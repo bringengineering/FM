@@ -417,15 +417,25 @@
     return rows;
   }
 
+  // 확정은 uid 아래 연도별로 쌓인다. 관리자는 uid → 연도 → 확정 으로,
+  // 본인은 연도 → 확정 으로 받는다.
   function flattenLeaveGrants(value, ownerUid) {
     if (!value || typeof value !== "object") return [];
-    // 본인 자료는 확정 한 건이 그대로 온다.
-    if (value.days !== undefined || value.confirmedBy !== undefined) {
-      return [Object.assign({}, value, { userId: String(value.userId || ownerUid || "") })];
-    }
-    return Object.entries(value)
-      .filter(([, record]) => record && typeof record === "object")
-      .map(([uid, record]) => Object.assign({}, record, { userId: String(record.userId || uid) }));
+    const rows = [];
+    const push = (uid, year, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        userId: String(record.userId || uid || ""),
+        year: String(record.year || year || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      // 연도 칸이면 그 아래가 확정이고, 아니면 여기가 확정이다.
+      if (/^\d{4}$/.test(firstKey)) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([year, record]) => push(firstKey, year, record));
+    });
+    return rows;
   }
 
   function flattenAttendance(value) {

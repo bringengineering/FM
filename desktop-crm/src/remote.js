@@ -2414,6 +2414,23 @@ class FirebaseRemoteClient {
       // 자기 신청을 승인하는 길이 생긴다.
       throw createError("승인과 반려는 관리자만 할 수 있습니다.", "LEAVE_DECISION_FORBIDDEN");
     }
+    // 화면이 들고 있던 자료로만 검사하면, 다른 기기에서 먼저 넣은 신청과
+    // 겹치거나 잔여를 함께 넘길 수 있다. 보내기 직전에 서버 것으로 다시 본다.
+    // (겹침은 여러 건을 걸쳐 봐야 해서 규칙만으로는 막을 수 없다.)
+    if (record.status === "requested") {
+      const [stored, grants] = await Promise.all([
+        this.dbRequest(`officeLeave/${session.uid}`, { method: "GET" }).catch(() => null),
+        this.dbRequest(`officeLeaveGrants/${session.uid}`, { method: "GET" }).catch(() => null),
+      ]);
+      this.assertSessionGuardActive(guard);
+      const year = record.startDate.slice(0, 4);
+      const checked = LeaveCore.validateRequest({
+        request: record,
+        requests: OfficeCore.flattenLeave(stored, session.uid),
+        grant: OfficeCore.flattenLeaveGrants(grants, session.uid).find(item => item.year === year) || null,
+      });
+      if (!checked.ok) throw createError(checked.error, checked.code);
+    }
     const location = `officeLeave/${session.uid}/${record.id}`;
     await this.dbRequest(location, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
@@ -2456,7 +2473,8 @@ class FirebaseRemoteClient {
     }));
     if (!record.userId) throw createError("대상자를 골라 주세요.", "VALIDATION_ERROR");
     if (!record.year) throw createError("연도를 골라 주세요.", "VALIDATION_ERROR");
-    await this.dbRequest(`officeLeaveGrants/${record.userId}`, { method: "PUT", body: record });
+    // 연도별로 나눠 저장한다. uid 하나에 두면 내년 확정이 올해 것을 지운다.
+    await this.dbRequest(`officeLeaveGrants/${record.userId}/${record.year}`, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
   }

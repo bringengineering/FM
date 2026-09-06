@@ -2118,6 +2118,64 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(viewer, "crmCompany/officeLeave/crm-viewer/req-4"), { userId: "crm-viewer" }));
   });
 
+  it("blocks a member from approving their own leave or editing an approved one", async () => {
+    // 규칙이 권한의 경계다. 앱을 우회해 토큰으로 직접 써도 승인을 만들 수 없어야 한다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    const base = {
+      userId: "crm-viewer", type: "annual",
+      startDate: "2026-11-02", endDate: "2026-11-04", days: 3,
+    };
+
+    // 처음부터 승인 상태로 만들 수 없다.
+    await assertFails(set(ref(viewer, "crmCompany/officeLeave/crm-viewer/self-1"), { ...base, status: "approved" }));
+    // 결정 항목을 스스로 넣을 수 없다.
+    await assertFails(set(ref(viewer, "crmCompany/officeLeave/crm-viewer/self-2"), {
+      ...base, status: "requested", decidedBy: "김현진",
+    }));
+
+    const path = "crmCompany/officeLeave/crm-viewer/self-3";
+    await assertSucceeds(set(ref(viewer, path), { ...base, status: "requested" }));
+    // 신청을 스스로 승인할 수 없다.
+    await assertFails(set(ref(viewer, path), { ...base, status: "approved", decidedBy: "본인" }));
+    // 취소하면서 기간이나 일수를 바꿀 수 없다 — 승인 이력이 흐려진다.
+    await assertFails(set(ref(viewer, path), { ...base, endDate: "2026-11-10", days: 9, status: "cancelled" }));
+    // 취소 자체는 된다.
+    await assertSucceeds(set(ref(viewer, path), { ...base, status: "cancelled" }));
+
+    // 이미 처리된 신청은 관리자도 다시 처리하지 못한다. 두 관리자가 동시에
+    // 눌러도 나중 것이 앞선 결정을 덮지 않는다.
+    const decided = "crmCompany/officeLeave/crm-viewer/self-4";
+    await assertSucceeds(set(ref(viewer, decided), { ...base, status: "requested" }));
+    await assertSucceeds(set(ref(admin, decided), { ...base, status: "approved", decidedBy: "김현진" }));
+    await assertFails(set(ref(admin, decided), { ...base, status: "rejected", decidedBy: "다른관리자" }));
+    // 정한 사람 없이 승인할 수도 없다.
+    const noDecider = "crmCompany/officeLeave/crm-viewer/self-5";
+    await assertSucceeds(set(ref(viewer, noDecider), { ...base, status: "requested" }));
+    await assertFails(set(ref(admin, noDecider), { ...base, status: "approved", decidedBy: "" }));
+  });
+
+  it("keeps each year's confirmed grant separate", async () => {
+    // uid 하나에 두면 내년 확정이 올해 것을 지운다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    const grant = (year: string, days: number) => ({
+      userId: "crm-viewer", year, days, confirmedBy: "김현진", confirmedAt: `${year}-01-02T00:00:00.000Z`,
+    });
+    await assertSucceeds(set(ref(admin, "crmCompany/officeLeaveGrants/crm-viewer/2026"), grant("2026", 15)));
+    await assertSucceeds(set(ref(admin, "crmCompany/officeLeaveGrants/crm-viewer/2027"), grant("2027", 16)));
+    // 2027 을 넣어도 2026 이 남아 있어야 한다.
+    expect((await assertSucceeds(get(ref(viewer, "crmCompany/officeLeaveGrants/crm-viewer/2026")))).val()).toMatchObject({ days: 15 });
+
+    // 칸 이름과 안의 연도가 어긋나면 저장되지 않는다.
+    await assertFails(set(ref(admin, "crmCompany/officeLeaveGrants/crm-viewer/2028"), grant("2026", 15)));
+    await assertFails(set(ref(admin, "crmCompany/officeLeaveGrants/crm-viewer/올해"), grant("올해", 15)));
+    // 본인은 여전히 못 쓴다.
+    await assertFails(set(ref(viewer, "crmCompany/officeLeaveGrants/crm-viewer/2026"), grant("2026", 30)));
+  });
+
   it("lets only an administrator set the confirmed leave grant", async () => {
     // 발생일수는 관리자가 확정한 값이 진실이다. 본인이 고칠 수 있으면
     // 잔여가 스스로 늘어난다.
@@ -2125,7 +2183,8 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
     const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
 
-    const grantPath = "crmCompany/officeLeaveGrants/crm-viewer";
+    // 확정은 uid 아래 연도별로 쌓인다.
+    const grantPath = "crmCompany/officeLeaveGrants/crm-viewer/2026";
     const grant = { userId: "crm-viewer", year: "2026", days: 15, confirmedBy: "김현진", confirmedAt: "2026-01-02T00:00:00.000Z" };
 
     await assertSucceeds(set(ref(admin, grantPath), grant));

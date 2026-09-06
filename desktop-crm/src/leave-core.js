@@ -49,6 +49,18 @@
   const dayCount = (start, end) =>
     Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1;
 
+  // 근속 연수·개월수는 달력으로 센다. 밀리초를 365.25 로 나누면 입사 만 1년
+  // 되는 날이 0.999년이 되어 "1년 미만" 으로 떨어진다. 그날은 법정 15일인데
+  // 11일로 제안하게 된다 — 코드 리뷰가 잡아 준 것이고 실제로 그랬다.
+  function elapsed(hireDate, asOf) {
+    const [hy, hm, hd] = hireDate.split("-").map(Number);
+    const [ay, am, ad] = asOf.split("-").map(Number);
+    let months = (ay - hy) * 12 + (am - hm);
+    // 그 달의 같은 날짜가 아직 안 왔으면 한 달을 뺀다.
+    if (ad < hd) months -= 1;
+    return { years: Math.floor(months / 12), months };
+  }
+
   // 근로기준법 60조를 그대로 옮긴 계산. 결과는 제안이고 확정이 아니다.
   // asOf 는 "언제 기준으로 보느냐" 다.
   function suggestGrant(hireDate, asOf) {
@@ -56,10 +68,10 @@
     const hired = Date.parse(`${hireDate}T00:00:00Z`);
     const at = Date.parse(`${asOf}T00:00:00Z`);
     if (at < hired) return null;
-    const years = Math.floor((at - hired) / (365.25 * 86400000));
+    const { years, months: elapsedMonths } = elapsed(hireDate, asOf);
     if (years < 1) {
       // 1개월 개근마다 1일, 최대 11일. 개근 여부는 CRM 이 모르므로 상한만 낸다.
-      const months = Math.min(11, Math.floor((at - hired) / (30.44 * 86400000)));
+      const months = Math.min(11, Math.max(0, elapsedMonths));
       return {
         days: months,
         basis: "1년 미만 · 1개월 개근마다 1일",
@@ -226,6 +238,7 @@
   }
 
   return Object.freeze({
+    elapsed,
     summarizeBalance,
     validateRequest,
     decide,

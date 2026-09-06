@@ -559,7 +559,8 @@
     const year = String(new Date().getFullYear());
     const all = state.data.leave || [];
     const grants = state.data.leaveGrants || [];
-    const myGrant = grants.find(item => item && item.userId === uid) || null;
+    // 연도를 안 맞추면 새해가 지난 뒤 작년 확정을 올해 잔여로 쓰게 된다.
+    const myGrant = grants.find(item => item && item.userId === uid && String(item.year) === year) || null;
     const balance = L.summarizeBalance({ userId: uid, year, grant: myGrant, requests: all });
     const mine = all
       .map(L.normalizeRequest)
@@ -619,7 +620,7 @@
     // 발생일수 확정. 입사일을 모르면 제안도 못 한다 — 그때는 그렇게 적는다.
     const year = String(new Date().getFullYear());
     const people = state.data.users.map(user => {
-      const confirmed = grants.find(item => item && item.userId === user.uid) || null;
+      const confirmed = grants.find(item => item && item.userId === user.uid && String(item.year) === year) || null;
       const hireDate = String(user.hireDate || "");
       const suggestion = hireDate ? L.suggestGrant(hireDate, Core.workDate()) : null;
       const hint = suggestion
@@ -653,7 +654,7 @@
       createdAt: new Date().toISOString(),
     };
     const year = request.startDate.slice(0, 4);
-    const grant = (state.data.leaveGrants || []).find(item => item && item.userId === request.userId) || null;
+    const grant = (state.data.leaveGrants || []).find(item => item && item.userId === request.userId && String(item.year) === year) || null;
     // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
     const checked = L.validateRequest({ request, requests: state.data.leave || [], grant, year });
     if (!checked.ok) { notify(checked.error, "error"); return; }

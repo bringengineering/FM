@@ -143,3 +143,24 @@ test("이미 처리된 신청을 다시 처리하지 않는다", () => {
   assert.equal(result.code, "ALREADY_DECIDED");
   assert.match(result.error, /이미 승인/u);
 });
+
+test("입사 만 1년 되는 날에 15일이 된다", () => {
+  // 밀리초를 365.25 로 나누면 그날이 0.999년이 되어 "1년 미만" 으로 떨어진다.
+  // 법정 15일인데 11일로 제안하게 된다. 달력으로 세야 한다.
+  assert.equal(Leave.suggestGrant("2025-09-06", "2026-09-06").days, 15);
+  assert.match(Leave.suggestGrant("2025-09-06", "2026-09-06").basis, /1년차/u);
+  // 하루 전은 아직 1년 미만이다.
+  assert.equal(Leave.suggestGrant("2025-09-07", "2026-09-06").days, 11);
+  // 윤년이 끼어도 마찬가지다.
+  assert.equal(Leave.suggestGrant("2024-02-29", "2025-03-01").days, 15);
+  assert.equal(Leave.suggestGrant("2025-01-01", "2026-01-01").days, 15);
+});
+
+test("개월수도 달력으로 센다", () => {
+  assert.deepEqual(Leave.elapsed("2026-01-31", "2026-02-28"), { years: 0, months: 0 });
+  assert.deepEqual(Leave.elapsed("2026-01-01", "2026-02-01"), { years: 0, months: 1 });
+  assert.deepEqual(Leave.elapsed("2025-09-06", "2026-09-06"), { years: 1, months: 12 });
+  assert.deepEqual(Leave.elapsed("2025-09-06", "2026-09-05"), { years: 0, months: 11 });
+  // 입사 당일은 0
+  assert.equal(Leave.suggestGrant("2026-09-06", "2026-09-06").days, 0);
+});
