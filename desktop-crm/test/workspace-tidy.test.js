@@ -10,16 +10,60 @@ const indexSource = read("index.html");
 const styleSource = read("styles.css");
 const navSource = indexSource.slice(indexSource.indexOf("<nav"), indexSource.indexOf("</nav>"));
 
-test("처음 화면은 셸이 다른 것만 고르게 한다", () => {
-  // 운영 안의 갈래는 들어가면 왼쪽에 그대로 다 있다. 여기에 또 늘어놓으면
-  // 어차피 사이드바에서 다시 고를 것을 한 번 더 고르게 하는 셈이다.
-  assert.equal(WorkspaceShell.LANDING_FOLDERS.length, 2);
-  assert.deepEqual(WorkspaceShell.LANDING_FOLDERS.map(item => item.workspace).sort(),
-    ["marketing", "operations"]);
+test("처음 화면이 폴더를 고르는 자리다", () => {
+  // 고르고 나면 사이드바에는 그 폴더만 남는다. 그래서 처음 화면에는 폴더가
+  // 다 있어야 한다 — 여기가 유일한 고르는 자리다.
+  const navFolders = new Set([...indexSource.matchAll(/data-nav-folder="([a-z-]+)"/g)].map(m => m[1]));
+  const landingFolders = WorkspaceShell.LANDING_FOLDERS.filter(item => item.workspace === "operations");
+  assert.equal(landingFolders.length, navFolders.size,
+    "처음 화면 카드와 사이드바 폴더 개수가 다르다");
+  for (const folder of landingFolders) {
+    // 짝이 어긋나면 고른 폴더가 통째로 사라진다.
+    assert.ok(navFolders.has(folder.navFolder), `${folder.title} 의 navFolder(${folder.navFolder}) 가 사이드바에 없다`);
+    assert.ok(folder.view, `${folder.title} 에 열 화면이 없다`);
+  }
   const landing = WorkspaceShell.renderLanding();
   assert.match(landing, /data-workspace-enter="operations"/);
-  // 마케팅은 셸이 달라 사이드바가 통째로 바뀐다. 여기서 빼면 들어갈 길이 없다.
   assert.match(landing, /data-workspace-enter="marketing"/);
+  assert.equal((landing.match(/data-workspace-enter-folder="/g) || []).length, landingFolders.length);
+});
+
+test("고른 폴더만 사이드바에 남는다", () => {
+  // 들어간 뒤에도 일곱 폴더가 다 늘어서 있으면 처음 화면에서 고른 것이
+  // 아무 의미가 없다.
+  assert.match(appSource, /function applyNavFolderScope\(\)/u);
+  const scope = appSource.slice(
+    appSource.indexOf("function applyNavFolderScope()"),
+    appSource.indexOf("function setActiveNavFolder("),
+  );
+  assert.match(scope, /folder\.hidden = Boolean\(activeNavFolder\) && folder\.dataset\.navFolder !== activeNavFolder/u);
+  // 랜딩 카드가 폴더 이름을 들고 온다.
+  assert.match(appSource, /pendingLandingFolder = String\(workspaceEnter\.dataset\.workspaceEnterFolder \|\| ""\)/u);
+  assert.match(appSource, /setActiveNavFolder\(pendingLandingFolder\)/u);
+  // 처음 화면으로 돌아오면 푼다.
+  assert.match(appSource, /setActiveNavFolder\(""\);\s*\n\s*await workspaceCoordinator\.showLanding\(\)/u);
+  // 앱을 다시 켜도 남는다.
+  assert.match(appSource, /restoreActiveNavFolder\(\);\s*\n\s*workspaceCoordinator\.start\(\)/u);
+});
+
+test("링크로 다른 폴더 화면에 가면 사이드바가 따라간다", () => {
+  // 왼쪽에 그 화면이 없으면 사람이 길을 잃는다.
+  assert.match(appSource, /const viewFolder = navFolderOfView\(currentView\)/u);
+  assert.match(appSource, /viewFolder !== activeNavFolder\) setActiveNavFolder\(viewFolder\)/u);
+  // 화면과 폴더의 짝은 사이드바에서 읽는다. 손으로 관리하면 어긋난다.
+  const lookup = appSource.slice(
+    appSource.indexOf("function navFolderOfView("),
+    appSource.indexOf("function applyNavFolderScope("),
+  );
+  assert.match(lookup, /querySelector\(`\.nav-item\[data-view="\$\{view\}"\]`\)/u);
+});
+
+test("없는 폴더 이름이 남아 있어도 사이드바가 비지 않는다", () => {
+  const restore = appSource.slice(
+    appSource.indexOf("function restoreActiveNavFolder()"),
+    appSource.indexOf("function pageMeta") > 0 ? appSource.indexOf("function restoreActiveNavFolder()") + 900 : undefined,
+  );
+  assert.match(restore, /document\.querySelector\(`\[data-nav-folder="\$\{saved\}"\]`\) \? saved : ""/u);
 });
 
 test("견적서는 CRM 폴더에서 열린다", () => {

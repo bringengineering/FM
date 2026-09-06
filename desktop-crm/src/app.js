@@ -891,6 +891,7 @@
       // 화면을 우회해도 서버 규칙이 다시 막는다 — 여기서 숨기는 것은 그 위의 예의다.
       document.getElementById("navPurchases").hidden = user.accessRole !== "admin";
     }
+    restoreActiveNavFolder();
     workspaceCoordinator.start();
   }
 
@@ -1446,6 +1447,11 @@
         : button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
+    // 화면이 다른 폴더로 넘어갔으면 사이드바도 따라간다. 링크로 건너뛰었는데
+    // 왼쪽에 그 화면이 없으면 사람이 길을 잃는다.
+    const viewFolder = navFolderOfView(currentView);
+    if (viewFolder && activeNavFolder && viewFolder !== activeNavFolder) setActiveNavFolder(viewFolder);
+    else applyNavFolderScope();
     const customerManagementView = ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages";
     const customerManagementFolder = document.querySelector('[data-nav-folder="customer-management"]');
     customerManagementFolder?.classList.toggle("active", customerManagementView);
@@ -1611,6 +1617,43 @@
   // 대시보드로 되돌리기 때문에, 그 전에 정해 두면 지워진다. 여기 담아 두고
   // 되돌리는 그 자리에서 꺼내 쓴다.
   let pendingLandingView = "";
+  let pendingLandingFolder = "";
+  // 지금 사이드바에 남겨 둘 폴더. 빈 값이면 전부 보인다 — 랜딩을 거치지 않고
+  // 들어온 경우(주소로 바로 열기 등)까지 감춰 버리면 갈 곳이 없어진다.
+  let activeNavFolder = "";
+  const NAV_FOLDER_KEY = "bring.crm.navFolder";
+
+  // 어느 화면이 어느 폴더에 사는지는 사이드바에서 읽는다. 목록을 손으로
+  // 관리하면 화면을 옮길 때마다 짝이 어긋난다.
+  function navFolderOfView(view) {
+    if (!view) return "";
+    const button = document.querySelector(`.nav-item[data-view="${view}"]`);
+    const folder = button && button.closest("[data-nav-folder]");
+    return folder ? String(folder.dataset.navFolder || "") : "";
+  }
+
+  function applyNavFolderScope() {
+    document.querySelectorAll("[data-nav-folder]").forEach(folder => {
+      folder.hidden = Boolean(activeNavFolder) && folder.dataset.navFolder !== activeNavFolder;
+    });
+  }
+
+  function setActiveNavFolder(folderKey) {
+    activeNavFolder = String(folderKey || "");
+    try {
+      if (activeNavFolder) window.localStorage.setItem(NAV_FOLDER_KEY, activeNavFolder);
+      else window.localStorage.removeItem(NAV_FOLDER_KEY);
+    } catch (_error) {}
+    applyNavFolderScope();
+  }
+
+  function restoreActiveNavFolder() {
+    let saved = "";
+    try { saved = String(window.localStorage.getItem(NAV_FOLDER_KEY) || ""); } catch (_error) {}
+    // 없는 폴더 이름이 남아 있으면 사이드바가 통째로 비어 버린다.
+    activeNavFolder = saved && document.querySelector(`[data-nav-folder="${saved}"]`) ? saved : "";
+    applyNavFolderScope();
+  }
 
   async function prepareWorkspaceTransition(workspace) {
     if (workspace === "marketing") marketingController.prepareLoad(currentAuth.user || {});
@@ -1627,6 +1670,8 @@
     // 두면 어느 카드를 눌러도 대시보드가 열린다.
     currentView = pendingLandingView || "dashboard";
     pendingLandingView = "";
+    setActiveNavFolder(pendingLandingFolder);
+    pendingLandingFolder = "";
     marketingLoaded = false;
   }
 
@@ -6944,11 +6989,16 @@
       // 같은 폴더를 찾아 눌러야 하면 랜딩을 나눈 뜻이 없다.
       const target = String(workspaceEnter.dataset.workspaceEnterView || "");
       pendingLandingView = target && WorkspaceShell.LANDING_FOLDERS.some(folder => folder.view === target) ? target : "";
+      // 고른 폴더만 왼쪽에 남긴다. 들어간 뒤에도 일곱 폴더가 다 늘어서 있으면
+      // 여기서 고른 것이 아무 의미가 없다.
+      pendingLandingFolder = String(workspaceEnter.dataset.workspaceEnterFolder || "");
       await workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
       return;
     }
     const workspaceSwitchControl = event.target.closest("[data-workspace-switch]");
     if (workspaceSwitchControl) {
+      // 처음 화면으로 돌아왔으니 고른 폴더를 푼다. 다음에 다른 폴더를 고를 참이다.
+      setActiveNavFolder("");
       await workspaceCoordinator.showLanding();
       return;
     }
