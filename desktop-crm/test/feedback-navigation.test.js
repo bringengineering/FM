@@ -30,7 +30,8 @@ test("marketing workspace navigation remains available", () => {
   assert.match(indexSource, /<script src="\.\/workspace-shell\.js"><\/script>/);
   assert.match(indexSource, /<script src="\.\/marketing-core\.js"><\/script>/);
   assert.match(indexSource, /<script src="\.\/marketing-ui\.js"><\/script>/);
-  assert.match(workspaceShellSource, /\["marketing", "마케팅 폴더", "마케팅 업무와 콘텐츠 관리"\]/);
+  // 랜딩이 폴더별로 쪼개졌다. 마케팅으로 들어가는 카드가 그대로 있는지만 본다.
+  assert.match(workspaceShellSource, /workspace: "marketing"[\s\S]*?title: "마케팅"/u);
   assert.match(workspaceShellSource, /data-workspace-enter="\$\{escapeHtml\(key\)\}"/);
   assert.match(appSource, /WorkspaceShell\.createWorkspaceCoordinator\(/);
   assert.match(appSource, /currentWorkspace === "marketing"/);
