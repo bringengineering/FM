@@ -84,3 +84,38 @@
   .office-leave-head{flex-direction:column;gap:8px}
   .office-leave-grants{display:block;overflow-x:auto}
 }
+
+/* --- 인사기록 --- */
+.office-hr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.office-hr-head span { display: block; color: var(--muted, #6b7280); font-size: 12px; }
+.office-hr-todo { background: #fef3c7; color: #92400e; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+.office-hr-warn { margin: 8px 0 12px; font-size: 12px; color: #b45309; }
+.office-hr-body { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; align-items: start; }
+.office-hr-list { display: flex; flex-direction: column; gap: 4px; }
+.office-hr-person { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; }
+.office-hr-person:hover { background: rgba(0, 0, 0, 0.04); }
+.office-hr-person.is-selected { border-color: var(--accent, #2563eb); background: rgba(37, 99, 235, 0.06); }
+.office-hr-person b { grid-column: 1; font-size: 13px; }
+.office-hr-person span { grid-column: 1; font-size: 11px; color: var(--muted, #6b7280); }
+.office-hr-missing { grid-column: 2; grid-row: 1 / span 2; font-style: normal; font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 999px; padding: 2px 7px; }
+.office-hr-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.office-hr-form header, .office-hr-form .wide, .office-hr-form .office-hr-checklist, .office-hr-form .office-hr-ok, .office-hr-form button { grid-column: 1 / -1; }
+.office-hr-form header b { font-size: 15px; }
+.office-hr-suggest { display: block; font-size: 12px; color: var(--muted, #6b7280); }
+.office-hr-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.office-hr-form label span { color: var(--muted, #6b7280); }
+.office-hr-checklist { list-style: none; margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.03); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.office-hr-checklist li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.office-hr-checklist li::before { content: "•"; }
+.office-hr-checklist li.level-required { color: #b91c1c; }
+.office-hr-checklist li.level-warn { color: #b45309; }
+.office-hr-checklist small { color: var(--muted, #6b7280); }
+.office-hr-ok { font-size: 12px; color: #166534; margin: 0; }
+.office-hr-mine { width: 100%; border-collapse: collapse; font-size: 13px; }
+.office-hr-mine th { text-align: left; width: 40%; padding: 8px 0; color: var(--muted, #6b7280); font-weight: 500; }
+.office-hr-mine td { padding: 8px 0; }
+.office-hr-mine tr + tr th, .office-hr-mine tr + tr td { border-top: 1px solid rgba(0, 0, 0, 0.06); }
+@media (max-width: 860px) {
+  .office-hr-body { grid-template-columns: 1fr; }
+  .office-hr-form { grid-template-columns: 1fr; }
+}

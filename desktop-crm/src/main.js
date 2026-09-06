@@ -7174,6 +7174,7 @@ secureCanonicalHandle("crm:building-document-upload", input => uploadBuildingDoc
 secureCanonicalHandle("crm:leave-request-save", input => remoteClient.saveLeaveRequest(input));
 secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveRequest(input));
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
+secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
 secureCanonicalHandle("crm:quote-seal-select", () => selectQuoteSeal());
 secureHandle("crm:auth-login", async credentials => {

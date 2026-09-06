@@ -54,6 +54,63 @@
           ".validate": false
         }
       },
+      "officeMembers": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
+        ".write": false,
+        "$uid": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+          ".validate": "newData.hasChildren(['userId','updatedAt','updatedBy']) && newData.child('userId').val() === $uid",
+          "userId": {
+            ".validate": "newData.isString() && newData.val() === $uid"
+          },
+          "hireDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "employmentType": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val() === 'regular' || newData.val() === 'contract' || newData.val() === 'parttime' || newData.val() === 'daily')"
+          },
+          "contractEndDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "resignedDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "contractSignedDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "insuranceStartDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "contractFileUrl": {
+            ".validate": "newData.isString() && (newData.val() === '' || (newData.val().beginsWith('https://') && newData.val().length <= 500))"
+          },
+          "department": {
+            ".validate": "newData.isString() && newData.val().length <= 60 && !newData.val().matches(/[0-9]{6}[-. ]?[1-4][0-9]{6}/) && !newData.val().matches(/[0-9]{13}/)"
+          },
+          "position": {
+            ".validate": "newData.isString() && newData.val().length <= 60 && !newData.val().matches(/[0-9]{6}[-. ]?[1-4][0-9]{6}/) && !newData.val().matches(/[0-9]{13}/)"
+          },
+          "phone": {
+            ".validate": "newData.isString() && newData.val().length <= 40 && !newData.val().matches(/[0-9]{6}[-. ]?[1-4][0-9]{6}/) && !newData.val().matches(/[0-9]{13}/)"
+          },
+          "emergencyContact": {
+            ".validate": "newData.isString() && newData.val().length <= 120 && !newData.val().matches(/[0-9]{6}[-. ]?[1-4][0-9]{6}/) && !newData.val().matches(/[0-9]{13}/)"
+          },
+          "note": {
+            ".validate": "newData.isString() && newData.val().length <= 500 && !newData.val().matches(/[0-9]{6}[-. ]?[1-4][0-9]{6}/) && !newData.val().matches(/[0-9]{13}/)"
+          },
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
       "officeLeave": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": false,
