@@ -120,3 +120,32 @@ test("보내는 글에 지시 줄을 화면에서 실어 보낸다", () => {
   assert.match(handler, /TELEGRAM_NOT_CONFIGURED/u);
   assert.match(handler, /requireTelegramAdmin\(\)/u);
 });
+
+test("지시서 초안 갈래가 서버·앱 양쪽에 다 있다", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "../../crm-ai-worker/src/tasks.js"), "utf8");
+  assert.match(worker, /directive_draft: \{/u);
+  assert.match(read("ai-client.js"), /"directive_draft"/u);
+});
+
+test("AI 가 짠 것을 바로 지시로 만들지 않는다", () => {
+  // 사람이 적은 것이든 AI 가 적은 것이든 같은 검토 화면을 지나야 이상한 것을
+  // 냈을 때 그 자리에서 보인다.
+  const draft = appSource.slice(appSource.indexOf("async function draftDirectiveWithAi"), appSource.indexOf("function readDirectivePaste"));
+  assert.ok(draft, "draftDirectiveWithAi 가 없다");
+  assert.match(draft, /task: "directive_draft"/u);
+  assert.ok(!/api\.saveWorkOrder|api\.saveWeeklyDirective|sendTelegramDirective/u.test(draft), "짜면서 만들거나 보내면 안 된다");
+  // 짠 글을 칸에 되돌려 놓아야 사람이 고칠 수 있다.
+  assert.match(draft, /box\.value = drafted/u);
+  // 읽은 결과까지 같이 보여 준다. 안 그러면 [읽어 보기] 를 안 누르고 만들기로 간다.
+  assert.match(draft, /I\.planImport\(\{/u);
+});
+
+test("AI 에 사람과 가용시간을 같이 넘긴다", () => {
+  // 대충 적은 글만 주면 22시간 낼 수 있는 사람에게 40시간짜리 주가 나온다.
+  const draft = appSource.slice(appSource.indexOf("async function draftDirectiveWithAi"), appSource.indexOf("function readDirectivePaste"));
+  assert.match(draft, /I\.draftContext\(\{/u);
+  assert.match(draft, /capacityHours: C && saved \? C\.weekCapacity\(saved\)\.hours : 0/u);
+  assert.match(draft, /openOrders: W \?/u);
+  // 누구 것인지 안 고르면 가용시간을 알 수 없으니 먼저 고르게 한다.
+  assert.match(draft, /누구에게 내는 지시서인지 골라 주세요/u);
+});

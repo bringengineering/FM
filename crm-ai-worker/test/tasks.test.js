@@ -16,6 +16,7 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "directive_draft",
     "daily_report",
     "monthly_management_report",
     "quote_draft",
@@ -130,4 +131,21 @@ test("daily report never invents a number and never grades the person", () => {
   const result = normalizeTaskResult("daily_report", { text: "오늘 누수 확인에 2시간을 썼습니다." });
   assert.equal(result.text, "오늘 누수 확인에 2시간을 썼습니다.");
   assert.throws(() => normalizeTaskResult("daily_report", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("directive draft writes a pasteable sheet and never invents facts", () => {
+  // 이 갈래가 내놓는 글은 그대로 붙여넣기 칸에 들어가 파서를 지난다. 그래서
+  // 모양이 어긋나면 화면이 "못 읽은 줄" 로 다 뱉는다.
+  const messages = buildTaskMessages("directive_draft", "당근이랑 숨고 좀 살려야 함", {});
+  assert.match(messages[0].content, /업무명\\t목적\\t완료기준\\t산출물\\t예상시간\\t가중치\\t마감/u);
+  // 없는 마감일과 건물명을 지어내면 그게 지시가 되어 애들에게 나간다.
+  assert.match(messages[0].content, /적히지 않은 사실을 만들지 마세요/u);
+  // 가중치 합이 100이 아니면 내보내기에서 막힌다. 애초에 맞춰서 내놓게 한다.
+  assert.match(messages[0].content, /합이 정확히 100/u);
+  // "열심히 한다" 는 완료 기준이 아니다.
+  assert.match(messages[0].content, /눈에 보이는 것으로/u);
+
+  const result = normalizeTaskResult("directive_draft", { text: "배경\t당근 문의가 줄었습니다" });
+  assert.equal(result.text, "배경\t당근 문의가 줄었습니다");
+  assert.throws(() => normalizeTaskResult("directive_draft", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
 });

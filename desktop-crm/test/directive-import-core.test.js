@@ -209,3 +209,48 @@ test("빈 글을 넣어도 터지지 않는다", () => {
   assert.deepEqual(plan.tasks, []);
   assert.ok(plan.blockers.some(note => /업무 줄을 하나도 못 읽었습니다/u.test(note)));
 });
+
+// --- AI 에게 넘기는 상황 ---
+
+test("대충 적은 글만 넘기지 않고 상황을 같이 넘긴다", () => {
+  // 글만 주면 AI 는 22시간 낼 수 있는 사람에게 40시간짜리 주를 짜 준다.
+  const context = I.draftContext({
+    name: "황우중",
+    weekStart: "2026-09-07",
+    capacityHours: 22,
+    openOrders: [{ title: "치과 이슈 정리" }],
+    projects: [{ name: "마케팅 채널" }],
+    notes: "당근이랑 숨고 좀 살려야 함",
+  });
+  assert.match(context, /받는 사람: 황우중/u);
+  assert.match(context, /낼 수 있는 시간: 22시간/u);
+  assert.match(context, /예상시간 합이 이보다 크면 안 됩니다/u);
+  assert.match(context, /이미 물고 있어서 새로 낼 필요가 없는 일: 치과 이슈 정리/u);
+  assert.match(context, /우리 프로젝트: 마케팅 채널/u);
+  assert.match(context, /당근이랑 숨고 좀 살려야 함/u);
+});
+
+test("시간표를 안 넣은 사람은 시간을 지어내지 말라고 한다", () => {
+  const context = I.draftContext({ name: "황우중", notes: "뭐라도" });
+  assert.match(context, /가용시간은 아직 등록되지 않았습니다/u);
+  assert.match(context, /보수적으로/u);
+  // 없는 숫자를 만들어 넘기면 AI 가 그걸 사실로 쓴다.
+  assert.doesNotMatch(context, /낼 수 있는 시간: 0시간/u);
+});
+
+test("AI 가 짠 글도 사람이 붙여 넣은 것과 같은 길을 지난다", () => {
+  // 같은 파서를 지나야 이상한 것을 냈을 때 그 자리에서 보인다.
+  const fromAi = [
+    "배경\t당근에서 문의가 줄고 있습니다.",
+    "목표\t문의가 주 3건 들어옵니다.",
+    "",
+    "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치\t마감",
+    "당근 비즈프로필 정비\t권한을 받아 최신으로\t사진 5장이 올라가면 끝\t20260909_당근.png\t4\t60\t2026-09-09",
+    "숨고 등록\t새 유입 통로\t프로필 승인 화면\t20260911_숨고.png\t3\t40\t2026-09-11",
+  ].join("\n");
+  const plan = I.planImport({ paste: fromAi, uid: "u-hwang", name: "황우중" });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.tasks.length, 2);
+  assert.equal(plan.weightTotal, 100);
+  assert.equal(plan.directive.background, "당근에서 문의가 줄고 있습니다.");
+});

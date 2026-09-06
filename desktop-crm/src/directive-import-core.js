@@ -213,6 +213,36 @@
     return { header, tasks, unread: unread.filter(Boolean), warnings, columns };
   }
 
+  // AI 에게 넘길 상황. 대표가 대충 적은 글만 주면 AI 는 사람이 몇 시간을
+  // 낼 수 있는지도, 지금 무엇을 물고 있는지도 모르고 짠다. 그러면 22시간
+  // 낼 수 있는 사람에게 40시간짜리 주를 짜 준다.
+  //
+  // 여기서 만드는 숫자는 없다. 가용시간은 capacity 가, 물고 있는 지시는
+  // 업무지시가 이미 센 것을 옮길 뿐이다.
+  function draftContext(input) {
+    const settings = input && typeof input === "object" ? input : {};
+    const lines = [];
+    const name = text(settings.name, 80);
+    if (name) lines.push(`받는 사람: ${name}`);
+    if (text(settings.weekStart, 10)) lines.push(`이 주의 월요일: ${text(settings.weekStart, 10)}`);
+    const hours = Number(settings.capacityHours);
+    if (Number.isFinite(hours) && hours > 0) {
+      lines.push(`이 사람이 이번 주에 낼 수 있는 시간: ${hours}시간 (수업 등을 뺀 값입니다. 예상시간 합이 이보다 크면 안 됩니다.)`);
+    } else {
+      lines.push("이 사람의 가용시간은 아직 등록되지 않았습니다. 예상시간은 보수적으로 잡으세요.");
+    }
+    const open = rows(settings.openOrders).map(order => text(order && order.title, 120)).filter(Boolean);
+    if (open.length) {
+      lines.push(`이미 물고 있어서 새로 낼 필요가 없는 일: ${open.slice(0, 12).join(", ")}`);
+    }
+    const projects = rows(settings.projects).map(project => text(project && project.name, 120)).filter(Boolean);
+    if (projects.length) lines.push(`우리 프로젝트: ${projects.join(", ")}`);
+    lines.push("");
+    lines.push("대표가 적은 이번 주 할 일:");
+    lines.push(text(settings.notes, 6000) || "(비어 있음)");
+    return lines.join("\n");
+  }
+
   // 읽은 것으로 무엇을 만들지 짠다. 만들지는 않는다 — 사람이 보고 누른다.
   function planImport(input) {
     const settings = input && typeof input === "object" ? input : {};
@@ -282,6 +312,7 @@
   }
 
   return Object.freeze({
+    draftContext,
     HEADER_WORDS,
     COLUMN_WORDS,
     splitCells,

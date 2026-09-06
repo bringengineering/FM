@@ -4754,14 +4754,15 @@
           <label><span>누구에게</span><select data-di-uid><option value="">고르기</option>${options}</select></label>
           <label><span>어느 주 (월요일)</span><input type="date" value="${esc(plan && plan.weekStart ? plan.weekStart : "")}" data-di-week></label>
         </div>
-        <label class="wide"><span>붙여넣기</span><textarea rows="8" data-di-paste placeholder="담당&#9;황우중&#10;배경&#9;당근에서 문의가 줄고 있습니다.&#10;목표&#9;주 3건 이상&#10;&#10;업무명&#9;목적&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#10;당근 비즈프로필 정비&#9;권한을 받아 최신으로&#9;사진 5장이 올라가면 끝&#9;20260909_당근.png&#9;4&#9;100"></textarea></label>
+        <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="담당&#9;황우중&#10;배경&#9;당근에서 문의가 줄고 있습니다.&#10;목표&#9;주 3건 이상&#10;&#10;업무명&#9;목적&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#10;당근 비즈프로필 정비&#9;권한을 받아 최신으로&#9;사진 5장이 올라가면 끝&#9;20260909_당근.png&#9;4&#9;100"></textarea></label>
         ${review}
         <div class="wo-editor-actions">
+          <button type="button" class="mini-button" data-di-draft${workOrderState.importing ? " disabled" : ""}>✨ AI로 짜기</button>
           <button type="button" class="mini-button" data-di-read${workOrderState.importing ? " disabled" : ""}>읽어 보기</button>
           <button type="button" class="primary-button" data-di-make${!plan || !plan.ok || workOrderState.importing ? " disabled" : ""}>${plan && plan.ok ? `업무지시 ${plan.tasks.length}건 만들기` : "만들기"}</button>
           <button type="button" class="mini-button return" data-di-cancel>그만두기</button>
         </div>
-        <p class="office-muted">읽은 것을 보여 드린 다음에 만듭니다. 붙여 넣자마자 지시가 나가면 잘못 붙여 넣은 것도 지시가 됩니다.</p>
+        <p class="office-muted">쓰던 지시서를 붙여 넣거나, 이번 주 할 일을 대충 적고 [AI로 짜기] 를 누르세요. 어느 쪽이든 읽은 것을 보여 드린 다음에 만듭니다 — 붙여 넣자마자 지시가 나가면 잘못 붙여 넣은 것도 지시가 됩니다.</p>
       </div>
     </section>`;
   }
@@ -5212,6 +5213,80 @@
       workOrderState.sendingDirective = false;
       renderWorkOrders();
     }
+  }
+
+  // 대충 적은 것을 AI 가 지시서 모양으로 짜 준다.
+  //
+  // 대표가 하던 것은 — 이번 주 할 것을 적고, 브라우저에서 GPT 로 다듬고, 그걸
+  // 다시 여기 붙여 넣었다. 그 가운데 단계를 없앤다.
+  //
+  // **AI 가 짠 것을 바로 지시로 만들지 않는다.** 붙여넣기 칸에 그대로 넣어
+  // 주고, 대표가 읽고 고친 다음에 [읽어 보기] → [만들기] 로 간다. 사람이
+  // 적은 것이든 AI 가 적은 것이든 같은 길을 지나야 한다 — 그래야 AI 가
+  // 이상한 것을 냈을 때 그 자리에서 보인다.
+  //
+  // 상황을 같이 넘긴다. 대충 적은 글만 주면 AI 는 22시간 낼 수 있는 사람에게
+  // 40시간짜리 주를 짜 준다.
+  async function draftDirectiveWithAi() {
+    const I = window.BringDirectiveImportCore;
+    const WD = window.BringWeeklyDirectiveCore;
+    const W = workOrderCore();
+    const C = capacityCore();
+    if (!I || !WD || workOrderState.importing) return;
+    const panel = document.querySelector(".di-panel");
+    if (!panel) return;
+    const notes = String((panel.querySelector("[data-di-paste]") || {}).value || "").trim();
+    const uid = String((panel.querySelector("[data-di-uid]") || {}).value || "");
+    const week = String((panel.querySelector("[data-di-week]") || {}).value || "");
+    if (!notes) { showToast("이번 주에 할 일을 먼저 적어 주세요. 짧아도 됩니다.", "error"); return; }
+    if (!uid) { showToast("누구에게 내는 지시서인지 골라 주세요. 그 사람 가용시간에 맞춰 짭니다.", "error"); return; }
+
+    const person = workOrderState.members.find(item => item && item.uid === uid);
+    const name = person ? (person.displayName || person.email || person.uid) : uid;
+    const saved = C ? C.personOf(workOrderState.capacity, uid) : null;
+    const content = I.draftContext({
+      name,
+      weekStart: WD.weekStart(week || todayKey()),
+      capacityHours: C && saved ? C.weekCapacity(saved).hours : 0,
+      openOrders: W ? W.forAssignee(workOrderState.orders || [], uid).filter(item => W.OPEN.includes(item.status)) : [],
+      projects: workOrderState.projects,
+      notes,
+    });
+
+    workOrderState.importing = true;
+    workOrderState.importUid = uid;
+    renderWorkOrders();
+    let drafted = "";
+    try {
+      const answer = await api.assist({ task: "directive_draft", content });
+      drafted = answer && answer.result && typeof answer.result.text === "string" ? answer.result.text.trim() : "";
+      if (!drafted) throw new Error("초안을 받지 못했습니다.");
+    } catch (error) {
+      const said = String(error && error.message || "");
+      showToast(
+        /지원하지 않는 AI 작업/u.test(said)
+          ? "AI 서버에 지시서 갈래가 아직 안 올라갔습니다. crm-ai-worker 를 배포한 뒤 다시 눌러 주세요."
+          : (said || "초안을 짜지 못했습니다."),
+        "error",
+      );
+    } finally {
+      workOrderState.importing = false;
+    }
+    if (!drafted) { renderWorkOrders(); return; }
+
+    // 읽은 결과까지 같이 보여 준다. 칸에만 넣어 두면 [읽어 보기] 를 한 번 더
+    // 눌러야 하는데, 그 한 번을 안 누르고 [만들기] 로 가는 사람이 생긴다.
+    workOrderState.importPlan = I.planImport({
+      paste: drafted,
+      uid,
+      name,
+      weekStart: week,
+      existingOrders: workOrderState.orders,
+    });
+    renderWorkOrders();
+    const box = document.querySelector(".di-panel [data-di-paste]");
+    if (box) box.value = drafted;
+    showToast("초안을 짰습니다. 읽어 보고 고친 다음 [만들기] 를 눌러 주세요.", "success");
   }
 
   // 붙여 넣은 것을 읽어 본다. 만들지는 않는다 — 사람이 보고 누른다.
@@ -9949,6 +10024,7 @@
       renderWorkOrders();
       return;
     }
+    if (event.target.closest("[data-di-draft]")) { await draftDirectiveWithAi(); return; }
     if (event.target.closest("[data-di-read]")) { readDirectivePaste(); return; }
     if (event.target.closest("[data-di-make]")) { await buildFromDirectivePaste(); return; }
     const dlShift = event.target.closest("[data-dl-shift]");

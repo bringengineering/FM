@@ -1023,4 +1023,49 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.calls.indexOf(sent!)).toBeLessThan(booted.calls.indexOf(marked!));
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
+  it("대충 적고 [AI로 짜기] 를 누르면 지시서 모양으로 짜 주되 바로 만들지 않는다", async () => {
+    // 대표가 하던 것 — 적고, 브라우저 GPT 로 다듬고, 다시 붙여 넣기. 그 가운데
+    // 단계를 없앤다. 다만 AI 가 짠 것도 사람이 적은 것과 같은 길을 지나야 한다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+
+    // 누구 것인지 안 고르면 가용시간을 모른 채 짜게 된다.
+    // 앞선 검사가 고른 사람이 남아 있을 수 있어 빈 상태로 되돌린다.
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "";
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = "당근이랑 숨고 좀 살려야 함";
+    let before = booted.calls.length;
+    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
+    await sleep(250);
+    expect(booted.calls.slice(before).some(call => call.name === "assist"),
+      "받는 사람 없이 짜면 시간을 모른 채 짠다").toBe(false);
+
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-admin";
+    before = booted.calls.length;
+    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
+    await sleep(400);
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task).toBe("directive_draft");
+    expect(sent.content).toContain("당근이랑 숨고 좀 살려야 함");
+    expect(sent.content).toContain("받는 사람: 서창환");
+    // 서창환은 월 13~14 한 시간만 막혀 있어 주 64시간이다.
+    expect(sent.content, "가용시간을 같이 넘겨야 한다").toContain("64시간");
+    // 지금 물고 있는 일을 알려야 같은 것을 또 시키지 않는다.
+    expect(sent.content).toContain("이미 물고 있어서");
+
+    // 짜면서 만들거나 보내면 안 된다. 사람이 읽고 고쳐야 한다.
+    const after = booted.calls.slice(before);
+    expect(after.some(call => call.name === "saveWorkOrder")).toBe(false);
+    expect(after.some(call => call.name === "sendTelegramDirective")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
 });
