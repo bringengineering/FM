@@ -1664,7 +1664,9 @@
     if (!list) return;
     list.innerHTML = folders.map(item => `<button type="button" class="nav-switch-go${item.navFolder === activeNavFolder ? " is-current" : ""}" data-nav-folder-go="${esc(item.navFolder)}" data-nav-folder-view="${esc(item.view)}">
         <b>${esc(item.title)}</b><small>${esc(item.description || "")}</small>
-      </button>`).join("") + `<button type="button" class="nav-switch-go nav-switch-all" data-nav-folder-go="" data-nav-folder-view=""><b>전체 보기</b><small>모든 폴더를 한 번에</small></button>`;
+      </button>`).join("");
+    // '전체 보기' 는 뺐다. 한 번에 다 보이면 사람은 다시 목록을 훑게 되고,
+    // 폴더를 나눈 뜻이 없어진다. 옮겨 다니는 길은 이 목록으로 충분하다.
   }
 
   function closeNavFolderSwitch() {
@@ -1675,7 +1677,8 @@
   }
 
   function setActiveNavFolder(folderKey) {
-    activeNavFolder = String(folderKey || "");
+    // 빈 값이 들어와도 전부 보이는 상태로는 안 돌아간다.
+    activeNavFolder = String(folderKey || "") || firstNavFolder();
     try {
       if (activeNavFolder) window.localStorage.setItem(NAV_FOLDER_KEY, activeNavFolder);
       else window.localStorage.removeItem(NAV_FOLDER_KEY);
@@ -1683,11 +1686,20 @@
     applyNavFolderScope();
   }
 
+  // 폴더를 정하지 못했을 때 무엇을 보일 것인가. 전에는 전부 보였다.
+  // 그런데 전부 보이는 상태가 한 번이라도 있으면, 폴더를 나눈 뜻이 없다.
+  // 그래서 첫 폴더로 떨어뜨린다 — 사이드바 맨 위에서 언제든 옮길 수 있다.
+  function firstNavFolder() {
+    const found = document.querySelector("[data-nav-folder]");
+    return found ? String(found.dataset.navFolder || "") : "";
+  }
+
   function restoreActiveNavFolder() {
     let saved = "";
     try { saved = String(window.localStorage.getItem(NAV_FOLDER_KEY) || ""); } catch (_error) {}
     // 없는 폴더 이름이 남아 있으면 사이드바가 통째로 비어 버린다.
-    activeNavFolder = saved && document.querySelector(`[data-nav-folder="${saved}"]`) ? saved : "";
+    const usable = saved && document.querySelector(`[data-nav-folder="${saved}"]`) ? saved : "";
+    activeNavFolder = usable || firstNavFolder();
     applyNavFolderScope();
   }
 
