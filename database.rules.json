@@ -1060,6 +1060,59 @@
         }
       }
     },
+    "weeklyDirectives": {
+      ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": false,
+      "$directiveId": {
+        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+        ".validate": "newData.hasChildren(['id','uid','weekStart','updatedAt','updatedBy']) && newData.child('id').val() === $directiveId && newData.child('weekStart').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)",
+        "id": {
+          ".validate": "newData.isString() && newData.val() === $directiveId"
+        },
+        "uid": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,128}$/)"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "weekStart": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+        },
+        "background": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "goal": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "loss": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "scopeExclude": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "precondition": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "approvers": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "note": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "publishedAt": {
+          ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/))"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val() === auth.uid"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
       "officeMembers": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": false,

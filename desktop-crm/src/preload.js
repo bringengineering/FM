@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   uploadWorkOrderResult: input => ipcRenderer.invoke("crm:work-order-result-upload", input),
   loadWorkOrders: () => ipcRenderer.invoke("crm:work-orders-load"),
   saveCapacity: input => ipcRenderer.invoke("crm:capacity-save", input),
+  saveWeeklyDirective: input => ipcRenderer.invoke("crm:weekly-directive-save", input),
   loadDailyLogs: () => ipcRenderer.invoke("crm:daily-logs-load"),
   saveDailyLog: input => ipcRenderer.invoke("crm:daily-log-save", input),
   confirmDailyLog: input => ipcRenderer.invoke("crm:daily-log-confirm", input),

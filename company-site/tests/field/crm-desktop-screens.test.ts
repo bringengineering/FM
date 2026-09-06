@@ -884,4 +884,77 @@ describe("desktop CRM screens actually render", () => {
       "초안을 만들면서 저장하면 안 된다").toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
+  it("쓰던 지시서를 붙여 넣으면 읽어 보여 주고, 누르면 지시가 만들어진다", async () => {
+    // 이미 시트에 다 적어 놓은 것을 화면에서 다시 치게 하면, 그건 일을 덜어
+    // 준 게 아니라 하나 더 만든 것이다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+    expect(booted.document.querySelector(".di-panel"), "붙여넣기 자리가 열려야 한다").toBeTruthy();
+
+    const sheet = [
+      "■ 주간 업무지시서",
+      "배경\t당근에서 문의가 줄고 있습니다.",
+      "목표\t채널 네 곳이 살아 있고 문의가 주 3건 들어옵니다.",
+      "안 하면\t겨울 성수기 전에 못 살립니다.",
+      "",
+      "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치\t마감",
+      "당근 비즈프로필 정비\t권한을 받아 최신으로 만든다\t사진 5장이 올라가면 끝\t20260909_당근.png\t4\t60\t2026-09-09",
+      "숨고 등록\t새 유입 통로를 만든다\t프로필 승인 화면\t20260911_숨고.png\t3\t40\t2026-09-11",
+    ].join("\n");
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = sheet;
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-hwang";
+    (booted.document.querySelector("[data-di-week]") as HTMLInputElement).value = "2026-09-07";
+
+    (booted.document.querySelector("[data-di-read]") as HTMLElement).click();
+    await sleep(250);
+
+    const shown = () => (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(shown()).toContain("당근 비즈프로필 정비");
+    expect(shown()).toContain("사진 5장이 올라가면 끝");
+    expect(shown(), "가중치 합을 보여 줘야 한다").toContain("100%");
+    // 못 읽은 줄을 조용히 버리면 대표는 시킨 줄 알고 애들은 못 받은 줄 안다.
+    expect(shown()).toContain("못 읽은 줄");
+    expect(shown()).toContain("■ 주간 업무지시서");
+    // 머리말도 읽혀야 한다. 이게 없어서 애들이 헷갈렸다.
+    expect(shown()).toContain("당근에서 문의가 줄고 있습니다.");
+    // 읽어 보기만으로 아무것도 만들지 않는다.
+    expect(booted.calls.some(call => call.name === "saveWorkOrder"), "읽기만으로 지시가 나가면 안 된다").toBe(false);
+    // 붙여 넣은 글이 다시 그리면서 사라지면 안 된다.
+    expect((booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value).toContain("당근 비즈프로필 정비");
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-di-make]") as HTMLButtonElement).click();
+    await sleep(700);
+    const orders = booted.calls.slice(before).filter(call => call.name === "saveWorkOrder");
+    expect(orders.length, "업무지시 두 건이 나가야 한다").toBe(2);
+    const first = orders[0].input as { title: string; why: string; doneWhen: string; deliverable: string; hours: number; weight: number; assigneeUid: string; dueDate: string };
+    expect(first.title).toBe("당근 비즈프로필 정비");
+    expect(first.why).toBe("권한을 받아 최신으로 만든다");
+    expect(first.doneWhen).toBe("사진 5장이 올라가면 끝");
+    expect(first.deliverable).toBe("20260909_당근.png");
+    expect(first.hours).toBe(4);
+    expect(first.weight).toBe(60);
+    expect(first.assigneeUid).toBe("u-hwang");
+    expect(first.dueDate).toBe("2026-09-09");
+
+    // 머리말은 지시 줄과 따로 저장된다. 지시 줄을 여기 복사해 두면 둘이 갈라진다.
+    const directive = booted.calls.slice(before).find(call => call.name === "saveWeeklyDirective");
+    expect(directive, "주간 지시서 머리말도 나가야 한다").toBeTruthy();
+    const head = directive!.input as { uid: string; weekStart: string; background: string; goal: string };
+    expect(head.uid).toBe("u-hwang");
+    expect(head.weekStart).toBe("2026-09-07");
+    expect(head.background).toContain("당근에서 문의가 줄고");
+    expect(head.goal).toContain("주 3건");
+    expect("tasks" in (directive!.input as Record<string, unknown>), "지시 줄을 머리말에 복사하면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
 });

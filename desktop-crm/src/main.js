@@ -7608,6 +7608,7 @@ secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGra
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
+secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
 secureCanonicalHandle("crm:daily-log-save", input => remoteClient.saveDailyLog(input));
 secureCanonicalHandle("crm:daily-log-confirm", input => remoteClient.confirmDailyLog(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));

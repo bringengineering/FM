@@ -2259,6 +2259,43 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-12")), log("crm-legacy-member", "2026-09-13")));
   });
 
+  it("lets only the boss issue a weekly directive while everyone reads it", async () => {
+    // 지시서는 감출 것이 아니다. 서로 무엇을 하는지 보이는 게 목적이다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/weeklyDirectives/${id}`;
+    const sheet = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      uid: "crm-legacy-member",
+      name: "황우중",
+      weekStart: "2026-09-07",
+      background: "당근에서 문의가 줄고 있습니다.",
+      goal: "채널 네 곳이 살아 있고 문의가 주 3건 들어옵니다.",
+      loss: "",
+      scopeExclude: "",
+      precondition: "",
+      approvers: "대표",
+      note: "",
+      publishedAt: "",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("crm-legacy-member_2026-09-07")), sheet("crm-legacy-member_2026-09-07")));
+    // 받는 사람도 사내 누구도 읽는다. 안 보이면 지시서가 아니다.
+    await assertSucceeds(get(ref(member, at("crm-legacy-member_2026-09-07"))));
+    await assertSucceeds(get(ref(member, "crmCompany/weeklyDirectives")));
+    // 받은 사람이 지시서를 고치면 그건 지시가 아니라 메모다.
+    await assertFails(set(ref(member, at("crm-legacy-member_2026-09-07")), sheet("crm-legacy-member_2026-09-07", { goal: "고쳐 적기", updatedBy: "crm-legacy-member" })));
+    // 월요일이 아닌 날짜 모양은 막는다.
+    await assertFails(set(ref(admin, at("w2")), sheet("w2", { weekStart: "2026년 9월 7일" })));
+    // 지시 줄을 여기 복사해 두면 업무지시와 갈라진다.
+    await assertFails(set(ref(admin, at("w3")), sheet("w3", { tasks: [{ title: "가" }] })));
+    // 지우는 길은 없다. 지난 주에 무엇을 시켰는지가 사라진다.
+    await assertFails(remove(ref(admin, at("crm-legacy-member_2026-09-07"))));
+  });
+
   it("lets each person edit their own timetable and only the boss edit someone else's", async () => {
     // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고,
     // 그러면 아무도 안 고친다. 안 고친 시간표는 틀린 숫자로 일을 나누게 한다.
