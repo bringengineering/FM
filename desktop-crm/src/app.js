@@ -200,6 +200,8 @@
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
+    deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
+    workReports: ["작업 종류를 고르면 항목이 깔립니다", "작업 결과보고서"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
@@ -1515,6 +1517,8 @@
     else if (currentView === "forms") renderForms();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
+    else if (currentView === "deliveryFlow") renderDeliveryFlows();
+    else if (currentView === "workReports") renderWorkReports();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -4561,6 +4565,532 @@
     }
   }
 
+  // --- 작업 결과보고서 ---
+  // 입주청소와 계단청소는 매번 하는 일이 같다. 그런데 보고서는 매번 처음부터
+  // 쓴다. 그래서 사람마다 다르게 쓰고, 바쁘면 안 쓴다.
+  //
+  // 그러니 항목을 사람이 적게 두지 않는다. 작업 종류를 고르면 그 종류의
+  // 표준 항목이 깔리고, 사람은 사진만 붙인다.
+  let reportState = {
+    reports: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    selectedId: "", draft: null, busyKey: "",
+  };
+
+  const reportCore = () => window.BringWorkReportCore;
+
+  async function loadWorkReports() {
+    if (reportState.loading) return;
+    reportState.loading = true;
+    reportState.error = "";
+    if (currentView === "workReports") renderWorkReports();
+    try {
+      const data = await api.loadWorkReports();
+      reportState.reports = Array.isArray(data && data.reports) ? data.reports : [];
+      reportState.admin = data && data.admin === true;
+      reportState.canWork = data && data.canWork === true;
+      reportState.uid = String((data && data.uid) || "");
+      reportState.loaded = true;
+    } catch (error) {
+      reportState.error = error && error.message || "결과보고서를 불러오지 못했습니다.";
+    } finally {
+      reportState.loading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
+  // 건물주에게 나가는 문서에 섞이면 안 되는 값들. 협력업체 이름과 업체
+  // 단가가 드러나면 그건 다음 계약을 잃는 일이다.
+  function reportSecrets() {
+    const vendors = (store.partnerVendors || store.vendors || []).map(item => String(item && item.name || "")).filter(Boolean);
+    return { vendorNames: vendors, vendorAmounts: [], privateMemos: [] };
+  }
+
+  function renderWorkReports() {
+    const R = reportCore();
+    if (!R) { main.innerHTML = `<section class="operations-hero"><div><h2>결과보고서</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
+
+    const reports = R.sortReports(reportState.reports);
+    const draft = reportState.draft ? R.normalizeReport(reportState.draft) : null;
+    const thisMonth = Core.workDate().slice(0, 7);
+    const monthly = reports.filter(item => item.workDate.slice(0, 7) === thisMonth);
+
+    const status = reportState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (reportState.error ? `<div class="info-box" style="color:#C6535F">${esc(reportState.error)}</div>` : "");
+
+    const rowsHtml = reports.slice(0, 60).map(item => {
+      const sum = R.summarizeItems(item);
+      return `<tr class="${item.id === reportState.selectedId ? "is-selected" : ""}">
+        <td><b>${esc(item.buildingName || "건물 미지정")}</b><small>${esc(R.kindLabel(item.kind))}</small></td>
+        <td><b>${esc(item.workDate)}</b><small>${esc(item.workerName || "작업자 미기재")}</small></td>
+        <td><b>${sum.done}/${sum.total}</b><small>사진 ${sum.photos}장</small></td>
+        <td><span class="office-status ${sum.progress === 100 ? "working" : "warn"}"><i></i>${sum.progress}%</span></td>
+        <td class="wr-row-actions">
+          ${reportState.canWork ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">고치기</button>` : ""}
+          <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
+          <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
+        </td>
+      </tr>`;
+    }).join("");
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>문서관리</span><h2>작업 결과보고서</h2><p>작업 종류를 고르면 항목이 깔립니다. 사람은 항목마다 전·후 사진만 붙이면 됩니다.</p></div>
+        <div class="operations-actions">${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>새 보고서</button>` : ""}</div>
+      </section>
+      ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사진</span><b>${monthly.reduce((sum, item) => sum + R.photoCount(item), 0)}</b><small>장</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>입주청소</span><b>${reports.filter(item => item.kind === "moveIn").length}</b><small>건</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>계단청소</span><b>${reports.filter(item => item.kind === "stairs").length}</b><small>건</small></div>
+      </div>
+      ${draft ? reportEditor(R, draft) : ""}
+      <section class="office-panel">
+        <header><div><span>REPORTS</span><h3>낸 보고서</h3></div><small>최근 것부터</small></header>
+        ${rowsHtml
+          ? `<div class="office-table-wrap"><table class="office-table">
+              <thead><tr><th>건물·종류</th><th>작업일</th><th>완료 항목</th><th>진척도</th><th></th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>아직 낸 보고서가 없습니다</b><span>${reportState.canWork ? "‘새 보고서’ 를 누르고 작업 종류만 고르면 항목이 깔립니다." : "작업자가 보고서를 내면 여기에 쌓입니다."}</span></div>`}
+      </section>`;
+  }
+
+  function reportEditor(R, draft) {
+    const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const blockers = R.blockers(draft);
+    const sum = R.summarizeItems(draft);
+
+    const cards = draft.items.map(item => {
+      const issue = R.itemIssue(item);
+      const shots = phase => (item[phase].length
+        ? item[phase].map(photo => `<li><a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || "사진")}</a><button type="button" class="text-button" data-report-drop-photo="${esc(photo.id)}" data-report-item="${esc(item.key)}" data-report-phase="${esc(phase)}">빼기</button></li>`).join("")
+        : `<li class="wr-none">없음</li>`);
+      return `<article class="wr-item${issue ? " has-issue" : ""}">
+        <header>
+          <div><b>${esc(item.label)}</b><small>${esc(item.detail)}</small></div>
+          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
+        </header>
+        <div class="wr-shots">
+          <div><span>작업 전</span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
+          <div><span>작업 후</span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
+        </div>
+        <input type="text" class="wr-note" data-report-note="${esc(item.key)}" maxlength="500" value="${esc(item.note)}" placeholder="${item.status === "skipped" ? "못 한 이유를 적어 주세요" : "비고 (선택)"}">
+        ${issue ? `<p class="wr-issue">${esc(issue)}</p>` : ""}
+      </article>`;
+    }).join("");
+
+    return `<form class="wo-editor wr-editor" data-report-form>
+      <h3>${esc(draft.createdAt ? "보고서 고치기" : "새 보고서")}</h3>
+      <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>건물</span><select name="buildingId" required>
+        <option value="">고르세요</option>
+        ${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}
+      </select></label>
+      <label><span>작업일</span><input type="date" name="workDate" value="${esc(draft.workDate)}" required${supplyDateBounds()}></label>
+      <label><span>작업 인원</span><input type="text" name="workerName" maxlength="120" value="${esc(draft.workerName)}" placeholder="예: 황우중 외 1명"></label>
+      <label><span>작업 범위</span><input type="text" name="area" maxlength="60" value="${esc(draft.area)}" placeholder="예: 지상 1~5층 계단실"></label>
+      <label><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
+      <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
+      <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
+      <label class="wide"><span>총평</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <div class="wide wr-items">${cards}</div>
+      ${blockers.length
+        ? `<div class="wide wr-blockers"><b>아직 낼 수 없습니다</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
+        : `<p class="wide wo-editor-note">낼 준비가 됐습니다. 완료 ${sum.done}항목 · 사진 ${sum.photos}장 · 진척도 ${sum.progress}%</p>`}
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${blockers.length ? " disabled" : ""}>저장</button>
+        <button class="secondary-button" type="button" data-report-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  // 화면에서 고친 것을 초안에 담아 둔다. 저장은 사람이 누를 때만 한다 —
+  // 사진 한 장 붙일 때마다 서버에 쓰면 반쯤 쓴 보고서가 남는다.
+  function readReportForm() {
+    const R = reportCore();
+    const form = document.querySelector("[data-report-form]");
+    if (!R || !form) return reportState.draft;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = R.normalizeReport(reportState.draft);
+    const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const items = previous.items.map(item => {
+      const statusEl = form.querySelector(`[data-report-status="${item.key}"]`);
+      const noteEl = form.querySelector(`[data-report-note="${item.key}"]`);
+      return Object.assign({}, item, {
+        status: statusEl ? statusEl.value : item.status,
+        note: noteEl ? noteEl.value : item.note,
+      });
+    });
+    return R.normalizeReport(Object.assign({}, previous, {
+      kind: String(raw.kind || previous.kind),
+      buildingId: String(raw.buildingId || ""),
+      buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
+      siteAddress: String(raw.siteAddress || (building && building.address) || ""),
+      workDate: String(raw.workDate || ""),
+      workerName: String(raw.workerName || ""),
+      area: String(raw.area || ""),
+      summary: String(raw.summary || ""),
+      contractFrom: String(raw.contractFrom || ""),
+      contractTo: String(raw.contractTo || ""),
+      items,
+    }));
+  }
+
+  function syncReportDraft() {
+    reportState.draft = readReportForm();
+    renderWorkReports();
+  }
+
+  async function saveWorkReportFromForm() {
+    const R = reportCore();
+    if (!R) return;
+    const draft = readReportForm();
+    const checked = R.validateReport(draft);
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      const saved = await api.saveWorkReport(checked.report);
+      reportState.draft = null;
+      reportState.selectedId = saved.id;
+      reportState.loaded = false;
+      showToast("결과보고서를 저장했습니다.", "success");
+      await loadWorkReports();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function addWorkReportPhoto(itemKey, phase) {
+    const R = reportCore();
+    if (!R || reportState.busyKey) return;
+    const draft = readReportForm();
+    if (!draft.buildingId) return showToast("건물을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
+    const item = draft.items.find(entry => entry.key === itemKey);
+    if (!item) return;
+    const picked = await api.pickBuildingDocuments();
+    if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+    reportState.busyKey = `${itemKey}:${phase}`;
+    reportState.draft = draft;
+    renderWorkReports();
+    let added = 0;
+    try {
+      for (const file of picked.files.slice(0, 4)) {
+        const uploaded = await api.uploadWorkReportPhoto({
+          reportId: draft.id,
+          itemKey,
+          itemLabel: item.label,
+          phase,
+          buildingName: draft.buildingName,
+          kindLabel: R.kindLabel(draft.kind),
+          workDate: draft.workDate,
+          filePath: file.path,
+          mimeType: file.mimeType,
+        });
+        if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
+        item[phase] = [...item[phase], {
+          id: uploaded.driveFileId,
+          driveFileId: uploaded.driveFileId,
+          webViewLink: uploaded.webViewLink,
+          caption: phase === "after" ? "작업 후" : "작업 전",
+        }];
+        added += 1;
+      }
+      reportState.draft = R.normalizeReport(draft);
+      showToast(`사진 ${added}장을 넣었습니다.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "사진을 넣지 못했습니다.", "error");
+    } finally {
+      reportState.busyKey = "";
+      renderWorkReports();
+    }
+  }
+
+  function dropWorkReportPhoto(photoId, itemKey, phase) {
+    const R = reportCore();
+    if (!R) return;
+    const draft = readReportForm();
+    const item = draft.items.find(entry => entry.key === itemKey);
+    if (!item) return;
+    // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
+    item[phase] = item[phase].filter(photo => photo.id !== photoId);
+    reportState.draft = R.normalizeReport(draft);
+    renderWorkReports();
+  }
+
+  async function exportWorkReportPdf(reportId, copyType) {
+    const R = reportCore();
+    if (!R || reportState.busyKey) return;
+    const report = R.findReport(reportState.reports, reportId);
+    if (!report) return;
+    reportState.busyKey = reportId;
+    renderWorkReports();
+    try {
+      const result = await api.exportWorkReport({
+        report,
+        copyType,
+        company: (store.settings && store.settings.quoteCompany) || {},
+        secrets: reportSecrets(),
+      });
+      if (result && result.canceled) return;
+      if (!result || !result.ok) throw new Error((result && result.error) || "보고서를 만들지 못했습니다.");
+      showToast(`${R.copyOf(copyType).label} PDF 를 저장했습니다.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
+    } finally {
+      reportState.busyKey = "";
+      renderWorkReports();
+    }
+  }
+
+  // --- 수주 진행 ---
+  // 이 화면이 답하는 질문은 하나다. **이 건물이 지금 어디까지 왔고, 다음에
+  // 무엇을 해야 하나.**
+  //
+  // 그래서 목록의 한 줄에 "다음에 할 일"을 글로 적는다. 진행률만 보여 주면
+  // 60% 라는 숫자를 보고도 무엇을 해야 하는지 모른다.
+  let deliveryState = {
+    flows: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    selectedId: "", editing: null, busyId: "",
+  };
+
+  const deliveryCore = () => window.BringDeliveryCore;
+
+  async function loadDeliveryFlows() {
+    if (deliveryState.loading) return;
+    deliveryState.loading = true;
+    deliveryState.error = "";
+    if (currentView === "deliveryFlow") renderDeliveryFlows();
+    try {
+      const data = await api.loadDeliveryFlows();
+      deliveryState.flows = Array.isArray(data && data.flows) ? data.flows : [];
+      deliveryState.admin = data && data.admin === true;
+      deliveryState.canWork = data && data.canWork === true;
+      deliveryState.uid = String((data && data.uid) || "");
+      deliveryState.loaded = true;
+    } catch (error) {
+      deliveryState.error = error && error.message || "수주 진행을 불러오지 못했습니다.";
+    } finally {
+      deliveryState.loading = false;
+      updateDeliveryBadge();
+      if (currentView === "deliveryFlow") renderDeliveryFlows();
+    }
+  }
+
+  // 사이드바 숫자는 아직 안 끝난 건수다. 전체 건수를 세면 늘 같은 숫자라
+  // 아무도 안 본다.
+  function updateDeliveryBadge() {
+    const badge = document.getElementById("navDeliveryCount");
+    if (!badge) return;
+    const D = deliveryCore();
+    const count = D ? D.summarize(deliveryState.flows).running : 0;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  function renderDeliveryFlows() {
+    const D = deliveryCore();
+    if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>수주 진행</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!deliveryState.loaded && !deliveryState.loading && !deliveryState.error) void loadDeliveryFlows();
+
+    const flows = D.sortFlows(deliveryState.flows);
+    const summary = D.summarize(flows);
+    const selected = deliveryState.selectedId && flows.some(item => item.id === deliveryState.selectedId)
+      ? deliveryState.selectedId
+      : (flows[0] ? flows[0].id : "");
+    const flow = flows.find(item => item.id === selected) || null;
+
+    const status = deliveryState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (deliveryState.error ? `<div class="info-box" style="color:#C6535F">${esc(deliveryState.error)}</div>` : "");
+
+    const rowsHtml = flows.map(item => {
+      const action = D.nextAction(item);
+      const done = D.progress(item);
+      return `<tr class="${item.id === selected ? "is-selected" : ""}" data-delivery-open="${esc(item.id)}">
+        <td><b>${esc(item.buildingName || "건물 미지정")}</b><small>${esc(item.title)}</small></td>
+        <td><span class="office-status ${action.done ? "working" : "warn"}"><i></i>${esc(action.done ? "완료" : action.label)}</span></td>
+        <td class="dv-next"><b>${esc(action.text)}</b><small>${esc(item.ownerName || "건물주 미지정")}</small></td>
+        <td><div class="dv-bar"><i style="width:${done}%"></i></div><small>${done}%</small></td>
+      </tr>`;
+    }).join("");
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>수주 진행</span><h2>견적서에서 입금까지</h2><p>건물마다 어디까지 왔는지, 그래서 다음에 무엇을 해야 하는지 한 장에서 봅니다.</p></div>
+        <div class="operations-actions">${deliveryState.canWork ? `<button type="button" class="primary-button" data-delivery-new>새 진행</button>` : ""}</div>
+      </section>
+      ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>진행 중</span><b>${summary.running}</b><small>전체 ${summary.total}건</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>견적·사진 단계</span><b>${summary.counts.quote + summary.counts.photos}</b><small>아직 문서 전</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>보고서 단계</span><b>${summary.counts.result + summary.counts.completion}</b><small>입금이 걸려 있습니다</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>끝난 것</span><b>${summary.finished}</b><small>평균 ${summary.progress}%</small></div>
+      </div>
+      ${deliveryState.editing ? deliveryEditor(D) : ""}
+      <section class="office-panel">
+        <header><div><span>IN PROGRESS</span><h3>건물별 진행</h3></div><small>손이 가야 하는 것부터</small></header>
+        ${rowsHtml
+          ? `<div class="office-table-wrap"><table class="office-table dv-table">
+              <thead><tr><th>건물</th><th>지금 단계</th><th>다음에 할 일</th><th>진행률</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>진행 중인 건이 없습니다</b><span>${deliveryState.canWork ? "‘새 진행’ 으로 건물 하나를 걸어 두면 견적서부터 시작합니다." : "대표가 진행을 만들면 여기에 나타납니다."}</span></div>`}
+      </section>
+      ${flow ? deliveryStageBoard(D, flow) : ""}`;
+  }
+
+  // 단계 다섯 장. 왜 이 단계가 있는지를 카드에 그대로 적는다 — 이유를 모르면
+  // 사람은 형식만 채우고 넘어간다.
+  function deliveryStageBoard(D, flow) {
+    const cards = D.STAGES.map(stage => {
+      const state = flow.stages[stage.key];
+      const blocker = D.blockedBy(flow, stage.key);
+      const closed = D.CLOSED.includes(state.status);
+      const files = state.files.map(file => `<li><a href="#" data-delivery-open-file="${esc(file.webViewLink)}">${esc(file.title || "결과물")}</a><small>${esc(String(file.uploadedAt).slice(0, 10))} · ${esc(file.uploadedBy || "")}</small></li>`).join("");
+      const actions = blocker || !deliveryState.canWork
+        ? ""
+        : `<div class="dv-stage-actions">
+            <button type="button" class="mini-button" data-delivery-upload="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>결과물 올리기</button>
+            ${closed ? "" : `<button type="button" class="mini-button" data-delivery-done="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>완료</button>
+            <button type="button" class="mini-button return" data-delivery-skip="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>건너뛰기</button>`}
+          </div>`;
+      return `<article class="dv-stage status-${esc(state.status)}${blocker ? " is-locked" : ""}">
+        <header>
+          <div><span>${D.STAGE_KEYS.indexOf(stage.key) + 1}</span><b>${esc(stage.label)}</b></div>
+          <span class="office-status ${closed ? (state.status === "skipped" ? "off" : "working") : (blocker ? "off" : "warn")}"><i></i>${esc(D.statusLabel(state.status))}</span>
+        </header>
+        <p class="dv-stage-why">${esc(stage.why)}</p>
+        ${blocker ? `<p class="dv-stage-lock">${esc(D.stageLabel(blocker))}이(가) 끝나야 열립니다.</p>` : `<p class="dv-stage-next">${esc(stage.next)}</p>`}
+        ${state.skipReason ? `<p class="dv-stage-skip">건너뛴 이유: ${esc(state.skipReason)}</p>` : ""}
+        ${files ? `<ul class="dv-stage-files">${files}</ul>` : `<p class="dv-stage-empty">올린 결과물 ${state.files.length}개 / 필요 ${stage.minFiles}개</p>`}
+        ${actions}
+      </article>`;
+    }).join("");
+
+    return `<section class="office-panel">
+      <header><div><span>STAGES</span><h3>${esc(flow.buildingName || flow.title)}</h3></div><small>${esc(flow.title)}</small></header>
+      <div class="dv-stages">${cards}</div>
+    </section>`;
+  }
+
+  function deliveryEditor(D) {
+    const draft = D.normalizeFlow(deliveryState.editing);
+    const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    return `<form class="wo-editor" data-delivery-form>
+      <h3>${esc(draft.createdAt ? "진행 고치기" : "새 진행")}</h3>
+      <label class="wide"><span>건물</span><select name="buildingId" required>
+        <option value="">고르세요</option>
+        ${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}
+      </select></label>
+      <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="200" value="${esc(draft.title)}" required placeholder="예: 공용부 청소 위탁"></label>
+      <label><span>건물주</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+      <label><span>연락처</span><input type="text" name="ownerContact" maxlength="80" value="${esc(draft.ownerContact)}" placeholder="카카오·문자 보낼 번호"></label>
+      <label><span>시작일</span><input type="date" name="startedOn" value="${esc(draft.startedOn)}"${supplyDateBounds()}></label>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "만들기")}</button>
+        <button class="secondary-button" type="button" data-delivery-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  async function saveDeliveryFlowFromForm(form) {
+    const D = deliveryCore();
+    if (!D) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = D.normalizeFlow(deliveryState.editing);
+    const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const checked = D.validateFlow(Object.assign({}, previous, {
+      id: previous.id || `dv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      buildingId: String(raw.buildingId || ""),
+      // 건물 이름을 같이 박아 둔다. 건물이 지워져도 진행 기록은 무엇이었는지 남아야 한다.
+      buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
+      title: String(raw.title || ""),
+      ownerName: String(raw.ownerName || ""),
+      ownerContact: String(raw.ownerContact || ""),
+      startedOn: String(raw.startedOn || ""),
+    }));
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      const saved = await api.saveDeliveryFlow(checked.flow);
+      deliveryState.editing = null;
+      deliveryState.selectedId = saved.id;
+      deliveryState.loaded = false;
+      showToast("진행을 저장했습니다.", "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function moveDeliveryStage(flowId, stage, next) {
+    const D = deliveryCore();
+    if (!D || deliveryState.busyId) return;
+    let skipReason = "";
+    if (next === "skipped") {
+      skipReason = String(window.prompt("이 단계를 건너뛰는 이유를 적어 주세요.") || "").trim();
+      if (!skipReason) return showToast("이유를 적어야 건너뛸 수 있습니다.", "error");
+    }
+    deliveryState.busyId = flowId;
+    renderDeliveryFlows();
+    try {
+      await api.advanceDeliveryStage({ id: flowId, stage, next, skipReason });
+      deliveryState.loaded = false;
+      showToast(`${D.stageLabel(stage)}을(를) ${D.statusLabel(next)} 로 옮겼습니다.`, "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "옮기지 못했습니다.", "error");
+    } finally {
+      deliveryState.busyId = "";
+      renderDeliveryFlows();
+    }
+  }
+
+  async function uploadDeliveryFile(flowId, stage) {
+    const D = deliveryCore();
+    if (!D || deliveryState.busyId) return;
+    const flow = D.findFlow(deliveryState.flows, flowId);
+    if (!flow) return;
+    const picked = await api.pickBuildingDocuments();
+    if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+    deliveryState.busyId = flowId;
+    renderDeliveryFlows();
+    let done = 0;
+    try {
+      for (const item of picked.files) {
+        const uploaded = await api.uploadDeliveryFile({
+          flowId,
+          stage,
+          stageLabel: D.stageLabel(stage),
+          buildingName: flow.buildingName,
+          filePath: item.path,
+          mimeType: item.mimeType,
+        });
+        if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
+        await api.advanceDeliveryStage({
+          id: flowId,
+          stage,
+          file: {
+            id: uploaded.driveFileId,
+            title: uploaded.title,
+            driveFileId: uploaded.driveFileId,
+            webViewLink: uploaded.webViewLink,
+          },
+        });
+        done += 1;
+      }
+      deliveryState.loaded = false;
+      showToast(`결과물 ${done}건을 올렸습니다.`, "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "결과물을 올리지 못했습니다.", "error");
+    } finally {
+      deliveryState.busyId = "";
+      renderDeliveryFlows();
+    }
+  }
+
   // --- 비품·자재 ---
   // 이 화면이 답하는 질문은 하나다. **지금 몇 개 남았나.**
   //
@@ -7205,6 +7735,54 @@
   }
 
   document.addEventListener("click", async event => {
+    if (event.target.closest("[data-report-new]")) {
+      const R = reportCore();
+      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: Core.workDate() }); renderWorkReports(); }
+      return;
+    }
+    const reportEdit = event.target.closest("[data-report-edit]");
+    if (reportEdit) {
+      const R = reportCore();
+      const found = R && R.findReport(reportState.reports, reportEdit.dataset.reportEdit);
+      if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
+      return;
+    }
+    if (event.target.closest("[data-report-cancel]")) { reportState.draft = null; renderWorkReports(); return; }
+    const reportAddPhoto = event.target.closest("[data-report-add-photo]");
+    if (reportAddPhoto) { await addWorkReportPhoto(reportAddPhoto.dataset.reportAddPhoto, reportAddPhoto.dataset.reportPhase); return; }
+    const reportDropPhoto = event.target.closest("[data-report-drop-photo]");
+    if (reportDropPhoto) { dropWorkReportPhoto(reportDropPhoto.dataset.reportDropPhoto, reportDropPhoto.dataset.reportItem, reportDropPhoto.dataset.reportPhase); return; }
+    const reportExport = event.target.closest("[data-report-export]");
+    if (reportExport) { await exportWorkReportPdf(reportExport.dataset.reportExport, reportExport.dataset.reportCopy); return; }
+    const reportPhoto = event.target.closest("[data-report-open-photo]");
+    if (reportPhoto) {
+      event.preventDefault();
+      const link = reportPhoto.dataset.reportOpenPhoto;
+      if (link) await api.openExternal(link);
+      return;
+    }
+    const deliveryOpen = event.target.closest("[data-delivery-open]");
+    if (deliveryOpen) { deliveryState.selectedId = deliveryOpen.dataset.deliveryOpen; renderDeliveryFlows(); return; }
+    if (event.target.closest("[data-delivery-new]")) {
+      const D = deliveryCore();
+      if (D) { deliveryState.editing = D.normalizeFlow({}); renderDeliveryFlows(); }
+      return;
+    }
+    if (event.target.closest("[data-delivery-cancel]")) { deliveryState.editing = null; renderDeliveryFlows(); return; }
+    const deliveryDone = event.target.closest("[data-delivery-done]");
+    if (deliveryDone) { await moveDeliveryStage(deliveryDone.dataset.deliveryFlow, deliveryDone.dataset.deliveryDone, "done"); return; }
+    const deliverySkip = event.target.closest("[data-delivery-skip]");
+    if (deliverySkip) { await moveDeliveryStage(deliverySkip.dataset.deliveryFlow, deliverySkip.dataset.deliverySkip, "skipped"); return; }
+    const deliveryUpload = event.target.closest("[data-delivery-upload]");
+    if (deliveryUpload) { await uploadDeliveryFile(deliveryUpload.dataset.deliveryFlow, deliveryUpload.dataset.deliveryUpload); return; }
+    const deliveryFileLink = event.target.closest("[data-delivery-open-file]");
+    if (deliveryFileLink) {
+      // Drive 링크는 기본 브라우저로 연다. 앱 안에서 열면 로그인이 또 필요하다.
+      event.preventDefault();
+      const link = deliveryFileLink.dataset.deliveryOpenFile;
+      if (link) await api.openExternal(link);
+      return;
+    }
     const supplyCategory = event.target.closest("[data-supply-category]");
     if (supplyCategory) { supplyState.category = supplyCategory.dataset.supplyCategory; renderSupplies(); return; }
     const supplyOpen = event.target.closest("[data-supply-open]");
@@ -9009,6 +9587,17 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-report-kind]")) {
+      // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
+      syncReportDraft();
+      return;
+    }
+    if (event.target.matches("[data-report-status]")) {
+      // 상태를 바꾸면 무엇이 더 필요한지가 바뀐다. 눌러 보고서야 아는 것보다
+      // 그 자리에서 보이는 편이 낫다.
+      syncReportDraft();
+      return;
+    }
     if (event.target.matches("[data-supply-retired]")) {
       supplyState.showRetired = event.target.checked === true;
       renderSupplies();
@@ -9344,6 +9933,8 @@
     const form = event.target;
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
+    if (form.matches("[data-report-form]")) { await saveWorkReportFromForm(); return; }
+    if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
     if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
     if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }

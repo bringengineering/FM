@@ -2230,6 +2230,136 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(admin, at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 })));
   });
 
+  it("keeps a work report's items and photos in the shape the document can print", async () => {
+    // 이 문서는 건물주와 청창사 양쪽으로 나간다. 항목·상태·사진 모양이
+    // 규칙과 코드에서 갈리면, 화면이 통과시킨 보고서를 서버가 막는다.
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/workReports/${id}`;
+    const shot = (id: string) => ({ id, driveFileId: `d_${id}`, webViewLink: "https://drive.google.com/x", caption: "작업 전" });
+    const item = (key: string, label: string, patch: Record<string, unknown> = {}) => ({
+      key, label, detail: "층별 계단·참 쓸기 및 물청소", status: "done", note: "",
+      before: [shot(`b_${key}`)], after: [shot(`a_${key}`)], ...patch,
+    });
+    const report = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      flowId: "",
+      buildingId: "b1",
+      buildingName: "우산동 빌딩",
+      kind: "stairs",
+      title: "",
+      siteAddress: "강원도 원주시",
+      ownerName: "김건물",
+      workDate: "2026-09-05",
+      workerName: "황우중 외 1명",
+      area: "지상 1~5층",
+      summary: "",
+      contractFrom: "2026-05-12",
+      contractTo: "2026-05-26",
+      items: [item("stairFloor", "계단실 바닥"), item("handrail", "난간·손잡이", { status: "skipped", note: "우천", before: [], after: [] })],
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-legacy-member",
+      ...patch,
+    });
+
+    // 사진을 찍은 사람이 그날 적는다.
+    await assertSucceeds(set(ref(member, at("w1")), report("w1")));
+    await assertSucceeds(get(ref(viewer, at("w1"))));
+    // 조회 전용 계정은 못 쓴다.
+    await assertFails(set(ref(viewer, at("w2")), { ...report("w2"), updatedBy: "crm-viewer" }));
+    // 건물과 작업일이 없으면 어느 현장 것인지 알 수 없다.
+    await assertFails(set(ref(member, at("w3")), report("w3", { buildingId: "" })));
+    await assertFails(set(ref(member, at("w4")), report("w4", { workDate: "2026-09" })));
+    // 모르는 작업 종류는 막는다. 종류가 늘면 표준 항목이 없는 보고서가 생긴다.
+    await assertFails(set(ref(member, at("w5")), report("w5", { kind: "왁싱" })));
+    // 모르는 상태도 막는다.
+    await assertFails(set(ref(member, at("w6")), report("w6", { items: [item("stairFloor", "계단실 바닥", { status: "보류" })] })));
+    // 이름 없는 항목은 표에서 빈 줄이 된다.
+    await assertFails(set(ref(member, at("w7")), report("w7", { items: [item("stairFloor", "")] })));
+    // Drive 밖 사진은 받은 사람 문서에서 안 열린다.
+    await assertFails(set(ref(member, at("w8")), report("w8", {
+      items: [item("stairFloor", "계단실 바닥", { after: [{ id: "x", driveFileId: "d", webViewLink: "http://x.test/a" }] })],
+    })));
+    // Drive 파일이 아니면 붙일 것이 없다.
+    await assertFails(set(ref(member, at("w9")), report("w9", {
+      items: [item("stairFloor", "계단실 바닥", { after: [{ id: "x", caption: "사진" }] })],
+    })));
+    // 모르는 칸과 남의 이름으로 적는 것을 막는다. 금액은 여기 두지 않는다.
+    await assertFails(set(ref(member, at("w10")), report("w10", { amount: 450000 })));
+    await assertFails(set(ref(member, at("w11")), report("w11", { updatedBy: "crm-admin" })));
+    // 지우는 길은 없다. 나간 보고서의 근거가 사라지면 안 된다.
+    await assertFails(remove(ref(member, at("w1"))));
+  });
+
+  it("keeps a delivery flow's stages in the shape the board can draw", async () => {
+    // 단계 이름이나 상태가 규칙과 코드에서 갈리면, 화면이 통과시킨 값을
+    // 서버가 막아서 사람은 이유 없는 권한 오류만 본다.
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/deliveryFlows/${id}`;
+    const stage = (patch: Record<string, unknown> = {}) => ({
+      status: "waiting", note: "", skipReason: "", doneAt: "", doneBy: "", ...patch,
+    });
+    const flow = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      buildingId: "b1",
+      buildingName: "우산동 빌딩",
+      customerId: "",
+      ownerName: "김건물",
+      ownerContact: "010-0000-0000",
+      title: "공용부 청소 위탁",
+      startedOn: "2026-09-01",
+      stages: {
+        quote: stage({ status: "done", doneAt: "2026-09-06T00:00:00.000Z", doneBy: "대표", files: [
+          { id: "f1", title: "견적서.pdf", driveFileId: "d1", webViewLink: "https://drive.google.com/x", uploadedAt: "2026-09-06T00:00:00.000Z", uploadedBy: "대표" },
+        ] }),
+        photos: stage(), plan: stage(), result: stage(), completion: stage(),
+      },
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-legacy-member",
+      ...patch,
+    });
+
+    // 사진을 찍는 사람도 진행을 만들고 올린다.
+    await assertSucceeds(set(ref(member, at("d1")), flow("d1")));
+    // 어디까지 왔는지는 감출 것이 아니다.
+    await assertSucceeds(get(ref(viewer, at("d1"))));
+    // 조회 전용 계정은 못 만진다.
+    await assertFails(set(ref(viewer, at("d2")), { ...flow("d2"), updatedBy: "crm-viewer" }));
+    // 건물과 제목이 없으면 목록에서 무엇인지 알 수 없다.
+    await assertFails(set(ref(member, at("d3")), flow("d3", { buildingId: "" })));
+    await assertFails(set(ref(member, at("d4")), flow("d4", { title: "" })));
+    // 모르는 단계는 막는다. 단계가 늘어나면 순서가 없는 것과 같다.
+    await assertFails(set(ref(member, at("d5")), flow("d5", {
+      stages: { quote: stage(), photos: stage(), plan: stage(), result: stage(), completion: stage(), 결제: stage() },
+    })));
+    // 모르는 상태도 막는다.
+    await assertFails(set(ref(member, at("d6")), flow("d6", {
+      stages: { quote: stage({ status: "취소" }), photos: stage(), plan: stage(), result: stage(), completion: stage() },
+    })));
+    // Drive 밖 링크는 다른 사람 화면에서 열리지 않는다.
+    await assertFails(set(ref(member, at("d7")), flow("d7", {
+      stages: {
+        quote: stage({ files: [{ id: "f1", title: "x", driveFileId: "d1", webViewLink: "http://x.test/a" }] }),
+        photos: stage(), plan: stage(), result: stage(), completion: stage(),
+      },
+    })));
+    // Drive 파일이 아니면 붙일 것이 없다.
+    await assertFails(set(ref(member, at("d8")), flow("d8", {
+      stages: {
+        quote: stage({ files: [{ id: "f1", title: "x" }] }),
+        photos: stage(), plan: stage(), result: stage(), completion: stage(),
+      },
+    })));
+    // 모르는 칸과 남의 이름으로 적는 것을 막는다.
+    await assertFails(set(ref(member, at("d9")), flow("d9", { amount: 1000000 })));
+    await assertFails(set(ref(member, at("d10")), flow("d10", { updatedBy: "crm-admin" })));
+    // 지우는 길은 없다. 진행이 사라지면 무엇을 했는지도 사라진다.
+    await assertFails(remove(ref(member, at("d1"))));
+  });
+
   it("lets anyone who works own the supply catalogue and never delete an item", async () => {
     // 품목을 지우면 그 품목에 달린 과거 기록의 이름이 사라진다. 안 쓰는
     // 것은 active 를 내려 목록 아래로 보낸다.
