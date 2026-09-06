@@ -5,6 +5,7 @@ const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
+const FormCore = require("./form-core");
 const ApprovalCore = require("./approval-core");
 const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
@@ -3859,6 +3860,87 @@ class FirebaseRemoteClient {
       },
       loadedAt: new Date().toISOString()
     };
+  }
+
+  // 서식과 작성. 서식은 관리자가 만들고 현장이 채운다. 둘 다 팀 전체가
+  // 읽는다 — 업무 서류라 감출 것이 없다.
+  async loadForms() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const [templates, entries] = await Promise.all([
+      this.dbRequest("formTemplates", { method: "GET" }).catch(() => null),
+      this.dbRequest("formEntries", { method: "GET" }).catch(() => null),
+    ]);
+    this.assertSessionGuardActive(guard);
+    const list = (payload, normalize) => Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => normalize(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      templates: list(templates, FormCore.normalizeTemplate),
+      entries: list(entries, FormCore.normalizeEntry),
+      canEditTemplates: session.role === "admin",
+      canFill: session.role === "admin" || session.role === "member",
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  async saveFormTemplate(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("서식은 관리자만 만들 수 있습니다.", "FORM_TEMPLATE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const now = new Date().toISOString();
+    const checked = FormCore.validateTemplate(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `formTemplates/${checked.template.id}`;
+    // 서버에 있는 것을 다시 읽어 판을 정한다. 화면이 오래됐으면 판이 뒤로
+    // 돌아가서, 이미 채운 문서가 어떤 판인지 알 수 없게 된다.
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const record = Object.assign(
+      FormCore.bumpVersion(existing, checked.template),
+      {
+        createdAt: (existing && existing.createdAt) || now,
+        updatedAt: now,
+        updatedBy: session.uid,
+      },
+    );
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  async saveFormEntry(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 서식을 채울 수 없습니다.", "FORM_ENTRY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const entry = FormCore.normalizeEntry(source);
+    if (!entry.templateId) throw createError("어떤 서식으로 쓸지 골라 주세요.", "TEMPLATE_REQUIRED");
+    const template = await this.dbRequest(`formTemplates/${entry.templateId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const checked = FormCore.validateEntry(entry, template);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `formEntries/${checked.entry.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing && FormCore.normalizeEntry(existing).status === "done") {
+      // 확인서가 나중에 바뀌면 확인한 의미가 없다.
+      throw createError("완료로 둔 작성은 고칠 수 없습니다.", "FORM_ENTRY_DONE");
+    }
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.entry, {
+      createdAt: (existing && existing.createdAt) || checked.entry.createdAt || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   async loadVendorDirectory(force) {

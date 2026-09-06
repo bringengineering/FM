@@ -196,6 +196,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
+    forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],
@@ -1500,6 +1501,7 @@
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
+    else if (currentView === "forms") renderForms();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -3755,6 +3757,241 @@
       const result = await api.exportQuote({ copyType, format, quote: aiAssistantState.quote });
       if (result && result.ok) showToast(`${copyType === "recipient" ? "공급받는자용" : "공급자 보관용"} 견적서 ${format === "pdf" ? "PDF" : "Excel"} 파일을 저장했습니다.`, "success");
     } catch (error) { showToast(error.message || "견적서를 저장하지 못했습니다.", "error"); }
+  }
+
+  // --- 서식 ---
+  // 서식을 만드는 사람과 채우는 사람이 다르다. 관리자가 틀을 만들고 현장이
+  // 채운다. 서식을 고쳐도 이미 채운 문서가 흔들리지 않는 것이 이 화면의
+  // 요지다 — 채운 문서는 그때 쓰인 항목 이름과 판을 함께 들고 있다.
+  let formState = {
+    templates: [], entries: [], canEditTemplates: false, canFill: false,
+    loaded: false, loading: false, error: "",
+    tab: "use", editingTemplateId: "", draftTemplate: null, editingEntryId: "", draftEntry: null,
+  };
+
+  const formCore = () => window.BringFormCore;
+
+  async function loadForms() {
+    if (formState.loading) return;
+    formState.loading = true;
+    formState.error = "";
+    if (currentView === "forms") renderForms();
+    try {
+      const data = await api.loadForms();
+      formState.templates = Array.isArray(data && data.templates) ? data.templates : [];
+      formState.entries = Array.isArray(data && data.entries) ? data.entries : [];
+      formState.canEditTemplates = data && data.canEditTemplates === true;
+      formState.canFill = data && data.canFill === true;
+      formState.loaded = true;
+    } catch (error) {
+      formState.error = error && error.message || "서식을 불러오지 못했습니다.";
+    } finally {
+      formState.loading = false;
+      if (currentView === "forms") renderForms();
+    }
+  }
+
+  function renderForms() {
+    const F = formCore();
+    if (!F) { main.innerHTML = `<section class="panel"><p>서식 모듈을 불러오지 못했습니다.</p></section>`; return; }
+    if (!formState.loaded && !formState.loading && !formState.error) void loadForms();
+    const tab = formState.canEditTemplates ? formState.tab : "use";
+    const status = formState.loading
+      ? `<p class="muted">불러오는 중…</p>`
+      : (formState.error ? `<p class="error-text">${esc(formState.error)}</p>` : "");
+    const tabs = formState.canEditTemplates
+      ? `<div class="form-tabs">
+          <button type="button" class="form-tab${tab === "use" ? " is-active" : ""}" data-form-tab="use">작성</button>
+          <button type="button" class="form-tab${tab === "edit" ? " is-active" : ""}" data-form-tab="edit">서식 만들기</button>
+        </div>`
+      : "";
+    main.innerHTML = `<section class="panel form-panel">
+      <header class="form-head">
+        <div><h2>서식</h2><p class="muted">점검표·확인서를 만들고, 현장에서 채웁니다.</p></div>
+        ${tabs}
+      </header>
+      ${status}
+      ${tab === "edit" ? formTemplateEditor(F) : formUsePanel(F)}
+    </section>`;
+  }
+
+  // --- 채우기 ---
+
+  function formUsePanel(F) {
+    const usable = F.usable(formState.templates);
+    const draft = formState.draftEntry;
+    const entries = F.rows(formState.entries).map(F.normalizeEntry)
+      .sort((a, b) => `${b.workDate}${b.updatedAt}`.localeCompare(`${a.workDate}${a.updatedAt}`))
+      .slice(0, 100);
+
+    const picker = formState.canFill
+      ? (usable.length
+        ? `<div class="form-pick">${usable.map(item => `<button type="button" class="mini-button" data-form-start="${esc(item.id)}">${esc(item.title)}</button>`).join("")}</div>`
+        : `<p class="muted">쓸 수 있는 서식이 없습니다.${formState.canEditTemplates ? " 서식 만들기에서 하나 만들고 '사용 중' 으로 두세요." : ""}</p>`)
+      : `<p class="muted">조회 전용 계정은 서식을 채울 수 없습니다.</p>`;
+
+    const list = entries.length
+      ? entries.map(item => {
+        const read = F.readEntry(item);
+        const label = (F.ENTRY_STATUSES.find(entry => entry.key === item.status) || {}).label || item.status;
+        return `<article class="form-entry status-${esc(item.status)}">
+          <header><div><b>${esc(read.title)}</b><span>${esc(read.workDate)} · ${esc(label)}<small> 판 ${read.version}</small></span></div>
+          ${item.status === "draft" && formState.canFill ? `<button type="button" class="mini-button" data-form-entry-open="${esc(item.id)}">이어 쓰기</button>` : ""}</header>
+          <ul>${read.lines.filter(line => line.value).map(line => `<li><span>${esc(line.label)}</span><b>${esc(line.value)}</b></li>`).join("") || `<li class="muted">아직 채운 것이 없습니다.</li>`}</ul>
+        </article>`;
+      }).join("")
+      : `<p class="muted">아직 작성한 것이 없습니다.</p>`;
+
+    return `<div class="form-use">
+      <h3>새로 쓰기</h3>
+      ${picker}
+      ${draft ? formEntryEditor(F, draft) : ""}
+      <h3>작성한 것</h3>
+      <div class="form-entry-list">${list}</div>
+    </div>`;
+  }
+
+  function formEntryEditor(F, draft) {
+    const template = formState.templates.map(F.normalizeTemplate).find(item => item.id === draft.templateId) || null;
+    if (!template) return `<p class="error-text">서식을 찾지 못했습니다.</p>`;
+    const answers = new Map(F.normalizeEntry(draft).answers.map(answer => [answer.key, answer.value]));
+    const input = field => {
+      const value = esc(String(answers.get(field.key) || ""));
+      if (field.type === "longtext") return `<textarea name="${esc(field.key)}" rows="3" maxlength="2000">${value}</textarea>`;
+      if (field.type === "check") return `<select name="${esc(field.key)}"><option value=""></option><option value="예"${answers.get(field.key) === "예" ? " selected" : ""}>예</option><option value="아니오"${answers.get(field.key) === "아니오" ? " selected" : ""}>아니오</option></select>`;
+      if (field.type === "choice") return `<select name="${esc(field.key)}"><option value=""></option>${field.choices.map(choice => `<option value="${esc(choice)}"${answers.get(field.key) === choice ? " selected" : ""}>${esc(choice)}</option>`).join("")}</select>`;
+      const type = field.type === "date" ? "date" : (field.type === "number" ? "number" : "text");
+      return `<input type="${type}" name="${esc(field.key)}" value="${value}" maxlength="2000">`;
+    };
+    return `<form class="form-entry-editor" data-form-entry-form data-form-entry-template="${esc(template.id)}">
+      <h4>${esc(template.title)}<small> 판 ${template.version}</small></h4>
+      ${template.description ? `<p class="muted">${esc(template.description)}</p>` : ""}
+      <label><span>작성일</span><input type="date" name="__workDate" value="${esc(draft.workDate)}" required></label>
+      ${template.fields.map(field => `<label class="${field.type === "longtext" ? "wide" : ""}"><span>${esc(field.label)}${field.required ? " *" : ""}</span>${input(field)}${field.hint ? `<small>${esc(field.hint)}</small>` : ""}</label>`).join("")}
+      <div class="form-entry-actions">
+        <button class="mini-button" type="submit" name="__status" value="draft">임시 저장</button>
+        <button class="primary-button" type="submit" name="__status" value="done">작성 완료</button>
+        <button type="button" class="mini-button return" data-form-entry-cancel>그만두기</button>
+      </div>
+      <p class="muted">완료로 두면 그 뒤에는 고칠 수 없습니다. 열쇠·출입 비밀번호는 적지 않습니다.</p>
+    </form>`;
+  }
+
+  // --- 서식 만들기 ---
+
+  function formTemplateEditor(F) {
+    const list = F.rows(formState.templates).map(F.normalizeTemplate)
+      .sort((a, b) => a.title.localeCompare(b.title, "ko"))
+      .map(item => `<button type="button" class="form-template-row${item.id === formState.editingTemplateId ? " is-selected" : ""}" data-form-template-open="${esc(item.id)}">
+        <b>${esc(item.title)}</b><span>${esc(F.statusLabel(item.status))} · 항목 ${item.fields.length}개 · 판 ${item.version}</span>
+      </button>`).join("");
+    const draft = formState.draftTemplate;
+    return `<div class="form-edit">
+      <div class="form-template-list">
+        <button type="button" class="mini-button" data-form-template-new>새 서식</button>
+        ${list || `<p class="muted">서식이 없습니다.</p>`}
+      </div>
+      <div class="form-template-detail">${draft ? formTemplateForm(F, draft) : `<p class="muted">왼쪽에서 서식을 고르거나 새로 만드세요.</p>`}</div>
+    </div>`;
+  }
+
+  function formTemplateForm(F, draft) {
+    const template = F.normalizeTemplate(draft);
+    const fieldRow = (field, index) => `<div class="form-field-row" data-form-field-index="${index}">
+      <input type="text" data-form-field="label" value="${esc(field.label)}" maxlength="120" placeholder="항목 이름">
+      <select data-form-field="type">${F.FIELD_TYPES.map(item => `<option value="${esc(item.key)}"${item.key === field.type ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
+      <input type="text" data-form-field="choices" value="${esc(field.choices.join(", "))}" placeholder="고를 것 (쉼표)" ${(F.typeOf(field.type) || {}).hasChoices ? "" : "disabled"}>
+      <label class="form-field-required"><input type="checkbox" data-form-field="required"${field.required ? " checked" : ""}> 필수</label>
+      <button type="button" class="mini-button return" data-form-field-remove="${index}">빼기</button>
+    </div>`;
+    return `<form class="form-template-form" data-form-template-form>
+      <label><span>서식 이름</span><input type="text" data-form-meta="title" value="${esc(template.title)}" maxlength="120" required></label>
+      <label><span>상태</span><select data-form-meta="status">${F.STATUSES.map(item => `<option value="${esc(item.key)}"${item.key === template.status ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label class="wide"><span>설명</span><input type="text" data-form-meta="description" value="${esc(template.description)}" maxlength="500"></label>
+      <div class="form-fields">${template.fields.map(fieldRow).join("") || `<p class="muted">항목이 없습니다.</p>`}</div>
+      <div class="form-template-actions">
+        <button type="button" class="mini-button" data-form-field-add>항목 추가</button>
+        <button class="primary-button" type="submit">저장</button>
+      </div>
+      <p class="muted">항목을 바꾸면 판이 올라갑니다. 이미 채운 문서는 그때 판 그대로 남습니다. 서식은 지울 수 없고 폐기로만 둡니다.</p>
+    </form>`;
+  }
+
+  // 화면에 적힌 것을 그대로 읽어 온다. 상태에만 담아 두면 사람이 친 것과
+  // 화면이 어긋난 채로 저장된다.
+  function readTemplateFromDom(F) {
+    const form = document.querySelector("[data-form-template-form]");
+    if (!form) return null;
+    const meta = name => {
+      const el = form.querySelector(`[data-form-meta="${name}"]`);
+      return el ? el.value : "";
+    };
+    const fields = [...form.querySelectorAll("[data-form-field-index]")].map((row, index) => {
+      const pick = name => row.querySelector(`[data-form-field="${name}"]`);
+      const base = F.normalizeTemplate(formState.draftTemplate).fields[Number(row.dataset.formFieldIndex)] || {};
+      return {
+        key: base.key || F.newFieldKey(),
+        order: index,
+        type: pick("type") ? pick("type").value : "text",
+        label: pick("label") ? pick("label").value : "",
+        hint: base.hint || "",
+        required: pick("required") ? pick("required").checked : false,
+        choices: pick("choices") ? pick("choices").value.split(",").map(item => item.trim()).filter(Boolean) : [],
+      };
+    });
+    return F.normalizeTemplate(Object.assign({}, formState.draftTemplate, {
+      title: meta("title"), status: meta("status"), description: meta("description"), fields,
+    }));
+  }
+
+  async function saveFormTemplateFromDom() {
+    const F = formCore();
+    if (!F) return;
+    const template = readTemplateFromDom(F);
+    if (!template) return;
+    const checked = F.validateTemplate(template);
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      const saved = await api.saveFormTemplate(checked.template);
+      formState.draftTemplate = saved;
+      formState.editingTemplateId = saved.id;
+      formState.loaded = false;
+      showToast(`서식을 저장했습니다. 판 ${saved.version}`, "success");
+      await loadForms();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function saveFormEntryFromDom(form, status) {
+    const F = formCore();
+    if (!F || !formState.draftEntry) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const template = formState.templates.map(F.normalizeTemplate)
+      .find(item => item.id === form.dataset.formEntryTemplate) || null;
+    if (!template) { showToast("서식을 찾지 못했습니다.", "error"); return; }
+    const entry = Object.assign({}, formState.draftEntry, {
+      workDate: String(raw.__workDate || ""),
+      status: status === "done" ? "done" : "draft",
+      // 항목 이름을 값과 함께 박는다. 서식이 바뀌어도 이 문서는 그대로 읽힌다.
+      answers: template.fields.map(field => ({
+        key: field.key,
+        label: field.label,
+        value: String(raw[field.key] == null ? "" : raw[field.key]),
+      })),
+    });
+    const checked = F.validateEntry(entry, template);
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      await api.saveFormEntry(checked.entry);
+      formState.draftEntry = status === "done" ? null : checked.entry;
+      formState.loaded = false;
+      showToast(status === "done" ? "작성을 마쳤습니다." : "임시 저장했습니다.", "success");
+      await loadForms();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
   }
 
   function renderOperationsIntelligence() {
@@ -6089,6 +6326,73 @@
   }
 
   document.addEventListener("click", async event => {
+    const formTab = event.target.closest("[data-form-tab]");
+    if (formTab) { formState.tab = formTab.dataset.formTab; renderForms(); return; }
+    const formStart = event.target.closest("[data-form-start]");
+    if (formStart) {
+      const F = formCore();
+      const template = F && formState.templates.map(F.normalizeTemplate).find(item => item.id === formStart.dataset.formStart);
+      if (template) {
+        formState.draftEntry = F.blankEntry(template, {
+          id: `fe_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          workDate: new Date().toISOString().slice(0, 10),
+        });
+        renderForms();
+      }
+      return;
+    }
+    const entryOpen = event.target.closest("[data-form-entry-open]");
+    if (entryOpen) {
+      const F = formCore();
+      const found = F && formState.entries.map(F.normalizeEntry).find(item => item.id === entryOpen.dataset.formEntryOpen);
+      if (found) { formState.draftEntry = found; renderForms(); }
+      return;
+    }
+    if (event.target.closest("[data-form-entry-cancel]")) { formState.draftEntry = null; renderForms(); return; }
+    const templateOpen = event.target.closest("[data-form-template-open]");
+    if (templateOpen) {
+      const F = formCore();
+      const found = F && formState.templates.map(F.normalizeTemplate).find(item => item.id === templateOpen.dataset.formTemplateOpen);
+      if (found) { formState.draftTemplate = found; formState.editingTemplateId = found.id; renderForms(); }
+      return;
+    }
+    if (event.target.closest("[data-form-template-new]")) {
+      const F = formCore();
+      if (F) {
+        formState.draftTemplate = F.normalizeTemplate({
+          id: `ft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          title: "", status: "draft", fields: [],
+        });
+        formState.editingTemplateId = formState.draftTemplate.id;
+        renderForms();
+      }
+      return;
+    }
+    if (event.target.closest("[data-form-field-add]")) {
+      const F = formCore();
+      if (F) {
+        // 화면에 적힌 것을 먼저 거둬야 이미 친 글자가 날아가지 않는다.
+        const current = readTemplateFromDom(F) || F.normalizeTemplate(formState.draftTemplate);
+        formState.draftTemplate = F.normalizeTemplate(Object.assign({}, current, {
+          fields: [...current.fields, { key: F.newFieldKey(), order: current.fields.length, type: "text", label: "", required: false, choices: [] }],
+        }));
+        renderForms();
+      }
+      return;
+    }
+    const fieldRemove = event.target.closest("[data-form-field-remove]");
+    if (fieldRemove) {
+      const F = formCore();
+      if (F) {
+        const current = readTemplateFromDom(F) || F.normalizeTemplate(formState.draftTemplate);
+        const at = Number(fieldRemove.dataset.formFieldRemove);
+        formState.draftTemplate = F.normalizeTemplate(Object.assign({}, current, {
+          fields: current.fields.filter((item, index) => index !== at),
+        }));
+        renderForms();
+      }
+      return;
+    }
     const messageMode = event.target.closest("[data-message-mode]");
     if (messageMode) { selectedMessageMode = messageMode.dataset.messageMode === "documents" ? "documents" : "messages"; renderCustomerMessages(); return; }
     const documentFallback = event.target.closest("[data-document-sms-fallback]");
@@ -8038,9 +8342,25 @@
     renderCustomerMessages();
   });
 
+  document.addEventListener("change", event => {
+    // 항목 종류를 바꾸면 "고를 것" 칸이 열리고 닫힌다.
+    const fieldType = event.target.closest('[data-form-field="type"]');
+    if (!fieldType) return;
+    const F = formCore();
+    if (!F) return;
+    const current = readTemplateFromDom(F);
+    if (current) { formState.draftTemplate = current; renderForms(); }
+  });
+
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }
+    if (form.matches("[data-form-entry-form]")) {
+      // 어느 단추로 냈는지에 따라 임시 저장인지 완료인지 갈린다.
+      await saveFormEntryFromDom(form, event.submitter && event.submitter.value);
+      return;
+    }
     if (form.id === "contractSourceRegisterForm") {
       if (!canAdministerSecurity()) return showToast("관리자만 계약 기준 문서를 등록할 수 있습니다.", "error");
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -9704,7 +10024,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "forms", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
