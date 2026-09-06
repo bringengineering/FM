@@ -143,6 +143,11 @@
       ideas: text(source.ideas, 2000),
       feedback: text(source.feedback, 2000),
       requests: text(source.requests, 2000),
+      // AI 가 쓴 초안. 사람이 고칠 수 있고, 대표가 확인 도장을 찍기 전에는
+      // 평가 근거로 쓰지 않는다. AI 가 쓴 글을 그대로 평가에 쓰기 시작하면
+      // 아무도 그 글을 안 읽고도 평가가 끝난다.
+      aiSummary: text(source.aiSummary, 4000),
+      aiSummaryAt: text(source.aiSummaryAt, 40),
       // 사람이 눌러야 보고다.
       submittedAt: text(source.submittedAt, 40),
       // 대표가 봤다는 표시. AI 가 쓴 총평을 사람이 확인하기 전에는 평가
@@ -407,6 +412,62 @@
     };
   }
 
+  // AI 에게 보낼 글. reportFacts 를 사람이 읽는 모양으로 편다.
+  //
+  // JSON 을 그대로 던지지 않는다. 던져 보면 AI 가 칸 이름을 그대로 문장에
+  // 옮겨 적어서 "weightedProgress 는 60% 입니다" 같은 글이 나온다. 사람이
+  // 읽을 말로 미리 바꿔 두면 그 말이 그대로 보고서에 쓰인다.
+  //
+  // 여기서 만드는 숫자는 없다. 전부 summarize 가 이미 센 것이고, 화면에도
+  // 같은 값이 떠 있다. 아무도 안 보는 숫자가 보고서에 먼저 올라가면 틀려도
+  // 아무도 못 잡는다.
+  function factsText(facts) {
+    const value = facts && typeof facts === "object" ? facts : {};
+    const totals = value.totals || {};
+    const lines = [];
+    lines.push(`작성자: ${text(value.who && value.who.name, 80) || "이름 없음"}`);
+    lines.push(`날짜: ${text(value.date, 10)}`);
+    lines.push(`채운 시간: ${totals.hours || 0}시간 (${totals.entries || 0}줄)`);
+    if (totals.overlapMinutes) lines.push(`겹쳐 적은 시간 ${totals.overlapMinutes}분은 합계에서 한 번만 셌습니다.`);
+    lines.push(`달성률: 시간으로 가중하면 ${totals.weightedProgress || 0}%, 단순 평균은 ${totals.plainProgress || 0}%`);
+    if (totals.looseHours) lines.push(`업무지시에 붙지 않은 시간: ${totals.looseHours}시간`);
+    const nature = rows(value.byNature).map(item => `${text(item.label, 20)} ${item.hours}시간(${item.percent}%)`).join(", ");
+    if (nature) lines.push(`업무 성격: ${nature}`);
+
+    lines.push("");
+    lines.push("[오늘 한 일]");
+    const entries = rows(value.entries);
+    if (!entries.length) lines.push("- 적힌 줄이 없습니다.");
+    entries.forEach(item => {
+      const where = text(item.order, 120) ? ` / 지시: ${text(item.order, 120)}` : " / 지시에 붙지 않음";
+      lines.push(`- ${text(item.time, 20)} (${item.hours}시간) ${text(item.title, 200)} [${text(item.nature, 20)}] 달성률 ${item.progress}%${where}`);
+    });
+
+    const plans = rows(value.plans);
+    if (plans.length) {
+      lines.push("");
+      lines.push("[내일 할 일]");
+      plans.forEach(item => {
+        const due = text(item.dueDate, 10) ? ` / 완료 예정 ${text(item.dueDate, 10)}` : "";
+        lines.push(`- ${text(item.title, 200)} [${text(item.nature, 20)}] 예상 ${item.hours}시간${due}`);
+      });
+    }
+
+    const words = value.words || {};
+    const said = [
+      ["막힌 것·특이사항", words.blockers],
+      ["아이디어·알아 둘 것", words.ideas],
+      ["오늘 나에게 한 줄", words.feedback],
+      ["일정 조정·건의", words.requests],
+    ].filter(([, body]) => text(body, 2000));
+    if (said.length) {
+      lines.push("");
+      lines.push("[본인이 적은 말 — 줄이지 말고 그대로 옮길 것]");
+      said.forEach(([label, body]) => lines.push(`- ${label}: ${text(body, 2000)}`));
+    }
+    return lines.join("\n");
+  }
+
   const dayId = (uid, date) => `${text(uid, 128)}_${text(date, 10)}`;
 
   return Object.freeze({
@@ -428,6 +489,7 @@
     weekRange,
     weekRollup,
     reportFacts,
+    factsText,
     dayId,
     toHours,
     minutesOf,

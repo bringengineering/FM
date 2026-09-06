@@ -833,4 +833,55 @@ describe("desktop CRM screens actually render", () => {
     expect((asked!.input as { uid: string; date: string })).toEqual({ uid: "u-admin", date: "2026-09-05" });
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
+  it("AI 초안은 화면에 뜬 숫자만 넘기고, 만들자마자 저장하지 않는다", async () => {
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 앞선 검사가 날짜와 탭을 옮겨 놓았을 수 있다. 화면을 내 일지·오늘로
+    // 되돌린다 — 검사끼리 순서에 기대면 하나를 옮길 때마다 다른 게 깨진다.
+    (booted.document.querySelector('[data-dl-tab="mine"]') as HTMLElement | null)?.click();
+    await sleep(150);
+    const back = booted.document.querySelector("[data-dl-date]") as HTMLInputElement;
+    back.value = new Date().toISOString().slice(0, 10);
+    back.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(200);
+
+    // 한 줄 적는다. 아무것도 없으면 초안을 만들 것도 없다.
+    (booted.document.querySelector("[data-dl-add]") as HTMLElement).click();
+    await sleep(150);
+    (booted.document.querySelector('[data-dl-field="title"]') as HTMLInputElement).value = "3층 누수 확인";
+    (booted.document.querySelector('[data-dl-field="start"]') as HTMLInputElement).value = "09:00";
+    (booted.document.querySelector('[data-dl-field="end"]') as HTMLInputElement).value = "13:00";
+    const orderPick = booted.document.querySelector('[data-dl-field="orderId"]') as HTMLSelectElement;
+    orderPick.value = ([...orderPick.options].find(option => option.textContent === "지난 것") as HTMLOptionElement).value;
+    (booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement).value = "건물주가 전화를 안 받습니다.";
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-dl-ai]") as HTMLElement).click();
+    await sleep(400);
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task).toBe("daily_report");
+    // 화면에 뜬 숫자를 그대로 넘긴다. 여기서 새로 세면 보고서와 화면이 다른
+    // 말을 하고, 그러면 둘 다 못 믿는다.
+    expect(sent.content).toContain("채운 시간: 4시간");
+    // 지시는 번호가 아니라 이름으로 간다. 번호만 주면 AI 가 지어낸다.
+    expect(sent.content).toContain("지시: 지난 것");
+    // 사람이 적은 말은 줄이지 않고 그대로 넘어가야 한다.
+    expect(sent.content).toContain("건물주가 전화를 안 받습니다.");
+    // 칸 이름이 새어 나가면 AI 가 그걸 문장에 옮겨 적는다.
+    expect(sent.content).not.toContain("weightedProgress");
+
+    // 만들자마자 서버에 쓰지 않는다. 아무도 안 읽은 글이 대표에게 올라간다.
+    expect(booted.calls.slice(before).some(call => call.name === "saveDailyLog"),
+      "초안을 만들면서 저장하면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
 });

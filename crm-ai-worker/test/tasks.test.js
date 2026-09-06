@@ -16,6 +16,7 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "daily_report",
     "monthly_management_report",
     "quote_draft",
     "consultation_intake"
@@ -114,4 +115,19 @@ test("task result requires every consultation draft field", () => {
     () => normalizeTaskResult("consultation_structure", { summary: "누수 상담", currentRequest: "현장 확인", outcome: "견적 검토" }),
     error => error?.code === "AI_INVALID_RESPONSE"
   );
+});
+
+test("daily report never invents a number and never grades the person", () => {
+  // 여기 오는 숫자는 CRM 이 이미 세서 화면에 띄운 것뿐이다. AI 가 다시
+  // 계산하기 시작하면 보고서와 화면이 다른 말을 하고, 그러면 둘 다 못 믿는다.
+  const messages = buildTaskMessages("daily_report", "09:00~11:00 누수 확인 2시간", {});
+  assert.match(messages[0].content, /다시 계산하거나 고치지 마세요/u);
+  // 평가는 사람이 한다. AI 가 "수고했다" 를 쓰면 그게 평가처럼 읽힌다.
+  assert.match(messages[0].content, /평가는 쓰지 말고/u);
+  // 막힌 것과 건의는 줄이면 안 된다. 대개 그게 제일 중요하다.
+  assert.match(messages[0].content, /그대로 옮기세요/u);
+
+  const result = normalizeTaskResult("daily_report", { text: "오늘 누수 확인에 2시간을 썼습니다." });
+  assert.equal(result.text, "오늘 누수 확인에 2시간을 썼습니다.");
+  assert.throws(() => normalizeTaskResult("daily_report", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
 });

@@ -130,3 +130,39 @@ test("글자 칸은 칠 때마다 다시 그리지 않는다", () => {
   assert.ok(!listener.includes("data-dl-field='title'"), "글자 칸을 다시 그리면 커서가 튄다");
   assert.ok(!appSource.includes('data-dl-word="blockers" oninput'), "글자 칸을 다시 그리면 커서가 튄다");
 });
+
+test("AI 갈래가 서버·앱 양쪽에 다 등록돼 있다", () => {
+  // 한쪽만 있으면 [초안 만들기] 가 UNSUPPORTED_TASK 로 죽는다.
+  const worker = fs.readFileSync(path.join(__dirname, "../../crm-ai-worker/src/tasks.js"), "utf8");
+  assert.match(worker, /daily_report: \{/u);
+  assert.match(read("ai-client.js"), /"daily_report"/u);
+});
+
+test("AI 에 넘기는 것은 화면에 이미 뜬 숫자뿐이다", () => {
+  const draft = appSource.slice(appSource.indexOf("async function draftDailyReport"), appSource.indexOf("async function saveDailyLogDraft"));
+  assert.ok(draft, "draftDailyReport 가 없다");
+  // 코어가 이미 센 것만 넘긴다. 여기서 새로 세면 보고서와 화면이 다른 말을 한다.
+  assert.match(draft, /D\.factsText\(D\.reportFacts\(checked\.day, \{ orderTitles \}\)\)/u);
+  assert.match(draft, /task: "daily_report"/u);
+  // 지시는 이름으로 넘긴다. 번호만 주면 AI 가 어느 일인지 모르고 지어낸다.
+  assert.match(draft, /orderTitles\[item\.id\]/u);
+  // 만든 글을 바로 서버에 쓰지 않는다. 아무도 안 읽은 글이 대표에게 올라간다.
+  assert.ok(!/api\.saveDailyLog/u.test(draft), "초안을 만들면서 저장하면 안 된다");
+});
+
+test("AI 가 쓴 글은 확인 전까지 평가 근거가 아니라고 화면이 말한다", () => {
+  // 화면에 안 적어 두면 그 구분은 지켜지지 않는다.
+  assert.match(appSource, /AI 가 쓴 글은 대표가 확인하기 전까지 평가에 쓰지 않습니다/u);
+  assert.match(appSource, /AI 가 숫자를 새로 만들지 않습니다/u);
+  // 규칙에도 자리가 있어야 저장이 통과한다.
+  assert.ok(log.aiSummary, "규칙에 aiSummary 가 없다");
+  assert.ok(log.aiSummaryAt, "규칙에 aiSummaryAt 가 없다");
+});
+
+test("AI 서버를 아직 안 올렸을 때 무엇을 해야 하는지 말한다", () => {
+  // 앱만 새로 받고 서버를 안 올리면 "지원하지 않는 AI 작업입니다" 라고만
+  // 나온다. 그 말로는 무엇을 해야 하는지 알 수 없다.
+  const draft = appSource.slice(appSource.indexOf("async function draftDailyReport"), appSource.indexOf("async function saveDailyLogDraft"));
+  assert.match(draft, /지원하지 않는 AI 작업/u);
+  assert.match(draft, /crm-ai-worker 를 배포한 뒤 다시 눌러 주세요/u);
+});

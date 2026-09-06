@@ -1031,6 +1031,12 @@
           "requests": {
             ".validate": "newData.isString() && newData.val().length <= 2000"
           },
+          "aiSummary": {
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          },
+          "aiSummaryAt": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/))"
+          },
           "submittedAt": {
             ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/))"
           },
