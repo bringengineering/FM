@@ -20,6 +20,8 @@
     selectedAttendanceDate: Core.workDate(),
     selectedAdminUserId: "",
     selectedMemberId: "",
+    payrollUserId: "",
+    payrollMonth: "",
     adminMonth: Core.workDate().slice(0, 7),
     adminTab: "list",
     adminAttendanceCorrection: null,
@@ -859,6 +861,135 @@
     }
   }
 
+  // --- 급여 ---
+  // 임금명세서 교부는 법정 의무다(근로기준법 48조 2항). 그래서 본인은 자기
+  // 명세서를 반드시 볼 수 있어야 한다 — 볼 수 없으면 교부한 것이 아니다.
+  // 회사 전체 인건비 합계는 대표만 본다.
+  const Payroll = () => window.BringPayrollCore;
+
+  const wonPay = value => `${Number(value || 0).toLocaleString("ko-KR")}원`;
+
+  function payrollView() {
+    const P = Payroll();
+    if (!P) return `<section class="office-panel"><p>급여 모듈을 불러오지 못했습니다.</p></section>`;
+    const mine = P.forUser(state.data.payroll || [], currentUserId());
+    const slips = mine.length
+      ? mine.map(item => paySlip(P, item)).join("")
+      : `<p class="office-empty">아직 받은 명세서가 없습니다.</p>`;
+    return `<section class="office-panel office-pay">
+      <header class="office-pay-head"><div><b>내 임금명세서</b><span>본인 것만 보입니다</span></div></header>
+      <div class="office-pay-list">${slips}</div>
+      ${state.data.payrollAdmin ? payrollAdminPanel(P) : ""}
+    </section>`;
+  }
+
+  function paySlip(P, item) {
+    const parts = P.lines(item);
+    // 0 원인 항목은 내지 않는다. 안 준 수당을 줄줄이 늘어놓으면 정작 받은
+    // 항목이 안 보인다.
+    const row = entry => `<li><span>${esc(entry.label)}</span><b>${esc(wonPay(entry.amount))}</b></li>`;
+    return `<article class="office-pay-slip status-${esc(item.status)}">
+      <header>
+        <div><b>${esc(item.month)}</b><span>지급일 ${esc(item.payDate)}</span></div>
+        <div class="office-pay-net"><b>${esc(wonPay(parts.netPay))}</b><small>실지급액</small></div>
+      </header>
+      <div class="office-pay-cols">
+        <div><h4>지급</h4><ul>${parts.earnings.map(row).join("")}</ul><p class="office-pay-sum">합계 <b>${esc(wonPay(parts.grossPay))}</b></p></div>
+        <div><h4>공제</h4><ul>${parts.deductions.map(row).join("") || `<li><span>없음</span><b>0원</b></li>`}</ul><p class="office-pay-sum">합계 <b>${esc(wonPay(parts.totalDeduction))}</b></p></div>
+      </div>
+      ${item.calcNote ? `<p class="office-pay-note"><b>계산방법</b> ${esc(item.calcNote)}</p>` : ""}
+      ${item.note ? `<p class="office-pay-note">${esc(item.note)}</p>` : ""}
+      <p class="office-pay-status">${esc(P.statusLabel(item.status))}${item.issuedBy ? ` · ${esc(item.issuedBy)}` : ""}</p>
+    </article>`;
+  }
+
+  function payrollAdminPanel(P) {
+    const all = state.data.payroll || [];
+    const monthList = P.months(all);
+    const month = state.payrollMonth && monthList.includes(state.payrollMonth)
+      ? state.payrollMonth
+      : (monthList[0] || new Date().toISOString().slice(0, 7));
+    const summary = P.summarize(all, month);
+    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b)));
+    const selected = state.payrollUserId && people.some(user => user.uid === state.payrollUserId)
+      ? state.payrollUserId
+      : (people[0] ? people[0].uid : "");
+    const existing = all.map(P.normalizeRecord)
+      .find(item => item.userId === selected && item.month === month) || null;
+
+    const table = people.map(user => {
+      const slip = all.map(P.normalizeRecord).find(item => item.userId === user.uid && item.month === month) || null;
+      return `<tr${user.uid === selected ? ' class="is-selected"' : ""}>
+        <td><button type="button" class="link-button" data-office-pay-user="${esc(user.uid)}">${esc(Core.displayName(user))}</button></td>
+        <td class="num">${slip ? esc(wonPay(slip.grossPay)) : "—"}</td>
+        <td class="num">${slip ? esc(wonPay(slip.netPay)) : "—"}</td>
+        <td>${slip ? esc(P.statusLabel(slip.status)) : "<em>미작성</em>"}</td>
+      </tr>`;
+    }).join("");
+
+    return `<section class="office-pay-admin">
+      <header>
+        <b>급여대장</b>
+        <label><span>귀속 월</span><select data-office-pay-month>${(monthList.includes(month) ? monthList : [month, ...monthList]).map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("")}</select></label>
+      </header>
+      <div class="office-pay-summary">
+        <div><span>지급 총액</span><b>${esc(wonPay(summary.grossPay))}</b></div>
+        <div><span>공제 총액</span><b>${esc(wonPay(summary.totalDeduction))}</b></div>
+        <div><span>실지급 총액</span><b>${esc(wonPay(summary.netPay))}</b></div>
+        <div><span>교부</span><b>${summary.issuedCount}/${summary.count}</b></div>
+      </div>
+      <table class="office-pay-table"><thead><tr><th>이름</th><th class="num">지급</th><th class="num">실지급</th><th>상태</th></tr></thead><tbody>${table}</tbody></table>
+      ${selected ? payrollForm(P, selected, month, existing) : ""}
+      <p class="office-pay-hint">4대보험료와 세금은 CRM 이 계산하지 않습니다. 급여대장 프로그램이나 노무사가 낸 숫자를 그대로 적어 주세요. CRM 은 합계가 맞는지만 봅니다.</p>
+    </section>`;
+  }
+
+  function payrollForm(P, userId, month, existing) {
+    const record = existing || P.normalizeRecord({ userId, month });
+    const locked = existing ? !P.canEdit(existing) : false;
+    const field = (key, label) => `<label><span>${esc(label)}</span><input type="text" inputmode="numeric" name="${esc(key)}" value="${record[key] ? esc(String(record[key])) : ""}"${locked ? " disabled" : ""}></label>`;
+    return `<form class="office-pay-form" data-office-pay-form data-office-pay-target="${esc(userId)}" data-office-pay-month-value="${esc(month)}">
+      <h4>${esc(month)} 명세서</h4>
+      ${locked ? `<p class="office-pay-locked">이미 교부한 명세서입니다. 고치려면 정정 명세서를 따로 내 주세요.</p>` : ""}
+      <label><span>지급일</span><input type="date" name="payDate" value="${esc(record.payDate)}"${locked ? " disabled" : ""} required></label>
+      <fieldset><legend>지급</legend>${P.EARNINGS.map(item => field(item.key, item.label)).join("")}</fieldset>
+      <fieldset><legend>공제</legend>${P.DEDUCTIONS.map(item => field(item.key, item.label)).join("")}</fieldset>
+      <label class="wide"><span>계산방법</span><input type="text" name="calcNote" maxlength="1000" value="${esc(record.calcNote)}"${locked ? " disabled" : ""} placeholder="연장·야간·휴일 수당이 있으면 필수 (법정 기재사항)"></label>
+      <label class="wide"><span>비고</span><input type="text" name="note" maxlength="500" value="${esc(record.note)}"${locked ? " disabled" : ""}></label>
+      ${locked ? "" : `<div class="office-pay-actions">
+        <button class="mini-button" type="submit" name="status" value="draft"${state.busy ? " disabled" : ""}>임시 저장</button>
+        <button class="primary-button" type="submit" name="status" value="issued"${state.busy ? " disabled" : ""}>교부</button>
+      </div>`}
+    </form>`;
+  }
+
+  async function savePayrollSlip(form, status) {
+    const P = Payroll();
+    if (!P || state.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const checked = P.validateRecord(Object.assign({}, raw, {
+      userId: form.dataset.officePayTarget,
+      month: form.dataset.officePayMonthValue,
+      status: status === "issued" ? "issued" : "draft",
+      issuedBy: status === "issued" ? (currentUser() && Core.displayName(currentUser())) || "관리자" : "",
+    }));
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { notify(checked.error, "error"); return; }
+    if (status === "issued" && !window.confirm(`${checked.record.month} 명세서를 교부합니다. 교부한 뒤에는 고칠 수 없습니다.`)) return;
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.savePayrollSlip(checked.record);
+      notify(status === "issued" ? "명세서를 교부했습니다." : "임시 저장했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "저장하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
     syncMessengerPresence();
@@ -871,6 +1002,7 @@
       else if (state.context.view === "officeAttendance") state.context.container.innerHTML = attendanceView();
       else if (state.context.view === "officeLeave") state.context.container.innerHTML = leaveView();
       else if (state.context.view === "officeMembers") state.context.container.innerHTML = membersView();
+      else if (state.context.view === "officePayroll") state.context.container.innerHTML = payrollView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
@@ -1215,6 +1347,8 @@
     }
     const leaveCancel = event.target.closest("[data-office-leave-cancel]");
     if (leaveCancel) { void cancelLeave(leaveCancel.dataset.officeLeaveCancel); return; }
+    const paySelect = event.target.closest("[data-office-pay-user]");
+    if (paySelect) { state.payrollUserId = paySelect.dataset.officePayUser; renderCurrent(); return; }
     const hrSelect = event.target.closest("[data-office-hr-select]");
     if (hrSelect) { state.selectedMemberId = hrSelect.dataset.officeHrSelect; renderCurrent(); return; }
     const go = event.target.closest("[data-office-go]");
@@ -1324,6 +1458,11 @@
   });
 
   document.addEventListener("change", event => {
+    if (event.target.matches("[data-office-pay-month]")) {
+      state.payrollMonth = event.target.value;
+      renderCurrent();
+      return;
+    }
     if (!event.target.matches("[data-office-attendance-correction-date]") || state.busy) return;
     selectAdminAttendanceCorrectionRecord(event.target.value);
     renderCurrent();
@@ -1357,6 +1496,13 @@
   document.addEventListener("submit", event => {
     const leaveForm = event.target.closest("[data-office-leave-form]");
     if (leaveForm) { event.preventDefault(); void submitLeaveRequest(leaveForm); return; }
+    const payForm = event.target.closest("[data-office-pay-form]");
+    if (payForm) {
+      event.preventDefault();
+      // 어느 단추로 냈는지에 따라 임시 저장인지 교부인지 갈린다.
+      void savePayrollSlip(payForm, event.submitter && event.submitter.value);
+      return;
+    }
     const hrForm = event.target.closest("[data-office-hr-form]");
     if (hrForm) { event.preventDefault(); void saveMemberRecord(hrForm, hrForm.dataset.officeHrForm); return; }
     const grantForm = event.target.closest("[data-office-leave-grant]");

@@ -5,6 +5,7 @@ const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
+const PayrollCore = require("./payroll-core");
 const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
@@ -2364,7 +2365,11 @@ class FirebaseRemoteClient {
     // 것만 본다. 연차 발생일수 제안이 여기 입사일을 재료로 쓴다.
     const memberAdmin = session.role === "admin";
     const memberLocation = memberAdmin ? "officeMembers" : `officeMembers/${session.uid}`;
-    const [users, teamProfiles, attendance, leave, leaveGrants, members] = await Promise.all([
+    // 급여도 같은 기준이다. 본인 명세서는 본인이 봐야 한다 — 교부가 법정
+    // 의무라 볼 수 없으면 교부한 것이 아니다. 남의 것은 관리자만 본다.
+    const payrollAdmin = session.role === "admin";
+    const payrollLocation = payrollAdmin ? "officePayroll" : `officePayroll/${session.uid}`;
+    const [users, teamProfiles, attendance, leave, leaveGrants, members, payroll] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
@@ -2373,6 +2378,7 @@ class FirebaseRemoteClient {
       this.dbRequest(leaveLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(grantLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(memberLocation, { method: "GET" }).catch(() => null),
+      this.dbRequest(payrollLocation, { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
     const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
@@ -2399,6 +2405,8 @@ class FirebaseRemoteClient {
         leaveAdmin,
         members: OfficeCore.flattenMembers(members, session.uid),
         memberAdmin,
+        payroll: OfficeCore.flattenPayroll(payroll, session.uid),
+        payrollAdmin,
         messages: OfficeCore.flattenMailbox(mailbox),
         loadedAt: new Date().toISOString(),
       },
@@ -2505,6 +2513,38 @@ class FirebaseRemoteClient {
     // 지우는 길은 만들지 않는다. 근로계약서는 3년 보관 의무가 있고, 퇴사는
     // 삭제가 아니라 퇴사일을 적는 것이다. 규칙도 삭제를 막는다.
     await this.dbRequest(`officeMembers/${record.userId}`, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 임금명세서 저장. 관리자만 쓴다. 본인은 자기 것을 읽을 수만 있다 —
+  // 자기 급여를 스스로 적을 수 있으면 명세서가 아니다.
+  async savePayrollSlip(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("임금명세서는 관리자만 만들 수 있습니다.", "PAYROLL_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const now = new Date().toISOString();
+    const issuing = String(source.status || "") === "issued";
+    const checked = PayrollCore.validateRecord(Object.assign({}, source, {
+      issuedBy: issuing ? String(source.issuedBy || session.displayName || session.email || "관리자") : "",
+      issuedAt: issuing ? String(source.issuedAt || now) : "",
+      updatedAt: now,
+      updatedBy: session.uid,
+    }));
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const record = checked.record;
+    const location = `officePayroll/${record.userId}/${record.month}`;
+    // 서버에 있는 것을 다시 읽어 판단한다. 화면이 오래됐을 수 있다.
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing && !PayrollCore.canEdit(existing)) {
+      // 이미 교부한 명세서가 나중에 바뀌면 교부한 의미가 없다.
+      throw createError("이미 교부한 명세서는 고칠 수 없습니다. 정정 명세서를 따로 내 주세요.", "PAYROLL_ISSUED");
+    }
+    await this.dbRequest(location, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
   }
