@@ -47,8 +47,8 @@ test("sidebar removes the sales pipeline tab and labels cases as complaint manag
   assert.match(appSource, /cases:\s*\["접수부터 사후관리까지",\s*"민원 관리"\]/);
 });
 
-test("sidebar removes the standalone operations, sales task, contract, and work management tabs", () => {
-  for (const view of ["operationsIntelligence", "tasks", "contracts", "workManagement"]) {
+test("sidebar removes the standalone sales task, contract, and work management tabs", () => {
+  for (const view of ["tasks", "contracts", "workManagement"]) {
     assert.equal(
       (navSource.match(new RegExp(`data-view="${view}"`, "g")) || []).length,
       0,
@@ -57,6 +57,10 @@ test("sidebar removes the standalone operations, sales task, contract, and work 
   }
   assert.doesNotMatch(navSource, /id="navTaskCount"|id="navContractCount"/);
   assert.doesNotMatch(appSource, /getElementById\("navTaskCount"\)|getElementById\("navContractCount"\)/);
+  // 운영 분석은 화면·코어가 모두 살아 있는데 열 방법만 없었다. 지우는 대신
+  // BI 폴더 안으로 올려서 다시 열리게 뒀다.
+  assert.equal((navSource.match(/data-view="operationsIntelligence"/g) || []).length, 1);
+  assert.match(navSource, /data-nav-folder="bi"[\s\S]*?data-view="operationsIntelligence"/u);
 });
 
 test("case and sales routes remain available behind the simplified navigation", () => {
@@ -69,7 +73,7 @@ test("case and sales routes remain available behind the simplified navigation", 
   );
 });
 
-test("removed standalone tabs keep their internal workflows and data routes", () => {
+test("relocated and removed tabs keep their internal workflows and data routes", () => {
   assert.match(appSource, /else if \(currentView === "operationsIntelligence"\) renderOperationsIntelligence\(\)/);
   assert.match(appSource, /else if \(currentView === "tasks"\) renderTasks\(\)/);
   assert.match(appSource, /else if \(currentView === "contracts"\) renderContracts\(\)/);

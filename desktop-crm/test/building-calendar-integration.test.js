@@ -33,7 +33,7 @@ test("places one calendar workspace after customer navigation and loads its modu
   assert.equal((indexSource.match(/data-view="workManagement"/g) || []).length, 0);
   assert.equal((indexSource.match(/data-view="buildingCalendar"/g) || []).length, 2);
   assert.equal((indexSource.match(/data-view="payments"/g) || []).length, 1);
-  assert.match(indexSource, /data-nav-folder="calendar">[\s\S]*?data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>캘린더<\/b>/);
+  assert.match(indexSource, /data-nav-folder="calendar">[\s\S]*?data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>ERP·일정<\/b>/);
   assert.match(appSource, /buildingCalendar:\s*\["업무·계약·건물주 입금 일정을 한눈에",\s*"캘린더"\]/);
   assert.match(appSource, /payments:\s*\["업무·계약·건물주 입금 일정을 한눈에",\s*"캘린더"\]/);
   assert.ok(indexSource.indexOf("work-calendar.js") < indexSource.indexOf("app.js"));

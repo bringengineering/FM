@@ -6544,7 +6544,7 @@ async function createWindow() {
             contractLabel: contractTab?.querySelector('b')?.textContent.trim() || '',
             paymentLabel: paymentTab?.querySelector('b')?.textContent.trim() || ''
           };
-          const unifiedDefault = calendarNavLabel === '캘린더' && pageTitle === '캘린더'
+          const unifiedDefault = calendarNavLabel === 'ERP·일정' && pageTitle === '캘린더'
             && workTab?.querySelector('b')?.textContent.trim() === '업무일정 캘린더'
             && contractTab?.querySelector('b')?.textContent.trim() === '계약일정 캘린더'
             && paymentTab?.querySelector('b')?.textContent.trim() === '건물주 입금캘린더'
