@@ -362,3 +362,44 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .wo-gantt-label { padding: 4px 18px 0; }
   .wo-gantt-track { margin: 0 18px; }
 }
+
+/* 비품·자재. 표는 근태관리와 같은 뼈대(office-table)를 쓰고, 여기서는 그
+   표가 안 하는 것 — 분류 고르기, 모자란 것 보여주기, 한 품목의 장부 —
+   만 더한다. */
+.sp-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
+.sp-tab{display:flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid #E5E8EB;border-radius:999px;background:#fff;color:#4E5968;font-size:12px;cursor:pointer}
+.sp-tab b{font-size:12px;font-weight:800}
+.sp-tab small{min-width:18px;padding:1px 6px;border-radius:999px;background:#F2F4F6;color:#8B95A1;font-size:10px;font-weight:800;text-align:center}
+.sp-tab:hover{border-color:#C9D3DD}
+.sp-tab.is-active{border-color:#3182F6;background:#EDF5FF;color:#1B64DA}
+.sp-tab.is-active small{background:#fff;color:#1B64DA}
+.sp-toggle{display:inline-flex;align-items:center;gap:7px;color:#4E5968;font-size:12px;white-space:nowrap;cursor:pointer}
+.sp-low{border-color:#F6D8DB}
+.sp-low>header{border-bottom-color:#FBECEE}
+.sp-low>header span{color:#C6535F}
+.sp-low-list{display:flex;flex-wrap:wrap;gap:8px;padding:16px 20px}
+.sp-low-chip{display:flex;flex-direction:column;gap:3px;padding:9px 13px;border:1px solid #F6D8DB;border-radius:12px;background:#FFF6F7;color:#191F28;text-align:left;cursor:pointer}
+.sp-low-chip b{font-size:12px;font-weight:800}
+.sp-low-chip small{color:#C6535F;font-size:10px;font-weight:700}
+.sp-low-chip.is-empty{border-color:#C6535F;background:#FFEFF0}
+.sp-low-chip:hover{border-color:#C6535F}
+.sp-low-more{align-self:center;color:#8B95A1;font-size:11px}
+.sp-row-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.sp-history-row>td{background:#FAFBFC}
+.sp-history{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none}
+.sp-history-item{display:grid;grid-template-columns:78px 54px 68px 1fr auto;align-items:center;gap:10px;padding:9px 2px;border-top:1px solid #EEF1F4;color:#4E5968;font-size:11px}
+.sp-history-item:first-child{border-top:0}
+.sp-history-item b{color:#191F28;font-size:11px;font-weight:800}
+.sp-history-kind{color:#8B95A1;font-size:10px;font-weight:800}
+.sp-history-item em{font-size:12px;font-style:normal;font-weight:900}
+.sp-history-item.kind-in em{color:#00875A}
+.sp-history-item.kind-out em,.sp-history-item.kind-disposal em{color:#C6535F}
+.sp-history-item.kind-adjust em{color:#1B64DA}
+.sp-history-item small{overflow:hidden;color:#8B95A1;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.sp-history-del{color:#C6535F}
+.sp-history-empty{padding:12px 2px;color:#8B95A1;font-size:11px}
+.sp-active{display:flex;flex-direction:row!important;align-items:center;gap:8px;color:#4E5968;font-size:11px;font-weight:600}
+@media (max-width:900px){
+  .sp-history-item{grid-template-columns:72px 1fr auto;row-gap:4px}
+  .sp-history-item small{grid-column:1/-1}
+}

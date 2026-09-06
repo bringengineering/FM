@@ -7,6 +7,7 @@ const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
+const SupplyCore = require("./supply-core");
 const FormCore = require("./form-core");
 const PayrollCore = require("./payroll-core");
 const ApprovalCore = require("./approval-core");
@@ -4163,6 +4164,133 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PUT", body: saved });
     this.assertSessionGuardActive(guard);
     return saved;
+  }
+
+  // 비품·자재. 남은 수량은 서버에 없다 — 기록을 받아 와서 여기서 센다.
+  async loadSupplies() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const [itemPayload, movePayload] = await Promise.all([
+      this.dbRequest("supplyItems", { method: "GET" }),
+      this.dbRequest("supplyMoves", { method: "GET" }),
+    ]);
+    this.assertSessionGuardActive(guard);
+    const admin = session.role === "admin";
+    // 단가는 관리자만 읽는 자리에 따로 있다. 일반 계정이 부르면 규칙이
+    // 막으므로 아예 부르지 않는다.
+    const costPayload = admin
+      ? await this.dbRequest("supplyCosts", { method: "GET" }).catch(() => null)
+      : null;
+    this.assertSessionGuardActive(guard);
+    const items = Object.entries(itemPayload && typeof itemPayload === "object" ? itemPayload : {})
+      .map(([id, value]) => SupplyCore.normalizeItem(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    const moves = Object.entries(movePayload && typeof movePayload === "object" ? movePayload : {})
+      .map(([id, value]) => SupplyCore.normalizeMove(Object.assign({ id }, value || {})))
+      .filter(move => move.id);
+    const costs = Object.entries(costPayload && typeof costPayload === "object" ? costPayload : {})
+      .map(([id, value]) => SupplyCore.normalizeCost(Object.assign({ itemId: id }, value || {})))
+      .filter(cost => cost.itemId);
+    return {
+      items,
+      moves,
+      costs,
+      admin,
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 품목을 만들거나 고친다. 관리자만. 지우는 길은 없다 — 안 쓰는 것은
+  // active 를 내려서 목록 아래로 보낸다.
+  async saveSupplyItem(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("품목은 관리자만 등록할 수 있습니다.", "SUPPLY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = SupplyCore.validateItem(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `supplyItems/${checked.item.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.item, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+
+    // 단가는 같은 폼에서 받지만 다른 노드로 간다. 원가는 팀 전체가 볼 것이
+    // 아니라서, 읽기 권한을 따로 걸 수 있는 자리에 둔다.
+    let cost = null;
+    if (Object.prototype.hasOwnProperty.call(source, "unitPrice")) {
+      const checkedCost = SupplyCore.validateCost({
+        itemId: checked.item.id,
+        unitPrice: source.unitPrice,
+        pricedAt: source.pricedAt,
+      });
+      if (!checkedCost.ok) throw createError(checkedCost.error, checkedCost.code);
+      cost = Object.assign({}, checkedCost.cost, { updatedAt: now, updatedBy: session.uid });
+      await this.dbRequest(`supplyCosts/${checked.item.id}`, { method: "PUT", body: cost });
+      this.assertSessionGuardActive(guard);
+    }
+    return { item: record, cost };
+  }
+
+  // 입출고를 적는다. 한 번 적은 것은 고치지 않는다 — 반대 기록이나 실사로
+  // 바로잡는다. 그래서 여기는 항상 새 기록만 쓴다.
+  async addSupplyMove(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 입출고를 적을 수 없습니다.", "SUPPLY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const admin = session.role === "admin";
+    const checked = SupplyCore.validateMove(source, admin);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    // 없는 품목에 기록이 붙으면 그 기록은 영영 안 보인다. 규칙도 막지만
+    // 여기서 먼저 걸러야 사람이 이유를 안다.
+    const item = await this.dbRequest(`supplyItems/${checked.move.itemId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!item) throw createError("없는 품목입니다.", "SUPPLY_ITEM_NOT_FOUND");
+    const location = `supplyMoves/${checked.move.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing) throw createError("이미 적은 기록입니다. 고치려면 반대 기록이나 실사를 적어 주세요.", "SUPPLY_MOVE_EXISTS");
+    const record = Object.assign({}, checked.move, {
+      byName: String(session.displayName || session.email || ""),
+      createdAt: new Date().toISOString(),
+      createdBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 잘못 적은 기록을 지운다. 관리자만. 장부를 고치는 일이라 남기는 게
+  // 원칙이지만, 오타 하나가 영원히 남으면 아무도 안 적게 된다.
+  async deleteSupplyMove(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("기록은 관리자만 지울 수 있습니다.", "SUPPLY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const moveId = SupplyCore.text(source.id, 60);
+    if (!moveId) throw createError("어느 기록인지 정해 주세요.", "VALIDATION_ERROR");
+    const location = `supplyMoves/${moveId}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 기록입니다.", "SUPPLY_MOVE_NOT_FOUND");
+    await this.dbRequest(location, { method: "DELETE" });
+    this.assertSessionGuardActive(guard);
+    return { id: moveId, deleted: true };
   }
 
   async loadVendorDirectory(force) {
