@@ -146,6 +146,70 @@
     return { send: true, reason: "", fingerprint: mark, day: today };
   }
 
+  // 보낼 수 있는 시각. 스물네 개를 다 열어 두면 새벽 3시를 고를 수 있고,
+  // 새벽에 울리면 사람은 알림을 꺼 버린다. 일하는 하루의 마디만 남긴다.
+  //
+  //   8시   나오면서
+  //   9시   일 시작할 때
+  //   12시  점심 전에 한 번
+  //   15시  오후에 한 번
+  //   18시  마치기 전에
+  const SEND_HOURS = Object.freeze([8, 9, 12, 15, 18]);
+  const DEFAULT_HOUR = 9;
+
+  function looksLikeHour(value) {
+    return SEND_HOURS.indexOf(Number(value)) >= 0;
+  }
+
+  // 여러 시각을 고를 수 있다. 하나만 고르면 하루 한 번이고, 다섯 개를 다
+  // 고르면 아직 연락 안 한 것을 하루 다섯 번 찔러 준다.
+  function normalizeHours(value) {
+    const picked = rows(value).map(Number).filter(looksLikeHour);
+    const unique = [...new Set(picked)].sort((left, right) => left - right);
+    return unique.length ? unique : [DEFAULT_HOUR];
+  }
+
+  /**
+   * 지금 보낼 때가 됐는가.
+   *
+   * "앱을 켤 때 한 번" 으로 두었더니, 새벽에 켜면 새벽에 가고 하루 종일
+   * 켜 두면 자정을 넘겨도 안 갔다. 그래서 시각을 본다.
+   *
+   * 정한 시각을 지나서 처음 확인하는 순간에 보낸다. 9시로 정해 뒀는데
+   * 10시에 앱을 켰다면 그때 간다 — 지나갔다고 건너뛰면 늦게 켠 날은
+   * 영영 안 온다.
+   */
+  /**
+   * 지금 보낼 때가 됐는가.
+   *
+   * "앱을 켤 때 한 번" 으로 두었더니, 새벽에 켜면 새벽에 갔고 하루 종일
+   * 켜 두면 자정을 넘겨도 안 갔다. 그래서 시각을 본다.
+   *
+   * 고른 시각마다 한 번씩 간다. 지나간 시각을 몰아서 보내지는 않는다 —
+   * 13시에 앱을 켰을 때 8·9·12시 것이 한꺼번에 오면 그건 알림이 아니라
+   * 소음이다. 지나간 것 중 **가장 최근 하나**만 보낸다.
+   */
+  function dueNow(settings, now) {
+    const at = now instanceof Date ? now : new Date(now || Date.now());
+    if (!(at instanceof Date) || Number.isNaN(at.getTime())) return { due: false, reason: "지금 시각을 알 수 없습니다." };
+    const value = settings && typeof settings === "object" ? settings : {};
+    if (value.autoSend === false) return { due: false, reason: "자동 보내기가 꺼져 있습니다." };
+    const hours = normalizeHours(value.hours);
+    const today = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+
+    const passed = hours.filter(hour => at.getHours() >= hour);
+    if (!passed.length) {
+      return { due: false, reason: `오늘 ${hours[0]}시에 보냅니다.`, day: today, hours };
+    }
+    const hour = passed[passed.length - 1];
+    const slot = `${today}T${String(hour).padStart(2, "0")}`;
+    if (text(value.lastAutoSlot, 20) === slot) {
+      const next = hours.find(item => item > hour);
+      return { due: false, reason: next ? `오늘 ${next}시에 다시 보냅니다.` : "오늘 보낼 것은 다 보냈습니다.", day: today, hours, slot };
+    }
+    return { due: true, reason: "", day: today, hour, hours, slot };
+  }
+
   // 봇 토큰 모양. 값 자체는 어디에도 남기지 않는다 — 길이와 모양만 본다.
   function looksLikeBotToken(value) {
     return /^\d{6,12}:[A-Za-z0-9_-]{30,50}$/.test(String(value == null ? "" : value).trim());
@@ -171,6 +235,7 @@
         chatId,
         autoSend: value.autoSend !== false,
         includePhone: value.includePhone === true,
+        hours: normalizeHours(value.hours),
       },
     };
   }
@@ -225,10 +290,26 @@
   function describeFailure(status, body) {
     const description = text(body && body.description, 200);
     if (status === 401) return "봇 토큰이 맞지 않습니다. 다시 넣어 주세요.";
-    if (status === 400 && /chat not found/iu.test(description)) {
-      return "방을 못 찾았습니다. 봇을 그 방에 초대했는지, 방 번호가 맞는지 확인해 주세요.";
+
+    // 403 은 까닭이 여럿인데 고칠 방법이 전혀 다르다. 하나로 뭉뚱그리면
+    // 사람을 엉뚱한 데로 보낸다 — 실제로 그랬다. "봇 번호를 방 번호로
+    // 넣었다" 는 사람에게 "방에 다시 초대하라" 고 말했다.
+    if (/can't send messages to bots|bot.*to.*bot/iu.test(description)) {
+      return "방 번호 자리에 봇 자신의 번호가 들어갔습니다. [방 찾기] 를 눌러 대화방을 골라 주세요.";
     }
-    if (status === 403) return "봇이 그 방에서 막혀 있습니다. 방에 다시 초대해 주세요.";
+    if (/can't initiate conversation/iu.test(description)) {
+      return "봇에게 먼저 말을 걸어야 합니다. 텔레그램에서 봇 대화를 열고 /start 를 보낸 다음 다시 눌러 주세요.";
+    }
+    if (/blocked by the user/iu.test(description)) {
+      return "봇을 차단해 두셨습니다. 텔레그램에서 봇 대화를 열고 차단을 풀어 주세요.";
+    }
+    if (/kicked|not a member|chat_write_forbidden/iu.test(description)) {
+      return "봇이 그 방에서 빠졌거나 글을 못 씁니다. 방에 다시 초대해 주세요.";
+    }
+    if (status === 400 && /chat not found/iu.test(description)) {
+      return "방을 못 찾았습니다. [방 찾기] 를 눌러 목록에서 골라 주세요. 손으로 적은 번호는 한 자리만 틀려도 이렇게 됩니다.";
+    }
+    if (status === 403) return "그 방에는 보낼 수 없습니다. [방 찾기] 를 눌러 대화방을 다시 골라 주세요.";
     if (status === 429) return "너무 자주 보냈습니다. 잠시 뒤에 다시 보냅니다.";
     return description ? `텔레그램이 거절했습니다. (${description})` : `텔레그램에 보내지 못했습니다. (HTTP ${status})`;
   }
@@ -236,6 +317,11 @@
   return Object.freeze({
     MAX_BODY,
     MAX_ROWS,
+    SEND_HOURS,
+    DEFAULT_HOUR,
+    looksLikeHour,
+    normalizeHours,
+    dueNow,
     dayOf,
     daysBetween,
     contactAlerts,

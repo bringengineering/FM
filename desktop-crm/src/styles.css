@@ -741,3 +741,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tg-chat-pick.is-current { border-color: #3182F6; background: #EAF2FE; }
 .tg-chat-pick b { color: #191F28; font-size: 13px; }
 .tg-chat-pick small { color: #8B95A1; font-size: 11px; }
+.tg-hours { margin: 2px 0 12px; }
+.tg-hours > span { display: block; margin-bottom: 6px; color: #4E5968; font-size: 12px; font-weight: 700; }
+.tg-hours > small { display: block; margin-top: 6px; color: #8B95A1; font-size: 11px; line-height: 1.6; }
+.tg-hour-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.tg-hour-pick {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border: 1px solid #E5E8EB; border-radius: 999px;
+  background: #fff; color: #4E5968; font-size: 12px; cursor: pointer;
+}
+.tg-hour-pick.is-on { border-color: #3182F6; background: #EAF2FE; color: #1B64DA; }
+.tg-hour-pick input { margin: 0; }
+.tg-hour-pick b { font-weight: 700; }
