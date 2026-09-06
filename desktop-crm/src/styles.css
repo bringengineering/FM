@@ -306,3 +306,50 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .purchase-kpis, .purchase-form, .form-edit, .form-template-form, .form-entry-editor { grid-template-columns: 1fr; }
   .form-field-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* --- 업무지시 --- */
+.wo-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wo-scope { display: flex; gap: 6px; }
+.wo-scope-tab { padding: 8px 14px; border: 1px solid #E5E8EB; border-radius: 999px; background: #fff; color: #4E5968; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.wo-scope-tab.is-active { border-color: #3182F6; background: #EDF5FF; color: #3182F6; }
+.wo-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px 13px; margin-bottom: 14px; padding: 18px 20px; border: 1px solid #3182F6; border-radius: 18px; background: #fff; }
+.wo-editor h3, .wo-editor .wide, .wo-editor-actions, .wo-editor-note { grid-column: 1 / -1; }
+.wo-editor h3 { margin: 0; color: #191F28; font-size: 15px; }
+.wo-editor label { display: flex; flex-direction: column; gap: 5px; color: #4E5968; font-size: 9px; font-weight: 800; }
+.wo-editor input, .wo-editor select, .wo-editor textarea { border: 1px solid #E5E8EB; border-radius: 10px; padding: 9px 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 400; color: #191F28; }
+.wo-editor textarea { resize: vertical; line-height: 1.5; }
+.wo-editor-actions { display: flex; gap: 8px; }
+.wo-editor-note { margin: 0; color: #8B95A1; font-size: 9px; }
+.wo-list { display: flex; flex-direction: column; gap: 12px; }
+.wo-empty { padding: 34px; text-align: center; color: #8B95A1; font-size: 11px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
+.wo-card { padding: 17px 19px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
+.wo-card.is-late { border-color: #FFB020; box-shadow: inset 3px 0 0 #FFB020; }
+.wo-card.status-done { opacity: .72; }
+.wo-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.wo-card > header b { color: #191F28; font-size: 14px; }
+.wo-card > header span { display: block; margin-top: 4px; color: #8B95A1; font-size: 10px; }
+.wo-card > header em { color: #C77A00; font-style: normal; font-weight: 800; }
+.wo-status { flex: 0 0 auto; padding: 5px 11px; border-radius: 999px; background: #F2F4F6; color: #4E5968; font-size: 10px; font-weight: 800; }
+.wo-card.status-submitted .wo-status { background: #EDF5FF; color: #3182F6; }
+.wo-card.status-returned .wo-status { background: #FFF1F1; color: #C6535F; }
+.wo-card.status-done .wo-status { background: #EDF9F5; color: #00875A; }
+/* 왜·무엇을·완료 기준은 접지 않는다. 접어 두면 제목만 보고 시작한다. */
+.wo-brief { display: grid; grid-template-columns: 104px 1fr; gap: 7px 14px; margin: 14px 0 0; padding: 13px 15px; border-radius: 13px; background: #FAFBFC; }
+.wo-brief dt { color: #8B95A1; font-size: 9px; font-weight: 800; }
+.wo-brief dd { margin: 0; color: #191F28; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.wo-return { margin: 11px 0 0; padding: 9px 12px; border-radius: 11px; background: #FFF1F1; color: #C6535F; font-size: 11px; }
+.wo-result-block { margin-top: 13px; }
+.wo-result-block h4 { margin: 0 0 7px; color: #4E5968; font-size: 10px; font-weight: 800; }
+.wo-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wo-results li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.wo-results a { color: #3182F6; font-weight: 700; text-decoration: none; }
+.wo-results a:hover { text-decoration: underline; }
+.wo-results small { color: #8B95A1; font-size: 9px; }
+.wo-none { margin: 0; color: #8B95A1; font-size: 11px; }
+.wo-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; padding-top: 13px; border-top: 1px solid #F2F4F6; }
+@media (max-width: 1100px) { .wo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .wo-kpis, .wo-editor { grid-template-columns: 1fr; }
+  .wo-brief { grid-template-columns: 1fr; gap: 3px 0; }
+  .wo-brief dd { margin-bottom: 8px; }
+}

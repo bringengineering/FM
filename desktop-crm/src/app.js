@@ -197,6 +197,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
+    workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
@@ -1508,6 +1509,7 @@
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
+    else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "purchases") renderPurchases();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
@@ -4169,6 +4171,272 @@
     }
   }
 
+  // --- 업무지시 ---
+  // 이 화면의 요지는 목록이 아니라 **왜·무엇을·완료 기준** 세 칸이다. 그래서
+  // 카드에서 그 셋을 접지 않는다. 접어 두면 받는 사람은 제목만 보고 시작하고,
+  // 결국 짐작으로 일하게 된다.
+  let workOrderState = {
+    orders: [], members: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    scope: "mine", editing: null, busyId: "",
+  };
+
+  const workOrderCore = () => window.BringWorkOrderCore;
+
+  async function loadWorkOrders() {
+    if (workOrderState.loading) return;
+    workOrderState.loading = true;
+    workOrderState.error = "";
+    if (currentView === "workOrders") renderWorkOrders();
+    try {
+      const data = await api.loadWorkOrders();
+      workOrderState.orders = Array.isArray(data && data.orders) ? data.orders : [];
+      workOrderState.members = Array.isArray(data && data.members) ? data.members : [];
+      workOrderState.admin = data && data.admin === true;
+      workOrderState.canWork = data && data.canWork === true;
+      workOrderState.uid = String((data && data.uid) || "");
+      if (!workOrderState.admin) workOrderState.scope = "mine";
+      workOrderState.loaded = true;
+    } catch (error) {
+      workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
+    } finally {
+      workOrderState.loading = false;
+      updateWorkOrderBadge();
+      if (currentView === "workOrders") renderWorkOrders();
+    }
+  }
+
+  // 사이드바 숫자. 대표에게는 검수 대기, 담당자에게는 자기가 아직 못 끝낸
+  // 것을 센다. 갱신하지 않으면 늘 0 으로 보이는데, 그건 "할 일 없음" 이라고
+  // 거짓말하는 것과 같다.
+  function updateWorkOrderBadge() {
+    const badge = document.getElementById("navWorkOrderCount");
+    if (!badge) return;
+    const W = workOrderCore();
+    const orders = workOrderState.orders || [];
+    let count = 0;
+    if (W) {
+      count = workOrderState.admin
+        ? W.summarize(orders, Core.workDate()).waitingReview
+        : W.forAssignee(orders, workOrderState.uid).filter(item => W.OPEN.includes(item.status)).length;
+    }
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  function renderWorkOrders() {
+    const W = workOrderCore();
+    if (!W) { main.innerHTML = `<section class="operations-hero"><div><h2>업무지시</h2><p>업무지시 모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
+
+    const today = Core.workDate();
+    const all = workOrderState.orders;
+    const scoped = workOrderState.scope === "mine" && !workOrderState.admin
+      ? W.forAssignee(all, workOrderState.uid)
+      : (workOrderState.scope === "mine" ? W.forAssignee(all, workOrderState.uid) : all);
+    const summary = W.summarize(workOrderState.admin && workOrderState.scope === "all" ? all : scoped, today);
+    const board = W.sortForBoard(scoped, today);
+
+    const status = workOrderState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
+
+    const scopeSwitch = workOrderState.admin
+      ? `<div class="wo-scope">
+          <button type="button" class="wo-scope-tab${workOrderState.scope === "mine" ? " is-active" : ""}" data-wo-scope="mine">내 지시</button>
+          <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
+        </div>`
+      : "";
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>프로젝트 관리</span><h2>업무지시</h2><p>왜 해야 하는지와 어디까지 하면 끝인지를 함께 적어 시킵니다.</p></div>
+        <div class="operations-actions">${scopeSwitch}${workOrderState.admin ? `<button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}</div>
+      </section>
+      ${status}
+      <div class="operations-kpis wo-kpis">
+        <div class="operations-kpi"><span>진행 중</span><b>${summary.open}</b><small>전체 ${summary.total}건</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>검수 대기</span><b>${summary.waitingReview}</b><small>${workOrderState.admin ? "대표가 볼 차례" : "대표 확인 중"}</small></div>
+        <div class="operations-kpi" style="--wash:#FFF1F1"><span>기한 지남</span><b>${summary.overdue}</b><small>먼저 손봐야 합니다</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>최근 7일 완료</span><b>${summary.doneRecently}</b><small>&nbsp;</small></div>
+      </div>
+      ${workOrderState.editing ? workOrderEditor(W) : ""}
+      <div class="wo-list">${board.length ? board.map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">지시가 없습니다.</div>`}</div>`;
+  }
+
+  function workOrderCard(W, order, today) {
+    const mine = order.assigneeUid === workOrderState.uid;
+    const late = W.overdue(order, today);
+    const moves = (workOrderState.canWork && (workOrderState.admin || mine))
+      ? W.nextChoices(order, workOrderState.admin)
+      : [];
+    const busy = workOrderState.busyId === order.id;
+
+    const results = order.results.length
+      ? `<ul class="wo-results">${order.results.map(item => `<li>
+          <a href="${esc(item.webViewLink || "#")}" data-wo-open="${esc(item.webViewLink || "")}">${esc(item.title || "결과물")}</a>
+          <small>${esc(item.uploadedBy)} · ${esc(String(item.uploadedAt).slice(0, 10))}</small>
+        </li>`).join("")}</ul>`
+      : `<p class="wo-none">아직 올라온 결과물이 없습니다.</p>`;
+
+    const actions = [];
+    if (workOrderState.canWork && (workOrderState.admin || mine) && order.status !== "done") {
+      actions.push(`<button type="button" class="mini-button" data-wo-upload="${esc(order.id)}"${busy ? " disabled" : ""}>결과물 올리기</button>`);
+    }
+    moves.forEach(move => {
+      const kind = move.key === "returned" ? " return" : "";
+      actions.push(`<button type="button" class="mini-button${kind}" data-wo-move="${esc(move.key)}" data-wo-id="${esc(order.id)}"${busy ? " disabled" : ""}>${esc(move.label)}</button>`);
+    });
+    if (workOrderState.admin && order.status !== "done") {
+      actions.push(`<button type="button" class="mini-button" data-wo-edit="${esc(order.id)}">지시 고치기</button>`);
+    }
+
+    return `<article class="wo-card status-${esc(order.status)}${late ? " is-late" : ""}">
+      <header>
+        <div>
+          <b>${esc(order.title)}</b>
+          <span>${esc(order.assigneeName || order.assigneeUid)}${order.dueDate ? ` · ${esc(order.dueDate)}까지` : ""}${late ? " · <em>기한 지남</em>" : ""}</span>
+        </div>
+        <span class="wo-status">${esc(W.statusLabel(order.status))}</span>
+      </header>
+      <dl class="wo-brief">
+        <dt>왜 해야 하나</dt><dd>${esc(order.why)}</dd>
+        <dt>무엇을 어떻게</dt><dd>${esc(order.what)}</dd>
+        <dt>어디까지 하면 끝</dt><dd>${esc(order.doneWhen)}</dd>
+      </dl>
+      ${order.reviewNote ? `<p class="wo-return">다시 요청 — ${esc(order.reviewNote)}</p>` : ""}
+      <section class="wo-result-block"><h4>결과물</h4>${results}</section>
+      ${actions.length ? `<div class="wo-actions">${actions.join("")}</div>` : ""}
+    </article>`;
+  }
+
+  function workOrderEditor(W) {
+    const draft = W.normalizeOrder(workOrderState.editing);
+    const people = workOrderState.members.filter(item => item && item.uid);
+    const options = people.map(item => `<option value="${esc(item.uid)}"${item.uid === draft.assigneeUid ? " selected" : ""}>${esc(item.displayName || item.email || item.uid)}</option>`).join("");
+    return `<form class="wo-editor" data-wo-form>
+      <h3>${esc(draft.createdAt ? "지시 고치기" : "새 지시")}</h3>
+      <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="120" value="${esc(draft.title)}" required placeholder="예: 3층 누수 확인"></label>
+      <label><span>누가</span><select name="assigneeUid" required><option value="">고르기</option>${options}</select></label>
+      <label><span>언제까지</span><input type="date" name="dueDate" value="${esc(draft.dueDate)}"></label>
+      <label class="wide"><span>왜 해야 하나</span><textarea name="why" rows="3" maxlength="2000" required placeholder="이유를 모르면 받는 사람이 짐작으로 합니다.">${esc(draft.why)}</textarea></label>
+      <label class="wide"><span>무엇을 어떻게</span><textarea name="what" rows="3" maxlength="2000" required>${esc(draft.what)}</textarea></label>
+      <label class="wide"><span>어디까지 하면 끝인가</span><textarea name="doneWhen" rows="2" maxlength="1000" required placeholder="예: 사진 3장과 원인 한 줄이 올라오면 끝">${esc(draft.doneWhen)}</textarea></label>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "지시하기")}</button>
+        <button type="button" class="mini-button return" data-wo-cancel>그만두기</button>
+      </div>
+      <p class="wo-editor-note">세 칸은 비워 둘 수 없습니다. 비어 있으면 시킨 사람 머릿속에만 남습니다.</p>
+    </form>`;
+  }
+
+  async function saveWorkOrderFromForm(form) {
+    const W = workOrderCore();
+    if (!W) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = W.normalizeOrder(workOrderState.editing);
+    const people = workOrderState.members;
+    const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
+    const checked = W.validateOrder(Object.assign({}, previous, {
+      id: previous.id || `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      title: String(raw.title || ""),
+      assigneeUid: String(raw.assigneeUid || ""),
+      assigneeName: chosen ? (chosen.displayName || chosen.email || chosen.uid) : previous.assigneeName,
+      dueDate: String(raw.dueDate || ""),
+      why: String(raw.why || ""),
+      what: String(raw.what || ""),
+      doneWhen: String(raw.doneWhen || ""),
+    }));
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      await api.saveWorkOrder(checked.order);
+      workOrderState.editing = null;
+      workOrderState.loaded = false;
+      showToast("지시를 저장했습니다.", "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function moveWorkOrder(orderId, next) {
+    const W = workOrderCore();
+    if (!W || workOrderState.busyId) return;
+    let note = "";
+    if (next === "returned") {
+      note = String(window.prompt("다시 요청하는 이유를 적어 주세요.") || "").trim();
+      if (!note) return showToast("이유를 적어야 합니다.", "error");
+    }
+    workOrderState.busyId = orderId;
+    renderWorkOrders();
+    try {
+      await api.updateWorkOrderProgress({ id: orderId, status: next, note });
+      workOrderState.loaded = false;
+      showToast(`${W.statusLabel(next)} 로 옮겼습니다.`, "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "옮기지 못했습니다.", "error");
+    } finally {
+      workOrderState.busyId = "";
+      renderWorkOrders();
+    }
+  }
+
+  // 결과물은 Drive 로 올라가고, 여기에는 링크만 남는다. 파일을 CRM 안에
+  // 쌓으면 백업도 공유도 우리가 다시 만들어야 한다.
+  async function uploadWorkOrderResult(orderId) {
+    const W = workOrderCore();
+    if (!W || workOrderState.busyId) return;
+    const order = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
+    const rootFolderId = buildingDocsRootFolderId();
+    if (!rootFolderId) return showToast("Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
+
+    let picked;
+    try {
+      picked = await api.pickBuildingDocuments();
+    } catch (error) {
+      return showToast(error && error.message || "파일을 선택하지 못했습니다.", "error");
+    }
+    if (!picked || picked.canceled) return;
+    if (!picked.ok) return showToast(picked.error || "파일을 선택하지 못했습니다.", "error");
+
+    workOrderState.busyId = orderId;
+    renderWorkOrders();
+    let done = 0;
+    try {
+      for (const file of picked.files) {
+        const uploaded = await api.uploadWorkOrderResult({
+          filePath: file.filePath,
+          mimeType: file.mimeType,
+          rootFolderId,
+          orderId,
+          orderTitle: order.title,
+        });
+        if (!uploaded || uploaded.ok === false) throw new Error(uploaded && uploaded.error || "Drive 에 올리지 못했습니다.");
+        await api.updateWorkOrderProgress({
+          id: orderId,
+          result: {
+            id: `res_${uploaded.driveFileId}`,
+            title: uploaded.title || file.fileName,
+            driveFileId: uploaded.driveFileId,
+            webViewLink: uploaded.webViewLink || "",
+            uploadedBy: (currentAuth.user && (currentAuth.user.displayName || currentAuth.user.email)) || "담당자",
+            uploadedAt: new Date().toISOString(),
+          },
+        });
+        done += 1;
+      }
+      workOrderState.loaded = false;
+      showToast(`결과물 ${done}건을 Drive 에 올렸습니다.`, "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "결과물을 올리지 못했습니다.", "error");
+    } finally {
+      workOrderState.busyId = "";
+      renderWorkOrders();
+    }
+  }
+
   function renderOperationsIntelligence() {
     main.innerHTML = AiOperationsUI.renderManagementReport({
       report: currentManagementReport(),
@@ -6501,6 +6769,33 @@
   }
 
   document.addEventListener("click", async event => {
+    const woScope = event.target.closest("[data-wo-scope]");
+    if (woScope) { workOrderState.scope = woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return; }
+    if (event.target.closest("[data-wo-new]")) {
+      const W = workOrderCore();
+      if (W) { workOrderState.editing = W.normalizeOrder({}); renderWorkOrders(); }
+      return;
+    }
+    const woEdit = event.target.closest("[data-wo-edit]");
+    if (woEdit) {
+      const W = workOrderCore();
+      const found = W && workOrderState.orders.find(item => item && item.id === woEdit.dataset.woEdit);
+      if (found) { workOrderState.editing = W.normalizeOrder(found); renderWorkOrders(); }
+      return;
+    }
+    if (event.target.closest("[data-wo-cancel]")) { workOrderState.editing = null; renderWorkOrders(); return; }
+    const woMove = event.target.closest("[data-wo-move]");
+    if (woMove) { await moveWorkOrder(woMove.dataset.woId, woMove.dataset.woMove); return; }
+    const woUpload = event.target.closest("[data-wo-upload]");
+    if (woUpload) { await uploadWorkOrderResult(woUpload.dataset.woUpload); return; }
+    const woOpen = event.target.closest("[data-wo-open]");
+    if (woOpen) {
+      // Drive 링크는 기본 브라우저로 연다. 앱 안에서 열면 로그인이 또 필요하다.
+      event.preventDefault();
+      const link = woOpen.dataset.woOpen;
+      if (link) await api.openExternal(link);
+      return;
+    }
     const formTab = event.target.closest("[data-form-tab]");
     if (formTab) { formState.tab = formTab.dataset.formTab; renderForms(); return; }
     const formStart = event.target.closest("[data-form-start]");
@@ -8534,6 +8829,7 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }
     if (form.matches("[data-form-entry-form]")) {
       // 어느 단추로 냈는지에 따라 임시 저장인지 완료인지 갈린다.
@@ -10204,7 +10500,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "purchases", "forms", "quotes"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "purchases", "forms", "quotes", "workOrders"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

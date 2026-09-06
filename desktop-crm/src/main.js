@@ -3173,6 +3173,51 @@ async function uploadBuildingDocument(input) {
   };
 }
 
+// 업무지시 결과물 올리기. 건물 서류와 같은 Drive 길을 쓰되, 폴더는 지시별로
+// 쌓는다 — 결과물은 건물이 아니라 지시에 딸린 것이라, 건물 폴더에 섞으면
+// 나중에 어느 지시의 결과인지 알 수 없다.
+async function uploadWorkOrderResult(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 업무지시 결과물을 올릴 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const filePath = String(options.filePath || "");
+  if (!pickedDocumentPaths.has(filePath)) {
+    throw Object.assign(new Error("파일을 다시 선택해 주세요."), { code: "FILE_NOT_PICKED" });
+  }
+  if (!driveSessionView().connected) {
+    throw Object.assign(new Error("회사 Drive 에 먼저 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  const orderId = String(options.orderId || "");
+  const orderTitle = String(options.orderTitle || "");
+  if (!orderId) throw Object.assign(new Error("어느 지시의 결과물인지 정해 주세요."), { code: "ORDER_REQUIRED" });
+
+  const content = await fs.readFile(filePath);
+  const day = String(options.uploadedAt || new Date().toISOString()).slice(0, 10);
+  const uploaded = await BuildingDocsDrive.uploadDocument(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    {
+      rootFolderId: String(options.rootFolderId || ""),
+      folderPath: ["업무지시", day.slice(0, 4), `${orderTitle || "제목없음"}_${orderId}`],
+      fileName: "",
+      docTypeLabel: "업무지시 결과물",
+      documentDate: day,
+      originalFileName: path.basename(filePath),
+      mimeType: String(options.mimeType || "application/octet-stream"),
+      documentKey: `${orderId}_${path.basename(filePath)}`,
+      content,
+    },
+  );
+  return {
+    ok: true,
+    alreadyThere: uploaded.alreadyThere === true,
+    driveFileId: uploaded.id,
+    title: uploaded.name || path.basename(filePath),
+    webViewLink: uploaded.webViewLink || "",
+  };
+}
+
 async function pickWorkflowFiles(input) {
   const kind = String(input && input.kind || "quote");
   const imageOnly = kind === "work-photo" || kind === "service-report-photo";
@@ -7171,10 +7216,13 @@ secureCanonicalHandle("crm:drive-connect", () => connectDrive());
 secureCanonicalHandle("crm:drive-disconnect", () => disconnectDrive());
 secureCanonicalHandle("crm:building-document-pick", () => pickBuildingDocuments());
 secureCanonicalHandle("crm:building-document-upload", input => uploadBuildingDocument(input));
+secureCanonicalHandle("crm:work-order-result-upload", input => uploadWorkOrderResult(input));
 secureCanonicalHandle("crm:leave-request-save", input => remoteClient.saveLeaveRequest(input));
 secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveRequest(input));
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
+secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
 secureCanonicalHandle("crm:payroll-save", input => remoteClient.savePayrollSlip(input));
@@ -7560,6 +7608,7 @@ secureCanonicalHandle("crm:field-team-profiles", async () => {
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:purchases-load", () => remoteClient.loadPurchases());
 secureHandle("crm:forms-load", () => remoteClient.loadForms());
+secureHandle("crm:work-orders-load", () => remoteClient.loadWorkOrders());
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
 secureHandle("crm:payment-schedule-save", input => savePaymentSchedule(input));
