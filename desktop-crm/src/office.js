@@ -303,6 +303,14 @@
     return `<section class="office-loading office-error"><span>!</span><b>자료를 불러오지 못했습니다</b><p>${esc(state.error)}</p><button class="secondary-button" data-office-refresh>다시 시도</button></section>`;
   }
 
+  // 날짜 칸이 빈 채로 열리면 사람은 연도부터 네 자리를 친다. 그 해 안으로
+  // 범위를 잡아 두면 달력이 올해로 열리고, 화살표만 눌러도 연도가 안 튄다.
+  // 지난해·내년까지는 열어 둔다 — 계약 종료일과 입사 예정일이 넘나든다.
+  function dateBounds(centerYear) {
+    const year = Number(centerYear) || Number(Core.workDate().slice(0, 4));
+    return ` min="${year - 1}-01-01" max="${year + 1}-12-31"`;
+  }
+
   function officeHero(title, description, actions) {
     return `<section class="office-hero"><div><span>BRING OFFICE</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div>${actions ? `<div class="office-hero-actions">${actions}</div>` : ""}</section>`;
   }
@@ -603,7 +611,7 @@
       }).join("")
       : `<p class="office-empty">아직 신청한 휴가가 없습니다.</p>`;
 
-    return `<section class="office-panel office-leave">
+    return `<section class="office-panel">
       <header class="office-leave-head"><div><b>내 연차</b><span>${esc(year)}년</span></div><div class="office-leave-remaining">${remaining}</div></header>
       <p class="office-leave-note">${esc(grantNote)}</p>
       <form class="office-leave-form" data-office-leave-form>
@@ -771,46 +779,61 @@
 
   function membersView() {
     const H = Hr();
-    if (!H) return `<section class="office-panel"><p>인사기록 모듈을 불러오지 못했습니다.</p></section>`;
+    if (!H) return `<section class="office-loading office-error"><span>!</span><b>인사기록 모듈을 불러오지 못했습니다</b></section>`;
     const today = Core.workDate();
     if (!state.data.memberAdmin) return myRecordView(H, today);
 
-    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b)));
+    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b), "ko"));
     const selected = state.selectedMemberId && people.some(user => user.uid === state.selectedMemberId)
       ? state.selectedMemberId
       : (people[0] ? people[0].uid : "");
     const todo = H.alerts(state.data.members || [], today);
+    const hired = people.filter(user => (memberRecordOf(user.uid) || {}).hireDate).length;
+    const filled = people.filter(user => {
+      const record = memberRecordOf(user.uid);
+      return record && !H.checklist(record, today).some(item => item.level === "required");
+    }).length;
 
     const rows = people.map(user => {
       const record = memberRecordOf(user.uid);
       const status = H.statusOf(record || { userId: user.uid }, today);
       const missing = H.checklist(record || { userId: user.uid }, today).filter(item => item.level === "required").length;
       const label = { active: "재직", resigned: "퇴사", scheduled: "입사 예정", unknown: "미등록" }[status] || status;
-      return `<button type="button" class="office-hr-person${user.uid === selected ? " is-selected" : ""}" data-office-hr-select="${esc(user.uid)}">
-        <b>${esc(Core.displayName(user))}</b>
-        <span>${esc(record && record.hireDate ? `${record.hireDate} 입사` : "입사일 없음")} · ${esc(label)}</span>
-        ${missing ? `<em class="office-hr-missing">${missing}</em>` : ""}
-      </button>`;
+      return `<tr class="office-admin-user-row${user.uid === selected ? " is-selected" : ""}">
+        <td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td>
+        <td>${record && record.hireDate ? `<b>${esc(record.hireDate)}</b>` : `<em class="office-muted">없음</em>`}</td>
+        <td>${esc((H.typeOf(record && record.employmentType) || {}).label || "—")}</td>
+        <td><span class="office-status ${status === "resigned" ? "off" : (missing ? "warn" : "on")}"><i></i>${esc(label)}</span></td>
+        <td>${missing ? `<span class="office-need">${missing}건</span>` : `<span class="office-muted">—</span>`}</td>
+        <td><button type="button" class="mini-button" data-office-hr-select="${esc(user.uid)}">기록 열기</button></td>
+      </tr>`;
     }).join("");
 
     const selectedUser = people.find(user => user.uid === selected) || null;
-    return `<section class="office-panel office-hr">
-      <header class="office-hr-head"><div><b>인사기록</b><span>입사일·계약형태·근로계약서 보관 위치</span></div>${todo.length ? `<span class="office-hr-todo">채워야 할 것 ${todo.length}건</span>` : ""}</header>
-      <p class="office-hr-warn">주민등록번호·계좌번호는 여기에 적지 마세요. 저장되지 않습니다.</p>
-      <div class="office-hr-body">
-        <div class="office-hr-list">${rows || `<p class="office-empty">팀원이 없습니다.</p>`}</div>
-        <div class="office-hr-detail">${selectedUser ? memberForm(H, selectedUser, today) : `<p class="office-empty">왼쪽에서 사람을 고르세요.</p>`}</div>
-      </div>
-    </section>`;
+    return `${officeHero("인사기록", "입사일·계약형태·근로계약서를 한 곳에서 관리합니다", `<span class="office-admin-lock">대표 전용</span>`)}
+      <section class="office-admin-kpis">
+        <article><span>등록 직원</span><b>${people.length}</b><small>명</small></article>
+        <article><span>입사일 있음</span><b>${hired}</b><small>명</small></article>
+        <article><span>기록 완비</span><b>${filled}</b><small>명</small></article>
+        <article><span>채워야 할 것</span><b>${todo.length}</b><small>건</small></article>
+      </section>
+      <section class="office-panel office-admin-users">
+        <header><div><span>TEAM RECORDS</span><h3>직원별 인사기록</h3></div><small>주민등록번호·계좌번호는 적지 마세요. 저장되지 않습니다.</small></header>
+        <div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>직원</th><th>입사일</th><th>계약형태</th><th>상태</th><th>채워야 할 것</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" class="office-muted">팀원이 없습니다.</td></tr>`}</tbody>
+        </table></div>
+      </section>
+      ${selectedUser ? memberForm(H, selectedUser, today) : ""}`;
   }
 
   // 본인 화면. 고칠 수는 없고, 회사가 무엇을 들고 있는지 보여 준다.
   // 무엇이 비어 있는지도 본인이 알아야 채워 달라고 말할 수 있다.
   function myRecordView(H, today) {
     const record = memberRecordOf(currentUserId());
+    const hero = officeHero("내 인사기록", "회사가 들고 있는 내 기록입니다. 고치려면 대표에게 말씀해 주세요", "");
     if (!record) {
-      return `<section class="office-panel office-hr"><header class="office-hr-head"><div><b>내 인사기록</b></div></header>
-        <p class="office-empty">아직 등록된 인사기록이 없습니다. 관리자에게 등록을 요청해 주세요.</p></section>`;
+      return `${hero}<div class="office-empty"><b>아직 등록된 인사기록이 없습니다</b><span>대표에게 등록을 요청해 주세요.</span></div>`;
     }
     const type = (H.typeOf(record.employmentType) || {}).label || "미정";
     const missing = H.checklist(record, today);
@@ -822,38 +845,45 @@
       ["근로계약서", record.contractFileUrl ? "보관됨" : "미보관"],
       ["4대보험 취득일", record.insuranceStartDate || "—"],
     ].map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(String(value))}</td></tr>`).join("");
-    return `<section class="office-panel office-hr">
-      <header class="office-hr-head"><div><b>내 인사기록</b><span>고치려면 관리자에게 말씀해 주세요</span></div></header>
-      <table class="office-hr-mine"><tbody>${rows}</tbody></table>
-      ${missing.length ? `<ul class="office-hr-checklist">${missing.map(item => `<li class="level-${esc(item.level)}">${esc(item.label)}</li>`).join("")}</ul>` : ""}
-    </section>`;
+    return `${hero}
+      <section class="office-panel">
+        <header><div><span>MY RECORD</span><h3>${esc(today)} 기준</h3></div></header>
+        <div class="office-table-wrap"><table class="office-table office-hr-mine"><tbody>${rows}</tbody></table></div>
+      </section>
+      ${missing.length ? `<section class="office-panel"><header><div><span>TO FILL</span><h3>비어 있는 항목</h3></div><small>대표가 채웁니다</small></header>
+        <ul class="office-hr-checklist">${missing.map(item => `<li class="level-${esc(item.level)}"><b>${esc(item.label)}</b>${item.why ? `<small>${esc(item.why)}</small>` : ""}</li>`).join("")}</ul></section>` : ""}`;
   }
 
   function memberForm(H, user, today) {
     const record = memberRecordOf(user.uid) || H.normalizeRecord({ userId: user.uid });
     const checklist = H.checklist(record, today);
-    const field = (name, label, type, extra) => `<label><span>${esc(label)}</span><input type="${type}" name="${esc(name)}" value="${esc(String(record[name] || ""))}"${extra || ""}></label>`;
+    const field = (name, label, type, extra) => `<label><span>${esc(label)}</span><input type="${type}" name="${esc(name)}" value="${esc(String(record[name] || ""))}"${type === "date" ? dateBounds() : ""}${extra || ""}></label>`;
     const types = H.EMPLOYMENT_TYPES.map(item => `<option value="${esc(item.key)}"${record.employmentType === item.key ? " selected" : ""}>${esc(item.label)}</option>`).join("");
     const suggestion = record.hireDate && window.BringLeaveCore
       ? window.BringLeaveCore.suggestGrant(record.hireDate, today)
       : null;
-    return `<form class="office-hr-form" data-office-hr-form="${esc(user.uid)}">
-      <header><b>${esc(Core.displayName(user))}</b>${suggestion ? `<span class="office-hr-suggest">올해 연차 제안 ${suggestion.days}일 · ${esc(suggestion.basis)}</span>` : `<span class="office-hr-suggest">입사일을 넣으면 연차 발생일수를 제안합니다</span>`}</header>
+    return `<section class="office-panel">
+      <header>
+        <div><span>RECORD</span><h3>${esc(Core.displayName(user))}</h3></div>
+        <small>${suggestion ? `올해 연차 제안 ${suggestion.days}일 · ${esc(suggestion.basis)}` : "입사일을 넣으면 연차 발생일수를 제안합니다"}</small>
+      </header>
       ${checklist.length ? `<ul class="office-hr-checklist">${checklist.map(item => `<li class="level-${esc(item.level)}"><b>${esc(item.label)}</b>${item.why ? `<small>${esc(item.why)}</small>` : ""}</li>`).join("")}</ul>` : `<p class="office-hr-ok">비어 있는 항목이 없습니다.</p>`}
-      ${field("hireDate", "입사일", "date")}
-      <label><span>계약형태</span><select name="employmentType"><option value="">선택</option>${types}</select></label>
-      ${field("contractEndDate", "계약 종료일", "date")}
-      ${field("department", "부서", "text", ' maxlength="60"')}
-      ${field("position", "직책", "text", ' maxlength="60"')}
-      ${field("phone", "연락처", "text", ' maxlength="40"')}
-      ${field("emergencyContact", "비상연락처", "text", ' maxlength="120"')}
-      ${field("contractSignedDate", "근로계약서 체결일", "date")}
-      ${field("contractFileUrl", "근로계약서 보관 위치", "url", ' placeholder="https://drive.google.com/... " maxlength="500"')}
-      ${field("insuranceStartDate", "4대보험 취득일", "date")}
-      ${field("resignedDate", "퇴사일", "date")}
-      <label class="wide"><span>비고</span><input type="text" name="note" value="${esc(record.note || "")}" maxlength="500"></label>
-      <button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>저장</button>
-    </form>`;
+      <form class="office-form-grid" data-office-hr-form="${esc(user.uid)}">
+        ${field("hireDate", "입사일", "date")}
+        <label><span>계약형태</span><select name="employmentType"><option value="">선택</option>${types}</select></label>
+        ${field("contractEndDate", "계약 종료일", "date")}
+        ${field("department", "부서", "text", ' maxlength="60"')}
+        ${field("position", "직책", "text", ' maxlength="60"')}
+        ${field("phone", "연락처", "text", ' maxlength="40"')}
+        ${field("emergencyContact", "비상연락처", "text", ' maxlength="120"')}
+        ${field("contractSignedDate", "근로계약서 체결일", "date")}
+        ${field("insuranceStartDate", "4대보험 취득일", "date")}
+        ${field("resignedDate", "퇴사일", "date")}
+        <label class="wide"><span>근로계약서 보관 위치</span><input type="url" name="contractFileUrl" value="${esc(record.contractFileUrl)}" maxlength="500" placeholder="https://drive.google.com/..."></label>
+        <label class="wide"><span>비고</span><input type="text" name="note" value="${esc(record.note)}" maxlength="500"></label>
+        <div class="office-form-actions"><button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>저장</button></div>
+      </form>
+    </section>`;
   }
 
   async function saveMemberRecord(form, userId) {
@@ -887,30 +917,42 @@
 
   function approvalsView() {
     const A = Approval();
-    if (!A) return `<section class="office-panel"><p>결재 모듈을 불러오지 못했습니다.</p></section>`;
+    if (!A) return `<section class="office-loading office-error"><span>!</span><b>결재 모듈을 불러오지 못했습니다</b></section>`;
     const uid = currentUserId();
     const all = state.data.approvals || [];
     const mine = A.forUser(all, uid);
+    const waiting = A.pending(all);
+    const myWaiting = mine.filter(item => item.status === "requested").length;
 
     const rowsHtml = mine.length
       ? mine.map(item => approvalRow(A, item, false)).join("")
-      : `<p class="office-empty">아직 올린 결재가 없습니다.</p>`;
+      : `<div class="office-empty"><b>아직 올린 결재가 없습니다</b><span>아래에서 지출·구매를 올려 보세요.</span></div>`;
 
-    return `<section class="office-panel office-approval">
-      <header class="office-approval-head"><div><b>내 결재</b><span>올린 뒤에는 내용을 고칠 수 없습니다</span></div></header>
-      <form class="office-approval-form" data-office-approval-form>
-        <label><span>종류</span><select name="kind">${A.KINDS.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
-        <label><span>제목</span><input type="text" name="title" maxlength="120" required></label>
-        <label><span>금액</span><input type="text" name="amount" inputmode="numeric" placeholder="지출·구매는 필수"></label>
-        <label><span>거래처</span><input type="text" name="vendor" maxlength="120" placeholder="선택"></label>
-        <label><span>필요일</span><input type="date" name="dueDate"></label>
-        <label><span>첨부 위치</span><input type="url" name="attachmentUrl" maxlength="500" placeholder="https:// 견적서 등"></label>
-        <label class="wide"><span>내용</span><textarea name="content" maxlength="2000" rows="3" placeholder="무엇을 왜 쓰는지"></textarea></label>
-        <button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>결재 올리기</button>
-      </form>
-      <div class="office-approval-list">${rowsHtml}</div>
+    return `${officeHero("결재", "지출·구매를 올리고 승인받습니다", state.data.approvalAdmin ? `<span class="office-admin-lock">승인 권한</span>` : "")}
+      <section class="office-admin-kpis">
+        <article><span>${state.data.approvalAdmin ? "승인 대기" : "내 대기"}</span><b>${state.data.approvalAdmin ? waiting.length : myWaiting}</b><small>건</small></article>
+        <article><span>내가 올린 것</span><b>${mine.length}</b><small>건</small></article>
+        <article><span>승인됨</span><b>${mine.filter(item => item.status === "approved").length}</b><small>건</small></article>
+        <article><span>반려됨</span><b>${mine.filter(item => item.status === "rejected").length}</b><small>건</small></article>
+      </section>
       ${state.data.approvalAdmin ? approvalAdminPanel(A, all) : ""}
-    </section>`;
+      <section class="office-panel">
+        <header><div><span>NEW REQUEST</span><h3>결재 올리기</h3></div><small>올린 뒤에는 내용을 고칠 수 없습니다</small></header>
+        <form class="office-form-grid" data-office-approval-form>
+          <label><span>종류</span><select name="kind">${A.KINDS.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
+          <label><span>제목</span><input type="text" name="title" maxlength="120" required></label>
+          <label><span>금액</span><input type="text" name="amount" inputmode="numeric" placeholder="지출·구매는 필수"></label>
+          <label><span>거래처</span><input type="text" name="vendor" maxlength="120" placeholder="선택"></label>
+          <label><span>필요일</span><input type="date" name="dueDate"${dateBounds()}></label>
+          <label><span>첨부 위치</span><input type="url" name="attachmentUrl" maxlength="500" placeholder="https:// 견적서 등"></label>
+          <label class="wide"><span>내용</span><textarea name="content" maxlength="2000" rows="3" placeholder="무엇을 왜 쓰는지"></textarea></label>
+          <div class="office-form-actions"><button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>결재 올리기</button></div>
+        </form>
+      </section>
+      <section class="office-panel">
+        <header><div><span>MY REQUESTS</span><h3>내가 올린 결재</h3></div><small>${mine.length}건</small></header>
+        <div class="office-approval-list">${rowsHtml}</div>
+      </section>`;
   }
 
   function approvalRow(A, item, decidable) {
@@ -944,11 +986,10 @@
     const pending = A.pending(all);
     const list = pending.length
       ? pending.map(item => approvalRow(A, item, true)).join("")
-      : `<p class="office-empty">승인을 기다리는 결재가 없습니다.</p>`;
-    return `<section class="office-approval-admin">
-      <header><b>승인 대기</b><span>${pending.length}건</span></header>
+      : `<div class="office-empty"><b>승인을 기다리는 결재가 없습니다</b><span>새 결재가 올라오면 여기에 뜹니다.</span></div>`;
+    return `<section class="office-panel">
+      <header><div><span>TO APPROVE</span><h3>승인 대기</h3></div><small>${pending.length}건 · 승인은 "써도 된다" 이지 "나갔다" 가 아닙니다</small></header>
       <div class="office-approval-list">${list}</div>
-      <p class="office-approval-hint">승인은 "써도 된다" 이지 "나갔다" 가 아닙니다. 실제로 나간 돈은 따로 잡습니다.</p>
     </section>`;
   }
 
@@ -1027,16 +1068,24 @@
 
   function payrollView() {
     const P = Payroll();
-    if (!P) return `<section class="office-panel"><p>급여 모듈을 불러오지 못했습니다.</p></section>`;
+    if (!P) return `<section class="office-loading office-error"><span>!</span><b>급여 모듈을 불러오지 못했습니다</b></section>`;
     const mine = P.forUser(state.data.payroll || [], currentUserId());
+    const latest = mine[0] || null;
     const slips = mine.length
       ? mine.map(item => paySlip(P, item)).join("")
-      : `<p class="office-empty">아직 받은 명세서가 없습니다.</p>`;
-    return `<section class="office-panel office-pay">
-      <header class="office-pay-head"><div><b>내 임금명세서</b><span>본인 것만 보입니다</span></div></header>
-      <div class="office-pay-list">${slips}</div>
-      ${state.data.payrollAdmin ? payrollAdminPanel(P) : ""}
-    </section>`;
+      : `<div class="office-empty"><b>아직 받은 명세서가 없습니다</b><span>대표가 교부하면 여기에 뜹니다.</span></div>`;
+    return `${officeHero("급여", "임금명세서를 받고 보관합니다", state.data.payrollAdmin ? `<span class="office-admin-lock">대표 전용</span>` : "")}
+      <section class="office-admin-kpis">
+        <article><span>받은 명세서</span><b>${mine.length}</b><small>건</small></article>
+        <article><span>최근 귀속</span><b>${esc(latest ? latest.month : "—")}</b><small>${esc(latest ? latest.payDate : "")}</small></article>
+        <article><span>최근 실지급</span><b>${esc(latest ? wonPay(latest.netPay) : "—")}</b><small>&nbsp;</small></article>
+        <article><span>교부 완료</span><b>${mine.filter(item => item.status === "issued").length}</b><small>건</small></article>
+      </section>
+      <section class="office-panel">
+        <header><div><span>MY PAYSLIPS</span><h3>내 임금명세서</h3></div><small>본인 것만 보입니다</small></header>
+        <div class="office-pay-list">${slips}</div>
+      </section>
+      ${state.data.payrollAdmin ? payrollAdminPanel(P) : ""}`;
   }
 
   function paySlip(P, item) {
@@ -1066,57 +1115,69 @@
       ? state.payrollMonth
       : (monthList[0] || new Date().toISOString().slice(0, 7));
     const summary = P.summarize(all, month);
-    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b)));
+    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b), "ko"));
     const selected = state.payrollUserId && people.some(user => user.uid === state.payrollUserId)
       ? state.payrollUserId
       : (people[0] ? people[0].uid : "");
     const existing = all.map(P.normalizeRecord)
       .find(item => item.userId === selected && item.month === month) || null;
+    const monthOptions = (monthList.includes(month) ? monthList : [month, ...monthList])
+      .map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("");
 
-    const table = people.map(user => {
+    const rows = people.map(user => {
       const slip = all.map(P.normalizeRecord).find(item => item.userId === user.uid && item.month === month) || null;
-      return `<tr${user.uid === selected ? ' class="is-selected"' : ""}>
-        <td><button type="button" class="link-button" data-office-pay-user="${esc(user.uid)}">${esc(Core.displayName(user))}</button></td>
-        <td class="num">${slip ? esc(wonPay(slip.grossPay)) : "—"}</td>
-        <td class="num">${slip ? esc(wonPay(slip.netPay)) : "—"}</td>
-        <td>${slip ? esc(P.statusLabel(slip.status)) : "<em>미작성</em>"}</td>
+      const status = slip ? slip.status : "";
+      return `<tr class="office-admin-user-row${user.uid === selected ? " is-selected" : ""}">
+        <td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td>
+        <td>${slip ? `<b>${esc(wonPay(slip.grossPay))}</b>` : `<em class="office-muted">—</em>`}</td>
+        <td>${slip ? esc(wonPay(slip.netPay)) : `<span class="office-muted">—</span>`}</td>
+        <td>${slip ? `<span class="office-status ${status === "issued" ? "on" : "warn"}"><i></i>${esc(P.statusLabel(status))}</span>` : `<span class="office-muted">미작성</span>`}</td>
+        <td><button type="button" class="mini-button" data-office-pay-user="${esc(user.uid)}">명세서 열기</button></td>
       </tr>`;
     }).join("");
 
-    return `<section class="office-pay-admin">
-      <header>
-        <b>급여대장</b>
-        <label><span>귀속 월</span><select data-office-pay-month>${(monthList.includes(month) ? monthList : [month, ...monthList]).map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("")}</select></label>
-      </header>
-      <div class="office-pay-summary">
-        <div><span>지급 총액</span><b>${esc(wonPay(summary.grossPay))}</b></div>
-        <div><span>공제 총액</span><b>${esc(wonPay(summary.totalDeduction))}</b></div>
-        <div><span>실지급 총액</span><b>${esc(wonPay(summary.netPay))}</b></div>
-        <div><span>교부</span><b>${summary.issuedCount}/${summary.count}</b></div>
-      </div>
-      <table class="office-pay-table"><thead><tr><th>이름</th><th class="num">지급</th><th class="num">실지급</th><th>상태</th></tr></thead><tbody>${table}</tbody></table>
-      ${selected ? payrollForm(P, selected, month, existing) : ""}
-      <p class="office-pay-hint">4대보험료와 세금은 CRM 이 계산하지 않습니다. 급여대장 프로그램이나 노무사가 낸 숫자를 그대로 적어 주세요. CRM 은 합계가 맞는지만 봅니다.</p>
-    </section>`;
+    return `<section class="office-panel office-admin-users">
+        <header>
+          <div><span>PAYROLL</span><h3>급여대장</h3></div>
+          <label class="office-inline-select"><span>귀속 월</span><select data-office-pay-month>${monthOptions}</select></label>
+        </header>
+        <div class="office-admin-kpis office-kpis-inset">
+          <article><span>지급 총액</span><b>${esc(wonPay(summary.grossPay))}</b><small>&nbsp;</small></article>
+          <article><span>공제 총액</span><b>${esc(wonPay(summary.totalDeduction))}</b><small>&nbsp;</small></article>
+          <article><span>실지급 총액</span><b>${esc(wonPay(summary.netPay))}</b><small>&nbsp;</small></article>
+          <article><span>교부</span><b>${summary.issuedCount}/${summary.count}</b><small>건</small></article>
+        </div>
+        <div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>직원</th><th>지급</th><th>실지급</th><th>상태</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="office-muted">팀원이 없습니다.</td></tr>`}</tbody>
+        </table></div>
+      </section>
+      ${selected ? payrollForm(P, selected, month, existing) : ""}`;
   }
 
   function payrollForm(P, userId, month, existing) {
     const record = existing || P.normalizeRecord({ userId, month });
     const locked = existing ? !P.canEdit(existing) : false;
+    const user = state.data.users.find(item => item && item.uid === userId) || null;
     const field = (key, label) => `<label><span>${esc(label)}</span><input type="text" inputmode="numeric" name="${esc(key)}" value="${record[key] ? esc(String(record[key])) : ""}"${locked ? " disabled" : ""}></label>`;
-    return `<form class="office-pay-form" data-office-pay-form data-office-pay-target="${esc(userId)}" data-office-pay-month-value="${esc(month)}">
-      <h4>${esc(month)} 명세서</h4>
+    return `<section class="office-panel">
+      <header>
+        <div><span>PAYSLIP</span><h3>${esc(user ? Core.displayName(user) : userId)} · ${esc(month)}</h3></div>
+        <small>4대보험료와 세금은 계산하지 않습니다. 노무사가 낸 숫자를 그대로 적어 주세요</small>
+      </header>
       ${locked ? `<p class="office-pay-locked">이미 교부한 명세서입니다. 고치려면 정정 명세서를 따로 내 주세요.</p>` : ""}
-      <label><span>지급일</span><input type="date" name="payDate" value="${esc(record.payDate)}"${locked ? " disabled" : ""} required></label>
-      <fieldset><legend>지급</legend>${P.EARNINGS.map(item => field(item.key, item.label)).join("")}</fieldset>
-      <fieldset><legend>공제</legend>${P.DEDUCTIONS.map(item => field(item.key, item.label)).join("")}</fieldset>
-      <label class="wide"><span>계산방법</span><input type="text" name="calcNote" maxlength="1000" value="${esc(record.calcNote)}"${locked ? " disabled" : ""} placeholder="연장·야간·휴일 수당이 있으면 필수 (법정 기재사항)"></label>
-      <label class="wide"><span>비고</span><input type="text" name="note" maxlength="500" value="${esc(record.note)}"${locked ? " disabled" : ""}></label>
-      ${locked ? "" : `<div class="office-pay-actions">
-        <button class="mini-button" type="submit" name="status" value="draft"${state.busy ? " disabled" : ""}>임시 저장</button>
-        <button class="primary-button" type="submit" name="status" value="issued"${state.busy ? " disabled" : ""}>교부</button>
-      </div>`}
-    </form>`;
+      <form class="office-form-grid" data-office-pay-form data-office-pay-target="${esc(userId)}" data-office-pay-month-value="${esc(month)}">
+        <label><span>지급일</span><input type="date" name="payDate" value="${esc(record.payDate)}"${dateBounds(month.slice(0, 4))}${locked ? " disabled" : ""} required></label>
+        <fieldset class="wide"><legend>지급</legend><div class="office-form-grid office-form-inner">${P.EARNINGS.map(item => field(item.key, item.label)).join("")}</div></fieldset>
+        <fieldset class="wide"><legend>공제</legend><div class="office-form-grid office-form-inner">${P.DEDUCTIONS.map(item => field(item.key, item.label)).join("")}</div></fieldset>
+        <label class="wide"><span>계산방법</span><input type="text" name="calcNote" maxlength="1000" value="${esc(record.calcNote)}"${locked ? " disabled" : ""} placeholder="연장·야간·휴일 수당이 있으면 필수 (법정 기재사항)"></label>
+        <label class="wide"><span>비고</span><input type="text" name="note" maxlength="500" value="${esc(record.note)}"${locked ? " disabled" : ""}></label>
+        ${locked ? "" : `<div class="office-form-actions">
+          <button class="mini-button" type="submit" name="status" value="draft"${state.busy ? " disabled" : ""}>임시 저장</button>
+          <button class="primary-button" type="submit" name="status" value="issued"${state.busy ? " disabled" : ""}>교부</button>
+        </div>`}
+      </form>
+    </section>`;
   }
 
   async function savePayrollSlip(form, status) {
