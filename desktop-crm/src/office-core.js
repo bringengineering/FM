@@ -396,6 +396,48 @@
       && Number(source.keyCode || 0) !== 229;
   }
 
+  // 서버에서 오는 모양이 두 가지다. 관리자는 uid 아래 전부를 받고, 본인은
+  // 자기 uid 아래만 받는다. flattenAttendance 와 같은 사정이다.
+  function flattenLeave(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    const rows = [];
+    const push = (uid, id, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        id: String(record.id || id || ""),
+        userId: String(record.userId || uid || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      // 신청 한 건인지(본인 자료) uid 묶음인지(관리자 자료) 로 가른다.
+      if (firstValue.startDate || firstValue.start_date) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([id, record]) => push(firstKey, id, record));
+    });
+    return rows;
+  }
+
+  // 확정은 uid 아래 연도별로 쌓인다. 관리자는 uid → 연도 → 확정 으로,
+  // 본인은 연도 → 확정 으로 받는다.
+  function flattenLeaveGrants(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    const rows = [];
+    const push = (uid, year, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        userId: String(record.userId || uid || ""),
+        year: String(record.year || year || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      // 연도 칸이면 그 아래가 확정이고, 아니면 여기가 확정이다.
+      if (/^\d{4}$/.test(firstKey)) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([year, record]) => push(firstKey, year, record));
+    });
+    return rows;
+  }
+
   function flattenAttendance(value) {
     if (!value || typeof value !== "object") return [];
     const rows = [];
@@ -437,6 +479,12 @@
       users: userMap.filter(user => user.uid && user.enabled && !user.mustChangePassword),
       attendance: Array.isArray(source.attendance) ? source.attendance.map(normalizeAttendance) : flattenAttendance(source.attendance),
       messages: Array.isArray(source.messages) ? source.messages.map(normalizeMessage) : flattenMailbox(source.messages),
+      // 휴가는 여기서 모양만 편다. 값 검사는 leave-core 가 한다 — 이 파일이
+      // 근태·메신저와 함께 쓰이는 곳이라 휴가 규칙까지 들이지 않는다.
+      leave: Array.isArray(source.leave) ? source.leave.slice() : flattenLeave(source.leave, current.uid),
+      leaveGrants: Array.isArray(source.leaveGrants) ? source.leaveGrants.slice() : flattenLeaveGrants(source.leaveGrants, current.uid),
+      // 관리자면 남의 휴가도 받는다. 화면이 이 값으로 승인 칸을 낼지 정한다.
+      leaveAdmin: source.leaveAdmin === true,
       loadedAt: safeText(source.loadedAt)
     };
   }
@@ -495,6 +543,8 @@
     normalizeOfficeMessageIds,
     unreadOfficeMessageIds,
     mergeConfirmedOfficeReadReceipts,
+    flattenLeave,
+    flattenLeaveGrants,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,

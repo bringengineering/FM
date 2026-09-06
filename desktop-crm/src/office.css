@@ -40,3 +40,47 @@
 @media(max-width:1200px){.office-attendance-correction-fields{grid-template-columns:1.4fr 1fr 1fr}.office-attendance-correction-reason{grid-column:1/-1}.office-admin-person{flex-wrap:wrap}.office-admin-person-actions{flex-basis:100%;margin-left:55px}}
 @media(max-width:760px){.office-attendance-correction-fields{grid-template-columns:1fr}.office-attendance-correction-reason{grid-column:auto}.office-attendance-correction>footer{align-items:flex-start;flex-direction:column}.office-admin-person-actions{margin-left:0}}
 .attendance-anomaly-panel{margin-bottom:18px}.attendance-anomaly-panel header p{margin:4px 0 0;color:#8B95A1;font-size:8px;line-height:1.55}.attendance-anomaly-empty{padding:22px 20px;color:#8B95A1;font-size:9px;text-align:center}.attendance-anomaly-list{margin:0;padding:0;list-style:none}.attendance-anomaly-item{display:flex;flex-direction:column;gap:4px;padding:13px 18px;border-top:1px solid #F2F4F6;border-left:3px solid #DFE3E8}.attendance-anomaly-item:first-child{border-top:0}.attendance-anomaly-item>div{display:flex;align-items:baseline;gap:8px}.attendance-anomaly-item b{color:#191F28;font-size:11px}.attendance-anomaly-item em{color:#8B95A1;font-size:8px;font-style:normal;font-weight:850}.attendance-anomaly-item p{margin:0;color:#8B95A1;font-size:8px;line-height:1.6}.attendance-anomaly-item.high{border-left-color:#F04452;background:#FFF7F8}.attendance-anomaly-item.high b{color:#F04452}.attendance-anomaly-item.medium{border-left-color:#FF9500}.attendance-anomaly-item.low{border-left-color:#8B95A1}
+
+/* ---- 연차 ---- */
+.office-leave-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:6px}
+.office-leave-head>div:first-child{display:grid;gap:2px}
+.office-leave-head b{font-size:15px}
+.office-leave-head span{color:#4E5968;font-size:11px}
+.office-leave-remaining{display:flex;align-items:baseline;gap:6px}
+.office-leave-remaining b{font-size:30px;line-height:1}
+.office-leave-remaining small{color:#4E5968;font-size:11px}
+/* 확정 전에는 숫자를 내지 않는다. 색으로도 구분해 "0일 남음" 과 헷갈리지 않게 한다. */
+.office-leave-remaining .office-leave-unset{color:#8B95A1;font-size:26px}
+.office-leave-note{margin:0 0 14px;color:#4E5968;font-size:11px;line-height:1.6}
+.office-leave-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end;margin-bottom:16px;padding:14px;border:1px solid #E5E8EB;border-radius:14px;background:#FAFBFC}
+.office-leave-form label{display:grid;gap:4px;min-width:0}
+.office-leave-form label.wide{grid-column:1/-1}
+.office-leave-form span{color:#4E5968;font-size:10px;font-weight:800}
+.office-leave-form input,.office-leave-form select{min-width:0;padding:8px 9px;border:1px solid #DFE3E8;border-radius:8px;background:#fff;color:#191F28;font:inherit;font-size:12px}
+.office-leave-list{display:grid;gap:8px}
+.office-leave-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid #E5E8EB;border-radius:12px;background:#fff}
+.office-leave-row>div:first-child{display:grid;gap:3px;min-width:0}
+.office-leave-row b{font-size:13px}
+.office-leave-row span{color:#4E5968;font-size:11px}
+.office-leave-row p{margin:2px 0 0;color:#8B95A1;font-size:11px;word-break:keep-all}
+.office-leave-row.status-approved{border-color:#C6E7D4}
+.office-leave-row.status-rejected,.office-leave-row.status-cancelled{opacity:.62}
+.office-leave-status,.office-leave-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.office-leave-status small{color:#4E5968;font-size:11px;font-weight:800}
+.office-leave-admin{margin-top:22px;padding-top:18px;border-top:1px solid #E5E8EB}
+.office-leave-admin>header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:16px 0 8px}
+.office-leave-admin>header:first-child{margin-top:0}
+.office-leave-admin>header b{font-size:13px}
+.office-leave-admin>header span{color:#4E5968;font-size:11px}
+.office-leave-grants{width:100%;border-collapse:collapse;font-size:12px}
+.office-leave-grants th{padding:6px 8px;border-bottom:1px solid #E5E8EB;color:#4E5968;font-size:10px;text-align:left}
+.office-leave-grants td{padding:7px 8px;border-bottom:1px solid #F1F3F5;vertical-align:middle}
+.office-leave-grants em{color:#8B95A1;font-style:normal}
+.office-leave-grants small{color:#8B95A1;font-size:10px}
+.office-leave-grant{display:flex;gap:6px}
+.office-leave-grant input{width:76px;padding:6px 8px;border:1px solid #DFE3E8;border-radius:8px;font:inherit;font-size:12px}
+.office-empty{margin:0;padding:18px;border:1px dashed #DFE3E8;border-radius:12px;color:#8B95A1;font-size:12px;text-align:center}
+@media(max-width:760px){
+  .office-leave-head{flex-direction:column;gap:8px}
+  .office-leave-grants{display:block;overflow-x:auto}
+}
