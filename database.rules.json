@@ -54,6 +54,65 @@
           ".validate": false
         }
       },
+      "officePurchases": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
+        ".write": false,
+        "$purchaseId": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+          ".validate": "newData.hasChildren(['id','tradeDate','vendor','title','supplyAmount','payState','updatedAt','updatedBy']) && newData.child('id').val() === $purchaseId && (newData.child('payState').val() !== 'paid' || newData.child('paidDate').val() !== '') && (newData.child('taxState').val() !== 'none' || newData.child('taxAmount').val() === 0) && (newData.child('taxState').val() !== 'received' || newData.child('taxInvoiceDate').val() !== '')",
+          "id": {
+            ".validate": "newData.isString() && newData.val() === $purchaseId"
+          },
+          "tradeDate": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+          },
+          "vendor": {
+            ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
+          },
+          "title": {
+            ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
+          },
+          "supplyAmount": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+          },
+          "taxAmount": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+          },
+          "taxState": {
+            ".validate": "newData.isString() && (newData.val() === 'pending' || newData.val() === 'received' || newData.val() === 'none')"
+          },
+          "taxInvoiceDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "payState": {
+            ".validate": "newData.isString() && (newData.val() === 'unpaid' || newData.val() === 'paid')"
+          },
+          "paidDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "buildingId": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "approvalId": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "note": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+          },
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
       "officeMembers": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": false,
