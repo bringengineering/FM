@@ -307,6 +307,244 @@
     return found || null;
   }
 
+
+  // --- 수기 기록 --------------------------------------------------------
+  // 다이소에서 다섯 가지를 사 왔을 때, 품목 다섯 개를 먼저 만들고 입고를
+  // 다섯 번 적는 것은 열 번의 폼이다. 그래서 종이 장부처럼 그냥 줄로
+  // 적게 두고, 없는 품목은 적는 김에 같이 만든다.
+  //
+  // 다만 적은 것을 곧바로 쓰지는 않는다. 사람이 무엇이 들어갈지 표로
+  // 보고 나서 누른다. 잘못 읽은 줄이 조용히 저장되면 재고가 틀어지고,
+  // 기록은 고칠 수 없기 때문이다.
+
+  const KIND_WORDS = Object.freeze([
+    { kind: "in", words: ["입고", "구매", "구입", "삼", "샀음", "사옴", "들어옴"] },
+    { kind: "out", words: ["사용", "씀", "썼음", "사용함", "출고", "가져감"] },
+    { kind: "disposal", words: ["폐기", "버림", "버렸음", "파손", "분실"] },
+    { kind: "adjust", words: ["실사", "재고", "세어봄", "확인"] },
+  ]);
+
+  // 수량 뒤에 붙는 단위. "2통" 을 2 와 통 으로 가른다.
+  const QTY_PATTERN = /^(\d{1,6})\s*([^\d\s]{0,6})$/u;
+
+  function kindFromWord(word) {
+    const clean = text(word, 20);
+    if (!clean) return "";
+    const found = KIND_WORDS.find(entry => entry.words.indexOf(clean) >= 0);
+    return found ? found.kind : "";
+  }
+
+  // 이름은 사람이 그때그때 다르게 친다. "락스 4L" 과 "락스4l" 은 같은 것이다.
+  function nameKey(value) {
+    return text(value, 120).replace(/[\s·・.,()[\]{}-]/gu, "").toLowerCase();
+  }
+
+  // 9/5, 09-05, 2026-09-05 을 다 받는다. 연도가 없으면 기준 연도를 쓴다.
+  function parseDateToken(token, fallbackYear) {
+    const clean = text(token, 12);
+    const full = clean.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/u);
+    const short = clean.match(/^(\d{1,2})[-./](\d{1,2})$/u);
+    let year;
+    let month;
+    let day;
+    if (full) {
+      year = Number(full[1]);
+      month = Number(full[2]);
+      day = Number(full[3]);
+    } else if (short) {
+      year = Number(fallbackYear);
+      month = Number(short[1]);
+      day = Number(short[2]);
+    } else {
+      return "";
+    }
+    if (!(year >= 2000 && year <= 2999)) return "";
+    if (!(month >= 1 && month <= 12)) return "";
+    if (!(day >= 1 && day <= 31)) return "";
+    const pad = value => String(value).padStart(2, "0");
+    return `${year}-${pad(month)}-${pad(day)}`;
+  }
+
+  function splitCells(line) {
+    // 엑셀에서 복사해 붙이면 탭이 온다. 그때는 칸이 이미 갈라져 있으니
+    // 짐작하지 않는다. 짐작은 틀릴 수 있고, 이미 갈라진 것은 확실하다.
+    if (line.indexOf("\t") >= 0) return line.split("\t").map(cell => cell.trim());
+    return null;
+  }
+
+  function parseManualLine(line, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const fallbackKind = isMoveKind(settings.kind) ? text(settings.kind, 20) : "in";
+    const fallbackDate = isDate(settings.date) ? text(settings.date, 10) : "";
+    const year = Number(text(fallbackDate, 10).slice(0, 4)) || new Date().getUTCFullYear();
+
+    const raw = text(line, 400);
+    const draft = { raw, date: fallbackDate, kind: fallbackKind, qty: 0, unit: "", name: "", reason: "" };
+
+    const cells = splitCells(raw);
+    if (cells) {
+      const [name, qty, kindWord, reason] = cells;
+      const qtyMatch = text(qty, 20).match(QTY_PATTERN);
+      draft.name = text(name, 120);
+      draft.qty = qtyMatch ? countOf(qtyMatch[1]) : countOf(qty);
+      draft.unit = qtyMatch ? text(qtyMatch[2], 20) : "";
+      draft.kind = kindFromWord(kindWord) || fallbackKind;
+      draft.reason = text(reason, 500);
+      return draft;
+    }
+
+    let tokens = raw.split(/\s+/u).filter(Boolean);
+    if (!tokens.length) return draft;
+
+    const dated = parseDateToken(tokens[0], year);
+    if (dated) {
+      draft.date = dated;
+      tokens = tokens.slice(1);
+    }
+
+    // 종류 낱말은 어디에 있든 찾는다. 그 뒤는 전부 메모다.
+    let kindAt = -1;
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (kindFromWord(tokens[index])) {
+        kindAt = index;
+        break;
+      }
+    }
+    if (kindAt >= 0) {
+      draft.kind = kindFromWord(tokens[kindAt]);
+      draft.reason = tokens.slice(kindAt + 1).join(" ").slice(0, 500);
+      tokens = tokens.slice(0, kindAt);
+    }
+
+    // 수량은 종류 앞에서 마지막으로 나오는 숫자다. "락스 4L 2통" 에서
+    // 4L 이 아니라 2통 을 집어야 한다 — 규격은 이름의 일부다.
+    let qtyAt = -1;
+    for (let index = tokens.length - 1; index >= 0; index -= 1) {
+      if (QTY_PATTERN.test(tokens[index])) {
+        qtyAt = index;
+        break;
+      }
+    }
+    if (qtyAt >= 0) {
+      const matched = tokens[qtyAt].match(QTY_PATTERN);
+      draft.qty = countOf(matched[1]);
+      draft.unit = text(matched[2], 20);
+      draft.name = tokens.slice(0, qtyAt).join(" ").slice(0, 120);
+    } else {
+      draft.name = tokens.join(" ").slice(0, 120);
+    }
+    return draft;
+  }
+
+  /**
+   * 적은 줄들을 그대로 저장할 수 있는 모양으로 바꾼다.
+   *
+   * 저장하지는 않는다. 무엇이 들어갈지 돌려줄 뿐이고, 화면은 그것을
+   * 표로 보여 준 다음에 사람이 누를 때만 저장한다.
+   */
+  function planManualEntry(source, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const known = rows(settings.items).map(normalizeItem).filter(item => item.id);
+    const byName = new Map(known.map(item => [nameKey(item.name), item]));
+    const category = isCategory(settings.category) ? text(settings.category, 20) : "etc";
+    const makeId = typeof settings.makeId === "function"
+      ? settings.makeId
+      : () => `sp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const lines = String(source == null ? "" : source).split(/\r?\n/u);
+    const entries = [];
+    const newItems = [];
+    // 같은 줄에서 두 번 나온 새 품목을 두 개 만들지 않는다.
+    const pending = new Map();
+
+    lines.forEach((line, index) => {
+      const trimmed = text(line, 400);
+      if (!trimmed || trimmed.startsWith("#")) return;
+
+      const draft = parseManualLine(trimmed, settings);
+      const entry = {
+        lineNo: index + 1,
+        raw: trimmed,
+        name: draft.name,
+        qty: draft.qty,
+        unit: draft.unit,
+        kind: draft.kind,
+        date: draft.date,
+        reason: draft.reason,
+        itemId: "",
+        isNew: false,
+        ok: false,
+        error: "",
+        code: "",
+      };
+
+      if (!entry.name) {
+        entry.error = "품목 이름을 못 읽었습니다.";
+        entry.code = "NAME_REQUIRED";
+        entries.push(entry);
+        return;
+      }
+
+      const key = nameKey(entry.name);
+      const existing = byName.get(key);
+      const queued = pending.get(key);
+      if (existing) {
+        entry.itemId = existing.id;
+        entry.unit = entry.unit || existing.unit;
+      } else if (queued) {
+        entry.itemId = queued.id;
+        entry.isNew = true;
+        entry.unit = entry.unit || queued.unit;
+      } else {
+        const made = normalizeItem({
+          id: makeId(),
+          name: entry.name,
+          category,
+          unit: entry.unit || "개",
+          vendor: text(settings.vendor, 120),
+          note: "수기 기록에서 만들어졌습니다.",
+        });
+        pending.set(key, made);
+        newItems.push(made);
+        entry.itemId = made.id;
+        entry.isNew = true;
+        entry.unit = made.unit;
+      }
+
+      const checked = validateMove({
+        id: makeId(),
+        itemId: entry.itemId,
+        kind: entry.kind,
+        qty: entry.qty,
+        date: entry.date,
+        reason: entry.reason,
+        byName: text(settings.byName, 80),
+      });
+      if (!checked.ok) {
+        entry.error = checked.error;
+        entry.code = checked.code;
+        entries.push(entry);
+        return;
+      }
+      entry.ok = true;
+      entry.move = checked.move;
+      entries.push(entry);
+    });
+
+    const good = entries.filter(entry => entry.ok);
+    const bad = entries.filter(entry => !entry.ok);
+    // 하나라도 못 읽으면 아무것도 저장하지 않는다. 반만 들어간 장부는
+    // 어디까지 들어갔는지 사람이 다시 세어야 한다.
+    const usedNames = new Set(good.map(entry => nameKey(entry.name)));
+    return {
+      ok: entries.length > 0 && bad.length === 0,
+      entries,
+      moves: good.map(entry => entry.move),
+      newItems: newItems.filter(item => usedNames.has(nameKey(item.name))),
+      errorCount: bad.length,
+    };
+  }
+
   return Object.freeze({
     CATEGORIES,
     MOVE_KINDS,
@@ -334,6 +572,11 @@
     movesOfItem,
     recentMoves,
     findItem,
+    parseManualLine,
+    planManualEntry,
+    nameKey,
+    parseDateToken,
+    kindFromWord,
     text,
     rows,
   });

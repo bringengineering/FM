@@ -55,6 +55,7 @@ type Booted = {
   window: JSDOM["window"];
   document: Document;
   errors: string[];
+  calls: Array<{ name: string; input: unknown }>;
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -76,7 +77,12 @@ async function boot(): Promise<Booted> {
   const names = [...preload.matchAll(/^\s{2}([A-Za-z0-9_]+):/gmu)].map(match => match[1]);
   const empty = { admin: true, canWork: true, uid: "u-admin", loadedAt: "2026-09-06T00:00:00.000Z" };
   const payloads: Record<string, unknown> = {
-    loadSupplies: { ...empty, items: [], moves: [], costs: [] },
+    loadSupplies: {
+      ...empty,
+      items: [{ id: "i-lax", name: "락스 4L", unit: "통", category: "clean", active: true }],
+      moves: [{ id: "m1", itemId: "i-lax", kind: "in", qty: 3, date: "2026-09-01" }],
+      costs: [],
+    },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
     loadWorkOrders: {
@@ -100,8 +106,12 @@ async function boot(): Promise<Booted> {
   };
 
   const api: Record<string, unknown> = {};
+  const calls: Array<{ name: string; input: unknown }> = [];
   for (const name of names) {
-    api[name] = async () => (payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true });
+    api[name] = async (input: unknown) => {
+      calls.push({ name, input });
+      return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
+    };
   }
   api.read = async () => ({
     ok: true,
@@ -128,7 +138,7 @@ async function boot(): Promise<Booted> {
   if (gate) gate.hidden = true;
   const shell = document.getElementById("app");
   if (shell) shell.hidden = false;
-  return { window, document, errors };
+  return { window, document, errors, calls };
 }
 
 describe("desktop CRM screens actually render", () => {
@@ -221,5 +231,60 @@ describe("desktop CRM screens actually render", () => {
     const after = folders.filter(folder => !folder.hidden);
     expect(after.length).toBe(1);
     expect(after[0].dataset.navFolder).toBe("project");
+  }, 60000);
+
+  it("비품에 수기로 여러 줄을 적고 저장까지 간다", async () => {
+    // 이 화면의 값어치는 "적은 것이 무엇으로 들어가는가" 를 누르기 전에
+    // 보여 주는 데 있다. 그 표가 실제로 나오는지는 쳐 봐야 안다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="supplies"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(180);
+
+    const open = booted.document.querySelector("[data-supply-manual]") as HTMLElement | null;
+    expect(open, "수기로 적는 단추가 있어야 한다").toBeTruthy();
+    open!.click();
+    await sleep(120);
+    const form = booted.document.querySelector("[data-supply-manual-form]") as HTMLFormElement | null;
+    expect(form, "수기 폼이 열려야 한다").toBeTruthy();
+
+    const area = form!.querySelector('[name="lines"]') as HTMLTextAreaElement;
+    const submit = form!.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+    // 한 줄은 못 읽게 둔다. 그 상태로는 저장이 잠겨야 한다.
+    area.value = "락스4l 2통 입고 쿠팡\n극세사걸레 5개 입고 다이소\n3개 입고";
+    area.dispatchEvent(new booted.window.Event("input", { bubbles: true }));
+    await sleep(100);
+    const preview = form!.querySelector(".sp-manual-preview") as HTMLElement | null;
+    expect(preview, "무엇이 들어갈지 표가 나와야 한다").toBeTruthy();
+    const shown = (preview!.textContent || "").replace(/\s+/gu, " ");
+    expect(shown, "이미 있는 품목은 새 품목으로 잡히면 안 된다").toContain("새 품목");
+    expect(shown).toContain("못 읽은 줄");
+    expect(submit.disabled, "못 읽은 줄이 있으면 저장이 잠겨야 한다").toBe(true);
+
+    // 그 줄을 지우면 열린다.
+    area.value = "락스4l 2통 입고 쿠팡\n극세사걸레 5개 입고 다이소";
+    area.dispatchEvent(new booted.window.Event("input", { bubbles: true }));
+    await sleep(100);
+    expect(submit.disabled, "다 읽혔으면 저장이 열려야 한다").toBe(false);
+    expect(submit.textContent).toContain("2줄");
+
+    const before = booted.calls.length;
+    form!.dispatchEvent(new booted.window.Event("submit", { bubbles: true, cancelable: true }));
+    await sleep(250);
+    const sent = booted.calls.slice(before).find(call => call.name === "saveSupplyBatch");
+    expect(sent, "저장 통로로 실제로 나가야 한다").toBeTruthy();
+    const body = sent!.input as { items: Array<{ id: string; name: string }>; moves: Array<{ itemId: string; qty: number }> };
+    expect(body.moves.length).toBe(2);
+    // 이미 있는 락스는 다시 만들지 않는다. 새 걸레만 만든다.
+    expect(body.items.map(item => item.name)).toEqual(["극세사걸레"]);
+    expect(body.moves.some(move => move.itemId === "i-lax" && move.qty === 2), "있는 품목에 붙어야 한다").toBe(true);
+    // 미리보기용 임시 번호가 그대로 나가면 두 줄이 한 줄로 덮인다.
+    expect(new Set(body.moves.map(move => (move as unknown as { id: string }).id)).size).toBe(2);
+    expect(body.moves.every(move => (move as unknown as { id: string }).id !== "preview")).toBe(true);
   }, 60000);
 });

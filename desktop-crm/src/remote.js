@@ -4413,6 +4413,64 @@ class FirebaseRemoteClient {
     return record;
   }
 
+  /**
+   * 수기로 적은 여러 줄을 한 번에 넣는다.
+   *
+   * 품목을 먼저 쓰고 기록을 나중에 쓴다. 중간에 끊기면 쓰이지 않은
+   * 품목이 남을 뿐이지만, 순서가 반대면 품목 없는 기록이 남아 영영
+   * 안 보인다. 남는 쪽이 안 보이는 쪽보다 낫다.
+   */
+  async saveSupplyBatch(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 입출고를 적을 수 없습니다.", "SUPPLY_FORBIDDEN");
+    }
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const items = Array.isArray(source.items) ? source.items : [];
+    const moves = Array.isArray(source.moves) ? source.moves : [];
+    if (!moves.length) throw createError("적을 것이 없습니다.", "VALIDATION_ERROR");
+    if (moves.length > 200) throw createError("한 번에 200줄까지 적을 수 있습니다.", "SUPPLY_BATCH_TOO_LARGE");
+
+    // 한 줄이라도 어긋나면 아무것도 쓰지 않는다. 반만 들어간 장부는
+    // 어디까지 들어갔는지 사람이 다시 세어야 한다.
+    const checkedItems = items.map(item => {
+      const verdict = SupplyCore.validateItem(item);
+      if (!verdict.ok) throw createError(verdict.error, verdict.code);
+      return verdict.item;
+    });
+    const checkedMoves = moves.map(move => {
+      const verdict = SupplyCore.validateMove(move);
+      if (!verdict.ok) throw createError(verdict.error, verdict.code);
+      return verdict.move;
+    });
+    const madeIds = new Set(checkedItems.map(item => item.id));
+    for (const move of checkedMoves) {
+      if (madeIds.has(move.itemId)) continue;
+      const existing = await this.dbRequest(`supplyItems/${move.itemId}`, { method: "GET" });
+      if (!existing) throw createError("없는 품목입니다.", "SUPPLY_ITEM_NOT_FOUND");
+    }
+
+    const guard = this.captureSessionGuard();
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const byName = String(session.displayName || session.email || "");
+    const savedItems = [];
+    for (const item of checkedItems) {
+      const record = Object.assign({}, item, { createdAt: now, updatedAt: now, updatedBy: session.uid });
+      await this.dbRequest(`supplyItems/${item.id}`, { method: "PUT", body: record });
+      this.assertSessionGuardActive(guard);
+      savedItems.push(record);
+    }
+    const savedMoves = [];
+    for (const move of checkedMoves) {
+      const record = Object.assign({}, move, { byName, createdAt: now, createdBy: session.uid });
+      await this.dbRequest(`supplyMoves/${move.id}`, { method: "PUT", body: record });
+      this.assertSessionGuardActive(guard);
+      savedMoves.push(record);
+    }
+    return { items: savedItems, moves: savedMoves };
+  }
+
   // 잘못 적은 기록을 지운다. 관리자만. 장부를 고치는 일이라 남기는 게
   // 원칙이지만, 오타 하나가 영원히 남으면 아무도 안 적게 된다.
   async deleteSupplyMove(input) {

@@ -7384,6 +7384,7 @@ secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(inpu
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
 secureCanonicalHandle("crm:supply-move-add", input => remoteClient.addSupplyMove(input));
+secureCanonicalHandle("crm:supply-batch-save", input => remoteClient.saveSupplyBatch(input));
 secureCanonicalHandle("crm:supply-move-delete", input => remoteClient.deleteSupplyMove(input));
 secureCanonicalHandle("crm:delivery-flow-save", input => remoteClient.saveDeliveryFlow(input));
 secureCanonicalHandle("crm:delivery-stage-advance", input => remoteClient.advanceDeliveryStage(input));

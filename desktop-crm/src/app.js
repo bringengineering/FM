@@ -5179,6 +5179,7 @@
     loaded: false, loading: false, error: "",
     category: "", showRetired: false, openItemId: "",
     itemEditing: null, moveEditing: null, busyId: "",
+    manualOpen: false, manualText: "", manualKind: "in", manualDate: "", manualVendor: "", manualSaving: false,
   };
 
   const supplyCore = () => window.BringSupplyCore;
@@ -5270,6 +5271,7 @@
         <div class="operations-actions">
           <label class="sp-toggle"><input type="checkbox" data-supply-retired${supplyState.showRetired ? " checked" : ""}> 안 쓰는 것도 보기</label>
           ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-new>입출고 적기</button>` : ""}
+          ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-manual>수기로 적기</button>` : ""}
           ${supplyState.canWork ? `<button type="button" class="primary-button" data-supply-item-new>새 품목</button>` : ""}
         </div>
       </section>
@@ -5281,6 +5283,7 @@
         <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사용</span><b>${summary.usedThisMonth}</b><small>기록 ${summary.movesThisMonth}건</small></div>
       </div>
       ${lowBox}
+      ${supplyState.manualOpen ? supplyManualEditor(S) : ""}
       ${supplyState.itemEditing ? supplyItemEditor(S) : ""}
       ${supplyState.moveEditing ? supplyMoveEditor(S) : ""}
       <div class="sp-tabs">${tabs}</div>
@@ -5339,6 +5342,133 @@
         ${supplyState.admin ? `<button type="button" class="text-button sp-history-del" data-supply-move-delete="${esc(move.id)}">지우기</button>` : ""}
       </li>`;
     }).join("")}</ol>`;
+  }
+
+  // 종이 장부처럼 그냥 줄로 적는다. 다이소에서 다섯 가지를 사 왔을 때
+  // 품목 다섯 개를 먼저 만들고 입고를 다섯 번 적는 것은 열 번의 폼이다.
+  //
+  // 대신 적은 것을 바로 쓰지 않는다. 무엇이 들어갈지 표로 보고 나서
+  // 누른다. 기록은 고칠 수 없으니 잘못 읽은 줄은 저장 전에 잡아야 한다.
+  function supplyManualEditor(S) {
+    const plan = S.planManualEntry(supplyState.manualText, {
+      items: supplyState.items,
+      kind: supplyState.manualKind,
+      date: supplyState.manualDate || todayKey(),
+      vendor: supplyState.manualVendor,
+      makeId: () => "preview",
+    });
+    const typed = String(supplyState.manualText || "").trim().length > 0;
+    return `<form class="wo-editor sp-manual" data-supply-manual-form>
+      <h3>수기로 적기</h3>
+      <p class="wo-editor-note">한 줄에 하나씩 적으세요. 없는 품목은 적는 김에 같이 만듭니다. 엑셀에서 복사해 붙여도 됩니다.</p>
+      <label><span>기본 종류</span><select name="kind">${S.MOVE_KINDS.map(item => `<option value="${esc(item.key)}"${item.key === supplyState.manualKind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>기본 날짜</span><input type="date" name="date" value="${esc(supplyState.manualDate || todayKey())}"${supplyDateBounds()}></label>
+      <label><span>새 품목 구매처</span><input type="text" name="vendor" maxlength="120" value="${esc(supplyState.manualVendor)}" placeholder="예: 다이소"></label>
+      <label class="wide"><span>적을 내용</span><textarea name="lines" rows="7" spellcheck="false" placeholder="락스 4L 2통 입고 쿠팡&#10;극세사걸레 5개 입고 다이소&#10;9/5 고무장갑 2켤레 사용 햇빛빌라&#10;마대자루 3개 폐기 젖어서 버림">${esc(supplyState.manualText)}</textarea></label>
+      <p class="wo-editor-note">줄 앞에 날짜를 적으면 그날로 갑니다. 입고·사용·폐기·실사를 적으면 그 줄만 종류가 바뀝니다. # 로 시작하는 줄은 넘깁니다.</p>
+      ${typed ? supplyManualPreview(S, plan) : ""}
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${plan.ok && !supplyState.manualSaving ? "" : " disabled"}>${supplyState.manualSaving ? "적는 중…" : `${plan.moves.length}줄 적기`}</button>
+        <button class="secondary-button" type="button" data-supply-manual-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  function supplyManualPreview(S, plan) {
+    if (!plan.entries.length) {
+      return `<p class="office-empty sp-manual-empty">아직 읽을 줄이 없습니다.</p>`;
+    }
+    const rows = plan.entries.map(entry => {
+      const kind = S.moveKind(entry.kind);
+      return `<tr class="${entry.ok ? "" : "is-bad"}">
+        <td class="sp-manual-no">${entry.lineNo}</td>
+        <td>${esc(entry.name || entry.raw)}${entry.isNew ? ` <span class="sp-manual-new">새 품목</span>` : ""}</td>
+        <td class="sp-manual-qty">${entry.ok ? `${entry.qty}${esc(entry.unit || "")}` : "—"}</td>
+        <td>${esc(kind ? kind.label : entry.kind)}</td>
+        <td>${esc(entry.date || "—")}</td>
+        <td>${entry.ok ? esc(entry.reason) : `<span class="sp-manual-error">${esc(entry.error)}</span>`}</td>
+      </tr>`;
+    }).join("");
+    const newCount = plan.entries.filter(entry => entry.isNew).length;
+    return `<div class="wide sp-manual-preview">
+      <div class="sp-manual-head">
+        <b>이렇게 들어갑니다</b>
+        <small>${plan.entries.length}줄 읽음${newCount ? ` · 새 품목 ${newCount}개` : ""}${plan.errorCount ? ` · 못 읽은 줄 ${plan.errorCount}개` : ""}</small>
+      </div>
+      <div class="office-table-wrap"><table class="office-table sp-manual-table">
+        <thead><tr><th>줄</th><th>품목</th><th>수량</th><th>종류</th><th>날짜</th><th>이유 · 메모</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      ${plan.errorCount ? `<p class="sp-manual-block">못 읽은 줄이 있어 아직 저장할 수 없습니다. 그 줄만 고쳐 주세요 — 반만 저장되면 어디까지 들어갔는지 다시 세어야 합니다.</p>` : ""}
+    </div>`;
+  }
+
+  // 화면을 통째로 다시 그리면 글자를 치던 자리에서 커서가 튀고 한글
+  // 조합이 끊긴다. 그래서 상태만 담아 두고 아래 표만 갈아 끼운다.
+  // 타자(input)와 고르기(change) 둘 다 여기로 온다.
+  function captureSupplyManualForm(target) {
+    const form = target && target.closest ? target.closest("[data-supply-manual-form]") : null;
+    if (!form) return false;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    supplyState.manualText = String(raw.lines || "");
+    supplyState.manualKind = String(raw.kind || "in");
+    supplyState.manualDate = String(raw.date || "");
+    supplyState.manualVendor = String(raw.vendor || "");
+    refreshSupplyManualPreview(form);
+    return true;
+  }
+
+  function refreshSupplyManualPreview(form) {
+    const S = supplyCore();
+    if (!S || !form) return;
+    const plan = S.planManualEntry(supplyState.manualText, {
+      items: supplyState.items,
+      kind: supplyState.manualKind,
+      date: supplyState.manualDate || todayKey(),
+      vendor: supplyState.manualVendor,
+      makeId: () => "preview",
+    });
+    const typed = String(supplyState.manualText || "").trim().length > 0;
+    const existing = form.querySelector(".sp-manual-preview, .sp-manual-empty");
+    const markup = typed ? supplyManualPreview(S, plan) : "";
+    if (existing) existing.outerHTML = markup;
+    else if (markup) form.querySelector(".wo-editor-actions").insertAdjacentHTML("beforebegin", markup);
+    const submit = form.querySelector("button[type=\"submit\"]");
+    if (submit) {
+      submit.disabled = !plan.ok || supplyState.manualSaving;
+      submit.textContent = supplyState.manualSaving ? "적는 중…" : `${plan.moves.length}줄 적기`;
+    }
+  }
+
+  async function saveSupplyManualFromForm(form) {
+    const S = supplyCore();
+    if (!S || supplyState.manualSaving) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const plan = S.planManualEntry(String(raw.lines || ""), {
+      items: supplyState.items,
+      kind: String(raw.kind || "in"),
+      date: String(raw.date || todayKey()),
+      vendor: String(raw.vendor || ""),
+    });
+    if (!plan.ok) {
+      setStatus(plan.errorCount ? "못 읽은 줄이 있습니다. 고치고 다시 눌러 주세요." : "적을 것이 없습니다.", "error");
+      return;
+    }
+    supplyState.manualSaving = true;
+    renderSupplies();
+    try {
+      await api.saveSupplyBatch({ items: plan.newItems, moves: plan.moves });
+      supplyState.manualOpen = false;
+      supplyState.manualText = "";
+      supplyState.loaded = false;
+      setStatus(`${plan.moves.length}줄을 적었습니다.${plan.newItems.length ? ` 새 품목 ${plan.newItems.length}개도 만들었습니다.` : ""}`, "success");
+      await loadSupplies();
+    } catch (error) {
+      setStatus(error && error.message || "적지 못했습니다.", "error");
+    } finally {
+      supplyState.manualSaving = false;
+      renderSupplies();
+    }
   }
 
   function supplyItemEditor(S) {
@@ -7919,6 +8049,13 @@
       return;
     }
     if (event.target.closest("[data-supply-move-cancel]")) { supplyState.moveEditing = null; renderSupplies(); return; }
+    if (event.target.closest("[data-supply-manual]")) {
+      supplyState.manualOpen = true;
+      supplyState.manualDate = supplyState.manualDate || todayKey();
+      renderSupplies();
+      return;
+    }
+    if (event.target.closest("[data-supply-manual-cancel]")) { supplyState.manualOpen = false; renderSupplies(); return; }
     const supplyMoveDelete = event.target.closest("[data-supply-move-delete]");
     if (supplyMoveDelete) { await removeSupplyMove(supplyMoveDelete.dataset.supplyMoveDelete); return; }
     const woProject = event.target.closest("[data-wo-project]");
@@ -9704,6 +9841,7 @@
       renderSupplies();
       return;
     }
+    if (captureSupplyManualForm(event.target)) return;
     if (event.target.matches("[data-supply-move-form] [name=\"kind\"]")) {
       // 종류를 바꾸면 이유 칸이 필수인지가 바뀐다. 눌러 보고서야 아는 것보다
       // 고르는 순간 보이는 편이 낫다.
@@ -10038,6 +10176,7 @@
     if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
     if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
     if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }
+    if (form.matches("[data-supply-manual-form]")) { await saveSupplyManualFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }
     if (form.matches("[data-form-entry-form]")) {
       // 어느 단추로 냈는지에 따라 임시 저장인지 완료인지 갈린다.
@@ -11303,6 +11442,7 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (captureSupplyManualForm(event.target)) return;
     if (event.target.matches("[data-owner-os-summary]")) {
       // 확인한 문장과 보내는 문장이 달라지면 확인은 무효다. 보내는 쪽은 이미
       // 그렇게 처리하지만, 화면이 계속 "확인됨" 이라고 하면 관리자는 고친 글이

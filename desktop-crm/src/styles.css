@@ -493,3 +493,47 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .wo-due-list li { grid-template-columns: 1fr auto; row-gap: 3px; }
   .wo-due-list small { grid-column: 1 / -1; text-align: left; }
 }
+
+/* 수기 기록 — 적은 것이 무엇으로 들어가는지 누르기 전에 보여 준다. */
+.sp-manual textarea {
+  font-family: ui-monospace, "D2Coding", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sp-manual-preview {
+  border: 1px solid #E5E8EB;
+  border-radius: 10px;
+  background: #FBFCFD;
+  padding: 11px 13px;
+}
+.sp-manual-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.sp-manual-head b { font-size: 13px; color: #191F28; }
+.sp-manual-head small { font-size: 12px; color: #8B95A1; }
+.sp-manual-table { font-size: 12px; }
+.sp-manual-table td { vertical-align: top; }
+.sp-manual-no { color: #8B95A1; width: 34px; }
+.sp-manual-qty { white-space: nowrap; }
+.sp-manual-table tr.is-bad { background: #FEF6F6; }
+.sp-manual-new {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: #EAF2FE;
+  color: #3182F6;
+  font-size: 11px;
+}
+.sp-manual-error { color: #C6535F; }
+.sp-manual-block {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #C6535F;
+  line-height: 1.6;
+}
+.sp-manual-empty { margin: 0; }

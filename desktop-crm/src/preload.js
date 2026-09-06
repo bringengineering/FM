@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   uploadDeliveryFile: input => ipcRenderer.invoke("crm:delivery-file-upload", input),
   saveSupplyItem: input => ipcRenderer.invoke("crm:supply-item-save", input),
   addSupplyMove: input => ipcRenderer.invoke("crm:supply-move-add", input),
+  saveSupplyBatch: input => ipcRenderer.invoke("crm:supply-batch-save", input),
   deleteSupplyMove: input => ipcRenderer.invoke("crm:supply-move-delete", input),
   saveFormTemplate: input => ipcRenderer.invoke("crm:form-template-save", input),
   saveFormEntry: input => ipcRenderer.invoke("crm:form-entry-save", input),
