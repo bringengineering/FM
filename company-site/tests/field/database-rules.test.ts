@@ -2360,6 +2360,85 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(member, at("d1"))));
   });
 
+  it("keeps 1on1 notes private to the person and the lead", async () => {
+    // 1on1 에는 "무엇에 막혀 있나" 가 적힌다. 그게 옆자리에 다 보이면
+    // 아무도 솔직하게 안 적고, 안 적으면 이 체계는 서식만 남는다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/growthCheckins/${id}`;
+    const note = (id: string, uid: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      uid,
+      name: "황우중",
+      week: "2026-08-31",
+      answers: { done: "햇빛빌라 계단청소", stuck: "건물주가 전화를 안 받습니다", next: "입주청소 두 건", grow: "결과보고서 혼자 내기" },
+      leadUid: "",
+      leadNote: "",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: uid,
+      ...patch,
+    });
+
+    // 자기 것은 자기가 적는다. 남이 대신 적으면 그건 관찰이지 1on1 이 아니다.
+    await assertSucceeds(set(ref(member, at("w1")), note("w1", "crm-legacy-member")));
+    await assertSucceeds(get(ref(member, at("w1"))));
+    // 관리자는 본다 — 1on1 상대이기 때문이다.
+    await assertSucceeds(get(ref(admin, at("w1"))));
+    // 옆자리 동료는 못 본다.
+    await assertFails(get(ref(other, at("w1"))));
+    // 목록째로 훑는 길도 없다.
+    await assertFails(get(ref(member, "crmCompany/growthCheckins")));
+    // 남의 이름으로 적을 수 없고, 남의 것을 고칠 수도 없다.
+    await assertFails(set(ref(member, at("w2")), note("w2", "crm-admin")));
+    await assertFails(set(ref(other, at("w3")), note("w3", "crm-viewer")));
+    await assertFails(set(ref(admin, `${at("w1")}/answers/stuck`), "고쳐 적기"));
+    // 모르는 칸은 안 받는다.
+    await assertFails(set(ref(member, at("w4")), note("w4", "crm-legacy-member", { mood: 3 })));
+  });
+
+  it("lets only the company set a growth level and always asks what comes next", async () => {
+    // 레벨은 회사가 하는 약속이다. 본인이 올릴 수 있으면 약속이 아니다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/growthReviews/${id}`;
+    const review = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      uid: "crm-legacy-member",
+      name: "황우중",
+      quarter: "2026-Q3",
+      level: "L2",
+      skills: { field: "L3", owner: "L2", record: "L2", plan: "L2", tool: "L2", biz: "L2" },
+      did: "계단청소 12건",
+      nextStep: "건물 한 채를 통째로 맡아 본다",
+      leadUid: "crm-admin",
+      leadNote: "",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("r1")), review("r1")));
+    // 본인은 자기 평가를 읽는다. 안 보이면 다음에 무엇을 할지 알 수 없다.
+    await assertSucceeds(get(ref(member, at("r1"))));
+    // 남의 평가는 못 본다.
+    await assertFails(get(ref(other, at("r1"))));
+    // 본인이 자기 레벨을 올릴 수는 없다.
+    await assertFails(set(ref(member, `${at("r1")}/level`), "L4"));
+    await assertFails(set(ref(member, at("r2")), review("r2", { level: "L5" })));
+    // 다음에 무엇을 배울지 없는 평가는 평가가 아니라 성적표다.
+    await assertFails(set(ref(admin, at("r3")), review("r3", { nextStep: "" })));
+    // 모르는 레벨은 막는다.
+    await assertFails(set(ref(admin, at("r4")), review("r4", { level: "S급" })));
+    // 급여는 여기 못 적는다. 회사 재무는 CRM 에 올리지 않는다.
+    await assertFails(set(ref(admin, at("r5")), review("r5", { salary: 3000000 })));
+    // 지우는 길은 없다. 지난 평가가 사라지면 무엇을 약속했는지도 사라진다.
+    await assertFails(remove(ref(admin, at("r1"))));
+  });
+
   it("lets only admins set quarterly objectives while anyone who works updates their own number", async () => {
     // 분기 목표는 회사가 정하는 것이다. 그런데 자기 핵심결과 값을 매주
     // 올리는 것은 팀원이 해야 이 체계가 돈다 — 대표만 올릴 수 있으면

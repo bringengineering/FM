@@ -679,3 +679,45 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 @media (max-width: 900px) { .okr-kr-row { grid-template-columns: 1fr 1fr; } }
 .okr-editor .okr-kr-editor { margin-top: 4px; }
+
+/* 성장·1on1 */
+.gr-next .panel-body > p { margin: 0 0 10px; }
+.gr-signs { margin: 0; padding-left: 18px; color: #4E5968; font-size: 13px; line-height: 1.85; }
+.gr-gap {
+  margin: 0 0 14px; padding: 11px 13px; border-radius: 10px;
+  background: #FFF8EC; color: #C77A00; font-size: 13px; line-height: 1.65;
+}
+.gr-missing {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 10px;
+  background: #FFF8EC; color: #C77A00;
+}
+.gr-missing b { display: block; font-size: 13px; }
+.gr-missing span { display: block; margin: 4px 0 6px; color: #4E5968; font-size: 13px; }
+.gr-missing small { color: #8B95A1; font-size: 11px; }
+.gr-done {
+  margin: 0 0 14px; padding: 11px 13px; border-radius: 10px;
+  background: #EFF6EE; color: #00875A; font-size: 13px;
+}
+.gr-week { padding: 11px 0; border-bottom: 1px solid #F1F3F5; }
+.gr-week:last-child { border-bottom: 0; }
+.gr-week > b { display: block; margin-bottom: 6px; color: #191F28; font-size: 12px; }
+.gr-week dl { display: grid; gap: 5px; margin: 0; }
+.gr-week dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; }
+.gr-week dt { color: #8B95A1; font-size: 12px; }
+.gr-week dd { margin: 0; color: #4E5968; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.gr-review { padding: 10px 0; border-bottom: 1px solid #F1F3F5; }
+.gr-review:last-child { border-bottom: 0; }
+.gr-review b { display: block; color: #191F28; font-size: 12px; }
+.gr-review p { margin: 4px 0 0; color: #4E5968; font-size: 13px; line-height: 1.65; }
+.gr-review small { display: block; margin-top: 4px; color: #8B95A1; font-size: 12px; }
+.gr-stuck { color: #C6535F; font-size: 12px; }
+.gr-ladder { display: grid; gap: 14px; }
+.gr-level .panel-body > p { margin: 0 0 9px; }
+.gr-here { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.gr-here em {
+  padding: 3px 10px; border-radius: 999px; background: #EAF2FE;
+  color: #3182F6; font-size: 12px; font-style: normal;
+}
+.gr-editor label > span > small { display: block; margin-top: 2px; color: #8B95A1; font-size: 11px; font-weight: 400; }
+.gr-skill-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
+.gr-skill-grid select { height: 36px; padding: 0 9px; border: 1px solid #E5E8EB; border-radius: 8px; font-size: 12px; }
