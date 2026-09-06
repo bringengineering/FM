@@ -23,22 +23,31 @@
 //
 // 누가 무엇을 적을 수 있는가
 //
-// **입고와 실사는 관리자만.** 아무나 재고를 만들어낼 수 있으면 숫자를 믿을
-// 수 없다. 산 사람이 적는 게 맞다.
+// **일하는 사람은 다 적는다.** 처음에는 입고와 실사를 관리자만 하게 뒀다 —
+// 아무나 재고를 만들어내면 숫자를 못 믿는다는 이유였다. 대표가 열라고
+// 정했고, 그 판단이 맞다. 물건을 받는 사람과 세는 사람이 대표가 아닌데
+// 대표만 적게 하면, 받은 날 안 적히고 나중에 기억으로 적힌다. 늦게 적힌
+// 숫자보다 그 자리에서 적힌 숫자가 낫다.
 //
-// **사용과 폐기는 누구나.** 쓴 사람이 그 자리에서 적어야 남는다. 나중에
-// 몰아서 적으면 아무도 안 적는다.
+// 대신 **틀린 것을 지우는 길만 대표에게 남긴다.** 적는 것은 쌓는 일이라
+// 틀려도 다음 기록으로 덮이지만, 지우는 것은 되돌릴 수 없다.
+//
+// 조회 전용 계정은 보기만 한다. 그건 그 계정의 뜻이다.
 //
 // 하지 않는 것
 //
-// 1. 단가를 여기 두지 않는다. 원가는 회사 재무라 팀 전체가 볼 것이 아니다.
-//    supplyCosts 라는 따로 떨어진 칸에 두고 관리자만 읽는다. (Firebase 는
-//    부모가 읽기를 허용하면 자식은 못 막는다. 그래서 아예 다른 노드다.)
-// 2. 자동으로 발주하지 않는다. 모자란다고 보여 줄 뿐, 사는 건 사람이 한다.
-// 3. 품목을 지우지 않는다. 지우면 과거 기록의 이름이 사라진다. 안 쓰는
+// 1. 자동으로 발주하지 않는다. 모자란다고 보여 줄 뿐, 사는 건 사람이 한다.
+// 2. 품목을 지우지 않는다. 지우면 과거 기록의 이름이 사라진다. 안 쓰는
 //    품목은 '사용 안 함'으로 내린다.
-// 4. 수량은 정수만 쓴다. 소수를 허용하면 "실리콘 0.5통"을 두 사람이 다르게
+// 3. 수량은 정수만 쓴다. 소수를 허용하면 "실리콘 0.5통"을 두 사람이 다르게
 //    센다. 단위를 통·박스로 잡아서 정수로 만든다.
+//
+// 단가가 따로 있는 이유
+//
+// supplyCosts 는 품목과 다른 노드다. 원래는 원가를 대표만 보게 하려고
+// 나눈 것이었고, 지금은 팀 전체가 본다. 그래도 합치지 않는다 — 다시
+// 닫아야 할 날이 오면, 노드가 갈려 있어야 규칙 한 줄로 닫힌다. 합쳐
+// 두면 그때는 자료를 옮겨야 한다.
 (function attachSupplyCore(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -67,12 +76,13 @@
     { key: "etc", label: "기타" },
   ]);
 
-  // sign 은 재고에 어떻게 반영되는가. set 은 "그 숫자로 맞춘다"는 뜻이다.
+  // sign 은 재고에 어떻게 반영되는가. 실사(adjust)는 더하고 빼는 것이 아니라
+  // "그 숫자로 맞춘다"는 뜻이라 sign 이 0 이다.
   const MOVE_KINDS = Object.freeze([
-    { key: "in", label: "입고", sign: 1, adminOnly: true, needsReason: false },
-    { key: "out", label: "사용", sign: -1, adminOnly: false, needsReason: false },
-    { key: "disposal", label: "폐기", sign: -1, adminOnly: false, needsReason: true },
-    { key: "adjust", label: "실사", sign: 0, adminOnly: true, needsReason: true },
+    { key: "in", label: "입고", sign: 1, needsReason: false },
+    { key: "out", label: "사용", sign: -1, needsReason: false },
+    { key: "disposal", label: "폐기", sign: -1, needsReason: true },
+    { key: "adjust", label: "실사", sign: 0, needsReason: true },
   ]);
 
   const CATEGORY_KEYS = Object.freeze(CATEGORIES.map(item => item.key));
@@ -161,19 +171,16 @@
     return { ok: true, item };
   }
 
-  // admin 은 지금 적는 사람이 관리자인지. 입고·실사를 화면에서 먼저 막아
-  // 준다. 진짜로 막는 것은 서버 규칙이고, 여기는 이유를 사람 말로 보여
-  // 주기 위한 것이다.
-  function validateMove(source, admin) {
+  // 진짜로 막는 것은 서버 규칙이고, 여기는 같은 기준을 사람 말로 먼저
+  // 보여 주기 위한 것이다. 두 기준이 어긋나면 사람은 이유 없는 권한
+  // 오류만 본다.
+  function validateMove(source) {
     const move = normalizeMove(source);
     if (!move.id) return { ok: false, error: "기록 번호가 없습니다.", code: "VALIDATION_ERROR" };
     if (!move.itemId) return { ok: false, error: "어느 품목인지 정해 주세요.", code: "ITEM_REQUIRED" };
     if (!move.date) return { ok: false, error: "날짜를 골라 주세요.", code: "DATE_REQUIRED" };
     const kind = moveKind(move.kind);
     if (!kind) return { ok: false, error: "입고·사용·폐기·실사 중에서 골라 주세요.", code: "KIND_REQUIRED" };
-    if (kind.adminOnly && !admin) {
-      return { ok: false, error: `${kind.label}는 관리자만 적을 수 있습니다.`, code: "MOVE_ADMIN_ONLY" };
-    }
     // 실사는 0 이 뜻이 있다. "세어 보니 하나도 없었다"이다.
     if (move.kind !== "adjust" && move.qty <= 0) {
       return { ok: false, error: "수량은 1 이상으로 적어 주세요.", code: "QTY_REQUIRED" };
@@ -300,13 +307,6 @@
     return found || null;
   }
 
-  // 화면에서 고를 수 있는 기록 종류. 관리자가 아니면 사용·폐기만 남는다.
-  function moveChoices(admin) {
-    return MOVE_KINDS
-      .filter(kind => admin || !kind.adminOnly)
-      .map(kind => ({ key: kind.key, label: kind.label }));
-  }
-
   return Object.freeze({
     CATEGORIES,
     MOVE_KINDS,
@@ -334,7 +334,6 @@
     movesOfItem,
     recentMoves,
     findItem,
-    moveChoices,
     text,
     rows,
   });
