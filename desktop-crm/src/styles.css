@@ -741,3 +741,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tg-chat-pick.is-current { border-color: #3182F6; background: #EAF2FE; }
 .tg-chat-pick b { color: #191F28; font-size: 13px; }
 .tg-chat-pick small { color: #8B95A1; font-size: 11px; }
+.tg-hour { max-width: 160px; margin: 2px 0 10px; }
+.tg-hour select { height: 40px; padding: 0 10px; border: 1px solid #E5E8EB; border-radius: 8px; font-size: 13px; }

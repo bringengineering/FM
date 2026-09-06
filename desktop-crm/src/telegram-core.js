@@ -146,6 +146,38 @@
     return { send: true, reason: "", fingerprint: mark, day: today };
   }
 
+  // 보낼 시각. 새벽 3시에 울리면 사람은 알림을 꺼 버린다.
+  const DEFAULT_HOUR = 9;
+
+  function looksLikeHour(value) {
+    const hour = Number(value);
+    return Number.isInteger(hour) && hour >= 0 && hour <= 23;
+  }
+
+  /**
+   * 지금 보낼 때가 됐는가.
+   *
+   * "앱을 켤 때 한 번" 으로 두었더니, 새벽에 켜면 새벽에 가고 하루 종일
+   * 켜 두면 자정을 넘겨도 안 갔다. 그래서 시각을 본다.
+   *
+   * 정한 시각을 지나서 처음 확인하는 순간에 보낸다. 9시로 정해 뒀는데
+   * 10시에 앱을 켰다면 그때 간다 — 지나갔다고 건너뛰면 늦게 켠 날은
+   * 영영 안 온다.
+   */
+  function dueNow(settings, now) {
+    const at = now instanceof Date ? now : new Date(now || Date.now());
+    if (!(at instanceof Date) || Number.isNaN(at.getTime())) return { due: false, reason: "지금 시각을 알 수 없습니다." };
+    const value = settings && typeof settings === "object" ? settings : {};
+    if (value.autoSend === false) return { due: false, reason: "자동 보내기가 꺼져 있습니다." };
+    const hour = looksLikeHour(value.hour) ? Number(value.hour) : DEFAULT_HOUR;
+    const today = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+    if (dayOf(value.lastAutoDay) === today) return { due: false, reason: "오늘은 이미 보냈습니다.", day: today };
+    if (at.getHours() < hour) {
+      return { due: false, reason: `오늘 ${hour}시에 보냅니다.`, day: today, hour };
+    }
+    return { due: true, reason: "", day: today, hour };
+  }
+
   // 봇 토큰 모양. 값 자체는 어디에도 남기지 않는다 — 길이와 모양만 본다.
   function looksLikeBotToken(value) {
     return /^\d{6,12}:[A-Za-z0-9_-]{30,50}$/.test(String(value == null ? "" : value).trim());
@@ -171,6 +203,7 @@
         chatId,
         autoSend: value.autoSend !== false,
         includePhone: value.includePhone === true,
+        hour: looksLikeHour(value.hour) ? Number(value.hour) : DEFAULT_HOUR,
       },
     };
   }
@@ -252,6 +285,9 @@
   return Object.freeze({
     MAX_BODY,
     MAX_ROWS,
+    DEFAULT_HOUR,
+    looksLikeHour,
+    dueNow,
     dayOf,
     daysBetween,
     contactAlerts,

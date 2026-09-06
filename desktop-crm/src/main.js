@@ -3206,6 +3206,7 @@ async function readTelegramSettings() {
       chatId: String(value.chatId || ""),
       autoSend: value.autoSend !== false,
       includePhone: value.includePhone === true,
+      hour: TelegramCore.looksLikeHour(value.hour) ? Number(value.hour) : TelegramCore.DEFAULT_HOUR,
       lastSent: value.lastSent && typeof value.lastSent === "object" ? value.lastSent : null,
     };
   } catch (error) {
@@ -3246,6 +3247,7 @@ async function loadTelegramSettings() {
     chatId: saved ? saved.chatId : "",
     autoSend: saved ? saved.autoSend : true,
     includePhone: saved ? saved.includePhone === true : false,
+    hour: saved && TelegramCore.looksLikeHour(saved.hour) ? Number(saved.hour) : TelegramCore.DEFAULT_HOUR,
     lastSentDay: saved && saved.lastSent ? String(saved.lastSent.day || "") : "",
   };
 }
@@ -3262,6 +3264,7 @@ async function saveTelegramSettings(input) {
     chatId: options.chatId,
     autoSend: options.autoSend,
     includePhone: options.includePhone,
+    hour: options.hour,
   });
   if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
   await writeTelegramSettings(Object.assign({ botToken }, checked.settings, {

@@ -7139,6 +7139,7 @@
     configured: false, chatId: "", autoSend: true, includePhone: false,
     lastSentDay: "", error: "", notice: "",
     finding: false, chats: null, chatHint: "",
+    hour: 9,
   };
   const telegramCore = () => window.BringTelegramCore;
   // 앱을 켜 둔 채로 자정을 넘겨도 하루에 한 번은 가게 한다.
@@ -7160,6 +7161,7 @@
         chatId: String((result && result.chatId) || ""),
         autoSend: !result || result.autoSend !== false,
         includePhone: Boolean(result && result.includePhone),
+        hour: Number(result && result.hour) >= 0 ? Number(result.hour) : 9,
         lastSentDay: String((result && result.lastSentDay) || ""),
         loaded: true, error: "",
       });
@@ -7193,7 +7195,8 @@
             </div>
           </label>
         </div>
-        <label class="tg-toggle"><input type="checkbox" name="autoSend"${telegramState.autoSend ? " checked" : ""}> 앱을 켜면 하루에 한 번 자동으로 보냅니다</label>
+        <label class="tg-toggle"><input type="checkbox" name="autoSend"${telegramState.autoSend ? " checked" : ""}> 하루에 한 번 자동으로 보냅니다 <small>앱이 켜져 있는 동안 정한 시각에 알아서 나갑니다. 누르실 것 없습니다.</small></label>
+        <label class="field tg-hour"><span>보낼 시각</span><select name="hour">${Array.from({ length: 24 }, (_unused, hour) => `<option value="${hour}"${hour === telegramState.hour ? " selected" : ""}>${hour}시</option>`).join("")}</select></label>
         <label class="tg-toggle"><input type="checkbox" name="includePhone"${telegramState.includePhone ? " checked" : ""}> 전화번호도 함께 보냅니다 <small>텔레그램 방은 사람이 나가도 글이 남습니다. 꼭 필요할 때만 켜 주세요.</small></label>
         <div class="form-actions">
           <button class="primary-button" type="submit"${telegramState.saving ? " disabled" : ""}>${telegramState.saving ? "저장 중…" : "저장"}</button>
@@ -7263,12 +7266,14 @@
         chatId: String(raw.chatId || ""),
         autoSend: raw.autoSend === "on",
         includePhone: raw.includePhone === "on",
+        hour: Number(raw.hour),
       });
       telegramState = Object.assign({}, telegramState, {
         configured: result && result.configured === true,
         chatId: String((result && result.chatId) || ""),
         autoSend: !result || result.autoSend !== false,
         includePhone: Boolean(result && result.includePhone),
+        hour: Number(result && result.hour) >= 0 ? Number(result.hour) : 9,
         notice: "저장했습니다.",
       });
     } catch (error) {
@@ -7316,12 +7321,30 @@
   //
   // 조용히 실패해도 화면에 아무 말도 하지 않는다 — 사람이 다른 일을 하는
   // 중에 오류창이 뜨면 방해만 된다. 설정 화면에 가면 그때 이유가 보인다.
+  /**
+   * 정한 시각이 지났으면 알아서 보낸다.
+   *
+   * 전에는 "앱을 켤 때 한 번" 이었다. 그래서 새벽에 켜면 새벽에 갔고,
+   * 하루 종일 켜 두면 자정을 넘겨도 안 갔다. 대표가 "내가 보내기만 하면
+   * 안 되잖아" 라고 한 것이 이 자리다.
+   *
+   * 이제 15분마다 확인한다. 정한 시각을 지나서 처음 확인하는 순간에
+   * 보낸다 — 지나갔다고 건너뛰면 늦게 켠 날은 영영 안 온다.
+   */
   async function maybeAutoSendTelegram() {
     if (!canAdministerSecurity()) return;
+    const T = telegramCore();
+    if (!T) return;
     const today = todayKey();
     if (telegramAutoTriedDay === today) return;
     if (!telegramState.loaded) await loadTelegramSettings();
-    if (!telegramState.configured || !telegramState.autoSend) return;
+    if (!telegramState.configured) return;
+    const verdict = T.dueNow({
+      autoSend: telegramState.autoSend,
+      hour: telegramState.hour,
+      lastAutoDay: telegramState.lastSentDay,
+    }, new Date());
+    if (!verdict.due) return;
     if (!telegramAlerts().length) return;
     telegramAutoTriedDay = today;
     try {
@@ -7332,6 +7355,13 @@
       // 같은 오류로 계속 두드리지는 않는다.
     }
   }
+
+  // 켜 둔 채로 시각이 지나가는 것을 잡는다. 자정을 넘기면 어제 표시를
+  // 지워서 새 날 것이 나갈 수 있게 한다.
+  setInterval(() => {
+    if (telegramAutoTriedDay && telegramAutoTriedDay !== todayKey()) telegramAutoTriedDay = "";
+    void maybeAutoSendTelegram();
+  }, 15 * 60 * 1000);
 
   function renderSettings() {
     const user = currentAuth.user || {};

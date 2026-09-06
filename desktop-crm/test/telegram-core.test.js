@@ -116,6 +116,42 @@ test("보낼 것이 없으면 보내지 않는다", () => {
   assert.equal(T.shouldSend([], null, TODAY).send, false);
 });
 
+test("정한 시각이 지나야 보낸다", () => {
+  // 새벽 3시에 울리면 사람은 알림을 꺼 버린다.
+  const at = hour => new Date(2026, 8, 7, hour, 30, 0);
+  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(3)).due, false);
+  assert.match(T.dueNow({ autoSend: true, hour: 9 }, at(3)).reason, /9시에 보냅니다/u);
+  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(9)).due, true);
+});
+
+test("늦게 켠 날도 건너뛰지 않는다", () => {
+  // 지나갔다고 넘기면 아침에 앱을 안 켠 날은 영영 안 온다.
+  const at = hour => new Date(2026, 8, 7, hour, 30, 0);
+  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(18)).due, true);
+});
+
+test("오늘 보낸 날은 또 안 보낸다", () => {
+  const at = new Date(2026, 8, 7, 10, 0, 0);
+  assert.equal(T.dueNow({ autoSend: true, hour: 9, lastAutoDay: "2026-09-07" }, at).due, false);
+  // 어제 보낸 것은 오늘을 막지 않는다.
+  assert.equal(T.dueNow({ autoSend: true, hour: 9, lastAutoDay: "2026-09-06" }, at).due, true);
+});
+
+test("자동을 끄면 시각과 상관없이 안 간다", () => {
+  assert.equal(T.dueNow({ autoSend: false, hour: 9 }, new Date(2026, 8, 7, 15, 0, 0)).due, false);
+});
+
+test("시각을 안 정했으면 아침 9시다", () => {
+  assert.equal(T.DEFAULT_HOUR, 9);
+  assert.equal(T.dueNow({ autoSend: true }, new Date(2026, 8, 7, 8, 0, 0)).due, false, "8시에는 아직");
+  assert.equal(T.dueNow({ autoSend: true }, new Date(2026, 8, 7, 9, 0, 0)).due, true);
+  // 말이 안 되는 시각은 기본값으로 떨어진다.
+  assert.equal(T.looksLikeHour(25), false);
+  assert.equal(T.looksLikeHour("아무거나"), false);
+  assert.equal(T.validateSettings({ botToken: "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345", chatId: "-100123456", hour: 99 }).settings.hour, 9);
+  assert.equal(T.validateSettings({ botToken: "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345", chatId: "-100123456", hour: 7 }).settings.hour, 7);
+});
+
 test("설정 모양을 먼저 본다", () => {
   // 모양이 틀린 채로 보내면 텔레그램이 영어로 거절하고, 사람은 무엇을
   // 고쳐야 하는지 모른다.

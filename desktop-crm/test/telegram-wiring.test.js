@@ -132,16 +132,32 @@ test("전화번호는 꺼진 채로 시작한다", () => {
   assert.match(appSource, /꼭 필요할 때만 켜 주세요/u, "무엇이 위험한지 화면에 적어야 한다");
 });
 
-test("자동 발송이 하루에 한 번만 돈다", () => {
+test("자동 발송이 정한 시각에 하루 한 번 돈다", () => {
+  // 대표가 "내가 보내기만 하면 안 되잖아" 라고 한 자리다. 전에는 앱을 켤
+  // 때 한 번이라, 새벽에 켜면 새벽에 갔고 켜 두면 자정을 넘겨도 안 갔다.
   const start = appSource.indexOf("async function maybeAutoSendTelegram(");
-  const body = appSource.slice(start, appSource.indexOf("\n  function ", start));
+  const body = appSource.slice(start, appSource.indexOf("// 켜 둔 채로", start));
   assert.match(body, /if \(telegramAutoTriedDay === today\) return;/u);
-  assert.match(body, /if \(!telegramState\.configured \|\| !telegramState\.autoSend\) return;/u);
+  assert.match(body, /T\.dueNow\(\{/u, "시각을 봐야 한다");
+  assert.match(body, /if \(!verdict\.due\) return;/u);
   assert.match(body, /canAdministerSecurity\(\)/u);
-  // 자료를 받은 뒤에 돌아야 한다.
-  // \n 하나로 못박으면 Windows 체크아웃(CRLF)에서만 깨진다. 검사가 운영체제를
-  // 타면 고친 사람은 자기 컴퓨터에서 재현조차 못 한다.
+  // 자료를 받은 뒤에 돌아야 한다. \n 하나로 못박으면 Windows(CRLF)에서만 깨진다.
   assert.match(appSource, /function render\(\) \{\r?\n[\s\S]{0,200}?void maybeAutoSendTelegram\(\);/u);
+});
+
+test("켜 둔 채로 시각이 지나가는 것도 잡는다", () => {
+  // 앱을 켤 때만 보면, 하루 종일 켜 둔 사람에게는 영영 안 간다.
+  assert.match(appSource, /setInterval\(\(\) => \{[\s\S]{0,400}?void maybeAutoSendTelegram\(\);[\s\S]{0,80}?\}, 15 \* 60 \* 1000\)/u);
+  // 자정을 넘기면 어제 표시를 지워야 새 날 것이 나간다.
+  assert.match(appSource, /if \(telegramAutoTriedDay && telegramAutoTriedDay !== todayKey\(\)\) telegramAutoTriedDay = "";/u);
+});
+
+test("보낼 시각을 사람이 정한다", () => {
+  assert.ok(appSource.includes('name="hour"'));
+  assert.match(appSource, /raw\.hour/u);
+  assert.match(mainSource, /hour: options\.hour/u);
+  // 새벽에 울리지 않게 기본은 아침이다.
+  assert.equal(require("../src/telegram-core").DEFAULT_HOUR, 9);
 });
 
 test("새 화면이 없는 클래스에 기대지 않는다", () => {
