@@ -59,6 +59,7 @@ const {
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
+  crmAuthPageKind,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isMatchingFieldAuthSignoutAck,
@@ -275,14 +276,8 @@ function closeCrmAuthWindow() {
 
 async function openCrmGoogleAuth(url) {
   const target = new URL(url);
-  const callbackPort = Number(target.searchParams.get("port"));
-  if (
-    target.origin !== "https://bring-fm.web.app"
-    || target.pathname !== "/crm-auth/"
-    || !Number.isInteger(callbackPort)
-    || callbackPort < 1024
-    || callbackPort > 65535
-  ) throw new Error("CRM_AUTH_URL_DENIED");
+  // 로그인 페이지와 Drive 연결 페이지 둘 다 이 창으로 연다.
+  if (!crmAuthPageKind(target.toString())) throw new Error("CRM_AUTH_URL_DENIED");
 
   closeCrmAuthWindow();
   const reauthAbortController = fieldReauthAbortController;
@@ -326,14 +321,8 @@ async function openCrmGoogleAuth(url) {
 
 async function openCrmEmailAuth(url, credentials) {
   const target = new URL(url);
-  const callbackPort = Number(target.searchParams.get("port"));
-  if (
-    target.origin !== "https://bring-fm.web.app"
-    || target.pathname !== "/crm-auth/"
-    || !Number.isInteger(callbackPort)
-    || callbackPort < 1024
-    || callbackPort > 65535
-  ) throw new Error("CRM_AUTH_URL_DENIED");
+  // 이메일 로그인은 로그인 페이지 말고 다른 곳으로 가면 안 된다.
+  if (crmAuthPageKind(target.toString()) !== "login") throw new Error("CRM_AUTH_URL_DENIED");
   const email = String(credentials && credentials.email || "").trim().toLowerCase();
   const password = String(credentials && credentials.password || "");
   if (!email || !password) throw new Error("LOGIN_CREDENTIALS_REQUIRED");

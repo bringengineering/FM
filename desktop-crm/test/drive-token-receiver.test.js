@@ -112,3 +112,65 @@ test("취소하면 취소로 끝난다", async () => {
   client.openGoogleAuth = async () => { controller.abort(); };
   await rejectsCode(client.receiveDriveToken({ signal: controller.signal }), "DRIVE_CONNECT_CANCELLED");
 });
+
+// --- 창을 여는 쪽 ---
+// 이 파일의 다른 테스트들은 openGoogleAuth 를 가짜로 바꿔치기해서 돌린다.
+// 그래서 "응답을 잘 받는지" 는 검사했지만 "진짜 창 여는 코드가 이 주소를
+// 허용하는지" 는 검사하지 않았다. 대표가 실제로 눌렀을 때 창이 아예 안 열려서
+// 알게 됐다. 여기서 그 구멍을 막는다.
+const { crmAuthPageKind } = require("../src/field-view-policy");
+const fs = require("node:fs");
+const path = require("node:path");
+const mainSource = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+
+const authUrl = (pathname, port = 51234) =>
+  `https://bring-fm.web.app${pathname}?port=${port}&state=${"a".repeat(43)}`;
+
+test("Drive 연결 페이지도 창을 열 수 있다", () => {
+  assert.equal(crmAuthPageKind(authUrl("/crm-drive-auth/")), "drive");
+  assert.equal(crmAuthPageKind(authUrl("/crm-auth/")), "login");
+});
+
+test("그 둘 말고는 창을 열지 않는다", () => {
+  for (const bad of [
+    authUrl("/crm-drive-auth"),            // 슬래시 없는 형태는 CRM 이 만들지 않는다
+    authUrl("/"),
+    authUrl("/crm-auth/../evil/"),
+    "https://evil.example.com/crm-drive-auth/?port=51234",
+    "https://bring-fm.web.app.evil.com/crm-drive-auth/?port=51234",
+    "http://bring-fm.web.app/crm-drive-auth/?port=51234",
+    "https://user:pw@bring-fm.web.app/crm-drive-auth/?port=51234",
+    "not a url",
+    "",
+  ]) assert.equal(crmAuthPageKind(bad), "", `${bad} 가 통과했다`);
+});
+
+test("돌아올 포트가 없거나 이상하면 열지 않는다", () => {
+  // 열어 봐야 응답을 받을 곳이 없다.
+  assert.equal(crmAuthPageKind("https://bring-fm.web.app/crm-drive-auth/"), "");
+  assert.equal(crmAuthPageKind(authUrl("/crm-drive-auth/", 80)), "");
+  assert.equal(crmAuthPageKind(authUrl("/crm-drive-auth/", 70000)), "");
+  assert.equal(crmAuthPageKind(authUrl("/crm-drive-auth/", "abc")), "");
+});
+
+test("이메일 로그인은 Drive 페이지로 못 간다", () => {
+  // 두 길이 섞이면 안 된다.
+  const emailOpener = mainSource.slice(
+    mainSource.indexOf("async function openCrmEmailAuth"),
+    mainSource.indexOf("async function openCrmEmailAuth") + 400,
+  );
+  assert.match(emailOpener, /crmAuthPageKind\(target\.toString\(\)\) !== "login"/u);
+});
+
+test("Drive 가 여는 주소와 허용 목록이 실제로 맞는다", () => {
+  // 받는 쪽이 만드는 주소를 그대로 허용 목록에 넣어 본다. 두 곳이 따로
+  // 움직이면 또 같은 일이 난다.
+  const client = Object.create(FirebaseRemoteClient.prototype);
+  client.firebase = { authPageUrl: "https://bring-fm.web.app/crm-auth/" };
+  let openedUrl = "";
+  client.openGoogleAuth = async url => { openedUrl = url; throw new Error("stop here"); };
+  return client.receiveDriveToken().catch(() => {
+    assert.ok(openedUrl, "주소를 만들어 열려고는 해야 한다");
+    assert.equal(crmAuthPageKind(openedUrl), "drive", `허용 목록이 ${openedUrl} 를 거절한다`);
+  });
+});
