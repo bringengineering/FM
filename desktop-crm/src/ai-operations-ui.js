@@ -31,7 +31,37 @@
       ["총이익", money(finance.grossProfit)], ["이익률", `${Number(finance.marginRate) || 0}%`], ["미수금", money(finance.receivable)],
       ["미지급금", money(finance.payable)], ["영업 연락", `${Number(sales.contactCount) || 0}건`], ["계약 전환율", `${Number(sales.conversionRate) || 0}%`]
     ];
-    return `<section class="ai-ops-panel ai-management-report"><header><div><span>MANAGEMENT INTELLIGENCE</span><h3>AI 월간 경영보고</h3><p>확정 숫자는 CRM이 계산하고 AI는 근거가 표시된 설명만 작성합니다.</p></div><label>보고 월 <input type="month" data-ai-management-month value="${esc(report.month)}"></label></header><div class="ai-report-metrics">${cards.map(([label, value]) => `<article><span>${esc(label)}</span><b>${esc(value)}</b></article>`).join("")}</div>${report.comparison ? `<p class="ai-comparison">전월 ${esc(report.comparison.month)} 대비 매출 ${money(report.comparison.revenueDelta)}, 이익 ${money(report.comparison.profitDelta)}</p>` : `<p class="ai-comparison">비교할 전월 데이터 없음</p>`}<div class="ai-report-actions"><button type="button" class="primary-button" data-ai-management-generate>AI 월간 경영보고 만들기</button>${input.result && input.result.text ? `<button type="button" class="secondary-button" data-ai-management-copy>보고서 복사</button>` : ""}</div>${input.loading ? `<div class="ai-ops-empty">AI가 보고서를 작성 중입니다…</div>` : input.error ? `<div class="ai-error">${esc(input.error)}</div>` : input.result && input.result.text ? `<article class="ai-report-narrative"><b>검토할 월간 보고서</b><p>${esc(input.result.text).replace(/\n/g, "<br>")}</p></article>` : ""}</section>`;
+    return `<section class="ai-ops-panel ai-management-report"><header><div><span>MANAGEMENT INTELLIGENCE</span><h3>AI 월간 경영보고</h3><p>확정 숫자는 CRM이 계산하고 AI는 근거가 표시된 설명만 작성합니다.</p></div><label>보고 월 <input type="month" data-ai-management-month value="${esc(report.month)}"></label></header><div class="ai-report-metrics">${cards.map(([label, value]) => `<article><span>${esc(label)}</span><b>${esc(value)}</b></article>`).join("")}</div>${report.comparison ? `<p class="ai-comparison">전월 ${esc(report.comparison.month)} 대비 매출 ${money(report.comparison.revenueDelta)}, 이익 ${money(report.comparison.profitDelta)}</p>` : `<p class="ai-comparison">비교할 전월 데이터 없음</p>`}<div class="ai-report-actions"><button type="button" class="primary-button" data-ai-management-generate>AI 월간 경영보고 만들기</button>${input.result && input.result.text ? `<button type="button" class="secondary-button" data-ai-management-copy>보고서 복사</button>` : ""}</div>${input.loading ? `<div class="ai-ops-empty">AI가 보고서를 작성 중입니다…</div>` : input.error ? `<div class="ai-error">${esc(input.error)}</div>` : input.result && input.result.text ? `<article class="ai-report-narrative"><b>검토할 월간 보고서</b><p>${esc(input.result.text).replace(/\n/g, "<br>")}</p></article>` : ""}${ownerOsBlock(input, report)}</section>`;
+  }
+
+  // 대표OS 로 올릴 총평을 사람이 확인하는 자리.
+  //
+  // AI 초안이 그대로 대표 평가에 들어가지 않게, 확인 버튼을 따로 뒀다. 확인을
+  // 누르기 전까지 보낸 보고는 받는 쪽에서 "확인 전 초안" 으로 표시된다.
+  // 글을 고치면 확인이 풀린다 — 확인한 문장과 보내는 문장이 달라지면 안 된다.
+  function ownerOsBlock(input, report) {
+    const owner = input.ownerOs;
+    if (!owner || !owner.visible) return "";
+    if (!owner.configured) {
+      return `<div class="ai-owner-os"><b>대표OS 보고</b><p>설정 화면에서 대표OS 연결을 먼저 넣어 주세요.</p></div>`;
+    }
+    const draft = String(owner.summary || "");
+    const confirmed = Boolean(owner.confirmedBy);
+    const canSend = Boolean(draft.trim());
+    return `<div class="ai-owner-os">
+      <b>대표OS 로 보낼 총평</b>
+      <p>${confirmed
+        ? `${esc(owner.confirmedBy)} 님이 확인했습니다. 이대로 대표 평가 근거가 됩니다.`
+        : "확인하기 전까지는 대표OS 에서 ‘확인 전 초안’ 으로 표시되고 평가 근거로 쓰이지 않습니다."}</p>
+      <textarea data-owner-os-summary rows="5" maxlength="4000" placeholder="AI 초안을 여기로 가져와 고치거나 직접 쓰세요.">${esc(draft)}</textarea>
+      <div class="ai-owner-os-actions">
+        ${input.result && input.result.text ? `<button type="button" class="secondary-button" data-owner-os-use-draft>AI 초안 가져오기</button>` : ""}
+        <button type="button" class="secondary-button" data-owner-os-confirm ${canSend && !confirmed ? "" : "disabled"}>${confirmed ? "확인됨" : "이 내용 확인"}</button>
+        <button type="button" class="primary-button" data-owner-os-send ${canSend && !owner.sending ? "" : "disabled"}>${owner.sending ? "보내는 중…" : `${esc(report.month || "")} 보고 보내기`}</button>
+      </div>
+      ${owner.notice ? `<p class="ai-owner-os-notice">${esc(owner.notice)}</p>` : ""}
+      ${owner.error ? `<p class="ai-error">${esc(owner.error)}</p>` : ""}
+    </div>`;
   }
 
   return Object.freeze({ renderSalesFocus, renderWorkAutomation, renderManagementReport });
