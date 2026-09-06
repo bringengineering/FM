@@ -3176,6 +3176,52 @@ async function uploadBuildingDocument(input) {
 // 업무지시 결과물 올리기. 건물 서류와 같은 Drive 길을 쓰되, 폴더는 지시별로
 // 쌓는다 — 결과물은 건물이 아니라 지시에 딸린 것이라, 건물 폴더에 섞으면
 // 나중에 어느 지시의 결과인지 알 수 없다.
+// 수주 진행 결과물. 건물별·단계별로 쌓는다. 날짜로 나누면 "우산동 빌딩
+// 서류 다 보여줘" 가 안 되는데, 그게 서류를 찾는 가장 흔한 이유다.
+async function uploadDeliveryFile(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 진행 결과물을 올릴 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const filePath = String(options.filePath || "");
+  if (!pickedDocumentPaths.has(filePath)) {
+    throw Object.assign(new Error("파일을 다시 선택해 주세요."), { code: "FILE_NOT_PICKED" });
+  }
+  if (!driveSessionView().connected) {
+    throw Object.assign(new Error("회사 Drive 에 먼저 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  const flowId = String(options.flowId || "");
+  const stage = String(options.stage || "");
+  if (!flowId || !stage) throw Object.assign(new Error("어느 진행의 어느 단계인지 정해 주세요."), { code: "STAGE_REQUIRED" });
+  const buildingName = String(options.buildingName || "");
+  const stageLabel = String(options.stageLabel || stage);
+
+  const content = await fs.readFile(filePath);
+  const day = String(options.uploadedAt || new Date().toISOString()).slice(0, 10);
+  const uploaded = await BuildingDocsDrive.uploadDocument(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    {
+      rootFolderId: String(options.rootFolderId || ""),
+      folderPath: ["수주 진행", buildingName || "건물 없음", stageLabel],
+      fileName: "",
+      docTypeLabel: stageLabel,
+      documentDate: day,
+      originalFileName: path.basename(filePath),
+      mimeType: String(options.mimeType || "application/octet-stream"),
+      documentKey: `${flowId}_${stage}_${path.basename(filePath)}`,
+      content,
+    },
+  );
+  return {
+    ok: true,
+    alreadyThere: uploaded.alreadyThere === true,
+    driveFileId: uploaded.id,
+    title: uploaded.name || path.basename(filePath),
+    webViewLink: uploaded.webViewLink || "",
+  };
+}
+
 async function uploadWorkOrderResult(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (isMarketingOnlySession()) {
@@ -7230,6 +7276,9 @@ secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWor
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
 secureCanonicalHandle("crm:supply-move-add", input => remoteClient.addSupplyMove(input));
 secureCanonicalHandle("crm:supply-move-delete", input => remoteClient.deleteSupplyMove(input));
+secureCanonicalHandle("crm:delivery-flow-save", input => remoteClient.saveDeliveryFlow(input));
+secureCanonicalHandle("crm:delivery-stage-advance", input => remoteClient.advanceDeliveryStage(input));
+secureCanonicalHandle("crm:delivery-file-upload", input => uploadDeliveryFile(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
 secureCanonicalHandle("crm:payroll-save", input => remoteClient.savePayrollSlip(input));
@@ -7615,6 +7664,7 @@ secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:forms-load", () => remoteClient.loadForms());
 secureHandle("crm:work-orders-load", () => remoteClient.loadWorkOrders());
 secureHandle("crm:supplies-load", () => remoteClient.loadSupplies());
+secureHandle("crm:delivery-flows-load", () => remoteClient.loadDeliveryFlows());
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
 secureHandle("crm:payment-schedule-save", input => savePaymentSchedule(input));

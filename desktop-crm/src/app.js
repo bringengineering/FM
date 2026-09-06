@@ -200,6 +200,7 @@
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
+    deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
@@ -1515,6 +1516,7 @@
     else if (currentView === "forms") renderForms();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
+    else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -4561,6 +4563,253 @@
     }
   }
 
+  // --- 수주 진행 ---
+  // 이 화면이 답하는 질문은 하나다. **이 건물이 지금 어디까지 왔고, 다음에
+  // 무엇을 해야 하나.**
+  //
+  // 그래서 목록의 한 줄에 "다음에 할 일"을 글로 적는다. 진행률만 보여 주면
+  // 60% 라는 숫자를 보고도 무엇을 해야 하는지 모른다.
+  let deliveryState = {
+    flows: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    selectedId: "", editing: null, busyId: "",
+  };
+
+  const deliveryCore = () => window.BringDeliveryCore;
+
+  async function loadDeliveryFlows() {
+    if (deliveryState.loading) return;
+    deliveryState.loading = true;
+    deliveryState.error = "";
+    if (currentView === "deliveryFlow") renderDeliveryFlows();
+    try {
+      const data = await api.loadDeliveryFlows();
+      deliveryState.flows = Array.isArray(data && data.flows) ? data.flows : [];
+      deliveryState.admin = data && data.admin === true;
+      deliveryState.canWork = data && data.canWork === true;
+      deliveryState.uid = String((data && data.uid) || "");
+      deliveryState.loaded = true;
+    } catch (error) {
+      deliveryState.error = error && error.message || "수주 진행을 불러오지 못했습니다.";
+    } finally {
+      deliveryState.loading = false;
+      updateDeliveryBadge();
+      if (currentView === "deliveryFlow") renderDeliveryFlows();
+    }
+  }
+
+  // 사이드바 숫자는 아직 안 끝난 건수다. 전체 건수를 세면 늘 같은 숫자라
+  // 아무도 안 본다.
+  function updateDeliveryBadge() {
+    const badge = document.getElementById("navDeliveryCount");
+    if (!badge) return;
+    const D = deliveryCore();
+    const count = D ? D.summarize(deliveryState.flows).running : 0;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  function renderDeliveryFlows() {
+    const D = deliveryCore();
+    if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>수주 진행</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!deliveryState.loaded && !deliveryState.loading && !deliveryState.error) void loadDeliveryFlows();
+
+    const flows = D.sortFlows(deliveryState.flows);
+    const summary = D.summarize(flows);
+    const selected = deliveryState.selectedId && flows.some(item => item.id === deliveryState.selectedId)
+      ? deliveryState.selectedId
+      : (flows[0] ? flows[0].id : "");
+    const flow = flows.find(item => item.id === selected) || null;
+
+    const status = deliveryState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (deliveryState.error ? `<div class="info-box" style="color:#C6535F">${esc(deliveryState.error)}</div>` : "");
+
+    const rowsHtml = flows.map(item => {
+      const action = D.nextAction(item);
+      const done = D.progress(item);
+      return `<tr class="${item.id === selected ? "is-selected" : ""}" data-delivery-open="${esc(item.id)}">
+        <td><b>${esc(item.buildingName || "건물 미지정")}</b><small>${esc(item.title)}</small></td>
+        <td><span class="office-status ${action.done ? "working" : "warn"}"><i></i>${esc(action.done ? "완료" : action.label)}</span></td>
+        <td class="dv-next"><b>${esc(action.text)}</b><small>${esc(item.ownerName || "건물주 미지정")}</small></td>
+        <td><div class="dv-bar"><i style="width:${done}%"></i></div><small>${done}%</small></td>
+      </tr>`;
+    }).join("");
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>수주 진행</span><h2>견적서에서 입금까지</h2><p>건물마다 어디까지 왔는지, 그래서 다음에 무엇을 해야 하는지 한 장에서 봅니다.</p></div>
+        <div class="operations-actions">${deliveryState.canWork ? `<button type="button" class="primary-button" data-delivery-new>새 진행</button>` : ""}</div>
+      </section>
+      ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>진행 중</span><b>${summary.running}</b><small>전체 ${summary.total}건</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>견적·사진 단계</span><b>${summary.counts.quote + summary.counts.photos}</b><small>아직 문서 전</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>보고서 단계</span><b>${summary.counts.result + summary.counts.completion}</b><small>입금이 걸려 있습니다</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>끝난 것</span><b>${summary.finished}</b><small>평균 ${summary.progress}%</small></div>
+      </div>
+      ${deliveryState.editing ? deliveryEditor(D) : ""}
+      <section class="office-panel">
+        <header><div><span>IN PROGRESS</span><h3>건물별 진행</h3></div><small>손이 가야 하는 것부터</small></header>
+        ${rowsHtml
+          ? `<div class="office-table-wrap"><table class="office-table dv-table">
+              <thead><tr><th>건물</th><th>지금 단계</th><th>다음에 할 일</th><th>진행률</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>진행 중인 건이 없습니다</b><span>${deliveryState.canWork ? "‘새 진행’ 으로 건물 하나를 걸어 두면 견적서부터 시작합니다." : "대표가 진행을 만들면 여기에 나타납니다."}</span></div>`}
+      </section>
+      ${flow ? deliveryStageBoard(D, flow) : ""}`;
+  }
+
+  // 단계 다섯 장. 왜 이 단계가 있는지를 카드에 그대로 적는다 — 이유를 모르면
+  // 사람은 형식만 채우고 넘어간다.
+  function deliveryStageBoard(D, flow) {
+    const cards = D.STAGES.map(stage => {
+      const state = flow.stages[stage.key];
+      const blocker = D.blockedBy(flow, stage.key);
+      const closed = D.CLOSED.includes(state.status);
+      const files = state.files.map(file => `<li><a href="#" data-delivery-open-file="${esc(file.webViewLink)}">${esc(file.title || "결과물")}</a><small>${esc(String(file.uploadedAt).slice(0, 10))} · ${esc(file.uploadedBy || "")}</small></li>`).join("");
+      const actions = blocker || !deliveryState.canWork
+        ? ""
+        : `<div class="dv-stage-actions">
+            <button type="button" class="mini-button" data-delivery-upload="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>결과물 올리기</button>
+            ${closed ? "" : `<button type="button" class="mini-button" data-delivery-done="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>완료</button>
+            <button type="button" class="mini-button return" data-delivery-skip="${esc(stage.key)}" data-delivery-flow="${esc(flow.id)}"${deliveryState.busyId ? " disabled" : ""}>건너뛰기</button>`}
+          </div>`;
+      return `<article class="dv-stage status-${esc(state.status)}${blocker ? " is-locked" : ""}">
+        <header>
+          <div><span>${D.STAGE_KEYS.indexOf(stage.key) + 1}</span><b>${esc(stage.label)}</b></div>
+          <span class="office-status ${closed ? (state.status === "skipped" ? "off" : "working") : (blocker ? "off" : "warn")}"><i></i>${esc(D.statusLabel(state.status))}</span>
+        </header>
+        <p class="dv-stage-why">${esc(stage.why)}</p>
+        ${blocker ? `<p class="dv-stage-lock">${esc(D.stageLabel(blocker))}이(가) 끝나야 열립니다.</p>` : `<p class="dv-stage-next">${esc(stage.next)}</p>`}
+        ${state.skipReason ? `<p class="dv-stage-skip">건너뛴 이유: ${esc(state.skipReason)}</p>` : ""}
+        ${files ? `<ul class="dv-stage-files">${files}</ul>` : `<p class="dv-stage-empty">올린 결과물 ${state.files.length}개 / 필요 ${stage.minFiles}개</p>`}
+        ${actions}
+      </article>`;
+    }).join("");
+
+    return `<section class="office-panel">
+      <header><div><span>STAGES</span><h3>${esc(flow.buildingName || flow.title)}</h3></div><small>${esc(flow.title)}</small></header>
+      <div class="dv-stages">${cards}</div>
+    </section>`;
+  }
+
+  function deliveryEditor(D) {
+    const draft = D.normalizeFlow(deliveryState.editing);
+    const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    return `<form class="wo-editor" data-delivery-form>
+      <h3>${esc(draft.createdAt ? "진행 고치기" : "새 진행")}</h3>
+      <label class="wide"><span>건물</span><select name="buildingId" required>
+        <option value="">고르세요</option>
+        ${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}
+      </select></label>
+      <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="200" value="${esc(draft.title)}" required placeholder="예: 공용부 청소 위탁"></label>
+      <label><span>건물주</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+      <label><span>연락처</span><input type="text" name="ownerContact" maxlength="80" value="${esc(draft.ownerContact)}" placeholder="카카오·문자 보낼 번호"></label>
+      <label><span>시작일</span><input type="date" name="startedOn" value="${esc(draft.startedOn)}"${supplyDateBounds()}></label>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "만들기")}</button>
+        <button class="secondary-button" type="button" data-delivery-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  async function saveDeliveryFlowFromForm(form) {
+    const D = deliveryCore();
+    if (!D) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = D.normalizeFlow(deliveryState.editing);
+    const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const checked = D.validateFlow(Object.assign({}, previous, {
+      id: previous.id || `dv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      buildingId: String(raw.buildingId || ""),
+      // 건물 이름을 같이 박아 둔다. 건물이 지워져도 진행 기록은 무엇이었는지 남아야 한다.
+      buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
+      title: String(raw.title || ""),
+      ownerName: String(raw.ownerName || ""),
+      ownerContact: String(raw.ownerContact || ""),
+      startedOn: String(raw.startedOn || ""),
+    }));
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      const saved = await api.saveDeliveryFlow(checked.flow);
+      deliveryState.editing = null;
+      deliveryState.selectedId = saved.id;
+      deliveryState.loaded = false;
+      showToast("진행을 저장했습니다.", "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function moveDeliveryStage(flowId, stage, next) {
+    const D = deliveryCore();
+    if (!D || deliveryState.busyId) return;
+    let skipReason = "";
+    if (next === "skipped") {
+      skipReason = String(window.prompt("이 단계를 건너뛰는 이유를 적어 주세요.") || "").trim();
+      if (!skipReason) return showToast("이유를 적어야 건너뛸 수 있습니다.", "error");
+    }
+    deliveryState.busyId = flowId;
+    renderDeliveryFlows();
+    try {
+      await api.advanceDeliveryStage({ id: flowId, stage, next, skipReason });
+      deliveryState.loaded = false;
+      showToast(`${D.stageLabel(stage)}을(를) ${D.statusLabel(next)} 로 옮겼습니다.`, "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "옮기지 못했습니다.", "error");
+    } finally {
+      deliveryState.busyId = "";
+      renderDeliveryFlows();
+    }
+  }
+
+  async function uploadDeliveryFile(flowId, stage) {
+    const D = deliveryCore();
+    if (!D || deliveryState.busyId) return;
+    const flow = D.findFlow(deliveryState.flows, flowId);
+    if (!flow) return;
+    const picked = await api.pickBuildingDocuments();
+    if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+    deliveryState.busyId = flowId;
+    renderDeliveryFlows();
+    let done = 0;
+    try {
+      for (const item of picked.files) {
+        const uploaded = await api.uploadDeliveryFile({
+          flowId,
+          stage,
+          stageLabel: D.stageLabel(stage),
+          buildingName: flow.buildingName,
+          filePath: item.path,
+          mimeType: item.mimeType,
+        });
+        if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
+        await api.advanceDeliveryStage({
+          id: flowId,
+          stage,
+          file: {
+            id: uploaded.driveFileId,
+            title: uploaded.title,
+            driveFileId: uploaded.driveFileId,
+            webViewLink: uploaded.webViewLink,
+          },
+        });
+        done += 1;
+      }
+      deliveryState.loaded = false;
+      showToast(`결과물 ${done}건을 올렸습니다.`, "success");
+      await loadDeliveryFlows();
+    } catch (error) {
+      showToast(error && error.message || "결과물을 올리지 못했습니다.", "error");
+    } finally {
+      deliveryState.busyId = "";
+      renderDeliveryFlows();
+    }
+  }
+
   // --- 비품·자재 ---
   // 이 화면이 답하는 질문은 하나다. **지금 몇 개 남았나.**
   //
@@ -7205,6 +7454,28 @@
   }
 
   document.addEventListener("click", async event => {
+    const deliveryOpen = event.target.closest("[data-delivery-open]");
+    if (deliveryOpen) { deliveryState.selectedId = deliveryOpen.dataset.deliveryOpen; renderDeliveryFlows(); return; }
+    if (event.target.closest("[data-delivery-new]")) {
+      const D = deliveryCore();
+      if (D) { deliveryState.editing = D.normalizeFlow({}); renderDeliveryFlows(); }
+      return;
+    }
+    if (event.target.closest("[data-delivery-cancel]")) { deliveryState.editing = null; renderDeliveryFlows(); return; }
+    const deliveryDone = event.target.closest("[data-delivery-done]");
+    if (deliveryDone) { await moveDeliveryStage(deliveryDone.dataset.deliveryFlow, deliveryDone.dataset.deliveryDone, "done"); return; }
+    const deliverySkip = event.target.closest("[data-delivery-skip]");
+    if (deliverySkip) { await moveDeliveryStage(deliverySkip.dataset.deliveryFlow, deliverySkip.dataset.deliverySkip, "skipped"); return; }
+    const deliveryUpload = event.target.closest("[data-delivery-upload]");
+    if (deliveryUpload) { await uploadDeliveryFile(deliveryUpload.dataset.deliveryFlow, deliveryUpload.dataset.deliveryUpload); return; }
+    const deliveryFileLink = event.target.closest("[data-delivery-open-file]");
+    if (deliveryFileLink) {
+      // Drive 링크는 기본 브라우저로 연다. 앱 안에서 열면 로그인이 또 필요하다.
+      event.preventDefault();
+      const link = deliveryFileLink.dataset.deliveryOpenFile;
+      if (link) await api.openExternal(link);
+      return;
+    }
     const supplyCategory = event.target.closest("[data-supply-category]");
     if (supplyCategory) { supplyState.category = supplyCategory.dataset.supplyCategory; renderSupplies(); return; }
     const supplyOpen = event.target.closest("[data-supply-open]");
@@ -9344,6 +9615,7 @@
     const form = event.target;
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
+    if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
     if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
     if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }

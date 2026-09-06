@@ -8,6 +8,7 @@ const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
 const SupplyCore = require("./supply-core");
+const DeliveryCore = require("./delivery-core");
 const FormCore = require("./form-core");
 const PayrollCore = require("./payroll-core");
 const ApprovalCore = require("./approval-core");
@@ -4158,6 +4159,105 @@ class FirebaseRemoteClient {
       throw createError("지시 내용은 고칠 수 없습니다.", "INSTRUCTION_LOCKED");
     }
     const saved = Object.assign({}, record, {
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: saved });
+    this.assertSessionGuardActive(guard);
+    return saved;
+  }
+
+  // 수주 진행. 건물마다 견적서에서 입금까지 어디쯤인지.
+  async loadDeliveryFlows() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("deliveryFlows", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const flows = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => DeliveryCore.normalizeFlow(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      flows,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 진행을 만들거나 건물·제목을 고친다. 단계는 여기서 못 만진다 —
+  // 단계는 아래 advanceDeliveryStage 한 곳으로만 움직인다. 두 길을 두면
+  // 한쪽이 순서 검사를 빠뜨린다.
+  async saveDeliveryFlow(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 진행을 만들 수 없습니다.", "DELIVERY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = DeliveryCore.validateFlow(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `deliveryFlows/${checked.flow.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.flow, {
+      // 있던 단계는 그대로 둔다. 이 길로 단계를 덮으면 올린 결과물이 사라진다.
+      stages: existing ? DeliveryCore.normalizeFlow(existing).stages : checked.flow.stages,
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 단계를 옮기거나 결과물을 붙인다. 순서·필수 결과물·건너뛴 이유를 여기서
+  // 다시 본다 — 화면이 오래됐을 수 있고, 두 사람이 동시에 눌렀을 수도 있다.
+  async advanceDeliveryStage(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 진행을 움직일 수 없습니다.", "DELIVERY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const flowId = DeliveryCore.text(source.id, 80);
+    if (!flowId) throw createError("어느 진행인지 정해 주세요.", "VALIDATION_ERROR");
+    const location = `deliveryFlows/${flowId}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 진행입니다.", "DELIVERY_NOT_FOUND");
+    let flow = DeliveryCore.normalizeFlow(Object.assign({ id: flowId }, existing));
+    const actorName = String(session.displayName || session.email || "");
+
+    if (source.file && typeof source.file === "object") {
+      const attached = DeliveryCore.attachFile({
+        flow,
+        stage: source.stage,
+        file: Object.assign({}, source.file, { uploadedAt: new Date().toISOString(), uploadedBy: actorName }),
+      });
+      if (!attached.ok) throw createError(attached.error, attached.code);
+      flow = attached.flow;
+    }
+
+    const next = DeliveryCore.text(source.next, 20);
+    if (next) {
+      const moved = DeliveryCore.moveStage({
+        flow,
+        stage: source.stage,
+        next,
+        skipReason: source.skipReason,
+        note: source.note,
+        actorName,
+        now: new Date().toISOString(),
+      });
+      if (!moved.ok) throw createError(moved.error, moved.code);
+      flow = moved.flow;
+    }
+
+    const saved = Object.assign({}, flow, {
+      createdAt: existing.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       updatedBy: session.uid,
     });
