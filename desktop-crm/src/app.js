@@ -5050,7 +5050,12 @@
         <dt>왜 해야 하나</dt><dd>${esc(order.why)}</dd>
         <dt>무엇을 어떻게</dt><dd>${esc(order.what)}</dd>
         <dt>어디까지 하면 끝</dt><dd>${esc(order.doneWhen)}</dd>
-        ${order.deliverable ? `<dt>산출물</dt><dd>${esc(order.deliverable)}</dd>` : ""}
+        ${order.deliverable || order.deliverableKind ? `<dt>산출물</dt><dd>${esc(order.deliverable || "이름 미정")}${(() => {
+          const need = W.deliverableCheck(order);
+          if (!need.kind) return "";
+          if (need.kind === "none") return ` · <span class="office-muted">${esc(need.label)}</span>`;
+          return ` · ${esc(need.label)} ${need.have}/${need.need}${need.ok ? " ✅" : ` · <span class="office-status missing"><i></i>${need.short}개 더</span>`}`;
+        })()}</dd>` : ""}
         ${order.hours || order.weight ? `<dt>크기</dt><dd>${order.hours ? `${order.hours}시간쯤` : "시간 미기입"}${order.weight ? ` · 이번 주 ${order.weight}%` : ""}</dd>` : ""}
       </dl>
       ${order.reviewNote ? `<p class="wo-return">다시 요청 — ${esc(order.reviewNote)}</p>` : ""}
@@ -5075,7 +5080,9 @@
       <label><span>언제까지</span><input type="date" name="dueDate" value="${esc(draft.dueDate)}"></label>
       <label><span>몇 시간쯤</span><input type="number" name="hours" min="0.5" max="${W.MAX_HOURS}" step="0.5" value="${draft.hours || ""}" placeholder="예: 4"></label>
       <label><span>가중치(%)</span><input type="number" name="weight" min="0" max="100" step="1" value="${draft.weight || ""}" placeholder="이 주에서 몇 %"></label>
-      <label class="wide"><span>산출물은 어떤 파일로</span><input type="text" name="deliverable" maxlength="200" value="${esc(draft.deliverable)}" placeholder="예: 20260907_3층누수_점검결과.xlsx (프로젝트 폴더에 올림)"></label>
+      <label><span>산출물 종류</span><select name="deliverableKind"><option value="">정하지 않음</option>${W.DELIVERABLE_KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.deliverableKind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>몇 개</span><input type="number" name="deliverableCount" min="0" max="20" step="1" value="${draft.deliverableCount || ""}" placeholder="예: 5"></label>
+      <label class="wide"><span>산출물 이름</span><input type="text" name="deliverable" maxlength="200" value="${esc(draft.deliverable)}" placeholder="예: 20260907_3층누수_점검결과 (앱이 뒤에 번호와 확장자를 붙입니다)"></label>
       <label class="wide"><span>왜 해야 하나</span><textarea name="why" rows="3" maxlength="2000" required placeholder="이유를 모르면 받는 사람이 짐작으로 합니다.">${esc(draft.why)}</textarea></label>
       <label class="wide"><span>무엇을 어떻게</span><textarea name="what" rows="3" maxlength="2000" required>${esc(draft.what)}</textarea></label>
       <label class="wide"><span>어디까지 하면 끝인가</span><textarea name="doneWhen" rows="2" maxlength="1000" required placeholder="예: 사진 3장과 원인 한 줄이 올라오면 끝">${esc(draft.doneWhen)}</textarea></label>
@@ -5109,6 +5116,8 @@
       hours: String(raw.hours || ""),
       weight: String(raw.weight || ""),
       deliverable: String(raw.deliverable || ""),
+      deliverableKind: String(raw.deliverableKind || ""),
+      deliverableCount: String(raw.deliverableCount || ""),
     }));
     // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
     if (!checked.ok) { showToast(checked.error, "error"); return; }
@@ -5674,13 +5683,17 @@
     let done = 0;
     try {
       for (const file of picked.files) {
+        // 이름을 앱이 붙인다. 이미 올라간 것 뒤로 번호가 이어져야 두 번에
+        // 나눠 올려도 _1, _2 가 겹치지 않는다.
+        const seq = order.results.length + done + 1;
         const uploaded = await api.uploadWorkOrderResult({
           filePath: file.filePath,
           mimeType: file.mimeType,
           rootFolderId,
           orderId,
           orderTitle: order.title,
-          projectName: project ? project.name : "",
+          assigneeName: order.assigneeName || order.assigneeUid,
+          fileName: W.resultFileName(order, file.fileName || "", order.deliverableCount > 1 || seq > 1 ? seq : 0),
         });
         if (!uploaded || uploaded.ok === false) throw new Error(uploaded && uploaded.error || "Drive 에 올리지 못했습니다.");
         await api.updateWorkOrderProgress({

@@ -102,8 +102,15 @@ test("결과물은 Drive 에 지시별로 쌓인다", () => {
   );
   assert.ok(upload.length > 0);
   assert.match(upload, /folderPath: \["업무지시"/u);
-  // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가 안 된다.
-  assert.match(upload, /projectName \|\| "프로젝트 없음"/u);
+  // 달 · 사람 · 지시 순으로 쌓는다. Drive 에서 찾는 이유는 거의 늘 "우중이
+  // 지난달에 뭐 냈냐" 라서다. 프로젝트로 모아 보는 것은 앱이 한다 —
+  // 프로젝트 탭에 그 지시들이 이미 모여 있다. 한 파일은 한 폴더에만 있을
+  // 수 있어 둘 중 하나를 골라야 했다.
+  assert.match(upload, /day\.slice\(0, 7\)/u);
+  assert.match(upload, /assigneeName \|\| "담당 미정"/u);
+  // 이름은 지시에 적어 둔 산출물 이름을 따른다. 사람이 손으로 치면 매번
+  // 다르게 적힌다.
+  assert.match(upload, /fileName: String\(options\.fileName \|\| ""\)/u);
   assert.match(upload, /DRIVE_AUTH_REQUIRED/u);
   assert.match(upload, /MARKETING_ONLY_FORBIDDEN/u);
   // Drive 도우미가 그 길을 실제로 쓴다.
@@ -169,4 +176,26 @@ test("업무지시가 프로젝트 관리 폴더에서 열린다", () => {
   const appAt = indexSource.indexOf('src="./app.js"');
   assert.ok(coreAt > 0 && coreAt < appAt);
   assert.match(appSource, /workOrders: \["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"\]/u);
+});
+
+test("올리는 쪽이 정해진 이름과 담당자를 실어 보낸다", () => {
+  const call = appSource.slice(appSource.indexOf("async function uploadWorkOrderResult"), appSource.indexOf("// --- 작업 결과보고서 ---"));
+  assert.match(call, /assigneeName: order\.assigneeName \|\| order\.assigneeUid/u);
+  assert.match(call, /W\.resultFileName\(order/u);
+  // 이미 올라간 것 뒤로 번호가 이어져야 두 번에 나눠 올려도 겹치지 않는다.
+  assert.match(call, /order\.results\.length \+ done \+ 1/u);
+});
+
+test("규칙이 산출물 규격을 담당자 손에서 뗀다", () => {
+  // 고칠 수 있으면 사진 5장이 1장이 되고 완료 기준이 사후에 낮아진다.
+  for (const field of ["deliverableKind", "deliverableCount"]) {
+    assert.ok(order[field], `규칙에 ${field} 가 없다`);
+    assert.ok(
+      order[".validate"].includes(`newData.child('${field}').val() === data.child('${field}').val()`),
+      `${field} 가 규칙에서 고정되지 않았다`,
+    );
+  }
+  // 모르는 종류는 안 받는다. 조용히 들어오면 개수 검사가 통째로 빠진다.
+  assert.match(order.deliverableKind[".validate"], /'photo'/u);
+  assert.match(order.deliverableCount[".validate"], /newData\.val\(\) <= 20/u);
 });

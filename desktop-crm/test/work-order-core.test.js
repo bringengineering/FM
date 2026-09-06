@@ -165,3 +165,88 @@ test("담당자는 소요시간·가중치·산출물을 고칠 수 없다", () 
   assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverable: "아무거나" })), false);
   assert.equal(W.sameInstruction(before, Object.assign({}, before, { progress: 50 })), true);
 });
+
+// --- 산출물 규격 ---
+
+test("산출물 종류를 다섯 가지로 못 박는다", () => {
+  // 자유 글로 두면 "사진", "사진 몇 장", "당근 사진" 이 다 다른 말이 되고
+  // 요구한 만큼 냈는지를 기계가 못 본다.
+  assert.deepEqual(W.DELIVERABLE_KINDS.map(item => item.key), ["photo", "doc", "sheet", "link", "none"]);
+  assert.equal(W.DELIVERABLE_KINDS.every(item => item.label && item.hint), true);
+  assert.equal(W.isDeliverableKind("사진"), false);
+  assert.equal(W.normalizeOrder(order({ deliverableKind: "사진" })).deliverableKind, "");
+  // 없음만 개수를 안 센다. 현장에서 확인만 하고 끝나는 일이 있다.
+  assert.equal(W.deliverableCounted("none"), false);
+  assert.equal(W.deliverableCounted("photo"), true);
+});
+
+test("옛 지시는 규격이 없어도 제출을 막지 않는다", () => {
+  // 없던 규격을 소급해서 세우면 옛 지시가 통째로 제출이 막힌다.
+  const old = W.normalizeOrder(order({ createdAt: "2026-07-01T00:00:00Z" }));
+  assert.equal(old.deliverableKind, "");
+  assert.equal(old.deliverableCount, 0);
+  const moved = W.moveStatus({
+    order: Object.assign({}, old, { results: [{ id: "r1", driveFileId: "d1" }] }),
+    next: "submitted", actorUid: "u1",
+  });
+  assert.equal(moved.ok, true);
+});
+
+test("요구한 만큼 안 올리면 제출이 안 된다", () => {
+  // 안 세면 사진 5장을 시켜도 1장에 제출이 열리고, 완료 기준이 있으나 마나다.
+  const short = W.moveStatus({
+    order: order({ deliverableKind: "photo", deliverableCount: 5, results: [{ id: "r1", driveFileId: "d1" }] }),
+    next: "submitted", actorUid: "u1",
+  });
+  assert.equal(short.ok, false);
+  assert.equal(short.code, "RESULT_SHORT");
+  assert.match(short.error, /사진 5개가 필요한데 1개 올렸습니다\. 4개 더/u);
+
+  const enough = W.moveStatus({
+    order: order({
+      deliverableKind: "photo", deliverableCount: 2,
+      results: [{ id: "r1", driveFileId: "d1" }, { id: "r2", driveFileId: "d2" }],
+    }),
+    next: "submitted", actorUid: "u1",
+  });
+  assert.equal(enough.ok, true);
+});
+
+test("없음짜리 지시는 결과물 없이도 제출된다", () => {
+  // 현장에서 확인만 하고 끝나는 일이 있다.
+  const made = W.moveStatus({
+    order: order({ deliverableKind: "none", deliverableCount: 0, results: [] }),
+    next: "submitted", actorUid: "u1",
+  });
+  assert.equal(made.ok, true);
+});
+
+test("개수는 1~20 정수다", () => {
+  assert.equal(W.deliverableCountOf(5), 5);
+  assert.equal(W.deliverableCountOf(0), 0);
+  assert.equal(W.deliverableCountOf(-3), 0);
+  assert.equal(W.deliverableCountOf(2.6), 3);
+  // 20을 넘기면 그건 한 지시가 아니다.
+  assert.equal(W.deliverableCountOf(500), 20);
+});
+
+test("파일 이름을 앱이 붙이고 확장자는 원본 그대로 둔다", () => {
+  // 사람이 손으로 치면 매번 다르게 적힌다. 확장자를 바꾸면 파일이 안 열린다.
+  const spec = { deliverable: "20260909_당근_비즈프로필.png" };
+  assert.equal(W.resultFileName(spec, "IMG_2847.JPG", 1), "20260909_당근_비즈프로필_1.jpg");
+  assert.equal(W.resultFileName(spec, "IMG_2848.JPG", 2), "20260909_당근_비즈프로필_2.jpg");
+  // 한 개짜리는 번호를 안 붙인다.
+  assert.equal(W.resultFileName(spec, "보고서.pdf", 0), "20260909_당근_비즈프로필.pdf");
+  // 지시에 이름이 안 적혀 있으면 원본을 그대로 둔다. 지어낸 이름을 붙이면
+  // 무슨 파일인지 알 수 없게 된다.
+  assert.equal(W.resultFileName({ deliverable: "" }, "IMG_2847.JPG", 1), "IMG_2847.JPG");
+  // 확장자가 없는 파일도 터지지 않는다.
+  assert.equal(W.resultFileName(spec, "README", 1), "20260909_당근_비즈프로필_1");
+});
+
+test("담당자는 산출물 규격을 고칠 수 없다", () => {
+  // 고칠 수 있으면 사진 5장이 1장이 되고 완료 기준이 사후에 낮아진다.
+  const before = order({ deliverableKind: "photo", deliverableCount: 5 });
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverableKind: "none" })), false);
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverableCount: 1 })), false);
+});
