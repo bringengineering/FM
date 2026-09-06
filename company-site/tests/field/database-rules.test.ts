@@ -2161,6 +2161,81 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(viewer, at("ok-1")), record("ok-1", { title: "다른 제목" })));
   });
 
+  it("keeps purchase ledger entries visible to administrators only", async () => {
+    // 매출은 팀원도 보지만 매입은 아니다. 원가와 이익률이 드러난다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const target = "crmCompany/officePurchases/pu-1";
+    const record = {
+      id: "pu-1",
+      tradeDate: "2026-09-01",
+      vendor: "세정산업",
+      title: "청소 세제",
+      supplyAmount: 100000,
+      taxAmount: 10000,
+      taxState: "received",
+      taxInvoiceDate: "2026-09-01",
+      payState: "unpaid",
+      paidDate: "",
+      buildingId: "",
+      approvalId: "",
+      note: "",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+
+    await assertSucceeds(set(ref(admin, target), record));
+    await assertSucceeds(get(ref(admin, "crmCompany/officePurchases")));
+
+    // 일반 구성원도 조회 계정도 못 본다. 매출과 다른 점이 이것이다.
+    await assertFails(get(ref(member, target)));
+    await assertFails(get(ref(member, "crmCompany/officePurchases")));
+    await assertFails(get(ref(viewer, target)));
+    await assertFails(get(ref(anonymous, target)));
+    await assertFails(set(ref(member, "crmCompany/officePurchases/pu-2"), { ...record, id: "pu-2", updatedBy: "crm-member" }));
+
+    // 지워지면 신고 근거가 사라진다.
+    await assertFails(remove(ref(admin, target)));
+  });
+
+  it("keeps purchase amounts and tax invoice state consistent", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const target = "crmCompany/officePurchases/pu-3";
+    const base = {
+      id: "pu-3",
+      tradeDate: "2026-09-01",
+      vendor: "세정산업",
+      title: "청소 세제",
+      supplyAmount: 100000,
+      taxAmount: 0,
+      taxState: "pending",
+      taxInvoiceDate: "",
+      payState: "unpaid",
+      paidDate: "",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+
+    await assertSucceeds(set(ref(admin, target), base));
+    // 지급완료인데 지급일이 없으면 잔고를 맞출 수 없다.
+    await assertFails(set(ref(admin, target), { ...base, payState: "paid" }));
+    await assertSucceeds(set(ref(admin, target), { ...base, payState: "paid", paidDate: "2026-09-05" }));
+    // 해당없음인데 세액이 있으면 매입세액 합계가 부풀어 신고가 틀어진다.
+    await assertFails(set(ref(admin, target), { ...base, taxState: "none", taxAmount: 10000 }));
+    // 계산서를 받았다면 발행일이 있어야 한다.
+    await assertFails(set(ref(admin, target), { ...base, taxState: "received", taxAmount: 10000 }));
+    // 금액은 원 단위 정수만.
+    await assertFails(set(ref(admin, target), { ...base, supplyAmount: 1000.5 }));
+    await assertFails(set(ref(admin, target), { ...base, supplyAmount: "100000" }));
+    // 모르는 칸은 막는다.
+    await assertFails(set(ref(admin, target), { ...base, profitMargin: 0.3 }));
+  });
+
   it("lets a person read only their own payslip and never write one", async () => {
     // 교부가 법정 의무라 본인이 볼 수 없으면 교부한 것이 아니다. 반대로
     // 자기 급여를 스스로 적을 수 있으면 그건 명세서가 아니다.
