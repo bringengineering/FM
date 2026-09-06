@@ -28,6 +28,26 @@ test("처음 화면이 폴더를 고르는 자리다", () => {
   assert.equal((landing.match(/data-workspace-enter-folder="/g) || []).length, landingFolders.length);
 });
 
+test("카드가 여는 화면이 그 카드가 남기는 폴더 안에 있다", () => {
+  // 짝이 어긋나면 이런 일이 난다 — CRM 을 골랐는데 화면은 다른 폴더 것이
+  // 열리고, 사이드바가 곧바로 그 폴더로 따라가 버린다. 고른 것이 무시된
+  // 것처럼 보인다.
+  const nav = indexSource.slice(indexSource.indexOf("<nav"), indexSource.indexOf("</nav>"));
+  const blocks = [...nav.matchAll(/data-nav-folder="([a-z-]+)"([\s\S]*?)(?=data-nav-folder="|$)/g)];
+  const viewsByFolder = new Map(blocks.map(([, key, body]) => [
+    key,
+    new Set([...body.matchAll(/data-view="([A-Za-z]+)"/g)].map(m => m[1])),
+  ]));
+  assert.ok(viewsByFolder.size >= 7, `폴더를 못 읽었다: ${viewsByFolder.size}`);
+  for (const folder of WorkspaceShell.LANDING_FOLDERS) {
+    if (folder.workspace !== "operations") continue;
+    const views = viewsByFolder.get(folder.navFolder);
+    assert.ok(views, `${folder.title} 의 폴더 ${folder.navFolder} 를 사이드바에서 못 찾았다`);
+    assert.ok(views.has(folder.view),
+      `${folder.title} 이 여는 ${folder.view} 가 ${folder.navFolder} 폴더 안에 없다`);
+  }
+});
+
 test("고른 폴더만 사이드바에 남는다", () => {
   // 들어간 뒤에도 일곱 폴더가 다 늘어서 있으면 처음 화면에서 고른 것이
   // 아무 의미가 없다.
