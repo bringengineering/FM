@@ -794,3 +794,18 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dl-word-card p{margin:4px 0 0;color:#4E5968;font-size:13px}
 .dl-word-card em{font-style:normal;color:#8B95A1;margin-right:6px}
 .dl-ai-draft{border:1px solid #E5E8EB;border-radius:10px;padding:12px 14px;background:#FBFCFD;color:#191F28;font-size:13px;line-height:1.7;white-space:normal}
+
+/* 지시서 붙여넣기. 읽은 결과를 보여 주는 자리라 표가 넓다. */
+.di-panel .panel-body{display:grid;gap:12px}
+.di-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.di-top label,.di-panel label.wide{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.di-panel textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6}
+.di-review{display:grid;gap:12px}
+.di-blockers{margin:0;padding-left:18px;color:#C6535F;font-size:12px;display:grid;gap:4px}
+.di-notready{background:#FFF8F8}
+.di-unread{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px;background:#FFFBFB}
+.di-unread ul{margin:6px 0;padding-left:18px;color:#4E5968;font-size:12px;display:grid;gap:2px}
+.di-unread small{color:#8B95A1;font-size:12px}
+.di-head{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;margin:0;font-size:13px}
+.di-head dt{color:#8B95A1}
+.di-head dd{margin:0;color:#191F28}

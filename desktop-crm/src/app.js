@@ -4550,6 +4550,7 @@
   let workOrderState = {
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
     projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
+    directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     loaded: false, loading: false, error: "",
     scope: "mine", editing: null, busyId: "",
   };
@@ -4568,6 +4569,7 @@
       workOrderState.members = Array.isArray(data && data.members) ? data.members : [];
       workOrderState.projects = Array.isArray(data && data.projects) ? data.projects : [];
       workOrderState.capacity = Array.isArray(data && data.capacity) ? data.capacity : [];
+      workOrderState.directives = Array.isArray(data && data.directives) ? data.directives : [];
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
       workOrderState.uid = String((data && data.uid) || "");
@@ -4643,6 +4645,7 @@
             <button type="button" class="wo-scope-tab${workOrderState.scope === "mine" ? " is-active" : ""}" data-wo-scope="mine">내 것만</button>
             <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
           </div>
+          ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-import>지시서 붙여넣기</button>` : ""}
           ${workOrderState.admin && P.missingSeeds(projects).length ? `<button type="button" class="mini-button" data-wo-seed>기본 프로젝트 ${P.missingSeeds(projects).length}개 만들기</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}
         </div>
@@ -4657,6 +4660,7 @@
       </div>
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
+      ${workOrderState.importOpen ? directiveImporter() : ""}
       ${workOrderState.capacityEditing ? capacityEditor() : ""}
       ${dueSoonBoard(P, scoped, today)}
       ${capacityBoard(P, today)}
@@ -4689,6 +4693,77 @@
   }
 
   // 사람별로 몇 건 물고 있는지. 이게 없으면 일을 나눠 줄 때 감으로 하게 된다.
+  // 쓰던 업무지시서를 그대로 붙여 넣어 만든다.
+  //
+  // 대표가 이미 시트에 다 적어 놓은 것을 화면에서 다시 치게 하면, 그건
+  // 프로그램이 일을 덜어 준 게 아니라 일을 하나 더 만든 것이다.
+  //
+  // 붙여 넣자마자 만들지 않는다. 읽은 결과를 먼저 보여 주고 사람이 누른다.
+  function directiveImporter() {
+    const I = window.BringDirectiveImportCore;
+    const WD = window.BringWeeklyDirectiveCore;
+    if (!I || !WD) return "";
+    const plan = workOrderState.importPlan;
+    const people = workOrderState.members.filter(item => item && item.uid);
+    const options = people.map(item => `<option value="${esc(item.uid)}"${item.uid === workOrderState.importUid ? " selected" : ""}>${esc(item.displayName || item.email || item.uid)}</option>`).join("");
+
+    const review = plan ? `<div class="di-review">
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>읽은 업무</span><b>${plan.tasks.length}건</b><small>${plan.weekStart ? `${esc(plan.weekStart)} 주` : "주가 안 적혀 있습니다"}</small></div>
+        <div class="operations-kpi" style="--wash:${plan.weightTotal === 100 ? "#EDF9F5" : "#FFF8E6"}"><span>가중치 합</span><b>${plan.weightTotal}%</b><small>${plan.weightTotal === 100 ? "맞습니다" : "100% 로 맞춰 주세요"}</small></div>
+        <div class="operations-kpi" style="--wash:${plan.unread.length ? "#FFF1F1" : "#F2F4F6"}"><span>못 읽은 줄</span><b>${plan.unread.length}줄</b><small>${plan.unread.length ? "아래에서 확인해 주세요" : "없습니다"}</small></div>
+      </div>
+      ${plan.blockers.length ? `<ul class="di-blockers">${plan.blockers.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
+      ${plan.notes.length ? `<ul class="dl-notes">${plan.notes.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
+      ${plan.warnings.length ? `<ul class="di-blockers">${plan.warnings.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>업무</th><th>왜</th><th>완료 기준</th><th>산출물</th><th>시간</th><th>가중치</th><th>마감</th></tr></thead>
+        <tbody>${plan.tasks.length ? plan.tasks.map(task => `<tr class="${task.ready ? "" : "di-notready"}">
+          <td><b>${esc(task.title)}</b>${task.duplicate ? `<small>같은 제목이 이미 있습니다</small>` : ""}${task.problems.length ? `<small>${esc(task.problems[0])}</small>` : ""}</td>
+          <td>${task.why ? esc(task.why) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
+          <td>${task.doneWhen ? esc(task.doneWhen) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
+          <td>${task.deliverable ? esc(task.deliverable) : `<span class="office-muted">—</span>`}</td>
+          <td>${task.hours ? `${task.hours}h` : `<span class="office-muted">—</span>`}</td>
+          <td>${task.weight ? `${task.weight}%` : `<span class="office-muted">—</span>`}</td>
+          <td>${task.dueDate ? esc(task.dueDate) : `<span class="office-muted">—</span>`}</td>
+        </tr>`).join("") : `<tr><td colspan="7" class="office-empty">업무 줄을 하나도 못 읽었습니다.</td></tr>`}</tbody>
+      </table></div>
+      ${plan.unread.length ? `<div class="di-unread">
+        <b>못 읽은 줄</b>
+        <ul>${plan.unread.map(line => `<li>${esc(line)}</li>`).join("")}</ul>
+        <small>버리지 않고 그대로 보여 드립니다. 필요한 줄이면 손으로 넣어 주세요.</small>
+      </div>` : ""}
+      <dl class="di-head">
+        <dt>왜 이번 주에</dt><dd>${plan.directive.background ? esc(plan.directive.background) : `<span class="office-status missing"><i></i>비었음 — 이게 없어서 애들이 헷갈립니다</span>`}</dd>
+        <dt>끝나면 무엇이 달라지나</dt><dd>${plan.directive.goal ? esc(plan.directive.goal) : `<span class="office-status missing"><i></i>비었음</span>`}</dd>
+        ${plan.directive.loss ? `<dt>안 하면</dt><dd>${esc(plan.directive.loss)}</dd>` : ""}
+        ${plan.directive.scopeExclude ? `<dt>이번 주에 안 하는 것</dt><dd>${esc(plan.directive.scopeExclude)}</dd>` : ""}
+        ${plan.directive.precondition ? `<dt>먼저 있어야 하는 것</dt><dd>${esc(plan.directive.precondition)}</dd>` : ""}
+      </dl>
+    </div>` : "";
+
+    return `<section class="office-panel wo-editor di-panel">
+      <header>
+        <div><span>IMPORT</span><h3>쓰던 업무지시서 붙여넣기</h3></div>
+        <small>시트에서 머리줄까지 통째로 긁어 붙이세요</small>
+      </header>
+      <div class="panel-body">
+        <div class="di-top">
+          <label><span>누구에게</span><select data-di-uid><option value="">고르기</option>${options}</select></label>
+          <label><span>어느 주 (월요일)</span><input type="date" value="${esc(plan && plan.weekStart ? plan.weekStart : "")}" data-di-week></label>
+        </div>
+        <label class="wide"><span>붙여넣기</span><textarea rows="8" data-di-paste placeholder="담당&#9;황우중&#10;배경&#9;당근에서 문의가 줄고 있습니다.&#10;목표&#9;주 3건 이상&#10;&#10;업무명&#9;목적&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#10;당근 비즈프로필 정비&#9;권한을 받아 최신으로&#9;사진 5장이 올라가면 끝&#9;20260909_당근.png&#9;4&#9;100"></textarea></label>
+        ${review}
+        <div class="wo-editor-actions">
+          <button type="button" class="mini-button" data-di-read${workOrderState.importing ? " disabled" : ""}>읽어 보기</button>
+          <button type="button" class="primary-button" data-di-make${!plan || !plan.ok || workOrderState.importing ? " disabled" : ""}>${plan && plan.ok ? `업무지시 ${plan.tasks.length}건 만들기` : "만들기"}</button>
+          <button type="button" class="mini-button return" data-di-cancel>그만두기</button>
+        </div>
+        <p class="office-muted">읽은 것을 보여 드린 다음에 만듭니다. 붙여 넣자마자 지시가 나가면 잘못 붙여 넣은 것도 지시가 됩니다.</p>
+      </div>
+    </section>`;
+  }
+
   // 이번 주 가용시간. 건수만 세던 판 위에 놓는다.
   //
   // 여기 있는 부하는 지금 고른 프로젝트가 아니라 그 사람 일 전부로 센다.
@@ -5022,6 +5097,89 @@
       workDays,
       blocks: blocks.filter(Boolean),
     }));
+  }
+
+  // 붙여 넣은 것을 읽어 본다. 만들지는 않는다 — 사람이 보고 누른다.
+  function readDirectivePaste() {
+    const I = window.BringDirectiveImportCore;
+    if (!I) return;
+    const panel = document.querySelector(".di-panel");
+    if (!panel) return;
+    const paste = String((panel.querySelector("[data-di-paste]") || {}).value || "");
+    const uid = String((panel.querySelector("[data-di-uid]") || {}).value || "");
+    const week = String((panel.querySelector("[data-di-week]") || {}).value || "");
+    const person = workOrderState.members.find(item => item && item.uid === uid);
+    workOrderState.importUid = uid;
+    workOrderState.importPlan = I.planImport({
+      paste,
+      uid,
+      name: person ? (person.displayName || person.email || person.uid) : "",
+      weekStart: week,
+      existingOrders: workOrderState.orders,
+    });
+    // 다시 그리면 붙여 넣은 글이 사라진다. 그래서 도로 넣어 준다.
+    renderWorkOrders();
+    const back = document.querySelector(".di-panel [data-di-paste]");
+    if (back) back.value = paste;
+  }
+
+  // 읽은 대로 만든다. 업무지시는 한 건씩 기존 통로로 낸다 — 여기서 따로 쓰면
+  // 지시를 내는 길이 둘이 되고, 둘은 반드시 어긋난다.
+  async function buildFromDirectivePaste() {
+    const WD = window.BringWeeklyDirectiveCore;
+    const W = workOrderCore();
+    const plan = workOrderState.importPlan;
+    if (!WD || !W || !plan || !plan.ok || workOrderState.importing) return;
+    const monday = WD.weekStart(plan.weekStart || todayKey());
+    const person = workOrderState.members.find(item => item && item.uid === plan.uid);
+    const name = person ? (person.displayName || person.email || person.uid) : plan.name;
+    workOrderState.importing = true;
+    renderWorkOrders();
+    const failed = [];
+    let made = 0;
+    try {
+      for (const task of plan.tasks) {
+        const checked = W.validateOrder({
+          id: `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          title: task.title,
+          why: task.why,
+          what: task.why,
+          doneWhen: task.doneWhen,
+          deliverable: task.deliverable,
+          assigneeUid: plan.uid,
+          assigneeName: name,
+          startDate: monday,
+          dueDate: task.dueDate || WD.addDays(monday, 6),
+          hours: task.hours,
+          weight: task.weight,
+        });
+        if (!checked.ok) { failed.push(`${task.title}: ${checked.error}`); continue; }
+        try {
+          await api.saveWorkOrder(checked.order);
+          made += 1;
+        } catch (error) {
+          failed.push(`${task.title}: ${error && error.message || "저장 실패"}`);
+        }
+      }
+      await api.saveWeeklyDirective(Object.assign({
+        uid: plan.uid,
+        name,
+        weekStart: monday,
+      }, plan.directive));
+      workOrderState.importOpen = false;
+      workOrderState.importPlan = null;
+      workOrderState.loaded = false;
+      // 몇 건이 안 됐는지 말한다. "만들었습니다" 만 띄우고 반만 생기면 왜
+      // 목록이 이상한지 아무도 모른다.
+      if (failed.length) showToast(`${made}건을 만들었습니다. 못 만든 것: ${failed.join(" / ")}`, "error");
+      else showToast(`업무지시 ${made}건과 주간 지시서를 만들었습니다.`, "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "만들지 못했습니다.", "error");
+    } finally {
+      workOrderState.importing = false;
+      renderWorkOrders();
+    }
   }
 
   async function saveCapacityDraft() {
@@ -9662,6 +9820,20 @@
     }
     if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
+    if (event.target.closest("[data-wo-import]")) {
+      workOrderState.importOpen = true;
+      workOrderState.importPlan = null;
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.closest("[data-di-cancel]")) {
+      workOrderState.importOpen = false;
+      workOrderState.importPlan = null;
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.closest("[data-di-read]")) { readDirectivePaste(); return; }
+    if (event.target.closest("[data-di-make]")) { await buildFromDirectivePaste(); return; }
     const dlShift = event.target.closest("[data-dl-shift]");
     if (dlShift) {
       const D = dailyLogCore();

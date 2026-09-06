@@ -11,6 +11,7 @@ const OkrCore = require("./okr-core");
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const DailyLogCore = require("./daily-log-core");
+const WeeklyDirectiveCore = require("./weekly-directive-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4041,9 +4042,10 @@ class FirebaseRemoteClient {
         displayName: String(user.displayName || user.email || uid),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
-    const [projectPayload, capacityPayload] = await Promise.all([
+    const [projectPayload, capacityPayload, directivePayload] = await Promise.all([
       this.dbRequest("projects", { method: "GET" }).catch(() => null),
       this.dbRequest("capacity", { method: "GET" }).catch(() => null),
+      this.dbRequest("weeklyDirectives", { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
     const projects = Object.entries(projectPayload && typeof projectPayload === "object" ? projectPayload : {})
@@ -4054,10 +4056,16 @@ class FirebaseRemoteClient {
     const capacity = Object.entries(capacityPayload && typeof capacityPayload === "object" ? capacityPayload : {})
       .map(([uid, value]) => CapacityCore.normalizePerson(Object.assign({ uid }, value || {})))
       .filter(item => item.uid);
+    // 주간 지시서 머리말. 지시 줄은 담지 않는다 — 한 번 복사하면 지시서와
+    // 업무지시가 갈라지고, 그때부터 둘 다 못 믿는다.
+    const directives = Object.entries(directivePayload && typeof directivePayload === "object" ? directivePayload : {})
+      .map(([id, value]) => WeeklyDirectiveCore.normalizeDirective(Object.assign({ id }, value || {})))
+      .filter(item => item.uid && item.weekStart);
     return {
       orders,
       projects,
       capacity,
+      directives,
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",
@@ -4379,6 +4387,38 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PATCH", body: { confirmedBy: session.uid, confirmedAt: now } });
     this.assertSessionGuardActive(guard);
     return { uid, date, confirmedBy: session.uid, confirmedAt: now };
+  }
+
+  // 주간 지시서 머리말을 저장한다. 대표만 낸다.
+  //
+  // 지시 줄은 여기서 만들지 않는다. 그건 saveWorkOrder 가 한 건씩 한다 —
+  // 여기서도 만들 수 있게 하면 같은 일을 두 곳에서 하게 되고, 두 곳은 반드시
+  // 어긋난다.
+  async saveWeeklyDirective(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("주간 지시서는 대표만 냅니다.", "DIRECTIVE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = WeeklyDirectiveCore.validateDirective(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const directive = checked.directive;
+    const location = `weeklyDirectives/${directive.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const before = WeeklyDirectiveCore.normalizeDirective(existing || {});
+    const publish = source.publish === true;
+    const record = Object.assign({}, directive, {
+      // 내보낸 시각은 처음 한 번만 찍는다. 고칠 때마다 새로 찍으면 언제 처음
+      // 나갔는지를 잃는다.
+      publishedAt: publish ? (before.publishedAt || new Date().toISOString()) : before.publishedAt,
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   // 시간표를 저장한다. 본인 것은 본인이, 남의 것은 관리자가.
