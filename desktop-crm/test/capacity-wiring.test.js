@@ -34,7 +34,7 @@ test("시간표는 읽는 통로를 따로 내지 않고 업무지시와 함께 
   const load = methodBody(remoteSource, "loadWorkOrders");
   assert.match(load, /this\.dbRequest\("capacity", \{ method: "GET" \}\)/u);
   assert.match(load, /CapacityCore\.normalizePerson/u);
-  assert.match(load, /\n      capacity,\n/u);
+  assert.match(load, /\r?\n      capacity,\r?\n/u);
   assert.ok(!mainSource.includes('"crm:capacity-load"'), "시간표만 따로 읽는 통로를 만들지 않는다");
 });
 
