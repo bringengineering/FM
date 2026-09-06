@@ -54,12 +54,30 @@
     };
   }
 
+  // 보고 대상 달에 만들어진 건만 남긴다. 안 그러면 8월 보고에 전체 기간 합계와
+  // 보고서를 만든 날(9월) 기준 병목이 8월 이름표를 달고 들어간다.
+  // 달 판정은 operations-intelligence-core 의 기간 필터와 같은 UTC 기준이다.
+  function operationsInMonth(operations, month) {
+    return rows(operations).filter(item => {
+      const value = Date.parse(item.createdAt);
+      if (!Number.isFinite(value)) return false;
+      const at = new Date(value);
+      return `${at.getUTCFullYear()}-${String(at.getUTCMonth() + 1).padStart(2, "0")}` === month;
+    });
+  }
+
   // 운영 지표는 CRM 안이 아니라 별도 조회로 오는 자료라, 없으면 아예 뺀다.
   // 없는 걸 0 으로 채우면 "문제 없음" 으로 읽힌다.
-  function operationsSection(operations, month, now) {
+  function operationsSection(operations, month) {
     if (!OperationsCore || !Array.isArray(operations) || !operations.length) return null;
-    const metrics = plain(OperationsCore.metrics(operations));
-    const analysis = plain(OperationsCore.bottlenecks(operations, { period: "month", now }));
+    const scoped = operationsInMonth(operations, month);
+    // 그 달 건이 하나도 없을 때도 뺀다. 조회가 최근 자료만 실어 오는 경우와
+    // 실제로 그 달에 일이 없었던 경우를 여기서는 구분할 수 없어서, 0 으로
+    // 단정하는 대신 말하지 않는다.
+    if (!scoped.length) return null;
+    const metrics = plain(OperationsCore.metrics(scoped));
+    // 이미 달로 걸렀으므로 여기서 기간을 또 자르지 않는다.
+    const analysis = plain(OperationsCore.bottlenecks(scoped, { period: "all" }));
     const groups = rows(analysis.groups)
       .filter(group => group.sampleSize >= RANKABLE_MIN_SAMPLE)
       .slice(0, TOP_BOTTLENECKS)
@@ -142,7 +160,7 @@
 
     const report = plain(ManagementReportCore.buildMonthlyReport(store, month));
     const snapshot = plain(ManagementReportCore.buildReportAiSnapshot(report));
-    const operations = operationsSection(settings.operations, month, now.toISOString());
+    const operations = operationsSection(settings.operations, month);
 
     const quantitative = {
       finance: snapshot.finance,

@@ -104,6 +104,47 @@ test("표본 3건 미만 그룹은 병목 순위로 내보내지 않는다", () 
   assert.equal(typeof ops.bottleneckSampleSize, "number");
 });
 
+test("운영 지표는 보고하는 달의 건만 센다", () => {
+  // 8월 보고를 9월에 만들면, 거르지 않을 경우 전체 기간 합계와 9월 병목이
+  // 8월 이름표를 달고 들어간다. 받는 쪽은 그걸 8월 실적으로 읽는다.
+  const makeOp = (id, createdAt, minutes) => ({
+    id, status: "completed", category: "누수", subcategory: "기타",
+    createdAt, completedAt: createdAt, directMinutes: minutes,
+  });
+  const operations = [
+    makeOp("a1", "2026-08-03T00:00:00.000Z", 60),
+    makeOp("a2", "2026-08-10T00:00:00.000Z", 60),
+    makeOp("a3", "2026-08-20T00:00:00.000Z", 60),
+    makeOp("s1", "2026-09-02T00:00:00.000Z", 600),
+    makeOp("s2", "2026-09-03T00:00:00.000Z", 600),
+  ];
+  // 만든 시각은 9월인데 보고 대상은 8월이다.
+  const madeInSeptember = "2026-09-04T09:00:00.000Z";
+  const envelope = Owner.buildReportEnvelope({ store, operations, month: "2026-08", now: madeInSeptember });
+  const ops = envelope.quantitative.operations;
+  assert.ok(ops, "8월 건이 있으므로 운영 칸이 나온다");
+  assert.equal(ops.month, "2026-08");
+  assert.equal(ops.total, 3, "8월 3건만 세야 한다");
+  assert.equal(ops.bottleneckSampleSize, 3, "병목도 8월 건만 본다");
+  // 9월의 600분짜리가 섞였다면 평균이 60분일 수 없다.
+  assert.equal(ops.topBottlenecks[0].averageDirectMinutes, 60);
+
+  // 반대로 9월 보고를 만들면 9월 건만 나온다.
+  const september = Owner.buildReportEnvelope({ store, operations, month: "2026-09", now: madeInSeptember });
+  assert.equal(september.quantitative.operations.total, 2);
+});
+
+test("그 달 운영 건이 없으면 0 이라고 하지 않고 뺀다", () => {
+  // 조회가 최근 자료만 실어 온 것인지, 실제로 그 달에 일이 없었던 것인지
+  // 여기서는 구분할 수 없다. 0 으로 단정하면 "문제 없음" 으로 읽힌다.
+  const operations = [{
+    id: "z1", status: "completed", category: "누수", subcategory: "기타",
+    createdAt: "2026-09-02T00:00:00.000Z", completedAt: "2026-09-02T01:00:00.000Z", directMinutes: 60,
+  }];
+  const envelope = Owner.buildReportEnvelope({ store, operations, month: "2026-08", now });
+  assert.equal("operations" in envelope.quantitative, false);
+});
+
 test("확인한 사람이 없으면 확인 시각도 남기지 않는다", () => {
   // 시각만 있고 사람이 없으면 누가 봤는지 모르는 채로 확인된 것처럼 보인다.
   const envelope = Owner.buildReportEnvelope({

@@ -42,6 +42,20 @@ test("마케팅 전용 계정은 대표OS 설정도 전송도 못 한다", () =>
   assert.match(sender, /isMarketingOnlySession\(\)/u);
 });
 
+test("보내기도 관리자만 할 수 있다", () => {
+  // 화면에서만 관리자를 확인하면, 개발자 도구에서 채널을 직접 불러 지어낸
+  // 실적을 대표 보고로 올릴 수 있다. 설정 저장과 같은 기준으로 막는다.
+  const sender = mainSource.slice(
+    mainSource.indexOf("async function sendOwnerOsReport"),
+    mainSource.indexOf("async function sendOwnerOsReport") + 2400,
+  );
+  assert.match(sender, /user\.role !== "admin"/u);
+  // 검사가 실제로 보내기 앞에 있어야 한다.
+  const guardIndex = sender.indexOf('user.role !== "admin"');
+  const sendIndex = sender.indexOf("OwnerOsEndpointCore.buildRequest");
+  assert.ok(guardIndex >= 0 && sendIndex >= 0 && guardIndex < sendIndex, "검사가 전송보다 앞이어야 한다");
+});
+
 test("세 채널이 main 과 preload 양쪽에 있다", () => {
   for (const channel of CHANNELS) {
     assert.ok(mainSource.includes(`secureCanonicalHandle("${channel}"`), `main.js 에 ${channel} 없음`);
@@ -194,4 +208,37 @@ test("확인 전 총평이라는 것을 화면이 말해 준다", () => {
   assert.match(uiSource, /평가 근거로 쓰이지 않습니다/u);
   // 연결 전에는 보내기 칸 대신 안내를 낸다.
   assert.match(uiSource, /설정 화면에서 대표OS 연결을 먼저 넣어 주세요/u);
+});
+
+test("달을 바꾸면 총평과 확인이 함께 풀린다", () => {
+  // 7월 총평이 "확인됨" 인 채로 남으면 8월 보고에 그대로 붙어 나간다.
+  // 대표는 8월을 읽고 확인한 것으로 믿게 된다.
+  const handler = appSource.slice(
+    appSource.indexOf('event.target.matches("[data-ai-management-month]")'),
+    appSource.indexOf('event.target.matches("[data-ai-management-month]")') + 900,
+  );
+  assert.ok(handler.length > 0);
+  assert.match(handler, /ownerOsSummaryState = blankOwnerOsSummaryState\(\)/u);
+  // 비우는 값에 확인자와 확인 시각이 실제로 들어 있어야 한다.
+  const blank = appSource.slice(
+    appSource.indexOf("const blankOwnerOsSummaryState ="),
+    appSource.indexOf("const blankOwnerOsSummaryState =") + 260,
+  );
+  assert.match(blank, /confirmedBy: ""/u);
+  assert.match(blank, /confirmedAt: ""/u);
+});
+
+test("총평을 고치면 확인이 풀린다", () => {
+  // 보내는 쪽은 이미 고친 글에서 확인자를 떼지만, 화면이 계속 "확인됨" 이라고
+  // 하면 관리자는 고친 글이 승인된 줄 알고 보낸다.
+  const handler = appSource.slice(
+    appSource.indexOf('event.target.matches("[data-owner-os-summary]")'),
+    appSource.indexOf('event.target.matches("[data-owner-os-summary]")') + 1100,
+  );
+  assert.ok(handler.length > 0, "입력 처리기가 있어야 한다");
+  assert.match(handler, /confirmedBy: ""/u);
+  assert.match(handler, /confirmedAt: ""/u);
+  assert.match(handler, /summary: event\.target\.value/u);
+  // 글자마다 다시 그리면 커서가 튀고 한글 조합이 끊긴다.
+  assert.match(handler, /wasConfirmed && !event\.isComposing/u);
 });
