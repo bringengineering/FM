@@ -451,6 +451,26 @@
     return rows.filter(row => row.userId);
   }
 
+  // 결재도 휴가와 같은 모양이다. 관리자는 uid 묶음을, 본인은 자기 결재
+  // 목록을 받는다. 결재 한 건인지 묶음인지는 status 가 있는지로 가른다.
+  function flattenApprovals(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    const rows = [];
+    const push = (uid, id, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        id: String(record.id || id || ""),
+        userId: String(record.userId || uid || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      if (firstValue.status || firstValue.title) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([id, record]) => push(firstKey, id, record));
+    });
+    return rows.filter(row => row.id && row.userId);
+  }
+
   function flattenAttendance(value) {
     if (!value || typeof value !== "object") return [];
     const rows = [];
@@ -501,6 +521,9 @@
       // 인사기록은 여기서 모양만 편다. 값 검사는 hr-core 가 한다.
       members: Array.isArray(source.members) ? source.members.slice() : flattenMembers(source.members, current.uid),
       memberAdmin: source.memberAdmin === true,
+      // 결재도 여기서 모양만 편다. 값 검사는 approval-core 가 한다.
+      approvals: Array.isArray(source.approvals) ? source.approvals.slice() : flattenApprovals(source.approvals, current.uid),
+      approvalAdmin: source.approvalAdmin === true,
       loadedAt: safeText(source.loadedAt)
     };
   }
@@ -562,6 +585,7 @@
     flattenLeave,
     flattenLeaveGrants,
     flattenMembers,
+    flattenApprovals,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,

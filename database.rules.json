@@ -54,6 +54,63 @@
           ".validate": false
         }
       },
+      "officeApprovals": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
+        ".write": false,
+        "$uid": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
+          ".write": false,
+          "$requestId": {
+            ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin') && newData.exists()",
+            ".validate": "newData.hasChildren(['id','userId','kind','title','status','createdAt']) && newData.child('id').val() === $requestId && newData.child('userId').val() === $uid && (!data.exists() || data.child('status').val() === 'requested') && ((root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && data.exists() && (newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected') && newData.hasChild('decidedBy') && newData.child('decidedBy').val() !== '' && (newData.child('status').val() === 'approved' || (newData.hasChild('decisionNote') && newData.child('decisionNote').val() !== '')) && newData.child('kind').val() === data.child('kind').val() && newData.child('title').val() === data.child('title').val() && newData.child('amount').val() === data.child('amount').val() && newData.child('vendor').val() === data.child('vendor').val() && newData.child('dueDate').val() === data.child('dueDate').val() && newData.child('content').val() === data.child('content').val() && newData.child('attachmentUrl').val() === data.child('attachmentUrl').val() && newData.child('createdAt').val() === data.child('createdAt').val()) || (!data.exists() && newData.child('status').val() === 'requested' && (!newData.hasChild('decidedBy') || newData.child('decidedBy').val() === '') && (!newData.hasChild('decidedAt') || newData.child('decidedAt').val() === '')) || (data.exists() && data.child('status').val() === 'requested' && newData.child('status').val() === 'cancelled' && newData.child('kind').val() === data.child('kind').val() && newData.child('title').val() === data.child('title').val() && newData.child('amount').val() === data.child('amount').val() && newData.child('vendor').val() === data.child('vendor').val() && newData.child('dueDate').val() === data.child('dueDate').val() && newData.child('content').val() === data.child('content').val() && newData.child('attachmentUrl').val() === data.child('attachmentUrl').val() && newData.child('createdAt').val() === data.child('createdAt').val()))",
+            "id": {
+              ".validate": "newData.isString() && newData.val() === $requestId"
+            },
+            "userId": {
+              ".validate": "newData.isString() && newData.val() === $uid"
+            },
+            "kind": {
+              ".validate": "newData.isString() && (newData.val() === 'expense' || newData.val() === 'purchase' || newData.val() === 'contract' || newData.val() === 'general')"
+            },
+            "title": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+            },
+            "amount": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "vendor": {
+              ".validate": "newData.isString() && newData.val().length <= 120"
+            },
+            "dueDate": {
+              ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+            },
+            "content": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "attachmentUrl": {
+              ".validate": "newData.isString() && (newData.val() === '' || (newData.val().beginsWith('https://') && newData.val().length <= 500))"
+            },
+            "status": {
+              ".validate": "newData.isString() && (newData.val() === 'requested' || newData.val() === 'approved' || newData.val() === 'rejected' || newData.val() === 'cancelled')"
+            },
+            "decidedBy": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "decidedAt": {
+              ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/))"
+            },
+            "decisionNote": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "createdAt": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
       "officePurchases": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": false,

@@ -5,6 +5,7 @@ const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
+const ApprovalCore = require("./approval-core");
 const PurchaseCore = require("./purchase-core");
 const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
@@ -2365,7 +2366,10 @@ class FirebaseRemoteClient {
     // 것만 본다. 연차 발생일수 제안이 여기 입사일을 재료로 쓴다.
     const memberAdmin = session.role === "admin";
     const memberLocation = memberAdmin ? "officeMembers" : `officeMembers/${session.uid}`;
-    const [users, teamProfiles, attendance, leave, leaveGrants, members] = await Promise.all([
+    // 결재도 같은 기준이다. 승인 권한이 있는 사람까지만 남의 것을 본다.
+    const approvalAdmin = session.role === "admin";
+    const approvalLocation = approvalAdmin ? "officeApprovals" : `officeApprovals/${session.uid}`;
+    const [users, teamProfiles, attendance, leave, leaveGrants, members, approvals] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
@@ -2374,6 +2378,7 @@ class FirebaseRemoteClient {
       this.dbRequest(leaveLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(grantLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(memberLocation, { method: "GET" }).catch(() => null),
+      this.dbRequest(approvalLocation, { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
     const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
@@ -2400,6 +2405,8 @@ class FirebaseRemoteClient {
         leaveAdmin,
         members: OfficeCore.flattenMembers(members, session.uid),
         memberAdmin,
+        approvals: OfficeCore.flattenApprovals(approvals, session.uid),
+        approvalAdmin,
         messages: OfficeCore.flattenMailbox(mailbox),
         loadedAt: new Date().toISOString(),
       },
@@ -2508,6 +2515,68 @@ class FirebaseRemoteClient {
     await this.dbRequest(`officeMembers/${record.userId}`, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
+  }
+
+  // 결재 상신·취소. 본인 칸에만 쓴다.
+  async saveApprovalRequest(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = ApprovalCore.validateRequest(Object.assign({}, source, { userId: session.uid }));
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const record = checked.record;
+    // 승인·반려는 이 길로 오지 못한다. 여기가 열리면 결재 절차가 없는 것과 같다.
+    if (record.status !== "requested" && record.status !== "cancelled") {
+      throw createError("승인과 반려는 관리자만 할 수 있습니다.", "APPROVAL_DECISION_FORBIDDEN");
+    }
+    const location = `officeApprovals/${session.uid}/${record.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing) {
+      // 이미 정해진 건은 아무도 못 고친다. 고치려면 취소하고 다시 올린다 —
+      // 그래야 무엇이 바뀌었는지 두 건으로 남는다.
+      if (ApprovalCore.normalizeRequest(existing).status !== "requested") {
+        throw createError("이미 처리된 결재는 고칠 수 없습니다.", "APPROVAL_ALREADY_DECIDED");
+      }
+      // 취소하면서 금액을 슬쩍 바꾸는 길을 막는다. 서버 규칙도 같은 것을 막는다.
+      if (!ApprovalCore.sameContent(existing, record)) {
+        throw createError("올린 내용은 고칠 수 없습니다. 취소하고 다시 올려 주세요.", "APPROVAL_CONTENT_LOCKED");
+      }
+    } else if (record.status !== "requested") {
+      throw createError("없는 결재는 취소할 수 없습니다.", "APPROVAL_NOT_FOUND");
+    }
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 승인·반려. 관리자만 한다.
+  async decideApprovalRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("승인과 반려는 관리자만 할 수 있습니다.", "APPROVAL_DECISION_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const userId = String(source.userId || "");
+    const requestId = String(source.id || "");
+    if (!userId || !requestId) throw createError("어떤 결재인지 정해 주세요.", "VALIDATION_ERROR");
+    const location = `officeApprovals/${userId}/${requestId}`;
+    // 서버에 있는 것을 다시 읽어 판단한다. 화면이 오래됐을 수 있고, 두 사람이
+    // 동시에 눌렀을 수도 있다.
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 결재입니다.", "APPROVAL_NOT_FOUND");
+    const checked = ApprovalCore.decide({
+      request: existing,
+      decision: String(source.decision || ""),
+      decidedBy: String(session.displayName || session.email || "관리자"),
+      note: String(source.note || ""),
+    });
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    await this.dbRequest(location, { method: "PUT", body: checked.record });
+    this.assertSessionGuardActive(guard);
+    return checked.record;
   }
 
   async saveOfficeAttendance(input) {
