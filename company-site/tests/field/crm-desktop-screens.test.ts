@@ -34,6 +34,7 @@ const SCREENS: Array<[string, string]> = [
   ["deliveryFlow", "견적서에서 입금까지"],
   ["workOrders", "표의 한 줄이 곧 업무지시"],
   ["objectives", "이번 분기에 무엇을 이루려 하는가"],
+  ["growth", "다음 단계가 무엇인지 적어 둡니다"],
   ["tasks", "할 일"],
   ["cases", "민원"],
   ["buildingCalendar", "업무일정"],
@@ -86,6 +87,16 @@ async function boot(): Promise<Booted> {
     },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
+    loadGrowth: {
+      ...empty,
+      checkins: [
+        { id: "gc1", uid: "u-admin", name: "서창환", week: "2026-08-31", answers: { done: "햇빛빌라 계단청소", stuck: "건물주가 전화를 안 받습니다", next: "입주청소 두 건", grow: "결과보고서 혼자 내기" } },
+        { id: "gc2", uid: "u-admin", name: "서창환", week: "2026-08-24", answers: { done: "입주청소 한 건", stuck: "건물주가 전화를 안 받습니다", next: "계단청소", grow: "" } },
+      ],
+      reviews: [
+        { id: "gr1", uid: "u-admin", name: "서창환", quarter: "2026-Q3", level: "L3", skills: { field: "L3", owner: "L2", record: "L3", plan: "L3", tool: "L3", biz: "L3" }, did: "계단청소 12건", nextStep: "건물 한 채를 통째로 맡아 본다" },
+      ],
+    },
     loadObjectives: {
       ...empty,
       objectives: [
@@ -126,7 +137,9 @@ async function boot(): Promise<Booted> {
     },
     loadWorkOrders: {
       ...empty,
-      members: [{ uid: "u-admin", displayName: "서창환" }],
+      // 두 사람을 둔다. 한 사람뿐이면 "이번 주에 아직 이야기 안 한 사람"
+      // 이 늘 0 이라, 그 칸이 도는지 알 수 없다.
+      members: [{ uid: "u-admin", displayName: "서창환" }, { uid: "u-hwang", displayName: "황우중" }],
       projects: [
         { id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
         // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
@@ -471,6 +484,69 @@ describe("desktop CRM screens actually render", () => {
     // 제목·책임자·핵심결과가 비어 있으므로 서버로 나가면 안 된다.
     expect(booted.calls.slice(before).some(call => call.name === "saveObjective"),
       "덜 채운 목표가 저장되면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("성장 화면이 다음 단계와 이번 주 1on1 을 같이 보여 준다", async () => {
+    // 이 화면의 값어치는 레벨을 붙이는 데 있지 않고, **다음에 무엇을
+    // 배울지가 적혀 있게** 하는 데 있다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="growth"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    // 지금 레벨(L3 맡는 사람)과 다음 레벨(L4 넓히는 사람)이 같이 보여야 한다.
+    expect(shown()).toContain("맡는 사람");
+    expect(shown(), "다음 단계가 적혀 있어야 한다").toContain("넓히는 사람");
+    expect(shown()).toContain("하던 일을 서식·표준 항목으로 만들어 남긴다");
+    // 역량이 레벨을 다 받치지 못하면 말해 준다 (owner 가 L2 인데 레벨은 L3).
+    expect(shown()).toContain("건물주 응대");
+
+    // 매주 같은 네 가지를 묻는다.
+    const form = booted.document.querySelector("[data-growth-checkin-form]") as HTMLFormElement;
+    expect(form, "이번 주 기록 칸이 있어야 한다").toBeTruthy();
+    ["done", "stuck", "next", "grow"].forEach(key => {
+      expect(form.querySelector(`[name="${key}"]`), key).toBeTruthy();
+    });
+
+    // 팀 탭 — 이번 주에 아직 이야기 안 한 사람이 보여야 한다.
+    (booted.document.querySelector('[data-growth-tab="team"]') as HTMLElement).click();
+    await sleep(200);
+    expect(shown()).toContain("이번 주에 아직 이야기 안 한 사람");
+    // 두 주째 같은 곳에 막혀 있으면 드러나야 한다.
+    expect(shown(), "같은 곳에 계속 막힌 것이 보여야 한다").toContain("같은 곳에 계속 막힘");
+
+    // 레벨 기준 탭 — 다섯 단계가 다 적혀 있어야 한다.
+    (booted.document.querySelector('[data-growth-tab="ladder"]') as HTMLElement).click();
+    await sleep(200);
+    ["배우는 사람", "혼자 하는 사람", "맡는 사람", "넓히는 사람", "정하는 사람"].forEach(label => {
+      expect(shown(), label).toContain(label);
+    });
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("다음에 무엇을 배울지 없는 평가는 저장으로 안 나간다", async () => {
+    (booted.document.querySelector('[data-growth-tab="team"]') as HTMLElement).click();
+    await sleep(200);
+    const open = booted.document.querySelector("[data-growth-review]") as HTMLElement | null;
+    expect(open, "분기 평가를 여는 자리가 있어야 한다").toBeTruthy();
+    open!.click();
+    await sleep(200);
+
+    const form = booted.document.querySelector("[data-growth-review-form]") as HTMLFormElement;
+    expect(form, "평가 서식이 열려야 한다").toBeTruthy();
+    (form.querySelector('[name="nextStep"]') as HTMLTextAreaElement).value = "";
+
+    const before = booted.calls.length;
+    form.dispatchEvent(new booted.window.Event("submit", { bubbles: true, cancelable: true }));
+    await sleep(200);
+    expect(booted.calls.slice(before).some(call => call.name === "saveGrowthReview"),
+      "성적표는 저장하지 않는다").toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });

@@ -8,6 +8,7 @@ const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
 const OkrCore = require("./okr-core");
+const GrowthCore = require("./growth-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4027,6 +4028,90 @@ class FirebaseRemoteClient {
       uid: session.uid,
       loadedAt: new Date().toISOString(),
     };
+  }
+
+  // 1on1 기록과 분기 평가를 불러온다.
+  //
+  // 자기 것은 누구나 본다. 남의 것은 관리자만 — 1on1 에는 "무엇에 막혀
+  // 있나" 가 적힌다. 그게 옆자리에 다 보이면 아무도 솔직하게 안 적는다.
+  async loadGrowth() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const [checkinPayload, reviewPayload] = await Promise.all([
+      this.dbRequest("growthCheckins", { method: "GET" }).catch(() => null),
+      this.dbRequest("growthReviews", { method: "GET" }).catch(() => null),
+    ]);
+    this.assertSessionGuardActive(guard);
+    const admin = session.role === "admin";
+    const mine = row => admin || row.uid === session.uid;
+    const checkins = Object.entries(checkinPayload && typeof checkinPayload === "object" ? checkinPayload : {})
+      .map(([id, value]) => GrowthCore.normalizeCheckin(Object.assign({ id }, value || {})))
+      .filter(item => item.id && mine(item));
+    const reviews = Object.entries(reviewPayload && typeof reviewPayload === "object" ? reviewPayload : {})
+      .map(([id, value]) => GrowthCore.normalizeReview(Object.assign({ id }, value || {})))
+      .filter(item => item.id && mine(item));
+    return {
+      checkins,
+      reviews,
+      admin,
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 1on1 기록. 자기 것은 자기가 적는다 — 남이 대신 적으면 그건 기록이
+  // 아니라 관찰이고, 관찰은 1on1 이 아니다.
+  async saveGrowthCheckin(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 기록할 수 없습니다.", "GROWTH_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = GrowthCore.validateCheckin(Object.assign({}, source, { uid: session.uid }));
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `growthCheckins/${checked.checkin.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing && GrowthCore.text(existing.uid, 80) !== session.uid) {
+      throw createError("남의 기록은 고칠 수 없습니다.", "GROWTH_FORBIDDEN");
+    }
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.checkin, {
+      name: String(session.displayName || session.email || ""),
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 분기 평가. 레벨을 정하는 것은 관리자만 — 그건 회사가 하는 약속이다.
+  async saveGrowthReview(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("분기 평가는 관리자만 남길 수 있습니다.", "GROWTH_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = GrowthCore.validateReview(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `growthReviews/${checked.review.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.review, {
+      leadUid: session.uid,
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   // 분기 목표(OKR)를 불러온다.

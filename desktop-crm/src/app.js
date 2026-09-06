@@ -199,6 +199,7 @@
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
+    growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
@@ -1516,6 +1517,7 @@
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
+    else if (currentView === "growth") renderGrowth();
     else if (currentView === "objectives") renderObjectives();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
@@ -6596,6 +6598,252 @@
     </section>`;
   }
 
+  // --- 성장·1on1 ---
+  //
+  // 작은 회사에서 성장이 막히는 까닭은 대개 기회가 없어서가 아니라,
+  // **다음 단계가 무엇인지 아무도 안 적어 놨기 때문**이다. 대기업이 이걸
+  // 잘하는 유일한 이유도 그것 하나다 — 적혀 있다.
+  //
+  // 그래서 이 화면은 세 가지만 한다. 레벨을 적어 두고, 매주 같은 것을
+  // 묻고, 분기 끝에 그 기록을 같이 본다.
+  //
+  // 점수를 매기지 않는다. 사람에게 숫자를 붙이면 그 숫자를 지키려고
+  // 일한다. 레벨은 등급이 아니라 다음에 무엇을 배울지의 이름이다.
+  let growthState = {
+    checkins: [], reviews: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    tab: "me", personUid: "", checkinDraft: null, reviewDraft: null, busy: false,
+  };
+
+  const growthCore = () => window.BringGrowthCore;
+
+  async function loadGrowth() {
+    if (growthState.loading) return;
+    growthState.loading = true;
+    growthState.error = "";
+    if (currentView === "growth") renderGrowth();
+    try {
+      const data = await api.loadGrowth();
+      growthState.checkins = Array.isArray(data && data.checkins) ? data.checkins : [];
+      growthState.reviews = Array.isArray(data && data.reviews) ? data.reviews : [];
+      growthState.admin = data && data.admin === true;
+      growthState.canWork = data && data.canWork === true;
+      growthState.uid = String((data && data.uid) || "");
+      growthState.loaded = true;
+    } catch (error) {
+      growthState.error = error && error.message || "성장 기록을 불러오지 못했습니다.";
+    } finally {
+      growthState.loading = false;
+      updateGrowthBadge();
+      if (currentView === "growth") renderGrowth();
+    }
+  }
+
+  // 사이드바 숫자는 "이번 주에 아직 이야기 안 한 사람" 이다. 1on1 은
+  // 바쁘면 제일 먼저 빠진다 — 빠진 것이 눈에 보여야 안 빠진다.
+  function updateGrowthBadge() {
+    const badge = document.getElementById("navGrowthCount");
+    if (!badge) return;
+    const G = growthCore();
+    if (!G || !growthState.admin) { badge.hidden = true; return; }
+    const count = G.missingCheckins(workOrderState.members || [], growthState.checkins, todayKey()).length;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  function renderGrowth() {
+    const G = growthCore();
+    if (!G) { main.innerHTML = `<section class="operations-hero"><div><h2>성장·1on1</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!growthState.loaded && !growthState.loading && !growthState.error) void loadGrowth();
+    if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
+
+    const tabs = growthState.admin
+      ? [["me", "내 기록"], ["team", "팀"], ["ladder", "레벨 기준"]]
+      : [["me", "내 기록"], ["ladder", "레벨 기준"]];
+    const tab = tabs.some(item => item[0] === growthState.tab) ? growthState.tab : "me";
+
+    main.innerHTML = `
+      <section class="operations-hero">
+        <div>
+          <span>성장은 기회가 아니라 다음 단계가 적혀 있느냐의 문제입니다</span>
+          <h2>다음 단계가 무엇인지 적어 둡니다</h2>
+          <p>레벨은 등급이 아니라 <b>다음에 무엇을 배울지의 이름</b>입니다. 점수를 매기지 않습니다.</p>
+        </div>
+      </section>
+      ${growthState.error ? `<div class="okr-error" role="alert">${esc(growthState.error)}</div>` : ""}
+      <div class="sp-tabs">${tabs.map(([key, label]) => `<button type="button" class="sp-tab${key === tab ? " is-active" : ""}" data-growth-tab="${esc(key)}"><b>${esc(label)}</b></button>`).join("")}</div>
+      ${tab === "me" ? growthMine(G) : tab === "team" ? growthTeam(G) : growthLadder(G)}
+    `;
+  }
+
+  function growthMine(G) {
+    const trail = G.personTrail(growthState.uid, growthState);
+    const level = G.levelOf(trail.level);
+    const next = trail.nextLevel;
+    const thisWeek = G.weekStart(todayKey());
+    const written = trail.checkins.find(item => item.week === thisWeek);
+    return `
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>지금 서 있는 곳</span><b>${esc(level ? level.label : trail.level)}</b><small>${esc(level ? level.scope : "")}</small></div>
+        <div class="operations-kpi" style="--wash:#eef5ff"><span>다음 단계</span><b>${esc(next ? next.label : "맨 위")}</b><small>${esc(next ? next.scope : "무엇을 안 할지도 정합니다")}</small></div>
+        <div class="operations-kpi" style="--wash:#f6f8fa"><span>남긴 주</span><b>${trail.weeks}주</b><small>${esc(trail.lastWeek || "아직 없음")}</small></div>
+        <div class="operations-kpi" style="--wash:${written ? "#eef7ee" : "#fff9eb"}"><span>이번 주</span><b>${written ? "적었습니다" : "아직"}</b><small>${esc(thisWeek)} 주</small></div>
+      </div>
+      ${next ? `<section class="office-panel gr-next">
+        <header><span class="eyebrow">${esc(trail.level)} → ${esc(next.key)}</span><h3>${esc(next.label)}가 되려면</h3></header>
+        <div class="panel-body"><p class="office-muted">${esc(next.meaning)}</p><ul class="gr-signs">${next.signs.map(sign => `<li>${esc(sign)}</li>`).join("")}</ul></div>
+      </section>` : ""}
+      ${trail.gap && !trail.gap.supported ? `<div class="gr-gap">지금 레벨을 아직 다 받치지 못한 곳이 있습니다 — ${esc([...trail.gap.below, ...trail.gap.missing].join(", "))}. 이건 흠이 아니라 다음에 볼 곳입니다.</div>` : ""}
+      ${growthState.canWork ? growthCheckinEditor(G, written) : ""}
+      ${trail.checkins.length ? `<section class="office-panel"><header><span class="eyebrow">지난 주들</span><h3>매주 같은 것을 묻습니다</h3></header><div class="panel-body">${trail.checkins.slice(0, 8).map(item => growthCheckinRow(G, item)).join("")}</div></section>` : ""}
+      ${trail.reviews.length ? `<section class="office-panel"><header><span class="eyebrow">분기 평가</span><h3>다음에 무엇을 배울지</h3></header><div class="panel-body">${trail.reviews.map(item => `<div class="gr-review"><b>${esc(item.quarter)} · ${esc(G.levelLabel(item.level))}</b><p>${esc(item.nextStep)}</p>${item.leadNote ? `<small>${esc(item.leadNote)}</small>` : ""}</div>`).join("")}</div></section>` : ""}
+    `;
+  }
+
+  function growthCheckinRow(G, item) {
+    return `<div class="gr-week">
+      <b>${esc(item.week)} 주</b>
+      <dl>${G.CHECKIN_QUESTIONS.filter(question => item.answers[question.key]).map(question => `<div><dt>${esc(question.label)}</dt><dd>${esc(item.answers[question.key])}</dd></div>`).join("")}</dl>
+    </div>`;
+  }
+
+  function growthCheckinEditor(G, written) {
+    const draft = G.normalizeCheckin(growthState.checkinDraft || written || { week: G.weekStart(todayKey()) });
+    return `<form class="wo-editor gr-editor" data-growth-checkin-form>
+      <h3>${written ? "이번 주 기록 고치기" : "이번 주 15분"}</h3>
+      <p class="wo-editor-note">매주 같은 것을 묻습니다. 매번 다른 것을 물으면 흐름이 안 보이고, 흐름이 안 보이면 분기 끝에 기억으로 이야기하게 됩니다.</p>
+      <input type="hidden" name="week" value="${esc(draft.week || G.weekStart(todayKey()))}">
+      ${G.CHECKIN_QUESTIONS.map(question => `<label class="wide"><span>${esc(question.label)} <small>${esc(question.hint)}</small></span><textarea name="${esc(question.key)}" rows="2" maxlength="2000">${esc(draft.answers[question.key])}</textarea></label>`).join("")}
+      <div class="wo-editor-actions"><button class="primary-button" type="submit"${growthState.busy ? " disabled" : ""}>남기기</button></div>
+    </form>`;
+  }
+
+  function growthTeam(G) {
+    const members = workOrderState.members || [];
+    const missing = G.missingCheckins(members, growthState.checkins, todayKey());
+    const rows = members.map(member => {
+      const trail = G.personTrail(member.uid, growthState);
+      const level = G.levelOf(trail.level);
+      return `<tr>
+        <td class="office-user-cell">${esc(member.displayName)}</td>
+        <td>${esc(level ? level.label : trail.level)}</td>
+        <td>${trail.weeks}주</td>
+        <td>${esc(trail.lastWeek || "—")}</td>
+        <td>${trail.repeatedStuck ? `<span class="gr-stuck">같은 곳에 계속 막힘</span>` : ""}</td>
+        <td>${growthState.admin ? `<button type="button" class="text-button" data-growth-review="${esc(member.uid)}">분기 평가</button>` : ""}</td>
+      </tr>`;
+    }).join("");
+    return `
+      ${missing.length ? `<div class="gr-missing"><b>이번 주에 아직 이야기 안 한 사람 ${missing.length}명</b><span>${esc(missing.map(item => item.name).join(", "))}</span><small>1on1 은 바쁘면 제일 먼저 빠집니다. 빠진 것이 보여야 안 빠집니다.</small></div>` : `<div class="gr-done">이번 주 1on1 을 다 했습니다.</div>`}
+      ${growthState.reviewDraft ? growthReviewEditor(G) : ""}
+      <section class="office-panel"><header><span class="eyebrow">팀</span><h3>누가 어디에 서 있나</h3></header>
+      <div class="panel-body"><div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>사람</th><th>레벨</th><th>남긴 주</th><th>마지막</th><th></th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div></div></section>`;
+  }
+
+  function growthReviewEditor(G) {
+    const draft = G.normalizeReview(growthState.reviewDraft);
+    const members = workOrderState.members || [];
+    const who = members.find(member => member.uid === draft.uid);
+    const O = okrCore();
+    return `<form class="wo-editor gr-editor" data-growth-review-form>
+      <h3>${esc(who ? who.displayName : "")} · 분기 평가</h3>
+      <p class="wo-editor-note">OKR 점수를 그대로 사람 점수로 바꾸지 않습니다. 그러면 다음 분기에 쉬운 목표만 세우게 됩니다.</p>
+      <label><span>분기</span><input type="text" name="quarter" value="${esc(draft.quarter || (O ? O.quarterOf(todayKey()) : ""))}" pattern="\\d{4}-Q[1-4]" required></label>
+      <label><span>레벨</span><select name="level">${G.LEVELS.map(level => `<option value="${esc(level.key)}"${level.key === draft.level ? " selected" : ""}>${esc(level.key)} ${esc(level.label)}</option>`).join("")}</select></label>
+      <div class="wide gr-skill-grid">${G.SKILLS.map(skill => `<label class="field"><span>${esc(skill.label)} <small>${esc(skill.detail)}</small></span><select name="skill_${esc(skill.key)}"><option value="">—</option>${G.LEVELS.map(level => `<option value="${esc(level.key)}"${level.key === draft.skills[skill.key] ? " selected" : ""}>${esc(level.key)}</option>`).join("")}</select></label>`).join("")}</div>
+      <label class="wide"><span>이번 분기에 한 일</span><textarea name="did" rows="3" maxlength="3000">${esc(draft.did)}</textarea></label>
+      <label class="wide"><span>다음 분기에 무엇을 배울지 <small>이게 없으면 평가가 아니라 성적표입니다</small></span><textarea name="nextStep" rows="2" maxlength="2000" required>${esc(draft.nextStep)}</textarea></label>
+      <label class="wide"><span>같이 나눈 이야기</span><textarea name="leadNote" rows="2" maxlength="3000">${esc(draft.leadNote)}</textarea></label>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${growthState.busy ? " disabled" : ""}>저장</button>
+        <button class="secondary-button" type="button" data-growth-review-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  function growthLadder(G) {
+    const board = G.ladder(workOrderState.members || [], growthState.reviews);
+    return `<div class="gr-ladder">${G.LEVELS.map((level, index) => {
+      const people = (board[index] || {}).people || [];
+      return `<section class="office-panel gr-level">
+        <header><span class="eyebrow">${esc(level.key)} · ${esc(level.scope)}</span><h3>${esc(level.label)}</h3></header>
+        <div class="panel-body">
+          <p class="office-muted">${esc(level.meaning)}</p>
+          <ul class="gr-signs">${level.signs.map(sign => `<li>${esc(sign)}</li>`).join("")}</ul>
+          ${growthState.admin && people.length ? `<div class="gr-here">${people.map(person => `<em>${esc(person.name)}</em>`).join("")}</div>` : ""}
+        </div>
+      </section>`;
+    }).join("")}</div>`;
+  }
+
+  async function saveGrowthCheckinFromForm(form) {
+    const G = growthCore();
+    if (!G || growthState.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const answers = {};
+    G.QUESTION_KEYS.forEach(key => { answers[key] = String(raw[key] || ""); });
+    const week = String(raw.week || G.weekStart(todayKey()));
+    const existing = growthState.checkins.find(item => item.uid === growthState.uid && item.week === week);
+    const checked = G.validateCheckin({
+      id: (existing && existing.id) || `gc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      uid: growthState.uid, week, answers,
+    });
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    growthState.busy = true;
+    renderGrowth();
+    try {
+      await api.saveGrowthCheckin(checked.checkin);
+      growthState.checkinDraft = null;
+      growthState.loaded = false;
+      showToast("이번 주 기록을 남겼습니다.", "success");
+      await loadGrowth();
+    } catch (error) {
+      showToast(error && error.message || "남기지 못했습니다.", "error");
+    } finally {
+      growthState.busy = false;
+      renderGrowth();
+    }
+  }
+
+  async function saveGrowthReviewFromForm(form) {
+    const G = growthCore();
+    if (!G || growthState.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = G.normalizeReview(growthState.reviewDraft);
+    const skills = {};
+    G.SKILL_KEYS.forEach(key => { skills[key] = String(raw[`skill_${key}`] || ""); });
+    const members = workOrderState.members || [];
+    const who = members.find(member => member.uid === previous.uid);
+    const checked = G.validateReview(Object.assign({}, previous, {
+      id: previous.id || `gr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name: who ? who.displayName : previous.name,
+      quarter: String(raw.quarter || ""),
+      level: String(raw.level || "L1"),
+      skills,
+      did: String(raw.did || ""),
+      nextStep: String(raw.nextStep || ""),
+      leadNote: String(raw.leadNote || ""),
+    }));
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    growthState.busy = true;
+    renderGrowth();
+    try {
+      await api.saveGrowthReview(checked.review);
+      growthState.reviewDraft = null;
+      growthState.loaded = false;
+      showToast("분기 평가를 남겼습니다.", "success");
+      await loadGrowth();
+    } catch (error) {
+      showToast(error && error.message || "남기지 못했습니다.", "error");
+    } finally {
+      growthState.busy = false;
+      renderGrowth();
+    }
+  }
+
   // --- 분기 목표 (OKR · RACI) ---
   //
   // 대표가 바란 것은 도구가 아니라 경험이다. "팀원들에게 대기업 인사구조
@@ -8562,6 +8810,21 @@
       if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
       return;
     }
+    const growthTab = event.target.closest("[data-growth-tab]");
+    if (growthTab) { growthState.tab = growthTab.dataset.growthTab; renderGrowth(); return; }
+    const growthReview = event.target.closest("[data-growth-review]");
+    if (growthReview) {
+      const G = growthCore();
+      const O = okrCore();
+      const uid = growthReview.dataset.growthReview;
+      const found = growthState.reviews.filter(item => item.uid === uid).sort((left, right) => right.quarter.localeCompare(left.quarter))[0];
+      if (G) {
+        growthState.reviewDraft = G.normalizeReview(found || { uid, quarter: O ? O.quarterOf(todayKey()) : "" });
+        renderGrowth();
+      }
+      return;
+    }
+    if (event.target.closest("[data-growth-review-cancel]")) { growthState.reviewDraft = null; renderGrowth(); return; }
     if (event.target.closest("[data-okr-new]")) {
       const O = okrCore();
       // 빈 폼을 주면 사람은 핵심결과 칸을 안 채우고 저장부터 누른다.
@@ -11997,6 +12260,12 @@
       buildingDocsState.buildingId = record.buildingId;
       logAudit({ category: "문서", targetType: "건물 서류", targetId: record.id, targetLabel: record.title || record.driveFileId, action: "건물 문서함에 연결", reason: BuildingDocs.typeLabel(record.docType) });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderBuildingDocuments(); showToast("서류를 연결했습니다. ‘최신 확인’ 을 누르면 Drive 에서 제목을 가져옵니다.", "success"); } });
+    } else if (form.matches("[data-growth-checkin-form]")) {
+      await saveGrowthCheckinFromForm(form);
+      return;
+    } else if (form.matches("[data-growth-review-form]")) {
+      await saveGrowthReviewFromForm(form);
+      return;
     } else if (form.matches("[data-okr-form]")) {
       await saveObjectiveFromForm(form);
       return;
