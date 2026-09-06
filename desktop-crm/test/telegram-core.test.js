@@ -173,8 +173,36 @@ test("못 찾았을 때 무엇을 해 보라고 말해 준다", () => {
 
 test("실패한 까닭을 사람 말로 바꾼다", () => {
   assert.match(T.describeFailure(401, {}), /토큰이 맞지 않습니다/u);
-  assert.match(T.describeFailure(400, { description: "Bad Request: chat not found" }), /봇을 그 방에 초대했는지/u);
-  assert.match(T.describeFailure(403, {}), /막혀 있습니다/u);
   assert.match(T.describeFailure(429, {}), /너무 자주/u);
   assert.match(T.describeFailure(500, {}), /HTTP 500/u);
+});
+
+test("403 을 하나로 뭉뚱그리지 않는다", () => {
+  // 403 은 까닭이 여럿인데 고칠 방법이 전혀 다르다. 뭉뚱그렸더니 실제로
+  // 사람을 엉뚱한 데로 보냈다 — 방 번호 자리에 봇 자신의 번호를 넣은
+  // 사람에게 "방에 다시 초대하라" 고 말했다. 초대할 방이 없는데.
+  const say = description => T.describeFailure(403, { description });
+
+  assert.match(say("Forbidden: bots can't send messages to bots"), /봇 자신의 번호/u);
+  assert.match(say("Forbidden: bot can't initiate conversation with a user"), /\/start/u);
+  assert.match(say("Forbidden: bot was blocked by the user"), /차단/u);
+  assert.match(say("Forbidden: bot was kicked from the supergroup chat"), /다시 초대/u);
+
+  // 네 가지가 서로 다른 말을 해야 한다. 같은 말이면 가른 뜻이 없다.
+  const said = [
+    "Forbidden: bots can't send messages to bots",
+    "Forbidden: bot can't initiate conversation with a user",
+    "Forbidden: bot was blocked by the user",
+    "Forbidden: bot was kicked from the supergroup chat",
+  ].map(say);
+  assert.equal(new Set(said).size, 4);
+
+  // 까닭을 못 알아봐도 무엇을 해 볼지는 말해 준다.
+  assert.match(say("Forbidden: 처음 보는 까닭"), /\[방 찾기\]/u);
+});
+
+test("방 번호를 손으로 적다 틀린 경우를 짚어 준다", () => {
+  const said = T.describeFailure(400, { description: "Bad Request: chat not found" });
+  assert.match(said, /\[방 찾기\]/u);
+  assert.match(said, /한 자리만 틀려도/u);
 });

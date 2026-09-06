@@ -225,10 +225,26 @@
   function describeFailure(status, body) {
     const description = text(body && body.description, 200);
     if (status === 401) return "봇 토큰이 맞지 않습니다. 다시 넣어 주세요.";
-    if (status === 400 && /chat not found/iu.test(description)) {
-      return "방을 못 찾았습니다. 봇을 그 방에 초대했는지, 방 번호가 맞는지 확인해 주세요.";
+
+    // 403 은 까닭이 여럿인데 고칠 방법이 전혀 다르다. 하나로 뭉뚱그리면
+    // 사람을 엉뚱한 데로 보낸다 — 실제로 그랬다. "봇 번호를 방 번호로
+    // 넣었다" 는 사람에게 "방에 다시 초대하라" 고 말했다.
+    if (/can't send messages to bots|bot.*to.*bot/iu.test(description)) {
+      return "방 번호 자리에 봇 자신의 번호가 들어갔습니다. [방 찾기] 를 눌러 대화방을 골라 주세요.";
     }
-    if (status === 403) return "봇이 그 방에서 막혀 있습니다. 방에 다시 초대해 주세요.";
+    if (/can't initiate conversation/iu.test(description)) {
+      return "봇에게 먼저 말을 걸어야 합니다. 텔레그램에서 봇 대화를 열고 /start 를 보낸 다음 다시 눌러 주세요.";
+    }
+    if (/blocked by the user/iu.test(description)) {
+      return "봇을 차단해 두셨습니다. 텔레그램에서 봇 대화를 열고 차단을 풀어 주세요.";
+    }
+    if (/kicked|not a member|chat_write_forbidden/iu.test(description)) {
+      return "봇이 그 방에서 빠졌거나 글을 못 씁니다. 방에 다시 초대해 주세요.";
+    }
+    if (status === 400 && /chat not found/iu.test(description)) {
+      return "방을 못 찾았습니다. [방 찾기] 를 눌러 목록에서 골라 주세요. 손으로 적은 번호는 한 자리만 틀려도 이렇게 됩니다.";
+    }
+    if (status === 403) return "그 방에는 보낼 수 없습니다. [방 찾기] 를 눌러 대화방을 다시 골라 주세요.";
     if (status === 429) return "너무 자주 보냈습니다. 잠시 뒤에 다시 보냅니다.";
     return description ? `텔레그램이 거절했습니다. (${description})` : `텔레그램에 보내지 못했습니다. (HTTP ${status})`;
   }
