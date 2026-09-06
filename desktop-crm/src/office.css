@@ -148,3 +148,46 @@
   .office-approval-row { flex-direction: column; }
   .office-approval-status { align-items: flex-start; }
 }
+
+/* --- 급여 --- */
+.office-pay-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.office-pay-head span { display: block; color: #6b7280; font-size: 12px; }
+.office-pay-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.office-pay-slip { border: 1px solid #e5e8eb; border-radius: 14px; padding: 14px 16px; }
+.office-pay-slip.status-draft { border-style: dashed; }
+.office-pay-slip > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.office-pay-slip > header b { font-size: 15px; }
+.office-pay-slip > header span { display: block; font-size: 12px; color: #6b7280; }
+.office-pay-net { text-align: right; }
+.office-pay-net b { font-size: 20px; }
+.office-pay-net small { display: block; font-size: 11px; color: #6b7280; }
+.office-pay-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+.office-pay-cols h4 { margin: 0 0 6px; font-size: 12px; color: #6b7280; }
+.office-pay-cols ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.office-pay-cols li { display: flex; justify-content: space-between; gap: 10px; }
+.office-pay-sum { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid #eef0f2; font-size: 13px; display: flex; justify-content: space-between; }
+.office-pay-note { margin: 10px 0 0; font-size: 12px; color: #4b5563; }
+.office-pay-status { margin: 8px 0 0; font-size: 11px; color: #6b7280; }
+.office-pay-admin { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5e8eb; }
+.office-pay-admin > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.office-pay-admin > header label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
+.office-pay-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.office-pay-summary > div { padding: 8px 10px; border: 1px solid #e5e8eb; border-radius: 10px; }
+.office-pay-summary span { display: block; font-size: 11px; color: #6b7280; }
+.office-pay-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.office-pay-table th, .office-pay-table td { padding: 7px 6px; text-align: left; border-bottom: 1px solid #eef0f2; }
+.office-pay-table th.num, .office-pay-table td.num { text-align: right; }
+.office-pay-table tr.is-selected { background: rgba(37, 99, 235, 0.06); }
+.office-pay-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 16px; }
+.office-pay-form h4, .office-pay-form .wide, .office-pay-form fieldset, .office-pay-form .office-pay-actions, .office-pay-locked { grid-column: 1 / -1; }
+.office-pay-form fieldset { border: 1px solid #e5e8eb; border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.office-pay-form legend { font-size: 12px; color: #6b7280; padding: 0 4px; }
+.office-pay-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.office-pay-form label span { color: #6b7280; }
+.office-pay-locked { font-size: 12px; color: #b45309; margin: 0; }
+.office-pay-actions { display: flex; gap: 8px; }
+.office-pay-hint { margin: 12px 0 0; font-size: 12px; color: #6b7280; }
+@media (max-width: 860px) {
+  .office-pay-cols, .office-pay-form { grid-template-columns: 1fr; }
+  .office-pay-form fieldset { grid-template-columns: 1fr 1fr; }
+}
