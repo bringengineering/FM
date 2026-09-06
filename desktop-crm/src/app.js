@@ -6152,6 +6152,10 @@
     }
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
+      // 랜딩에서 고른 폴더의 첫 화면까지 열어 준다. 들어가자마자 다시 왼쪽에서
+      // 같은 폴더를 찾아 눌러야 하면 랜딩을 나눈 뜻이 없다.
+      const target = String(workspaceEnter.dataset.workspaceEnterView || "");
+      if (target && WorkspaceShell.LANDING_FOLDERS.some(folder => folder.view === target)) currentView = target;
       await workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
       return;
     }
