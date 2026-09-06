@@ -166,3 +166,27 @@ test("AI 서버를 아직 안 올렸을 때 무엇을 해야 하는지 말한다
   assert.match(draft, /지원하지 않는 AI 작업/u);
   assert.match(draft, /crm-ai-worker 를 배포한 뒤 다시 눌러 주세요/u);
 });
+
+test("앱을 켤 때 한 번만 읽지 않는다", () => {
+  // 대표가 지시를 보내도 애들이 앱을 켜 두고 있으면 영영 안 뜬다.
+  // 화면에 들어올 때마다 다시 읽어야 한다.
+  assert.match(appSource, /function isStale\(state\)/u);
+  assert.match(appSource, /Date\.now\(\) - Number\(state\.refreshedAt \|\| 0\) >= LIVE_STALE_MS/u);
+  const render = appSource.slice(appSource.indexOf("function renderDailyLog"), appSource.indexOf("function renderDailyLog") + 700);
+  assert.match(render, /isStale\(dailyLogState\) && !dailyLogState\.draft/u, "치던 것이 있으면 덮어쓰면 안 된다");
+  assert.match(render, /isStale\(workOrderState\)/u);
+  // 다 읽고도 안 그리면 새로 온 지시가 고를 목록에 없다.
+  const load = methodBody(appSource.replace(/^  async function /gmu, "  async "), "loadWorkOrders");
+  assert.match(load, /currentView === "dailyLog" && !dailyLogState\.loading\) renderDailyLog/u);
+});
+
+test("새로고침 버튼이 치던 것을 지우지 않는다", () => {
+  const handler = appSource.slice(appSource.indexOf('closest("[data-live-refresh]")'), appSource.indexOf('closest("[data-live-refresh]")') + 800);
+  assert.match(handler, /const typing = Boolean\(dailyLogState\.draft\)/u);
+  assert.match(handler, /loadDailyLogs\(typing\)/u);
+  assert.match(appSource, /if \(!keepDraft\) dailyLogState\.draft = null;/u);
+  assert.match(appSource, /async function loadDailyLogs\(keepDraft\)/u);
+  // 버튼이 두 화면에 다 있어야 막혔을 때 손으로 뚫을 수 있다.
+  assert.match(appSource, /refreshButton\(dailyLogState, "dailyLog"\)/u);
+  assert.match(appSource, /refreshButton\(workOrderState, "workOrders"\)/u);
+});
