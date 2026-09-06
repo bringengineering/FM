@@ -115,8 +115,12 @@
     const raw = text(value);
     if (!raw) return "";
     if (DRIVE_FILE_ID.test(raw) && !raw.includes("/")) return raw;
-    const patterns = [/\/file\/d\/([A-Za-z0-9_-]{6,200})/, /\/document\/d\/([A-Za-z0-9_-]{6,200})/,
-      /\/spreadsheets\/d\/([A-Za-z0-9_-]{6,200})/, /[?&]id=([A-Za-z0-9_-]{6,200})/];
+    // 폴더 주소(/drive/folders/…)를 빠뜨리면 안 된다. 문서함 폴더를 지정하는
+    // 칸에 사람이 실제로 붙여넣는 형태가 바로 이것이다.
+    const patterns = [/\/drive\/folders\/([A-Za-z0-9_-]{6,200})/, /\/drive\/u\/\d+\/folders\/([A-Za-z0-9_-]{6,200})/,
+      /\/file\/d\/([A-Za-z0-9_-]{6,200})/, /\/document\/d\/([A-Za-z0-9_-]{6,200})/,
+      /\/spreadsheets\/d\/([A-Za-z0-9_-]{6,200})/, /\/presentation\/d\/([A-Za-z0-9_-]{6,200})/,
+      /[?&]id=([A-Za-z0-9_-]{6,200})/];
     for (const pattern of patterns) {
       const match = pattern.exec(raw);
       if (match) return match[1];
