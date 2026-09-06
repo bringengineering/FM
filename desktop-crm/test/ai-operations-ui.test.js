@@ -85,7 +85,34 @@ test("CRM loads automation cores before app and connects all three workflows", (
   assert.match(app, /workAutomationPanel\?\.addEventListener\("toggle"/);
   assert.match(app, /renderManagementReport/);
   assert.match(app, /assertCurrentProposal/);
-  assert.doesNotMatch(app, /sendSms|sendMessage|자동\s*발송/);
+  // 고객에게 자동으로 무언가를 보내지 않는다.
+  //
+  // 전에는 app.js 파일 전체에서 "자동 발송" 이라는 글자를 금지했다. 그런데
+  // 그 규칙은 **고객에게 나가는 것**을 막으려던 것이지, 회사 안에서 쓰는
+  // 말까지 막으려던 것이 아니다. 사내 텔레그램 알림처럼 고객과 무관한
+  // 기능이 그 글자를 쓴다는 이유로 막히면, 사람은 규칙을 피해 말을 바꾸게
+  // 되고 규칙은 아무것도 지키지 않게 된다.
+  //
+  // 그래서 두 가지로 나눈다.
+  //   1. 고객에게 보내는 통로는 app.js 어디에도 없다 (아래 파일 전체 검사)
+  //   2. AI·자동화 화면은 보내는 말조차 꺼내지 않는다 (그 구간만 검사)
+  // 고객에게 문자를 보내는 길은 하나뿐이고, 그 앞에는 반드시 사람 확인이 있다.
+  assert.doesNotMatch(app, /sendSms\b/u, "확인을 거치지 않는 문자 통로가 있으면 안 된다");
+  const sendSites = [...app.matchAll(/action: "sendCustomerMessage"/gu)];
+  assert.equal(sendSites.length, 1, "고객에게 보내는 자리는 한 군데여야 한다");
+  // 그 자리 바로 앞에 requestConfirmation 이 있어야 한다.
+  const before = app.slice(Math.max(0, sendSites[0].index - 1200), sendSites[0].index);
+  // 글자가 있는 것으로는 모자란다. 확인이 **막고 있어야** 한다 — 물어보고
+  // 결과를 안 보면 물어본 적이 없는 것과 같다.
+  assert.match(before, /if \(!await requestConfirmation\(\{[\s\S]*?\}\)\) return;/u,
+    "확인에서 아니오를 고르면 그 자리에서 돌아서야 한다");
+  assert.match(before, /실제 발송 요청이 전달됩니다/u, "무엇이 일어나는지 적혀 있어야 한다");
+
+  const automationStart = app.indexOf("AiOperationsUI.renderWorkAutomation");
+  const automationEnd = app.indexOf("AiOperationsUI.renderSalesFocus");
+  assert.ok(automationStart > 0 && automationEnd > automationStart);
+  assert.doesNotMatch(app.slice(automationStart, automationEnd), /자동\s*발송/u,
+    "자동화 화면은 사람 확인 없이 보내지 않는다");
   const applyBlock = app.slice(app.indexOf('const workDraftApply ='), app.indexOf('const managementGenerate ='));
   assert.match(applyBlock, /commitBuildingScheduleRecord/);
   assert.doesNotMatch(applyBlock, /scheduleSave\(\)/);

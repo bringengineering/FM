@@ -150,6 +150,18 @@ async function boot(): Promise<Booted> {
   api.onAuthChanged = () => {};
   window.bringCRM = api;
 
+  // 스타일시트를 진짜로 물린다.
+  //
+  // jsdom 은 <link> 를 따라가지 않는다. 그래서 CSS 가 없는 채로 돌았고,
+  // "고른 폴더만 보인다" 검사가 hidden 속성만 보고 통과했다. 실제로는
+  // .nav-folder{display:grid} 가 브라우저 기본 [hidden]{display:none} 을
+  // 덮어써서 화면에는 모든 폴더가 그대로 남아 있었다.
+  //
+  // CSS 를 물려 두면 이 검사가 사람이 보는 것과 같은 것을 본다.
+  const styleTag = window.document.createElement("style");
+  styleTag.textContent = fs.readFileSync(path.join(SRC, "styles.css"), "utf8");
+  window.document.head.appendChild(styleTag);
+
   for (const file of [...indexHtml.matchAll(/<script src="\.\/([^"]+)"><\/script>/gu)].map(match => match[1])) {
     window.eval(fs.readFileSync(path.join(SRC, file), "utf8"));
   }
@@ -237,10 +249,19 @@ describe("desktop CRM screens actually render", () => {
     card.click();
     await sleep(150);
 
+    // hidden 속성이 아니라 **실제로 보이는지**를 본다.
+    //
+    // .nav-folder{display:grid} 가 브라우저 기본 [hidden]{display:none} 을
+    // 덮어써서, 속성은 제대로 들어가는데 화면에는 다 남아 있었다. 속성만
+    // 보던 이 검사는 그동안 통과했고, 대표는 두 번 "안 된다" 고 말했다.
+    const visible = (element: HTMLElement) =>
+      booted.window.getComputedStyle(element).display !== "none";
     const folders = [...booted.document.querySelectorAll("[data-nav-folder]")] as HTMLElement[];
-    const shown = folders.filter(folder => !folder.hidden);
-    expect(shown.length, "고른 폴더만 남아야 한다").toBe(1);
-    expect(shown[0].dataset.navFolder).toBe("office");
+    const shown = folders.filter(visible);
+    expect(shown.map(folder => folder.dataset.navFolder), "고른 폴더만 남아야 한다").toEqual(["office"]);
+    // 자식까지 보지는 않는다. jsdom 은 부모가 감춰져도 자식의 display 를
+    // 그대로 내주기 때문이다 — 브라우저와 다르다. 감춰야 할 것은 폴더이고,
+    // 폴더가 감춰지면 그 안의 메뉴도 같이 사라진다.
 
     // 사이드바 안에서 다른 폴더로 바로 옮겨 갈 수 있어야 한다.
     const switcher = booted.document.querySelector("[data-nav-folder-switch]");
@@ -252,9 +273,12 @@ describe("desktop CRM screens actually render", () => {
     expect(project, "프로젝트 관리로 가는 길이 있어야 한다").toBeTruthy();
     project?.click();
     await sleep(150);
-    const after = folders.filter(folder => !folder.hidden);
-    expect(after.length).toBe(1);
-    expect(after[0].dataset.navFolder).toBe("project");
+    const after = folders.filter(visible);
+    expect(after.map(folder => folder.dataset.navFolder)).toEqual(["project"]);
+
+    // '전체 보기' 는 없어야 한다. 한 번에 다 보이면 폴더를 나눈 뜻이 없다.
+    const all = [...booted.document.querySelectorAll("[data-nav-folder-go]")] as HTMLElement[];
+    expect(all.every(item => item.dataset.navFolderGo), "폴더를 안 고르는 길이 있으면 안 된다").toBe(true);
   }, 60000);
 
   it("비품에 수기로 여러 줄을 적고 저장까지 간다", async () => {
