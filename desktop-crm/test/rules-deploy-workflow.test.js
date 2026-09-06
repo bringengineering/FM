@@ -62,6 +62,31 @@ test("열쇠는 임시 폴더에만 두고 지운다", () => {
   assert.match(executable, /permissions:\n\s+contents: read/u);
 });
 
+test("열쇠가 아닌 것을 넣었으면 무엇을 잘못 넣었는지 말해 준다", () => {
+  // firebase 는 "firebase login 하셨나요?" 라고만 말한다. 그 말로는 무엇을
+  // 잘못 넣었는지 알 수 없어서 사람이 같은 것을 또 넣는다.
+  assert.match(executable, /FIREBASE_SERVICE_ACCOUNT 이 JSON 이 아닙니다/u);
+  assert.match(executable, /웹앱 설정\(firebaseConfig\)이 아니라/u);
+  assert.match(executable, /키의 project_id 가/u);
+  assert.match(executable, /private_key 가 깨졌습니다/u);
+  // 검사가 배포보다 먼저여야 뜻이 있다.
+  assert.ok(executable.indexOf("FIREBASE_SERVICE_ACCOUNT 이 JSON 이 아닙니다")
+    < executable.indexOf("deploy --only database"));
+  // 셸이 작은따옴표로 감싸므로 스크립트 안에 작은따옴표가 있으면 끊긴다.
+  const script = executable.match(/node -e '([\s\S]*?)\n *' "\$key"/u);
+  assert.ok(script, "열쇠 확인 스크립트가 있어야 한다");
+  assert.doesNotMatch(script[1], /'/u, "스크립트 안에 작은따옴표가 있으면 셸에서 끊긴다");
+  // 배포가 실패했을 때도 다음에 볼 곳을 알려 준다.
+  assert.match(executable, /Realtime Database 관리자/u);
+});
+
+test("자격증명을 export 로 넘긴다", () => {
+  // 명령 앞에 붙이는 형태는 중간에 낀 도구가 환경을 다시 만들면 조용히
+  // 사라진다. 실제로 첫 배포가 여기서 인증에 실패했다.
+  assert.match(executable, /export GOOGLE_APPLICATION_CREDENTIALS="\$key"/u);
+  assert.doesNotMatch(executable, /GOOGLE_APPLICATION_CREDENTIALS="\$key" \\/u);
+});
+
 test("진짜 프로젝트에만, 데이터베이스 규칙만 올린다", () => {
   // 검사는 demo 프로젝트, 배포는 bring-fm. 두 이름이 섞이면 검사가
   // 진짜 자료를 만지거나 배포가 아무 데도 안 간다.

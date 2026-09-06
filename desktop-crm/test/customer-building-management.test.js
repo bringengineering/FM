@@ -33,7 +33,7 @@ test("customer management navigation groups customers, partner vendors, and vaca
   assert.equal((indexSource.match(/data-view="partnerVendors"/g) || []).length, 1);
   assert.equal((indexSource.match(/id="navPartnerVendorCount"/g) || []).length, 1);
   assert.doesNotMatch(indexSource, /data-view="buildings"/);
-  assert.match(appSource, /button\.dataset\.view === "customers" && currentView === "buildings"/);
+  assert.match(appSource, /view === "customers" && currentView === "buildings"/u);
   assert.match(appSource, /partnerVendors: \["협력 업체 정보를 한곳에서", "협력 업체"\]/);
   assert.match(appSource, /\["customers", "buildings", "vacancies", "partnerVendors"\]\.includes\(currentView\)/);
   assert.match(appSource, /customerManagementFolder\?\.classList\.add\("open"\)/);

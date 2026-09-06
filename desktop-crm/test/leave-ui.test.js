@@ -31,13 +31,13 @@ test("모듈이 없어도 화면이 죽지 않는다", () => {
 
 test("확정 전에는 잔여 숫자를 내지 않는다", () => {
   // 이 화면의 핵심이다. 0 으로 두면 "다 썼다" 로 읽힌다.
-  const view = officeSource.slice(officeSource.indexOf("function leaveView()"), officeSource.indexOf("function leaveAdminPanel"));
-  assert.match(view, /balance\.confirmed[\s\S]*?office-leave-unset/u);
-  assert.match(view, /관리자 확정 전/u);
+  const view = officeSource.slice(officeSource.indexOf("function leaveView()"), officeSource.indexOf("function leaveStatusClass"));
+  // 잔여도 발생일수도 확정 전에는 숫자 대신 줄표를 낸다.
+  assert.match(view, /balance\.confirmed \? String\(balance\.remainingDays\) : "—"/u);
+  assert.match(view, /balance\.confirmed \? balance\.grantedDays : "—"/u);
+  assert.match(view, /확정 전/u);
   // 확정 전에도 신청은 할 수 있어야 한다.
   assert.match(view, /신청은 지금도 할 수 있습니다/u);
-  // 색으로도 구분해 "0일 남음" 과 헷갈리지 않게 한다.
-  assert.match(cssSource, /\.office-leave-unset\{[^}]*color:#8B95A1/u);
 });
 
 test("보내기 전에 화면에서 먼저 거른다", () => {
