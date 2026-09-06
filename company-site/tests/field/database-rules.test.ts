@@ -2071,6 +2071,72 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect((await assertSucceeds(get(ref(officeAdmin, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
   });
 
+  it("keeps leave requests private to the person and their administrator", async () => {
+    // 휴가 사유는 근태보다 사적이다. 같은 회사 사람이라고 서로 볼 수 있으면
+    // 아무도 솔직한 사유를 적지 않는다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const mine = "crmCompany/officeLeave/crm-viewer/req-1";
+    const request = {
+      userId: "crm-viewer",
+      type: "annual",
+      startDate: "2026-10-05",
+      endDate: "2026-10-07",
+      status: "requested",
+      days: 3,
+      reason: "가족 여행",
+    };
+
+    // 본인은 자기 칸에 신청한다.
+    await assertSucceeds(set(ref(viewer, mine), request));
+    await assertSucceeds(get(ref(viewer, mine)));
+
+    // 남의 휴가는 못 본다. 같은 일반 구성원이어도 마찬가지다.
+    await assertFails(get(ref(member, mine)));
+    await assertFails(get(ref(member, "crmCompany/officeLeave/crm-viewer")));
+    // 남의 칸에 대신 신청하지도 못한다.
+    await assertFails(set(ref(member, "crmCompany/officeLeave/crm-viewer/req-2"), request));
+    // userId 를 바꿔 자기 칸에 남의 것처럼 넣는 것도 막는다.
+    await assertFails(set(ref(member, "crmCompany/officeLeave/crm-member/req-3"), {
+      ...request, userId: "crm-viewer",
+    }));
+
+    // 관리자는 본다. 승인해야 하기 때문이다.
+    await assertSucceeds(get(ref(admin, mine)));
+    await assertSucceeds(get(ref(admin, "crmCompany/officeLeave")));
+    await assertSucceeds(update(ref(admin, mine), { status: "approved", decidedBy: "김현진" }));
+
+    // 전체 목록은 관리자만. 일반 구성원은 못 본다.
+    await assertFails(get(ref(member, "crmCompany/officeLeave")));
+    await assertFails(get(ref(viewer, "crmCompany/officeLeave")));
+    await assertFails(get(ref(anonymous, mine)));
+
+    // 필수 항목이 빠진 신청은 저장되지 않는다.
+    await assertFails(set(ref(viewer, "crmCompany/officeLeave/crm-viewer/req-4"), { userId: "crm-viewer" }));
+  });
+
+  it("lets only an administrator set the confirmed leave grant", async () => {
+    // 발생일수는 관리자가 확정한 값이 진실이다. 본인이 고칠 수 있으면
+    // 잔여가 스스로 늘어난다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+
+    const grantPath = "crmCompany/officeLeaveGrants/crm-viewer";
+    const grant = { userId: "crm-viewer", year: "2026", days: 15, confirmedBy: "김현진", confirmedAt: "2026-01-02T00:00:00.000Z" };
+
+    await assertSucceeds(set(ref(admin, grantPath), grant));
+    // 본인은 자기 것을 볼 수만 있다.
+    await assertSucceeds(get(ref(viewer, grantPath)));
+    await assertFails(set(ref(viewer, grantPath), { ...grant, days: 30 }));
+    // 남의 것은 보지도 못한다.
+    await assertFails(get(ref(member, grantPath)));
+    await assertFails(get(ref(viewer, "crmCompany/officeLeaveGrants")));
+  });
+
   it("keeps BIRNG OFFICE attendance and messages private while granting only explicit office administrators team access", async () => {
     const admin = environment.authenticatedContext(
       "crm-admin",
