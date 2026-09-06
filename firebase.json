@@ -35,6 +35,24 @@
         ]
       },
       {
+        "source": "/crm-drive-auth",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/crm-drive-auth/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "/field-sw.js",
         "headers": [
           {

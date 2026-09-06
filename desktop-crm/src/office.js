@@ -412,6 +412,36 @@
     return `<div class="office-admin-calendar"><div class="office-calendar-weekdays">${headers}</div><div class="office-calendar-grid">${cells}</div></div>`;
   }
 
+  // 근태 기록에서 사람이 한 번 봐야 할 날을 골라 보여준다. 판정이 아니라
+  // 확인 요청이다. 지각·결근은 이 데이터로 알 수 없어서 다루지 않는다.
+  // (attendance-anomaly-core.js 의 머리말에 이유를 적어 뒀다.)
+  function attendanceAnomalyPanel(userId) {
+    const Anomaly = window.BringAttendanceAnomalyCore;
+    if (!Anomaly) return "";
+    const result = Anomaly.detect(state.data.attendance, {
+      userId: userId || "",
+      month: state.adminMonth,
+      today: Core.workDate()
+    });
+    const scope = userId ? "이 직원" : "전체 직원";
+    if (!result.sampleSize) {
+      // 기록이 0건인 것과 이상이 0건인 것은 다르다. 문구로 구분한다.
+      return `<section class="office-panel attendance-anomaly-panel"><header><div><span>ATTENDANCE REVIEW</span><h3>확인이 필요한 근태</h3></div><small>${esc(state.adminMonth)}</small></header><div class="attendance-anomaly-empty">${esc(scope)}의 이 달 근태 기록이 아직 없습니다.</div></section>`;
+    }
+    if (!result.findings.length) {
+      return `<section class="office-panel attendance-anomaly-panel"><header><div><span>ATTENDANCE REVIEW</span><h3>확인이 필요한 근태</h3></div><small>${esc(state.adminMonth)} · 기록 ${result.sampleSize}건</small></header><div class="attendance-anomaly-empty">확인이 필요한 날이 없습니다.</div></section>`;
+    }
+    const nameOf = uid => {
+      const user = state.data.users.find(item => item && item.uid === uid);
+      return user ? Core.displayName(user) : "";
+    };
+    const items = result.findings.map(item => {
+      const who = userId ? "" : nameOf(item.userId);
+      return `<li class="attendance-anomaly-item ${esc(item.severity)}"><div><b>${esc(item.message)}</b>${who ? `<em>${esc(who)}</em>` : ""}</div><p>${esc(item.detail)}</p></li>`;
+    }).join("");
+    return `<section class="office-panel attendance-anomaly-panel"><header><div><span>ATTENDANCE REVIEW</span><h3>확인이 필요한 근태</h3><p>기록만 보고 고른 것이며, 위반 여부는 근로계약과 함께 사람이 판단합니다.</p></div><small>${esc(state.adminMonth)} · 기록 ${result.sampleSize}건 · 확인 ${result.findings.length}건</small></header><ul class="attendance-anomaly-list">${items}</ul></section>`;
+  }
+
   function clearAdminAttendanceCorrection() {
     state.adminAttendanceCorrection = null;
   }
@@ -499,7 +529,8 @@
         <div class="office-admin-month-kpis"><article><span>출근 일수</span><b>${summary.attendedDays}<small>일</small></b></article><article><span>퇴근 완료</span><b>${summary.completedDays}<small>일</small></b></article><article class="${summary.missingCheckoutDays ? "warning" : ""}"><span>퇴근 미기록</span><b>${summary.missingCheckoutDays}<small>일</small></b></article><article><span>총 근무시간</span><b>${esc(durationText(summary.totalMinutes))}</b></article></div>
         ${adminCalendar(summary, today)}
         <footer class="office-admin-detail-note"><b>퇴근 미기록 처리 안내</b><span>과거 날짜에 출근 기록만 있고 퇴근 기록이 없으면 자동으로 ‘퇴근 미기록’으로 표시됩니다. 관리자가 실제 퇴근 시간을 확인한 뒤 정정하는 승인 흐름을 권장합니다.</span></footer>
-      </section>`;
+      </section>
+      ${attendanceAnomalyPanel(selectedUser.uid)}`;
     }
 
     const todayRows = rows.filter(row => row.workDate === today);
@@ -512,7 +543,8 @@
       return `<tr class="office-admin-user-row"><td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td><td><b>${summary.attendedDays}일</b></td><td>${esc(formatTime(latest && latest.checkInAt))}</td><td>${esc(formatTime(latest && latest.checkOutAt))}</td><td>${latest ? `<span class="office-status ${Core.attendanceReviewStatus(latest, today) === "퇴근 미기록" ? "missing" : statusClass(latest)}"><i></i>${esc(Core.attendanceReviewStatus(latest, today))}</span>` : statusPill(null)}</td><td><div class="office-admin-row-actions"><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(user))} 이름 수정" data-office-display-name-edit="${esc(user.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button><button type="button" class="office-admin-open-button" aria-label="${esc(Core.displayName(user))} 근태 보기" data-office-admin-user="${esc(user.uid)}">근태 보기 →</button></div></td></tr>`;
     }).join("");
     return `${hero}${adminTabs(selectedUser)}${attendanceNameEditor}<section class="office-admin-kpis"><article><span>오늘 출근</span><b>${todayRows.length}</b><small>명</small></article><article><span>현재 근무 중</span><b>${working}</b><small>명</small></article><article><span>퇴근 완료</span><b>${completed}</b><small>명</small></article><article><span>등록 직원</span><b>${state.data.users.length}</b><small>명</small></article></section>
-      <section class="office-panel office-admin-users"><header><div><span>TEAM ATTENDANCE</span><h3>직원별 근태 기록</h3></div><small>${esc(state.adminMonth)} 기준 · 근태 보기 버튼으로 전용 탭 열기</small></header><div class="office-table-wrap"><table class="office-table"><thead><tr><th>직원</th><th>월 출근</th><th>최근 출근</th><th>최근 퇴근</th><th>최근 상태</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div></section>`;
+      <section class="office-panel office-admin-users"><header><div><span>TEAM ATTENDANCE</span><h3>직원별 근태 기록</h3></div><small>${esc(state.adminMonth)} 기준 · 근태 보기 버튼으로 전용 탭 열기</small></header><div class="office-table-wrap"><table class="office-table"><thead><tr><th>직원</th><th>월 출근</th><th>최근 출근</th><th>최근 퇴근</th><th>최근 상태</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div></section>
+      ${attendanceAnomalyPanel("")}`;
   }
 
   function renderCurrent() {

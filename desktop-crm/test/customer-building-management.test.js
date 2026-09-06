@@ -23,7 +23,7 @@ test("customer management navigation groups customers, partner vendors, and vaca
   const folderMarkup = indexSource.slice(folderStart, folderEnd);
   assert.match(indexSource, /data-nav-folder="customer-management"/);
   // 접힘 화살표는 <i> 안의 SVG 로 그린다(속성은 늘어날 수 있으므로 태그만 확인)
-  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>고객 관리<\/b><i [^>]*aria-hidden="true"[^>]*>/);
+  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>CRM<\/b><i [^>]*aria-hidden="true"[^>]*>/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="customers"[^>]*>[\s\S]*?<b>고객·건물 관리<\/b><em id="navCustomerCount">0<\/em><\/button>/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="partnerVendors"[^>]*>[\s\S]*?<b>협력 업체<\/b><em id="navPartnerVendorCount">0<\/em><\/button>/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="vacancies"[^>]*>[\s\S]*?<b>공실 현황<\/b><em id="navVacancyCount">0<\/em><\/button>/);

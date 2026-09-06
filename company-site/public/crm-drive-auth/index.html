@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="color-scheme" content="light">
+  <title>BRING CRM Drive 연결</title>
+  <style>
+    :root{font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;color:#17364d;background:#edf8fe}
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#fff 0,#edf8fe 55%,#dff2fb 100%)}
+    main{width:min(440px,100%);padding:36px;border:1px solid #cfe5f1;border-radius:24px;background:#fff;box-shadow:0 24px 70px rgba(42,116,157,.16);text-align:center}
+    .logo{display:grid;place-items:center;height:70px;margin:0 auto 18px}.logo img{max-width:210px;max-height:70px;object-fit:contain}
+    .eyebrow{color:#3e9bd0;font-size:12px;font-weight:900;letter-spacing:.08em}h1{margin:7px 0 10px;font-size:25px;letter-spacing:-.04em}p{margin:0;color:#718b9b;font-size:14px;line-height:1.65}
+    button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;margin-top:26px;border:1px solid #bedced;border-radius:14px;background:#fff;color:#285d7b;font-size:15px;font-weight:900;cursor:pointer;box-shadow:0 8px 20px rgba(60,139,184,.1)}button:hover{background:#f4fbff;border-color:#75bce3}button:disabled{cursor:wait;opacity:.65}.g{font-size:20px;color:#4285f4}
+    #message{min-height:22px;margin-top:16px;color:#608398;font-size:12px;font-weight:700}.error{color:#ce5865!important}.note{margin-top:20px;padding-top:18px;border-top:1px solid #e3eef4;color:#8aa0ae;font-size:11px;line-height:1.55}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="logo"><img src="/bring-care-logo.png" alt="Bring Care"></div>
+    <div class="eyebrow">BRING ENGINEERING</div>
+    <h1>회사 Drive 연결</h1>
+    <p>건물 서류를 회사 Drive에 올리려면 Drive 권한이 필요합니다.<br>회사 Google 계정으로 계속해 주세요.</p>
+    <button id="connect" type="button"><span class="g">G</span>회사 Drive에 연결</button>
+    <div id="message" role="status"></div>
+    <div class="note">이 화면은 CRM 로그인이 아닙니다. Drive에 파일을 올리고 폴더를 만드는 권한만 받습니다.<br>Google 비밀번호는 BRING CRM이나 회사 서버에 저장되지 않습니다.</div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      // 이 페이지는 CRM 로그인 페이지(/crm-auth)와 일부러 나눠 뒀다.
+      // 로그인은 회사에서 가장 자주 쓰는 길이라, Drive 권한을 붙이려다
+      // 그 길이 막히는 일이 없어야 한다. 여기가 깨져도 로그인은 멀쩡하다.
+      //
+      // 돌려주는 값도 로그인과 다른 이름을 쓴다(drive_access_token). CRM 쪽에서
+      // 이 응답을 로그인으로 잘못 받아들이는 길을 만들지 않으려는 것이다.
+      const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+      const params = new URLSearchParams(location.search);
+      const port = Number(params.get("port"));
+      const state = params.get("state") || "";
+      const button = document.getElementById("connect");
+      const message = document.getElementById("message");
+      const popupCancellationCodes = new Set(["auth/popup-closed-by-user", "auth/cancelled-popup-request"]);
+      const validRequest = Number.isInteger(port) && port >= 1024 && port <= 65535 && /^[A-Za-z0-9_-]{32,128}$/.test(state);
+      if (!validRequest) {
+        button.disabled = true;
+        message.textContent = "BRING CRM 프로그램에서 Drive 연결 버튼을 다시 눌러 주세요.";
+        message.className = "error";
+        return;
+      }
+
+      firebase.initializeApp({
+        apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+        authDomain: "bring-fm.firebaseapp.com",
+        databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "bring-fm",
+        storageBucket: "bring-fm.firebasestorage.app",
+        appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+      });
+
+      const postSession = fields => {
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = `http://127.0.0.1:${port}/callback`;
+        for (const [name, value] of [["state", state], ...fields]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+      };
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        message.className = "";
+        message.textContent = "Google 창을 여는 중입니다…";
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.addScope(DRIVE_SCOPE);
+          // consent 를 명시하는 이유: 전에 Drive 없이 동의한 계정이면
+          // select_account 만으로는 Drive 권한이 붙은 토큰이 오지 않는다.
+          provider.setCustomParameters({ prompt: "consent" });
+          const result = await firebase.auth().signInWithPopup(provider);
+          const credential = result.credential || firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+          const tokenResponse = result._tokenResponse || {};
+          const accessToken = credential && credential.accessToken || tokenResponse.oauthAccessToken || "";
+          if (!accessToken) throw new Error("Drive 권한을 받지 못했습니다.");
+          // 실제로 Drive 권한이 붙었는지 확인한다. 사용자가 동의 화면에서
+          // Drive 항목만 체크 해제할 수 있고, 그러면 올릴 때 가서야 실패한다.
+          const granted = String(tokenResponse.grantedScopes || "");
+          if (granted && !granted.split(" ").includes(DRIVE_SCOPE)) {
+            throw Object.assign(new Error("Drive 권한이 빠졌습니다."), { code: "drive/scope-declined" });
+          }
+          const expiresIn = String(tokenResponse.expiresIn || tokenResponse.expires_in || "");
+          message.textContent = "Drive 연결이 확인되었습니다. CRM으로 돌아갑니다…";
+          postSession([
+            ["drive_access_token", accessToken],
+            ["drive_token_expires_in", expiresIn],
+            ["drive_account_email", String(result.user && result.user.email || "")]
+          ]);
+        } catch (error) {
+          const raw = String(error && error.code || "");
+          const errorCode = raw === "drive/scope-declined"
+            ? "DRIVE_SCOPE_DECLINED"
+            : popupCancellationCodes.has(raw)
+              ? "DRIVE_POPUP_CANCELLED"
+              : "DRIVE_CONNECT_FAILED";
+          message.textContent = errorCode === "DRIVE_POPUP_CANCELLED"
+            ? "Drive 연결이 취소되었습니다."
+            : errorCode === "DRIVE_SCOPE_DECLINED"
+              ? "Drive 권한에 동의해야 서류를 올릴 수 있습니다."
+              : "Drive 연결에 실패했습니다. CRM에서 다시 시도해 주세요.";
+          message.className = "error";
+          postSession([["error", errorCode]]);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
