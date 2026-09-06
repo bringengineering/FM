@@ -121,7 +121,9 @@ test("application remembers only the workspace preference and supports switching
   assert.match(appSource, /workspaceCoordinator\.select\(/);
   assert.match(appSource, /workspaceCoordinator\.showLanding\(\)/);
   assert.match(appSource, /async function prepareWorkspaceTransition/);
-  assert.match(appSource, /currentView === "valueScope"\) await deactivateValueScope\(\)[\s\S]*?currentView = "dashboard"/);
+  // 워크스페이스를 바꾸면 이전 화면에 남지 않는다. 기본은 대시보드고,
+  // 랜딩에서 폴더를 골라 들어온 경우에만 그 화면으로 연다.
+  assert.match(appSource, /currentView === "valueScope"\) await deactivateValueScope\(\)[\s\S]*?currentView = pendingLandingView \|\| "dashboard"/);
   assert.match(html, /data-workspace-switch/);
 });
 
@@ -170,11 +172,22 @@ test("랜딩 카드를 누르면 그 폴더 화면까지 열린다", () => {
   );
   assert.match(handler, /dataset\.workspaceEnterView/u);
   assert.match(handler, /WorkspaceShell\.LANDING_FOLDERS\.some\(folder => folder\.view === target\)/u);
-  // 화면을 먼저 정하고 나서 workspace 를 고른다. 순서가 바뀌면 이전 화면이 한 번 그려진다.
-  assert.ok(
-    handler.indexOf("currentView = target") < handler.indexOf("workspaceCoordinator.select"),
-    "화면을 먼저 정해야 한다",
+
+  // 여기서 currentView 를 바로 정하면 안 된다. select() 가 부르는
+  // prepareWorkspaceTransition 이 그 뒤에 대시보드로 되돌리기 때문에,
+  // 어느 카드를 눌러도 대시보드가 열린다. 코드 리뷰가 잡아 준 것이고
+  // 실제로 그랬다. 담아 뒀다가 되돌리는 그 자리에서 꺼내 쓴다.
+  assert.doesNotMatch(handler, /currentView = target/u, "전환이 덮어쓴다");
+  assert.match(handler, /pendingLandingView = target &&/u);
+
+  const transition = appText.slice(
+    appText.indexOf("async function prepareWorkspaceTransition"),
+    appText.indexOf("async function prepareWorkspaceTransition") + 900,
   );
+  assert.doesNotMatch(transition, /\n\s*currentView = "dashboard";/u, "무조건 대시보드로 되돌리면 안 된다");
+  assert.match(transition, /currentView = pendingLandingView \|\| "dashboard"/u);
+  // 한 번 쓰고 비운다. 안 그러면 다음에 왼쪽 전환 버튼으로 들어와도 그 화면이 열린다.
+  assert.match(transition, /pendingLandingView = "";/u);
 });
 
 test("랜딩 카드 이름이 사이드바 폴더 이름과 같다", () => {
