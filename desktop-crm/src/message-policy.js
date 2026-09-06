@@ -6,16 +6,19 @@
   "use strict";
 
   const TEMPLATES = Object.freeze({
-    cleaning_schedule: Object.freeze({ id: "cleaning_schedule", label: "청소 예정일 안내", purpose: "information", channels: ["kakao"], requiresSource: true }),
-    move_in_cleaning_confirmation: Object.freeze({ id: "move_in_cleaning_confirmation", label: "입주청소 일정 확인", purpose: "information", channels: ["kakao"], requiresSource: true }),
-    requested_followup: Object.freeze({ id: "requested_followup", label: "요청한 견적·상담 후속", purpose: "information", channels: ["kakao"], requiresSource: true }),
-    work_completed: Object.freeze({ id: "work_completed", label: "작업 완료 안내", purpose: "information", channels: ["kakao"], requiresSource: true }),
-    payment_reminder: Object.freeze({ id: "payment_reminder", label: "입금·미납 안내", purpose: "information", channels: ["kakao"], requiresSource: true }),
+    cleaning_schedule: Object.freeze({ id: "cleaning_schedule", label: "청소 예정일 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    move_in_cleaning_confirmation: Object.freeze({ id: "move_in_cleaning_confirmation", label: "입주청소 일정 확인", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    requested_followup: Object.freeze({ id: "requested_followup", label: "요청한 견적·상담 후속", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    work_completed: Object.freeze({ id: "work_completed", label: "작업 완료 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    payment_reminder: Object.freeze({ id: "payment_reminder", label: "입금·미납 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
     cleaning_reengagement: Object.freeze({ id: "cleaning_reengagement", label: "청소 서비스 재이용 안내", purpose: "marketing", channels: ["kakao", "sms"] }),
     building_management_offer: Object.freeze({ id: "building_management_offer", label: "건물관리 추가 서비스 제안", purpose: "marketing", channels: ["kakao", "sms"] }),
     promotion: Object.freeze({ id: "promotion", label: "프로모션·혜택 안내", purpose: "marketing", channels: ["kakao", "sms"] })
   });
 
+  // 광고성에는 폴백을 두지 않는다. 광고성은 채널마다 따로 동의를 받아야
+  // 하므로, 알림톡 동의만 있는 사람에게 문자로 넘어가면 동의 없는 광고
+  // 문자가 된다. 그건 과태료다.
   const MESSAGES = Object.freeze({
     ALLOWED: "발송할 수 있습니다.",
     TEMPLATE_NOT_ALLOWED: "허용된 메시지 템플릿을 선택해 주세요.",
@@ -43,7 +46,13 @@
     const template = TEMPLATES[text(request.templateId)];
     if (!template) return result(false, "TEMPLATE_NOT_ALLOWED");
     const channel = text(request.channel);
-    if (!template.channels.includes(channel)) return result(false, "CHANNEL_NOT_ALLOWED", template);
+    // asFallback 은 "사람이 고른 것이 아니라, 앞 채널이 실패해서 흘러온
+    // 것" 이라는 뜻이다. 그때만 fallbackChannels 가 열린다. 고르는 목록에
+    // 문자를 넣어 버리면, 알림톡이 되는데도 굳이 문자로 보내는 일이 는다.
+    const usable = request.asFallback === true
+      ? [...template.channels, ...(template.fallbackChannels || [])]
+      : template.channels;
+    if (!usable.includes(channel)) return result(false, "CHANNEL_NOT_ALLOWED", template);
     if (!request.customer || !text(request.customer.id)) return result(false, "CUSTOMER_REQUIRED", template);
     if (!text(request.customer.phone)) return result(false, "PHONE_REQUIRED", template);
     if (template.requiresSource && (!text(request.sourceType) || !text(request.sourceId))) return result(false, "SOURCE_REQUIRED", template);
