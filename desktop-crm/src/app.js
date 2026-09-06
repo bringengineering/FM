@@ -186,6 +186,7 @@
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
     consultations: ["전화·방문·미팅 내용", "고객 상담"],
     aiAssistant: ["업무 초안을 안전하게 작성", "AI 비서"],
+    quotes: ["고객에게 보낼 견적서", "견적서"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
     relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
@@ -1518,6 +1519,7 @@
     else if (currentView === "valueScope") renderValueScope();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "aiAssistant") renderAiAssistant();
+    else if (currentView === "quotes") renderQuotes();
     else if (currentView === "pipeline") renderPipeline();
     else if (currentView === "contracts") renderContracts();
     else if (currentView === "relationships") renderRelationships();
@@ -3437,10 +3439,20 @@
   ]);
 
   function renderAiAssistant() {
-    const quoteTab = aiAssistantState.tab === "quote";
-    main.innerHTML = `<nav class="ai-assistant-tabs" aria-label="AI 비서 작업"><button type="button" class="${quoteTab ? "" : "active"}" data-ai-assistant-tab="report" aria-selected="${quoteTab ? "false" : "true"}"><span>▤</span><b>보고서 작성</b><small>업무 요약·문자·보고</small></button><button type="button" class="${quoteTab ? "active" : ""}" data-ai-assistant-tab="quote" aria-selected="${quoteTab ? "true" : "false"}"><span>₩</span><b>견적서 작성</b><small>Excel·PDF 각 2종</small></button></nav>${quoteTab ? renderAiQuoteAssistant() : renderAiReportAssistant()}`;
-    if (quoteTab && !aiAssistantState.supplierLoaded && !aiAssistantState.supplierLoading) void loadAiQuoteSupplier();
-    if (quoteTab && !aiAssistantState.sealLoaded && !aiAssistantState.sealLoading) void loadAiQuoteSeal();
+    main.innerHTML = renderAiReportAssistant();
+  }
+
+  // 견적서는 고객에게 보내는 서류라 CRM 폴더에 산다. AI 로 초안을 뽑는 것은
+  // 그 안의 한 가지 방법일 뿐이라, AI 비서 탭에 숨어 있을 이유가 없었다.
+  function renderQuotes() {
+    main.innerHTML = renderAiQuoteAssistant();
+    if (!aiAssistantState.supplierLoaded && !aiAssistantState.supplierLoading) void loadAiQuoteSupplier();
+    if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading) void loadAiQuoteSeal();
+  }
+
+  // 견적 화면을 다시 그린다. 화면이 옮겨 다녀도 부르는 쪽이 안 바뀌게 한다.
+  function refreshQuotesView() {
+    if (currentView === "quotes") renderQuotes();
   }
 
   function renderAiReportAssistant() {
@@ -3491,7 +3503,7 @@
       aiAssistantState.supplierError = error.message || "공급자 정보를 불러오지 못했습니다.";
     } finally {
       aiAssistantState.supplierLoading = false;
-      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+      refreshQuotesView();
     }
   }
 
@@ -3517,7 +3529,7 @@
       aiAssistantState.supplierError = error.message || "공급자 정보를 저장하지 못했습니다.";
     } finally {
       aiAssistantState.supplierSaving = false;
-      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+      refreshQuotesView();
     }
   }
 
@@ -3535,7 +3547,7 @@
       aiAssistantState.sealError = error.message || "인감을 불러오지 못했습니다.";
     } finally {
       aiAssistantState.sealLoading = false;
-      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+      refreshQuotesView();
     }
   }
 
@@ -3556,7 +3568,7 @@
       showToast(aiAssistantState.sealError, "error");
     } finally {
       aiAssistantState.sealLoading = false;
-      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+      refreshQuotesView();
     }
   }
 
@@ -3793,9 +3805,9 @@
 
   function renderPurchases() {
     const P = purchaseCore();
-    if (!P) { main.innerHTML = `<section class="panel"><p>매입 모듈을 불러오지 못했습니다.</p></section>`; return; }
+    if (!P) { main.innerHTML = `<section class="operations-hero"><div><h2>매입·지급</h2><p>매입 모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (currentAuth.user && currentAuth.user.accessRole !== "admin") {
-      main.innerHTML = `<section class="panel"><p>매입·지급은 대표만 볼 수 있습니다.</p></section>`;
+      main.innerHTML = `<section class="operations-hero"><div><h2>매입·지급</h2><p>매입·지급은 대표만 볼 수 있습니다.</p></div></section>`;
       return;
     }
     if (!purchaseState.loaded && !purchaseState.loading && !purchaseState.error) void loadPurchases();
@@ -3811,8 +3823,8 @@
       : null;
 
     const status = purchaseState.loading
-      ? `<p class="muted">불러오는 중…</p>`
-      : (purchaseState.error ? `<p class="error-text">${esc(purchaseState.error)}</p>` : "");
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (purchaseState.error ? `<div class="info-box" style="color:#C6535F">${esc(purchaseState.error)}</div>` : "");
 
     const rowsHtml = P.rows(purchaseState.items)
       .map(P.normalizeRecord)
@@ -3833,29 +3845,32 @@
         </tr>`;
       }).join("");
 
-    main.innerHTML = `<section class="panel purchase-panel">
-      <header class="purchase-head">
-        <div><h2>매입·지급</h2><p class="muted">회사에서 나간 돈입니다. 대표만 볼 수 있습니다.</p></div>
-        <label class="purchase-month"><span>기준 월</span>
-          <select data-purchase-month>${(monthList.includes(month) ? monthList : [month, ...monthList]).map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("")}</select>
-        </label>
-      </header>
+    const monthOptions = (monthList.includes(month) ? monthList : [month, ...monthList])
+      .map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("");
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>대표 전용</span><h2>매입·지급</h2><p>회사에서 나간 돈입니다. 원가가 드러나 팀원에게는 보이지 않습니다.</p></div>
+        <div class="operations-actions"><label class="purchase-month"><span>기준 월</span><select data-purchase-month>${monthOptions}</select></label></div>
+      </section>
       ${status}
-      <div class="purchase-summary">
-        <div><span>공급가</span><b>${esc(wonText(summary.supplyAmount))}</b></div>
-        <div><span>세액</span><b>${esc(wonText(summary.taxAmount))}</b></div>
-        <div><span>합계</span><b>${esc(wonText(summary.totalAmount))}</b></div>
-        <div><span>미지급</span><b class="owing">${esc(wonText(summary.unpaidAmount))}</b></div>
-        <div><span>공제 가능 매입세액</span><b>${esc(wonText(summary.deductibleTaxAmount))}</b></div>
+      <div class="operations-kpis purchase-kpis">
+        <div class="operations-kpi"><span>공급가</span><b>${esc(wonText(summary.supplyAmount))}</b><small>${summary.count}건</small></div>
+        <div class="operations-kpi" style="--wash:#F4F6FF"><span>세액</span><b>${esc(wonText(summary.taxAmount))}</b><small>합계 ${esc(wonText(summary.totalAmount))}</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>미지급</span><b>${esc(wonText(summary.unpaidAmount))}</b><small>${care.unpaid.length}건 남음</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>공제 가능 매입세액</span><b>${esc(wonText(summary.deductibleTaxAmount))}</b><small>계산서 받은 것만</small></div>
       </div>
-      <p class="purchase-note">공제 가능 매입세액은 <b>세금계산서를 받은 것만</b> 셉니다. 못 받은 것은 공제받을 수 없습니다. 이 값은 신고 근거일 뿐, 신고를 대신하지 않습니다.</p>
-      ${purchaseForm(P, editing)}
-      <table class="purchase-table">
-        <thead><tr><th>거래일</th><th>거래처</th><th>항목</th><th class="num">공급가</th><th class="num">세액</th><th>계산서</th><th>지급</th><th></th></tr></thead>
-        <tbody>${rowsHtml || `<tr><td colspan="8" class="muted">이 달에 잡힌 매입이 없습니다.</td></tr>`}</tbody>
-      </table>
-      ${purchaseAttention(care)}
-    </section>`;
+      <p class="purchase-note">공제 가능 매입세액은 <b>세금계산서를 받은 것만</b> 셉니다. 못 받은 것은 공제받을 수 없습니다. 신고 근거일 뿐, 신고를 대신하지 않습니다.</p>
+      <section class="purchase-board">
+        <header class="purchase-board-head"><div><b>${esc(editing ? "매입 고치기" : "매입 추가")}</b><span>공급가와 세액을 각각 적어 주세요. 부가세는 계산하지 않습니다.</span></div></header>
+        ${purchaseForm(P, editing)}
+      </section>
+      <section class="purchase-board">
+        <header class="purchase-board-head"><div><b>${esc(month)} 매입</b><span>미지급은 왼쪽에 표시됩니다.</span></div><em>${summary.count}건</em></header>
+        <div class="purchase-table-scroll"><table class="purchase-table">
+          <thead><tr><th>거래일</th><th>거래처</th><th>항목</th><th class="num">공급가</th><th class="num">세액</th><th>계산서</th><th>지급</th><th></th></tr></thead>
+          <tbody>${rowsHtml || `<tr><td colspan="8" class="purchase-empty">이 달에 잡힌 매입이 없습니다.</td></tr>`}</tbody>
+        </table></div>
+      </section>
+      ${purchaseAttention(care)}`;
   }
 
   function purchaseForm(P, editing) {
@@ -3885,9 +3900,9 @@
     // 미지급과 계산서 미수취는 성격이 다르다. 앞은 돈이 나가야 하는 것이고,
     // 뒤는 공제를 못 받는 것이다. 그래서 한 목록에 섞지 않는다.
     const block = (title, hint, items, render) => `<section class="purchase-care">
-      <header><b>${esc(title)}</b><span>${items.length}건</span></header>
-      <p class="muted">${esc(hint)}</p>
-      ${items.length ? `<ul>${items.slice(0, 20).map(render).join("")}</ul>` : `<p class="muted">없습니다.</p>`}
+      <header><b>${esc(title)}</b><em>${items.length}건</em></header>
+      <p>${esc(hint)}</p>
+      ${items.length ? `<ul>${items.slice(0, 20).map(render).join("")}</ul>` : `<p class="purchase-empty">없습니다.</p>`}
     </section>`;
     return `<div class="purchase-care-grid">
       ${block("미지급", "아직 나가지 않은 돈입니다. 기간이 오래된 것부터.", care.unpaid,
@@ -3955,26 +3970,24 @@
 
   function renderForms() {
     const F = formCore();
-    if (!F) { main.innerHTML = `<section class="panel"><p>서식 모듈을 불러오지 못했습니다.</p></section>`; return; }
+    if (!F) { main.innerHTML = `<section class="operations-hero"><div><h2>서식</h2><p>서식 모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!formState.loaded && !formState.loading && !formState.error) void loadForms();
     const tab = formState.canEditTemplates ? formState.tab : "use";
     const status = formState.loading
-      ? `<p class="muted">불러오는 중…</p>`
-      : (formState.error ? `<p class="error-text">${esc(formState.error)}</p>` : "");
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (formState.error ? `<div class="info-box" style="color:#C6535F">${esc(formState.error)}</div>` : "");
     const tabs = formState.canEditTemplates
       ? `<div class="form-tabs">
           <button type="button" class="form-tab${tab === "use" ? " is-active" : ""}" data-form-tab="use">작성</button>
           <button type="button" class="form-tab${tab === "edit" ? " is-active" : ""}" data-form-tab="edit">서식 만들기</button>
         </div>`
       : "";
-    main.innerHTML = `<section class="panel form-panel">
-      <header class="form-head">
-        <div><h2>서식</h2><p class="muted">점검표·확인서를 만들고, 현장에서 채웁니다.</p></div>
-        ${tabs}
-      </header>
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>문서관리</span><h2>서식</h2><p>점검표·확인서를 만들고, 현장에서 채웁니다.</p></div>
+        <div class="operations-actions">${tabs}</div>
+      </section>
       ${status}
-      ${tab === "edit" ? formTemplateEditor(F) : formUsePanel(F)}
-    </section>`;
+      <section class="form-body">${tab === "edit" ? formTemplateEditor(F) : formUsePanel(F)}</section>`;
   }
 
   // --- 채우기 ---
@@ -4015,7 +4028,7 @@
 
   function formEntryEditor(F, draft) {
     const template = formState.templates.map(F.normalizeTemplate).find(item => item.id === draft.templateId) || null;
-    if (!template) return `<p class="error-text">서식을 찾지 못했습니다.</p>`;
+    if (!template) return `<div class="info-box" style="color:#C6535F">서식을 찾지 못했습니다.</div>`;
     const answers = new Map(F.normalizeEntry(draft).answers.map(answer => [answer.key, answer.value]));
     const input = field => {
       const value = esc(String(answers.get(field.key) || ""));
@@ -6786,12 +6799,6 @@
     if (aiCopy && aiAssistantState.result?.text) {
       try { await navigator.clipboard.writeText(aiAssistantState.result.text); showToast("AI 초안을 복사했습니다.", "success"); }
       catch { showToast("초안을 복사하지 못했습니다.", "error"); }
-      return;
-    }
-    const aiAssistantTab = event.target.closest("[data-ai-assistant-tab]");
-    if (aiAssistantTab) {
-      aiAssistantState.tab = aiAssistantTab.dataset.aiAssistantTab === "quote" ? "quote" : "report";
-      renderAiAssistant();
       return;
     }
     const aiQuoteExample = event.target.closest("[data-ai-quote-example]");
@@ -10197,7 +10204,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "purchases", "forms"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "purchases", "forms", "quotes"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
