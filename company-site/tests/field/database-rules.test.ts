@@ -2230,11 +2230,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(admin, at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 })));
   });
 
-  it("lets only administrators own the supply catalogue and never delete an item", async () => {
+  it("lets anyone who works own the supply catalogue and never delete an item", async () => {
     // 품목을 지우면 그 품목에 달린 과거 기록의 이름이 사라진다. 안 쓰는
     // 것은 active 를 내려 목록 아래로 보낸다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
     const at = (id: string) => `crmCompany/supplyItems/${id}`;
     const item = (id: string, patch: Record<string, unknown> = {}) => ({
       id,
@@ -2257,8 +2258,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 무엇이 창고에 있는지는 팀 전체가 안다. 감출 것이 아니다.
     await assertSucceeds(get(ref(member, at("s1"))));
     await assertSucceeds(get(ref(member, "crmCompany/supplyItems")));
-    // 만드는 것은 관리자만. 아무나 품목을 늘리면 같은 물건이 두 줄이 된다.
-    await assertFails(set(ref(member, at("s2")), { ...item("s2"), updatedBy: "crm-legacy-member" }));
+    // 창고를 채우는 사람이 등록한다. 대표만 등록하게 하면 등록이 안 된다.
+    await assertSucceeds(set(ref(member, at("s2")), { ...item("s2"), updatedBy: "crm-legacy-member" }));
+    // 조회 전용 계정은 보기만 한다. 그건 그 계정의 뜻이다.
+    await assertFails(set(ref(viewer, at("s8")), { ...item("s8"), updatedBy: "crm-viewer" }));
     // 이름과 단위가 없으면 목록에서 무엇인지, 몇 개인지 알 수 없다.
     await assertFails(set(ref(admin, at("s3")), item("s3", { name: "" })));
     await assertFails(set(ref(admin, at("s4")), item("s4", { unit: "" })));
@@ -2266,12 +2269,15 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(admin, at("s5")), item("s5", { category: "우리끼리" })));
     // 남은 수량을 품목에 적어 두는 길을 막는다. 그 숫자는 기록에서 센다.
     await assertFails(set(ref(admin, at("s6")), item("s6", { stock: 12 })));
-    // 단가도 여기 못 적는다 — 팀 전체가 읽는 자리다.
+    // 단가는 여기 못 적는다. 지금은 팀 전체가 보지만 노드는 갈라 둔다 —
+    // 다시 닫아야 할 날이 오면 규칙 한 줄로 닫히게 하려고.
     await assertFails(set(ref(admin, at("s7")), item("s7", { unitPrice: 3200 })));
+    // 지우는 것은 아무도 못 한다.
+    await assertFails(remove(ref(member, at("s1"))));
     await assertFails(remove(ref(admin, at("s1"))));
   });
 
-  it("keeps the supply ledger append-only and lets only administrators book stock in", async () => {
+  it("keeps the supply ledger append-only and lets anyone who works book stock in", async () => {
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
@@ -2303,11 +2309,13 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 남의 이름으로 적지 못한다.
     await assertFails(set(ref(member, at("v3")), move("v3", "crm-admin")));
 
-    // 입고와 실사는 관리자만. 아무나 재고를 만들어내면 숫자를 못 믿는다.
-    await assertFails(set(ref(member, at("v4")), move("v4", "crm-legacy-member", { kind: "in", qty: 20 })));
-    await assertFails(set(ref(member, at("v5")), move("v5", "crm-legacy-member", { kind: "adjust", qty: 7, reason: "재고조사" })));
+    // 입고와 실사도 받는 사람·세는 사람이 그 자리에서 적는다.
+    await assertSucceeds(set(ref(member, at("v4")), move("v4", "crm-legacy-member", { kind: "in", qty: 20 })));
+    await assertSucceeds(set(ref(member, at("v5")), move("v5", "crm-legacy-member", { kind: "adjust", qty: 7, reason: "재고조사" })));
     await assertSucceeds(set(ref(admin, at("v6")), move("v6", "crm-admin", { kind: "in", qty: 20 })));
     await assertSucceeds(set(ref(admin, at("v7")), move("v7", "crm-admin", { kind: "adjust", qty: 7, reason: "재고조사" })));
+    // 조회 전용 계정은 어느 종류도 못 적는다.
+    await assertFails(set(ref(viewer, at("v17")), move("v17", "crm-viewer", { kind: "in", qty: 5 })));
 
     // 폐기와 실사는 이유가 있어야 한다. 없으면 나중에 왜 줄었는지 모른다.
     await assertFails(set(ref(member, at("v8")), move("v8", "crm-legacy-member", { kind: "disposal", qty: 1 })));
@@ -2332,9 +2340,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(remove(ref(admin, at("v1"))));
   });
 
-  it("keeps supply unit prices out of everyone's reach but the administrator", async () => {
-    // 원가는 회사 재무다. 팀 전체가 읽는 품목 노드에 두면 읽기를 다시 막을
-    // 길이 없다 — Firebase 는 부모가 허용하면 자식에서 못 막는다.
+  it("keeps supply unit prices in their own node even though the team can read them", async () => {
+    // 대표가 팀 전체에게 열라고 정했다. 그래도 품목 안으로 합치지 않는다 —
+    // Firebase 는 부모가 읽기를 허용하면 자식에서 못 막으므로, 다시 닫아야
+    // 할 날이 오면 노드가 갈려 있어야 규칙 한 줄로 닫힌다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
@@ -2354,15 +2363,18 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     };
     await assertSucceeds(set(ref(admin, target), cost));
     await assertSucceeds(get(ref(admin, target)));
-    // 품목은 보이지만 값은 안 보인다.
-    await assertSucceeds(get(ref(member, "crmCompany/supplyItems/c1")));
-    await assertFails(get(ref(member, target)));
-    await assertFails(get(ref(viewer, target)));
-    await assertFails(get(ref(member, "crmCompany/supplyCosts")));
-    await assertFails(set(ref(member, target), { ...cost, updatedBy: "crm-legacy-member" }));
+    // 값을 아는 사람이 적고, 팀 전체가 읽는다.
+    await assertSucceeds(get(ref(member, target)));
+    await assertSucceeds(get(ref(viewer, target)));
+    await assertSucceeds(get(ref(member, "crmCompany/supplyCosts")));
+    await assertSucceeds(set(ref(member, target), { ...cost, updatedBy: "crm-legacy-member" }));
+    // 조회 전용 계정은 읽되 못 고친다.
+    await assertFails(set(ref(viewer, target), { ...cost, updatedBy: "crm-viewer" }));
     // 음수 단가는 어디서도 뜻이 없다.
     await assertFails(set(ref(admin, target), { ...cost, unitPrice: -100 }));
     await assertFails(set(ref(admin, target), { ...cost, vendorSecret: "x" }));
+    // 지우는 길은 없다 — 품목과 같다.
+    await assertFails(remove(ref(admin, target)));
   });
 
   it("keeps HR records readable only by the person and administrators", async () => {

@@ -4176,11 +4176,9 @@ class FirebaseRemoteClient {
     ]);
     this.assertSessionGuardActive(guard);
     const admin = session.role === "admin";
-    // 단가는 관리자만 읽는 자리에 따로 있다. 일반 계정이 부르면 규칙이
-    // 막으므로 아예 부르지 않는다.
-    const costPayload = admin
-      ? await this.dbRequest("supplyCosts", { method: "GET" }).catch(() => null)
-      : null;
+    // 단가도 팀 전체가 본다. 노드는 갈라 둔 채다 — 다시 닫아야 할 날이
+    // 오면 규칙 한 줄로 닫히게 하려고.
+    const costPayload = await this.dbRequest("supplyCosts", { method: "GET" }).catch(() => null);
     this.assertSessionGuardActive(guard);
     const items = Object.entries(itemPayload && typeof itemPayload === "object" ? itemPayload : {})
       .map(([id, value]) => SupplyCore.normalizeItem(Object.assign({ id }, value || {})))
@@ -4202,12 +4200,12 @@ class FirebaseRemoteClient {
     };
   }
 
-  // 품목을 만들거나 고친다. 관리자만. 지우는 길은 없다 — 안 쓰는 것은
-  // active 를 내려서 목록 아래로 보낸다.
+  // 품목을 만들거나 고친다. 일하는 사람 누구나. 지우는 길은 없다 — 안 쓰는
+  // 것은 active 를 내려서 목록 아래로 보낸다.
   async saveSupplyItem(input) {
     const session = this.requireOfficeSession();
-    if (session.role !== "admin") {
-      throw createError("품목은 관리자만 등록할 수 있습니다.", "SUPPLY_FORBIDDEN");
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 품목을 등록할 수 없습니다.", "SUPPLY_FORBIDDEN");
     }
     const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -4225,8 +4223,8 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
 
-    // 단가는 같은 폼에서 받지만 다른 노드로 간다. 원가는 팀 전체가 볼 것이
-    // 아니라서, 읽기 권한을 따로 걸 수 있는 자리에 둔다.
+    // 단가는 같은 폼에서 받지만 다른 노드로 간다. 지금은 팀 전체가 보지만,
+    // 노드가 갈려 있어야 나중에 규칙 한 줄로 다시 닫을 수 있다.
     let cost = null;
     if (Object.prototype.hasOwnProperty.call(source, "unitPrice")) {
       const checkedCost = SupplyCore.validateCost({
@@ -4251,8 +4249,7 @@ class FirebaseRemoteClient {
     }
     const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const admin = session.role === "admin";
-    const checked = SupplyCore.validateMove(source, admin);
+    const checked = SupplyCore.validateMove(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     // 없는 품목에 기록이 붙으면 그 기록은 영영 안 보인다. 규칙도 막지만
     // 여기서 먼저 걸러야 사람이 이유를 안다.

@@ -50,29 +50,31 @@ test("재고는 음수로 내려가지 않는다", () => {
   assert.equal(S.stockOf("i1", [move({ kind: "out", qty: 5 })]), 0);
 });
 
-test("입고와 실사는 관리자만 적는다", () => {
-  assert.equal(S.validateMove(move({ kind: "in", qty: 5 }), false).code, "MOVE_ADMIN_ONLY");
-  assert.equal(S.validateMove(move({ kind: "adjust", qty: 5, reason: "조사" }), false).code, "MOVE_ADMIN_ONLY");
-  assert.equal(S.validateMove(move({ kind: "in", qty: 5 }), true).ok, true);
-  assert.equal(S.validateMove(move({ kind: "out", qty: 5 }), false).ok, true);
-  assert.deepEqual(S.moveChoices(false).map(row => row.key), ["out", "disposal"]);
-  assert.deepEqual(S.moveChoices(true).map(row => row.key), ["in", "out", "disposal", "adjust"]);
+test("네 가지를 일하는 사람 누구나 적는다", () => {
+  // 물건을 받는 사람과 세는 사람이 대표가 아닌데 대표만 적게 하면, 받은
+  // 날 안 적히고 나중에 기억으로 적힌다.
+  assert.equal(S.validateMove(move({ kind: "in", qty: 5 })).ok, true);
+  assert.equal(S.validateMove(move({ kind: "adjust", qty: 5, reason: "조사" })).ok, true);
+  assert.equal(S.validateMove(move({ kind: "out", qty: 5 })).ok, true);
+  assert.deepEqual(S.MOVE_KEYS.slice(), ["in", "out", "disposal", "adjust"]);
+  // 사람을 가르던 표시가 남아 있으면 다음 사람이 아직 갈리는 줄 안다.
+  S.MOVE_KINDS.forEach(kind => assert.equal("adminOnly" in kind, false, kind.key));
 });
 
 test("폐기와 실사는 이유가 있어야 한다", () => {
-  assert.equal(S.validateMove(move({ kind: "disposal", qty: 1 }), false).code, "REASON_REQUIRED");
-  assert.equal(S.validateMove(move({ kind: "disposal", qty: 1, reason: "찢어짐" }), false).ok, true);
-  assert.equal(S.validateMove(move({ kind: "adjust", qty: 0 }), true).code, "REASON_REQUIRED");
+  assert.equal(S.validateMove(move({ kind: "disposal", qty: 1 })).code, "REASON_REQUIRED");
+  assert.equal(S.validateMove(move({ kind: "disposal", qty: 1, reason: "찢어짐" })).ok, true);
+  assert.equal(S.validateMove(move({ kind: "adjust", qty: 0 })).code, "REASON_REQUIRED");
 });
 
 test("실사만 0 을 받는다 — 세어 보니 없었다는 뜻이다", () => {
-  assert.equal(S.validateMove(move({ kind: "out", qty: 0 }), false).code, "QTY_REQUIRED");
-  assert.equal(S.validateMove(move({ kind: "adjust", qty: 0, reason: "다 씀" }), true).ok, true);
+  assert.equal(S.validateMove(move({ kind: "out", qty: 0 })).code, "QTY_REQUIRED");
+  assert.equal(S.validateMove(move({ kind: "adjust", qty: 0, reason: "다 씀" })).ok, true);
 });
 
 test("날짜와 품목이 없으면 적을 수 없다", () => {
-  assert.equal(S.validateMove(move({ date: "" }), true).code, "DATE_REQUIRED");
-  assert.equal(S.validateMove(move({ itemId: "" }), true).code, "ITEM_REQUIRED");
+  assert.equal(S.validateMove(move({ date: "" })).code, "DATE_REQUIRED");
+  assert.equal(S.validateMove(move({ itemId: "" })).code, "ITEM_REQUIRED");
 });
 
 test("수량은 정수만 남는다", () => {

@@ -4642,7 +4642,7 @@
         <div class="operations-actions">
           <label class="sp-toggle"><input type="checkbox" data-supply-retired${supplyState.showRetired ? " checked" : ""}> 안 쓰는 것도 보기</label>
           ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-new>입출고 적기</button>` : ""}
-          ${supplyState.admin ? `<button type="button" class="primary-button" data-supply-item-new>새 품목</button>` : ""}
+          ${supplyState.canWork ? `<button type="button" class="primary-button" data-supply-item-new>새 품목</button>` : ""}
         </div>
       </section>
       ${status}
@@ -4661,7 +4661,7 @@
 
   function supplyGroupTable(S, group, lastMoved) {
     const rowsHtml = group.items.map(item => {
-      const cost = supplyState.admin ? supplyCostOf(item.id) : null;
+      const cost = supplyCostOf(item.id);
       const short = item.minStock > 0 ? item.stock < item.minStock : item.stock <= 0;
       const badge = !item.active
         ? `<span class="office-status off"><i></i>안 씀</span>`
@@ -4670,7 +4670,7 @@
           : (short ? `<span class="office-status warn"><i></i>부족</span>` : `<span class="office-status working"><i></i>충분</span>`));
       const open = supplyState.openItemId === item.id;
       const history = open
-        ? `<tr class="sp-history-row"><td colspan="${supplyState.admin ? 7 : 6}">${supplyHistory(S, item)}</td></tr>`
+        ? `<tr class="sp-history-row"><td colspan="7">${supplyHistory(S, item)}</td></tr>`
         : "";
       return `<tr data-supply-row="${esc(item.id)}">
           <td><b>${esc(item.name)}</b><small>${esc(item.spec || "규격 없음")}</small></td>
@@ -4678,11 +4678,11 @@
           <td>${badge}</td>
           <td><b>${esc(item.location || "-")}</b><small>${esc(item.vendor || "구매처 미정")}</small></td>
           <td><b>${esc(lastMoved[item.id] || "-")}</b><small>마지막 이동</small></td>
-          ${supplyState.admin ? `<td><b>${cost && cost.unitPrice ? `${cost.unitPrice.toLocaleString("ko-KR")}원` : "-"}</b><small>${cost && cost.pricedAt ? esc(cost.pricedAt) : "단가 미기입"}</small></td>` : ""}
+          <td><b>${cost && cost.unitPrice ? `${cost.unitPrice.toLocaleString("ko-KR")}원` : "-"}</b><small>${cost && cost.pricedAt ? esc(cost.pricedAt) : "단가 미기입"}</small></td>
           <td class="sp-row-actions">
             <button type="button" class="text-button" data-supply-open="${esc(item.id)}">${open ? "기록 접기" : "기록 보기"}</button>
             ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-for="${esc(item.id)}">적기</button>` : ""}
-            ${supplyState.admin ? `<button type="button" class="mini-button" data-supply-item-edit="${esc(item.id)}">고치기</button>` : ""}
+            ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-item-edit="${esc(item.id)}">고치기</button>` : ""}
           </td>
         </tr>${history}`;
     }).join("");
@@ -4690,7 +4690,7 @@
     return `<section class="office-panel">
       <header><div><span>${esc(group.key.toUpperCase())}</span><h3>${esc(group.label)}</h3></div><small>${group.items.length}가지</small></header>
       <div class="office-table-wrap"><table class="office-table">
-        <thead><tr><th>품목</th><th>남은 수량</th><th>상태</th><th>보관·구매처</th><th>마지막 이동</th>${supplyState.admin ? "<th>단가</th>" : ""}<th></th></tr></thead>
+        <thead><tr><th>품목</th><th>남은 수량</th><th>상태</th><th>보관·구매처</th><th>마지막 이동</th><th>단가</th><th></th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
     </section>`;
@@ -4725,11 +4725,10 @@
       <label><span>규격</span><input type="text" name="spec" maxlength="200" value="${esc(draft.spec)}" placeholder="예: 4L / 20매입"></label>
       <label><span>보관 장소</span><input type="text" name="location" maxlength="120" value="${esc(draft.location)}" placeholder="예: 사무실 창고 2번칸"></label>
       <label><span>구매처</span><input type="text" name="vendor" maxlength="120" value="${esc(draft.vendor)}" placeholder="예: 쿠팡 / 자재상"></label>
-      ${supplyState.admin ? `<label><span>단가 (원)</span><input type="number" name="unitPrice" min="0" step="1" value="${cost && cost.unitPrice ? cost.unitPrice : ""}" placeholder="관리자만 봅니다"></label>
-      <label><span>단가 기준일</span><input type="date" name="pricedAt" value="${esc(cost && cost.pricedAt ? cost.pricedAt : "")}"${supplyDateBounds()}></label>` : ""}
+      <label><span>단가 (원)</span><input type="number" name="unitPrice" min="0" step="1" value="${cost && cost.unitPrice ? cost.unitPrice : ""}" placeholder="한 개 살 때 값"></label>
+      <label><span>단가 기준일</span><input type="date" name="pricedAt" value="${esc(cost && cost.pricedAt ? cost.pricedAt : "")}"${supplyDateBounds()}></label>
       <label class="wide"><span>메모</span><textarea name="note" rows="2" maxlength="1000">${esc(draft.note)}</textarea></label>
       <label class="wide sp-active"><input type="checkbox" name="active"${draft.active ? " checked" : ""}> 지금 쓰는 품목입니다 (끄면 목록 아래로 내려갑니다 — 지우지는 않습니다)</label>
-      ${supplyState.admin ? `<p class="wo-editor-note">단가는 팀 전체가 보는 자리에 저장하지 않습니다. 관리자만 읽는 곳에 따로 들어갑니다.</p>` : ""}
       <div class="wo-editor-actions">
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "만들기")}</button>
         <button class="secondary-button" type="button" data-supply-item-cancel>취소</button>
@@ -4739,7 +4738,7 @@
 
   function supplyMoveEditor(S) {
     const draft = S.normalizeMove(supplyState.moveEditing);
-    const choices = S.moveChoices(supplyState.admin);
+    const choices = S.MOVE_KINDS.map(item => ({ key: item.key, label: item.label }));
     const kind = S.moveKind(draft.kind) || choices[0];
     const items = supplyState.items.filter(item => item.active || item.id === draft.itemId);
     return `<form class="wo-editor" data-supply-move-form>
@@ -4781,7 +4780,7 @@
     // 단가 칸은 관리자에게만 보인다. 안 보이는 사람이 낸 폼에는 없으므로,
     // 있을 때만 실어 보낸다 — 빈 값을 보내면 있던 단가가 0 이 된다.
     const payload = Object.assign({}, checked.item);
-    if (supplyState.admin && Object.prototype.hasOwnProperty.call(raw, "unitPrice")) {
+    if (supplyState.canWork && Object.prototype.hasOwnProperty.call(raw, "unitPrice")) {
       payload.unitPrice = String(raw.unitPrice || "").trim() === "" ? 0 : raw.unitPrice;
       payload.pricedAt = String(raw.pricedAt || "");
     }
@@ -4807,7 +4806,7 @@
       qty: raw.qty,
       date: String(raw.date || ""),
       reason: String(raw.reason || ""),
-    }, supplyState.admin);
+    });
     if (!checked.ok) { showToast(checked.error, "error"); return; }
     try {
       await api.addSupplyMove(checked.move);

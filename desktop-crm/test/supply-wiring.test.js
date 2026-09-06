@@ -42,15 +42,18 @@ test("마케팅 전용 계정은 비품을 만지지 못한다", () => {
   }
 });
 
-test("품목은 관리자만 만들고, 사용 기록은 팀원도 적는다", () => {
+test("일하는 사람은 품목도 만들고 네 가지 기록을 다 적는다", () => {
+  // 물건을 받고 세는 사람이 대표가 아니다. 대표만 적게 하면 그 자리에서
+  // 안 적히고 나중에 기억으로 적힌다.
   const save = methodBody(remoteSource, "saveSupplyItem");
-  assert.match(save, /session\.role !== "admin"/u);
+  assert.match(save, /session\.role !== "admin" && session\.role !== "member"/u);
   assert.match(save, /SUPPLY_FORBIDDEN/u);
   assert.match(save, /SupplyCore\.validateItem/u);
 
   const add = methodBody(remoteSource, "addSupplyMove");
   assert.match(add, /session\.role !== "admin" && session\.role !== "member"/u);
-  assert.match(add, /SupplyCore\.validateMove\(source, admin\)/u, "관리자인지 넘겨야 입고·실사를 가른다");
+  // 종류로 사람을 가르지 않는다.
+  assert.match(add, /SupplyCore\.validateMove\(source\)/u);
 });
 
 test("같은 기록을 두 번 쓰지 않는다", () => {
@@ -70,34 +73,29 @@ test("기록은 관리자만 지운다", () => {
   assert.match(remove, /method: "DELETE"/u);
 });
 
-test("단가는 관리자가 아니면 아예 부르지 않는다", () => {
-  // 규칙이 막으니 부르면 권한 오류가 뜬다. 그 오류는 사람에게 아무 뜻이
-  // 없으므로, 애초에 부르지 않는다.
+test("단가는 늘 부른다 — 이제 팀 전체가 본다", () => {
   const load = methodBody(remoteSource, "loadSupplies");
-  assert.match(load, /const admin = session\.role === "admin"/u);
-  assert.match(load, /admin\s*\n?\s*\?\s*await this\.dbRequest\("supplyCosts"/u);
-  assert.match(load, /: null/u);
+  assert.match(load, /const costPayload = await this\.dbRequest\("supplyCosts"/u);
+  assert.doesNotMatch(load, /admin\s*\n?\s*\?\s*await this\.dbRequest\("supplyCosts"/u);
 });
 
-test("단가는 팀 전체가 읽는 노드에 저장하지 않는다", () => {
-  // Firebase 는 부모가 읽기를 허용하면 자식은 못 막는다. 그래서 단가는
-  // 품목과 아예 다른 노드에 있어야 한다.
+test("단가는 팀 전체가 보되, 노드는 갈라 둔다", () => {
+  // 다시 닫아야 할 날이 오면 노드가 갈려 있어야 규칙 한 줄로 닫힌다.
+  // 품목 안에 합쳐 두면 그때는 자료를 옮겨야 한다.
   assert.ok(rules.supplyItems, "supplyItems 규칙이 있어야 한다");
   assert.ok(rules.supplyCosts, "supplyCosts 규칙이 있어야 한다");
   assert.equal(rules.supplyItems.$itemId.unitPrice, undefined, "품목에 단가 칸이 있으면 안 된다");
   assert.equal(rules.supplyItems.$itemId.$other[".validate"], false, "모르는 칸은 막는다");
-  assert.match(rules.supplyCosts[".read"], /role'\)\.val\(\) === 'admin'/u);
-  assert.doesNotMatch(rules.supplyCosts[".read"], /'member'|'viewer'/u);
-  // 목록은 팀 전체가 읽는다 — 무엇이 있는지는 감출 것이 아니다.
+  // 셋 다 같은 사람이 읽는다.
   assert.match(rules.supplyItems[".read"], /'viewer'/u);
   assert.match(rules.supplyMoves[".read"], /'viewer'/u);
+  assert.match(rules.supplyCosts[".read"], /'viewer'/u);
 });
 
-test("입고와 실사는 규칙이 관리자만 받는다", () => {
+test("입고와 실사도 규칙이 팀원에게서 받는다", () => {
   const validate = rules.supplyMoves.$moveId[".validate"];
-  assert.match(validate, /newData\.child\('kind'\)\.val\(\) !== 'in'/u);
-  assert.match(validate, /newData\.child\('kind'\)\.val\(\) !== 'adjust'/u);
-  assert.match(validate, /role'\)\.val\(\) === 'admin'/u);
+  // 종류로 사람을 가르던 절이 남아 있으면, 화면은 열렸는데 서버가 막는다.
+  assert.doesNotMatch(validate, /role'\)\.val\(\) === 'admin'/u);
   // 없는 품목에 기록이 붙지 않는다.
   assert.match(validate, /root\.child\('crmCompany\/supplyItems'\)/u);
   // 폐기·실사는 이유가 있어야 한다.
@@ -116,7 +114,11 @@ test("기록은 덮어쓰지 못하고, 지우는 것은 관리자만", () => {
 
   // 품목은 지우는 길이 없다. .validate 는 삭제 때 안 돌아가므로 .write 에서 막는다.
   assert.match(rules.supplyItems.$itemId[".write"], /newData\.exists\(\)/u);
-  assert.doesNotMatch(rules.supplyItems.$itemId[".write"], /'member'|'viewer'/u);
+  // 만드는 것은 일하는 사람 누구나, 조회 전용은 아니다.
+  assert.match(rules.supplyItems.$itemId[".write"], /'member'/u);
+  assert.doesNotMatch(rules.supplyItems.$itemId[".write"], /'viewer'/u);
+  assert.match(rules.supplyCosts.$itemId[".write"], /'member'/u);
+  assert.doesNotMatch(rules.supplyCosts.$itemId[".write"], /'viewer'/u);
 });
 
 test("규칙의 분류·종류가 코드와 같다", () => {
@@ -148,6 +150,18 @@ test("남은 수량을 화면이 직접 세고, 저장된 숫자를 안 쓴다",
   assert.match(body, /S\.lowStock\(supplyState\.items, supplyState\.moves\)/u);
   assert.match(body, /S\.groupByCategory\(supplyState\.items, supplyState\.moves\)/u);
   assert.doesNotMatch(body, /item\.stockValue|data\.stock\b/u);
+});
+
+test("지우는 것만 대표에게 남긴다", () => {
+  // 적는 것은 쌓는 일이라 틀려도 다음 기록으로 덮이지만, 지우는 것은
+  // 되돌릴 수 없다.
+  const remove = methodBody(remoteSource, "deleteSupplyMove");
+  assert.match(remove, /session\.role !== "admin"/u);
+  const start = appSource.indexOf("// --- 비품·자재 ---");
+  const section = appSource.slice(start, appSource.indexOf("function renderOperationsIntelligence("));
+  const gates = [...section.matchAll(/supplyState\.admin/gu)].length;
+  assert.equal(gates, 3, "화면에서 관리자로 가르는 곳은 불러오기·지우기 단추·지우기 함수 셋뿐이다");
+  assert.match(section, /data-supply-move-delete="\$\{esc\(move\.id\)\}"/u);
 });
 
 test("사이드바 숫자는 부족한 것을 센다", () => {
