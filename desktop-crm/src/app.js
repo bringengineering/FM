@@ -4320,6 +4320,22 @@
           <label class="wide"><span>일정 조정 · 건의</span><textarea rows="3" maxlength="2000" data-dl-word="requests">${esc(draft.requests)}</textarea></label>
         </div>
       </section>
+      <section class="office-panel dl-panel">
+        <header>
+          <div><span>AI</span><h3>보고서 초안</h3></div>
+          <small>화면에 이미 뜬 숫자만 넘깁니다. AI 가 숫자를 새로 만들지 않습니다.</small>
+        </header>
+        <div class="panel-body">
+          ${draft.aiSummary
+            ? `<div class="dl-ai-draft">${esc(draft.aiSummary).replace(/\r?\n/gu, "<br>")}</div>
+               <p class="office-muted">${esc(String(draft.aiSummaryAt || "").slice(0, 16).replace("T", " "))} 에 만든 초안입니다. 사실이 틀렸으면 위의 줄을 고치고 다시 만들어 주세요.</p>`
+            : `<p class="office-muted">오늘 적은 것으로 보고서 문장을 만들어 봅니다. 만든 글은 저장을 눌러야 남습니다.</p>`}
+          ${frozen ? "" : `<div class="wo-editor-actions">
+            <button type="button" class="mini-button" data-dl-ai${dailyLogState.busy ? " disabled" : ""}>${draft.aiSummary ? "다시 만들기" : "초안 만들기"}</button>
+            <span class="office-muted">AI 가 쓴 글은 대표가 확인하기 전까지 평가에 쓰지 않습니다.</span>
+          </div>`}
+        </div>
+      </section>
       ${frozen ? `<div class="info-box">대표가 확인한 일지입니다. 고치려면 대표에게 말해 주세요.</div>` : `<div class="wo-editor-actions dl-actions">
         <button type="button" class="mini-button" data-dl-save${dailyLogState.busy ? " disabled" : ""}>임시 저장</button>
         <button type="button" class="primary-button" data-dl-submit${dailyLogState.busy ? " disabled" : ""}>${draft.submittedAt ? "다시 보내기" : "보내기"}</button>
@@ -4352,6 +4368,16 @@
       </tr>`;
     }).join("");
 
+    const drafts = today.filter(item => item.aiSummary).map(item => {
+      const person = people.find(row => row.uid === item.uid);
+      const name = person ? (person.displayName || person.email || person.uid) : item.uid;
+      return `<div class="dl-word-card">
+        <b>${esc(name)}</b>
+        <div class="dl-ai-draft">${esc(item.aiSummary).replace(/\r?\n/gu, "<br>")}</div>
+        <p class="office-muted">AI 가 쓴 초안입니다. ${item.confirmedBy ? "확인하셨습니다." : "확인 전까지는 평가 근거로 쓰지 않습니다."}</p>
+      </div>`;
+    }).join("");
+
     const words = today.filter(item => item.blockers || item.requests).map(item => {
       const person = people.find(row => row.uid === item.uid);
       const name = person ? (person.displayName || person.email || person.uid) : item.uid;
@@ -4372,6 +4398,10 @@
       ${words ? `<section class="office-panel">
         <header><div><span>WORDS</span><h3>숫자로 안 남는 것</h3></div><small>여기가 대개 더 중요합니다</small></header>
         <div class="panel-body dl-word-list">${words}</div>
+      </section>` : ""}
+      ${drafts ? `<section class="office-panel">
+        <header><div><span>AI</span><h3>보고서 초안</h3></div><small>사람이 적은 것으로 만든 글입니다</small></header>
+        <div class="panel-body dl-word-list">${drafts}</div>
       </section>` : ""}`;
   }
 
@@ -4424,6 +4454,54 @@
       await loadDailyLogs();
     } catch (error) {
       showToast(error && error.message || "확인하지 못했습니다.", "error");
+    } finally {
+      dailyLogState.busy = false;
+      renderDailyLog();
+    }
+  }
+
+  // AI 보고서 초안. 넘기는 것은 **화면에 이미 뜬 숫자뿐**이다. AI 가 다시
+  // 세기 시작하면 보고서와 화면이 다른 말을 하고, 그러면 둘 다 못 믿는다.
+  //
+  // 만든 글을 바로 서버에 쓰지 않는다. 사람이 읽고 [저장] 이나 [보냄] 을
+  // 눌러야 남는다 — 안 그러면 아무도 안 읽은 글이 대표에게 올라간다.
+  async function draftDailyReport() {
+    const D = dailyLogCore();
+    const W = workOrderCore();
+    if (!D || dailyLogState.busy) return;
+    const draft = readDailyLogDraft(D);
+    const checked = D.validateDay(draft);
+    if (!checked.ok) { showToast(checked.error, "error"); dailyLogState.draft = draft; renderDailyLog(); return; }
+    // 지시 번호 대신 지시 이름을 넘긴다. 번호만 주면 AI 가 어느 일인지 모르고
+    // 지어낸다.
+    const orderTitles = {};
+    (workOrderState.orders || []).forEach(item => {
+      if (item && item.id) orderTitles[item.id] = W ? W.normalizeOrder(item).title : String(item.title || "");
+    });
+    const content = D.factsText(D.reportFacts(checked.day, { orderTitles }));
+    dailyLogState.busy = true;
+    dailyLogState.draft = draft;
+    renderDailyLog();
+    try {
+      const answer = await api.assist({ task: "daily_report", content });
+      const text = answer && answer.result && typeof answer.result.text === "string" ? answer.result.text.trim() : "";
+      if (!text) throw new Error("초안을 받지 못했습니다.");
+      dailyLogState.draft = D.normalizeDay(Object.assign({}, draft, {
+        aiSummary: text,
+        aiSummaryAt: new Date().toISOString(),
+      }));
+      showToast("초안을 만들었습니다. 읽어 보고 저장해 주세요.", "success");
+    } catch (error) {
+      const said = String(error && error.message || "");
+      // 이 갈래는 AI 서버에도 올라가 있어야 한다. 앱만 새로 받고 서버를 안
+      // 올렸으면 "지원하지 않는 작업" 이라고만 나오는데, 그 말로는 무엇을
+      // 해야 하는지 알 수 없다.
+      showToast(
+        /지원하지 않는 AI 작업/u.test(said)
+          ? "AI 서버에 일일보고서 갈래가 아직 안 올라갔습니다. crm-ai-worker 를 배포한 뒤 다시 눌러 주세요."
+          : (said || "초안을 만들지 못했습니다."),
+        "error",
+      );
     } finally {
       dailyLogState.busy = false;
       renderDailyLog();
@@ -9657,6 +9735,7 @@
       renderDailyLog();
       return;
     }
+    if (event.target.closest("[data-dl-ai]")) { await draftDailyReport(); return; }
     if (event.target.closest("[data-dl-save]")) { await saveDailyLogDraft(false); return; }
     if (event.target.closest("[data-dl-submit]")) { await saveDailyLogDraft(true); return; }
     const dlConfirm = event.target.closest("[data-dl-confirm]");

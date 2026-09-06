@@ -246,3 +246,46 @@ test("일지 번호는 사람과 날짜로 정해진다", () => {
   // 하루에 두 장이 생기면 어느 것이 그날인지 알 수 없다.
   assert.equal(D.dayId("u-kim", "2026-09-02"), "u-kim_2026-09-02");
 });
+
+// --- AI 에게 보내는 글 ---
+
+test("AI 에 보내는 글은 화면에 뜬 숫자를 그대로 옮긴다", () => {
+  const facts = D.reportFacts(day({
+    entries: [
+      entry({ id: "e1", start: "09:00", end: "11:00", nature: "innovation", orderId: "wo1", progress: 60 }),
+      entry({ id: "e2", start: "11:00", end: "18:00", nature: "routine", title: "철근콘크리트 수강", orderId: "", progress: 100 }),
+    ],
+    blockers: "건물주가 전화를 안 받습니다.",
+  }), { orderTitles: { wo1: "BRING OFFICE 통합" } });
+  const written = D.factsText(facts);
+
+  // 숫자는 summarize 가 이미 센 것과 같아야 한다. 다르면 보고서와 화면이
+  // 다른 말을 하고, 그러면 둘 다 못 믿는다.
+  assert.match(written, /채운 시간: 9시간 \(2줄\)/u);
+  assert.match(written, /시간으로 가중하면 91%/u);
+  assert.match(written, /기존 7시간\(78%\)/u);
+  assert.match(written, /업무지시에 붙지 않은 시간: 7시간/u);
+  // 지시는 번호가 아니라 이름으로 간다. 번호만 주면 AI 가 지어낸다.
+  assert.match(written, /지시: BRING OFFICE 통합/u);
+  assert.match(written, /지시에 붙지 않음/u);
+  // 사람이 적은 말은 줄이지 않는다.
+  assert.match(written, /줄이지 말고 그대로 옮길 것/u);
+  assert.match(written, /건물주가 전화를 안 받습니다\./u);
+  // 칸 이름이 그대로 새어 나가면 AI 가 그걸 문장에 옮겨 적는다.
+  assert.ok(!/weightedProgress|looseHours|byNature/u.test(written));
+});
+
+test("빈 하루도 글은 만들어진다", () => {
+  // 여기서 터지면 [초안 만들기] 를 누른 사람은 왜 안 되는지 알 수 없다.
+  const written = D.factsText(D.reportFacts({ uid: "u", date: "2026-09-02" }, {}));
+  assert.match(written, /채운 시간: 0시간 \(0줄\)/u);
+  assert.match(written, /적힌 줄이 없습니다/u);
+});
+
+test("AI 초안은 일지에 담기되 사람 손을 거친다", () => {
+  const withDraft = D.normalizeDay(day({ aiSummary: "오늘 누수 확인에 2시간을 썼습니다.", aiSummaryAt: "2026-09-02T18:00:00.000Z" }));
+  assert.equal(withDraft.aiSummary, "오늘 누수 확인에 2시간을 썼습니다.");
+  // 초안이 있다고 보낸 것도 대표가 본 것도 아니다.
+  assert.equal(D.summarize(withDraft).submitted, false);
+  assert.equal(D.summarize(withDraft).confirmed, false);
+});

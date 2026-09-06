@@ -793,3 +793,4 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dl-word-card{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px}
 .dl-word-card p{margin:4px 0 0;color:#4E5968;font-size:13px}
 .dl-word-card em{font-style:normal;color:#8B95A1;margin-right:6px}
+.dl-ai-draft{border:1px solid #E5E8EB;border-radius:10px;padding:12px 14px;background:#FBFCFD;color:#191F28;font-size:13px;line-height:1.7;white-space:normal}
