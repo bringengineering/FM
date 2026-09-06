@@ -273,3 +273,64 @@ test("방 번호를 손으로 적다 틀린 경우를 짚어 준다", () => {
   assert.match(said, /\[방 찾기\]/u);
   assert.match(said, /한 자리만 틀려도/u);
 });
+
+// --- 주간 업무지시서 보내기 ---
+
+const dOrder = (patch = {}) => Object.assign({
+  title: "당근 비즈프로필 정비", doneWhen: "사진 5장이 올라가면 끝",
+  deliverable: "20260909_당근.png", hours: 4, weight: 100, dueDate: "2026-09-09",
+}, patch);
+
+test("지시서를 보내되 전문을 보내지 않는다", () => {
+  const body = T.composeDirective({
+    name: "황우중",
+    week: { from: "2026-09-07", to: "2026-09-13" },
+    directive: {
+      background: "당근에서 문의가 줄고 있습니다.",
+      goal: "문의가 주 3건 들어옵니다.",
+      loss: "겨울 성수기 전에 못 살립니다.",
+      scopeExclude: "유료 광고는 안 합니다.",
+      precondition: "권한을 먼저 받아야 합니다.",
+      note: "여기 적은 것은 안 나가야 한다",
+    },
+    orders: [dOrder()],
+  });
+  assert.match(body, /주간 업무지시서/u);
+  assert.match(body, /황우중/u);
+  assert.match(body, /2026-09-07 ~ 2026-09-13/u);
+  // 애들이 헷갈리던 것이 왜·완료기준·산출물이라 그 셋은 반드시 나간다.
+  assert.match(body, /당근에서 문의가 줄고 있습니다\./u);
+  assert.match(body, /사진 5장이 올라가면 끝/u);
+  assert.match(body, /20260909_당근\.png/u);
+  assert.match(body, /100% · 4h · ~09-09/u);
+  // 텔레그램에서 다 읽으면 앱을 안 연다. 앱을 안 열면 일지가 안 써진다.
+  assert.match(body, /진행은 앱에서 적습니다/u);
+  // 비고까지 다 실어 보내면 그게 전문이다.
+  assert.doesNotMatch(body, /여기 적은 것은 안 나가야 한다/u);
+});
+
+test("지시가 없으면 보낼 글이 없다", () => {
+  assert.equal(T.composeDirective({ name: "황우중", orders: [] }), "");
+});
+
+test("지시가 많아도 텔레그램이 받는 길이를 넘지 않는다", () => {
+  const many = Array.from({ length: 40 }, (unused, index) => dOrder({
+    title: `${index} 아주 긴 업무 이름을 넣어 본다 `.repeat(4),
+    doneWhen: "끝나는 기준을 아주 길게 적어 본다 ".repeat(6),
+  }));
+  const body = T.composeDirective({ name: "황우중", directive: { background: "가".repeat(600) }, orders: many });
+  assert.ok(body.length <= 3500, `길이가 ${body.length}`);
+  assert.match(body, /줄임/u);
+});
+
+test("HTML 로 쓰는 글자를 그대로 흘리지 않는다", () => {
+  // 제목에 < 가 들어가면 텔레그램이 글 전체를 거절한다.
+  const body = T.composeDirective({
+    name: "황<우>중",
+    directive: { background: "a < b & c" },
+    orders: [dOrder({ title: "<b>굵게</b>" })],
+  });
+  assert.match(body, /&lt;b&gt;굵게/u);
+  assert.match(body, /황&lt;우&gt;중/u);
+  assert.match(body, /a &lt; b &amp; c/u);
+});

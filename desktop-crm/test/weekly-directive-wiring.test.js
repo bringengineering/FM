@@ -78,3 +78,45 @@ test("다시 그릴 때 붙여 넣은 글을 날리지 않는다", () => {
   // 긴 글을 다시 붙여 넣게 하면 다음부터 안 쓴다.
   assert.match(appSource, /if \(back\) back\.value = paste;/u);
 });
+
+test("지시서를 텔레그램으로 보내는 통로가 세 곳에 다 있다", () => {
+  assert.doesNotThrow(() => MutationPolicy.assertRegistered("crm:telegram-directive-send"));
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:telegram-directive-send"'));
+  assert.ok(preloadSource.includes('"crm:telegram-directive-send"'));
+  assert.equal(MutationPolicy.classification("crm:telegram-directive-send"), "mutation");
+});
+
+test("갖춰지지 않은 지시서는 안 나간다", () => {
+  // 왜 하는지가 빈 지시서가 나가면 애들이 헷갈리는 그 자리로 그대로 돌아간다.
+  const send = appSource.slice(appSource.indexOf("async function sendDirectiveToTelegram"), appSource.indexOf("function readDirectivePaste"));
+  assert.ok(send, "sendDirectiveToTelegram 이 없다");
+  assert.match(send, /WD\.readiness\(\{/u);
+  assert.match(send, /if \(!check\.ok\) \{ showToast/u);
+  // 모자란 것을 한 번에 다 말한다. 하나씩 나오면 세 번 누르고 그만둔다.
+  assert.match(send, /check\.missing\.join\(" \/ "\)/u);
+});
+
+test("보내기 전에 사람에게 묻는다", () => {
+  // 방에 있는 사람 모두가 보게 되고, 보낸 글은 지울 수 없다.
+  const send = appSource.slice(appSource.indexOf("async function sendDirectiveToTelegram"), appSource.indexOf("function readDirectivePaste"));
+  const ask = send.indexOf("requestConfirmation");
+  const post = send.indexOf("api.sendTelegramDirective");
+  assert.ok(ask > -1, "묻지 않고 보내면 안 된다");
+  assert.ok(ask < post, "묻기 전에 보내면 안 된다");
+  assert.match(send, /if \(!confirmed\) return;/u);
+});
+
+test("보낸 뒤에 내보낸 것으로 찍는다", () => {
+  // 보내기 전에 찍으면 실패한 것도 보낸 것으로 남는다.
+  const send = appSource.slice(appSource.indexOf("async function sendDirectiveToTelegram"), appSource.indexOf("function readDirectivePaste"));
+  assert.ok(send.indexOf("api.sendTelegramDirective") < send.indexOf("publish: true"), "보내기 전에 찍으면 안 된다");
+});
+
+test("보내는 글에 지시 줄을 화면에서 실어 보낸다", () => {
+  // 서버에서 다시 읽으면 화면이 보고 있는 것과 다른 것을 보낼 수 있다.
+  const handler = mainSource.slice(mainSource.indexOf("async function sendTelegramDirective"), mainSource.indexOf("async function sendTelegramContactAlert"));
+  assert.match(handler, /TelegramCore\.composeDirective/u);
+  assert.match(handler, /options\.orders/u);
+  assert.match(handler, /TELEGRAM_NOT_CONFIGURED/u);
+  assert.match(handler, /requireTelegramAdmin\(\)/u);
+});

@@ -122,6 +122,64 @@
     return body.length > MAX_BODY ? `${body.slice(0, MAX_BODY - 20)}\n… (줄임)` : body;
   }
 
+  // 주간 업무지시서를 텔레그램 글로 만든다.
+  //
+  // 대표가 하던 것은 이랬다 — 이번 주 할 것을 적고, GPT 로 다듬고, 그걸
+  // 사람이 다시 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다.
+  // 이제 붙여 넣은 지시서가 CRM 에 남아 있으니, 여기서 바로 나갈 수 있다.
+  //
+  // **전문을 보내지 않는다.** 애들이 텔레그램에서 다 읽으면 앱을 안 연다.
+  // 앱을 안 열면 「오늘」 일지를 안 쓰고, 진행률이 안 올라가고, 대표는 다시
+  // 저녁에 카톡으로 물어보게 된다. 그래서 왜 하는지와 무엇을 어디까지 하면
+  // 되는지까지만 보내고, 적는 것은 앱에서 하게 한다.
+  //
+  // 완료 기준과 산출물은 넣는다. 애들이 헷갈리던 것이 바로 그 둘이라,
+  // 그것까지 빼면 보내는 뜻이 없다.
+  function composeDirective(input) {
+    const settings = input && typeof input === "object" ? input : {};
+    const directive = settings.directive && typeof settings.directive === "object" ? settings.directive : {};
+    const list = rows(settings.orders);
+    const name = text(settings.name, 80) || text(directive.name, 80);
+    const week = settings.week && typeof settings.week === "object" ? settings.week : null;
+    if (!list.length) return "";
+
+    const head = `<b>BRING · 주간 업무지시서</b>\n${escapeHtml(name || "담당 미정")}${week ? ` · ${escapeHtml(week.from)} ~ ${escapeHtml(week.to)}` : ""}`;
+    const why = [];
+    if (text(directive.background, 2000)) why.push(`<b>왜</b>\n${escapeHtml(text(directive.background, 600))}`);
+    if (text(directive.goal, 2000)) why.push(`<b>이 주가 끝나면</b>\n${escapeHtml(text(directive.goal, 600))}`);
+    if (text(directive.loss, 2000)) why.push(`<b>안 하면</b>\n${escapeHtml(text(directive.loss, 400))}`);
+    if (text(directive.scopeExclude, 2000)) why.push(`<b>이번 주에 안 하는 것</b>\n${escapeHtml(text(directive.scopeExclude, 400))}`);
+
+    const shown = list.slice(0, MAX_ROWS);
+    const lines = shown.map((order, index) => {
+      const weight = Number(order && order.weight);
+      const hours = Number(order && order.hours);
+      const tag = [
+        Number.isFinite(weight) && weight > 0 ? `${Math.round(weight)}%` : "",
+        Number.isFinite(hours) && hours > 0 ? `${hours}h` : "",
+        text(order && order.dueDate, 10) ? `~${text(order.dueDate, 10).slice(5)}` : "",
+      ].filter(Boolean).join(" · ");
+      const parts = [`${index + 1}. <b>${escapeHtml(text(order && order.title, 120))}</b>${tag ? ` <i>(${escapeHtml(tag)})</i>` : ""}`];
+      if (text(order && order.doneWhen, 1000)) parts.push(`   끝: ${escapeHtml(text(order.doneWhen, 200))}`);
+      if (text(order && order.deliverable, 200)) parts.push(`   냄: ${escapeHtml(text(order.deliverable, 200))}`);
+      return parts.join("\n");
+    });
+
+    const rest = list.length - shown.length;
+    const tail = [
+      rest > 0 ? `… 그리고 ${rest}건 더` : "",
+      "",
+      "진행은 앱에서 적습니다. 프로젝트 관리 → 오늘.",
+    ].filter(line => line !== "" || true);
+
+    // 토막마다 한 칸씩 띄운다. 휴대폰에서 붙어 있으면 어디가 어디인지 안 읽힌다.
+    const spacedWhy = why.flatMap(block => [block, ""]);
+    const body = [head, "", ...spacedWhy, `<b>이번 주 할 일 ${list.length}건</b>`, ...lines, ...tail]
+      .filter((line, index, all) => !(line === "" && all[index - 1] === ""))
+      .join("\n");
+    return body.length > MAX_BODY ? `${body.slice(0, MAX_BODY - 40)}\n… (줄임) 나머지는 앱에서 보세요.` : body;
+  }
+
   // 무엇을 보냈는지 한 줄로 남긴다. 다음에 같은 것을 또 보내지 않기 위해서다.
   function alertsFingerprint(alerts) {
     return rows(alerts).map(alert => `${alert.id}:${alert.due}`).sort().join("|");
@@ -315,6 +373,7 @@
   }
 
   return Object.freeze({
+    composeDirective,
     MAX_BODY,
     MAX_ROWS,
     SEND_HOURS,

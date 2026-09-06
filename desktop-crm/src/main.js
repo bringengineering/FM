@@ -3339,6 +3339,37 @@ async function postToTelegram(botToken, chatId, body) {
 }
 
 /**
+ * 주간 업무지시서를 회사 텔레그램 방으로 보낸다.
+ *
+ * 대표가 하던 것은 이랬다 — 이번 주 할 것을 적고, GPT 로 다듬고, 그걸 사람이
+ * 다시 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다. 이제
+ * 지시서가 CRM 에 남아 있으니 여기서 바로 나간다.
+ *
+ * 지시서와 지시 줄은 화면이 들고 있으므로 화면에서 받는다. 여기서 다시 읽으면
+ * 화면이 보고 있는 것과 다른 것을 보낼 수 있다.
+ *
+ * 갖춰지지 않은 지시서는 보내지 않는다. 왜 하는지가 빈 지시서가 나가면 애들이
+ * 헷갈리는 그 자리로 그대로 돌아간다.
+ */
+async function sendTelegramDirective(input) {
+  requireTelegramAdmin();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const saved = await readTelegramSettings();
+  if (!saved || !saved.botToken || !saved.chatId) {
+    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
+  }
+  const body = TelegramCore.composeDirective({
+    directive: options.directive,
+    orders: Array.isArray(options.orders) ? options.orders : [],
+    name: options.name,
+    week: options.week,
+  });
+  if (!body) return { ok: false, code: "DIRECTIVE_EMPTY", error: "보낼 지시가 없습니다." };
+  await postToTelegram(saved.botToken, saved.chatId, body);
+  return { ok: true, sent: true, count: (Array.isArray(options.orders) ? options.orders : []).length };
+}
+
+/**
  * 연락할 고객을 회사 텔레그램 방으로 보낸다.
  *
  * 고객 자료는 화면이 들고 있으므로 화면에서 받는다. 여기서 다시 읽으면
@@ -7634,6 +7665,7 @@ secureCanonicalHandle("crm:telegram-chats-find", input => findTelegramChats(inpu
 secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSettings(input));
 secureCanonicalHandle("crm:telegram-settings-forget", () => forgetTelegramSettings());
 secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContactAlert(input));
+secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

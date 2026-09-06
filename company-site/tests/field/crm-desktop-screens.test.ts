@@ -63,6 +63,15 @@ type Booted = {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// 주는 월요일에 시작한다. 화면·코어와 같은 잣대를 써야 검사가 오늘 날짜에
+// 상관없이 돈다 — 고정 날짜를 박으면 다음 주에 검사가 깨진다.
+function mondayOf(date: Date): string {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay();
+  utc.setUTCDate(utc.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return utc.toISOString().slice(0, 10);
+}
+
 async function boot(): Promise<Booted> {
   const errors: string[] = [];
   const dom = new JSDOM(indexHtml, { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
@@ -164,6 +173,16 @@ async function boot(): Promise<Booted> {
         // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
         { id: "p2", name: "회사 서버", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
       ],
+      // 이번 주 지시서. 머리말만 담고 지시 줄은 안 담는다 — 복사해 두면 갈라진다.
+      directives: [
+        {
+          id: "u-admin_" + mondayOf(new Date()), uid: "u-admin", name: "서창환", weekStart: mondayOf(new Date()),
+          background: "임차인이 두 번 민원을 넣었고 다음 주에 갱신 면담이 있습니다.",
+          goal: "누수 원인이 확인되고 건물주에게 보고가 나가 있습니다.",
+          loss: "", scopeExclude: "", precondition: "", approvers: "대표", note: "",
+          publishedAt: "", updatedAt: "2026-09-06T00:00:00.000Z", updatedBy: "u-admin",
+        },
+      ],
       orders: [
         // 기한 지난 것·오늘·이번 주·담당자 없는 것을 한 벌씩 둔다. 표가
         // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
@@ -171,6 +190,8 @@ async function boot(): Promise<Booted> {
         { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
         { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100, hours: 6, weight: 40 },
         // 어느 프로젝트에도 안 붙은 업무. 이것이 "왜 하는지 모르는 일" 이다.
+        // 이번 주에 걸친 지시. 지시서를 보내려면 이 주에 뭔가 있어야 한다.
+        { id: "o5", title: "3층 누수 확인", why: "임차인이 두 번 민원을 넣었습니다", what: "천장을 열어 배관을 봅니다", doneWhen: "사진 3장과 원인 한 줄", deliverable: "20260906_3층누수.xlsx", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "assigned", startDate: mondayOf(new Date()), dueDate: mondayOf(new Date()), progress: 0, hours: 8, weight: 100 },
         { id: "o4", title: "떠도는 일", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "", track: "etc", status: "assigned", dueDate: "", startDate: "", progress: 0, raci: { R: ["u-admin"], A: ["u-admin"] } },
       ],
     },
@@ -955,6 +976,51 @@ describe("desktop CRM screens actually render", () => {
     expect(head.background).toContain("당근에서 문의가 줄고");
     expect(head.goal).toContain("주 3건");
     expect("tasks" in (directive!.input as Record<string, unknown>), "지시 줄을 머리말에 복사하면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("지시서를 텔레그램으로 바로 보낸다", async () => {
+    // 대표가 하던 것은 — 이번 주 할 것을 적고, GPT 로 다듬고, 사람이 다시
+    // 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown).toContain("주 지시서");
+    // 아직 못 받은 사람이 드러나야 한다. 밑에 깔리면 그 사람은 그 주를 그냥 보낸다.
+    expect(shown).toContain("아직 없음");
+
+    const send = booted.document.querySelector('[data-wd-send="u-admin"]') as HTMLElement;
+    expect(send, "지시가 있는 사람에게는 보내기가 있어야 한다").toBeTruthy();
+
+    const before = booted.calls.length;
+    send.click();
+    await sleep(250);
+    // 방에 있는 사람 모두가 보게 되고, 보낸 글은 지울 수 없다. 그래서 묻는다.
+    const dialog = booted.document.querySelector(".confirmation-layer.open");
+    expect(dialog, "묻지 않고 보내면 안 된다").toBeTruthy();
+    expect((dialog as HTMLElement).textContent).toContain("3층 누수 확인");
+    expect(booted.calls.slice(before).some(call => call.name === "sendTelegramDirective"),
+      "묻기 전에 나가면 안 된다").toBe(false);
+
+    (booted.document.querySelector('[data-confirm-choice="confirm"]') as HTMLElement).click();
+    await sleep(400);
+    const sent = booted.calls.slice(before).find(call => call.name === "sendTelegramDirective");
+    expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
+    const body = sent!.input as { name: string; orders: Array<{ title: string }>; directive: { background: string } };
+    expect(body.name).toBe("서창환");
+    expect(body.orders.map(order => order.title)).toContain("3층 누수 확인");
+    expect(body.directive.background).toContain("임차인이 두 번 민원");
+    // 보낸 뒤에 내보낸 것으로 찍는다. 먼저 찍으면 실패한 것도 보낸 것이 된다.
+    const marked = booted.calls.slice(before).find(call => call.name === "saveWeeklyDirective");
+    expect(marked, "내보낸 것으로 남겨야 한다").toBeTruthy();
+    expect((marked!.input as { publish: boolean }).publish).toBe(true);
+    expect(booted.calls.indexOf(sent!)).toBeLessThan(booted.calls.indexOf(marked!));
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
