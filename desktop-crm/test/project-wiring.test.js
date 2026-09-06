@@ -122,3 +122,34 @@ test("project-core 가 app.js 보다 먼저 실린다", () => {
   const appAt = indexSource.indexOf('src="./app.js"');
   assert.ok(coreAt > 0 && coreAt < appAt);
 });
+
+test("간트 위에 손이 가야 할 것과 사람별 부하를 올린다", () => {
+  // 간트는 언제 무엇을 하는지 보여 주지만, 오늘 누가 무엇부터 손대야
+  // 하는지는 말해 주지 않는다.
+  const start = appSource.indexOf("function renderWorkOrders(");
+  const body = appSource.slice(start, appSource.indexOf("\n  function dueSoonBoard(", start));
+  assert.match(body, /dueSoonBoard\(P, scoped, today\)/u);
+  assert.match(body, /assigneeBoard\(P, scoped, today\)/u);
+  // 두 칸이 간트보다 위에 있어야 먼저 눈에 들어온다.
+  assert.ok(body.indexOf("dueSoonBoard(") < body.indexOf("ganttBoard("));
+  assert.ok(body.indexOf("assigneeBoard(") < body.indexOf("ganttBoard("));
+});
+
+test("손 갈 일이 없으면 그 칸을 아예 안 그린다", () => {
+  // 늘 자리를 차지하고 "없음" 이라고 적혀 있으면 사람은 그 자리를 안 본다.
+  const due = appSource.slice(appSource.indexOf("function dueSoonBoard("), appSource.indexOf("\n  function assigneeBoard("));
+  assert.match(due, /if \(!list\.length\) return "";/u);
+  assert.match(due, /P\.dueSoon\(orders, today, 7\)/u);
+  // 지난 것은 "며칠 지남" 으로, 남은 것은 "며칠 남음" 으로 말한다.
+  assert.match(due, /일 지남/u);
+  assert.match(due, /일 남음/u);
+  assert.match(due, /"오늘"/u);
+  // 누르면 아래 카드로 데려간다. 이미 있는 길을 쓴다.
+  assert.match(due, /data-wo-open-card="/u);
+
+  const board = appSource.slice(appSource.indexOf("function assigneeBoard("), appSource.indexOf("\n  // 간트. 엑셀 표"));
+  assert.match(board, /if \(!board\.length\) return "";/u);
+  assert.match(board, /P\.byAssignee\(orders, today\)/u);
+  // 담당자 없는 줄이 눈에 띄어야 한다. 그게 제일 먼저 손봐야 할 것이다.
+  assert.match(board, /wo-unassigned/u);
+});

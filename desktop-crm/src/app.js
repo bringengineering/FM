@@ -4222,8 +4222,53 @@
       </div>
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
+      ${dueSoonBoard(P, scoped, today)}
+      ${assigneeBoard(P, scoped, today)}
       ${ganttBoard(W, P, scoped, today, summary)}
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">지시가 없습니다.</div>`}</div>`;
+  }
+
+  // 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
+  // 하는지는 말해 주지 않는다. 지난 것과 이번 주 안에 올 것을 한 줄씩 적는다.
+  //
+  // 아무것도 없으면 이 칸을 아예 안 그린다. 늘 자리를 차지하고 "없음" 이라고
+  // 적혀 있으면 사람은 그 자리를 안 보게 된다.
+  function dueSoonBoard(P, orders, today) {
+    const list = P.dueSoon(orders, today, 7);
+    if (!list.length) return "";
+    const late = list.filter(item => item.late).length;
+    return `<section class="office-panel wo-due">
+      <header>
+        <div><span>DUE SOON</span><h3>손이 가야 할 것 ${list.length}건</h3></div>
+        <small>${late ? `기한 지남 ${late}건` : "이번 주 안에 마감"}</small>
+      </header>
+      <ul class="wo-due-list">${list.slice(0, 12).map(item => `<li class="${item.late ? "is-late" : ""}" data-wo-open-card="${esc(item.id)}">
+        <b>${esc(item.title)}</b>
+        <span>${esc(item.assigneeName || "담당자 없음")}</span>
+        <em>${item.late ? `${Math.abs(item.daysLeft)}일 지남` : (item.daysLeft === 0 ? "오늘" : `${item.daysLeft}일 남음`)}</em>
+        <small>${esc(item.dueDate)}</small>
+      </li>`).join("")}</ul>
+    </section>`;
+  }
+
+  // 사람별로 몇 건 물고 있는지. 이게 없으면 일을 나눠 줄 때 감으로 하게 된다.
+  function assigneeBoard(P, orders, today) {
+    const board = P.byAssignee(orders, today);
+    if (!board.length) return "";
+    return `<section class="office-panel">
+      <header><div><span>WORKLOAD</span><h3>사람별 진행</h3></div><small>기한 지난 것이 많은 사람부터</small></header>
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>담당</th><th>물고 있는 것</th><th>기한 지남</th><th>이번 주</th><th>검수 대기</th><th>평균 진행률</th></tr></thead>
+        <tbody>${board.map(row => `<tr class="${row.uid ? "" : "wo-unassigned"}">
+          <td><b>${esc(row.name)}</b><small>${row.total}건 중 완료 ${row.done}</small></td>
+          <td><b>${row.open}</b></td>
+          <td>${row.overdue ? `<span class="office-status missing"><i></i>${row.overdue}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td>${row.soon ? `<span class="office-status warn"><i></i>${row.soon}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td>${row.waitingReview ? `<span class="office-status complete"><i></i>${row.waitingReview}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td><div class="dv-bar"><i style="width:${row.progress}%"></i></div><small>${row.progress}%</small></td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </section>`;
   }
 
   // 간트. 엑셀 표의 오른쪽 칸이 하던 일이다.

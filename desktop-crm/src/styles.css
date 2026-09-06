@@ -472,3 +472,24 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .nav-switch-go:hover { background: #F2F4F6; }
 .nav-switch-go.is-current { background: #EDF5FF; color: #1B64DA; }
 .nav-switch-all { margin-top: 3px; border-top: 1px solid #F2F4F6; border-radius: 0 0 10px 10px; }
+
+/* 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
+   하는지는 말해 주지 않는다. 그 한 줄이 여기다. */
+.wo-due { border-color: #F6D8DB; }
+.wo-due > header { border-bottom-color: #FBECEE; }
+.wo-due > header span { color: #C6535F; }
+.wo-due-list { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 6px 0; list-style: none; }
+.wo-due-list li { display: grid; grid-template-columns: 1fr 90px 78px 74px; align-items: center; gap: 10px; padding: 9px 20px; border-top: 1px solid #F7F9FA; cursor: pointer; }
+.wo-due-list li:first-child { border-top: 0; }
+.wo-due-list li:hover { background: #FAFBFC; }
+.wo-due-list b { overflow: hidden; color: #191F28; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.wo-due-list span { color: #8B95A1; font-size: 11px; }
+.wo-due-list em { font-size: 11px; font-style: normal; font-weight: 800; text-align: right; }
+.wo-due-list li em { color: #C77A00; }
+.wo-due-list li.is-late em { color: #C6535F; }
+.wo-due-list small { color: #8B95A1; font-size: 10px; text-align: right; }
+.wo-unassigned > td:first-child b { color: #C6535F; }
+@media (max-width: 900px) {
+  .wo-due-list li { grid-template-columns: 1fr auto; row-gap: 3px; }
+  .wo-due-list small { grid-column: 1 / -1; text-align: left; }
+}
