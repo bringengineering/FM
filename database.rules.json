@@ -593,7 +593,93 @@
           }
         }
       },
-      "projects": {
+      "objectives": {
+      ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": false,
+      "$objectiveId": {
+        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+        ".validate": "newData.hasChildren(['id','quarter','title','ownerUid','status','updatedAt','updatedBy']) && newData.child('id').val() === $objectiveId",
+        "id": {
+          ".validate": "newData.isString() && newData.val() === $objectiveId && newData.val().length <= 80"
+        },
+        "quarter": {
+          ".validate": "newData.isString() && newData.val().length === 7"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+        },
+        "why": {
+          ".validate": "newData.isString() && newData.val().length <= 1000"
+        },
+        "ownerUid": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "ownerName": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "track": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() === 'draft' || newData.val() === 'active' || newData.val() === 'closed')"
+        },
+        "projectIds": {
+          "$index": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          }
+        },
+        "keyResults": {
+          "$index": {
+            ".validate": "newData.hasChildren(['id','title','unit','target'])",
+            "id": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "title": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+            },
+            "unit": {
+              ".validate": "newData.isString() && (newData.val() === 'count' || newData.val() === 'percent' || newData.val() === 'krw' || newData.val() === 'day')"
+            },
+            "baseline": {
+              ".validate": "newData.isNumber()"
+            },
+            "target": {
+              ".validate": "newData.isNumber()"
+            },
+            "current": {
+              ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+              ".validate": "newData.isNumber()"
+            },
+            "ownerUid": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "ownerName": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "createdAt": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "updatedAt": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "projects": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": false,
         "$projectId": {

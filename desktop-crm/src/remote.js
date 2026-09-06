@@ -7,6 +7,7 @@ const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
+const OkrCore = require("./okr-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4026,6 +4027,87 @@ class FirebaseRemoteClient {
       uid: session.uid,
       loadedAt: new Date().toISOString(),
     };
+  }
+
+  // 분기 목표(OKR)를 불러온다.
+  //
+  // 업무지시와 같은 자료를 쓰므로 그 통로에 얹지 않고 따로 둔다 —
+  // 목표 화면은 프로젝트와 업무를 다 봐야 하지만, 업무지시 화면은
+  // 목표를 몰라도 된다.
+  async loadObjectives() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("objectives", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const objectives = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => OkrCore.normalizeObjective(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      objectives,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 목표를 세우거나 고친다. 관리자만 — 분기 목표는 회사가 정하는 것이다.
+  async saveObjective(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("분기 목표는 관리자만 세울 수 있습니다.", "OBJECTIVE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = OkrCore.validateObjective(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `objectives/${checked.objective.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.objective, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  /**
+   * 핵심결과의 지금 값만 고친다.
+   *
+   * 목표 전체를 다시 쓰지 않는다. 값을 올리는 일은 자주 있고, 그때마다
+   * 목표 전체를 덮으면 두 사람이 같은 날 다른 핵심결과를 올릴 때 한쪽이
+   * 통째로 사라진다.
+   */
+  async updateKeyResult(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 값을 올릴 수 없습니다.", "OBJECTIVE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const objectiveId = OkrCore.text(source.objectiveId, 80);
+    const keyResultId = OkrCore.text(source.keyResultId, 80);
+    if (!objectiveId || !keyResultId) throw createError("어느 핵심결과인지 정해 주세요.", "VALIDATION_ERROR");
+    const stored = await this.dbRequest(`objectives/${objectiveId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!stored) throw createError("없는 목표입니다.", "OBJECTIVE_NOT_FOUND");
+    const objective = OkrCore.normalizeObjective(Object.assign({ id: objectiveId }, stored));
+    const index = objective.keyResults.findIndex(item => item.id === keyResultId);
+    if (index < 0) throw createError("없는 핵심결과입니다.", "KEY_RESULT_NOT_FOUND");
+    const next = Object.assign({}, objective.keyResults[index], { current: Number(source.current) || 0 });
+    const checked = OkrCore.validateKeyResult(next);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const now = new Date().toISOString();
+    // 그 칸 하나만 쓴다.
+    await this.dbRequest(`objectives/${objectiveId}/keyResults/${index}/current`, { method: "PUT", body: checked.keyResult.current });
+    this.assertSessionGuardActive(guard);
+    await this.dbRequest(`objectives/${objectiveId}/updatedAt`, { method: "PUT", body: now });
+    this.assertSessionGuardActive(guard);
+    return { objectiveId, keyResultId, current: checked.keyResult.current, updatedAt: now };
   }
 
   // 프로젝트를 만들거나 고친다. 관리자만.

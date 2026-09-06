@@ -33,6 +33,7 @@ const SCREENS: Array<[string, string]> = [
   ["quotes", "견적"],
   ["deliveryFlow", "견적서에서 입금까지"],
   ["workOrders", "표의 한 줄이 곧 업무지시"],
+  ["objectives", "이번 분기에 무엇을 이루려 하는가"],
   ["tasks", "할 일"],
   ["cases", "민원"],
   ["buildingCalendar", "업무일정"],
@@ -85,6 +86,20 @@ async function boot(): Promise<Booted> {
     },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
+    loadObjectives: {
+      ...empty,
+      objectives: [
+        {
+          id: "ob1", quarter: "2026-Q3", title: "원주에서 계단청소를 자리잡힌 일로 만든다",
+          why: "단발 청소로는 매달 다시 영업해야 한다.", ownerUid: "u-admin", ownerName: "서창환",
+          track: "biz", status: "active", projectIds: ["p1"],
+          keyResults: [
+            { id: "k1", title: "정기 계약 건수", unit: "count", baseline: 0, target: 10, current: 7, ownerUid: "u-admin", ownerName: "서창환" },
+            { id: "k2", title: "재계약률", unit: "percent", baseline: 0, target: 80, current: 20, ownerUid: "", ownerName: "" },
+          ],
+        },
+      ],
+    },
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
     scanWorkReportPhotos: {
@@ -112,13 +127,19 @@ async function boot(): Promise<Booted> {
     loadWorkOrders: {
       ...empty,
       members: [{ uid: "u-admin", displayName: "서창환" }],
-      projects: [{ id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" }],
+      projects: [
+        { id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
+        // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
+        { id: "p2", name: "회사 서버", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
+      ],
       orders: [
         // 기한 지난 것·오늘·이번 주·담당자 없는 것을 한 벌씩 둔다. 표가
         // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
         { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40 },
         { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
         { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100 },
+        // 어느 프로젝트에도 안 붙은 업무. 이것이 "왜 하는지 모르는 일" 이다.
+        { id: "o4", title: "떠도는 일", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "", track: "etc", status: "assigned", dueDate: "", startDate: "", progress: 0, raci: { R: ["u-admin"], A: ["u-admin"] } },
       ],
     },
     loadForms: { ...empty, templates: [], entries: [], canEditTemplates: true, canFill: true },
@@ -398,6 +419,58 @@ describe("desktop CRM screens actually render", () => {
     expect(links.length, "전·후 한 장씩 붙어야 한다").toBe(2);
     // 얹었다고 서버에 쓰지 않는다. 사람이 저장을 눌러야 한다.
     expect(booted.calls.some(call => call.name === "saveWorkReport")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("분기 목표가 목표와 이어지지 않은 일을 같이 보여 준다", async () => {
+    // 이 화면의 값어치는 목표판을 예쁘게 채우는 데 있지 않고, **지금 하는
+    // 일 중에 무엇이 목표와 상관없는지**를 드러내는 데 있다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="objectives"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown).toContain("원주에서 계단청소를 자리잡힌 일로 만든다");
+    // 핵심결과 두 개의 평균은 (0.7 + 0.25) / 2 = 0.475 → 48%
+    expect(shown, "진척도를 사람이 적지 않고 값에서 센다").toContain("48%");
+    expect(shown).toContain("정기 계약 건수");
+    expect(shown).toContain("7건 / 10건");
+
+    // 목표에 안 붙은 것을 실제로 세어 보여 준다. 붙인 프로젝트는 p1 뿐이다.
+    expect(shown, "이어지지 않은 일을 드러내야 한다").toContain("이 일들은 어느 목표에 닿는지 적혀 있지 않습니다");
+
+    // RACI 설명이 화면에 있어야 한다 — 팀원이 처음 보는 말이다.
+    expect(shown).toContain("끝났는지 판단하고 책임지는 한 사람");
+
+    const bars = booted.document.querySelectorAll(".okr-bar i");
+    expect(bars.length, "핵심결과마다 막대가 하나씩").toBe(2);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("핵심결과 없이는 목표를 저장할 수 없다", async () => {
+    const newButton = [...booted.document.querySelectorAll("button")]
+      .find(button => (button.textContent || "").trim() === "새 목표") as HTMLElement | undefined;
+    expect(newButton, "새 목표 단추가 있어야 한다").toBeTruthy();
+    newButton!.click();
+    await sleep(180);
+
+    const form = booted.document.querySelector("[data-okr-form]") as HTMLFormElement;
+    expect(form, "목표 편집기가 열려야 한다").toBeTruthy();
+    // 기본으로 핵심결과 한 줄이 깔려 있어야 한다 — 빈 폼을 주면 사람은
+    // 그 칸을 안 채우고 저장부터 누른다.
+    expect(form.querySelectorAll("[data-okr-kr-row]").length).toBe(1);
+
+    const before = booted.calls.length;
+    form.dispatchEvent(new booted.window.Event("submit", { bubbles: true, cancelable: true }));
+    await sleep(200);
+    // 제목·책임자·핵심결과가 비어 있으므로 서버로 나가면 안 된다.
+    expect(booted.calls.slice(before).some(call => call.name === "saveObjective"),
+      "덜 채운 목표가 저장되면 안 된다").toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });

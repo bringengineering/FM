@@ -2360,6 +2360,64 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(member, at("d1"))));
   });
 
+  it("lets only admins set quarterly objectives while anyone who works updates their own number", async () => {
+    // 분기 목표는 회사가 정하는 것이다. 그런데 자기 핵심결과 값을 매주
+    // 올리는 것은 팀원이 해야 이 체계가 돈다 — 대표만 올릴 수 있으면
+    // 대표가 매주 다섯 사람에게 물어보게 되고, 그러면 아무도 안 올린다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/objectives/${id}`;
+    const objective = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      quarter: "2026-Q3",
+      title: "원주에서 계단청소를 자리잡힌 일로 만든다",
+      why: "단발 청소로는 매달 다시 영업해야 한다.",
+      ownerUid: "crm-admin",
+      ownerName: "서창환",
+      track: "biz",
+      status: "active",
+      projectIds: ["p1"],
+      keyResults: [
+        { id: "k1", title: "정기 계약 건수", unit: "count", baseline: 0, target: 10, current: 3, ownerUid: "crm-legacy-member", ownerName: "황우중", note: "" },
+      ],
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("ob1")), objective("ob1")));
+    // 목표는 팀 전체가 본다. 감추면 자기 일이 어디에 닿는지 알 수 없다.
+    await assertSucceeds(get(ref(member, at("ob1"))));
+    await assertSucceeds(get(ref(viewer, "crmCompany/objectives")));
+    // 목표를 세우는 것은 관리자만.
+    await assertFails(set(ref(member, at("ob2")), { ...objective("ob2"), updatedBy: "crm-legacy-member" }));
+    await assertFails(set(ref(viewer, at("ob3")), { ...objective("ob3"), updatedBy: "crm-viewer" }));
+
+    // 값 올리기는 팀원도 한다. 그 칸 하나만.
+    await assertSucceeds(set(ref(member, `${at("ob1")}/keyResults/0/current`), 7));
+    await assertSucceeds(set(ref(member, `${at("ob1")}/updatedAt`), "2026-09-07T00:00:00.000Z"));
+    // 그러나 목표 값을 팀원이 낮추지는 못한다. 그건 목표를 바꾸는 일이다.
+    await assertFails(set(ref(member, `${at("ob1")}/keyResults/0/target`), 3));
+    await assertFails(set(ref(member, `${at("ob1")}/title`), "쉬운 목표"));
+    // 조회 전용은 값도 못 올린다.
+    await assertFails(set(ref(viewer, `${at("ob1")}/keyResults/0/current`), 9));
+
+    // 모르는 상태·단위는 막는다. 화면이 아는 것과 서버가 아는 것이 같아야 한다.
+    await assertFails(set(ref(admin, at("ob4")), objective("ob4", { status: "대충" })));
+    await assertFails(set(ref(admin, at("ob5")), objective("ob5", {
+      keyResults: [{ id: "k", title: "x", unit: "느낌", baseline: 0, target: 1, current: 0 }],
+    })));
+    // 책임자 없는 목표는 못 세운다.
+    await assertFails(set(ref(admin, at("ob6")), objective("ob6", { ownerUid: "" })));
+    // 모르는 칸은 안 받는다.
+    await assertFails(set(ref(admin, at("ob7")), objective("ob7", { budget: 5000000 })));
+    // 지우는 길은 없다. 지난 분기 목표가 사라지면 왜 그렇게 했는지도 사라진다.
+    await assertFails(remove(ref(admin, at("ob1"))));
+    await assertFails(remove(ref(member, at("ob1"))));
+  });
+
   it("lets anyone who works own the supply catalogue and never delete an item", async () => {
     // 품목을 지우면 그 품목에 달린 과거 기록의 이름이 사라진다. 안 쓰는
     // 것은 active 를 내려 목록 아래로 보낸다.
