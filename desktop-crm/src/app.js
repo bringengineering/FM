@@ -201,6 +201,7 @@
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
+    workReports: ["작업 종류를 고르면 항목이 깔립니다", "작업 결과보고서"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
@@ -1517,6 +1518,7 @@
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
+    else if (currentView === "workReports") renderWorkReports();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -4563,6 +4565,285 @@
     }
   }
 
+  // --- 작업 결과보고서 ---
+  // 입주청소와 계단청소는 매번 하는 일이 같다. 그런데 보고서는 매번 처음부터
+  // 쓴다. 그래서 사람마다 다르게 쓰고, 바쁘면 안 쓴다.
+  //
+  // 그러니 항목을 사람이 적게 두지 않는다. 작업 종류를 고르면 그 종류의
+  // 표준 항목이 깔리고, 사람은 사진만 붙인다.
+  let reportState = {
+    reports: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    selectedId: "", draft: null, busyKey: "",
+  };
+
+  const reportCore = () => window.BringWorkReportCore;
+
+  async function loadWorkReports() {
+    if (reportState.loading) return;
+    reportState.loading = true;
+    reportState.error = "";
+    if (currentView === "workReports") renderWorkReports();
+    try {
+      const data = await api.loadWorkReports();
+      reportState.reports = Array.isArray(data && data.reports) ? data.reports : [];
+      reportState.admin = data && data.admin === true;
+      reportState.canWork = data && data.canWork === true;
+      reportState.uid = String((data && data.uid) || "");
+      reportState.loaded = true;
+    } catch (error) {
+      reportState.error = error && error.message || "결과보고서를 불러오지 못했습니다.";
+    } finally {
+      reportState.loading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
+  // 건물주에게 나가는 문서에 섞이면 안 되는 값들. 협력업체 이름과 업체
+  // 단가가 드러나면 그건 다음 계약을 잃는 일이다.
+  function reportSecrets() {
+    const vendors = (store.partnerVendors || store.vendors || []).map(item => String(item && item.name || "")).filter(Boolean);
+    return { vendorNames: vendors, vendorAmounts: [], privateMemos: [] };
+  }
+
+  function renderWorkReports() {
+    const R = reportCore();
+    if (!R) { main.innerHTML = `<section class="operations-hero"><div><h2>결과보고서</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
+
+    const reports = R.sortReports(reportState.reports);
+    const draft = reportState.draft ? R.normalizeReport(reportState.draft) : null;
+    const thisMonth = Core.workDate().slice(0, 7);
+    const monthly = reports.filter(item => item.workDate.slice(0, 7) === thisMonth);
+
+    const status = reportState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (reportState.error ? `<div class="info-box" style="color:#C6535F">${esc(reportState.error)}</div>` : "");
+
+    const rowsHtml = reports.slice(0, 60).map(item => {
+      const sum = R.summarizeItems(item);
+      return `<tr class="${item.id === reportState.selectedId ? "is-selected" : ""}">
+        <td><b>${esc(item.buildingName || "건물 미지정")}</b><small>${esc(R.kindLabel(item.kind))}</small></td>
+        <td><b>${esc(item.workDate)}</b><small>${esc(item.workerName || "작업자 미기재")}</small></td>
+        <td><b>${sum.done}/${sum.total}</b><small>사진 ${sum.photos}장</small></td>
+        <td><span class="office-status ${sum.progress === 100 ? "working" : "warn"}"><i></i>${sum.progress}%</span></td>
+        <td class="wr-row-actions">
+          ${reportState.canWork ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">고치기</button>` : ""}
+          <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
+          <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
+        </td>
+      </tr>`;
+    }).join("");
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>문서관리</span><h2>작업 결과보고서</h2><p>작업 종류를 고르면 항목이 깔립니다. 사람은 항목마다 전·후 사진만 붙이면 됩니다.</p></div>
+        <div class="operations-actions">${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>새 보고서</button>` : ""}</div>
+      </section>
+      ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사진</span><b>${monthly.reduce((sum, item) => sum + R.photoCount(item), 0)}</b><small>장</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>입주청소</span><b>${reports.filter(item => item.kind === "moveIn").length}</b><small>건</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>계단청소</span><b>${reports.filter(item => item.kind === "stairs").length}</b><small>건</small></div>
+      </div>
+      ${draft ? reportEditor(R, draft) : ""}
+      <section class="office-panel">
+        <header><div><span>REPORTS</span><h3>낸 보고서</h3></div><small>최근 것부터</small></header>
+        ${rowsHtml
+          ? `<div class="office-table-wrap"><table class="office-table">
+              <thead><tr><th>건물·종류</th><th>작업일</th><th>완료 항목</th><th>진척도</th><th></th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>아직 낸 보고서가 없습니다</b><span>${reportState.canWork ? "‘새 보고서’ 를 누르고 작업 종류만 고르면 항목이 깔립니다." : "작업자가 보고서를 내면 여기에 쌓입니다."}</span></div>`}
+      </section>`;
+  }
+
+  function reportEditor(R, draft) {
+    const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const blockers = R.blockers(draft);
+    const sum = R.summarizeItems(draft);
+
+    const cards = draft.items.map(item => {
+      const issue = R.itemIssue(item);
+      const shots = phase => (item[phase].length
+        ? item[phase].map(photo => `<li><a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || "사진")}</a><button type="button" class="text-button" data-report-drop-photo="${esc(photo.id)}" data-report-item="${esc(item.key)}" data-report-phase="${esc(phase)}">빼기</button></li>`).join("")
+        : `<li class="wr-none">없음</li>`);
+      return `<article class="wr-item${issue ? " has-issue" : ""}">
+        <header>
+          <div><b>${esc(item.label)}</b><small>${esc(item.detail)}</small></div>
+          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
+        </header>
+        <div class="wr-shots">
+          <div><span>작업 전</span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
+          <div><span>작업 후</span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
+        </div>
+        <input type="text" class="wr-note" data-report-note="${esc(item.key)}" maxlength="500" value="${esc(item.note)}" placeholder="${item.status === "skipped" ? "못 한 이유를 적어 주세요" : "비고 (선택)"}">
+        ${issue ? `<p class="wr-issue">${esc(issue)}</p>` : ""}
+      </article>`;
+    }).join("");
+
+    return `<form class="wo-editor wr-editor" data-report-form>
+      <h3>${esc(draft.createdAt ? "보고서 고치기" : "새 보고서")}</h3>
+      <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>건물</span><select name="buildingId" required>
+        <option value="">고르세요</option>
+        ${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}
+      </select></label>
+      <label><span>작업일</span><input type="date" name="workDate" value="${esc(draft.workDate)}" required${supplyDateBounds()}></label>
+      <label><span>작업 인원</span><input type="text" name="workerName" maxlength="120" value="${esc(draft.workerName)}" placeholder="예: 황우중 외 1명"></label>
+      <label><span>작업 범위</span><input type="text" name="area" maxlength="60" value="${esc(draft.area)}" placeholder="예: 지상 1~5층 계단실"></label>
+      <label><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
+      <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
+      <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
+      <label class="wide"><span>총평</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <div class="wide wr-items">${cards}</div>
+      ${blockers.length
+        ? `<div class="wide wr-blockers"><b>아직 낼 수 없습니다</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
+        : `<p class="wide wo-editor-note">낼 준비가 됐습니다. 완료 ${sum.done}항목 · 사진 ${sum.photos}장 · 진척도 ${sum.progress}%</p>`}
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${blockers.length ? " disabled" : ""}>저장</button>
+        <button class="secondary-button" type="button" data-report-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  // 화면에서 고친 것을 초안에 담아 둔다. 저장은 사람이 누를 때만 한다 —
+  // 사진 한 장 붙일 때마다 서버에 쓰면 반쯤 쓴 보고서가 남는다.
+  function readReportForm() {
+    const R = reportCore();
+    const form = document.querySelector("[data-report-form]");
+    if (!R || !form) return reportState.draft;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = R.normalizeReport(reportState.draft);
+    const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const items = previous.items.map(item => {
+      const statusEl = form.querySelector(`[data-report-status="${item.key}"]`);
+      const noteEl = form.querySelector(`[data-report-note="${item.key}"]`);
+      return Object.assign({}, item, {
+        status: statusEl ? statusEl.value : item.status,
+        note: noteEl ? noteEl.value : item.note,
+      });
+    });
+    return R.normalizeReport(Object.assign({}, previous, {
+      kind: String(raw.kind || previous.kind),
+      buildingId: String(raw.buildingId || ""),
+      buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
+      siteAddress: String(raw.siteAddress || (building && building.address) || ""),
+      workDate: String(raw.workDate || ""),
+      workerName: String(raw.workerName || ""),
+      area: String(raw.area || ""),
+      summary: String(raw.summary || ""),
+      contractFrom: String(raw.contractFrom || ""),
+      contractTo: String(raw.contractTo || ""),
+      items,
+    }));
+  }
+
+  function syncReportDraft() {
+    reportState.draft = readReportForm();
+    renderWorkReports();
+  }
+
+  async function saveWorkReportFromForm() {
+    const R = reportCore();
+    if (!R) return;
+    const draft = readReportForm();
+    const checked = R.validateReport(draft);
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      const saved = await api.saveWorkReport(checked.report);
+      reportState.draft = null;
+      reportState.selectedId = saved.id;
+      reportState.loaded = false;
+      showToast("결과보고서를 저장했습니다.", "success");
+      await loadWorkReports();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function addWorkReportPhoto(itemKey, phase) {
+    const R = reportCore();
+    if (!R || reportState.busyKey) return;
+    const draft = readReportForm();
+    if (!draft.buildingId) return showToast("건물을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
+    const item = draft.items.find(entry => entry.key === itemKey);
+    if (!item) return;
+    const picked = await api.pickBuildingDocuments();
+    if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+    reportState.busyKey = `${itemKey}:${phase}`;
+    reportState.draft = draft;
+    renderWorkReports();
+    let added = 0;
+    try {
+      for (const file of picked.files.slice(0, 4)) {
+        const uploaded = await api.uploadWorkReportPhoto({
+          reportId: draft.id,
+          itemKey,
+          itemLabel: item.label,
+          phase,
+          buildingName: draft.buildingName,
+          kindLabel: R.kindLabel(draft.kind),
+          workDate: draft.workDate,
+          filePath: file.path,
+          mimeType: file.mimeType,
+        });
+        if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
+        item[phase] = [...item[phase], {
+          id: uploaded.driveFileId,
+          driveFileId: uploaded.driveFileId,
+          webViewLink: uploaded.webViewLink,
+          caption: phase === "after" ? "작업 후" : "작업 전",
+        }];
+        added += 1;
+      }
+      reportState.draft = R.normalizeReport(draft);
+      showToast(`사진 ${added}장을 넣었습니다.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "사진을 넣지 못했습니다.", "error");
+    } finally {
+      reportState.busyKey = "";
+      renderWorkReports();
+    }
+  }
+
+  function dropWorkReportPhoto(photoId, itemKey, phase) {
+    const R = reportCore();
+    if (!R) return;
+    const draft = readReportForm();
+    const item = draft.items.find(entry => entry.key === itemKey);
+    if (!item) return;
+    // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
+    item[phase] = item[phase].filter(photo => photo.id !== photoId);
+    reportState.draft = R.normalizeReport(draft);
+    renderWorkReports();
+  }
+
+  async function exportWorkReportPdf(reportId, copyType) {
+    const R = reportCore();
+    if (!R || reportState.busyKey) return;
+    const report = R.findReport(reportState.reports, reportId);
+    if (!report) return;
+    reportState.busyKey = reportId;
+    renderWorkReports();
+    try {
+      const result = await api.exportWorkReport({
+        report,
+        copyType,
+        company: (store.settings && store.settings.quoteCompany) || {},
+        secrets: reportSecrets(),
+      });
+      if (result && result.canceled) return;
+      if (!result || !result.ok) throw new Error((result && result.error) || "보고서를 만들지 못했습니다.");
+      showToast(`${R.copyOf(copyType).label} PDF 를 저장했습니다.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
+    } finally {
+      reportState.busyKey = "";
+      renderWorkReports();
+    }
+  }
+
   // --- 수주 진행 ---
   // 이 화면이 답하는 질문은 하나다. **이 건물이 지금 어디까지 왔고, 다음에
   // 무엇을 해야 하나.**
@@ -7454,6 +7735,32 @@
   }
 
   document.addEventListener("click", async event => {
+    if (event.target.closest("[data-report-new]")) {
+      const R = reportCore();
+      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: Core.workDate() }); renderWorkReports(); }
+      return;
+    }
+    const reportEdit = event.target.closest("[data-report-edit]");
+    if (reportEdit) {
+      const R = reportCore();
+      const found = R && R.findReport(reportState.reports, reportEdit.dataset.reportEdit);
+      if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
+      return;
+    }
+    if (event.target.closest("[data-report-cancel]")) { reportState.draft = null; renderWorkReports(); return; }
+    const reportAddPhoto = event.target.closest("[data-report-add-photo]");
+    if (reportAddPhoto) { await addWorkReportPhoto(reportAddPhoto.dataset.reportAddPhoto, reportAddPhoto.dataset.reportPhase); return; }
+    const reportDropPhoto = event.target.closest("[data-report-drop-photo]");
+    if (reportDropPhoto) { dropWorkReportPhoto(reportDropPhoto.dataset.reportDropPhoto, reportDropPhoto.dataset.reportItem, reportDropPhoto.dataset.reportPhase); return; }
+    const reportExport = event.target.closest("[data-report-export]");
+    if (reportExport) { await exportWorkReportPdf(reportExport.dataset.reportExport, reportExport.dataset.reportCopy); return; }
+    const reportPhoto = event.target.closest("[data-report-open-photo]");
+    if (reportPhoto) {
+      event.preventDefault();
+      const link = reportPhoto.dataset.reportOpenPhoto;
+      if (link) await api.openExternal(link);
+      return;
+    }
     const deliveryOpen = event.target.closest("[data-delivery-open]");
     if (deliveryOpen) { deliveryState.selectedId = deliveryOpen.dataset.deliveryOpen; renderDeliveryFlows(); return; }
     if (event.target.closest("[data-delivery-new]")) {
@@ -9280,6 +9587,17 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-report-kind]")) {
+      // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
+      syncReportDraft();
+      return;
+    }
+    if (event.target.matches("[data-report-status]")) {
+      // 상태를 바꾸면 무엇이 더 필요한지가 바뀐다. 눌러 보고서야 아는 것보다
+      // 그 자리에서 보이는 편이 낫다.
+      syncReportDraft();
+      return;
+    }
     if (event.target.matches("[data-supply-retired]")) {
       supplyState.showRetired = event.target.checked === true;
       renderSupplies();
@@ -9615,6 +9933,7 @@
     const form = event.target;
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
+    if (form.matches("[data-report-form]")) { await saveWorkReportFromForm(); return; }
     if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
     if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
     if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }

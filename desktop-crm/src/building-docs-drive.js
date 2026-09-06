@@ -160,6 +160,39 @@
     return created.id;
   }
 
+  /**
+   * 올려 둔 파일을 다시 받아 온다. 결과보고서에 사진을 박을 때 쓴다.
+   *
+   * 링크로 두면 받은 사람의 PDF 에서는 아예 안 열린다 — 그 사람은 우리
+   * Drive 에 로그인할 수 없다. 그래서 인쇄 직전에 받아서 문서 안에 넣는다.
+   *
+   * 너무 큰 파일은 받지 않는다. 사진 스무 장이 각각 20MB 면 인쇄가 멈춘다.
+   */
+  async function downloadFile(deps, input) {
+    const { fetchImpl, accessToken } = deps;
+    const fileId = text(input && input.fileId);
+    if (!fileId) throw fail("어느 파일인지 정해 주세요.", "VALIDATION_ERROR");
+    const limit = Number(input && input.maxBytes) > 0 ? Number(input.maxBytes) : 12 * 1024 * 1024;
+
+    const meta = await driveJson(
+      fetchImpl,
+      `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size&supportsAllDrives=true`,
+      { headers: authHeader(accessToken) },
+      "파일 확인",
+    );
+    const size = Number(meta.size || 0);
+    if (size > limit) throw fail("파일이 너무 큽니다.", "DRIVE_FILE_TOO_LARGE");
+
+    const response = await fetchImpl(
+      `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+      { headers: authHeader(accessToken) },
+    );
+    if (!response || !response.ok) throw fail("파일을 받지 못했습니다.", "DRIVE_FAILED");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > limit) throw fail("파일이 너무 큽니다.", "DRIVE_FILE_TOO_LARGE");
+    return { id: meta.id || fileId, name: meta.name || "", mimeType: meta.mimeType || "application/octet-stream", content: buffer };
+  }
+
   /** 경로를 따라 폴더를 차례로 만들고 마지막 폴더 ID 를 돌려준다. */
   async function ensureFolderPath(deps, rootFolderId, segments) {
     let parentId = rootFolderId;
@@ -376,6 +409,7 @@
     quote,
     ensureFolder,
     ensureFolderPath,
+    downloadFile,
     findExisting,
     APP_TAG,
     RESUMABLE_THRESHOLD_BYTES,

@@ -9,6 +9,7 @@ const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
+const WorkReportCore = require("./work-report-core");
 const FormCore = require("./form-core");
 const PayrollCore = require("./payroll-core");
 const ApprovalCore = require("./approval-core");
@@ -4165,6 +4166,48 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PUT", body: saved });
     this.assertSessionGuardActive(guard);
     return saved;
+  }
+
+  // 작업 결과보고서. 입주청소·계단청소는 매번 하는 일이 같아서, 항목은
+  // 코드가 깔고 사람은 사진만 붙인다.
+  async loadWorkReports() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("workReports", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const reports = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => WorkReportCore.normalizeReport(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      reports,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  async saveWorkReport(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 결과보고서를 쓸 수 없습니다.", "WORK_REPORT_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = WorkReportCore.validateReport(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `workReports/${checked.report.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.report, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   // 수주 진행. 건물마다 견적서에서 입금까지 어디쯤인지.
