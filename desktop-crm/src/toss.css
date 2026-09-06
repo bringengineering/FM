@@ -458,6 +458,19 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
   border:1px solid var(--line); border-radius:var(--radius);
   background:#fff; box-shadow:var(--shadow);
 }
+/* 폴더가 여덟 개다. 230px 카드 2열로 두면 4줄이 되어 화면을 넘긴다.
+   폭에 맞춰 열을 늘리고 카드를 낮춘다. */
+.workspace-folder-grid{ grid-template-columns:repeat(auto-fit,minmax(206px,1fr)); gap:16px; }
+.workspace-folder-card{ min-height:132px; padding:20px; gap:6px; }
+.workspace-folder-card strong{ font-size:16px; }
+.workspace-folder-card small{ font-size:12px; }
+/* safe center: 카드가 화면보다 길어지면 가운데 정렬이 위쪽을 화면 밖으로
+   밀어내 첫 줄을 못 누르게 된다. safe 는 그때 위 정렬로 물러난다. */
+.workspace-landing{ max-width:1080px; gap:26px; align-content:safe center; }
+@media(max-width:760px){
+  .workspace-folder-grid{ grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+  .workspace-folder-card{ min-height:112px; padding:16px; }
+}
 .workspace-folder-card:hover{ border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); }
 
 /* ---- 한글 줄바꿈 ----

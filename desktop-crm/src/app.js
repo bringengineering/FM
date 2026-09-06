@@ -1592,6 +1592,11 @@
     if (currentMarketingView === "marketingInput" && canWriteMarketing && !marketingEntryController.state.loading && !marketingEntryController.state.loaded) marketingEntryController.refresh().then(() => { if (currentWorkspace === "marketing" && currentMarketingView === "marketingInput") renderMarketingWorkspace(); });
   }
 
+  // 랜딩에서 고른 폴더의 화면. prepareWorkspaceTransition 이 currentView 를
+  // 대시보드로 되돌리기 때문에, 그 전에 정해 두면 지워진다. 여기 담아 두고
+  // 되돌리는 그 자리에서 꺼내 쓴다.
+  let pendingLandingView = "";
+
   async function prepareWorkspaceTransition(workspace) {
     if (workspace === "marketing") marketingController.prepareLoad(currentAuth.user || {});
     else {
@@ -1603,7 +1608,10 @@
       marketingReviewReturnFocus = "";
     }
     if (currentView === "valueScope") await deactivateValueScope();
-    currentView = "dashboard";
+    // 랜딩에서 폴더를 골라 들어왔으면 그 화면으로 연다. 그냥 "dashboard" 로
+    // 두면 어느 카드를 눌러도 대시보드가 열린다.
+    currentView = pendingLandingView || "dashboard";
+    pendingLandingView = "";
     marketingLoaded = false;
   }
 
@@ -6152,6 +6160,10 @@
     }
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
+      // 랜딩에서 고른 폴더의 첫 화면까지 열어 준다. 들어가자마자 다시 왼쪽에서
+      // 같은 폴더를 찾아 눌러야 하면 랜딩을 나눈 뜻이 없다.
+      const target = String(workspaceEnter.dataset.workspaceEnterView || "");
+      pendingLandingView = target && WorkspaceShell.LANDING_FOLDERS.some(folder => folder.view === target) ? target : "";
       await workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
       return;
     }
