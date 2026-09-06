@@ -64,6 +64,33 @@ test("규칙이 남의 인사기록을 막는다", () => {
   assert.ok(!/auth\.uid === \$uid/.test(rules.$uid[".write"]), "본인이 자기 인사기록을 고칠 수 있으면 안 된다");
 });
 
+test("화면 검사와 서버 규칙이 같은 값을 막는다", () => {
+  // 기준이 어긋나면, 화면이 통과시킨 값을 서버가 막아 사람은 이유 없는
+  // 권한 오류만 본다. 그래서 두 정규식이 글자 하나까지 같아야 한다.
+  const Hr = require("../src/hr-core");
+  const source = fs.readFileSync(path.join(__dirname, "../src/hr-core.js"), "utf8");
+  const patterns = [...source.matchAll(/^  const (?:RESIDENT_LIKE|LONG_DIGITS) = \/(.+)\/;$/gmu)].map(m => m[1]);
+  assert.equal(patterns.length, 2, "hr-core 의 정규식 두 개를 찾지 못했다");
+  for (const field of ["note", "phone", "emergencyContact", "department", "position"]) {
+    const rule = rules.$uid[field][".validate"];
+    for (const pattern of patterns) {
+      assert.ok(rule.includes(`/${pattern}/`), `${field} 규칙에 ${pattern} 가 없다`);
+    }
+  }
+  // 규칙이 더 많이 막지도 않아야 한다.
+  const extra = [...rules.$uid.note[".validate"].matchAll(/matches\(\/(.+?)\/\)/gu)].map(m => m[1]);
+  assert.deepEqual(extra.sort(), patterns.slice().sort());
+  // 실제로 같은 판단을 하는지도 본다.
+  for (const value of ["900101-1234567", "9001011234567", "1234567890123"]) {
+    assert.equal(Hr.looksLikeResidentNumber(value), true, value);
+    assert.ok(patterns.some(pattern => new RegExp(pattern).test(value)), value);
+  }
+  for (const value of ["010-1234-5678", "123-45-67890"]) {
+    assert.equal(Hr.looksLikeResidentNumber(value), false, value);
+    assert.ok(!patterns.some(pattern => new RegExp(pattern).test(value)), value);
+  }
+});
+
 test("규칙이 주민등록번호와 모르는 칸을 막는다", () => {
   for (const field of ["note", "phone", "emergencyContact", "department", "position"]) {
     assert.match(rules.$uid[field][".validate"], /\[0-9\]\{6\}\[-\. \]\?\[1-4\]\[0-9\]\{6\}/u, field);

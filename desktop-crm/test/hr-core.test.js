@@ -22,6 +22,13 @@ test("전화번호와 사업자번호는 막지 않는다", () => {
   }
 });
 
+test("계좌·카드번호처럼 긴 숫자도 막는다", () => {
+  // 칸을 안 만들어도 사람은 비고란에 적는다. 주민번호만 막으면 계좌번호가 들어온다.
+  for (const value of ["1234567890123", "4111111111111111"]) {
+    assert.equal(Hr.validateRecord({ userId: "u1", note: value }).ok, false, value);
+  }
+});
+
 test("근로계약서 보관 위치는 https 만 받는다", () => {
   assert.equal(Hr.validateRecord({ userId: "u1", contractFileUrl: "http://drive.google.com/x" }).ok, false);
   assert.equal(Hr.validateRecord({ userId: "u1", contractFileUrl: "https://drive.google.com/x" }).ok, true);

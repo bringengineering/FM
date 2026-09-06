@@ -45,19 +45,22 @@
 
   const typeOf = key => EMPLOYMENT_TYPES.find(entry => entry.key === text(key, 20)) || null;
 
-  // 주민등록번호처럼 생긴 값. 하이픈이 있든 없든, 공백을 끼워 넣든 잡는다.
-  // 900101-1234567 / 9001011234567 / 900101 1234567 이 전부 걸린다.
-  // 사업자번호(3-2-5) 와 전화번호는 자릿수가 달라 걸리지 않는다.
+  // 주민등록번호·계좌번호처럼 생긴 값.
+  //
+  // 서버 규칙과 **글자 하나까지 같은 기준**이어야 한다. 화면이 통과시킨 값을
+  // 서버가 막으면 사람은 이유 없는 권한 오류만 본다. 그래서 여기 두 정규식은
+  // database.rules.json 의 free-text 규칙을 그대로 옮긴 것이다. 한쪽을 고치면
+  // 다른 쪽도 고쳐야 하고, hr-wiring 검사가 그 짝을 지킨다.
+  //
+  // 900101-1234567 / 900101 1234567 은 앞 규칙이, 9001011234567 과 13자리
+  // 이상 연속 숫자(계좌·카드번호)는 뒤 규칙이 잡는다. 전화번호(010-1234-5678)
+  // 와 사업자번호(123-45-67890)는 연속 자릿수가 모자라 걸리지 않는다.
+  const RESIDENT_LIKE = /[0-9]{6}[-. ]?[1-4][0-9]{6}/;
+  const LONG_DIGITS = /[0-9]{13}/;
+
   function looksLikeResidentNumber(value) {
-    const digits = String(value == null ? "" : value).replace(/[\s.-]/g, "");
-    if (!/^\d{13}$/.test(digits)) {
-      // 긴 문장 안에 섞여 있는 경우도 본다.
-      return /\b\d{6}\s*[-\s]\s*[1-4]\d{6}\b/.test(String(value == null ? "" : value));
-    }
-    const month = Number(digits.slice(2, 4));
-    const day = Number(digits.slice(4, 6));
-    const sex = Number(digits.slice(6, 7));
-    return month >= 1 && month <= 12 && day >= 1 && day <= 31 && sex >= 1 && sex <= 4;
+    const raw = String(value == null ? "" : value);
+    return RESIDENT_LIKE.test(raw) || LONG_DIGITS.test(raw);
   }
 
   function normalizeRecord(value) {
@@ -94,7 +97,7 @@
         return {
           ok: false,
           code: "RESIDENT_NUMBER_FORBIDDEN",
-          error: "주민등록번호는 이 시스템에 저장할 수 없습니다. 4대보험 신고는 노무사·EDI 에서 하시고, 여기에는 적지 말아 주세요.",
+          error: "주민등록번호·계좌번호로 보이는 값은 저장할 수 없습니다. 4대보험 신고는 노무사·EDI 에서 하시고, 여기에는 적지 말아 주세요.",
         };
       }
     }
