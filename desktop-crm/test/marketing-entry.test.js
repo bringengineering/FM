@@ -202,7 +202,17 @@ test('app wires the actual marketing commit/archive endpoints and route events',
   assert.match(app, /archive:\s*payload\s*=>\s*api\.archiveMarketingRecord\(payload\)/);
   assert.match(app, /data-marketing-entry-form/);
   assert.match(app, /confirmOverwrite/);
-  for (const field of ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'keyword', 'contentId', 'contentTitle', 'inquiryMethod', 'validLead', 'invalidReason', 'firstTouchAt', 'inquiryAt', 'attributionNote']) assert.match(app, new RegExp(`name=["']${field}["']`));
+  // 폼이 내는 칸 이름과 읽는 쪽이 어긋나면 저장이 조용히 빈다. 두 곳을
+  // 같이 본다 — 마크업 모양이 아니라 그 짝이 이 검사의 요지다.
+  const fields = ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'keyword', 'contentId', 'contentTitle', 'inquiryMethod', 'validLead', 'invalidReason', 'firstTouchAt', 'inquiryAt', 'attributionNote'];
+  const formBody = app.slice(app.indexOf('function marketingAttributionFields'), app.indexOf('const crmEditPermissions'));
+  const parseBody = app.slice(app.indexOf('function parseMarketingAttribution'), app.indexOf('function caseFieldsWithMarketing'));
+  for (const field of fields) {
+    assert.ok(formBody.includes(`"${field}"`), `폼이 ${field} 칸을 내지 않는다`);
+    assert.ok(parseBody.includes(`raw.${field}`), `저장할 때 ${field} 를 읽지 않는다`);
+  }
+  // 라벨과 입력칸을 세로로 쌓는 클래스가 빠지면 칸마다 높이가 달라진다.
+  assert.doesNotMatch(formBody, /<label>/u, 'class="field" 없는 라벨이 있으면 정렬이 무너진다');
   assert.match(app, /Core\.normalizeMarketingAttribution/);
   assert.match(app, /function marketingAttributionFields/);
   assert.match(app, /workflowCaseBasicForm[\s\S]*marketingAttributionFields\(item\.marketing/);

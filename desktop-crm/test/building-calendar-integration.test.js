@@ -31,8 +31,8 @@ test("places one calendar workspace after customer navigation and loads its modu
   const valueScope = indexSource.indexOf('data-view="valueScope"');
   assert.ok(vacancies >= 0 && calendar > vacancies && valueScope > calendar);
   assert.equal((indexSource.match(/data-view="workManagement"/g) || []).length, 0);
-  assert.equal((indexSource.match(/data-view="buildingCalendar"/g) || []).length, 2);
-  assert.equal((indexSource.match(/data-view="payments"/g) || []).length, 1);
+  assert.equal((indexSource.match(/data-view="buildingCalendar"/g) || []).length, 1);
+  assert.equal((indexSource.match(/data-view="payments"/g) || []).length, 0, "입금은 캘린더 안 탭이다");
   assert.match(indexSource, /data-nav-folder="calendar">[\s\S]*?data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>ERP·일정<\/b>/);
   assert.match(appSource, /buildingCalendar:\s*\["업무·계약·건물주 입금 일정을 한눈에",\s*"캘린더"\]/);
   assert.match(appSource, /payments:\s*\["업무·계약·건물주 입금 일정을 한눈에",\s*"캘린더"\]/);
@@ -40,13 +40,18 @@ test("places one calendar workspace after customer navigation and loads its modu
   assert.ok(indexSource.indexOf("work-calendar.css") >= 0);
 });
 
-test("renders the three calendars as children below the expandable calendar navigation", () => {
+test("renders one calendar entry below the expandable calendar navigation", () => {
+  // 셋은 같은 달력을 다르게 보는 것이다. 사이드바에 세 줄로 흩어 두면
+  // 서로 다른 화면처럼 읽혀서, 고르는 자리를 화면 안으로 옮겼다.
   const folderStart = indexSource.indexOf('data-nav-folder="calendar"');
   const folderEnd = indexSource.indexOf('data-view="valueScope"', folderStart);
   const folder = indexSource.slice(folderStart, folderEnd);
-  assert.match(folder, /data-unified-calendar-tab="work"[\s\S]*?<b>업무일정 캘린더<\/b>/);
-  assert.match(folder, /data-unified-calendar-tab="contract"[\s\S]*?<b>계약일정 캘린더<\/b>/);
-  assert.match(folder, /data-unified-calendar-tab="payment"[\s\S]*?<b>건물주 입금캘린더<\/b><em id="navPaymentCount">0<\/em>/);
+  assert.match(folder, /data-view="buildingCalendar"[\s\S]*?<b>캘린더<\/b><em id="navPaymentCount">0<\/em>/);
+  assert.doesNotMatch(folder, /data-unified-calendar-tab=/u, "탭은 화면 안에 있다");
+  // 화면 안에서 셋 다 고를 수 있어야 한다. 안 그러면 갈 길이 없어진다.
+  const frame = functionSource("unifiedCalendarFrame");
+  ["work", "contract", "payment"].forEach(key => assert.ok(frame.includes(`UNIFIED_CALENDAR_LABELS[key]`) && appSource.includes(`${key}: "`), key));
+  assert.match(appSource, /UNIFIED_CALENDAR_LABELS = Object\.freeze\(\{ work: "업무일정", contract: "계약일정", payment: "건물주 입금" \}\)/u);
   assert.match(stylesSource, /\.app-shell\{[^}]*grid-template-columns:260px minmax\(0,1fr\)/);
   assert.match(stylesSource, /@media\(max-width:1380px\)\{[\s\S]*?\.app-shell\{grid-template-columns:240px minmax\(0,1fr\)\}/);
   assert.match(stylesSource, /\.nav-item>b\{[^}]*min-width:0;[^}]*overflow:hidden;[^}]*text-overflow:ellipsis;[^}]*white-space:nowrap/);
@@ -74,7 +79,11 @@ test("calendar exposes work, contract, and owner-payment tabs over their origina
   assert.match(appSource, /let unifiedCalendarTab\s*=\s*"work"/);
   assert.match(appSource, /UNIFIED_CALENDAR_TABS\s*=\s*Object\.freeze\(\["work",\s*"contract",\s*"payment"\]\)/);
   assert.match(frame, /data-calendar-view=/);
-  assert.doesNotMatch(frame, /unified-calendar-tabs|role="tablist"/);
+  assert.match(frame, /unified-calendar-tabs/u);
+  assert.match(frame, /role="tablist"/u);
+  // 탭이 사이드바와 같은 처리를 타야 폴더 열림·활성 표시가 어긋나지 않는다.
+  assert.match(frame, /data-view="\$\{key === "payment" \? "payments" : "buildingCalendar"\}"/u);
+  assert.match(frame, /aria-selected=/u);
   assert.match(calendar, /workActive\s*\?\s*WorkCalendar\.render\(model,\s*\{ canWrite: canWriteCRM\(\) \}\)\s*:\s*renderOneOffContractCalendar\(\)/);
   assert.match(calendar, /unifiedCalendarFrame\(unifiedCalendarTab,\s*content/);
   assert.match(payments, /unifiedCalendarTab\s*=\s*"payment"/);

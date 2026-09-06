@@ -1,5 +1,64 @@
 .unified-calendar-view {
   display: grid;
+  gap: 14px;
+}
+
+/* 업무·계약·입금은 같은 달력을 다르게 보는 것이다. 사이드바에 세 줄로
+   흩어 두면 서로 다른 화면처럼 읽혀서, 고르는 자리를 화면 안으로 옮겼다. */
+.unified-calendar-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unified-calendar-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border: 1px solid #E5E8EB;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #4E5968;
+  font: inherit;
+  cursor: pointer;
+}
+
+.unified-calendar-tab b {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.unified-calendar-tab em {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #F2F4F6;
+  color: #8B95A1;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+}
+
+.unified-calendar-tab:hover {
+  border-color: #C9D3DD;
+}
+
+.unified-calendar-tab.is-active {
+  border-color: #3182F6;
+  background: #EDF5FF;
+  color: #1B64DA;
+}
+
+.unified-calendar-tab.is-active em {
+  background: #FFFFFF;
+  color: #1B64DA;
+}
+
+.unified-calendar-tab:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(49, 130, 246, .18);
 }
 
 .calendar-tab-intro {

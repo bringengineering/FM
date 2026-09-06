@@ -75,7 +75,8 @@ test("링크로 다른 폴더 화면에 가면 사이드바가 따라간다", ()
     appSource.indexOf("function navFolderOfView("),
     appSource.indexOf("function applyNavFolderScope("),
   );
-  assert.match(lookup, /querySelector\(`\.nav-item\[data-view="\$\{view\}"\]`\)/u);
+  assert.match(lookup, /querySelector\(`\.nav-item\[data-view="\$\{[a-zA-Z]+\}"\]`\)/u);
+  assert.doesNotMatch(lookup, /"customer-management"|"calendar"|"office"/u, "폴더 이름을 손으로 적어 두면 화면을 옮길 때 어긋난다");
 });
 
 test("없는 폴더 이름이 남아 있어도 사이드바가 비지 않는다", () => {

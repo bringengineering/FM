@@ -87,7 +87,8 @@ test("relocated and removed tabs keep their internal workflows and data routes",
   assert.match(appSource, /else if \(currentView === "tasks"\) renderTasks\(\)/);
   assert.match(appSource, /else if \(currentView === "contracts"\) renderContracts\(\)/);
   assert.match(appSource, /else if \(currentView === "workManagement"\) renderWorkManagement\(\)/);
-  assert.match(indexSource, /data-nav-folder="calendar"[\s\S]*?data-unified-calendar-tab="contract"/);
+  // 계약일정은 캘린더 한 줄 안의 탭이 됐다. 폴더에는 캘린더가 있어야 한다.
+  assert.match(indexSource, /data-nav-folder="calendar"[\s\S]*?data-view="buildingCalendar"/u);
   assert.match(
     appSource,
     /\[[^\]]*"operationsIntelligence"[^\]]*"contracts"[^\]]*"tasks"[^\]]*\]\.includes\(query\.get\("view"\)\)/,

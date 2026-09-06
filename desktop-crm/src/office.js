@@ -581,7 +581,7 @@
 
   function leaveView() {
     const L = Leave();
-    if (!L) return `<section class="office-panel"><p>연차 모듈을 불러오지 못했습니다.</p></section>`;
+    if (!L) return `<section class="office-loading office-error"><span>!</span><b>연차 모듈을 불러오지 못했습니다</b></section>`;
     const uid = currentUserId();
     const year = String(new Date().getFullYear());
     const all = state.data.leave || [];
@@ -594,37 +594,61 @@
       .filter(item => item.userId === uid)
       .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
 
-    const remaining = balance.confirmed
-      ? `<b>${balance.remainingDays}</b><small>일 남음</small>`
-      : `<b class="office-leave-unset">—</b><small>관리자 확정 전</small>`;
+    // 확정 전에는 숫자를 지어내지 않는다. 0 으로 두면 "다 썼다"로 읽힌다.
+    const remaining = balance.confirmed ? String(balance.remainingDays) : "—";
     const grantNote = balance.confirmed
-      ? `${balance.grantedDays}일 중 ${balance.usedDays}일 사용${balance.pendingDays ? ` · 신청 중 ${balance.pendingDays}일` : ""}`
+      ? "확정한 발생일수에서 사용·신청 중인 날을 뺀 값입니다"
       : "올해 발생일수를 관리자가 아직 확정하지 않았습니다. 신청은 지금도 할 수 있습니다.";
 
-    const rowsHtml = mine.length
-      ? mine.map(item => {
-        const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
-        const status = (L.STATUSES.find(entry => entry.key === item.status) || {}).label || item.status;
-        const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
-        const decided = item.decidedBy ? `<small>${esc(status)} · ${esc(item.decidedBy)}</small>` : `<small>${esc(status)}</small>`;
-        return `<article class="office-leave-row status-${esc(item.status)}"><div><b>${esc(range)}</b><span>${esc(type)} · ${item.days}일</span>${item.reason ? `<p>${esc(item.reason)}</p>` : ""}</div><div class="office-leave-status">${decided}${item.status === "requested" ? `<button type="button" class="mini-button return" data-office-leave-cancel="${esc(item.id)}">취소</button>` : ""}</div></article>`;
-      }).join("")
-      : `<p class="office-empty">아직 신청한 휴가가 없습니다.</p>`;
+    const rowsHtml = mine.map(item => {
+      const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
+      const status = (L.STATUSES.find(entry => entry.key === item.status) || {}).label || item.status;
+      const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
+      return `<tr>
+        <td><b>${esc(range)}</b><small>${esc(type)}</small></td>
+        <td><b>${item.days}일</b><small>${item.reason ? esc(item.reason) : "사유 없음"}</small></td>
+        <td><span class="office-status ${leaveStatusClass(item.status)}"><i></i>${esc(status)}</span></td>
+        <td>${item.decidedBy ? `<span class="office-muted">${esc(item.decidedBy)}</span>` : `<span class="office-muted">—</span>`}</td>
+        <td>${item.status === "requested" ? `<button type="button" class="mini-button return" data-office-leave-cancel="${esc(item.id)}">취소</button>` : ""}</td>
+      </tr>`;
+    }).join("");
 
-    return `<section class="office-panel">
-      <header class="office-leave-head"><div><b>내 연차</b><span>${esc(year)}년</span></div><div class="office-leave-remaining">${remaining}</div></header>
-      <p class="office-leave-note">${esc(grantNote)}</p>
-      <form class="office-leave-form" data-office-leave-form>
-        <label><span>종류</span><select name="type">${L.LEAVE_TYPES.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
-        <label><span>시작일</span><input type="date" name="startDate" required></label>
-        <label><span>종료일</span><input type="date" name="endDate" required></label>
-        <label><span>일수</span><input type="number" name="days" min="0.5" step="0.5" placeholder="비우면 기간대로"></label>
-        <label class="wide"><span>사유</span><input type="text" name="reason" maxlength="200" placeholder="선택"></label>
-        <button class="primary-button" type="submit">휴가 신청</button>
-      </form>
-      <div class="office-leave-list">${rowsHtml}</div>
-      ${state.data.leaveAdmin ? leaveAdminPanel(L, all, grants) : ""}
-    </section>`;
+    return `${officeHero("연차", "신청·승인과 남은 일수를 한 곳에서 봅니다", state.data.leaveAdmin ? `<span class="office-admin-lock">대표 전용</span>` : "")}
+      <section class="office-admin-kpis">
+        <article><span>${esc(year)}년 발생</span><b>${balance.confirmed ? balance.grantedDays : "—"}</b><small>${balance.confirmed ? "일" : "확정 전"}</small></article>
+        <article><span>사용</span><b>${balance.usedDays}</b><small>일</small></article>
+        <article><span>신청 중</span><b>${balance.pendingDays}</b><small>일</small></article>
+        <article><span>남음</span><b>${esc(remaining)}</b><small>일</small></article>
+      </section>
+      <section class="office-panel">
+        <header><div><span>REQUEST LEAVE</span><h3>휴가 신청</h3></div><small>${esc(grantNote)}</small></header>
+        <form class="office-form-grid" data-office-leave-form>
+          <label><span>종류</span><select name="type">${L.LEAVE_TYPES.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
+          <label><span>시작일</span><input type="date" name="startDate" required${dateBounds()}></label>
+          <label><span>종료일</span><input type="date" name="endDate" required${dateBounds()}></label>
+          <label><span>일수</span><input type="number" name="days" min="0.5" step="0.5" placeholder="비우면 기간대로"></label>
+          <label class="wide"><span>사유</span><input type="text" name="reason" maxlength="200" placeholder="선택"></label>
+          <div class="office-form-actions"><button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>휴가 신청</button></div>
+        </form>
+      </section>
+      <section class="office-panel">
+        <header><div><span>MY LEAVE</span><h3>내 신청 내역</h3></div><small>${mine.length}건</small></header>
+        ${rowsHtml
+          ? `<div class="office-table-wrap"><table class="office-table">
+              <thead><tr><th>기간</th><th>일수·사유</th><th>상태</th><th>정한 사람</th><th></th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>아직 신청한 휴가가 없습니다</b><span>위에서 기간을 골라 신청하면 여기에 쌓입니다.</span></div>`}
+      </section>
+      ${state.data.leaveAdmin ? leaveAdminPanel(L, all, grants) : ""}`;
+  }
+
+  // 승인 대기는 노랑, 승인은 초록, 반려·취소는 회색. 근태의 색과 같게 둔다 —
+  // 화면마다 같은 뜻에 다른 색을 쓰면 사람이 색을 안 믿는다.
+  function leaveStatusClass(status) {
+    if (status === "approved") return "working";
+    if (status === "requested") return "warn";
+    return "off";
   }
 
   function leaveAdminPanel(L, all, grants) {
@@ -632,21 +656,26 @@
       .map(L.normalizeRequest)
       .filter(item => item.status === "requested")
       .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
-    const nameOf = uid => {
-      const user = state.data.users.find(item => item && item.uid === uid);
-      return user ? Core.displayName(user) : uid;
-    };
-    const list = pending.length
-      ? pending.map(item => {
-        const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
-        const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
-        return `<article class="office-leave-row"><div><b>${esc(nameOf(item.userId))}</b><span>${esc(range)} · ${esc(type)} · ${item.days}일</span>${item.reason ? `<p>${esc(item.reason)}</p>` : ""}</div><div class="office-leave-actions"><button type="button" class="mini-button" data-office-leave-decide="approved" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">승인</button><button type="button" class="mini-button return" data-office-leave-decide="rejected" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">반려</button></div></article>`;
-      }).join("")
-      : `<p class="office-empty">승인을 기다리는 신청이 없습니다.</p>`;
+    const userOf = uid => state.data.users.find(item => item && item.uid === uid) || { uid, displayName: uid };
+
+    const pendingRows = pending.map(item => {
+      const user = userOf(item.userId);
+      const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
+      const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
+      return `<tr>
+        <td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td>
+        <td><b>${esc(range)}</b><small>${esc(type)}</small></td>
+        <td><b>${item.days}일</b><small>${item.reason ? esc(item.reason) : "사유 없음"}</small></td>
+        <td class="office-leave-actions">
+          <button type="button" class="mini-button" data-office-leave-decide="approved" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">승인</button>
+          <button type="button" class="mini-button return" data-office-leave-decide="rejected" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">반려</button>
+        </td>
+      </tr>`;
+    }).join("");
 
     // 발생일수 확정. 입사일을 모르면 제안도 못 한다 — 그때는 그렇게 적는다.
     const year = String(new Date().getFullYear());
-    const people = state.data.users.map(user => {
+    const grantRows = state.data.users.map(user => {
       const confirmed = grants.find(item => item && item.userId === user.uid && String(item.year) === year) || null;
       // 입사일은 인사기록에서 온다. normalizeUser 는 hireDate 를 들고
       // 오지 않아서 여기 제안 칸이 그동안 늘 비어 있었다.
@@ -656,16 +685,33 @@
       const hint = suggestion
         ? `제안 ${suggestion.days}일 · ${esc(suggestion.basis)}${suggestion.caveat ? " ⚠" : ""}`
         : "입사일이 없어 제안할 수 없습니다";
-      return `<tr><td>${esc(Core.displayName(user))}</td><td>${confirmed ? `${confirmed.days}일` : "<em>미확정</em>"}</td><td><small>${hint}</small></td><td><form class="office-leave-grant" data-office-leave-grant="${esc(user.uid)}"><input type="number" name="days" min="0" max="40" step="0.5" value="${confirmed ? esc(String(confirmed.days)) : (suggestion ? esc(String(suggestion.days)) : "")}" required><button class="mini-button" type="submit">확정</button></form></td></tr>`;
+      return `<tr>
+        <td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td>
+        <td>${confirmed
+          ? `<span class="office-status on"><i></i>${confirmed.days}일</span>`
+          : `<span class="office-status off"><i></i>미확정</span>`}</td>
+        <td><span class="office-muted">${hint}</span></td>
+        <td><form class="office-leave-grant" data-office-leave-grant="${esc(user.uid)}"><input type="number" name="days" min="0" max="40" step="0.5" value="${confirmed ? esc(String(confirmed.days)) : (suggestion ? esc(String(suggestion.days)) : "")}" required><button class="mini-button" type="submit">확정</button></form></td>
+      </tr>`;
     }).join("");
 
-    return `<section class="office-leave-admin">
-      <header><b>승인 대기</b><span>${pending.length}건</span></header>
-      <div class="office-leave-list">${list}</div>
-      <header><b>${esc(year)}년 발생일수 확정</b><span>확정한 값이 잔여의 기준이 됩니다</span></header>
-      <table class="office-leave-grants"><thead><tr><th>이름</th><th>확정</th><th>법정 제안</th><th></th></tr></thead><tbody>${people}</tbody></table>
-      <p class="office-leave-note">법정 제안은 입사일만 보고 계산한 값입니다. 개근 여부와 회사 규정은 반영되지 않습니다.</p>
-    </section>`;
+    return `<section class="office-panel">
+        <header><div><span>APPROVALS</span><h3>승인 대기</h3></div><small>${pending.length}건</small></header>
+        ${pendingRows
+          ? `<div class="office-table-wrap"><table class="office-table">
+              <thead><tr><th>직원</th><th>기간</th><th>일수·사유</th><th></th></tr></thead>
+              <tbody>${pendingRows}</tbody>
+            </table></div>`
+          : `<div class="office-empty"><b>승인을 기다리는 신청이 없습니다</b><span>신청이 올라오면 여기에서 승인하거나 반려합니다.</span></div>`}
+      </section>
+      <section class="office-panel">
+        <header><div><span>ANNUAL GRANT</span><h3>${esc(year)}년 발생일수 확정</h3></div><small>확정한 값이 잔여의 기준이 됩니다</small></header>
+        <div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>직원</th><th>확정</th><th>법정 제안</th><th></th></tr></thead>
+          <tbody>${grantRows || `<tr><td colspan="4" class="office-muted">팀원이 없습니다.</td></tr>`}</tbody>
+        </table></div>
+        <p class="office-leave-note">법정 제안은 입사일만 보고 계산한 값입니다. 개근 여부와 회사 규정은 반영되지 않습니다.</p>
+      </section>`;
   }
 
   async function submitLeaveRequest(form) {

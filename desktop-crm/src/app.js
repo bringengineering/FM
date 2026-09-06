@@ -1438,10 +1438,11 @@
     document.getElementById("pageEyebrow").textContent = meta[0];
     document.getElementById("pageTitle").textContent = meta[1];
     document.querySelectorAll(".nav-item").forEach(button => {
-      const calendarTab = button.dataset.unifiedCalendarTab;
-      const active = calendarTab
-        ? ["buildingCalendar", "payments"].includes(currentView) && calendarTab === unifiedCalendarTab
-        : button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
+      const view = button.dataset.view;
+      const active = view === currentView
+        // 캘린더 한 줄이 업무·계약·입금 셋을 다 대표한다.
+        || (view === "buildingCalendar" && currentView === "payments")
+        || (view === "customers" && currentView === "buildings");
       button.classList.toggle("active", active);
     });
     // 화면이 다른 폴더로 넘어갔으면 사이드바도 따라간다. 링크로 건너뛰었는데
@@ -1624,7 +1625,9 @@
   // 관리하면 화면을 옮길 때마다 짝이 어긋난다.
   function navFolderOfView(view) {
     if (!view) return "";
-    const button = document.querySelector(`.nav-item[data-view="${view}"]`);
+    // 입금 캘린더는 제 줄이 없다. 캘린더 한 줄이 대표하므로 그 폴더를 쓴다.
+    const key = view === "payments" ? "buildingCalendar" : view;
+    const button = document.querySelector(`.nav-item[data-view="${key}"]`);
     const folder = button && button.closest("[data-nav-folder]");
     return folder ? String(folder.dataset.navFolder || "") : "";
   }
@@ -2009,12 +2012,18 @@
     const m = Core.normalizeMarketingAttribution(value);
     const options = (values, selected, empty) => `${empty ? `<option value="">${esc(empty)}</option>` : ""}${values.map(item => `<option value="${attr(item)}"${item === selected ? " selected" : ""}>${esc(item)}</option>`).join("")}`;
     const invalid = m.validLead === false;
+    const pick = (label, name, values, selected, empty, extra) => `<label class="field"><span>${esc(label)}</span><select name="${attr(name)}"${extra || ""}>${options(values, selected, empty)}</select></label>`;
+    const text = (label, name, current) => `<label class="field"><span>${esc(label)}</span><input name="${attr(name)}" maxlength="200" value="${attr(current || "")}"></label>`;
+    const when = (label, name, current) => `<label class="field"><span>${esc(label)}</span><input name="${attr(name)}" type="datetime-local" value="${attr(datetimeValue(current))}"></label>`;
     return `<fieldset class="wide marketing-attribution-fields"><legend>마케팅 유입 정보</legend><div class="form-grid">
-      <label><span>최초 유입</span><select name="firstSource">${options(MarketingCore.CHANNELS, m.firstSource, "선택 안 함")}</select></label><label><span>최근 유입</span><select name="lastSource">${options(MarketingCore.CHANNELS, m.lastSource, "선택 안 함")}</select></label>
-      <label><span>세부 채널</span><input name="subChannel" maxlength="200" value="${attr(m.subChannel || "")}"></label><label><span>캠페인 ID</span><input name="campaignId" maxlength="200" value="${attr(m.campaignId || "")}"></label><label><span>캠페인명</span><input name="campaignName" maxlength="200" value="${attr(m.campaignName || "")}"></label>
-      <label><span>키워드</span><input name="keyword" maxlength="200" value="${attr(m.keyword || "")}"></label><label><span>콘텐츠 ID</span><input name="contentId" maxlength="200" value="${attr(m.contentId || "")}"></label><label><span>콘텐츠명</span><input name="contentTitle" maxlength="200" value="${attr(m.contentTitle || "")}"></label>
-      <label><span>문의 방식</span><select name="inquiryMethod">${options(MarketingCore.INQUIRY_METHODS, m.inquiryMethod, "선택 안 함")}</select></label><label><span>유효 리드</span><select name="validLead" data-marketing-valid-lead><option value="">확인 필요</option><option value="true"${m.validLead === true ? " selected" : ""}>유효</option><option value="false"${invalid ? " selected" : ""}>무효</option></select></label><label><span>무효 사유</span><select name="invalidReason" data-marketing-invalid-reason${invalid ? " required" : " disabled"}>${options(MarketingCore.INVALID_REASONS, m.invalidReason, "선택")}</select></label>
-      <label><span>최초 접점</span><input name="firstTouchAt" type="datetime-local" value="${attr(datetimeValue(m.firstTouchAt))}"></label><label><span>문의 일시</span><input name="inquiryAt" type="datetime-local" value="${attr(datetimeValue(m.inquiryAt))}"></label><label class="wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(m.attributionNote || "")}</textarea></label>
+      ${pick("최초 유입", "firstSource", MarketingCore.CHANNELS, m.firstSource, "선택 안 함")}${pick("최근 유입", "lastSource", MarketingCore.CHANNELS, m.lastSource, "선택 안 함")}
+      ${when("최초 접점", "firstTouchAt", m.firstTouchAt)}${when("문의 일시", "inquiryAt", m.inquiryAt)}
+      ${pick("문의 방식", "inquiryMethod", MarketingCore.INQUIRY_METHODS, m.inquiryMethod, "선택 안 함")}${text("세부 채널", "subChannel", m.subChannel)}
+      ${text("캠페인 ID", "campaignId", m.campaignId)}${text("캠페인명", "campaignName", m.campaignName)}
+      ${text("키워드", "keyword", m.keyword)}${text("콘텐츠 ID", "contentId", m.contentId)}
+      ${text("콘텐츠명", "contentTitle", m.contentTitle)}
+      <label class="field"><span>유효 리드</span><select name="validLead" data-marketing-valid-lead><option value="">확인 필요</option><option value="true"${m.validLead === true ? " selected" : ""}>유효</option><option value="false"${invalid ? " selected" : ""}>무효</option></select></label>${pick("무효 사유", "invalidReason", MarketingCore.INVALID_REASONS, m.invalidReason, "선택", ` data-marketing-invalid-reason${invalid ? " required" : " disabled"}`)}
+      <label class="field wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(m.attributionNote || "")}</textarea></label>
     </div></fieldset>`;
   }
   const crmEditPermissions = () => MarketingUI.crmEditPermissions(currentAuth.user || {});
@@ -3867,11 +3876,19 @@
           <button type="button" class="form-tab${tab === "edit" ? " is-active" : ""}" data-form-tab="edit">서식 만들기</button>
         </div>`
       : "";
+    const usable = F.usable(formState.templates).length;
+    const entries = F.rows(formState.entries).map(F.normalizeEntry);
+    const drafts = entries.filter(item => item.status === "draft").length;
     main.innerHTML = `<section class="operations-hero">
         <div><span>문서관리</span><h2>서식</h2><p>점검표·확인서를 만들고, 현장에서 채웁니다.</p></div>
         <div class="operations-actions">${tabs}</div>
       </section>
       ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>쓸 수 있는 서식</span><b>${usable}</b><small>전체 ${F.rows(formState.templates).length}개</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>쓰다 만 것</span><b>${drafts}</b><small>이어 쓰면 됩니다</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>작성 완료</span><b>${entries.length - drafts}</b><small>고칠 수 없습니다</small></div>
+      </div>
       <section class="form-body">${tab === "edit" ? formTemplateEditor(F) : formUsePanel(F)}</section>`;
   }
 
@@ -3887,8 +3904,8 @@
     const picker = formState.canFill
       ? (usable.length
         ? `<div class="form-pick">${usable.map(item => `<button type="button" class="mini-button" data-form-start="${esc(item.id)}">${esc(item.title)}</button>`).join("")}</div>`
-        : `<p class="muted">쓸 수 있는 서식이 없습니다.${formState.canEditTemplates ? " 서식 만들기에서 하나 만들고 '사용 중' 으로 두세요." : ""}</p>`)
-      : `<p class="muted">조회 전용 계정은 서식을 채울 수 없습니다.</p>`;
+        : `<div class="office-empty"><b>쓸 수 있는 서식이 없습니다</b><span>${formState.canEditTemplates ? "‘서식 만들기’ 에서 하나 만들고 ‘사용 중’ 으로 두세요." : "대표가 서식을 만들면 여기에 나타납니다."}</span></div>`)
+      : `<div class="office-empty"><b>조회 전용 계정입니다</b><span>서식을 채우려면 쓰기 권한이 필요합니다.</span></div>`;
 
     const list = entries.length
       ? entries.map(item => {
@@ -3900,14 +3917,18 @@
           <ul>${read.lines.filter(line => line.value).map(line => `<li><span>${esc(line.label)}</span><b>${esc(line.value)}</b></li>`).join("") || `<li class="muted">아직 채운 것이 없습니다.</li>`}</ul>
         </article>`;
       }).join("")
-      : `<p class="muted">아직 작성한 것이 없습니다.</p>`;
+      : `<div class="office-empty"><b>아직 작성한 것이 없습니다</b><span>위에서 서식을 고르면 여기에 쌓입니다.</span></div>`;
 
     return `<div class="form-use">
-      <h3>새로 쓰기</h3>
-      ${picker}
+      <section class="office-panel">
+        <header><div><span>NEW ENTRY</span><h3>새로 쓰기</h3></div><small>고를 서식 ${usable.length}개</small></header>
+        <div class="panel-body">${picker}</div>
+      </section>
       ${draft ? formEntryEditor(F, draft) : ""}
-      <h3>작성한 것</h3>
-      <div class="form-entry-list">${list}</div>
+      <section class="office-panel">
+        <header><div><span>ENTRIES</span><h3>작성한 것</h3></div><small>최근 ${entries.length}건</small></header>
+        <div class="form-entry-list">${list}</div>
+      </section>
     </div>`;
   }
 
@@ -4920,8 +4941,24 @@
     };
   }
 
+  // 캘린더는 하나다. 업무·계약·입금은 같은 달력을 다르게 보는 것이라,
+  // 사이드바에 세 줄로 흩어 두면 서로 다른 화면처럼 읽힌다. 여기서 고른다.
+  const UNIFIED_CALENDAR_LABELS = Object.freeze({ work: "업무일정", contract: "계약일정", payment: "건물주 입금" });
+
   function unifiedCalendarFrame(activeTab, content, counts) {
-    return `<section class="unified-calendar-view" data-calendar-view="${attr(activeTab)}"><div class="unified-calendar-panel" role="region" aria-label="선택한 캘린더">${content}</div></section>`;
+    const numbers = counts || {};
+    const tabs = UNIFIED_CALENDAR_TABS.map(key => {
+      const on = key === activeTab;
+      // data-view 를 같이 달아 사이드바와 같은 처리를 탄다. 여기만 따로
+      // 만들면 폴더 열림·활성 표시가 어긋난다.
+      return `<button type="button" role="tab" class="unified-calendar-tab${on ? " is-active" : ""}" aria-selected="${on ? "true" : "false"}" tabindex="${on ? "0" : "-1"}" data-view="${key === "payment" ? "payments" : "buildingCalendar"}" data-unified-calendar-tab="${attr(key)}">
+        <b>${esc(UNIFIED_CALENDAR_LABELS[key])}</b><em>${Number(numbers[key] || 0)}</em>
+      </button>`;
+    }).join("");
+    return `<section class="unified-calendar-view" data-calendar-view="${attr(activeTab)}">
+      <div class="unified-calendar-tabs" role="tablist" aria-label="캘린더 종류">${tabs}</div>
+      <div class="unified-calendar-panel" role="region" aria-label="선택한 캘린더">${content}</div>
+    </section>`;
   }
 
   function renderBuildingCalendar() {

@@ -219,8 +219,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .form-tabs { display: flex; gap: 6px; }
 .form-tab { padding: 8px 15px; border: 1px solid #E5E8EB; border-radius: 999px; background: #fff; color: #4E5968; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
 .form-tab.is-active { border-color: #3182F6; background: #EDF5FF; color: #3182F6; }
-.form-use h3 { margin: 18px 0 9px; color: #4E5968; font-size: 11px; font-weight: 800; }
-.form-use h3:first-child { margin-top: 4px; }
 .form-pick { display: flex; flex-wrap: wrap; gap: 7px; }
 .form-entry-editor { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px 13px; margin: 14px 0 4px; padding: 17px 19px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
 .form-entry-editor h4, .form-entry-editor .wide, .form-entry-editor .form-entry-actions, .form-entry-editor > p { grid-column: 1 / -1; }
@@ -232,7 +230,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .form-entry-editor input, .form-entry-editor select, .form-entry-editor textarea { border: 1px solid #E5E8EB; border-radius: 10px; padding: 9px 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 400; color: #191F28; }
 .form-entry-editor textarea { resize: vertical; }
 .form-entry-actions { display: flex; gap: 8px; }
-.form-entry-list { display: flex; flex-direction: column; gap: 10px; }
+.form-entry-list { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
 .form-entry { padding: 15px 18px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
 .form-entry.status-draft { border-style: dashed; }
 .form-entry > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
