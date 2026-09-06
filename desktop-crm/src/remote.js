@@ -140,7 +140,7 @@ const WORKFLOW_ACTIONS = new Set([
 
 const SHARED_COLLECTIONS = Object.freeze([
   "customers", "buildings", "activities", "contracts", "contractReadiness", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
-  "securityAssets", "auditLogs", "securityIncidents",
+  "securityAssets", "auditLogs", "securityIncidents", "buildingDocuments",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
