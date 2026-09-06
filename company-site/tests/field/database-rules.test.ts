@@ -2358,6 +2358,109 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     })));
   });
 
+  it("lets only administrators author forms and refuses access secrets", async () => {
+    // 서식은 관리자가 만들고 현장이 채운다. 열쇠·출입 비밀번호는 어느 쪽에도
+    // 적지 못한다 — 문서함과 같은 기준이다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    // crm-member 는 비밀번호 변경이 걸린 계정이라 일부러 막힌다. 평범한
+    // 팀원은 crm-legacy-member 다.
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const mustChangePassword = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const at = (id: string) => `crmCompany/formTemplates/${id}`;
+    const template = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "점검 체크리스트",
+      docType: "inspection",
+      description: "",
+      status: "active",
+      version: 1,
+      fields: [{ key: "fabc12", order: 0, type: "check", label: "소화기 상태", hint: "", required: true }],
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("t1")), template("t1")));
+    // 팀원은 읽지만 만들지는 못한다.
+    await assertSucceeds(get(ref(member, at("t1"))));
+    await assertFails(set(ref(member, at("t2")), { ...template("t2"), updatedBy: "crm-legacy-member" }));
+    await assertFails(get(ref(anonymous, at("t1"))));
+    // 비밀번호 변경이 걸린 계정은 읽지도 못한다.
+    await assertFails(get(ref(mustChangePassword, at("t1"))));
+
+    // 열쇠·비밀번호는 이름에도 설명에도 항목에도 못 넣는다.
+    await assertFails(set(ref(admin, at("t3")), template("t3", { title: "현관 비밀번호 1234 확인서" })));
+    await assertFails(set(ref(admin, at("t4")), template("t4", { description: "도어락 9876#" })));
+    await assertFails(set(ref(admin, at("t5")), template("t5", {
+      fields: [{ key: "fabc12", order: 0, type: "text", label: "출입 비번 0417", hint: "", required: false }],
+    })));
+    // 힌트 낱말만 있고 숫자가 없으면 막지 않는다. 둘 중 하나로 막으면
+    // 멀쩡한 문장이 걸린다.
+    await assertSucceeds(set(ref(admin, at("t6")), template("t6", { title: "열쇠 인수인계 확인서" })));
+
+    // 모르는 칸과 모르는 항목 종류는 막는다.
+    await assertFails(set(ref(admin, at("t7")), template("t7", { formula: "a+b" })));
+    await assertFails(set(ref(admin, at("t8")), template("t8", {
+      fields: [{ key: "fabc12", order: 0, type: "signature", label: "서명", hint: "", required: false }],
+    })));
+    // 항목 열쇠는 정해진 모양만.
+    await assertFails(set(ref(admin, at("t9")), template("t9", {
+      fields: [{ key: "소화기", order: 0, type: "text", label: "소화기", hint: "", required: false }],
+    })));
+
+    // 지우면 그 서식으로 채운 문서를 못 읽는다.
+    await assertFails(remove(ref(admin, at("t1"))));
+  });
+
+  it("freezes a completed form entry and refuses access secrets in answers", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    // crm-member 는 비밀번호 변경이 걸린 계정이라 일부러 막힌다. 평범한
+    // 팀원은 crm-legacy-member 다.
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const mustChangePassword = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    const at = (id: string) => `crmCompany/formEntries/${id}`;
+    const entry = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      templateId: "t1",
+      templateVersion: 1,
+      templateTitle: "점검 체크리스트",
+      buildingId: "",
+      workDate: "2026-09-06",
+      status: "draft",
+      answers: [{ key: "fabc12", label: "소화기 상태", value: "이상 없음" }],
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-legacy-member",
+      ...patch,
+    });
+
+    // 현장이 채운다. 조회 계정은 읽되 쓰지 못한다.
+    await assertSucceeds(set(ref(member, at("e1")), entry("e1")));
+    await assertSucceeds(get(ref(viewer, at("e1"))));
+    await assertFails(set(ref(viewer, at("e2")), { ...entry("e2"), updatedBy: "crm-viewer" }));
+    // 비밀번호 변경이 걸린 계정은 채우지 못한다.
+    await assertFails(set(ref(mustChangePassword, at("e4")), { ...entry("e4"), updatedBy: "crm-member" }));
+
+    // 채운 값에도 열쇠·비밀번호는 적지 못한다.
+    await assertFails(set(ref(member, at("e3")), entry("e3", {
+      answers: [{ key: "fabc12", label: "특이사항", value: "현관 비밀번호 8214 로 변경" }],
+    })));
+
+    // 완료로 두면 그 뒤에는 못 고친다. 확인서가 나중에 바뀌면 확인한 의미가 없다.
+    await assertSucceeds(set(ref(member, at("e1")), entry("e1", { status: "done" })));
+    await assertFails(set(ref(member, at("e1")), entry("e1", {
+      status: "done", answers: [{ key: "fabc12", label: "소화기 상태", value: "확인 못 함" }],
+    })));
+    await assertFails(set(ref(admin, at("e1")), entry("e1", { status: "draft", updatedBy: "crm-admin" })));
+    // 지우지도 못한다.
+    await assertFails(remove(ref(member, at("e1"))));
+  });
+
   it("keeps HR records readable only by the person and administrators", async () => {
     // 입사일·계약형태는 그 사람 것이다. 옆자리 동료가 볼 이유가 없다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();

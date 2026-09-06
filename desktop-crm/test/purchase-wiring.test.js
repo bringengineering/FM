@@ -30,16 +30,25 @@ test("마케팅 전용 계정은 매입을 만지지 못한다", () => {
   );
 });
 
+// 함수 하나씩 잘라 본다. "loadPurchases 부터 다음 화면까지" 로 자르면 그
+// 사이에 다른 기능이 끼어들 때 세는 값이 달라진다.
+function methodBody(source, name) {
+  const start = source.indexOf(`async ${name}(`);
+  if (start < 0) return "";
+  const end = source.indexOf("\n  async ", start + 1);
+  return source.slice(start, end < 0 ? undefined : end);
+}
+
 test("대표가 아니면 읽지도 쓰지도 못한다", () => {
   // 매입은 원가와 이익률이 드러난다. 매출과 달리 팀원에게 열지 않는다.
-  const block = remoteSource.slice(
-    remoteSource.indexOf("async loadPurchases"),
-    remoteSource.indexOf("async loadVendorDirectory"),
-  );
-  assert.ok(block.length > 0);
-  assert.equal((block.match(/session\.role !== "admin"/g) || []).length, 2, "적재와 저장 양쪽에서 막아야 한다");
-  assert.equal((block.match(/PURCHASE_FORBIDDEN/g) || []).length, 2);
-  assert.match(block, /PurchaseCore\.validateRecord/u);
+  // 읽기만 막고 쓰기를 안 막는 실수를 잡으려면 양쪽을 따로 봐야 한다.
+  for (const name of ["loadPurchases", "savePurchase"]) {
+    const body = methodBody(remoteSource, name);
+    assert.ok(body.length > 0, `${name} 를 찾지 못했다`);
+    assert.match(body, /session\.role !== "admin"/u, name);
+    assert.match(body, /PURCHASE_FORBIDDEN/u, name);
+  }
+  assert.match(methodBody(remoteSource, "savePurchase"), /PurchaseCore\.validateRecord/u);
 });
 
 test("규칙이 관리자만 읽고 쓰게 한다", () => {
