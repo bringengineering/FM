@@ -7179,6 +7179,7 @@ secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTe
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
 secureCanonicalHandle("crm:approval-save", input => remoteClient.saveApprovalRequest(input));
 secureCanonicalHandle("crm:approval-decide", input => remoteClient.decideApprovalRequest(input));
+secureCanonicalHandle("crm:purchase-save", input => remoteClient.savePurchase(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
 secureCanonicalHandle("crm:quote-seal-select", () => selectQuoteSeal());
 secureHandle("crm:auth-login", async credentials => {
@@ -7556,6 +7557,7 @@ secureCanonicalHandle("crm:field-team-profiles", async () => {
   }
 });
 secureHandle("crm:operations-load", readOperations);
+secureHandle("crm:purchases-load", () => remoteClient.loadPurchases());
 secureHandle("crm:forms-load", () => remoteClient.loadForms());
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
