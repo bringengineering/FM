@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   decideLeaveRequest: input => ipcRenderer.invoke("crm:leave-decide", input),
   saveLeaveGrant: input => ipcRenderer.invoke("crm:leave-grant-save", input),
   saveMemberRecord: input => ipcRenderer.invoke("crm:hr-record-save", input),
+  saveApprovalRequest: input => ipcRenderer.invoke("crm:approval-save", input),
+  decideApprovalRequest: input => ipcRenderer.invoke("crm:approval-decide", input),
   loadQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-load"),
   selectQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-select"),
   loadOperationsIntelligence: () => ipcRenderer.invoke("crm:operations-intelligence-load"),
