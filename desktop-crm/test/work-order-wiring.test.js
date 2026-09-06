@@ -102,6 +102,8 @@ test("결과물은 Drive 에 지시별로 쌓인다", () => {
   );
   assert.ok(upload.length > 0);
   assert.match(upload, /folderPath: \["업무지시"/u);
+  // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가 안 된다.
+  assert.match(upload, /projectName \|\| "프로젝트 없음"/u);
   assert.match(upload, /DRIVE_AUTH_REQUIRED/u);
   assert.match(upload, /MARKETING_ONLY_FORBIDDEN/u);
   // Drive 도우미가 그 길을 실제로 쓴다.
@@ -133,8 +135,15 @@ test("왜·무엇을·완료 기준을 카드에서 접지 않는다", () => {
 
 test("대시보드 숫자는 core 한 곳에서만 센다", () => {
   const view = appSource.slice(appSource.indexOf("function renderWorkOrders()"), appSource.indexOf("function workOrderCard("));
-  assert.match(view, /W\.summarize\(/u);
+  // 프로젝트 한 장의 숫자는 project-core 가 낸다. 사이드바 숫자는 여전히
+  // work-order-core 가 낸다 — 둘이 세는 범위가 다르다.
+  assert.match(view, /P\.summarize\(/u);
   assert.ok(!/\.filter\([^)]*status ===/.test(view), "화면이 직접 세고 있다");
+  const badge = appSource.slice(
+    appSource.indexOf("function updateWorkOrderBadge()"),
+    appSource.indexOf("function renderWorkOrders()"),
+  );
+  assert.match(badge, /W\.summarize\(/u);
   assert.match(view, /class="operations-hero"/u);
   assert.match(view, /class="operations-kpis wo-kpis"/u);
 });

@@ -312,3 +312,53 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .wo-brief { grid-template-columns: 1fr; gap: 3px 0; }
   .wo-brief dd { margin-bottom: 8px; }
 }
+
+/* --- 프로젝트·간트 --- */
+.wo-project-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+.wo-project-tab { display: flex; align-items: baseline; gap: 7px; padding: 9px 15px; border: 1px solid #E5E8EB; border-radius: 999px; background: #fff; cursor: pointer; }
+.wo-project-tab b { color: #4E5968; font-size: 12px; }
+.wo-project-tab small { color: #8B95A1; font-size: 10px; }
+.wo-project-tab.is-active { border-color: #3182F6; background: #EDF5FF; }
+.wo-project-tab.is-active b { color: #3182F6; }
+.wo-gantt { margin-bottom: 14px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; overflow: hidden; }
+.wo-gantt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #F2F4F6; }
+.wo-gantt-head b { color: #191F28; font-size: 13px; }
+.wo-gantt-head span { display: block; margin-top: 3px; color: #8B95A1; font-size: 10px; }
+.wo-gantt-head small { color: #8B95A1; font-size: 10px; }
+.wo-gantt-axis, .wo-gantt-row { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; align-items: center; }
+.wo-gantt-axis { height: 26px; border-bottom: 1px solid #F2F4F6; }
+.wo-gantt-axis .wo-gantt-track { position: relative; height: 100%; }
+.wo-gantt-tick { position: absolute; top: 7px; transform: translateX(-50%); color: #8B95A1; font-size: 9px; white-space: nowrap; }
+.wo-gantt-group > header { display: flex; align-items: baseline; gap: 8px; padding: 11px 18px 5px; }
+.wo-gantt-group > header b { color: #4E5968; font-size: 10px; font-weight: 800; }
+.wo-gantt-group > header span { color: #8B95A1; font-size: 9px; }
+.wo-gantt-row { padding: 3px 0; cursor: pointer; }
+.wo-gantt-row:hover { background: #FAFBFC; }
+.wo-gantt-label { padding: 0 12px 0 18px; overflow: hidden; }
+.wo-gantt-label b { display: block; color: #191F28; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wo-gantt-label small { color: #8B95A1; font-size: 9px; }
+.wo-gantt-track { position: relative; height: 26px; margin-right: 18px; border-radius: 8px; background: linear-gradient(90deg, #F7F8FA 0 1px, transparent 1px); }
+.wo-gantt-track[data-wo-gantt-drag] { cursor: ew-resize; }
+.wo-gantt-track.is-dragging { background: #EDF5FF; }
+.wo-gantt-bar { position: absolute; top: 4px; height: 18px; min-width: 10px; border-radius: 6px; background: #D7E7FF; overflow: hidden; display: flex; align-items: center; }
+.wo-gantt-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #3182F6; opacity: .75; }
+.wo-gantt-bar em { position: relative; z-index: 1; margin-left: 6px; color: #17324F; font-style: normal; font-size: 9px; font-weight: 800; }
+.wo-gantt-bar.status-done { background: #D6F2E6; }
+.wo-gantt-bar.status-done i { background: #00875A; }
+.wo-gantt-bar.status-submitted { background: #E6E2FF; }
+.wo-gantt-bar.status-submitted i { background: #6B5BD6; }
+.wo-gantt-bar.is-late { box-shadow: 0 0 0 2px #FFB020 inset; }
+.wo-gantt-undated { display: inline-block; margin-top: 5px; padding: 3px 9px; border-radius: 999px; background: #FFF6E9; color: #C77A00; font-size: 9px; font-weight: 800; }
+.wo-gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #C6535F; opacity: .55; }
+.wo-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.wo-progress { display: flex; align-items: center; gap: 6px; width: 96px; height: 6px; border-radius: 999px; background: #F2F4F6; position: relative; }
+.wo-progress i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #3182F6; }
+.wo-progress b { position: absolute; right: -34px; top: -6px; color: #4E5968; font-size: 10px; }
+.wo-progress-set { display: flex; align-items: center; gap: 5px; color: #8B95A1; font-size: 10px; font-weight: 800; }
+.wo-progress-set input { width: 62px; border: 1px solid #E5E8EB; border-radius: 8px; padding: 5px 7px; font: inherit; font-size: 11px; }
+.wo-card.is-flash { box-shadow: 0 0 0 3px #C7E0FF; transition: box-shadow .2s; }
+@media (max-width: 860px) {
+  .wo-gantt-axis, .wo-gantt-row { grid-template-columns: 1fr; }
+  .wo-gantt-label { padding: 4px 18px 0; }
+  .wo-gantt-track { margin: 0 18px; }
+}

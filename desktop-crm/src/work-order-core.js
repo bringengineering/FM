@@ -41,6 +41,14 @@
   const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
   const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10));
 
+  // 진행률은 0~100 정수. 소수점을 두면 두 사람이 다른 숫자를 보게 된다.
+  function progressOf(value) {
+    if (value === "" || value == null) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.min(100, Math.max(0, Math.round(number)));
+  }
+
   // 지시가 지나는 길. 한 방향으로만 간다.
   const STATUSES = Object.freeze([
     { key: "assigned", label: "지시함", owner: "assignee" },
@@ -92,6 +100,12 @@
       why: text(source.why, 2000),
       what: text(source.what, 2000),
       doneWhen: text(source.doneWhen, 1000),
+      // 지시는 프로젝트의 한 줄이다. 목록과 간트가 따로 놀지 않으려면
+      // 같은 기록을 봐야 한다.
+      projectId: text(source.projectId, 80),
+      track: text(source.track, 40),
+      startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
+      progress: progressOf(source.progress),
       assigneeUid: text(source.assigneeUid, 128),
       assigneeName: text(source.assigneeName, 80),
       buildingId: text(source.buildingId, 80),
@@ -121,6 +135,9 @@
     }
     if (!order.what) {
       return { ok: false, code: "WHAT_REQUIRED", error: "무엇을 어떻게 하는지 적어 주세요." };
+    }
+    if (order.startDate && order.dueDate && order.startDate > order.dueDate) {
+      return { ok: false, code: "DATE_REVERSED", error: "시작일이 마감일보다 늦습니다." };
     }
     if (!order.doneWhen) {
       return {
@@ -172,13 +189,14 @@
       ok: true,
       order: Object.assign({}, order, {
         status: next,
+        progress: next === "done" ? 100 : order.progress,
         reviewNote: next === "returned" ? note : (next === "done" ? "" : order.reviewNote),
       }),
     };
   }
 
   // 지시 내용이 바뀌었는지 본다. 담당자가 상태만 바꾸는지 확인하는 데 쓴다.
-  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "buildingId", "createdAt", "createdBy"]);
+  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "createdAt", "createdBy"]);
   function sameInstruction(before, after) {
     const a = normalizeOrder(before);
     const b = normalizeOrder(after);
@@ -242,6 +260,7 @@
     ADMIN_MOVES,
     statusLabel,
     isStatus,
+    progressOf,
     normalizeResult,
     normalizeOrder,
     validateOrder,

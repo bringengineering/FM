@@ -2161,6 +2161,75 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(viewer, at("ok-1")), record("ok-1", { title: "다른 제목" })));
   });
 
+  it("lets only administrators author projects and never delete one", async () => {
+    // 프로젝트가 사라지면 그 아래 지시들이 갈 곳을 잃는다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/projects/${id}`;
+    const project = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      name: "브링 케어",
+      owner: "브링엔지니어링",
+      goal: "",
+      status: "active",
+      startDate: "2026-07-03",
+      endDate: "2026-08-28",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("p1")), project("p1")));
+    // 팀원은 읽지만 만들지는 못한다.
+    await assertSucceeds(get(ref(member, at("p1"))));
+    await assertFails(set(ref(member, at("p2")), { ...project("p2"), updatedBy: "crm-legacy-member" }));
+    // 이름이 없으면 목록에서 무엇인지 알 수 없다.
+    await assertFails(set(ref(admin, at("p3")), project("p3", { name: "" })));
+    // 시작일이 종료일보다 늦으면 간트에서 막대가 거꾸로 그려진다.
+    await assertFails(set(ref(admin, at("p4")), project("p4", { startDate: "2026-09-01", endDate: "2026-08-01" })));
+    await assertFails(set(ref(admin, at("p5")), project("p5", { budget: 1000 })));
+    await assertFails(remove(ref(admin, at("p1"))));
+  });
+
+  it("keeps a work order's schedule and progress in a shape the chart can draw", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "건물지도",
+      why: "현장에서 동 호수를 못 찾아 헤맵니다.",
+      what: "도면을 받아 층별 지도를 만듭니다.",
+      doneWhen: "층별 지도 PDF 가 올라오면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "황우중",
+      projectId: "p1",
+      track: "tech",
+      startDate: "2026-06-29",
+      dueDate: "2026-07-03",
+      progress: 98,
+      status: "doing",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("g1")), order("g1")));
+    // 시작일이 마감일보다 늦으면 막대가 거꾸로 그려진다.
+    await assertFails(set(ref(admin, at("g2")), order("g2", { startDate: "2026-07-10", dueDate: "2026-07-03" })));
+    // 진행률은 0~100 정수만. 소수점을 두면 두 사람이 다른 숫자를 본다.
+    await assertFails(set(ref(admin, at("g3")), order("g3", { progress: 130 })));
+    await assertFails(set(ref(admin, at("g4")), order("g4", { progress: 12.5 })));
+    await assertFails(set(ref(admin, at("g5")), order("g5", { progress: "80" })));
+    // 모르는 구분은 막는다. 칸이 늘어나면 표가 흩어진다.
+    await assertFails(set(ref(admin, at("g6")), order("g6", { track: "sales" })));
+    // 날짜가 없어도 지시는 남는다. 날짜를 안 정한 일이야말로 먼저 손봐야 한다.
+    await assertSucceeds(set(ref(admin, at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 })));
+  });
+
   it("keeps HR records readable only by the person and administrators", async () => {
     // 입사일·계약형태는 그 사람 것이다. 옆자리 동료가 볼 이유가 없다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
