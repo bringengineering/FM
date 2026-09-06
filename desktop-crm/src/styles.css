@@ -214,45 +214,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(max-width:1050px){.building-docs-layout{grid-template-columns:minmax(0,1fr)}}
 .building-docs-drive{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.building-docs-drive b{color:#191F28;font-size:11px}.building-docs-drive span{flex:1;min-width:180px;color:#8B95A1;font-size:10px}.building-docs-drive.connected b{color:#04A66B}.building-docs-notice{background:#E8F8F0;color:#04A66B;font-size:10px}.building-docs-type-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}.building-docs-type-picker button{min-height:46px;border:1px solid #DFE3E8;border-radius:11px;background:#fff;color:#4E5968;font-size:11px;font-weight:800;cursor:pointer}.building-docs-type-picker button:hover{border-color:#3182F6;background:#F4F9FF;color:#1B64DA}
 
-/* --- 매입·지급 --- */
-/* 색과 크기는 operations.css 의 것을 그대로 쓴다. 화면마다 회색이 다르면
-   같은 프로그램으로 안 보인다. */
-.purchase-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.purchase-month { display: flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 800; color: #4E5968; }
-.purchase-month select { border: 1px solid #E5E8EB; border-radius: 10px; padding: 7px 9px; background: #fff; font: inherit; font-size: 11px; }
-.purchase-note { margin: 0 0 14px; color: #8B95A1; font-size: 10px; }
-.purchase-note b { color: #4E5968; }
-.purchase-board { margin-bottom: 14px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; overflow: hidden; }
-.purchase-board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #F2F4F6; }
-.purchase-board-head b { color: #191F28; font-size: 13px; }
-.purchase-board-head span { display: block; margin-top: 4px; color: #8B95A1; font-size: 9px; }
-.purchase-board-head em { color: #4E5968; font-size: 10px; font-style: normal; font-weight: 800; }
-.purchase-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px 13px; padding: 16px 18px; }
-.purchase-form .wide, .purchase-form-actions { grid-column: 1 / -1; }
-.purchase-form-actions { display: flex; gap: 8px; }
-.purchase-form label { display: flex; flex-direction: column; gap: 5px; font-size: 9px; font-weight: 800; color: #4E5968; }
-.purchase-form input, .purchase-form select { border: 1px solid #E5E8EB; border-radius: 10px; padding: 9px 10px; background: #fff; font: inherit; font-size: 12px; }
-.purchase-form input:focus, .purchase-form select:focus, .purchase-month select:focus { outline: 2px solid #C7E0FF; outline-offset: 0; border-color: #3182F6; }
-.purchase-table-scroll { overflow-x: auto; }
-.purchase-table { width: 100%; border-collapse: collapse; }
-.purchase-table th { padding: 10px 14px; text-align: left; color: #8B95A1; font-size: 9px; font-weight: 800; border-bottom: 1px solid #F2F4F6; white-space: nowrap; }
-.purchase-table td { padding: 12px 14px; border-bottom: 1px solid #F7F8FA; color: #191F28; font-size: 12px; white-space: nowrap; }
-.purchase-table tr:last-child td { border-bottom: 0; }
-.purchase-table th.num, .purchase-table td.num { text-align: right; }
-.purchase-table tr.pay-unpaid td:first-child { box-shadow: inset 3px 0 0 #FFB020; }
-.purchase-table small { margin-left: 5px; color: #8B95A1; font-size: 9px; }
-.purchase-empty { padding: 26px 14px; text-align: center; color: #8B95A1; font-size: 11px; }
-.purchase-care-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-.purchase-care { padding: 16px 18px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
-.purchase-care header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.purchase-care header b { color: #191F28; font-size: 13px; }
-.purchase-care header em { color: #4E5968; font-size: 10px; font-style: normal; font-weight: 800; }
-.purchase-care > p { margin: 6px 0 0; color: #8B95A1; font-size: 9px; }
-.purchase-care ul { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.purchase-care li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: #4E5968; font-size: 11px; }
-.purchase-care li b { color: #191F28; }
-.purchase-care li small { margin-left: auto; color: #8B95A1; font-size: 9px; }
-
 /* --- 서식 --- */
 .form-body { display: block; }
 .form-tabs { display: flex; gap: 6px; }
@@ -298,12 +259,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .form-field-required { display: flex !important; flex-direction: row !important; align-items: center; gap: 5px !important; white-space: nowrap; color: #4E5968; font-size: 10px; font-weight: 800; }
 .form-template-actions { display: flex; gap: 8px; }
 @media (max-width: 1100px) {
-  .purchase-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .purchase-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form-entry-editor { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
-  .purchase-kpis, .purchase-form, .form-edit, .form-template-form, .form-entry-editor { grid-template-columns: 1fr; }
+  .form-edit, .form-template-form, .form-entry-editor { grid-template-columns: 1fr; }
   .form-field-row { grid-template-columns: 1fr 1fr; }
 }
 

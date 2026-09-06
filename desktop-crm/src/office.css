@@ -85,109 +85,67 @@
   .office-leave-grants{display:block;overflow-x:auto}
 }
 
-/* --- 인사기록 --- */
-.office-hr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.office-hr-head span { display: block; color: var(--muted, #6b7280); font-size: 12px; }
-.office-hr-todo { background: #fef3c7; color: #92400e; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
-.office-hr-warn { margin: 8px 0 12px; font-size: 12px; color: #b45309; }
-.office-hr-body { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; align-items: start; }
-.office-hr-list { display: flex; flex-direction: column; gap: 4px; }
-.office-hr-person { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; }
-.office-hr-person:hover { background: rgba(0, 0, 0, 0.04); }
-.office-hr-person.is-selected { border-color: var(--accent, #2563eb); background: rgba(37, 99, 235, 0.06); }
-.office-hr-person b { grid-column: 1; font-size: 13px; }
-.office-hr-person span { grid-column: 1; font-size: 11px; color: var(--muted, #6b7280); }
-.office-hr-missing { grid-column: 2; grid-row: 1 / span 2; font-style: normal; font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 999px; padding: 2px 7px; }
-.office-hr-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
-.office-hr-form header, .office-hr-form .wide, .office-hr-form .office-hr-checklist, .office-hr-form .office-hr-ok, .office-hr-form button { grid-column: 1 / -1; }
-.office-hr-form header b { font-size: 15px; }
-.office-hr-suggest { display: block; font-size: 12px; color: var(--muted, #6b7280); }
-.office-hr-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.office-hr-form label span { color: var(--muted, #6b7280); }
-.office-hr-checklist { list-style: none; margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.03); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-.office-hr-checklist li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-.office-hr-checklist li::before { content: "•"; }
-.office-hr-checklist li.level-required { color: #b91c1c; }
-.office-hr-checklist li.level-warn { color: #b45309; }
-.office-hr-checklist small { color: var(--muted, #6b7280); }
-.office-hr-ok { font-size: 12px; color: #166534; margin: 0; }
-.office-hr-mine { width: 100%; border-collapse: collapse; font-size: 13px; }
-.office-hr-mine th { text-align: left; width: 40%; padding: 8px 0; color: var(--muted, #6b7280); font-weight: 500; }
-.office-hr-mine td { padding: 8px 0; }
-.office-hr-mine tr + tr th, .office-hr-mine tr + tr td { border-top: 1px solid rgba(0, 0, 0, 0.06); }
-@media (max-width: 860px) {
-  .office-hr-body { grid-template-columns: 1fr; }
-  .office-hr-form { grid-template-columns: 1fr; }
-}
-
-/* --- 전자결재 --- */
-.office-approval-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.office-approval-head span { display: block; color: var(--muted, #6b7280); font-size: 12px; }
-.office-approval-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; margin: 14px 0 18px; }
-.office-approval-form .wide, .office-approval-form button { grid-column: 1 / -1; }
-.office-approval-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.office-approval-form label span { color: var(--muted, #6b7280); }
-.office-approval-form textarea { resize: vertical; font: inherit; }
-.office-approval-list { display: flex; flex-direction: column; gap: 8px; }
-.office-approval-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #e5e8eb; border-radius: 12px; }
-.office-approval-row b { font-size: 13px; }
-.office-approval-row span { display: block; font-size: 12px; color: var(--muted, #6b7280); margin-top: 2px; }
-.office-approval-row p { margin: 6px 0 0; font-size: 12px; white-space: pre-wrap; }
-.office-approval-row .office-approval-note { color: #b45309; }
-.office-approval-row.status-approved { border-left: 3px solid #16a34a; }
-.office-approval-row.status-rejected { border-left: 3px solid #dc2626; }
-.office-approval-row.status-cancelled { opacity: 0.6; }
-.office-approval-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; white-space: nowrap; }
-.office-approval-status small { font-size: 11px; color: var(--muted, #6b7280); }
-.office-approval-actions { display: flex; gap: 6px; }
-.office-approval-admin { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5e8eb; }
-.office-approval-admin > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
-.office-approval-hint { margin: 10px 0 0; font-size: 12px; color: var(--muted, #6b7280); }
-@media (max-width: 860px) {
-  .office-approval-form { grid-template-columns: 1fr; }
-  .office-approval-row { flex-direction: column; }
-  .office-approval-status { align-items: flex-start; }
-}
-
-/* --- 급여 --- */
-.office-pay-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.office-pay-head span { display: block; color: #6b7280; font-size: 12px; }
-.office-pay-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-.office-pay-slip { border: 1px solid #e5e8eb; border-radius: 14px; padding: 14px 16px; }
-.office-pay-slip.status-draft { border-style: dashed; }
-.office-pay-slip > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.office-pay-slip > header b { font-size: 15px; }
-.office-pay-slip > header span { display: block; font-size: 12px; color: #6b7280; }
-.office-pay-net { text-align: right; }
-.office-pay-net b { font-size: 20px; }
-.office-pay-net small { display: block; font-size: 11px; color: #6b7280; }
-.office-pay-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
-.office-pay-cols h4 { margin: 0 0 6px; font-size: 12px; color: #6b7280; }
-.office-pay-cols ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.office-pay-cols li { display: flex; justify-content: space-between; gap: 10px; }
-.office-pay-sum { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid #eef0f2; font-size: 13px; display: flex; justify-content: space-between; }
-.office-pay-note { margin: 10px 0 0; font-size: 12px; color: #4b5563; }
-.office-pay-status { margin: 8px 0 0; font-size: 11px; color: #6b7280; }
-.office-pay-admin { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5e8eb; }
-.office-pay-admin > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.office-pay-admin > header label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
-.office-pay-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
-.office-pay-summary > div { padding: 8px 10px; border: 1px solid #e5e8eb; border-radius: 10px; }
-.office-pay-summary span { display: block; font-size: 11px; color: #6b7280; }
-.office-pay-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.office-pay-table th, .office-pay-table td { padding: 7px 6px; text-align: left; border-bottom: 1px solid #eef0f2; }
-.office-pay-table th.num, .office-pay-table td.num { text-align: right; }
-.office-pay-table tr.is-selected { background: rgba(37, 99, 235, 0.06); }
-.office-pay-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 16px; }
-.office-pay-form h4, .office-pay-form .wide, .office-pay-form fieldset, .office-pay-form .office-pay-actions, .office-pay-locked { grid-column: 1 / -1; }
-.office-pay-form fieldset { border: 1px solid #e5e8eb; border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
-.office-pay-form legend { font-size: 12px; color: #6b7280; padding: 0 4px; }
-.office-pay-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.office-pay-form label span { color: #6b7280; }
-.office-pay-locked { font-size: 12px; color: #b45309; margin: 0; }
-.office-pay-actions { display: flex; gap: 8px; }
-.office-pay-hint { margin: 12px 0 0; font-size: 12px; color: #6b7280; }
-@media (max-width: 860px) {
-  .office-pay-cols, .office-pay-form { grid-template-columns: 1fr; }
-  .office-pay-form fieldset { grid-template-columns: 1fr 1fr; }
-}
+/* --- 인사기록·결재·급여 공통 --- */
+/* 값은 전체 근태관리에서 그대로 가져온다. 화면마다 회색이 다르면 같은
+   프로그램으로 안 보인다. */
+.office-muted{color:#8B95A1;font-style:normal}
+.office-need{display:inline-block;padding:3px 9px;border-radius:999px;background:#FFF1F1;color:#C6535F;font-size:10px;font-weight:800}
+.office-inline-select{display:flex;align-items:center;gap:7px;color:#8B95A1;font-size:10px;font-weight:800}
+.office-inline-select select{border:1px solid #E5E8EB;border-radius:10px;padding:6px 9px;background:#fff;font:inherit;font-size:11px;color:#191F28}
+.office-kpis-inset{margin:0 0 14px;padding:0 18px}
+.office-form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px;padding:16px 18px}
+.office-form-grid .wide,.office-form-grid fieldset,.office-form-actions{grid-column:1/-1}
+.office-form-grid label{display:flex;flex-direction:column;gap:5px;color:#4E5968;font-size:9px;font-weight:800}
+.office-form-grid input,.office-form-grid select,.office-form-grid textarea{border:1px solid #E5E8EB;border-radius:11px;padding:10px 11px;background:#fff;font:inherit;font-size:12px;font-weight:400;color:#191F28}
+.office-form-grid input:focus,.office-form-grid select:focus,.office-form-grid textarea:focus{outline:2px solid #C7E0FF;border-color:#3182F6}
+.office-form-grid input:disabled,.office-form-grid select:disabled{background:#F7F8FA;color:#8B95A1}
+.office-form-grid textarea{resize:vertical;line-height:1.55}
+.office-form-grid fieldset{border:1px solid #F2F4F6;border-radius:14px;padding:6px 0 10px;margin:0;background:#FAFBFC}
+.office-form-grid legend{margin-left:18px;padding:0 6px;color:#8B95A1;font-size:9px;font-weight:800}
+.office-form-inner{grid-template-columns:repeat(4,minmax(0,1fr));padding:6px 18px 0}
+.office-form-actions{display:flex;gap:8px;padding-top:2px}
+.office-hr-checklist{list-style:none;margin:0;padding:14px 18px;display:flex;flex-direction:column;gap:7px;border-bottom:1px solid #F2F4F6}
+.office-hr-checklist li{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;font-size:11px}
+.office-hr-checklist li::before{content:"•";color:#C6D0D9}
+.office-hr-checklist li.level-required b{color:#C6535F}
+.office-hr-checklist li.level-warn b{color:#C77A00}
+.office-hr-checklist small{color:#8B95A1;font-size:10px}
+.office-hr-ok{margin:0;padding:14px 18px;color:#00875A;font-size:11px;border-bottom:1px solid #F2F4F6}
+.office-hr-mine th{width:38%;text-align:left;color:#8B95A1;font-weight:600}
+.office-status.warn{background:#FFF6E9;color:#C77A00}
+.office-status.off{background:#F2F4F6;color:#8B95A1}
+.office-admin-user-row.is-selected{background:rgba(49,130,246,.06)}
+.office-pay-locked{margin:0;padding:12px 18px;background:#FFF6E9;color:#C77A00;font-size:11px}
+/* --- 급여 명세서 --- */
+.office-pay-list{display:flex;flex-direction:column;gap:12px;padding:16px 18px}
+.office-pay-slip{border:1px solid #E5E8EB;border-radius:16px;padding:15px 17px}
+.office-pay-slip.status-draft{border-style:dashed}
+.office-pay-slip>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.office-pay-slip>header b{color:#191F28;font-size:14px}
+.office-pay-slip>header span{display:block;margin-top:4px;color:#8B95A1;font-size:10px}
+.office-pay-net{text-align:right}
+.office-pay-net b{font-size:20px;color:#191F28}
+.office-pay-net small{display:block;color:#8B95A1;font-size:9px}
+.office-pay-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
+.office-pay-cols h4{margin:0 0 6px;color:#8B95A1;font-size:9px;font-weight:800}
+.office-pay-cols ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12px}
+.office-pay-cols li{display:flex;justify-content:space-between;gap:10px;color:#4E5968}
+.office-pay-cols li b{color:#191F28}
+.office-pay-sum{display:flex;justify-content:space-between;margin:8px 0 0;padding-top:7px;border-top:1px solid #F2F4F6;color:#4E5968;font-size:12px}
+.office-pay-note{margin:10px 0 0;color:#4E5968;font-size:11px}
+.office-pay-status{margin:8px 0 0;color:#8B95A1;font-size:10px}
+/* --- 결재 --- */
+.office-approval-list{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+.office-approval-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:13px 15px;border:1px solid #E5E8EB;border-radius:15px}
+.office-approval-row b{color:#191F28;font-size:13px}
+.office-approval-row span{display:block;margin-top:3px;color:#8B95A1;font-size:10px}
+.office-approval-row p{margin:7px 0 0;color:#4E5968;font-size:11px;white-space:pre-wrap}
+.office-approval-row .office-approval-note{color:#C77A00}
+.office-approval-row.status-approved{border-left:3px solid #00875A}
+.office-approval-row.status-rejected{border-left:3px solid #C6535F}
+.office-approval-row.status-cancelled{opacity:.6}
+.office-approval-status{display:flex;flex-direction:column;align-items:flex-end;gap:7px;white-space:nowrap}
+.office-approval-status small{color:#8B95A1;font-size:10px}
+.office-approval-actions{display:flex;gap:6px}
+@media(max-width:1180px){.office-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.office-form-inner{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:860px){.office-form-grid,.office-form-inner,.office-pay-cols{grid-template-columns:1fr}.office-approval-row{flex-direction:column}.office-approval-status{align-items:flex-start}}

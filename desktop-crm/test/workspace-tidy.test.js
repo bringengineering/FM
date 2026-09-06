@@ -110,16 +110,9 @@ test("새 화면이 없는 클래스에 기대지 않는다", () => {
     assert.ok(inAnyStylesheet, `${name} 이 어느 스타일시트에도 없다`);
   }
   // 두 화면이 쓰는 제 클래스는 styles.css 에 있어야 한다.
-  for (const name of ["purchase-board", "purchase-table", "purchase-care", "form-tab", "form-entry", "form-field-row"]) {
+  for (const name of ["form-tab", "form-entry", "form-field-row", "wo-card", "wo-brief"]) {
     assert.ok(styleClasses.has(name), `${name} 스타일이 없다`);
   }
-});
-
-test("매입 화면이 다른 운영 화면과 같은 뼈대를 쓴다", () => {
-  const view = appSource.slice(appSource.indexOf("function renderPurchases()"), appSource.indexOf("function purchaseForm"));
-  assert.match(view, /class="operations-hero"/u);
-  assert.match(view, /class="operations-kpis purchase-kpis"/u);
-  assert.ok(!view.includes('class="panel'), "없는 짝의 panel 을 다시 쓰고 있다");
 });
 
 test("서식 화면도 같은 뼈대를 쓴다", () => {
