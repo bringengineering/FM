@@ -4162,7 +4162,24 @@
   //
   // 파일을 올리지는 않는다. 회사 Drive 권한이 읽기 전용이라 CRM 이 Drive 에
   // 쓸 수 없다. 사람이 Drive 에 올리고 링크를 여기 등록하는 방식이다.
-  let buildingDocsState = { buildingId: "", error: "" };
+  let buildingDocsState = { buildingId: "", error: "", uploading: "", notice: "" };
+  // Drive 연결 상태. 토큰은 여기 오지 않는다 — 연결됐는지와 어느 계정인지만 안다.
+  let driveState = { connected: false, email: "", loaded: false };
+
+  async function refreshDriveStatus() {
+    try {
+      driveState = Object.assign({ loaded: true }, await api.driveStatus());
+    } catch {
+      driveState = { connected: false, email: "", loaded: true };
+    }
+    if (currentView === "buildingDocuments") renderBuildingDocuments();
+  }
+
+  // 문서함이 쓸 Drive 뿌리 폴더. 회사 Drive 에서 만든 폴더 주소를 넣어 둔다.
+  function buildingDocsRootFolderId() {
+    return String((store.company && store.company.buildingDocsFolderId) || "").trim();
+  }
+
 
   function renderBuildingDocuments() {
     const buildings = (store.buildings || []).filter(item => item && !item.archivedAt);
@@ -4175,7 +4192,23 @@
     const selected = buildings.find(item => item.id === selectedId) || null;
     const box = selected ? BuildingDocs.buildBuildingBox(documents, selectedId) : null;
 
-    const hero = `<section class="operations-hero"><div><span>건물 문서함</span><h2>건물마다 어떤 서류가 있는지 한곳에서 봅니다</h2><p>회사 Drive 에 둔 서류를 건물에 연결합니다. 사내에서만 봅니다.</p></div>${canWriteCRM() && selected ? `<div class="operations-actions"><button type="button" class="primary-button" data-action="new-building-document">＋ 서류 연결</button></div>` : ""}</section>`;
+    const rootFolderId = buildingDocsRootFolderId();
+    const canUpload = canWriteCRM() && selected && Boolean(rootFolderId);
+    const actions = canWriteCRM() && selected
+      ? `<div class="operations-actions">${
+        canUpload && driveState.connected
+          ? `<button type="button" class="primary-button" data-action="upload-building-document" ${buildingDocsState.uploading ? "disabled" : ""}>${buildingDocsState.uploading ? "올리는 중…" : "＋ 서류 올리기"}</button>`
+          : ""
+      }<button type="button" class="secondary-button" data-action="new-building-document">링크로 연결</button></div>`
+      : "";
+    const hero = `<section class="operations-hero"><div><span>건물 문서함</span><h2>건물마다 어떤 서류가 있는지 한곳에서 봅니다</h2><p>회사 Drive 에 둔 서류를 건물에 연결합니다. 사내에서만 봅니다.</p></div>${actions}</section>`;
+
+    // Drive 연결 줄. 무엇이 빠졌는지 한 줄로 알려 주고 그 자리에서 고치게 한다.
+    const driveBar = !canWriteCRM() ? "" : !rootFolderId
+      ? `<div class="info-box building-docs-drive"><b>Drive 폴더가 아직 없습니다</b><span>회사 Drive 에 문서함으로 쓸 폴더를 만들고 주소를 넣어 주세요.</span><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 지정</button></div>`
+      : !driveState.connected
+        ? `<div class="info-box building-docs-drive"><b>Drive 에 연결되지 않았습니다</b><span>연결하면 CRM 에서 바로 서류를 올릴 수 있습니다. 연결 전에는 링크만 붙일 수 있습니다.</span><button type="button" class="mini-button" data-action="connect-drive">회사 Drive 연결</button><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button></div>`
+        : `<div class="info-box building-docs-drive connected"><b>Drive 연결됨</b><span>${esc(driveState.email || "회사 계정")} · 올린 파일은 이 계정 소유가 됩니다.</span><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button><button type="button" class="mini-button return" data-action="disconnect-drive">연결 해제</button></div>`;
 
     if (!buildings.length) {
       main.innerHTML = hero + empty("등록된 건물이 없습니다", "고객·건물 관리에서 건물을 먼저 등록하면 문서함이 만들어집니다.", `<button class="primary-button" data-view="customers">고객·건물 관리로 이동 →</button>`);
@@ -4198,13 +4231,130 @@
       <aside class="building-docs-list"><div class="panel-head"><div><h3>건물</h3><p>필수 서류가 빠진 건물이 위에 옵니다.</p></div></div>${list}</aside>
       <section class="building-docs-detail">
         ${selected ? `<div class="panel-head"><div><h3>${esc(selected.name || "건물명 미입력")}</h3><p>${esc(selected.address || "주소 미입력")} · 서류 ${box.total}건${box.archivedCount ? ` · 보관 ${box.archivedCount}건` : ""}</p></div></div>` : ""}
+        ${driveBar}
+        ${buildingDocsState.notice ? `<div class="info-box building-docs-notice">${esc(buildingDocsState.notice)}</div>` : ""}
         ${box && box.missingRequired.length ? `<div class="info-box building-docs-warning"><b>빠진 필수 서류</b><span>${box.missingRequired.map(item => esc(item.label)).join(" · ")}</span></div>` : ""}
         ${groups || (box && box.total === 0 ? empty("연결된 서류가 없습니다", "Drive 에 올린 서류의 링크를 연결하면 여기에 모입니다.", canWriteCRM() ? `<button class="primary-button" data-action="new-building-document">＋ 서류 연결</button>` : "") : "")}
         <div class="info-box building-docs-note">서류 파일은 회사 Drive 에 있고 여기에는 연결만 저장합니다. 건물주에게는 나가지 않습니다. 열쇠 번호·출입 비밀번호는 이곳이 아니라 정보·열쇠 관리에서 다룹니다.</div>
       </section>
     </div>`;
+    if (!driveState.loaded && canWriteCRM()) void refreshDriveStatus();
     if (buildingDocsState.error) showToast(buildingDocsState.error, "error");
     buildingDocsState.error = "";
+  }
+
+  function buildingDocsFolderEditor() {
+    const current = buildingDocsRootFolderId();
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>문서함 폴더 지정</h2><p>회사 Drive 에 문서함으로 쓸 폴더를 만들고 그 주소를 넣어 주세요.</p></div><button class="close-button" data-action="close-modal">×</button></div>
+      <form id="buildingDocsFolderForm" class="modal-body">
+        <label class="field wide"><span>Drive 폴더 주소 또는 ID</span><input name="folderRef" value="${attr(current)}" placeholder="https://drive.google.com/drive/folders/..." autocomplete="off" required></label>
+        <div class="info-box">건물별 하위 폴더는 CRM 이 알아서 만듭니다. 이 폴더는 그 위 뿌리입니다.<br>BRING CARE 아래에 <b>08. 건물 문서함</b> 같은 폴더를 새로 만들어 쓰시면 됩니다.</div>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">저장</button></div>
+      </form>`;
+    openModal();
+  }
+
+  // 고른 파일을 차례로 올리고, 올라간 것을 그 자리에서 문서함에 연결한다.
+  // 올리기와 연결을 한 번에 하는 것이 이 기능의 핵심이다 — 나눠 두면 올려놓고
+  // 연결을 빠뜨려서 문서함이 "없다" 고 말하는 일이 생긴다.
+  async function uploadBuildingDocuments() {
+    if (!canWriteCRM()) return showToast("서류 올리기는 쓰기 권한이 있어야 합니다.", "error");
+    const rootFolderId = buildingDocsRootFolderId();
+    if (!rootFolderId) return showToast("문서함 폴더를 먼저 지정해 주세요.", "error");
+    const building = (store.buildings || []).find(item => item && item.id === buildingDocsState.buildingId);
+    if (!building) return showToast("건물을 먼저 선택해 주세요.", "error");
+
+    let picked;
+    try {
+      picked = await api.pickBuildingDocuments();
+    } catch (error) {
+      return showToast(error && error.message || "파일을 선택하지 못했습니다.", "error");
+    }
+    if (!picked || picked.canceled) return;
+    if (!picked.ok) return showToast(picked.error || "파일을 선택하지 못했습니다.", "error");
+
+    const docType = await askBuildingDocType();
+    if (!docType) return;
+
+    const beforeStore = cloneStore(store);
+    let done = 0;
+    let skipped = 0;
+    for (const file of picked.files) {
+      buildingDocsState.uploading = file.fileName;
+      renderBuildingDocuments();
+      const documentKey = `doc_${building.id}_${docType}_${file.fileName}`;
+      let uploaded;
+      try {
+        uploaded = await api.uploadBuildingDocument({
+          filePath: file.filePath,
+          mimeType: file.mimeType,
+          rootFolderId,
+          buildingName: building.name || "",
+          buildingAddress: building.roadAddress || building.address || "",
+          docTypeLabel: BuildingDocs.typeLabel(docType),
+          documentDate: new Date().toISOString(),
+          documentKey,
+        });
+      } catch (error) {
+        buildingDocsState.uploading = "";
+        store = cloneStore(beforeStore);
+        renderBuildingDocuments();
+        return showToast(error && error.message || `${file.fileName} 을(를) 올리지 못했습니다.`, "error");
+      }
+      if (!uploaded || uploaded.ok !== true) {
+        buildingDocsState.uploading = "";
+        store = cloneStore(beforeStore);
+        renderBuildingDocuments();
+        return showToast((uploaded && uploaded.error) || "서류를 올리지 못했습니다.", "error");
+      }
+      if (uploaded.alreadyThere) skipped += 1; else done += 1;
+
+      const record = BuildingDocs.normalizeDocument({
+        id: `doc_${uploaded.driveFileId}`,
+        buildingId: building.id,
+        driveFileId: uploaded.driveFileId,
+        docType,
+        title: uploaded.title,
+        webViewLink: uploaded.webViewLink,
+        modifiedAt: uploaded.modifiedAt,
+        lastCheckedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: salesActorName(),
+      });
+      const existing = (store.buildingDocuments || []).find(item => item && item.id === record.id);
+      if (existing) Object.assign(existing, record, { archivedAt: "" });
+      else (store.buildingDocuments = store.buildingDocuments || []).push(record);
+      logAudit({ category: "문서", targetType: "건물 서류", targetId: record.id, targetLabel: record.title, action: "Drive 에 올려 문서함에 연결", reason: BuildingDocs.typeLabel(docType) });
+    }
+    buildingDocsState.uploading = "";
+    buildingDocsState.notice = skipped
+      ? `${done}건을 올렸습니다. 이미 올라와 있던 ${skipped}건은 그대로 뒀습니다.`
+      : `${done}건을 올려 문서함에 연결했습니다.`;
+    scheduleSave();
+    renderBuildingDocuments();
+    showToast(buildingDocsState.notice, "success");
+  }
+
+  // 올리기 전에 서류 종류를 한 번 묻는다. 종류가 폴더 경로를 정하므로
+  // 나중에 고치면 파일이 엉뚱한 곳에 남는다.
+  function askBuildingDocType() {
+    return new Promise(resolve => {
+      const options = BuildingDocs.DOC_TYPES
+        .map(type => `<button type="button" class="secondary-button" data-building-doc-type="${attr(type.key)}">${esc(type.label)}${type.required ? " (필수)" : ""}</button>`)
+        .join("");
+      modalContent.innerHTML = `<div class="modal-head"><div><h2>서류 종류</h2><p>어떤 서류인지 골라 주세요. 종류에 따라 Drive 폴더가 나뉩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
+        <div class="modal-body"><div class="building-docs-type-picker">${options}</div></div>`;
+      openModal();
+      const onClick = event => {
+        const pick = event.target.closest("[data-building-doc-type]");
+        const close = event.target.closest('[data-action="close-modal"]');
+        if (!pick && !close) return;
+        modalContent.removeEventListener("click", onClick);
+        closeModal();
+        resolve(pick ? pick.dataset.buildingDocType : "");
+      };
+      modalContent.addEventListener("click", onClick);
+    });
   }
 
   function buildingDocumentEditor(buildingId) {
@@ -7290,6 +7440,28 @@
     }
     else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
     else if (action === "valuescope-register-prospect") await registerValueScopeProspect();
+    else if (action === "connect-drive") {
+      if (!canWriteCRM()) return showToast("Drive 연결은 쓰기 권한이 있어야 합니다.", "error");
+      showToast("브라우저에서 회사 Google 계정으로 계속해 주세요.");
+      try {
+        driveState = Object.assign({ loaded: true }, await api.connectDrive());
+        renderBuildingDocuments();
+        showToast("회사 Drive 에 연결했습니다.", "success");
+      } catch (error) {
+        showToast(error && error.message || "Drive 에 연결하지 못했습니다.", "error");
+      }
+    }
+    else if (action === "disconnect-drive") {
+      try { driveState = Object.assign({ loaded: true }, await api.disconnectDrive()); } catch { driveState = { connected: false, email: "", loaded: true }; }
+      renderBuildingDocuments();
+    }
+    else if (action === "set-building-docs-folder") {
+      if (!canAdministerSecurity()) return showToast("문서함 폴더는 관리자만 지정할 수 있습니다.", "error");
+      buildingDocsFolderEditor();
+    }
+    else if (action === "upload-building-document") {
+      await uploadBuildingDocuments();
+    }
     else if (action === "new-building-document") buildingDocumentEditor(buildingDocsState.buildingId || ((store.buildings || []).find(item => item && !item.archivedAt) || {}).id || "");
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
@@ -8788,6 +8960,15 @@
       if (!existing) store.securityIncidents.push(item);
       logAudit({ category: "사고", targetType: "보안사고", targetId: item.id, targetLabel: item.type, action: `${existing ? "처리 내용 변경" : "사고 보고"} · ${item.status}`, actor: item.reportedBy, reason: item.summary });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); securityTab = "incidents"; renderSecurity(); showToast(existing ? "사고 처리 내용을 서버에 저장했습니다." : "사고를 책임자 보고 목록에 서버 등록했습니다.", existing ? "success" : "error"); } });
+    } else if (form.id === "buildingDocsFolderForm") {
+      if (!canAdministerSecurity()) return showToast("문서함 폴더는 관리자만 지정할 수 있습니다.", "error");
+      const beforeStore = cloneStore(store);
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const folderId = BuildingDocs.extractDriveFileId(raw.folderRef);
+      if (!folderId) return showToast("Drive 폴더 주소를 확인해 주세요.", "error");
+      store.company = Object.assign({}, store.company, { buildingDocsFolderId: folderId });
+      logAudit({ category: "설정", targetType: "건물 문서함", targetLabel: folderId, action: "문서함 Drive 폴더 지정", reason: "서류 보관 위치" });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderBuildingDocuments(); showToast("문서함 폴더를 지정했습니다.", "success"); } });
     } else if (form.id === "buildingDocumentForm") {
       if (!canWriteCRM()) return showToast("서류 연결은 쓰기 권한이 있어야 합니다.", "error");
       const beforeStore = cloneStore(store);

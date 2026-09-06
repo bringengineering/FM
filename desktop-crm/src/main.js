@@ -21,6 +21,7 @@ const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
+const BuildingDocsDrive = require("./building-docs-drive");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
@@ -2955,6 +2956,116 @@ async function runDocumentDelivery(action, input) {
   } catch (error) {
     return { ok: false, code: error.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: error.message || "문서 발송 서버를 사용할 수 없습니다." };
   }
+}
+
+// --- 건물 문서함 Drive 연결 -------------------------------------------------
+//
+// 접근 토큰은 디스크에 남기지 않고 메모리에만 둔다. 한 시간이면 만료되는 값이라
+// 굳이 저장할 이유가 없고, 저장하지 않으면 새어 나갈 자리도 없다. 프로그램을
+// 다시 켜면 다시 연결하면 된다.
+let driveSession = null;
+
+function driveSessionView() {
+  if (!driveSession) return { connected: false, email: "", expiresAt: "" };
+  if (Date.parse(driveSession.expiresAt) <= Date.now()) {
+    driveSession = null;
+    return { connected: false, email: "", expiresAt: "" };
+  }
+  return { connected: true, email: driveSession.email, expiresAt: driveSession.expiresAt };
+}
+
+async function connectDrive() {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!remoteClient) throw Object.assign(new Error("로그인 모듈을 사용할 수 없습니다."), { code: "DRIVE_CONNECT_FAILED" });
+  driveSession = await remoteClient.receiveDriveToken();
+  return driveSessionView();
+}
+
+function disconnectDrive() {
+  driveSession = null;
+  return driveSessionView();
+}
+
+// 화면이 아무 경로나 올려 달라고 하지 못하게, 이 세션에서 사람이 직접 고른
+// 파일만 기억해 두고 그 안에서만 읽는다.
+const pickedDocumentPaths = new Set();
+
+const DOCUMENT_MIME = {
+  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+  heic: "image/heic", doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  hwp: "application/x-hwp", hwpx: "application/vnd.hancom.hwpx",
+  zip: "application/zip",
+};
+
+async function pickBuildingDocuments() {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "건물 서류 선택",
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "서류·사진", extensions: Object.keys(DOCUMENT_MIME) }],
+  });
+  if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true, files: [] };
+  const files = [];
+  for (const filePath of result.filePaths.slice(0, 20)) {
+    const stat = await fs.stat(filePath);
+    if (stat.size > BuildingDocsDrive.MAX_FILE_BYTES) {
+      return { ok: false, error: `${path.basename(filePath)} 파일이 너무 큽니다.`, files: [] };
+    }
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+    pickedDocumentPaths.add(filePath);
+    // 파일 내용은 넘기지 않는다. 100MB 짜리를 base64 로 바꾸면 133MB 문자열이
+    // 되어 화면 쪽으로 건너간다. 올리는 일은 여기서 파일을 직접 읽어 한다.
+    files.push({
+      filePath,
+      fileName: path.basename(filePath),
+      mimeType: DOCUMENT_MIME[extension] || "application/octet-stream",
+      size: stat.size,
+    });
+  }
+  return { ok: true, files };
+}
+
+async function uploadBuildingDocument(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  // 계약·개인정보가 담긴 서류다. 마케팅 전용 계정이 다룰 자료가 아니다.
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 건물 서류를 올릴 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const filePath = String(options.filePath || "");
+  if (!pickedDocumentPaths.has(filePath)) {
+    throw Object.assign(new Error("파일을 다시 선택해 주세요."), { code: "FILE_NOT_PICKED" });
+  }
+  if (!driveSessionView().connected) {
+    throw Object.assign(new Error("회사 Drive 에 먼저 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+
+  const content = await fs.readFile(filePath);
+  const uploaded = await BuildingDocsDrive.uploadDocument(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    {
+      rootFolderId: String(options.rootFolderId || ""),
+      buildingName: String(options.buildingName || ""),
+      buildingAddress: String(options.buildingAddress || ""),
+      docTypeLabel: String(options.docTypeLabel || ""),
+      documentDate: String(options.documentDate || ""),
+      originalFileName: path.basename(filePath),
+      mimeType: String(options.mimeType || "application/octet-stream"),
+      documentKey: String(options.documentKey || ""),
+      content,
+    },
+  );
+  return {
+    ok: true,
+    alreadyThere: uploaded.alreadyThere === true,
+    driveFileId: uploaded.id,
+    title: uploaded.name || path.basename(filePath),
+    webViewLink: uploaded.webViewLink || "",
+    modifiedAt: uploaded.modifiedTime || "",
+  };
 }
 
 async function pickWorkflowFiles(input) {
@@ -6947,6 +7058,11 @@ secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(
 secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
+secureCanonicalHandle("crm:drive-status", () => driveSessionView());
+secureCanonicalHandle("crm:drive-connect", () => connectDrive());
+secureCanonicalHandle("crm:drive-disconnect", () => disconnectDrive());
+secureCanonicalHandle("crm:building-document-pick", () => pickBuildingDocuments());
+secureCanonicalHandle("crm:building-document-upload", input => uploadBuildingDocument(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
 secureCanonicalHandle("crm:quote-seal-select", () => selectQuoteSeal());
 secureHandle("crm:auth-login", async credentials => {
