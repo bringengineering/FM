@@ -4551,7 +4551,7 @@
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
     projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
-    sendingDirective: false,
+    sendingDirective: false, importSplit: null,
     loaded: false, loading: false, error: "",
     scope: "mine", editing: null, busyId: "",
   };
@@ -4754,6 +4754,7 @@
           <label><span>누구에게</span><select data-di-uid><option value="">고르기</option>${options}</select></label>
           <label><span>어느 주 (월요일)</span><input type="date" value="${esc(plan && plan.weekStart ? plan.weekStart : "")}" data-di-week></label>
         </div>
+        ${splitStrip()}
         <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="담당&#9;황우중&#10;배경&#9;당근에서 문의가 줄고 있습니다.&#10;목표&#9;주 3건 이상&#10;&#10;업무명&#9;목적&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#10;당근 비즈프로필 정비&#9;권한을 받아 최신으로&#9;사진 5장이 올라가면 끝&#9;20260909_당근.png&#9;4&#9;100"></textarea></label>
         ${review}
         <div class="wo-editor-actions">
@@ -5215,6 +5216,24 @@
     }
   }
 
+  // 갈라진 사람을 고르는 줄. 여러 사람 것이 섞인 뭉치를 넣었을 때만 나온다.
+  //
+  // 사람마다 따로 검토하게 한다. 한 화면에 셋을 다 펼치면 대표는 첫 사람만
+  // 읽고 [만들기] 를 누른다.
+  function splitStrip() {
+    const split = workOrderState.importSplit;
+    if (!split || !split.people.length) return "";
+    return `<div class="di-split">
+      <b>사람별로 갈랐습니다 — 한 사람씩 보고 만드세요</b>
+      <div class="sp-tabs">${split.people.map((person, index) => `<button type="button" class="sp-tab${index === split.at ? " is-active" : ""}" data-di-person="${index}">${esc(person.name)}${person.done ? " ✓" : ""}</button>`).join("")}</div>
+      ${split.unknown.length ? `<div class="di-unread">
+        <b>누구 것인지 모르는 줄 ${split.unknown.length}개</b>
+        <ul>${split.unknown.map(line => `<li>${esc(line)}</li>`).join("")}</ul>
+        <small>짐작해서 아무에게나 붙이면 시킨 적 없는 일이 지시가 됩니다. 사람을 정해 손으로 넣어 주세요.</small>
+      </div>` : ""}
+    </div>`;
+  }
+
   // 대충 적은 것을 AI 가 지시서 모양으로 짜 준다.
   //
   // 대표가 하던 것은 — 이번 주 할 것을 적고, 브라우저에서 GPT 로 다듬고, 그걸
@@ -5239,26 +5258,40 @@
     const uid = String((panel.querySelector("[data-di-uid]") || {}).value || "");
     const week = String((panel.querySelector("[data-di-week]") || {}).value || "");
     if (!notes) { showToast("이번 주에 할 일을 먼저 적어 주세요. 짧아도 됩니다.", "error"); return; }
-    if (!uid) { showToast("누구에게 내는 지시서인지 골라 주세요. 그 사람 가용시간에 맞춰 짭니다.", "error"); return; }
 
-    const person = workOrderState.members.find(item => item && item.uid === uid);
-    const name = person ? (person.displayName || person.email || person.uid) : uid;
-    const saved = C ? C.personOf(workOrderState.capacity, uid) : null;
-    const content = I.draftContext({
-      name,
-      weekStart: WD.weekStart(week || todayKey()),
-      capacityHours: C && saved ? C.weekCapacity(saved).hours : 0,
-      openOrders: W ? W.forAssignee(workOrderState.orders || [], uid).filter(item => W.OPEN.includes(item.status)) : [],
-      projects: workOrderState.projects,
-      notes,
+    // 사람을 안 골랐으면 여러 사람 것이 섞인 뭉치로 본다. 대표가 실제로 쓰는
+    // 모양은 한 사람짜리 표가 아니라 카톡에 흘려 적은 뭉치다.
+    const monday = WD.weekStart(week || todayKey());
+    const everyone = workOrderState.members.filter(item => item && item.uid).map(item => {
+      const who = item.displayName || item.email || item.uid;
+      const saved = C ? C.personOf(workOrderState.capacity, item.uid) : null;
+      return {
+        uid: item.uid,
+        name: who,
+        capacityHours: C && saved ? C.weekCapacity(saved).hours : 0,
+        openTitles: W ? W.forAssignee(workOrderState.orders || [], item.uid).filter(row => W.OPEN.includes(row.status)).map(row => row.title) : [],
+      };
     });
+    const many = !uid;
+    const person = everyone.find(item => item.uid === uid) || null;
+    const name = person ? person.name : "";
+    const content = many
+      ? I.splitContext({ weekStart: monday, people: everyone, projects: workOrderState.projects, notes })
+      : I.draftContext({
+        name,
+        weekStart: monday,
+        capacityHours: person ? person.capacityHours : 0,
+        openOrders: W ? W.forAssignee(workOrderState.orders || [], uid).filter(item => W.OPEN.includes(item.status)) : [],
+        projects: workOrderState.projects,
+        notes,
+      });
 
     workOrderState.importing = true;
     workOrderState.importUid = uid;
     renderWorkOrders();
     let drafted = "";
     try {
-      const answer = await api.assist({ task: "directive_draft", content });
+      const answer = await api.assist({ task: many ? "directive_split" : "directive_draft", content });
       drafted = answer && answer.result && typeof answer.result.text === "string" ? answer.result.text.trim() : "";
       if (!drafted) throw new Error("초안을 받지 못했습니다.");
     } catch (error) {
@@ -5274,6 +5307,35 @@
     }
     if (!drafted) { renderWorkOrders(); return; }
 
+    if (many) {
+      // 사람마다 따로 검토하게 한다. 한 화면에 셋을 다 펼치면 대표는 첫 사람만
+      // 읽고 [만들기] 를 누른다.
+      const split = I.splitByPerson(drafted);
+      const matched = split.people
+        .map(block => {
+          const found = everyone.find(item => item.name === block.name)
+            || everyone.find(item => item.name.includes(block.name) || block.name.includes(item.name));
+          return found ? Object.assign({}, block, { uid: found.uid, name: found.name, done: false }) : null;
+        })
+        .filter(Boolean);
+      if (!matched.length) {
+        showToast("사람을 갈라내지 못했습니다. 받는 사람을 고르고 다시 눌러 주세요.", "error");
+        renderWorkOrders();
+        return;
+      }
+      // 목록에 없는 이름이 나왔으면 버리지 않고 모름 칸으로 보낸다.
+      const strayNames = split.people.filter(block => !matched.some(item => item.text === block.text));
+      workOrderState.importSplit = {
+        people: matched,
+        at: 0,
+        unknown: [...split.unknown, ...strayNames.map(block => `${block.name}: ${block.text.split(/\r?\n/u)[0] || ""}`)],
+      };
+      showDirectivePerson(0);
+      showToast(`${matched.length}명으로 갈랐습니다. 한 사람씩 보고 만들어 주세요.`, "success");
+      return;
+    }
+
+    workOrderState.importSplit = null;
     // 읽은 결과까지 같이 보여 준다. 칸에만 넣어 두면 [읽어 보기] 를 한 번 더
     // 눌러야 하는데, 그 한 번을 안 누르고 [만들기] 로 가는 사람이 생긴다.
     workOrderState.importPlan = I.planImport({
@@ -5287,6 +5349,29 @@
     const box = document.querySelector(".di-panel [data-di-paste]");
     if (box) box.value = drafted;
     showToast("초안을 짰습니다. 읽어 보고 고친 다음 [만들기] 를 눌러 주세요.", "success");
+  }
+
+  // 갈라진 사람 하나를 화면에 올린다.
+  function showDirectivePerson(index) {
+    const I = window.BringDirectiveImportCore;
+    const split = workOrderState.importSplit;
+    if (!I || !split || !split.people[index]) return;
+    split.at = index;
+    const person = split.people[index];
+    workOrderState.importUid = person.uid;
+    const week = String((document.querySelector(".di-panel [data-di-week]") || {}).value || "");
+    workOrderState.importPlan = I.planImport({
+      paste: person.text,
+      uid: person.uid,
+      name: person.name,
+      weekStart: week,
+      existingOrders: workOrderState.orders,
+    });
+    renderWorkOrders();
+    const box = document.querySelector(".di-panel [data-di-paste]");
+    if (box) box.value = person.text;
+    const pick = document.querySelector(".di-panel [data-di-uid]");
+    if (pick) pick.value = person.uid;
   }
 
   // 붙여 넣은 것을 읽어 본다. 만들지는 않는다 — 사람이 보고 누른다.
@@ -5356,14 +5441,23 @@
         name,
         weekStart: monday,
       }, plan.directive));
-      workOrderState.importOpen = false;
+      // 여러 사람으로 갈라 놓았으면 창을 안 닫는다. 닫으면 남은 사람 것을
+      // 다시 붙여 넣어야 한다.
+      const split = workOrderState.importSplit;
+      const remaining = split ? split.people.filter((item, index) => index !== split.at && !item.done) : [];
+      if (split) split.people[split.at].done = true;
+      workOrderState.importOpen = Boolean(remaining.length);
       workOrderState.importPlan = null;
+      if (!remaining.length) workOrderState.importSplit = null;
       workOrderState.loaded = false;
       // 몇 건이 안 됐는지 말한다. "만들었습니다" 만 띄우고 반만 생기면 왜
       // 목록이 이상한지 아무도 모른다.
+      const left = remaining.length ? ` 아직 ${remaining.map(item => item.name).join(", ")} 가 남았습니다.` : "";
       if (failed.length) showToast(`${made}건을 만들었습니다. 못 만든 것: ${failed.join(" / ")}`, "error");
-      else showToast(`업무지시 ${made}건과 주간 지시서를 만들었습니다.`, "success");
+      else showToast(`${name} · 업무지시 ${made}건과 주간 지시서를 만들었습니다.${left}`, "success");
       await loadWorkOrders();
+      // 남은 사람이 있으면 그 사람을 바로 올려 준다.
+      if (remaining.length) showDirectivePerson(workOrderState.importSplit.people.indexOf(remaining[0]));
     } catch (error) {
       showToast(error && error.message || "만들지 못했습니다.", "error");
     } finally {
@@ -10021,9 +10115,12 @@
     if (event.target.closest("[data-di-cancel]")) {
       workOrderState.importOpen = false;
       workOrderState.importPlan = null;
+      workOrderState.importSplit = null;
       renderWorkOrders();
       return;
     }
+    const diPerson = event.target.closest("[data-di-person]");
+    if (diPerson) { showDirectivePerson(Number(diPerson.dataset.diPerson)); return; }
     if (event.target.closest("[data-di-draft]")) { await draftDirectiveWithAi(); return; }
     if (event.target.closest("[data-di-read]")) { readDirectivePaste(); return; }
     if (event.target.closest("[data-di-make]")) { await buildFromDirectivePaste(); return; }

@@ -127,12 +127,14 @@ test("지시서 초안 갈래가 서버·앱 양쪽에 다 있다", () => {
   assert.match(read("ai-client.js"), /"directive_draft"/u);
 });
 
+const aiDraft = () => appSource.slice(appSource.indexOf("async function draftDirectiveWithAi"), appSource.indexOf("function showDirectivePerson"));
+
 test("AI 가 짠 것을 바로 지시로 만들지 않는다", () => {
   // 사람이 적은 것이든 AI 가 적은 것이든 같은 검토 화면을 지나야 이상한 것을
   // 냈을 때 그 자리에서 보인다.
-  const draft = appSource.slice(appSource.indexOf("async function draftDirectiveWithAi"), appSource.indexOf("function readDirectivePaste"));
+  const draft = aiDraft();
   assert.ok(draft, "draftDirectiveWithAi 가 없다");
-  assert.match(draft, /task: "directive_draft"/u);
+  assert.match(draft, /task: many \? "directive_split" : "directive_draft"/u);
   assert.ok(!/api\.saveWorkOrder|api\.saveWeeklyDirective|sendTelegramDirective/u.test(draft), "짜면서 만들거나 보내면 안 된다");
   // 짠 글을 칸에 되돌려 놓아야 사람이 고칠 수 있다.
   assert.match(draft, /box\.value = drafted/u);
@@ -140,12 +142,43 @@ test("AI 가 짠 것을 바로 지시로 만들지 않는다", () => {
   assert.match(draft, /I\.planImport\(\{/u);
 });
 
-test("AI 에 사람과 가용시간을 같이 넘긴다", () => {
-  // 대충 적은 글만 주면 22시간 낼 수 있는 사람에게 40시간짜리 주가 나온다.
-  const draft = appSource.slice(appSource.indexOf("async function draftDirectiveWithAi"), appSource.indexOf("function readDirectivePaste"));
+test("사람을 고르면 그 사람 것으로, 안 고르면 섞인 뭉치로 본다", () => {
+  // 대표가 실제로 쓰는 모양은 한 사람짜리 표가 아니라 카톡에 흘려 적은
+  // 뭉치다 — "현진 저거 마무리 / 우중 카페 만들기" 가 섞여 있다.
+  const draft = aiDraft();
+  assert.match(draft, /const many = !uid;/u);
+  assert.match(draft, /I\.splitContext\(\{ weekStart: monday, people: everyone/u);
   assert.match(draft, /I\.draftContext\(\{/u);
+});
+
+test("AI 에 사람마다의 가용시간을 같이 넘긴다", () => {
+  // 한 사람 기준으로 다 짜면 누군가는 반드시 넘친다.
+  const draft = aiDraft();
   assert.match(draft, /capacityHours: C && saved \? C\.weekCapacity\(saved\)\.hours : 0/u);
-  assert.match(draft, /openOrders: W \?/u);
-  // 누구 것인지 안 고르면 가용시간을 알 수 없으니 먼저 고르게 한다.
-  assert.match(draft, /누구에게 내는 지시서인지 골라 주세요/u);
+  assert.match(draft, /openTitles: W \?/u);
+});
+
+test("갈라낸 이름을 사내 사람과 맞추고, 못 맞춘 것은 버리지 않는다", () => {
+  // 목록에 없는 이름으로 지시를 만들면 그 지시는 갈 곳이 없다. 그렇다고
+  // 조용히 버리면 대표는 시킨 줄 알고 애들은 못 받은 줄 안다.
+  const draft = aiDraft();
+  assert.match(draft, /I\.splitByPerson\(drafted\)/u);
+  assert.match(draft, /everyone\.find\(item => item\.name === block\.name\)/u);
+  assert.match(draft, /unknown: \[\.\.\.split\.unknown/u);
+  // 한 명도 못 맞췄으면 그 상태로 두지 않고 사람을 고르라고 한다.
+  assert.match(draft, /사람을 갈라내지 못했습니다/u);
+});
+
+test("여러 사람으로 갈랐으면 한 명 만들고 창을 안 닫는다", () => {
+  // 닫으면 남은 사람 것을 다시 붙여 넣어야 한다.
+  const build = appSource.slice(appSource.indexOf("async function buildFromDirectivePaste"), appSource.indexOf("async function saveCapacityDraft"));
+  assert.match(build, /workOrderState\.importOpen = Boolean\(remaining\.length\)/u);
+  assert.match(build, /아직 \$\{remaining\.map\(item => item\.name\)\.join\(", "\)\} 가 남았습니다/u);
+  assert.match(build, /if \(remaining\.length\) showDirectivePerson/u);
+});
+
+test("갈라주기 갈래도 서버·앱 양쪽에 다 있다", () => {
+  const worker = fs.readFileSync(path.join(__dirname, "../../crm-ai-worker/src/tasks.js"), "utf8");
+  assert.match(worker, /directive_split: \{/u);
+  assert.match(read("ai-client.js"), /"directive_split"/u);
 });

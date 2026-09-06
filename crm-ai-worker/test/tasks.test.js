@@ -16,6 +16,7 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "directive_split",
     "directive_draft",
     "daily_report",
     "monthly_management_report",
@@ -148,4 +149,20 @@ test("directive draft writes a pasteable sheet and never invents facts", () => {
   const result = normalizeTaskResult("directive_draft", { text: "배경\t당근 문의가 줄었습니다" });
   assert.equal(result.text, "배경\t당근 문의가 줄었습니다");
   assert.throws(() => normalizeTaskResult("directive_draft", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("directive split never guesses whose work an unclear line is", () => {
+  // 짐작해서 아무에게나 붙이면 시킨 적 없는 일이 지시가 되어 나간다.
+  const messages = buildTaskMessages("directive_split", "현진 CRM 마무리, 우중 카페 구축", {});
+  assert.match(messages[0].content, /== 사람이름 ==/u);
+  assert.match(messages[0].content, /누구인지 모름/u);
+  assert.match(messages[0].content, /짐작해서 아무에게나 붙이면/u);
+  // 목록에 없는 사람을 만들어 내면 그 지시는 갈 곳이 없다.
+  assert.match(messages[0].content, /주어진 사람 목록에 있는 이름만/u);
+  // 사람마다 가용시간이 다르다. 한 사람 기준으로 다 짜면 누군가는 넘친다.
+  assert.match(messages[0].content, /사람마다 주어진 가용시간/u);
+  assert.match(messages[0].content, /사람마다 합이 정확히 100/u);
+
+  const result = normalizeTaskResult("directive_split", { text: "== 김현진 ==\n배경\t가" });
+  assert.match(result.text, /== 김현진 ==/u);
 });

@@ -254,3 +254,72 @@ test("AI 가 짠 글도 사람이 붙여 넣은 것과 같은 길을 지난다",
   assert.equal(plan.weightTotal, 100);
   assert.equal(plan.directive.background, "당근에서 문의가 줄고 있습니다.");
 });
+
+// --- 여러 사람 것이 섞인 뭉치 ---
+
+const SPLIT = [
+  "== 김현진 ==",
+  "배경\tCRM 이 아직 안 끝났습니다.",
+  "목표\t배포까지 끝나 있습니다.",
+  "",
+  "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+  "CRM 마무리\t남은 화면을 끝낸다\t배포가 나가면 끝\t20260911_배포.txt\t10\t100",
+  "== 황우중 ==",
+  "배경\t유입 통로가 좁습니다.",
+  "",
+  "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+  "카페 구축\t광고 데이터로 만든다\t글 5개가 올라가면 끝\t20260911_카페.png\t8\t100",
+  "== 누구인지 모름 ==",
+  "단체 문자 보내기 및 업무 연락처 정리",
+].join("\n");
+
+test("사람별로 갈라진 글을 토막으로 나눈다", () => {
+  const split = I.splitByPerson(SPLIT);
+  assert.deepEqual(split.people.map(person => person.name), ["김현진", "황우중"]);
+  assert.match(split.people[0].text, /CRM 마무리/u);
+  assert.match(split.people[1].text, /카페 구축/u);
+  // 사람 토막만 따로 파서를 지나야 한다. 섞인 채로 넣으면 한 사람 것이 된다.
+  const plan = I.planImport({ paste: split.people[1].text, uid: "u-hwang", name: "황우중" });
+  assert.equal(plan.tasks.length, 1);
+  assert.equal(plan.tasks[0].title, "카페 구축");
+});
+
+test("누구 것인지 모르는 줄을 아무에게나 붙이지 않는다", () => {
+  // 짐작해서 붙이면 시킨 적 없는 일이 그 사람에게 나간다.
+  const split = I.splitByPerson(SPLIT);
+  assert.deepEqual(split.unknown, ["단체 문자 보내기 및 업무 연락처 정리"]);
+  assert.equal(split.people.some(person => /단체 문자/u.test(person.text)), false);
+});
+
+test("첫 이름 앞에 붙은 줄도 버리지 않는다", () => {
+  const split = I.splitByPerson(["여기 뭐라고 적어 놨음", "== 김현진 ==", "배경\t가"].join("\n"));
+  assert.deepEqual(split.unknown, ["여기 뭐라고 적어 놨음"]);
+  assert.equal(split.people.length, 1);
+});
+
+test("갈린 것이 없으면 사람도 없다", () => {
+  const split = I.splitByPerson("그냥 줄글입니다");
+  assert.deepEqual(split.people, []);
+  assert.deepEqual(split.unknown, ["그냥 줄글입니다"]);
+  assert.deepEqual(I.splitByPerson("").people, []);
+});
+
+test("섞인 뭉치를 넘길 때 사람마다의 가용시간을 같이 넘긴다", () => {
+  // 한 사람 기준으로 다 짜면 누군가는 반드시 넘친다.
+  const context = I.splitContext({
+    weekStart: "2026-09-07",
+    people: [
+      { name: "김현진", capacityHours: 40, openTitles: ["공실현황 탭"] },
+      { name: "황우중", capacityHours: 22, openTitles: [] },
+      { name: "서창환" },
+    ],
+    projects: [{ name: "마케팅 채널" }],
+    notes: "현진 CRM 마무리, 우중 카페 구축",
+  });
+  assert.match(context, /여기 있는 이름만 쓰세요/u);
+  assert.match(context, /- 김현진 \/ 이번 주 낼 수 있는 시간 40시간 \/ 이미 물고 있는 일: 공실현황 탭/u);
+  assert.match(context, /- 황우중 \/ 이번 주 낼 수 있는 시간 22시간/u);
+  // 시간표를 안 넣은 사람에게 0시간이라고 넘기면 AI 가 그걸 사실로 쓴다.
+  assert.match(context, /- 서창환 \/ 가용시간 미등록/u);
+  assert.match(context, /현진 CRM 마무리, 우중 카페 구축/u);
+});
