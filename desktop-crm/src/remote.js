@@ -466,6 +466,31 @@ function resolveDatabaseLocation(location, databaseRoot) {
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
 }
 
+// 성장 기록을 한 줄씩 펴 놓는다.
+//
+// 대표가 읽으면 {uid: {번호: 기록}}, 본인이 읽으면 {번호: 기록} 이라 모양이
+// 다르다. 여기에 더해 사람별로 나누기 전에 저장된 것이 남아 있을 수 있어서,
+// **그 옛 모양도 같이 받는다**. 옛 기록을 조용히 버리면 적어 둔 사람은 자기
+// 기록이 사라진 것을 나중에야 안다. `marker` 는 그 값이 기록 한 장인지
+// (week / quarter 를 갖고 있다) 사람 가지인지 가르는 데 쓴다.
+function flattenGrowth(payload, admin, uid, marker) {
+  const bag = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  if (!admin) return Object.entries(bag).map(([id, value]) => Object.assign({ id, uid }, value || {}));
+  const rows = [];
+  Object.entries(bag).forEach(([key, value]) => {
+    if (!value || typeof value !== "object") return;
+    if (typeof value[marker] === "string") {
+      // 사람별로 나누기 전에 저장된 한 장. 열쇠가 기록 번호였다.
+      rows.push(Object.assign({ id: key }, value));
+      return;
+    }
+    Object.entries(value).forEach(([id, row]) => {
+      if (row && typeof row === "object") rows.push(Object.assign({ id, uid: key }, row));
+    });
+  });
+  return rows;
+}
+
 function createError(message, code, cause) {
   const error = new Error(message);
   error.code = code;
@@ -4048,18 +4073,25 @@ class FirebaseRemoteClient {
   async loadGrowth() {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
+    const admin = session.role === "admin";
+    // 대표는 전부를, 나머지는 자기 가지만 읽는다. **읽는 경로 자체가 다르다**
+    // — 다 읽어 와서 화면에서 걸러 주면 화면을 안 거치는 길로 남의 1on1 을
+    // 그대로 가져갈 수 있다.
+    //
+    // 여기서 실패를 삼키지 않는다. 예전에는 못 읽은 것을 빈 목록으로 바꿨고,
+    // 그래서 화면이 늘 "아직 아무것도 없습니다" 라고 말했다. 그건 거짓말이라
+    // 아무도 이상한 줄 몰랐다.
     const [checkinPayload, reviewPayload] = await Promise.all([
-      this.dbRequest("growthCheckins", { method: "GET" }).catch(() => null),
-      this.dbRequest("growthReviews", { method: "GET" }).catch(() => null),
+      this.dbRequest(admin ? "growthCheckins" : `growthCheckins/${session.uid}`, { method: "GET" }),
+      this.dbRequest(admin ? "growthReviews" : `growthReviews/${session.uid}`, { method: "GET" }),
     ]);
     this.assertSessionGuardActive(guard);
-    const admin = session.role === "admin";
     const mine = row => admin || row.uid === session.uid;
-    const checkins = Object.entries(checkinPayload && typeof checkinPayload === "object" ? checkinPayload : {})
-      .map(([id, value]) => GrowthCore.normalizeCheckin(Object.assign({ id }, value || {})))
+    const checkins = flattenGrowth(checkinPayload, admin, session.uid, "week")
+      .map(value => GrowthCore.normalizeCheckin(value))
       .filter(item => item.id && mine(item));
-    const reviews = Object.entries(reviewPayload && typeof reviewPayload === "object" ? reviewPayload : {})
-      .map(([id, value]) => GrowthCore.normalizeReview(Object.assign({ id }, value || {})))
+    const reviews = flattenGrowth(reviewPayload, admin, session.uid, "quarter")
+      .map(value => GrowthCore.normalizeReview(value))
       .filter(item => item.id && mine(item));
     return {
       checkins,
@@ -4082,7 +4114,7 @@ class FirebaseRemoteClient {
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const checked = GrowthCore.validateCheckin(Object.assign({}, source, { uid: session.uid }));
     if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `growthCheckins/${checked.checkin.id}`;
+    const location = `growthCheckins/${session.uid}/${checked.checkin.id}`;
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     if (existing && GrowthCore.text(existing.uid, 80) !== session.uid) {
@@ -4110,7 +4142,7 @@ class FirebaseRemoteClient {
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const checked = GrowthCore.validateReview(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `growthReviews/${checked.review.id}`;
+    const location = `growthReviews/${checked.review.uid}/${checked.review.id}`;
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     const now = new Date().toISOString();
