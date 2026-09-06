@@ -3206,7 +3206,8 @@ async function readTelegramSettings() {
       chatId: String(value.chatId || ""),
       autoSend: value.autoSend !== false,
       includePhone: value.includePhone === true,
-      hour: TelegramCore.looksLikeHour(value.hour) ? Number(value.hour) : TelegramCore.DEFAULT_HOUR,
+      hours: TelegramCore.normalizeHours(value.hours),
+      lastAutoSlot: String(value.lastAutoSlot || ""),
       lastSent: value.lastSent && typeof value.lastSent === "object" ? value.lastSent : null,
     };
   } catch (error) {
@@ -3247,7 +3248,8 @@ async function loadTelegramSettings() {
     chatId: saved ? saved.chatId : "",
     autoSend: saved ? saved.autoSend : true,
     includePhone: saved ? saved.includePhone === true : false,
-    hour: saved && TelegramCore.looksLikeHour(saved.hour) ? Number(saved.hour) : TelegramCore.DEFAULT_HOUR,
+    hours: TelegramCore.normalizeHours(saved ? saved.hours : null),
+    lastAutoSlot: saved ? String(saved.lastAutoSlot || "") : "",
     lastSentDay: saved && saved.lastSent ? String(saved.lastSent.day || "") : "",
   };
 }
@@ -3264,7 +3266,7 @@ async function saveTelegramSettings(input) {
     chatId: options.chatId,
     autoSend: options.autoSend,
     includePhone: options.includePhone,
-    hour: options.hour,
+    hours: options.hours,
   });
   if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
   await writeTelegramSettings(Object.assign({ botToken }, checked.settings, {
@@ -3358,9 +3360,12 @@ async function sendTelegramContactAlert(input) {
 
   const body = TelegramCore.composeMessage(alerts, { asOf, includePhone: saved.includePhone === true });
   await postToTelegram(saved.botToken, saved.chatId, body);
-  await writeTelegramSettings(Object.assign({}, saved, {
-    lastSent: { day: verdict.day || asOf, fingerprint: verdict.fingerprint || TelegramCore.alertsFingerprint(alerts), at: new Date().toISOString() },
-  }));
+  // 자동으로 나간 것만 시각 칸을 채운다. 사람이 누른 것은 그 시각의
+  // 자동 발송을 대신하지 않는다 — 아침에 눌러 봤다고 9시 알림이
+  // 사라지면 그게 더 헷갈린다.
+  const stamp = { lastSent: { day: verdict.day || asOf, fingerprint: verdict.fingerprint || TelegramCore.alertsFingerprint(alerts), at: new Date().toISOString() } };
+  if (TelegramCore.text(options.slot, 20)) stamp.lastAutoSlot = TelegramCore.text(options.slot, 20);
+  await writeTelegramSettings(Object.assign({}, saved, stamp));
   return { ok: true, sent: true, count: alerts.length, reason: "" };
 }
 

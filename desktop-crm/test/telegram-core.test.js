@@ -116,40 +116,71 @@ test("보낼 것이 없으면 보내지 않는다", () => {
   assert.equal(T.shouldSend([], null, TODAY).send, false);
 });
 
+test("고를 수 있는 시각은 하루의 마디뿐이다", () => {
+  // 스물네 개를 다 열어 두면 새벽 3시를 고를 수 있고, 새벽에 울리면
+  // 사람은 알림을 꺼 버린다.
+  assert.deepEqual(T.SEND_HOURS.slice(), [8, 9, 12, 15, 18]);
+  assert.equal(T.looksLikeHour(3), false);
+  assert.equal(T.looksLikeHour(9), true);
+  // 모르는 값은 기본값으로 떨어진다. 빈 목록도 마찬가지 — 자동을 켜 두고
+  // 시각을 하나도 안 고르면 영영 안 간다.
+  assert.deepEqual(T.normalizeHours([3, 25, "아무거나"]), [9]);
+  assert.deepEqual(T.normalizeHours([]), [9]);
+  assert.deepEqual(T.normalizeHours([18, 8, 8]), [8, 18], "겹친 것은 접고 순서대로");
+});
+
 test("정한 시각이 지나야 보낸다", () => {
-  // 새벽 3시에 울리면 사람은 알림을 꺼 버린다.
   const at = hour => new Date(2026, 8, 7, hour, 30, 0);
-  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(3)).due, false);
-  assert.match(T.dueNow({ autoSend: true, hour: 9 }, at(3)).reason, /9시에 보냅니다/u);
-  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(9)).due, true);
+  assert.equal(T.dueNow({ autoSend: true, hours: [9] }, at(3)).due, false);
+  assert.match(T.dueNow({ autoSend: true, hours: [9] }, at(3)).reason, /9시에 보냅니다/u);
+  assert.equal(T.dueNow({ autoSend: true, hours: [9] }, at(9)).due, true);
 });
 
 test("늦게 켠 날도 건너뛰지 않는다", () => {
   // 지나갔다고 넘기면 아침에 앱을 안 켠 날은 영영 안 온다.
-  const at = hour => new Date(2026, 8, 7, hour, 30, 0);
-  assert.equal(T.dueNow({ autoSend: true, hour: 9 }, at(18)).due, true);
+  assert.equal(T.dueNow({ autoSend: true, hours: [9] }, new Date(2026, 8, 7, 18, 30, 0)).due, true);
 });
 
-test("오늘 보낸 날은 또 안 보낸다", () => {
-  const at = new Date(2026, 8, 7, 10, 0, 0);
-  assert.equal(T.dueNow({ autoSend: true, hour: 9, lastAutoDay: "2026-09-07" }, at).due, false);
-  // 어제 보낸 것은 오늘을 막지 않는다.
-  assert.equal(T.dueNow({ autoSend: true, hour: 9, lastAutoDay: "2026-09-06" }, at).due, true);
+test("지나간 시각을 몰아서 보내지 않는다", () => {
+  // 13시에 앱을 켰을 때 8·9·12시 것이 한꺼번에 오면 알림이 아니라 소음이다.
+  const made = T.dueNow({ autoSend: true, hours: [8, 9, 12, 15, 18] }, new Date(2026, 8, 7, 13, 0, 0));
+  assert.equal(made.due, true);
+  assert.equal(made.hour, 12, "지나간 것 중 가장 최근 하나만");
+  assert.equal(made.slot, "2026-09-07T12");
+});
+
+test("같은 시각을 두 번 보내지 않고, 다음 시각에는 다시 보낸다", () => {
+  // 아직 연락 안 한 것을 하루에 몇 번 찔러 주는 것이 이 기능의 요지다.
+  const hours = [8, 9, 12, 15, 18];
+  const noon = T.dueNow({ autoSend: true, hours, lastAutoSlot: "2026-09-07T12" }, new Date(2026, 8, 7, 13, 0, 0));
+  assert.equal(noon.due, false);
+  assert.match(noon.reason, /15시에 다시 보냅니다/u);
+
+  const three = T.dueNow({ autoSend: true, hours, lastAutoSlot: "2026-09-07T12" }, new Date(2026, 8, 7, 15, 10, 0));
+  assert.equal(three.due, true, "다음 시각에는 같은 내용이라도 다시 찔러 준다");
+  assert.equal(three.slot, "2026-09-07T15");
+
+  const done = T.dueNow({ autoSend: true, hours, lastAutoSlot: "2026-09-07T18" }, new Date(2026, 8, 7, 20, 0, 0));
+  assert.equal(done.due, false);
+  assert.match(done.reason, /다 보냈습니다/u);
+});
+
+test("어제 보낸 것이 오늘을 막지 않는다", () => {
+  const made = T.dueNow({ autoSend: true, hours: [9], lastAutoSlot: "2026-09-06T09" }, new Date(2026, 8, 7, 10, 0, 0));
+  assert.equal(made.due, true);
 });
 
 test("자동을 끄면 시각과 상관없이 안 간다", () => {
-  assert.equal(T.dueNow({ autoSend: false, hour: 9 }, new Date(2026, 8, 7, 15, 0, 0)).due, false);
+  assert.equal(T.dueNow({ autoSend: false, hours: [9] }, new Date(2026, 8, 7, 15, 0, 0)).due, false);
 });
 
 test("시각을 안 정했으면 아침 9시다", () => {
   assert.equal(T.DEFAULT_HOUR, 9);
   assert.equal(T.dueNow({ autoSend: true }, new Date(2026, 8, 7, 8, 0, 0)).due, false, "8시에는 아직");
   assert.equal(T.dueNow({ autoSend: true }, new Date(2026, 8, 7, 9, 0, 0)).due, true);
-  // 말이 안 되는 시각은 기본값으로 떨어진다.
-  assert.equal(T.looksLikeHour(25), false);
-  assert.equal(T.looksLikeHour("아무거나"), false);
-  assert.equal(T.validateSettings({ botToken: "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345", chatId: "-100123456", hour: 99 }).settings.hour, 9);
-  assert.equal(T.validateSettings({ botToken: "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345", chatId: "-100123456", hour: 7 }).settings.hour, 7);
+  const good = { botToken: "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345", chatId: "-100123456" };
+  assert.deepEqual(T.validateSettings(Object.assign({ hours: [3] }, good)).settings.hours, [9]);
+  assert.deepEqual(T.validateSettings(Object.assign({ hours: [8, 18] }, good)).settings.hours, [8, 18]);
 });
 
 test("설정 모양을 먼저 본다", () => {

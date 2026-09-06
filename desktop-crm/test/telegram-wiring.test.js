@@ -132,14 +132,15 @@ test("전화번호는 꺼진 채로 시작한다", () => {
   assert.match(appSource, /꼭 필요할 때만 켜 주세요/u, "무엇이 위험한지 화면에 적어야 한다");
 });
 
-test("자동 발송이 정한 시각에 하루 한 번 돈다", () => {
+test("자동 발송이 고른 시각마다 한 번씩 돈다", () => {
   // 대표가 "내가 보내기만 하면 안 되잖아" 라고 한 자리다. 전에는 앱을 켤
   // 때 한 번이라, 새벽에 켜면 새벽에 갔고 켜 두면 자정을 넘겨도 안 갔다.
   const start = appSource.indexOf("async function maybeAutoSendTelegram(");
   const body = appSource.slice(start, appSource.indexOf("// 켜 둔 채로", start));
-  assert.match(body, /if \(telegramAutoTriedDay === today\) return;/u);
   assert.match(body, /T\.dueNow\(\{/u, "시각을 봐야 한다");
   assert.match(body, /if \(!verdict\.due\) return;/u);
+  // 응답을 기다리는 사이에 또 부르지 않는다.
+  assert.match(body, /if \(telegramAutoTriedSlot === verdict\.slot\) return;/u);
   assert.match(body, /canAdministerSecurity\(\)/u);
   // 자료를 받은 뒤에 돌아야 한다. \n 하나로 못박으면 Windows(CRLF)에서만 깨진다.
   assert.match(appSource, /function render\(\) \{\r?\n[\s\S]{0,200}?void maybeAutoSendTelegram\(\);/u);
@@ -149,15 +150,32 @@ test("켜 둔 채로 시각이 지나가는 것도 잡는다", () => {
   // 앱을 켤 때만 보면, 하루 종일 켜 둔 사람에게는 영영 안 간다.
   assert.match(appSource, /setInterval\(\(\) => \{[\s\S]{0,400}?void maybeAutoSendTelegram\(\);[\s\S]{0,80}?\}, 15 \* 60 \* 1000\)/u);
   // 자정을 넘기면 어제 표시를 지워야 새 날 것이 나간다.
-  assert.match(appSource, /if \(telegramAutoTriedDay && telegramAutoTriedDay !== todayKey\(\)\) telegramAutoTriedDay = "";/u);
+  // 어느 시각 것을 보냈는지로 막으므로, 자정이 지나면 슬롯이 저절로 달라진다.
+  assert.doesNotMatch(appSource, /telegramAutoTriedDay/u);
 });
 
-test("보낼 시각을 사람이 정한다", () => {
-  assert.ok(appSource.includes('name="hour"'));
-  assert.match(appSource, /raw\.hour/u);
-  assert.match(mainSource, /hour: options\.hour/u);
-  // 새벽에 울리지 않게 기본은 아침이다.
-  assert.equal(require("../src/telegram-core").DEFAULT_HOUR, 9);
+test("보낼 시각을 사람이 여러 개 고른다", () => {
+  const T = require("../src/telegram-core");
+  assert.ok(appSource.includes('name="hours"'));
+  assert.match(appSource, /T\.SEND_HOURS \|\| \[\]/u, "고를 수 있는 시각을 화면이 따로 적으면 안 된다");
+  assert.match(appSource, /\[name="hours"\]:checked/u);
+  assert.match(mainSource, /hours: options\.hours/u);
+  // 새벽에 울리지 않게 하루의 마디만 연다.
+  assert.deepEqual(T.SEND_HOURS.slice(), [8, 9, 12, 15, 18]);
+  assert.equal(T.DEFAULT_HOUR, 9);
+});
+
+test("자동으로 나간 것만 시각 칸을 채운다", () => {
+  // 아침에 [지금 보내기] 를 눌러 봤다고 9시 알림이 사라지면 더 헷갈린다.
+  const body = topLevelBody(mainSource, "sendTelegramContactAlert");
+  assert.match(body, /if \(TelegramCore\.text\(options\.slot, 20\)\) stamp\.lastAutoSlot/u);
+  // 화면의 자동 발송은 슬롯을 실어 보낸다.
+  const start = appSource.indexOf("async function maybeAutoSendTelegram(");
+  const auto = appSource.slice(start, appSource.indexOf("// 켜 둔 채로", start));
+  assert.match(auto, /slot: verdict\.slot/u);
+  // 사람이 누르는 쪽은 슬롯을 안 보낸다.
+  const manual = appSource.slice(appSource.indexOf("async function sendTelegramNow("));
+  assert.doesNotMatch(manual.slice(0, 900), /slot:/u);
 });
 
 test("새 화면이 없는 클래스에 기대지 않는다", () => {

@@ -146,12 +146,27 @@
     return { send: true, reason: "", fingerprint: mark, day: today };
   }
 
-  // 보낼 시각. 새벽 3시에 울리면 사람은 알림을 꺼 버린다.
+  // 보낼 수 있는 시각. 스물네 개를 다 열어 두면 새벽 3시를 고를 수 있고,
+  // 새벽에 울리면 사람은 알림을 꺼 버린다. 일하는 하루의 마디만 남긴다.
+  //
+  //   8시   나오면서
+  //   9시   일 시작할 때
+  //   12시  점심 전에 한 번
+  //   15시  오후에 한 번
+  //   18시  마치기 전에
+  const SEND_HOURS = Object.freeze([8, 9, 12, 15, 18]);
   const DEFAULT_HOUR = 9;
 
   function looksLikeHour(value) {
-    const hour = Number(value);
-    return Number.isInteger(hour) && hour >= 0 && hour <= 23;
+    return SEND_HOURS.indexOf(Number(value)) >= 0;
+  }
+
+  // 여러 시각을 고를 수 있다. 하나만 고르면 하루 한 번이고, 다섯 개를 다
+  // 고르면 아직 연락 안 한 것을 하루 다섯 번 찔러 준다.
+  function normalizeHours(value) {
+    const picked = rows(value).map(Number).filter(looksLikeHour);
+    const unique = [...new Set(picked)].sort((left, right) => left - right);
+    return unique.length ? unique : [DEFAULT_HOUR];
   }
 
   /**
@@ -164,18 +179,35 @@
    * 10시에 앱을 켰다면 그때 간다 — 지나갔다고 건너뛰면 늦게 켠 날은
    * 영영 안 온다.
    */
+  /**
+   * 지금 보낼 때가 됐는가.
+   *
+   * "앱을 켤 때 한 번" 으로 두었더니, 새벽에 켜면 새벽에 갔고 하루 종일
+   * 켜 두면 자정을 넘겨도 안 갔다. 그래서 시각을 본다.
+   *
+   * 고른 시각마다 한 번씩 간다. 지나간 시각을 몰아서 보내지는 않는다 —
+   * 13시에 앱을 켰을 때 8·9·12시 것이 한꺼번에 오면 그건 알림이 아니라
+   * 소음이다. 지나간 것 중 **가장 최근 하나**만 보낸다.
+   */
   function dueNow(settings, now) {
     const at = now instanceof Date ? now : new Date(now || Date.now());
     if (!(at instanceof Date) || Number.isNaN(at.getTime())) return { due: false, reason: "지금 시각을 알 수 없습니다." };
     const value = settings && typeof settings === "object" ? settings : {};
     if (value.autoSend === false) return { due: false, reason: "자동 보내기가 꺼져 있습니다." };
-    const hour = looksLikeHour(value.hour) ? Number(value.hour) : DEFAULT_HOUR;
+    const hours = normalizeHours(value.hours);
     const today = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-    if (dayOf(value.lastAutoDay) === today) return { due: false, reason: "오늘은 이미 보냈습니다.", day: today };
-    if (at.getHours() < hour) {
-      return { due: false, reason: `오늘 ${hour}시에 보냅니다.`, day: today, hour };
+
+    const passed = hours.filter(hour => at.getHours() >= hour);
+    if (!passed.length) {
+      return { due: false, reason: `오늘 ${hours[0]}시에 보냅니다.`, day: today, hours };
     }
-    return { due: true, reason: "", day: today, hour };
+    const hour = passed[passed.length - 1];
+    const slot = `${today}T${String(hour).padStart(2, "0")}`;
+    if (text(value.lastAutoSlot, 20) === slot) {
+      const next = hours.find(item => item > hour);
+      return { due: false, reason: next ? `오늘 ${next}시에 다시 보냅니다.` : "오늘 보낼 것은 다 보냈습니다.", day: today, hours, slot };
+    }
+    return { due: true, reason: "", day: today, hour, hours, slot };
   }
 
   // 봇 토큰 모양. 값 자체는 어디에도 남기지 않는다 — 길이와 모양만 본다.
@@ -203,7 +235,7 @@
         chatId,
         autoSend: value.autoSend !== false,
         includePhone: value.includePhone === true,
-        hour: looksLikeHour(value.hour) ? Number(value.hour) : DEFAULT_HOUR,
+        hours: normalizeHours(value.hours),
       },
     };
   }
@@ -285,8 +317,10 @@
   return Object.freeze({
     MAX_BODY,
     MAX_ROWS,
+    SEND_HOURS,
     DEFAULT_HOUR,
     looksLikeHour,
+    normalizeHours,
     dueNow,
     dayOf,
     daysBetween,
