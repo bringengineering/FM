@@ -135,6 +135,24 @@
   //
   // 완료 기준과 산출물은 넣는다. 애들이 헷갈리던 것이 바로 그 둘이라,
   // 그것까지 빼면 보내는 뜻이 없다.
+  // 고객에게 보낼 문구를 회사방에 올린다.
+  //
+  // 고객 번호로 바로 나가지 않는다. 알림톡 템플릿 심사가 끝나기 전이라
+  // 사람이 카카오톡에 붙여 넣어야 하고, 그러려면 누구에게 보내는 문구인지가
+  // 문구와 같이 보여야 한다. 문구만 덩그러니 오면 받는 사람을 헷갈린다.
+  function composeCustomerNotice(input) {
+    const value = input && typeof input === "object" ? input : {};
+    const body = text(value.body, 1200);
+    if (!body) return "";
+    const who = [text(value.ownerName, 80), text(value.ownerContact, 60)].filter(Boolean).join(" · ");
+    const head = `<b>BRING · 고객 알림</b>\n${escapeHtml(text(value.buildingName, 200) || "건물 미지정")}${text(value.workDate, 10) ? ` · ${escapeHtml(text(value.workDate, 10))}` : ""}`;
+    const lines = [head];
+    if (who) lines.push(`받는 사람: ${escapeHtml(who)}`);
+    lines.push(`\n${escapeHtml(body)}`);
+    lines.push("\n<i>카카오톡에 붙여 넣어 주세요. 알림톡 심사 전이라 자동 발송은 아직 안 됩니다.</i>");
+    return lines.join("\n").slice(0, MAX_BODY);
+  }
+
   function composeDirective(input) {
     const settings = input && typeof input === "object" ? input : {};
     const directive = settings.directive && typeof settings.directive === "object" ? settings.directive : {};
@@ -374,6 +392,7 @@
 
   return Object.freeze({
     composeDirective,
+    composeCustomerNotice,
     MAX_BODY,
     MAX_ROWS,
     SEND_HOURS,

@@ -87,13 +87,14 @@ test("없는 폴더 이름이 남아 있어도 사이드바가 비지 않는다"
   assert.match(restore, /document\.querySelector\(`\[data-nav-folder="\$\{saved\}"\]`\) \? saved : ""/u);
 });
 
-test("견적서는 CRM 폴더에서 열린다", () => {
-  // 고객에게 보내는 서류다. AI 비서 탭에 숨어 있을 이유가 없었다.
+test("견적서는 문서관리에서, 결과보고서 앞에서 열린다", () => {
+  // 고객에게 보내는 서류다. AI 비서 탭에 숨어 있을 이유가 없었다. 그리고
+  // 그 다음 장이 결과보고서라서, 둘이 떨어져 있으면 같은 것을 두 번 친다.
   assert.equal((navSource.match(/data-view="quotes"/g) || []).length, 1);
-  assert.match(navSource, /data-view="customers"[\s\S]*?data-view="quotes"/u,
-    "견적서가 CRM 폴더 밖에 있다");
+  assert.match(navSource, /data-view="quotes"[\s\S]*?data-view="workReports"/u,
+    "견적서가 결과보고서보다 뒤에 있다");
   assert.match(appSource, /quotes: \["고객에게 보낼 견적서", "견적서"\]/u);
-  assert.match(appSource, /function renderQuotes\(\)[\s\S]{0,200}renderAiQuoteAssistant\(\)/u);
+  assert.match(appSource, /function renderQuotes\(\)[\s\S]{0,900}renderAiQuoteAssistant\(\)/u);
   // 화면이 옮겨 다녀도 다시 그리는 쪽은 한 곳만 본다.
   assert.match(appSource, /function refreshQuotesView\(\)[\s\S]{0,120}currentView === "quotes"/u);
   assert.ok(!appSource.includes("aiAssistantState.tab"), "안 쓰는 탭 상태가 남아 있다");

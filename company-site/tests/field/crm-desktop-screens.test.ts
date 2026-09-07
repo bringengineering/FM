@@ -49,6 +49,7 @@ const SCREENS: Array<[string, string]> = [
   ["operationsIntelligence", "운영"],
   ["buildingDocuments", "문서"],
   ["workReports", "작업 종류를 고르면 항목이 깔립니다"],
+  ["customerNotices", "문구는 단계가 정하고"],
   ["forms", "점검표·확인서"],
   ["security", "열쇠"],
   ["aiAssistant", "AI"],
@@ -69,6 +70,15 @@ function mondayOf(date: Date): string {
   const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = utc.getUTCDay();
   utc.setUTCDate(utc.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return utc.toISOString().slice(0, 10);
+}
+
+// 이번 주에서 며칠 떨어진 날. 고정 날짜를 박아 두면 달력이 그 날짜를
+// 지나가는 주에 검사가 깨진다 — "2026-09-10" 은 9월 7일 주가 되자
+// 이번 주 지시가 되었고, 가중치 합이 140% 가 되어 지시서 보내기가 막혔다.
+function dayFromMonday(offset: number): string {
+  const utc = new Date(`${mondayOf(new Date())}T00:00:00Z`);
+  utc.setUTCDate(utc.getUTCDate() + offset);
   return utc.toISOString().slice(0, 10);
 }
 
@@ -96,7 +106,16 @@ async function boot(): Promise<Booted> {
       costs: [],
     },
     loadDeliveryFlows: { ...empty, flows: [] },
-    loadWorkReports: { ...empty, reports: [] },
+    loadWorkReports: {
+      ...empty,
+      reports: [
+        {
+          id: "r1", buildingName: "상지대 벤처창업관", kind: "stairs", workDate: dayFromMonday(1),
+          workerName: "김현진", siteAddress: "원주시 상지대길 83", ownerName: "김건물", ownerContact: "010-0000-0000",
+          items: [], createdAt: "", updatedAt: "", updatedBy: "",
+        },
+      ],
+    },
     loadTelegramSettings: { ok: true, configured: false, chatId: "", autoSend: true, includePhone: false, lastSentDay: "" },
     findTelegramChats: {
       ok: true,
@@ -188,7 +207,7 @@ async function boot(): Promise<Booted> {
         // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
         { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40, hours: 4, weight: 30 },
         { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
-        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100, hours: 6, weight: 40 },
+        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: dayFromMonday(28), startDate: dayFromMonday(21), progress: 100, hours: 6, weight: 40 },
         // 어느 프로젝트에도 안 붙은 업무. 이것이 "왜 하는지 모르는 일" 이다.
         // 이번 주에 걸친 지시. 지시서를 보내려면 이 주에 뭔가 있어야 한다.
         { id: "o5", title: "3층 누수 확인", why: "임차인이 두 번 민원을 넣었습니다", what: "천장을 열어 배관을 봅니다", doneWhen: "사진 3장과 원인 한 줄", deliverable: "20260906_3층누수.xlsx", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "assigned", startDate: mondayOf(new Date()), dueDate: mondayOf(new Date()), progress: 0, hours: 8, weight: 100 },
@@ -1186,6 +1205,44 @@ describe("desktop CRM screens actually render", () => {
     handle().click();
     await sleep(200);
     expect(sheet()).toContain("진행은 「오늘」 에서 적습니다");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("견적서에서 결과보고서로, 결과보고서에서 고객 알림으로 이어진다", async () => {
+    // 세 장이 남남이면 건물명·주소·건물주를 세 번 친다. 그러면 세 군데가
+    // 조금씩 달라지고, 어느 것이 맞는지는 아무도 모른다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workReports"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    const main = booted.document.getElementById("main") as HTMLElement;
+    // 어디까지 왔는지가 세 화면 위에 같은 모양으로 있어야 한다.
+    const strip = booted.document.querySelector(".df-strip") as HTMLElement;
+    expect(strip, "문서관리 한 줄이 없다").toBeTruthy();
+    expect(strip.textContent).toContain("견적서");
+    expect(strip.textContent).toContain("작업 결과보고서");
+    expect(strip.textContent).toContain("고객 알림");
+    expect(main.textContent).toContain("상지대 벤처창업관");
+
+    const notice = booted.document.querySelector('[data-df-notice="r1"]') as HTMLElement;
+    expect(notice, "보고서 줄에서 고객 알림으로 갈 수 있어야 한다").toBeTruthy();
+    notice.click();
+    await sleep(300);
+
+    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown).toContain("고객 알림");
+    // 문구가 그 보고서의 건물명으로 채워져야 한다. 안 채워지면 사람이 또 친다.
+    const body = booted.document.querySelector("[data-df-body]") as HTMLTextAreaElement;
+    expect(body, "보낼 문구 칸이 없다").toBeTruthy();
+    expect(body.value).toContain("상지대 벤처창업관");
+    expect(body.value).toContain("작업을 마쳤습니다");
+    // 고객에게 바로 가지 않는다는 것을 화면이 말해야 한다. 안 그러면
+    // 보낸 줄 알고 건물주는 연락을 못 받는다.
+    expect(shown).toContain("알림톡 템플릿 심사가 끝나야");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
