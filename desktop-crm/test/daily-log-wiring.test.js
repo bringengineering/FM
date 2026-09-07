@@ -142,6 +142,9 @@ test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고�
   assert.match(render, /data-dl-field="nature"/u);
   assert.match(render, /data-dl-field="orderId"/u);
   assert.match(render, /data-dl-field="progress"/u);
+  assert.match(render, /class="dl-progress"/u);
+  assert.match(render, /<b aria-hidden="true">%<\/b>/u);
+  assert.match(read("styles.css"), /\.dl-progress\{display:flex;align-items:center;gap:5px/u);
 });
 
 test("처음 쓰는 날도 줄 넣기 없이 09시부터 18시까지 기본 시간표가 열린다", () => {

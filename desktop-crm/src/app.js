@@ -4306,7 +4306,7 @@
       <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="무엇을 했나" data-dl-field="title" data-dl-index="${index}"></td>
       <td><select data-dl-field="nature" data-dl-index="${index}">${natureOptions(item.nature)}</select></td>
       <td><select data-dl-field="orderId" data-dl-index="${index}">${orderOptions(item.orderId)}</select></td>
-      <td><input type="number" min="0" max="100" step="5" value="${item.progress}" data-dl-field="progress" data-dl-index="${index}"><b>%</b></td>
+      <td><div class="dl-progress"><input type="number" min="0" max="100" step="5" value="${item.progress}" aria-label="달성률" data-dl-field="progress" data-dl-index="${index}"><b aria-hidden="true">%</b></div></td>
       <td><span class="office-muted">${D.toHours(D.entryMinutes(item))}h</span></td>
       <td><button type="button" class="mini-button return" data-dl-remove="${index}">지우기</button></td>
     </tr>`).join("");

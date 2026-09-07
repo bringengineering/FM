@@ -779,7 +779,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dl-table th:nth-child(4),.dl-table td:nth-child(4){width:96px}
 .dl-table th:nth-child(6),.dl-table td:nth-child(6){width:110px;white-space:nowrap}
 .dl-table th:nth-child(7),.dl-table td:nth-child(7){width:64px}
-.dl-table td input[type=number]{width:62px}
+.dl-progress{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.dl-progress input[type=number]{flex:0 0 62px;width:62px;min-width:0}
+.dl-progress b{flex:0 0 auto;color:#4E5968;font-size:12px;line-height:1}
 .dl-natures{display:flex;flex-wrap:wrap;gap:8px}
 .dl-nature{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F2F4F6;color:#4E5968;font-size:12px}
 .dl-nature b{color:#191F28}
