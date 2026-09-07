@@ -4239,18 +4239,38 @@
     });
   }
 
-  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 처음 쓰는 날이면
-  // 09:00~18:00 시간표를 기본으로 펼친다.
+  // 임시 저장에는 실제로 적은 줄만 남는다. 그 자료를 그대로 그리면 저장 뒤
+  // 비어 있던 시간대가 사라지므로, 저장된 줄은 같은 시간 자리에 되돌려 놓고
+  // 빠진 기본 시간대만 빈 줄로 다시 채운다. 기본 범위 밖의 기존 기록도 버리지
+  // 않고 뒤에 그대로 둔다.
+  function restoreDailyLogTimeGrid(D, source, date) {
+    const day = D.normalizeDay(source);
+    const used = new Set();
+    const entries = defaultDailyLogEntries(date).map(slot => {
+      const foundIndex = day.entries.findIndex((item, index) => (
+        !used.has(index) && item.start === slot.start && item.end === slot.end
+      ));
+      if (foundIndex < 0) return slot;
+      used.add(foundIndex);
+      return day.entries[foundIndex];
+    });
+    day.entries.forEach((item, index) => {
+      if (!used.has(index)) entries.push(item);
+    });
+    return D.normalizeDay(Object.assign({}, day, { entries }));
+  }
+
+  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 처음 쓰는 날뿐 아니라
+  // 임시 저장을 다시 불러온 뒤에도 09:00~18:00 시간표를 빠짐없이 펼친다.
   function dailyLogDraft(D) {
     if (dailyLogState.draft) return D.normalizeDay(dailyLogState.draft);
     const date = dailyLogDate();
     const found = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === date);
-    return D.normalizeDay(found || {
+    return restoreDailyLogTimeGrid(D, found || {
       uid: dailyLogState.uid,
       name: dailyLogState.name,
       date,
-      entries: defaultDailyLogEntries(date),
-    });
+    }, date);
   }
 
   // 이 사람이 지금 물고 있는 지시. 줄마다 고르게 한다 — 지시를 안 고르면

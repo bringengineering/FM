@@ -147,14 +147,17 @@ test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고�
   assert.match(read("styles.css"), /\.dl-progress\{display:flex;align-items:center;gap:5px/u);
 });
 
-test("처음 쓰는 날도 줄 넣기 없이 09시부터 18시까지 기본 시간표가 열린다", () => {
+test("처음 쓰거나 임시 저장을 다시 연 날도 09시부터 18시까지 기본 시간표가 열린다", () => {
   const draft = appSource.slice(appSource.indexOf("function defaultDailyLogEntries"), appSource.indexOf("function myOpenOrders"));
   assert.match(draft, /Array\.from\(\{ length: 9 \}/u);
   assert.match(draft, /index \+ 9/u);
   assert.match(draft, /endHour = startHour \+ 1/u);
-  assert.match(draft, /entries: defaultDailyLogEntries\(date\)/u);
+  assert.match(draft, /function restoreDailyLogTimeGrid\(D, source, date\)/u);
+  assert.match(draft, /defaultDailyLogEntries\(date\)\.map/u);
+  assert.match(draft, /item\.start === slot\.start && item\.end === slot\.end/u);
+  assert.match(draft, /if \(!used\.has\(index\)\) entries\.push\(item\)/u, "기본 시간 밖의 기존 기록도 남겨야 한다");
   assert.match(draft, /const found = dailyLogState\.logs\.find/u);
-  assert.match(draft, /found \|\| \{/u, "저장된 일지는 기본 시간표로 덮어쓰면 안 된다");
+  assert.match(draft, /restoreDailyLogTimeGrid\(D, found \|\| \{/u, "저장된 일지도 빠진 시간만 복원해야 한다");
 
   const screenshot = mainSource.slice(
     mainSource.indexOf('BRING_CRM_SCREENSHOT_ACTION === "daily-log-fixed-times"'),
