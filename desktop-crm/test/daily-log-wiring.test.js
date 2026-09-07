@@ -144,6 +144,25 @@ test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고�
   assert.match(render, /data-dl-field="progress"/u);
 });
 
+test("처음 쓰는 날도 줄 넣기 없이 09시부터 18시까지 기본 시간표가 열린다", () => {
+  const draft = appSource.slice(appSource.indexOf("function defaultDailyLogEntries"), appSource.indexOf("function myOpenOrders"));
+  assert.match(draft, /Array\.from\(\{ length: 9 \}/u);
+  assert.match(draft, /index \+ 9/u);
+  assert.match(draft, /endHour = startHour \+ 1/u);
+  assert.match(draft, /entries: defaultDailyLogEntries\(date\)/u);
+  assert.match(draft, /const found = dailyLogState\.logs\.find/u);
+  assert.match(draft, /found \|\| \{/u, "저장된 일지는 기본 시간표로 덮어쓰면 안 된다");
+
+  const screenshot = mainSource.slice(
+    mainSource.indexOf('BRING_CRM_SCREENSHOT_ACTION === "daily-log-fixed-times"'),
+    mainSource.indexOf('BRING_CRM_SCREENSHOT_ACTION === "form-matrix"'),
+  );
+  assert.doesNotMatch(screenshot, /data-dl-add/u, "미리보기 검증이 줄 넣기를 대신 누르면 안 된다");
+  assert.match(screenshot, /renderedWithoutAddingRows: true/u);
+  assert.match(mainSource, /BRING_CRM_PREVIEW_VIEW === "dailyLog"/u);
+  assert.match(mainSource, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
+});
+
 test("AI 갈래가 서버·앱 양쪽에 다 등록돼 있다", () => {
   // 한쪽만 있으면 [초안 만들기] 가 UNSUPPORTED_TASK 로 죽는다.
   const worker = fs.readFileSync(path.join(__dirname, "../../crm-ai-worker/src/tasks.js"), "utf8");

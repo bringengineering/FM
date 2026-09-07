@@ -141,7 +141,10 @@ let applicationResourcesClosed = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, retryAt: 0, message: "" };
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
-const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
+// 실제 데이터와 분리된 화면을 프로그램 창으로 확인할 때만 쓰는 닫힌 경로다.
+// 제품 실행에서는 환경 변수가 없으므로 기존 로그인·저장 경로에 영향이 없다.
+const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog" ? "dailyLog" : "";
+const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
@@ -4454,7 +4457,9 @@ async function createWindow() {
     mainWindow = null;
   });
   await mainWindow.loadFile(path.join(__dirname, "index.html"), {
-    query: process.env.BRING_CRM_SCREENSHOT ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" } : {}
+    query: process.env.BRING_CRM_SCREENSHOT
+      ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" }
+      : (interactivePreviewView ? { demo: "1", view: interactivePreviewView } : {})
   });
 
   if (process.env.BRING_CRM_SMOKE === "1") {
@@ -7496,10 +7501,6 @@ async function createWindow() {
         await wait(180);
         window.__crmSmokeNavigate('dailyLog');
         await wait(220);
-        for (let index = 0; index < 9; index += 1) {
-          document.querySelector('[data-dl-add]')?.click();
-          await wait(35);
-        }
         [...document.querySelectorAll('.info-box')]
           .filter(node => node.textContent.includes("crm:daily-logs-load"))
           .forEach(node => node.remove());
@@ -7511,6 +7512,7 @@ async function createWindow() {
             && labels[0] === '오전 09:00' && labels[17] === '오후 06:00',
           fixedTimeCount: fixedTimes.length,
           editableTimeCount: editableTimes.length,
+          renderedWithoutAddingRows: true,
           first: labels[0] || '',
           last: labels[17] || '',
           state: window.__crmTest?.snapshot(),
