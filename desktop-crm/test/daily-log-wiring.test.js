@@ -126,9 +126,22 @@ test("화면이 친 것을 날짜를 옮길 때 챙긴다", () => {
 test("글자 칸은 칠 때마다 다시 그리지 않는다", () => {
   // change 는 칸을 떠날 때 온다. input 에 걸면 한 글자마다 다시 그려 커서가 튄다.
   const listener = appSource.slice(appSource.indexOf('if (event.target.matches("[data-dl-date]"))'), appSource.indexOf('if (event.target.matches("[data-dl-date]"))') + 1400);
-  assert.match(listener, /data-dl-field='start'/u);
+  assert.doesNotMatch(listener, /data-dl-field='start'|data-dl-field='end'/u);
   assert.ok(!listener.includes("data-dl-field='title'"), "글자 칸을 다시 그리면 커서가 튄다");
   assert.ok(!appSource.includes('data-dl-word="blockers" oninput'), "글자 칸을 다시 그리면 커서가 튄다");
+});
+
+test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고친다", () => {
+  const render = appSource.slice(appSource.indexOf("function dailyLogMine"), appSource.indexOf("function dailyLogTeamBoard"));
+  assert.match(appSource, /function dailyLogTimeLabel\(value\)/u);
+  assert.match(render, /class="dl-fixed-time"/u);
+  assert.match(render, /왼쪽 시간은 변경할 수 없습니다/u);
+  assert.doesNotMatch(render, />고정</u);
+  assert.doesNotMatch(render, /<input type="time"[^>]*data-dl-field="(?:start|end)"/u);
+  assert.match(render, /data-dl-field="title"/u);
+  assert.match(render, /data-dl-field="nature"/u);
+  assert.match(render, /data-dl-field="orderId"/u);
+  assert.match(render, /data-dl-field="progress"/u);
 });
 
 test("AI 갈래가 서버·앱 양쪽에 다 등록돼 있다", () => {
