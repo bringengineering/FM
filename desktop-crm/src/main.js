@@ -3354,6 +3354,30 @@ async function postToTelegram(botToken, chatId, body) {
  * 갖춰지지 않은 지시서는 보내지 않는다. 왜 하는지가 빈 지시서가 나가면 애들이
  * 헷갈리는 그 자리로 그대로 돌아간다.
  */
+// 고객에게 보낼 문구를 회사 텔레그램방에 올린다.
+//
+// 고객 번호로 바로 보내지 않는다. 알림톡 템플릿 심사가 끝나야 그 길이
+// 열린다. 그 전에 여기서 문자로 대신 보내면 정보성·광고성 구분 없이
+// 나가게 되고, 그건 과태료다. 지금은 사람이 카카오톡에 붙여 넣는다.
+async function sendCustomerNotice(input) {
+  requireTelegramAdmin();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const saved = await readTelegramSettings();
+  if (!saved || !saved.botToken || !saved.chatId) {
+    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
+  }
+  const body = TelegramCore.composeCustomerNotice({
+    buildingName: options.buildingName,
+    ownerName: options.ownerName,
+    ownerContact: options.ownerContact,
+    workDate: options.workDate,
+    body: options.body,
+  });
+  if (!body) return { ok: false, code: "NOTICE_EMPTY", error: "보낼 문구가 없습니다." };
+  await postToTelegram(saved.botToken, saved.chatId, body);
+  return { ok: true, sent: true };
+}
+
 async function sendTelegramDirective(input) {
   requireTelegramAdmin();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -7700,6 +7724,7 @@ secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSetting
 secureCanonicalHandle("crm:telegram-settings-forget", () => forgetTelegramSettings());
 secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContactAlert(input));
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
+secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

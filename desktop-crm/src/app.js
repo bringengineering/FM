@@ -205,6 +205,7 @@
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
     workReports: ["작업 종류를 고르면 항목이 깔립니다", "작업 결과보고서"],
+    customerNotices: ["끝났다고 건물주에게 알립니다", "고객 알림"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
@@ -1514,6 +1515,8 @@
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
+    // 들어온 것과 다시 그린 것은 다르다. 여기서만 다시 읽는다.
+    if (currentView !== lastRenderedView) refreshOnEnter(currentView);
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
@@ -1525,6 +1528,7 @@
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "workReports") renderWorkReports();
+    else if (currentView === "customerNotices") renderCustomerNotices();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -3555,7 +3559,12 @@
   // 견적서는 고객에게 보내는 서류라 CRM 폴더에 산다. AI 로 초안을 뽑는 것은
   // 그 안의 한 가지 방법일 뿐이라, AI 비서 탭에 숨어 있을 이유가 없었다.
   function renderQuotes() {
-    main.innerHTML = renderAiQuoteAssistant();
+    // 견적서를 만든 다음 무엇을 해야 하는지가 이 화면에 없었다. 그래서
+    // 결과보고서 화면에서 건물명·주소·건물주를 처음부터 다시 쳤다.
+    const handOff = aiAssistantState.quote
+      ? `<div class="df-handoff"><button type="button" class="primary-button" data-df-report>이 견적으로 결과보고서 만들기</button><small>건물명·주소·건물주·연락처·작업 종류가 그대로 넘어갑니다. 작업일과 작업자는 비워 둡니다.</small></div>`
+      : `<div class="df-handoff"><small>견적서를 만들면 그대로 결과보고서로 넘길 수 있습니다.</small></div>`;
+    main.innerHTML = docFlowStrip("quote") + handOff + renderAiQuoteAssistant();
     if (!aiAssistantState.supplierLoaded && !aiAssistantState.supplierLoading) void loadAiQuoteSupplier();
     if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading) void loadAiQuoteSeal();
   }
@@ -4148,7 +4157,13 @@
 
   const dailyLogCore = () => window.BringDailyLogCore;
 
-  async function loadDailyLogs(keepDraft) {
+  // resetDraft 를 켠 쪽만 초안을 버린다. 저장·확인 뒤에는 서버 것이 맞으니
+  // 버려야 하고, 그 밖의 다시 읽기는 **치던 것을 절대 건드리면 안 된다.**
+  //
+  // 이걸 거꾸로 두었다가 한 번 당했다. 화면에 들어오면 다시 읽는데, 그 응답이
+  // 돌아오는 사이에 사람이 [줄 넣기] 를 누르면 응답이 그 줄을 지웠다. 부르는
+  // 쪽이 "지금은 초안이 없다" 고 보고 부른 것이라, 판단을 부를 때 하면 늦는다.
+  async function loadDailyLogs(resetDraft) {
     if (dailyLogState.loading) return;
     dailyLogState.loading = true;
     dailyLogState.error = "";
@@ -4163,9 +4178,7 @@
       dailyLogState.loaded = true;
       dailyLogState.refreshedAt = Date.now();
       // 불러온 것으로 초안을 다시 잡는다. 저장하고 나면 서버 것이 맞다.
-      // 다만 아직 안 보낸 것을 치는 중이면 그대로 둔다. 새로고침이 남의 손처럼
-      // 쳐 놓은 것을 지우면 다음부터 아무도 안 쓴다.
-      if (!keepDraft) dailyLogState.draft = null;
+      if (resetDraft) dailyLogState.draft = null;
     } catch (error) {
       dailyLogState.error = error && error.message || "일지를 불러오지 못했습니다.";
     } finally {
@@ -4252,10 +4265,6 @@
   function renderDailyLog() {
     const D = dailyLogCore();
     if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>오늘</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    // 치던 것이 있으면 건드리지 않는다.
-    if (isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
-    // 줄마다 지시를 고르려면 지시 목록이 있어야 한다.
-    if (isStale(workOrderState)) void loadWorkOrders();
 
     const date = dailyLogDate();
     const draft = dailyLogDraft(D);
@@ -4491,7 +4500,7 @@
       await api.confirmDailyLog({ uid, date });
       dailyLogState.loaded = false;
       showToast("확인했습니다.", "success");
-      await loadDailyLogs();
+      await loadDailyLogs(true);
     } catch (error) {
       showToast(error && error.message || "확인하지 못했습니다.", "error");
     } finally {
@@ -4571,7 +4580,7 @@
       } else {
         showToast("저장했습니다. 아직 대표에게 가지 않았습니다.", "success");
       }
-      await loadDailyLogs();
+      await loadDailyLogs(true);
       workOrderState.loaded = false;
     } catch (error) {
       // 실패해도 친 것을 날리지 않는다. 다시 치게 하면 다음부터 안 쓴다.
@@ -4599,6 +4608,33 @@
     const minutes = Math.round(seconds / 60);
     return minutes < 60 ? `${minutes}분 전` : `${Math.round(minutes / 60)}시간 전`;
   }
+  // 사람이 무언가 치는 중이면 다시 읽지 않는다.
+  //
+  // 다시 읽으면 그 화면을 다시 그리는데, 다시 그리면 아직 상태로 안 옮긴
+  // 것 — 붙여 넣은 뭉치, 고치던 지시 — 이 화면에서 사라진다. 사라진 사람은
+  // 다시 붙여 넣지 않고 그냥 이 화면을 안 쓰게 된다.
+  function workOrderTyping() {
+    return Boolean(workOrderState.editing || workOrderState.projectEditing
+      || workOrderState.importOpen || workOrderState.importPlan || workOrderState.importSplit);
+  }
+
+  // 다시 읽는 것은 **화면에 들어올 때 한 번**이다.
+  //
+  // 그리는 함수 안에서 부르면 길이 스스로를 문다 — 다시 읽고, 다 읽으면
+  // 다시 그리고, 그리면서 또 읽을지 따진다. 어느 순서로 끝나는지는 그날
+  // 기계가 얼마나 바쁜지에 달리고, 그 사이에 사람이 친 것이 남는지도 같이
+  // 달린다. 실제로 CI 에서 「오늘」 화면에 사람이 안 친 줄이 아홉 개 떴다.
+  //
+  // 들어올 때 한 번이면 그런 것이 없다. 화면에 머무는 동안 새로 온 것은
+  // [새로고침] 이 있다.
+  function refreshOnEnter(view) {
+    if (view === "workOrders" || view === "dailyLog") {
+      if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
+    }
+    // 치던 것이 있으면 건드리지 않는다.
+    if (view === "dailyLog" && isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
+  }
+
   function refreshButton(state, action) {
     const when = freshLabel(state);
     return `<button type="button" class="mini-button" data-live-refresh="${action}"${state.loading ? " disabled" : ""}>새로고침${when ? ` <small>· ${esc(when)}</small>` : ""}</button>`;
@@ -4674,7 +4710,6 @@
     const W = workOrderCore();
     const P = projectCore();
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (isStale(workOrderState) && !workOrderState.editing && !workOrderState.projectEditing) void loadWorkOrders();
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
@@ -5900,6 +5935,154 @@
     return { vendorNames: vendors, vendorAmounts: [], privateMemos: [] };
   }
 
+  // --- 문서관리 한 줄 (견적서 → 결과보고서 → 고객 알림) ---
+  //
+  // 세 장이 남남이면 같은 것을 세 번 적게 된다. 앞 장이 아는 것을 뒷 장이
+  // 물려받게 하고, 어디까지 왔는지를 세 화면 모두 위에 같은 모양으로 둔다.
+  let docFlowState = {
+    quote: null,      // 견적서 화면에서 넘긴 것
+    report: null,     // 결과보고서 화면에서 고른 것
+    notice: null,     // 만든 문구
+    sending: false,
+    sentAt: "",
+  };
+
+  const docFlowCore = () => window.BringDocFlowCore;
+  const notifyCore = () => window.BringNotifyCore;
+
+  function docFlowStrip(currentKey) {
+    const F = docFlowCore();
+    if (!F) return "";
+    const chain = F.chain(docFlowState);
+    const label = {
+      quote: docFlowState.quote ? `${docFlowState.quote.projectName || docFlowState.quote.recipient || "견적"}` : "아직 없음",
+      report: docFlowState.report ? `${docFlowState.report.buildingName || "건물 미지정"}` : "아직 없음",
+      notice: docFlowState.sentAt ? `보냄 ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}` : (docFlowState.notice ? "문구 만듦" : "아직 없음"),
+    };
+    return `<section class="df-strip">
+      <ol>${chain.steps.map(step => `<li class="${step.done ? "is-done" : ""}${step.key === currentKey ? " is-here" : ""}${step.ready ? "" : " is-locked"}">
+        <button type="button" data-df-go="${esc(step.view)}"${step.ready ? "" : " disabled"}>
+          <b>${step.no}</b>
+          <span>${esc(step.label)}</span>
+          <small>${label[step.key]}</small>
+        </button>
+      </li>`).join("")}</ol>
+      <p>${esc(chain.next ? `다음: ${chain.next.label} — ${chain.next.hint}` : "세 장이 다 끝났습니다.")}</p>
+    </section>`;
+  }
+
+  // 견적서에서 결과보고서로 넘긴다. 만드는 것은 사람이 누른다 — 견적을 낼
+  // 때마다 보고서가 생기면 안 한 일의 보고서가 쌓인다.
+  function handOffQuoteToReport() {
+    const F = docFlowCore();
+    const R = reportCore();
+    const quote = aiAssistantState.quote;
+    if (!F || !R) { showToast("모듈을 불러오지 못했습니다.", "error"); return; }
+    if (!quote) { showToast("먼저 견적서를 만들어 주세요.", "error"); return; }
+    if (!reportState.canWork) { showToast("결과보고서를 만들 권한이 없습니다.", "error"); return; }
+    const { seed, missing, matched } = F.reportSeedFromQuote(quote);
+    docFlowState.quote = quote;
+    reportState.draft = R.normalizeReport(seed);
+    reportState.selectedId = "";
+    currentView = "workReports";
+    render();
+    const notice = [];
+    if (!matched) notice.push("작업 종류를 못 맞춰 ‘특수·기타’ 로 열었습니다");
+    if (missing.length) notice.push(`${missing.join("·")} 을(를) 채워 주세요`);
+    showToast(notice.length ? `견적서에서 옮겼습니다. ${notice.join(" · ")}.` : "견적서에서 옮겼습니다.", notice.length ? "info" : "success");
+  }
+
+  // 결과보고서에서 고객 알림으로 넘긴다.
+  function handOffReportToNotice(reportId) {
+    const F = docFlowCore();
+    const N = notifyCore();
+    if (!F || !N) { showToast("모듈을 불러오지 못했습니다.", "error"); return; }
+    const report = reportState.reports.find(item => item && item.id === reportId)
+      || (reportState.draft && reportState.draft.id === reportId ? reportState.draft : null);
+    if (!report) { showToast("보고서를 찾지 못했습니다.", "error"); return; }
+    docFlowState.report = report;
+    docFlowState.notice = N.draftFor("result", F.noticeValuesFromReport(report));
+    docFlowState.sentAt = "";
+    currentView = "customerNotices";
+    render();
+  }
+
+  function renderCustomerNotices() {
+    const F = docFlowCore();
+    const N = notifyCore();
+    if (!F || !N) { main.innerHTML = `<section class="operations-hero"><div><h2>고객 알림</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    const report = docFlowState.report;
+    const notice = docFlowState.notice;
+    const body = notice ? notice.body : "";
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>문서관리</span><h2>고객 알림</h2><p>작업이 끝났다는 것을 건물주에게 알립니다. 문구는 단계가 정하고, 보낼지는 사람이 정합니다.</p></div>
+      </section>
+      ${docFlowStrip("notice")}
+      ${report ? `<section class="office-panel">
+        <header><div><span>NOTICE</span><h3>${esc(report.buildingName || "건물 미지정")}</h3></div><small>${esc(report.workDate || "작업일 미기재")} · ${esc(report.ownerName || "건물주 미기재")}</small></header>
+        <div class="df-notice">
+          <label><span>보낼 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
+          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 보내기 전에 고쳐 주세요.</p>` : ""}
+          <dl class="df-meta">
+            <div><dt>받는 사람</dt><dd>${esc(report.ownerName || "미기재")}</dd></div>
+            <div><dt>연락처</dt><dd>${esc(report.ownerContact || "미기재")}</dd></div>
+            <div><dt>단계 문구</dt><dd>${esc(notice ? notice.title : "-")}</dd></div>
+          </dl>
+          <div class="df-actions">
+            <button type="button" class="secondary-button" data-df-copy>문구 복사</button>
+            <button type="button" class="primary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 보내기</button>
+          </div>
+          ${docFlowState.sentAt ? `<p class="office-muted">보냈습니다 · ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}</p>` : ""}
+        </div>
+      </section>` : `<section class="office-panel"><div class="office-empty">
+        <b>아직 고른 보고서가 없습니다</b>
+        <span>작업 결과보고서 목록에서 ‘고객 알림’ 을 누르면 그 보고서로 문구를 만듭니다.</span>
+      </div></section>`}
+      <section class="office-panel">
+        <header><div><span>NOTE</span><h3>카카오 알림톡은 아직 못 보냅니다</h3></div></header>
+        <div class="df-note">
+          <p>알림톡 템플릿 심사가 끝나야 고객 번호로 바로 나갑니다. 그 전까지는 <b>회사 텔레그램방으로 문구를 보내고, 사람이 카카오톡에 붙여 넣습니다.</b></p>
+          <p class="office-muted">심사가 끝나면 이 화면의 [보내기] 가 고객 번호로 바로 나가게 바뀝니다. 문구와 단계는 그대로 씁니다.</p>
+        </div>
+      </section>`;
+  }
+
+  async function sendCustomerNotice() {
+    if (docFlowState.sending) return;
+    const report = docFlowState.report;
+    const field = document.querySelector("[data-df-body]");
+    const body = field ? String(field.value || "").trim() : "";
+    if (!report) { showToast("먼저 보고서를 골라 주세요.", "error"); return; }
+    if (!body) { showToast("보낼 문구가 비어 있습니다.", "error"); return; }
+    const confirmed = await requestConfirmation({
+      title: "회사 텔레그램으로 보냅니다",
+      description: "고객에게 바로 가지 않습니다. 회사방에 문구가 올라가고, 사람이 카카오톡에 붙여 넣습니다.",
+      target: `${report.buildingName || "건물 미지정"} · ${report.ownerName || "건물주 미기재"}`,
+      confirmLabel: "보내기",
+    });
+    if (!confirmed) return;
+    docFlowState.sending = true;
+    render();
+    try {
+      const result = await api.sendCustomerNotice({
+        buildingName: report.buildingName,
+        ownerName: report.ownerName,
+        ownerContact: report.ownerContact,
+        workDate: report.workDate,
+        body,
+      });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "보내지 못했습니다.");
+      docFlowState.sentAt = new Date().toISOString();
+      showToast("회사 텔레그램방으로 보냈습니다.", "success");
+    } catch (error) {
+      showToast(error && error.message || "보내지 못했습니다.", "error");
+    } finally {
+      docFlowState.sending = false;
+      render();
+    }
+  }
+
   function renderWorkReports() {
     const R = reportCore();
     if (!R) { main.innerHTML = `<section class="operations-hero"><div><h2>결과보고서</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
@@ -5925,6 +6108,7 @@
           ${reportState.canWork ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">고치기</button>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
+          <button type="button" class="mini-button" data-df-notice="${esc(item.id)}">고객 알림</button>
         </td>
       </tr>`;
     }).join("");
@@ -5933,6 +6117,7 @@
         <div><span>문서관리</span><h2>작업 결과보고서</h2><p>작업 종류를 고르면 항목이 깔립니다. 사람은 항목마다 전·후 사진만 붙이면 됩니다.</p></div>
         <div class="operations-actions">${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>새 보고서</button>` : ""}</div>
       </section>
+      ${docFlowStrip("report")}
       ${status}
       <div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
@@ -10421,12 +10606,27 @@
       }
       return;
     }
+    const dfGo = event.target.closest("[data-df-go]");
+    if (dfGo) { currentView = dfGo.dataset.dfGo; render(); return; }
+    if (event.target.closest("[data-df-report]")) { handOffQuoteToReport(); return; }
+    const dfNotice = event.target.closest("[data-df-notice]");
+    if (dfNotice) { handOffReportToNotice(dfNotice.dataset.dfNotice); return; }
+    if (event.target.closest("[data-df-copy]")) {
+      const field = document.querySelector("[data-df-body]");
+      const body = field ? String(field.value || "") : "";
+      if (!body) { showToast("복사할 문구가 없습니다.", "error"); return; }
+      void navigator.clipboard.writeText(body)
+        .then(() => showToast("문구를 복사했습니다. 카카오톡에 붙여 넣으세요.", "success"))
+        .catch(() => showToast("복사하지 못했습니다. 문구를 직접 선택해 주세요.", "error"));
+      return;
+    }
+    if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
       if (liveRefresh.dataset.liveRefresh === "dailyLog") {
         // 치던 것은 그대로 둔다. 새로고침이 손으로 친 것을 지우면 안 된다.
         const typing = Boolean(dailyLogState.draft);
-        void loadDailyLogs(typing).then(() => {
+        void loadDailyLogs().then(() => {
           showToast(typing ? "다시 불러왔습니다. 치던 것은 그대로 뒀습니다." : "다시 불러왔습니다.", "success");
         });
       } else {
@@ -14253,7 +14453,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
