@@ -788,23 +788,25 @@ describe("desktop CRM screens actually render", () => {
     expect(shown()).toContain("일일 업무일지");
     // 오늘은 아직 안 썼다. 어제 것이 딸려 오면 날짜를 잘못 고른 것이다.
     expect(shown()).toContain("아직 안 보냄");
-    expect(shown()).toContain("아직 한 줄도 없습니다");
-
-    // 줄을 하나 넣는다.
-    (booted.document.querySelector("[data-dl-add]") as HTMLElement).click();
-    await sleep(150);
+    // 빈 하루는 09:00~18:00 한 시간짜리 아홉 줄로 열린다. 매일 [줄 넣기] 를
+    // 아홉 번 눌러야 같은 화면이 되면 아무도 안 쓴다.
+    expect(shown()).toContain("오전 09:00");
+    expect(shown()).toContain("오후 06:00");
+    expect(shown()).toContain("왼쪽 시간은 변경할 수 없습니다");
     const titles = [...booted.document.querySelectorAll('[data-dl-field="title"]')] as HTMLInputElement[];
-    expect(titles.length).toBe(1);
-    titles[0].value = "3층 누수 확인";
-    const starts = booted.document.querySelector('[data-dl-field="start"]') as HTMLInputElement;
-    const ends = booted.document.querySelector('[data-dl-field="end"]') as HTMLInputElement;
-    starts.value = "09:00";
-    ends.value = "13:00";
-    // 지시를 고르면 그 시간이 "시킨 일 밖" 에서 빠져야 한다.
-    const orderPick = booted.document.querySelector('[data-dl-field="orderId"]') as HTMLSelectElement;
-    const mine = [...orderPick.options].find(option => option.textContent === "지난 것");
+    expect(titles.length, "아홉 줄이 깔려 있어야 한다").toBe(9);
+    // 시간 칸은 고치는 것이 아니다. 고칠 수 있으면 09:00~18:00 이 뜻을 잃는다.
+    expect(booted.document.querySelector('[data-dl-field="start"]'), "시간 칸은 입력이 아니다").toBeNull();
+
+    // 앞의 네 줄에 적는다. 한 줄이 한 시간이니 네 줄이면 네 시간이다.
+    const picks = [...booted.document.querySelectorAll('[data-dl-field="orderId"]')] as HTMLSelectElement[];
+    const mine = [...picks[0].options].find(option => option.textContent === "지난 것");
     expect(mine, "내가 물고 있는 지시가 골라져야 한다").toBeTruthy();
-    orderPick.value = mine!.value;
+    for (let index = 0; index < 4; index += 1) {
+      titles[index].value = "3층 누수 확인";
+      // 네 줄 다 지시에 붙인다. 안 붙이면 그 시간이 "시킨 일 밖" 으로 잡힌다.
+      picks[index].value = mine!.value;
+    }
     const progress = booted.document.querySelector('[data-dl-field="progress"]') as HTMLInputElement;
     progress.value = "80";
     // change 는 칸을 떠날 때 온다 — 글자 칸은 안 걸려서 커서가 안 튄다.
@@ -822,10 +824,11 @@ describe("desktop CRM screens actually render", () => {
     expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
     const body = sent!.input as { submit: boolean; date: string; entries: Array<{ title: string; start: string; end: string; orderId: string; progress: number }> };
     expect(body.submit, "보내기는 저장과 다르다").toBe(true);
-    expect(body.entries.length).toBe(1);
+    // 적은 네 줄만 간다. 안 적은 다섯 줄은 보낼 것이 없다.
+    expect(body.entries.length).toBe(4);
     expect(body.entries[0].title).toBe("3층 누수 확인");
     expect(body.entries[0].start).toBe("09:00");
-    expect(body.entries[0].end).toBe("13:00");
+    expect(body.entries[3].end).toBe("13:00");
     expect(body.entries[0].progress).toBe(80);
     expect(body.entries[0].orderId).toBe("o1");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
@@ -914,14 +917,14 @@ describe("desktop CRM screens actually render", () => {
     back.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
     await sleep(200);
 
-    // 한 줄 적는다. 아무것도 없으면 초안을 만들 것도 없다.
-    (booted.document.querySelector("[data-dl-add]") as HTMLElement).click();
-    await sleep(150);
-    (booted.document.querySelector('[data-dl-field="title"]') as HTMLInputElement).value = "3층 누수 확인";
-    (booted.document.querySelector('[data-dl-field="start"]') as HTMLInputElement).value = "09:00";
-    (booted.document.querySelector('[data-dl-field="end"]') as HTMLInputElement).value = "13:00";
-    const orderPick = booted.document.querySelector('[data-dl-field="orderId"]') as HTMLSelectElement;
-    orderPick.value = ([...orderPick.options].find(option => option.textContent === "지난 것") as HTMLOptionElement).value;
+    // 네 줄 적는다. 아무것도 없으면 초안을 만들 것도 없다.
+    const dlTitles = [...booted.document.querySelectorAll('[data-dl-field="title"]')] as HTMLInputElement[];
+    const dlPicks = [...booted.document.querySelectorAll('[data-dl-field="orderId"]')] as HTMLSelectElement[];
+    const dlOrder = ([...dlPicks[0].options].find(option => option.textContent === "지난 것") as HTMLOptionElement).value;
+    for (let index = 0; index < 4; index += 1) {
+      dlTitles[index].value = "3층 누수 확인";
+      dlPicks[index].value = dlOrder;
+    }
     (booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement).value = "건물주가 전화를 안 받습니다.";
 
     const before = booted.calls.length;
