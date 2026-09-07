@@ -198,6 +198,7 @@
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "오늘"],
+    projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
@@ -1524,6 +1525,7 @@
     else if (currentView === "growth") renderGrowth();
     else if (currentView === "objectives") renderObjectives();
     else if (currentView === "dailyLog") renderDailyLog();
+    else if (currentView === "projectRoadmap") renderProjectRoadmap();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
@@ -4648,6 +4650,9 @@
   // 들어올 때 한 번이면 그런 것이 없다. 화면에 머무는 동안 새로 온 것은
   // [새로고침] 이 있다.
   function refreshOnEnter(view) {
+    if (view === "projectRoadmap") {
+      if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
+    }
     if (view === "workOrders" || view === "dailyLog") {
       if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
     }
@@ -4681,6 +4686,7 @@
     workOrderState.loading = true;
     workOrderState.error = "";
     if (currentView === "workOrders") renderWorkOrders();
+    else if (currentView === "projectRoadmap") renderProjectRoadmap();
     try {
       const data = await api.loadWorkOrders();
       workOrderState.orders = Array.isArray(data && data.orders) ? data.orders : [];
@@ -4695,11 +4701,21 @@
       workOrderState.loaded = true;
       workOrderState.refreshedAt = Date.now();
     } catch (error) {
-      workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
+      // 자동 화면검증은 실제 회사 자료에 닿지 않는다. 로드맵 미리보기에서만
+      // 닫힌 견본을 넣어 프로그램 화면 그대로 확인한다.
+      if (currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
+        Object.assign(workOrderState, projectRoadmapPreviewPayload());
+        workOrderState.loaded = true;
+        workOrderState.error = "";
+        workOrderState.refreshedAt = Date.now();
+      } else {
+        workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
+      }
     } finally {
       workOrderState.loading = false;
       updateWorkOrderBadge();
       if (currentView === "workOrders") renderWorkOrders();
+      else if (currentView === "projectRoadmap") renderProjectRoadmap();
       // 「오늘」 은 줄마다 지시를 고른다. 지시가 새로 왔는데 그 화면을 다시
       // 그리지 않으면, 방금 받은 지시가 고를 목록에 없다.
       else if (currentView === "dailyLog" && !dailyLogState.loading) renderDailyLog();
@@ -4725,6 +4741,201 @@
   }
 
   const projectCore = () => window.BringProjectCore;
+
+  let projectRoadmapState = {
+    mode: "people",
+    rangeShift: 0,
+    selectedKey: "",
+  };
+
+  function projectRoadmapPreviewPayload() {
+    const W = workOrderCore();
+    const P = projectCore();
+    const today = todayKey();
+    const members = [
+      { uid: "local-admin", displayName: "김민서" },
+      { uid: "preview-park", displayName: "박서연" },
+      { uid: "preview-lee", displayName: "이준호" },
+      { uid: "preview-choi", displayName: "최도윤" },
+    ];
+    const projects = [
+      { id: "preview-crm", name: "CRM 고도화", owner: "김민서", goal: "고객·건물 업무를 한 화면에서 더 빠르게 처리합니다." },
+      { id: "preview-ops", name: "원룸 운영 표준화", owner: "최도윤", goal: "현장 운영 절차와 결과보고 기준을 하나로 맞춥니다." },
+      { id: "preview-docs", name: "문서 자동화", owner: "박서연", goal: "반복 작성하는 견적·보고 문서를 자동화합니다." },
+      { id: "preview-alert", name: "고객 알림 자동화", owner: "이준호", goal: "진행 단계에 맞춰 고객 안내를 놓치지 않게 합니다." },
+    ].map(item => P.normalizeProject(Object.assign(item, { status: "active", startDate: P.addDays(today, -24), endDate: P.addDays(today, 42) })));
+    const make = (id, title, projectId, uid, start, end, progress, status, updated) => W.normalizeOrder({
+      id, title, projectId, assigneeUid: uid,
+      assigneeName: (members.find(item => item.uid === uid) || {}).displayName || uid,
+      startDate: P.addDays(today, start), dueDate: P.addDays(today, end), progress, status,
+      why: "현재 프로젝트 일정에 필요한 업무입니다.", what: title, doneWhen: "검토 가능한 결과가 등록되면 끝납니다.",
+      hours: 4, updatedAt: `${P.addDays(today, updated)}T09:00:00.000Z`, createdAt: `${P.addDays(today, start)}T09:00:00.000Z`, updatedBy: uid,
+    });
+    const orders = [
+      make("preview-1", "고객 검색 개선", "preview-crm", "local-admin", -20, 8, 68, "doing", -1),
+      make("preview-2", "원룸 운영 체크리스트", "preview-ops", "local-admin", 14, 34, 0, "assigned", -4),
+      make("preview-3", "견적서 품목 자동 작성", "preview-docs", "preview-park", -10, 12, 42, "doing", 0),
+      make("preview-4", "CRM 화면 검수", "preview-crm", "preview-park", -1, 19, 25, "doing", 0),
+      make("preview-5", "업무지시 연동", "preview-crm", "preview-lee", -6, 19, 35, "doing", -2),
+      make("preview-6", "고객 진행 알림", "preview-alert", "preview-lee", 17, 38, 10, "assigned", -3),
+      make("preview-7", "현장 운영 기준 정리", "preview-ops", "preview-choi", -17, 21, 82, "submitted", 0),
+    ];
+    return { orders, projects, members, capacity: [], directives: [], admin: true, canWork: true, uid: "local-admin" };
+  }
+
+  function renderWorkOrderSurface() {
+    if (currentView === "projectRoadmap") renderProjectRoadmap();
+    else renderWorkOrders();
+  }
+
+  function roadmapInitials(value) {
+    const name = String(value || "").trim();
+    if (!name) return "?";
+    return name.replace(/\s+/gu, "").slice(0, 2);
+  }
+
+  function roadmapDate(value) {
+    const text = String(value || "");
+    return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? `${Number(text.slice(5, 7))}.${String(Number(text.slice(8, 10))).padStart(2, "0")}` : "미정";
+  }
+
+  function roadmapDetail(W, P, assignment, today) {
+    if (!assignment) {
+      return `<section class="roadmap-detail is-empty"><b>프로젝트 막대를 선택해 주세요</b><span>담당 일정과 최근 진행사항이 여기에 표시됩니다.</span></section>`;
+    }
+    const ids = new Set(assignment.orderIds);
+    const orders = workOrderState.orders
+      .filter(item => ids.has(item.id))
+      .slice()
+      .sort((a, b) => (a.startDate || a.dueDate || "9999").localeCompare(b.startDate || b.dueDate || "9999"));
+    const project = P.sortProjects(workOrderState.projects).find(item => item.id === assignment.projectId);
+    const recent = P.recentProgress(workOrderState.orders, assignment.orderIds, 6);
+    const open = orders.filter(item => P.OPEN_STATUSES.includes(item.status));
+    const next = open.filter(item => !item.dueDate || item.dueDate >= today);
+    const memberName = uid => {
+      const member = workOrderState.members.find(item => item && item.uid === uid);
+      return member ? (member.displayName || member.email || member.uid) : "담당자";
+    };
+
+    const scheduleRows = orders.map(order => {
+      const mine = order.assigneeUid === workOrderState.uid;
+      const writable = workOrderState.canWork && (workOrderState.admin || mine) && order.status !== "done";
+      return `<article class="roadmap-schedule-row${W.overdue(order, today) ? " is-late" : ""}">
+        <div><b>${esc(order.title)}</b><span>${esc(order.assigneeName || "담당자 없음")} · ${esc(roadmapDate(order.startDate))} ~ ${esc(roadmapDate(order.dueDate))}</span></div>
+        <span class="roadmap-status status-${esc(order.status)}">${esc(W.statusLabel(order.status))}</span>
+        <div class="roadmap-row-progress"><i><b style="width:${order.progress}%"></b></i><strong>${order.progress}%</strong></div>
+        ${writable ? `<label class="roadmap-progress-input"><span>진행률</span><input type="number" min="0" max="100" step="5" value="${order.progress}" data-wo-progress="${esc(order.id)}"><b>%</b></label>` : ""}
+        ${workOrderState.admin && order.status !== "done" ? `<button type="button" class="mini-button" data-wo-edit="${esc(order.id)}">수정</button>` : ""}
+      </article>`;
+    }).join("");
+
+    const recentRows = recent.map(order => {
+      const when = String(order.updatedAt || order.createdAt || "").slice(0, 10) || "날짜 미정";
+      const actor = order.updatedBy ? memberName(order.updatedBy) : (order.assigneeName || "담당자");
+      const note = order.reviewNote
+        ? `다시 요청: ${order.reviewNote}`
+        : (order.results && order.results.length ? `결과물 ${order.results.length}건 · ${W.statusLabel(order.status)}` : `${W.statusLabel(order.status)} · 진행률 ${order.progress}%`);
+      return `<li><time>${esc(when)}</time><i></i><div><b>${esc(order.title)}</b><span>${esc(note)}</span><small>${esc(actor)}</small></div></li>`;
+    }).join("");
+
+    return `<section class="roadmap-detail">
+      <header>
+        <div><span>선택한 프로젝트</span><h3>${esc(assignment.projectName)}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>평균 진행률</span></div>
+      </header>
+      <div class="roadmap-detail-grid">
+        <section>
+          <div class="roadmap-section-head"><div><b>일정과 현재 진행</b><span>진행 중 ${open.length}건 · 앞으로 ${next.length}건</span></div>${workOrderState.admin ? `<button type="button" class="mini-button" data-roadmap-new data-project-id="${esc(assignment.projectId)}" data-assignee-uid="${esc(assignment.assigneeUid)}">＋ 다음 일정</button>` : ""}</div>
+          <div class="roadmap-schedule-list">${scheduleRows || `<p class="roadmap-empty">연결된 일정이 없습니다.</p>`}</div>
+        </section>
+        <section>
+          <div class="roadmap-section-head"><div><b>최근 진행사항</b><span>업무지시에서 변경된 최신 순서</span></div></div>
+          <ol class="roadmap-updates">${recentRows || `<li class="roadmap-empty">아직 진행 기록이 없습니다.</li>`}</ol>
+        </section>
+      </div>
+    </section>`;
+  }
+
+  function renderProjectRoadmap() {
+    const W = workOrderCore();
+    const P = projectCore();
+    if (!W || !P) {
+      main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트 로드맵</h2><p>로드맵 모듈을 불러오지 못했습니다.</p></div></section>`;
+      return;
+    }
+    const today = todayKey();
+    const range = P.roadmapRange(today, projectRoadmapState.rangeShift);
+    const mine = projectRoadmapState.mode === "mine" ? workOrderState.uid : "";
+    const mode = projectRoadmapState.mode === "projects" ? "projects" : "people";
+    const lanes = P.roadmapRows({
+      orders: workOrderState.orders,
+      projects: workOrderState.projects,
+      members: workOrderState.members,
+      range,
+      mode,
+      mineUid: mine,
+    });
+    const assignments = lanes.flatMap(lane => lane.assignments);
+    let selected = assignments.find(item => item.key === projectRoadmapState.selectedKey) || assignments[0] || null;
+    projectRoadmapState.selectedKey = selected ? selected.key : "";
+    const visibleOrderIds = new Set(assignments.flatMap(item => item.orderIds));
+    const visibleOrders = workOrderState.orders.filter(item => visibleOrderIds.has(item.id));
+    const summary = P.summarize(visibleOrders, today);
+    const todayLine = P.todayOffset(range, today);
+    const rangeLabel = range ? `${range.from.slice(0, 7).replace("-", "년 ")}월 ~ ${range.to.slice(0, 7).replace("-", "년 ")}월` : "";
+    const status = workOrderState.loading
+      ? `<div class="info-box">프로젝트와 일정을 불러오는 중…</div>`
+      : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
+    const projectCount = new Set(visibleOrders.map(item => item.projectId).filter(Boolean)).size;
+
+    const laneHtml = lanes.map((lane, laneIndex) => {
+      const bars = lane.assignments.map((assignment, index) => {
+        const box = P.roadmapLayout(assignment, range);
+        const label = mode === "people" ? assignment.projectName : assignment.assigneeName;
+        if (!box) {
+          return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
+        }
+        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%`)}">
+          <i style="width:${assignment.progress}%"></i><span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
+        </button>`;
+      }).join("");
+      const laneOpen = lane.assignments.reduce((sum, item) => sum + item.open, 0);
+      const laneProgress = lane.assignments.length ? Math.round(lane.assignments.reduce((sum, item) => sum + item.progress, 0) / lane.assignments.length) : 0;
+      const addUid = mode === "people" ? lane.key : "";
+      const addProject = mode === "projects" ? lane.key : "";
+      const height = Math.max(70, 22 + Math.max(1, lane.assignments.length) * 46);
+      return `<article class="roadmap-lane" style="--lane-height:${height}px">
+        <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div><b>${esc(lane.label)}</b><small>${lane.assignments.length}개 프로젝트 · 진행 ${laneOpen}건</small><span><i style="width:${laneProgress}%"></i></span></div></div>
+        <div class="roadmap-lane-track">${range.weeks.map(() => "<i></i>").join("")}${todayLine === null ? "" : `<span class="roadmap-today-line" style="left:${todayLine.toFixed(3)}%"></span>`}${bars}${workOrderState.admin ? `<button type="button" class="roadmap-lane-add" data-roadmap-new data-project-id="${esc(addProject === "__none" ? "" : addProject)}" data-assignee-uid="${esc(addUid === "__none" ? "" : addUid)}">＋ 일정</button>` : ""}</div>
+      </article>`;
+    }).join("");
+
+    main.innerHTML = `<section class="operations-hero roadmap-hero">
+        <div><span>PROJECT ROADMAP</span><h2>담당자와 프로젝트 진행을 한눈에 봅니다</h2><p>막대는 업무지시의 실제 일정과 진행률입니다. 막대를 누르면 현재 진행과 다음 일정을 이어서 확인할 수 있습니다.</p></div>
+        <div class="operations-actions">${refreshButton(workOrderState, "projectRoadmap")}${workOrderState.admin ? `<button type="button" class="primary-button" data-roadmap-new>＋ 일정 추가</button>` : ""}</div>
+      </section>
+      ${status}
+      ${workOrderState.editing ? workOrderEditor(W, P, P.sortProjects(workOrderState.projects)) : ""}
+      <section class="roadmap-summary">
+        <article><span>진행 프로젝트</span><b>${projectCount}</b><small>현재 화면 기간</small></article>
+        <article><span>진행 일정</span><b>${summary.open}</b><small>전체 ${summary.total}건</small></article>
+        <article class="is-warning"><span>기한 지남</span><b>${summary.overdue}</b><small>먼저 확인</small></article>
+        <article class="is-progress"><span>평균 진행률</span><b>${summary.progress}%</b><small>완료 ${summary.done}건</small></article>
+      </section>
+      <section class="roadmap-board">
+        <header class="roadmap-toolbar">
+          <div class="roadmap-modes" role="tablist" aria-label="로드맵 보기 기준">
+            <button type="button" class="${projectRoadmapState.mode === "people" ? "is-active" : ""}" data-roadmap-mode="people">담당자 기준</button>
+            <button type="button" class="${projectRoadmapState.mode === "projects" ? "is-active" : ""}" data-roadmap-mode="projects">프로젝트 기준</button>
+            <button type="button" class="${projectRoadmapState.mode === "mine" ? "is-active" : ""}" data-roadmap-mode="mine">내 일정만</button>
+          </div>
+          <div class="roadmap-period"><button type="button" data-roadmap-shift="-1" aria-label="이전 기간">‹</button><b>${esc(rangeLabel)}</b><button type="button" data-roadmap-shift="1" aria-label="다음 기간">›</button><button type="button" data-roadmap-today>오늘로 이동</button></div>
+        </header>
+        <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.weeks.map(week => `<span>${esc(week.label)}</span>`).join("")}</div></div>
+        <div class="roadmap-lanes">${laneHtml || `<div class="roadmap-no-lanes"><b>이 기간에 표시할 일정이 없습니다.</b><span>일정을 추가하거나 앞뒤 기간으로 이동해 주세요.</span></div>`}</div>
+      </section>
+      ${roadmapDetail(W, P, selected, today)}`;
+  }
 
   function renderWorkOrders() {
     const W = workOrderCore();
@@ -5683,7 +5894,7 @@
       showToast(error && error.message || "시간표를 저장하지 못했습니다.", "error");
     } finally {
       workOrderState.busyId = "";
-      renderWorkOrders();
+      renderWorkOrderSurface();
     }
   }
 
@@ -10654,21 +10865,68 @@
       }
       return;
     }
+    const roadmapMode = event.target.closest("[data-roadmap-mode]");
+    if (roadmapMode) {
+      const mode = roadmapMode.dataset.roadmapMode;
+      projectRoadmapState.mode = ["people", "projects", "mine"].includes(mode) ? mode : "people";
+      projectRoadmapState.selectedKey = "";
+      renderProjectRoadmap();
+      return;
+    }
+    const roadmapShift = event.target.closest("[data-roadmap-shift]");
+    if (roadmapShift) {
+      projectRoadmapState.rangeShift += Number(roadmapShift.dataset.roadmapShift) || 0;
+      projectRoadmapState.selectedKey = "";
+      renderProjectRoadmap();
+      return;
+    }
+    if (event.target.closest("[data-roadmap-today]")) {
+      projectRoadmapState.rangeShift = 0;
+      projectRoadmapState.selectedKey = "";
+      renderProjectRoadmap();
+      return;
+    }
+    const roadmapSelect = event.target.closest("[data-roadmap-select]");
+    if (roadmapSelect) {
+      projectRoadmapState.selectedKey = roadmapSelect.dataset.roadmapSelect;
+      renderProjectRoadmap();
+      document.querySelector(".roadmap-detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    const roadmapNew = event.target.closest("[data-roadmap-new]");
+    if (roadmapNew) {
+      if (!workOrderState.admin) return showToast("일정 추가는 관리자만 할 수 있습니다.", "error");
+      const W = workOrderCore();
+      const P = projectCore();
+      if (!W || !P) return;
+      const assigneeUid = String(roadmapNew.dataset.assigneeUid || "");
+      const member = workOrderState.members.find(item => item && item.uid === assigneeUid);
+      workOrderState.editing = W.normalizeOrder({
+        projectId: String(roadmapNew.dataset.projectId || ""),
+        assigneeUid,
+        assigneeName: member ? (member.displayName || member.email || member.uid) : "",
+        startDate: todayKey(),
+        dueDate: P.addDays(todayKey(), 6),
+      });
+      renderProjectRoadmap();
+      document.querySelector("[data-wo-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     const woScope = event.target.closest("[data-wo-scope]");
     if (woScope) { workOrderState.scope = woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-new]")) {
       const W = workOrderCore();
-      if (W) { workOrderState.editing = W.normalizeOrder({}); renderWorkOrders(); }
+      if (W) { workOrderState.editing = W.normalizeOrder({}); renderWorkOrderSurface(); }
       return;
     }
     const woEdit = event.target.closest("[data-wo-edit]");
     if (woEdit) {
       const W = workOrderCore();
       const found = W && workOrderState.orders.find(item => item && item.id === woEdit.dataset.woEdit);
-      if (found) { workOrderState.editing = W.normalizeOrder(found); renderWorkOrders(); }
+      if (found) { workOrderState.editing = W.normalizeOrder(found); renderWorkOrderSurface(); }
       return;
     }
-    if (event.target.closest("[data-wo-cancel]")) { workOrderState.editing = null; renderWorkOrders(); return; }
+    if (event.target.closest("[data-wo-cancel]")) { workOrderState.editing = null; renderWorkOrderSurface(); return; }
     const woMove = event.target.closest("[data-wo-move]");
     if (woMove) { await moveWorkOrder(woMove.dataset.woId, woMove.dataset.woMove); return; }
     const woUpload = event.target.closest("[data-wo-upload]");
@@ -14473,7 +14731,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

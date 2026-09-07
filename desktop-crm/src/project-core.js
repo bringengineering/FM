@@ -266,6 +266,155 @@
       .filter(group => group.orders.length);
   }
 
+  // 담당자 중심 로드맵은 오늘이 화면 한가운데에 있어야 한다. 자료 전체의
+  // 처음·끝을 한 번에 펼치면 오래된 지시 하나 때문에 이번 달 일정이 점으로
+  // 찌그러진다. 8주씩 보여 주고 앞뒤 단추로 옮긴다.
+  function weekStart(value) {
+    if (!isDate(value)) return "";
+    const date = new Date(`${text(value, 10)}T00:00:00Z`);
+    const day = date.getUTCDay();
+    return addDays(value, -(day === 0 ? 6 : day - 1));
+  }
+
+  function roadmapRange(asOf, shift) {
+    const today = isDate(asOf) ? text(asOf, 10) : "";
+    if (!today) return null;
+    const page = Number.isFinite(Number(shift)) ? Math.round(Number(shift)) : 0;
+    // 이번 주 앞에 세 주를 두어 오늘 선이 대략 중앙에 오게 한다.
+    const from = addDays(weekStart(today), -21 + page * 28);
+    const days = 56;
+    const to = addDays(from, days - 1);
+    const weeks = Array.from({ length: 8 }, (_, index) => {
+      const start = addDays(from, index * 7);
+      return { start, end: addDays(start, 6), label: `${Number(start.slice(5, 7))}월 ${Math.ceil(Number(start.slice(8, 10)) / 7)}주` };
+    });
+    return { from, to, days, weeks };
+  }
+
+  function overlapsRange(order, range) {
+    if (!range) return true;
+    const start = isDate(order && order.startDate) ? text(order.startDate, 10)
+      : (isDate(order && order.dueDate) ? text(order.dueDate, 10) : "");
+    const end = isDate(order && order.dueDate) ? text(order.dueDate, 10) : start;
+    // 날짜가 없는 것도 숨기지 않는다. 날짜를 정해야 한다는 사실 자체가
+    // 로드맵에서 보아야 할 진행사항이다.
+    return !start || (start <= range.to && end >= range.from);
+  }
+
+  function roadmapLayout(item, range) {
+    if (!range) return null;
+    const start = isDate(item && item.startDate) ? text(item.startDate, 10)
+      : (isDate(item && item.endDate) ? text(item.endDate, 10) : "");
+    const end = isDate(item && item.endDate) ? text(item.endDate, 10) : start;
+    if (!start) return null;
+    const visibleStart = start < range.from ? range.from : start;
+    const visibleEnd = end > range.to ? range.to : end;
+    if (visibleStart > visibleEnd) return null;
+    const offset = daysBetween(range.from, visibleStart);
+    const span = daysBetween(visibleStart, visibleEnd) + 1;
+    return {
+      left: (offset / range.days) * 100,
+      width: (Math.max(1, span) / range.days) * 100,
+      clippedStart: start < range.from,
+      clippedEnd: end > range.to,
+    };
+  }
+
+  function roadmapStatus(list) {
+    if (list.every(item => item.status === "done")) return "done";
+    if (list.some(item => item.status === "returned")) return "returned";
+    if (list.some(item => item.status === "submitted")) return "submitted";
+    if (list.some(item => item.status === "doing")) return "doing";
+    return "assigned";
+  }
+
+  // 같은 사람이 같은 프로젝트에서 받은 업무는 막대 하나로 묶는다. 막대를
+  // 누르면 아래 상세에서 그 안의 일정들을 다시 한 줄씩 확인한다.
+  function roadmapRows(input) {
+    const source = input && typeof input === "object" ? input : {};
+    const range = source.range || null;
+    const mode = source.mode === "projects" ? "projects" : "people";
+    const mineUid = text(source.mineUid, 128);
+    const projects = new Map(rows(source.projects).map(item => [text(item && item.id, 80), normalizeProject(item)]));
+    const members = rows(source.members).filter(item => item && text(item.uid, 128));
+    const orders = rows(source.orders)
+      .filter(item => !mineUid || text(item.assigneeUid, 128) === mineUid)
+      .filter(item => overlapsRange(item, range));
+    const laneMap = new Map();
+
+    const ensureLane = (key, label, secondary) => {
+      if (!laneMap.has(key)) laneMap.set(key, { key, label, secondary, assignments: [] });
+      return laneMap.get(key);
+    };
+
+    if (mode === "people") {
+      members.filter(item => !mineUid || text(item.uid, 128) === mineUid).forEach(member => {
+        ensureLane(text(member.uid, 128), text(member.displayName || member.email || member.uid, 80), "담당자");
+      });
+    } else {
+      projects.forEach(project => ensureLane(project.id, project.name, project.owner || "프로젝트"));
+    }
+
+    const grouped = new Map();
+    orders.forEach(order => {
+      const uid = text(order.assigneeUid, 128);
+      const projectId = text(order.projectId, 80);
+      const laneKey = mode === "people" ? (uid || "__none") : (projectId || "__none");
+      const groupKey = mode === "people" ? (projectId || "__none") : (uid || "__none");
+      const key = `${laneKey}::${groupKey}`;
+      if (!grouped.has(key)) grouped.set(key, { laneKey, groupKey, orders: [] });
+      grouped.get(key).orders.push(order);
+      if (mode === "people" && !laneMap.has(laneKey)) ensureLane(laneKey, text(order.assigneeName, 80) || "담당자 없음", "담당자");
+      if (mode === "projects" && !laneMap.has(laneKey)) ensureLane(laneKey, (projects.get(projectId) || {}).name || "프로젝트 없음", "프로젝트");
+    });
+
+    grouped.forEach(group => {
+      const list = group.orders;
+      const starts = list.map(item => isDate(item.startDate) ? item.startDate : item.dueDate).filter(isDate).sort();
+      const ends = list.map(item => isDate(item.dueDate) ? item.dueDate : item.startDate).filter(isDate).sort();
+      const first = list[0] || {};
+      const project = projects.get(text(first.projectId, 80));
+      const assignment = {
+        key: `${group.laneKey}::${group.groupKey}`,
+        projectId: text(first.projectId, 80),
+        projectName: project ? project.name : "프로젝트 없음",
+        assigneeUid: text(first.assigneeUid, 128),
+        assigneeName: text(first.assigneeName, 80) || "담당자 없음",
+        startDate: starts[0] || "",
+        endDate: ends.length ? ends[ends.length - 1] : "",
+        progress: list.length ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length) : 0,
+        status: roadmapStatus(list),
+        orderIds: list.map(item => text(item.id, 80)).filter(Boolean),
+        open: list.filter(item => OPEN_STATUSES.includes(text(item.status, 20))).length,
+        total: list.length,
+        updatedAt: list.map(item => text(item.updatedAt || item.createdAt, 40)).sort().pop() || "",
+      };
+      const lane = laneMap.get(group.laneKey);
+      if (lane) lane.assignments.push(assignment);
+    });
+
+    return [...laneMap.values()]
+      .map(lane => Object.assign(lane, {
+        assignments: lane.assignments.sort((a, b) => (a.startDate || "9999").localeCompare(b.startDate || "9999") || a.projectName.localeCompare(b.projectName, "ko")),
+      }))
+      .filter(lane => lane.assignments.length || (mode === "people" && lane.key !== "__none"))
+      .sort((a, b) => {
+        if (a.key === "__none") return -1;
+        if (b.key === "__none") return 1;
+        return a.label.localeCompare(b.label, "ko");
+      });
+  }
+
+  function recentProgress(orders, orderIds, limit) {
+    const wanted = new Set(rows(orderIds).map(id => text(id, 80)).filter(Boolean));
+    const take = Math.max(1, Math.min(20, Number(limit) || 6));
+    return rows(orders)
+      .filter(item => !wanted.size || wanted.has(text(item.id, 80)))
+      .slice()
+      .sort((a, b) => text(b.updatedAt || b.createdAt, 40).localeCompare(text(a.updatedAt || a.createdAt, 40)))
+      .slice(0, take);
+  }
+
   // 지금 실제로 돌고 있는 여섯 덩어리. 이름은 대표가 부르는 이름 그대로
   // 썼다 — 여기서만 쓰는 이름을 새로 지으면 사람들이 매번 "그게 뭐였지" 를
   // 한 번 더 한다.
@@ -333,6 +482,12 @@
     dueSoon,
     byAssignee,
     groupByTrack,
+    weekStart,
+    roadmapRange,
+    overlapsRange,
+    roadmapLayout,
+    roadmapRows,
+    recentProgress,
     sortProjects,
     addDays,
     daysBetween,

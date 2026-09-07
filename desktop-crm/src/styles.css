@@ -361,6 +361,127 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .wo-gantt-track { margin: 0 18px; }
 }
 
+/* --- 프로젝트 로드맵 ---
+   업무지시와 같은 자료를 사람 중심으로 다시 놓는다. 왼쪽 이름은 고정하고
+   오른쪽 8주만 흘러가야 누가 무엇을 맡았는지 놓치지 않는다. */
+.roadmap-hero { margin-bottom: 12px; }
+.roadmap-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.roadmap-summary article { padding: 14px 16px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; }
+.roadmap-summary span, .roadmap-summary small { display: block; color: #8B95A1; font-size: 10px; font-weight: 700; }
+.roadmap-summary b { display: block; margin: 4px 0 2px; color: #191F28; font-size: 24px; line-height: 1.1; }
+.roadmap-summary article.is-warning { border-color: #F6D8DB; background: #FFF9F9; }
+.roadmap-summary article.is-warning b { color: #C6535F; }
+.roadmap-summary article.is-progress { border-color: #CFE8DC; background: #FAFFFD; }
+.roadmap-summary article.is-progress b { color: #00875A; }
+.roadmap-board { margin-bottom: 14px; overflow: hidden; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; }
+.roadmap-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-bottom: 1px solid #EEF1F4; background: #FBFCFD; }
+.roadmap-modes { display: inline-flex; gap: 3px; padding: 3px; border-radius: 11px; background: #F2F4F6; }
+.roadmap-modes button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #6B7684; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.roadmap-modes button.is-active { background: #fff; color: #1B64DA; box-shadow: 0 1px 4px rgba(23, 42, 61, .1); }
+.roadmap-period { display: flex; align-items: center; gap: 7px; }
+.roadmap-period b { min-width: 210px; color: #333D4B; font-size: 11px; text-align: center; }
+.roadmap-period button { min-height: 32px; padding: 0 10px; border: 1px solid #DDE3EA; border-radius: 9px; background: #fff; color: #4E5968; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.roadmap-period button:hover { border-color: #9CC4FA; color: #1B64DA; }
+.roadmap-axis { display: grid; grid-template-columns: 184px minmax(760px, 1fr); border-bottom: 1px solid #DCE3EA; background: #F7F9FA; }
+.roadmap-axis > div:first-child { display: flex; align-items: center; padding: 0 14px; border-right: 1px solid #DCE3EA; color: #4E5968; font-size: 10px; font-weight: 800; }
+.roadmap-axis > div:last-child { display: grid; grid-template-columns: repeat(8, minmax(95px, 1fr)); }
+.roadmap-axis span { padding: 10px 4px; border-left: 1px solid #E5E8EB; color: #6B7684; font-size: 9px; font-weight: 700; text-align: center; }
+.roadmap-axis span:first-child { border-left: 0; }
+.roadmap-lanes { min-width: 944px; }
+.roadmap-lane { display: grid; grid-template-columns: 184px minmax(760px, 1fr); min-height: var(--lane-height); border-bottom: 1px solid #EEF1F4; }
+.roadmap-lane:last-child { border-bottom: 0; }
+.roadmap-lane-person { display: flex; align-items: center; gap: 9px; padding: 12px 13px; border-right: 1px solid #DCE3EA; background: #fff; }
+.roadmap-lane-person > div { min-width: 0; flex: 1; }
+.roadmap-lane-person b, .roadmap-lane-person small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roadmap-lane-person b { color: #191F28; font-size: 11px; }
+.roadmap-lane-person small { margin-top: 3px; color: #8B95A1; font-size: 9px; }
+.roadmap-lane-person div > span { display: block; height: 4px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
+.roadmap-lane-person div > span i { display: block; height: 100%; border-radius: inherit; background: #3182F6; }
+.roadmap-avatar { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #EAF2FE; color: #1B64DA; font-size: 10px; font-weight: 900; }
+.roadmap-avatar.tone-1 { background: #FFF2D9; color: #B96A00; }
+.roadmap-avatar.tone-2 { background: #EFEAFF; color: #6B4FD3; }
+.roadmap-avatar.tone-3 { background: #E7F8F1; color: #00875A; }
+.roadmap-avatar.tone-4 { background: #FFECEE; color: #C6535F; }
+.roadmap-lane-track { position: relative; display: grid; min-height: var(--lane-height); grid-template-columns: repeat(8, minmax(95px, 1fr)); background: #fff; }
+.roadmap-lane-track > i { border-left: 1px solid #EEF1F4; background: linear-gradient(180deg, rgba(247,249,250,.7), rgba(255,255,255,.4)); }
+.roadmap-lane-track > i:first-child { border-left: 0; }
+.roadmap-today-line { position: absolute; z-index: 3; top: 0; bottom: 0; width: 2px; background: #E55763; pointer-events: none; }
+.roadmap-today-line::before { position: absolute; top: 0; left: 50%; padding: 2px 6px; border-radius: 999px; background: #E55763; color: #fff; content: "오늘"; font-size: 8px; font-weight: 900; transform: translate(-50%, -50%); }
+.roadmap-bar { position: absolute; z-index: 2; display: block; height: 34px; min-width: 48px; overflow: hidden; padding: 0; border: 1px solid #B7D2F6; border-radius: 10px; background: #EAF2FE; color: #17324F; font: inherit; text-align: left; cursor: pointer; }
+.roadmap-bar > i { position: absolute; inset: 0 auto 0 0; background: #B7D7F3; }
+.roadmap-bar > span { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 100%; padding: 0 9px; }
+.roadmap-bar b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.roadmap-bar em { flex: 0 0 auto; color: #1B64DA; font-size: 9px; font-style: normal; font-weight: 900; }
+.roadmap-bar.status-submitted { border-color: #D4C9FA; background: #F1EDFF; }
+.roadmap-bar.status-submitted > i { background: #D8D0F8; }
+.roadmap-bar.status-returned { border-color: #F2D59E; background: #FFF8E9; }
+.roadmap-bar.status-returned > i { background: #F5DEB5; }
+.roadmap-bar.status-done { border-color: #BFE3D3; background: #EBF8F2; }
+.roadmap-bar.status-done > i { background: #BEE8D7; }
+.roadmap-bar.is-selected { border-color: #1B64DA; box-shadow: 0 0 0 2px rgba(49,130,246,.18); }
+.roadmap-undated { position: absolute; z-index: 2; right: 64px; display: flex; height: 34px; align-items: center; gap: 7px; padding: 0 10px; border: 1px dashed #E2B868; border-radius: 10px; background: #FFFAEF; color: #8C5B00; font: inherit; cursor: pointer; }
+.roadmap-undated b, .roadmap-undated span { font-size: 9px; }
+.roadmap-undated.is-selected { border-color: #C77A00; box-shadow: 0 0 0 2px rgba(199,122,0,.14); }
+.roadmap-lane-add { position: absolute; z-index: 4; right: 8px; bottom: 7px; min-height: 25px; padding: 0 8px; border: 1px dashed #C9D3DD; border-radius: 8px; background: rgba(255,255,255,.9); color: #8B95A1; font: inherit; font-size: 8px; font-weight: 800; cursor: pointer; }
+.roadmap-lane-add:hover { border-color: #3182F6; color: #1B64DA; }
+.roadmap-no-lanes { display: flex; min-height: 180px; align-items: center; justify-content: center; flex-direction: column; gap: 5px; color: #8B95A1; }
+.roadmap-no-lanes b { color: #4E5968; font-size: 12px; }
+.roadmap-no-lanes span { font-size: 10px; }
+.roadmap-detail { margin-bottom: 16px; overflow: hidden; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; }
+.roadmap-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid #EEF1F4; }
+.roadmap-detail > header span { color: #3182F6; font-size: 9px; font-weight: 900; letter-spacing: .04em; }
+.roadmap-detail > header h3 { margin: 4px 0; color: #191F28; font-size: 17px; }
+.roadmap-detail > header p { max-width: 720px; margin: 0; color: #6B7684; font-size: 10px; line-height: 1.55; }
+.roadmap-detail-score { min-width: 84px; text-align: right; }
+.roadmap-detail-score b { display: block; color: #1B64DA; font-size: 23px; }
+.roadmap-detail-score span { color: #8B95A1!important; font-size: 9px!important; }
+.roadmap-detail-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); }
+.roadmap-detail-grid > section { min-width: 0; padding: 15px 18px 18px; }
+.roadmap-detail-grid > section + section { border-left: 1px solid #EEF1F4; background: #FBFCFD; }
+.roadmap-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.roadmap-section-head b, .roadmap-section-head span { display: block; }
+.roadmap-section-head b { color: #333D4B; font-size: 12px; }
+.roadmap-section-head span { margin-top: 3px; color: #8B95A1; font-size: 9px; }
+.roadmap-schedule-list { display: flex; flex-direction: column; gap: 7px; }
+.roadmap-schedule-row { display: grid; grid-template-columns: minmax(150px, 1fr) 62px 112px auto auto; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #EEF1F4; border-radius: 11px; background: #fff; }
+.roadmap-schedule-row.is-late { border-color: #F6D8DB; }
+.roadmap-schedule-row > div:first-child { min-width: 0; }
+.roadmap-schedule-row > div:first-child b, .roadmap-schedule-row > div:first-child span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roadmap-schedule-row > div:first-child b { color: #333D4B; font-size: 10px; }
+.roadmap-schedule-row > div:first-child span { margin-top: 3px; color: #8B95A1; font-size: 8px; }
+.roadmap-status { padding: 4px 7px; border-radius: 999px; background: #EAF2FE; color: #1B64DA; font-size: 8px; font-weight: 900; text-align: center; }
+.roadmap-status.status-done { background: #E7F8F1; color: #00875A; }
+.roadmap-status.status-returned { background: #FFF3DD; color: #B96A00; }
+.roadmap-status.status-submitted { background: #F1EDFF; color: #6B4FD3; }
+.roadmap-row-progress { display: flex; align-items: center; gap: 6px; }
+.roadmap-row-progress i { display: block; width: 72px; height: 5px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
+.roadmap-row-progress i b { display: block; height: 100%; border-radius: inherit; background: #3182F6; }
+.roadmap-row-progress strong { color: #4E5968; font-size: 9px; }
+.roadmap-progress-input { display: flex; align-items: center; gap: 3px; color: #8B95A1; font-size: 8px; font-weight: 800; }
+.roadmap-progress-input input { width: 48px; height: 28px; padding: 0 5px; border: 1px solid #DDE3EA; border-radius: 7px; color: #333D4B; font: inherit; font-size: 9px; }
+.roadmap-updates { position: relative; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+.roadmap-updates li { display: grid; grid-template-columns: 66px 9px 1fr; gap: 7px; padding: 7px 0; }
+.roadmap-updates time { color: #8B95A1; font-size: 8px; }
+.roadmap-updates i { position: relative; display: block; width: 7px; height: 7px; margin-top: 2px; border: 2px solid #fff; border-radius: 50%; background: #3182F6; box-shadow: 0 0 0 1px #B7D2F6; }
+.roadmap-updates i::after { position: absolute; top: 7px; bottom: -32px; left: 2px; width: 1px; background: #DDE7F2; content: ""; }
+.roadmap-updates li:last-child i::after { display: none; }
+.roadmap-updates div b, .roadmap-updates div span, .roadmap-updates div small { display: block; }
+.roadmap-updates div b { color: #333D4B; font-size: 9px; }
+.roadmap-updates div span { margin-top: 2px; color: #6B7684; font-size: 8px; line-height: 1.5; }
+.roadmap-updates div small { margin-top: 2px; color: #A3ABB5; font-size: 8px; }
+.roadmap-detail.is-empty { display: flex; min-height: 120px; align-items: center; justify-content: center; flex-direction: column; gap: 5px; color: #8B95A1; }
+.roadmap-detail.is-empty b { color: #4E5968; font-size: 12px; }
+.roadmap-detail.is-empty span, .roadmap-empty { color: #8B95A1; font-size: 10px; }
+@media (max-width: 1050px) {
+  .roadmap-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .roadmap-toolbar { align-items: stretch; flex-direction: column; }
+  .roadmap-period { justify-content: space-between; }
+  .roadmap-detail-grid { grid-template-columns: 1fr; }
+  .roadmap-detail-grid > section + section { border-top: 1px solid #EEF1F4; border-left: 0; }
+  .roadmap-schedule-row { grid-template-columns: minmax(150px, 1fr) 62px 100px; }
+  .roadmap-progress-input, .roadmap-schedule-row > .mini-button { grid-row: 2; }
+}
+
 /* 비품·자재. 표는 근태관리와 같은 뼈대(office-table)를 쓰고, 여기서는 그
    표가 안 하는 것 — 분류 고르기, 모자란 것 보여주기, 한 품목의 장부 —
    만 더한다. */

@@ -55,6 +55,78 @@ test("막대가 폭을 넘지 않는다", () => {
   assert.ok(box.left + box.width <= 100.001, `${box.left}+${box.width}`);
 });
 
+test("로드맵은 오늘 주간을 화면 가운데에 둔 8주 범위를 만든다", () => {
+  const range = P.roadmapRange("2026-09-07", 0);
+  assert.equal(range.from, "2026-08-17");
+  assert.equal(range.to, "2026-10-11");
+  assert.equal(range.days, 56);
+  assert.equal(range.weeks.length, 8);
+  assert.ok(P.todayOffset(range, "2026-09-07") > 35);
+  assert.ok(P.todayOffset(range, "2026-09-07") < 50);
+  const next = P.roadmapRange("2026-09-07", 1);
+  assert.equal(next.from, "2026-09-14");
+});
+
+test("로드맵은 같은 담당자의 같은 프로젝트 업무를 막대 하나로 묶는다", () => {
+  const range = P.roadmapRange("2026-09-07", 0);
+  const lanes = P.roadmapRows({
+    range,
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }, { uid: "u2", displayName: "박서연" }],
+    projects: [{ id: "p1", name: "CRM 고도화" }],
+    orders: [
+      order({ id: "a", projectId: "p1", assigneeUid: "u1", assigneeName: "김민서", startDate: "2026-09-01", dueDate: "2026-09-10", progress: 60, status: "doing" }),
+      order({ id: "b", projectId: "p1", assigneeUid: "u1", assigneeName: "김민서", startDate: "2026-09-08", dueDate: "2026-09-18", progress: 80, status: "doing" }),
+    ],
+  });
+  assert.equal(lanes.length, 2, "일정이 없는 구성원도 담당자 목록에는 남아야 한다");
+  assert.equal(lanes[0].label, "김민서");
+  assert.equal(lanes[0].assignments.length, 1);
+  assert.equal(lanes[0].assignments[0].projectName, "CRM 고도화");
+  assert.equal(lanes[0].assignments[0].startDate, "2026-09-01");
+  assert.equal(lanes[0].assignments[0].endDate, "2026-09-18");
+  assert.equal(lanes[0].assignments[0].progress, 70);
+  assert.deepEqual(lanes[0].assignments[0].orderIds, ["a", "b"]);
+});
+
+test("로드맵은 프로젝트 기준과 내 일정 필터를 함께 지원한다", () => {
+  const range = P.roadmapRange("2026-09-07", 0);
+  const source = {
+    range,
+    mode: "projects",
+    members: [{ uid: "u1", displayName: "김민서" }, { uid: "u2", displayName: "박서연" }],
+    projects: [{ id: "p1", name: "CRM" }, { id: "p2", name: "자동화" }],
+    orders: [
+      order({ id: "a", projectId: "p1", assigneeUid: "u1", assigneeName: "김민서", dueDate: "2026-09-09" }),
+      order({ id: "b", projectId: "p2", assigneeUid: "u2", assigneeName: "박서연", dueDate: "2026-09-10" }),
+    ],
+  };
+  assert.deepEqual(P.roadmapRows(source).map(row => row.label).sort(), ["CRM", "자동화"].sort());
+  const mine = P.roadmapRows(Object.assign({}, source, { mode: "people", mineUid: "u2" }));
+  assert.deepEqual(mine.map(row => row.label), ["박서연"]);
+  assert.equal(mine[0].assignments[0].projectName, "자동화");
+});
+
+test("로드맵 막대는 보이는 기간에서 잘리고 날짜 없는 일정은 남는다", () => {
+  const range = { from: "2026-09-01", to: "2026-09-30", days: 30, weeks: [] };
+  const clipped = P.roadmapLayout({ startDate: "2026-08-20", endDate: "2026-10-05" }, range);
+  assert.equal(clipped.left, 0);
+  assert.equal(clipped.width, 100);
+  assert.equal(clipped.clippedStart, true);
+  assert.equal(clipped.clippedEnd, true);
+  assert.equal(P.roadmapLayout({}, range), null);
+  assert.equal(P.overlapsRange({}, range), true);
+});
+
+test("최근 진행사항은 실제 수정 시각 최신 순서로 고른다", () => {
+  const recent = P.recentProgress([
+    order({ id: "old", updatedAt: "2026-09-01T00:00:00.000Z" }),
+    order({ id: "new", updatedAt: "2026-09-07T00:00:00.000Z" }),
+    order({ id: "other", updatedAt: "2026-09-08T00:00:00.000Z" }),
+  ], ["old", "new"], 2);
+  assert.deepEqual(recent.map(item => item.id), ["new", "old"]);
+});
+
 test("드래그한 칸을 날짜로 되돌린다", () => {
   const range = { from: "2026-09-01", to: "2026-09-10", days: 10 };
   assert.deepEqual(P.datesFromColumns(range, 2, 5), { startDate: "2026-09-03", dueDate: "2026-09-06" });
