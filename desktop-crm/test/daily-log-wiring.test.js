@@ -180,13 +180,29 @@ test("앱을 켤 때 한 번만 읽지 않는다", () => {
   assert.match(load, /currentView === "dailyLog" && !dailyLogState\.loading\) renderDailyLog/u);
 });
 
-test("새로고침 버튼이 치던 것을 지우지 않는다", () => {
+test("다시 읽는 것이 치던 것을 지우지 않는다", () => {
+  // 부르는 쪽이 "지금은 초안이 없다" 고 보고 불러도, 응답이 오는 사이에
+  // 사람이 [줄 넣기] 를 누른다. 판단을 부를 때 하면 그 줄이 지워진다.
+  assert.match(appSource, /async function loadDailyLogs\(resetDraft\)/u);
+  assert.match(appSource, /if \(resetDraft\) dailyLogState\.draft = null;/u);
   const handler = appSource.slice(appSource.indexOf('closest("[data-live-refresh]")'), appSource.indexOf('closest("[data-live-refresh]")') + 800);
-  assert.match(handler, /const typing = Boolean\(dailyLogState\.draft\)/u);
-  assert.match(handler, /loadDailyLogs\(typing\)/u);
-  assert.match(appSource, /if \(!keepDraft\) dailyLogState\.draft = null;/u);
-  assert.match(appSource, /async function loadDailyLogs\(keepDraft\)/u);
+  assert.match(handler, /loadDailyLogs\(\)/u);
+  assert.ok(!/loadDailyLogs\(true\)/u.test(handler), "새로고침이 초안을 버리면 안 된다");
+  // 저장·확인 뒤에는 서버 것이 맞다. 그때만 버린다.
+  assert.equal((appSource.match(/loadDailyLogs\(true\)/gu) || []).length, 2);
   // 버튼이 두 화면에 다 있어야 막혔을 때 손으로 뚫을 수 있다.
   assert.match(appSource, /refreshButton\(dailyLogState, "dailyLog"\)/u);
   assert.match(appSource, /refreshButton\(workOrderState, "workOrders"\)/u);
+});
+
+test("치는 중인 화면을 다시 읽어서 덮지 않는다", () => {
+  // 붙여 넣은 뭉치는 아직 상태로 안 옮긴 것이다. 다시 그리면 화면에서
+  // 사라지고, 사라진 사람은 다시 붙여 넣지 않고 이 화면을 안 쓰게 된다.
+  assert.match(appSource, /function workOrderTyping\(\)/u);
+  const guard = appSource.slice(appSource.indexOf("function workOrderTyping()"), appSource.indexOf("function workOrderTyping()") + 400);
+  for (const field of ["editing", "projectEditing", "importOpen", "importPlan", "importSplit"]) {
+    assert.ok(guard.includes(`workOrderState.${field}`), `치는 중으로 안 치는 것: ${field}`);
+  }
+  // 두 화면 다 같은 잣대를 써야 한다. 한쪽만 막으면 다른 쪽에서 지워진다.
+  assert.equal((appSource.match(/isStale\(workOrderState\) && !workOrderTyping\(\)/gu) || []).length, 2);
 });

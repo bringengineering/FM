@@ -4155,7 +4155,13 @@
 
   const dailyLogCore = () => window.BringDailyLogCore;
 
-  async function loadDailyLogs(keepDraft) {
+  // resetDraft 를 켠 쪽만 초안을 버린다. 저장·확인 뒤에는 서버 것이 맞으니
+  // 버려야 하고, 그 밖의 다시 읽기는 **치던 것을 절대 건드리면 안 된다.**
+  //
+  // 이걸 거꾸로 두었다가 한 번 당했다. 화면에 들어오면 다시 읽는데, 그 응답이
+  // 돌아오는 사이에 사람이 [줄 넣기] 를 누르면 응답이 그 줄을 지웠다. 부르는
+  // 쪽이 "지금은 초안이 없다" 고 보고 부른 것이라, 판단을 부를 때 하면 늦는다.
+  async function loadDailyLogs(resetDraft) {
     if (dailyLogState.loading) return;
     dailyLogState.loading = true;
     dailyLogState.error = "";
@@ -4170,9 +4176,7 @@
       dailyLogState.loaded = true;
       dailyLogState.refreshedAt = Date.now();
       // 불러온 것으로 초안을 다시 잡는다. 저장하고 나면 서버 것이 맞다.
-      // 다만 아직 안 보낸 것을 치는 중이면 그대로 둔다. 새로고침이 남의 손처럼
-      // 쳐 놓은 것을 지우면 다음부터 아무도 안 쓴다.
-      if (!keepDraft) dailyLogState.draft = null;
+      if (resetDraft) dailyLogState.draft = null;
     } catch (error) {
       dailyLogState.error = error && error.message || "일지를 불러오지 못했습니다.";
     } finally {
@@ -4227,7 +4231,7 @@
     // 치던 것이 있으면 건드리지 않는다.
     if (isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
     // 줄마다 지시를 고르려면 지시 목록이 있어야 한다.
-    if (isStale(workOrderState)) void loadWorkOrders();
+    if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
 
     const date = dailyLogDate();
     const draft = dailyLogDraft(D);
@@ -4463,7 +4467,7 @@
       await api.confirmDailyLog({ uid, date });
       dailyLogState.loaded = false;
       showToast("확인했습니다.", "success");
-      await loadDailyLogs();
+      await loadDailyLogs(true);
     } catch (error) {
       showToast(error && error.message || "확인하지 못했습니다.", "error");
     } finally {
@@ -4543,7 +4547,7 @@
       } else {
         showToast("저장했습니다. 아직 대표에게 가지 않았습니다.", "success");
       }
-      await loadDailyLogs();
+      await loadDailyLogs(true);
       workOrderState.loaded = false;
     } catch (error) {
       // 실패해도 친 것을 날리지 않는다. 다시 치게 하면 다음부터 안 쓴다.
@@ -4571,6 +4575,16 @@
     const minutes = Math.round(seconds / 60);
     return minutes < 60 ? `${minutes}분 전` : `${Math.round(minutes / 60)}시간 전`;
   }
+  // 사람이 무언가 치는 중이면 다시 읽지 않는다.
+  //
+  // 다시 읽으면 그 화면을 다시 그리는데, 다시 그리면 아직 상태로 안 옮긴
+  // 것 — 붙여 넣은 뭉치, 고치던 지시 — 이 화면에서 사라진다. 사라진 사람은
+  // 다시 붙여 넣지 않고 그냥 이 화면을 안 쓰게 된다.
+  function workOrderTyping() {
+    return Boolean(workOrderState.editing || workOrderState.projectEditing
+      || workOrderState.importOpen || workOrderState.importPlan || workOrderState.importSplit);
+  }
+
   function refreshButton(state, action) {
     const when = freshLabel(state);
     return `<button type="button" class="mini-button" data-live-refresh="${action}"${state.loading ? " disabled" : ""}>새로고침${when ? ` <small>· ${esc(when)}</small>` : ""}</button>`;
@@ -4646,7 +4660,7 @@
     const W = workOrderCore();
     const P = projectCore();
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (isStale(workOrderState) && !workOrderState.editing && !workOrderState.projectEditing) void loadWorkOrders();
+    if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
@@ -10563,7 +10577,7 @@
       if (liveRefresh.dataset.liveRefresh === "dailyLog") {
         // 치던 것은 그대로 둔다. 새로고침이 손으로 친 것을 지우면 안 된다.
         const typing = Boolean(dailyLogState.draft);
-        void loadDailyLogs(typing).then(() => {
+        void loadDailyLogs().then(() => {
           showToast(typing ? "다시 불러왔습니다. 치던 것은 그대로 뒀습니다." : "다시 불러왔습니다.", "success");
         });
       } else {
