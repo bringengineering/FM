@@ -4210,12 +4210,47 @@
 
   const dailyLogDate = () => dailyLogState.date || todayKey();
 
-  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 없으면 빈 하루다.
+  function dailyLogTimeLabel(value) {
+    const matched = /^(\d{2}):(\d{2})$/u.exec(String(value || ""));
+    if (!matched) return "--:--";
+    const hour = Number(matched[1]);
+    const displayHour = hour % 12 || 12;
+    return `${hour < 12 ? "오전" : "오후"} ${String(displayHour).padStart(2, "0")}:${matched[2]}`;
+  }
+
+  // 새 일지는 09:00~18:00의 한 시간 단위 표를 먼저 보여 준다. 직원이 매일
+  // [줄 넣기]를 아홉 번 눌러야 같은 화면을 만드는 방식이면 빈 일지가 기본
+  // 화면처럼 보인다. 내용은 비워 두되 시간대만 정해 두어 바로 적을 수 있게 한다.
+  function defaultDailyLogEntries(date) {
+    return Array.from({ length: 9 }, (_, index) => {
+      const startHour = index + 9;
+      const endHour = startHour + 1;
+      const start = `${String(startHour).padStart(2, "0")}:00`;
+      const end = `${String(endHour).padStart(2, "0")}:00`;
+      return {
+        id: `dl_${String(date || todayKey()).replace(/-/gu, "")}_${String(startHour).padStart(2, "0")}00`,
+        start,
+        end,
+        title: "",
+        nature: "routine",
+        orderId: "",
+        progress: 0,
+      };
+    });
+  }
+
+  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 처음 쓰는 날이면
+  // 09:00~18:00 시간표를 기본으로 펼친다.
   function dailyLogDraft(D) {
     if (dailyLogState.draft) return D.normalizeDay(dailyLogState.draft);
     const date = dailyLogDate();
     const found = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === date);
-    return D.normalizeDay(found || { uid: dailyLogState.uid, name: dailyLogState.name, date });
+    return D.normalizeDay(found || {
+      uid: dailyLogState.uid,
+      name: dailyLogState.name,
+      date,
+      entries: defaultDailyLogEntries(date),
+    });
   }
 
   // 이 사람이 지금 물고 있는 지시. 줄마다 고르게 한다 — 지시를 안 고르면
@@ -4275,12 +4310,12 @@
       .map(item => `<option value="${esc(item.key)}"${item.key === value ? " selected" : ""}>${esc(item.label)}</option>`).join("");
 
     const rowsHtml = draft.entries.map((item, index) => `<tr>
-      <td><input type="time" value="${esc(item.start)}" data-dl-field="start" data-dl-index="${index}"></td>
-      <td><input type="time" value="${esc(item.end)}" data-dl-field="end" data-dl-index="${index}"></td>
+      <td><time class="dl-fixed-time" datetime="${attr(item.start)}" aria-label="시작 시간 ${attr(dailyLogTimeLabel(item.start))}">${esc(dailyLogTimeLabel(item.start))}</time></td>
+      <td><time class="dl-fixed-time" datetime="${attr(item.end)}" aria-label="종료 시간 ${attr(dailyLogTimeLabel(item.end))}">${esc(dailyLogTimeLabel(item.end))}</time></td>
       <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="무엇을 했나" data-dl-field="title" data-dl-index="${index}"></td>
       <td><select data-dl-field="nature" data-dl-index="${index}">${natureOptions(item.nature)}</select></td>
       <td><select data-dl-field="orderId" data-dl-index="${index}">${orderOptions(item.orderId)}</select></td>
-      <td><input type="number" min="0" max="100" step="5" value="${item.progress}" data-dl-field="progress" data-dl-index="${index}"><b>%</b></td>
+      <td><div class="dl-progress"><input type="number" min="0" max="100" step="5" value="${item.progress}" aria-label="달성률" data-dl-field="progress" data-dl-index="${index}"><b aria-hidden="true">%</b></div></td>
       <td><span class="office-muted">${D.toHours(D.entryMinutes(item))}h</span></td>
       <td><button type="button" class="mini-button return" data-dl-remove="${index}">지우기</button></td>
     </tr>`).join("");
@@ -4304,7 +4339,7 @@
         <div class="operations-kpi" style="--wash:#EDF5FF"><span>상태</span><b><span class="office-status ${esc(stateKind)}"><i></i>${esc(stateLabel)}</span></b><small>${draft.confirmedBy ? "고칠 수 없습니다" : "보내기 전까지 고칠 수 있습니다"}</small></div>
       </div>
       <section class="office-panel dl-panel">
-        <header><div><span>TODAY</span><h3>시간대별로 적기</h3></div><small>${esc(natureBar ? "" : "한 줄부터 넣어 보세요")}</small></header>
+        <header><div><span>TODAY</span><h3>시간대별로 적기</h3></div><small>왼쪽 시간은 변경할 수 없습니다</small></header>
         <div class="panel-body">
           ${natureBar ? `<div class="dl-natures">${natureBar}</div>` : ""}
           <div class="office-table-wrap"><table class="office-table dl-table">
@@ -12357,9 +12392,10 @@
       renderDailyLog();
       return;
     }
-    // 줄의 시각·지시를 바꾸면 그 자리에서 시간과 합계가 다시 나와야 한다.
+    // 줄의 지시·성격·달성률을 바꾸면 그 자리에서 합계가 다시 나와야 한다.
+    // 시작·끝 시각은 읽기 전용 고정 표시라 이 변경 통로에 들어오지 않는다.
     // 글자 칸은 여기 안 걸린다 — change 는 칸을 떠날 때 오므로 커서가 안 튄다.
-    if (event.target.matches("[data-dl-field='start'], [data-dl-field='end'], [data-dl-field='nature'], [data-dl-field='orderId'], [data-dl-field='progress']")) {
+    if (event.target.matches("[data-dl-field='nature'], [data-dl-field='orderId'], [data-dl-field='progress']")) {
       const D = dailyLogCore();
       if (!D) return;
       dailyLogState.draft = readDailyLogDraft(D);

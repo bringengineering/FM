@@ -775,10 +775,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dl-datenav input[type=date]{width:auto}
 .dl-panel .panel-body{display:grid;gap:12px}
 .dl-table th:nth-child(1),.dl-table th:nth-child(2),.dl-table td:nth-child(1),.dl-table td:nth-child(2){width:96px}
+.dl-fixed-time{display:flex;align-items:center;min-width:82px;min-height:36px;padding:0 9px;border:1px solid #E5E8EB;border-radius:9px;background:#F2F4F6;color:#4E5968;font-size:11px;font-variant-numeric:tabular-nums;font-style:normal;font-weight:850;white-space:nowrap;cursor:default}
 .dl-table th:nth-child(4),.dl-table td:nth-child(4){width:96px}
 .dl-table th:nth-child(6),.dl-table td:nth-child(6){width:110px;white-space:nowrap}
 .dl-table th:nth-child(7),.dl-table td:nth-child(7){width:64px}
-.dl-table td input[type=number]{width:62px}
+.dl-progress{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.dl-progress input[type=number]{flex:0 0 62px;width:62px;min-width:0}
+.dl-progress b{flex:0 0 auto;color:#4E5968;font-size:12px;line-height:1}
 .dl-natures{display:flex;flex-wrap:wrap;gap:8px}
 .dl-nature{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F2F4F6;color:#4E5968;font-size:12px}
 .dl-nature b{color:#191F28}

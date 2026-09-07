@@ -141,7 +141,10 @@ let applicationResourcesClosed = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, retryAt: 0, message: "" };
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
-const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
+// 실제 데이터와 분리된 화면을 프로그램 창으로 확인할 때만 쓰는 닫힌 경로다.
+// 제품 실행에서는 환경 변수가 없으므로 기존 로그인·저장 경로에 영향이 없다.
+const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog" ? "dailyLog" : "";
+const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
@@ -4478,7 +4481,9 @@ async function createWindow() {
     mainWindow = null;
   });
   await mainWindow.loadFile(path.join(__dirname, "index.html"), {
-    query: process.env.BRING_CRM_SCREENSHOT ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" } : {}
+    query: process.env.BRING_CRM_SCREENSHOT
+      ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" }
+      : (interactivePreviewView ? { demo: "1", view: interactivePreviewView } : {})
   });
 
   if (process.env.BRING_CRM_SMOKE === "1") {
@@ -7513,6 +7518,30 @@ async function createWindow() {
         })().catch(error => ({ pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() })),
         new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, state: window.__crmTest?.snapshot() }), 15000))
       ])`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "daily-log-fixed-times") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(180);
+        window.__crmSmokeNavigate('dailyLog');
+        await wait(220);
+        [...document.querySelectorAll('.info-box')]
+          .filter(node => node.textContent.includes("crm:daily-logs-load"))
+          .forEach(node => node.remove());
+        const fixedTimes = [...document.querySelectorAll('.dl-fixed-time')];
+        const editableTimes = [...document.querySelectorAll('.dl-table input[type="time"]')];
+        const labels = fixedTimes.map(node => node.textContent.replace(/\s+/g, ' ').trim());
+        return {
+          pass: fixedTimes.length === 18 && editableTimes.length === 0
+            && labels[0] === '오전 09:00' && labels[17] === '오후 06:00',
+          fixedTimeCount: fixedTimes.length,
+          editableTimeCount: editableTimes.length,
+          renderedWithoutAddingRows: true,
+          first: labels[0] || '',
+          last: labels[17] || '',
+          state: window.__crmTest?.snapshot(),
+        };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "form-matrix") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -7577,7 +7606,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

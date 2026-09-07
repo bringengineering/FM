@@ -126,9 +126,44 @@ test("화면이 친 것을 날짜를 옮길 때 챙긴다", () => {
 test("글자 칸은 칠 때마다 다시 그리지 않는다", () => {
   // change 는 칸을 떠날 때 온다. input 에 걸면 한 글자마다 다시 그려 커서가 튄다.
   const listener = appSource.slice(appSource.indexOf('if (event.target.matches("[data-dl-date]"))'), appSource.indexOf('if (event.target.matches("[data-dl-date]"))') + 1400);
-  assert.match(listener, /data-dl-field='start'/u);
+  assert.doesNotMatch(listener, /data-dl-field='start'|data-dl-field='end'/u);
   assert.ok(!listener.includes("data-dl-field='title'"), "글자 칸을 다시 그리면 커서가 튄다");
   assert.ok(!appSource.includes('data-dl-word="blockers" oninput'), "글자 칸을 다시 그리면 커서가 튄다");
+});
+
+test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고친다", () => {
+  const render = appSource.slice(appSource.indexOf("function dailyLogMine"), appSource.indexOf("function dailyLogTeamBoard"));
+  assert.match(appSource, /function dailyLogTimeLabel\(value\)/u);
+  assert.match(render, /class="dl-fixed-time"/u);
+  assert.match(render, /왼쪽 시간은 변경할 수 없습니다/u);
+  assert.doesNotMatch(render, />고정</u);
+  assert.doesNotMatch(render, /<input type="time"[^>]*data-dl-field="(?:start|end)"/u);
+  assert.match(render, /data-dl-field="title"/u);
+  assert.match(render, /data-dl-field="nature"/u);
+  assert.match(render, /data-dl-field="orderId"/u);
+  assert.match(render, /data-dl-field="progress"/u);
+  assert.match(render, /class="dl-progress"/u);
+  assert.match(render, /<b aria-hidden="true">%<\/b>/u);
+  assert.match(read("styles.css"), /\.dl-progress\{display:flex;align-items:center;gap:5px/u);
+});
+
+test("처음 쓰는 날도 줄 넣기 없이 09시부터 18시까지 기본 시간표가 열린다", () => {
+  const draft = appSource.slice(appSource.indexOf("function defaultDailyLogEntries"), appSource.indexOf("function myOpenOrders"));
+  assert.match(draft, /Array\.from\(\{ length: 9 \}/u);
+  assert.match(draft, /index \+ 9/u);
+  assert.match(draft, /endHour = startHour \+ 1/u);
+  assert.match(draft, /entries: defaultDailyLogEntries\(date\)/u);
+  assert.match(draft, /const found = dailyLogState\.logs\.find/u);
+  assert.match(draft, /found \|\| \{/u, "저장된 일지는 기본 시간표로 덮어쓰면 안 된다");
+
+  const screenshot = mainSource.slice(
+    mainSource.indexOf('BRING_CRM_SCREENSHOT_ACTION === "daily-log-fixed-times"'),
+    mainSource.indexOf('BRING_CRM_SCREENSHOT_ACTION === "form-matrix"'),
+  );
+  assert.doesNotMatch(screenshot, /data-dl-add/u, "미리보기 검증이 줄 넣기를 대신 누르면 안 된다");
+  assert.match(screenshot, /renderedWithoutAddingRows: true/u);
+  assert.match(mainSource, /BRING_CRM_PREVIEW_VIEW === "dailyLog"/u);
+  assert.match(mainSource, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
 });
 
 test("AI 갈래가 서버·앱 양쪽에 다 등록돼 있다", () => {
