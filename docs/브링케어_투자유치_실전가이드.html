@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브링케어 투자유치 실전 가이드</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#14171f; --panel2:#1c2029; --line:#2b3040;
+    --text:#eceef4; --dim:#9aa2b4; --faint:#636b80;
+    --gold:#e6b450; --good:#5ec98a; --warn:#e6a54a; --bad:#e07a7a; --mid:#d9b45a;
+    --accent:#e6b450;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);
+    font:14px/1.65 "Pretendard","Malgun Gothic",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding:0 0 90px}
+  .wrap{max-width:940px;margin:0 auto;padding:0 20px}
+
+  header{background:linear-gradient(180deg,#211d12,#0d0f14);border-bottom:1px solid #3a3320;padding:38px 0 26px;margin-bottom:6px}
+  header .eyebrow{color:var(--gold);font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+  header h1{margin:0 0 8px;font-size:27px;letter-spacing:-.3px}
+  header h1 small{color:var(--faint);font-size:14px;font-weight:400;margin-left:8px}
+  header .sub{color:var(--dim);font-size:13.5px;max-width:70ch}
+  .meta{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .chip b{color:var(--gold)}
+
+  nav{position:sticky;top:0;z-index:10;background:rgba(11,13,18,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:9px 0}
+  nav .wrap{display:flex;flex-wrap:wrap;gap:6px}
+  nav a{font-size:11.5px;padding:4px 9px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  nav a:hover{color:var(--text);border-color:#3d4970}
+
+  section{margin-top:32px;scroll-margin-top:52px}
+  h2{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);border-bottom:1px solid #3a3320;padding-bottom:7px;margin:0 0 15px;font-weight:700}
+  h2 span{color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;margin-left:6px}
+  p.lead{color:var(--dim);max-width:74ch}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px 18px;margin-bottom:12px}
+  .thesis{background:linear-gradient(180deg,rgba(230,180,80,.07),rgba(0,0,0,.05));border-color:#4a3f20}
+  .thesis p{margin:0 0 10px}.thesis p:last-child{margin:0}.thesis b{color:var(--gold)}
+  .quote{border-left:3px solid var(--gold);padding:4px 0 4px 13px;color:var(--dim);font-style:italic;margin:10px 0}
+
+  .stat3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .stat .n{font-size:22px;font-weight:700;letter-spacing:-.5px;color:var(--gold);font-variant-numeric:tabular-nums}
+  .stat .l{font-size:11.5px;color:var(--dim);margin-top:2px}
+
+  /* rejection table */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--faint);font-size:10.5px;font-weight:600;padding:0 8px 8px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.3px}
+  td{padding:8px;border-bottom:1px solid rgba(43,48,64,.55);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .rk{white-space:nowrap;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid}
+  .rk-hi{color:#0b0d12;background:var(--bad);border-color:var(--bad)}
+  .rk-md{color:var(--mid);background:rgba(217,180,90,.14);border-color:#5c4820}
+  .rk-lo{color:var(--good);background:rgba(94,201,138,.12);border-color:#2f5540}
+  td.no{color:var(--faint);font-variant-numeric:tabular-nums;width:22px}
+  td.rj{color:var(--text)}
+  td.df{color:var(--dim)} td.df b{color:var(--text)}
+  tr.hi td.rj{color:#fff;font-weight:600}
+  tr.hi{background:rgba(224,122,122,.05)}
+
+  .dom{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px;border-top:2px solid var(--gold)}
+  .dcard h4{margin:0 0 6px;font-size:13px}
+  .dcard p{margin:0;font-size:12px;color:var(--dim)}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:13px;margin-top:4px}
+  .kv .k{color:var(--gold);white-space:nowrap;font-weight:600}
+  .kv .v{color:var(--dim)} .kv .v b{color:var(--text)}
+
+  ul{margin:6px 0 0;padding-left:18px} li{margin-bottom:5px;color:var(--dim)} li b{color:var(--text);font-weight:600}
+  .warnbox{background:rgba(224,122,122,.08);border:1px solid #5c2f2f;border-radius:9px;padding:12px 14px;margin-top:10px}
+  .warnbox b{color:var(--bad)}
+  .okbox{background:rgba(94,201,138,.07);border:1px solid #2f5540;border-radius:9px;padding:12px 14px;margin-top:10px}
+  .okbox b{color:var(--good)}
+
+  .chk{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid rgba(43,48,64,.5)}
+  .chk:last-child{border-bottom:0}
+  .chk .box{flex:0 0 auto;width:16px;height:16px;border:1.5px solid #5c4820;border-radius:4px;margin-top:2px}
+  .chk .tx{flex:1;font-size:13px}.chk .tx b{color:var(--text)} .chk .tx em{font-style:normal;color:var(--faint);font-size:12px;display:block;margin-top:1px}
+  .foot{margin-top:36px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .src{color:var(--faint);font-size:11px}
+  .note{color:var(--faint);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <div class="eyebrow">투자유치 실전 · Fundraising Playbook</div>
+  <h1>브링케어 투자유치 실전 가이드 <small>v1.0</small></h1>
+  <div class="sub">국내 VC 투자유치 실무서(밀리의서재, 142p)를 브링케어의 <b>기업가치 9억·지분 10%·1억 라운드</b>에 그대로 적용. 교보 부동산책이 '경영 체계'라면, 이 책은 '투자를 실제로 받을 때'의 실전.</div>
+  <div class="meta">
+    <span class="chip">기준일 <b>2026-08-21</b></span>
+    <span class="chip">타깃 라운드 <b>Seed · 1억</b></span>
+    <span class="chip">근거 <b>VC 투자유치 실무서 + 브링 체계도/MASTER_CONTEXT</b></span>
+  </div>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#thesis">핵심 명제</a>
+  <a href="#reject">부결 24 × 브링</a>
+  <a href="#domain">4대 방어</a>
+  <a href="#bm">BM 자가진단</a>
+  <a href="#val">기업가치 9억</a>
+  <a href="#exit">EXIT</a>
+  <a href="#vc">어떤 VC·타이밍</a>
+  <a href="#ir">IR·90일</a>
+</div></nav>
+
+<div class="wrap">
+
+<section id="thesis">
+  <h2>핵심 명제 <span>투자자는 '미래가치'를 산다</span></h2>
+  <div class="card thesis">
+    <p><b>투자는 미래가치에 대한 베팅이다.</b> 은행처럼 담보로 빌려주는 게 아니라, "이 회사가 미래에 성장·성공할까"를 판단해 확신이 들 때 집행한다. 창업자 관점에서 관건은 하나 — <b>"미래가치를 설득해 투자자의 공감을 얻어낼 수 있는가."</b></p>
+    <p>그런데 통계가 냉정하다. 미국 VC 회수 성과에서 <b>원금 미만 회수가 64%</b>. 그래서 투자자의 기본 태도는 '의심'이다. 창업자 말을 곧이곧대로 믿는 VC는 없다. → <b>브링이 할 일은 "설득 준비"</b>다. 스스로를 냉정하게 자가진단하지 못하면 첫 단추부터 어긋난다.</p>
+    <p>브링의 진짜 승부처는 명확하다 — VC는 브링을 보며 <b>"부동산 관리? 로컬·노동집약·전통산업인데 VC 대상이 되나?"</b>를 가장 먼저 의심한다. 이 가이드의 절반은 <b>그 의심(부결 사유)에 대한 반박 논리</b>를 미리 세우는 것이다.</p>
+  </div>
+  <div class="stat3">
+    <div class="stat"><div class="n">64%</div><div class="l">미국 VC 원금 미만 회수 (고위험 자산)</div></div>
+    <div class="stat"><div class="n">약 24</div><div class="l">투심위 부결 패턴 (시장성·사업성)</div></div>
+    <div class="stat"><div class="n">3~6개월</div><div class="l">VC 투자 프로세스 소요 (역산 필수)</div></div>
+  </div>
+</section>
+
+<section id="reject">
+  <h2>투심위 부결 24패턴 × 브링 자가진단 <span>&lt;표 6-1&gt; · 브링 위험도와 방어논리</span></h2>
+  <p class="lead">책의 핵심 체크리스트. VC가 시장성·사업성 때문에 기업을 부결하는 24가지 패턴이다(MECE 아님 — 여러 개 동시 해당 가능). 투자자가 <b>가장 빈번히 묻는 건 1·3·9번</b>. 브링은 로컬 PM 특성상 <span style="color:var(--bad)">9·10·13·20번에 정면으로 걸린다</span> — 여기 답을 못 만들면 라운드는 시작도 못 한다.</p>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th class="no">#</th><th>부결 패턴</th><th style="width:64px">브링<br>위험</th><th style="width:44%">브링 방어 논리</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td class="no">9</td><td class="rj">낮은 진입장벽·후발주자 모방 우려</td><td><span class="rk rk-hi">높음</span></td><td class="df"><b>ValueScope 데이터 해자 + 밀집권역 선점.</b> 청소·관리는 흉내내도, 원주 24,933건·중개사 786곳 CRM·공동관리 Zone 선점은 복제 불가. 매뉴얼 26 SOP = 진입장벽.</td></tr>
+        <tr class="hi"><td class="no">10</td><td class="rj">확장성(scalability) 결여 BM</td><td><span class="rk rk-hi">높음</span></td><td class="df"><b>표준화→복제 구조.</b> 1인 55동은 노동집약처럼 보이나, 매뉴얼 v1.0 = 프랜차이즈 본부화 = 도시 단위 복제. "본부(기준·데이터) + 현지 파트너" 구조로 인력 선형투입 탈피.</td></tr>
+        <tr class="hi"><td class="no">13</td><td class="rj">전형적인 내수산업 (로컬 비즈니스)</td><td><span class="rk rk-hi">높음</span></td><td class="df"><b>Zero to One 지역 독점 → 인접 복제.</b> 로컬을 약점이 아니라 "좁은 시장 독점 후 도시 확장(원주→춘천→강릉)" 서사로. 국내 다가구 관리시장 규모(TAM)로 천장 반박.</td></tr>
+        <tr class="hi"><td class="no">20</td><td class="rj">전통산업 저평가 / 낮은 선호도</td><td><span class="rk rk-hi">높음</span></td><td class="df"><b>"관리회사"가 아니라 "부동산 데이터·운영 OS".</b> ValueScope 엔진·CRM·AI 민원분류로 프롭테크로 포지셔닝. 단, 억지 하이테크는 역효과(2-2 참고) — 데이터로 증명.</td></tr>
+        <tr><td class="no">19</td><td class="rj">고객 매출향상 아닌 비용절감 타겟팅</td><td><span class="rk rk-md">중간</span></td><td class="df"><b>공실 해결 = 매출 증대로 리프레임.</b> "관리비 절감(15만→8.9만)"만 말하면 비용절감 BM. 핵심 소구는 <b>공실 해소·임대수익 회복</b>(건물주 매출↑)으로.</td></tr>
+        <tr><td class="no">1</td><td class="rj">불명확한 고객가치·소구포인트</td><td><span class="rk rk-lo">낮음</span></td><td class="df">공실이라는 건물주의 명확한 통증. "혼자 15만, 함께 8.9만" + 공실 시계.</td></tr>
+        <tr><td class="no">3</td><td class="rj">틈새시장(niche)에 국한 우려</td><td><span class="rk rk-md">중간</span></td><td class="df">원주 특정권역=틈새로 보일 수 있음 → 마일스톤·확장 계획으로 "틈새 넘어서는 성장path" 제시.</td></tr>
+        <tr><td class="no">2</td><td class="rj">성숙·정체 시장 포지셔닝</td><td><span class="rk rk-md">중간</span></td><td class="df">부동산관리는 성숙시장이나 <b>소형 다가구 통합관리는 미개척</b>. 분산·비효율 시장을 묶는 각.</td></tr>
+        <tr><td class="no">11</td><td class="rj">수주사업 BM의 불리함(마진 고착)</td><td><span class="rk rk-lo">낮음</span></td><td class="df">수주형 아님. 월 관리비 <b>구독형 지속수익</b> + 결합서비스(이익 44%).</td></tr>
+        <tr><td class="no">7</td><td class="rj">시장규모가 외부요인 결정(보조금BM)</td><td><span class="rk rk-md">중간</span></td><td class="df">정부지원 4건은 좋지만 <b>"지원금 없으면 안 되는 회사"로 보이면 감점</b>. 지원사업은 부수, 본질은 자립 유닛이코노믹스.</td></tr>
+        <tr><td class="no">21</td><td class="rj">참여자간 복잡·첨예한 이해관계</td><td><span class="rk rk-md">중간</span></td><td class="df">건물주·임차인·중개 3자 → 중개보수·책임경계 명문화로 정리됨을 증거로.</td></tr>
+        <tr><td class="no">17</td><td class="rj">과거 투자실패의 주홍글씨 산업</td><td><span class="rk rk-md">중간</span></td><td class="df">'관리·청소업' 인식 → 데이터·운영 표준으로 카테고리 재정의.</td></tr>
+        <tr><td class="no">14</td><td class="rj">막연한 해외 진출 계획</td><td><span class="rk rk-lo">낮음</span></td><td class="df">해외 언급 자제가 유리. S3도 국내 3도시(원주·춘천·강릉).</td></tr>
+        <tr><td class="no">4·5·6</td><td class="rj">극초기시장·트렌드민감·시장진입 확신부족</td><td><span class="rk rk-lo">낮음</span></td><td class="df">실수요(공실) 기반, 이미 7동 실계약으로 시장진입 증명.</td></tr>
+        <tr><td class="no">8·12·15·16·18·22·23·24</td><td class="rj">플랫폼난이도·흥행연속·평판·대외변수·선발부진·심리거부·수익모델·업종이해</td><td><span class="rk rk-lo">낮음</span></td><td class="df">개별 리스크 낮음. 24번(업종 성공방정식)은 대표의 현장·토목 도메인 전문성으로 커버.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="warnbox"><b>결론:</b> 브링의 IR·투심위 질의응답은 <b>9·10·13·20번(로컬·확장성·모방·전통산업 저평가)</b>에 대한 30초 답변을 반드시 준비해야 한다. 이 4개가 브링 라운드의 성패를 가른다.</div>
+</section>
+
+<section id="domain">
+  <h2>4대 부결 영역 <span>브링 방어 요약</span></h2>
+  <div class="dom">
+    <div class="dcard"><h4>① 시장성·사업성</h4><p>돈 벌 것으로 안 보이면 부결. 브링 답: 다가구 관리 TAM + 공실해결 매출 소구 + 지속수익.</p></div>
+    <div class="dcard"><h4>② 차별성·경쟁력</h4><p>차별성≠경쟁력. '다름'이 금방 희석되면 경쟁력 아님. 브링 답: <b>데이터 해자·표준화</b>는 지속가능한 경쟁력.</p></div>
+    <div class="dcard"><h4>③ 사람·팀 역량</h4><p>도메인 전문가가 관건. 브링 답: 대표(현장·토목·영업)+현진(CRM·자동화)+우중(HW). 단 <b>지분·역할 합의 선결</b>.</p></div>
+    <div class="dcard"><h4>④ EXIT</h4><p>EXIT 안 보이면 부결. 브링 답: 아래 EXIT 섹션 — 현실 경로(M&amp;A·구주매각) + 장기 IPO path.</p></div>
+  </div>
+</section>
+
+<section id="bm">
+  <h2>BM 자가진단 3키워드 <span>고객가치제안 · 시장진입 · 수익모델</span></h2>
+  <p class="lead">책 저자가 "어디부터 시작할지 모르겠으면 이 3가지로 좁혀라"라고 한 핵심. 브링으로 정리하면:</p>
+  <div class="card">
+    <div class="kv">
+      <span class="k">고객가치제안</span><span class="v">건물주의 <b>공실·관리 통증</b> 해소. "혼자 15만/함께 8.9만" + 공실 시계로 끊김 없는 사이클 관리. (효용 명확)</span>
+      <span class="k">시장진입</span><span class="v"><b>공실 해결을 입구로</b>(무료 진단→관리 전환), 권역 밀집블록(150m)에 집중. 이미 7동 계약 = 진입 증명.</span>
+      <span class="k">수익모델</span><span class="v"><b>월 관리비 지속수익(로열티형)</b> + 결합서비스(청소·수리·전문작업 5%). 이익의 44%가 결합. (팔수록 흑자 구조 검증이 과제)</span>
+    </div>
+  </div>
+  <p class="note">→ 3키워드 중 <b>수익모델의 '유닛이코노믹스 검증'</b>이 아직 가정(1인 55동·실수령 8만·90분). 이 검증이 곧 투자 설득력. (체계도 FIN축 6동 실측·8주 타임로그와 직결)</p>
+</section>
+
+<section id="val">
+  <h2>기업가치 9억 협상 <span>프리/포스트머니 · 희석증권 · Valuation Gap</span></h2>
+  <div class="card">
+    <div class="kv">
+      <span class="k">공식</span><span class="v">포스트머니 = 프리머니 + 투자유치금액. 브링: <b>프리 9억 + 1억 = 포스트 10억, 지분 10%</b>.</span>
+      <span class="k">희석증권</span><span class="v">기업가치 = 전체 주식수 × 1주당 가격. VC는 <b>잠재주식까지 다 센다</b> — CB·BW·RCPS 리픽싱, 하회발행, <b>스톡옵션</b>, 가수금 출자전환분.</span>
+      <span class="k">Valuation Gap</span><span class="v">창업자는 현재 주식수로 "9억은 싸다" 하지만, VC는 희석 감안해 "지금 단계엔 비싸다"로 받는다. 이 간극이 부결 사유.</span>
+    </div>
+  </div>
+  <div class="warnbox"><b>브링 최우선 리스크 — 초기멤버 지분 미합의:</b> 이게 정리 안 되면 VC 눈엔 <b>미래 희석·대주주 리스크(5-3)</b>로 보인다. 스톡옵션·지분 구조를 <b>라운드 전에 캡테이블로 확정</b>하라. 가수금(대표가 회사에 넣은 돈)이 있으면 투자 전 정리하거나 출자전환 각오 — 출자전환하면 지분 희석 방어에는 유리.</div>
+  <div class="okbox"><b>9억 방어 논리:</b> 로컬 PM에 9억은 VC가 비싸다 볼 수 있다. 미래가치로 설득 — ① <b>ValueScope 데이터 자산</b>(별도 구축비용·복제불가), ② <b>복제 가능한 운영 표준</b>(도시당 유닛 반복), ③ 실현수익률 기반 정직한 모델. "숫자로 검증된 6동 → 100동 → 다도시" 성장 path.</div>
+</section>
+
+<section id="exit">
+  <h2>EXIT 시나리오 <span>&lt;표 6-4&gt; · VC는 EXIT 없으면 투자 안 한다</span></h2>
+  <p class="lead">"열심히 하고 있습니다"는 EXIT 답변이 아니다. 국내 VC의 회수 방법은 4가지뿐이고, 브링은 실현 가능한 시나리오를 어필해야 한다.</p>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:110px">방법</th><th>VC 관점</th><th style="width:40%">브링 현실 경로</th></tr></thead>
+      <tbody>
+        <tr><td class="rj">IPO (코스닥)</td><td class="df">Best. 대부분 여기로 수렴. 단 설립~상장 평균 13~14년, 아무나 못 함. 선언만으론 안 믿음.</td><td class="df">장기 목표. 다도시·플랫폼화로 성장 path 정렬. 초기 IR에선 "지향"으로.</td></tr>
+        <tr><td class="rj">M&amp;A</td><td class="df">투자자에겐 좋으나 국내 M&amp;A 시장 작음. 프롭테크·플랫폼은 사례 있음.</td><td class="df"><b>현실적 유력 경로</b>. 대형 부동산·프롭테크·건물관리사에 데이터+운영망 매각.</td></tr>
+        <tr><td class="rj">구주매각</td><td class="df">차선책. 그러나 <b>국내 VC EXIT 10건 중 5~6건</b>이 실제 이 방식. 초기투자자의 현실적 회수.</td><td class="df">후속 라운드 시 초기 투자자 구주 매각으로 회수 가능 — 성장하면 자연 발생.</td></tr>
+        <tr><td class="rj">상환 (RCPS)</td><td class="df">플랜B. 연이자 5~8%. <b>이익잉여금 있어야 상환 가능</b>(적자 누적이면 불가).</td><td class="df">브링이 흑자 전환(BEP 35~40동) 후엔 상환 여력 = VC 안전장치. 위축된 시장선 오히려 매력.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="okbox"><b>브링 EXIT 스토리:</b> "1차 M&amp;A(프롭테크/관리 대기업) 또는 후속 라운드 구주매각이 현실 경로, 장기적으로 다도시 플랫폼화 시 IPO 지향." + 더휴식 교훈처럼 <b>현금흐름→리파이낸싱</b>이 받쳐주는 구조라 상환 플랜B도 살아있음. VC가 좋아하는 "안전장치 있는 성장주".</div>
+</section>
+
+<section id="vc">
+  <h2>어떤 VC를 노리나 + 타이밍 <span>제4·5장 · 초기기업은 범위를 좁혀라</span></h2>
+  <div class="card">
+    <ul>
+      <li><b>대형 펀드 VC를 쫓지 마라.</b> 초기기업이 대형펀드 VC에 가면 "더 크면 오세요" 소리 듣는다. 1회 투자규모가 클수록 검토가 깐깐해진다. <b>브링(1억 라운드)엔 시드·초기 특화 VC·AC</b>가 현실적.</li>
+      <li><b>펀드 '주목적'을 확인하라.</b> 모태펀드·성장금융·KIF 자펀드마다 주목적(대상 섹터·지역)이 정해져 있다. 브링에 맞는 결: <b>지역(강원)·소셜/임팩트·프롭테크·AI(소셜벤처 과제4) 매칭 펀드</b>.</li>
+      <li><b>정부매칭을 지렛대로.</b> TIPS·모태펀드 지역계정·창업지원. 단 부결사유 #7(보조금 의존)에 안 걸리게 "자립 유닛이코노믹스 + 정부매칭 병행" 프레임.</li>
+      <li><b>프로세스는 3~6개월.</b> IR 다음 주에 "돈 언제 들어오나요"는 금물 — 그땐 본격 검토도 시작 전. <b>자금 필요시점에서 소요기간+버퍼를 역산</b>해 투자유치 착수 시점을 잡아라.</li>
+      <li><b>단계 정합:</b> PSF 검증(고객문제-솔루션 적합) 완료 = Seed 시점, PMF 검증(제품-시장 적합) = Pre-A 시점. 브링은 6동 실증+매뉴얼 v1.0이 곧 PSF→PMF 증거.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="ir">
+  <h2>IR 자료 원칙 + 다음 90일 <span>제7장 · 대면 전에 승부는 난다</span></h2>
+  <div class="card">
+    <ul>
+      <li><b>IR자료가 첫인상이자 상징물.</b> VC는 자료만 보고 더 볼지 30초 안에 판단(1인당 연 100~1,000개 검토, 투자는 1~4건). 대면은 자료 통과 후.</li>
+      <li><b>IR자료 = 근거데이터·증거.</b> 주장 아니라 backdata. 6동 실측·공실일수·전환율이 그 증거.</li>
+      <li><b>4대 흔한 실수 회피:</b> 시장성/사업성 · 차별성/경쟁력 · 사람/팀 · EXIT — 위 섹션들이 곧 대비책.</li>
+      <li><b>투자제안 파트·마일스톤 로드맵 누락 금지.</b> 로드맵 없으면 VC는 EXIT 확률 낮게 본다. 투자제안(얼마·지분·용처) 없는 IR은 "마침표 없는 문장".</li>
+      <li><b>IR자료는 영원히 남는다.</b> 지금 말한 미래를 나중에 대조당한다 → 과장 금지, 실현수익률 기준.</li>
+    </ul>
+  </div>
+  <h2 style="margin-top:22px">다음 90일 — 투자유치 준비 체크리스트</h2>
+  <div class="card">
+    <div class="chk"><div class="box"></div><div class="tx"><b>캡테이블 확정 + 초기멤버 지분·스톡옵션 합의</b><em>희석·대주주 리스크 제거 (라운드 전 최우선)</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>유닛이코노믹스 검증</b><em>6동 실측·8주 타임로그 → "팔수록 흑자" 증거 (수익모델 부결 차단)</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>부결 9·10·13·20번 30초 답변 스크립트</b><em>로컬·확장성·모방·전통산업 저평가 반박 논리 암기</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>IR덱 10장 작성</b><em>문제·솔루션·시장(TAM)·BM·실적·팀·재무·EXIT·투자제안·로드맵</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>타깃 VC/AC 롱리스트 → 주목적 매칭으로 숏리스트</b><em>강원 지역·프롭테크·소셜/AI·시드 특화, TIPS·모태 지역계정</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>EXIT 스토리 1페이지</b><em>M&amp;A/구주매각 현실경로 + 다도시 플랫폼 IPO 지향</em></div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>자금 필요시점에서 역산해 착수 시점 확정</b><em>프로세스 3~6개월 + 버퍼</em></div></div>
+  </div>
+</section>
+
+<div class="foot">
+  브링케어 투자유치 실전 가이드 v1.0 · 출처: 국내 VC 투자유치 실무서(밀리의서재, 142p 실판독) + 브링케어_체계도 v1.3 · BRING_MASTER_CONTEXT.md<br>
+  <span class="src">※ 부동산 '투자'(교보책 17·19·32)는 부동산에 투자하는 관점이고, 이 문서는 브링이 '투자를 받는' 관점 — 서로 다른 책·다른 목적. 기업가치 9억 등은 내부 목표치로 IR 착수 전 재무모델 재검증 대상.</span>
+</div>
+
+</div>
+</body>
+</html>
