@@ -172,9 +172,14 @@ test("앱을 켤 때 한 번만 읽지 않는다", () => {
   // 화면에 들어올 때마다 다시 읽어야 한다.
   assert.match(appSource, /function isStale\(state\)/u);
   assert.match(appSource, /Date\.now\(\) - Number\(state\.refreshedAt \|\| 0\) >= LIVE_STALE_MS/u);
+  // 그리는 함수 안에서 부르면 길이 스스로를 문다 — 읽고, 다 읽으면 그리고,
+  // 그리면서 또 읽을지 따진다. 들어올 때 한 번만 읽는다.
+  const enter = appSource.slice(appSource.indexOf("function refreshOnEnter"), appSource.indexOf("function refreshButton"));
+  assert.match(enter, /isStale\(dailyLogState\) && !dailyLogState\.draft/u, "치던 것이 있으면 덮어쓰면 안 된다");
+  assert.match(enter, /isStale\(workOrderState\) && !workOrderTyping\(\)/u);
+  assert.match(appSource, /if \(currentView !== lastRenderedView\) refreshOnEnter\(currentView\);/u);
   const render = appSource.slice(appSource.indexOf("function renderDailyLog"), appSource.indexOf("function renderDailyLog") + 700);
-  assert.match(render, /isStale\(dailyLogState\) && !dailyLogState\.draft/u, "치던 것이 있으면 덮어쓰면 안 된다");
-  assert.match(render, /isStale\(workOrderState\)/u);
+  assert.ok(!/isStale\(/u.test(render), "그리면서 읽으면 안 된다");
   // 다 읽고도 안 그리면 새로 온 지시가 고를 목록에 없다.
   const load = methodBody(appSource.replace(/^  async function /gmu, "  async "), "loadWorkOrders");
   assert.match(load, /currentView === "dailyLog" && !dailyLogState\.loading\) renderDailyLog/u);
@@ -204,5 +209,5 @@ test("치는 중인 화면을 다시 읽어서 덮지 않는다", () => {
     assert.ok(guard.includes(`workOrderState.${field}`), `치는 중으로 안 치는 것: ${field}`);
   }
   // 두 화면 다 같은 잣대를 써야 한다. 한쪽만 막으면 다른 쪽에서 지워진다.
-  assert.equal((appSource.match(/isStale\(workOrderState\) && !workOrderTyping\(\)/gu) || []).length, 2);
+  assert.match(appSource, /view === "workOrders" \|\| view === "dailyLog"/u);
 });

@@ -1515,6 +1515,8 @@
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
+    // 들어온 것과 다시 그린 것은 다르다. 여기서만 다시 읽는다.
+    if (currentView !== lastRenderedView) refreshOnEnter(currentView);
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
@@ -4228,10 +4230,6 @@
   function renderDailyLog() {
     const D = dailyLogCore();
     if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>오늘</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    // 치던 것이 있으면 건드리지 않는다.
-    if (isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
-    // 줄마다 지시를 고르려면 지시 목록이 있어야 한다.
-    if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
 
     const date = dailyLogDate();
     const draft = dailyLogDraft(D);
@@ -4585,6 +4583,23 @@
       || workOrderState.importOpen || workOrderState.importPlan || workOrderState.importSplit);
   }
 
+  // 다시 읽는 것은 **화면에 들어올 때 한 번**이다.
+  //
+  // 그리는 함수 안에서 부르면 길이 스스로를 문다 — 다시 읽고, 다 읽으면
+  // 다시 그리고, 그리면서 또 읽을지 따진다. 어느 순서로 끝나는지는 그날
+  // 기계가 얼마나 바쁜지에 달리고, 그 사이에 사람이 친 것이 남는지도 같이
+  // 달린다. 실제로 CI 에서 「오늘」 화면에 사람이 안 친 줄이 아홉 개 떴다.
+  //
+  // 들어올 때 한 번이면 그런 것이 없다. 화면에 머무는 동안 새로 온 것은
+  // [새로고침] 이 있다.
+  function refreshOnEnter(view) {
+    if (view === "workOrders" || view === "dailyLog") {
+      if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
+    }
+    // 치던 것이 있으면 건드리지 않는다.
+    if (view === "dailyLog" && isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
+  }
+
   function refreshButton(state, action) {
     const when = freshLabel(state);
     return `<button type="button" class="mini-button" data-live-refresh="${action}"${state.loading ? " disabled" : ""}>새로고침${when ? ` <small>· ${esc(when)}</small>` : ""}</button>`;
@@ -4660,7 +4675,6 @@
     const W = workOrderCore();
     const P = projectCore();
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
