@@ -225,32 +225,61 @@ function reportFileName(report) {
   return `${report.date.replace(/-/gu, "")}_${name}_일일업무일지.xlsx`;
 }
 
+function fixedLengthMultipart(config, report, documentBytes) {
+  const encoder = new TextEncoder();
+  const boundary = `bring${crypto.randomUUID().replace(/-/gu, "")}`;
+  const fileName = reportFileName(report);
+  const chunks = [
+    encoder.encode(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${config.chatId}\r\n`),
+    encoder.encode(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${composeDailyReportCaption(report)}\r\n`),
+    encoder.encode(`--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${fileName}"\r\nContent-Type: ${XLSX_MIME}\r\n\r\n`),
+    new Uint8Array(documentBytes),
+    encoder.encode(`\r\n--${boundary}--\r\n`),
+  ];
+  const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const body = new Uint8Array(length);
+  let offset = 0;
+  chunks.forEach(chunk => { body.set(chunk, offset); offset += chunk.byteLength; });
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
 async function postDocument(config, report, document, fetchImpl, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const documentBytes = await document.arrayBuffer();
+  const upload = fixedLengthMultipart(config, report, documentBytes);
   let response;
-  try {
-    const form = new FormData();
-    form.append("chat_id", config.chatId);
-    form.append("caption", composeDailyReportCaption(report));
-    form.append("document", document, reportFileName(report));
-    response = await fetchImpl(`https://api.telegram.org/bot${config.token}/sendDocument`, {
-      method: "POST",
-      body: form,
-      redirect: "error",
-      signal: controller.signal,
-    });
-  } catch {
-    throw coded("TELEGRAM_TEMPORARY_FAILURE");
-  } finally {
-    clearTimeout(timeout);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await fetchImpl(`https://api.telegram.org/bot${config.token}/sendDocument`, {
+        method: "POST",
+        headers: { "content-type": upload.contentType, accept: "application/json" },
+        body: upload.body.slice(),
+        signal: controller.signal,
+      });
+      break;
+    } catch (error) {
+      if (attempt === 0 && error && error.name !== "AbortError") continue;
+      console.warn("daily-report telegram transport failed", {
+        kind: error && error.name === "AbortError" ? "timeout" : "network",
+      });
+      clearTimeout(timeout);
+      throw coded("TELEGRAM_TEMPORARY_FAILURE");
+    }
   }
+  clearTimeout(timeout);
   let value = null;
   try {
     const raw = await response.text();
     if (raw.length <= 16 * 1024) value = JSON.parse(raw);
   } catch {}
-  if (response.status === 401 || response.status === 403 || response.status === 400) throw coded("TELEGRAM_NOT_CONFIGURED");
+  if (!response.ok || !value || value.ok !== true) {
+    console.warn("daily-report telegram rejected", {
+      status: Number(response.status || 0),
+      errorCode: Number(value && value.error_code || 0),
+    });
+  }
+  if ([400, 401, 403, 404].includes(response.status)) throw coded("TELEGRAM_NOT_CONFIGURED");
   if (response.status === 429) throw coded("RATE_LIMITED");
   if (!response.ok || !value || value.ok !== true) throw coded("TELEGRAM_TEMPORARY_FAILURE");
 }

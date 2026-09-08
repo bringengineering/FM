@@ -64,6 +64,12 @@ function environment(overrides = {}) {
   };
 }
 
+async function sentTelegramForm(call) {
+  return new Response(call.options.body, {
+    headers: { "content-type": call.options.headers["content-type"] },
+  }).formData();
+}
+
 test("daily report caption is brief, bounded, and does not expose the CRM email", () => {
   const normalized = normalizeDailyReportPayload(report(), identity);
   const message = composeDailyReportCaption(normalized);
@@ -94,7 +100,8 @@ test("authenticated employee sends one saved report through the fixed company bo
   assert.equal(first.status, 200);
   assert.deepEqual(await first.json(), { ok: true, requestId: "tg-req-1", sent: true, duplicate: false });
   const telegram = calls.find(call => call.url.includes("api.telegram.org"));
-  const sent = telegram.options.body;
+  assert.equal(telegram.options.body instanceof Uint8Array, true);
+  const sent = await sentTelegramForm(telegram);
   assert.equal(sent.get("chat_id"), "-1001234567890");
   assert.match(sent.get("caption"), /김현진/u);
   const document = sent.get("document");
@@ -106,6 +113,27 @@ test("authenticated employee sends one saved report through the fixed company bo
   assert.equal(second.status, 200);
   assert.deepEqual(await second.json(), { ok: true, requestId: "tg-req-1", sent: false, duplicate: true });
   assert.equal(calls.filter(call => call.url.includes("api.telegram.org")).length, 1);
+});
+
+test("daily report Telegram send retries one transient network failure with a fresh fixed-length upload body", async () => {
+  const telegramBodies = [];
+  const worker = createWorker({
+    requestId: () => "tg-req-retry",
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).includes("accounts:lookup")) {
+        return new Response(JSON.stringify({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }), { status: 200 });
+      }
+      telegramBodies.push(options.body);
+      if (telegramBodies.length === 1) throw new TypeError("Network connection lost");
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 8 } }), { status: 200 });
+    },
+  });
+
+  const response = await worker.fetch(request(), environment());
+  assert.equal(response.status, 200);
+  assert.equal(telegramBodies.length, 2);
+  assert.notEqual(telegramBodies[0], telegramBodies[1]);
+  assert.equal(telegramBodies.every(body => body instanceof Uint8Array), true);
 });
 
 test("daily report route rejects a non-Excel attachment", async () => {
@@ -145,6 +173,22 @@ test("daily report Telegram route fails closed for wrong user, unverified email,
 
   const missingSecret = createWorker({ fetchImpl: accountFetch({ localId: identity.uid, email: identity.email, emailVerified: true }) });
   const response = await missingSecret.fetch(request(), environment({ TELEGRAM_BOT_TOKEN: "" }));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "TELEGRAM_NOT_CONFIGURED");
+});
+
+test("daily report Telegram route treats a rejected bot endpoint as a configuration failure", async () => {
+  const worker = createWorker({
+    requestId: () => "tg-req-404",
+    fetchImpl: async url => {
+      if (String(url).includes("accounts:lookup")) {
+        return new Response(JSON.stringify({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: false, error_code: 404 }), { status: 404 });
+    },
+  });
+
+  const response = await worker.fetch(request(), environment());
   assert.equal(response.status, 503);
   assert.equal((await response.json()).code, "TELEGRAM_NOT_CONFIGURED");
 });

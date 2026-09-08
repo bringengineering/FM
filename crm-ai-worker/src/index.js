@@ -4,7 +4,7 @@ import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { readDailyReportPayload, sendDailyReportTelegram } from "./daily-report-telegram.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-09-08-v4";
+const SERVICE_VERSION = "2026-09-08-v7";
 const ASSIST_PATH = "/v1/assist";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
