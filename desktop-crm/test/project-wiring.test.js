@@ -66,10 +66,10 @@ test("프로젝트는 활성 팀원을 여러 담당자로 선택해 저장한�
   assert.match(remoteSave, /PROJECT_ASSIGNEE_INVALID/u);
   assert.match(remoteSave, /Object\.fromEntries\(assignees\.map/u);
   const assigneeRule = rules.projects.$projectId.assignees;
-  assert.match(assigneeRule[".validate"], /numChildren\(\) <= 20/u);
   assert.match(assigneeRule.$uid[".validate"], /newData\.child\('uid'\)\.val\(\) === \$uid/u);
   assert.match(assigneeRule.$uid[".validate"], /crmCompany\/access/u);
   assert.match(assigneeRule.$uid[".validate"], /enabled/u);
+  assert.equal(assigneeRule.$uid.$other[".validate"], false);
 });
 
 test("프로젝트와 지시를 한 번에 준다", () => {
