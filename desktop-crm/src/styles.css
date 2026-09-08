@@ -384,9 +384,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-period button:hover { border-color: #9CC4FA; color: #1B64DA; }
 .roadmap-axis { display: grid; grid-template-columns: 184px minmax(760px, 1fr); border-bottom: 1px solid #DCE3EA; background: #F7F9FA; }
 .roadmap-axis > div:first-child { display: flex; align-items: center; padding: 0 14px; border-right: 1px solid #DCE3EA; color: #4E5968; font-size: 10px; font-weight: 800; }
-.roadmap-axis > div:last-child { display: grid; grid-template-columns: repeat(8, minmax(95px, 1fr)); }
-.roadmap-axis span { padding: 10px 4px; border-left: 1px solid #E5E8EB; color: #6B7684; font-size: 9px; font-weight: 700; text-align: center; }
+.roadmap-axis > div:last-child { position: relative; display: grid; grid-template-columns: repeat(8, minmax(95px, 1fr)); }
+.roadmap-axis span { padding: 17px 4px 8px; border-left: 1px solid #E5E8EB; color: #6B7684; font-size: 9px; font-weight: 700; text-align: center; }
 .roadmap-axis span:first-child { border-left: 0; }
+.roadmap-today-label { position: absolute; z-index: 4; top: 3px; padding: 1px 7px; border: 1px solid rgba(229,87,99,.28); border-radius: 999px; background: #fff; color: #D94B58; font-size: 8px; font-weight: 900; line-height: 13px; pointer-events: none; transform: translateX(-50%); white-space: nowrap; writing-mode: horizontal-tb; }
 .roadmap-lanes { min-width: 944px; }
 .roadmap-lane { display: grid; grid-template-columns: 184px minmax(760px, 1fr); min-height: var(--lane-height); border-bottom: 1px solid #EEF1F4; }
 .roadmap-lane:last-child { border-bottom: 0; }
@@ -405,8 +406,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-lane-track { position: relative; display: grid; min-height: var(--lane-height); grid-template-columns: repeat(8, minmax(95px, 1fr)); background: #fff; }
 .roadmap-lane-track > i { border-left: 1px solid #EEF1F4; background: linear-gradient(180deg, rgba(247,249,250,.7), rgba(255,255,255,.4)); }
 .roadmap-lane-track > i:first-child { border-left: 0; }
-.roadmap-today-line { position: absolute; z-index: 3; top: 0; bottom: 0; width: 2px; background: #E55763; pointer-events: none; }
-.roadmap-today-line::before { position: absolute; top: 0; left: 50%; padding: 2px 6px; border-radius: 999px; background: #E55763; color: #fff; content: "오늘"; font-size: 8px; font-weight: 900; transform: translate(-50%, -50%); }
+.roadmap-today-line { position: absolute; z-index: 3; top: 0; bottom: 0; width: 1px; background: rgba(229,87,99,.34); pointer-events: none; }
 .roadmap-bar { position: absolute; z-index: 2; display: block; height: 34px; min-width: 48px; overflow: hidden; padding: 0; border: 1px solid #B7D2F6; border-radius: 10px; background: #EAF2FE; color: #17324F; font: inherit; text-align: left; cursor: pointer; }
 .roadmap-bar > i { position: absolute; inset: 0 auto 0 0; background: #B7D7F3; }
 .roadmap-bar > span { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 100%; padding: 0 9px; }

@@ -4962,7 +4962,7 @@
           </div>
           <div class="roadmap-period"><button type="button" data-roadmap-shift="-1" aria-label="이전 기간">‹</button><b>${esc(rangeLabel)}</b><button type="button" data-roadmap-shift="1" aria-label="다음 기간">›</button><button type="button" data-roadmap-today>오늘로 이동</button></div>
         </header>
-        <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.weeks.map(week => `<span>${esc(week.label)}</span>`).join("")}</div></div>
+        <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.weeks.map(week => `<span>${esc(week.label)}</span>`).join("")}${todayLine === null ? "" : `<b class="roadmap-today-label" style="left:${todayLine.toFixed(3)}%">오늘</b>`}</div></div>
         <div class="roadmap-lanes">${laneHtml || `<div class="roadmap-no-lanes"><b>이 기간에 표시할 일정이 없습니다.</b><span>일정을 추가하거나 앞뒤 기간으로 이동해 주세요.</span></div>`}</div>
       </section>
       ${roadmapDetail(W, P, selected, today)}`;

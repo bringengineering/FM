@@ -39,6 +39,9 @@ test("담당자·프로젝트·내 일정 보기와 기간 이동이 연결돼 �
   assert.match(app, /data-roadmap-today/u);
   assert.match(app, /projectRoadmapState\.rangeShift = 0/u);
   assert.match(css, /\.roadmap-today-line/u);
+  assert.match(app, /class="roadmap-today-label"[^>]*>오늘<\/b>/u);
+  assert.match(css, /\.roadmap-today-label[^}]*white-space:\s*nowrap[^}]*writing-mode:\s*horizontal-tb/u);
+  assert.doesNotMatch(css, /\.roadmap-today-line::before/u, "각 행의 오늘 기준선에 글자를 반복하면 안 된다");
 });
 
 test("로드맵 일정 추가와 진행률 변경은 업무지시 저장 경로를 재사용한다", () => {
