@@ -1218,10 +1218,10 @@ describe("desktop CRM screens actually render", () => {
     expect(sheet()).toContain("이번 주 지시서가 아직 없습니다");
     expect(sheet(), "남의 것을 펼치면 내 것은 접힌다").not.toContain("임차인이 두 번 민원을 넣었고");
 
-    // 진행률은 「오늘」 에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
+    // 진행률은 「일일업무보고서」에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
     handle().click();
     await sleep(200);
-    expect(sheet()).toContain("진행은 「오늘」 에서 적습니다");
+    expect(sheet()).toContain("진행은 「일일업무보고서」에서 적습니다");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
   it("견적서에서 결과보고서로, 결과보고서에서 고객 알림으로 이어진다", async () => {
