@@ -367,16 +367,15 @@
     orders.forEach(order => {
       const uid = text(order.assigneeUid, 128);
       const projectId = text(order.projectId, 80);
-      // 프로젝트를 고르지 않은 기존 업무도 제목으로 각각 보여 준다. 모두
-      // "프로젝트 없음" 한 막대로 합치면 어떤 업무인지 알 수 없다.
-      const orphanKey = `order:${text(order.id, 80) || text(order.title, 120)}`;
-      const laneKey = mode === "people" ? (uid || "__none") : (projectId || orphanKey);
-      const groupKey = mode === "people" ? (projectId || orphanKey) : (uid || "__none");
+      // 프로젝트에 연결하지 않은 업무는 담당자마다 한 막대로 묶는다. 개별
+      // 업무는 막대를 눌렀을 때 상세 일정 목록에서 모두 확인한다.
+      const laneKey = mode === "people" ? (uid || "__none") : (projectId || "__work_orders");
+      const groupKey = mode === "people" ? (projectId || "__work_orders") : (uid || "__none");
       const key = `${laneKey}::${groupKey}`;
       if (!grouped.has(key)) grouped.set(key, { laneKey, groupKey, orders: [] });
       grouped.get(key).orders.push(order);
       if (mode === "people" && !laneMap.has(laneKey)) ensureLane(laneKey, text(order.assigneeName, 80) || "담당자 없음", "담당자");
-      if (mode === "projects" && !laneMap.has(laneKey)) ensureLane(laneKey, (projects.get(projectId) || {}).name || text(order.title, 120) || "업무 제목 없음", projectId ? "프로젝트" : "미연결 업무");
+      if (mode === "projects" && !laneMap.has(laneKey)) ensureLane(laneKey, (projects.get(projectId) || {}).name || "업무지시", projectId ? "프로젝트" : "미연결 업무");
     });
 
     grouped.forEach(group => {
@@ -392,7 +391,7 @@
       const assignment = {
         key: `${group.laneKey}::${group.groupKey}`,
         projectId: text(first.projectId, 80),
-        projectName: project ? project.name : text(first.title, 120) || "업무 제목 없음",
+        projectName: project ? project.name : `업무지시 ${list.length}건`,
         assigneeUid: text(first.assigneeUid, 128),
         assigneeName: text(first.assigneeName, 80) || "담당자 없음",
         startDate: [projectStart, starts[0]].filter(Boolean).sort()[0] || "",

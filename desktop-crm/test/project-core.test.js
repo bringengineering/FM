@@ -127,7 +127,7 @@ test("최근 진행사항은 실제 수정 시각 최신 순서로 고른다", (
   assert.deepEqual(recent.map(item => item.id), ["new", "old"]);
 });
 
-test("프로젝트에 연결하지 않은 업무는 프로젝트 없음 대신 업무 제목으로 보인다", () => {
+test("프로젝트에 연결하지 않은 업무는 담당자별 업무지시 막대 하나로 묶는다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),
     mode: "people",
@@ -138,8 +138,26 @@ test("프로젝트에 연결하지 않은 업무는 프로젝트 없음 대신 �
       order({ id: "b", title: "견적서 확인", assigneeUid: "u1", dueDate: "2026-09-11" }),
     ],
   });
-  assert.deepEqual(lanes[0].assignments.map(item => item.projectName), ["현장 점검표 만들기", "견적서 확인"]);
-  assert.equal(lanes[0].assignments.some(item => item.projectName === "프로젝트 없음"), false);
+  assert.equal(lanes[0].assignments.length, 1);
+  assert.equal(lanes[0].assignments[0].projectName, "업무지시 2건");
+  assert.deepEqual(lanes[0].assignments[0].orderIds, ["a", "b"]);
+});
+
+test("프로젝트 기준에서도 미연결 업무는 한 줄에서 담당자별로 묶는다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "projects",
+    members: [],
+    projects: [],
+    orders: [
+      order({ id: "a", title: "현장 점검", assigneeUid: "u1", assigneeName: "김민서", dueDate: "2026-09-10" }),
+      order({ id: "b", title: "견적 확인", assigneeUid: "u1", assigneeName: "김민서", dueDate: "2026-09-11" }),
+      order({ id: "c", title: "문서 검토", assigneeUid: "u2", assigneeName: "박서연", dueDate: "2026-09-12" }),
+    ],
+  });
+  assert.equal(lanes.length, 1);
+  assert.equal(lanes[0].label, "업무지시");
+  assert.deepEqual(lanes[0].assignments.map(item => item.projectName), ["업무지시 2건", "업무지시 1건"]);
 });
 
 test("업무지시가 없는 새 프로젝트도 진행률과 기한으로 로드맵에 남는다", () => {

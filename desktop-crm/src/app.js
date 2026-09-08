@@ -4941,7 +4941,7 @@
     const status = workOrderState.loading
       ? `<div class="info-box">프로젝트와 일정을 불러오는 중…</div>`
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
-    const projectCount = new Set(assignments.map(item => item.projectId || item.key)).size;
+    const projectCount = new Set(assignments.map(item => item.projectId).filter(Boolean)).size;
 
     const laneHtml = lanes.map((lane, laneIndex) => {
       const bars = lane.assignments.map((assignment, index) => {
@@ -4957,13 +4957,19 @@
       const laneOpen = lane.assignments.reduce((sum, item) => sum + item.open, 0);
       const laneProgress = lane.assignments.length ? Math.round(lane.assignments.reduce((sum, item) => sum + item.progress, 0) / lane.assignments.length) : 0;
       const addUid = mode === "people" ? lane.key : "";
-      const addProject = mode === "projects" && workOrderState.projects.some(item => item && item.id === lane.key) ? lane.key : "";
+      const isProjectLane = mode === "projects" && workOrderState.projects.some(item => item && item.id === lane.key);
+      const addProject = isProjectLane ? lane.key : "";
       const height = Math.max(70, 22 + Math.max(1, lane.assignments.length) * 46);
-      const laneName = mode === "projects" && workOrderState.admin && lane.key !== "__none" && !lane.key.startsWith("order:")
+      const laneProjectCount = lane.assignments.filter(item => item.projectId).length;
+      const laneWorkOrderCount = lane.assignments.filter(item => !item.projectId).reduce((sum, item) => sum + item.total, 0);
+      const laneSummary = mode === "projects"
+        ? `${laneWorkOrderCount ? `업무지시 ${laneWorkOrderCount}건 · ` : ""}${lane.assignments.length}명 담당 · 진행 ${laneOpen}건`
+        : `${laneProjectCount}개 프로젝트${laneWorkOrderCount ? ` · 업무지시 ${laneWorkOrderCount}건` : ""} · 진행 ${laneOpen}건`;
+      const laneName = isProjectLane && workOrderState.admin
         ? `<button type="button" class="roadmap-project-name" data-roadmap-project-progress="${esc(lane.key)}">${esc(lane.label)}</button>`
         : `<b>${esc(lane.label)}</b>`;
       return `<article class="roadmap-lane" style="--lane-height:${height}px">
-        <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div>${laneName}<small>${lane.assignments.length}개 프로젝트 · 진행 ${laneOpen}건</small><span><i style="width:${laneProgress}%"></i></span></div></div>
+        <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div>${laneName}<small>${esc(laneSummary)}</small><span><i style="width:${laneProgress}%"></i></span></div></div>
         <div class="roadmap-lane-track">${range.weeks.map(() => "<i></i>").join("")}${todayLine === null ? "" : `<span class="roadmap-today-line" style="left:${todayLine.toFixed(3)}%"></span>`}${bars}${workOrderState.admin ? `<button type="button" class="roadmap-lane-add" data-roadmap-new data-project-id="${esc(addProject === "__none" ? "" : addProject)}" data-assignee-uid="${esc(addUid === "__none" ? "" : addUid)}">＋ 일정</button>` : ""}</div>
       </article>`;
     }).join("");
