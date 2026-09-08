@@ -304,7 +304,7 @@ test("지시서를 보내되 전문을 보내지 않는다", () => {
   assert.match(body, /20260909_당근\.png/u);
   assert.match(body, /100% · 4h · ~09-09/u);
   // 텔레그램에서 다 읽으면 앱을 안 연다. 앱을 안 열면 일지가 안 써진다.
-  assert.match(body, /진행은 앱에서 적습니다/u);
+  assert.match(body, /진행은 앱에서 적습니다\. 프로젝트 관리 → 일일업무보고서\./u);
   // 비고까지 다 실어 보내면 그게 전문이다.
   assert.doesNotMatch(body, /여기 적은 것은 안 나가야 한다/u);
 });

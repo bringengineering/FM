@@ -34,6 +34,12 @@ test("일지 채널이 세 곳에 다 등록돼 있다", () => {
   assert.ok(indexSource.includes('src="./daily-log-core.js"'));
 });
 
+test("오늘 탭 명칭을 일일업무보고서로 통일한다", () => {
+  assert.match(indexSource, /data-view="dailyLog"[\s\S]*?<b>일일업무보고서<\/b><em id="navDailyLogCount">0<\/em>/u);
+  assert.match(appSource, /dailyLog: \["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "일일업무보고서"\]/u);
+  assert.ok(!indexSource.includes('<b>오늘</b><em id="navDailyLogCount">'));
+});
+
 test("읽는 경로 자체가 사람마다 다르다", () => {
   // 다 읽어 와서 화면에서 걸러 보여 주면, 화면을 안 거치는 길로 남의 일지를
   // 그대로 가져갈 수 있다.

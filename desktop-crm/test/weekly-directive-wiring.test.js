@@ -210,8 +210,8 @@ test("펼친 자리에 텔레그램에 안 나가는 것까지 다 있다", () =
   // 지시 한 건 한 건의 왜·완료기준·산출물이 보여야 한다. 그게 없어서 애들이 헷갈렸다.
   assert.match(detail, /order\.doneWhen \? `<dt>어디까지 하면 끝<\/dt>/u);
   assert.match(detail, /W\.deliverableCheck\(order\)/u);
-  // 진행률은 「오늘」 에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
-  assert.match(detail, /진행은 「오늘」 에서 적습니다/u);
+  // 진행률은 「일일업무보고서」에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
+  assert.match(detail, /진행은 「일일업무보고서」에서 적습니다/u);
   assert.ok(!/data-wo-progress/u.test(detail), "여기서 진행률을 고치게 하면 안 된다");
 });
 

@@ -197,7 +197,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
-    dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "오늘"],
+    dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "일일업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
@@ -5252,7 +5252,7 @@
     return `<div class="wd-detail">
       ${head ? `<dl class="di-head">${head}</dl>` : `<p class="office-muted">왜 하는지가 아직 안 적혀 있습니다.</p>`}
       <div class="wd-tasks">${list || `<p class="office-empty">이 주에 걸친 지시가 없습니다.</p>`}</div>
-      <p class="office-muted">진행은 「오늘」 에서 적습니다. 여기 진행률은 거기서 올라온 값입니다.</p>
+      <p class="office-muted">진행은 「일일업무보고서」에서 적습니다. 여기 진행률은 거기서 올라온 값입니다.</p>
     </div>`;
   }
 
