@@ -80,12 +80,30 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
   };
 
+  function normalizeAssignees(value) {
+    const source = Array.isArray(value)
+      ? value
+      : (value && typeof value === "object" ? Object.values(value) : []);
+    const seen = new Set();
+    const result = [];
+    for (const item of source) {
+      const uid = text(item && item.uid, 128);
+      const name = text(item && item.name, 80);
+      if (!/^[A-Za-z0-9._-]{1,128}$/u.test(uid) || !name || seen.has(uid)) continue;
+      seen.add(uid);
+      result.push({ uid, name });
+      if (result.length >= 20) break;
+    }
+    return result;
+  }
+
   function normalizeProject(value) {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
     return {
       id: text(source.id, 80),
       name: text(source.name, 120),
       owner: text(source.owner, 80),
+      assignees: normalizeAssignees(source.assignees),
       goal: text(source.goal, 2000),
       status: STATUSES.some(item => item.key === source.status) ? source.status : "active",
       // 이 프로젝트의 일이 가용시간을 잡아먹는가. 학업이 그렇지 않다 —
@@ -513,6 +531,7 @@
     statusLabel,
     progressOf,
     normalizeProject,
+    normalizeAssignees,
     validateProject,
     ordersOf,
     ganttRange,

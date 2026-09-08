@@ -50,6 +50,28 @@ test("프로젝트는 관리자만 만들고 지우지 못한다", () => {
   assert.match(save, /progressUpdatedAt: progressChanged \? now/u);
 });
 
+test("프로젝트는 활성 팀원을 여러 담당자로 선택해 저장한다", () => {
+  const editor = appSource.slice(appSource.indexOf("function projectAssigneeField("), appSource.indexOf("function workOrderCard("));
+  const roadmapEditor = appSource.slice(appSource.indexOf("function roadmapProjectEditor("), appSource.indexOf("function roadmapDetail("));
+  const save = appSource.slice(appSource.indexOf("async function saveProjectFromForm("), appSource.indexOf("async function setWorkOrderProgress("));
+  const remoteSave = methodBody(remoteSource, "saveProject");
+  assert.match(editor, /type="checkbox" name="assigneeUid"/u);
+  assert.match(editor, /여러 명 선택할 수 있습니다/u);
+  assert.match(roadmapEditor, /projectAssigneeField\(draft\)/u);
+  assert.match(appSource, /checked\.length > 20/u);
+  assert.match(save, /formData\.getAll\("assigneeUid"\)/u);
+  assert.match(save, /assigneesChanged/u);
+  assert.match(save, /assignees\.map\(item => item\.name\)\.join\(", "\)/u);
+  assert.match(remoteSave, /OfficeCore\.mergeOfficeUsers\(users, teamProfiles\)/u);
+  assert.match(remoteSave, /PROJECT_ASSIGNEE_INVALID/u);
+  assert.match(remoteSave, /Object\.fromEntries\(assignees\.map/u);
+  const assigneeRule = rules.projects.$projectId.assignees;
+  assert.match(assigneeRule[".validate"], /numChildren\(\) <= 20/u);
+  assert.match(assigneeRule.$uid[".validate"], /newData\.child\('uid'\)\.val\(\) === \$uid/u);
+  assert.match(assigneeRule.$uid[".validate"], /crmCompany\/access/u);
+  assert.match(assigneeRule.$uid[".validate"], /enabled/u);
+});
+
 test("프로젝트와 지시를 한 번에 준다", () => {
   // 두 번 부르면 그 사이에 지시가 바뀌어 간트가 프로젝트와 안 맞는 순간이 생긴다.
   const load = methodBody(remoteSource, "loadWorkOrders");

@@ -277,6 +277,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wo-editor textarea { resize: vertical; line-height: 1.5; }
 .wo-editor-actions { display: flex; gap: 8px; }
 .wo-editor-note { margin: 0; color: #8B95A1; font-size: 9px; }
+.wo-project-assignees { min-width: 0; margin: 0; padding: 0; border: 0; }
+.wo-project-assignees > legend { margin-bottom: 5px; color: #4E5968; font-size: 9px; font-weight: 800; }
+.wo-project-assignees > small { display: block; margin: -16px 0 5px auto; color: #8B95A1; font-size: 9px; text-align: right; }
+.wo-project-assignees details { position: relative; }
+.wo-project-assignees summary { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-height: 39px; padding: 6px 34px 6px 8px; border: 1px solid #E5E8EB; border-radius: 10px; background: #fff; color: #4E5968; cursor: pointer; list-style: none; }
+.wo-project-assignees summary::-webkit-details-marker { display: none; }
+.wo-project-assignees summary::after { position: absolute; right: 13px; top: 13px; width: 7px; height: 7px; border-right: 2px solid #8B95A1; border-bottom: 2px solid #8B95A1; content: ""; transform: rotate(45deg); }
+.wo-project-assignees details[open] summary::after { top: 17px; transform: rotate(225deg); }
+.wo-project-assignee-chip { display: inline-flex; align-items: center; min-height: 25px; padding: 0 9px; border-radius: 7px; background: #EDF5FF; color: #3182F6; font-size: 11px; font-weight: 700; }
+.wo-project-assignee-empty { color: #8B95A1; font-size: 11px; font-weight: 400; }
+.wo-project-assignee-options { position: absolute; z-index: 12; top: calc(100% + 5px); left: 0; right: 0; display: grid; gap: 2px; max-height: 230px; overflow-y: auto; padding: 7px; border: 1px solid #D7E5F2; border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(36, 61, 82, .16); }
+.wo-project-assignee-option { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px !important; min-height: 36px; padding: 3px 8px; border-radius: 7px; color: #191F28 !important; cursor: pointer; }
+.wo-project-assignee-option:hover { background: #F2F7FC; }
+.wo-project-assignee-option input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: #3182F6; }
+.wo-project-assignee-option span { overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.wo-project-assignee-option small { color: #8B95A1; font-size: 9px; font-weight: 400; }
+.wo-project-legacy-owner { margin: 6px 0 0; color: #6B7D8D; font-size: 9px; }
 .wo-list { display: flex; flex-direction: column; gap: 12px; }
 .wo-empty { padding: 34px; text-align: center; color: #8B95A1; font-size: 11px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }
 .wo-card { padding: 17px 19px; border: 1px solid #E5E8EB; border-radius: 18px; background: #fff; }

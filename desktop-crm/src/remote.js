@@ -4259,14 +4259,33 @@ class FirebaseRemoteClient {
     const checked = ProjectCore.validateProject(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     const location = `projects/${checked.project.id}`;
-    const existing = await this.dbRequest(location, { method: "GET" });
+    const [existing, users, teamProfiles] = await Promise.all([
+      this.dbRequest(location, { method: "GET" }),
+      this.dbRequest("crmAccess", { method: "GET" }),
+      this.dbRequest("teamProfiles", { method: "GET" }).catch(() => null),
+    ]);
     this.assertSessionGuardActive(guard);
+    const merged = OfficeCore.mergeOfficeUsers(users, teamProfiles);
+    const assignees = checked.project.assignees.map(item => {
+      const user = merged[item.uid];
+      if (OfficeCore.normalizeOfficeUserId(item.uid) !== item.uid || !user
+        || user.enabled !== true || user.mustChangePassword === true
+        || !["admin", "member", "viewer"].includes(String(user.role || ""))) {
+        throw createError("선택한 담당자가 현재 활성 계정이 아닙니다. 목록을 새로고침해 주세요.", "PROJECT_ASSIGNEE_INVALID");
+      }
+      return {
+        uid: item.uid,
+        name: String(user.displayName || user.email || item.uid).trim().slice(0, 80),
+      };
+    });
     const now = new Date().toISOString();
     const before = ProjectCore.normalizeProject(existing || {});
     const progressChanged = !existing
       || before.progress !== checked.project.progress
       || before.progressNote !== checked.project.progressNote;
     const record = Object.assign({}, checked.project, {
+      assignees: Object.fromEntries(assignees.map(item => [item.uid, item])),
+      owner: assignees.length ? assignees.map(item => item.name).join(", ").slice(0, 80) : checked.project.owner,
       createdAt: (existing && existing.createdAt) || now,
       progressUpdatedAt: progressChanged ? now : before.progressUpdatedAt,
       progressUpdatedBy: progressChanged ? session.uid : before.progressUpdatedBy,

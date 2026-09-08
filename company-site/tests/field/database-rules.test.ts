@@ -2189,6 +2189,25 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 시작일이 종료일보다 늦으면 간트에서 막대가 거꾸로 그려진다.
     await assertFails(set(ref(admin, at("p4")), project("p4", { startDate: "2026-09-01", endDate: "2026-08-01" })));
     await assertFails(set(ref(admin, at("p5")), project("p5", { budget: 1000 })));
+    await assertSucceeds(set(ref(admin, at("p6")), project("p6", { assignees: {
+      "crm-admin": { uid: "crm-admin", name: "관리자" },
+      "crm-viewer": { uid: "crm-viewer", name: "조회 담당" },
+    } })));
+    // 담당자 키와 uid 는 같아야 하고, 비활성·비밀번호 변경 대기 계정은 배정하지 않는다.
+    await assertFails(set(ref(admin, at("p7")), project("p7", { assignees: {
+      "crm-admin": { uid: "crm-viewer", name: "키 불일치" },
+    } })));
+    await assertFails(set(ref(admin, at("p8")), project("p8", { assignees: {
+      "crm-disabled": { uid: "crm-disabled", name: "비활성 계정" },
+    } })));
+    await assertFails(set(ref(admin, at("p9")), project("p9", { assignees: {
+      "crm-member": { uid: "crm-member", name: "비밀번호 변경 대기" },
+    } })));
+    const tooMany = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [
+      `member-${index}`,
+      { uid: `member-${index}`, name: `담당자 ${index}` },
+    ]));
+    await assertFails(set(ref(admin, at("p10")), project("p10", { assignees: tooMany })));
     await assertFails(remove(ref(admin, at("p1"))));
   });
 

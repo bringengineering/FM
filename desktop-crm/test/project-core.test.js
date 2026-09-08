@@ -11,6 +11,29 @@ test("이름 없는 프로젝트는 만들 수 없다", () => {
   assert.equal(P.validateProject({ id: "p1", name: "x", startDate: "2026-09-01", endDate: "2026-08-01" }).code, "DATE_REVERSED");
 });
 
+test("프로젝트 담당자는 여러 명을 중복 없이 보존한다", () => {
+  const project = P.normalizeProject({
+    id: "p1",
+    name: "CRM 개선",
+    assignees: {
+      u1: { uid: "u1", name: "김현진" },
+      duplicate: { uid: "u1", name: "다른 이름" },
+      u2: { uid: "u2", name: "서창환" },
+      invalid: { uid: "잘못된 uid", name: "제외" },
+    },
+  });
+  assert.deepEqual(project.assignees, [
+    { uid: "u1", name: "김현진" },
+    { uid: "u2", name: "서창환" },
+  ]);
+  assert.equal(P.validateProject(project).ok, true);
+});
+
+test("프로젝트 담당자는 최대 스무 명까지만 받는다", () => {
+  const assignees = Array.from({ length: 25 }, (_, index) => ({ uid: `u${index}`, name: `담당자 ${index}` }));
+  assert.equal(P.normalizeProject({ id: "p1", name: "CRM 개선", assignees }).assignees.length, 20);
+});
+
 test("간트 폭을 자료에서 뽑는다", () => {
   // 고정 폭을 쓰면 지난달에 시작한 일이 화면 밖으로 나가 없는 것처럼 보인다.
   const range = P.ganttRange([

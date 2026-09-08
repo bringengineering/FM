@@ -4830,12 +4830,36 @@
     return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? `${Number(text.slice(5, 7))}.${String(Number(text.slice(8, 10))).padStart(2, "0")}` : "미정";
   }
 
+  function projectAssigneeField(draft) {
+    const people = workOrderState.members.filter(item => item && item.uid);
+    const selected = new Set(draft.assignees.map(item => item.uid));
+    if (!selected.size && draft.owner) {
+      const legacyNames = new Set(draft.owner.split(",").map(item => item.trim()).filter(Boolean));
+      people.forEach(item => {
+        const name = item.displayName || item.email || item.uid;
+        if (legacyNames.has(name) || legacyNames.has(item.uid)) selected.add(item.uid);
+      });
+    }
+    const selectedPeople = people.filter(item => selected.has(item.uid));
+    const summary = selectedPeople.length
+      ? selectedPeople.map(item => `<span class="wo-project-assignee-chip">${esc(item.displayName || item.email || item.uid)}</span>`).join("")
+      : `<span class="wo-project-assignee-empty">담당자를 선택해 주세요</span>`;
+    const options = people.length
+      ? people.map(item => {
+        const name = item.displayName || item.email || item.uid;
+        return `<label class="wo-project-assignee-option"><input type="checkbox" name="assigneeUid" value="${esc(item.uid)}" data-assignee-name="${esc(name)}"${selected.has(item.uid) ? " checked" : ""}><span>${esc(name)}</span>${item.department || item.title ? `<small>${esc([item.department, item.title].filter(Boolean).join(" · "))}</small>` : ""}</label>`;
+      }).join("")
+      : `<p class="wo-project-assignee-empty">선택할 수 있는 활성 계정이 없습니다.</p>`;
+    return `<fieldset class="wide wo-project-assignees"><legend>담당자</legend><small>여러 명 선택할 수 있습니다.</small><details><summary data-wo-project-assignee-summary>${summary}</summary><div class="wo-project-assignee-options">${options}</div></details>${draft.owner && !selectedPeople.length ? `<p class="wo-project-legacy-owner">기존 담당: ${esc(draft.owner)} · 팀원 목록에서 새 담당자를 선택하면 교체됩니다.</p>` : ""}</fieldset>`;
+  }
+
   function roadmapProjectEditor(P) {
     const draft = P.normalizeProject(workOrderState.projectEditing);
     const isNew = !draft.id;
     return `<form class="wo-editor roadmap-project-editor" data-wo-project-form>
       <div class="roadmap-project-editor-head"><div><span>${isNew ? "NEW PROJECT" : "PROGRESS UPDATE"}</span><h3>${isNew ? "프로젝트 추가" : esc(draft.name)}</h3><p>${isNew ? "프로젝트명·진행률·시작일·마감일을 정하면 로드맵에 바로 표시됩니다." : "프로젝트 일정과 진행사항을 남기면 로드맵에 바로 반영됩니다."}</p></div><button type="button" class="mini-button return" data-wo-project-cancel>닫기</button></div>
       <label class="wide"><span>프로젝트명</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 고객관리 자동화"${isNew ? "" : " readonly"}></label>
+      ${projectAssigneeField(draft)}
       <label><span>진행률</span><div class="roadmap-project-progress-field"><input type="number" name="progress" min="0" max="100" step="5" value="${draft.progress}" required><b>%</b></div></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}" required></label>
       <label><span>마감일</span><input type="date" name="endDate" value="${esc(draft.endDate)}" required></label>
@@ -5461,7 +5485,7 @@
     return `<form class="wo-editor" data-wo-project-form>
       <h3>${esc(draft.createdAt ? "프로젝트 고치기" : "새 프로젝트")}</h3>
       <label class="wide"><span>프로젝트 이름</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 브링 케어"></label>
-      <label><span>담당</span><input type="text" name="owner" maxlength="80" value="${esc(draft.owner)}" placeholder="예: 브링엔지니어링"></label>
+      ${projectAssigneeField(draft)}
       <label><span>상태</span><select name="status">${P.STATUSES.map(item => `<option value="${esc(item.key)}"${item.key === draft.status ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
       <label><span>진행률</span><input type="number" name="progress" min="0" max="100" step="5" value="${draft.progress}"></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}"></label>
@@ -5473,6 +5497,16 @@
         <button type="button" class="mini-button return" data-wo-project-cancel>그만두기</button>
       </div>
     </form>`;
+  }
+
+  function updateProjectAssigneeSummary(form) {
+    const summary = form && form.querySelector("[data-wo-project-assignee-summary]");
+    if (!summary) return;
+    const names = Array.from(form.querySelectorAll('input[name="assigneeUid"]:checked'))
+      .map(input => String(input.dataset.assigneeName || "").trim()).filter(Boolean);
+    summary.innerHTML = names.length
+      ? names.map(name => `<span class="wo-project-assignee-chip">${esc(name)}</span>`).join("")
+      : `<span class="wo-project-assignee-empty">담당자를 선택해 주세요</span>`;
   }
 
   function workOrderCard(W, order, today) {
@@ -5994,12 +6028,23 @@
   async function saveProjectFromForm(form) {
     const P = projectCore();
     if (!P) return;
-    const raw = Object.fromEntries(new FormData(form).entries());
+    const formData = new FormData(form);
+    const raw = Object.fromEntries(formData.entries());
     const previous = P.normalizeProject(workOrderState.projectEditing);
+    const selectedUids = formData.getAll("assigneeUid").map(value => String(value || ""));
+    const selectedPeople = selectedUids.map(uid => workOrderState.members.find(item => item && item.uid === uid)).filter(Boolean);
+    const assigneesChanged = form.dataset.assigneesTouched === "true";
+    const assignees = assigneesChanged
+      ? selectedPeople.map(item => ({ uid: item.uid, name: item.displayName || item.email || item.uid }))
+      : previous.assignees;
+    const owner = assigneesChanged
+      ? assignees.map(item => item.name).join(", ").slice(0, 80)
+      : previous.owner;
     const checked = P.validateProject(Object.assign({}, previous, {
       id: previous.id || `pj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       name: String(raw.name || ""),
-      owner: raw.owner === undefined ? previous.owner : String(raw.owner || ""),
+      owner,
+      assignees,
       status: raw.status === undefined ? previous.status : String(raw.status || "active"),
       startDate: raw.startDate === undefined ? previous.startDate : String(raw.startDate || ""),
       endDate: raw.endDate === undefined ? previous.endDate : String(raw.endDate || ""),
@@ -13099,6 +13144,18 @@
   document.addEventListener("pointerup", event => { void endGanttDrag(event); });
 
   document.addEventListener("change", event => {
+    const projectAssignee = event.target.closest('[data-wo-project-form] input[name="assigneeUid"]');
+    if (projectAssignee) {
+      const form = projectAssignee.form;
+      const checked = form.querySelectorAll('input[name="assigneeUid"]:checked');
+      if (checked.length > 20) {
+        projectAssignee.checked = false;
+        showToast("프로젝트 담당자는 최대 20명까지 선택할 수 있습니다.", "error");
+      }
+      form.dataset.assigneesTouched = "true";
+      updateProjectAssigneeSummary(form);
+      return;
+    }
     const woProgress = event.target.closest("[data-wo-progress]");
     if (woProgress) { void setWorkOrderProgress(woProgress.dataset.woProgress, woProgress.value); return; }
     // 항목 종류를 바꾸면 "고를 것" 칸이 열리고 닫힌다.

@@ -842,6 +842,15 @@
           "owner": {
             ".validate": "newData.isString() && newData.val().length <= 80"
           },
+          "assignees": {
+            ".validate": "newData.numChildren() <= 20",
+            "$uid": {
+              ".validate": "$uid.matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.hasChildren(['uid','name']) && newData.numChildren() === 2 && newData.child('uid').isString() && newData.child('uid').val() === $uid && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child($uid).child('role').val() === 'admin' || root.child('crmCompany/access').child($uid).child('role').val() === 'member' || root.child('crmCompany/access').child($uid).child('role').val() === 'viewer') && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 80",
+              "uid": { ".validate": "newData.isString()" },
+              "name": { ".validate": "newData.isString()" },
+              "$other": { ".validate": false }
+            }
+          },
           "goal": {
             ".validate": "newData.isString() && newData.val().length <= 2000"
           },
