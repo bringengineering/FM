@@ -4834,10 +4834,11 @@
     const draft = P.normalizeProject(workOrderState.projectEditing);
     const isNew = !draft.id;
     return `<form class="wo-editor roadmap-project-editor" data-wo-project-form>
-      <div class="roadmap-project-editor-head"><div><span>${isNew ? "NEW PROJECT" : "PROGRESS UPDATE"}</span><h3>${isNew ? "프로젝트 추가" : esc(draft.name)}</h3><p>${isNew ? "프로젝트명·진행률·기한만 정하면 로드맵에 바로 표시됩니다." : "새 진행률과 진행사항을 남기면 로드맵에 바로 반영됩니다."}</p></div><button type="button" class="mini-button return" data-wo-project-cancel>닫기</button></div>
+      <div class="roadmap-project-editor-head"><div><span>${isNew ? "NEW PROJECT" : "PROGRESS UPDATE"}</span><h3>${isNew ? "프로젝트 추가" : esc(draft.name)}</h3><p>${isNew ? "프로젝트명·진행률·시작일·마감일을 정하면 로드맵에 바로 표시됩니다." : "프로젝트 일정과 진행사항을 남기면 로드맵에 바로 반영됩니다."}</p></div><button type="button" class="mini-button return" data-wo-project-cancel>닫기</button></div>
       <label class="wide"><span>프로젝트명</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 고객관리 자동화"${isNew ? "" : " readonly"}></label>
       <label><span>진행률</span><div class="roadmap-project-progress-field"><input type="number" name="progress" min="0" max="100" step="5" value="${draft.progress}" required><b>%</b></div></label>
-      <label><span>기한 날짜</span><input type="date" name="endDate" value="${esc(draft.endDate)}" required></label>
+      <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}" required></label>
+      <label><span>마감일</span><input type="date" name="endDate" value="${esc(draft.endDate)}" required></label>
       ${isNew ? "" : `<label class="wide"><span>진행사항</span><textarea name="progressNote" rows="3" maxlength="500" required placeholder="예: 화면 구성 완료, 실제 데이터 연결 작업 중">${esc(draft.progressNote)}</textarea></label>`}
       <div class="wo-editor-actions"><button class="primary-button" type="submit">${isNew ? "프로젝트 추가" : "진행사항 저장"}</button></div>
     </form>`;

@@ -109,7 +109,7 @@
     if (!project.id) return { ok: false, code: "ID_REQUIRED", error: "프로젝트 번호가 없습니다." };
     if (!project.name) return { ok: false, code: "NAME_REQUIRED", error: "프로젝트 이름을 적어 주세요." };
     if (project.startDate && project.endDate && project.startDate > project.endDate) {
-      return { ok: false, code: "DATE_REVERSED", error: "시작일이 종료일보다 늦습니다." };
+      return { ok: false, code: "DATE_REVERSED", error: "시작일이 마감일보다 늦습니다." };
     }
     return { ok: true, project };
   }

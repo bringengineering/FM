@@ -65,12 +65,13 @@ test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 �
   assert.match(detail, /업무지시에서 변경된 최신 순서/u);
 });
 
-test("로드맵에서 프로젝트명·진행률·기한을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
+test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
   assert.match(app, /data-roadmap-project-new/u);
   assert.match(app, /function roadmapProjectEditor\(/u);
   assert.match(app, /name="name"[^>]*required/u);
   assert.match(app, /name="progress"[^>]*min="0"[^>]*max="100"/u);
-  assert.match(app, /name="endDate"[^>]*required/u);
+  assert.match(app, /<span>시작일<\/span><input type="date" name="startDate"[^>]*required/u);
+  assert.match(app, /<span>마감일<\/span><input type="date" name="endDate"[^>]*required/u);
   assert.match(app, /name="progressNote"[^>]*required/u);
   assert.match(app, /data-roadmap-project-progress/u);
   assert.match(app, /api\.saveProject\(checked\.project\)/u);
