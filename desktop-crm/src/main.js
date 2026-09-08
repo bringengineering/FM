@@ -4530,7 +4530,27 @@ async function createWindow() {
       route.remove();
       return true;
     }; true`, true);
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="project"]')?.click();
+        await wait(180);
+        window.__crmSmokeNavigate('projectRoadmap');
+        await wait(180);
+        document.querySelector('[data-live-refresh="projectRoadmap"]')?.click();
+        await wait(420);
+        const labels = [...document.querySelectorAll('.roadmap-today-label')];
+        const repeated = [...document.querySelectorAll('.roadmap-lane-track')]
+          .some(track => track.textContent.includes('오늘'));
+        return {
+          pass: window.__crmTest?.snapshot().view === 'projectRoadmap'
+            && labels.length === 1 && !repeated,
+          todayLabels: labels.length,
+          repeated,
+          state: window.__crmTest?.snapshot(),
+        };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter="operations"]')?.click();
@@ -7611,7 +7631,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
