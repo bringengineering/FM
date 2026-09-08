@@ -127,6 +127,55 @@ test("최근 진행사항은 실제 수정 시각 최신 순서로 고른다", (
   assert.deepEqual(recent.map(item => item.id), ["new", "old"]);
 });
 
+test("프로젝트에 연결하지 않은 업무는 프로젝트 없음 대신 업무 제목으로 보인다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }],
+    projects: [],
+    orders: [
+      order({ id: "a", title: "현장 점검표 만들기", assigneeUid: "u1", dueDate: "2026-09-10" }),
+      order({ id: "b", title: "견적서 확인", assigneeUid: "u1", dueDate: "2026-09-11" }),
+    ],
+  });
+  assert.deepEqual(lanes[0].assignments.map(item => item.projectName), ["현장 점검표 만들기", "견적서 확인"]);
+  assert.equal(lanes[0].assignments.some(item => item.projectName === "프로젝트 없음"), false);
+});
+
+test("업무지시가 없는 새 프로젝트도 진행률과 기한으로 로드맵에 남는다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "projects",
+    members: [],
+    projects: [{ id: "p1", name: "신규 자동화", startDate: "2026-09-07", endDate: "2026-09-30", progress: 35, progressNote: "기획 완료", progressUpdatedAt: "2026-09-08T00:00:00.000Z" }],
+    orders: [],
+  });
+  assert.equal(lanes.length, 1);
+  assert.equal(lanes[0].label, "신규 자동화");
+  assert.equal(lanes[0].assignments[0].progress, 35);
+  assert.equal(lanes[0].assignments[0].endDate, "2026-09-30");
+  assert.equal(lanes[0].assignments[0].progressNote, "기획 완료");
+});
+
+test("직접 남긴 프로젝트 진행률은 연결 업무의 평균보다 우선한다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }],
+    projects: [{ id: "p1", name: "CRM", progress: 80, progressNote: "검수 중", progressUpdatedAt: "2026-09-08T00:00:00.000Z" }],
+    orders: [order({ id: "a", title: "화면 구현", projectId: "p1", assigneeUid: "u1", progress: 20, dueDate: "2026-09-12" })],
+  });
+  assert.equal(lanes[0].assignments[0].progress, 80);
+  assert.equal(lanes[0].assignments[0].progressNote, "검수 중");
+});
+
+test("프로젝트 진행사항은 0부터 100까지 정수로 정규화한다", () => {
+  assert.equal(P.normalizeProject({ progress: 37.6 }).progress, 38);
+  assert.equal(P.normalizeProject({ progress: 140 }).progress, 100);
+  assert.equal(P.normalizeProject({ progress: -5 }).progress, 0);
+  assert.equal(P.normalizeProject({ progressNote: "가".repeat(600) }).progressNote.length, 500);
+});
+
 test("드래그한 칸을 날짜로 되돌린다", () => {
   const range = { from: "2026-09-01", to: "2026-09-10", days: 10 };
   assert.deepEqual(P.datesFromColumns(range, 2, 5), { startDate: "2026-09-03", dueDate: "2026-09-06" });

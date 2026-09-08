@@ -75,6 +75,10 @@
   const trackOf = key => TRACKS.find(item => item.key === text(key, 40)) || null;
   const trackLabel = key => (trackOf(key) || {}).label || "기타";
   const statusLabel = key => (STATUSES.find(item => item.key === key) || {}).label || key;
+  const progressOf = value => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
+  };
 
   function normalizeProject(value) {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -90,6 +94,10 @@
       offCapacity: source.offCapacity === true,
       startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
       endDate: isDate(source.endDate) ? text(source.endDate, 10) : "",
+      progress: progressOf(source.progress),
+      progressNote: text(source.progressNote, 500),
+      progressUpdatedAt: text(source.progressUpdatedAt, 40),
+      progressUpdatedBy: text(source.progressUpdatedBy, 128),
       createdAt: text(source.createdAt, 40),
       updatedAt: text(source.updatedAt, 40),
       updatedBy: text(source.updatedBy, 128),
@@ -359,13 +367,16 @@
     orders.forEach(order => {
       const uid = text(order.assigneeUid, 128);
       const projectId = text(order.projectId, 80);
-      const laneKey = mode === "people" ? (uid || "__none") : (projectId || "__none");
-      const groupKey = mode === "people" ? (projectId || "__none") : (uid || "__none");
+      // 프로젝트를 고르지 않은 기존 업무도 제목으로 각각 보여 준다. 모두
+      // "프로젝트 없음" 한 막대로 합치면 어떤 업무인지 알 수 없다.
+      const orphanKey = `order:${text(order.id, 80) || text(order.title, 120)}`;
+      const laneKey = mode === "people" ? (uid || "__none") : (projectId || orphanKey);
+      const groupKey = mode === "people" ? (projectId || orphanKey) : (uid || "__none");
       const key = `${laneKey}::${groupKey}`;
       if (!grouped.has(key)) grouped.set(key, { laneKey, groupKey, orders: [] });
       grouped.get(key).orders.push(order);
       if (mode === "people" && !laneMap.has(laneKey)) ensureLane(laneKey, text(order.assigneeName, 80) || "담당자 없음", "담당자");
-      if (mode === "projects" && !laneMap.has(laneKey)) ensureLane(laneKey, (projects.get(projectId) || {}).name || "프로젝트 없음", "프로젝트");
+      if (mode === "projects" && !laneMap.has(laneKey)) ensureLane(laneKey, (projects.get(projectId) || {}).name || text(order.title, 120) || "업무 제목 없음", projectId ? "프로젝트" : "미연결 업무");
     });
 
     grouped.forEach(group => {
@@ -374,23 +385,53 @@
       const ends = list.map(item => isDate(item.dueDate) ? item.dueDate : item.startDate).filter(isDate).sort();
       const first = list[0] || {};
       const project = projects.get(text(first.projectId, 80));
+      const manualProgress = Boolean(project && project.progressUpdatedAt);
+      const taskProgress = list.length ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length) : 0;
+      const projectStart = project && isDate(project.startDate) ? project.startDate : "";
+      const projectEnd = project && isDate(project.endDate) ? project.endDate : "";
       const assignment = {
         key: `${group.laneKey}::${group.groupKey}`,
         projectId: text(first.projectId, 80),
-        projectName: project ? project.name : "프로젝트 없음",
+        projectName: project ? project.name : text(first.title, 120) || "업무 제목 없음",
         assigneeUid: text(first.assigneeUid, 128),
         assigneeName: text(first.assigneeName, 80) || "담당자 없음",
-        startDate: starts[0] || "",
-        endDate: ends.length ? ends[ends.length - 1] : "",
-        progress: list.length ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length) : 0,
+        startDate: [projectStart, starts[0]].filter(Boolean).sort()[0] || "",
+        endDate: [projectEnd, ends.length ? ends[ends.length - 1] : ""].filter(Boolean).sort().pop() || "",
+        progress: manualProgress ? project.progress : taskProgress,
+        progressNote: project ? project.progressNote : "",
         status: roadmapStatus(list),
         orderIds: list.map(item => text(item.id, 80)).filter(Boolean),
         open: list.filter(item => OPEN_STATUSES.includes(text(item.status, 20))).length,
         total: list.length,
-        updatedAt: list.map(item => text(item.updatedAt || item.createdAt, 40)).sort().pop() || "",
+        updatedAt: [project && project.progressUpdatedAt, ...list.map(item => text(item.updatedAt || item.createdAt, 40))].filter(Boolean).sort().pop() || "",
       };
       const lane = laneMap.get(group.laneKey);
       if (lane) lane.assignments.push(assignment);
+    });
+
+    // 업무지시가 아직 없어도 직접 만든 프로젝트는 로드맵에서 사라지지 않는다.
+    // 담당자가 없는 새 프로젝트는 사람 기준 화면의 "담당자 미정" 줄에 놓는다.
+    if (!mineUid) projects.forEach(project => {
+      if ([...grouped.values()].some(group => group.orders.some(order => text(order.projectId, 80) === project.id))) return;
+      if (!overlapsRange({ startDate: project.startDate, dueDate: project.endDate }, range)) return;
+      const laneKey = mode === "people" ? "__none" : project.id;
+      const lane = ensureLane(laneKey, mode === "people" ? "담당자 미정" : project.name, mode === "people" ? "담당자" : "프로젝트");
+      lane.assignments.push({
+        key: `${laneKey}::project:${project.id}`,
+        projectId: project.id,
+        projectName: project.name,
+        assigneeUid: "",
+        assigneeName: "담당자 미정",
+        startDate: project.startDate,
+        endDate: project.endDate,
+        progress: project.progress,
+        progressNote: project.progressNote,
+        status: project.status === "done" ? "done" : "assigned",
+        orderIds: [],
+        open: project.status === "done" ? 0 : 1,
+        total: 1,
+        updatedAt: project.progressUpdatedAt || project.updatedAt || project.createdAt,
+      });
     });
 
     return [...laneMap.values()]
@@ -408,8 +449,9 @@
   function recentProgress(orders, orderIds, limit) {
     const wanted = new Set(rows(orderIds).map(id => text(id, 80)).filter(Boolean));
     const take = Math.max(1, Math.min(20, Number(limit) || 6));
+    if (!wanted.size) return [];
     return rows(orders)
-      .filter(item => !wanted.size || wanted.has(text(item.id, 80)))
+      .filter(item => wanted.has(text(item.id, 80)))
       .slice()
       .sort((a, b) => text(b.updatedAt || b.createdAt, 40).localeCompare(text(a.updatedAt || a.createdAt, 40)))
       .slice(0, take);
@@ -470,6 +512,7 @@
     trackOf,
     trackLabel,
     statusLabel,
+    progressOf,
     normalizeProject,
     validateProject,
     ordersOf,

@@ -365,6 +365,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
    업무지시와 같은 자료를 사람 중심으로 다시 놓는다. 왼쪽 이름은 고정하고
    오른쪽 8주만 흘러가야 누가 무엇을 맡았는지 놓치지 않는다. */
 .roadmap-hero { margin-bottom: 12px; }
+.roadmap-project-editor { margin-bottom: 12px; border-color: #B8D6FA; background: linear-gradient(180deg, #F8FBFF, #fff); }
+.roadmap-project-editor-head { display: flex; grid-column: 1 / -1; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.roadmap-project-editor-head span { color: #3182F6; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.roadmap-project-editor-head h3 { margin: 3px 0; color: #191F28; }
+.roadmap-project-editor-head p { margin: 0; color: #6B7684; font-size: 10px; }
+.roadmap-project-progress-field { position: relative; }
+.roadmap-project-progress-field input { padding-right: 30px; }
+.roadmap-project-progress-field b { position: absolute; top: 50%; right: 12px; color: #6B7684; font-size: 11px; transform: translateY(-50%); }
 .roadmap-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .roadmap-summary article { padding: 14px 16px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; }
 .roadmap-summary span, .roadmap-summary small { display: block; color: #8B95A1; font-size: 10px; font-weight: 700; }
@@ -395,6 +403,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-lane-person > div { min-width: 0; flex: 1; }
 .roadmap-lane-person b, .roadmap-lane-person small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roadmap-lane-person b { color: #191F28; font-size: 11px; }
+.roadmap-project-name { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; color: #191F28; font: inherit; font-size: 11px; font-weight: 900; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.roadmap-project-name:hover { color: #1B64DA; text-decoration: underline; }
 .roadmap-lane-person small { margin-top: 3px; color: #8B95A1; font-size: 9px; }
 .roadmap-lane-person div > span { display: block; height: 4px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
 .roadmap-lane-person div > span i { display: block; height: 100%; border-radius: inherit; background: #3182F6; }
@@ -429,6 +439,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-no-lanes span { font-size: 10px; }
 .roadmap-detail { margin-bottom: 16px; overflow: hidden; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; }
 .roadmap-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid #EEF1F4; }
+.roadmap-project-title { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; cursor: pointer; }
+.roadmap-project-title:hover { color: #1B64DA; text-decoration: underline; }
+.roadmap-detail-score .mini-button { margin-top: 7px; white-space: nowrap; }
 .roadmap-detail > header span { color: #3182F6; font-size: 9px; font-weight: 900; letter-spacing: .04em; }
 .roadmap-detail > header h3 { margin: 4px 0; color: #191F28; font-size: 17px; }
 .roadmap-detail > header p { max-width: 720px; margin: 0; color: #6B7684; font-size: 10px; line-height: 1.55; }

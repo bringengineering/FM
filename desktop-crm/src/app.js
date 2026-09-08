@@ -4830,6 +4830,19 @@
     return /^\d{4}-\d{2}-\d{2}$/u.test(text) ? `${Number(text.slice(5, 7))}.${String(Number(text.slice(8, 10))).padStart(2, "0")}` : "미정";
   }
 
+  function roadmapProjectEditor(P) {
+    const draft = P.normalizeProject(workOrderState.projectEditing);
+    const isNew = !draft.id;
+    return `<form class="wo-editor roadmap-project-editor" data-wo-project-form>
+      <div class="roadmap-project-editor-head"><div><span>${isNew ? "NEW PROJECT" : "PROGRESS UPDATE"}</span><h3>${isNew ? "프로젝트 추가" : esc(draft.name)}</h3><p>${isNew ? "프로젝트명·진행률·기한만 정하면 로드맵에 바로 표시됩니다." : "새 진행률과 진행사항을 남기면 로드맵에 바로 반영됩니다."}</p></div><button type="button" class="mini-button return" data-wo-project-cancel>닫기</button></div>
+      <label class="wide"><span>프로젝트명</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 고객관리 자동화"${isNew ? "" : " readonly"}></label>
+      <label><span>진행률</span><div class="roadmap-project-progress-field"><input type="number" name="progress" min="0" max="100" step="5" value="${draft.progress}" required><b>%</b></div></label>
+      <label><span>기한 날짜</span><input type="date" name="endDate" value="${esc(draft.endDate)}" required></label>
+      ${isNew ? "" : `<label class="wide"><span>진행사항</span><textarea name="progressNote" rows="3" maxlength="500" required placeholder="예: 화면 구성 완료, 실제 데이터 연결 작업 중">${esc(draft.progressNote)}</textarea></label>`}
+      <div class="wo-editor-actions"><button class="primary-button" type="submit">${isNew ? "프로젝트 추가" : "진행사항 저장"}</button></div>
+    </form>`;
+  }
+
   function roadmapDetail(W, P, assignment, today) {
     if (!assignment) {
       return `<section class="roadmap-detail is-empty"><b>프로젝트 막대를 선택해 주세요</b><span>담당 일정과 최근 진행사항이 여기에 표시됩니다.</span></section>`;
@@ -4868,11 +4881,17 @@
         : (order.results && order.results.length ? `결과물 ${order.results.length}건 · ${W.statusLabel(order.status)}` : `${W.statusLabel(order.status)} · 진행률 ${order.progress}%`);
       return `<li><time>${esc(when)}</time><i></i><div><b>${esc(order.title)}</b><span>${esc(note)}</span><small>${esc(actor)}</small></div></li>`;
     }).join("");
+    const projectProgressRow = project && project.progressUpdatedAt
+      ? `<li><time>${esc(project.progressUpdatedAt.slice(0, 10))}</time><i></i><div><b>${esc(project.name)}</b><span>${esc(project.progressNote || `프로젝트 진행률 ${project.progress}%`)}</span><small>프로젝트 진행률 ${project.progress}%</small></div></li>`
+      : "";
+    const projectName = project && workOrderState.admin
+      ? `<button type="button" class="roadmap-project-title" data-roadmap-project-progress="${esc(project.id)}">${esc(assignment.projectName)}</button>`
+      : esc(assignment.projectName);
 
     return `<section class="roadmap-detail">
       <header>
-        <div><span>선택한 프로젝트</span><h3>${esc(assignment.projectName)}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
-        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>평균 진행률</span></div>
+        <div><span>${project ? "선택한 프로젝트 · 이름을 누르면 진행사항 추가" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${project && project.progressUpdatedAt ? "프로젝트 진행률" : "평균 진행률"}</span>${project && workOrderState.admin ? `<button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button>` : ""}</div>
       </header>
       <div class="roadmap-detail-grid">
         <section>
@@ -4881,7 +4900,7 @@
         </section>
         <section>
           <div class="roadmap-section-head"><div><b>최근 진행사항</b><span>업무지시에서 변경된 최신 순서</span></div></div>
-          <ol class="roadmap-updates">${recentRows || `<li class="roadmap-empty">아직 진행 기록이 없습니다.</li>`}</ol>
+          <ol class="roadmap-updates">${(projectProgressRow || recentRows) ? `${projectProgressRow}${recentRows}` : `<li class="roadmap-empty">아직 진행 기록이 없습니다.</li>`}</ol>
         </section>
       </div>
     </section>`;
@@ -4909,43 +4928,51 @@
     const assignments = lanes.flatMap(lane => lane.assignments);
     let selected = assignments.find(item => item.key === projectRoadmapState.selectedKey) || assignments[0] || null;
     projectRoadmapState.selectedKey = selected ? selected.key : "";
-    const visibleOrderIds = new Set(assignments.flatMap(item => item.orderIds));
-    const visibleOrders = workOrderState.orders.filter(item => visibleOrderIds.has(item.id));
-    const summary = P.summarize(visibleOrders, today);
+    const summary = {
+      total: assignments.length,
+      open: assignments.reduce((sum, item) => sum + (item.status === "done" ? 0 : 1), 0),
+      overdue: assignments.filter(item => item.status !== "done" && item.endDate && item.endDate < today).length,
+      done: assignments.filter(item => item.status === "done").length,
+      progress: assignments.length ? Math.round(assignments.reduce((sum, item) => sum + item.progress, 0) / assignments.length) : 0,
+    };
     const todayLine = P.todayOffset(range, today);
     const rangeLabel = range ? `${range.from.slice(0, 7).replace("-", "년 ")}월 ~ ${range.to.slice(0, 7).replace("-", "년 ")}월` : "";
     const status = workOrderState.loading
       ? `<div class="info-box">프로젝트와 일정을 불러오는 중…</div>`
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
-    const projectCount = new Set(visibleOrders.map(item => item.projectId).filter(Boolean)).size;
+    const projectCount = new Set(assignments.map(item => item.projectId || item.key)).size;
 
     const laneHtml = lanes.map((lane, laneIndex) => {
       const bars = lane.assignments.map((assignment, index) => {
         const box = P.roadmapLayout(assignment, range);
         const label = mode === "people" ? assignment.projectName : assignment.assigneeName;
         if (!box) {
-          return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
+          return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"${assignment.projectId && workOrderState.admin ? ` data-roadmap-project-progress="${esc(assignment.projectId)}"` : ""}><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
         }
-        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%`)}">
+        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}"${assignment.projectId && workOrderState.admin ? ` data-roadmap-project-progress="${esc(assignment.projectId)}"` : ""} title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%`)}">
           <i style="width:${assignment.progress}%"></i><span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
         </button>`;
       }).join("");
       const laneOpen = lane.assignments.reduce((sum, item) => sum + item.open, 0);
       const laneProgress = lane.assignments.length ? Math.round(lane.assignments.reduce((sum, item) => sum + item.progress, 0) / lane.assignments.length) : 0;
       const addUid = mode === "people" ? lane.key : "";
-      const addProject = mode === "projects" ? lane.key : "";
+      const addProject = mode === "projects" && workOrderState.projects.some(item => item && item.id === lane.key) ? lane.key : "";
       const height = Math.max(70, 22 + Math.max(1, lane.assignments.length) * 46);
+      const laneName = mode === "projects" && workOrderState.admin && lane.key !== "__none" && !lane.key.startsWith("order:")
+        ? `<button type="button" class="roadmap-project-name" data-roadmap-project-progress="${esc(lane.key)}">${esc(lane.label)}</button>`
+        : `<b>${esc(lane.label)}</b>`;
       return `<article class="roadmap-lane" style="--lane-height:${height}px">
-        <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div><b>${esc(lane.label)}</b><small>${lane.assignments.length}개 프로젝트 · 진행 ${laneOpen}건</small><span><i style="width:${laneProgress}%"></i></span></div></div>
+        <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div>${laneName}<small>${lane.assignments.length}개 프로젝트 · 진행 ${laneOpen}건</small><span><i style="width:${laneProgress}%"></i></span></div></div>
         <div class="roadmap-lane-track">${range.weeks.map(() => "<i></i>").join("")}${todayLine === null ? "" : `<span class="roadmap-today-line" style="left:${todayLine.toFixed(3)}%"></span>`}${bars}${workOrderState.admin ? `<button type="button" class="roadmap-lane-add" data-roadmap-new data-project-id="${esc(addProject === "__none" ? "" : addProject)}" data-assignee-uid="${esc(addUid === "__none" ? "" : addUid)}">＋ 일정</button>` : ""}</div>
       </article>`;
     }).join("");
 
     main.innerHTML = `<section class="operations-hero roadmap-hero">
         <div><span>PROJECT ROADMAP</span><h2>담당자와 프로젝트 진행을 한눈에 봅니다</h2><p>막대는 업무지시의 실제 일정과 진행률입니다. 막대를 누르면 현재 진행과 다음 일정을 이어서 확인할 수 있습니다.</p></div>
-        <div class="operations-actions">${refreshButton(workOrderState, "projectRoadmap")}${workOrderState.admin ? `<button type="button" class="primary-button" data-roadmap-new>＋ 일정 추가</button>` : ""}</div>
+        <div class="operations-actions">${refreshButton(workOrderState, "projectRoadmap")}${workOrderState.admin ? `<button type="button" class="secondary-button" data-roadmap-project-new>＋ 프로젝트 추가</button><button type="button" class="primary-button" data-roadmap-new>＋ 일정 추가</button>` : ""}</div>
       </section>
       ${status}
+      ${workOrderState.projectEditing ? roadmapProjectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, P.sortProjects(workOrderState.projects)) : ""}
       <section class="roadmap-summary">
         <article><span>진행 프로젝트</span><b>${projectCount}</b><small>현재 화면 기간</small></article>
@@ -5429,9 +5456,11 @@
       <label class="wide"><span>프로젝트 이름</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 브링 케어"></label>
       <label><span>담당</span><input type="text" name="owner" maxlength="80" value="${esc(draft.owner)}" placeholder="예: 브링엔지니어링"></label>
       <label><span>상태</span><select name="status">${P.STATUSES.map(item => `<option value="${esc(item.key)}"${item.key === draft.status ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>진행률</span><input type="number" name="progress" min="0" max="100" step="5" value="${draft.progress}"></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}"></label>
       <label><span>종료일</span><input type="date" name="endDate" value="${esc(draft.endDate)}"></label>
       <label class="wide"><span>이 프로젝트로 무엇을 이루나</span><textarea name="goal" rows="2" maxlength="2000">${esc(draft.goal)}</textarea></label>
+      <label class="wide"><span>최근 진행사항</span><textarea name="progressNote" rows="2" maxlength="500">${esc(draft.progressNote)}</textarea></label>
       <div class="wo-editor-actions">
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "만들기")}</button>
         <button type="button" class="mini-button return" data-wo-project-cancel>그만두기</button>
@@ -5963,11 +5992,13 @@
     const checked = P.validateProject(Object.assign({}, previous, {
       id: previous.id || `pj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       name: String(raw.name || ""),
-      owner: String(raw.owner || ""),
-      status: String(raw.status || "active"),
-      startDate: String(raw.startDate || ""),
-      endDate: String(raw.endDate || ""),
-      goal: String(raw.goal || ""),
+      owner: raw.owner === undefined ? previous.owner : String(raw.owner || ""),
+      status: raw.status === undefined ? previous.status : String(raw.status || "active"),
+      startDate: raw.startDate === undefined ? previous.startDate : String(raw.startDate || ""),
+      endDate: raw.endDate === undefined ? previous.endDate : String(raw.endDate || ""),
+      goal: raw.goal === undefined ? previous.goal : String(raw.goal || ""),
+      progress: raw.progress === undefined ? previous.progress : String(raw.progress || "0"),
+      progressNote: raw.progressNote === undefined ? previous.progressNote : String(raw.progressNote || ""),
     }));
     if (!checked.ok) { showToast(checked.error, "error"); return; }
     try {
@@ -5997,7 +6028,7 @@
       showToast(error && error.message || "진행률을 바꾸지 못했습니다.", "error");
     } finally {
       workOrderState.busyId = "";
-      renderWorkOrders();
+      renderWorkOrderSurface();
     }
   }
 
@@ -10699,7 +10730,7 @@
       if (P) { workOrderState.projectEditing = P.normalizeProject({}); renderWorkOrders(); }
       return;
     }
-    if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
+    if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrderSurface(); return; }
     if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
     const wdOpen = event.target.closest("[data-wd-open]");
     if (wdOpen) {
@@ -10915,6 +10946,28 @@
       projectRoadmapState.rangeShift = 0;
       projectRoadmapState.selectedKey = "";
       renderProjectRoadmap();
+      return;
+    }
+    if (event.target.closest("[data-roadmap-project-new]")) {
+      if (!workOrderState.admin) return showToast("프로젝트 추가는 관리자만 할 수 있습니다.", "error");
+      const P = projectCore();
+      if (!P) return;
+      workOrderState.projectEditing = P.normalizeProject({ startDate: todayKey(), endDate: P.addDays(todayKey(), 7), progress: 0 });
+      renderProjectRoadmap();
+      document.querySelector("[data-wo-project-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const roadmapProjectProgress = event.target.closest("[data-roadmap-project-progress]");
+    if (roadmapProjectProgress) {
+      const P = projectCore();
+      const projectId = String(roadmapProjectProgress.dataset.roadmapProjectProgress || "");
+      const project = P && P.sortProjects(workOrderState.projects).find(item => item.id === projectId);
+      if (!project) return showToast("프로젝트 정보를 찾지 못했습니다.", "error");
+      if (!workOrderState.admin) return showToast("프로젝트 진행사항 추가는 관리자만 할 수 있습니다.", "error");
+      if (roadmapProjectProgress.dataset.roadmapSelect) projectRoadmapState.selectedKey = roadmapProjectProgress.dataset.roadmapSelect;
+      workOrderState.projectEditing = P.normalizeProject(project);
+      renderProjectRoadmap();
+      document.querySelector("[data-wo-project-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     const roadmapSelect = event.target.closest("[data-roadmap-select]");

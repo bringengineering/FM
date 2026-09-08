@@ -4262,8 +4262,14 @@ class FirebaseRemoteClient {
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     const now = new Date().toISOString();
+    const before = ProjectCore.normalizeProject(existing || {});
+    const progressChanged = !existing
+      || before.progress !== checked.project.progress
+      || before.progressNote !== checked.project.progressNote;
     const record = Object.assign({}, checked.project, {
       createdAt: (existing && existing.createdAt) || now,
+      progressUpdatedAt: progressChanged ? now : before.progressUpdatedAt,
+      progressUpdatedBy: progressChanged ? session.uid : before.progressUpdatedBy,
       updatedAt: now,
       updatedBy: session.uid,
     });

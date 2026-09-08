@@ -65,6 +65,20 @@ test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 �
   assert.match(detail, /업무지시에서 변경된 최신 순서/u);
 });
 
+test("로드맵에서 프로젝트명·진행률·기한을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
+  assert.match(app, /data-roadmap-project-new/u);
+  assert.match(app, /function roadmapProjectEditor\(/u);
+  assert.match(app, /name="name"[^>]*required/u);
+  assert.match(app, /name="progress"[^>]*min="0"[^>]*max="100"/u);
+  assert.match(app, /name="endDate"[^>]*required/u);
+  assert.match(app, /name="progressNote"[^>]*required/u);
+  assert.match(app, /data-roadmap-project-progress/u);
+  assert.match(app, /api\.saveProject\(checked\.project\)/u);
+  assert.match(app, /raw\.startDate === undefined \? previous\.startDate/u);
+  assert.match(app, /raw\.goal === undefined \? previous\.goal/u);
+  assert.match(app, /프로젝트에 연결되지 않은 업무/u);
+});
+
 test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미리보기를 허용한다", () => {
   assert.match(main, /BRING_CRM_PREVIEW_VIEW === "projectRoadmap" \? "projectRoadmap" : ""/u);
   assert.match(main, /Boolean\(interactivePreviewView\)/u);

@@ -44,6 +44,10 @@ test("프로젝트는 관리자만 만들고 지우지 못한다", () => {
   for (const field of Object.keys(ProjectCore.normalizeProject({ id: "p" }))) {
     assert.ok(rules.projects.$projectId[field], `규칙에 없는 칸: ${field}`);
   }
+  assert.match(rules.projects.$projectId.progress[".validate"], /val\(\) >= 0.*val\(\) <= 100.*val\(\) % 1 === 0/u);
+  assert.match(rules.projects.$projectId.progressNote[".validate"], /length <= 500/u);
+  assert.match(save, /progressChanged/u);
+  assert.match(save, /progressUpdatedAt: progressChanged \? now/u);
 });
 
 test("프로젝트와 지시를 한 번에 준다", () => {
