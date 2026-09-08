@@ -7,6 +7,7 @@ const read = name => fs.readFileSync(path.join(__dirname, "../src", name), "utf8
 const app = read("app.js");
 const html = read("index.html");
 const css = read("styles.css");
+const main = read("main.js");
 
 test("프로젝트 관리 폴더에 로드맵 하위 탭이 있다", () => {
   const start = html.indexOf('data-nav-folder="project"');
@@ -62,5 +63,11 @@ test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 �
   assert.match(detail, /최근 진행사항/u);
   assert.match(detail, /P\.recentProgress/u);
   assert.match(detail, /업무지시에서 변경된 최신 순서/u);
+});
+
+test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미리보기를 허용한다", () => {
+  assert.match(main, /BRING_CRM_PREVIEW_VIEW === "projectRoadmap" \? "projectRoadmap" : ""/u);
+  assert.match(main, /Boolean\(interactivePreviewView\)/u);
+  assert.match(main, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
 });
 

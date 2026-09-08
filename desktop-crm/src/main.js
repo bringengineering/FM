@@ -145,7 +145,9 @@ const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 // 실제 데이터와 분리된 화면을 프로그램 창으로 확인할 때만 쓰는 닫힌 경로다.
 // 제품 실행에서는 환경 변수가 없으므로 기존 로그인·저장 경로에 영향이 없다.
-const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog" ? "dailyLog" : "";
+const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog"
+  ? "dailyLog"
+  : (process.env.BRING_CRM_PREVIEW_VIEW === "projectRoadmap" ? "projectRoadmap" : "");
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
