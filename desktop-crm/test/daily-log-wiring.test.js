@@ -23,7 +23,7 @@ function methodBody(source, name) {
 }
 
 test("일지 채널이 세 곳에 다 등록돼 있다", () => {
-  for (const channel of ["crm:daily-log-save", "crm:daily-log-confirm"]) {
+  for (const channel of ["crm:daily-log-save", "crm:daily-log-confirm", "crm:daily-log-telegram-send"]) {
     assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel), channel);
     assert.ok(mainSource.includes(`secureCanonicalHandle("${channel}"`), channel);
     assert.ok(preloadSource.includes(`"${channel}"`), channel);
@@ -129,6 +129,23 @@ test("글자 칸은 칠 때마다 다시 그리지 않는다", () => {
   assert.doesNotMatch(listener, /data-dl-field='start'|data-dl-field='end'/u);
   assert.ok(!listener.includes("data-dl-field='title'"), "글자 칸을 다시 그리면 커서가 튄다");
   assert.ok(!appSource.includes('data-dl-word="blockers" oninput'), "글자 칸을 다시 그리면 커서가 튄다");
+});
+
+test("보내기는 CRM 저장 뒤 회사 텔레그램 업무방으로 나간다", () => {
+  const save = appSource.slice(appSource.indexOf("async function saveDailyLogDraft"), appSource.indexOf("// 앱을 켤 때 한 번만", appSource.indexOf("async function saveDailyLogDraft")));
+  const telegramHandler = mainSource.slice(mainSource.indexOf('secureCanonicalHandle("crm:daily-log-telegram-send"'), mainSource.indexOf('secureCanonicalHandle("crm:consultation-audio-pick"'));
+  const persist = save.indexOf("api.saveDailyLog");
+  const telegram = save.indexOf("api.sendTelegramDailyLog");
+  assert.ok(persist > -1 && telegram > persist, "저장되지 않은 보고서를 먼저 보내면 안 된다");
+  assert.match(save, /requestConfirmation/u, "업무방에 공개하기 전에 확인해야 한다");
+  assert.match(save, /CRM에는 제출했지만 텔레그램 업무방 Excel 전송에 실패했습니다/u, "부분 실패를 숨기면 안 된다");
+  assert.match(appSource, /회사 봇이 Excel 업무보고서를 브링엔지니어링 업무방에 올립니다/u);
+  assert.match(mainSource, /sendDailyLogToTelegram/u);
+  assert.match(mainSource, /createDailyLogWorkbook/u);
+  assert.match(mainSource, /dailyLogWorkbookFileName/u);
+  assert.ok(telegramHandler.indexOf("createDailyLogWorkbook(report, { profile })") < telegramHandler.indexOf("sendDailyLogToTelegram({"), "Excel 파일을 먼저 만든 뒤 보낸다");
+  assert.match(save, /profile: \{ department: me\.department \|\| "", title: me\.title \|\| "" \}/u, "기존 양식의 부서명과 직책을 직원 프로필에서 가져온다");
+  assert.match(remoteSource, /department: String\(user\.department \|\| ""\)/u);
 });
 
 test("오늘 일지의 시작·끝 시간은 고정 표시이고 내용만 고친다", () => {

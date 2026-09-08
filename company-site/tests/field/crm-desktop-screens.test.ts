@@ -268,6 +268,12 @@ async function boot(): Promise<Booted> {
   for (const name of names) {
     api[name] = async (input: unknown) => {
       calls.push({ name, input });
+      if (name === "saveDailyLog") {
+        const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
+        const now = "2026-09-07T09:01:02.000Z";
+        return { log: { ...value, uid: "u-admin", name: "서창환", submittedAt: value.submit === true ? now : "", updatedAt: now }, rolled: [], failed: [] };
+      }
+      if (name === "sendTelegramDailyLog") return { ok: true, requestId: "tg-screen-1", sent: true, duplicate: false };
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };
   }
@@ -773,7 +779,7 @@ describe("desktop CRM screens actually render", () => {
     expect((study!.input as { offCapacity: boolean }).offCapacity).toBe(true);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
-  it("오늘 화면에서 줄을 넣고 보내면 지시로 올라간다", async () => {
+  it("오늘 화면에서 고정 시간표를 적고 보내면 지시와 업무방으로 올라간다", async () => {
     // 같은 숫자를 일지에 한 번, 지시에 또 한 번 적게 하면 둘은 반드시 어긋난다.
     (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
     await sleep(100);
@@ -819,6 +825,11 @@ describe("desktop CRM screens actually render", () => {
 
     const before = booted.calls.length;
     (booted.document.querySelector("[data-dl-submit]") as HTMLElement).click();
+    await sleep(150);
+    const confirmation = booted.document.querySelector(".confirmation-layer.open") as HTMLElement | null;
+    expect(confirmation, "업무방에 공개하기 전에 확인창이 나와야 한다").toBeTruthy();
+    expect(confirmation!.textContent).toContain("브링엔지니어링 업무방");
+    (confirmation!.querySelector('[data-confirm-choice="confirm"]') as HTMLElement).click();
     await sleep(400);
     const sent = booted.calls.slice(before).find(call => call.name === "saveDailyLog");
     expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
@@ -831,6 +842,9 @@ describe("desktop CRM screens actually render", () => {
     expect(body.entries[3].end).toBe("13:00");
     expect(body.entries[0].progress).toBe(80);
     expect(body.entries[0].orderId).toBe("o1");
+    const telegram = booted.calls.slice(before).find(call => call.name === "sendTelegramDailyLog");
+    expect(telegram, "CRM 저장 뒤 회사 봇 전송 통로로 나가야 한다").toBeTruthy();
+    expect(booted.calls.indexOf(sent!)).toBeLessThan(booted.calls.indexOf(telegram!));
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 

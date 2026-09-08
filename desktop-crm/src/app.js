@@ -4410,7 +4410,7 @@
       ${frozen ? `<div class="info-box">대표가 확인한 일지입니다. 고치려면 대표에게 말해 주세요.</div>` : `<div class="wo-editor-actions dl-actions">
         <button type="button" class="mini-button" data-dl-save${dailyLogState.busy ? " disabled" : ""}>임시 저장</button>
         <button type="button" class="primary-button" data-dl-submit${dailyLogState.busy ? " disabled" : ""}>${draft.submittedAt ? "다시 보내기" : "보내기"}</button>
-        <span class="office-muted">보내야 대표에게 갑니다. 저장만 하면 나만 봅니다.</span>
+        <span class="office-muted">보내면 CRM에 제출한 뒤 회사 봇이 Excel 업무보고서를 브링엔지니어링 업무방에 올립니다.</span>
       </div>`}`;
   }
 
@@ -4585,10 +4585,34 @@
     const draft = readDailyLogDraft(D);
     const checked = D.validateDay(draft);
     if (!checked.ok) { showToast(checked.error, "error"); dailyLogState.draft = draft; renderDailyLog(); return; }
+    if (submit) {
+      const confirmed = await requestConfirmation({
+        title: "회사 텔레그램 업무방으로 보냅니다",
+        description: "CRM에 제출한 뒤 회사 봇이 Excel 업무보고서를 브링엔지니어링 업무방에 올립니다. 방에 있는 사람 모두가 보게 됩니다.",
+        target: `${checked.day.name || dailyLogState.name || "작성자"} · ${checked.day.date}`,
+        message: checked.day.aiSummary || `오늘 한 일 ${checked.day.entries.length}줄 · AI 보고서 초안 없이 제출`,
+        warning: "텔레그램에 올라간 메시지는 CRM에서 회수할 수 없습니다.",
+        confirmLabel: draft.submittedAt ? "다시 보내기" : "보내기",
+      });
+      if (!confirmed) return;
+    }
     dailyLogState.busy = true;
     renderDailyLog();
     try {
       const saved = await api.saveDailyLog(Object.assign({}, checked.day, { submit: submit === true }));
+      let telegram = null;
+      let telegramError = null;
+      if (submit) {
+        try {
+          const me = (workOrderState.members || []).find(item => item && item.uid === dailyLogState.uid) || {};
+          telegram = await api.sendTelegramDailyLog({
+            report: saved && saved.log,
+            profile: { department: me.department || "", title: me.title || "" },
+          });
+        } catch (error) {
+          telegramError = error;
+        }
+      }
       dailyLogState.draft = null;
       dailyLogState.loaded = false;
       const rolled = Array.isArray(saved && saved.rolled) ? saved.rolled : [];
@@ -4597,8 +4621,15 @@
         // 무엇이 올라갔는지 말한다. "보냈습니다" 만 띄우면 지시가 안 움직여도
         // 아무도 모른다.
         const moved = rolled.length ? ` 지시 ${rolled.length}건의 진행률을 올렸습니다.` : "";
-        if (failed.length) showToast(`보냈습니다.${moved} 못 올린 지시 ${failed.length}건이 있습니다.`, "error");
-        else showToast(`보냈습니다.${moved}`, "success");
+        if (telegramError) {
+          showToast(`CRM에는 제출했지만 텔레그램 업무방 Excel 전송에 실패했습니다. ${telegramError.message || "잠시 후 다시 보내 주세요."}${moved}${failed.length ? ` 못 올린 지시 ${failed.length}건이 있습니다.` : ""}`, "error");
+        } else if (failed.length) {
+          showToast(`CRM 제출과 텔레그램 Excel 전송을 마쳤습니다.${moved} 못 올린 지시 ${failed.length}건이 있습니다.`, "error");
+        } else if (telegram && telegram.duplicate) {
+          showToast(`같은 내용이 이미 업무방에 있어 중복 전송하지 않았습니다.${moved}`, "success");
+        } else {
+          showToast(`CRM 제출과 텔레그램 업무방 Excel 전송을 마쳤습니다.${moved}`, "success");
+        }
       } else {
         showToast("저장했습니다. 아직 대표에게 가지 않았습니다.", "success");
       }

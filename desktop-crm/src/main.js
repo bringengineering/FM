@@ -20,6 +20,7 @@ const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
 const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
+const { createDailyLogWorkbook, dailyLogWorkbookFileName } = require("./daily-log-xlsx");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
@@ -49,6 +50,7 @@ const {
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
+const { sendDailyLogToTelegram } = require("./daily-log-telegram-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
 const { requestDocumentDelivery } = require("./document-delivery-client");
@@ -146,10 +148,11 @@ const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog" ? "dailyLog" : "";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
-const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
+const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
+const CRM_DAILY_LOG_TELEGRAM_URL = new URL("/v1/telegram/daily-report", CRM_AI_GATEWAY_URL).href;
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -7626,6 +7629,28 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     idToken,
     input,
     fetchImpl: (url, options) => net.fetch(url, options)
+  });
+});
+secureCanonicalHandle("crm:daily-log-telegram-send", async input => {
+  const request = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const report = request.report && typeof request.report === "object" && !Array.isArray(request.report)
+    ? request.report : request;
+  const profile = request.profile && typeof request.profile === "object" && !Array.isArray(request.profile)
+    ? request.profile : {};
+  const user = remoteClient && remoteClient.authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!["admin", "member"].includes(String(user.role || user.accessRole || ""))) {
+    throw Object.assign(new Error("업무보고서를 텔레그램으로 보낼 권한이 없습니다."), { code: "FORBIDDEN" });
+  }
+  const idToken = await remoteClient.ensureIdToken(false);
+  const xlsxBytes = createDailyLogWorkbook(report, { profile });
+  return sendDailyLogToTelegram({
+    endpoint: CRM_DAILY_LOG_TELEGRAM_URL,
+    idToken,
+    input: report,
+    xlsxBytes,
+    fileName: dailyLogWorkbookFileName(report),
+    fetchImpl: (url, options) => net.fetch(url, options),
   });
 });
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {

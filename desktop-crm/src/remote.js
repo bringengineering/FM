@@ -4040,6 +4040,8 @@ class FirebaseRemoteClient {
       .map(([uid, user]) => ({
         uid,
         displayName: String(user.displayName || user.email || uid),
+        department: String(user.department || "").trim().slice(0, 60),
+        title: String(user.title || user.position || "").trim().slice(0, 60),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
     const [projectPayload, capacityPayload, directivePayload] = await Promise.all([

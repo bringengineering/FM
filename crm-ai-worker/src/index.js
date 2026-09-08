@@ -1,13 +1,15 @@
 import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
+import { readDailyReportPayload, sendDailyReportTelegram } from "./daily-report-telegram.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-08-31-v1";
+const SERVICE_VERSION = "2026-09-08-v4";
 const ASSIST_PATH = "/v1/assist";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
 const DOCUMENT_DELIVERY_PATH = "/v1/document-delivery";
+const DAILY_REPORT_TELEGRAM_PATH = "/v1/telegram/daily-report";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -25,6 +27,8 @@ const ERROR_STATUS = Object.freeze({
   AI_INVALID_RESPONSE: 502
   , CONTRACT_DRIVE_UNAVAILABLE: 503
   , CONTRACT_SOURCE_NOT_FOUND: 404
+  , TELEGRAM_NOT_CONFIGURED: 503
+  , TELEGRAM_TEMPORARY_FAILURE: 502
 });
 
 function base64url(value) {
@@ -144,21 +148,33 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl) {
   if (!email || !uid) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   const allowed = new Set(String(env.CRM_ALLOWED_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
   if (!allowed.has(email)) throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
-  return { uid, email };
+  return { uid, email, emailVerified: user?.emailVerified === true };
 }
 
 async function enforceLimits(identity, env, now) {
-  if (!env.AI_RATE_LIMITER || typeof env.AI_RATE_LIMITER.limit !== "function" || !env.AI_USAGE) {
+  await enforceBurstLimit(identity, env);
+  if (!env.AI_USAGE) {
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
-  const burst = await env.AI_RATE_LIMITER.limit({ key: identity.uid });
-  if (!burst?.success) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
   const day = new Date(now()).toISOString().slice(0, 10);
   const key = `company:${day}`;
   const count = Number(await env.AI_USAGE.get(key) || 0);
   const limit = Math.max(1, Number(env.AI_COMPANY_DAILY_LIMIT || 1000));
   if (!Number.isFinite(count) || count >= limit) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
   await env.AI_USAGE.put(key, String(count + 1), { expirationTtl: 172800 });
+}
+
+function allowedDailyReportSenders(env) {
+  const configured = String(env.CRM_DAILY_REPORT_EMAILS || "").trim();
+  return new Set(String(configured || env.CRM_ALLOWED_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+}
+
+async function enforceBurstLimit(identity, env) {
+  if (!env.AI_RATE_LIMITER || typeof env.AI_RATE_LIMITER.limit !== "function") {
+    throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  }
+  const burst = await env.AI_RATE_LIMITER.limit({ key: identity.uid });
+  if (!burst?.success) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
 }
 
 async function callGroq(payload, env, fetchImpl, timeoutMs) {
@@ -255,15 +271,25 @@ export function createWorker(options = {}) {
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
-      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      const isDailyReportTelegram = url.pathname === DAILY_REPORT_TELEGRAM_PATH;
+      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery && !isDailyReportTelegram) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
-      if (url.pathname !== CONTRACTS_PATH && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
+      if ([ASSIST_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
         if (isDocumentDelivery) return await documentDeliveryHandler(request, identity, env);
         if (url.pathname === CONTRACTS_PATH) return await checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId);
+        if (isDailyReportTelegram) {
+          if (identity.emailVerified !== true || !allowedDailyReportSenders(env).has(identity.email)) {
+            throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
+          }
+          await enforceBurstLimit(identity, env);
+          const payload = await readDailyReportPayload(request, identity);
+          const sent = await sendDailyReportTelegram({ ...payload, identity, env, fetchImpl, timeoutMs });
+          return json({ ok: true, requestId: requestId(), ...sent }, 200, cors);
+        }
         await enforceLimits(identity, env, now);
         if (url.pathname === TRANSCRIBE_PATH) {
           const audio = await readAudioPayload(request);

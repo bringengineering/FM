@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   sendCustomerNotice: input => ipcRenderer.invoke("crm:customer-notice-send", input),
   loadDailyLogs: () => ipcRenderer.invoke("crm:daily-logs-load"),
   saveDailyLog: input => ipcRenderer.invoke("crm:daily-log-save", input),
+  sendTelegramDailyLog: input => ipcRenderer.invoke("crm:daily-log-telegram-send", input),
   confirmDailyLog: input => ipcRenderer.invoke("crm:daily-log-confirm", input),
   loadSupplies: () => ipcRenderer.invoke("crm:supplies-load"),
   loadDeliveryFlows: () => ipcRenderer.invoke("crm:delivery-flows-load"),

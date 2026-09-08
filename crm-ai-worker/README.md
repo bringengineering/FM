@@ -11,6 +11,19 @@ BRING CRM과 Groq Cloud 사이에서 Firebase 직원 인증, 개인정보 마스
 - 직원 이메일은 `CRM_ALLOWED_EMAILS`의 명시적 허용 목록과 대조합니다.
 - AI 응답은 초안이며 CRM 데이터를 자동으로 변경하지 않습니다.
 
+## 일일 업무보고 텔레그램 전송
+
+직원이 CRM에서 일일 업무보고의 `보내기`를 누르면, CRM 저장이 끝난 같은 보고서를 기존 일일 업무일지 양식의 Excel 파일로 만든 뒤 회사 봇이 고정된 업무방에 첨부합니다. 텔레그램 본문에는 작성자·일자·업무 건수와 짧은 요약만 표시하고 상세 업무·내일 계획·공유사항은 Excel 파일 안에 담습니다. 직원 PC에는 봇 토큰이나 방 번호를 배포하지 않습니다. 전송자는 인증된 Firebase 직원 계정과 CRM 직원 허용 목록으로 확인합니다. 더 좁은 전송자 제한이 필요할 때만 `CRM_DAILY_REPORT_EMAILS` Secret을 따로 설정합니다. 업무방 메시지에는 이메일을 노출하지 않고 작성자 이름만 표시합니다. 같은 내용은 KV 지문으로 중복 전송하지 않습니다. 업로드 파일은 Excel MIME·확장자·안전한 OOXML 패키지 구조와 5MB 제한을 모두 확인하며 매크로·외부 연결·수식이 든 파일은 거부합니다.
+
+봇 토큰과 업무방 번호는 둘 다 Cloudflare Secret으로만 등록합니다. 소스, `wrangler.toml`, 명령 인수나 로그에 값을 남기지 않습니다.
+
+```powershell
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_WORK_CHAT_ID
+```
+
+봇을 `브링엔지니어링 업무방`에 초대하고 메시지 전송 권한을 준 뒤, 합성 보고서로 대상 방을 확인해야 합니다. 두 Secret과 방 권한을 검증하기 전에는 `TELEGRAM_DAILY_REPORT_ENABLED=false`를 유지합니다. 검증 후에만 이 값을 `true`로 바꿔 배포합니다.
+
 ## CRM 고객 문서 발송
 
 견적서와 작업 결과보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
