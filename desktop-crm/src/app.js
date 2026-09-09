@@ -5000,7 +5000,7 @@
 
     main.innerHTML = `<section class="operations-hero roadmap-hero">
         <div><span>PROJECT ROADMAP</span><h2>담당자와 프로젝트 진행을 한눈에 봅니다</h2><p>막대는 업무지시의 실제 일정과 진행률입니다. 막대를 누르면 현재 진행과 다음 일정을 이어서 확인할 수 있습니다.</p></div>
-        <div class="operations-actions">${refreshButton(workOrderState, "projectRoadmap")}${workOrderState.admin ? `<button type="button" class="secondary-button" data-roadmap-project-new>＋ 프로젝트 추가</button><button type="button" class="primary-button" data-roadmap-new>＋ 일정 추가</button>` : ""}</div>
+        <div class="operations-actions">${refreshButton(workOrderState, "projectRoadmap")}${workOrderState.admin ? `<button type="button" class="primary-button" data-roadmap-project-new>＋ 프로젝트 추가</button>` : ""}</div>
       </section>
       ${status}
       ${workOrderState.projectEditing ? roadmapProjectEditor(P) : ""}

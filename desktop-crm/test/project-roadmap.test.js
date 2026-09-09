@@ -66,6 +66,11 @@ test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 �
 });
 
 test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
+  const heroStart = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">');
+  const heroEnd = app.indexOf("${status}", heroStart);
+  const hero = app.slice(heroStart, heroEnd);
+  assert.match(hero, /class="primary-button" data-roadmap-project-new/u);
+  assert.doesNotMatch(hero, /data-roadmap-new/u, "로드맵 상단에는 일정 추가 버튼을 두지 않는다");
   assert.match(app, /data-roadmap-project-new/u);
   assert.match(app, /function roadmapProjectEditor\(/u);
   assert.match(app, /name="name"[^>]*required/u);
