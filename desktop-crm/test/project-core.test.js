@@ -198,7 +198,7 @@ test("업무지시가 없는 새 프로젝트도 진행률과 기한으로 로�
   assert.equal(lanes[0].assignments[0].progressNote, "기획 완료");
 });
 
-test("직접 남긴 프로젝트 진행률은 연결 업무의 평균보다 우선한다", () => {
+test("일일업무보고서에서 올라온 업무지시 진행률이 프로젝트 막대에도 반영된다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),
     mode: "people",
@@ -206,8 +206,30 @@ test("직접 남긴 프로젝트 진행률은 연결 업무의 평균보다 우�
     projects: [{ id: "p1", name: "CRM", progress: 80, progressNote: "검수 중", progressUpdatedAt: "2026-09-08T00:00:00.000Z" }],
     orders: [order({ id: "a", title: "화면 구현", projectId: "p1", assigneeUid: "u1", progress: 20, dueDate: "2026-09-12" })],
   });
-  assert.equal(lanes[0].assignments[0].progress, 80);
+  // 프로젝트에 예전에 직접 적은 80%가 있어도, 현재 연결 업무가 20%면
+  // 로드맵의 업무지시 막대 역시 업무지시 화면과 같은 20%여야 한다.
+  assert.equal(lanes[0].assignments[0].progress, 20);
   assert.equal(lanes[0].assignments[0].progressNote, "검수 중");
+});
+
+test("묶인 업무지시 중 하나가 오르면 로드맵 평균도 다시 계산된다", () => {
+  const source = {
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }],
+    projects: [],
+    orders: [
+      order({ id: "a", assigneeUid: "u1", progress: 20, dueDate: "2026-09-10" }),
+      order({ id: "b", assigneeUid: "u1", progress: 80, dueDate: "2026-09-11" }),
+    ],
+  };
+  const before = P.roadmapRows(source)[0].assignments[0];
+  const after = P.roadmapRows(Object.assign({}, source, {
+    orders: source.orders.map(item => item.id === "a" ? Object.assign({}, item, { progress: 60 }) : item),
+  }))[0].assignments[0];
+  assert.equal(before.projectName, "업무지시 2건");
+  assert.equal(before.progress, 50);
+  assert.equal(after.progress, 70);
 });
 
 test("프로젝트 진행사항은 0부터 100까지 정수로 정규화한다", () => {

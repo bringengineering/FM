@@ -4381,8 +4381,18 @@ class FirebaseRemoteClient {
           if (current.assigneeUid !== session.uid) continue;
           if (!WorkOrderCore.OPEN.includes(current.status)) continue;
           if (current.progress === item.progress) continue;
-          await this.updateWorkOrderProgress({ id: item.orderId, progress: item.progress });
-          rolled.push({ orderId: item.orderId, title: current.title, progress: item.progress });
+          const updated = await this.updateWorkOrderProgress({ id: item.orderId, progress: item.progress });
+          // 보고서를 보낸 화면도 같은 업무지시 원본을 즉시 갱신할 수 있도록
+          // 서버에 실제로 저장된 상태와 수정 시각을 함께 돌려준다. 화면에서
+          // 시간을 새로 만들면 다른 컴퓨터에서 고친 기록처럼 보일 수 있다.
+          rolled.push({
+            orderId: item.orderId,
+            title: current.title,
+            progress: updated.progress,
+            status: updated.status,
+            updatedAt: updated.updatedAt,
+            updatedBy: updated.updatedBy,
+          });
         } catch (error) {
           failed.push({ orderId: item.orderId, error: String(error && error.message || "올리지 못했습니다.") });
         }

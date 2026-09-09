@@ -402,7 +402,6 @@
       const ends = list.map(item => isDate(item.dueDate) ? item.dueDate : item.startDate).filter(isDate).sort();
       const first = list[0] || {};
       const project = projects.get(text(first.projectId, 80));
-      const manualProgress = Boolean(project && project.progressUpdatedAt);
       const taskProgress = list.length ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length) : 0;
       const projectStart = project && isDate(project.startDate) ? project.startDate : "";
       const projectEnd = project && isDate(project.endDate) ? project.endDate : "";
@@ -414,7 +413,12 @@
         assigneeName: text(first.assigneeName, 80) || "담당자 없음",
         startDate: [projectStart, starts[0]].filter(Boolean).sort()[0] || "",
         endDate: [projectEnd, ends.length ? ends[ends.length - 1] : ""].filter(Boolean).sort().pop() || "",
-        progress: manualProgress ? project.progress : taskProgress,
+        // 업무지시가 붙은 막대는 언제나 그 지시들의 현재 진행률을 쓴다.
+        // 프로젝트 진행사항을 따로 적어 둔 뒤 일일업무보고서에서 지시를
+        // 올려도 예전 프로젝트 숫자가 계속 보이면 세 화면이 서로 다른 말을
+        // 하게 된다. 업무지시가 하나도 없는 프로젝트만 아래 별도 갈래에서
+        // 프로젝트 진행률을 그대로 쓴다.
+        progress: taskProgress,
         progressNote: project ? project.progressNote : "",
         status: roadmapStatus(list),
         orderIds: list.map(item => text(item.id, 80)).filter(Boolean),

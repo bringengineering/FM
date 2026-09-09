@@ -76,6 +76,17 @@ test("되올리는 것은 자기 지시, 아직 안 끝난 것뿐이다", () => 
   assert.match(save, /WorkOrderCore\.OPEN\.includes\(current\.status\)/u);
   // 한 건이 안 되어도 일지는 이미 저장됐다. 여기서 터뜨리면 저장이 취소된 줄 안다.
   assert.match(save, /failed\.push/u);
+  assert.match(save, /const updated = await this\.updateWorkOrderProgress/u);
+  assert.match(save, /updatedAt: updated\.updatedAt/u, "로드맵 최근 진행사항에 실제 저장 시각을 넘겨야 한다");
+});
+
+test("보고서에서 오른 진행률을 업무지시와 프로젝트 로드맵의 공용 상태에 즉시 합친다", () => {
+  const save = appSource.slice(appSource.indexOf("async function saveDailyLogDraft"), appSource.indexOf("// 앱을 켤 때 한 번만", appSource.indexOf("async function saveDailyLogDraft")));
+  const apply = appSource.slice(appSource.indexOf("function applyDailyLogWorkOrderRollups"), appSource.indexOf("async function saveDailyLogDraft"));
+  assert.match(save, /applyDailyLogWorkOrderRollups\(rolled\)/u);
+  assert.match(apply, /workOrderState\.orders =/u);
+  assert.match(apply, /progress: update\.progress/u);
+  assert.match(apply, /updatedAt: update\.updatedAt/u);
 });
 
 test("규칙이 옆자리 일지를 막고 대표에게만 목록을 연다", () => {

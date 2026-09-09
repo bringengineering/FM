@@ -4579,6 +4579,26 @@
     }
   }
 
+  function applyDailyLogWorkOrderRollups(rollups) {
+    const W = workOrderCore();
+    if (!W || !Array.isArray(rollups) || !rollups.length) return;
+    const changed = new Map(rollups
+      .filter(item => item && item.orderId)
+      .map(item => [String(item.orderId), item]));
+    if (!changed.size) return;
+    workOrderState.orders = (workOrderState.orders || []).map(value => {
+      const order = W.normalizeOrder(value);
+      const update = changed.get(order.id);
+      if (!update) return value;
+      return W.normalizeOrder(Object.assign({}, order, {
+        progress: update.progress,
+        status: update.status || order.status,
+        updatedAt: update.updatedAt || order.updatedAt,
+        updatedBy: update.updatedBy || order.updatedBy,
+      }));
+    });
+  }
+
   async function saveDailyLogDraft(submit) {
     const D = dailyLogCore();
     if (!D || dailyLogState.busy) return;
@@ -4617,6 +4637,10 @@
       dailyLogState.loaded = false;
       const rolled = Array.isArray(saved && saved.rolled) ? saved.rolled : [];
       const failed = Array.isArray(saved && saved.failed) ? saved.failed : [];
+      // 업무지시 목록과 프로젝트 로드맵은 같은 workOrderState 를 그린다.
+      // 보고서에서 올라온 값을 여기에 바로 합쳐야 다음 화면을 여는 순간부터
+      // 목록·로드맵 막대·상세 진행률이 모두 같은 숫자를 보여 준다.
+      applyDailyLogWorkOrderRollups(rolled);
       if (submit) {
         // 무엇이 올라갔는지 말한다. "보냈습니다" 만 띄우면 지시가 안 움직여도
         // 아무도 모른다.
@@ -4916,7 +4940,7 @@
     return `<section class="roadmap-detail">
       <header>
         <div><span>${project ? "선택한 프로젝트 · 이름을 누르면 진행사항 추가" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
-        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${project && project.progressUpdatedAt ? "프로젝트 진행률" : "평균 진행률"}</span>${project && workOrderState.admin ? `<button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button>` : ""}</div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button>` : ""}</div>
       </header>
       <div class="roadmap-detail-grid">
         <section>
