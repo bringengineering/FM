@@ -21,6 +21,7 @@ const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
 const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
 const { createDailyLogWorkbook, dailyLogWorkbookFileName } = require("./daily-log-xlsx");
+const { createMonthlyDailyLogWorkbook, monthlyDailyLogWorkbookFileName } = require("./daily-log-monthly-xlsx");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
@@ -2694,6 +2695,49 @@ async function exportOfficeAttendance(input) {
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   await fs.writeFile(result.filePath, workbook);
   return { ok: true, path: result.filePath };
+}
+
+async function exportMonthlyDailyLogs(input) {
+  const actor = remoteClient && remoteClient.authState().user;
+  if (!actor) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("월간 업무보고서 요청을 확인해 주세요.");
+  const userId = String(input.userId || "").trim();
+  const month = String(input.month || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/u.test(userId) || !/^\d{4}-(0[1-9]|1[0-2])$/u.test(month)) {
+    throw new Error("월간 업무보고서 대상과 월을 확인해 주세요.");
+  }
+  const [dailyPayload, workPayload] = await Promise.all([
+    remoteClient.loadDailyLogs(),
+    remoteClient.loadWorkOrders(),
+  ]);
+  if (dailyPayload.admin !== true && userId !== dailyPayload.uid) {
+    throw Object.assign(new Error("본인의 월간 업무보고서만 내보낼 수 있습니다."), { code: "DAILY_LOG_EXPORT_FORBIDDEN" });
+  }
+  const member = (workPayload.members || []).find(item => item && item.uid === userId);
+  if (!member && userId !== dailyPayload.uid) throw new Error("선택한 구성원을 찾지 못했습니다.");
+  const user = Object.assign({
+    uid: userId,
+    displayName: userId === dailyPayload.uid ? dailyPayload.name : userId,
+    department: "",
+    title: "",
+  }, member || {});
+  const request = {
+    month,
+    user: Object.assign({}, user, { name: user.displayName || user.name || user.email || user.uid }),
+    logs: dailyPayload.logs || [],
+    orders: workPayload.orders || [],
+    now: new Date(),
+  };
+  const workbook = createMonthlyDailyLogWorkbook(request);
+  const fileName = monthlyDailyLogWorkbookFileName(request);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "월간 일일업무보고서 Excel 저장",
+    defaultPath: fileName,
+    filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  await fs.writeFile(result.filePath, workbook, { mode: 0o600 });
+  return { ok: true, fileName: path.basename(result.filePath) };
 }
 
 async function exportAiQuote(input) {
@@ -8007,6 +8051,7 @@ secureCanonicalHandle("crm:office-attachment-open", input => openOfficeAttachmen
 secureCanonicalHandle("crm:office-message-send", input => sendOfficeMessage(input));
 secureCanonicalHandle("crm:office-messages-read", input => markOfficeMessagesRead(input));
 secureCanonicalHandle("crm:office-attendance-export", input => exportOfficeAttendance(input));
+secureCanonicalHandle("crm:daily-logs-monthly-export", input => exportMonthlyDailyLogs(input));
 secureCanonicalHandle("crm:office-messenger-presence", input => {
   const user = assertOfficeSession();
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};

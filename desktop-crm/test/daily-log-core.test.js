@@ -216,6 +216,31 @@ test("한 주의 성격 비율이 하루의 합과 맞는다", () => {
   assert.equal(week.byNature.find(item => item.key === "innovation").percent, 30);
 });
 
+test("한 달치는 사람과 월을 나누고 겹친 시간은 하루마다 한 번만 센다", () => {
+  const month = D.monthRollup({
+    uid: "u-kim",
+    month: "2026-09",
+    asOf: "2026-09-04",
+    days: [
+      day({ date: "2026-09-01", submittedAt: "2026-09-01T09:00:00Z", entries: [
+        entry({ id: "e1", start: "09:00", end: "12:00", orderId: "wo1", progress: 20 }),
+        entry({ id: "e2", start: "11:00", end: "13:00", orderId: "wo1", progress: 60 }),
+      ] }),
+      day({ date: "2026-09-03", entries: [entry({ id: "e3", start: "09:00", end: "11:00", orderId: "", progress: 100 })] }),
+      day({ date: "2026-08-31", entries: [entry({ start: "09:00", end: "18:00" })] }),
+      day({ date: "2026-09-02", uid: "u-hwang", entries: [entry({ start: "09:00", end: "18:00" })] }),
+    ],
+  });
+  assert.equal(month.written, 2);
+  assert.equal(month.entries, 3);
+  assert.equal(month.hours, 6);
+  assert.equal(month.overlapMinutes, 60);
+  assert.equal(month.linkedOrders, 1);
+  assert.equal(month.looseMinutes, 120);
+  assert.deepEqual(month.missing, ["2026-09-02", "2026-09-04"]);
+  assert.equal(month.weeks[0].written, 2);
+});
+
 // --- AI 에 넘기는 사실 ---
 
 test("AI 에는 이미 센 숫자만 넘기고 총평은 넘기지 않는다", () => {

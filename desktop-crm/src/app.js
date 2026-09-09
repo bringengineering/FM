@@ -4275,6 +4275,84 @@
     }, date);
   }
 
+  function dailyLogExportPeople() {
+    const people = (workOrderState.members || []).filter(item => item && item.uid).map(item => ({
+      uid: String(item.uid),
+      name: String(item.displayName || item.email || item.uid),
+    }));
+    if (!people.some(item => item.uid === dailyLogState.uid) && dailyLogState.uid) {
+      people.push({ uid: dailyLogState.uid, name: dailyLogState.name || dailyLogState.uid });
+    }
+    return (dailyLogState.admin ? people : people.filter(item => item.uid === dailyLogState.uid))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }
+
+  function refreshDailyLogExportPreview(form) {
+    const D = dailyLogCore();
+    if (!D || !form) return;
+    const month = String(form.elements.month && form.elements.month.value || "");
+    const uid = String(form.elements.userId && form.elements.userId.value || "");
+    const summary = D.monthRollup({ days: dailyLogState.logs, uid, month, asOf: todayKey() });
+    const values = {
+      days: `${summary.written}일`,
+      hours: `${summary.hours}시간`,
+      entries: `${summary.entries}건`,
+      orders: `${summary.linkedOrders}건`,
+    };
+    Object.entries(values).forEach(([key, value]) => {
+      const node = form.querySelector(`[data-dl-export-stat="${key}"]`);
+      if (node) node.textContent = value;
+    });
+    const notice = form.querySelector("[data-dl-export-notice]");
+    if (notice) notice.textContent = summary.written
+      ? `저장된 보고서 ${summary.written}일을 날짜·시간 순서로 내보냅니다.`
+      : "선택한 달에 저장된 업무보고서가 없습니다.";
+    const submit = form.querySelector("[data-dl-export-submit]");
+    if (submit) submit.disabled = !summary.written;
+  }
+
+  function openDailyLogExport() {
+    const people = dailyLogExportPeople();
+    if (!people.length) { showToast("내보낼 구성원을 찾지 못했습니다.", "error"); return; }
+    const month = /^\d{4}-\d{2}$/u.test(dailyLogDate().slice(0, 7)) ? dailyLogDate().slice(0, 7) : todayKey().slice(0, 7);
+    const selectedUid = people.some(item => item.uid === dailyLogState.uid) ? dailyLogState.uid : people[0].uid;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>월간 Excel 내보내기</h2><p>저장된 일일업무보고서를 한 달 단위로 정리합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="내보내기 창 닫기">×</button></div>
+      <form id="dailyLogExportForm" class="modal-body dl-export-form">
+        <div class="dl-export-fields">
+          <label class="field"><span>대상 월</span><input type="month" name="month" value="${attr(month)}" required></label>
+          <label class="field"><span>구성원</span><select name="userId" required>${people.map(person => `<option value="${attr(person.uid)}"${person.uid === selectedUid ? " selected" : ""}>${esc(person.name)}</option>`).join("")}</select></label>
+        </div>
+        <section class="dl-export-preview">
+          <header><div><span>자료 확인</span><h3>Excel에 들어갈 내용</h3></div><small data-dl-export-notice></small></header>
+          <div class="dl-export-stats"><div><span>작성된 날짜</span><b data-dl-export-stat="days">0일</b></div><div><span>총 업무시간</span><b data-dl-export-stat="hours">0시간</b></div><div><span>상세 기록</span><b data-dl-export-stat="entries">0건</b></div><div><span>연결 업무지시</span><b data-dl-export-stat="orders">0건</b></div></div>
+          <div class="dl-export-sheets"><div><i>1</i><span><b>월간 요약</b><small>총 시간·업무 성격·주차별 현황</small></span></div><div><i>2</i><span><b>일별 상세</b><small>날짜·시간대·업무 내용·달성률</small></span></div><div><i>3</i><span><b>업무지시 현황</b><small>첫 진행률·현재 진행률·투입시간</small></span></div></div>
+        </section>
+        <div class="info-box">현재 화면에만 적고 아직 임시 저장하지 않은 내용은 포함하지 않습니다.</div>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" data-dl-export-submit>Excel 파일 만들기</button></div>
+      </form>`;
+    openModal();
+    refreshDailyLogExportPreview(document.getElementById("dailyLogExportForm"));
+  }
+
+  async function exportMonthlyDailyLogsFromForm(form) {
+    if (!form || !api.exportMonthlyDailyLogs) return;
+    const button = form.querySelector("[data-dl-export-submit]");
+    if (button) { button.disabled = true; button.textContent = "Excel 만드는 중…"; }
+    try {
+      const result = await api.exportMonthlyDailyLogs({
+        month: String(form.elements.month && form.elements.month.value || ""),
+        userId: String(form.elements.userId && form.elements.userId.value || ""),
+      });
+      if (!result || result.canceled) return;
+      closeModal();
+      showToast(`${result.fileName || "월간 일일업무보고서"} 파일을 저장했습니다.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "월간 Excel 파일을 만들지 못했습니다.", "error");
+    } finally {
+      if (button && modal.classList.contains("open")) { button.disabled = false; button.textContent = "Excel 파일 만들기"; }
+    }
+  }
+
   // 이 사람이 지금 물고 있는 지시. 줄마다 고르게 한다 — 지시를 안 고르면
   // 그 시간은 "시킨 일 밖" 으로 잡히고, 그 합계가 대표가 봐야 할 숫자다.
   function myOpenOrders() {
@@ -4312,6 +4390,7 @@
             <button type="button" class="sp-tab${dailyLogState.tab === "mine" ? " is-active" : ""}" data-dl-tab="mine">내 일지</button>
             <button type="button" class="sp-tab${dailyLogState.tab === "team" ? " is-active" : ""}" data-dl-tab="team">받은 보고</button>
           </div>` : ""}
+          <button type="button" class="secondary-button" data-dl-export-open>Excel 내보내기</button>
           ${refreshButton(dailyLogState, "dailyLog")}
         </div>
       </section>
@@ -10849,6 +10928,7 @@
       renderDailyLog();
       return;
     }
+    if (event.target.closest("[data-dl-export-open]")) { openDailyLogExport(); return; }
     const dlTab = event.target.closest("[data-dl-tab]");
     if (dlTab) {
       const D = dailyLogCore();
@@ -12820,6 +12900,10 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("#dailyLogExportForm [name='month'], #dailyLogExportForm [name='userId']")) {
+      refreshDailyLogExportPreview(event.target.form);
+      return;
+    }
     if (event.target.matches("[data-dl-date]")) {
       const D = dailyLogCore();
       if (!D) return;
@@ -13197,6 +13281,7 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.id === "dailyLogExportForm") { await exportMonthlyDailyLogsFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
     if (form.matches("[data-report-form]")) { await saveWorkReportFromForm(); return; }

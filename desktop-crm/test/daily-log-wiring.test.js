@@ -22,16 +22,31 @@ function methodBody(source, name) {
   return source.slice(start, end < 0 ? undefined : end);
 }
 
-test("일지 채널이 세 곳에 다 등록돼 있다", () => {
+test("일지 저장 채널과 월간 내보내기 채널이 모두 등록돼 있다", () => {
   for (const channel of ["crm:daily-log-save", "crm:daily-log-confirm", "crm:daily-log-telegram-send"]) {
     assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel), channel);
     assert.ok(mainSource.includes(`secureCanonicalHandle("${channel}"`), channel);
     assert.ok(preloadSource.includes(`"${channel}"`), channel);
     assert.equal(MutationPolicy.classification(channel), "mutation", channel);
   }
+  assert.doesNotThrow(() => MutationPolicy.assertRegistered("crm:daily-logs-monthly-export"));
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:daily-logs-monthly-export"'));
+  assert.ok(preloadSource.includes('"crm:daily-logs-monthly-export"'));
+  assert.equal(MutationPolicy.classification("crm:daily-logs-monthly-export"), "control");
   assert.ok(mainSource.includes('secureHandle("crm:daily-logs-load"'));
   assert.equal(MutationPolicy.classification("crm:daily-logs-load"), "control");
   assert.ok(indexSource.includes('src="./daily-log-core.js"'));
+});
+
+test("월간 Excel은 대상 월과 구성원을 고르고 세 시트로 내보낸다", () => {
+  assert.match(appSource, /data-dl-export-open/u);
+  assert.match(appSource, /id="dailyLogExportForm"/u);
+  assert.match(appSource, /월간 요약[\s\S]*일별 상세[\s\S]*업무지시 현황/u);
+  assert.match(appSource, /api\.exportMonthlyDailyLogs/u);
+  assert.match(preloadSource, /crm:daily-logs-monthly-export/u);
+  assert.match(mainSource, /createMonthlyDailyLogWorkbook/u);
+  assert.match(mainSource, /remoteClient\.loadDailyLogs\(\)/u, "렌더러가 건넨 일지 대신 권한에 맞는 서버 자료를 다시 읽어야 한다");
+  assert.match(mainSource, /dailyPayload\.admin !== true && userId !== dailyPayload\.uid/u);
 });
 
 test("오늘 탭 명칭을 일일업무보고서로 통일한다", () => {

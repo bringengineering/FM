@@ -368,6 +368,109 @@
     };
   }
 
+  // 한 달치 Excel과 화면의 내보내기 미리보기가 같은 숫자를 쓰도록 여기서
+  // 한 번만 센다. 저장된 일지만 대상으로 하고, 하루 안에서 겹친 시간은
+  // summarize와 마찬가지로 총 업무시간에서 한 번만 센다.
+  function monthRollup(input) {
+    const settings = input && typeof input === "object" ? input : {};
+    const month = /^\d{4}-(0[1-9]|1[0-2])$/u.test(text(settings.month, 7)) ? text(settings.month, 7) : "";
+    const uid = text(settings.uid, 128);
+    const asOf = isDate(settings.asOf) ? text(settings.asOf, 10) : "";
+    const days = rows(settings.days).map(normalizeDay)
+      .filter(day => day.date && (!uid || day.uid === uid))
+      .filter(day => month && day.date.startsWith(`${month}-`))
+      .filter(day => day.entries.some(entryOk))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const each = days.map(summarize);
+    const entries = days.flatMap(day => day.entries.filter(entryOk).map(entry => ({ day, entry })));
+    const totalMinutes = each.reduce((total, item) => total + item.totalMinutes, 0);
+    const sumMinutes = entries.reduce((total, item) => total + entryMinutes(item.entry), 0);
+    const weightedScore = entries.reduce((total, item) => total + entryMinutes(item.entry) * item.entry.progress, 0);
+    const orderIds = [...new Set(entries.map(item => item.entry.orderId).filter(Boolean))];
+    const byNature = NATURES.map(nature => {
+      const mine = entries.filter(item => item.entry.nature === nature.key);
+      const minutes = mine.reduce((total, item) => total + entryMinutes(item.entry), 0);
+      return {
+        key: nature.key,
+        label: nature.label,
+        entries: mine.length,
+        minutes,
+        hours: toHours(minutes),
+        percent: sumMinutes ? Math.round((minutes / sumMinutes) * 100) : 0,
+        weightedProgress: minutes
+          ? Math.round(mine.reduce((total, item) => total + entryMinutes(item.entry) * item.entry.progress, 0) / minutes)
+          : 0,
+      };
+    });
+
+    const weeks = [];
+    if (month) {
+      const [year, monthNumber] = month.split("-").map(Number);
+      const monthDays = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      const count = Math.ceil(monthDays / 7);
+      for (let week = 1; week <= count; week += 1) {
+        const fromDay = (week - 1) * 7 + 1;
+        const toDay = Math.min(monthDays, week * 7);
+        const from = `${month}-${String(fromDay).padStart(2, "0")}`;
+        const to = `${month}-${String(toDay).padStart(2, "0")}`;
+        const weekDays = days.filter(day => day.date >= from && day.date <= to);
+        const weekEntries = weekDays.flatMap(day => day.entries.filter(entryOk));
+        const weekMinutes = weekEntries.reduce((total, entry) => total + entryMinutes(entry), 0);
+        weeks.push({
+          week,
+          label: `${Number(month.slice(5, 7))}월 ${week}주`,
+          from,
+          to,
+          written: weekDays.length,
+          minutes: weekDays.map(summarize).reduce((total, item) => total + item.totalMinutes, 0),
+          hours: toHours(weekDays.map(summarize).reduce((total, item) => total + item.totalMinutes, 0)),
+          weightedProgress: weekMinutes
+            ? Math.round(weekEntries.reduce((total, entry) => total + entryMinutes(entry) * entry.progress, 0) / weekMinutes)
+            : 0,
+          linkedOrders: new Set(weekEntries.map(entry => entry.orderId).filter(Boolean)).size,
+        });
+      }
+    }
+
+    const missing = [];
+    if (month) {
+      const [year, monthNumber] = month.split("-").map(Number);
+      const monthDays = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      const written = new Set(days.map(day => day.date));
+      const limit = !asOf || asOf.slice(0, 7) > month
+        ? monthDays
+        : (asOf.slice(0, 7) === month ? Number(asOf.slice(8, 10)) : 0);
+      for (let day = 1; day <= limit; day += 1) {
+        const date = `${month}-${String(day).padStart(2, "0")}`;
+        const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+        if (weekday !== 0 && weekday !== 6 && !written.has(date)) missing.push(date);
+      }
+    }
+
+    return {
+      uid,
+      month,
+      days,
+      written: days.length,
+      submitted: days.filter(day => day.submittedAt).length,
+      entries: entries.length,
+      minutes: totalMinutes,
+      sumMinutes,
+      hours: toHours(totalMinutes),
+      overlapMinutes: Math.max(0, sumMinutes - totalMinutes),
+      weightedProgress: sumMinutes ? Math.round(weightedScore / sumMinutes) : 0,
+      plainProgress: entries.length
+        ? Math.round(entries.reduce((total, item) => total + item.entry.progress, 0) / entries.length)
+        : 0,
+      looseMinutes: entries.filter(item => !item.entry.orderId).reduce((total, item) => total + entryMinutes(item.entry), 0),
+      orderIds,
+      linkedOrders: orderIds.length,
+      byNature,
+      weeks,
+      missing,
+    };
+  }
+
   // AI 에게 넘길 것. **여기 있는 숫자는 전부 위에서 이미 센 것**이고, 보고용
   // 으로 새로 만든 지표는 없다. 아무도 안 보는 숫자가 보고서에 먼저 올라가면
   // 틀려도 아무도 못 잡는다.
@@ -488,6 +591,7 @@
     weekStart,
     weekRange,
     weekRollup,
+    monthRollup,
     reportFacts,
     factsText,
     dayId,
