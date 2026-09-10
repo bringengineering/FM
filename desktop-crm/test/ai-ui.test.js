@@ -124,6 +124,30 @@ test("quote screen offers an AI-free manual authoring path", () => {
   assert.doesNotMatch(handler, /api\.assist/);
 });
 
+test("quote actions stay in the standalone quote workspace", () => {
+  const app = read("app.js");
+  const quoteFunctions = [
+    app.slice(app.indexOf("async function saveAiQuoteSupplier"), app.indexOf("function legacyQuotePreviewHtml")),
+    app.slice(app.indexOf("async function requestAiQuoteDraft"), app.indexOf("function wrapCanvasText")),
+    app.slice(app.indexOf("async function exportAiQuote"), app.indexOf("// --- 서식 ---")),
+  ].join("\n");
+  const quoteClickHandlers = app.slice(
+    app.indexOf('const aiQuoteExample = event.target.closest("[data-ai-quote-example]")'),
+    app.indexOf('const customerPhotoPick = event.target.closest("[data-customer-photo-pick]")'),
+  );
+  const quoteChangeHandlers = app.slice(
+    app.indexOf('if (event.target.matches("[data-ai-quote-supplier]"))'),
+    app.indexOf('if (event.target.matches("[data-operations-period]"))'),
+  );
+
+  for (const source of [quoteFunctions, quoteClickHandlers, quoteChangeHandlers]) {
+    assert.doesNotMatch(source, /renderAiAssistant\(\)/);
+  }
+  assert.match(quoteClickHandlers, /refreshQuotesView\(\)/);
+  assert.match(quoteChangeHandlers, /refreshQuotesView\(\)/);
+  assert.match(quoteFunctions, /if \(currentView === "quotes"\) renderQuotes\(\)/);
+});
+
 test("quote identity exposes editable issue, validity and site fields", () => {
   const app = read("app.js");
   assert.match(app, /data-ai-quote-recipient="siteAddress"/);

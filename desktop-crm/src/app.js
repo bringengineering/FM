@@ -3632,10 +3632,10 @@
     if (aiAssistantState.supplierSaving) return;
     let supplier;
     try { supplier = QuoteCore.normalizeSupplier(QuoteCore.companyProfile(aiAssistantState.supplier), { requireComplete: true }); }
-    catch (error) { aiAssistantState.supplierError = error.message; renderAiAssistant(); return; }
+    catch (error) { aiAssistantState.supplierError = error.message; refreshQuotesView(); return; }
     aiAssistantState.supplierSaving = true;
     aiAssistantState.supplierError = "";
-    renderAiAssistant();
+    refreshQuotesView();
     try {
       const result = await api.saveQuoteSupplier(supplier);
       aiAssistantState.supplier = QuoteCore.normalizeSupplier(result && result.supplier, { requireComplete: true });
@@ -3676,7 +3676,7 @@
     if (aiAssistantState.sealLoading || !aiAssistantState.sealCanConfigure) return;
     aiAssistantState.sealLoading = true;
     aiAssistantState.sealError = "";
-    renderAiAssistant();
+    refreshQuotesView();
     try {
       const result = await api.selectQuoteSeal();
       if (!result || result.canceled) return;
@@ -3759,7 +3759,7 @@
     aiAssistantState.quoteLoading = true;
     aiAssistantState.quoteError = "";
     aiAssistantState.quoteWarnings = [];
-    renderAiAssistant();
+    refreshQuotesView();
     let aiResult = null;
     try {
       const response = await api.assist({ task: "quote_draft", content: aiAssistantState.quoteContent, context: { workType: "견적서", owner: currentAuth.user?.displayName || store.settings.owner || "" } });
@@ -3775,7 +3775,7 @@
       aiAssistantState.quoteError = error.message || "견적서를 만들지 못했습니다.";
     } finally {
       aiAssistantState.quoteLoading = false;
-      if (currentView === "aiAssistant") renderAiAssistant();
+      if (currentView === "quotes") renderQuotes();
     }
   }
 
@@ -3884,12 +3884,12 @@
     if (!aiAssistantState.quote) return;
     if (!QuoteCore.supplierComplete(aiAssistantState.quote.company)) {
       aiAssistantState.supplierError = "회사에 기존 등록된 사업자등록번호를 저장해 주세요.";
-      renderAiAssistant();
+      refreshQuotesView();
       return;
     }
     if (!QuoteCore.recipientComplete(aiAssistantState.quote)) {
       aiAssistantState.quoteError = "공급받는자 성명과 전화번호를 입력해 주세요.";
-      renderAiAssistant();
+      refreshQuotesView();
       return;
     }
     try {
@@ -11485,7 +11485,7 @@
     if (aiQuoteExample) {
       aiAssistantState.quoteContent = aiQuoteExample.dataset.aiQuoteExample || "";
       aiAssistantState.quoteError = "";
-      renderAiAssistant();
+      refreshQuotesView();
       document.querySelector("[data-ai-quote-content]")?.focus();
       return;
     }
@@ -11497,14 +11497,14 @@
       aiAssistantState.quote = null;
       aiAssistantState.quoteError = "";
       aiAssistantState.quoteWarnings = [];
-      renderAiAssistant();
+      refreshQuotesView();
       return;
     }
     const manualQuoteCreate = event.target.closest("[data-manual-quote-create]");
     if (manualQuoteCreate) {
       aiAssistantState.quote = QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
       aiAssistantState.quoteError = "";
-      renderAiAssistant();
+      refreshQuotesView();
       document.querySelector('[data-ai-quote-recipient="projectName"]')?.select();
       return;
     }
@@ -11517,7 +11517,7 @@
       try {
         aiAssistantState.quote = QuoteCore.addDraftItem(aiAssistantState.quote);
         aiAssistantState.quoteError = "";
-        renderAiAssistant();
+        refreshQuotesView();
         const names = document.querySelectorAll('[data-ai-quote-item="name"]');
         const input = names[names.length - 1];
         if (input) { input.focus(); input.select(); }
@@ -11533,7 +11533,7 @@
       try {
         aiAssistantState.quote = QuoteCore.removeDraftItem(aiAssistantState.quote, Number(aiQuoteItemDelete.dataset.aiQuoteItemDelete));
         aiAssistantState.quoteError = "";
-        renderAiAssistant();
+        refreshQuotesView();
         showToast("품목을 삭제하고 합계를 다시 계산했습니다.", "success");
       } catch (error) {
         aiAssistantState.quoteError = error.message || "품목을 삭제하지 못했습니다.";
@@ -13018,7 +13018,7 @@
       const next = JSON.parse(JSON.stringify(quote));
       next[key] = event.target.value.trim();
       if (key === "quoteDate") next.validUntil = QuoteCore.dateAfter(next.quoteDate, 7);
-      try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; renderAiAssistant(); }
+      try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; refreshQuotesView(); }
       catch (error) { aiAssistantState.quoteError = error.message || "공급받는자 정보를 확인해 주세요."; showToast(aiAssistantState.quoteError, "error"); }
       return;
     }
@@ -13029,7 +13029,7 @@
       if (!quote || !Number.isInteger(index) || !quote.items[index] || !["name", "detail", "unitPrice"].includes(key)) return;
       const next = JSON.parse(JSON.stringify(quote));
       next.items[index][key] = key === "unitPrice" ? Math.round(Number(event.target.value) || 0) : event.target.value;
-      try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; renderAiAssistant(); }
+      try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; refreshQuotesView(); }
       catch (error) { aiAssistantState.quoteError = error.message || "품목을 확인해 주세요."; showToast(aiAssistantState.quoteError, "error"); }
       return;
     }
