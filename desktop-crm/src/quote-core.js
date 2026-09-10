@@ -17,11 +17,14 @@
     businessCategory: "기타 공학 연구개발업 / 건축물 일반 청소업"
   });
   const MAX_ITEMS = 8;
+  const MOVE_IN_CLEANING_AMOUNTS = Object.freeze(Array.from({ length: 11 }, (_, index) => 100000 + index * 10000));
   const SERVICE_TEMPLATES = Object.freeze({
     "입주청소": [
-      ["입주청소 기본 작업", "실내 전체 먼지·오염 제거, 바닥 및 표면 청소", 0.72],
-      ["주방·욕실 집중 청소", "기름때·물때 제거 및 위생 설비 마감", 0.18],
-      ["창틀·마감 정리", "창틀·몰딩·스위치 등 세부 구간 및 작업 후 정리", 0.10]
+      ["내부 기본 청소", "천장·벽면·몰딩·문·문틀·스위치·콘센트의 먼지 및 생활 오염 제거, 실내 바닥 진공청소 및 물걸레 마감", 0.25],
+      ["주방 청소", "싱크대·상판·수납장 내외부·후드 외부·가스레인지 주변의 먼지와 일반 기름때 제거 및 표면 세척", 0.20],
+      ["욕실 청소", "변기·세면대·거울·수전·타일·배수구 세척, 일반 물때와 표면 오염 제거 및 위생 마감", 0.20],
+      ["창호·베란다 청소", "내부 유리·창틀·창호 레일의 먼지와 오염 제거, 베란다 바닥 및 배수구 주변 청소", 0.20],
+      ["마감·소모품·장비비", "청소 상태 최종 점검, 잔여 오염 부분 보완, 작업 폐기물 정리 및 세제·소독제·청소도구 사용", 0.15]
     ],
     "퇴실청소": [
       ["퇴실청소 기본 작업", "실내 전체 먼지·오염 제거 및 바닥 청소", 0.72],
@@ -154,6 +157,16 @@
     });
   }
 
+  function distributeExact(total, template) {
+    let used = 0;
+    return template.map((row, index) => {
+      const last = index === template.length - 1;
+      const unitPrice = last ? total - used : Math.round(total * row[2]);
+      used += unitPrice;
+      return { name: row[0], detail: row[1], quantity: 1, unit: "식", unitPrice, note: "" };
+    });
+  }
+
   function normalizeItems(items) {
     if (!Array.isArray(items)) return [];
     return items.slice(0, MAX_ITEMS).map(item => ({
@@ -204,12 +217,12 @@
     if (!totalAmount) throw new Error("금액을 찾을 수 없습니다. 예: 햇빛빌라 입주청소 12만원");
     const service = text(ai.service, 60) || inferService(prompt);
     const recipient = text(ai.recipient, 80) || inferRecipient(prompt, service);
-    let items = normalizeItems(ai.items);
+    let items = service === "입주청소" ? distributeExact(totalAmount, SERVICE_TEMPLATES["입주청소"]) : normalizeItems(ai.items);
     if (!items.length) items = distribute(totalAmount, detailTemplate(service));
     else items = rebalanceItems(items, totalAmount);
     const quoteDate = isoDay(options.now);
     const notes = Array.isArray(ai.notes) ? ai.notes.map(item => text(item, 180)).filter(Boolean).slice(0, 4) : [];
-    return normalizeDraft({
+    const draft = normalizeDraft({
       quoteDate,
       validUntil: addDays(quoteDate, 7),
       recipient,
@@ -223,6 +236,23 @@
       notes: notes.length ? notes : ["작업 범위와 현장 상태가 달라지는 경우 금액은 협의 후 조정될 수 있습니다.", "견적 유효기간은 발행일로부터 7일입니다."],
       company: companyProfile(options.supplier)
     });
+    return service === "입주청소" ? applyMoveInCleaningPreset(draft, totalAmount) : draft;
+  }
+
+  function applyMoveInCleaningPreset(quote, totalAmount) {
+    const total = positiveNumber(totalAmount);
+    if (!MOVE_IN_CLEANING_AMOUNTS.includes(total)) throw new Error("입주청소 표준 견적은 10만원부터 20만원까지 1만원 단위로 선택해 주세요.");
+    const source = quote && typeof quote === "object" && !Array.isArray(quote) ? quote : createManualDraft();
+    return normalizeDraft(Object.assign({}, source, {
+      projectName: source.projectName === "수기 견적서" ? "입주청소 견적서" : source.projectName,
+      service: "입주청소",
+      summary: "입주 전 실내 전체를 표준 작업 범위에 따라 청소하는 견적입니다.",
+      items: distributeExact(total, SERVICE_TEMPLATES["입주청소"]),
+      notes: [
+        "외창, 심한 곰팡이, 스티커·접착제, 대량 폐기물 및 가전 내부 청소는 기본 범위에서 제외됩니다.",
+        "현장 상태와 오염도에 따라 추가 비용이 발생할 수 있습니다."
+      ]
+    }));
   }
 
   function createManualDraft(options = {}) {
@@ -300,5 +330,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, createManualDraft, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase, dateAfter: addDays };
+  return { COMPANY, MAX_ITEMS, MOVE_IN_CLEANING_AMOUNTS, createDraftFromPrompt, createManualDraft, applyMoveInCleaningPreset, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase, dateAfter: addDays };
 });

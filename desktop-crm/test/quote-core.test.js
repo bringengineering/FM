@@ -30,6 +30,32 @@ test("one-line Korean request becomes a balanced BRING quote draft", () => {
   assert.equal(quote.validUntil, "2026-09-08");
 });
 
+test("move-in cleaning uses the fixed five-item standard from 10 to 20만원", () => {
+  const names = ["내부 기본 청소", "주방 청소", "욕실 청소", "창호·베란다 청소", "마감·소모품·장비비"];
+  const ratios = [0.25, 0.20, 0.20, 0.20, 0.15];
+  for (let total = 100000; total <= 200000; total += 10000) {
+    const quote = QuoteCore.applyMoveInCleaningPreset(QuoteCore.createManualDraft({ now: "2026-09-10" }), total);
+    assert.deepEqual(quote.items.map(item => item.name), names);
+    assert.deepEqual(quote.items.map(item => [item.quantity, item.unit]), names.map(() => [1, "식"]));
+    assert.deepEqual(quote.items.map(item => item.unitPrice), ratios.map(ratio => Math.round(total * ratio)));
+    assert.equal(quote.items.reduce((sum, item) => sum + QuoteCore.itemTotal(item), 0), total);
+    assert.ok(quote.items.every(item => item.detail.length >= 40));
+  }
+  assert.deepEqual(QuoteCore.MOVE_IN_CLEANING_AMOUNTS, [100000, 110000, 120000, 130000, 140000, 150000, 160000, 170000, 180000, 190000, 200000]);
+  assert.throws(() => QuoteCore.applyMoveInCleaningPreset(QuoteCore.createManualDraft(), 90000), /10만원부터 20만원/);
+});
+
+test("AI cannot replace the fixed move-in cleaning standard", () => {
+  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 10만원", {
+    service: "입주청소",
+    items: [{ name: "AI 임의 품목", detail: "바뀌면 안 됨", quantity: 1, unit: "식", unitPrice: 100000 }]
+  }, { now: "2026-09-10" });
+  assert.deepEqual(quote.items.map(item => item.name), ["내부 기본 청소", "주방 청소", "욕실 청소", "창호·베란다 청소", "마감·소모품·장비비"]);
+  assert.deepEqual(quote.items.map(item => item.unitPrice), [25000, 20000, 20000, 20000, 15000]);
+  assert.match(quote.notes.join(" "), /외창/);
+  assert.match(quote.notes.join(" "), /현장 상태와 오염도/);
+});
+
 test("explicit prompt amount overrides and rebalances an AI amount", () => {
   const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", {
     recipient: "햇빛빌라", service: "입주청소", projectName: "햇빛빌라 입주청소", totalAmount: 990000,
