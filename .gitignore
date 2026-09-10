@@ -1,0 +1,19 @@
+.firebase/
+.wrangler/
+.node_modules/
+node_modules/
+.dev.vars
+cloudflare-worker/.dev.vars
+.worktrees/
+.superpowers/
+.understand-anything/
+*.tsbuildinfo
+functions/lib/
+# Generated from the canonical repository map before company-site dev/build.
+company-site/public/wonju-map.html
+company-site/public/data/
+# Recreated from the tracked public guide by `company-site export:firebase`.
+company-site/firebase-public/popbill-guide/
+*-debug.log
+desktop-crm/node_modules/
+desktop-crm/dist/

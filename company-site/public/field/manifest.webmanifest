@@ -1,0 +1,24 @@
+{
+  "name": "BRING 현장 매물 플랫폼",
+  "short_name": "BRING FIELD",
+  "description": "건물·매물 정보와 현장 사진·영상을 관리하는 브링 내부 플랫폼",
+  "start_url": "/field",
+  "scope": "/field",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0b2342",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/field-icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/field-icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

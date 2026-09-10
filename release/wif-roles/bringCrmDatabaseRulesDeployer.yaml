@@ -1,0 +1,21 @@
+title: BRING CRM Database Rules Deployer
+description: Deploys only Firebase Realtime Database Security Rules for bring-fm.
+stage: GA
+includedPermissions:
+  - firebasedatabase.instances.get
+  - firebasedatabase.instances.list
+  - firebasedatabase.instances.update
+  - firebase.projects.get
+  - firebaserules.releases.create
+  - firebaserules.releases.get
+  - firebaserules.releases.getExecutable
+  - firebaserules.releases.list
+  - firebaserules.releases.update
+  - firebaserules.rulesets.create
+  - firebaserules.rulesets.get
+  - firebaserules.rulesets.list
+  - firebaserules.rulesets.test
+  - resourcemanager.projects.get
+  - serviceusage.services.get
+  - serviceusage.services.list
+  - serviceusage.services.use
