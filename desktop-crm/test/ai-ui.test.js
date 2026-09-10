@@ -157,6 +157,20 @@ test("quote identity exposes editable issue, validity and site fields", () => {
   assert.match(app, /QuoteCore\.dateAfter\(next\.quoteDate, 7\)/);
 });
 
+test("quote editor offers the fixed move-in cleaning price selector", () => {
+  const app = read("app.js");
+  assert.match(app, /data-move-in-quote-amount/);
+  assert.match(app, /QuoteCore\.MOVE_IN_CLEANING_AMOUNTS\.map/);
+  assert.match(app, /10만원부터 20만원까지 1만원 단위/);
+  assert.match(app, /현재 품목을 표준 5개 품목으로 교체/);
+  const changeHandler = app.slice(
+    app.indexOf('if (event.target.matches("[data-move-in-quote-amount]"))'),
+    app.indexOf('if (event.target.matches("[data-ai-quote-recipient]"))'),
+  );
+  assert.match(changeHandler, /QuoteCore\.applyMoveInCleaningPreset/);
+  assert.match(changeHandler, /refreshQuotesView\(\)/);
+});
+
 test("consultation AI creates a reviewable draft without changing or saving the form", () => {
   const app = read("app.js");
   assert.match(app, /data-consultation-ai-organize[^>]*disabled/);

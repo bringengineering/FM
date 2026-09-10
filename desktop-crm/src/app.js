@@ -3726,10 +3726,16 @@
     return `<article class="transaction-quote recipient-copy" data-ai-quote-document><header><b>견 적 서</b></header><section class="transaction-parties"><div class="transaction-party"><span class="vertical-label">공급받는자</span><dl><div><dt>견적명</dt><dd>${esc(quote.projectName)}</dd></div><div><dt>현장 주소</dt><dd>${esc(quote.siteAddress || "미입력")}</dd></div><div><dt>성명</dt><dd>${esc(quote.recipient || "미입력")}</dd></div><div><dt>전화번호</dt><dd>${esc(quote.recipientPhone || "미입력")}</dd></div><div><dt>발행일</dt><dd>${esc(quote.quoteDate)}</dd></div><div><dt>유효일</dt><dd>${esc(quote.validUntil)}</dd></div></dl></div><div class="transaction-party"><span class="vertical-label">공급자</span><dl><div><dt>사업자등록번호</dt><dd>${esc(supplier.registrationNumber || "미입력")}</dd></div><div><dt>상호</dt><dd>${esc(supplier.businessName || "미입력")}</dd></div><div><dt>대표자</dt><dd><span>${esc(supplier.representative || "미입력")}</span>${seal}</dd></div><div class="address-row"><dt>소재지</dt><dd>${esc(supplier.address || "미입력")}</dd></div><div><dt>업태</dt><dd>${esc(supplier.businessType || "미입력")}</dd></div><div><dt>업종</dt><dd>${esc(supplier.businessCategory || "미입력")}</dd></div></dl></div></section><section class="transaction-total"><span>합계금액 (VAT 포함)</span><b>${QuoteCore.money(quote.totalAmount)}</b></section><div class="transaction-table-wrap"><table><thead><tr><th>품목</th><th>규격 및 상세</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th><th>세액</th><th>합계</th></tr></thead><tbody>${itemRows}${emptyRows}</tbody><tfoot><tr><th colspan="5">합계</th><td>${QuoteCore.money(quote.supplyAmount)}</td><td>${QuoteCore.money(quote.vatAmount)}</td><td>${QuoteCore.money(quote.totalAmount)}</td></tr></tfoot></table></div><section class="transaction-signatures"><span>작성일</span><b>${esc(quote.quoteDate)}</b><span>공급자 확인</span><b class="transaction-confirmation">${esc(supplier.representative || "")}${confirmationSeal}</b><span>공급받는자 확인</span><b>${esc(quote.recipient || "")}</b></section><footer><b>안내 사항</b>${quote.notes.map((note, index) => `<span>${index + 1}. ${esc(note)}</span>`).join("")}</footer></article>`;
   }
 
+  function moveInCleaningQuotePreset(quote) {
+    const selected = quote && quote.service === "입주청소" && QuoteCore.MOVE_IN_CLEANING_AMOUNTS.includes(quote.totalAmount) ? quote.totalAmount : "";
+    const options = QuoteCore.MOVE_IN_CLEANING_AMOUNTS.map(amount => `<option value="${amount}"${selected === amount ? " selected" : ""}>${amount / 10000}만원</option>`).join("");
+    return `<label class="ai-content-field ai-quote-standard-preset"><span>입주청소 표준 견적</span><select data-move-in-quote-amount><option value="">가격 선택 · 10만원부터 20만원까지 1만원 단위</option>${options}</select><small>가격을 선택하면 현재 품목을 표준 5개 품목으로 교체합니다. 적용 후 각 항목은 직접 수정할 수 있습니다.</small></label>`;
+  }
+
   function renderAiQuoteAssistant() {
     const quote = aiAssistantState.quote;
     const manual = aiAssistantState.quoteMode === "manual";
-    const modeSwitch = `<div class="ai-quote-mode-switch" role="tablist" aria-label="견적서 작성 방식"><button type="button" data-quote-mode="ai" class="${manual ? "" : "active"}" aria-selected="${!manual}">AI 작성</button><button type="button" data-quote-mode="manual" class="${manual ? "active" : ""}" aria-selected="${manual}">수기 작성</button></div>`;
+    const modeSwitch = `<div class="ai-quote-mode-switch" role="tablist" aria-label="견적서 작성 방식"><button type="button" data-quote-mode="ai" class="${manual ? "" : "active"}" aria-selected="${!manual}">AI 작성</button><button type="button" data-quote-mode="manual" class="${manual ? "active" : ""}" aria-selected="${manual}">수기 작성</button></div>${moveInCleaningQuotePreset(quote)}`;
     const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote));
     const disabled = canExport ? "" : " disabled";
     const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div></div>`;
@@ -13009,6 +13015,21 @@
       aiAssistantState.supplierDirty = true;
       aiAssistantState.supplierError = "";
       try { applySupplierToQuote(); } catch (_error) {}
+      return;
+    }
+    if (event.target.matches("[data-move-in-quote-amount]")) {
+      const amount = Number(event.target.value);
+      if (!amount) return;
+      try {
+        const base = aiAssistantState.quote || QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
+        aiAssistantState.quote = QuoteCore.applyMoveInCleaningPreset(base, amount);
+        aiAssistantState.quoteError = "";
+        refreshQuotesView();
+        showToast(`입주청소 표준 5개 품목을 ${amount / 10000}만원으로 적용했습니다.`, "success");
+      } catch (error) {
+        aiAssistantState.quoteError = error.message || "입주청소 표준 견적을 적용하지 못했습니다.";
+        showToast(aiAssistantState.quoteError, "error");
+      }
       return;
     }
     if (event.target.matches("[data-ai-quote-recipient]")) {
