@@ -120,7 +120,7 @@ test('all mutation modules await persistence before following success actions',(
  'sample-ui.mjs':['await api.setPortfolio(p)'],
  'backup-report-ui.mjs':['await api.setPortfolio(mergeBackup'],
  'duplicate-ui.mjs':['await api.save(result.data,buildingId)'],
- 'crm-transfer-ui.mjs':['await api.setPortfolio(next)']
+ 'crm-transfer-ui.mjs':['await api.setPortfolio(next,building)']
  };
  for(const [name,needles] of Object.entries(requirements)){const source=fs.readFileSync(path.join(native,name),'utf8');for(const needle of needles)assert.ok(source.includes(needle),name+': '+needle);}
 });
@@ -152,4 +152,30 @@ test('company native JSON replacement is disabled even if its hidden handler is 
  const instance=await mountBuildingAtlas({host,initialPortfolio:portfolio(),mode:'company',canWrite:true,confirm:async()=>true,savePortfolio:async p=>{writes++;return p;},createViewer:()=>{throw Error('no GPU')}});
  const file=host.shadowRoot.querySelector('#file');file.files=[{size:1,text:async()=>JSON.stringify(portfolio().items[0].data)}];
  await file.onchange({target:file});assert.equal(writes,0);assert.equal(file.disabled,true);instance.dispose();
+});
+
+for(const kind of ['backup','fm']) {
+ const ids=kind==='backup'?{open:'backupReport',file:'portfolioFile',confirm:'mergePortfolio',dialog:'backupReportDialog',close:'backupReportClose',preview:'restorePreview',error:'backupError'}:{open:'importFMBasics',file:'fmBasicsFile',confirm:'fmImportConfirm',dialog:'fmImportDialog',close:'fmImportClose',preview:'fmImportPreview',error:'fmImportError'};
+ const content=name=>kind==='backup'?JSON.stringify({...portfolio(),items:[{id:name,data:{...portfolio().items[0].data,building:{...portfolio().items[0].data.building,name}}} ],activeId:name}):JSON.stringify({kind:'bring-building-basics',version:1,building:{name,address:''}});
+ test(kind+' import ignores reads from a prior building or replaced/closed import session',async t=>{
+  const {mountBuildingAtlas}=await load('mount.mjs');const host=fakeHost(),p=portfolio();p.items.push({...structuredClone(p.items[0]),id:'crm-2'});let writes=0;
+  const instance=await mountBuildingAtlas({host,initialPortfolio:p,canWrite:true,savePortfolio:async next=>{writes++;return next;},createViewer:()=>{throw Error('no GPU')}});t.after(()=>instance.dispose());
+  const root=host.shadowRoot,$=id=>root.querySelector('#'+id),input=$(ids.file);
+  const delayed=name=>{let finish;input.files=[{size:1,text:()=>new Promise(r=>finish=()=>r(content(name)))}];const pending=input.onchange({target:input});return {pending,finish};};
+  $(ids.open).onclick();const first=delayed('Old building import');$('buildingSelect').onchange({target:{value:'crm-2'}});first.finish();await first.pending;
+  assert.equal($(ids.confirm).disabled,true);await $(ids.confirm).onclick();assert.equal(writes,0);
+  $(ids.open).onclick();const old=delayed('Old session');input.files=[{size:1,text:async()=>content('New session')}];await input.onchange({target:input});old.finish();await old.pending;
+  assert.match($(ids.preview).textContent,/New session/);assert.doesNotMatch($(ids.preview).textContent,/Old session/);
+  const closed=delayed('Closed session');$(ids.close).onclick();$(ids.open).onclick();closed.finish();await closed.pending;assert.equal($(ids.confirm).disabled,true);assert.equal($(ids.preview).textContent,'');
+ });
+ test(kind+' import preserves file and preview after failed commit',async t=>{
+  const {mountBuildingAtlas}=await load('mount.mjs');const host=fakeHost();let writes=0;
+  const instance=await mountBuildingAtlas({host,initialPortfolio:portfolio(),canWrite:true,savePortfolio:async next=>{writes++;if(writes===1)throw Error('offline');return next;},createViewer:()=>{throw Error('no GPU')}});t.after(()=>instance.dispose());
+  const root=host.shadowRoot,$=id=>root.querySelector('#'+id);$(ids.open).onclick();const input=$(ids.file),file={size:1,text:async()=>content('Keep preview')};input.files=[file];await input.onchange({target:input});const preview=$(ids.preview).textContent;await $(ids.confirm).onclick();
+  assert.equal(writes,1);assert.equal($(ids.dialog).open,true);assert.equal($(ids.preview).textContent,preview);assert.equal(input.files[0],file);assert.equal($(ids.confirm).disabled,false);assert.equal($(ids.error).textContent,'offline');
+  await $(ids.confirm).onclick();assert.equal(writes,2);assert.equal($(ids.dialog).open,false);
+ });
+}
+test('setPortfolio propagates the captured import building rather than defaulting to current',()=>{
+ const source=fs.readFileSync(path.join(native,'mount.mjs'),'utf8');assert.match(source,/setPortfolio\(p,expectedId/);assert.match(source,/gate.commit\(p,expectedId\)/);
 });

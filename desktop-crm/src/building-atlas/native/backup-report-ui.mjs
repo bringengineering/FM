@@ -4,11 +4,24 @@ export function setupBackupReport(api){
  const $=id=>document.getElementById(id),button=document.createElement('button');button.id='backupReport';button.textContent='보고서·전체 백업';document.querySelector('.actions').prepend(button);
  const dialog=document.createElement('dialog');dialog.id='backupReportDialog';dialog.innerHTML='<div class="modalhead"><h2>보고서 · 데이터 보관</h2><button id="backupReportClose">닫기</button></div><section class="backup-section"><h3>선택 건물 점검 보고서</h3><p>점검 일정·설비 확인 근거·작업 내역·입력 비용을 HTML 보고서로 저장합니다. 파일을 열어 PDF로 인쇄할 수 있습니다.</p><button id="downloadReport" class="primary">점검 보고서 저장</button></section><section class="backup-section"><h3>등록 건물 전체 백업</h3><p id="backupCount"></p><p>모든 건물의 기록·첨부 사진·평면도·배관 경로를 한 파일로 보관합니다.</p><button id="downloadPortfolio">전체 건물 백업 저장</button></section><section class="backup-section"><h3>백업에서 건물 추가</h3><p>기존 건물을 유지한 채 백업 건물을 추가합니다. 같은 번호의 건물은 복원 사본으로 추가합니다.</p><input id="portfolioFile" type="file" accept="application/json,.json"><p id="restorePreview" role="status"></p><button id="mergePortfolio" disabled>확인한 건물 추가</button></section><p id="backupError" role="alert"></p>';document.body.append(dialog);
  if(api.mode==='company')$('portfolioFile').closest('section').hidden=true;
- let incoming;
+ let incoming,importBuilding,importNonce=0,committing=false;
+ const invalidateImport=()=>{importNonce++;incoming=null;if(!document.signal.aborted){$('mergePortfolio').disabled=true;$('restorePreview').textContent='';}};
+ const currentImport=(nonce,building)=>!document.signal.aborted&&nonce===importNonce&&building===api.getPortfolio().activeId;
+ document.onDispose(invalidateImport);
+ dialog.addEventListener('close',invalidateImport,{signal:document.signal});
+ document.addEventListener('atlas-render',()=>{if(!committing&&importBuilding!==api.getPortfolio().activeId)invalidateImport();});
  const download=api.download;
- button.onclick=()=>{incoming=null;$('portfolioFile').value='';$('restorePreview').textContent='';$('backupError').textContent='';$('mergePortfolio').disabled=true;const p=api.getPortfolio();$('backupCount').textContent=`건물 ${p.items.length}개 · 기록 ${p.items.reduce((n,i)=>n+i.data.records.length,0)}건`;dialog.showModal();};$('backupReportClose').onclick=()=>dialog.close();
+ button.onclick=()=>{invalidateImport();importBuilding=api.getPortfolio().activeId;$('portfolioFile').value='';$('restorePreview').textContent='';$('backupError').textContent='';$('mergePortfolio').disabled=true;const p=api.getPortfolio();$('backupCount').textContent=`건물 ${p.items.length}개 · 기록 ${p.items.reduce((n,i)=>n+i.data.records.length,0)}건`;dialog.showModal();};$('backupReportClose').onclick=()=>dialog.close();
  $('downloadReport').onclick=()=>{try{download(reportHTML(api.getData()),'text/html;charset=utf-8','BRING-점검보고서-'+new Date().toLocaleDateString('sv-SE')+'.html');}catch(e){document.reportError('backupError',e);}};
  $('downloadPortfolio').onclick=()=>{try{const p=validateBackup(api.getPortfolio());download(JSON.stringify(p,null,2),'application/json','BRING-전체건물-'+new Date().toLocaleDateString('sv-SE')+'.json');}catch(e){document.reportError('backupError',e);}};
- $('portfolioFile').onchange=async e=>{incoming=null;$('mergePortfolio').disabled=true;$('backupError').textContent='';try{const file=e.target.files[0];if(!file)return;if(file.size>30e6)throw Error('30MB 이하 전체 백업 파일을 선택해주세요.');const text=await file.text();document.assertActive();incoming=validateBackup(JSON.parse(text));$('restorePreview').textContent=`추가할 건물 ${incoming.items.length}개: ${incoming.items.map(i=>i.data.building.name).join(', ')}`;$('mergePortfolio').disabled=false;}catch(err){if(document.signal.aborted)return;$('restorePreview').textContent='';document.reportError('backupError',err);}};
- $('mergePortfolio').onclick=async ()=>{if(!incoming)return;try{await api.setPortfolio(mergeBackup(api.getPortfolio(),incoming));const count=incoming.items.length;incoming=null;$('mergePortfolio').disabled=true;dialog.close();api.toast(`건물 ${count}개를 추가했습니다. 기존 건물은 유지됩니다.`);}catch(err){document.reportError('backupError',err);}};
+ $('portfolioFile').onchange=async e=>{invalidateImport();importBuilding=api.getPortfolio().activeId;const nonce=importNonce,building=importBuilding;$('mergePortfolio').disabled=true;$('backupError').textContent='';try{const file=e.target.files[0];if(!file)return;if(file.size>30e6)throw Error('30MB 이하 전체 백업 파일을 선택해주세요.');const text=await file.text();if(!currentImport(nonce,building))return;incoming=validateBackup(JSON.parse(text));$('restorePreview').textContent=`추가할 건물 ${incoming.items.length}개: ${incoming.items.map(i=>i.data.building.name).join(', ')}`;$('mergePortfolio').disabled=false;}catch(err){if(!currentImport(nonce,building))return;$('restorePreview').textContent='';document.reportError('backupError',err);}};
+ $('mergePortfolio').onclick=async ()=>{
+ if(!incoming||committing)return;
+ const nonce=importNonce,building=importBuilding,payload=incoming,count=payload.items.length;
+ if(!currentImport(nonce,building)){invalidateImport();document.reportError('backupError','건물이 변경되었습니다. 파일을 다시 선택해주세요.');return;}
+ committing=true;
+ try{await api.setPortfolio(mergeBackup(api.getPortfolio(),payload),building);if(document.signal.aborted||nonce!==importNonce)return;incoming=null;$('mergePortfolio').disabled=true;dialog.close();api.toast(`건물 ${count}개를 추가했습니다. 기존 건물은 유지됩니다.`);}
+ catch(err){if(currentImport(nonce,building))document.reportError('backupError',err);}
+ finally{committing=false;}
+};
 }
