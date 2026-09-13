@@ -4,8 +4,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const native = path.resolve(__dirname, '../src/building-atlas/native');
+test('embedded renderer uses scoped compact chrome while keeping native editing actions',()=>{const source=fs.readFileSync(path.join(native,'mount.mjs'),'utf8');assert.match(source,/data-embedded/);assert.match(source,/embedded\.css/);});
 const load = name => import(pathToFileURL(path.join(native, name)).href);
 const portfolio = () => ({version:2, activeId:'crm-1', items:[{id:'crm-1',data:{version:1,building:{name:'One',address:'',floors:1,width:16,depth:12},records:[]}}]});
+
+test('native reference selection and binding preserve old state on failure and store IDs only',async()=>{
+ const {mountBuildingAtlas}=await load('mount.mjs');const {demo}=await import('../src/building-atlas/upstream/model.mjs');const p=portfolio();p.items[0].data=demo();let selected,writes=0,saved,fail=true,pick;
+ const host=fakeHost();const instance=await mountBuildingAtlas({host,initialPortfolio:p,mode:'company',canWrite:true,onSelectRecord:s=>selected=s,validateReference:()=>true,savePortfolio:async n=>{writes++;if(fail)throw Error('offline');saved=n;return n;},createViewer:(_h,choose)=>{pick=choose;return {update(){},reset(){}};}});
+ assert.equal(selected.record.id,p.items[0].data.records[0].id);const id=selected.record.id,old=structuredClone(selected.record);
+ await assert.rejects(instance.bindReference({recordId:id,type:'unit',id:'u1'}),/offline/);assert.deepEqual(selected.record,old);
+ fail=false;await instance.bindReference({recordId:id,type:'unit',id:'u1'});assert.deepEqual(selected.record.fields,{...old.fields,crmReferenceType:'unit',crmReferenceId:'u1'});assert.equal(saved.items[0].data.records[0].x,old.x);
+ pick(p.items[0].data.records[1].id);await assert.rejects(instance.bindReference({recordId:id,type:'unit',id:'u1'}),/선택/);assert.equal(writes,2);instance.dispose();
+});
+test('native reference write fails closed for read-only, invalid target, and editor drafts',async()=>{
+ const {mountBuildingAtlas}=await load('mount.mjs');const {demo}=await import('../src/building-atlas/upstream/model.mjs');
+ for(const reason of ['readonly','invalid','draft']){const p=portfolio();p.items[0].data=demo();const host=fakeHost();let writes=0;const instance=await mountBuildingAtlas({host,initialPortfolio:p,canWrite:reason!=='readonly',validateReference:()=>reason!=='invalid',savePortfolio:async n=>{writes++;return n;},createViewer:()=>({update(){},reset(){}})});if(reason==='draft')host.shadowRoot.querySelector('#buildingEdit').onclick();await assert.rejects(instance.bindReference({recordId:p.items[0].data.records[0].id,type:'unit',id:'u'}));assert.equal(writes,0);instance.dispose();}
+});
 test('native package exposes mount and does not use global storage or iframe', async () => {
  assert.ok(fs.existsSync(path.join(native,'mount.mjs')), 'native mount must exist');
  for(const name of fs.readdirSync(native).filter(n=>n.endsWith('.mjs'))) {

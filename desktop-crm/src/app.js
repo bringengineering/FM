@@ -1528,7 +1528,7 @@
   }
 
   function renderOperationsWorkspace() {
-    if (currentView !== "buildingAtlas" && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
+    if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     if (!["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
@@ -2905,6 +2905,16 @@
   }
 
   function renderCustomers() {
+    // Refresh host basics before resolving post-registration customer intent.
+    return Promise.resolve(renderBuildingAtlas()).then(async () => {
+      const intent = selectedCustomerHubId, view = buildingAtlasView, generation = buildingAtlasGeneration;
+      if (!intent || !view) return;
+      const selected = await view.selectCustomer(intent);
+      if (selected && view === buildingAtlasView && generation === buildingAtlasGeneration && selectedCustomerHubId === intent) selectedCustomerHubId = "";
+    });
+  }
+
+  function renderCustomerLegacyList() {
     const selectedCustomer = customerById(selectedCustomerHubId);
     if (selectedCustomer) return renderCustomerManagementDetail(selectedCustomer);
     if (selectedCustomerHubId) selectedCustomerHubId = "";
@@ -3219,15 +3229,24 @@
     buildingAtlasAbort = new AbortController();
     const generation = ++buildingAtlasGeneration;
     const identity = atlasIdentity(currentAuth.user);
-    main.innerHTML = '<section id="crmBuildingAtlas"><p role="status">3D 설비지도를 준비하고 있습니다.</p></section>';
+    const initialCustomerIntent = selectedCustomerHubId;
+    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
     const host = main.querySelector("#crmBuildingAtlas");
-    const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && currentView === "buildingAtlas" && currentWorkspace === "operations" && host.isConnected;
+    const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && ["customers", "buildingAtlas"].includes(currentView) && currentWorkspace === "operations" && host.isConnected;
     try {
       const { mountCrmAtlas } = await import("./building-atlas/crm-host.mjs");
+      const { mountCustomerWorkspace } = await import("./building-atlas/customer-workspace.mjs");
       if (!stillCurrent()) return;
-      const instance = await mountCrmAtlas({ host, buildings: atlasBuildings(), api, getBuildingContext: atlasBuildingContext, initialBuildingId: buildingAtlasInitialId || selectedBuildingId, confirm: async message => window.confirm(message), signal: buildingAtlasAbort.signal });
+      const signal = buildingAtlasAbort.signal;
+      const instance = await mountCustomerWorkspace({ host, signal, initialCustomerId:initialCustomerIntent, getCustomers: () => store.customers.map(customer => ({id:customer.id,name:customerDisplayName(customer),buildings:customerBuildings(customer).filter(building=>!building.archivedAt)})), getVisibleCustomerIds:()=>filteredCustomers().map(c=>c.id), getVisibleBuildings:()=>atlasBuildings().filter(b=>(customerManagementFilter==="전체"||managementStatusForBuilding(buildingById(b.id))===customerManagementFilter)&&Core.normalizeText(`${b.name} ${b.address}`).includes(Core.normalizeText(searchEl.value))), getBuildings: atlasBuildings,
+        getProfile: (customerId, buildingId) => {
+          const customer = customerById(customerId), building = buildingById(buildingId);
+          return [{title:building?.name || "건물 미연결",lines:[building?.address || building?.roadAddress || "주소 미등록"]}, {title:customer?customerDisplayName(customer):"고객 미연결",lines:customer?[customerPhoneText(customer.phone)||"연락처 미등록",customer.email||"이메일 미등록",`담당자: ${customer.owner||"미지정"}`,`다음 연락: ${dateText(customer.nextContactAt)}`,`관리 상태: ${managementStatusForCustomer(customer)}`]:[]}, {title:"개인 메모 · 고객 특징",lines:[customer?.notes||"등록된 메모 없음"]}];
+        }, getSections: customerAtlasSections, getReferenceTargets:id=>stillCurrent()?atlasReferenceTargets(id):[], initialBuildingId:buildingAtlasInitialId || selectedBuildingId || undefined,
+        mountAtlas: options => mountCrmAtlas({...options,buildings:atlasBuildings(),api,confirm:async message=>window.confirm(message),signal}) });
       if (generation !== buildingAtlasGeneration || !stillCurrent()) { instance.dispose(); return; }
       buildingAtlasView = instance;
+      if (selectedCustomerHubId === initialCustomerIntent && instance.selection().customerId === initialCustomerIntent) selectedCustomerHubId = "";
       buildingAtlasInitialId = "";
     } catch (_error) {
       if (stillCurrent()) host.innerHTML = '<p role="alert">3D 설비지도를 열지 못했습니다. 다른 메뉴로 이동한 뒤 다시 열어 주세요.</p>';
@@ -3236,18 +3255,44 @@
     }
   }
 
+  function atlasReferenceTargets(id) {
+    const building = (store.buildings || []).find(item => item.id === id && !item.archivedAt);
+    if (!building) return [];
+    const line = values => values.filter(value => value !== undefined && value !== null && value !== "").map(String).join(" · ");
+    const target = (type, key, label, lines) => ({buildingId:id,type,id:String(key || ""),label:String(label || key || "이름 미등록"),lines});
+    return [
+      ...activeBuildingUnitsForBuilding(building).map(unit => target("unit",unit.id,unit.label || unit.unitLabel,[line([unit.floorLabel,VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)]]),unit.notes || unit.memo || "메모 미등록"])),
+      ...activeCases().filter(item => (item.crmBuildingId || item.buildingId) === id).map(item => target("case",item.id || workflowCaseKey(item),line([item.ticketNo || item.id,item.room,item.issueType]),[line([Core.workflowProgress(item).current,item.description || item.summary,item.owner])])),
+      ...(store.serviceRecords || []).filter(item => item.buildingId === id && !item.archivedAt).map(item => target("service",item.id,item.title,[line([item.scheduledDate,item.startTime,WorkManagement.typeLabel(item.serviceType),WorkManagement.statusLabel(item.status)]),line([item.owner,item.summary])]))
+    ].filter(item => item.id);
+  }
+
+  function customerAtlasSections(customerId, buildingId) {
+    const context = atlasBuildingContext(buildingId);
+    const section = (title, source) => ({...(context.find(item=>item.title===source)||{lines:[]}),title});
+    const line = values => values.filter(value=>value!==undefined&&value!==null&&value!=="").join(" · ");
+    const contracts = section("계약","계약");
+    const commonContracts=[...new Map((store.contracts||[]).filter(item=>customerId&&item.customerId===customerId&&!item.buildingId).map(item=>[item.id||item,item])).values()];
+    contracts.lines=[...(contracts.lines||[]),...commonContracts.map(item=>line([item.name,item.status,item.startDate,item.endDate,item.amount,"고객 공통 · 위치 미지정"]))];
+    const related=item=>item.buildingId?Boolean(buildingId&&item.buildingId===buildingId):Boolean(customerId&&item.customerId===customerId);
+    const tasks=(store.tasks||[]).filter(item=>!item.archivedAt&&related(item));
+    const work=section("민원·작업","민원·작업 진행");work.lines=[...(work.lines||[]),...tasks.map(item=>line([item.title,item.status,item.dueAt,item.owner,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))];
+    return [{title:"상담",lines:(store.activities||[]).filter(related).map(item=>line([dateText(item.occurredAt),item.type,item.summary,item.result,item.nextAction,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))},contracts,work,section("일정","일정·서비스 작업"),section("호실","등록된 층·호실"),section("사진","민원·작업 사진")];
+  }
+
   function atlasBuildingContext(id) {
     const building = (store.buildings || []).find(item => item.id === id && !item.archivedAt);
     if (!building) return [];
+    const exactCases = activeCases().filter(item => (item.crmBuildingId || item.buildingId) === id);
     const line = values => values.filter(value => value !== undefined && value !== null && value !== "").map(String).join(" · ");
     return [
       { title: "건물 기본정보", lines: [line([building.name, building.address || building.roadAddress]), `관리 상태: ${managementStatusForBuilding(building)}`, "치수·설비 위치·배관 경로는 별도 현장 확인이 필요합니다."] },
       { title: "연결 고객·연락처·담당자", lines: buildingCustomers(building).map(customer => line([customer.name, customer.type, customer.phone, customer.owner && `담당 ${customer.owner}`])) },
       { title: "계약", lines: buildingContracts(building).map(contract => line([contract.name, contract.status, contract.startDate, contract.endDate, contract.billingCycle, contract.amount != null ? krw(contract.amount) : "금액 미등록", contract.scope])) },
       { title: "일정·서비스 작업", lines: (store.serviceRecords || []).filter(record => record.buildingId === id && !record.archivedAt).map(record => line([record.scheduledDate, record.startTime, record.title, WorkManagement.typeLabel(record.serviceType), WorkManagement.statusLabel(record.status), record.owner, record.summary])) },
-      { title: "민원·작업 진행", lines: buildingCases(building).map(item => line([item.ticketNo || item.id, item.room, item.issueType, Core.workflowProgress(item).current])) },
-      { title: "등록된 층·호실", lines: buildingUnitsForBuilding(building).map(unit => line([unit.floorLabel, unit.label || unit.unitLabel, VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)] || "상태 확인 필요"])) },
-      { title: "민원·작업 사진", lines: [], resources: buildingCases(building).flatMap(item => [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].map((photo,index) => ({name: line([item.ticketNo || item.id, photo.fileName || photo.name || `사진 ${index+1}`, photo.phase]), url: caseFirst(photo.fileUrl, photo.driveUrl, photo.url, photo.webViewLink)}))) },
+      { title: "민원·작업 진행", lines: exactCases.map(item => line([item.ticketNo || item.id, item.room || "위치 미지정", item.issueType, Core.workflowProgress(item).current])) },
+      { title: "등록된 층·호실", lines: buildingUnitsForBuilding(building).map(unit => line([unit.floorLabel || "위치 미지정", unit.label || unit.unitLabel, VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)] || "상태 확인 필요", "3D 위치 미지정"])) },
+      { title: "민원·작업 사진", lines: [], resources: exactCases.flatMap(item => [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].map((photo,index) => ({name: line([item.ticketNo || item.id, photo.fileName || photo.name || `사진 ${index+1}`, photo.phase]), url: caseFirst(photo.fileUrl, photo.driveUrl, photo.url, photo.webViewLink)}))) },
     ];
   }
 
@@ -11391,6 +11436,7 @@
     }
     const messageCustomerOpen = event.target.closest("[data-message-customer-open]");
     if (messageCustomerOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedMessageCustomerId = messageCustomerOpen.dataset.messageCustomerOpen;
       closeDrawer();
       currentView = "customerMessages";
@@ -11785,8 +11831,10 @@
     }
     const atlasOpen = event.target.closest("[data-building-atlas-open]");
     if (atlasOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+      disposeBuildingAtlas();
       buildingAtlasInitialId = atlasOpen.dataset.buildingAtlasOpen || "";
-      currentView = "buildingAtlas";
+      currentView = "customers";
       render();
       return;
     }
@@ -11794,7 +11842,7 @@
     if (nav) {
       const nextView = nav.dataset.view;
       if (!Object.hasOwn(viewMeta, nextView)) return;
-      if (nextView !== "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+      if (nextView !== currentView && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const requestedCalendarTab = nav.dataset.unifiedCalendarTab;
       if (UNIFIED_CALENDAR_TABS.includes(requestedCalendarTab)) unifiedCalendarTab = requestedCalendarTab;
       const folder = nav.closest("[data-nav-folder]");
@@ -12623,6 +12671,7 @@
     if (driveImportReject) { driveImportRejectionEditor(driveImportReject.dataset.driveImportReject); return; }
     const buildingVacancies = event.target.closest("[data-building-vacancies], [data-vacancy-manage]");
     if (buildingVacancies) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const buildingId = buildingVacancies.dataset.buildingVacancies || buildingVacancies.dataset.vacancyManage;
       const building = buildingById(buildingId);
       if (!building || building.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
@@ -12794,6 +12843,7 @@
     }
     const buildingPayments = event.target.closest("[data-building-payments]");
     if (buildingPayments) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const building = buildingById(buildingPayments.dataset.buildingPayments);
       if (!building) return showToast("건물 정보를 찾지 못했습니다.", "error");
       paymentBuildingFilter = paymentFilterIdForBuilding(building);
@@ -12804,6 +12854,7 @@
     }
     const buildingCaseOpen = event.target.closest("[data-building-case-open]");
     if (buildingCaseOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedCaseKey = buildingCaseOpen.dataset.buildingCaseOpen;
       caseListMode = "active";
       currentView = "cases";
@@ -12812,6 +12863,7 @@
     }
     const buildingPaymentOpen = event.target.closest("[data-building-payment-open]");
     if (buildingPaymentOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       paymentBuildingFilter = buildingPaymentOpen.dataset.buildingPaymentId || "all";
       currentView = "payments";
       render();
@@ -12820,6 +12872,7 @@
     }
     const buildingJump = event.target.closest("[data-building-jump]");
     if (buildingJump) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedBuildingId = buildingJump.dataset.buildingJump;
       closeModal();
       closeDrawer();
@@ -13446,6 +13499,7 @@
 
   document.addEventListener("submit", async event => {
     event.preventDefault();
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
     if (form.id === "dailyLogExportForm") { await exportMonthlyDailyLogsFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
@@ -14711,7 +14765,7 @@
   });
   searchEl.addEventListener("keydown", async event => {
     if (event.key !== "Enter" || currentView === "buildingCalendar") return;
-    if (currentView === "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     if (!["cases", "buildings", "vacancies", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers";
     render();
   });
@@ -15003,7 +15057,7 @@ document.addEventListener("keydown", event => {
   async function openOfficeMessengerShortcut(action) {
     const peerId = action && typeof action.peerId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(action.peerId) ? action.peerId : "";
     if (!peerId) return false;
-    if (currentView === "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return false;
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return false;
     await workspaceCoordinator.select("operations");
     currentView = "officeMessenger";
     render();

@@ -3,13 +3,14 @@ import {createDOMScope,createMutationGate,createSafeViewer} from './dom-scope.mj
 import {template} from './template.mjs';
 import {setupEnhancements} from './enhancements.mjs';
 import {attachCatalog} from './equipment-catalog.mjs';
-export async function mountBuildingAtlas({host,initialPortfolio,savePortfolio,canWrite=false,mode='practice',confirm:ask=async()=>false,download:sendDownload,createViewer:viewerFactory,signal}={}) {
+export async function mountBuildingAtlas({host,initialPortfolio,savePortfolio,canWrite=false,mode='practice',embedded=false,onSelectRecord=()=>{},validateReference=()=>false,confirm:ask=async()=>false,download:sendDownload,createViewer:viewerFactory,signal}={}) {
  if(!host?.attachShadow)throw Error('설비지도 호스트가 필요합니다.');
  const gate=createMutationGate({initialPortfolio,savePortfolio,canWrite,mode});
  const root=host.shadowRoot||host.attachShadow({mode:'open'});
  root.innerHTML=template;
  const document=createDOMScope(root,host.ownerDocument),$=id=>document.getElementById(id);
  const style=document.createElement('link');style.rel='stylesheet';style.href=new URL('./theme.css',import.meta.url).href;root.prepend(style);
+ if(embedded){host.setAttribute('data-embedded','true');const compact=document.createElement('link');compact.rel='stylesheet';compact.href=new URL('./embedded.css',import.meta.url).href;root.append(compact);}
  const timers=new Set(),urls=new Set();
  const setTimeout=(fn,ms)=>{const id=globalThis.setTimeout(()=>{timers.delete(id);if(!document.signal.aborted)fn();},ms);timers.add(id);return id;};
  const clearTimeout=id=>{globalThis.clearTimeout(id);timers.delete(id);};
@@ -27,7 +28,18 @@ let state={floor:'all',transparent:true,explode:false,layers:new Set(categories.
 $('storage').textContent=mode==='practice'?'연습 모드 · 메모리에서만 작업 · 회사 자료에 저장하지 않음':canWrite?'선택한 CRM 건물 · 회사 저장':'선택한 CRM 건물 · 읽기 전용';
 function toast(text){if(document.signal.aborted)return;$('toast').textContent=text;$('toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').style.display='none',4000);}
 async function persist(next,expectedId=portfolio.activeId){validate(next);const p=structuredClone(portfolio);const item=p.items.find(i=>i.id===expectedId);if(!item)throw Error('건물이 변경되었습니다.');item.data=next;portfolio=await gate.commit(p,expectedId);data=portfolio.items.find(i=>i.id===portfolio.activeId).data;render();toast(mode==='practice'?'연습 자료를 반영했습니다.':'회사 자료를 저장했습니다.');}
-function choose(id){selected=id;state.selected=id;render();}
+function choose(id){if(document.signal.aborted)return;selected=id;state.selected=id;render();}
+async function bindReference({recordId,type,id}={}){
+ assertWritable();const expectedId=portfolio.activeId;
+ if(selected!==recordId||!data.records.some(r=>r.id===recordId))throw Error('선택한 모형 기록이 변경되었습니다.');
+ if(gate.isBusy()||[...root.querySelectorAll('dialog')].some(d=>d.open))throw Error('열려 있는 편집을 저장하거나 닫은 뒤 연결해주세요.');
+ if(!['unit','case','service'].includes(type)||typeof id!=='string'||!id.trim()||id.length>300)throw Error('연결 대상 ID를 확인해주세요.');
+ // Validation must be synchronous: no await may separate the fresh owner check and save gate.
+ if(validateReference({buildingId:expectedId,recordId,type,id})!==true)throw Error('현재 건물의 CRM 연결 대상을 다시 확인해주세요.');
+ const next=structuredClone(data),record=next.records.find(r=>r.id===recordId);
+ record.fields={...record.fields,crmReferenceType:type,crmReferenceId:id};
+ await persist(next,expectedId);
+}
 function render(){if(document.signal.aborted)return;
  $('title').textContent=data.building.name;$('address').textContent=data.building.address;$('stats').textContent=`지하 1층 + 지상 ${data.building.floors}층 · 등록 ${data.records.length}건 · 현장 확인 ${data.records.filter(r=>r.confidence==='현장 확인').length}건`;
  $('floor').innerHTML='<option value="all">전체 층</option>'+Array.from({length:data.building.floors+1},(_,f)=>`<option value="${f}">${f===0?'지하 1층':f+'층'}</option>`).join('');$('floor').value=state.floor;
@@ -37,6 +49,7 @@ function render(){if(document.signal.aborted)return;
  $('listTitle').textContent=categories.find(c=>c.id===category)?.name||'전체 기록';$('count').textContent=rows.length+'건';
  $('records').innerHTML=rows.length?rows.map(r=>`<button class="record ${r.id===selected?'selected':''}" data-record="${esc(r.id)}"><strong>${esc(r.name)}</strong><small>${r.floor===0?'B1':r.floor+'F'} · ${esc(r.status)} · ${esc(r.confidence)}</small></button>`).join(''):'<p class="muted">등록된 기록이 없습니다. ‘＋ 기록 등록’에서 추가하세요.</p>';
  renderDetail();viewer?.update(data,state);document.emit('atlas-render');applyPermissions();
+ try{onSelectRecord({buildingId:portfolio.activeId,record:structuredClone(data.records.find(r=>r.id===selected)||null),canWrite});}catch{/* A host display callback cannot change a committed save result. */}
 }
 function renderDetail(){const r=data.records.find(r=>r.id===selected);if(!r){$('detail').innerHTML='<h2>설비와 기록을 선택하세요</h2><p class="muted">3D 설비 또는 아래 목록에서 항목을 선택하면 연결 정보와 상세 기록을 확인할 수 있습니다.</p>';return;}
  const field=(k,v)=>`<dt>${esc(k)}</dt><dd>${esc(v||'등록 필요')}</dd>`;
@@ -65,9 +78,10 @@ $('form').onsubmit=async e=>{e.preventDefault();try{assertWritable();if(editingB
  function applyPermissions(){for(const button of root.querySelectorAll(writeSelectors))if(!canWrite)button.disabled=true;if(mode==='company'){for(const id of ['newBuilding','import'])$(id).hidden=true;$('file').disabled=true;}}
  document.addEventListener('cancel',e=>{if(gate.isBusy())e.preventDefault();},{capture:true});
  document.addEventListener('click',e=>{if(gate.isBusy()&&(e.target.closest('dialog')||e.target.closest(writeSelectors))){e.preventDefault();e.stopImmediatePropagation();toast('저장이 진행 중입니다.');return;}if(!canWrite&&e.target.closest(writeSelectors)){e.preventDefault();e.stopImmediatePropagation();toast('읽기 전용입니다.');}},{capture:true});
- const filters=root.querySelector('.filter-drawer');filters.open=(host.clientWidth||390)>800;
+ const filters=root.querySelector('.filter-drawer');filters.open=!embedded&&(host.clientWidth||390)>800;
  setupEnhancements({dom:document,mode,canWrite,assertWritable,download,getData:()=>data,getSelected:()=>selected,getViewer:()=>viewer,getState:()=>state,getPortfolio:()=>portfolio,save:persist,toast,choose,render,setPortfolio,selectBuilding});
+ if(embedded){const header=root.querySelector('header'),tools=document.createElement('details'),summary=document.createElement('summary');summary.textContent='모형 편집 · 도면 · 백업 도구';tools.className='embedded-tools';header.before(tools);tools.append(summary,header);const recordPanel=document.createElement('details'),recordSummary=document.createElement('summary');recordSummary.textContent='모형 기록 목록 · 선택 설비 상세';recordPanel.className='embedded-records';root.querySelector('main').append(recordPanel);recordPanel.append(recordSummary,root.querySelector('.listhead'),$('records'),$('detail'));}
  render();try{const createViewer=viewerFactory||(await import('./viewer.mjs')).createViewer;document.assertActive();const candidate=await createViewer($('viewport'),choose);if(document.signal.aborted){createSafeViewer(candidate).dispose();return {dispose};}viewer=createSafeViewer(candidate,()=>{if(!document.signal.aborted)$('fallback').hidden=false;});viewer.update(data,state);viewer.reset();}catch(e){viewer?.dispose?.();viewer=undefined;if(!document.signal.aborted)$('fallback').hidden=false;}
 
- return {dispose};
+ return {dispose,bindReference};
 }

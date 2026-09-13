@@ -18,7 +18,7 @@ test('building shortcut remains present alongside archived buildings',()=>{
 });
 test('building navigation closes the covering detail modal',async()=>{
  const vm=require('node:vm');const start=app.indexOf('    const buildingJump = event.target.closest(');const end=app.indexOf('\n    }',start)+6;
- const ctx={event:{target:{closest:()=>({dataset:{buildingJump:'b1'}})}},selectedBuildingId:'',currentView:'',closeDrawer:()=>{},closed:false,closeModal:()=>{ctx.closed=true;},render:()=>{},requestDriveImportCandidatesRefresh:()=>{},refreshOperations:async()=>{}};
+ const ctx={buildingAtlasView:null,event:{target:{closest:()=>({dataset:{buildingJump:'b1'}})}},selectedBuildingId:'',currentView:'',closeDrawer:()=>{},closed:false,closeModal:()=>{ctx.closed=true;},render:()=>{},requestDriveImportCandidatesRefresh:()=>{},refreshOperations:async()=>{}};
  vm.createContext(ctx);await vm.runInContext('(async()=>{'+app.slice(start,end)+'})()',ctx);assert.equal(ctx.closed,true);
 });
 test('read-only details do not introduce customer navigation with audit-save side effects',()=>{
