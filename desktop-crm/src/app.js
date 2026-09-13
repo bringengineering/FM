@@ -120,6 +120,9 @@
   let dataPath = "";
   let currentAuth = { required: true, user: null, error: "" };
   let currentSync = { status: "offline", message: "서버 연결 확인 중" };
+  let operationsCheckSnapshot = null;
+  let operationsCheckReceivedAt = "";
+  let operationsCheckFilters = {};
   let currentUpdate = { status: "disabled", currentVersion: "", availableVersion: "", percent: 0, message: "" };
   let queuedSave = null;
   let saveInFlight = false;
@@ -683,6 +686,9 @@
     currentAuth = value || { required: true, user: null, error: "" };
     const nextMarketingIdentity = marketingIdentityKey(currentAuth);
     if (previousMarketingIdentity !== nextMarketingIdentity) {
+      operationsCheckSnapshot = null;
+      operationsCheckReceivedAt = "";
+      operationsCheckFilters = {};
       marketingController.invalidate("identity-change", currentAuth.user || null);
       marketingEntryController.invalidate();
       marketingEntryDraft = null;
@@ -693,6 +699,9 @@
       marketingLoaded = false;
     }
     if (previousUid !== currentAuthUid()) {
+      operationsCheckSnapshot = null;
+      operationsCheckReceivedAt = "";
+      operationsCheckFilters = {};
       window.BringOffice?.reset();
       authGeneration += 1;
       overlayRefreshPromise = null;
@@ -1926,6 +1935,51 @@
     return prospect;
   }
 
+  function captureOperationsSnapshot(data) {
+    const receipt = data && data.operationsCheckReceipt;
+    const user = currentAuth.user || {};
+    if (!receipt || receipt.uid !== currentAuthUid() || receipt.role !== (user.accessRole || user.role || "")
+      || !receipt.source || !receipt.availability || !Number.isFinite(Date.parse(receipt.receivedAt))) return;
+    if (operationsCheckReceivedAt && Date.parse(receipt.receivedAt) < Date.parse(operationsCheckReceivedAt)) return;
+    operationsCheckSnapshot = JSON.parse(JSON.stringify(receipt));
+    operationsCheckReceivedAt = receipt.receivedAt;
+  }
+
+  function operationsCheckMarkup() {
+    const source = operationsCheckSnapshot && operationsCheckSnapshot.source || {};
+    const availability = operationsCheckSnapshot && operationsCheckSnapshot.availability || {};
+    const dateParts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).map(part => [part.type, part.value]));
+    const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+    const model = window.BringOperationsCheck.buildOperationsCheck(source, { today, availability });
+    return window.BringOperationsCheckUI.renderOperationsCheck(model, { ...operationsCheckFilters, sync: { status: currentSync.status, receivedAt: operationsCheckReceivedAt, hasSnapshot: Boolean(operationsCheckSnapshot), displayPending: Boolean(pendingRemoteStore) } });
+  }
+
+  function refreshOperationsCheck() {
+    const panel = document.getElementById("operationsCheck");
+    if (panel) panel.outerHTML = operationsCheckMarkup();
+  }
+
+  function openOperationsCheck(buildingId) {
+    operationsCheckFilters = { buildingId: buildingId || "" };
+    currentView = "dashboard";
+    render();
+    document.getElementById("operationsCheck")?.scrollIntoView({ block: "start" });
+  }
+
+  function operationsCheckDetail(source, id, buildingId) {
+    if (pendingRemoteStore) return showToast("편집 중 수신된 자료가 있습니다. 편집을 종료하고 화면 반영 후 다시 확인해 주세요.", "warning");
+    const collections = ["buildings", "contracts", "serviceContracts", "serviceRecords"];
+    if (!collections.includes(source)) return;
+    const item = (store[source] || []).find(row => row.id === id);
+    if (!item) return showToast("현재 조회 범위에서 이 항목을 확인할 수 없습니다.", "warning");
+    if (source === "buildings") { selectedBuildingId = id; currentView = "buildings"; render(); return; }
+    const building = (store.buildings || []).find(row => row.id === (item.buildingId || buildingId));
+    const customer = (store.customers || []).find(row => row.id === item.customerId);
+    const action = source === "contracts" ? `data-contract-edit="${attr(id)}"` : source === "serviceRecords" ? `data-work-edit="${attr(id)}"` : "";
+    modalContent.innerHTML = `<div class="modal-header"><div><h2>${esc(item.title || item.name || "운영 항목 상세")}</h2><p>기존 등록 내용 · 조회 전용</p></div><button type="button" class="icon-button" data-action="close-modal">×</button></div><div class="operations-check"><p>건물: ${esc(building?.name || "연결 확인 필요")}</p><p>고객: ${esc(customer?.name || "직접 연결 미입력")}</p><p>상태: ${esc(item.status || "미입력")}</p><p>시작/예정일: ${esc(item.startDate || item.scheduledDate || "미입력")}</p><p>종료/완료일: ${esc(item.endDate || item.completedAt || "미입력")}</p><p>${esc(item.summary || item.scope || item.memo || "")}</p><p>증빙: ${esc(item.evidenceUrl || item.driveFileId || "이 기록에 직접 연결된 증빙 없음 · 별도 보고서는 결과보고서에서 확인")}</p></div><div class="form-actions">${action && canWriteCRM() ? `<button type="button" class="primary-button" ${action}>기존 화면에서 수정</button>` : ""}${source === "serviceContracts" && building ? `<button type="button" class="secondary-button" data-building-jump="${attr(building.id)}">건물 보기</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button></div>`;
+    openModal();
+  }
+
   function renderDashboard() {
     const stats = Core.calculateDashboard(store, new Date(), []);
     const today = todayKey();
@@ -1957,6 +2011,7 @@
         ${kpi("늦어진 연락", stats.overdueContacts, "우선 확인 필요", "#f47d86", stats.overdueContacts ? "alert" : "")}
         ${kpi("진행 중인 할 일", stats.openTasks, `기한 지난 업무 ${stats.overdueTasks}건`, "#79a9ee", stats.overdueTasks ? "alert" : "")}
       </div>
+      ${operationsCheckMarkup()}
       <div class="dashboard-grid">
         <section class="panel">
           <div class="panel-head"><div><h3>오늘 먼저 볼 고객</h3><p>고객을 누르면 상세 내용과 상담 기록을 볼 수 있어요.</p></div><button class="text-button" data-view="customers">전체 고객 보기 →</button></div>
@@ -3152,8 +3207,9 @@
 
   function renderArchivedBuildings() {
     const archived = (store.buildings || []).filter(item => item && item.archivedAt);
-    if (!archived.length) return "";
-    return `<details class="sales-crm sales-archived-panel"><summary><span>보관된 건물</span><b>${archived.length}곳</b></summary><div class="sales-archived-list">${archived.map(item => `<article><div><strong>${esc(item.name || "건물명 미입력")}</strong><p>${esc(item.address || "주소 미입력")} · ${esc(dateText(item.archivedAt))}</p></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-restore="${attr(item.id)}">복원</button>` : ""}</article>`).join("")}</div></details>`;
+    const checkLink = `<button type="button" class="secondary-button" data-operations-jump="${attr(selectedBuildingId || "")}">이 건물 운영 점검</button>`;
+    if (!archived.length) return checkLink;
+    return `${checkLink}<details class="sales-crm sales-archived-panel"><summary><span>보관된 건물</span><b>${archived.length}곳</b></summary><div class="sales-archived-list">${archived.map(item => `<article><div><strong>${esc(item.name || "건물명 미입력")}</strong><p>${esc(item.address || "주소 미입력")} · ${esc(dateText(item.archivedAt))}</p></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-restore="${attr(item.id)}">복원</button>` : ""}</article>`).join("")}</div></details>`;
   }
 
   function driveImportCandidateById(id) {
@@ -3544,6 +3600,7 @@
 
   function renderWorkManagement() {
     main.innerHTML = workManagementMarkup();
+    main.insertAdjacentHTML("afterbegin", `<button type="button" class="secondary-button" data-operations-jump>운영 점검 보기</button>`);
     bindWorkManagementControls(main);
   }
 
@@ -10695,6 +10752,13 @@
   }
 
   document.addEventListener("click", async event => {
+    const operationsJump = event.target.closest("[data-operations-jump]");
+    if (operationsJump) { openOperationsCheck(operationsJump.dataset.operationsJump); return; }
+    const operationsFilter = event.target.closest("[data-operations-filter]");
+    if (operationsFilter) { operationsCheckFilters.category = operationsFilter.dataset.operationsFilter; refreshOperationsCheck(); return; }
+    if (event.target.closest("[data-operations-reset]")) { operationsCheckFilters = {}; refreshOperationsCheck(); return; }
+    const operationsDetail = event.target.closest("[data-operations-detail]");
+    if (operationsDetail) { operationsCheckDetail(operationsDetail.dataset.operationsSource, operationsDetail.dataset.operationsDetail, operationsDetail.dataset.operationsTargetBuilding); return; }
     const navSwitchToggle = event.target.closest("[data-nav-switch-toggle]");
     if (navSwitchToggle) {
       const list = document.querySelector("[data-nav-switch-list]");
@@ -12685,6 +12749,7 @@
     const buildingJump = event.target.closest("[data-building-jump]");
     if (buildingJump) {
       selectedBuildingId = buildingJump.dataset.buildingJump;
+      closeModal();
       closeDrawer();
       currentView = "buildings";
       render();
@@ -12906,6 +12971,14 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-operations-query], [data-operations-building], [data-operations-owner]")) {
+      const field = event.target;
+      if (field.matches("[data-operations-query]")) operationsCheckFilters.query = field.value;
+      else if (field.matches("[data-operations-building]")) operationsCheckFilters.buildingId = field.value;
+      else operationsCheckFilters.owner = field.value;
+      refreshOperationsCheck();
+      return;
+    }
     if (event.target.matches("#dailyLogExportForm [name='month'], #dailyLogExportForm [name='userId']")) {
       refreshDailyLogExportPreview(event.target.form);
       return;
@@ -14883,12 +14956,13 @@ document.addEventListener("keydown", event => {
 
   api.onSyncState(state => {
     updateSyncUI(state);
+    refreshOperationsCheck();
     if (state && state.status === "connected" && appInitialized) {
       void refreshRendererOverlays().catch(() => undefined);
       void refreshCustomerPhotos().catch(() => undefined);
     }
   });
-  api.onRemoteData(applyRemoteStore);
+  api.onRemoteData(data => { captureOperationsSnapshot(data); applyRemoteStore(data); refreshOperationsCheck(); });
   api.onCustomerPhotos(photos => applyCustomerPhotos(photos));
   api.onOfficeData(data => window.BringOffice.applyData(data, currentAuth));
   api.onValueScopeEvent(envelope => {
@@ -14998,7 +15072,9 @@ document.addEventListener("keydown", event => {
 
   async function loadApplication(initialData) {
     try {
-      store = Core.sanitizeStore(initialData || await api.load());
+      const loadedData = initialData || await api.load();
+      captureOperationsSnapshot(loadedData);
+      store = Core.sanitizeStore(loadedData);
       ensureSalesStore(store);
       let customerPhotoLoadFailed = false;
       await refreshCustomerPhotos(false).catch(() => { customerPhotoLoadFailed = true; customerPhotos = {}; });

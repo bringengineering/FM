@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const OperationsCheck = require("./operations-check-core");
 const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
@@ -2328,7 +2329,17 @@ class FirebaseRemoteClient {
   }
 
   async fetchRemotePayload() {
-    return this.dbRequest("crmShared/data", { method: "GET" });
+    const guard = this.captureSessionGuard();
+    const value = await this.dbRequest("crmShared/data", { method: "GET" });
+    if (this.sessionGuardActive(guard)) {
+      const source = OperationsCheck.projectOperationsSource(value);
+      this.operationsCheckReceipt = { guard, value: {
+        uid: guard.uid, role: this.session.accessRole || this.session.role || "",
+        receivedAt: new Date().toISOString(), source,
+        availability: Object.fromEntries(Object.keys(source).map(key => [key, true]))
+      } };
+    }
+    return value;
   }
 
   requireOfficeSession() {
@@ -3148,6 +3159,13 @@ class FirebaseRemoteClient {
     if (!overlays || !this.sessionGuardActive(guard)) return null;
     const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries);
     if (!this.sessionGuardActive(guard)) return null;
+    // Delivery-only sidecar, added after all persistence/sanitization. Local overlay
+    // refreshes retain the last successful root-read timestamp and original fields.
+    const receipt = this.operationsCheckReceipt;
+    if (receipt && this.sessionGuardActive(receipt.guard)
+      && receipt.value.role === (this.session.accessRole || this.session.role || "")) {
+      renderer.operationsCheckReceipt = JSON.parse(JSON.stringify(receipt.value));
+    }
     if (notify) {
       if (!this.sessionGuardActive(guard)) return null;
       this.onRemoteStore(renderer);

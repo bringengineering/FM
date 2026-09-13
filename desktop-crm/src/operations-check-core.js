@@ -112,9 +112,20 @@
         cleaningOnlyBuildings:contractsReady ? [...cleaning].filter(id => !managed.has(id)).length : null,
         evidenceTasks:can('serviceRecords') ? evidence.size : null,
         heldContracts:contractsReady ? held.size : null},
-      issues,buildings:[...activeBuildings.values()].map(b => ({id:text(b.id),name:text(b.name),managed:managed.has(text(b.id)),cleaningOnly:cleaning.has(text(b.id))&&!managed.has(text(b.id))})),
+      issues,buildings:[...activeBuildings.values()].map(b => ({id:text(b.id),name:text(b.name),owner:text(b.manager || b.owner),managed:managed.has(text(b.id)),cleaningOnly:cleaning.has(text(b.id))&&!managed.has(text(b.id))})),
       sourceState:{...available},today
     };
   }
-  return {buildOperationsCheck};
+  // Explicit allowlist: no access codes, contact details, or unrelated raw fields.
+  function projectOperationsSource(input) {
+    const fields = {
+      buildings:['id','name','archivedAt','manager','owner','ownerCustomerId'],
+      customers:['id'],
+      contracts:['id','name','title','buildingId','types','type','billingCycle','status','startDate','endDate','owner'],
+      serviceContracts:['id','name','title','buildingId','serviceType','cadence','status','startDate','endDate','owner'],
+      serviceRecords:['id','title','name','buildingId','customerId','contractId','status','completedAt','evidenceUrl','driveFileId','owner']
+    };
+    return Object.fromEntries(Object.entries(fields).map(([key,keys])=>[key,rows((input||{})[key]).map(row=>Object.fromEntries(keys.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,JSON.parse(JSON.stringify(row[k]))])))]));
+  }
+  return {buildOperationsCheck,projectOperationsSource};
 });

@@ -4,7 +4,7 @@
   function renderOperationsCheck(model,options={}) {
     const sync=options.sync||{}, metrics=model.metrics||{};
     const snapshot=sync.hasSnapshot===true;
-    const partial=Object.values(metrics).some(value=>value===null);
+    const partial=Object.values(metrics).some(value=>value===null)||Object.values(model.sourceState||{}).some(value=>value!==true);
     const category=options.category||'all', query=String(options.query||'').trim().toLowerCase();
     const buildingId=options.buildingId||'', owner=options.owner||'';
     const buildings=model.buildings||[], issues=model.issues||[];
@@ -15,6 +15,7 @@
     if (!snapshot) status=['syncing','loading'].includes(sync.status)?'불러오는 중':'서버에서 확인하지 못했습니다';
     else if(sync.status!=='connected') status='최신 확인 실패 · 이전 수신 자료를 표시합니다';
     else status=partial?'일부 데이터만 확인됨':'서버 수신 자료 기준';
+    if(snapshot && sync.displayPending) status+=' · 최신 자료 수신됨 · 편집 종료 후 상세 화면에 반영';
     const received=sync.receivedAt&&Number.isFinite(Date.parse(sync.receivedAt))?new Date(sync.receivedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'아직 확인되지 않음';
     const owners=[...new Set([...issues,...buildings].map(row=>row.owner).filter(Boolean))].sort();
     const cards=[['registeredBuildings','등록 건물','registered'],['managedBuildings','정기관리 건물','managed'],['cleaningOnlyBuildings','청소 전용 건물','cleaning'],['evidenceTasks','증빙 확인 작업','evidence']];

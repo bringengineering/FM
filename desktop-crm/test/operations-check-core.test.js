@@ -8,6 +8,7 @@ const options = { today:'2026-09-13', availability:{buildings:true,customers:tru
 function fixture() { return {buildings:[{id:'b1',name:'A',ownerCustomerId:'u1'},{id:'b2',name:'B'},{id:'b3',name:'C'},{id:'b4',archivedAt:'2026-01-01'}],customers:[{id:'u1'}],contracts:[],serviceContracts:[],serviceRecords:[]}; }
 function contract(extra={}) { return {id:'c1',buildingId:'b1',types:['건물관리'],billingCycle:'월 정기',status:'진행 중',startDate:'2026-09-01',...extra}; }
 function build(data, extra={}) { assert.equal(typeof Core.buildOperationsCheck,'function','read-only aggregation must be implemented'); return Core.buildOperationsCheck(data,{...options,...extra}); }
+test('building lists retain the responsible employee',()=>{const data=fixture();data.buildings[0].manager='담당 직원';assert.equal(build(data).buildings[0].owner,'담당 직원');});
 test('counts unique active buildings, management and exclusive cleaning',()=>{
  const data=fixture();data.contracts=[contract(),contract({id:'c2',types:['청소']}),contract({id:'c3',buildingId:'b2',types:['청소'],status:'종료 예정',endDate:'2026-09-13'}),contract({id:'c4',buildingId:'b3',billingCycle:'건별'})];
  const before=JSON.stringify(data);const result=build(data);
