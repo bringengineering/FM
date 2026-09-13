@@ -44,3 +44,13 @@ aside,.center,.detail{width:100%}.detail{padding:14px}#viewport{height:340px;min
 #maintenanceDialog table{display:block;overflow:auto}.building-picker{flex-wrap:wrap}}
 
 header{height:auto}main{height:auto}#fallback{color:#334e70}.detail .buttons{flex-wrap:wrap}.plan-options{overflow:auto}
+
+/* Bright architectural model: overlays remain readable without hiding equipment. */
+#viewport{background:#f2f6fa;border:1px solid #dbe4eb}
+.viewtools{max-width:calc(100% - 28px);flex-wrap:wrap;color:#203a50;gap:8px}
+.viewtools button{background:#fffffff2;color:#244263;border-color:#a6bbc8;box-shadow:0 2px 8px #324f6510}
+.viewtools button:hover{background:#eaf3fc}
+.viewtools button:focus-visible{outline:3px solid #247dd5;outline-offset:2px}
+.legend{max-width:calc(100% - 36px);color:#405b70;background:#fffffff0;border:1px solid #dbe4eb;border-radius:8px;padding:6px 9px;overflow-wrap:anywhere}
+#fallback{background:#f2f6fa;color:#334e70;padding:100px 24px 90px;overflow-wrap:anywhere}
+@media(max-width:800px){.viewtools{top:10px;left:10px;max-width:calc(100% - 20px);gap:6px}.viewtools button{padding:7px 9px}.legend{left:10px;bottom:10px;max-width:calc(100% - 20px);font-size:10px}}
