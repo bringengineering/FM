@@ -7,6 +7,8 @@ const fieldOperationsDisabled = () => Promise.resolve({
 });
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  loadBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-load", input),
+  saveBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-save", input),
   authState: () => ipcRenderer.invoke("crm:auth-state"),
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
   loginWithGoogle: () => ipcRenderer.invoke("crm:auth-google-login"),

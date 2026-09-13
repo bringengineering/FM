@@ -28,6 +28,36 @@
           }
         }
       },
+      "buildingAtlas": {
+        ".read": false,
+        ".write": false,
+        "$buildingId": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/data/buildings').child($buildingId).child('id').val() === $buildingId && root.child('crmCompany/data/buildings').child($buildingId).child('archived').val() !== true && root.child('crmCompany/data/buildings').child($buildingId).child('deleted').val() !== true && (!root.child('crmCompany/data/buildings').child($buildingId).child('deletedAt').exists() || root.child('crmCompany/data/buildings').child($buildingId).child('deletedAt').val() === '') && (!root.child('crmCompany/data/buildings').child($buildingId).child('archivedAt').exists() || root.child('crmCompany/data/buildings').child($buildingId).child('archivedAt').val() === '')",
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && root.child('crmCompany/data/buildings').child($buildingId).child('id').val() === $buildingId && root.child('crmCompany/data/buildings').child($buildingId).child('archived').val() !== true && root.child('crmCompany/data/buildings').child($buildingId).child('deleted').val() !== true && (!root.child('crmCompany/data/buildings').child($buildingId).child('deletedAt').exists() || root.child('crmCompany/data/buildings').child($buildingId).child('deletedAt').val() === '') && newData.exists() && (!root.child('crmCompany/data/buildings').child($buildingId).child('archivedAt').exists() || root.child('crmCompany/data/buildings').child($buildingId).child('archivedAt').val() === '')",
+          ".validate": "$buildingId.matches(/^[A-Za-z0-9_-]{1,150}$/) && $buildingId !== '__proto__' && $buildingId !== 'prototype' && $buildingId !== 'constructor' && newData.hasChildren(['schemaVersion','buildingId','revision','updatedBy','updatedAtMs','modelJson']) && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+          "schemaVersion": {
+            ".validate": "newData.val() === 1"
+          },
+          "buildingId": {
+            ".validate": "newData.isString() && newData.val() === $buildingId"
+          },
+          "revision": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "updatedAtMs": {
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0 && newData.val() >= now - 300000 && newData.val() <= now + 300000"
+          },
+          "modelJson": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4194304"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
       "quoteSupplier": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",

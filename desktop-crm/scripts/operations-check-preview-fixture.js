@@ -9,9 +9,29 @@
  data.serviceRecords=[{id:'s1',title:'가상 청소 작업',buildingId:'b2',serviceType:'cleaning',status:'completed',completedAt:'2026-09-01',scheduledDate:'2026-09-01',owner:'테스트 담당자',summary:'증빙 미연결 테스트'},{id:'s2',title:'가상 점검',buildingId:'b1',customerId:'u1',contractId:'c1',status:'completed',completedAt:'2026-09-01',evidenceUrl:'https://example.invalid/evidence',owner:'테스트 담당자'}];
  const withReceipt=value=>({...value,operationsCheckReceipt:{uid:user.uid,role:user.accessRole,receivedAt:new Date().toISOString(),source:window.BringOperationsCheck.projectOperationsSource(value),availability:Object.fromEntries(['buildings','customers','contracts','serviceContracts','serviceRecords'].map(key=>[key,Object.hasOwn(value,key)]))}});
  const clone=()=>withReceipt(JSON.parse(JSON.stringify(data)));
+ const atlasRecords=new Map();let atlasFailure=false;
+ if(new URLSearchParams(location.search).has('atlasNoWebGL')) {
+   const originalContext=HTMLCanvasElement.prototype.getContext;
+   HTMLCanvasElement.prototype.getContext=function(type,...args){return /webgl/i.test(type)?null:originalContext.call(this,type,...args);};
+ }
  let user={uid:'preview-only',email:'preview@example.invalid',name:'테스트 담당자',accessRole:'admin',role:'admin',officeAdmin:true};
  const methods={authState:async()=>({required:false,user}),load:async()=>{listeners.onSyncState?.({status:'connected',message:'가상 데이터 · 서버 연결 차단'});return clone();},dataPath:async()=>'가상 데이터 — 서버 접근 없음',loadCustomerPhotos:async()=>({}),loadCanonicalBuildingUnits:async()=>[],loadFieldSummaries:async()=>({}),loadFieldTeamProfiles:async()=>[],loadOperations:async()=>({cases:[],payments:{},caseSettings:{}}),loadWorkflowVendors:async()=>[],loadDriveImportCandidates:async()=>[],loadWorkReports:async()=>[],updateState:async()=>({status:'disabled',message:'미리보기'}),loadOffice:async()=>({}),loadContractSources:async()=>({})};
  window.bringCRM=new Proxy(methods,{get(target,key){if(key in target)return target[key];if(String(key).startsWith('on'))return callback=>{listeners[key]=callback;};if(/^(save|commit|delete|remove|create|send|login|logout|change|upload|import|restore|openExternal)/i.test(String(key)))return async()=>{blockedWrites++;throw new Error('테스트 실행: 쓰기/외부 작업 차단');};return async()=>({});}});
+ methods.loadBuildingAtlas=async({buildingId})=>{
+   if(new URLSearchParams(location.search).has('atlasSeed')&&!atlasRecords.has(buildingId)) {
+     const {demo}=await import('../building-atlas/upstream/model.mjs');
+     atlasRecords.set(buildingId,{buildingId,revision:1,model:demo()});
+   }
+   return {ok:true,record:structuredClone(atlasRecords.get(buildingId)||null),etag:String(atlasRecords.get(buildingId)?.revision||0),canWrite:user.accessRole!=='viewer'};
+ };
+ methods.saveBuildingAtlas=async({buildingId,model,expectedRevision,etag})=>{
+   if(atlasFailure)return {ok:false,error:{code:'ATLAS_ERROR',message:'가상 저장 실패 · 편집 내용 유지'}};
+   if(user.accessRole==='viewer')return {ok:false,error:{code:'PERMISSION_DENIED',message:'조회 전용'}};
+   const revision=atlasRecords.get(buildingId)?.revision||0;
+   if(revision!==expectedRevision||etag!==String(revision))return {ok:false,error:{code:'ATLAS_CONFLICT',message:'가상 저장 충돌'}};
+   atlasRecords.set(buildingId,{buildingId,revision:revision+1,model:structuredClone(model)});
+   return methods.loadBuildingAtlas({buildingId});
+ };
  if(new URLSearchParams(location.search).get('previewLoading')==='1') methods.load=async()=>{
    listeners.onSyncState?.({status:'syncing',message:'가상 초기 로딩'});
    const value=window.BringCore.blankStore();value.settings.onboardingComplete=true;return value;
@@ -20,6 +40,7 @@
  window.addEventListener('DOMContentLoaded',()=>{
    const bar=document.createElement('div');bar.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#17384d;color:white;padding:8px;display:flex;gap:8px;align-items:center;font-size:12px';
    bar.innerHTML='<b>가상 데이터 · 회사 서버 접근 차단</b><button data-preview-state="connected">정상</button><button data-preview-state="offline">연결 실패</button><button data-preview-state="empty">0건</button><button data-preview-state="partial">부분 조회</button><button data-preview-state="viewer">조회 직원</button><span id="previewWrites">서버 쓰기 0회</span>';
+   const failButton=document.createElement('button');failButton.textContent='지도 저장 실패 켜기';failButton.onclick=()=>{atlasFailure=!atlasFailure;failButton.textContent=atlasFailure?'지도 저장 실패 끄기':'지도 저장 실패 켜기';};bar.append(failButton);
    document.body.appendChild(bar);bar.addEventListener('click',event=>{const state=event.target.dataset.previewState;if(!state)return;
      if(state==='viewer'){user={...user,uid:'preview-viewer',role:'viewer',accessRole:'viewer',officeAdmin:false};listeners.onAuthState?.({required:false,enforceRoles:true,user});}
      listeners.onSyncState?.({status:state==='offline'?'offline':'connected',message:'가상 상태'});

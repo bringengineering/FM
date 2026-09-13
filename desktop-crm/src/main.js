@@ -7800,6 +7800,23 @@ secureCanonicalHandle("crm:supply-move-delete", input => remoteClient.deleteSupp
 secureCanonicalHandle("crm:delivery-flow-save", input => remoteClient.saveDeliveryFlow(input));
 secureCanonicalHandle("crm:delivery-stage-advance", input => remoteClient.advanceDeliveryStage(input));
 secureCanonicalHandle("crm:delivery-file-upload", input => uploadDeliveryFile(input));
+async function buildingAtlasResponse(request) {
+  try { return { ok: true, ...await request() }; }
+  catch (error) {
+    const code = String(error && error.code || "ATLAS_REQUEST_FAILED");
+    const safeCode = /^(ATLAS_[A-Z_]+|NETWORK|SESSION_CHANGED|AUTH_REQUIRED|ACCESS_DENIED|READ_ONLY_ACCOUNT|PASSWORD_CHANGE_REQUIRED|MARKETING_ONLY_FORBIDDEN|PROHIBITED_SENSITIVE_VALUE)$/.test(code) ? code : "ATLAS_REQUEST_FAILED";
+    const messages = {
+      ATLAS_CONFLICT: "다른 직원이 먼저 수정했습니다. 작성 내용을 보관하고 최신 지도를 확인해 주세요.",
+      ATLAS_TOO_LARGE: "지도 용량이 허용 크기를 초과했습니다. 사진·도면 크기를 줄여 주세요.",
+      ATLAS_BUILDING_UNAVAILABLE: "연결된 CRM 건물을 확인해 주세요.",
+      SESSION_CHANGED: "로그인 계정이 변경되었습니다. 지도를 다시 열어 주세요.",
+      NETWORK: "지도 서버에 연결할 수 없습니다. 작성 내용은 보관됩니다.",
+    };
+    return { ok: false, code: safeCode, error: messages[safeCode] || "지도를 처리하지 못했습니다. 권한과 서버 연결을 확인해 주세요. 작성 내용은 보관됩니다." };
+  }
+}
+secureCanonicalHandle("crm:building-atlas-load", input => buildingAtlasResponse(() => remoteClient.loadBuildingAtlas(input)));
+secureCanonicalHandle("crm:building-atlas-save", input => buildingAtlasResponse(() => remoteClient.saveBuildingAtlas(input)));
 secureCanonicalHandle("crm:work-report-save", input => remoteClient.saveWorkReport(input));
 secureCanonicalHandle("crm:work-report-photo-upload", input => uploadWorkReportPhoto(input));
 secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));

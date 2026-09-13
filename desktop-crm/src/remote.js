@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const BuildingAtlasService = require("./building-atlas-service");
 const OperationsCheck = require("./operations-check-core");
 const http = require("node:http");
 const path = require("node:path");
@@ -80,7 +81,7 @@ async function cancelResponseBody(response) {
   } catch (_error) {}
 }
 
-async function readBoundedJsonResponse(response, maxBytes, errorCode = "DATABASE_ERROR") {
+async function readBoundedJsonResponse(response, maxBytes, errorCode = "DATABASE_ERROR", options = {}) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw createError("응답 크기 제한이 올바르지 않습니다.", errorCode);
   if (!response || typeof response.ok !== "boolean") throw createError("서버 응답을 확인할 수 없습니다.", errorCode);
   if (!response.ok) {
@@ -130,6 +131,7 @@ async function readBoundedJsonResponse(response, maxBytes, errorCode = "DATABASE
     throw createError("첨부파일 서버 응답 인코딩이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID", cause);
   }
   try {
+    if (!text && options.rejectEmpty) throw createError("빈 서버 응답은 저장 상태를 확인할 수 없습니다.", "DATABASE_RESPONSE_INVALID");
     return text ? JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) : null;
   } catch (cause) {
     throw createError("첨부파일 서버 응답 형식이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID", cause);
@@ -2348,6 +2350,14 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadBuildingAtlas(input) {
+    return BuildingAtlasService.load(this, input, { readJson: readBoundedJsonResponse, resolveLocation: resolveDatabaseLocation });
+  }
+
+  async saveBuildingAtlas(input) {
+    return BuildingAtlasService.save(this, input, { readJson: readBoundedJsonResponse, resolveLocation: resolveDatabaseLocation });
   }
 
   async loadQuoteSupplier() {
