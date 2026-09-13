@@ -1,6 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+test("nightly workflow isolates backup identity and verifies decryption before upload", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const workflow = fs.readFileSync(path.join(__dirname, "../.github/workflows/crm-backup.yml"), "utf8");
+  assert.match(workflow, /environment: bring-crm-backup/);
+  assert.match(workflow, /vars.GCP_BACKUP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM/);
+  assert.doesNotMatch(workflow, /vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM/);
+  assert.match(workflow, /--no-symkey-cache/);
+  assert.match(workflow, /cmp .*backup-.*verified/);
+});
+
 const {
   normalizeBackupPath,
   parsePathList,

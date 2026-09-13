@@ -1,11 +1,13 @@
 # Realtime Database 야간 백업
 
-매일 새벽 3시 10분(한국시간)에 Realtime Database를 통째로 내보내
+매일 새벽 3시 10분(한국시간, 예약 실행은 지연될 수 있음)에 Realtime Database의 지정 경로를 내보내
 **GPG로 암호화한 뒤** GitHub Actions 아티팩트로 30일간 보관합니다.
 
 * 워크플로: `.github/workflows/crm-backup.yml`
 * 내보내기 스크립트: `backup/export-rtdb.js` (테스트: `backup/export-rtdb.test.js`)
-* 기본 백업 경로: `workflow`, `cases`, `caseSettings`, `crmCompany`
+* 기본 백업 경로: `workflow`, `cases`, `caseSettings`, `crmCompany`, `fieldPlatform`, `paymentCalendars`, `signage`
+* 제외: 과거 이관 사본, 별도 허용 목록, DB 보안 규칙, Authentication 사용자, 외부 파일 원본. 전체 시스템 백업은 아닙니다.
+* 업로드 전 복호화한 압축파일을 원본과 바이트 단위로 비교합니다. 운영 DB에 쓰거나 복원하지 않습니다.
 
 평문 백업은 러너 밖으로 절대 나가지 않습니다. 압축 → 암호화 → 평문 삭제 순서로 처리하고,
 암호가 설정돼 있지 않으면 백업 자체가 **실패**합니다(조용히 넘어가지 않음).
@@ -40,9 +42,13 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 > Realtime Database 읽기는 보안 규칙을 우회하는 관리자 접근으로 동작합니다.
 > 이 서비스 계정에는 **쓰기 권한을 절대 부여하지 마세요.**
 
-### 2. 기존 Workload Identity 풀에 연결
+### 2. 백업 전용 Workload Identity 풀에 연결
 
-릴리스에서 쓰는 것과 같은 provider를 재사용합니다.
+릴리스용 provider는 재사용하지 않습니다. 백업 전용 풀 `bring-crm-backup`과 provider `bringengineering-fm-backup`을 사용합니다.
+신뢰 조건은 저장소 ID `1276587874`, 소유자 ID `243367126`, 저장소 `bringengineering/FM`,
+브랜치 `refs/heads/claude/jolly-davinci-zl27wm`, 환경 `bring-crm-backup`,
+워크플로 `bringengineering/FM/.github/workflows/crm-backup.yml@refs/heads/claude/jolly-davinci-zl27wm`으로 제한합니다.
+GitHub 환경 `bring-crm-backup`도 이 브랜치만 허용합니다. 기본 브랜치 변경 시 양쪽 조건을 함께 검토하세요.
 
 ```bash
 gcloud iam service-accounts add-iam-policy-binding \
@@ -58,7 +64,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 | 종류 | 이름 | 값 |
 | --- | --- | --- |
-| Variable | `GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM` | (릴리스에서 쓰던 값 그대로) |
+| Variable | `GCP_BACKUP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM` | `projects/864976295990/locations/global/workloadIdentityPools/bring-crm-backup/providers/bringengineering-fm-backup` |
 | Variable | `GCP_BACKUP_SERVICE_ACCOUNT_BRING_FM` | `bring-crm-backup@bring-fm.iam.gserviceaccount.com` |
 | Variable | `RTDB_URL` | `https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app` |
 | Variable | `BACKUP_PATHS` *(선택)* | 기본값과 다르게 할 때만. 예: `workflow,cases` |
