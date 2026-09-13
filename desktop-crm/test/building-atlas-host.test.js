@@ -28,3 +28,31 @@ test('abort during initial read prevents mounting late data',async()=>{const hos
 test('failed import retains visible preview and draft until explicit discard',async()=>{const s=await setup({confirm:async()=>true,download:async()=>{},api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,error:{message:'import offline'}})}});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model())}];await s.$('atlas-file').onchange();await s.$('atlas-import-confirm').onclick();assert.equal(s.$('atlas-review').hidden,false);assert.match(s.$('atlas-status').textContent,/import offline/);s.handle.dispose();});
 test('import cannot overwrite a newer edit with a stale backup during confirmation',async()=>{let finish;let prompts=0;const s=await setup({download:async()=>{},confirm:()=>++prompts===1?new Promise(r=>finish=()=>r(true)):true});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model('Imported'))}];await s.$('atlas-file').onchange();await s.$('atlas-backup').onclick();const pending=s.$('atlas-import-confirm').onclick();const p=structuredClone(s.mounts[0].initialPortfolio);p.items[0].data.building.name='new edit';await s.mounts[0].savePortfolio(p);finish();await pending;assert.equal(s.writes.length,1);assert.equal(s.$('atlas-review').hidden,false);assert.match(s.$('atlas-status').textContent,/백업/);s.handle.dispose();});
 test('failed first import never offers create over preserved draft',async()=>{const s=await setup({confirm:async()=>true,api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,error:{message:'offline'}})}});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model())}];await s.$('atlas-file').onchange();await s.$('atlas-import-confirm').onclick();assert.equal(s.$('atlas-create').hidden,true);s.handle.dispose();});
+test('practice supports adding multiple buildings and replacing the entire portfolio without company writes',async()=>{
+ const s=await setup();s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();const save=s.mounts[1].savePortfolio;
+ const multiple={version:2,activeId:'new-building',items:[{id:'practice',data:model()},{id:'new-building',data:model('New')}]};
+ assert.deepEqual(await save(multiple),multiple);
+ const replacement={version:2,activeId:'from-backup',items:[{id:'from-backup',data:model('Backup')}]};
+ const result=await save(replacement);assert.deepEqual(result,replacement);assert.notEqual(result,replacement);assert.notEqual(result.items[0].data,replacement.items[0].data);
+ assert.equal(s.writes.length,0);assert.equal(await s.handle.requestLeave(),false);s.handle.dispose();
+});
+test('practice validates every model and unique IDs and active selection in full portfolios',async()=>{
+ const s=await setup();s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();const save=s.mounts[1].savePortfolio;
+ for(const p of [
+  {version:2,activeId:'practice',items:[{id:'practice',data:model()},{id:'bad',data:{}}]},
+  {version:2,activeId:'practice',items:[{id:'practice',data:model()},{id:'practice',data:model()}]},
+  {version:2,activeId:'missing',items:[{id:'other',data:model()}]},
+  {version:1,activeId:'practice',items:[{id:'practice',data:model()}]}
+ ])await assert.rejects(save(p));
+ assert.equal(s.writes.length,0);assert.equal(await s.handle.requestLeave(),true);s.handle.dispose();
+});
+test('company still rejects multiple models or a replacement active ID',async()=>{
+ const s=await setup();const save=s.mounts[0].savePortfolio;
+ await assert.rejects(save({version:2,activeId:'a',items:[{id:'a',data:model()},{id:'b',data:model()}]}),/CRM 건물/);
+ await assert.rejects(save({version:2,activeId:'b',items:[{id:'b',data:model()}]}),/CRM 건물/);
+ assert.equal(s.writes.length,0);s.handle.dispose();
+});
+test('provisional confirmation accurately discloses basement and one above-ground floor',async()=>{
+ const prompts=[];const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true})},confirm:async text=>{prompts.push(text);return true}});
+ await s.$('atlas-create').onclick();assert.match(prompts[0],/지하 1층.*지상 1층/);assert.match(s.$('atlas-status').textContent,/지하 1층.*지상 1층/);assert.equal(s.mounts[0].initialPortfolio.items[0].data.building.floors,1);s.handle.dispose();
+});

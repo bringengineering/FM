@@ -19,6 +19,11 @@ export function parseImport(text, bytes=new TextEncoder().encode(text).length) {
     if(bytes>8e6) throw failure('단일 모형은 8MB 이하로 선택해주세요.');
     return [{id:'single',data:copy(validate(value))}];
   }
+  validatePortfolio(value);
+  return value.items.map(({id,data})=>({id,data:copy(data)}));
+}
+
+function validatePortfolio(value) {
   if(value?.version!==2 || !Array.isArray(value.items) || !value.items.length || value.items.length>1000)
     throw failure('지원하는 모형 또는 건물 묶음 형식이 아닙니다.');
   const ids=new Set();
@@ -27,7 +32,6 @@ export function parseImport(text, bytes=new TextEncoder().encode(text).length) {
     ids.add(item.id); validate(item.data);
   }
   if(!ids.has(value.activeId)) throw failure('건물 묶음의 선택 건물이 없습니다.');
-  return value.items.map(({id,data})=>({id,data:copy(data)}));
 }
 
 function unwrap(response) {
@@ -107,9 +111,11 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
     const candidate=await mountNative({host:nativeHost,initialPortfolio:portfolio(targetId,model),mode:practice?'practice':'company',canWrite:practice||controller.snapshot().canWrite,confirm:ask,download,signal:abort.signal,
       savePortfolio:async next=>{
         if(!active(token)||abort.signal.aborted)throw failure('건물 화면이 변경되었습니다.');
+        // Practice owns a full in-memory portfolio, including sample replacements,
+        // new buildings and merged backups. Only company mode is CRM-ID bounded.
+        if(practice){validatePortfolio(next);practiceDirty=true;return copy(next);}
         if(next?.version!==2||next.activeId!==targetId||next.items?.length!==1||next.items[0].id!==targetId)throw failure('선택한 CRM 건물만 저장할 수 있습니다.');
         validate(next.items[0].data);
-        if(practice){practiceDirty=true;return copy(next);}
         if(!current())throw failure('현재 건물이 목록에 없습니다. 다시 조회해주세요.');
         await controller.save(next.items[0].data);
         if(!active(token))throw failure('건물 화면이 변경되었습니다.');
@@ -138,9 +144,9 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
   create.onclick=async()=>{
     const token=epoch,id=buildingId;
     if(create.hidden||create.disabled)return;
-    if(!await ask('이 건물의 추정 모형을 만들까요? 지상 1층·가로 16m·세로 12m는 임시 기본값이며 실제 건물 치수가 아닙니다. 편집 후 저장해야 회사 자료에 반영됩니다.'))return;
+    if(!await ask('이 건물의 추정 모형을 만들까요? 지하 1층 + 지상 1층·가로 16m·세로 12m는 임시 기본값이며 실제 건물 층수나 치수가 아닙니다. 편집 후 저장해야 회사 자료에 반영됩니다.'))return;
     if(!active(token)||id!==buildingId||!current()||controller.snapshot().status==='saving')return;
-    const b=current();provisional=true;renderControls();status.textContent='추정 모형 · 미저장 · 기본 치수는 실제 건물 정보가 아닙니다.';
+    const b=current();provisional=true;renderControls();status.textContent='추정 모형 · 미저장 · 지하 1층 + 지상 1층과 기본 치수는 실제 건물 정보가 아닙니다.';
     try{await mountModel({version:1,building:{name:b.name,address:b.address,floors:1,width:16,depth:12},records:[]},token);}catch(error){if(active(token))status.textContent=error.message;}
   };
   function renderReview(){
