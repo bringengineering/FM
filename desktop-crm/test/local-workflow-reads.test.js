@@ -3,7 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+// Windows CI checks out CRLF while local patch edits may still have LF.
+const source=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8').replace(/\r\n/g,'\n');
 test('roadmap explicit local demo retains sample with editing disabled',()=>{
  const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
  assert.match(app,/data\.localOnly === true && currentView === "projectRoadmap"/);
