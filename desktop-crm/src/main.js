@@ -4543,6 +4543,14 @@ async function createWindow() {
     }
     const snapshot = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     console.log(JSON.stringify(snapshot));
+    const workflowReads = await mainWindow.webContents.executeJavaScript(`Promise.all(
+      ["loadForms", "loadWorkOrders", "loadDailyLogs", "loadSupplies", "loadDeliveryFlows", "loadWorkReports"].map(async method => {
+        const result = await window.bringCRM[method]();
+        if (!result.localOnly || result.canWork !== false) throw new Error(method + " local read failed");
+        return method;
+      })
+    )`, true);
+    console.log(JSON.stringify({ workflowReads, localOnly: true }));
     applicationExitAllowed = true;
     app.quit();
   }
@@ -8217,12 +8225,37 @@ secureCanonicalHandle("crm:field-team-profiles", async () => {
   }
 });
 secureHandle("crm:operations-load", readOperations);
-secureHandle("crm:forms-load", () => remoteClient.loadForms());
-secureHandle("crm:work-orders-load", () => remoteClient.loadWorkOrders());
-secureHandle("crm:daily-logs-load", () => remoteClient.loadDailyLogs());
-secureHandle("crm:supplies-load", () => remoteClient.loadSupplies());
-secureHandle("crm:delivery-flows-load", () => remoteClient.loadDeliveryFlows());
-secureHandle("crm:work-reports-load", () => remoteClient.loadWorkReports());
+// Local verification never connects to company storage. Keep these views read-only.
+function readWorkflowCollection(method) {
+  const collections = {
+    loadForms: ["templates", "entries"],
+    loadWorkOrders: ["orders", "projects", "capacity", "directives", "members"],
+    loadDailyLogs: ["logs"],
+    loadSupplies: ["items", "moves", "costs"],
+    loadDeliveryFlows: ["flows"],
+    loadWorkReports: ["reports"],
+  };
+  if (!Object.prototype.hasOwnProperty.call(collections, method)) throw new Error("지원하지 않는 조회입니다.");
+  if (localTestMode) {
+    return {
+      ...Object.fromEntries(collections[method].map(key => [key, []])),
+      admin: false, canWork: false, canEditTemplates: false, canFill: false,
+      uid: "", name: "", localOnly: true,
+    };
+  }
+  if (!remoteClient || typeof remoteClient[method] !== "function") {
+    const error = new Error("회사 서버 연결이 준비되지 않았습니다. 로그인 상태를 확인한 후 다시 시도해 주세요.");
+    error.code = "REMOTE_NOT_READY";
+    throw error;
+  }
+  return remoteClient[method]();
+}
+secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
+secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
+secureHandle("crm:daily-logs-load", () => readWorkflowCollection("loadDailyLogs"));
+secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
+secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
+secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
 secureHandle("crm:payment-schedule-save", input => savePaymentSchedule(input));

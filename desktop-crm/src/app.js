@@ -4938,7 +4938,10 @@
     if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
     try {
-      const data = await api.loadWorkOrders();
+      let data = await api.loadWorkOrders();
+      if (data && data.localOnly === true && currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
+        data = { ...projectRoadmapPreviewPayload(), admin: false, canWork: false };
+      }
       workOrderState.orders = Array.isArray(data && data.orders) ? data.orders : [];
       workOrderState.members = Array.isArray(data && data.members) ? data.members : [];
       workOrderState.projects = Array.isArray(data && data.projects) ? data.projects : [];
@@ -4951,16 +4954,7 @@
       workOrderState.loaded = true;
       workOrderState.refreshedAt = Date.now();
     } catch (error) {
-      // 자동 화면검증은 실제 회사 자료에 닿지 않는다. 로드맵 미리보기에서만
-      // 닫힌 견본을 넣어 프로그램 화면 그대로 확인한다.
-      if (currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
-        Object.assign(workOrderState, projectRoadmapPreviewPayload());
-        workOrderState.loaded = true;
-        workOrderState.error = "";
-        workOrderState.refreshedAt = Date.now();
-      } else {
-        workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
-      }
+      workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
     } finally {
       workOrderState.loading = false;
       updateWorkOrderBadge();
