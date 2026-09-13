@@ -69,3 +69,12 @@
 - 실제 센서 연동·AI 진단·도면 자동 실측은 범위 밖이다. 추정 모형은 시공·차단·소방 대응·구조 안전 판단에 사용할 수 없다.
 
 운영 반영 전: 원격 최신 변경 비교 → EXE 파일 저장 확인 → 새 지도 경로 규칙 배포 승인 → CRM 릴리스 승인 → 실제 테스트 건물로 계정 두 개의 저장/조회 확인 순서로 진행한다. 기존 규칙·브랜치·태그를 무조건 덮어쓰지 않는다.
+
+## 후속 검증: 로컬 EXE 패키징
+
+- 운영 브랜치 codex/bring-field-platform을 읽기 전용으로 재확인: 1889ef252c10e2bdf6b5de46329aae2cf240b482로 기준과 동일.
+- 잠금 파일 기준 npm ci 후 electron-builder로 Windows unpacked 빌드 성공. publish=never, 버전=1.42.0-atlas.local, 코드서명 없음. 운영 설치 프로그램이 아닌 개발 검증 전용이다.
+- 출력: desktop-crm/dist-atlas-verification/win-unpacked/BRING CRM.exe. 실행에는 같은 폴더의 resources 등 전체 파일이 필요하다.
+- app.asar 내부의 crm-host.mjs, native/mount.mjs, building-atlas-service.js 포함 확인.
+- 패키징한 EXE의 기존 BRING_CRM_SMOKE=1 모드 실행: 종료 코드 0, ready=true, initialized=true. 테스트 전용 userData 및 가상 계정 사용. 고객·건물 수 0이며 운영 자료에 접근하지 않음.
+- 이 결과는 **앱 시작 검증**이다. 보고서/백업의 실제 저장 대화창 처리 및 파일 열기, 설치·자동 업데이트 검증을 대체하지 않는다. 해당 항목은 계속 미완료다.
