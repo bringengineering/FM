@@ -56,3 +56,15 @@ test('provisional confirmation accurately discloses basement and one above-groun
  const prompts=[];const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true})},confirm:async text=>{prompts.push(text);return true}});
  await s.$('atlas-create').onclick();assert.match(prompts[0],/지하 1층.*지상 1층/);assert.match(s.$('atlas-status').textContent,/지하 1층.*지상 1층/);assert.equal(s.mounts[0].initialPortfolio.items[0].data.building.floors,1);s.handle.dispose();
 });
+test('real IPC string error is displayed and preserves the top-level error code',async()=>{
+ const denied=await setup({api:{loadBuildingAtlas:async()=>({ok:false,code:'ATLAS_FORBIDDEN',error:'이 회사 건물에 접근할 수 없습니다.'})}});
+ assert.equal(denied.$('atlas-status').textContent,'이 회사 건물에 접근할 수 없습니다.');assert.equal(denied.mounts.length,0);denied.handle.dispose();
+ const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'v1',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,code:'ATLAS_CONFLICT',error:'다른 사용자가 먼저 변경했습니다.'})}});
+ await assert.rejects(s.mounts[0].savePortfolio(s.mounts[0].initialPortfolio),error=>error.code==='ATLAS_CONFLICT'&&error.message==='다른 사용자가 먼저 변경했습니다.');
+ assert.equal(s.$('atlas-status').textContent,'다른 사용자가 먼저 변경했습니다.');assert.equal(await s.handle.requestLeave(),false);s.handle.dispose();
+});
+test('persistent notice prohibits safety decisions from estimated models and example pipes',async()=>{
+ const s=await setup();const notice=s.$('atlas-notice');assert.equal(notice.hidden,false);
+ for(const phrase of ['추정 모형','설비 위치','예시 배관','시공','차단','소방 대응','구조 안전','사용하면 안 됩니다'])assert.ok(notice.textContent.includes(phrase),phrase);
+ s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();assert.equal(notice.hidden,false);assert.match(notice.textContent,/사용하면 안 됩니다/);s.handle.dispose();
+});

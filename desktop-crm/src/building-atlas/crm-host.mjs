@@ -35,7 +35,7 @@ function validatePortfolio(value) {
 }
 
 function unwrap(response) {
-  if(response?.ok!==true) throw failure(response?.error?.message || response?.message || '회사 설비지도 요청에 실패했습니다.',response?.error?.code || response?.code);
+  if(response?.ok!==true) throw failure((typeof response?.error==='string'?response.error:response?.error?.message) || response?.message || '회사 설비지도 요청에 실패했습니다.',response?.error?.code || response?.code);
   return {record:response.record,etag:response.etag,canWrite:response.canWrite};
 }
 
@@ -57,7 +57,7 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
   const refresh=el('button','atlas-refresh','새로 조회'), create=el('button','atlas-create','모형 만들기'), importButton=el('button','atlas-import','JSON 가져오기 검토');
   const file=el('input','atlas-file');file.type='file';file.accept='.json,application/json';file.hidden=true;
   const status=el('p','atlas-status');status.setAttribute('aria-live','polite');status.setAttribute('role','status');
-  const notice=el('p','atlas-notice','모형의 치수와 설비 위치는 실제 도면·현장 확인 전까지 추정 정보입니다.');
+  const notice=el('p','atlas-notice','추정 모형의 치수·설비 위치·예시 배관은 실제 도면과 현장 확인 전까지 검증되지 않은 정보입니다. 이를 시공·차단·소방 대응·구조 안전 판단에 사용하면 안 됩니다. 실제 작업과 안전 판단에는 검증된 도면 및 담당 전문가의 현장 확인이 필요합니다.');
   const panel=el('section','atlas-review');panel.hidden=true;panel.setAttribute('aria-label','가져오기 검토');
   const source=el('select','atlas-source'), target=el('p','atlas-target'), preview=el('p','atlas-preview');
   const backup=el('button','atlas-backup','현재 모형 백업 다운로드'), importConfirm=el('button','atlas-import-confirm','원본·대상 확인 후 가져오기'), cancel=el('button','atlas-import-cancel','가져오기 취소');
