@@ -1,0 +1,12 @@
+.crm-atlas{min-width:0;width:100%;color:#17365a;background:#f4f8fd;font-family:inherit}
+.crm-atlas-toolbar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:14px;border:1px solid #c8d9ec;border-radius:12px;background:#fff}
+.crm-atlas-toolbar label,.crm-atlas #atlas-review label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:650;min-width:0}
+.crm-atlas button,.crm-atlas select{font:inherit;border:1px solid #9bb9dd;border-radius:7px;padding:9px 12px;background:#fff;color:#17365a;min-height:40px;max-width:100%}
+.crm-atlas button{cursor:pointer}.crm-atlas button:hover{background:#eaf2fc}.crm-atlas button:disabled,.crm-atlas select:disabled{cursor:default;opacity:.55}
+.crm-atlas button:focus-visible,.crm-atlas select:focus-visible{outline:3px solid #3285da;outline-offset:2px}
+.crm-atlas #atlas-status{padding:10px 14px;margin:8px 0;color:#154c85;background:#e9f2ff;border-radius:8px;overflow-wrap:anywhere}
+.crm-atlas #atlas-notice{font-size:13px;margin:8px 4px 12px;color:#536b83}
+.crm-atlas #atlas-review{padding:14px;border:1px solid #9bb9dd;background:#fff;margin-bottom:14px;border-radius:10px;overflow-wrap:anywhere}
+.crm-atlas #atlas-review button{margin:5px 6px 0 0}.crm-atlas #atlas-review h3{margin:0 0 12px}
+.crm-atlas #atlas-native{display:block;width:100%;min-width:0;min-height:540px}.crm-atlas [hidden]{display:none!important}
+@media(max-width:600px){.crm-atlas-toolbar{padding:10px;gap:8px}.crm-atlas-toolbar label{flex:1 1 150px}.crm-atlas-toolbar button{flex:1 1 130px}.crm-atlas select{width:100%}.crm-atlas #atlas-review button{width:100%;margin-right:0}}
