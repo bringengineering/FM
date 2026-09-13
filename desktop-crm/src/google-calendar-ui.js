@@ -6,7 +6,8 @@
  function createController({request,onChange=()=>{}}){
   const checkedRequest=async input=>{const result=await request(input);if(result?.ok!==true)throw Object.assign(new Error(result?.code==='FORBIDDEN'?'캘린더 접근 권한이 없습니다.':'캘린더 연결을 확인해 주세요.'),{code:result?.code});return result;};
   let state=empty(),epoch=0;
-  const snapshot=()=>structuredClone(state),emit=()=>onChange(snapshot());
+  // The calendar contract contains JSON-only data; support isolated renderer/test realms too.
+  const snapshot=()=>JSON.parse(JSON.stringify(state)),emit=()=>onChange(snapshot());
   function reset(){epoch++;state=empty();}
   async function load(month){
    if(state.busy)return;const mine=epoch;state.busy=true;
