@@ -45,3 +45,6 @@ Calendar 목록과 일정 읽기에 필요한 최소 읽기 전용 OAuth 범위�
 - 캘린더 중복·변경·취소·반복·시간대·페이지 실패·재시도·권한 만료를 가상 API 테스트로 검증한다.
 - Google 실계정 연결은 설정과 사용자 동의가 완료된 이후 선택한 업무용 캘린더로만 확인한다.
 - Google 연결 전 단계와 실제 연동 완료를 결과 보고에서 구분한다. PR 생성은 배포 완료를 의미하지 않는다.
+# Status update — 2026-09-14
+
+User cancelled the Google Calendar integration. Calendar-related sections below are historical design only and must not be implemented or deployed. The integration code, IPC, UI, Worker routes and migration were removed. Existing native CRM calendars and records remain unchanged. Customer/building 3D integration and CRM-style UI polish continue under PR #116. Google OAuth client/downloaded credentials and enabled API were not deleted; no calendar server deployment or live event import occurred. Temporary Cloudflare calendar secrets were rolled back before cancellation.

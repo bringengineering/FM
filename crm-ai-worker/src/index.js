@@ -2,8 +2,6 @@ import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js"
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { readDailyReportPayload, sendDailyReportTelegram } from "./daily-report-telegram.js";
-import { calendarAction, calendarPublic } from "./calendar/routes.js";
-export { CompanyCalendarState } from "./calendar/state.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-09-08-v7";
@@ -147,7 +145,7 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl) {
   const user = Array.isArray(payload.users) ? payload.users[0] : null;
   const email = String(user?.email || "").trim().toLowerCase();
   const uid = String(user?.localId || "").trim();
-  if (!email || !uid || user?.disabled === true) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
+  if (!email || !uid) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   const allowed = new Set(String(env.CRM_ALLOWED_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
   if (!allowed.has(email)) throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
   return { uid, email, emailVerified: user?.emailVerified === true };
@@ -272,21 +270,15 @@ export function createWorker(options = {}) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
-      if (["/v1/calendar/oauth/callback", "/v1/calendar/webhook"].includes(url.pathname)) return calendarPublic(request, env);
-      const isCalendar = url.pathname === "/v1/calendar";
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
       const isDailyReportTelegram = url.pathname === DAILY_REPORT_TELEGRAM_PATH;
-      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery && !isDailyReportTelegram && !isCalendar) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery && !isDailyReportTelegram) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
       if ([ASSIST_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
-        if (isCalendar) {
-          const result = await calendarAction(request, identity, env);
-          return new Response(result.body, { status: result.status, headers: { ...Object.fromEntries(result.headers), ...cors } });
-        }
         if (isDocumentDelivery) return await documentDeliveryHandler(request, identity, env);
         if (url.pathname === CONTRACTS_PATH) return await checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId);
         if (isDailyReportTelegram) {

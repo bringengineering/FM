@@ -25,17 +25,6 @@
  let user={uid:'preview-only',email:'preview@example.invalid',name:'테스트 담당자',accessRole:'admin',role:'admin',officeAdmin:true};
  const methods={authState:async()=>({required:false,user}),load:async()=>{listeners.onSyncState?.({status:'connected',message:'가상 데이터 · 서버 연결 차단'});return clone();},dataPath:async()=>'가상 데이터 — 서버 접근 없음',loadCustomerPhotos:async()=>({}),loadCanonicalBuildingUnits:async()=>[],loadFieldSummaries:async()=>({}),loadFieldTeamProfiles:async()=>[],loadOperations:async()=>({cases:[],payments:{},caseSettings:{}}),loadWorkflowVendors:async()=>[],loadDriveImportCandidates:async()=>[],loadWorkReports:async()=>[],updateState:async()=>({status:'disabled',message:'미리보기'}),loadOffice:async()=>({}),loadContractSources:async()=>({})};
  window.bringCRM=new Proxy(methods,{get(target,key){if(key in target)return target[key];if(String(key).startsWith('on'))return callback=>{listeners[key]=callback;};if(/^(save|commit|delete|remove|create|send|login|logout|change|upload|import|restore|openExternal)/i.test(String(key)))return async()=>{blockedWrites++;throw new Error('테스트 실행: 쓰기/외부 작업 차단');};return async()=>({});}});
- let calendarConnected=new URLSearchParams(location.search).has('calendarSeed');
- methods.googleCalendar=async input=>{
-   if(!new URLSearchParams(location.search).has('calendarSeed'))return {ok:true,status:'unconfigured',selectedCalendars:[],events:[]};
-   if(input.action==='connect')return {ok:false,code:'CALENDAR_UNCONFIGURED'};
-   if(input.action==='disconnect')calendarConnected=false;
-   if(input.action==='select')calendarConnected=true;
-   const base={ok:true,status:calendarConnected?'connected':'disconnected',accountEmail:'calendar-preview@example.invalid',selectedCalendars:calendarConnected?[{id:'preview-calendar',name:'가상 회사 업무 일정'}]:[],lastSyncedAt:new Date().toISOString()};
-   if(input.action==='calendars')return {...base,calendars:[{id:'preview-calendar',name:'가상 회사 업무 일정'}]};
-   if(input.action==='events')return {...base,events:calendarConnected?[{id:'google-preview-cleaning',calendarId:'preview-calendar',title:'가상 Google 입주청소',description:'읽기 전용 연동 시험',location:'가상 현장',start:'2026-09-13T10:00:00+09:00',end:'2026-09-13T12:00:00+09:00',allDay:false,status:'confirmed'},{id:'google-preview-all-day',calendarId:'preview-calendar',title:'가상 Google 현장 점검',start:'2026-09-14',end:'2026-09-16',allDay:true,status:'confirmed'}]:[]};
-   return base;
- };
  if(new URLSearchParams(location.search).has('unifiedSeed')) methods.loadCanonicalBuildingUnits=async()=>[
    {id:'unit-preview-101',crmBuildingId:'b1',label:'가상 101호',floorLabel:'1층',status:'vacant'},
    {id:'unit-preview-other',crmBuildingId:'b2',label:'다른 건물 201호',floorLabel:'2층',status:'occupied'}

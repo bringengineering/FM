@@ -2,7 +2,6 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
-  'crm:google-calendar', // action-specific admin checks in canonical main handler and server
   'crm:building-atlas-load',
   'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:service-report-export','crm:building-monthly-report-export','crm:quote-supplier-load','crm:quote-seal-load','crm:owner-os-settings-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout','crm:drive-status','crm:building-document-pick',
   'crm:load','crm:office-load','crm:office-attendance-export','crm:office-attachment-open','crm:office-messenger-presence','crm:operations-intelligence-load','crm:canonical-building-units-load',

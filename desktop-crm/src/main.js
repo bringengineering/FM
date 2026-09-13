@@ -51,7 +51,6 @@ const {
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
-const GoogleCalendarClient = require("./google-calendar-client");
 const { sendDailyLogToTelegram } = require("./daily-log-telegram-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
@@ -153,7 +152,6 @@ const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog"
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
-const CRM_GOOGLE_CALENDAR_URL = new URL('/v1/calendar', CRM_AI_GATEWAY_URL).href;
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
@@ -7695,29 +7693,6 @@ async function createWindow() {
 }
 
 secureHandle("crm:auth-state", () => authState());
-secureCanonicalHandle("crm:google-calendar", async input => {
-  try {
-  const payload = GoogleCalendarClient.validateInput(input);
-  const client = remoteClient;
-  const user = client && client.authState().user;
-  if (!user) throw Object.assign(new Error('다시 로그인해 주세요.'), {code:'AUTH_REQUIRED'});
-  const uid = String(user.uid || user.localId || user.email);
-  if (!['status','events'].includes(payload.action) && String(user.role || user.accessRole || '') !== 'admin') {
-    throw Object.assign(new Error('관리자만 Google 캘린더 연결을 변경할 수 있습니다.'), {code:'FORBIDDEN'});
-  }
-  const result = await GoogleCalendarClient.calendarRequest({endpoint:CRM_GOOGLE_CALENDAR_URL,idToken:await client.ensureIdToken(false),input:payload,fetchImpl:(url,options)=>net.fetch(url,options)});
-  const current = remoteClient && remoteClient.authState().user;
-  if (remoteClient !== client || !current || String(current.uid || current.localId || current.email) !== uid) throw Object.assign(new Error('로그인이 변경되었습니다. 다시 시도해 주세요.'), {code:'AUTH_REQUIRED'});
-  if (payload.action === 'connect') {
-    await shell.openExternal(GoogleCalendarClient.authorizationUrl(result.authorizationUrl));
-    return {ok:true,status:'authorization_pending'};
-  }
-  return result;
-  } catch (error) {
-    const safe = GoogleCalendarClient.failure(error?.code);
-    return {ok:false,code:safe.code};
-  }
-});
 secureCanonicalHandle("crm:ai-assist", async input => {
   if (!remoteClient || !remoteClient.authState().user) {
     throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
