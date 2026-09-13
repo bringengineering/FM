@@ -179,3 +179,30 @@ for(const kind of ['backup','fm']) {
 test('setPortfolio propagates the captured import building rather than defaulting to current',()=>{
  const source=fs.readFileSync(path.join(native,'mount.mjs'),'utf8');assert.match(source,/setPortfolio\(p,expectedId/);assert.match(source,/gate.commit\(p,expectedId\)/);
 });
+
+test('post-commit GPU failure degrades without reporting save failure',async t=>{
+ const {mountBuildingAtlas}=await load('mount.mjs');const original=global.FormData;global.FormData=class{constructor(form){this.values=form.testValues;}get(k){return this.values[k]??'';}getAll(k){return this.values[k]??[];}};t.after(()=>{global.FormData=original;});
+ const host=fakeHost();let updates=0,disposed=0,writes=0;
+ const instance=await mountBuildingAtlas({host,initialPortfolio:portfolio(),canWrite:true,savePortfolio:async p=>{writes++;return p;},createViewer:()=>({update(){if(++updates>1)throw Error('GPU lost after save');},reset(){},dispose(){disposed++;}})});t.after(()=>instance.dispose());
+ const root=host.shadowRoot;root.querySelector('#buildingEdit').onclick();const form=root.querySelector('#form');form.testValues={name:'Saved',address:'',floors:1,width:16,depth:12};await form.onsubmit({preventDefault(){},target:form});
+ assert.equal(writes,1);assert.equal(root.querySelector('#formError').textContent,'');assert.equal(root.querySelector('#editor').open,false);assert.equal(root.querySelector('#title').textContent,'Saved');assert.equal(root.querySelector('#fallback').hidden,false);assert.equal(disposed,1);assert.doesNotThrow(()=>root.querySelector('#reset').onclick());
+});
+test('safe viewer contains reset focus update and disposal failures',async()=>{
+ const {createSafeViewer}=await load('dom-scope.mjs');for(const method of ['update','reset','focus']){
+ let failed=0,disposed=0;const raw={update(){},reset(){},focus(){},dispose(){disposed++;throw Error('dispose lost');}};raw[method]=()=>{throw Error('GPU lost');};
+ const viewer=createSafeViewer(raw,()=>failed++);assert.doesNotThrow(()=>viewer[method]());assert.equal(failed,1);assert.equal(disposed,1);viewer.dispose();viewer.update();assert.equal(disposed,1);
+ }
+});
+for(const order of ['old-first','new-first','reopened','disposed'])test('floor plan latest image wins: '+order,async t=>{
+ const {mountBuildingAtlas}=await load('mount.mjs');const originals=[global.createImageBitmap,global.Image,FakeNode.prototype.getContext,FakeNode.prototype.toDataURL];
+ const pending=new Map(),closed=[];global.createImageBitmap=file=>new Promise(resolve=>pending.set(file.name,()=>resolve({width:10,height:10,name:file.name,close(){closed.push(file.name);}})));
+ global.Image=class{};FakeNode.prototype.getContext=function(){return new Proxy({drawImage:b=>{this.bitmapName=b.name;},measureText:()=>({width:1})},{get:(o,k)=>o[k]||(()=>{})});};FakeNode.prototype.toDataURL=function(){return 'data:image/jpeg;base64,'+Buffer.from(this.bitmapName||'image').toString('base64');};
+ t.after(()=>{[global.createImageBitmap,global.Image,FakeNode.prototype.getContext,FakeNode.prototype.toDataURL]=originals;});
+ const host=fakeHost();let saved;const instance=await mountBuildingAtlas({host,initialPortfolio:portfolio(),canWrite:true,savePortfolio:async p=>{saved=p;return p;},createViewer:()=>{throw Error('no GPU')}});t.after(()=>instance.dispose());
+ const root=host.shadowRoot,$=id=>root.querySelector('#'+id);$('openFloorPlan').onclick();const input=$('planImage');const start=name=>{input.files=[{name,type:'image/jpeg',size:1}];return input.onchange({target:input});};
+ const first=start('old.jpg');if(order==='reopened'){$('planClose').onclick();$('openFloorPlan').onclick();}const second=start('new.jpg');assert.equal($('planSave').disabled,true);
+ if(order==='disposed'){instance.dispose();pending.get('old.jpg')();pending.get('new.jpg')();await Promise.all([first,second]);assert.deepEqual(closed.sort(),['new.jpg','old.jpg']);assert.equal(root.children.length,0);return;}
+ if(order==='old-first'||order==='reopened'){pending.get('old.jpg')();await first;assert.equal($('planSave').disabled,true);pending.get('new.jpg')();await second;}
+ else{pending.get('new.jpg')();await second;assert.equal($('planSave').disabled,false);pending.get('old.jpg')();await first;}
+ await $('planSave').onclick();assert.equal(saved.items[0].data.building.floorPlans[0].name,'new.jpg');assert.deepEqual(closed.sort(),['new.jpg','old.jpg']);
+});

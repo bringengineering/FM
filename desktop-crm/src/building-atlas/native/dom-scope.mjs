@@ -43,3 +43,11 @@ export function createDOMScope(root,owner) {
  };
  return scope;
 }
+
+/** GPU/display errors never change the outcome of an already committed write. */
+export function createSafeViewer(resource,onFailure=()=>{}) {
+ let disposed=false;
+ function dispose(){if(disposed)return;disposed=true;try{resource?.dispose?.();}catch{/* Best effort after context loss. */}}
+ const call=(method,args)=>{if(disposed)return;try{return resource?.[method]?.(...args);}catch(error){dispose();try{onFailure(error);}catch{/* Detached host. */}}};
+ return {update:(...args)=>call('update',args),reset:(...args)=>call('reset',args),focus:(...args)=>call('focus',args),dispose};
+}

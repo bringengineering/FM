@@ -1,5 +1,5 @@
 import {categories,colors,validate,connected} from '../upstream/model.mjs';
-import {createDOMScope,createMutationGate} from './dom-scope.mjs';
+import {createDOMScope,createMutationGate,createSafeViewer} from './dom-scope.mjs';
 import {template} from './template.mjs';
 import {setupEnhancements} from './enhancements.mjs';
 import {attachCatalog} from './equipment-catalog.mjs';
@@ -67,7 +67,7 @@ $('form').onsubmit=async e=>{e.preventDefault();try{assertWritable();if(editingB
  document.addEventListener('click',e=>{if(gate.isBusy()&&(e.target.closest('dialog')||e.target.closest(writeSelectors))){e.preventDefault();e.stopImmediatePropagation();toast('저장이 진행 중입니다.');return;}if(!canWrite&&e.target.closest(writeSelectors)){e.preventDefault();e.stopImmediatePropagation();toast('읽기 전용입니다.');}},{capture:true});
  const filters=root.querySelector('.filter-drawer');filters.open=(host.clientWidth||390)>800;
  setupEnhancements({dom:document,mode,canWrite,assertWritable,download,getData:()=>data,getSelected:()=>selected,getViewer:()=>viewer,getState:()=>state,getPortfolio:()=>portfolio,save:persist,toast,choose,render,setPortfolio,selectBuilding});
- render();try{const createViewer=viewerFactory||(await import('./viewer.mjs')).createViewer;document.assertActive();const candidate=await createViewer($('viewport'),choose);if(document.signal.aborted){candidate?.dispose?.();return {dispose};}viewer=candidate;viewer.update(data,state);viewer.reset();}catch(e){viewer?.dispose?.();viewer=undefined;if(!document.signal.aborted)$('fallback').hidden=false;}
+ render();try{const createViewer=viewerFactory||(await import('./viewer.mjs')).createViewer;document.assertActive();const candidate=await createViewer($('viewport'),choose);if(document.signal.aborted){createSafeViewer(candidate).dispose();return {dispose};}viewer=createSafeViewer(candidate,()=>{if(!document.signal.aborted)$('fallback').hidden=false;});viewer.update(data,state);viewer.reset();}catch(e){viewer?.dispose?.();viewer=undefined;if(!document.signal.aborted)$('fallback').hidden=false;}
 
  return {dispose};
 }
