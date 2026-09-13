@@ -26,6 +26,14 @@
   const ContractReadinessUI = window.BringContractReadinessUI;
   const ContractReadinessCore = window.BringContractReadinessCore;
   const api = window.bringCRM;
+  const GoogleCalendarUI = window.BringGoogleCalendarUI;
+  const googleCalendarController = GoogleCalendarUI?.createController({
+    request: input => typeof api.googleCalendar === 'function' ? api.googleCalendar(input) : Promise.resolve({ok:true,status:'unconfigured',selectedCalendars:[],events:[]}),
+    onChange: () => {
+      if (currentView === 'buildingCalendar') renderBuildingCalendar();
+      else if (currentView === 'settings') renderGoogleCalendarCard();
+    },
+  });
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
   const modalContent = document.getElementById("modalContent");
@@ -707,6 +715,7 @@
       marketingLoaded = false;
     }
     if (previousUid !== currentAuthUid()) {
+      googleCalendarController?.reset();
       operationsCheckSnapshot = null;
       operationsCheckReceivedAt = "";
       operationsCheckFilters = {};
@@ -7812,6 +7821,7 @@
       buildingId: workCalendarBuildingId,
       query: workCalendarQuery,
       today: todayKey(),
+      externalEvents: googleCalendarController?.snapshot().events || [],
     });
     return {
       work: Number(model.counts && model.counts.month || 0),
@@ -7848,13 +7858,18 @@
       buildingId: workCalendarBuildingId,
       query: workCalendarQuery,
       today: todayKey(),
+      externalEvents: googleCalendarController?.snapshot().events || [],
     });
     workCalendarMonth = model.month;
     workCalendarDate = model.selectedDate;
     workCalendarBuildingId = model.buildingId;
     const workActive = unifiedCalendarTab === "work";
-    const content = workActive ? WorkCalendar.render(model, { canWrite: canWriteCRM() }) : renderOneOffContractCalendar();
+    let content = workActive ? WorkCalendar.render(model, { canWrite: canWriteCRM() }) : renderOneOffContractCalendar();
+    if (workActive) content = '<div data-google-calendar-host></div>' + content;
     main.innerHTML = unifiedCalendarFrame(unifiedCalendarTab, content, unifiedCalendarCounts(model));
+    renderGoogleCalendarCard();
+    const calendarState = googleCalendarController?.snapshot();
+    if (currentAuth.user && calendarState && !calendarState.busy && calendarState.loadedMonth !== workCalendarMonth && calendarState.status !== 'stale') void googleCalendarController.load(workCalendarMonth);
     if (!workActive) {
       const panel = main.querySelector("[data-contract-work-panel]");
       panel?.addEventListener("toggle", () => { contractWorkManagementExpanded = panel.open; });
@@ -9371,6 +9386,34 @@
     void maybeAutoSendTelegram();
   }, 15 * 60 * 1000);
 
+  function renderGoogleCalendarCard() {
+    const host = main.querySelector('[data-google-calendar-host]');
+    if (!host || !GoogleCalendarUI || !googleCalendarController) return;
+    host.innerHTML = GoogleCalendarUI.render(googleCalendarController.snapshot(), currentAuth.user?.role === 'admin', currentView !== 'settings');
+  }
+
+  setInterval(() => {
+    if (currentAuth.user && currentView === 'buildingCalendar' && unifiedCalendarTab === 'work') void googleCalendarController?.load(workCalendarMonth);
+  }, 60000);
+
+  async function handleGoogleCalendarAction(button) {
+    if (!googleCalendarController || button.disabled) return;
+    const action = button.dataset.googleCalendarAction;
+    if (action === 'refresh') return googleCalendarController.load(workCalendarMonth);
+    if (currentAuth.user?.role !== 'admin') return showToast('관리자만 캘린더 연결을 변경할 수 있습니다.', 'error');
+    const generation = authGeneration;
+    let input = {action};
+    if (action === 'select') {
+      const card = button.closest('[data-google-calendar-host]');
+      const calendarIds = Array.from(card.querySelectorAll('[data-google-calendar-id]:checked')).map(node => node.dataset.googleCalendarId);
+      if (!calendarIds.length || calendarIds.length > 5 || !card.querySelector('[data-google-calendar-share]')?.checked) return showToast('업무용 캘린더를 1~5개 선택하고 공유 확인을 체크해 주세요.', 'error');
+      input = {action,calendarIds,shareConfirmed:true};
+    }
+    if (action === 'disconnect' && !await requestConfirmation({title:'Google 캘린더 연결을 해제할까요?',description:'Google 일정 수집을 중단하고 가져온 일정 표시를 해제합니다. CRM에서 직접 작성한 일정은 유지됩니다.',confirmLabel:'연결 해제'})) return;
+    if (generation !== authGeneration) return;
+    return googleCalendarController.act(input,workCalendarMonth);
+  }
+
   function renderSettings() {
     const user = currentAuth.user || {};
     const canRestore = (!currentAuth.required && !currentAuth.enforceRoles) || user.role === "admin";
@@ -9378,6 +9421,9 @@
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
       <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담·후속 연락과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
     </div>`;
+    main.insertAdjacentHTML('beforeend', '<div data-google-calendar-host></div>');
+    renderGoogleCalendarCard();
+    if (currentAuth.user && googleCalendarController?.snapshot().status === 'loading') void googleCalendarController.load(workCalendarMonth);
     if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
     if (!telegramState.loaded && !telegramState.loading && canAdministerSecurity()) void loadTelegramSettings();
   }
@@ -12249,6 +12295,8 @@
       pageMeta();
       return;
     }
+    const googleCalendarAction = event.target.closest('[data-google-calendar-action]');
+    if (googleCalendarAction) { await handleGoogleCalendarAction(googleCalendarAction); return; }
     const calendarShift = event.target.closest("[data-work-calendar-shift]");
     if (calendarShift) {
       workCalendarMonth = WorkCalendar.shiftMonth(workCalendarMonth, Number(calendarShift.dataset.workCalendarShift) || 0);

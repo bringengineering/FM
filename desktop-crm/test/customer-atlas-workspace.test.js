@@ -8,6 +8,42 @@ class Node {
  querySelector(s){return this.children.find(n=>n.id===s.slice(1))||this.children.map(n=>n.querySelector(s)).find(Boolean)||null;}
 }
 const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
+const visit=n=>[n,...n.children.flatMap(visit)];
+test('model column owns its heading and related records independently of profile',async()=>{
+ const s=await setup();
+ const column=visit(s.host).find(n=>n.className==='customer-atlas-model-column');
+ assert.ok(column,'dedicated model column exists');
+ assert.deepEqual(column.children.map(n=>n.className),['customer-atlas-heading','customer-atlas-stage','customer-atlas-history']);
+ s.handle.dispose();
+});
+test('profile removes only repeated building identity and renders labelled metadata safely',async()=>{
+ const s=await setup({getBuildings:()=>[{id:'a',name:'A',address:'Address'}],getProfile:()=>[{title:'A',lines:['Address']},{title:'Owner',lines:['010-1234','a@b.test','담당자: Kim','다음 연락: 내일','관리 상태: 관리 중']},{title:'개인 메모 · 고객 특징',lines:['<img onerror=bad>']} ]});
+ const profile=visit(s.host).find(n=>n.className==='customer-atlas-profile');
+ assert.doesNotMatch(text(profile),/Address/);
+ assert.ok(visit(profile).some(n=>n.tag==='dt'&&n.textContent==='연락처'));
+ assert.match(text(profile),/<img onerror=bad>/);
+ s.handle.dispose();
+});
+test('record tabs associate panels and support arrow-key focus and orphan selected state',async()=>{
+ const s=await setup({initialBuildingId:'orphan',getBuildings:()=>[{id:'orphan',name:'Orphan'}],getSections:()=>[{title:'상담',lines:['one']},{title:'업무',lines:['two']}]});
+ const orphan=visit(s.host).find(n=>n.textContent==='Orphan · 고객 미연결');
+ assert.equal(orphan['aria-pressed'],'true');
+ const first=visit(s.host).find(n=>n.role==='tab');
+ assert.ok(first['aria-controls']);
+ let prevented=false;first.onkeydown({key:'ArrowRight',preventDefault(){prevented=true}});
+ const active=visit(s.host).find(n=>n.role==='tab'&&n['aria-selected']==='true');
+ const panel=s.host.querySelector('#'+active['aria-controls']);
+ assert.equal(active.textContent,'업무');assert.equal(active.tabIndex,0);assert.equal(panel['aria-labelledby'],active.id);assert.equal(panel.role,'tabpanel');assert.equal(prevented,true);
+ s.handle.dispose();
+});
+test('embedded presentation uses CRM tokens, a large model, wrapping and reduced motion',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const css=fs.readFileSync(path.join(__dirname,'../src/building-atlas/customer-workspace.css'),'utf8');
+ const native=fs.readFileSync(path.join(__dirname,'../src/building-atlas/native/embedded.css'),'utf8');
+ assert.match(css,/var\(--blue,\s*#3182F6\)/i);assert.match(css,/prefers-reduced-motion/);
+ assert.match(css,/flex-wrap:\s*wrap/);assert.match(css,/min-height:\s*44px/);
+ assert.match(native,/#viewport\s*\{[^}]*min-height:\s*420px/);
+});
 test('archiving a CRM unit removes the target and makes its existing model reference unresolved',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
  const fn=source.match(/  function atlasReferenceTargets\(id\) \{[\s\S]*?\n  \}/)[0],active=source.match(/  const activeBuildingUnitsForBuilding = .*;/)[0];

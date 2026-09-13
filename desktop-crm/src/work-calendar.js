@@ -264,6 +264,8 @@
       };
     });
 
+    const external = typeof module === 'object' && module.exports ? require('./google-calendar-events') : globalThis.BringGoogleCalendarEvents;
+    normalizedRecords.push(...(external ? external.project(settings.externalEvents, month) : []));
     const includeCancelled = settings.includeCancelled === true;
     const visibleEvents = normalizedRecords.filter(event => (includeCancelled || event.status !== "cancelled")
       && (buildingId === "all" || event.buildingId === buildingId)
@@ -295,11 +297,12 @@
   }
 
   function renderEvent(event, canWrite, compact) {
+    canWrite = canWrite && event.source !== 'google';
     const archived = event.buildingArchived ? `<span class="work-calendar-archive-badge">보관 건물</span>` : "";
     const time = event.startTime ? `${event.startTime}${event.endTime ? `–${event.endTime}` : ""}` : event.scheduledTime;
     const meta = [time, compact ? event.buildingName : typeLabel(event.serviceType)].filter(Boolean).join(" · ");
     const classes = ["work-calendar-event", `status-${event.status}`, event.completed ? "is-completed" : "", event.buildingArchived ? "is-archived-building" : ""].filter(Boolean).join(" ");
-    const content = `<span class="work-calendar-event-title">${esc(event.title)}</span>${meta ? `<span class="work-calendar-event-meta">${esc(meta)}</span>` : ""}${archived}`;
+    const content = `<span class="work-calendar-event-title">${esc(event.title)}</span>${meta ? `<span class="work-calendar-event-meta">${esc(meta)}</span>` : ""}${event.source === 'google' ? '<span class="google-calendar-badge">Google · 읽기 전용</span>' : ''}${archived}`;
     if (compact) {
       const accessibleLabel = [event.scheduledDate, time, event.buildingName, event.title, event.statusLabel].filter(Boolean).join(" · ");
       return canWrite

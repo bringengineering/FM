@@ -5,6 +5,7 @@ workers_dev = true
 preview_urls = false
 
 [vars]
+CALENDAR_ENABLED = "false"
 AI_ENABLED = "true"
 GROQ_MODEL = "qwen/qwen3.8-27b"
 AI_COMPANY_DAILY_LIMIT = "1000"
@@ -30,3 +31,11 @@ id = "e2ff82add8014f11aebf8bd1f6d95f8e"
 [[kv_namespaces]]
 binding = "DOCUMENT_DELIVERY"
 id = "e45a57c874534b76b90107d43ad4a759"
+
+[[durable_objects.bindings]]
+name = "CALENDAR_STATE"
+class_name = "CompanyCalendarState"
+
+[[migrations]]
+tag = "calendar-v1"
+new_sqlite_classes = ["CompanyCalendarState"]

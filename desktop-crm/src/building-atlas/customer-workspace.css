@@ -1,4 +1,59 @@
 .customer-atlas-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;color:#243b53}.customer-atlas-workspace h3{font-size:15px}.customer-atlas-workspace h4{margin:18px 0 8px}.customer-atlas-workspace p{font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}.customer-atlas-workspace button{padding:9px 12px;border:1px solid #dce6ee;border-radius:8px;background:white;color:inherit;cursor:pointer}.customer-atlas-workspace button[aria-pressed=true],.customer-atlas-workspace button[aria-selected=true]{background:#eaf3ff;border-color:#80b4eb;color:#1761b2}#customer-atlas-list{padding:16px;background:#fff;border:1px solid #e1e8ef;border-radius:12px;max-height:850px;overflow:auto}#customer-atlas-list button{display:block;width:100%;text-align:left;margin:5px 0}.customer-atlas-content{min-width:0}.customer-atlas-top{display:grid;grid-template-columns:minmax(0,1fr) 245px;border:1px solid #e1e8ef;border-radius:12px;background:white;overflow:hidden}.customer-atlas-top>div{min-width:0}.customer-atlas-profile{padding:18px;border-left:1px solid #e1e8ef}.customer-atlas-profile button{margin:4px}.customer-atlas-history{margin-top:16px;border:1px solid #e1e8ef;border-radius:12px;background:#fff;padding:16px}.customer-atlas-tabs{display:flex;gap:8px;overflow:auto}.customer-atlas-tabs button{white-space:nowrap}.customer-atlas-top .crm-atlas{padding:12px}.customer-atlas-top #atlas-notice{font-size:11px}.customer-atlas-top #atlas-stage{min-height:360px}@media(max-width:1250px){.customer-atlas-top{grid-template-columns:1fr}.customer-atlas-profile{border-left:0;border-top:1px solid #e1e8ef}}@media(max-width:800px){.customer-atlas-workspace{grid-template-columns:1fr}#customer-atlas-list{max-height:240px}}
 .customer-atlas-heading{padding:10px 16px;background:#fff;border:1px solid #e1e8ef;border-radius:12px 12px 0 0}.customer-atlas-heading h3,.customer-atlas-heading p{margin:3px 0}.customer-management-toolbar{display:flex;gap:16px;align-items:center;padding:12px 0;flex-wrap:wrap}.customer-management-toolbar label{display:flex;align-items:center;gap:10px;font-size:12px}.customer-management-toolbar input,.customer-management-toolbar select{padding:10px;border:1px solid #dce6ee;border-radius:8px;background:white}.customer-management-toolbar input{min-width:0;max-width:100%}.customer-atlas-top [hidden]{display:none!important}
 #atlas-reference-panel{margin-top:18px;padding-top:12px;border-top:1px solid #e1e8ef;min-width:0}#atlas-reference-panel label{display:block;font-size:12px;line-height:1.6}#atlas-reference-target{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:10px 8px;border:1px solid #dce6ee;border-radius:8px;background:#fff;color:#243b53}#atlas-reference-bind{margin:8px 0;max-width:100%;white-space:normal}.customer-atlas-workspace button:disabled{opacity:.55;cursor:not-allowed}.customer-atlas-workspace :focus-visible{outline:2px solid #1761b2;outline-offset:2px}
-.customer-atlas-top .crm-atlas-toolbar{padding:2px 0;border:0;gap:6px;background:transparent}.customer-atlas-top .crm-atlas button,.customer-atlas-top .crm-atlas select{min-height:26px;padding:5px 8px;font-size:11px}.customer-atlas-top .crm-atlas #atlas-status{padding:3px 6px;margin:4px 0;font-size:11px}.customer-atlas-top .crm-atlas #atlas-native{min-height:0}.customer-atlas-top .crm-atlas{padding:6px}.customer-atlas-heading{padding:7px 12px}.customer-atlas-heading p{font-size:11px}.customer-atlas-top #atlas-notice{font-size:10px;line-height:1.4;margin:6px}
+.customer-atlas-top .crm-atlas-toolbar{padding:2px 0;border:0;gap:6px;background:transparent}.customer-atlas-top .crm-atlas #atlas-native{min-height:0}
+
+/* CRM presentation: independent model column keeps related work immediately below it. */
+.customer-atlas-workspace { grid-template-columns:184px minmax(0,1fr); gap:16px; align-items:start; color:var(--text,#191F28); font-family:inherit; }
+.customer-atlas-workspace * { box-sizing:border-box; }
+.customer-atlas-workspace h3 { margin:0 0 12px; font-size:14px; line-height:1.5; }
+.customer-atlas-workspace h4 { margin:18px 0 7px; font-size:12px; }
+.customer-atlas-workspace p { margin:7px 0; color:var(--soft,#4E5968); }
+.customer-atlas-workspace button { max-width:100%; min-height:36px; padding:8px 11px; border-color:var(--line,#E5E8EB); border-radius:10px; font:inherit; font-size:12px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; touch-action:manipulation; }
+.customer-atlas-workspace button:hover { background:#FAFBFC; border-color:#B0B8C1; }
+.customer-atlas-workspace button[aria-pressed=true],.customer-atlas-workspace button[aria-selected=true] { background:#E8F3FF; border-color:var(--blue,#3182F6); color:var(--blue-2,#1B64DA); font-weight:700; box-shadow:inset 3px 0 var(--blue,#3182F6); }
+#customer-atlas-list { padding:16px 12px; border-color:var(--line,#E5E8EB); border-radius:var(--radius,16px); max-height:800px; min-width:0; }
+.customer-atlas-model-column,.customer-atlas-stage { min-width:0; }
+.customer-atlas-top { grid-template-columns:minmax(0,1fr) 252px; gap:16px; align-items:start; background:transparent; border:0; border-radius:0; overflow:visible; }
+.customer-atlas-heading { padding:16px 18px; border-color:var(--line,#E5E8EB); border-bottom:0; border-radius:16px 16px 0 0; }
+.customer-atlas-heading h3 { font-size:18px; margin:0; overflow-wrap:anywhere; }
+.customer-atlas-heading p { margin:5px 0 0; font-size:12px; }
+.customer-atlas-stage { border:1px solid var(--line,#E5E8EB); border-top:0; border-radius:0 0 16px 16px; background:#fff; overflow:hidden; }
+.customer-atlas-profile,.customer-atlas-history { border:1px solid var(--line,#E5E8EB); border-radius:var(--radius,16px); background:#fff; padding:16px; min-width:0; }
+.customer-atlas-profile-section + .customer-atlas-profile-section { border-top:1px solid var(--line,#E5E8EB); padding-top:14px; margin-top:14px; }
+.customer-atlas-profile-section h3 { overflow-wrap:anywhere; }
+.customer-atlas-profile > button { margin:6px 4px 0 0; }
+.customer-atlas-profile > button[data-customer-hub-edit],#atlas-reference-bind { border-color:var(--blue,#3182F6); background:var(--blue,#3182F6); color:#fff; }
+.customer-atlas-metadata { display:grid; gap:8px; margin:0; font-size:12px; }
+.customer-atlas-metadata > div { display:grid; grid-template-columns:62px minmax(0,1fr); gap:8px; line-height:1.5; }
+.customer-atlas-metadata dt { color:var(--soft,#4E5968); }
+.customer-atlas-metadata dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.customer-atlas-tabs { flex-wrap:wrap; gap:6px; padding-bottom:12px; border-bottom:1px solid var(--line,#E5E8EB); margin-bottom:14px; overflow:visible; }
+.customer-atlas-tabs button { white-space:normal; }
+#customer-atlas-record-panel > h3 { font-size:13px; }
+#atlas-reference-panel { padding-top:16px; border-color:var(--line,#E5E8EB); }
+#atlas-reference-target { margin-top:6px; border-color:var(--line,#E5E8EB); border-radius:10px; color:var(--text,#191F28); font:inherit; font-size:12px; }
+#atlas-reference-bind { width:100%; }
+.customer-atlas-workspace :focus-visible { outline:3px solid var(--blue,#3182F6); outline-offset:2px; }
+.customer-atlas-workspace [hidden] { display:none!important; }
+.customer-atlas-stage .crm-atlas { padding:8px; background:#fff; color:var(--text,#191F28); }
+.customer-atlas-stage .crm-atlas button,.customer-atlas-stage .crm-atlas select { min-height:36px; padding:7px 9px; font-size:12px; border-color:var(--line,#E5E8EB); color:var(--text,#191F28); border-radius:10px; }
+.customer-atlas-stage #atlas-status { padding:6px 8px; margin:6px 0; font-size:12px; }
+.customer-atlas-stage #atlas-notice { font-size:11px; line-height:1.5; margin:8px; }
+.customer-management-toolbar { gap:12px; padding:0 0 16px; }
+.customer-management-toolbar input,.customer-management-toolbar select { padding:10px 12px; min-height:40px; border-color:var(--line,#E5E8EB); border-radius:10px; font:inherit; font-size:12px; }
+.customer-management-toolbar input { width:320px; }
+@media(max-width:1100px) {
+ .customer-atlas-workspace { grid-template-columns:160px minmax(0,1fr); gap:12px; }
+ .customer-atlas-top { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:700px) {
+ .customer-atlas-workspace { grid-template-columns:minmax(0,1fr); }
+ #customer-atlas-list { max-height:240px; }
+ .customer-atlas-workspace button,.customer-atlas-stage .crm-atlas button,.customer-atlas-stage .crm-atlas select,#atlas-reference-target,.customer-management-toolbar input,.customer-management-toolbar select { min-height:44px; }
+ .customer-atlas-heading,.customer-atlas-profile,.customer-atlas-history { padding:14px; }
+ .customer-management-toolbar input { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+ .customer-atlas-workspace * { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+}

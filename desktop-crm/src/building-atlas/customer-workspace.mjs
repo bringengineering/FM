@@ -4,9 +4,21 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
  const el=(tag,text,id)=>{const n=doc.createElement(tag);if(text)n.textContent=text;if(id)n.id=id;return n;};
  const css=el('link');css.rel='stylesheet';css.href=new URL('./customer-workspace.css',import.meta.url).href;
  const shell=el('section');shell.className='customer-atlas-workspace';
- const list=el('aside',null,'customer-atlas-list'),content=el('section'),heading=el('header'),top=el('div'),stage=el('div'),profile=el('aside'),history=el('section'),tabs=el('div'),body=el('div');
+ const list=el('aside',null,'customer-atlas-list'),content=el('section'),heading=el('header'),top=el('div'),stage=el('div'),profile=el('aside'),history=el('section'),tabs=el('div'),body=el('div'),modelColumn=el('div');
  content.className='customer-atlas-content';top.className='customer-atlas-top';profile.className='customer-atlas-profile';history.className='customer-atlas-history';tabs.className='customer-atlas-tabs';tabs.setAttribute('role','tablist');
- heading.className='customer-atlas-heading';top.append(stage,profile);history.append(tabs,body);content.append(heading,top,history);shell.append(list,content);host.replaceChildren(css,shell);
+ heading.className='customer-atlas-heading';
+ stage.className='customer-atlas-stage';
+ modelColumn.className='customer-atlas-model-column';
+ list.setAttribute('aria-label','고객·건물 선택');
+ profile.setAttribute('aria-label','고객 정보와 모형 연결');
+ tabs.setAttribute('aria-label','관련 업무 기록');
+ body.id='customer-atlas-record-panel';
+ body.setAttribute('role','tabpanel');
+ body.tabIndex=0;
+ history.append(el('h3','관련 업무 기록'),tabs,body);
+ modelColumn.append(heading,stage,history);
+ top.append(modelColumn,profile);
+ content.append(top);shell.append(list,content);host.replaceChildren(css,shell);
  let atlas,disposed=false,busy=false,tab=0,selectedRecord=null,referenceWritable=false,referenceError='',referenceBusy=false,pendingBuildingId;
  const referencePanel=el('section',null,'atlas-reference-panel');
  const requestedBuilding=getBuildings().find(b=>b.id===initialBuildingId);
@@ -30,25 +42,56 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
   if(referenceError){const error=el('p',referenceError);error.setAttribute('role','alert');referencePanel.append(error);}
  }
  function renderRows(target,sections){target.replaceChildren();for(const section of sections||[]){target.append(el('h3',section.title));for(const line of section.lines?.length?section.lines:section.resources?.length?[]:['등록된 자료 없음'])target.append(el('p',String(line)));for(const r of section.resources||[]){const row=el('p',r.name||'사진');if(/^https:\/\//i.test(r.url||''))row.append(button('원본 열기','data-case-resource-link',r.url));target.append(row);}}}
+ // Presentation only: keep the projection and its original values untouched.
+ function renderProfile(sections,building,customer){
+  profile.replaceChildren();
+  for(const section of sections||[]){
+   const lines=section.lines||[];
+   if(building&&section.title===building.name&&lines.length===1&&lines[0]===building.address)continue;
+   const card=el('section');card.className='customer-atlas-profile-section';
+   card.append(el('h3',section.title));
+   if(customer&&section.title===customer.name&&lines.length>=5){
+    const details=el('dl');details.className='customer-atlas-metadata';
+    lines.forEach((line,index)=>{
+     const value=String(line),match=index>=2?value.match(/^([^:]+):\s*(.*)$/s):null;
+     const row=el('div');row.append(el('dt',match?match[1]:['연락처','이메일'][index]||'정보'),el('dd',match?match[2]:value));details.append(row);
+    });
+    card.append(details);
+   }else for(const line of lines.length?lines:['등록된 자료 없음'])card.append(el('p',String(line)));
+   profile.append(card);
+  }
+ }
  function render(){
   if(disposed)return;
   const building=getBuildings().find(b=>b.id===buildingId);heading.replaceChildren(el('h3',building?.name||'건물 미연결'),el('p',building?.address||'주소 미등록'));
   const customer=getCustomers().find(c=>c.id===customerId);
   const staleSelection=Boolean((customerId&&!customer)||(buildingId&&!building)||(customerId&&buildingId&&!customer?.buildings.some(b=>b.id===buildingId)));
-  list.replaceChildren(el('h3','고객·건물'),button('＋ 고객 등록','data-action','new-customer'));
+  list.replaceChildren(el('h3','고객·건물'));
   const linked=new Set(getCustomers().flatMap(c=>c.buildings.map(b=>b.id))),visible=new Set(getVisibleCustomerIds());
   for(const c of getCustomers()){
    if(!visible.has(c.id))continue;
    list.append(el('h4',c.name));
    for(const b of c.buildings.length?c.buildings:[null]){if(b)linked.add(b.id);const choice=button(b?.name||'건물 미연결');choice.setAttribute('aria-pressed',String(customerId===c.id&&buildingId===(b?.id||null)));choice.onclick=()=>select(c.id,b?.id||null);list.append(choice);}
   }
-  for(const b of getVisibleBuildings().filter(b=>!linked.has(b.id))){const choice=button(`${b.name} · 고객 미연결`);choice.onclick=()=>select(null,b.id);list.append(choice);}
-  renderRows(profile,staleSelection?[{title:'고객·건물 연결이 변경되었습니다',lines:['기존 모형과 미저장 초안은 유지했습니다. 현재 목록에서 고객·건물을 다시 선택해주세요. 이전 고객 프로필과 공통 업무는 표시하지 않습니다.']}]:getProfile(customerId,buildingId));
+  for(const b of getVisibleBuildings().filter(b=>!linked.has(b.id))){const choice=button(`${b.name} · 고객 미연결`);choice.setAttribute('aria-pressed',String(customerId===null&&buildingId===b.id));choice.onclick=()=>select(null,b.id);list.append(choice);}
+  renderProfile(staleSelection?[{title:'고객·건물 연결이 변경되었습니다',lines:['기존 모형과 미저장 초안은 유지했습니다. 현재 목록에서 고객·건물을 다시 선택해주세요. 이전 고객 프로필과 공통 업무는 표시하지 않습니다.']}]:getProfile(customerId,buildingId),building,staleSelection?null:customer);
   if(customerId&&!staleSelection){const consultation=button('＋ 상담 기록','data-action','new-consultation');consultation.setAttribute('data-customer-id',customerId);profile.append(button('고객 정보·메모 수정','data-customer-hub-edit',customerId),button('전체 상세','data-customer-open',customerId),consultation);}
   if(buildingId)profile.append(button('건물 정보 수정','data-building-edit',buildingId));
   renderReference();profile.append(referencePanel);
   const sections=getSections(staleSelection?null:customerId,building?.id||null)||[];tab=Math.min(tab,Math.max(0,sections.length-1));tabs.replaceChildren();
-  sections.forEach((section,i)=>{const b=button(section.title);b.setAttribute('role','tab');b.setAttribute('aria-selected',String(i===tab));b.onclick=()=>{tab=i;render();};tabs.append(b);});
+  sections.forEach((section,i)=>{
+   const b=button(section.title);b.id=`customer-atlas-tab-${i}`;
+   b.setAttribute('role','tab');b.setAttribute('aria-selected',String(i===tab));
+   b.setAttribute('aria-controls',body.id);b.tabIndex=i===tab?0:-1;
+   const activate=index=>{tab=index;render();doc.getElementById?.(`customer-atlas-tab-${index}`)?.focus();};
+   b.onclick=()=>activate(i);
+   b.onkeydown=event=>{
+    const next={ArrowRight:(i+1)%sections.length,ArrowLeft:(i+sections.length-1)%sections.length,Home:0,End:sections.length-1}[event.key];
+    if(next!==undefined){event.preventDefault();activate(next);}
+   };
+   tabs.append(b);
+  });
+  body.setAttribute('aria-labelledby',sections.length?`customer-atlas-tab-${tab}`:'');
   renderRows(body,sections[tab]?[sections[tab]]:[]);
  }
  async function select(cid,bid){
