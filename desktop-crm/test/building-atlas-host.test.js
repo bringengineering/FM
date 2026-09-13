@@ -10,6 +10,17 @@ class Node {
  querySelector(s){if(s==='dialog[open]')return this.dialog||null;return this.children.find(n=>n.id===s.slice(1))||this.children.map(n=>n.querySelector(s)).find(Boolean)||null;}
 }
 function fixture(){const document={createElement:tag=>new Node(tag,document)};return document.createElement('div');}
+test('CRM context follows selected building, refreshes, and never enters model or practice',async()=>{
+ const seen=[];let label='연락처 010-test';
+ const s=await setup({getBuildingContext:id=>{seen.push(id);return [{title:'고객',lines:[label]}];}});
+ const text=node=>[node.textContent||'',...node.children.map(text)].join(' ');
+ assert.match(text(s.$('atlas-crm-context')),/010-test/);
+ assert.ok(!JSON.stringify(s.mounts[0].initialPortfolio).includes('010-test'));
+ s.$('atlas-building').value='b';await s.$('atlas-building').onchange();assert.equal(seen.at(-1),'b');
+ label='변경 연락처';s.handle.updateBuildings([{id:'b',name:'B'}]);assert.match(text(s.$('atlas-crm-context')),/변경 연락처/);
+ s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();assert.equal(s.$('atlas-crm-context').hidden,true);
+ assert.equal(s.writes.length,0);s.handle.dispose();
+});
 async function setup(extra={}){const host=fixture(),mounts=[],reads=[],writes=[];const api={loadBuildingAtlas:async({buildingId})=>{reads.push(buildingId);return {ok:true,record:{buildingId,revision:1,model:model()},etag:'v1',canWrite:true}},saveBuildingAtlas:async p=>{writes.push(p);return {ok:true,record:{buildingId:p.buildingId,revision:p.expectedRevision+1,model:p.model},etag:'v2',canWrite:true}}};const {mountCrmAtlas}=await load();const handle=await mountCrmAtlas({host,buildings:[{id:'a',name:'A',address:'주소'},{id:'b',name:'B',address:'주소2'}],api,mountNative:async args=>{mounts.push(args);return {dispose:()=>{args.disposed=true}}},...extra});return {host,mounts,reads,writes,handle,api,$:id=>host.querySelector('#'+id)};}
 test('building basics allowlist strips private properties and archived buildings',async()=>{const {buildingBasics}=await load();assert.deepEqual(buildingBasics([{id:'a',name:'A',address:'B',phone:'secret'},{id:'b',name:'B',archivedAt:1}]),[{id:'a',name:'A',address:'B'}]);});
 test('import validates all candidates and version-specific byte limits',async()=>{const {parseImport}=await load();assert.equal(parseImport(JSON.stringify(model()),100).length,1);assert.throws(()=>parseImport(JSON.stringify(model()),8000001),/8MB/);assert.throws(()=>parseImport(JSON.stringify({version:2,activeId:'a',items:[{id:'a',data:model()},{id:'b',data:{}}]}),100));assert.throws(()=>parseImport('{}',30000001),/30MB/);});

@@ -1,4 +1,7 @@
 .crm-atlas{min-width:0;width:100%;color:#17365a;background:#f4f8fd;font-family:inherit}
+.crm-atlas #atlas-crm-context{padding:14px;margin:12px 0;border:1px solid #c8d9ec;border-radius:12px;background:white;overflow-wrap:anywhere}
+.crm-atlas #atlas-crm-context h3{margin:0 0 6px}.crm-atlas #atlas-crm-context>p{font-size:12px;color:#536b83}
+.crm-atlas #atlas-crm-context details{padding:10px;border-top:1px solid #e2ebf4;max-height:320px;overflow:auto}.crm-atlas #atlas-crm-context summary{cursor:pointer;font-weight:650}.crm-atlas #atlas-crm-context button{margin-left:8px}
 .crm-atlas-toolbar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:14px;border:1px solid #c8d9ec;border-radius:12px;background:#fff}
 .crm-atlas-toolbar label,.crm-atlas #atlas-review label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:650;min-width:0}
 .crm-atlas button,.crm-atlas select{font:inherit;border:1px solid #9bb9dd;border-radius:7px;padding:9px 12px;background:#fff;color:#17365a;min-height:40px;max-width:100%}

@@ -40,7 +40,7 @@ function unwrap(response) {
 }
 
 // mountNative is an optional renderer adapter; IO always remains in this host.
-export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,confirm:ask=async()=>false,download:sendDownload,mountNative=mountBuildingAtlas,signal}={}) {
+export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,getBuildingContext=()=>[],confirm:ask=async()=>false,download:sendDownload,mountNative=mountBuildingAtlas,signal}={}) {
   if(!host?.ownerDocument || !api) throw new TypeError('설비지도 호스트와 회사 API가 필요합니다.');
   const doc=host.ownerDocument, urls=new Set();
   let basics=buildingBasics(buildings), buildingId=basics.find(b=>b.id===initialBuildingId)?.id || basics[0]?.id || null;
@@ -63,8 +63,29 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
   const backup=el('button','atlas-backup','현재 모형 백업 다운로드'), importConfirm=el('button','atlas-import-confirm','원본·대상 확인 후 가져오기'), cancel=el('button','atlas-import-cancel','가져오기 취소');
   panel.append(el('h3',null,'가져오기 검토'),labelled('가져올 원본 건물',source),target,preview,backup,importConfirm,cancel);
   const stage=el('div','atlas-stage');
+  const contextPanel=el('section','atlas-crm-context');contextPanel.setAttribute('aria-label','연결된 CRM 건물 자료');
+  function renderContext(){
+    contextPanel.replaceChildren();contextPanel.hidden=mode!=='company'||!current();
+    if(contextPanel.hidden)return;
+    contextPanel.append(el('h3',null,'고객·건물 관리 연동 자료'),el('p',null,'현재 CRM에서 받은 자료 · 조회 전용 · 수정은 고객·건물 관리에서 진행합니다. 모형·백업에는 복사하지 않습니다.'));
+    try{
+      for(const section of getBuildingContext(buildingId)||[]){
+        const details=el('details'),summary=el('summary',null,String(section.title||''));
+        details.append(summary);
+        for(const line of section.lines?.length?section.lines:section.resources?.length?[]:['등록된 자료 없음'])details.append(el('p',null,String(line)));
+        for(const resource of section.resources||[]){
+          const row=el('p',null,String(resource.name||'사진'));
+          if(/^https:\/\//i.test(String(resource.url||''))){
+            const button=el('button',null,'사진 원본 열기');button.type='button';button.setAttribute('data-case-resource-link',resource.url);row.append(button);
+          }
+          details.append(row);
+        }
+        contextPanel.append(details);
+      }
+    }catch(_error){contextPanel.append(el('p',null,'CRM 연동 자료를 표시하지 못했습니다. 고객·건물 관리에서 확인해주세요.'));}
+  }
   toolbar.append(labelled('CRM 건물',select),labelled('작업 모드',modeSelect),refresh,create,importButton,file);
-  shell.append(toolbar,status,notice,panel,stage);host.replaceChildren(css,shell);create.hidden=true;
+  shell.append(toolbar,status,contextPanel,notice,panel,stage);host.replaceChildren(css,shell);create.hidden=true;
   const active=token=>!disposed && token===epoch;
   const current=()=>basics.find(b=>b.id===buildingId);
   const controller=createAtlasController({
@@ -84,7 +105,7 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
   function labels() {
     const options=basics.map(b=>{const opt=el('option',null,`${b.name} · ${b.address}`);opt.value=b.id;return opt;});
     if(buildingId&&!current()){const opt=el('option',null,'선택한 건물은 목록에서 제외되었습니다.');opt.value=buildingId;options.push(opt);}
-    select.replaceChildren(...options);select.value=buildingId||'';renderControls();renderReview();
+    select.replaceChildren(...options);select.value=buildingId||'';renderControls();renderReview();renderContext();
   }
   function clearReview(){importNonce++;review=null;panel.hidden=true;file.value='';renderControls();}
   function stopNative(){nativeAbort?.abort();nativeAbort=null;native?.dispose?.();native=null;stage.replaceChildren();nativeHost=null;}
@@ -125,6 +146,7 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,con
     native=candidate;
   }
   async function openCurrent(){
+    renderContext();
     const token=++epoch;stopNative();clearReview();provisional=false;practiceDirty=false;create.hidden=true;
     if(mode==='practice'){
       controller.reset();status.textContent='연습 모드 · 예시 자료 · 메모리에만 반영되며 회사에는 저장하지 않습니다.';renderControls();

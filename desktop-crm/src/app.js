@@ -3225,7 +3225,7 @@
     try {
       const { mountCrmAtlas } = await import("./building-atlas/crm-host.mjs");
       if (!stillCurrent()) return;
-      const instance = await mountCrmAtlas({ host, buildings: atlasBuildings(), api, initialBuildingId: buildingAtlasInitialId || selectedBuildingId, confirm: async message => window.confirm(message), signal: buildingAtlasAbort.signal });
+      const instance = await mountCrmAtlas({ host, buildings: atlasBuildings(), api, getBuildingContext: atlasBuildingContext, initialBuildingId: buildingAtlasInitialId || selectedBuildingId, confirm: async message => window.confirm(message), signal: buildingAtlasAbort.signal });
       if (generation !== buildingAtlasGeneration || !stillCurrent()) { instance.dispose(); return; }
       buildingAtlasView = instance;
       buildingAtlasInitialId = "";
@@ -3234,6 +3234,21 @@
     } finally {
       if (generation === buildingAtlasGeneration) buildingAtlasLoading = false;
     }
+  }
+
+  function atlasBuildingContext(id) {
+    const building = (store.buildings || []).find(item => item.id === id && !item.archivedAt);
+    if (!building) return [];
+    const line = values => values.filter(value => value !== undefined && value !== null && value !== "").map(String).join(" · ");
+    return [
+      { title: "건물 기본정보", lines: [line([building.name, building.address || building.roadAddress]), `관리 상태: ${managementStatusForBuilding(building)}`, "치수·설비 위치·배관 경로는 별도 현장 확인이 필요합니다."] },
+      { title: "연결 고객·연락처·담당자", lines: buildingCustomers(building).map(customer => line([customer.name, customer.type, customer.phone, customer.owner && `담당 ${customer.owner}`])) },
+      { title: "계약", lines: buildingContracts(building).map(contract => line([contract.name, contract.status, contract.startDate, contract.endDate, contract.billingCycle, contract.amount != null ? krw(contract.amount) : "금액 미등록", contract.scope])) },
+      { title: "일정·서비스 작업", lines: (store.serviceRecords || []).filter(record => record.buildingId === id && !record.archivedAt).map(record => line([record.scheduledDate, record.startTime, record.title, WorkManagement.typeLabel(record.serviceType), WorkManagement.statusLabel(record.status), record.owner, record.summary])) },
+      { title: "민원·작업 진행", lines: buildingCases(building).map(item => line([item.ticketNo || item.id, item.room, item.issueType, Core.workflowProgress(item).current])) },
+      { title: "등록된 층·호실", lines: buildingUnitsForBuilding(building).map(unit => line([unit.floorLabel, unit.label || unit.unitLabel, VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)] || "상태 확인 필요"])) },
+      { title: "민원·작업 사진", lines: [], resources: buildingCases(building).flatMap(item => [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].map((photo,index) => ({name: line([item.ticketNo || item.id, photo.fileName || photo.name || `사진 ${index+1}`, photo.phase]), url: caseFirst(photo.fileUrl, photo.driveUrl, photo.url, photo.webViewLink)}))) },
+    ];
   }
 
   function renderBuildings() {
