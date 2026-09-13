@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브링케어 IR 덱 템플릿</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#14171f; --panel2:#1c2029; --line:#2b3040;
+    --text:#eceef4; --dim:#9aa2b4; --faint:#636b80;
+    --gold:#e6b450; --good:#5ec98a; --bad:#e07a7a; --blue:#6fa8dc; --mid:#d9b45a;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.65 "Pretendard","Malgun Gothic",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding:0 0 90px}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+
+  header{background:linear-gradient(180deg,#211d12,#0d0f14);border-bottom:1px solid #3a3320;padding:36px 0 26px;margin-bottom:6px}
+  header .eyebrow{color:var(--gold);font-size:11.5px;letter-spacing:2px;text-transform:uppercase;margin-bottom:7px}
+  header h1{margin:0 0 8px;font-size:27px}
+  header h1 small{color:var(--faint);font-size:14px;font-weight:400;margin-left:8px}
+  header .sub{color:var(--dim);font-size:13.5px;max-width:74ch}
+  .meta{margin-top:13px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .chip b{color:var(--gold)}
+
+  nav{position:sticky;top:0;z-index:10;background:rgba(11,13,18,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:9px 0}
+  nav .wrap{display:flex;flex-wrap:wrap;gap:6px}
+  nav a{font-size:11.5px;padding:4px 9px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  nav a:hover{color:var(--text);border-color:#3d4970}
+
+  section{margin-top:30px;scroll-margin-top:52px}
+  h2{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);border-bottom:1px solid #3a3320;padding-bottom:7px;margin:0 0 15px;font-weight:700}
+  h2 span{color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;margin-left:6px}
+  p.lead{color:var(--dim);max-width:76ch}
+
+  .principle{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+  .pr{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;border-left:3px solid var(--gold)}
+  .pr b{color:var(--text)} .pr p{margin:4px 0 0;font-size:12.5px;color:var(--dim)}
+
+  /* slide cards */
+  .slide{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:11px;display:grid;grid-template-columns:44px 1fr;gap:14px}
+  .slide .num{font-size:20px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1.1}
+  .slide .num small{display:block;font-size:9px;color:var(--faint);font-weight:600;letter-spacing:.5px}
+  .slide h3{margin:0 0 3px;font-size:15px}
+  .slide .purpose{color:var(--dim);font-size:12.5px;margin:0 0 8px}
+  .slide .msg{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--good);border-radius:7px;padding:7px 11px;font-size:12.5px;margin-bottom:8px}
+  .slide .msg b{color:var(--good)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}.slide{grid-template-columns:1fr}.slide .num{display:flex;gap:8px;align-items:baseline}.slide .num small{display:inline}}
+  .blk .h{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;margin-bottom:3px}
+  .blk ul{margin:0;padding-left:16px} .blk li{margin-bottom:3px;color:var(--dim);font-size:12.5px} .blk li b{color:var(--text)}
+  .ev{color:var(--blue)!important}
+  .rej{display:inline-block;font-size:10px;color:var(--bad);border:1px solid #5c2f2f;background:rgba(224,122,122,.1);border-radius:5px;padding:1px 6px;margin-top:6px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--faint);font-size:10.5px;font-weight:600;padding:0 8px 7px;border-bottom:1px solid var(--line);text-transform:uppercase}
+  td{padding:8px;border-bottom:1px solid rgba(43,48,64,.55);vertical-align:top;color:var(--dim)} td b{color:var(--text)}
+  tr:last-child td{border-bottom:0}
+  td.ax{color:var(--gold);font-weight:600;white-space:nowrap}
+
+  .foot{margin-top:34px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .note{color:var(--faint);font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <div class="eyebrow">IR Deck Template · 큰 틀</div>
+  <h1>브링케어 IR 덱 템플릿 <small>v1.0 · 구조 설계</small></h1>
+  <div class="sub">"어떤 투자사가 와도 — 우리는 <b>이만큼 준비돼 있고, 이렇게 하고 있다</b>"를 근거(backdata)로 보여주는 덱의 큰 틀. 본문 15슬라이드 + APPENDIX 15종. <b>디자인 이전의 구조·내용 설계</b>이며, 각 슬라이드에 담을 내용·증거·대응 부결사유까지 명시.</div>
+  <div class="meta">
+    <span class="chip">본문 <b>15</b> · 부록 <b>15</b></span>
+    <span class="chip">라운드 <b>Seed · 1억 · 기업가치 9억</b></span>
+    <span class="chip">근거 <b>VC 실무서 제7장 IR + 부결 4영역</b></span>
+  </div>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#rule">IR 원칙</a>
+  <a href="#deck">본문 15슬라이드</a>
+  <a href="#appx">APPENDIX 15종</a>
+  <a href="#byinvestor">투자자 유형별</a>
+  <a href="#next">다음 단계</a>
+</div></nav>
+
+<div class="wrap">
+
+<section id="rule">
+  <h2>IR 원칙 <span>책 제7장 — 대면 전에 승부는 난다</span></h2>
+  <div class="principle">
+    <div class="pr"><b>주장 아니라 증거</b><p>IR자료 = 근거데이터(backdata). 모든 주장에 브링 실데이터(CRM·6동·ValueScope)를 붙인다.</p></div>
+    <div class="pr"><b>투자제안·마일스톤 필수</b><p>얼마·지분·용처·로드맵 없는 덱은 "마침표 없는 문장". 반드시 The Ask 슬라이드로 닫는다.</p></div>
+    <div class="pr"><b>과장 금지</b><p>IR자료는 영원히 남아 6개월·1년 뒤 대조당한다. 좁은 바닥 레퍼런스 체크. 실현수익률 기준.</p></div>
+    <div class="pr"><b>부결 4영역 선제 방어</b><p>시장성·차별성·팀·EXIT — 각 부결 영역에 대응하는 슬라이드를 미리 배치(아래 표시).</p></div>
+    <div class="pr"><b>본문은 간결, 깊이는 부록</b><p>본문 15장은 스토리, 깊은 질문엔 APPENDIX를 꺼낸다. "준비돼 있음"을 부록 두께로 증명.</p></div>
+  </div>
+</section>
+
+<section id="deck">
+  <h2>본문 덱 — 15 슬라이드 <span>스토리 순서: 문제 → 해결 → 증거 → 제안</span></h2>
+
+  <div class="slide"><div class="num">1<small>COVER</small></div><div>
+    <h3>커버 · 한 줄 정의</h3>
+    <div class="purpose">첫인상. 회사가 뭘 하는지 한 문장으로.</div>
+    <div class="msg"><b>핵심:</b> "원주 소형 임대건물을 하나의 관리구역으로 묶는 지역 공동관리 — 브링케어"</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>로고·회사명·한 줄 태그라인</li><li>대표(서창환)·연락처·날짜</li><li>라운드 표기: Seed 1억 / 기업가치 9억</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">브랜드 매니페스토 톤</li></ul></div>
+    </div>
+  </div></div>
+
+  <div class="slide"><div class="num">2<small>PROBLEM</small></div><div>
+    <h3>문제 — 건물주의 공실·관리 통증</h3>
+    <div class="purpose">투자자가 공감할 '진짜 아픔'. 큰 통증일수록 좋다.</div>
+    <div class="msg"><b>핵심:</b> "소형 다가구 건물주는 공실·퇴실·수리·민원을 혼자 감당한다. 분산·비효율·고비용."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>공실 = 건물주가 움직이는 트리거</li><li>기존 관리의 단절(청소·수리·중개 따로)</li><li>혼자 관리 시 월 15만원 부담</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">현장 초도조사 사례·공실 사진</li><li class="ev">다가구 노후·공실 통계(부록 A11)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #1 불명확한 고객가치 → 명확한 통증</span>
+  </div></div>
+
+  <div class="slide"><div class="num">3<small>SOLUTION</small></div><div>
+    <h3>솔루션 — 지역 공동관리 Zone</h3>
+    <div class="purpose">문제를 어떻게 푸는가. "우산동 전체를 하나의 가상 아파트 단지처럼."</div>
+    <div class="msg"><b>핵심:</b> "동일 권역 여러 건물을 하나로 묶어 공동 운영 — 혼자 15만, 함께 8.9만."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>공동관리 모델 도식(150m 밀집블록)</li><li>서비스 사이클: 관리→퇴실→청소·수리→공실준비→임대→입주</li><li>"건물의 한 사이클을 끊기지 않게"</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">ValueScope 영업지도(밀집블록 218개)</li></ul></div>
+    </div>
+  </div></div>
+
+  <div class="slide"><div class="num">4<small>WHY NOW</small></div><div>
+    <h3>왜 지금인가 (Why Now)</h3>
+    <div class="purpose">타이밍. 왜 이 사업이 지금 되는가.</div>
+    <div class="msg"><b>핵심:</b> "1인 가구 증가·다가구 노후·공실 심화 + 지역 데이터/AI 활용 가능해진 시점."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>수요: 학기·전입, 1인가구 구조 변화</li><li>공급: 노후 다가구, 공실률</li><li>기술: CRM·데이터로 소형관리 규모화 가능</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">원주 실거래·공실 밴드(ValueScope)</li></ul></div>
+    </div>
+  </div></div>
+
+  <div class="slide"><div class="num">5<small>MARKET</small></div><div>
+    <h3>시장 — TAM / SAM / SOM</h3>
+    <div class="purpose">시장이 충분히 큰가(부결 #13 로컬·확장성 정면 대응).</div>
+    <div class="msg"><b>핵심:</b> "원주에서 검증 → 전국 소형 다가구 관리시장으로. 좁게 독점 후 확장."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li><b>SOM</b>: 원주 우산동 등 핵심권역</li><li><b>SAM</b>: 원주 다가구 5,129동·26,825세대</li><li><b>TAM</b>: 전국 소형 임대건물 관리시장</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">ValueScope 원주 24,933건 실데이터</li><li class="ev">동별 다가구 통계(부록 A11)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #13 내수·로컬 · #10 확장성 → 좁은 독점→확장 서사</span>
+  </div></div>
+
+  <div class="slide"><div class="num">6<small>PRODUCT</small></div><div>
+    <h3>제품·서비스 — 어떻게 작동하나</h3>
+    <div class="purpose">실제로 무엇을 파는가. 운영이 굴러간다는 증명.</div>
+    <div class="msg"><b>핵심:</b> "서비스 5종 + 운영 9단계 + SOP 26종으로 표준화된 운영체계(Building OS)."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>서비스 5종(관리·청소·입퇴실·공간기획·전문작업)</li><li>운영 9단계 사이클</li><li>Building OS(민원 케이스 ①~⑰ 워크플로)</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">CRM 관리자화면 v5.39 시연</li><li class="ev">SOP 26종·매뉴얼(부록 A6)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #24 업종 이해 → 표준화된 운영 증명</span>
+  </div></div>
+
+  <div class="slide"><div class="num">7<small>BM</small></div><div>
+    <h3>비즈니스 모델 — 어떻게 버나</h3>
+    <div class="purpose">팔수록 흑자인가(수익모델 부결 대응).</div>
+    <div class="msg"><b>핵심:</b> "월 관리비 = 지속수익(로열티형) + 결합서비스. 이익의 44%가 결합에서."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>지속수익 구조(89,000원/동)</li><li>결합서비스 마진(청소·수리·전문작업 5%)</li><li>유닛이코노믹스 요약(동당 손익)</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">6동 실측 유닛이코노믹스(부록 A2)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #23 수익모델 · #11 수주불리 → 구독형 지속수익</span>
+  </div></div>
+
+  <div class="slide"><div class="num">8<small>TRACTION</small></div><div>
+    <h3>트랙션 · 실적 — 이미 하고 있다</h3>
+    <div class="purpose">가장 강력한 슬라이드. "말이 아니라 현장에서 만들고 있다."</div>
+    <div class="msg"><b>핵심:</b> "건물관리 7동 · 공용부청소 7곳 · 입주청소 10건+ · 수리 12건 (실계약·실매출)."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>실적 숫자 + 성장 곡선</li><li>공실 시계·전환율 등 운영지표</li><li>"실제 현장에서 만드는 관리체계"</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">계약서·통장 기반 실적(부록 A2)</li><li class="ev">전후 사진·완료보고(부록 A10)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #6 시장진입 확신 → 7동 실계약이 증명</span>
+  </div></div>
+
+  <div class="slide"><div class="num">9<small>MOAT</small></div><div>
+    <h3>데이터 해자 · 경쟁우위 (Moat)</h3>
+    <div class="purpose">모방 방어. "차별성이 지속가능한 경쟁력인가"(부결 #9·20 핵심).</div>
+    <div class="msg"><b>핵심:</b> "ValueScope(지역 데이터) + CRM + SOP 26종 = 청소업체가 못 따라오는 운영·데이터 자산."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>ValueScope: 상권분석·앵커·실거래·밸류업 엔진</li><li>CRM 1.7.0·AI 민원분류</li><li>밀집권역 선점 = 네트워크 효과</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">ValueScope 화면·엔진 218 tests(부록 A5)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #9 모방 · #20 전통산업 저평가 → 데이터·표준 해자</span>
+  </div></div>
+
+  <div class="slide"><div class="num">10<small>COMPETITION</small></div><div>
+    <h3>경쟁 구도</h3>
+    <div class="purpose">가장 큰 경쟁자는 '건물주 직접 관리'(비용 0원)와 어떻게 싸우나.</div>
+    <div class="msg"><b>핵심:</b> "가격이 아니라 시간·리스크·책임경계·SLA로 이긴다."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>경쟁 유형 4종(직접관리·청소업체·중개·PM)</li><li>비교축: 책임경계·SLA·데이터</li><li>브링만의 포지션(통합·표준·데이터)</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">수주 성공/이탈 사유 기록</li></ul></div>
+    </div>
+  </div></div>
+
+  <div class="slide"><div class="num">11<small>TEAM</small></div><div>
+    <h3>팀 — 왜 우리가 해내나</h3>
+    <div class="purpose">도메인 전문성 + 균형(부결 사람·팀 영역, 브링의 강점).</div>
+    <div class="msg"><b>핵심:</b> "현장·토목 도메인(대표) + CRM·자동화(현진) + 하드웨어·IoT(우중) = 균형 팀."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>대표: 현장·영업·토목 도메인 전문</li><li>현진: 자동화·CRM·케이스 시스템</li><li>우중: 하드웨어·IoT</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">이력·역할·조직도(부록 A13)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 팀영역: 엔지니어 위주도·없는것도 약점 → 균형팀</span>
+  </div></div>
+
+  <div class="slide"><div class="num">12<small>FINANCIALS</small></div><div>
+    <h3>재무 — 규모별 손익 & 유닛이코노믹스</h3>
+    <div class="purpose">정직한 숫자. 실현수익률 기준(허수 총수익률 아님).</div>
+    <div class="msg"><b>핵심:</b> "현재 6동 → BEP 35~40동 → 100동 월 +256만(17.8%). 이익 44%는 결합서비스."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>규모별 손익 곡선(6→BEP→100동)</li><li>70동 함정 언급(정직함=신뢰)</li><li>기준가정(1인 55동·8만·90분)과 검증계획</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">재무모델·민감도(부록 A1)</li><li class="ev">8주 타임로그(부록 A3)</li></ul></div>
+    </div>
+    <span class="rej">부결방어 #19 비용절감 → 공실해결 매출증대 병기</span>
+  </div></div>
+
+  <div class="slide"><div class="num">13<small>ROADMAP</small></div><div>
+    <h3>성장 로드맵 · 마일스톤</h3>
+    <div class="purpose">EXIT 확률의 근거. 로드맵 누락 = EXIT 확률 낮은 인상.</div>
+    <div class="msg"><b>핵심:</b> "S0(6동)→S1(BEP)→S2(투자·100동)→S3(춘천 확장), 각 단계 숫자 게이트."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>단계별 게이트(동수·매출·대표없이운영)</li><li>도시 확장(원주→춘천→강릉)</li><li>투자금이 여는 마일스톤</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">투자 로드맵 문서·복제 트리거</li></ul></div>
+    </div>
+  </div></div>
+
+  <div class="slide"><div class="num">14<small>EXIT</small></div><div>
+    <h3>EXIT 시나리오</h3>
+    <div class="purpose">VC는 EXIT 없으면 투자 안 함. "열심히"는 답이 아님.</div>
+    <div class="msg"><b>핵심:</b> "현실 경로 M&amp;A·구주매각, 장기 다도시 플랫폼화 IPO 지향 + 흑자 후 상환 안전장치."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>4방법 중 브링 현실 경로</li><li>비교 대상 M&amp;A 사례(프롭테크·관리)</li><li>안전장치(RCPS 상환 여력)</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">EXIT 스토리 1페이지</li></ul></div>
+    </div>
+    <span class="rej">부결방어 EXIT영역: 실현가능 시나리오 어필</span>
+  </div></div>
+
+  <div class="slide"><div class="num">15<small>THE ASK</small></div><div>
+    <h3>투자 제안 (The Ask)</h3>
+    <div class="purpose">덱의 마침표. 얼마·지분·용처·마일스톤을 명확히.</div>
+    <div class="msg"><b>핵심:</b> "1억 (기업가치 9억, 지분 10%). 인력·시스템·춘천 사전진입에 투입."</div>
+    <div class="grid2">
+      <div class="blk"><div class="h">담을 내용</div><ul><li>조달액·기업가치·지분</li><li>자금 사용처(인력·시스템·확장) 비중</li><li>이 돈으로 도달할 마일스톤(→ 다음 라운드)</li></ul></div>
+      <div class="blk"><div class="h ev">증거</div><ul><li class="ev">자금 사용계획 상세(부록 A15)</li><li class="ev">캡테이블(부록 A4)</li></ul></div>
+    </div>
+    <span class="rej">부결방어: 투자제안 누락 = 마침표 없는 문장</span>
+  </div></div>
+</section>
+
+<section id="appx">
+  <h2>APPENDIX — 15종 <span>본문이 스토리라면, 부록은 "준비돼 있음"의 증거 창고</span></h2>
+  <p class="lead">투자자가 깊이 물을 때 꺼내는 backdata. 실사(due diligence)에서 요구받을 자료를 미리 정리해두면 "이 회사는 준비됐다"는 신호가 된다. 항목마다 <b>무엇을 · 왜(어떤 질문에 대응)</b>.</p>
+  <div class="card" style="background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:6px 16px 10px;overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:30px">#</th><th style="width:28%">항목</th><th>담을 내용</th><th style="width:26%">대응(어떤 질문에)</th></tr></thead>
+      <tbody>
+        <tr><td class="ax">A1</td><td><b>상세 재무모델</b></td><td>규모별 손익·3개년 추정 P&amp;L·민감도 분석(임대료·공실·금리)</td><td>"숫자가 버티나?"</td></tr>
+        <tr><td class="ax">A2</td><td><b>6동 유닛이코노믹스</b></td><td>동별 실매출·실원가·마진(계약서·통장 기반)</td><td>"팔수록 흑자인가?"</td></tr>
+        <tr><td class="ax">A3</td><td><b>8주 타임로그</b></td><td>동당 업무시간 실측 → 1인 55동 용량 검증</td><td>"가장 민감한 가정 검증됐나?"</td></tr>
+        <tr><td class="ax">A4</td><td><b>캡테이블</b></td><td>현재 지분·스톡옵션·가수금·10% 희석 후 구조</td><td>"대주주·희석 리스크는?"</td></tr>
+        <tr><td class="ax">A5</td><td><b>ValueScope 데이터</b></td><td>상권분석·앵커·실거래·밸류업 엔진(218 tests) 화면·설명</td><td>"데이터 해자가 진짜인가?"</td></tr>
+        <tr><td class="ax">A6</td><td><b>SOP 26종·운영매뉴얼</b></td><td>목록 + 핵심 SOP 발췌 + 매뉴얼 v0.9→v1.0 승인 계획</td><td>"운영이 표준화됐나?"</td></tr>
+        <tr><td class="ax">A7</td><td><b>계약·법무</b></td><td>표준계약서·중개분리·건설업등록·개인정보 준수 체계</td><td>"법적 리스크는?"</td></tr>
+        <tr><td class="ax">A8</td><td><b>정부지원 파이프라인</b></td><td>4건(소상공인·마을기업·소셜벤처·조달청) 상태·업종자격 확인</td><td>"보조금 의존 아닌가?"</td></tr>
+        <tr><td class="ax">A9</td><td><b>부결 24 자가진단표</b></td><td>투심위 부결 24패턴 × 브링 위험도·방어논리(선제 제시)</td><td>"약점을 아는가?"</td></tr>
+        <tr><td class="ax">A10</td><td><b>고객 레퍼런스·현장 증빙</b></td><td>건물주 후기·전후 사진·완료보고·알림톡 사례</td><td>"진짜 고객이 있나?"</td></tr>
+        <tr><td class="ax">A11</td><td><b>시장 데이터</b></td><td>다가구 통계·공실·실거래밴드·권역별 시세표</td><td>"시장이 큰가?"</td></tr>
+        <tr><td class="ax">A12</td><td><b>밸류업 실증 리포트</b></td><td>개선 전/후 NOI·회수기간 자동계산(ValueScope)</td><td>"가치를 실제로 올리나?"</td></tr>
+        <tr><td class="ax">A13</td><td><b>팀 이력·조직도</b></td><td>대표·현진·우중 이력·역할·채용 계획</td><td>"팀이 해내나?"</td></tr>
+        <tr><td class="ax">A14</td><td><b>리스크 &amp; 대응</b></td><td>70동 함정·대표 의존·부동산업 규제·할인가 고착 + 대응책</td><td>"뭘 걱정해야 하나?"</td></tr>
+        <tr><td class="ax">A15</td><td><b>자금 사용계획 상세</b></td><td>1억 항목별 배분·시점·도달 마일스톤</td><td>"내 돈을 어디 쓰나?"</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">※ A1~A4·A9는 <b>워크북에서 채우는 항목</b>과 직결 — 워크북을 채우면 부록이 자동으로 완성된다.</p>
+</section>
+
+<section id="byinvestor">
+  <h2>투자자 유형별 강조 포인트 <span>"어떤 투자사가 와도"</span></h2>
+  <div class="card" style="background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:6px 16px 10px;overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:22%">투자자</th><th>가장 궁금해하는 것</th><th style="width:34%">브링이 강조할 슬라이드·부록</th></tr></thead>
+      <tbody>
+        <tr><td class="ax">엔젤·개인투자조합</td><td>대표·팀, 스토리, 잠재력</td><td>11 팀 · 2~3 문제·솔루션 · 8 트랙션</td></tr>
+        <tr><td class="ax">AC·TIPS 운영사</td><td>실행력·성장 가능성·정부매칭 적합</td><td>8 트랙션 · 13 로드맵 · A8 정부지원</td></tr>
+        <tr><td class="ax">지역·임팩트 투자</td><td>지역 문제 해결·사회가치</td><td>2 문제(지역 공실) · 마을기업 통합돌봄 스토리 · 5 시장</td></tr>
+        <tr><td class="ax">프롭테크·데이터 VC</td><td>데이터 해자·기술·확장성</td><td>9 Moat · A5 ValueScope · A12 밸류업</td></tr>
+        <tr><td class="ax">재무형 VC</td><td>유닛이코노믹스·EXIT·밸류에이션</td><td>7 BM · 12 재무 · 14 EXIT · A1~A4</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">본문 15장은 <b>고정</b>, 투자자 유형에 따라 <b>어느 슬라이드에 시간을 더 쓰고 어느 부록을 먼저 꺼내느냐</b>만 조절한다. → 하나의 덱으로 모든 투자사 대응.</p>
+</section>
+
+<section id="next">
+  <h2>다음 단계 <span>이 틀 → 실제 자료</span></h2>
+  <div class="card" style="background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px">
+    <ul>
+      <li><b>1) 내용 채우기</b> — 각 슬라이드의 '담을 내용'을 <b>투자준비 워크북</b>에서 채운다(트랙션·재무·캡테이블 등).</li>
+      <li><b>2) 디자인 덱 제작</b> — 이 틀을 확정하면 <b>.pptx 15장 + 부록</b>으로 디자인해 만든다(다음 작업).</li>
+      <li><b>3) 원페이저</b> — 본문 1·2·8·15만 뽑아 <b>1장 요약(티저)</b>으로 — 첫 접촉용.</li>
+    </ul>
+  </div>
+</section>
+
+<div class="foot">
+  브링케어 IR 덱 템플릿 v1.0 (구조 설계) · 근거: 국내 VC 투자유치 실무서 제7장 IR + 부결 4영역 · 브링 체계도 v1.3 · MASTER_CONTEXT<br>
+  자매 문서: 투자유치 백서 · 실전 가이드 · 투자준비 워크북 · 투자 로드맵. 숫자·기업가치는 내부 목표치로 IR 확정 전 재무모델 재검증 대상.
+</div>
+
+</div>
+</body>
+</html>

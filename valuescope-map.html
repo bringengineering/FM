@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BRING ValueScope — 딜 지도</title>
+<style>
+  :root {
+    --sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --bg: #EEF1F7; --surface: #FFFFFF; --surface-2: #F3F5FA;
+    --ink: #131A26; --ink-2: #46536B; --muted: #7A879C;
+    --line: #E1E6EF; --line-strong: #CBD3E1; --accent: #1B4FD8;
+    --go: #17916B; --go-bg: #E4F1EB;
+    --cond: #C77A0A; --cond-bg: #F6ECDA;
+    --review: #3E63C7; --review-bg: #E5EAF8;
+    --nogo: #C4362F; --nogo-bg: #F7E4E2;
+    --shadow: 0 1px 2px rgba(19,26,38,.06), 0 8px 24px rgba(19,26,38,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0B0F17; --surface:#131A27; --surface-2:#1A2231;
+      --ink:#EAF0F8; --ink-2:#A9B6CC; --muted:#6E7C93;
+      --line:#26313F; --line-strong:#33404F; --accent:#5385F0;
+      --go:#34B88E; --go-bg:#12271F; --cond:#E0A83A; --cond-bg:#2A2213;
+      --review:#6E90E8; --review-bg:#161F33; --nogo:#E8635B; --nogo-bg:#2A1614;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+  .mono { font-family:var(--mono); font-variant-numeric: tabular-nums; }
+
+  .app { display:grid; grid-template-rows:auto 1fr; height:100vh; }
+  header {
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    padding:12px 18px; background:var(--surface); border-bottom:1px solid var(--line);
+  }
+  .brand { display:flex; align-items:baseline; gap:10px; }
+  .brand .logo { font-weight:800; font-size:16px; letter-spacing:-.01em; }
+  .brand .logo b { color:var(--accent); }
+  .brand .sub { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .head-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pill { font-family:var(--mono); font-size:11px; padding:4px 9px; border-radius:999px;
+    border:1px solid var(--line-strong); color:var(--ink-2); background:var(--surface); white-space:nowrap; }
+
+  .main { display:grid; grid-template-columns:340px 1fr; min-height:0; }
+  .side { background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  .filters { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:10px; }
+  .filters h1 { margin:0; font-size:14px; letter-spacing:-.01em; }
+  .filters .count { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-family:var(--mono); font-size:11.5px; cursor:pointer; user-select:none;
+    padding:5px 10px; border-radius:999px; border:1px solid var(--line-strong);
+    background:var(--surface); color:var(--ink-2); display:flex; align-items:center; gap:6px; }
+  .chip .dot { width:8px; height:8px; border-radius:50%; }
+  .chip[aria-pressed="true"] { border-color:currentColor; }
+  .chip.go[aria-pressed="true"] { color:var(--go); background:var(--go-bg); }
+  .chip.cond[aria-pressed="true"] { color:var(--cond); background:var(--cond-bg); }
+  .chip.review[aria-pressed="true"] { color:var(--review); background:var(--review-bg); }
+  .chip.nogo[aria-pressed="true"] { color:var(--nogo); background:var(--nogo-bg); }
+
+  .geo { display:flex; gap:6px; }
+  .geo input { flex:1; min-width:0; font:inherit; font-size:12.5px; padding:8px 10px; border-radius:9px;
+    border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); }
+  .geo input:focus { outline:2px solid color-mix(in srgb,var(--accent) 45%,transparent); outline-offset:1px; border-color:var(--accent); }
+  .geo button { font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:8px 12px; border-radius:9px;
+    border:1px solid var(--accent); background:var(--accent); color:#fff; white-space:nowrap; }
+  .geo-result { font-family:var(--mono); font-size:11.5px; color:var(--ink-2); background:var(--surface-2);
+    border-radius:8px; padding:8px 10px; line-height:1.5; }
+  .geo-result.err { color:var(--nogo); background:var(--nogo-bg); }
+  .geo-result b { color:var(--ink); }
+  .pin.search { background:var(--accent); }
+
+  .list { overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:8px; min-height:0; }
+  .deal { text-align:left; width:100%; cursor:pointer; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:12px 13px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:8px;
+    transition:border-color .12s, transform .12s; }
+  .deal:hover { border-color:var(--accent); }
+  .deal.active { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent), var(--shadow); }
+  .deal .row1 { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .deal .name { font-size:13.5px; font-weight:700; letter-spacing:-.01em; }
+  .deal .addr { font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .vbadge { flex:none; font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.04em;
+    padding:3px 8px; border-radius:999px; white-space:nowrap; border:1px solid transparent; }
+  .vbadge.go { color:var(--go); background:var(--go-bg); border-color:color-mix(in srgb,var(--go) 30%,transparent); }
+  .vbadge.cond { color:var(--cond); background:var(--cond-bg); border-color:color-mix(in srgb,var(--cond) 30%,transparent); }
+  .vbadge.review { color:var(--review); background:var(--review-bg); border-color:color-mix(in srgb,var(--review) 30%,transparent); }
+  .vbadge.nogo { color:var(--nogo); background:var(--nogo-bg); border-color:color-mix(in srgb,var(--nogo) 30%,transparent); }
+  .deal .stats { display:flex; gap:14px; font-family:var(--mono); font-size:11.5px; }
+  .deal .stats .s span { color:var(--muted); }
+  .deal .stage { font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+
+  #map { width:100%; height:100%; min-height:0; background:var(--surface-2); }
+
+  /* naver marker pin */
+  .pin { transform:translate(-50%,-100%); font-family:var(--mono); font-weight:800; font-size:11px; color:#fff;
+    padding:5px 9px; border-radius:999px 999px 999px 2px; white-space:nowrap; box-shadow:0 3px 8px rgba(0,0,0,.3);
+    border:2px solid #fff; }
+  .pin.go { background:#17916B; } .pin.cond { background:#C77A0A; }
+  .pin.review { background:#3E63C7; } .pin.nogo { background:#C4362F; }
+
+  /* infowindow card */
+  .iw { font-family:var(--sans); width:280px; padding:14px 15px; color:#131A26; }
+  .iw .top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .iw h2 { margin:0; font-size:15px; letter-spacing:-.01em; }
+  .iw .addr { font-size:11.5px; color:#7A879C; margin-top:2px; }
+  .iw .vbadge { font-size:11px; }
+  .iw .ladder { margin:12px 0; padding:11px 12px; background:#F3F5FA; border-radius:10px; display:flex; justify-content:space-between; }
+  .iw .ladder .c .k { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:#7A879C; }
+  .iw .ladder .c .v { font-family:var(--mono); font-size:14px; font-weight:800; margin-top:2px; }
+  .iw .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px; }
+  .iw .metrics .m { text-align:center; }
+  .iw .metrics .m .k { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:#7A879C; }
+  .iw .metrics .m .v { font-family:var(--mono); font-size:13px; font-weight:700; margin-top:2px; }
+  .iw .risk { font-size:11.5px; color:#46536B; background:#F7E4E2; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+  .iw .btn { display:block; text-align:center; font-size:12.5px; font-weight:700; text-decoration:none;
+    padding:9px; border-radius:9px; background:#1B4FD8; color:#fff; }
+  .iw .btn.ghost { background:#EEF1F7; color:#46536B; }
+
+  .legend { position:absolute; left:356px; bottom:16px; z-index:5; background:var(--surface); border:1px solid var(--line);
+    border-radius:10px; box-shadow:var(--shadow); padding:10px 12px; display:flex; flex-direction:column; gap:6px; font-size:11.5px; }
+  .legend .lg { display:flex; align-items:center; gap:7px; color:var(--ink-2); font-family:var(--mono); }
+  .legend .lg .sw { width:10px; height:10px; border-radius:50%; }
+  .legend .title { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
+
+  .maperr { position:absolute; inset:auto 16px 16px auto; max-width:360px; z-index:9; background:var(--nogo-bg);
+    color:var(--nogo); border:1px solid color-mix(in srgb,var(--nogo) 30%,transparent); border-radius:10px; padding:12px 14px; font-size:12.5px; display:none; }
+  .maperr.on { display:block; }
+
+  .mapwrap { position:relative; min-height:0; }
+  @media (max-width: 780px) {
+    .main { grid-template-columns:1fr; grid-template-rows:minmax(160px,38vh) 1fr; }
+    .legend { left:12px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="logo">BRING <b>ValueScope</b></span>
+      <span class="sub">딜 지도</span>
+    </div>
+    <div class="head-right">
+      <span class="pill">참고용 추정 · 공식 감정평가 아님</span>
+      <span class="pill" id="enginePill">engine —</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside class="side">
+      <div class="filters">
+        <h1>검토 중인 딜 <span class="count" id="count"></span></h1>
+        <div class="chips" id="chips">
+          <button class="chip go" data-v="GO" aria-pressed="true"><span class="dot" style="background:var(--go)"></span>GO</button>
+          <button class="chip cond" data-v="CONDITIONAL_GO" aria-pressed="true"><span class="dot" style="background:var(--cond)"></span>조건부</button>
+          <button class="chip review" data-v="REVIEW" aria-pressed="true"><span class="dot" style="background:var(--review)"></span>추가검토</button>
+          <button class="chip nogo" data-v="NO_GO" aria-pressed="true"><span class="dot" style="background:var(--nogo)"></span>NO-GO</button>
+        </div>
+        <form class="geo" id="geoForm" autocomplete="off">
+          <input id="geoInput" type="text" placeholder="주소로 위치 찾기 (예: 강원 원주시 무실동 …)" />
+          <button type="submit">검색</button>
+        </form>
+        <div class="geo-result" id="geoResult" hidden></div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+
+    <div class="mapwrap">
+      <div id="map"></div>
+      <div class="legend">
+        <div class="title">판정</div>
+        <div class="lg"><span class="sw" style="background:var(--go)"></span>GO · 투자 적합</div>
+        <div class="lg"><span class="sw" style="background:var(--cond)"></span>조건부 GO</div>
+        <div class="lg"><span class="sw" style="background:var(--review)"></span>추가검토</div>
+        <div class="lg"><span class="sw" style="background:var(--nogo)"></span>NO-GO · 부적합</div>
+      </div>
+      <div class="maperr" id="maperr"></div>
+    </div>
+  </div>
+</div>
+
+<script src="./data/valuescope-deals.js"></script>
+<script>
+  const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
+  const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
+  const params = new URLSearchParams(location.search);
+  const isValidKey = v => /^[A-Za-z0-9_-]{8,40}$/.test(v || "");
+  const requestedKey = params.get("ncpKeyId") || localStorage.getItem(NAVER_MAPS_KEY_STORAGE);
+  const NAVER_MAPS_KEY = isValidKey(requestedKey) ? requestedKey : DEFAULT_NAVER_MAPS_KEY;
+  if (requestedKey && isValidKey(requestedKey)) localStorage.setItem(NAVER_MAPS_KEY_STORAGE, requestedKey);
+
+  const DATA = window.VALUESCOPE_DEALS || { center: { lat: 37.3452, lng: 127.9280 }, deals: [], engine_version: "?" };
+  const REPORT_URL = "https://claude.ai/code/artifact/740253cd-e8a6-4ff1-97a7-5ef47938848f";
+
+  const VMETA = {
+    GO:            { cls: "go",     ko: "GO · 투자 적합" },
+    CONDITIONAL_GO:{ cls: "cond",   ko: "조건부 GO" },
+    REVIEW:        { cls: "review", ko: "추가검토" },
+    NO_GO:         { cls: "nogo",   ko: "NO-GO · 부적합" },
+  };
+  const eok = v => v == null ? "—" : (v / 1e8).toFixed(2) + "억";
+  const man = v => v == null ? "—" : Math.round(v / 1e4).toLocaleString() + "만";
+  const pct = v => v == null ? "—" : (v * 100).toFixed(1) + "%";
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const els = {
+    list: document.getElementById("list"),
+    count: document.getElementById("count"),
+    chips: document.getElementById("chips"),
+    err: document.getElementById("maperr"),
+  };
+  document.getElementById("enginePill").textContent = "engine v" + (DATA.engine_version || "?");
+
+  const active = new Set(["GO", "CONDITIONAL_GO", "REVIEW", "NO_GO"]);
+  let map, infoWindow;
+  let searchMarker = null;
+  const markers = {};
+
+  function visibleDeals() { return DATA.deals.filter(d => active.has(d.verdict)); }
+
+  function infoHTML(d) {
+    const m = VMETA[d.verdict];
+    const riskLine = d.hard_stops.length ? d.hard_stops[0]
+      : d.conditions.length ? d.conditions[0]
+      : d.top_risks.length ? d.top_risks[0] : null;
+    const reportBtn = d.verdict === "GO"
+      ? `<a class="btn" href="${REPORT_URL}" target="_blank" rel="noopener">상세 리포트 열기 →</a>`
+      : `<a class="btn ghost" href="${REPORT_URL}" target="_blank" rel="noopener">리포트 예시 보기</a>`;
+    return `
+      <div class="iw">
+        <div class="top">
+          <div><h2>${esc(d.name)}</h2><div class="addr">${esc(d.address)} · ${esc(d.asset_type)} · ${d.unit_count}호</div></div>
+          <span class="vbadge ${m.cls}">${esc(m.ko.split(" ")[0])}</span>
+        </div>
+        <div class="ladder">
+          <div class="c"><div class="k">매도호가</div><div class="v">${eok(d.asking_price)}</div></div>
+          <div class="c"><div class="k">권장</div><div class="v" style="color:#1B4FD8">${eok(d.recommended_price)}</div></div>
+          <div class="c"><div class="k">절대 상한가</div><div class="v" style="color:#C4362F">${eok(d.walkaway_price)}</div></div>
+        </div>
+        <div class="metrics">
+          <div class="m"><div class="k">DSCR</div><div class="v">${d.dscr ?? "—"}</div></div>
+          <div class="m"><div class="k">IRR</div><div class="v">${pct(d.irr)}</div></div>
+          <div class="m"><div class="k">자기자본</div><div class="v">${eok(d.required_equity)}</div></div>
+          <div class="m"><div class="k">하방DSCR</div><div class="v" style="color:${d.downside_dscr < 1 ? "#C4362F" : "inherit"}">${d.downside_dscr ?? "—"}</div></div>
+        </div>
+        ${riskLine ? `<div class="risk">⚠ ${esc(riskLine)}</div>` : ""}
+        ${reportBtn}
+      </div>`;
+  }
+
+  function renderList() {
+    const ds = visibleDeals();
+    els.count.textContent = `(${ds.length}/${DATA.deals.length})`;
+    els.list.innerHTML = "";
+    ds.forEach(d => {
+      const m = VMETA[d.verdict];
+      const btn = document.createElement("button");
+      btn.className = "deal";
+      btn.dataset.id = d.id;
+      btn.innerHTML = `
+        <div class="row1">
+          <div><div class="name">${esc(d.name)}</div><div class="addr">${esc(d.address)}</div></div>
+          <span class="vbadge ${m.cls}">${esc(m.ko.split(" ")[0])}</span>
+        </div>
+        <div class="stats">
+          <span class="s"><span>상한가</span> ${eok(d.walkaway_price)}</span>
+          <span class="s"><span>DSCR</span> ${d.dscr ?? "—"}</span>
+          <span class="s"><span>IRR</span> ${pct(d.irr)}</span>
+        </div>
+        <div class="stage">${esc(d.stage)}</div>`;
+      btn.addEventListener("click", () => focusDeal(d.id));
+      els.list.appendChild(btn);
+    });
+  }
+
+  function setActiveCard(id) {
+    document.querySelectorAll(".deal").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  }
+
+  function focusDeal(id) {
+    const d = DATA.deals.find(x => x.id === id);
+    if (!d || !map) return;
+    setActiveCard(id);
+    map.panTo(new naver.maps.LatLng(d.lat, d.lng));
+    if (markers[id]) {
+      infoWindow.setContent(infoHTML(d));
+      infoWindow.open(map, markers[id]);
+    }
+  }
+
+  function renderMarkers() {
+    Object.values(markers).forEach(mk => mk.setMap(null));
+    for (const k in markers) delete markers[k];
+    const bounds = new naver.maps.LatLngBounds();
+    visibleDeals().forEach(d => {
+      const m = VMETA[d.verdict];
+      const pos = new naver.maps.LatLng(d.lat, d.lng);
+      const marker = new naver.maps.Marker({
+        position: pos, map,
+        title: d.name,
+        icon: {
+          content: `<div class="pin ${m.cls}">${esc(d.verdict === "CONDITIONAL_GO" ? "조건부" : d.verdict.replace("_", "-"))}</div>`,
+          anchor: new naver.maps.Point(0, 0),
+        },
+      });
+      naver.maps.Event.addListener(marker, "click", () => {
+        setActiveCard(d.id);
+        infoWindow.setContent(infoHTML(d));
+        infoWindow.open(map, marker);
+      });
+      markers[d.id] = marker;
+      bounds.extend(pos);
+    });
+    if (visibleDeals().length) map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+  }
+
+  function refresh() { renderList(); if (map) renderMarkers(); }
+
+  function setupChips() {
+    els.chips.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const v = chip.dataset.v;
+        if (active.has(v)) active.delete(v); else active.add(v);
+        chip.setAttribute("aria-pressed", active.has(v));
+        refresh();
+      });
+    });
+  }
+
+  function showErr(msg) { els.err.textContent = msg; els.err.classList.add("on"); }
+
+  function initMap() {
+    map = new naver.maps.Map("map", {
+      center: new naver.maps.LatLng(DATA.center.lat, DATA.center.lng),
+      zoom: 13, minZoom: 7, mapDataControl: false,
+    });
+    infoWindow = new naver.maps.InfoWindow({ borderWidth: 0, backgroundColor: "transparent", disableAnchor: false, pixelOffset: new naver.maps.Point(0, -8) });
+    renderMarkers();
+    geocodeMissingDeals();
+  }
+
+  // Naver Geocoding (client-side, via submodules=geocoder). Requires the NCP
+  // Maps key to have the Geocoding sub-service enabled.
+  function geocodeAddress(addr, cb) {
+    if (!(window.naver && naver.maps && naver.maps.Service)) {
+      cb(null, "지도 로딩 중입니다. 잠시 후 다시 시도해 주세요."); return;
+    }
+    naver.maps.Service.geocode({ query: addr }, function (status, res) {
+      if (status !== naver.maps.Service.Status.OK || !res.v2 || !(res.v2.addresses || []).length) {
+        cb(null, "주소를 찾지 못했습니다. (키에 Geocoding 서비스가 활성화됐는지, 주소 형식을 확인해 주세요)"); return;
+      }
+      var a = res.v2.addresses[0];
+      cb({ lat: parseFloat(a.y), lng: parseFloat(a.x), road: a.roadAddress, jibun: a.jibunAddress }, null);
+    });
+  }
+
+  function geocodeMissingDeals() {
+    DATA.deals.filter(d => (d.lat == null || d.lng == null) && d.address).forEach(d => {
+      geocodeAddress(d.address, r => { if (r) { d.lat = r.lat; d.lng = r.lng; refresh(); } });
+    });
+  }
+
+  function setupGeo() {
+    const form = document.getElementById("geoForm");
+    const input = document.getElementById("geoInput");
+    const out = document.getElementById("geoResult");
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      out.hidden = false; out.classList.remove("err"); out.textContent = "검색 중…";
+      geocodeAddress(q, (r, err) => {
+        if (err) { out.classList.add("err"); out.textContent = err; return; }
+        out.classList.remove("err");
+        out.innerHTML = `<b>${esc(r.road || r.jibun || q)}</b><br>좌표 ${r.lat.toFixed(5)}, ${r.lng.toFixed(5)} — 이 좌표를 딜 데이터에 넣으면 핀으로 표시됩니다.`;
+        const pos = new naver.maps.LatLng(r.lat, r.lng);
+        if (searchMarker) searchMarker.setMap(null);
+        searchMarker = new naver.maps.Marker({
+          position: pos, map, zIndex: 1000,
+          icon: { content: `<div class="pin search">검색</div>`, anchor: new naver.maps.Point(0, 0) },
+        });
+        map.setCenter(pos); map.setZoom(15);
+      });
+    });
+  }
+
+  function loadNaverMaps() {
+    window.navermap_authFailure = () => showErr("네이버 지도 인증 실패 — 네이버 클라우드 콘솔 Web 서비스 URL에 이 사이트 주소를 등록해야 합니다.");
+    window.__vsNaverReady = () => initMap();
+    const s = document.createElement("script");
+    s.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}&submodules=geocoder&callback=__vsNaverReady`;
+    s.async = true;
+    s.onerror = () => showErr("네이버 지도 SDK 로드가 차단되었습니다. Web 서비스 URL 등록을 확인해 주세요.");
+    document.head.appendChild(s);
+    setTimeout(() => { if (!map && (!window.naver || !window.naver.maps)) showErr("네이버 지도 응답 지연 — 새로고침하거나 API 키(Web 서비스 URL 등록)를 확인해 주세요."); }, 6000);
+  }
+
+  setupChips();
+  setupGeo();
+  renderList();
+  loadNaverMaps();
+</script>
+</body>
+</html>
