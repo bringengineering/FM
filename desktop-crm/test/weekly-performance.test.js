@@ -68,12 +68,29 @@ test('renderWorkOrders preserves raw records through mine/all performance scope'
  let captured;
  const ctx={window:{},main:{innerHTML:''},workOrderState:{orders,performanceOrders:orders,projects:[{id:'p',name:'가상',status:'active'}],scope:'mine',uid:'u'},workOrderCore:()=>require('../src/work-order-core'),projectCore:()=>require('../src/project-core'),todayKey:()=>'2026-09-14',esc:String,refreshButton:()=>'',weeklyExecutionPanel:()=>'',weeklyPerformancePanel:rows=>{captured=core().summarize({orders:rows,asOf:'2026-09-14'});return '';}};
  for(const name of ['dueSoonBoard','directiveBoard','capacityBoard','assigneeBoard','ganttBoard','workOrderCard'])ctx[name]=()=>'';
+ ctx.workOrderState.projectId='p';
  vm.createContext(ctx);vm.runInContext(render,ctx);vm.runInContext('renderWorkOrders()',ctx);
  assert.equal(captured.diagnostics.unknownStatus,1);assert.equal(captured.diagnostics.cancelled,1);assert.equal(captured.diagnostics.idless,1);assert.equal(captured.diagnostics.undated,2);
  assert.equal(captured.counts.total,2);assert.equal(captured.counts.overdue,0);
  const row=captured.rows.find(r=>r.id==='raw');assert.equal(row.reviewNote,rawNote);assert.equal(row.results[0].note,rawNote);assert.equal(row.results[0].title,' 원본 제목 ');
  ctx.workOrderState.scope='all';vm.runInContext('renderWorkOrders()',ctx);assert.equal(captured.counts.total,3);assert.equal(captured.counts.done,1);assert.ok(!captured.rows.some(r=>r.id==='elsewhere'));
  ctx.workOrderState.projectId='__none';vm.runInContext('renderWorkOrders()',ctx);assert.equal(captured.counts.total,1);assert.equal(captured.rows[0].id,'unassigned');
+ ctx.workOrderState.projectId='__all';vm.runInContext('renderWorkOrders()',ctx);
+ assert.equal(captured.counts.total,5,'all projects include assigned and unlinked reports');
+ assert.ok(ctx.main.innerHTML.includes('data-wo-project="__all"'),'explicit all-projects tab');
+ ctx.workOrderState.projectId='';vm.runInContext('renderWorkOrders()',ctx);
+ assert.equal(captured.counts.total,5,'initial view must not silently select first project');
+ ctx.workOrderState.projectId='removed';vm.runInContext('renderWorkOrders()',ctx);
+ assert.equal(captured.counts.total,5,'removed selection falls back to all projects');
+ ctx.weeklyPerformancePanel=(_rows,label)=>label;vm.runInContext('renderWorkOrders()',ctx);
+ assert.ok(ctx.main.innerHTML.includes('전체 프로젝트 · 전체'),'performance heading matches the all-project scope');
+});
+test('stale project selection uses all orders for timeline actions too',()=>{
+ const fn=source('app.js').match(/  function currentProjectOrders\(P\) \{[\s\S]*?\n  \}/)[0];
+ const orders=[{id:'one',projectId:'p'},{id:'two',projectId:''}];
+ const ctx={workOrderState:{projectId:'removed',projects:[{id:'p'}],orders}};
+ vm.createContext(ctx);vm.runInContext(fn,ctx);
+ assert.equal(ctx.currentProjectOrders(require('../src/project-core')).length,2);
 });
 async function remoteLoad(payload){
  const remote=source('remote.js'),start=remote.indexOf('  async loadWorkOrders() {'),end=remote.indexOf('\n  // 1on1',start);
@@ -81,11 +98,17 @@ async function remoteLoad(payload){
  vm.createContext(ctx);vm.runInContext(`globalThis.client={${remote.slice(start,end)}}`,ctx);
  Object.assign(ctx.client,{requireOfficeSession:()=>({uid:'u',role:'admin'}),captureSessionGuard:()=>({}),assertSessionGuardActive:()=>{},dbRequest:async key=>key==='workOrders'?payload:null});return ctx.client.loadWorkOrders();
 }
-async function appLoad(data){
+async function appLoad(data,previous={}){
  const app=source('app.js'),start=app.indexOf('  async function loadWorkOrders()'),end=app.indexOf('  function updateWorkOrderBadge()',start);
- const ctx={workOrderState:{orders:[],loading:false},currentView:'workOrders',api:{loadWorkOrders:async()=>data},renderWorkOrders:()=>{},updateWorkOrderBadge:()=>{}};
+ const ctx={workOrderState:{orders:[],loading:false,...previous},currentView:'workOrders',api:{loadWorkOrders:async()=>data},renderWorkOrders:()=>{},updateWorkOrderBadge:()=>{}};
  vm.createContext(ctx);vm.runInContext(app.slice(start,end),ctx);await ctx.loadWorkOrders();return ctx.workOrderState;
 }
+test('initial administrator sees all employees while employee remains mine',async()=>{
+ assert.equal((await appLoad({admin:true,uid:'admin',orders:[]})).scope,'all');
+ assert.equal((await appLoad({admin:false,uid:'member',orders:[]})).scope,'mine');
+ assert.equal((await appLoad({admin:true,uid:'admin',orders:[]},{uid:'admin',scope:'mine'})).scope,'mine','refresh preserves explicit mine filter');
+ assert.equal((await appLoad({admin:false,uid:'admin',orders:[]},{uid:'admin',scope:'all'})).scope,'mine','role downgrade restores employee scope');
+});
 test('remote read projection preserves known raw fields with authoritative IDs through app loader',async()=>{
  const note='  '+ '원문'.repeat(600)+'  ';
  const data=await remoteLoad({dbKey:{id:'forged',projectId:'p',assigneeUid:'u',title:'  title  ',status:'future',startDate:'bad',dueDate:'2026-09-10',updatedAt:'invalid',reviewNote:note,secret:'excluded',results:[{id:'r',title:' title ',note,secret:'excluded',webViewLink:'javascript:bad'}]}});

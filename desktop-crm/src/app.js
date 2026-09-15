@@ -5012,6 +5012,8 @@
       workOrderState.directives = Array.isArray(data && data.directives) ? data.directives : [];
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
+      const nextWorkOrderUid = String((data && data.uid) || "");
+      if (workOrderState.uid !== nextWorkOrderUid) workOrderState.scope = workOrderState.admin ? "all" : "mine";
       workOrderState.uid = String((data && data.uid) || "");
       if (!workOrderState.admin) workOrderState.scope = "mine";
       workOrderState.loaded = true;
@@ -5369,13 +5371,13 @@
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
-    const selected = workOrderState.projectId && (workOrderState.projectId === "__none" || projects.some(item => item.id === workOrderState.projectId))
+    const selected = workOrderState.projectId && (["__all", "__none"].includes(workOrderState.projectId) || projects.some(item => item.id === workOrderState.projectId))
       ? workOrderState.projectId
-      : (projects[0] ? projects[0].id : "");
+      : "__all";
     const project = projects.find(item => item.id === selected) || null;
     // 프로젝트에 안 붙은 지시도 갈 곳이 있어야 한다. 안 그러면 그 지시는
     // 어느 화면에서도 안 보인다.
-    const orders = selected === "__none"
+    const orders = selected === "__all" ? workOrderState.orders : selected === "__none"
       ? workOrderState.orders.filter(item => !item.projectId)
       : P.ordersOf(workOrderState.orders, selected);
     const scoped = workOrderState.scope === "mine"
@@ -5384,7 +5386,7 @@
     // The separate server projection keeps raw validation inputs and notes.
     // Do not fall back to normalized card records when it is unavailable.
     const performanceProjectOrders = (workOrderState.performanceOrders || []).filter(item => item &&
-      (selected === "__none" ? !item.projectId : String(item.projectId || "").trim() === selected));
+      (selected === "__all" || (selected === "__none" ? !item.projectId : String(item.projectId || "").trim() === selected)));
     const performanceScoped = workOrderState.scope === "mine"
       ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
       : performanceProjectOrders;
@@ -5396,6 +5398,7 @@
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
 
     const tabs = [
+      { id: "__all", label: "전체 프로젝트", status: "" },
       ...projects.map(item => ({ id: item.id, label: item.name, status: item.status })),
       ...(orphans ? [{ id: "__none", label: `프로젝트 없음 (${orphans})`, status: "" }] : []),
     ].map(item => `<button type="button" class="wo-project-tab${item.id === selected ? " is-active" : ""}" data-wo-project="${esc(item.id)}">
@@ -5426,7 +5429,7 @@
       <header class="wo-action-heading"><h3>${workOrderState.scope === "mine" ? "내 업무 · 결과 제출" : "업무 목록 · 제출 결과 검수"}</h3><p>${workOrderState.loading ? "업무를 불러오는 중입니다." : workOrderState.error ? "조회 오류를 확인한 뒤 다시 불러와 주세요." : "업무별 완료 기준을 확인하고 결과물과 증빙을 제출하세요. 제출 후 대표 검수를 거칩니다."}</p></header>
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>
       <details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>
-      ${weeklyPerformancePanel(performanceScoped, `${project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today)}
+      ${weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today)}
       </details>
       <details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>
       <p class="wo-progress-definition">입력된 진행률 평균: ${workOrderState.loading || workOrderState.error || !workOrderState.loaded ? "조회 확인 필요" : summary.total ? `${summary.progress}%` : "대상 없음"} · 업무에 입력한 진행률의 평균이며, 완료 건수 비율과 다릅니다.</p>
@@ -6480,7 +6483,9 @@
   }
 
   function currentProjectOrders(P) {
+    if (!workOrderState.projectId || workOrderState.projectId === "__all") return workOrderState.orders;
     if (workOrderState.projectId === "__none") return workOrderState.orders.filter(item => !item.projectId);
+    if (!(workOrderState.projects || []).some(item => item.id === workOrderState.projectId)) return workOrderState.orders;
     return P.ordersOf(workOrderState.orders, workOrderState.projectId);
   }
 
