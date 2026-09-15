@@ -23,8 +23,33 @@
    HTMLCanvasElement.prototype.getContext=function(type,...args){return /webgl/i.test(type)?null:originalContext.call(this,type,...args);};
  }
  let user={uid:'preview-only',email:'preview@example.invalid',name:'테스트 담당자',accessRole:'admin',role:'admin',officeAdmin:true};
+ const weeklyPreview=new URLSearchParams(location.search).get('weeklySeed')==='1';
+ const performancePreview=new URLSearchParams(location.search).get('performanceSeed')==='1';
+ if(weeklyPreview&&new URLSearchParams(location.search).get('weeklyRole')==='member')user={...user,role:'member',accessRole:'member',officeAdmin:false};
  const methods={authState:async()=>({required:false,user}),load:async()=>{listeners.onSyncState?.({status:'connected',message:'가상 데이터 · 서버 연결 차단'});return clone();},dataPath:async()=>'가상 데이터 — 서버 접근 없음',loadCustomerPhotos:async()=>({}),loadCanonicalBuildingUnits:async()=>[],loadFieldSummaries:async()=>({}),loadFieldTeamProfiles:async()=>[],loadOperations:async()=>({cases:[],payments:{},caseSettings:{}}),loadWorkflowVendors:async()=>[],loadDriveImportCandidates:async()=>[],loadWorkReports:async()=>[],updateState:async()=>({status:'disabled',message:'미리보기'}),loadOffice:async()=>({}),loadContractSources:async()=>({})};
  window.bringCRM=new Proxy(methods,{get(target,key){if(key in target)return target[key];if(String(key).startsWith('on'))return callback=>{listeners[key]=callback;};if(/^(save|commit|delete|remove|create|send|login|logout|change|upload|import|restore|openExternal)/i.test(String(key)))return async()=>{blockedWrites++;throw new Error('테스트 실행: 쓰기/외부 작업 차단');};return async()=>({});}});
+ // Do not let the catch-all proxy advertise desktop-only recovery capability.
+ // Only the explicit synthetic recovery scenario below implements these methods.
+ Object.assign(methods,{loadWorkOutcomeDraft:undefined,saveWorkOutcomeDraft:undefined,clearWorkOutcomeDraft:undefined});
+ if(new URLSearchParams(location.search).get('recoverySeed')==='1') {
+   // Synthetic in-memory recovery only: no real file, customer or server access.
+   const drafts=new Map([['performance-3',{baseReport:'',savedAt:new Date().toISOString(),draft:{summary:'가상 복구 초안: 공간 사진 8곳 확인',contribution:'',blockers:'',nextAction:'',decisionRequest:'',metrics:[],evidence:[{title:'가상 증빙',url:'https://example.com/proof'}]}}]]);
+   methods.loadWorkOutcomeDraft=async({orderId})=>structuredClone(drafts.get(orderId)||null);
+   methods.saveWorkOutcomeDraft=async({orderId,value})=>{const savedAt=new Date().toISOString();drafts.set(orderId,{...structuredClone(value),savedAt});return {savedAt};};
+   methods.clearWorkOutcomeDraft=async({orderId})=>{drafts.delete(orderId);return {ok:true};};
+ }
+ // Explicit synthetic records for editor-only QA. The proxy still blocks work-order saves.
+ if(weeklyPreview||performancePreview)methods.loadWorkOrders=async()=>({
+   admin:user.accessRole==='admin',canWork:true,uid:user.uid,orders:performancePreview?['assigned','doing','submitted','returned','done'].map((status,index)=>({id:`performance-${index}`,title:`가상 성과 점검 ${index+1}`,projectId:'preview-project-0',assigneeUid:user.uid,status,startDate:'2026-09-14',dueDate:'2026-09-18',updatedAt:'2026-09-14T00:00:00Z',reviewNote:index===3?'가상 검수 의견: 보완 필요':'',results:index>=2?[{id:`result-${index}`,title:'가상 결과물',note:'가상 제출 메모 · 실제 성과 아님'}]:[]})):[],capacity:[],directives:[],
+   members:[{uid:'preview-only',displayName:'가상 대표'},{uid:'preview-member',displayName:'가상 직원'}],
+   projects:Array.from({length:6},(_,index)=>({id:`preview-project-${index}`,name:`가상 프로젝트 ${index+1}`,status:'active'}))
+ });
+ if(weeklyPreview||performancePreview) {
+   const loadPreviewOrders=methods.loadWorkOrders;
+   methods.loadWorkOrders=async()=>{const value=await loadPreviewOrders();
+     if(value.orders[2])value.orders[2].outcomeReport=JSON.stringify({summary:'가상 결과: 공간 사진 확인 · 실제 회사 실적 아님',contribution:'가상 촬영 담당',blockers:'가상 미확인 공간 2곳',nextAction:'가상 재방문 일정 확인',decisionRequest:'가상 출입 승인 요청',metrics:[{label:'가상 촬영 공간',target:10,actual:8,unit:'곳'}],evidence:[{title:'가상 증빙',url:'https://example.com/proof'}]});
+     return {...value,performanceOrders:JSON.parse(JSON.stringify(value.orders))};};
+ }
  if(new URLSearchParams(location.search).has('unifiedSeed')) methods.loadCanonicalBuildingUnits=async()=>[
    {id:'unit-preview-101',crmBuildingId:'b1',label:'가상 101호',floorLabel:'1층',status:'vacant'},
    {id:'unit-preview-other',crmBuildingId:'b2',label:'다른 건물 201호',floorLabel:'2층',status:'occupied'}

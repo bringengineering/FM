@@ -62,6 +62,7 @@
   const COLUMN_WORDS = Object.freeze([
     { key: "title", words: ["업무명", "업무", "과업", "일", "제목", "task"] },
     { key: "why", words: ["목적", "왜", "배경", "이유"] },
+    { key: "what", words: ["진행방법", "수행내용", "작업내용", "무엇을어떻게", "what"] },
     { key: "doneWhen", words: ["완료기준", "완료", "기준", "done"] },
     { key: "deliverable", words: ["산출물", "결과물", "파일", "제출물"] },
     { key: "hours", words: ["시간", "예상시간", "소요시간", "예상"] },
@@ -116,7 +117,7 @@
   // 여러 칸 띄어져 온다. 둘 다 받는다.
   const splitCells = line => (line.includes("\t")
     ? line.split("\t")
-    : line.split(/ {2,}|\s*\|\s*/u)).map(cell => text(cell, 500));
+    : line.split(/ {2,}|\s*\|\s*/u)).map(cell => String(cell).trim());
 
   const meaningful = cells => cells.filter(cell => cell).length;
 
@@ -130,7 +131,11 @@
       if (key && !(key in map)) map[key] = index;
     });
     const found = Object.keys(map).length;
-    return found >= 2 && "title" in map ? map : null;
+    // A sentence beginning with "일" is not a task-column label.
+    // Require the title cell to be a complete known label before replacing columns.
+    const titleLabel = "title" in map && COLUMN_WORDS.find(item => item.key === "title")
+      .words.some(word => bare(word) === bare(cells[map.title]));
+    return found >= 2 && titleLabel ? map : null;
   }
 
   function readTask(cells, columns) {
@@ -140,6 +145,7 @@
     return {
       title: title.slice(0, 120),
       why: at("why"),
+      ...("what" in columns ? { what: String(cells[columns.what] || "").trim() } : {}),
       doneWhen: at("doneWhen").slice(0, 1000),
       deliverable: at("deliverable").slice(0, 200),
       hours: numberOf(at("hours")),
@@ -329,6 +335,7 @@
       if (!task.doneWhen) problems.push("완료 기준이 비어 있습니다.");
       if (!task.hours) problems.push("예상 시간이 없습니다.");
       if (!task.deliverable) problems.push("산출물이 비어 있습니다.");
+      if ((task.what || "").length > 2000) problems.push("진행방법은 2,000자 이내로 정리해 주세요. 원문은 붙여넣기 칸에 유지됩니다.");
       return Object.assign({}, task, {
         index,
         problems,
@@ -336,7 +343,7 @@
         // 제목이 같은 게 정상이다.
         duplicate: existing.includes(bare(task.title)),
         // 그대로 지시로 낼 수 있는가. 왜·무엇을·완료 기준이 있어야 한다.
-        ready: Boolean(task.title && task.why && task.doneWhen),
+        ready: Boolean(task.title && task.why && task.doneWhen && (task.what || "").length <= 2000),
       });
     });
 
@@ -346,7 +353,7 @@
     if (!tasks.length) blockers.push("업무 줄을 하나도 못 읽었습니다.");
     const notReady = tasks.filter(task => !task.ready);
     if (tasks.length && notReady.length) {
-      blockers.push(`왜·완료 기준이 없어 지시로 낼 수 없는 줄이 ${notReady.length}건 있습니다: ${notReady.map(task => task.title).join(", ")}`);
+      blockers.push(`지시로 낼 수 없는 줄이 ${notReady.length}건 있습니다. 목적·완료 기준 또는 진행방법 2,000자 제한을 확인해 주세요: ${notReady.map(task => task.title).join(", ")}`);
     }
 
     const notes = [];
@@ -363,6 +370,8 @@
     return {
       ok: blockers.length === 0,
       uid,
+      projectId: text(settings.projectId, 80),
+      sourcePaste: String(settings.paste == null ? "" : settings.paste),
       name: text(settings.name, 80) || text(header.recipient, 80),
       weekStart: text(settings.weekStart, 10) || text(header.weekStart, 10),
       directive: {

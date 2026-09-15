@@ -9,6 +9,21 @@ class Node {
 }
 const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
 const visit=n=>[n,...n.children.flatMap(visit)];
+test('desktop embedded header shares one row without shrinking the model or narrow layout',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const css=fs.readFileSync(path.join(__dirname,'../src/building-atlas/customer-workspace.css'),'utf8');
+ assert.match(css,/@media\s*\(min-width:701px\)/);
+ assert.match(css,/\.customer-atlas-stage \.crm-atlas > \*\s*\{\s*grid-column:1 \/ -1/);
+ assert.match(css,/\.customer-atlas-stage \.crm-atlas #atlas-status\s*\{[^}]*grid-column:2/);
+});
+test('compact customer chooser exposes current selection and closes after successful selection',async()=>{
+ const s=await setup();const toggle=s.host.querySelector('#customer-atlas-chooser-toggle');
+ assert.ok(toggle,'compact selector toggle exists');assert.equal(toggle['aria-expanded'],'false');
+ toggle.onclick();assert.equal(toggle['aria-expanded'],'true');
+ await s.handle.select(null,'b');
+ const current=s.host.querySelector('#customer-atlas-chooser-toggle');assert.equal(current['aria-expanded'],'false');
+ assert.equal(current['aria-controls'],'customer-atlas-choices');s.handle.dispose();
+});
 test('model column owns its heading and related records independently of profile',async()=>{
  const s=await setup();
  const column=visit(s.host).find(n=>n.className==='customer-atlas-model-column');

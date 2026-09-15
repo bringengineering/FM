@@ -205,6 +205,7 @@
       dueDate: isDate(source.dueDate) ? text(source.dueDate, 10) : "",
       status: isStatus(source.status) ? source.status : "assigned",
       reviewNote: text(source.reviewNote, 500),
+      ...(typeof source.outcomeReport === "string" ? { outcomeReport: source.outcomeReport } : {}),
       results: rows(source.results).map(normalizeResult).filter(item => item.id && item.driveFileId),
       createdBy: text(source.createdBy, 80),
       createdAt: text(source.createdAt, 40),

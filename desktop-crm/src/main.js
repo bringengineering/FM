@@ -19,6 +19,8 @@ const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
+const WorkOutcomeDocx = require("./work-outcome-docx");
+const WorkOutcomePptx = require("./work-outcome-pptx");
 const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
 const { createDailyLogWorkbook, dailyLogWorkbookFileName } = require("./daily-log-xlsx");
 const { createMonthlyDailyLogWorkbook, monthlyDailyLogWorkbookFileName } = require("./daily-log-monthly-xlsx");
@@ -1639,6 +1641,27 @@ async function clearFieldAuthQuarantineMarker() {
 }
 
 let localStoreCoordinator = null;
+let workOutcomeDraftStore = null;
+function getWorkOutcomeDraftStore() {
+  if (!workOutcomeDraftStore) workOutcomeDraftStore = require('./work-outcome-draft-store').create({
+    fs, directory: path.join(path.dirname(dataFile()), 'work-outcome-drafts-v1'),
+    encode: value => encodeProtectedJson(safeStorage, value),
+    decode: raw => decodeProtectedJson(safeStorage, raw),
+  });
+  return workOutcomeDraftStore;
+}
+
+async function handleWorkOutcomeDraft(action, input) {
+  if (!remoteClient) throw new Error('다시 로그인해 주세요.');
+  const session = remoteClient.requireOfficeSession();
+  if (!['admin', 'member'].includes(session.role) || isMarketingOnlySession()) throw new Error('업무 초안 접근 권한이 없습니다.');
+  if (!['load', 'save', 'clear'].includes(action)) throw new Error('허용되지 않은 초안 요청입니다.');
+  const guard = remoteClient.captureSessionGuard();
+  const scope = { company: `${remoteClient.firebase.databaseUrl}/${remoteClient.databaseRoot || ''}`, uid: session.uid, orderId: input && input.orderId };
+  const active = () => remoteClient.sessionGuardActive(guard);
+  const store = getWorkOutcomeDraftStore();
+  return action === 'save' ? store.save(scope, input.value, active) : store[action](scope, active);
+}
 
 function getLocalStoreCoordinator() {
   if (!localStoreCoordinator) {
@@ -3159,6 +3182,8 @@ const DOCUMENT_MIME = {
   pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
   heic: "image/heic", doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   hwp: "application/x-hwp", hwpx: "application/vnd.hancom.hwpx",
@@ -3561,6 +3586,30 @@ async function uploadWorkReportPhoto(input) {
 //
 // 사진은 여기서 Drive 에서 받아 data: 로 박는다. 링크로 두면 받은 사람의
 // PDF 에서는 아예 안 열린다.
+// Authenticated local export. No report or workflow mutation on the company server.
+// Release gate: native DOCX layout review is still required before distribution.
+async function exportWorkOutcomeDocument(input) {
+  const format = input && input.format === undefined ? "docx" : input && input.format;
+  if (!["docx", "pptx"].includes(format)) throw new Error("지원하지 않는 보고서 파일 형식입니다.");
+  if (!remoteClient || !authState().user) throw new Error("다시 로그인해 주세요.");
+  if (isMarketingOnlySession()) throw new Error("업무 결과보고 조회 권한이 없습니다.");
+  const guard = remoteClient.captureSessionGuard();
+  const bundle = await remoteClient.prepareWorkOutcomeExport(input);
+  remoteClient.assertSessionGuardActive(guard);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: `주간 업무 결과보고서 ${format === "docx" ? "Word" : "PowerPoint"} 저장`,
+    defaultPath: `BRING_주간결과보고_${bundle.from}_${bundle.to}.${format}`,
+    filters: [{ name: format === "docx" ? "Word 문서" : "PowerPoint 발표자료", extensions: [format] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  remoteClient.assertSessionGuardActive(guard);
+  if (path.extname(result.filePath).toLowerCase() !== `.${format}`) throw new Error(`파일 확장자 .${format}로 저장해 주세요.`);
+  const bytes = (format === "docx" ? WorkOutcomeDocx : WorkOutcomePptx).create(bundle);
+  remoteClient.assertSessionGuardActive(guard);
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, filePath: result.filePath, format };
+}
+
 async function exportWorkReport(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   // 이 문서에는 건물주 이름·주소와 현장 사진이 담긴다. 마케팅 전용 계정이
@@ -7801,6 +7850,10 @@ secureCanonicalHandle("crm:daily-log-save", input => remoteClient.saveDailyLog(i
 secureCanonicalHandle("crm:daily-log-confirm", input => remoteClient.confirmDailyLog(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
+secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
+secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
+secureCanonicalHandle("crm:work-outcome-draft-save", input => handleWorkOutcomeDraft('save', input));
+secureCanonicalHandle("crm:work-outcome-draft-clear", input => handleWorkOutcomeDraft('clear', input));
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
 secureCanonicalHandle("crm:supply-move-add", input => remoteClient.addSupplyMove(input));
 secureCanonicalHandle("crm:supply-batch-save", input => remoteClient.saveSupplyBatch(input));

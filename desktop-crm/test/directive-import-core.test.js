@@ -2,6 +2,31 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const I = require("../src/directive-import-core");
+test('schedule descriptions must not replace the column header or disappear',()=>{
+  const parsed=I.parseDirective('업무명\t목적\t진행방법\t완료기준\t산출물\n회의 준비\t시간 미확정 상태로 놓치지 않기 위해\t주최 측에 확인한다\t확인 기록을 남긴다\t일정 확인 기록');
+  assert.equal(parsed.tasks.length,1);
+  assert.equal(parsed.tasks[0].title,'회의 준비');
+  assert.equal(parsed.tasks[0].deliverable,'일정 확인 기록');
+  assert.equal(parsed.columns.title,0);
+});
+test('execution text is preserved up to the server limit and over-limit imports are blocked',()=>{
+  for (const length of [501, 1001, 2000, 2001]) {
+    const what='가'.repeat(length);
+    const parsed=I.parseDirective(`업무명\t목적\t진행방법\t완료기준\n현장 점검\t기준 확보\t${what}\t누락 확인`);
+    assert.equal(parsed.tasks[0].what,what);
+    const plan=I.planImport({parsed,uid:'u'});
+    assert.equal(plan.ok,length<=2000);
+    if(length>2000) assert.match(plan.blockers.join(' '),/2,000자/);
+  }
+});
+test('explicit execution instructions survive parsing and import planning',()=>{
+  const parsed=I.parseDirective('업무명\t목적\t진행방법\t완료기준\n현장 점검\t기준 확보\t층별 촬영 후 공간 번호와 연결\t누락 공간 확인');
+  assert.equal(parsed.tasks[0].what,'층별 촬영 후 공간 번호와 연결');
+  const plan=I.planImport({parsed,uid:'u'});
+  assert.equal(plan.tasks[0].what,parsed.tasks[0].what);
+  const app=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
+  assert.match(app,/what: task\.what \|\| task\.why/);
+});
 
 // 구글 시트에서 긁어 붙이면 칸이 탭으로 갈라져 온다. 이게 실제 모양이다.
 const SHEET = [
