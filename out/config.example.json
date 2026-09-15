@@ -1,0 +1,8 @@
+{
+  "_설명": "이 파일을 config.json 으로 복사해 사용하세요. 봇 토큰은 여기에 넣지 말고 환경변수 TELEGRAM_BOT_TOKEN 으로 넘깁니다.",
+  "telegram_bot_username": "bring_task_bot",
+  "recipients": {
+    "hyunjin": { "name": "김현진", "chat_id": "6974927146" },
+    "woojung": { "name": "황우중", "chat_id": "8739295337" }
+  }
+}
