@@ -232,6 +232,7 @@ test('the structured notification shortcut opens the matching Messenger conversa
   assert.ok(start >= 0 && end > start);
   const calls = [];
   const context = vm.createContext({
+    buildingAtlasView: null,
     workspaceCoordinator: { select: async value => calls.push(['workspace', value]) },
     render: () => calls.push(['render']),
     window: { BringOffice: { openConversation: async peerId => calls.push(['conversation', peerId]) } },

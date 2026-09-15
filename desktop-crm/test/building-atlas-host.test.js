@@ -1,6 +1,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const load=()=>import('../src/building-atlas/crm-host.mjs');
+test('host reference callbacks reject cross-building targets and ignore obsolete mounts',async()=>{const seen=[];const s=await setup({onSelectRecord:v=>seen.push(v),validateReference:()=>true});const old=s.mounts[0];assert.equal(old.validateReference({buildingId:'b',type:'unit',id:'u'}),false);assert.equal(old.validateReference({buildingId:'a',type:'unit',id:'u'}),true);old.onSelectRecord({buildingId:'a',record:{id:'r'}});assert.equal(seen.at(-1).record.id,'r');await s.handle.selectBuilding('b');const count=seen.length;old.onSelectRecord({buildingId:'a',record:{id:'late'}});assert.equal(seen.length,count);assert.equal(old.validateReference({buildingId:'a',type:'unit',id:'u'}),false);s.handle.dispose();});
+test('embedded host supports guarded explicit empty selection without falling back to first building',async()=>{const s=await setup({initialBuildingId:null,embedded:true});assert.equal(s.mounts.length,0);assert.equal(typeof s.handle.selectBuilding,'function');assert.equal(await s.handle.selectBuilding('b'),true);assert.deepEqual(s.reads,['b']);s.$('atlas-native').shadowRoot={querySelector:()=>({open:true})};assert.equal(await s.handle.selectBuilding(null),false);assert.equal(s.mounts.length,1);s.handle.dispose();});
 const model=(name='A')=>({version:1,building:{name,address:'주소',floors:1,width:16,depth:12},records:[]});
 class Node {
  constructor(tag,ownerDocument){Object.assign(this,{tag,ownerDocument,children:[],value:'',hidden:false,disabled:false});}

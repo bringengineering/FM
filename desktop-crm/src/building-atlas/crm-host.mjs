@@ -40,10 +40,10 @@ function unwrap(response) {
 }
 
 // mountNative is an optional renderer adapter; IO always remains in this host.
-export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,getBuildingContext=()=>[],confirm:ask=async()=>false,download:sendDownload,mountNative=mountBuildingAtlas,signal}={}) {
+export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,embedded=false,getBuildingContext=()=>[],onSelectRecord=()=>{},validateReference=()=>false,confirm:ask=async()=>false,download:sendDownload,mountNative=mountBuildingAtlas,signal}={}) {
   if(!host?.ownerDocument || !api) throw new TypeError('설비지도 호스트와 회사 API가 필요합니다.');
   const doc=host.ownerDocument, urls=new Set();
-  let basics=buildingBasics(buildings), buildingId=basics.find(b=>b.id===initialBuildingId)?.id || basics[0]?.id || null;
+  let basics=buildingBasics(buildings), buildingId=initialBuildingId===null?null:basics.find(b=>b.id===initialBuildingId)?.id || basics[0]?.id || null;
   let mode='company', disposed=false, epoch=0, importNonce=0, native=null, nativeAbort=null, nativeHost=null;
   let review=null, provisional=false, practiceDirty=false;
   const el=(tag,id,text)=>{const node=doc.createElement(tag);if(id)node.id=id;if(text)node.textContent=text;return node;};
@@ -65,7 +65,7 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
   const stage=el('div','atlas-stage');
   const contextPanel=el('section','atlas-crm-context');contextPanel.setAttribute('aria-label','연결된 CRM 건물 자료');
   function renderContext(){
-    contextPanel.replaceChildren();contextPanel.hidden=mode!=='company'||!current();
+    contextPanel.replaceChildren();contextPanel.hidden=embedded||mode!=='company'||!current();
     if(contextPanel.hidden)return;
     contextPanel.append(el('h3',null,'고객·건물 관리 연동 자료'),el('p',null,'현재 CRM에서 받은 자료 · 조회 전용 · 수정은 고객·건물 관리에서 진행합니다. 모형·백업에는 복사하지 않습니다.'));
     try{
@@ -85,7 +85,9 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
     }catch(_error){contextPanel.append(el('p',null,'CRM 연동 자료를 표시하지 못했습니다. 고객·건물 관리에서 확인해주세요.'));}
   }
   toolbar.append(labelled('CRM 건물',select),labelled('작업 모드',modeSelect),refresh,create,importButton,file);
+  if(embedded){toolbar.children[0].hidden=true;toolbar.children[1].hidden=true;}
   shell.append(toolbar,status,contextPanel,notice,panel,stage);host.replaceChildren(css,shell);create.hidden=true;
+  if(embedded){shell.replaceChildren(toolbar,status,contextPanel,panel,stage,notice);}
   const active=token=>!disposed && token===epoch;
   const current=()=>basics.find(b=>b.id===buildingId);
   const controller=createAtlasController({
@@ -108,7 +110,7 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
     select.replaceChildren(...options);select.value=buildingId||'';renderControls();renderReview();renderContext();
   }
   function clearReview(){importNonce++;review=null;panel.hidden=true;file.value='';renderControls();}
-  function stopNative(){nativeAbort?.abort();nativeAbort=null;native?.dispose?.();native=null;stage.replaceChildren();nativeHost=null;}
+  function stopNative(){nativeAbort?.abort();nativeAbort=null;native?.dispose?.();native=null;stage.replaceChildren();nativeHost=null;onSelectRecord({buildingId,record:null,canWrite:false});}
   function hasDraft(){return provisional||practiceDirty||controller.snapshot().draft!==null||Boolean(nativeHost?.shadowRoot?.querySelector('dialog[open]'));}
   async function requestLeave(){
     if(disposed)return true;
@@ -129,7 +131,9 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
     stopNative();const targetId=practice?'practice':buildingId;
     nativeHost=el('div','atlas-native');stage.append(nativeHost);
     const abort=new AbortController();nativeAbort=abort;
-    const candidate=await mountNative({host:nativeHost,initialPortfolio:portfolio(targetId,model),mode:practice?'practice':'company',canWrite:practice||controller.snapshot().canWrite,confirm:ask,download,signal:abort.signal,
+    const candidate=await mountNative({host:nativeHost,embedded,initialPortfolio:portfolio(targetId,model),mode:practice?'practice':'company',canWrite:practice||controller.snapshot().canWrite,confirm:ask,download,signal:abort.signal,
+      onSelectRecord:selection=>{if(active(token)&&!abort.signal.aborted&&!practice&&mode==='company'&&current()&&selection.buildingId===targetId)onSelectRecord(selection);},
+      validateReference:reference=>active(token)&&!abort.signal.aborted&&!practice&&mode==='company'&&Boolean(current())&&controller.snapshot().canWrite&&reference.buildingId===targetId&&validateReference(reference)===true,
       savePortfolio:async next=>{
         if(!active(token)||abort.signal.aborted)throw failure('건물 화면이 변경되었습니다.');
         // Practice owns a full in-memory portfolio, including sample replacements,
@@ -157,8 +161,9 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
     catch(error){if(active(token))status.textContent=error.message;}
   }
   async function switchTo(nextMode,nextId){
-    if(!await requestLeave()){modeSelect.value=mode;select.value=buildingId||'';return;}
+    if(!await requestLeave()){modeSelect.value=mode;select.value=buildingId||'';return false;}
     mode=nextMode;buildingId=nextId;modeSelect.value=mode;select.value=buildingId||'';await openCurrent();
+    return !disposed;
   }
   modeSelect.onchange=()=>switchTo(modeSelect.value,buildingId);
   select.onchange=()=>switchTo(mode,select.value);
@@ -217,5 +222,5 @@ export async function mountCrmAtlas({host,buildings=[],api,initialBuildingId,get
   signal?.addEventListener('abort',dispose,{once:true});
   if(signal?.aborted)dispose();
   if(!disposed){labels();await openCurrent();}
-  return Object.freeze({updateBuildings(next){if(disposed)return;basics=buildingBasics(next);labels();},requestLeave,dispose});
+  return Object.freeze({async bindReference(reference){if(disposed||mode!=='company'||!current()||!controller.snapshot().canWrite||!native?.bindReference)throw failure('현재 건물에 연결을 저장할 수 없습니다.');return native.bindReference(reference);},async selectBuilding(id){if(id===buildingId)return true;if(id!==null&&!basics.some(b=>b.id===id))return false;return switchTo('company',id);},updateBuildings(next){if(disposed)return;basics=buildingBasics(next);labels();},requestLeave,dispose});
 }

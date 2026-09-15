@@ -694,6 +694,7 @@
     if (previousAtlasIdentity !== atlasIdentity(currentAuth.user)) disposeBuildingAtlas();
     const nextMarketingIdentity = marketingIdentityKey(currentAuth);
     if (previousMarketingIdentity !== nextMarketingIdentity) {
+      window.BringWorkOutcomeDownloadUI?.disposeAll();
       operationsCheckSnapshot = null;
       operationsCheckReceivedAt = "";
       operationsCheckFilters = {};
@@ -1528,7 +1529,7 @@
   }
 
   function renderOperationsWorkspace() {
-    if (currentView !== "buildingAtlas" && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
+    if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     if (!["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
@@ -2905,6 +2906,16 @@
   }
 
   function renderCustomers() {
+    // Refresh host basics before resolving post-registration customer intent.
+    return Promise.resolve(renderBuildingAtlas()).then(async () => {
+      const intent = selectedCustomerHubId, view = buildingAtlasView, generation = buildingAtlasGeneration;
+      if (!intent || !view) return;
+      const selected = await view.selectCustomer(intent);
+      if (selected && view === buildingAtlasView && generation === buildingAtlasGeneration && selectedCustomerHubId === intent) selectedCustomerHubId = "";
+    });
+  }
+
+  function renderCustomerLegacyList() {
     const selectedCustomer = customerById(selectedCustomerHubId);
     if (selectedCustomer) return renderCustomerManagementDetail(selectedCustomer);
     if (selectedCustomerHubId) selectedCustomerHubId = "";
@@ -3219,15 +3230,24 @@
     buildingAtlasAbort = new AbortController();
     const generation = ++buildingAtlasGeneration;
     const identity = atlasIdentity(currentAuth.user);
-    main.innerHTML = '<section id="crmBuildingAtlas"><p role="status">3D 설비지도를 준비하고 있습니다.</p></section>';
+    const initialCustomerIntent = selectedCustomerHubId;
+    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
     const host = main.querySelector("#crmBuildingAtlas");
-    const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && currentView === "buildingAtlas" && currentWorkspace === "operations" && host.isConnected;
+    const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && ["customers", "buildingAtlas"].includes(currentView) && currentWorkspace === "operations" && host.isConnected;
     try {
       const { mountCrmAtlas } = await import("./building-atlas/crm-host.mjs");
+      const { mountCustomerWorkspace } = await import("./building-atlas/customer-workspace.mjs");
       if (!stillCurrent()) return;
-      const instance = await mountCrmAtlas({ host, buildings: atlasBuildings(), api, getBuildingContext: atlasBuildingContext, initialBuildingId: buildingAtlasInitialId || selectedBuildingId, confirm: async message => window.confirm(message), signal: buildingAtlasAbort.signal });
+      const signal = buildingAtlasAbort.signal;
+      const instance = await mountCustomerWorkspace({ host, signal, initialCustomerId:initialCustomerIntent, getCustomers: () => store.customers.map(customer => ({id:customer.id,name:customerDisplayName(customer),buildings:customerBuildings(customer).filter(building=>!building.archivedAt)})), getVisibleCustomerIds:()=>filteredCustomers().map(c=>c.id), getVisibleBuildings:()=>atlasBuildings().filter(b=>(customerManagementFilter==="전체"||managementStatusForBuilding(buildingById(b.id))===customerManagementFilter)&&Core.normalizeText(`${b.name} ${b.address}`).includes(Core.normalizeText(searchEl.value))), getBuildings: atlasBuildings,
+        getProfile: (customerId, buildingId) => {
+          const customer = customerById(customerId), building = buildingById(buildingId);
+          return [{title:building?.name || "건물 미연결",lines:[building?.address || building?.roadAddress || "주소 미등록"]}, {title:customer?customerDisplayName(customer):"고객 미연결",lines:customer?[customerPhoneText(customer.phone)||"연락처 미등록",customer.email||"이메일 미등록",`담당자: ${customer.owner||"미지정"}`,`다음 연락: ${dateText(customer.nextContactAt)}`,`관리 상태: ${managementStatusForCustomer(customer)}`]:[]}, {title:"개인 메모 · 고객 특징",lines:[customer?.notes||"등록된 메모 없음"]}];
+        }, getSections: customerAtlasSections, getReferenceTargets:id=>stillCurrent()?atlasReferenceTargets(id):[], initialBuildingId:buildingAtlasInitialId || selectedBuildingId || undefined,
+        mountAtlas: options => mountCrmAtlas({...options,buildings:atlasBuildings(),api,confirm:async message=>window.confirm(message),signal}) });
       if (generation !== buildingAtlasGeneration || !stillCurrent()) { instance.dispose(); return; }
       buildingAtlasView = instance;
+      if (selectedCustomerHubId === initialCustomerIntent && instance.selection().customerId === initialCustomerIntent) selectedCustomerHubId = "";
       buildingAtlasInitialId = "";
     } catch (_error) {
       if (stillCurrent()) host.innerHTML = '<p role="alert">3D 설비지도를 열지 못했습니다. 다른 메뉴로 이동한 뒤 다시 열어 주세요.</p>';
@@ -3236,18 +3256,44 @@
     }
   }
 
+  function atlasReferenceTargets(id) {
+    const building = (store.buildings || []).find(item => item.id === id && !item.archivedAt);
+    if (!building) return [];
+    const line = values => values.filter(value => value !== undefined && value !== null && value !== "").map(String).join(" · ");
+    const target = (type, key, label, lines) => ({buildingId:id,type,id:String(key || ""),label:String(label || key || "이름 미등록"),lines});
+    return [
+      ...activeBuildingUnitsForBuilding(building).map(unit => target("unit",unit.id,unit.label || unit.unitLabel,[line([unit.floorLabel,VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)]]),unit.notes || unit.memo || "메모 미등록"])),
+      ...activeCases().filter(item => (item.crmBuildingId || item.buildingId) === id).map(item => target("case",item.id || workflowCaseKey(item),line([item.ticketNo || item.id,item.room,item.issueType]),[line([Core.workflowProgress(item).current,item.description || item.summary,item.owner])])),
+      ...(store.serviceRecords || []).filter(item => item.buildingId === id && !item.archivedAt).map(item => target("service",item.id,item.title,[line([item.scheduledDate,item.startTime,WorkManagement.typeLabel(item.serviceType),WorkManagement.statusLabel(item.status)]),line([item.owner,item.summary])]))
+    ].filter(item => item.id);
+  }
+
+  function customerAtlasSections(customerId, buildingId) {
+    const context = atlasBuildingContext(buildingId);
+    const section = (title, source) => ({...(context.find(item=>item.title===source)||{lines:[]}),title});
+    const line = values => values.filter(value=>value!==undefined&&value!==null&&value!=="").join(" · ");
+    const contracts = section("계약","계약");
+    const commonContracts=[...new Map((store.contracts||[]).filter(item=>customerId&&item.customerId===customerId&&!item.buildingId).map(item=>[item.id||item,item])).values()];
+    contracts.lines=[...(contracts.lines||[]),...commonContracts.map(item=>line([item.name,item.status,item.startDate,item.endDate,item.amount,"고객 공통 · 위치 미지정"]))];
+    const related=item=>item.buildingId?Boolean(buildingId&&item.buildingId===buildingId):Boolean(customerId&&item.customerId===customerId);
+    const tasks=(store.tasks||[]).filter(item=>!item.archivedAt&&related(item));
+    const work=section("민원·작업","민원·작업 진행");work.lines=[...(work.lines||[]),...tasks.map(item=>line([item.title,item.status,item.dueAt,item.owner,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))];
+    return [{title:"상담",lines:(store.activities||[]).filter(related).map(item=>line([dateText(item.occurredAt),item.type,item.summary,item.result,item.nextAction,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))},contracts,work,section("일정","일정·서비스 작업"),section("호실","등록된 층·호실"),section("사진","민원·작업 사진")];
+  }
+
   function atlasBuildingContext(id) {
     const building = (store.buildings || []).find(item => item.id === id && !item.archivedAt);
     if (!building) return [];
+    const exactCases = activeCases().filter(item => (item.crmBuildingId || item.buildingId) === id);
     const line = values => values.filter(value => value !== undefined && value !== null && value !== "").map(String).join(" · ");
     return [
       { title: "건물 기본정보", lines: [line([building.name, building.address || building.roadAddress]), `관리 상태: ${managementStatusForBuilding(building)}`, "치수·설비 위치·배관 경로는 별도 현장 확인이 필요합니다."] },
       { title: "연결 고객·연락처·담당자", lines: buildingCustomers(building).map(customer => line([customer.name, customer.type, customer.phone, customer.owner && `담당 ${customer.owner}`])) },
       { title: "계약", lines: buildingContracts(building).map(contract => line([contract.name, contract.status, contract.startDate, contract.endDate, contract.billingCycle, contract.amount != null ? krw(contract.amount) : "금액 미등록", contract.scope])) },
       { title: "일정·서비스 작업", lines: (store.serviceRecords || []).filter(record => record.buildingId === id && !record.archivedAt).map(record => line([record.scheduledDate, record.startTime, record.title, WorkManagement.typeLabel(record.serviceType), WorkManagement.statusLabel(record.status), record.owner, record.summary])) },
-      { title: "민원·작업 진행", lines: buildingCases(building).map(item => line([item.ticketNo || item.id, item.room, item.issueType, Core.workflowProgress(item).current])) },
-      { title: "등록된 층·호실", lines: buildingUnitsForBuilding(building).map(unit => line([unit.floorLabel, unit.label || unit.unitLabel, VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)] || "상태 확인 필요"])) },
-      { title: "민원·작업 사진", lines: [], resources: buildingCases(building).flatMap(item => [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].map((photo,index) => ({name: line([item.ticketNo || item.id, photo.fileName || photo.name || `사진 ${index+1}`, photo.phase]), url: caseFirst(photo.fileUrl, photo.driveUrl, photo.url, photo.webViewLink)}))) },
+      { title: "민원·작업 진행", lines: exactCases.map(item => line([item.ticketNo || item.id, item.room || "위치 미지정", item.issueType, Core.workflowProgress(item).current])) },
+      { title: "등록된 층·호실", lines: buildingUnitsForBuilding(building).map(unit => line([unit.floorLabel || "위치 미지정", unit.label || unit.unitLabel, VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)] || "상태 확인 필요", "3D 위치 미지정"])) },
+      { title: "민원·작업 사진", lines: [], resources: exactCases.flatMap(item => [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].map((photo,index) => ({name: line([item.ticketNo || item.id, photo.fileName || photo.name || `사진 ${index+1}`, photo.phase]), url: caseFirst(photo.fileUrl, photo.driveUrl, photo.url, photo.webViewLink)}))) },
     ];
   }
 
@@ -4940,7 +4986,7 @@
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
-    scope: "mine", editing: null, busyId: "",
+    scope: "mine", editing: null, busyId: "", performancePeriod: "all", performanceAvailable: false, performanceOrders: [],
   };
 
   const workOrderCore = () => window.BringWorkOrderCore;
@@ -4957,6 +5003,8 @@
       if (data && data.localOnly === true && currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
         data = { ...projectRoadmapPreviewPayload(), admin: false, canWork: false };
       }
+      workOrderState.performanceAvailable = Array.isArray(data && data.performanceOrders) && data.localOnly !== true;
+      workOrderState.performanceOrders = workOrderState.performanceAvailable ? data.performanceOrders : [];
       workOrderState.orders = Array.isArray(data && data.orders) ? data.orders : [];
       workOrderState.members = Array.isArray(data && data.members) ? data.members : [];
       workOrderState.projects = Array.isArray(data && data.projects) ? data.projects : [];
@@ -4964,6 +5012,8 @@
       workOrderState.directives = Array.isArray(data && data.directives) ? data.directives : [];
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
+      const nextWorkOrderUid = String((data && data.uid) || "");
+      if (workOrderState.uid !== nextWorkOrderUid) workOrderState.scope = workOrderState.admin ? "all" : "mine";
       workOrderState.uid = String((data && data.uid) || "");
       if (!workOrderState.admin) workOrderState.scope = "mine";
       workOrderState.loaded = true;
@@ -5254,6 +5304,66 @@
       ${roadmapDetail(W, P, selected, today)}`;
   }
 
+  async function loadPrivateWeeklyPack(input) {
+    const C = window.BringWeeklyExecutionCore;
+    const auth = currentAuth;
+    const token = {};
+    const editing = () => workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
+    try {
+      if (!C || !workOrderState.admin) return;
+      if (editing()) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 파일을 불러오세요."); return; }
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (!Number.isFinite(file.size) || file.size > C.MAX_FILE_BYTES) { showToast("업무지시 파일은 300KB 이하만 불러올 수 있습니다.", "error"); return; }
+      workOrderState.privatePackReadToken = token;
+      const pack = C.parsePrivatePack(await file.text());
+      if (currentAuth !== auth || !workOrderState.admin || editing() || workOrderState.privatePackReadToken !== token) { showToast("로그인 또는 편집 상태가 바뀌었습니다. 파일을 다시 선택해 주세요."); return; }
+      workOrderState.privatePack = pack;
+      renderWorkOrderSurface();
+      const panel = document.querySelector(".weekly-execution");
+      if (panel) panel.open = true;
+      showToast("초안을 불러왔습니다. 서버에는 저장되지 않았으며, 앱을 다시 열면 파일을 다시 불러와야 합니다.");
+    } catch (error) {
+      showToast(error && error.code === "INVALID_WEEKLY_PACK" ? error.message : "업무지시 파일을 읽지 못했습니다. 기존 초안은 유지됩니다.", "error");
+    } finally { input.value = ""; }
+  }
+
+  function weeklyExecutionPanel() {
+    const C = window.BringWeeklyExecutionCore;
+    if (!C) return "";
+    const pack = workOrderState.admin && workOrderState.privatePack || C.createWeeklyPack();
+    const fields = [["why", "왜"], ["what", "무엇을"], ["doneWhen", "완료 기준"], ["deliverable", "산출물"], ["prerequisite", "선행조건"], ["targets", "목표 · 실적 아님"]];
+    return `<details class="office-panel weekly-execution"><summary>이번 주 업무 초안 <small>${esc(pack.label)} · 저장되지 않음</small></summary>
+      <div class="panel-body">${workOrderState.admin ? `<label class="field"><span>내부 업무지시 JSON 불러오기 · 서버 저장 안 됨</span><input type="file" accept=".json,application/json" data-weekly-file aria-label="내부 업무지시 파일 불러오기"></label><p>불러온 초안은 현재 앱에서만 보입니다. 앱 재시작 시 다시 불러오세요. 담당자·프로젝트·날짜를 확인하고 편집기에서 저장해야 직원에게 공유됩니다.</p>` : ""}<ul class="weekly-guidance">${pack.guidance.map(line => `<li>${esc(line)}</li>`).join("")}</ul>
+      ${pack.projects.map(project => `<details class="weekly-project"><summary>${esc(project.name)} <small>${project.tasks.length}개 초안</small></summary>
+        ${[...new Set(project.tasks.map(task => task.owner))].map(owner => `<section class="weekly-owner"><h4>권장 역할: ${esc(owner)}</h4>${project.tasks.filter(task => task.owner === owner).map(task => `<article class="wd-task"><header><b>${esc(task.title)}</b></header><dl>${fields.map(([key, label]) => `<dt>${esc(label)}</dt><dd>${esc(task[key])}</dd>`).join("")}</dl>${workOrderState.admin ? `<button type="button" class="mini-button" data-weekly-draft="${esc(task.key)}">편집기에 초안 넣기 · 저장 안 됨</button>` : ""}</article>`).join("")}</section>`).join("")}
+      </details>`).join("")}</div></details>`;
+  }
+
+  function weeklyPerformancePanel(orders, scopeLabel, asOf) {
+    const C = window.BringWeeklyPerformanceCore;
+    const period = workOrderState.performancePeriod === "current-week" ? "current-week" : "all";
+    const editing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
+    const stamp = new Date(workOrderState.refreshedAt || NaN);
+    const refreshed = Number.isFinite(stamp.getTime()) ? stamp.toLocaleString("ko-KR") : "확인되지 않음";
+    const heading = `<header><div><h3>기록 기반 성과 현황 · 읽기 전용</h3><p>${esc(scopeLabel)} · 마지막 갱신 ${esc(refreshed)}</p></div><div role="group" aria-label="성과 집계 기간">${[["all", "전체 기간"], ["current-week", "이번 주 일정"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${editing ? "disabled" : ""}>${label}</button>`).join("")}</div></header>`;
+    const summary = C && C.summarize({ orders, asOf, period });
+    if (workOrderState.loading || workOrderState.error || !workOrderState.loaded || workOrderState.performanceAvailable === false || !summary || !summary.available) return `<section class="office-panel weekly-performance">${heading}<p role="status">집계 불가 · ${esc(workOrderState.loading ? "불러오는 중" : workOrderState.error || "조회 결과를 확인하지 못했습니다.")}</p></section>`;
+    const labels = { assigned: "배정", doing: "진행", submitted: "제출 · 검수 대기", returned: "반려", done: "관리자 완료 처리" };
+    const d = summary.diagnostics;
+    const rows = summary.rows.slice(0, 50);
+    return `<section class="office-panel weekly-performance">${heading}
+      <p>${period === "all" ? "전체 기간 누적 상태" : `이번 주 일정 겹침 · ${esc(summary.range.start)} ~ ${esc(summary.range.end)} (월~일)`} · 완료 처리율은 관리자 완료 처리 / 집계 대상 지시입니다. 독립 검증된 성과가 아니며 제출은 완료에 포함하지 않습니다.</p>
+      ${editing ? `<p>편집 내용을 보존하기 위해 편집 종료 후 기간을 바꿀 수 있습니다.</p>` : ""}
+      <div class="performance-counts">${Object.entries(labels).map(([key, label]) => `<article><span>${label}</span><b>${summary.counts[key]}</b></article>`).join("")}</div>
+      <p>집계 대상 ${summary.counts.total}건 · 기한 지남 ${summary.counts.overdue}건 · 완료 처리율 ${summary.completion === null ? "산정 불가 (대상 없음)" : `${summary.completion.toFixed(1)}%`}</p>
+      <p>제출 메모·검수 의견은 저장된 원문만 표시합니다. 정성 성과 분석이나 목표 달성 판정은 생성하지 않습니다.</p>
+      ${window.BringWorkOutcomeUI ? window.BringWorkOutcomeUI.performance(rows) : '<p>결과보고 표시 모듈을 불러오지 못했습니다.</p>'}
+      <p class="performance-diagnostics">중복 통합 ${d.duplicates}건 · ID 없음 제외 ${d.idless}건 · 알 수 없는 상태 제외 ${d.unknownStatus}건 · 취소 제외 ${d.cancelled}건 · 날짜 없음/오류 ${d.undated}건 (이번 주 제외, 지연 판단 제외). 미기록 실적은 0으로 추정하지 않습니다.</p>
+      <details><summary>원문 기록 · ${rows.length} / ${summary.rows.length}건 표시</summary><div class="performance-table-wrap"><table><thead><tr><th scope="col">원본 업무 · 상태</th><th scope="col">검수 메모 원문</th><th scope="col">결과물 제목 · 메모 원문</th><th scope="col">출처</th></tr></thead><tbody>${rows.map(row => `<tr><th scope="row">${esc(row.title || "제목 없음")}<br><small>${labels[row.status]}</small></th><td>${esc(row.reviewNote || "아직 기록 없음")}</td><td>${row.results.length ? row.results.map(result => `<div><b>${esc(result.title || "제목 없음")}</b><p>${esc(result.note || "아직 기록 없음")}</p><small>원본 ID: ${esc(result.orderId)}</small></div>`).join("") : "아직 기록 없음"}</td><td><button type="button" class="mini-button" data-wo-open-card="${esc(row.id)}">원본 · 증빙 확인</button><small>${esc(row.id)}</small></td></tr>`).join("") || `<tr><td colspan="4">표시할 기록 없음</td></tr>`}</tbody></table></div></details>
+    </section>`;
+  }
+
   function renderWorkOrders() {
     const W = workOrderCore();
     const P = projectCore();
@@ -5261,18 +5371,25 @@
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
-    const selected = workOrderState.projectId && projects.some(item => item.id === workOrderState.projectId)
+    const selected = workOrderState.projectId && (["__all", "__none"].includes(workOrderState.projectId) || projects.some(item => item.id === workOrderState.projectId))
       ? workOrderState.projectId
-      : (projects[0] ? projects[0].id : "");
+      : "__all";
     const project = projects.find(item => item.id === selected) || null;
     // 프로젝트에 안 붙은 지시도 갈 곳이 있어야 한다. 안 그러면 그 지시는
     // 어느 화면에서도 안 보인다.
-    const orders = selected === "__none"
+    const orders = selected === "__all" ? workOrderState.orders : selected === "__none"
       ? workOrderState.orders.filter(item => !item.projectId)
       : P.ordersOf(workOrderState.orders, selected);
     const scoped = workOrderState.scope === "mine"
       ? W.forAssignee(orders, workOrderState.uid)
       : orders;
+    // The separate server projection keeps raw validation inputs and notes.
+    // Do not fall back to normalized card records when it is unavailable.
+    const performanceProjectOrders = (workOrderState.performanceOrders || []).filter(item => item &&
+      (selected === "__all" || (selected === "__none" ? !item.projectId : String(item.projectId || "").trim() === selected)));
+    const performanceScoped = workOrderState.scope === "mine"
+      ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
+      : performanceProjectOrders;
     const summary = P.summarize(scoped, today);
     const orphans = workOrderState.orders.filter(item => !item.projectId).length;
 
@@ -5281,13 +5398,14 @@
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
 
     const tabs = [
+      { id: "__all", label: "전체 프로젝트", status: "" },
       ...projects.map(item => ({ id: item.id, label: item.name, status: item.status })),
       ...(orphans ? [{ id: "__none", label: `프로젝트 없음 (${orphans})`, status: "" }] : []),
     ].map(item => `<button type="button" class="wo-project-tab${item.id === selected ? " is-active" : ""}" data-wo-project="${esc(item.id)}">
         <b>${esc(item.label)}</b>${item.status && item.status !== "active" ? `<small>${esc(P.statusLabel(item.status))}</small>` : ""}
       </button>`).join("");
 
-    main.innerHTML = `<section class="operations-hero">
+    main.innerHTML = `<section class="operations-hero work-orders-hero">
         <div><span>프로젝트 관리</span><h2>${esc(project ? project.name : "프로젝트")}</h2><p>${esc(project && project.goal ? project.goal : "지금 돌고 있는 일을 한 장에서 봅니다. 표의 한 줄이 곧 업무지시입니다.")}</p></div>
         <div class="operations-actions">
           <div class="wo-scope">
@@ -5295,6 +5413,7 @@
             <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
           </div>
           ${refreshButton(workOrderState, "workOrders")}
+          ${(workOrderState.admin || workOrderState.canWork) && typeof api.exportWorkOutcomeDocument === "function" ? `<button type="button" class="mini-button" data-wo-report-download>성과보고서 Word·PPT</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-import>지시서 붙여넣기</button>` : ""}
           ${workOrderState.admin && P.missingSeeds(projects).length ? `<button type="button" class="mini-button" data-wo-seed>기본 프로젝트 ${P.missingSeeds(projects).length}개 만들기</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}
@@ -5302,22 +5421,24 @@
       </section>
       ${status}
       ${tabs ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
-      <div class="operations-kpis wo-kpis">
-        <div class="operations-kpi"><span>진행 중</span><b>${summary.open}</b><small>전체 ${summary.total}건</small></div>
-        <div class="operations-kpi" style="--wash:#EDF5FF"><span>검수 대기</span><b>${summary.waitingReview}</b><small>${workOrderState.admin ? "대표가 볼 차례" : "대표 확인 중"}</small></div>
-        <div class="operations-kpi" style="--wash:#FFF1F1"><span>기한 지남</span><b>${summary.overdue}</b><small>먼저 손봐야 합니다</small></div>
-        <div class="operations-kpi" style="--wash:#EDF9F5"><span>평균 진행률</span><b>${summary.progress}%</b><small>완료 ${summary.done}건</small></div>
-      </div>
+      ${weeklyExecutionPanel()}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
       ${workOrderState.importOpen ? directiveImporter() : ""}
       ${workOrderState.capacityEditing ? capacityEditor() : ""}
+      <header class="wo-action-heading"><h3>${workOrderState.scope === "mine" ? "내 업무 · 결과 제출" : "업무 목록 · 제출 결과 검수"}</h3><p>${workOrderState.loading ? "업무를 불러오는 중입니다." : workOrderState.error ? "조회 오류를 확인한 뒤 다시 불러와 주세요." : "업무별 완료 기준을 확인하고 결과물과 증빙을 제출하세요. 제출 후 대표 검수를 거칩니다."}</p></header>
+      <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>
+      <details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>
+      ${weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today)}
+      </details>
+      <details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>
+      <p class="wo-progress-definition">입력된 진행률 평균: ${workOrderState.loading || workOrderState.error || !workOrderState.loaded ? "조회 확인 필요" : summary.total ? `${summary.progress}%` : "대상 없음"} · 업무에 입력한 진행률의 평균이며, 완료 건수 비율과 다릅니다.</p>
       ${dueSoonBoard(P, scoped, today)}
       ${directiveBoard(P, today)}
       ${capacityBoard(P, today)}
       ${assigneeBoard(P, scoped, today)}
       ${ganttBoard(W, P, scoped, today, summary)}
-      <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">지시가 없습니다.</div>`}</div>`;
+      </details>`;
   }
 
   // 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
@@ -5368,16 +5489,17 @@
       ${plan.notes.length ? `<ul class="dl-notes">${plan.notes.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
       ${plan.warnings.length ? `<ul class="di-blockers">${plan.warnings.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
       <div class="office-table-wrap"><table class="office-table">
-        <thead><tr><th>업무</th><th>왜</th><th>완료 기준</th><th>산출물</th><th>시간</th><th>가중치</th><th>마감</th></tr></thead>
+        <thead><tr><th>업무</th><th>왜</th><th>진행방법</th><th>완료 기준</th><th>산출물</th><th>시간</th><th>가중치</th><th>마감</th></tr></thead>
         <tbody>${plan.tasks.length ? plan.tasks.map(task => `<tr class="${task.ready ? "" : "di-notready"}">
           <td><b>${esc(task.title)}</b>${task.duplicate ? `<small>같은 제목이 이미 있습니다</small>` : ""}${task.problems.length ? `<small>${esc(task.problems[0])}</small>` : ""}</td>
           <td>${task.why ? esc(task.why) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
+          <td>${esc(task.what || task.why)}${!task.what ? `<small>진행방법 미입력 · 목적 내용 사용</small>` : ""}</td>
           <td>${task.doneWhen ? esc(task.doneWhen) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
           <td>${task.deliverable ? esc(task.deliverable) : `<span class="office-muted">—</span>`}</td>
           <td>${task.hours ? `${task.hours}h` : `<span class="office-muted">—</span>`}</td>
           <td>${task.weight ? `${task.weight}%` : `<span class="office-muted">—</span>`}</td>
           <td>${task.dueDate ? esc(task.dueDate) : `<span class="office-muted">—</span>`}</td>
-        </tr>`).join("") : `<tr><td colspan="7" class="office-empty">업무 줄을 하나도 못 읽었습니다.</td></tr>`}</tbody>
+        </tr>`).join("") : `<tr><td colspan="8" class="office-empty">업무 줄을 하나도 못 읽었습니다.</td></tr>`}</tbody>
       </table></div>
       ${plan.unread.length ? `<div class="di-unread">
         <b>못 읽은 줄</b>
@@ -5401,10 +5523,11 @@
       <div class="panel-body">
         <div class="di-top">
           <label><span>누구에게</span><select data-di-uid><option value="">고르기</option>${options}</select></label>
+          <label><span>어느 프로젝트</span><select data-di-project><option value="">프로젝트 연결 안 함</option>${(workOrderState.projects || []).map(item => `<option value="${esc(item.id)}"${plan && plan.projectId === item.id ? " selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
           <label><span>어느 주 (월요일)</span><input type="date" value="${esc(plan && plan.weekStart ? plan.weekStart : "")}" data-di-week></label>
         </div>
         ${splitStrip()}
-        <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="담당&#9;황우중&#10;배경&#9;당근에서 문의가 줄고 있습니다.&#10;목표&#9;주 3건 이상&#10;&#10;업무명&#9;목적&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#10;당근 비즈프로필 정비&#9;권한을 받아 최신으로&#9;사진 5장이 올라가면 끝&#9;20260909_당근.png&#9;4&#9;100"></textarea></label>
+        <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="업무명&#9;목적&#9;진행방법&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#9;마감">${esc(plan ? plan.sourcePaste || "" : "")}</textarea></label>
         ${review}
         <div class="wo-editor-actions">
           <button type="button" class="mini-button" data-di-draft${workOrderState.importing ? " disabled" : ""}>✨ AI로 짜기</button>
@@ -5753,12 +5876,15 @@
       : `<p class="wo-none">아직 올라온 결과물이 없습니다.</p>`;
 
     const actions = [];
+    if (order.outcomeReport || (workOrderState.canWork && (workOrderState.admin || mine) && !['submitted', 'done'].includes(order.status))) {
+      actions.push(`<button type="button" class="mini-button" data-wo-outcome="${esc(order.id)}"${busy ? " disabled" : ""}>${order.outcomeReport ? "결과보고 보기·수정" : "결과보고 작성"}</button>`);
+    }
     if (workOrderState.canWork && (workOrderState.admin || mine) && order.status !== "done") {
       actions.push(`<button type="button" class="mini-button" data-wo-upload="${esc(order.id)}"${busy ? " disabled" : ""}>결과물 올리기</button>`);
     }
     moves.forEach(move => {
       const kind = move.key === "returned" ? " return" : "";
-      actions.push(`<button type="button" class="mini-button${kind}" data-wo-move="${esc(move.key)}" data-wo-id="${esc(order.id)}"${busy ? " disabled" : ""}>${esc(move.label)}</button>`);
+      actions.push(`<button type="button" class="mini-button${kind}" data-wo-move="${esc(move.key)}" data-wo-id="${esc(order.id)}"${busy ? " disabled" : ""}>${esc(move.key === "submitted" ? "대표 검수 요청" : move.label)}</button>`);
     });
     if (workOrderState.canWork && (workOrderState.admin || mine) && order.status !== "done") {
       actions.push(`<label class="wo-progress-set"><span>진행률</span><input type="number" min="0" max="100" step="5" value="${order.progress}" data-wo-progress="${esc(order.id)}"${busy ? " disabled" : ""}><b>%</b></label>`);
@@ -5791,9 +5917,17 @@
         ${order.hours || order.weight ? `<dt>크기</dt><dd>${order.hours ? `${order.hours}시간쯤` : "시간 미기입"}${order.weight ? ` · 이번 주 ${order.weight}%` : ""}</dd>` : ""}
       </dl>
       ${order.reviewNote ? `<p class="wo-return">다시 요청 — ${esc(order.reviewNote)}</p>` : ""}
+      ${order.outcomeReport && ['assigned','doing','returned'].includes(order.status) ? `<p class="info-box">보고서 저장됨 · 아직 제출 전${moves.some(move => move.key === 'submitted') ? ' — 결과물과 증빙을 확인한 뒤 아래 ‘대표 검수 요청’을 누르세요.' : ''}</p>` : ""}
       <section class="wo-result-block"><h4>결과물</h4>${results}</section>
       ${actions.length ? `<div class="wo-actions">${actions.join("")}</div>` : ""}
     </article>`;
+  }
+
+  function revealSavedWorkOutcome(id) {
+    const card = Array.from(document.querySelectorAll('.wo-card[data-wo-card]')).find(item => item.dataset.woCard === id);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'auto', block: 'center' });
+    card.querySelector('[data-wo-move="submitted"]')?.focus({ preventScroll: true });
   }
 
   function workOrderEditor(W, P, projects) {
@@ -6129,6 +6263,7 @@
     workOrderState.importPlan = I.planImport({
       paste,
       uid,
+      projectId: String((panel.querySelector("[data-di-project]") || {}).value || ""),
       name: person ? (person.displayName || person.email || person.uid) : "",
       weekStart: week,
       existingOrders: workOrderState.orders,
@@ -6146,7 +6281,23 @@
     const W = workOrderCore();
     const plan = workOrderState.importPlan;
     if (!WD || !W || !plan || !plan.ok || workOrderState.importing) return;
-    const monday = WD.weekStart(plan.weekStart || todayKey());
+    const reviewPanel = typeof document !== "undefined" ? document.querySelector(".di-panel") : null;
+    if (reviewPanel) {
+      const value = key => String((reviewPanel.querySelector(`[data-di-${key}]`) || {}).value || "");
+      if (value("uid") !== plan.uid || value("project") !== (plan.projectId || "") || value("week") !== plan.weekStart || value("paste") !== plan.sourcePaste) {
+        showToast("검토 후 입력 내용이 변경되었습니다. 담당자·프로젝트·일정·본문을 다시 읽어 확인한 뒤 등록해 주세요.", "error");
+        return;
+      }
+    }
+    if (!plan.weekStart || plan.tasks.some(task => !task.dueDate)) {
+      showToast("시작 주와 각 업무의 마감일을 확정한 뒤 다시 읽어 주세요. 날짜를 자동 지정하지 않습니다.", "error");
+      return;
+    }
+    const monday = WD.weekStart(plan.weekStart);
+    if (plan.projectId && !(workOrderState.projects || []).some(item => item.id === plan.projectId)) {
+      showToast("선택한 프로젝트를 확인할 수 없습니다. 목록을 새로 불러온 뒤 다시 선택해 주세요.", "error");
+      return;
+    }
     const person = workOrderState.members.find(item => item && item.uid === plan.uid);
     const name = person ? (person.displayName || person.email || person.uid) : plan.name;
     workOrderState.importing = true;
@@ -6155,27 +6306,46 @@
     let made = 0;
     try {
       for (const task of plan.tasks) {
+        if (task.importSaved) continue;
+        if (task.importNeedsReview) {
+          failed.push(`${task.title}: 저장 여부를 업무 목록에서 먼저 확인해 주세요 (${task.importId}). 확인 전에는 다시 저장하지 않습니다.`);
+          continue;
+        }
+        if (!task.importId) task.importId = `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         const checked = W.validateOrder({
-          id: `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          id: task.importId,
           title: task.title,
           why: task.why,
-          what: task.why,
+          what: task.what || task.why,
           doneWhen: task.doneWhen,
           deliverable: task.deliverable,
+          projectId: plan.projectId || "",
           assigneeUid: plan.uid,
           assigneeName: name,
           startDate: monday,
-          dueDate: task.dueDate || WD.addDays(monday, 6),
+          dueDate: task.dueDate,
           hours: task.hours,
           weight: task.weight,
         });
         if (!checked.ok) { failed.push(`${task.title}: ${checked.error}`); continue; }
         try {
           await api.saveWorkOrder(checked.order);
+          task.importSaved = true;
           made += 1;
         } catch (error) {
+          // A missing acknowledgement is not proof that the server did not write.
+          // Reusing the id avoids duplicates but could still overwrite a concurrent edit.
+          if (/UNCONFIRMED|CONFLICT/.test(String(error && error.code || "")) || /업무 저장 결과를 확인하지 못|다른 사용자가 업무를 먼저 변경/.test(String(error && error.message || ""))) {
+            task.importNeedsReview = true;
+          }
           failed.push(`${task.title}: ${error && error.message || "저장 실패"}`);
         }
+      }
+      if (failed.length) {
+        workOrderState.importOpen = true;
+        showToast(`${made}건 저장. 실패한 업무는 검토 화면에 유지했습니다. 재시도 시 이미 저장된 업무는 건너뜁니다. ${failed.join(" / ")}`, "error");
+        await loadWorkOrders();
+        return;
       }
       await api.saveWeeklyDirective(Object.assign({
         uid: plan.uid,
@@ -6313,7 +6483,9 @@
   }
 
   function currentProjectOrders(P) {
+    if (!workOrderState.projectId || workOrderState.projectId === "__all") return workOrderState.orders;
     if (workOrderState.projectId === "__none") return workOrderState.orders.filter(item => !item.projectId);
+    if (!(workOrderState.projects || []).some(item => item.id === workOrderState.projectId)) return workOrderState.orders;
     return P.ordersOf(workOrderState.orders, workOrderState.projectId);
   }
 
@@ -11011,7 +11183,10 @@
     const supplyMoveDelete = event.target.closest("[data-supply-move-delete]");
     if (supplyMoveDelete) { await removeSupplyMove(supplyMoveDelete.dataset.supplyMoveDelete); return; }
     const woProject = event.target.closest("[data-wo-project]");
-    if (woProject) { workOrderState.projectId = woProject.dataset.woProject; renderWorkOrders(); return; }
+    if (woProject) {
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 프로젝트를 변경해 주세요."); return; }
+      workOrderState.projectId = woProject.dataset.woProject; renderWorkOrders(); return;
+    }
     if (event.target.closest("[data-wo-project-new]")) {
       const P = projectCore();
       if (P) { workOrderState.projectEditing = P.normalizeProject({}); renderWorkOrders(); }
@@ -11179,7 +11354,7 @@
     const woOpenCard = event.target.closest("[data-wo-open-card]");
     if (woOpenCard) {
       // 간트에서 막대를 누르면 아래 카드로 데려간다. 자세한 것은 카드에 있다.
-      const card = document.querySelector(`.wo-card[data-wo-card="${woOpenCard.dataset.woOpenCard}"]`);
+      const card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
       if (card) {
         card.scrollIntoView({ behavior: "smooth", block: "center" });
         card.classList.add("is-flash");
@@ -11285,7 +11460,38 @@
       return;
     }
     const woScope = event.target.closest("[data-wo-scope]");
-    if (woScope) { workOrderState.scope = woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return; }
+    if (woScope) {
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 조회 범위를 변경해 주세요."); return; }
+      workOrderState.scope = woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return;
+    }
+    const performancePeriod = event.target.closest("[data-performance-period]");
+    if (performancePeriod) {
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("편집을 마친 뒤 기간을 변경해 주세요."); return; }
+      workOrderState.performancePeriod = performancePeriod.dataset.performancePeriod === "current-week" ? "current-week" : "all";
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.closest("[data-wo-report-download]")) {
+      if (!(workOrderState.admin || workOrderState.canWork) || !window.BringWorkOutcomeDownloadUI || typeof api.exportWorkOutcomeDocument !== "function") return;
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 마친 뒤 보고서를 내려받으세요."); return; }
+      window.BringWorkOutcomeDownloadUI.open({ uid: workOrderState.uid, admin: workOrderState.admin, members: workOrderState.members, save: input => api.exportWorkOutcomeDocument(input) });
+      return;
+    }
+    const weeklyDraft = event.target.closest("[data-weekly-draft]");
+    if (weeklyDraft) {
+      if (!workOrderState.admin) return;
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("열린 편집을 저장하거나 그만둔 뒤 초안을 선택하세요.", "error"); return; }
+      const C = window.BringWeeklyExecutionCore;
+      const W = workOrderCore();
+      const draft = C && C.editorDraft(weeklyDraft.dataset.weeklyDraft, workOrderState.admin, workOrderState.privatePack);
+      if (W && draft) {
+        workOrderState.editing = W.normalizeOrder(draft);
+        renderWorkOrderSurface();
+        document.querySelector("[data-wo-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("아직 저장되지 않았습니다. 담당 회원·프로젝트·날짜·예상 시간을 선택해 검토하세요.");
+      }
+      return;
+    }
     if (event.target.closest("[data-wo-new]")) {
       const W = workOrderCore();
       if (W) { workOrderState.editing = W.normalizeOrder({}); renderWorkOrderSurface(); }
@@ -11301,6 +11507,25 @@
     if (event.target.closest("[data-wo-cancel]")) { workOrderState.editing = null; renderWorkOrderSurface(); return; }
     const woMove = event.target.closest("[data-wo-move]");
     if (woMove) { await moveWorkOrder(woMove.dataset.woId, woMove.dataset.woMove); return; }
+    const woOutcome = event.target.closest("[data-wo-outcome]");
+    if (woOutcome) {
+      const order = workOrderState.orders.find(item => item.id === woOutcome.dataset.woOutcome);
+      if (!order || workOrderState.busyId) return;
+      try {
+        window.BringWorkOutcomeUI.open({ order, core: window.BringWorkOutcomeCore,
+          canEdit: workOrderState.canWork && (workOrderState.admin || order.assigneeUid === workOrderState.uid),
+          save: payload => api.updateWorkOrderProgress(payload),
+          recovery: typeof api.loadWorkOutcomeDraft === 'function' && typeof api.saveWorkOutcomeDraft === 'function' && typeof api.clearWorkOutcomeDraft === 'function' ? {
+            load: input => api.loadWorkOutcomeDraft(input),
+            save: input => api.saveWorkOutcomeDraft(input),
+            clear: input => api.clearWorkOutcomeDraft(input),
+          } : null,
+          onWarning: message => showToast(message, "error"),
+          onSaved: async () => { showToast("결과보고를 저장했습니다. 아직 제출 전입니다. ‘대표 검수 요청’으로 제출하세요.", "success"); await loadWorkOrders(); revealSavedWorkOutcome(order.id); },
+        });
+      } catch (error) { showToast(error.message || "결과보고를 열지 못했습니다.", "error"); }
+      return;
+    }
     const woUpload = event.target.closest("[data-wo-upload]");
     if (woUpload) { await uploadWorkOrderResult(woUpload.dataset.woUpload); return; }
     const woOpen = event.target.closest("[data-wo-open]");
@@ -11391,6 +11616,7 @@
     }
     const messageCustomerOpen = event.target.closest("[data-message-customer-open]");
     if (messageCustomerOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedMessageCustomerId = messageCustomerOpen.dataset.messageCustomerOpen;
       closeDrawer();
       currentView = "customerMessages";
@@ -11785,8 +12011,10 @@
     }
     const atlasOpen = event.target.closest("[data-building-atlas-open]");
     if (atlasOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+      disposeBuildingAtlas();
       buildingAtlasInitialId = atlasOpen.dataset.buildingAtlasOpen || "";
-      currentView = "buildingAtlas";
+      currentView = "customers";
       render();
       return;
     }
@@ -11794,7 +12022,7 @@
     if (nav) {
       const nextView = nav.dataset.view;
       if (!Object.hasOwn(viewMeta, nextView)) return;
-      if (nextView !== "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+      if (nextView !== currentView && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const requestedCalendarTab = nav.dataset.unifiedCalendarTab;
       if (UNIFIED_CALENDAR_TABS.includes(requestedCalendarTab)) unifiedCalendarTab = requestedCalendarTab;
       const folder = nav.closest("[data-nav-folder]");
@@ -12623,6 +12851,7 @@
     if (driveImportReject) { driveImportRejectionEditor(driveImportReject.dataset.driveImportReject); return; }
     const buildingVacancies = event.target.closest("[data-building-vacancies], [data-vacancy-manage]");
     if (buildingVacancies) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const buildingId = buildingVacancies.dataset.buildingVacancies || buildingVacancies.dataset.vacancyManage;
       const building = buildingById(buildingId);
       if (!building || building.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
@@ -12794,6 +13023,7 @@
     }
     const buildingPayments = event.target.closest("[data-building-payments]");
     if (buildingPayments) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       const building = buildingById(buildingPayments.dataset.buildingPayments);
       if (!building) return showToast("건물 정보를 찾지 못했습니다.", "error");
       paymentBuildingFilter = paymentFilterIdForBuilding(building);
@@ -12804,6 +13034,7 @@
     }
     const buildingCaseOpen = event.target.closest("[data-building-case-open]");
     if (buildingCaseOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedCaseKey = buildingCaseOpen.dataset.buildingCaseOpen;
       caseListMode = "active";
       currentView = "cases";
@@ -12812,6 +13043,7 @@
     }
     const buildingPaymentOpen = event.target.closest("[data-building-payment-open]");
     if (buildingPaymentOpen) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       paymentBuildingFilter = buildingPaymentOpen.dataset.buildingPaymentId || "all";
       currentView = "payments";
       render();
@@ -12820,6 +13052,7 @@
     }
     const buildingJump = event.target.closest("[data-building-jump]");
     if (buildingJump) {
+      if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedBuildingId = buildingJump.dataset.buildingJump;
       closeModal();
       closeDrawer();
@@ -13043,6 +13276,7 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-weekly-file]")) { await loadPrivateWeeklyPack(event.target); return; }
     if (event.target.matches("[data-operations-query], [data-operations-building], [data-operations-owner]")) {
       const field = event.target;
       if (field.matches("[data-operations-query]")) operationsCheckFilters.query = field.value;
@@ -13446,6 +13680,7 @@
 
   document.addEventListener("submit", async event => {
     event.preventDefault();
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
     if (form.id === "dailyLogExportForm") { await exportMonthlyDailyLogsFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
@@ -14711,7 +14946,7 @@
   });
   searchEl.addEventListener("keydown", async event => {
     if (event.key !== "Enter" || currentView === "buildingCalendar") return;
-    if (currentView === "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     if (!["cases", "buildings", "vacancies", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers";
     render();
   });
@@ -15003,7 +15238,7 @@ document.addEventListener("keydown", event => {
   async function openOfficeMessengerShortcut(action) {
     const peerId = action && typeof action.peerId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(action.peerId) ? action.peerId : "";
     if (!peerId) return false;
-    if (currentView === "buildingAtlas" && buildingAtlasView && !await buildingAtlasView.requestLeave()) return false;
+    if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return false;
     await workspaceCoordinator.select("operations");
     currentView = "officeMessenger";
     render();
@@ -15026,6 +15261,8 @@ document.addEventListener("keydown", event => {
   });
 
   api.onAuthState(state => {
+    workOrderState.privatePack = null;
+    workOrderState.privatePackReadToken = null;
     setCurrentAuth(state);
     if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "회사 이메일과 비밀번호로 로그인해 주세요.", Boolean(currentAuth.error));
     else if (currentAuth.user && currentAuth.user.mustChangePassword) showPasswordChange(currentAuth);

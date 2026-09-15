@@ -244,4 +244,4 @@ function quoteFileName(input, copyType = "recipient") {
   return `${safeFileSegment(QuoteCore.fileBase(quote))}_${copyConfig(copyType).sheetName}.xlsx`;
 }
 
-module.exports = { COPY_CONFIG, createQuoteWorkbook, quoteSheetXml, ocrDataSheetXml, quoteFileName };
+module.exports = { COPY_CONFIG, createQuoteWorkbook, quoteSheetXml, ocrDataSheetXml, quoteFileName, zipStore };

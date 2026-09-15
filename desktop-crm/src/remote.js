@@ -8,6 +8,8 @@ const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
+const WorkOutcomeCore = require("./work-outcome-core");
+const WorkOutcomeExport = require("./work-outcome-export-core");
 const ProjectCore = require("./project-core");
 const OkrCore = require("./okr-core");
 const GrowthCore = require("./growth-core");
@@ -4061,6 +4063,20 @@ class FirebaseRemoteClient {
     const orders = Object.entries(payload && typeof payload === "object" ? payload : {})
       .map(([id, value]) => WorkOrderCore.normalizeOrder(Object.assign({ id }, value || {})))
       .filter(item => item.id);
+    // A read-only allowlist retains validation inputs and exact source notes.
+    // Existing normalized orders remain the editing/card contract.
+    const scalarFields = (record, fields) => Object.fromEntries(fields.map(key => {
+      const value = record && record[key];
+      // Keep malformed date presence without leaking nested source structures.
+      if (["startDate", "dueDate", "updatedAt"].includes(key) && value != null && typeof value !== "string") return [key, "invalid-date-type"];
+      return [key, value == null || ["string", "number", "boolean"].includes(typeof value) ? value : null];
+    }));
+    const performanceOrders = payload === null || (payload && typeof payload === "object" && !Array.isArray(payload))
+      ? Object.entries(payload || {}).map(([id, value]) => ({
+        ...scalarFields(value, ["projectId", "assigneeUid", "title", "status", "startDate", "dueDate", "updatedAt", "reviewNote", "outcomeReport"]),
+        id,
+        results: Array.isArray(value && value.results) ? value.results.map(result => scalarFields(result, ["id", "title", "note", "driveFileId", "webViewLink"])) : [],
+      })) : null;
     const merged = OfficeCore.mergeOfficeUsers(users, teamProfiles);
     const members = Object.entries(merged)
       .filter(([uid, user]) => OfficeCore.normalizeOfficeUserId(uid) === uid
@@ -4093,6 +4109,7 @@ class FirebaseRemoteClient {
       .filter(item => item.uid && item.weekStart);
     return {
       orders,
+      performanceOrders,
       projects,
       capacity,
       directives,
@@ -4524,7 +4541,8 @@ class FirebaseRemoteClient {
     const checked = WorkOrderCore.validateOrder(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     const location = `workOrders/${checked.order.id}`;
-    const existing = await this.dbRequest(location, { method: "GET" });
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    const existing = snapshot.value;
     this.assertSessionGuardActive(guard);
     if (existing && WorkOrderCore.normalizeOrder(existing).status === "done") {
       // 끝난 일이 나중에 바뀌면 기록이 아니다.
@@ -4534,14 +4552,47 @@ class FirebaseRemoteClient {
     const record = Object.assign({}, checked.order, {
       results: existing ? WorkOrderCore.normalizeOrder(existing).results : checked.order.results,
       status: existing ? WorkOrderCore.normalizeOrder(existing).status : checked.order.status,
+      progress: existing ? WorkOrderCore.normalizeOrder(existing).progress : checked.order.progress,
+      reviewNote: existing ? WorkOrderCore.normalizeOrder(existing).reviewNote : "",
       createdBy: (existing && existing.createdBy) || String(session.displayName || session.email || "관리자"),
       createdAt: (existing && existing.createdAt) || now,
       updatedAt: now,
       updatedBy: session.uid,
     });
-    await this.dbRequest(location, { method: "PUT", body: record });
+    // Instruction edits cannot create, replace or erase outcome reports.
+    delete record.outcomeReport;
+    if (existing && typeof existing.outcomeReport === "string") record.outcomeReport = existing.outcomeReport;
+    const persisted = Object.assign({}, record);
+    // RTDB removes empty arrays. Compare the actual wire shape, not a phantom [].
+    if (!record.results.length) delete persisted.results;
+    try {
+      await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
+    } catch (error) {
+      if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") throw createError("다른 사용자가 업무를 먼저 변경했습니다. 다시 불러온 뒤 지시 내용을 수정하세요.", "WORK_ORDER_CONFLICT", error);
+      if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw createError("업무 저장 결과를 확인하지 못했습니다. 새로고침으로 저장 여부를 확인하세요.", "WORK_ORDER_WRITE_UNCONFIRMED", error);
+      throw error;
+    }
     this.assertSessionGuardActive(guard);
     return record;
+  }
+
+  async prepareWorkOutcomeExport(input) {
+    const session = this.requireOfficeSession();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const assigneeUid = typeof source.assigneeUid === "string" ? source.assigneeUid : session.uid;
+    if (!["admin", "member"].includes(session.role) || (session.role !== "admin" && assigneeUid !== session.uid)) {
+      throw createError("본인 결과보고만 내보낼 수 있습니다. 다른 직원 보고서는 관리자가 확인합니다.", "WORK_OUTCOME_EXPORT_FORBIDDEN");
+    }
+    // Validate explicit scope before reading; never accept renderer-supplied reports.
+    WorkOutcomeExport.prepare({ orders: [], assigneeUid, from: source.from, to: source.to });
+    const guard = this.captureSessionGuard();
+    const snapshot = await this.dbReadWithEtag("workOrders", false, guard);
+    this.assertSessionGuardActive(guard);
+    if (snapshot.value !== null && (typeof snapshot.value !== "object" || Array.isArray(snapshot.value))) {
+      throw createError("서버 업무 목록을 확인하지 못했습니다.", "WORK_OUTCOME_EXPORT_UNAVAILABLE");
+    }
+    const orders = Object.entries(snapshot.value || {}).map(([id, value]) => Object.assign({}, value, { id }));
+    return WorkOutcomeExport.prepare({ orders, assigneeUid, from: source.from, to: source.to });
   }
 
   // 상태를 옮기거나 결과물을 붙인다. 담당자와 관리자가 함께 쓴다.
@@ -4557,7 +4608,8 @@ class FirebaseRemoteClient {
     const location = `workOrders/${orderId}`;
     // 서버에 있는 것을 다시 읽고 판단한다. 화면이 오래됐을 수 있고, 두 사람이
     // 동시에 눌렀을 수도 있다.
-    const existing = await this.dbRequest(location, { method: "GET" });
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    const existing = snapshot.value;
     this.assertSessionGuardActive(guard);
     if (!existing) throw createError("없는 지시입니다.", "WORK_ORDER_NOT_FOUND");
     const current = WorkOrderCore.normalizeOrder(Object.assign({ id: orderId }, existing));
@@ -4601,9 +4653,27 @@ class FirebaseRemoteClient {
 
     const nextStatus = String(source.status || "");
     let record = withDates;
+    if (Object.prototype.hasOwnProperty.call(source, "outcomeReport")) {
+      if (current.status === "submitted" || current.status === "done") {
+        throw createError("검수 중이거나 완료된 보고는 변경할 수 없습니다. 보완 요청 후 수정하세요.", "WORK_OUTCOME_LOCKED");
+      }
+      let parsed;
+      if (Object.prototype.hasOwnProperty.call(source, "expectedOutcomeReport") && source.expectedOutcomeReport !== (current.outcomeReport || "")) {
+        throw createError("다른 사용자가 보고서를 변경했습니다. 작성 내용을 복사한 뒤 최신 보고서를 다시 열어 비교하세요.", "WORK_OUTCOME_CONFLICT");
+      }
+      try {
+        if (typeof source.outcomeReport !== "string" || source.outcomeReport.length > 60000) throw new Error();
+        parsed = JSON.parse(source.outcomeReport);
+      } catch (_) { throw createError("보고서 형식이나 크기를 확인하세요.", "WORK_OUTCOME_INVALID"); }
+      const checked = WorkOutcomeCore.validate(parsed);
+      if (!checked.ok) throw createError(checked.errors.map(item => item.message).join(" "), "WORK_OUTCOME_INVALID");
+      const serialized = JSON.stringify(checked.value);
+      if (serialized.length > 60000) throw createError("보고서가 너무 큽니다. 상세 자료는 증빙 링크로 연결하세요.", "WORK_OUTCOME_INVALID");
+      record = Object.assign({}, record, { outcomeReport: serialized });
+    }
     if (nextStatus && nextStatus !== withResult.status) {
       const moved = WorkOrderCore.moveStatus({
-        order: withDates,
+        order: record,
         next: nextStatus,
         admin,
         actorUid: session.uid,
@@ -4624,7 +4694,19 @@ class FirebaseRemoteClient {
       updatedAt: new Date().toISOString(),
       updatedBy: session.uid,
     });
-    await this.dbRequest(location, { method: "PUT", body: saved });
+    const persisted = Object.assign({}, saved);
+    if (!saved.results.length) delete persisted.results;
+    try {
+      await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
+    } catch (error) {
+      if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") {
+        throw createError("다른 사용자가 업무를 먼저 변경했습니다. 새로고침해 결과물과 검수 상태를 확인한 뒤 다시 시도하세요.", "WORK_ORDER_CONFLICT", error);
+      }
+      if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") {
+        throw createError("업무 저장 결과를 확인하지 못했습니다. 다시 제출하기 전에 새로고침하여 저장 여부를 확인하세요.", "WORK_ORDER_WRITE_UNCONFIRMED", error);
+      }
+      throw error;
+    }
     this.assertSessionGuardActive(guard);
     return saved;
   }

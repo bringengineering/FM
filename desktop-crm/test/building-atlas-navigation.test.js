@@ -5,6 +5,7 @@ const path = require('node:path');
 const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '../src/index.html'), 'utf8');
 const vm = require('node:vm');
+test('customer drawer cross-navigation cannot discard unified workspace drafts',async()=>{for(const [start,end,dataset] of [['    const messageCustomerOpen =','    const consentEdit =',{messageCustomerOpen:'c'}],['    const buildingJump =','    const customerListOpen =',{buildingJump:'b'}]]){const source=app.slice(app.indexOf(start),app.indexOf(end,app.indexOf(start)));let closed=0;const context={event:{target:{closest:s=>s.includes(dataset.buildingJump?'data-building-jump':'data-message-customer-open')?{dataset}:null}},buildingAtlasView:{requestLeave:async()=>false},currentView:'customers',closeDrawer:()=>closed++,closeModal:()=>closed++,render:()=>closed++,requestDriveImportCandidatesRefresh(){},refreshOperations:async()=>{},selectedBuildingId:'old'};await vm.runInNewContext(`(async()=>{${source}})()`,context);assert.equal(closed,0);assert.equal(context.currentView,'customers');}});
 
 test('global search and messenger shortcut cannot discard an atlas draft', async () => {
   let handler, rendered=0, selected=0;
@@ -16,8 +17,8 @@ test('global search and messenger shortcut cannot discard an atlas draft', async
   assert.equal(await context.openOfficeMessengerShortcut({peerId:'test-peer'}),false);
   assert.equal(selected,0);assert.equal(context.currentView,'buildingAtlas');
 });
-test('CRM exposes one atlas navigation entry and a building-context entry', () => {
-  assert.equal((html.match(/data-view="buildingAtlas"/g) || []).length, 1);
+test('CRM exposes no standalone atlas navigation entry and retains building-context entry', () => {
+  assert.equal((html.match(/data-view="buildingAtlas"/g) || []).length, 0);
   assert.match(app, /buildingAtlas:\s*\[/);
   assert.match(app, /data-building-atlas-open/);
   assert.match(app, /currentView === "buildingAtlas"\) renderBuildingAtlas\(\)/);

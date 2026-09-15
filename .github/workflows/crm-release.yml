@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+      - name: Block artifacts containing internal weekly assignments
+        run: node desktop-crm/scripts/release/check-internal-data.js
       - name: Plan from tags, Releases, and persistent reservation refs
         id: plan
         env:
