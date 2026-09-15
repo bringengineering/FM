@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 
 const FORM_ENDPOINT =
   "https://formsubmit.co/ajax/bringengineering1008@gmail.com";
-const BRIDGE_ORIGIN = "https://bring-fm-hj.web.app";
+const BRIDGE_ORIGIN = "https://bring-fm.web.app";
 const BRIDGE_URL = `${BRIDGE_ORIGIN}/consult-mail-bridge.html`;
 
 type SubmitStatus = "idle" | "sending" | "error" | "copied";

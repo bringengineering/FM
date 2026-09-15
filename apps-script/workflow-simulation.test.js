@@ -104,6 +104,10 @@ const context = {
   String,
   Number,
   JSON,
+  OWNER_PAYMENT_ACCOUNT: {
+    accountNumber: "123-456-789012",
+    accountHolder: "브링케어"
+  },
   readCaseFromFirebase_(caseId) {
     return clone(db[caseId] || null);
   },
@@ -148,6 +152,7 @@ const functions = [
   "workflowPricedQuote_",
   "workflowStepState_",
   "submitOwnerDecisionLocked_",
+  "confirmCasePaymentLocked_",
   "reopenCaseForAnotherQuote_",
   "advanceCaseWorkflow_",
   "normalizeText_",
@@ -381,6 +386,13 @@ function runOwnerDecisionSimulation() {
   expectStatus(approvalId, { c9: "done", c10: "doing" }, "owner approval");
   assert.equal(db[approvalId].ownerDecision.status, "approved_payment", "owner decision must be stored");
   assert.equal(db[approvalId].paymentStatus, "awaiting_payment", "payment must wait for confirmation");
+  const confirmed = context.confirmCasePaymentLocked_(approvalId, "admin@bring-care.local", "admin-uid");
+  assert.equal(confirmed.ok, true, "admin payment confirmation must succeed");
+  expectStatus(approvalId, { c9: "done", c10: "done", c11: "doing" }, "admin payment confirmation");
+  assert.equal(db[approvalId].paymentStatus, "confirmed", "payment must be confirmed by admin");
+  assert.equal(db[approvalId].paymentConfirmation.confirmedBy, "admin@bring-care.local", "admin identity must be recorded");
+  const duplicateConfirmation = context.confirmCasePaymentLocked_(approvalId, "admin@bring-care.local", "admin-uid");
+  assert.equal(duplicateConfirmation.skipped, true, "duplicate payment confirmation must be idempotent");
 
   const otherId = "BR-SIM-OTHER-QUOTE";
   db[otherId] = {
@@ -413,5 +425,5 @@ console.log("PASS ①→⑤: onboarding, receipt SMS, consultation and classific
 console.log("PASS ⑤→⑦: vendor MMS, upload batch gate and lowest-price recommendation");
 console.log("PASS ⑧→⑨: automatic owner MMS, failure hold and duplicate-send prevention");
 console.log("PASS matching: exact, building-only and fuzzy ranking");
-console.log("PASS owner decision: approval opens c10 and other quote reopens c5");
+console.log("PASS owner decision: approval opens c10, admin confirmation opens c11, and other quote reopens c5");
 console.log("PASS owner decision link: prepared and validated at c8 before owner MMS");
