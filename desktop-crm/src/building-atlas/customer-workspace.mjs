@@ -24,6 +24,7 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
  const requestedBuilding=getBuildings().find(b=>b.id===initialBuildingId);
  const first=getCustomers().find(c=>c.id===initialCustomerId)||getCustomers().find(c=>c.buildings.some(b=>b.id===initialBuildingId))||(requestedBuilding?null:getCustomers()[0]);
  let customerId=first?.id||null,buildingId=first?.buildings.find(b=>b.id===initialBuildingId)?.id||first?.buildings[0]?.id||(!first?initialBuildingId:null)||null;
+ let chooserExpanded=!buildingId;
  const button=(label,attr,value)=>{const b=el('button',label);b.type='button';if(attr)b.setAttribute(attr,value);return b;};
  function referenceTargets(id){return (getReferenceTargets(id)||[]).filter(t=>t.buildingId===id&&['unit','case','service'].includes(t.type)&&typeof t.id==='string'&&t.id.trim()&&t.id.length<=300);}
  function renderReference(){
@@ -66,14 +67,18 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
   const building=getBuildings().find(b=>b.id===buildingId);heading.replaceChildren(el('h3',building?.name||'건물 미연결'),el('p',building?.address||'주소 미등록'));
   const customer=getCustomers().find(c=>c.id===customerId);
   const staleSelection=Boolean((customerId&&!customer)||(buildingId&&!building)||(customerId&&buildingId&&!customer?.buildings.some(b=>b.id===buildingId)));
-  list.replaceChildren(el('h3','고객·건물'));
+  const chooser=button(`${building?.name||customer?.name||'고객·건물 선택'} · 변경`);chooser.id='customer-atlas-chooser-toggle';
+  const choices=el('div',null,'customer-atlas-choices');choices.append(el('h3','고객·건물'));
+  const updateChooser=()=>{list.className=chooserExpanded?'customer-atlas-chooser expanded':'customer-atlas-chooser';chooser.setAttribute('aria-expanded',String(chooserExpanded));};
+  chooser.setAttribute('aria-controls',choices.id);chooser.onclick=()=>{chooserExpanded=!chooserExpanded;updateChooser();};updateChooser();
+  list.replaceChildren(chooser,choices);
   const linked=new Set(getCustomers().flatMap(c=>c.buildings.map(b=>b.id))),visible=new Set(getVisibleCustomerIds());
   for(const c of getCustomers()){
    if(!visible.has(c.id))continue;
-   list.append(el('h4',c.name));
-   for(const b of c.buildings.length?c.buildings:[null]){if(b)linked.add(b.id);const choice=button(b?.name||'건물 미연결');choice.setAttribute('aria-pressed',String(customerId===c.id&&buildingId===(b?.id||null)));choice.onclick=()=>select(c.id,b?.id||null);list.append(choice);}
+   choices.append(el('h4',c.name));
+   for(const b of c.buildings.length?c.buildings:[null]){if(b)linked.add(b.id);const choice=button(b?.name||'건물 미연결');choice.setAttribute('aria-pressed',String(customerId===c.id&&buildingId===(b?.id||null)));choice.onclick=()=>select(c.id,b?.id||null);choices.append(choice);}
   }
-  for(const b of getVisibleBuildings().filter(b=>!linked.has(b.id))){const choice=button(`${b.name} · 고객 미연결`);choice.setAttribute('aria-pressed',String(customerId===null&&buildingId===b.id));choice.onclick=()=>select(null,b.id);list.append(choice);}
+  for(const b of getVisibleBuildings().filter(b=>!linked.has(b.id))){const choice=button(`${b.name} · 고객 미연결`);choice.setAttribute('aria-pressed',String(customerId===null&&buildingId===b.id));choice.onclick=()=>select(null,b.id);choices.append(choice);}
   renderProfile(staleSelection?[{title:'고객·건물 연결이 변경되었습니다',lines:['기존 모형과 미저장 초안은 유지했습니다. 현재 목록에서 고객·건물을 다시 선택해주세요. 이전 고객 프로필과 공통 업무는 표시하지 않습니다.']}]:getProfile(customerId,buildingId),building,staleSelection?null:customer);
   if(customerId&&!staleSelection){const consultation=button('＋ 상담 기록','data-action','new-consultation');consultation.setAttribute('data-customer-id',customerId);profile.append(button('고객 정보·메모 수정','data-customer-hub-edit',customerId),button('전체 상세','data-customer-open',customerId),consultation);}
   if(buildingId)profile.append(button('건물 정보 수정','data-building-edit',buildingId));
@@ -96,10 +101,10 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
  }
  async function select(cid,bid){
   if(disposed||busy||!atlas)return false;
-  if(customerId===cid&&buildingId===bid)return true;
+  if(customerId===cid&&buildingId===bid){chooserExpanded=false;render();return true;}
   busy=true;pendingBuildingId=bid;
   profile.hidden=true;history.hidden=true;heading.hidden=true;
-  try{const allowed=buildingId===bid?await atlas.requestLeave():await atlas.selectBuilding(bid);if(!allowed||disposed)return false;customerId=cid;buildingId=bid;render();return true;}finally{busy=false;pendingBuildingId=undefined;profile.hidden=false;history.hidden=false;heading.hidden=false;if(!disposed)renderReference();}
+  try{const allowed=buildingId===bid?await atlas.requestLeave():await atlas.selectBuilding(bid);if(!allowed||disposed)return false;customerId=cid;buildingId=bid;chooserExpanded=false;render();return true;}finally{busy=false;pendingBuildingId=undefined;profile.hidden=false;history.hidden=false;heading.hidden=false;if(!disposed)renderReference();}
  }
  const dispose=()=>{if(disposed)return;disposed=true;atlas?.dispose();signal?.removeEventListener('abort',dispose);host.replaceChildren();};
  signal?.addEventListener('abort',dispose,{once:true});

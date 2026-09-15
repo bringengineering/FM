@@ -55,7 +55,9 @@ test("지시는 관리자만 내고, 담당자는 자기 것만 옮긴다", () =
   assert.match(progress, /current\.assigneeUid !== session\.uid/u);
   assert.match(progress, /NOT_ASSIGNEE/u);
   // 서버 자료를 다시 읽고 판단한다. 두 사람이 동시에 눌렀을 수도 있다.
-  assert.match(progress, /const existing = await this\.dbRequest\(location, \{ method: "GET" \}\)/u);
+  assert.match(progress, /const snapshot = await this\.dbReadWithEtag\(location, false, guard\)/u);
+  assert.match(progress, /dbConditionalPut\(location, persisted, snapshot\.etag/u);
+  assert.match(progress, /if \(!saved.results.length\) delete persisted.results/u);
   assert.match(progress, /WorkOrderCore\.moveStatus/u);
   // 담당자가 지시 내용을 고치는 길을 막는다.
   assert.match(progress, /WorkOrderCore\.sameInstruction/u);
@@ -152,7 +154,9 @@ test("대시보드 숫자는 core 한 곳에서만 센다", () => {
   );
   assert.match(badge, /W\.summarize\(/u);
   assert.match(view, /class="operations-hero"/u);
-  assert.match(view, /class="operations-kpis wo-kpis"/u);
+  assert.match(view, /wo-performance-disclosure/u);
+  assert.match(view, /weeklyPerformancePanel\(performanceScoped/u);
+  assert.doesNotMatch(view, /class="operations-kpis wo-kpis"/u);
 });
 
 test("사이드바 숫자를 실제로 갱신한다", () => {
