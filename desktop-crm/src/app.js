@@ -5402,7 +5402,7 @@
         <b>${esc(item.label)}</b>${item.status && item.status !== "active" ? `<small>${esc(P.statusLabel(item.status))}</small>` : ""}
       </button>`).join("");
 
-    main.innerHTML = `<section class="operations-hero">
+    main.innerHTML = `<section class="operations-hero work-orders-hero">
         <div><span>프로젝트 관리</span><h2>${esc(project ? project.name : "프로젝트")}</h2><p>${esc(project && project.goal ? project.goal : "지금 돌고 있는 일을 한 장에서 봅니다. 표의 한 줄이 곧 업무지시입니다.")}</p></div>
         <div class="operations-actions">
           <div class="wo-scope">

@@ -983,3 +983,14 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .operations-actions,.payment-operation-actions,.partner-hero-actions{
   flex-wrap:wrap; justify-content:flex-end; row-gap:8px;
 }
+
+/* Constrain flex items before wrapping: overflow clipping hid mobile actions. */
+@media(max-width:760px){
+  .work-orders-hero > div:first-child{ min-width:0; flex-basis:100%; overflow-wrap:anywhere; }
+  .work-orders-hero .operations-actions{ flex:1 1 100%; min-width:0; justify-content:flex-start; }
+  .work-orders-hero .operations-actions > button{ max-width:100%; white-space:normal; }
+  .topbar{ height:auto; min-height:88px; flex-wrap:wrap; padding-block:12px; }
+  .topbar > .top-actions{ flex:1 1 100%; flex-wrap:wrap; justify-content:flex-start; }
+  .top-actions .user-pill{ max-width:100%; }
+  .top-actions .user-pill button{ flex-shrink:0; }
+}
