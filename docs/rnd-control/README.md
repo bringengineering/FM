@@ -415,3 +415,11 @@ csv-import-audit.js가 불변 가져오기 job, 원본 출처·열 매핑·기�
 renderer에는 출처/열 매핑/Drive 참조/검토 해시와 건수 및 첫 50개 ID만 반환한다. 원본 CSV 바이너리·전체 가져오기 JSON·인증 토큰을 반환하지 않는다. canPublish=false, databaseWrites=false이며 공유 DB 게시 기능이 아니다. Drive 재검증 확인은 기존 불변 로컬 이력에 추가한다. PC 시각과 준비 요약은 서버 게시 권한/실시각의 증명이 아니며 실제 게시 시 서버가 권한·원본·시각·프로젝트를 다시 확인해야 한다.
 
 서비스 3개·전체 Node 498개·native Main/preload/명시적 확인 취소/시험 모드 회사 Drive 호출 거부·초안/공유 방문 보존 검사 PASS. 회사 실계정의 준비 성공 경로와 서버 게시·공유 권한·팀 조회/복원·두 PC 검수는 여전히 미완료다.
+
+### CSV 공유 감사 서버 트랜잭션 기반
+
+functions/src/rnd/csv-import-transaction.ts에 검증된 감사 명세를 private handle로 묶는 compiler와 append-only root updater를 추가했다. 호출자는 서버에서 인증·Drive 원본을 확인하고 실제 domain validator를 제공해야 한다. request data의 callback/미검증 actor/명세를 이 내부 dependency로 사용하면 안 된다. HTTP 게시 API는 아직 연결하지 않았다.
+
+Compiler는 async 전에 계정·명세·검증기/해시 함수 참조를 보관하며 checksum·ID·계정·로컬 초안 상태를 결합한다. WeakMap에 등록된 동결 handle만 updater가 받아들이며 복사한 handle과 임의 request object는 거부한다. 매 transaction retry에 현재 CRM/RND 승인·계정 이메일·쓰기 역할·비밀번호 변경 상태를 확인한다. 새 기록은 현재 공유 프로젝트 revision이 같을 때만 importJobs에 추가하고 모든 방문·프로젝트·다른 회사 자료를 보존한다. 정확히 같은 기존 감사 기록은 이후 프로젝트 변경이 있어도 중복 게시하지 않고 재확인한다. 같은 ID의 다른 내용은 덮어쓰지 않는다.
+
+신규 helper 시험 4개·전체 Functions 48 files/1,158 tests·TypeScript 빌드와 기존 검증 runtime 14개 패키징 PASS. helper 시험의 domain validator는 격리용 stub이며 실제 원본 인증/공유 게시의 근거가 아니다. 새 helper의 실제 Admin SDK 동시 transaction/emulator, callable 인증·Drive·실시각 연결, 직접 DB 쓰기 차단·조회 Rules와 팀 화면/복원은 미완료다. 전체 회사 root transaction의 규모/비용 검토도 남아 있다. 운영 배포하지 않았다. Windows 검토 실행 파일은 기존 9def771 소스이며 이번 서버 helper는 포함된 UI 기능이 아니다.
