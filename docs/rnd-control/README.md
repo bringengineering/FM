@@ -569,3 +569,8 @@ Native 게시/이력 연결7개 및 기존 공유 조회5개, CRM Node517개 PAS
 공유 감사 조회 성공 후 감사 요약 ZIP 보관 버튼을 제공한다. renderer는 작업/프로젝트 ID만 보내고 Main이 승인·세대를 검사하며 서버 공유 감사 기록을 다시 조회한다. JSON 요약과 SHA-256 manifest/static README를 ZIP에 담아 사용자가 선택한 경로에 partial wx 저장 후 권한/세대 재검사와 rename을 수행한다. viewer도 승인된 읽기 전용 내보내기를 사용할 수 있다. 취소/권한 변경/기록 연결 불일치 시 쓰지 않는다. 원본 CSV·binary·전체 작업 JSON은 포함하지 않으며 역사 조회의 목록50개 제한을 유지한다. 복원 backup/현재 Drive 원본 검증 증거가 아니다. 운영 DB/Drive에 쓰지 않는다.
 
 CRM Node523개 PASS: 신규6개는 ID-only/currenthistory/cancel/session/mismatch와 ZIP JSON/manifest SHA/static README·저장창 중 승인 회수·정상 감사 SHA의 민감정보 오인 방지/형식과 민감 텍스트 거부를 검사한다. Native 공유 감사 화면7개 PASS: 내보내기 ID-only 요청·프로젝트 교체 비활성·genuine Main/preload 로컬 회사 내보내기 거부 포함. 성공은 fixture이며 실제 회사 조회/파일저장 happy path는 별도 검수다. Windows66ee323은 이번 내보내기를 포함하지 않는다. 전체61개 인수/운영 배포 미완료.
+
+
+### 최신 Windows 감사 요약 내보내기 검토 빌드 · 7d13461
+
+최신 Windows 검토 ZIP을7d13461 소스로 갱신했다. 확인 사본에서 공유 조회 연결·Main 서버 재조회 기반 감사 요약 ZIP 보관을 포함한다. src104개 ASAR byte 일치 PASS. packaged 공유 감사 조회/내보내기 화면7개·게시/확인 사본 조회 화면7개·CSV 가져오기8개 PASS. 이전66ee323 제외 메모는 해당 단계 당시 상태다. export 성공 반환과 감사 성공 데이터는 fixture이며 genuine Main 회사 조회/게시/내보내기는 로컬 시험에서 거부한다. 실제 saveDialog+서버조회+파일보관 happy path와 회사계정 두PC/원격게시·전체61개 인수는 미완료다. 다른 동봉 로그는 과거 단계 증거일 수 있다. 운영 설치·업데이트·Rules/Functions 배포하지 않았다.
