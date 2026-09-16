@@ -5,3 +5,5 @@ Requirement: original EXP-04 separates real numeric zero from missing sensor rea
 Implemented: domain validation/research command, repository immutable collection patches, archive/import/backup compatibility and server Rules. Native Main and full emulator verification use explicit local fixtures; no company cloud assertion.
 
 Remaining: native observation form with project drafts/session guards, current-state reporting/search and internal export/disclosure exclusion, focused UI/packaged verification and refreshed Windows package. No EXP-04 PASS claim before the full input/reporting scope is tested.
+
+Update: native UI/project drafts/session guards, search/portfolio and internal export/review exclusion now implemented and locally verified (Node423, focused Main/UI/ZIP). Remaining: packaged validation and refreshed delivery archives, actual company operation.

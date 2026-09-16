@@ -34,4 +34,3 @@ export function applyResearch(project,command,user){
  else throw Error('지원하지 않는 연구 작업');
  const previousCount=before.history.length;r.history.push({...command.type==='editDraft'?{reason:command.reason,beforePlan:before.experiments.find(e=>e.id===command.id).plan,afterPlan:copy(r.experiments.find(e=>e.id===command.id).plan)}:{},type:command.type,targetId:command.id??command.plan?.id??command.frameworkVersion??command.dataset?.id??command.metric?.id??command.task?.eventId??command.observation?.id,actorUid:user.uid,at:new Date().toISOString(),sequence:previousCount+1});return p;
 }
-
