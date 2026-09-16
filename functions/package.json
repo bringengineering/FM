@@ -8,6 +8,7 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
+    "gcp-build": "tsc -p tsconfig.json && node scripts/verify-rnd-runtime.mjs",
     "build": "tsc -p tsconfig.json && node scripts/bundle-rnd-runtime.mjs",
     "test": "node scripts/bundle-rnd-runtime.mjs && vitest run test"
   },
