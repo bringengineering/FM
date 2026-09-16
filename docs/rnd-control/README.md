@@ -498,3 +498,10 @@ Native Electron 시험에서 viewer 요약/원래 게시 계정·HTML 텍스트 
 실제 metadata restore 준비/compile 경로가 snapshot의 importJobs 감사 이력을 바이트 표현 그대로 보존하는 시험을 추가했다. 기존 게시 계정·시각·Drive 참조·불변 작업 JSON을 새 복원 기록으로 바꾸지 않고 방문 기록도 재적용하지 않는다. 감사 목록이 배열/숫자/문자열로 손상된 경우 compiler가 복원을 거부한다. absent/null collection을 새로 만들거나 역사 기록을 현재 계정으로 재게시하지 않는다.
 
 전체 CRM Node 505개 PASS. 보존 시험의 감사 자료는 fixture이며 domain 인증/실계정 증거가 아니다. 기존 root snapshot 변경 검사는 동시 추가된 감사 이력을 덮어쓰지 않는 기반이며 실제 CSV 게시/복원 동시 SDK 시험과 감사 내보내기/backup 포함은 별도로 남아 있다. Windows 검토 파일은 직전 18e8d0a 빌드이며 신규 guard는 아직 포함하지 않았다.
+
+
+### CSV 감사 원격 조회 transport 한도
+
+getCSVAudit의 원격 응답을 JSON 파싱 전에 스트림으로 읽고 실제 수신 byte 합계를 32MiB로 제한한다. 명시된 oversized Content-Length도 미리 거부하며 길이 헤더가 없어도 chunk 합계로 제한한다. UTF-8을 fatal decoder로 검사하여 chunk 경계의 한국어는 복원하고 잘못된 byte는 거부한다. chunk read 대기 전후 계정 일치를 확인하며 실패/완료 시 reader를 취소/해제한다. 스트림 없는 response는 거부하며 fake json fallback은 없다. 현재 Main 승인/세대 최종 guard는 그대로 유지한다.
+
+전체 CRM Node 509개 PASS. 경계 분할 한글·초과 스트림 조기 취소·Content-Length/잘못된 UTF-8/스트림 없음·read 중 세션 변경 검증 PASS. 최신 Windows 검토 파일은 18e8d0a로 이번 helper/복원 guard를 아직 포함하지 않는다. 실제 프로그램의 원격 happy path와 회사 실계정은 후속 검수다. 운영 미배포.
