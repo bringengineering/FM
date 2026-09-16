@@ -602,3 +602,12 @@ CRM Node525개 및 Drive11개 PASS, 독립 검토 중요한 회귀 없음. Googl
 기존 Main Drive 연결은 OAuth 반환 뒤 UID만 비교하던 흐름을 trusted singleton drive-connection-flow로 교체했다. 인증 동의 전·token 반환 후·Drive 연결 완료 후 remote SDK 로그인 세대와 현재 승인 UID/이메일/역할을 확인한다. 같은UID 재로그인·이메일/역할 변경도 거부하며 연결 후 검사 실패는 새 연결을 clear한다. 인증 진행 중 중복 요청은 별도 동의창을 열지 않는다. token은 Main 내부에서만 사용하고 finally 지역 참조를 정리한다.
 
 Node529개 PASS(새 flow3개는 OAuth fixture 세션A-B-A/역할·이메일 변경/busy/안전 응답/연결후회수 포함). native admin localtest와viewer 실제 Main/preload가 외부 동의 호출 전에 연결을 거부함을 확인했다. Native 게시8개/공유조회8개PASS. OAuth 실제 성공은 검증하지 않았다. Windows 최신c933276은 앞선 Drive 내부 취소/상태 수정까지 포함하며 이번 Main flow는 아직 미포함이다. 전체61개 인수와 운영 배포 미완료.
+
+
+### 고정 GitHub 코드 파일 원본 확인
+
+참고 근거 폼에 고정 GitHub 파일 원본 확인 버튼을 연결했다. renderer는 URL/version만 보내고 Main은 현재 R&D 조회 승인과 세대를 검사한다. github.com의 40자리 고정 commit 파일 링크만 허용하며 fixed api.github.com에서 commit SHA와 파일 경로를 확인한다. 8MiB 이하 파일의 canonical base64·크기·Git blob SHA-1·SHA-256을 검증한다. contents encoding none은 검증된 SHA의 같은 호스트 git/blobs 경로로 읽고 SHA/크기를 재대조한다. redirect를 금지하고 streaming 응답 한도(commit 1MiB/file 12MiB)를 적용한다. UI에는 소형 receipt만 반환하며 파일 본문/token을 제공하지 않는다. 401/403/404는 접근 또는 존재 미확인으로 구분하고 삭제를 확정하지 않는다. 입력·프로젝트·로그인 변경 이후 늦은 결과는 표시하지 않는다. 파일 내용 확인과 기술 주장 승인은 별개다.
+
+공개 저장소는 인증 없이 조회한다. 비공개 저장소는 trusted Main 환경 BRING_RND_GITHUB_READ_TOKEN에 제한적 읽기 인증이 있을 때만 사용한다. token을 IPC/DB/내보내기에 보존하지 않으며 별도 GitHub 로그인이나 계정 전환도 하지 않았다. API 기준: [GitHub contents](https://docs.github.com/en/rest/repos/contents), [Git blobs](https://docs.github.com/en/rest/git/blobs).
+
+Node 534개/Native 5개 PASS. 실제 참고 근거 폼 연결·URL/version 요청·안전한 텍스트·입력 변경/프로젝트 A-B-A·genuine Main 로컬 조회 거부를 확인했다. 실제 기존 GitHub 인증으로 FM/e39b3a6/code-source.mjs 원격 파일 해시와 local Git 바이트 일치 증거를 확보했다. GitHub API는 실제 실행했고 CRM auth는 fixture이므로 Main 원격 성공/일반 근거 승인/전체 OUT-03 PASS 증거는 아니다. 결과는 조회 시점 표시이며 프로젝트 불변 검증 이력에 자동 보존하지 않는다. Windows 최신 e39b3a6은 이번 새 기능 미포함. 전체 61개 인수 및 운영 배포 미완료.
