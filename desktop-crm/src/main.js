@@ -3820,6 +3820,7 @@ secureHandle('crm:rnd-csv-jobs',async()=>csvJobService().list());
 secureHandle('crm:rnd-csv-get-job',async input=>csvJobService().get(input));
 secureHandle('crm:rnd-csv-receipt',async input=>csvJobService().receipt(input));
 secureHandle('crm:rnd-csv-drive-source',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 Drive로 전송하지 않습니다');return require('./rnd-control/csv-drive-source').createCSVDriveSource({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,ledger:csvLedger(),getProject:id=>rndRepository().get('projects',id),upload:input=>rndDrive.upload(input)})(input);});
+secureHandle('crm:rnd-csv-drive-verify',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 Drive 원본을 검증하지 않습니다');return require('./rnd-control/csv-drive-verification').createCSVDriveVerification({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,ledger:csvLedger(),getProject:id=>rndRepository().get('projects',id),verifyVersion:ref=>rndDrive.verifyVersion(ref)})(input);});
 secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
 let rndSharedRestore;
 function sharedRestoreClient(){
