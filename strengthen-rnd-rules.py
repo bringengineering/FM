@@ -97,6 +97,8 @@ for field in ['frozenAt','fetchedAt','customerIdsJSON','buildingIdsJSON']:
 project['crmContexts']={'$context':{'.write':access+' && newData.exists() && !data.exists()', '.validate':' && '.join('('+check+')' for check in context_checks),'$other':{'.validate':False},**{field:{} for field in context_fields}}}
 exec(Path('follow-up-rules.py').read_text(encoding='utf-8'))
 install_follow_up_rules(project, access, admin)
+exec(Path('observation-rules.py').read_text(encoding='utf-8'))
+install_observation_rules(project,access)
 rnd="root.child('rndAccess').child(auth.uid)"
 crm="root.child('crmCompany/access').child(auth.uid)"
 extra=" && "+rnd+".child('enabled').val() === true && "+rnd+".child('email').val() === auth.token.email && "+rnd+".child('role').val() === "+crm+".child('role').val()"

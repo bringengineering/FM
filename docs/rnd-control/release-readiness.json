@@ -114,8 +114,13 @@
     {
       "id": "EXP-04",
       "result": "NOT_RUN",
-      "reason": "결측 사유·미점검 상태 엔터티 필요",
-      "evidence": []
+      "reason": "관측 상태 OBSERVED/MISSING/NOT_INSPECTED/UNOBSERVABLE·값0/null·사유·실험/계획/대상·Main작성자·불변기록 구현. 실제Main 재조회 및 전체emulator null필드 복원/원본수정거부 시험 통과. 입력UI/검색/보고서/packaged검수는 미완료",
+      "evidence": [
+        "desktop-crm/test/rnd-observation.test.js",
+        "desktop-crm/test-rnd-rules.mjs",
+        "desktop-crm/test-rnd-observation-electron.mjs",
+        "docs/superpowers/plans/2026-09-17-observation-states.md"
+      ]
     },
     {
       "id": "EXP-05",

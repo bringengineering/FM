@@ -1103,6 +1103,28 @@
                   ".validate": false
                 }
               }
+            },
+            "observations": {
+              "$observation": {
+                ".write": "(auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists() && !data.exists()) && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val()",
+                ".validate": "(newData.hasChildren([\"id\", \"projectId\", \"experimentId\", \"planRevision\", \"unitId\", \"name\", \"unit\", \"status\", \"reason\", \"observedAt\", \"recordedBy\", \"at\"])) && (newData.child('id').val() === $observation) && (newData.child('projectId').val() === $id) && (newData.child('recordedBy').val() === auth.uid) && (newData.parent().parent().child('experiments').child(newData.child('experimentId').val()).child('status').val() === 'running') && (newData.child('planRevision').val() === newData.parent().parent().child('experiments').child(newData.child('experimentId').val()).child('planVersion').val()) && (newData.child('id').isString() && newData.child('id').val().matches(/^[a-zA-Z0-9_-]{1,128}$/)) && (newData.child('experimentId').isString() && newData.child('experimentId').val().matches(/^[a-zA-Z0-9_-]{1,128}$/)) && (newData.child('unitId').isString() && newData.child('unitId').val().matches(/^[a-zA-Z0-9_-]{1,128}$/)) && (newData.child('recordedBy').isString() && newData.child('recordedBy').val().matches(/^[a-zA-Z0-9_-]{1,128}$/)) && (newData.child('name').isString() && newData.child('name').val().length <= 4000 && newData.child('name').val().matches(/.*[!-~¡-ᙿᚁ-῿​-‧‪-‮‰-⁞⁠-⿿、-﻾＀-￿].*/)) && (newData.child('unit').isString() && newData.child('unit').val().length <= 4000 && newData.child('unit').val().matches(/.*[!-~¡-ᙿᚁ-῿​-‧‪-‮‰-⁞⁠-⿿、-﻾＀-￿].*/)) && (newData.child('reason').isString() && newData.child('reason').val().length <= 4000 && newData.child('reason').val().matches(/.*[!-~¡-ᙿᚁ-῿​-‧‪-‮‰-⁞⁠-⿿、-﻾＀-￿].*/)) && (newData.child('observedAt').isString() && newData.child('observedAt').val().matches(/^([0-9]{4}-((0[13578]|1[02])-(0[1-9]|[12][0-9]|3[01])|(0[469]|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-8]))|([0-9]{2}(0[48]|[2468][048]|[13579][26])|([02468][048]|[13579][26])00)-02-29)T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$/)) && (newData.child('at').isString() && newData.child('at').val().matches(/^([0-9]{4}-((0[13578]|1[02])-(0[1-9]|[12][0-9]|3[01])|(0[469]|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-8]))|([0-9]{2}(0[48]|[2468][048]|[13579][26])|([02468][048]|[13579][26])00)-02-29)T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$/)) && (newData.child('observedAt').val() <= newData.child('at').val()) && ((newData.child('status').val() === 'OBSERVED' && newData.child('value').isNumber()) || ((newData.child('status').val() === 'MISSING' || newData.child('status').val() === 'NOT_INSPECTED' || newData.child('status').val() === 'UNOBSERVABLE') && !newData.child('value').exists()))",
+                "id": {},
+                "projectId": {},
+                "experimentId": {},
+                "planRevision": {},
+                "unitId": {},
+                "name": {},
+                "unit": {},
+                "status": {},
+                "value": {},
+                "reason": {},
+                "observedAt": {},
+                "recordedBy": {},
+                "at": {},
+                "$other": {
+                  ".validate": false
+                }
+              }
             }
           },
           "crmContexts": {
