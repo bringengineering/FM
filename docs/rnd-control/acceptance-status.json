@@ -402,9 +402,13 @@
       "condition": "결정 승인",
       "expected": "검토 근거의 지정 버전·결정자·사유·후속업무·시각 저장",
       "result": "NOT_RUN",
-      "note": "관리자 결정·승인 근거·이유·시각 저장. 후속 업무 domain 생성/상태/담당자/검토자/기한/불변 이벤트 기반과 시험 구현. 공유 DB·task head 제약·Main·UI·보고서 연결은 미완료",
+      "note": "관리자 결정·승인 근거·이유·시각 및 후속 업무 Main/UI·불변 이벤트·원자적 task head·Rules 연결 구현. Node421, 전체 emulator Rules, native 생성/진행/검토/자기검토 완료·재조회·프로젝트별 입력·지연응답·계정정리·내부 ZIP/검토 제외 시험 통과. 회사 실계정 및 packaged 후속 업무 검수 미완료; 전체 gate PASS 근거는 아직 부족",
       "evidence": [
-        "desktop-crm/test/rnd-follow-up.test.js"
+        "desktop-crm/test/rnd-follow-up.test.js",
+        "desktop-crm/test-rnd-follow-up-rules.mjs",
+        "desktop-crm/test-rnd-follow-up-electron.mjs",
+        "desktop-crm/test/rnd-follow-up-reporting.test.js",
+        "docs/rnd-control/decision-follow-up-integration.md"
       ]
     },
     {
