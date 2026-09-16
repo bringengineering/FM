@@ -438,3 +438,12 @@ csv-import-auth.ts가 검증된 Firebase callable request.auth의 UID/이메일/
 실제 CRM의 CSV 감사/원본 검증과 회사 Drive 모듈이 참조하는 9개 JS/MJS 파일을 바이트 그대로 서버 패키지에 복사한다. rnd-control과 core의 상대 경로 및 CommonJS 경계를 유지하며 파일별 SHA inventory를 빌드한다. 클라우드 빌드는 CRM 소스 폴더를 요구하지 않고 배포 패키지의 의존 관계와 해시를 확인한다. 서버 adapter는 크기를 제한한 감사 명세 구성/검증과 digest, 고정 회사 Drive의 연결/원본 재검증만 제공한다.
 
 전체 Functions 50 files/1,167 tests PASS. CRM 폴더 없는 임시 패키지의 TypeScript 컴파일, 기존 복구 14개와 CSV 9개 검증, 두 runtime의 실제 로드 PASS. 회사 Drive 시험은 HTTP fixture이며 실계정의 성공 근거가 아니다. 실제 게시 callable·최신 인증/Drive/서버 시각·DB transaction·Rules·팀 화면 연결은 다음 작업이다. 운영 미배포이며 Windows 검토 실행 파일은 이전 9def771 소스다. 원래 61개 인수 기준의 완료 판단은 변경하지 않는다.
+
+
+### CSV 공유 게시 서버 준비 operation
+
+서버 내부 prepareCSVImportPublication은 job/providerFileId/Drive token만 받아 알 수 없는 필드를 거부한다. 실제 job 검증 후 현재 인증 계정과 원본 소유자를 결합하고 공유 프로젝트를 조회한다. 고정 회사 Drive driver로 원본을 재검증한 후 인증을 다시 확인하며 서버 시각/프로젝트 버전으로 실제 감사 명세를 구성한다. 마지막 프로젝트 조회가 달라지면 compiler를 호출하지 않는다. 연결은 실패/성공 모두 finally에서 정리한다. 인증 closure/runtime/clock/compiler는 trusted server dependency이며 request body로 구성하지 않는다.
+
+신규 orchestration 시험 4개 및 Functions 51 files/1,171 tests·독립 cloud build PASS. 이 시험의 인증/Drive/runtime/compile은 mock이며 실제 domain/Drive runtime 시험은 별도로 존재한다. 실제 callable SDK 연결·atomic 게시 및 동일 job 재요청 처리·Rules·팀 조회는 여전히 미완료다. 이 operation 자체는 DB 쓰기를 수행하지 않고 private compiled handle만 서버 내부에 반환한다. 운영 미배포.
+
+서버 준비는 Drive 위치/소유권/버전 검증 뒤 8MiB로 제한한 원본 다운로드의 해시/크기를 다시 확인하고 실제 CSV parser로 초안을 재계산한다. 새 체크섬을 붙인 위조 시간/비용/사유도 원본에서 만든 값과 다르면 거부한다. 서버에서 조회한 기존 방문을 재방문 연결 검증에 사용하며 원본 ID가 초안/충돌/제외에 정확히 한 번씩 분류됐는지 확인한다. 충돌/제외는 과거 PC 검토의 보고이며 현재 서버 DB에 실제 적용된 결과가 아니다. 원장 이름·추출 시각·열 매핑은 원본 계정의 선언으로서 그 사업적 정확성을 인증하지 않는다.
