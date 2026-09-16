@@ -505,3 +505,8 @@ Native Electron 시험에서 viewer 요약/원래 게시 계정·HTML 텍스트 
 getCSVAudit의 원격 응답을 JSON 파싱 전에 스트림으로 읽고 실제 수신 byte 합계를 32MiB로 제한한다. 명시된 oversized Content-Length도 미리 거부하며 길이 헤더가 없어도 chunk 합계로 제한한다. UTF-8을 fatal decoder로 검사하여 chunk 경계의 한국어는 복원하고 잘못된 byte는 거부한다. chunk read 대기 전후 계정 일치를 확인하며 실패/완료 시 reader를 취소/해제한다. 스트림 없는 response는 거부하며 fake json fallback은 없다. 현재 Main 승인/세대 최종 guard는 그대로 유지한다.
 
 전체 CRM Node 509개 PASS. 경계 분할 한글·초과 스트림 조기 취소·Content-Length/잘못된 UTF-8/스트림 없음·read 중 세션 변경 검증 PASS. 최신 Windows 검토 파일은 18e8d0a로 이번 helper/복원 guard를 아직 포함하지 않는다. 실제 프로그램의 원격 happy path와 회사 실계정은 후속 검수다. 운영 미배포.
+
+
+### 최신 Windows 검토 빌드 갱신 · 6cca3df
+
+위 단계별 메모의 Windows 18e8d0a/신규 guard 미포함 상태는 해당 단계 당시의 기록이다. 현재 제공하는 Windows 검토 ZIP은 6cca3df 소스로 새로 빌드했으며 감사 복원 형식 guard와 스트리밍 조회 한도를 포함한다. 101개 src 파일의 ASAR 바이트 일치 PASS. 새 packaged 감사 조회 5개/기존 CSV 가져오기 8개/공유 복원 화면 4개 시험 PASS. 감사 UI 성공과 공유 복원 승인 동작은 fixture이며 실제 Main의 회사 조회/저장은 로컬 시험에서 거부한다. 최신 결과 파일과 source verification/build manifest/ZIP 전체 파일 hash를 함께 제공한다. 그 밖의 함께 실린 옛 시험 로그는 해당 과거 단계의 증거로 읽어야 한다. 회사 실계정 승인/원본/원격 게시 happy path 및 전체 61개 인수 완료는 아직 검증되지 않았다. 운영 설치/업데이트/Rules·Functions 배포를 하지 않았다.
