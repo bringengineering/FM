@@ -84,6 +84,8 @@ jobs:
         run: pnpm --dir company-site exec firebase --config ../rnd-emulator.json --project demo-bring-rnd emulators:exec --only database "node ../desktop-crm/test-rnd-rules.mjs"
       - name: Test R&D CSV audit read-only access in local emulator
         run: pnpm --dir company-site exec firebase --config ../rnd-emulator.json --project demo-bring-rnd emulators:exec --only database "node ../desktop-crm/test-rnd-csv-audit-rules.mjs"
+      - name: Test R&D CSV publication and restore transaction races
+        run: pnpm --dir company-site exec firebase --config ../rnd-emulator.json --project demo-bring-rnd emulators:exec --only database "node ../functions/test-rnd-csv-transaction.mjs"
       - name: Test R&D restore callables with Firebase Auth and Functions emulators
         env:
           BRING_RND_SHARED_RESTORE_ENABLED: "1"

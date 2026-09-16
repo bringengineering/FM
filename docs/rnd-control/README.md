@@ -555,3 +555,10 @@ CRM Node517개, Functions53파일1179개, runtime byte 일치/build, Native 게�
 보관된 게시 확인 사본마다 이 작업의 공유 감사 조회 버튼을 추가했다. 활성 이력 행·로그인 초기화 세대·현재 프로젝트를 확인한 뒤 같은 host의 읽기 전용 조회 화면에 작업/프로젝트 ID를 전달한다. 조회 화면은 ID·프로젝트를 다시 검사하고 기존 대기 조회를 취소한 뒤 현재 Main 권한 조회 경로를 사용한다. 다른 프로젝트 선택 중에는 서버 요청을 만들지 않는다. 새 쓰기/IPC 경로는 없다.
 
 Native 게시/이력 연결7개 및 기존 공유 조회5개, CRM Node517개 PASS. 조회 성공은 fixture로 실제 회사 원격 성공을 증명하지 않는다. 독립 검토 중요한 문제 없음. Windows 최신 검토 빌드는66ee323으로 이번 편의 연결은 아직 소스에만 포함한다. 전체61개 인수 및 운영 배포 미완료.
+
+
+### CSV 게시와 metadata 복원 SDK 동시 실행 검증
+
+실제 createServerRestoreRuntime의 preview/prepare/compile로 복원 계획을 만들고 실제 CSV parser/job/audit/compiler로 게시 계획을 만든 뒤 demo Firebase DB에서 Admin SDK root transaction을 실행했다. CSV 먼저/복원 먼저/동시 Promise 요청 모두 감사 원본과 기존 방문 자료·회사 기타 자료 보존 PASS. CSV 먼저 추가돼 스냅샷이 바뀌면 오래된 복원은 committed false로 거부하고, 복원 먼저 성공하면 CSV는 새 복원 프로젝트를 보존하며 감사만 추가한다. 동시 시험은 실제 SDK 요청 실행이며 인증·Drive 자료는 fixture이고 실제 회사/Google 원본·배포 callable의 증거가 아니다. 같은 작업 동시 게시·재게시·승인 회수 시험도 포함하여6개 PASS.
+
+이 실행을 GitHub CI의 build 후 demo database emulator 단계에 추가했다. CI 새 실행 결과는 별도 확인해야 한다. production 로직/Windows src는 변경하지 않았고 전체61개 인수 및 운영 배포는 미완료.
