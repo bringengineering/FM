@@ -524,3 +524,10 @@ csv-audit-publisher.js는 trusted Main에서 승인/로그인 세대·계정별 
 rndCSVPublishAudit -> secureHandle crm:rnd-csv-publish-audit -> 승인/로컬 거부 -> default-disabled publisher를 연결했다. 검증된 계정별 CSV ledger job과 기존 회사 Drive 연결을 trusted Main dependency로 사용한다. Drive withConnectionToken callback은 내부 작업에만 인증을 제공하고 callback 완료 뒤 같은 연결·UID/이메일/역할·만료를 확인한다. 별도 token 조회 IPC/state 필드를 제공하지 않는다. CRM token을 기다리는 중 Drive 연결이 해제/변경/만료되면 게시 준비를 거부한다. publisher를 singleton으로 보관해 중복 호출 busy guard를 유지한다. 두 승인/CRM 로그인 세대 검사와 서버 최신 인증/원본 재검증은 그대로다.
 
 CRM Node 515개·Main/preload 구문 검사 PASS. Drive 연결 시험은 HTTP fixture이며 원본 회사 계정 인증의 근거가 아니다. 아직 renderer의 별도 게시 확인 버튼·실제 Main 게시 IPC 성공/에뮬레이터/실계정 검수를 연결하지 않았다. 새 IPC는 기본 비활성이고 운영 배포하지 않았다. Windows 최신 검토 빌드는 6cca3df로 신규 publisher 및 token callback/IPC는 포함하지 않는다.
+
+
+### CSV 이력 공유 감사 게시 화면
+
+기존 CRM CSV 가져오기 이력의 Drive 원본 사본마다 공유 감사 기록 게시 버튼을 연결했다. 별도 확인 후 jobId/providerFileId만 Main에 전달하며 작업/프로젝트/RECORDED 응답을 확인하여 표시한다. 세션 초기화·프로젝트 교체·이력 화면 교체 이후 늦은 결과는 표시하지 않는다. 게시 오류는 자동 재시도하지 않고 방문 기록을 자동 반영하지 않는다.
+
+실제 Electron 창에서 실제 mountCSVHistory 연결을 통해 확인 취소/ID 한정 요청과 fixture receipt/프로젝트 A-B-A 늦은 응답 무시/재조회·세션 초기화 listener 정리와 늦은 결과 무시/genuine Main-preload 로컬 시험 게시 거부 5개 PASS. CRM Node 515개 PASS. 성공 경로는 명시한 fixture이며 회사 계정 원격 게시 성공의 증거가 아니다. 기능은 기본 비활성이고 운영 배포하지 않았다. Windows 검토 ZIP은 여전히 6cca3df로 새 게시 Main 및 화면은 포함하지 않으며 소스 패키지와 구분한다. 전체 61개 인수 완료는 아직 검증되지 않았다.
