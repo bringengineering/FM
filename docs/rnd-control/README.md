@@ -301,3 +301,5 @@ DB 기준선 연결 보호: rndControl/visits의 기존 projectId는 일반 DB �
 재시작 대조 통합 시험: 실제 임시 디스크 원장에 전송 전 작업을 기록하고, 테스트 서버가 저장 후 응답을 유실하며 즉시 재조회도 실패하는 상황을 구성했습니다. repository·ledger·recovery 서비스를 새로 생성해 같은 디스크 원장을 읽으면 내용 일치를 확인하고, 이후 서버 수정에는 CURRENT_DIFFERENT를 반환합니다. 전체 과정에서 쓰기는 1회입니다. Node 서비스 재생성 시험이며 Windows 프로세스 강제 종료와 실제 회사 서버 장애 검증은 아닙니다. 근거: desktop-crm/test/rnd-save-restart.test.js.
 
 GitHub CI에는 R&D Database Emulator 시험 단계를 추가했습니다. company-site 작업 디렉터리에서 같은 상대 경로·demo project 설정으로 R&D Rules 시험을 로컬 실행해 통과했습니다. CI의 R&D 의존성 설치는 Electron 바이너리 다운로드를 생략합니다. 실제 GitHub 실행 결과는 PR Checks에서 별도로 확인해야 합니다.
+
+GitHub CI 실행 35136744005(ad4806a)에서 Windows desktop 및 backend-and-rules가 모두 통과했습니다. R&D Emulator 시험을 포함한 CI 근거이며 운영 계정 검수를 대신하지 않습니다. 이후 세션 보호 보강은 auth 사용자 객체의 복사본을 보관하고 UID·역할·이메일 변경을 모두 비교합니다. 같은 객체의 내부 이메일 변경도 원격 쓰기 전에 차단하는 모델 시험을 추가했습니다. 새 커밋의 CI 결과는 별도 확인 대상입니다.
