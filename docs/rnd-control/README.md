@@ -517,3 +517,10 @@ getCSVAudit의 원격 응답을 JSON 파싱 전에 스트림으로 읽고 실제
 csv-audit-publisher.js는 trusted Main에서 승인/로그인 세대·계정별 검증 job·인증 정보 callback을 받아 서버 게시를 호출하는 내부 서비스다. renderer 요청으로는 jobId/providerFileId만 허용한다. 고정 HTTPS endpoint, redirect error, 120초 timeout을 사용하고 bearer CRM token과 Drive token은 Main 내부 호출에만 사용한다. 응답을 128KiB streaming 한도로 읽고 작업/프로젝트/RECORDED 상태/해시가 정확히 맞는 작은 receipt만 반환한다. 서버 메시지·credential은 반환하지 않고 결과 불명 시 같은 기록 조회를 안내하며 자동 재시도하지 않는다. 현재 승인을 각 대기 이후 다시 확인하고 로그인 교체나 role 변경 시 응답을 거부한다.
 
 전체 CRM Node 513개 PASS. 신규 4개 시험은 fixedendpoint/ID제한/owner·viewer·disabled거부/credential·response세션변경/위조응답·서버disabled·transportuncertain 및 민감 오류문자열 비노출을 fixture로 검증한다. 아직 실제 Main Drive 연결 인증 상태·IPC·renderer 게시 버튼에 연결하지 않은 기반이다. 운영 미배포이며 Windows 6cca3df 빌드에는 이 추가 module이 포함되지 않았다. 실제 회사 게시 성공/로컬 게시 receipt·팀 화면 통합은 후속 작업이다.
+
+
+### CSV 게시 Main 인증/IPC 연결
+
+rndCSVPublishAudit -> secureHandle crm:rnd-csv-publish-audit -> 승인/로컬 거부 -> default-disabled publisher를 연결했다. 검증된 계정별 CSV ledger job과 기존 회사 Drive 연결을 trusted Main dependency로 사용한다. Drive withConnectionToken callback은 내부 작업에만 인증을 제공하고 callback 완료 뒤 같은 연결·UID/이메일/역할·만료를 확인한다. 별도 token 조회 IPC/state 필드를 제공하지 않는다. CRM token을 기다리는 중 Drive 연결이 해제/변경/만료되면 게시 준비를 거부한다. publisher를 singleton으로 보관해 중복 호출 busy guard를 유지한다. 두 승인/CRM 로그인 세대 검사와 서버 최신 인증/원본 재검증은 그대로다.
+
+CRM Node 515개·Main/preload 구문 검사 PASS. Drive 연결 시험은 HTTP fixture이며 원본 회사 계정 인증의 근거가 아니다. 아직 renderer의 별도 게시 확인 버튼·실제 Main 게시 IPC 성공/에뮬레이터/실계정 검수를 연결하지 않았다. 새 IPC는 기본 비활성이고 운영 배포하지 않았다. Windows 최신 검토 빌드는 6cca3df로 신규 publisher 및 token callback/IPC는 포함하지 않는다.

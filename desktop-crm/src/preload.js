@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   rndCSVReceipt: input => ipcRenderer.invoke('crm:rnd-csv-receipt',input),
   rndCSVDriveSource: input => ipcRenderer.invoke('crm:rnd-csv-drive-source',input),
   rndCSVDriveVerify: input => ipcRenderer.invoke('crm:rnd-csv-drive-verify',input),
+  rndCSVPublishAudit: input => ipcRenderer.invoke('crm:rnd-csv-publish-audit',input),
   rndCSVAuditHistory: input => ipcRenderer.invoke('crm:rnd-csv-audit-history',input),
   rndCSVPrepareAudit: input => ipcRenderer.invoke('crm:rnd-csv-prepare-audit',input),
   rndPreviewCSV: input => ipcRenderer.invoke("crm:rnd-preview-csv",input),
