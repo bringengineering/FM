@@ -19,6 +19,9 @@ test('rendered cards and performance share raw date scope without server writes'
   assert.deepEqual(cards.sort(),expected.sort());assert.deepEqual(summary.rows.map(o=>o.id).sort(),expected.sort());
  }
  assert.ok(!render.includes('saveWorkOrder'));
+ ctx.workOrderState.performancePeriod='current-week';ctx.workOrderState.performanceAvailable=false;
+ assert.doesNotThrow(()=>ctx.renderWorkOrders());
+ assert.ok(ctx.main.innerHTML.includes('기간 조회 확인 필요'));
 });
 test('period selector preserves input, excludes bad dates, includes overlapping work',()=>{
  const orders=[{id:'a',status:'doing',startDate:'2026-09-10',dueDate:'2026-09-18'}, {id:'b',status:'assigned',dueDate:'2026-09-13'}, {id:'c',status:'assigned',dueDate:'2026-02-30'}];

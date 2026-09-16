@@ -68,7 +68,7 @@
   }
   function selectPeriod(options) {
     const summary = summarize(options);
-    if (!summary.available) return { ...summary, orders: [] };
+    if (!summary.available) return { ...summary, diagnostics: {}, orders: [] };
     const ids = new Set(summary.rows.map(row => row.id));
     return { ...summary, orders: options.orders.filter(order => ids.has(text(order && order.id).trim())) };
   }
