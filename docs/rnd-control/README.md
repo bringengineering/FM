@@ -543,3 +543,8 @@ CRM Node 515개·Main/preload 구문 검사 PASS. Drive 연결 시험은 HTTP fi
 검증된 게시 응답의 작업/프로젝트/Drive 파일 ID와 content SHA-256을 trusted Main 경로에서 계정별 CSV ledger 불변 slot에 저장한다. 일반 renderer local receipt API로 공유 게시 확인 항목을 만들 수 없다. 재시작 후 이력 목록에서 확인 사본을 표시하며 현재 서버 상태는 별도 공유 감사 조회로 확인하도록 안내한다. 원본 job JSON/CSV와 방문 기록은 변경하지 않는다. 저장 실패는 localReceiptStored false로 표시하되 서버 게시 성공을 실패로 바꾸거나 자동 재게시하지 않는다. 기록 저장 뒤에도 현재 계정/로그인 세대를 확인한다.
 
 CRM Node517개, Functions53파일1179개, runtime byte 일치/build, Native 게시 화면6개 PASS. 새 persistence 시험은 fixture job의 재시작·계정 격리·위조 입력 거부·디스크 실패/no retry를 검증하며 회사 원격 성공의 증거가 아니다. 독립 검토에서도 중요한 문제 없음. Windows 최신 ZIP은7f637a6이며 이번 확인 사본 기능은 소스에만 추가됐다. 운영 배포와 전체61개 인수는 미완료.
+
+
+### Windows 확인 사본 기능 검토 빌드 · 66ee323
+
+최신 Windows 검토 ZIP은66ee323 소스로 갱신했다. src103개 ASAR byte 일치 PASS. 게시 화면6개(역사 확인 사본 표시 포함)/공유 감사 조회5개/CSV 가져오기8개 packaged 검증 PASS. 과거7f637a6 미포함 메모는 단계 당시 상태이며 최신 빌드는 Main-confirmed local receipt 기능을 포함한다. 성공 자료는 fixture이고 실제 회사 조회/게시는 로컬 Main 거부 검증이다. 실계정 원격 성공·두 PC 검수·전체61개 인수 및 운영 배포는 미완료. 동봉 다른 시험 로그는 과거 증거일 수 있다.
