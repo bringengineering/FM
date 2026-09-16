@@ -4,6 +4,7 @@ Continue original ImportJob scope. Complete company sharing requires schema, tru
 
 - [x] RED schema tests: exact immutable local ImportJob, fresh verified company Drive original, creator binding, original draft-only scope, collision policy/dry-run/rollback/source metadata, checksum and size restrictions.
 - [x] csv-import-audit.js builds/validates canonical shared audit metadata using existing local job validator and Drive reference validator. No raw CSV binary or automatic visit writes. This validator is consistency evidence, never authenticated origin/authorization.
+- [x] Main audit preparation: job/file IDs only, fresh approved actor and current shared project, authoritative Drive reverification, owned metadata/time and summary-only IPC with canPublish=false. No DB posting or binary source return.
 - [ ] Trusted publication operation with fresh current CRM/RND access and authoritative Drive verification; atomic append/idempotent same-job replay; reject changed job and stale project; handle uncertain writes separately. Extend restore snapshot/runtime compatibility without rewriting old history.
 - [ ] Append-only database permissions and emulator tests for two users, approvals, malformed data and collisions. Keep operational rules undeployed.
 - [ ] Main/preload explicit publish, team read-only history, reports and backup preservation. Native and packaged verification.
