@@ -457,12 +457,14 @@
       "condition": "기존 파일/CSV import",
       "expected": "dry-run·충돌목록·승인·rollback manifest, 원본 보존",
       "result": "NOT_RUN",
-      "note": "JSON 메타데이터 백업 검증 및 프로젝트 ID·이름·현재/백업 revision의 페이지별 충돌 검토 구현. native/packaged101건 페이지/충돌·신규 필터/문자 안전 표시/취소 무변경/원본 유지/신규 초안 추가/검토 중 변경 거부/세션정리 시험 통과. CSV import 전체 범위·승인 복원·rollback manifest 및 회사 운영 검수는 미완료",
+      "note": "JSON 백업의 페이지별 충돌 검토와 원본 유지·신규 초안 추가 구현. 복원 전/입력/적용 후 해시·계획의 명세 다운로드 및 검증 함수 추가. Node428/native 실제 다운로드 파일 검증·지연해시 중 변경 거부 통과. 되돌리기 함수는 정확한 적용 후 상태만 허용하며 UI/공유 복원·CSV 전체 범위·운영 검수는 미완료",
       "evidence": [
         "desktop-crm/test/rnd-import.test.js",
         "desktop-crm/test-rnd-restore-preview-electron.mjs",
         "docs/superpowers/plans/2026-09-17-restore-preview-details.md",
-        "docs/superpowers/plans/2026-09-17-restore-review-dialog.md"
+        "docs/superpowers/plans/2026-09-17-restore-review-dialog.md",
+        "desktop-crm/test/rnd-restore-manifest.test.js",
+        "docs/rnd-control/restore-manifest.md"
       ]
     },
     {
