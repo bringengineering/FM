@@ -4,7 +4,7 @@
 
 기존 BRING CRM src/index.html·app.js에 R&D 통합 관리 메뉴와 전용 화면을 연결했다. 신규 기능은 desktop-crm/src/rnd-control 폴더에 있다. preload.js는 R&D 읽기·저장 IPC만 노출하며, 인증 토큰은 main.js와 repository.js 안에서 처리한다.
 
-R&D 원장은 별도 rndControl/projects·rndControl/visits이다. 기존 CRM 원장을 변경하지 않는다. 프로젝트별 CRM 고정 자료는 허용된 읽기 전용 메타데이터와 선택 원장 ID만 R&D 경로에 보관한다. 승인 사용자는 기존 crmCompany/access와 별도 rndAccess의 활성·이메일·역할 일치를 확인한다. Firebase Functions를 추가하거나 배포 금지 정책을 변경하지 않았다.
+R&D 원장은 별도 rndControl/projects·rndControl/visits이다. 기존 CRM 원장을 변경하지 않는다. 프로젝트별 CRM 고정 자료는 허용된 읽기 전용 메타데이터와 선택 원장 ID만 R&D 경로에 보관한다. 승인 사용자는 기존 crmCompany/access와 별도 rndAccess의 활성·이메일·역할 일치를 확인한다. 공유 복원 Firebase Functions 개발 소스를 추가했으며 운영 배포 금지 정책을 유지한다. 실제 운영 배포는 하지 않았다.
 
 ## 현재 기능
 
@@ -377,3 +377,5 @@ CRM 화면의 공유 복원 검토·서버 승인 준비·별도 확인 후 실�
 CSV UTF-8 원본의 SHA-256·크기·파일명·출처 원장·추출 시각·열 매핑을 검토 결과에 기록한다. 분(min)·원(KRW) 단위를 사용자가 명시해야 하며 자동 변환하지 않는다. 빈 수치, 중복 ID, 잘못된 재방문 관계 및 파일 제한을 검사한다. 기존 ID는 KEEP_EXISTING으로 보존하고 오류가 있으면 전체 반영을 막는다. 수식 안전 CSV 내보내기는 별도 복사본에만 적용한다.
 
 CSV 파서 11개·Main 검토 서비스 6개와 전체 데스크톱 472개 시험 PASS. Main/preload/화면에서 파일 선택·열 매핑·출처·단위·검토·별도 확인·신규 미공유 초안 추가를 연결했다. 현재 승인 사용자와 로그인 세대를 다시 확인하고 공유 목록을 기준으로 중복을 판정한다. 매핑하지 않은 열도 CRM 민감정보 정책으로 검사한다. 검토 후 입력 변경은 확인을 무효화한다. 취소·Escape·세션 초기화는 지연 응답의 반영을 차단한다. 원본 출처는 이 세션의 초안 항목에 보관한다. 영구 ImportJob 및 원본 보존·롤백 manifest 연결은 아직 남았다. CRM-04와 회사 운영 승인으로 간주하지 않는다. Windows 검토 빌드의 정확한 소스 기준은 패키지 명세에서 확인한다. 운영 검수는 61개 중 5개 PASS로 유지한다.
+
+최신 Windows 검토 빌드: a18ec8f 커밋, src 89개 ASAR 일치. 실행 파일에서 CSV 관리자·viewer Main/preload, 열 매핑·오류·확인 변경·지연 응답 취소와 기존 CRM/R&D 및 공유 복원 UI 시험 PASS. ZIP CRC 및 전체 실행 파일 해시 검증 PASS. 실제 회사 운영 승인은 별도다.
