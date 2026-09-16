@@ -21,3 +21,10 @@ test('CRM old, absent and future timestamps are never reported as current',()=>{
  assert.equal(createCrmContextSnapshot({...data,updatedAt:'2026-09-18T00:00:00Z'},{fetchedAt}).status,'UPDATED_TIME_UNKNOWN');
  assert.throws(()=>createCrmContextSnapshot({customers:[{id:'c'},{id:'c'}],buildings:[]},{fetchedAt}),/중복/);
 });
+test('Firebase sparse array holes do not hide valid ledger records or permit malformed non-null entries',()=>{
+ const customers=[null,{id:'c1'},undefined,{id:'c2'}];
+ const snapshot=createCrmContextSnapshot({customers,buildings:[],updatedAt:fetchedAt},{fetchedAt});
+ assert.deepEqual(snapshot.customers,[{id:'c1'},{id:'c2'}]);assert.equal(snapshot.counts.customers,2);
+ assert.equal(customers.length,4);
+ assert.throws(()=>createCrmContextSnapshot({customers:[{id:'c'},false],buildings:[]},{fetchedAt}),/항목 형식/);
+});

@@ -61,7 +61,7 @@ const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.
 const localTestRole = ["admin", "member", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
-  app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
+  app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid) + "-" + crypto.randomUUID()));
 }
 let localOperationsData = null;
 let localCanonicalBuildingUnits = Object.create(null);

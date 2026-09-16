@@ -1,6 +1,6 @@
 function records(value){
  if(value===undefined||value===null)return null;
- if(Array.isArray(value))return value.map(item=>({item,key:null}));
+ if(Array.isArray(value))return value.filter(item=>item!==null&&item!==undefined).map(item=>({item,key:null}));
  if(typeof value==='object')return Object.entries(value).map(([key,item])=>({key,item}));
  throw Error('CRM 원장 목록 형식 오류');
 }
