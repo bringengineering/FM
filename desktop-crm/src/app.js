@@ -4986,7 +4986,7 @@
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
-    scope: "mine", editing: null, busyId: "", performancePeriod: "all", performanceAvailable: false, performanceOrders: [],
+    scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
   };
 
   const workOrderCore = () => window.BringWorkOrderCore;
@@ -5342,18 +5342,18 @@
 
   function weeklyPerformancePanel(orders, scopeLabel, asOf) {
     const C = window.BringWeeklyPerformanceCore;
-    const period = workOrderState.performancePeriod === "current-week" ? "current-week" : "all";
+    const period = ["current-week", "previous-week"].includes(workOrderState.performancePeriod) ? workOrderState.performancePeriod : "all";
     const editing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
     const stamp = new Date(workOrderState.refreshedAt || NaN);
     const refreshed = Number.isFinite(stamp.getTime()) ? stamp.toLocaleString("ko-KR") : "확인되지 않음";
-    const heading = `<header><div><h3>기록 기반 성과 현황 · 읽기 전용</h3><p>${esc(scopeLabel)} · 마지막 갱신 ${esc(refreshed)}</p></div><div role="group" aria-label="성과 집계 기간">${[["all", "전체 기간"], ["current-week", "이번 주 일정"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${editing ? "disabled" : ""}>${label}</button>`).join("")}</div></header>`;
+    const heading = `<header><div><h3>기록 기반 성과 현황 · 읽기 전용</h3><p>${esc(scopeLabel)} · 마지막 갱신 ${esc(refreshed)}</p></div><div role="group" aria-label="성과 집계 기간">${[["current-week", "이번 주 일정"], ["previous-week", "지난주 일정"], ["all", "전체 기간"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${editing ? "disabled" : ""}>${label}</button>`).join("")}</div></header>`;
     const summary = C && C.summarize({ orders, asOf, period });
     if (workOrderState.loading || workOrderState.error || !workOrderState.loaded || workOrderState.performanceAvailable === false || !summary || !summary.available) return `<section class="office-panel weekly-performance">${heading}<p role="status">집계 불가 · ${esc(workOrderState.loading ? "불러오는 중" : workOrderState.error || "조회 결과를 확인하지 못했습니다.")}</p></section>`;
     const labels = { assigned: "배정", doing: "진행", submitted: "제출 · 검수 대기", returned: "반려", done: "관리자 완료 처리" };
     const d = summary.diagnostics;
     const rows = summary.rows.slice(0, 50);
     return `<section class="office-panel weekly-performance">${heading}
-      <p>${period === "all" ? "전체 기간 누적 상태" : `이번 주 일정 겹침 · ${esc(summary.range.start)} ~ ${esc(summary.range.end)} (월~일)`} · 완료 처리율은 관리자 완료 처리 / 집계 대상 지시입니다. 독립 검증된 성과가 아니며 제출은 완료에 포함하지 않습니다.</p>
+      <p>${period === "all" ? "전체 기간 누적 상태" : `${period === "previous-week" ? "지난주" : "이번 주"} 일정 겹침 · ${esc(summary.range.start)} ~ ${esc(summary.range.end)} (월~일)`} · 완료 처리율은 관리자 완료 처리 / 집계 대상 지시입니다. 독립 검증된 성과가 아니며 제출은 완료에 포함하지 않습니다.</p>
       ${editing ? `<p>편집 내용을 보존하기 위해 편집 종료 후 기간을 바꿀 수 있습니다.</p>` : ""}
       <div class="performance-counts">${Object.entries(labels).map(([key, label]) => `<article><span>${label}</span><b>${summary.counts[key]}</b></article>`).join("")}</div>
       <p>집계 대상 ${summary.counts.total}건 · 기한 지남 ${summary.counts.overdue}건 · 완료 처리율 ${summary.completion === null ? "산정 불가 (대상 없음)" : `${summary.completion.toFixed(1)}%`}</p>
@@ -5380,7 +5380,7 @@
     const orders = selected === "__all" ? workOrderState.orders : selected === "__none"
       ? workOrderState.orders.filter(item => !item.projectId)
       : P.ordersOf(workOrderState.orders, selected);
-    const scoped = workOrderState.scope === "mine"
+    let scoped = workOrderState.scope === "mine"
       ? W.forAssignee(orders, workOrderState.uid)
       : orders;
     // The separate server projection keeps raw validation inputs and notes.
@@ -5390,6 +5390,16 @@
     const performanceScoped = workOrderState.scope === "mine"
       ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
       : performanceProjectOrders;
+    const period = workOrderState.performancePeriod || "all";
+    const periodCore = window.BringWeeklyPerformanceCore;
+    const periodSummary = periodCore && periodCore.selectPeriod
+      ? periodCore.selectPeriod({ orders: workOrderState.performanceAvailable === false ? null : performanceScoped, asOf: today, period }) : null;
+    if (period !== "all") {
+      const visibleIds = new Set(periodSummary && periodSummary.orders ? periodSummary.orders.map(item => item.id) : []);
+      scoped = scoped.filter(item => visibleIds.has(item.id));
+    }
+    const periodEditing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
+    const periodControls = `<div class="office-panel"><div role="group" aria-label="업무와 성과 조회 기간">${[["current-week", "이번 주"], ["previous-week", "지난주"], ["all", "전체 기간"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${periodEditing ? "disabled" : ""}>${label}</button>`).join("")}</div><p>${period === "all" ? "전체 기간 업무" : periodSummary && periodSummary.available ? `${esc(periodSummary.range.start)} ~ ${esc(periodSummary.range.end)} · 일정이 겹치는 업무` : "기간 조회 확인 필요"} · 목록과 성과에 같은 기간을 적용합니다.</p>${periodSummary && periodSummary.diagnostics.undated ? `<p>일정 확인 필요 ${periodSummary.diagnostics.undated}건 · 전체 기간에서 확인하세요.</p>` : ""}${periodEditing ? "<p>작성 내용을 보존하기 위해 편집 종료 후 기간을 변경할 수 있습니다.</p>" : ""}</div>`;
     const summary = P.summarize(scoped, today);
     const orphans = workOrderState.orders.filter(item => !item.projectId).length;
 
@@ -5422,6 +5432,7 @@
       ${status}
       ${tabs ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
       ${weeklyExecutionPanel()}
+      ${periodControls}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
       ${workOrderState.importOpen ? directiveImporter() : ""}
@@ -11467,7 +11478,7 @@
     const performancePeriod = event.target.closest("[data-performance-period]");
     if (performancePeriod) {
       if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("편집을 마친 뒤 기간을 변경해 주세요."); return; }
-      workOrderState.performancePeriod = performancePeriod.dataset.performancePeriod === "current-week" ? "current-week" : "all";
+      workOrderState.performancePeriod = ["current-week", "previous-week"].includes(performancePeriod.dataset.performancePeriod) ? performancePeriod.dataset.performancePeriod : "all";
       renderWorkOrders();
       return;
     }
