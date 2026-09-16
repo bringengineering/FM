@@ -48,7 +48,7 @@ const SCREENS: Array<[string, string]> = [
   ["officePayroll", "급여"],
   ["operationsIntelligence", "운영"],
   ["buildingDocuments", "문서"],
-  ["workReports", "작업 종류를 고르면 항목이 깔립니다"],
+  ["workReports", "작업 결과보고서 작성"],
   ["customerNotices", "문구는 단계가 정하고"],
   ["forms", "점검표·확인서"],
   ["security", "열쇠"],
