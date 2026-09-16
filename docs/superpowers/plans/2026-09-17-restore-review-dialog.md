@@ -1,0 +1,6 @@
+# Paginated restore review
+Approved scope: autonomous CRM R&D development, detailed conflict preview.
+Replace native confirmation with accessible CRM-styled modal,50 rows/page, filter all/conflicts/additions, exact IDs/title/revisions, textContent safe rendering. Cancel/Escape/reset resolves false. Accept adds new local drafts only. Before applying, recheck session epoch, selected project and current draft snapshot to reject stale review. No cloud writes or same-ID replacement. Full rollback/shared history restoration remains pending.
+Tests first: native custom dialog absent fails; then50/50/1 traversal, filter conflicts, literal markup, cancel/no-change, accept draft-only, stale project update rejection and session reset cancellation. Node424/full native check; independent review; packaged/delivery later.
+
+Checkpoint: initial native check failed because modal absent, then native cancel/draft-only and101-record paging/filter/literalmarkup pass. Stale-case race identified and fixed by waiting modal-open before mutating project. Changed-project guard and session-reset cancellation pass. Full Node424 pass. Independent reviewer found no Critical/Important production issue; Important test synchronization issue fixed and rerun. Packaged validation and delivery refresh remain; CRM-04 overall acceptance still unproven.
