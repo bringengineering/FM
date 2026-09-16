@@ -611,3 +611,10 @@ Node529개 PASS(새 flow3개는 OAuth fixture 세션A-B-A/역할·이메일 변�
 공개 저장소는 인증 없이 조회한다. 비공개 저장소는 trusted Main 환경 BRING_RND_GITHUB_READ_TOKEN에 제한적 읽기 인증이 있을 때만 사용한다. token을 IPC/DB/내보내기에 보존하지 않으며 별도 GitHub 로그인이나 계정 전환도 하지 않았다. API 기준: [GitHub contents](https://docs.github.com/en/rest/repos/contents), [Git blobs](https://docs.github.com/en/rest/git/blobs).
 
 Node 534개/Native 5개 PASS. 실제 참고 근거 폼 연결·URL/version 요청·안전한 텍스트·입력 변경/프로젝트 A-B-A·genuine Main 로컬 조회 거부를 확인했다. 실제 기존 GitHub 인증으로 FM/e39b3a6/code-source.mjs 원격 파일 해시와 local Git 바이트 일치 증거를 확보했다. GitHub API는 실제 실행했고 CRM auth는 fixture이므로 Main 원격 성공/일반 근거 승인/전체 OUT-03 PASS 증거는 아니다. 결과는 조회 시점 표시이며 프로젝트 불변 검증 이력에 자동 보존하지 않는다. Windows 최신 e39b3a6은 이번 새 기능 미포함. 전체 61개 인수 및 운영 배포 미완료.
+
+
+### GitHub 확인 결과 JSON 보관
+
+고정 GitHub 파일 확인 성공 후 파일 확인 결과 JSON 보관 버튼을 제공한다. renderer는 URL/version만 보내며 Main이 원격 commit/file을 다시 검증한다. 검증 metadata를 허용 목록으로 선택하여 저장소·경로·commit·Git blob SHA·SHA-256·크기·확인 시각과 보관 계정을 남긴다. 원본 내용/token은 포함하지 않고 technicalClaimApproved false·cloudWrites false로 표시한다. 저장창 이후와 partial wx 저장/rename 직전에 현재 권한·로그인 세대를 확인한다. JSON 파일 바이트의 별도 SHA-256도 반환한다. 미확인 파일·취소·세션 변경은 보관하지 않는다. 기존 Drive의 자료 업로드 경로로 별도 등록할 수 있는 JSON이며 자동 Drive 전송이나 프로젝트 이력 저장은 하지 않는다.
+
+Node536개/Native7개 PASS. 새 export2개는 원격 재검증 callback·허용 metadata·원본/token 제외·취소/세션/미확인 거부를 검증한다. 실제 native 폼에서 URL/version 요청·변경 비활성 및 genuine Main 로컬 내보내기 거부를 확인했다. UI 성공/파일 경로는 fixture이며 실제 Main saveDialog 성공·회사 Drive 보관 검수는 별도다. 독립 검토 중요한 문제 없음. Windows e39b3a6은 새 GitHub 검증과 보관 기능 미포함. 전체61개 인수/운영 배포 미완료.

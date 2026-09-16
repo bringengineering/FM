@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   rndCSVDriveVerify: input => ipcRenderer.invoke('crm:rnd-csv-drive-verify',input),
   rndCSVPublishAudit: input => ipcRenderer.invoke('crm:rnd-csv-publish-audit',input),
   rndCSVExportAudit: input => ipcRenderer.invoke('crm:rnd-csv-export-audit',input),
+  rndExportCodeSource: input => ipcRenderer.invoke('crm:rnd-export-code-source',input),
   rndVerifyCodeSource: input => ipcRenderer.invoke('crm:rnd-verify-code-source',input),
   rndCSVAuditHistory: input => ipcRenderer.invoke('crm:rnd-csv-audit-history',input),
   rndCSVPrepareAudit: input => ipcRenderer.invoke('crm:rnd-csv-prepare-audit',input),
