@@ -7,7 +7,7 @@ export function mountCrmContext({host,api}){
   const snapshot=await api.rndCrmContext();if(started!==epoch)return;
   const statuses={UNAVAILABLE:'미연결',PARTIAL:'일부 원장 누락',UPDATED_TIME_UNKNOWN:'원장 갱신 시각 확인 필요',STALE:'과거 스냅샷 · 갱신 필요',CURRENT:'현재 조회 자료'};
   output.textContent=`${snapshot.testMode?'시험 자료 · ':''}${statuses[snapshot.status]??'상태 확인 필요'} · 고객 ${snapshot.counts.customers??'확인 불가'} · 건물 ${snapshot.counts.buildings??'확인 불가'} · 원장 갱신 ${snapshot.sourceUpdatedAt??'확인 불가'} · 조회 ${snapshot.fetchedAt}`;
-  list.replaceChildren();for(const kind of ['customers','buildings']){
+  output.textContent+=` · 수집자료 SHA256 ${snapshot.manifestHash??'미확인'}`;output.style.overflowWrap='anywhere';list.replaceChildren();for(const kind of ['customers','buildings']){
    const records=snapshot[kind];if(!records)continue;const label=document.createElement('p');label.textContent=`${kind==='customers'?'고객':'건물'} 원장 ID · ${records.length}건 중 최대 20건 표시`;list.append(label);
    for(const record of records.slice(0,20)){const row=document.createElement('p');row.textContent=`${record.id}${record.name?' · '+record.name:''}${record.ownerCustomerId?' · 고객 '+record.ownerCustomerId:''}`;list.append(row);}
   }

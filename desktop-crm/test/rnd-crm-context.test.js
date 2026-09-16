@@ -28,3 +28,10 @@ test('Firebase sparse array holes do not hide valid ledger records or permit mal
  assert.equal(customers.length,4);
  assert.throws(()=>createCrmContextSnapshot({customers:[{id:'c'},false],buildings:[]},{fetchedAt}),/항목 형식/);
 });
+test('CRM context manifest includes IDs, counts, source clocks and test mode and detects edits',()=>{
+ const {verifyCrmContextManifest}=require('../src/rnd-control/crm-context');
+ const snapshot=createCrmContextSnapshot({customers:[{id:'c'}],buildings:[],updatedAt:fetchedAt},{fetchedAt});
+ assert.equal(verifyCrmContextManifest(JSON.parse(JSON.stringify(snapshot))),true);
+ for(const patch of [{customers:[{id:'other'}]},{counts:{customers:0,buildings:0}},{testMode:true},{fetchedAt:'2026-09-18T00:00:00Z'}])assert.equal(verifyCrmContextManifest({...snapshot,...patch}),false);
+ assert.equal(verifyCrmContextManifest(createCrmContextSnapshot(null,{fetchedAt})),true);
+});

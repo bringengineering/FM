@@ -314,3 +314,7 @@ CRM 읽기 전용 context: Main은 기존 fetchRemotePayload의 crmShared/data G
 
 Firebase 배열 빈 자리 처리: CRM context는 배열의 null/undefined 빈 자리만 제외하며 정상 원장 ID를 유지합니다. 값이 존재하는 잘못된 항목은 계속 형식 오류로 처리해 조용히 누락시키지 않습니다. 원본 배열은 변경하지 않습니다. 빈 자리와 정상 2건이 섞인 자료, malformed false 항목 거부의 회귀 시험을 추가했습니다.
 시험 캐시 격리 보강: 기본 시험 모드 userData 경로에 PID와 UUID를 사용해 프로세스 ID 재사용 시 다른 시험의 안내 설정·캐시와 겹치지 않도록 했습니다. Windows 시험에서 안내 버튼 대기 실패가 발생한 뒤 확인한 격리 취약 가능성 보강이며, 이전 실패 원인이 캐시였다고 확정한 것은 아닙니다.
+
+CRM context 내용 검증: crm-context-v1 manifest는 원장 ID·건수·조회/갱신시각·시험 모드를 포함한 SHA256을 기록하고 변경을 검사합니다. 화면에서 검증값을 확인할 수 있습니다. checksum은 작성자·원장 출처·서버 승인에 대한 서명이 아니며 프로젝트별 고정 보관은 아직 구현하지 않았습니다. Node 400개, 별도 native 기준선/CRM context 시험 및 Windows packaged 화면 시험 통과.
+
+CI 실행 35138349335(9c935d0)는 기존 FIELD 시험의 전역 Storage.setItem 오류 주입이 Firebase SDK 저장에도 영향을 주어 실패했습니다. 두 자동 저장 시험을 실제 초안 key로 한정하고 실패 key 호출도 확인하도록 수정했습니다. 로컬 FIELD 전체 결과는 44 files 통과, 454 tests 통과·기존 71 skipped이며 FIELD typecheck도 통과했습니다. 이 수정의 GitHub CI는 별도 확인 대상입니다.
