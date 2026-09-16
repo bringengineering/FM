@@ -143,3 +143,5 @@ for check in visit_checks:
 p.write_text(json.dumps(rules,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 
 exec(Path('restore-audit-rules.py').read_text(encoding='utf-8'))
+
+exec(Path('csv-audit-rules.py').read_text(encoding='utf-8'))

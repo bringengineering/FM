@@ -463,3 +463,10 @@ Functions 53 files/1,177 tests·TypeScript/cloud package PASS. 실제 export의 
 실제 Admin SDK 에뮬레이터에서 두 요청이 같은 작업을 동시에 준비/게시하는 시험을 추가했다. 최초 방식의 transaction 실패 후 조회만으로는 SDK pending write가 확정되기 전 요청을 거부하는 경합을 재현했다. 서버만 선택할 수 있는 same-job confirmation 옵션을 root updater에 추가하여 동일 immutable importJobJSON/해시·원본 해시·프로젝트·소유자·Drive file의 기존 감사 기록을 transaction 안에서 보존한다. 기본 helper는 기존 exact digest 규칙을 유지한다. 실제 transaction 결과의 감사 명세를 domain validator와 same-job/file binding으로 다시 확인한 뒤 보관된 실제 해시를 응답한다. 새 감사 명세로 기존 시각/기록을 덮어쓰지 않는다. 실패 뒤 재확인도 한 번으로 제한한다.
 
 Functions 53 files/1,179 tests PASS. 로컬 demo database 실제 SDK 동시 두 요청/원본 감사 한 건/같은 응답 해시·변경된 프로젝트 보존 재확인·권한 회수 거부 PASS. CSV parser·불변 job ledger·감사 domain 검증은 실제 runtime을 사용한다. 인증/Drive 참조는 명시한 fixture이며 실제 callable 인증이나 회사 Drive 원본 검증의 근거는 아니다. test-rnd-csv-transaction.mjs 및 emulator 결과를 제공한다. 회사 실계정/두 PC 검수, callable emulator 성공 경로, 팀 조회/Rules/backup·restore 연결은 계속 남아 있다. 운영 미배포, 기존 Windows 검토 빌드 유지.
+
+
+### 공유 CSV 감사 조회 Rules
+
+rndControl/importJobs를 현재 두 승인 기록의 enabled/email/일치하는 admin·member·viewer 역할로 읽을 수 있도록 규칙을 추가했다. 클라이언트의 생성/수정/삭제/상위 multipath 쓰기는 모두 거부하며 서버 게시 API만 기록을 추가한다. 관리자 상위 rndControl read의 권한 상속도 두 승인의 비밀번호 변경 대기 검사로 제한했다. csv-audit-rules.py는 기존 생성 작업의 마지막에 연결하며 반복 실행의 바이트 동일성을 확인했다.
+
+실제 database emulator에서 세 역할의 collection/개별 감사 조회, 모든 직접 쓰기 거부, 미승인·회수·역할/이메일 불일치·비밀번호 변경 대기 거부 및 별도 승인 계정의 원래 감사 조회 PASS. 기존 전체 R&D rule suite도 PASS. 새 rule suite는 CI에 연결했다. DB에 넣은 감사 자료는 권한 시험 fixture이며 domain 형식이나 회사 실계정 운용의 근거가 아니다. Rules는 운영 미배포. Main의 팀 조회 서비스/화면, 보고서·backup/restore 보존과 회사 검수는 후속 작업이다. Windows 검토 빌드는 기존 버전이다.

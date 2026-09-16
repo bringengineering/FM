@@ -786,7 +786,7 @@
       }
     },
     "rndControl": {
-      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val()",
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val() && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('rndAccess').child(auth.uid).child('mustChangePassword').val() !== true",
       ".write": false,
       "projects": {
         ".read": "(auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')) && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val()",
@@ -1208,6 +1208,10 @@
             }
           }
         }
+      },
+      "importJobs": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val() && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('rndAccess').child(auth.uid).child('mustChangePassword').val() !== true",
+        ".write": false
       }
     },
     "rndAccess": {
