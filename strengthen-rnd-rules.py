@@ -95,6 +95,8 @@ context_checks=[present(context_fields),"newData.child('id').val() === $context"
 for field in ['frozenAt','fetchedAt','customerIdsJSON','buildingIdsJSON']:
  context_checks.append("newData.child('"+field+"').isString() && newData.child('"+field+"').val().length > 0")
 project['crmContexts']={'$context':{'.write':access+' && newData.exists() && !data.exists()', '.validate':' && '.join('('+check+')' for check in context_checks),'$other':{'.validate':False},**{field:{} for field in context_fields}}}
+exec(Path('follow-up-rules.py').read_text(encoding='utf-8'))
+install_follow_up_rules(project, access, admin)
 rnd="root.child('rndAccess').child(auth.uid)"
 crm="root.child('crmCompany/access').child(auth.uid)"
 extra=" && "+rnd+".child('enabled').val() === true && "+rnd+".child('email').val() === auth.token.email && "+rnd+".child('role').val() === "+crm+".child('role').val()"

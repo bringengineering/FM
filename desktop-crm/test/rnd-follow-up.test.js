@@ -45,3 +45,14 @@ test('historical follow-up rejects unknown fields and malformed completion metad
  chain=applyFollowUp(project,chain,{type:'transition',eventId:'evt4',taskId:'t',previousEventId:'evt3',status:'done',reason:'Checked'},reviewer);
  assert.throws(()=>followUpTasks(chain.map(e=>e.id==='evt4'?{...e,selfReviewReason:'invented'}:e)),/완료/);
 });
+
+test('follow-up uses the server-compatible timestamp and result-link policy',async()=>{
+ const {applyFollowUp}=await load();const first=applyFollowUp(project,[],create,admin);
+ let events=applyFollowUp(project,first,{type:'transition',eventId:'evt2',taskId:'t',previousEventId:'evt1',status:'active',reason:'Start'},owner);
+ const review={type:'transition',eventId:'evt3',taskId:'t',previousEventId:'evt2',status:'review',reason:'Ready',result:'Report',resultUrl:'https://example.com/report?version=2#section'};
+ assert.equal(applyFollowUp(project,events,review,owner).at(-1).status,'review');
+ for(const resultUrl of ['https://example.com/report?token','https://example.com/report?access_token=secret','https://example.com/report?%74oken=secret','https://%/report','https://999.999.999.999/report'])assert.throws(()=>applyFollowUp(project,events,{...review,resultUrl},owner),/결과/);
+ assert.throws(()=>applyFollowUp(project,events,{...review,result:'x'.repeat(4001)},owner),/결과/);
+ assert.throws(()=>applyFollowUp(project,[],create,admin,{at:'2026-09-17'}),/시각/);
+ assert.throws(()=>applyFollowUp(project,[],{...create,reason:'\u00a0\u3000'},admin),/이유/);
+});

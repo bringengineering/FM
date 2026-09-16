@@ -1,16 +1,18 @@
+import {followUpPolicy} from './follow-up-policy.mjs';
+const matches=(field,value)=>typeof value==='string'&&new RegExp('^'+followUpPolicy[field]+'$').test(value);
 const key=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value);
-const text=value=>typeof value==='string'&&!!value.trim();
+const text=value=>typeof value==='string'&&value.length<=4000&&!!value.trim()&&matches('text',value);
 const fields=new Set(['id','taskId','projectId','decisionId','title','ownerUid','reviewerUid','due','criteria','status','sequence','previousEventId','actorUid','actorRole','reason','at','result','resultUrl','completedBy','completedAt','selfReview','selfReviewReason']);
 const states=['todo','active','review','done','blocked','cancelled'];
 const transitions={todo:['active','blocked','cancelled'],active:['review','blocked','cancelled'],blocked:['active','cancelled'],review:['done','active','blocked','cancelled'],done:[],cancelled:[]};
 function date(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value??''))return false;const parsed=new Date(value+'T00:00:00Z');return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===value;}
-function resultURL(value){try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password&&![...url.searchParams.keys()].some(key=>/token|secret|password|authorization|credential|signature|^auth$|^key$|^api[_-]?key$/i.test(key));}catch{return false;}}
+function resultURL(value){if(!matches('url',value)||!matches('host',value))return false;try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password&&![...url.searchParams.keys()].some(key=>/token|secret|password|authorization|credential|signature|auth|key/i.test(key));}catch{return false;}}
 export function followUpTasks(events){
  if(!Array.isArray(events))throw Error('후속 업무 이력 형식 오류');const latest=new Map(),seen=new Set();
  for(const event of [...events].sort((a,b)=>(a?.sequence??0)-(b?.sequence??0)||String(a?.id).localeCompare(String(b?.id)))){
   if(event&&Object.keys(event).some(field=>!fields.has(field)))throw Error('후속 업무 이력에 허용되지 않은 필드');
   if(!event||!key(event.id)||!key(event.taskId)||seen.has(event.id)||!states.includes(event.status))throw Error('후속 업무 이력 ID·상태 오류');
-  if(!key(event.projectId)||!key(event.decisionId)||!key(event.ownerUid)||!key(event.reviewerUid)||!key(event.actorUid)||!['admin','member'].includes(event.actorRole)||!text(event.title)||!text(event.criteria)||!text(event.reason)||!date(event.due)||!Number.isFinite(Date.parse(event.at))||!Number.isInteger(event.sequence)||event.sequence<1)throw Error('후속 업무 이력 명세 오류');
+  if(!key(event.projectId)||!key(event.decisionId)||!key(event.ownerUid)||!key(event.reviewerUid)||!key(event.actorUid)||!['admin','member'].includes(event.actorRole)||!text(event.title)||!text(event.criteria)||!text(event.reason)||!date(event.due)||!matches('at',event.at)||!Number.isFinite(Date.parse(event.at))||!Number.isInteger(event.sequence)||event.sequence<1)throw Error('후속 업무 이력 명세 오류');
   const previous=latest.get(event.taskId);
   if(event.sequence!==(previous?.sequence??0)+1||(event.previousEventId??null)!==(previous?.id??null))throw Error('후속 업무 이력 연결 오류');
   if(previous&&['projectId','decisionId','title','ownerUid','reviewerUid','due','criteria'].some(field=>event[field]!==previous[field]))throw Error('후속 업무 원래 명세는 변경할 수 없습니다');
@@ -32,7 +34,7 @@ export function applyFollowUp(project,events,command,user,{at=new Date().toISOSt
  if(!user?.uid||!['admin','member'].includes(user.role))throw Error('후속 업무 변경 권한이 없습니다');
  const latest=followUpTasks(events),previous=latest.find(task=>task.taskId===command.taskId);
  if(!key(command.eventId)||events.some(event=>event.id===command.eventId))throw Error('후속 업무 이벤트 ID 오류·중복');
- if(!key(command.taskId)||!text(command.reason)||!Number.isFinite(Date.parse(at)))throw Error('후속 업무 ID·이유·시각 확인 필요');
+ if(!key(command.taskId)||!text(command.reason)||!matches('at',at)||!Number.isFinite(Date.parse(at)))throw Error('후속 업무 ID·이유·시각 확인 필요');
  let event;
  if(command.type==='create'){
   if(user.role!=='admin')throw Error('관리자만 결정의 후속 업무를 생성할 수 있습니다');
