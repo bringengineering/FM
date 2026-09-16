@@ -280,14 +280,15 @@
     {
       "id": "CRM-04",
       "result": "NOT_RUN",
-      "reason": "JSON 백업의 페이지별 충돌 검토와 원본 유지·신규 초안 추가 구현. 복원 전/입력/적용 후 해시·계획의 명세 다운로드 및 검증 함수 추가. Node428/native 실제 다운로드 파일 검증·지연해시 중 변경 거부 통과. 되돌리기 함수는 정확한 적용 후 상태만 허용하며 UI/공유 복원·CSV 전체 범위·운영 검수는 미완료",
+      "reason": "JSON 백업 페이지별 검토·원본 유지·초안 추가·전후 명세 다운로드/검증 구현. 최신 세션 되돌리기 UI는 적용 후 전체 해시 일치·미제출/저장/업로드/공유저장 거부를 확인하며 기존 dirty 상태와 원본 공유 자료 유지. Node428/native 취소·실행·지연 해시 중 변경 거부 통과. 새 UI packaged/일반 명세 재실행/승인 공유 복원/CSV 전체 범위·운영 검수 미완료",
       "evidence": [
         "desktop-crm/test/rnd-import.test.js",
         "desktop-crm/test-rnd-restore-preview-electron.mjs",
         "docs/superpowers/plans/2026-09-17-restore-preview-details.md",
         "docs/superpowers/plans/2026-09-17-restore-review-dialog.md",
         "desktop-crm/test/rnd-restore-manifest.test.js",
-        "docs/rnd-control/restore-manifest.md"
+        "docs/rnd-control/restore-manifest.md",
+        "docs/superpowers/plans/2026-09-17-rollback-ui.md"
       ]
     },
     {
