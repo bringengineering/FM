@@ -122,13 +122,38 @@ test("규칙이 항목·상태·사진 모양을 코드와 같이 본다", () =>
 });
 
 test("화면이 사이드바와 라우팅에 다 걸려 있다", () => {
-  assert.match(appSource, /workReports: \["작업 종류를 고르면 항목이 깔립니다", "작업 결과보고서"\]/u);
+  assert.match(appSource, /workReports: \["사진과 작업정보로 AI 초안을 만듭니다", "작업 결과보고서"\]/u);
   assert.match(appSource, /currentView === "workReports"\) renderWorkReports\(\)/u);
   assert.ok(indexSource.includes('data-view="workReports"'));
   assert.ok(indexSource.includes('<script src="./work-report-core.js"></script>'));
   // 문서관리 폴더 안, 서식 옆이다.
   const folder = indexSource.slice(indexSource.indexOf('data-nav-folder="documents"'), indexSource.indexOf('data-nav-folder="workflow"'));
   assert.ok(folder.includes('data-view="workReports"'), "문서관리 폴더 안에 있어야 한다");
+});
+
+test("결과보고서 작성 화면이 사진 검토와 AI 초안을 한 흐름으로 보여 준다", () => {
+  const start = appSource.indexOf("function reportEditor(");
+  const body = appSource.slice(start, appSource.indexOf("\n  function readReportForm(", start));
+  assert.match(body, /wr-ai-steps/u);
+  assert.match(body, /wr-ai-layout/u);
+  assert.match(body, /data-report-focus-item/u);
+  assert.match(body, /data-report-ai-draft/u);
+  assert.match(body, /결과보고서 저장/u);
+});
+
+test("AI 초안에는 확인된 사실만 보내고 사진·연락처·주소는 보내지 않는다", () => {
+  const start = appSource.indexOf("function workReportAiContent(");
+  const contentBody = appSource.slice(start, appSource.indexOf("\n  async function createWorkReportAiDraft(", start));
+  assert.match(contentBody, /item\.before\.length/u);
+  assert.match(contentBody, /item\.after\.length/u);
+  assert.match(contentBody, /R\.statusLabel/u);
+  assert.doesNotMatch(contentBody, /webViewLink|driveFileId|ownerContact|siteAddress|ownerName/u);
+
+  const aiStart = appSource.indexOf("async function createWorkReportAiDraft(");
+  const aiBody = appSource.slice(aiStart, appSource.indexOf("\n  function reportEditor(", aiStart));
+  assert.match(aiBody, /task: "completion_report"/u);
+  assert.match(aiBody, /result\?\.text/u);
+  assert.match(aiBody, /summary: text/u);
 });
 
 test("항목은 코드가 깔고 사람은 사진만 붙인다", () => {
