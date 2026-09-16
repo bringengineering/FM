@@ -280,8 +280,12 @@
     {
       "id": "CRM-04",
       "result": "NOT_RUN",
-      "reason": "JSON 보관/복원 있음. dry-run·충돌목록·rollback manifest 필요",
-      "evidence": []
+      "reason": "JSON 메타데이터 백업의 해시/목록/관계 검증 및 프로젝트별 ID·이름·현재/백업 revision 충돌 사전 표시 구현. native/packaged에서 취소 무변경·같은 ID 원본 유지·신규만 초안 추가 확인. CSV import 전체 범위·승인 복원·rollback manifest 및 대량 목록 검수는 미완료",
+      "evidence": [
+        "desktop-crm/test/rnd-import.test.js",
+        "desktop-crm/test-rnd-restore-preview-electron.mjs",
+        "docs/superpowers/plans/2026-09-17-restore-preview-details.md"
+      ]
     },
     {
       "id": "UX-01",
