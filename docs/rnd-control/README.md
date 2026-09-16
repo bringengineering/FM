@@ -595,3 +595,10 @@ CRM Node525개 및 Drive11개 PASS, 독립 검토 중요한 회귀 없음. Googl
 연결 요청도 actor snapshot과 connectionGeneration을 캡처한다. 새 연결/clear가 세대를 변경하며 userinfo·회사root 응답 대기 뒤마다 UID/이메일/역할과 세대를 다시 검사한다. 취소/로그아웃된 요청은 나중에 연결을 복구하지 못하고 오래된 연결 완료가 새 성공 token을 대체하지 못한다. connection에 actor 이메일/역할을 내부 결합하고 같은UID의 이메일/역할 변경 후에도 재연결을 요구한다. 외부 state/IPC token 노출은 없다.
 
 새 시험은 userinfo/root 두 대기 구간에서 clear/reconnect/동일 actor객체 역할·이메일 변경8가지 거부를 확인한다. 전체 Node526개 PASS. GoogleHTTP는 fixture이며 실계정 네트워크/로그아웃 검수는 남아 있다. Main 기존 clear hook은 로그인 변경·자기 승인 변경·승인 실패에 연결되어 있다. Windows7d13461은 이번 추가 변경 미포함, 전체61개 인수 및 운영 배포 미완료.
+
+
+### Main Google 동의 대기 중 로그인 교체 차단
+
+기존 Main Drive 연결은 OAuth 반환 뒤 UID만 비교하던 흐름을 trusted singleton drive-connection-flow로 교체했다. 인증 동의 전·token 반환 후·Drive 연결 완료 후 remote SDK 로그인 세대와 현재 승인 UID/이메일/역할을 확인한다. 같은UID 재로그인·이메일/역할 변경도 거부하며 연결 후 검사 실패는 새 연결을 clear한다. 인증 진행 중 중복 요청은 별도 동의창을 열지 않는다. token은 Main 내부에서만 사용하고 finally 지역 참조를 정리한다.
+
+Node529개 PASS(새 flow3개는 OAuth fixture 세션A-B-A/역할·이메일 변경/busy/안전 응답/연결후회수 포함). native admin localtest와viewer 실제 Main/preload가 외부 동의 호출 전에 연결을 거부함을 확인했다. Native 게시8개/공유조회8개PASS. OAuth 실제 성공은 검증하지 않았다. Windows 최신c933276은 앞선 Drive 내부 취소/상태 수정까지 포함하며 이번 Main flow는 아직 미포함이다. 전체61개 인수와 운영 배포 미완료.
