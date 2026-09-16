@@ -9,4 +9,5 @@ export function mountSharedCSVAudit({host,api}){
  catch(error){if(current())status.textContent=`조회 중단 · ${error.message}`;}
  finally{if(version===epoch){read.disabled=false;if(!current()){result.replaceChildren();status.textContent='프로젝트가 변경되어 조회 결과를 표시하지 않습니다.';}}}
  };
+ panel.addEventListener('rnd-csv-audit-open',event=>{const detail=event.detail;if(!panel.isConnected||detail?.projectId!==window.BringRndProject?.current()?.id||typeof detail.jobId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(detail.jobId))return;reset();input.value=detail.jobId;panel.open=true;input.focus();read.onclick();});
 }
