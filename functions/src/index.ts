@@ -1,3 +1,7 @@
+import {authenticateCSVImportCallable,CSVImportAuthorizationError} from './rnd/csv-import-auth.js';
+import {createServerCSVRuntime} from './rnd/csv-import-runtime.js';
+import {prepareCSVImportPublication} from './rnd/csv-import-publication.js';
+import {publishCSVImport,CSVImportCommitUncertainError} from './rnd/csv-import-publish.js';
 import {authenticateRestoreCallable,RestoreAuthorizationError} from './rnd/restore-auth.js';
 import {createServerRestoreRuntime} from './rnd/restore-runtime.js';
 import {createRestoreApprovalSession,createRestoreSessionUpdater,createRestoreSessionStoreUpdater} from './rnd/restore-session.js';
@@ -4383,4 +4387,15 @@ export const rndPrepareSharedRestore = onCall({region:'asia-southeast1',timeoutS
 });
 export const rndCommitSharedRestore = onCall({region:'asia-southeast1',timeoutSeconds:120,memory:'1GiB'},async request=>{
  requireSharedRestoreEnabled();const data=restoreRequestData(request.data);if(typeof data.sessionId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.sessionId))throw new HttpsError('invalid-argument','승인 요청 ID 오류');const actor=await restoreActor(request),runtime=createServerRestoreRuntime();const result=await runRestoreRootTransaction(adminDatabase.ref(),createRestoreSessionUpdater({actor,sessionId:data.sessionId,digest:runtime.digest,now:Date.now}));if(!result.committed)throw new HttpsError('aborted','승인 만료·권한·자료 변경으로 복원을 적용하지 않았습니다');const state=result.snapshot.val().rndRestoreSessions[actor.uid][data.sessionId];return{operationId:data.sessionId,status:'COMMITTED',audit:state.audit??state.mutation?.audit};
+});
+
+/** Default disabled; operational enablement and deployment require separate approval. */
+export const rndPublishCSVImport = onCall({region:'asia-southeast1',timeoutSeconds:120,memory:'1GiB'},async request=>{
+ if(process.env.BRING_RND_CSV_PUBLICATION_ENABLED!=='1')throw new HttpsError('failed-precondition','CSV 공유 감사 API가 활성화되지 않았습니다');
+ if(!request.data||typeof request.data!=='object'||Array.isArray(request.data)||Buffer.byteLength(JSON.stringify(request.data))>16*1024*1024+32768)throw new HttpsError('invalid-argument','CSV 게시 요청 형식/크기 오류');
+ const authenticate=()=>authenticateCSVImportCallable(request.auth,{getAccount:uid=>getAuth().getUser(uid),getApprovals:async uid=>{const [crm,rnd]=await Promise.all([adminDatabase.ref('crmCompany/access/'+uid).get(),adminDatabase.ref('rndAccess/'+uid).get()]);return{crm:crm.val(),rnd:rnd.val()};}});
+ const readProject=async(id:string)=>(await adminDatabase.ref('rndControl/projects/'+id).get()).val();
+ const readVisits=async(_projectId:string)=>{const value=(await adminDatabase.ref('rndControl/visits').get()).val();if(value===null)return[];if(!value||typeof value!=='object'||Array.isArray(value))throw Error('CSV authoritative visits invalid');return Object.values(value) as Record<string,unknown>[];};
+ try{await authenticate();const runtime=createServerCSVRuntime();return await publishCSVImport(request.data,{authenticate,runtime,readAudit:async id=>(await adminDatabase.ref('rndControl/importJobs/'+id).get()).val(),prepare:input=>prepareCSVImportPublication(input,{authenticate,readProject,readVisits,runtime,now:()=>new Date().toISOString()}),transaction:async update=>{const result=await runRestoreRootTransaction(adminDatabase.ref(),update);return{committed:result.committed,value:result.snapshot.val()};}});}
+ catch(error){if(error instanceof CSVImportAuthorizationError)throw new HttpsError(error.code,error.message);if(error instanceof CSVImportCommitUncertainError)throw new HttpsError('unavailable','게시 결과 확인이 필요합니다. 같은 가져오기 작업으로 확인하세요.');throw error;}
 });

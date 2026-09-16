@@ -4201,7 +4201,7 @@ describe("Firebase entrypoint metadata", () => {
     );
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
-    expect(registrations.onCall).toHaveBeenCalledTimes(23);
+    expect(registrations.onCall).toHaveBeenCalledTimes(24);
     expect(registrations.onRequest).toHaveBeenCalledTimes(2);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);

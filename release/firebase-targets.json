@@ -26,6 +26,7 @@
       "recordFieldOperatorSwitch",
       "rndCommitSharedRestore",
       "rndPrepareSharedRestore",
+      "rndPublishCSVImport",
       "saveFieldRegistration",
       "setManagementContractStatus",
       "startFieldCaptureSession",

@@ -447,3 +447,12 @@ csv-import-auth.ts가 검증된 Firebase callable request.auth의 UID/이메일/
 신규 orchestration 시험 4개 및 Functions 51 files/1,171 tests·독립 cloud build PASS. 이 시험의 인증/Drive/runtime/compile은 mock이며 실제 domain/Drive runtime 시험은 별도로 존재한다. 실제 callable SDK 연결·atomic 게시 및 동일 job 재요청 처리·Rules·팀 조회는 여전히 미완료다. 이 operation 자체는 DB 쓰기를 수행하지 않고 private compiled handle만 서버 내부에 반환한다. 운영 미배포.
 
 서버 준비는 Drive 위치/소유권/버전 검증 뒤 8MiB로 제한한 원본 다운로드의 해시/크기를 다시 확인하고 실제 CSV parser로 초안을 재계산한다. 새 체크섬을 붙인 위조 시간/비용/사유도 원본에서 만든 값과 다르면 거부한다. 서버에서 조회한 기존 방문을 재방문 연결 검증에 사용하며 원본 ID가 초안/충돌/제외에 정확히 한 번씩 분류됐는지 확인한다. 충돌/제외는 과거 PC 검토의 보고이며 현재 서버 DB에 실제 적용된 결과가 아니다. 원장 이름·추출 시각·열 매핑은 원본 계정의 선언으로서 그 사업적 정확성을 인증하지 않는다.
+
+
+### CSV 서버 게시 callable 연결
+
+rndPublishCSVImport는 기본 비활성(BRING_RND_CSV_PUBLICATION_ENABLED가 정확히 1일 때만 실행)이며 운영 배포하지 않았다. Firebase request.auth만 최신 Admin SDK 계정/CRM·RND 승인에 전달한다. 크기를 제한한 job/fileId/Drive token 요청을 실제 서버 준비 경로에 결합하고 Admin SDK 회사 root transaction으로 importJobs 감사 기록 하나만 추가한다. 매 transaction retry의 현재 두 승인과 프로젝트 버전 검사가 방문·프로젝트·다른 회사 자료를 보존한다. 기존 공유 복원에서 검증한 root listener/transaction helper를 재사용한다.
+
+같은 owned job/fileId의 이미 보관된 감사 명세는 실제 validator로 검사하고 기존 서버 시각/내용으로 재확인한다. 다른 job 내용/다른 Drive 파일은 거부한다. 새 게시 시 원본 Drive 재검증을 수행하며 기존 기록 재확인은 과거 감사 기록의 보관 확인이다. SDK transport 오류나 commit snapshot 불일치는 결과 불명으로 구분한다. 자동 재시도/방문 적용은 없다. 원래 계정의 role이 바뀌면 새 역할의 현재 두 승인을 요구하며 기존 명세의 과거 역할은 수정하지 않는다.
+
+Functions 53 files/1,177 tests·TypeScript/cloud package PASS. 실제 export의 기본 거부/검증된 인증 필요/잘못된 body 거부를 실행했다. 새 게시/재확인/충돌/권한 회수/프로젝트 변경/결과 불명 시험은 격리한 transaction 및 domain validator stub이며 실제 Admin SDK emulator 동시성/회사 실계정 Drive 게시를 증명하지 않는다. CSV callable의 emulator 성공 경로, 동시 같은-job 게시, append-only 조회 Rules·팀 화면·backup/restore 보존 연결은 남아 있다. 전체 회사 root transaction의 비용/규모 검토가 필요하며 Windows 검토 빌드는 9def771 그대로다. archive manifest는 배포 선택자를 제공하지 않고 functionsDeploymentAllowed=false를 유지한다.
