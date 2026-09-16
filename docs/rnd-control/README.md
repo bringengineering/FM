@@ -431,3 +431,10 @@ csv-import-auth.ts가 검증된 Firebase callable request.auth의 UID/이메일/
 인증 실패와 게시 승인 실패는 각각 unauthenticated/permission-denied의 typed error로 구분하고 SDK 계정/자료 서비스 장애를 권한 오류로 숨기지 않는다. await 전에 검증된 로그인 정보를 복제하며 SDK에서 받은 전체 계정·인증 토큰은 publisher 객체에 포함하지 않는다. 엔드포인트는 반드시 Firebase onCall이 제공한 request.auth만 넘겨야 한다. request body나 임의 decoded JWT를 이 내부 helper에 전달하면 안 된다.
 
 신규 인증 시험 6개·전체 Functions 49 files/1,164 tests·TypeScript 빌드/기존 검증 runtime 패키징 PASS. JWT 서명 검증은 이 helper가 수행하는 것이 아니며 실제 callable/SDK/emulator 연결은 아직 미완료다. Drive/domain/runtime·게시 트랜잭션·클라이언트와 통합하고 게시 직전 현재 계정/원본을 확인하는 작업이 남았다. 운영 미배포이며 Windows 검토 실행 파일은 이전 9def771 소스를 유지한다.
+
+
+### CSV 서버 패키지 독립 실행
+
+실제 CRM의 CSV 감사/원본 검증과 회사 Drive 모듈이 참조하는 9개 JS/MJS 파일을 바이트 그대로 서버 패키지에 복사한다. rnd-control과 core의 상대 경로 및 CommonJS 경계를 유지하며 파일별 SHA inventory를 빌드한다. 클라우드 빌드는 CRM 소스 폴더를 요구하지 않고 배포 패키지의 의존 관계와 해시를 확인한다. 서버 adapter는 크기를 제한한 감사 명세 구성/검증과 digest, 고정 회사 Drive의 연결/원본 재검증만 제공한다.
+
+전체 Functions 50 files/1,167 tests PASS. CRM 폴더 없는 임시 패키지의 TypeScript 컴파일, 기존 복구 14개와 CSV 9개 검증, 두 runtime의 실제 로드 PASS. 회사 Drive 시험은 HTTP fixture이며 실계정의 성공 근거가 아니다. 실제 게시 callable·최신 인증/Drive/서버 시각·DB transaction·Rules·팀 화면 연결은 다음 작업이다. 운영 미배포이며 Windows 검토 실행 파일은 이전 9def771 소스다. 원래 61개 인수 기준의 완료 판단은 변경하지 않는다.

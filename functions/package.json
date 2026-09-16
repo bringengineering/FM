@@ -8,9 +8,9 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
-    "gcp-build": "tsc -p tsconfig.json && node scripts/verify-rnd-runtime.mjs",
-    "build": "tsc -p tsconfig.json && node scripts/bundle-rnd-runtime.mjs",
-    "test": "node scripts/bundle-rnd-runtime.mjs && vitest run test"
+    "gcp-build": "tsc -p tsconfig.json && node scripts/verify-rnd-runtime.mjs && node scripts/verify-csv-runtime.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/bundle-rnd-runtime.mjs && node scripts/bundle-csv-runtime.mjs",
+    "test": "node scripts/bundle-rnd-runtime.mjs && node scripts/bundle-csv-runtime.mjs && vitest run test"
   },
   "dependencies": {
     "@fontsource/noto-sans-kr": "^5.2.8",
