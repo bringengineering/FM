@@ -268,7 +268,7 @@
     {
       "id": "CRM-03",
       "result": "NOT_RUN",
-      "reason": "CRM snapshot 어댑터·갱신시각 필요",
+      "reason": "Main GET 전용 CRM context·원장 ID/DB key·개인 상세 제외·조회/갱신시각·미연결/누락/과거 상태와 CRM UI 구현. 실제 회사 계정 및 프로젝트 고정 snapshot 보관 검수는 남음",
       "evidence": []
     },
     {
@@ -343,7 +343,7 @@
     {
       "id": "OPS-03",
       "result": "NOT_RUN",
-      "reason": "기존 CRM 포함 357개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료",
+      "reason": "기존 CRM 포함 398개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료",
       "evidence": [
         "desktop-crm/test-rnd-electron.mjs",
         "desktop-crm/test-rnd-disabled-electron.mjs"

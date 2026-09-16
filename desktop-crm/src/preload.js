@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("bringCRM", {
   rndRestoreUpload: input => ipcRenderer.invoke("crm:rnd-restore-upload",input),
   rndCheckSaveAttempt: input => ipcRenderer.invoke("crm:rnd-check-save-attempt",input),
+  rndCrmContext: () => ipcRenderer.invoke("crm:rnd-crm-context"),
   rndSaveAttempts: () => ipcRenderer.invoke("crm:rnd-save-attempts"),
   rndUploadRecovery: () => ipcRenderer.invoke("crm:rnd-upload-recovery"),
   rndModuleState: () => ipcRenderer.invoke("crm:rnd-module-state"),
