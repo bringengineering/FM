@@ -3810,12 +3810,15 @@ secureHandle("crm:rnd-workflow", async input=>{
  if(localTestMode)return rndTestRecords.projects[next.id]={...next,revision:previous.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
  return repo.save("projects",next,{allowResearchChange:true});
 });
-secureHandle("crm:rnd-preview-csv",async input=>require("./rnd-control/csv-preview-service").createCSVPreviewService({
- access:()=>assertRndAccess(true),
- list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection),
- captureSession:()=>localTestMode?{local:true,role:localTestRole}:{client:remoteClient,guard:remoteClient?.captureSessionGuard()},
- isCurrent:binding=>binding?.local?localTestMode&&binding.role===localTestRole:binding?.client===remoteClient&&!!remoteClient?.sessionGuardActive(binding.guard)
-})(input));
+function csvSessionBinding(){return localTestMode?{local:true,role:localTestRole}:{client:remoteClient,guard:remoteClient?.captureSessionGuard()};}
+function csvSessionCurrent(binding){return binding?.local?localTestMode&&binding.role===localTestRole:binding?.client===remoteClient&&!!remoteClient?.sessionGuardActive(binding.guard);}
+function csvPreviewService(){return require("./rnd-control/csv-preview-service").createCSVPreviewService({access:()=>assertRndAccess(true),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent});}
+let rndCSVLedger;function csvJobService(){const ledger=rndCSVLedger??=require('./rnd-control/csv-job-ledger').createCSVJobLedger(path.join(app.getPath('userData'),'rnd-csv-import-jobs'));return require('./rnd-control/csv-job-service').createCSVJobService({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,preview:csvPreviewService(),ledger});}
+secureHandle('crm:rnd-preview-csv',async input=>csvPreviewService()(input));
+secureHandle('crm:rnd-csv-create-job',async input=>csvJobService().create(input));
+secureHandle('crm:rnd-csv-jobs',async()=>csvJobService().list());
+secureHandle('crm:rnd-csv-get-job',async input=>csvJobService().get(input));
+secureHandle('crm:rnd-csv-receipt',async input=>csvJobService().receipt(input));
 secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
 let rndSharedRestore;
 function sharedRestoreClient(){

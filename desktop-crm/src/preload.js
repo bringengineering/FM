@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  rndCSVCreateJob: input => ipcRenderer.invoke('crm:rnd-csv-create-job',input),
+  rndCSVJobs: () => ipcRenderer.invoke('crm:rnd-csv-jobs'),
+  rndCSVGetJob: input => ipcRenderer.invoke('crm:rnd-csv-get-job',input),
+  rndCSVReceipt: input => ipcRenderer.invoke('crm:rnd-csv-receipt',input),
   rndPreviewCSV: input => ipcRenderer.invoke("crm:rnd-preview-csv",input),
   rndPreviewSharedRestore: input => ipcRenderer.invoke("crm:rnd-preview-shared-restore",input),
   rndPrepareSharedRestore: input => ipcRenderer.invoke("crm:rnd-prepare-shared-restore",input),
