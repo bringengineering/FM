@@ -457,7 +457,7 @@
       "condition": "기존 파일/CSV import",
       "expected": "dry-run·충돌목록·승인·rollback manifest, 원본 보존",
       "result": "NOT_RUN",
-      "note": "JSON 백업 페이지별 검토·원본 유지·초안 추가·전후 명세 다운로드/검증 구현. 최신 세션 되돌리기 UI는 적용 후 전체 해시 일치·미제출/저장/업로드/공유저장 거부를 확인하며 기존 dirty 상태와 원본 공유 자료 유지. Node428/native 취소·실행·지연 해시 중 변경 거부 통과. 새 UI packaged/일반 명세 재실행/승인 공유 복원/CSV 전체 범위·운영 검수 미완료",
+      "note": "JSON 백업 검토·원본 유지·초안 추가·전후 명세 다운로드 및 최신 세션 되돌리기 UI 구현. Node428/native/packaged101건 페이지·취소·실행·미제출/공유저장 거부·지연 검증 후 입력/프로젝트 변경 거부·세션 초기화 검수 통과. 원래 dirty 상태와 Main 공유 자료 유지. 일반 명세 재실행/승인 공유 복원/CSV 전체 범위·회사 운영 검수 미완료",
       "evidence": [
         "desktop-crm/test/rnd-import.test.js",
         "desktop-crm/test-rnd-restore-preview-electron.mjs",
@@ -465,7 +465,8 @@
         "docs/superpowers/plans/2026-09-17-restore-review-dialog.md",
         "desktop-crm/test/rnd-restore-manifest.test.js",
         "docs/rnd-control/restore-manifest.md",
-        "docs/superpowers/plans/2026-09-17-rollback-ui.md"
+        "docs/superpowers/plans/2026-09-17-rollback-ui.md",
+        "desktop-crm/test-rnd-rollback-edge-electron.mjs"
       ]
     },
     {
