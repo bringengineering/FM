@@ -562,3 +562,10 @@ Native 게시/이력 연결7개 및 기존 공유 조회5개, CRM Node517개 PAS
 실제 createServerRestoreRuntime의 preview/prepare/compile로 복원 계획을 만들고 실제 CSV parser/job/audit/compiler로 게시 계획을 만든 뒤 demo Firebase DB에서 Admin SDK root transaction을 실행했다. CSV 먼저/복원 먼저/동시 Promise 요청 모두 감사 원본과 기존 방문 자료·회사 기타 자료 보존 PASS. CSV 먼저 추가돼 스냅샷이 바뀌면 오래된 복원은 committed false로 거부하고, 복원 먼저 성공하면 CSV는 새 복원 프로젝트를 보존하며 감사만 추가한다. 동시 시험은 실제 SDK 요청 실행이며 인증·Drive 자료는 fixture이고 실제 회사/Google 원본·배포 callable의 증거가 아니다. 같은 작업 동시 게시·재게시·승인 회수 시험도 포함하여6개 PASS.
 
 이 실행을 GitHub CI의 build 후 demo database emulator 단계에 추가했다. CI 새 실행 결과는 별도 확인해야 한다. production 로직/Windows src는 변경하지 않았고 전체61개 인수 및 운영 배포는 미완료.
+
+
+### 공유 감사 요약 ZIP 보관
+
+공유 감사 조회 성공 후 감사 요약 ZIP 보관 버튼을 제공한다. renderer는 작업/프로젝트 ID만 보내고 Main이 승인·세대를 검사하며 서버 공유 감사 기록을 다시 조회한다. JSON 요약과 SHA-256 manifest/static README를 ZIP에 담아 사용자가 선택한 경로에 partial wx 저장 후 권한/세대 재검사와 rename을 수행한다. viewer도 승인된 읽기 전용 내보내기를 사용할 수 있다. 취소/권한 변경/기록 연결 불일치 시 쓰지 않는다. 원본 CSV·binary·전체 작업 JSON은 포함하지 않으며 역사 조회의 목록50개 제한을 유지한다. 복원 backup/현재 Drive 원본 검증 증거가 아니다. 운영 DB/Drive에 쓰지 않는다.
+
+CRM Node523개 PASS: 신규6개는 ID-only/currenthistory/cancel/session/mismatch와 ZIP JSON/manifest SHA/static README·저장창 중 승인 회수·정상 감사 SHA의 민감정보 오인 방지/형식과 민감 텍스트 거부를 검사한다. Native 공유 감사 화면7개 PASS: 내보내기 ID-only 요청·프로젝트 교체 비활성·genuine Main/preload 로컬 회사 내보내기 거부 포함. 성공은 fixture이며 실제 회사 조회/파일저장 happy path는 별도 검수다. Windows66ee323은 이번 내보내기를 포함하지 않는다. 전체61개 인수/운영 배포 미완료.
