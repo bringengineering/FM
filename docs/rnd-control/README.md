@@ -299,3 +299,5 @@ DB 기준선 연결 보호: rndControl/visits의 기존 projectId는 일반 DB �
 저장 작업 대조: PC에 보관된 현재 계정의 작업을 선택해 현재 공유 기록을 읽기 전용으로 비교할 수 있습니다. 작업 ID·revision·전체 내용 SHA256 일치만 CURRENT_MATCH로 반환합니다. 불일치(CURRENT_DIFFERENT)는 이후 변경 또는 미저장을 구분할 수 없으므로 완료로 확정하지 않습니다. 조회 실패는 READ_FAILED이며 재쓰기·기록 삭제·본문 반환을 하지 않습니다. 각 조회 전후 승인·UID·역할·이메일을 다시 확인하고 세션 변경 후 화면 응답을 폐기합니다. 실제 계정으로 앱 재시작 후 대조, 자동 일괄 대조 및 작업 기록 정리/보관은 추가 검수·개발 대상입니다. UI 대조 표시 시험은 IPC fixture이며 실제 회사 DB 시험을 대신하지 않습니다.
 
 재시작 대조 통합 시험: 실제 임시 디스크 원장에 전송 전 작업을 기록하고, 테스트 서버가 저장 후 응답을 유실하며 즉시 재조회도 실패하는 상황을 구성했습니다. repository·ledger·recovery 서비스를 새로 생성해 같은 디스크 원장을 읽으면 내용 일치를 확인하고, 이후 서버 수정에는 CURRENT_DIFFERENT를 반환합니다. 전체 과정에서 쓰기는 1회입니다. Node 서비스 재생성 시험이며 Windows 프로세스 강제 종료와 실제 회사 서버 장애 검증은 아닙니다. 근거: desktop-crm/test/rnd-save-restart.test.js.
+
+GitHub CI에는 R&D Database Emulator 시험 단계를 추가했습니다. company-site 작업 디렉터리에서 같은 상대 경로·demo project 설정으로 R&D Rules 시험을 로컬 실행해 통과했습니다. CI의 R&D 의존성 설치는 Electron 바이너리 다운로드를 생략합니다. 실제 GitHub 실행 결과는 PR Checks에서 별도로 확인해야 합니다.

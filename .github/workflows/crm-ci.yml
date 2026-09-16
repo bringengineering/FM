@@ -7,6 +7,7 @@ on:
       - "functions/**"
       - "company-site/**"
       - "database.rules.json"
+      - "rnd-emulator.json"
       - "firebase.json"
       - "release/firebase-targets.json"
       - ".github/workflows/crm-*.yml"
@@ -19,6 +20,7 @@ on:
       - "functions/**"
       - "company-site/**"
       - "database.rules.json"
+      - "rnd-emulator.json"
       - "firebase.json"
       - "release/firebase-targets.json"
       - ".github/workflows/crm-*.yml"
@@ -72,3 +74,9 @@ jobs:
       - run: pnpm --dir company-site build
       - name: Test Firebase rules in local emulators
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
+      - name: Install R&D rule test dependencies
+        run: npm ci --prefix desktop-crm
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - name: Test R&D Firebase rules in local emulator
+        run: pnpm --dir company-site exec firebase --config ../rnd-emulator.json --project demo-bring-rnd emulators:exec --only database "node ../desktop-crm/test-rnd-rules.mjs"
