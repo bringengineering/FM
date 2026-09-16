@@ -581,3 +581,10 @@ CRM Node523개 PASS: 신규6개는 ID-only/currenthistory/cancel/session/mismatc
 새 통합 시험은 CSV 실제 parser/preview·ledger 원본 보관·audit builder·history 기본 감사 validator·export service를 연결하고 임시 디렉터리에 partial write/check/rename으로 ZIP을 저장한 뒤 다시 읽는다. ZIP entry CRC·게시 원래 계정·출처/감사 SHA·manifest JSON hash·원본 CSV/job 변경 없음 PASS. 변조된 게시 계정은 기본 감사 validator가 saveDialog callback 전에 거부한다. 전체 CRM Node524개 PASS.
 
 파일 I/O와 도메인 검증은 실제이고 권한/auth·Drive 참조·readAudit 저장소와 saveDialog는 fixture/injected이다. genuine Main의 remote/saveDialog happy path나 회사 원격 성공 증거로 확대하지 않는다. production src/Windows7d13461은 변경하지 않았다. 전체61개 인수 및 운영 배포 미완료.
+
+
+### Drive 준비 상태 구분 보완
+
+Drive state에 READY/STORAGE_NOT_CONFIGURED/DRIVE_REAUTH_REQUIRED/CRM_ACCESS_REQUIRED를 구분한다. 같은UID라도 현재 역할이viewer/차단 상태 또는 비밀번호 변경 필요면 connected false이다. 미연결·다른UID 연결과50분 인증 만료는 별도 typed code와 한국어 재연결 안내로 업로드를 거부한다. 회사 root 소유권/폴더/보관 capability 확인 실패는STORAGE_NOT_CONFIGURED이며 이전 연결을 같은 capturedconnection일 때만 정리하여 늦은 실패가 새 연결을 지우지 않는다. state/token IPC에 token을 추가하지 않았다.
+
+CRM Node525개 및 Drive11개 PASS, 독립 검토 중요한 회귀 없음. Google HTTP/시간은 fixture이며 실제 tokenexpiry/rootACL은 회사계정 검수가 남아 있다. acceptance FILE-02/04 전체PASS로 올리지 않았다. Windows7d13461은 이번 변경을 아직 포함하지 않는다. 전체61개 인수 및 운영 배포 미완료.
