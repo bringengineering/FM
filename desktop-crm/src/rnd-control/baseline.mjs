@@ -3,6 +3,7 @@ export const costKeys=['labor','transport','materials','outsourcing'];
 function amount(value,key){if(value===null||value===undefined||String(value).trim()===''||!Number.isFinite(Number(value))||Number(value)<0)throw Error(`${key}: 0 이상의 실제 값을 입력하세요`);return Number(value);}
 export function validateVisit(input){
  const v=structuredClone(input);
+ if(v.restorationSourceRevision!==undefined&&(!Number.isInteger(v.restorationSourceRevision)||v.restorationSourceRevision<0))throw Error('복원 원본 revision 형식 오류');
  for(const key of ['id','buildingId','operator','reason','serviceScope','costBasis','evidenceUrl'])if(!String(v[key]??'').trim())throw Error(`${key}: 필수 항목입니다`);
  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.date??'')||!Number.isFinite(Date.parse(v.date))||new Date(v.date).toISOString().slice(0,10)!==v.date)throw Error('날짜를 확인하세요');
  for(const key of timeKeys)v.minutes[key]=amount(v.minutes?.[key],key);
