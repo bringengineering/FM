@@ -1,3 +1,7 @@
+import {authenticateRestoreCallable} from './rnd/restore-auth.js';
+import {createServerRestoreRuntime} from './rnd/restore-runtime.js';
+import {createRestoreApprovalSession,createRestoreSessionUpdater} from './rnd/restore-session.js';
+import {runRestoreRootTransaction} from './rnd/restore-transaction.js';
 import { Buffer } from "node:buffer";
 import { randomBytes, randomUUID } from "node:crypto";
 
@@ -4368,3 +4372,15 @@ export const rebuildMapProjectionOnMediaWrite = onValueWritten(
     );
   },
 );
+
+function requireSharedRestoreEnabled(){if(process.env.BRING_RND_SHARED_RESTORE_ENABLED!=='1')throw new HttpsError('failed-precondition','공유 복원 API가 활성화되지 않았습니다');}
+function restoreRequestData(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value)||Buffer.byteLength(JSON.stringify(value),'utf8')>16*1024*1024)throw new HttpsError('invalid-argument','복원 요청 형식/크기 오류');return structuredClone(value as Record<string,unknown>);}
+async function restoreActor(request:CallableRequest<unknown>){return authenticateRestoreCallable(request.auth,{getAccount:uid=>getAuth().getUser(uid),getApprovals:async uid=>{const [crm,rnd]=await Promise.all([adminDatabase.ref('crmCompany/access/'+uid).get(),adminDatabase.ref('rndAccess/'+uid).get()]);return{crm:crm.val(),rnd:rnd.val()};}});}
+export const rndPrepareSharedRestore = onCall({region:'asia-southeast1',timeoutSeconds:120,memory:'1GiB'},async request=>{
+ requireSharedRestoreEnabled();const data=restoreRequestData(request.data),actor=await restoreActor(request),runtime=createServerRestoreRuntime();const value=(await adminDatabase.ref('rndControl').get()).val();const snapshot={value,etag:'server-digest-'+runtime.digest(value),actorUid:actor.uid,contentSHA256:runtime.digest(value)};
+ const plan=await runtime.prepare({backup:data.backup,reviewed:data.reviewed,reason:data.reason},{access:()=>restoreActor(request),readSnapshot:async()=>snapshot});const mutation=runtime.compile({snapshot,plan,operationId:randomUUID(),at:new Date().toISOString()});await restoreActor(request);const session=createRestoreApprovalSession({actor,mutation,expectedSnapshotSHA256:snapshot.contentSHA256,now:Date.now()});
+ const stored=await adminDatabase.ref('rndRestoreSessions/'+actor.uid+'/'+session.id).transaction(current=>current===null?session:undefined,undefined,false);if(!stored.committed)throw new HttpsError('aborted','승인 요청을 보관하지 못했습니다');return{sessionId:session.id,expiresAt:session.expiresAt,projects:mutation.audit.projects,visits:mutation.audit.visits,scope:'metadata-only'};
+});
+export const rndCommitSharedRestore = onCall({region:'asia-southeast1',timeoutSeconds:120,memory:'1GiB'},async request=>{
+ requireSharedRestoreEnabled();const data=restoreRequestData(request.data);if(typeof data.sessionId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.sessionId))throw new HttpsError('invalid-argument','승인 요청 ID 오류');const actor=await restoreActor(request),runtime=createServerRestoreRuntime();const result=await runRestoreRootTransaction(adminDatabase.ref(),createRestoreSessionUpdater({actor,sessionId:data.sessionId,digest:runtime.digest,now:Date.now}));if(!result.committed)throw new HttpsError('aborted','승인 만료·권한·자료 변경으로 복원을 적용하지 않았습니다');const state=result.snapshot.val().rndRestoreSessions[actor.uid][data.sessionId];return{operationId:data.sessionId,status:'COMMITTED',audit:state.mutation.audit};
+});

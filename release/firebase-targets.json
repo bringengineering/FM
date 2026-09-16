@@ -24,6 +24,8 @@
       "listFieldOperationsWorkspace",
       "provisionFieldUser",
       "recordFieldOperatorSwitch",
+      "rndCommitSharedRestore",
+      "rndPrepareSharedRestore",
       "saveFieldRegistration",
       "setManagementContractStatus",
       "startFieldCaptureSession",
