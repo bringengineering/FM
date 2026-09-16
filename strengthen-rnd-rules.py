@@ -108,6 +108,7 @@ def protect(node):
   elif k in ['.read','.write'] and isinstance(v,str) and 'rndAccess' not in v:node[k]='('+v+')'+extra
 protect(rules['rules']['rndControl'])
 admin_access="auth != null && "+crm+".child('enabled').val() === true && "+crm+".child('email').val() === auth.token.email && "+admin
+rules['rules']['rndControl']['.read']=admin_access+extra
 rules['rules']['rndAccess']={'.read':admin_access,'.write':False,'$uid':{'.read':"auth != null && auth.uid === $uid && "+crm+".child('enabled').val() === true && "+crm+".child('email').val() === auth.token.email",'.write':admin_access+' && newData.exists()', '.validate':present(['enabled','email','role','approvedBy','approvedAt','reason'])+" && newData.child('enabled').isBoolean() && newData.child('email').val() === root.child('crmCompany/access').child($uid).child('email').val() && newData.child('role').val() === root.child('crmCompany/access').child($uid).child('role').val() && newData.child('approvedBy').val() === auth.uid && newData.child('approvedAt').isString() && newData.child('reason').isString() && newData.child('reason').val().length > 0",'$other':{'.validate':False},**{k:{} for k in ['enabled','email','role','approvedBy','approvedAt','reason','auditId']}}}
 grant_rule=rules['rules']['rndAccess']['$uid']
 event="root.child('rndAccessAudit').child($uid).child(newData.child('auditId').val())"
