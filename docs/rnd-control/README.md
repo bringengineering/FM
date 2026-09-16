@@ -349,3 +349,5 @@ Windows 후속 업무 검토본 갱신: dcbdfe6 소스로 x64 디렉터리 빌�
 관측 기록 통합 갱신: 실제 0값과 결측·미점검·관측 불가를 구분하는 입력, 프로젝트별 초안, 검색·상태별 집계·내부 보고서를 연결했습니다. Node423, 전체 emulator 및 native/packaged Main·UI·ZIP 검수 통과. Windows 소스70e2297의 src77개가 ASAR와 바이트 단위 일치합니다. EXP-04의 로컬 자동 검수 근거를 기록했으며 회사 운영 배포·실계정/Drive 검수는 미완료입니다. observation-status.md에 검수 범위를 기록했습니다.
 
 복원 사전 안내 보완: JSON 백업의 프로젝트별 ID·이름·현재/백업 revision을 확인하고 같은 ID는 유지하며 신규 항목만 초안으로 추가합니다. Node424 및 native/packaged 취소·적용 시험 통과. Windows 소스 d008270, src77 바이트 일치 및 관측/후속업무/기존 CRM/고정 보관/비활성화 검수 통과. 대량 목록 검토·CSV 전체 import·승인 복원·rollback manifest와 운영 검수는 남아 있습니다.
+
+대량 복원 검토 화면: 50개씩 페이지 이동하고 충돌·신규 항목을 필터로 확인합니다. 검토 중 프로젝트 수정 또는 세션 변경 시 적용을 중단합니다. native/packaged101건 목록과 원본 유지·초안 추가·취소 검수 통과. Windows 소스48cca6d의 src78개가 ASAR와 바이트 단위 일치합니다. CRM-04 전체 범위의 CSV·승인 복원·rollback manifest와 회사 실환경 검수는 남아 있습니다.
