@@ -141,3 +141,5 @@ for check in visit_checks:
  if check not in visits['.validate']:
   visits['.validate'] += ' && ('+check+')'
 p.write_text(json.dumps(rules,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+exec(Path('restore-audit-rules.py').read_text(encoding='utf-8'))
