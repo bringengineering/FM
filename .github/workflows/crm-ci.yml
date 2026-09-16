@@ -8,6 +8,7 @@ on:
       - "company-site/**"
       - "database.rules.json"
       - "rnd-emulator.json"
+      - "rnd-callable-emulator.json"
       - "firebase.json"
       - "release/firebase-targets.json"
       - ".github/workflows/crm-*.yml"
@@ -21,6 +22,7 @@ on:
       - "company-site/**"
       - "database.rules.json"
       - "rnd-emulator.json"
+      - "rnd-callable-emulator.json"
       - "firebase.json"
       - "release/firebase-targets.json"
       - ".github/workflows/crm-*.yml"
@@ -80,3 +82,7 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Test R&D Firebase rules in local emulator
         run: pnpm --dir company-site exec firebase --config ../rnd-emulator.json --project demo-bring-rnd emulators:exec --only database "node ../desktop-crm/test-rnd-rules.mjs"
+      - name: Test R&D restore callables with Firebase Auth and Functions emulators
+        env:
+          BRING_RND_SHARED_RESTORE_ENABLED: "1"
+        run: pnpm --dir company-site exec firebase --config ../rnd-callable-emulator.json --project demo-bring-rnd emulators:exec --only database,auth,functions "node ../functions/test-rnd-restore-callable-emulator.mjs"
