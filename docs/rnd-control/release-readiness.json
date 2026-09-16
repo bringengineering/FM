@@ -2,7 +2,7 @@
   "kind": "BRING_RND_RELEASE_READINESS",
   "gateCount": 61,
   "eligible": false,
-  "passed": 4,
+  "passed": 5,
   "remaining": [
     {
       "id": "AUTH-01",
@@ -110,17 +110,6 @@
       "result": "NOT_RUN",
       "reason": "inconclusive 종료 시험 확인. aborted·반대 결과 별도 검수 필요",
       "evidence": []
-    },
-    {
-      "id": "EXP-04",
-      "result": "NOT_RUN",
-      "reason": "관측 상태 OBSERVED/MISSING/NOT_INSPECTED/UNOBSERVABLE·값0/null·사유·실험/계획/대상·Main작성자·불변기록 구현. 실제Main 재조회 및 전체emulator null필드 복원/원본수정거부 시험 통과. 입력UI/검색/보고서/packaged검수는 미완료",
-      "evidence": [
-        "desktop-crm/test/rnd-observation.test.js",
-        "desktop-crm/test-rnd-rules.mjs",
-        "desktop-crm/test-rnd-observation-electron.mjs",
-        "docs/superpowers/plans/2026-09-17-observation-states.md"
-      ]
     },
     {
       "id": "EXP-05",

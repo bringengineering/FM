@@ -7,3 +7,5 @@ Implemented: domain validation/research command, repository immutable collection
 Remaining: native observation form with project drafts/session guards, current-state reporting/search and internal export/disclosure exclusion, focused UI/packaged verification and refreshed Windows package. No EXP-04 PASS claim before the full input/reporting scope is tested.
 
 Update: native UI/project drafts/session guards, search/portfolio and internal export/review exclusion now implemented and locally verified (Node423, focused Main/UI/ZIP). Remaining: packaged validation and refreshed delivery archives, actual company operation.
+
+Packaged checkpoint: source70e2297,77 source files exactly match ASAR; focused observation Main/UI/report/draft/session checks pass. Delivery archives refreshed. EXP-04 local automatic acceptance is evidenced PASS; company operational release remains unready.

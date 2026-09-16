@@ -187,13 +187,15 @@
       "method": "자동",
       "condition": "센서 결측·미점검·실제 0값 입력",
       "expected": "null+reason, NOT_INSPECTED/UNOBSERVABLE, 0이 서로 다르게 저장",
-      "result": "NOT_RUN",
-      "note": "관측 상태 OBSERVED/MISSING/NOT_INSPECTED/UNOBSERVABLE·값0/null·사유·실험/계획/대상·Main작성자·불변기록 구현. 실제Main 재조회 및 전체emulator null필드 복원/원본수정거부 시험 통과. 입력UI/검색/보고서/packaged검수는 미완료",
+      "result": "PASS",
+      "note": "로컬 자동 검수: 실제 Main/UI와 Windows packaged에서 값0과 결측·미점검·관측불가 null+reason의 개별 저장·재조회 통과. 전체 emulator에서 Firebase null 생략 후 복원 및 불변기록 검증 통과. 검색/상태별 집계/내부 ZIP·검토 제외 확인. 회사 운영 배포·실계정 검수는 별도 미완료",
       "evidence": [
         "desktop-crm/test/rnd-observation.test.js",
         "desktop-crm/test-rnd-rules.mjs",
         "desktop-crm/test-rnd-observation-electron.mjs",
-        "docs/superpowers/plans/2026-09-17-observation-states.md"
+        "docs/superpowers/plans/2026-09-17-observation-states.md",
+        "desktop-crm/test/rnd-observation-reporting.test.js",
+        "docs/rnd-control/observation-status.md"
       ]
     },
     {
