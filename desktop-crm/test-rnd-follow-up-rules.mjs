@@ -44,6 +44,14 @@ export async function testFollowUpRules({env,db,p,rndPatch}){
  await save(workflow(p,{...create,eventId:'cancel-create',taskId:'cancel-task'},'admin'),'admin');
  await save(workflow(p,{type:'transition',eventId:'cancel-done',taskId:'cancel-task',previousEventId:'cancel-create',status:'cancelled',reason:'Scope cancelled'},'admin'),'admin');
  const cancelled=p.research.followUpEvents.at(-1);await direct('admin',{'projects/p/research/followUpHeads/cancel-task':{eventId:'cancel-resurrection',sequence:3},'projects/p/research/followUpEvents/cancel-resurrection':{...cancelled,id:'cancel-resurrection',previousEventId:cancelled.id,sequence:3,status:'active'}});
+ await save(workflow(p,{...create,eventId:'revoked-owner-create',taskId:'revoked-owner-task'},'admin'),'admin');
+ await env.withSecurityRulesDisabled(c=>set(ref(c.database(),'rndAccess/member/enabled'),false));
+ const ownerStart=workflow(p,{...active,eventId:'revoked-owner-start',taskId:'revoked-owner-task',previousEventId:'revoked-owner-create'},'member');await assertFails(update(ref(db('member'),'rndControl'),patch(ownerStart,'member')));
+ const ownerCancel=workflow(p,{type:'transition',eventId:'revoked-owner-cancel',taskId:'revoked-owner-task',previousEventId:'revoked-owner-create',status:'cancelled',reason:'Owner access revoked; admin closes remaining work'},'admin');
+ await save(ownerCancel,'admin');assert.equal(p.research.followUpEvents.at(-1).ownerUid,'member');
+ const newAssignment=workflow(p,{...create,eventId:'disabled-assignee-create',taskId:'disabled-assignee-task'},'admin');await assertFails(update(ref(db('admin'),'rndControl'),patch(newAssignment,'admin')));
+ await env.withSecurityRulesDisabled(c=>set(ref(c.database(),'rndAccess/member/enabled'),true));
+ console.log('PASS revoked owner cannot work; admin can cancel without rewriting assignment or history; new disabled assignment denied');
  console.log('PASS follow-up DB actor/assignee roles, append-only events, atomic task heads, stale predecessor, concurrent writers, review completion and revoked access');return p;
 }
 

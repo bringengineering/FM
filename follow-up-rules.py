@@ -29,7 +29,7 @@ def install_follow_up_rules(project, access, admin):
  for field in ['ownerUid','reviewerUid']:
   crm="root.child('crmCompany/access').child("+val(field)+")"
   rnd="root.child('rndAccess').child("+val(field)+")"
-  checks.append(crm+".child('enabled').val() === true && "+rnd+".child('enabled').val() === true && "+rnd+".child('email').val() === "+crm+".child('email').val() && "+rnd+".child('role').val() === "+crm+".child('role').val() && ("+crm+".child('role').val() === 'admin' || "+crm+".child('role').val() === 'member')")
+  checks.append('('+head+'.exists() || ('+crm+".child('enabled').val() === true && "+rnd+".child('enabled').val() === true && "+rnd+".child('email').val() === "+crm+".child('email').val() && "+rnd+".child('role').val() === "+crm+".child('role').val() && ("+crm+".child('role').val() === 'admin' || "+crm+".child('role').val() === 'member')))")
  absent=' && '.join('!'+child(f)+'.exists()' for f in ['previousEventId','result','resultUrl','completedBy','completedAt','selfReview','selfReviewReason'])
  first='!'+head+'.exists() && '+admin+' && '+val('sequence')+" === 1 && "+val('status')+" === 'todo' && "+absent
  fixed=' && '.join(val(f)+' === '+previous+".child('"+f+"').val()" for f in ['projectId','decisionId','title','ownerUid','reviewerUid','due','criteria'])

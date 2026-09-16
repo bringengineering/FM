@@ -35,3 +35,9 @@ Current-task search and portfolio open/review/overdue counts are integrated with
 The Windows x64 directory build from dcbdfe6260b3452928c028f0dfc449ac3e40fac1 now passes the focused follow-up lifecycle/search/portfolio/ZIP/project-draft/delayed-response/session suite. Existing full CRM/R&D, CRM context freeze/export and disabled-module packaged checks also pass. All 75 src files match app.asar byte-for-byte; rnd-packaged-source-verification.json records the compiled source commit and ASAR SHA256. Package inventory/hash validation remains independent of application test evidence.
 
 This is an unpacked review application, version 1.8.0; no installer, update channel, production Rules or OAuth pages were deployed. Local fixture and emulator evidence does not replace real company identities, shared Drive and two-PC operational checks. Overall original acceptance status remains 4/61 evidenced PASS / NOT READY.
+
+## Revoked-assignee cleanup fix
+
+An approved owner losing R&D access originally prevented even an authorized administrator from cancelling unfinished work. Assignee eligibility is now checked at initial assignment. Every transition still checks the current actor's live CRM/R&D access, fixed original task specification and owner/reviewer/admin role. An admin can cancel with a recorded reason after the former owner is revoked; revoked owners cannot write, and new assignments to revoked accounts remain denied. Original owner and history are retained; this does not grant the revoked account continued access or permit general reassignment.
+
+The added emulator test reproduced failure before the fix and passes with it, alongside the full existing Rules suite. This changes server Rules only; the previously verified Windows src/app.asar are unchanged. Operational Rules deployment remains pending.

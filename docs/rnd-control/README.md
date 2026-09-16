@@ -343,3 +343,5 @@ GitHub CI 35140606062(a813b0d)는 프로젝트별 CRM 고정 자료·DB 불변/�
 후속 업무 통합 갱신: Main·원자적 이벤트/task head·Rules·CRM 생성/진행/검토/완료·프로젝트별 입력 초안·지연 응답·검색/포트폴리오·내부 Markdown 이력을 연결했습니다. Node421 및 focused native 시험 통과. 실제 Main ZIP의 CRC/해시/UTF8와 검토용 제외 확인. 기존 Windows 검토본 갱신 및 packaged 후속 업무 검수는 아직 미완료입니다. decision-follow-up-integration.md, follow-up-ui-review.md에 상세 범위를 기록했습니다.
 
 Windows 후속 업무 검토본 갱신: dcbdfe6 소스로 x64 디렉터리 빌드를 만들고 packaged 후속 업무/기존 CRM·R&D/CRM 고정 보관/비활성화 시험을 모두 통과했습니다. ASAR의 src75개가 해당 커밋 소스와 바이트 단위 일치합니다. 전달 ZIP에는 해시 목록과 packaged 시험 로그를 포함합니다. 설치·운영 배포·회사 실계정/Drive/두 PC 검수는 완료되지 않았습니다.
+
+권한 회수 후 업무 정리 보완: 신규 배정 시 승인 CRM/R&D 담당·검토자만 허용하고, 기존 업무의 각 변경은 현재 행위자 권한을 검증합니다. 담당자의 권한이 회수된 뒤에도 관리자는 사유를 남겨 취소할 수 있으며 기존 담당/이력을 바꾸지 않습니다. 회수 계정의 쓰기 및 새 배정은 거부됩니다. 전체 Rules emulator 시험 통과; 운영 Rules는 배포하지 않았습니다.
