@@ -3734,6 +3734,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
     finishCrmLogout: async () => {
       rndDrive.clear();
+      rndSharedRestore?.clear();
       cancelFieldRequests("FIELD_LOGOUT");
       if (fieldView) fieldView.setVisible(false);
       fieldViewVisible = false;
@@ -3810,6 +3811,15 @@ secureHandle("crm:rnd-workflow", async input=>{
  return repo.save("projects",next,{allowResearchChange:true});
 });
 secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
+let rndSharedRestore;
+function sharedRestoreClient(){
+ assertRndModuleEnabled();assertMainMutationAllowed();
+ if(localTestMode||process.env.BRING_RND_SHARED_RESTORE_ENABLED!=='1')throw new Error('공유 복원 실행 기능이 활성화되지 않았습니다');
+ if(!remoteClient)throw new Error('CRM 로그인 연결이 필요합니다');
+ return rndSharedRestore??=require('./rnd-control/shared-restore-client').createSharedRestoreClient({enabled:()=>rndModuleEnabled&&!localTestMode&&process.env.BRING_RND_SHARED_RESTORE_ENABLED==='1',access:()=>assertRndAccess(true),captureSession:()=>({client:remoteClient,guard:remoteClient.captureSessionGuard()}),isCurrent:binding=>binding?.client===remoteClient&&remoteClient.sessionGuardActive(binding.guard),token:()=>remoteClient.ensureIdToken(false),baseUrl:'https://asia-southeast1-bring-fm.cloudfunctions.net',fetch:(...args)=>remoteClient.fetch(...args)});
+}
+secureHandle('crm:rnd-prepare-shared-restore',input=>sharedRestoreClient().prepare(input));
+secureHandle('crm:rnd-commit-shared-restore',input=>sharedRestoreClient().commit(input));
 secureHandle("crm:rnd-get", async input => {
  await assertRndAccess(false);
  if(!input || !["projects","visits"].includes(input.collection) || typeof input.id!=="string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.id))throw new Error("R&D 대상 ID 오류");
