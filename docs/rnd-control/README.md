@@ -477,3 +477,10 @@ rndControl/importJobs를 현재 두 승인 기록의 enabled/email/일치하는 
 csv-audit-history.js는 trusted Main 승인 조회/원격 감사 조회 dependency로 동작하는 읽기 전용 서비스다. projectId/jobId만 복제해 받고 현재 승인된 admin/member/viewer와 로그인 세대를 조회/검증/응답 직전마다 확인한다. 원격 응답을 소유 복제한 뒤 실제 감사 validator로 검증하고 요청 프로젝트/작업 ID가 정확히 맞아야 요약을 반환한다. 원래 게시자·게시 시각·프로젝트 버전·출처/매핑·기록 해시·Drive 참조·건수와 첫 50개 ID만 반환하며 importJobJSON/CSV 원본/초안 본문은 전달하지 않는다. Drive URL은 고정 google.com file 경로로 재구성한다. 보관 조회이며 현재 Drive 원본 재검증이나 가져온 방문의 공유 적용 완료를 뜻하지 않는다.
 
 서비스 시험 4개와 전체 desktop Node 502개 PASS. 서비스 시험 validator는 stub이며 실제 감사 domain validator 시험은 별도로 존재한다. 아직 Main 원격 repository 조회·preload IPC·팀 화면에 연결하지 않은 내부 서비스 기반이다. 운영 미배포이며 Windows 9def771 검토 빌드에는 신규 서비스가 포함되지 않았다. source ZIP만 최신화한다.
+
+
+### CSV 감사 이력 Main/preload 읽기 연결
+
+rndCSVAuditHistory -> secureHandle crm:rnd-csv-audit-history -> 현재 승인/세대 guard -> read-only getCSVAudit -> 실제 감사 validator -> summary 경로를 연결했다. repository는 기존 projects/visits collection 허용 목록을 변경하지 않고 고정 importJobs/ID 경로 GET만 제공한다. token 대기와 원격 JSON 조회 뒤 계정 UID/역할/이메일을 확인하며 받은 JSON의 encoded 크기 32MiB를 검사한다. 이 크기 검사는 파싱 뒤의 제한이며 transport streaming 한도를 증명하지 않는다. 서비스가 새 승인을 반복 확인해 조회 권한 회수 시 최종 응답을 막는다. 로컬 시험 모드에서는 실제 회사 공유 이력을 조회하지 않는다.
+
+전체 CRM Node 503개·Main/preload 구문 검사 PASS. repository의 올바른 단일 GET/ID 제한/계정 교체/불일치 ID/일반 audit save 거부를 시험했다. 아직 renderer 화면·실제 Electron 이력 IPC 성공 경로·회사 실계정 검수를 수행하지 않았다. Windows 9def771 빌드에는 이 연결이 포함되지 않았다. source ZIP만 최신화하며 실제 프로그램 화면 기능 완료로 주장하지 않는다.
