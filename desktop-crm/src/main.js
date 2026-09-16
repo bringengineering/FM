@@ -3809,6 +3809,7 @@ secureHandle("crm:rnd-workflow", async input=>{
  if(localTestMode)return rndTestRecords.projects[next.id]={...next,revision:previous.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
  return repo.save("projects",next,{allowResearchChange:true});
 });
+secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
 secureHandle("crm:rnd-get", async input => {
  await assertRndAccess(false);
  if(!input || !["projects","visits"].includes(input.collection) || typeof input.id!=="string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.id))throw new Error("R&D 대상 ID 오류");

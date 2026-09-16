@@ -4402,7 +4402,7 @@
     if (!action) return;
     if (action === "logout") {
       const pendingRnd = window.BringRndProject?.pendingState?.();
-      if (pendingRnd && (pendingRnd.projects || pendingRnd.forms || pendingRnd.uploads || window.BringRndBaselinePending?.() || window.BringRndCrmContextPending?.() || window.BringRndFollowUpPending?.() || window.BringRndFollowUpDraftsPending?.() || window.BringRndObservationPending?.() || window.BringRndObservationDraftsPending?.() || window.BringRndRollbackPending?.())) {
+      if (pendingRnd && (pendingRnd.projects || pendingRnd.forms || pendingRnd.uploads || window.BringRndBaselinePending?.() || window.BringRndCrmContextPending?.() || window.BringRndFollowUpPending?.() || window.BringRndFollowUpDraftsPending?.() || window.BringRndObservationPending?.() || window.BringRndObservationDraftsPending?.() || window.BringRndRollbackPending?.() || window.BringRndSharedRestorePreviewPending?.())) {
         const confirmedRnd = await requestConfirmation({title:"R&D 입력 내용을 확인해 주세요",description:"미공유 초안이나 입력 중인 폼이 있습니다. 필요한 기록을 공유 저장하거나 파일로 보관한 뒤 로그아웃해 주세요.",target:`미공유 프로젝트 ${pendingRnd.projects}개 · 입력한 폼 ${pendingRnd.forms}개 · 업로드 대기 ${pendingRnd.uploads}개`,warning:"로그아웃하면 이 기기의 R&D 세션 입력은 정리됩니다.",confirmLabel:"입력 정리 후 로그아웃",cancelLabel:"돌아가서 보관",tone:"warning"});
         if (!confirmedRnd) return;
       }

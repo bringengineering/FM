@@ -1,0 +1,4 @@
+# Shared restore preflight
+Full target: approved immutable history/shared restoration. This prerequisite is read-only, not completion of shared restore.
+Require fresh admin RND access before and after current project/visit reads and validation. Verified metadata backup only. Hydrate current project maps; validate links and frozen CRM contexts for current/incoming. Report exact preserve-existing/new IDs, source/current revisions, hashes, protected research/CRM counts and visit collision/binding details. canApply=false until dedicated approval/CAS/Rules route is implemented. No write dependency.
+TDD service rejects member before reads, changed/revoked identity after async read, unverified/tampered backup, invalidcontexts; preserves all inputs and reports conflicts+historical counts. Main IPC/preload read-only integration with localfixture lists; native/UI approval route follows in later work.
