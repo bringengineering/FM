@@ -337,3 +337,5 @@ CRM 고정 자료 코드 리뷰에서 지연 응답 후 미제출 산출물 입�
 GitHub 코드 경로 검증 보강: SHA가 있어도 blob 파일 경로 누락·경로 이동·인코딩된 구분자/제어문자·잘못된 escape·commit 뒤 추가 경로가 있으면 등록을 거부합니다. Node 411개 통과. 인증된 읽기 전용 GitHub API로 a813b0d 커밋 존재와 Main/CRM context/code source 파일 3개의 원격 blob 바이트가 같은 로컬 커밋과 일치함을 확인했습니다. github-source-verification.json은 해당 커밋/파일/관측 시각에 한정된 근거이며 일반 등록 자료의 자동 원격 검증이나 연구 주장의 타당성을 증명하지 않습니다.
 
 GitHub CI 35140606062(a813b0d)는 프로젝트별 CRM 고정 자료·DB 불변/동시 저장 시험을 포함해 Windows desktop과 backend-and-rules 모두 통과했습니다. 후속 코드 경로 검사 커밋은 별도 CI 확인 대상입니다.
+
+후속 실행 업무 개발 착수: follow-up.mjs에 결정 연결·담당/검토자·기한·완료 기준·불변 상태 이벤트의 domain 처리 로직을 추가했습니다. 담당자 진행/검토 요청과 지정 검토자 완료 확정, 자기검토 이유, 결과 자료 링크, stale/중복 이벤트 거부를 시험했습니다. Node 414개 통과. 현재 domain 기반만 구현했으며 Main 공유 저장·서버 task head 제약·UI·보고서 연결은 계획에 따라 이어서 구현해야 합니다. 기존 Windows 검토본에는 이 후속 업무 화면이 아직 없습니다. 개발 계획: docs/superpowers/plans/2026-09-17-decision-follow-up.md. 코드 경로 검사 21d0710의 CI 35140917469는 desktop 및 backend-and-rules 모두 통과했습니다.

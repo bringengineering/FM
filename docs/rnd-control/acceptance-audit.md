@@ -45,7 +45,7 @@
 | EVD-03 | NOT_RUN | 승인 source 변경 방지. 접근불가 경고·외부 묶음 제외 필요 |
 | EVD-04 | PASS | 기준값 0·미측정·비유한 수치는 —와 계산 불가 사유. 실제 결과 0은 측정값으로 구별. 모델/CRM 계산 화면 및 오버플로 방지 시험 확인 |
 | EVD-05 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
-| EVD-06 | NOT_RUN | 관리자 결정·승인 근거·이유·시각 저장. 후속업무 엔터티 필요 |
+| EVD-06 | NOT_RUN | 관리자 결정·승인 근거·이유·시각 저장. 후속 업무 domain 생성/상태/담당자/검토자/기한/불변 이벤트 기반과 시험 구현. 공유 DB·task head 제약·Main·UI·보고서 연결은 미완료 |
 | CRM-01 | NOT_RUN | 별도 rndControl 경로. CRM 읽기전용 snapshot 어댑터 필요 |
 | CRM-02 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | CRM-03 | NOT_RUN | Main GET 전용 CRM context와 프로젝트별 선택 ID·관계·보관 이유·SHA256·시각·당시 revision 고정 보관 구현. 일반 저장 변조/삭제 거부, DB append-only·동시 revision 시험, native 지연 편집/세션 정리 및 내부 Markdown 포함·검토용 제외 확인. 실제 회사 원장/두 PC, JSON 내용의 DB 출처 신뢰 보강 및 승인 복원 검수는 남음 |

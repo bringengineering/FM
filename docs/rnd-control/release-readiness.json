@@ -250,8 +250,10 @@
     {
       "id": "EVD-06",
       "result": "NOT_RUN",
-      "reason": "관리자 결정·승인 근거·이유·시각 저장. 후속업무 엔터티 필요",
-      "evidence": []
+      "reason": "관리자 결정·승인 근거·이유·시각 저장. 후속 업무 domain 생성/상태/담당자/검토자/기한/불변 이벤트 기반과 시험 구현. 공유 DB·task head 제약·Main·UI·보고서 연결은 미완료",
+      "evidence": [
+        "desktop-crm/test/rnd-follow-up.test.js"
+      ]
     },
     {
       "id": "CRM-01",
