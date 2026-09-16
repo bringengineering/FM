@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  rndPreviewCSV: input => ipcRenderer.invoke("crm:rnd-preview-csv",input),
   rndPreviewSharedRestore: input => ipcRenderer.invoke("crm:rnd-preview-shared-restore",input),
   rndPrepareSharedRestore: input => ipcRenderer.invoke("crm:rnd-prepare-shared-restore",input),
   rndCommitSharedRestore: input => ipcRenderer.invoke("crm:rnd-commit-shared-restore",input),

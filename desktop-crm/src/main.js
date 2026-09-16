@@ -3810,6 +3810,12 @@ secureHandle("crm:rnd-workflow", async input=>{
  if(localTestMode)return rndTestRecords.projects[next.id]={...next,revision:previous.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
  return repo.save("projects",next,{allowResearchChange:true});
 });
+secureHandle("crm:rnd-preview-csv",async input=>require("./rnd-control/csv-preview-service").createCSVPreviewService({
+ access:()=>assertRndAccess(true),
+ list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection),
+ captureSession:()=>localTestMode?{local:true,role:localTestRole}:{client:remoteClient,guard:remoteClient?.captureSessionGuard()},
+ isCurrent:binding=>binding?.local?localTestMode&&binding.role===localTestRole:binding?.client===remoteClient&&!!remoteClient?.sessionGuardActive(binding.guard)
+})(input));
 secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
 let rndSharedRestore;
 function sharedRestoreClient(){
