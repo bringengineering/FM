@@ -18,7 +18,7 @@ R&D 원장은 별도 rndControl/projects·rndControl/visits이다. 기존 CRM �
 
 desktop-crm에서 npm ci, node node_modules/electron/install.js, npm start. 운영 로그인 실행 전 시험 설정과 변경 범위를 확인한다.
 
-자동 시험: desktop-crm에서 npm test — 351개 PASS.
+자동 시험: desktop-crm에서 npm test — 최신 실행 466개 PASS.
 앱 시험: desktop-crm에서 node test-rnd-electron.mjs — CRM 첫 실행 안내 닫기, 메뉴·모듈 초기화·시험 저장·신뢰한 수정자·목록·메뉴 전환 보존, 전용 IPC의 실험 승인·동결·실행·종료·근거 승인·사업 결정, 앱 내부 프로젝트 입력창·프로젝트 전환 시 미공유 상태와 연구 화면 분리 PASS. 실제 원격 저장을 시험한 결과가 아니다.
 서버 시험: 저장소 루트에서 firebase emulators:exec --only database --project demo-bring-rnd --config rnd-emulator.json "node desktop-crm/test-rnd-rules.mjs" — 허용·거부 요청 시험 PASS. permission_denied 경고는 기대한 거부 시험 로그다.
 
@@ -371,3 +371,9 @@ Windows 검토본 최종 갱신: e8990bb 소스의 복원 검토 화면과 해�
 CRM 화면의 공유 복원 검토·서버 승인 준비·별도 확인 후 실행을 연결했습니다. 서버 승인 세션의 용량 제한과 다음 준비 때의 만료 정리를 추가했습니다. 회사 계정의 전체 화면-서버 경로와 Drive·두 PC 검증, 루트 트랜잭션 규모 검토는 남아 있습니다. Windows 검토 빌드의 소스 기준은 패키지 명세에서 확인하세요. 소스 ZIP의 PACKAGE_MANIFEST.json에서 최신 소스 커밋과 별도의 과거 실행 빌드 근거를 구분해 확인해야 합니다.
 
 연결 코드의 검사 범위와 제한은 shared-restore-integration.md에 기록했습니다. 시험 API를 주입한 화면 검수와 실제 로그인 토큰을 사용한 로컬 HTTP 전송 검수는 서로 구분합니다.
+
+## CSV 기준선 가져오기 검토 기반 (화면 연결 전)
+
+CSV UTF-8 원본의 SHA-256·크기·파일명·출처 원장·추출 시각·열 매핑을 검토 결과에 기록한다. 분(min)·원(KRW) 단위를 사용자가 명시해야 하며 자동 변환하지 않는다. 빈 수치, 중복 ID, 잘못된 재방문 관계 및 파일 제한을 검사한다. 기존 ID는 KEEP_EXISTING으로 보존하고 오류가 있으면 전체 반영을 막는다. 수식 안전 CSV 내보내기는 별도 복사본에만 적용한다.
+
+전용 11개 시험과 전체 데스크톱 466개 시험 PASS. 이 단계는 소스의 파서·검토 기반이며 Main/preload/화면, 영구 ImportJob 및 원본 보존·롤백 manifest 연결은 아직 남았다. CRM-04와 회사 운영 승인으로 간주하지 않는다. 기존 Windows 검토 빌드는 b5ae509 소스 기준으로 이 신규 CSV 모듈을 포함하지 않는다. 운영 검수는 61개 중 5개 PASS로 유지한다.
