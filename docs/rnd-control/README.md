@@ -484,3 +484,10 @@ csv-audit-history.js는 trusted Main 승인 조회/원격 감사 조회 dependen
 rndCSVAuditHistory -> secureHandle crm:rnd-csv-audit-history -> 현재 승인/세대 guard -> read-only getCSVAudit -> 실제 감사 validator -> summary 경로를 연결했다. repository는 기존 projects/visits collection 허용 목록을 변경하지 않고 고정 importJobs/ID 경로 GET만 제공한다. token 대기와 원격 JSON 조회 뒤 계정 UID/역할/이메일을 확인하며 받은 JSON의 encoded 크기 32MiB를 검사한다. 이 크기 검사는 파싱 뒤의 제한이며 transport streaming 한도를 증명하지 않는다. 서비스가 새 승인을 반복 확인해 조회 권한 회수 시 최종 응답을 막는다. 로컬 시험 모드에서는 실제 회사 공유 이력을 조회하지 않는다.
 
 전체 CRM Node 503개·Main/preload 구문 검사 PASS. repository의 올바른 단일 GET/ID 제한/계정 교체/불일치 ID/일반 audit save 거부를 시험했다. 아직 renderer 화면·실제 Electron 이력 IPC 성공 경로·회사 실계정 검수를 수행하지 않았다. Windows 9def771 빌드에는 이 연결이 포함되지 않았다. source ZIP만 최신화하며 실제 프로그램 화면 기능 완료로 주장하지 않는다.
+
+
+### 공유 CSV 감사 조회 화면
+
+현재 프로젝트와 가져오기 작업 ID로 보관된 감사 요약을 읽는 별도 panel을 실제 R&D 화면에 연결했다. viewer도 사용할 수 있으며 현재 PC 이력에 없는 공유 작업 ID도 직접 조회한다. 게시 계정/시각·원본 출처·건수·원본/감사 해시를 textContent로 표시한다. 입력 변경·취소·로그인 초기화·프로젝트 변경은 조회 세대를 바꾸어 늦은 결과를 거부한다. 화면은 읽기 전용이고 보관 당시 감사 자료를 보여 주며 방문 공유 적용이나 현재 Drive 성공을 뜻하지 않는다.
+
+Native Electron 시험에서 viewer 요약/원래 게시 계정·HTML 텍스트 안전·취소 늦은 결과·프로젝트 교체 늦은 결과·genuine Main/preload의 로컬 시험 실제회사 조회 거부 PASS. UI 성공 데이터는 명시한 fixture이며 실제 Main 원격 성공/실계정 사용을 증명하지 않는다. 전체 Node 503개 PASS. 새 화면의 Windows 검토 패키지는 빌드 및 실행 결과/manifest를 별도 확인해야 한다. 운영 미배포.
