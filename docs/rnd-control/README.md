@@ -531,3 +531,8 @@ CRM Node 515개·Main/preload 구문 검사 PASS. Drive 연결 시험은 HTTP fi
 기존 CRM CSV 가져오기 이력의 Drive 원본 사본마다 공유 감사 기록 게시 버튼을 연결했다. 별도 확인 후 jobId/providerFileId만 Main에 전달하며 작업/프로젝트/RECORDED 응답을 확인하여 표시한다. 세션 초기화·프로젝트 교체·이력 화면 교체 이후 늦은 결과는 표시하지 않는다. 게시 오류는 자동 재시도하지 않고 방문 기록을 자동 반영하지 않는다.
 
 실제 Electron 창에서 실제 mountCSVHistory 연결을 통해 확인 취소/ID 한정 요청과 fixture receipt/프로젝트 A-B-A 늦은 응답 무시/재조회·세션 초기화 listener 정리와 늦은 결과 무시/genuine Main-preload 로컬 시험 게시 거부 5개 PASS. CRM Node 515개 PASS. 성공 경로는 명시한 fixture이며 회사 계정 원격 게시 성공의 증거가 아니다. 기능은 기본 비활성이고 운영 배포하지 않았다. Windows 검토 ZIP은 여전히 6cca3df로 새 게시 Main 및 화면은 포함하지 않으며 소스 패키지와 구분한다. 전체 61개 인수 완료는 아직 검증되지 않았다.
+
+
+### 최신 Windows 게시 화면 검토 빌드 · 7f637a6
+
+현재 Windows 검토 ZIP을 7f637a6 소스로 갱신했다. 앞선 Windows6cca3df 제외 메모는 단계 당시 상태다. 최신 실행 파일에는 publisher/Main 인증·IPC와 CSV 이력 게시 화면까지 포함한다. src103개 ASAR byte 일치 PASS. 실행 파일에서 게시 화면5개/공유 감사 조회5개/CSV 가져오기8개 검증 PASS. 게시·조회 성공은 fixture이고 genuine Main은 로컬 시험의 실제 회사 접근을 거부한다. 실계정 원격 게시 성공과 전체61개 인수는 여전히 검증되지 않았다. 다른 동봉 로그는 과거 단계 자료일 수 있다. 운영 설치·업데이트·Rules/Functions 배포는 하지 않았다.
