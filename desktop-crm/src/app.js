@@ -214,7 +214,7 @@
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
-    workReports: ["작업 종류를 고르면 항목이 깔립니다", "작업 결과보고서"],
+    workReports: ["사진과 작업정보로 AI 초안을 만듭니다", "작업 결과보고서"],
     customerNotices: ["끝났다고 건물주에게 알립니다", "고객 알림"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
@@ -6649,6 +6649,7 @@
     selectedId: "", draft: null, busyKey: "",
     driveOpen: false, driveFolderId: "", driveFolderName: "", driveScanning: false,
     drivePlan: null, driveLeftovers: [], driveError: "",
+    aiLoading: false, aiError: "", aiDraftAt: "",
   };
 
   const reportCore = () => window.BringWorkReportCore;
@@ -6858,20 +6859,23 @@
       </tr>`;
     }).join("");
 
-    main.innerHTML = `<section class="operations-hero">
-        <div><span>문서관리</span><h2>작업 결과보고서</h2><p>작업 종류를 고르면 항목이 깔립니다. 사람은 항목마다 전·후 사진만 붙이면 됩니다.</p></div>
-        <div class="operations-actions">${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>새 보고서</button>` : ""}</div>
+    main.innerHTML = `<section class="ai-assistant-hero ai-work-report-hero">
+        <div><span>BRING CRM AI · WORK REPORT</span><h2>작업 결과보고서 작성</h2><p>현장 정보와 사진을 넣으면 구역별 전·후 사진을 정리하고, 회사 AI가 확인 가능한 사실만으로 보고서 초안을 만듭니다.</p></div>
+        <div class="ai-work-report-hero-mark" aria-hidden="true">✓</div>
       </section>
+      <div class="ai-work-report-head-actions">
+        <button type="button" class="secondary-button" data-report-history>작성 내역 ${reports.length ? `<b>${reports.length}</b>` : ""}</button>
+        ${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>＋ 새 보고서</button>` : ""}
+      </div>
       ${docFlowStrip("report")}
       ${status}
-      <div class="operations-kpis">
+      ${draft ? reportEditor(R, draft) : `<div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
         <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사진</span><b>${monthly.reduce((sum, item) => sum + R.photoCount(item), 0)}</b><small>장</small></div>
         <div class="operations-kpi" style="--wash:#EDF5FF"><span>입주청소</span><b>${reports.filter(item => item.kind === "moveIn").length}</b><small>건</small></div>
         <div class="operations-kpi" style="--wash:#FFF6E9"><span>계단청소</span><b>${reports.filter(item => item.kind === "stairs").length}</b><small>건</small></div>
-      </div>
-      ${draft ? reportEditor(R, draft) : ""}
-      <section class="office-panel">
+      </div>`}
+      <section class="office-panel wr-history" data-report-history-panel>
         <header><div><span>REPORTS</span><h3>낸 보고서</h3></div><small>최근 것부터</small></header>
         ${rowsHtml
           ? `<div class="office-table-wrap"><table class="office-table">
@@ -6989,62 +6993,165 @@
       buildingName: draft.buildingName || made.draft.buildingName,
       workDate: draft.workDate || made.draft.workDate,
     }));
+    reportState.aiDraftAt = "";
     reportState.driveLeftovers = made.leftovers;
     const added = made.draft.items.reduce((sum, item) => sum + item.before.length + item.after.length, 0);
     showToast(`사진 ${added}장을 초안에 얹었습니다.${made.leftovers.length ? ` 못 붙인 폴더 ${made.leftovers.length}개는 그대로 뒀습니다.` : ""} 확인하고 저장해 주세요.`, "success");
     renderWorkReports();
   }
 
+  function workReportAiContent(R, draft) {
+    const report = R.normalizeReport(draft);
+    const lines = [
+      `작업 종류: ${R.kindLabel(report.kind)}`,
+      `작업일: ${report.workDate || "미입력"}`,
+      `작업 범위: ${report.area || "미입력"}`,
+      `보고 구분: ${R.categoryLabel(report.category)}`,
+      "항목별 확인 사실:",
+    ];
+    report.items.forEach(item => {
+      lines.push(`- ${item.label} | 상태 ${R.statusLabel(item.status)} | 작업 전 사진 ${item.before.length}장 | 작업 후 사진 ${item.after.length}장${item.note ? ` | 메모 ${item.note}` : ""}`);
+    });
+    if (report.summary) lines.push(`기존 발견·조치 메모: ${report.summary}`);
+    if (report.followUp) lines.push(`기존 후속 메모: ${report.followUp}`);
+    lines.push("위 사실만 사용해 발견 사항과 조치 결과를 간결한 완료보고서 문장으로 작성하세요. 사진에 보이지 않는 상태·원인·효과는 추측하지 마세요.");
+    return lines.join("\n");
+  }
+
+  async function createWorkReportAiDraft() {
+    const R = reportCore();
+    if (!R || reportState.aiLoading) return;
+    const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    const summary = R.summarizeItems(draft);
+    if (!summary.photos) {
+      showToast("사진을 한 장 이상 등록한 뒤 AI 초안을 만들어 주세요.", "error");
+      return;
+    }
+    reportState.draft = draft;
+    reportState.aiLoading = true;
+    reportState.aiError = "";
+    renderWorkReports();
+    try {
+      // 원본 사진 링크·고객 연락처·주소는 AI로 보내지 않는다. 사람이 확인한
+      // 항목 상태와 사진 개수, 직접 적은 메모만 전달한다.
+      const content = workReportAiContent(R, draft);
+      const context = { workType: R.kindLabel(draft.kind), category: R.categoryLabel(draft.category) };
+      const response = await api.assist({
+        task: "completion_report",
+        content,
+        context,
+      });
+      const text = String(response?.result?.text || "").trim();
+      if (!text) throw new Error("AI 초안이 비어 있습니다.");
+      reportState.draft = R.normalizeReport(Object.assign({}, draft, { summary: text }));
+      reportState.aiDraftAt = new Date().toISOString();
+      showToast("AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
+    } catch (error) {
+      reportState.aiError = error && error.message || "AI 초안을 만들지 못했습니다.";
+    } finally {
+      reportState.aiLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
   function reportEditor(R, draft) {
     const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
     const blockers = R.blockers(draft);
     const sum = R.summarizeItems(draft);
+    const basicReady = Boolean(draft.buildingId && draft.workDate);
+    const photosReady = sum.photos > 0;
+    const issueCount = draft.items.filter(item => R.itemIssue(item)).length;
+    const aiReady = Boolean(draft.summary.trim());
+    const step = (index, label, detail, done, active) => `<div class="wr-ai-step${done ? " is-done" : ""}${active ? " is-active" : ""}"><span>${done ? "✓" : index}</span><div><b>${esc(label)}</b><small>${esc(detail)}</small></div></div>`;
 
     const cards = draft.items.map(item => {
       const issue = R.itemIssue(item);
       const shots = phase => (item[phase].length
         ? item[phase].map(photo => `<li><a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || "사진")}</a><button type="button" class="text-button" data-report-drop-photo="${esc(photo.id)}" data-report-item="${esc(item.key)}" data-report-phase="${esc(phase)}">빼기</button></li>`).join("")
         : `<li class="wr-none">없음</li>`);
-      return `<article class="wr-item${issue ? " has-issue" : ""}">
+      return `<article class="wr-item${issue ? " has-issue" : ""}" id="wr-item-${attr(item.key)}">
         <header>
           <div><b>${esc(item.label)}</b><small>${esc(item.detail)}</small></div>
           <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
         </header>
         <div class="wr-shots">
-          <div><span>작업 전</span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
-          <div><span>작업 후</span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>사진 넣기</button>` : ""}</div>
+          <div><span>작업 전 <b>${item.before.length}</b></span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
+          <div><span>작업 후 <b>${item.after.length}</b></span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
         </div>
         <input type="text" class="wr-note" data-report-note="${esc(item.key)}" maxlength="500" value="${esc(item.note)}" placeholder="${item.status === "skipped" ? "못 한 이유를 적어 주세요" : "비고 (선택)"}">
         ${issue ? `<p class="wr-issue">${esc(issue)}</p>` : ""}
       </article>`;
     }).join("");
 
-    return `<form class="wo-editor wr-editor" data-report-form>
-      <h3>${esc(draft.createdAt ? "보고서 고치기" : "새 보고서")}</h3>
-      <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-      <label><span>건물</span><select name="buildingId" required>
-        <option value="">고르세요</option>
-        ${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}
-      </select></label>
-      <label><span>작업일</span><input type="date" name="workDate" value="${esc(draft.workDate)}" required${supplyDateBounds()}></label>
-      <label><span>작업 인원</span><input type="text" name="workerName" maxlength="120" value="${esc(draft.workerName)}" placeholder="예: 황우중 외 1명"></label>
-      <label><span>작업 범위</span><input type="text" name="area" maxlength="60" value="${esc(draft.area)}" placeholder="예: 지상 1~5층 계단실"></label>
-      <label><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
-      <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
-      <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
-      <label><span>구분</span><select name="category">${R.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-      <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
-      <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
-      <label class="wide"><span>발견 사항 및 조치 내용</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
-      <label class="wide"><span>후속 필요 사항 · 권고</span><textarea name="followUp" rows="2" maxlength="2000">${esc(draft.followUp)}</textarea></label>
-      ${reportState.canWork ? reportDriveBox(R) : ""}
-      <div class="wide wr-items">${cards}</div>
-      ${blockers.length
-        ? `<div class="wide wr-blockers"><b>아직 낼 수 없습니다</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
-        : `<p class="wide wo-editor-note">낼 준비가 됐습니다. 완료 ${sum.done}항목 · 사진 ${sum.photos}장 · 진척도 ${sum.progress}%</p>`}
-      <div class="wo-editor-actions">
-        <button class="primary-button" type="submit"${blockers.length ? " disabled" : ""}>저장</button>
-        <button class="secondary-button" type="button" data-report-cancel>취소</button>
+    const reviewRows = draft.items.map(item => {
+      const issue = R.itemIssue(item);
+      return `<button type="button" class="wr-ai-review-row${issue ? " needs-review" : ""}" data-report-focus-item="${attr(item.key)}"><span><i></i><b>${esc(item.label)}</b></span><small>전 ${item.before.length} · 후 ${item.after.length}</small><em>${issue ? "확인 필요" : "확인 완료"}</em></button>`;
+    }).join("");
+
+    return `<form class="wo-editor wr-editor wr-ai-editor" data-report-form>
+      <div class="wr-ai-title"><div><span>${draft.createdAt ? "SAVED REPORT" : "NEW REPORT"}</span><h3>${esc(draft.createdAt ? "결과보고서 수정" : "새 결과보고서")}</h3><p>기본 정보와 사진을 확인한 뒤 AI 초안을 검토하고 저장합니다.</p></div><button class="secondary-button" type="button" data-report-cancel>닫기</button></div>
+      <div class="wr-ai-steps">
+        ${step("01", "기본 정보", basicReady ? "입력 완료" : "건물·작업일 입력", basicReady, !basicReady)}
+        ${step("02", "사진 등록", photosReady ? `${sum.photos}장 등록` : "전·후 사진 등록", photosReady, basicReady && !photosReady)}
+        ${step("03", "AI 검토", aiReady ? "초안 생성 완료" : "확인된 사실로 작성", aiReady, photosReady && !aiReady)}
+        ${step("04", "보고서 저장", blockers.length ? `${blockers.length}개 확인 필요` : "저장 가능", !blockers.length, aiReady && !blockers.length)}
+      </div>
+      <div class="wr-ai-layout">
+        <div class="wr-ai-main">
+          <section class="wr-ai-card">
+            <header><span class="wr-ai-card-icon">01</span><div><h4>기본 정보</h4><p>보고서에 표시할 현장과 작업 정보를 입력합니다.</p></div></header>
+            <div class="wr-ai-form-grid">
+              <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+              <label><span>건물</span><select name="buildingId" required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}</select></label>
+              <label><span>작업일</span><input type="date" name="workDate" value="${esc(draft.workDate)}" required${supplyDateBounds()}></label>
+              <label><span>작업 인원</span><input type="text" name="workerName" maxlength="120" value="${esc(draft.workerName)}" placeholder="예: 황우중 외 1명"></label>
+              <label><span>작업 범위</span><input type="text" name="area" maxlength="60" value="${esc(draft.area)}" placeholder="예: 지상 1~5층 계단실"></label>
+              <label><span>구분</span><select name="category">${R.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+              <label class="wide"><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
+              <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
+              <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
+              <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+              <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
+            </div>
+          </section>
+          <section class="wr-ai-card wr-ai-photo-card">
+            <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>Drive 폴더로 한 번에 불러오거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
+            <div class="wr-ai-photo-guide"><span>1</span><p><b>작업 전·후 사진을 등록하세요.</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
+            ${reportState.canWork ? reportDriveBox(R) : ""}
+            <div class="wr-ai-manual-head"><div><b>항목별 직접 등록</b><small>AI는 사진 원본을 받지 않으며, 확인된 항목과 사진 수만 보고 문장을 만듭니다.</small></div><span>${draft.items.length}개 구역</span></div>
+            <div class="wr-items">${cards}</div>
+          </section>
+          <section class="wr-ai-card">
+            <header><span class="wr-ai-card-icon">03</span><div><h4>보고서 상세 내용</h4><p>AI 초안은 언제든 직접 고칠 수 있습니다.</p></div></header>
+            <div class="wr-ai-form-grid">
+              <label class="wide"><span>발견 사항 및 조치 내용</span><textarea name="summary" rows="6" maxlength="2000" placeholder="사진 등록 후 오른쪽의 AI 초안 만들기를 누르거나 직접 입력하세요.">${esc(draft.summary)}</textarea></label>
+              <label class="wide"><span>후속 필요 사항 · 권고</span><textarea name="followUp" rows="3" maxlength="2000" placeholder="추가 관리나 고객 안내가 필요한 내용을 적어 주세요.">${esc(draft.followUp)}</textarea></label>
+            </div>
+          </section>
+        </div>
+        <aside class="wr-ai-side">
+          <section class="wr-ai-card wr-ai-analysis">
+            <header><div><span>PHOTO CHECK</span><h4>사진 분류 확인</h4></div><em>${issueCount ? `${issueCount}개 확인 필요` : "모두 확인"}</em></header>
+            <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div><div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
+            <div class="wr-ai-review-list">${reviewRows}</div>
+          </section>
+          <section class="wr-ai-card wr-ai-draft">
+            <header><div><span>BRING CRM AI</span><h4>AI 보고서 초안</h4></div>${reportState.aiDraftAt ? `<em>작성됨</em>` : ""}</header>
+            ${draft.summary ? `<div class="wr-ai-draft-preview">${esc(draft.summary)}</div>` : `<div class="wr-ai-draft-empty"><b>아직 초안이 없습니다</b><p>사진과 작업 상태를 확인하면 AI가 정돈된 보고서 문장을 만듭니다.</p></div>`}
+            <button type="button" class="primary-button wr-ai-generate" data-report-ai-draft${reportState.aiLoading || !photosReady ? " disabled" : ""}>${reportState.aiLoading ? "AI가 작성 중…" : draft.summary ? "✦ AI 초안 다시 만들기" : "✦ AI 초안 만들기"}</button>
+            ${reportState.aiError ? `<p class="wr-ai-error" role="alert">${esc(reportState.aiError)}</p>` : ""}
+            <p class="wr-ai-safe">원본 사진·고객 연락처·주소는 AI에 전송하지 않습니다.</p>
+          </section>
+          <section class="wr-ai-card wr-ai-finish">
+            <header><div><span>FINAL CHECK</span><h4>저장 준비</h4></div><strong>${sum.progress}%</strong></header>
+            <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
+            <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped} · 사진 ${sum.photos}장</p>
+            ${blockers.length
+              ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
+              : `<div class="wr-ai-ready">✓ 보고서를 저장할 준비가 됐습니다.</div>`}
+            <div class="wr-ai-finish-actions"><button class="primary-button" type="submit"${blockers.length ? " disabled" : ""}>결과보고서 저장</button><button class="secondary-button" type="button" data-report-cancel>취소</button></div>
+          </section>
+        </aside>
       </div>
     </form>`;
   }
@@ -7087,6 +7194,7 @@
 
   function syncReportDraft() {
     reportState.draft = readReportForm();
+    reportState.aiDraftAt = "";
     renderWorkReports();
   }
 
@@ -7099,6 +7207,8 @@
     try {
       const saved = await api.saveWorkReport(checked.report);
       reportState.draft = null;
+      reportState.aiError = "";
+      reportState.aiDraftAt = "";
       reportState.selectedId = saved.id;
       reportState.loaded = false;
       showToast("결과보고서를 저장했습니다.", "success");
@@ -7144,6 +7254,7 @@
         added += 1;
       }
       reportState.draft = R.normalizeReport(draft);
+      reportState.aiDraftAt = "";
       showToast(`사진 ${added}장을 넣었습니다.`, "success");
     } catch (error) {
       showToast(error && error.message || "사진을 넣지 못했습니다.", "error");
@@ -7162,6 +7273,7 @@
     // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
     item[phase] = item[phase].filter(photo => photo.id !== photoId);
     reportState.draft = R.normalizeReport(draft);
+    reportState.aiDraftAt = "";
     renderWorkReports();
   }
 
@@ -11019,14 +11131,25 @@
     if (!event.target.closest("[data-nav-folder-switch]")) closeNavFolderSwitch();
     if (event.target.closest("[data-report-new]")) {
       const R = reportCore();
-      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() }); renderWorkReports(); }
+      if (R) {
+        reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() });
+        reportState.aiError = "";
+        reportState.aiDraftAt = "";
+        renderWorkReports();
+      }
       return;
     }
     const reportEdit = event.target.closest("[data-report-edit]");
     if (reportEdit) {
       const R = reportCore();
       const found = R && R.findReport(reportState.reports, reportEdit.dataset.reportEdit);
-      if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
+      if (found) {
+        reportState.draft = found;
+        reportState.selectedId = found.id;
+        reportState.aiError = "";
+        reportState.aiDraftAt = "";
+        renderWorkReports();
+      }
       return;
     }
     const growthTab = event.target.closest("[data-growth-tab]");
@@ -11102,7 +11225,25 @@
     if (event.target.closest("[data-telegram-forget]")) { void forgetTelegram(); return; }
     if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
-    if (event.target.closest("[data-report-cancel]")) { reportState.draft = null; renderWorkReports(); return; }
+    if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
+    if (event.target.closest("[data-report-history]")) {
+      document.querySelector("[data-report-history-panel]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const reportFocusItem = event.target.closest("[data-report-focus-item]");
+    if (reportFocusItem) {
+      const item = document.getElementById(`wr-item-${reportFocusItem.dataset.reportFocusItem}`);
+      item?.scrollIntoView({ behavior: "smooth", block: "center" });
+      item?.querySelector("select, button, input")?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.target.closest("[data-report-cancel]")) {
+      reportState.draft = null;
+      reportState.aiError = "";
+      reportState.aiDraftAt = "";
+      renderWorkReports();
+      return;
+    }
     const reportAddPhoto = event.target.closest("[data-report-add-photo]");
     if (reportAddPhoto) { await addWorkReportPhoto(reportAddPhoto.dataset.reportAddPhoto, reportAddPhoto.dataset.reportPhase); return; }
     const reportDropPhoto = event.target.closest("[data-report-drop-photo]");
