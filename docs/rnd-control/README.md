@@ -618,3 +618,11 @@ Node 534개/Native 5개 PASS. 실제 참고 근거 폼 연결·URL/version 요�
 고정 GitHub 파일 확인 성공 후 파일 확인 결과 JSON 보관 버튼을 제공한다. renderer는 URL/version만 보내며 Main이 원격 commit/file을 다시 검증한다. 검증 metadata를 허용 목록으로 선택하여 저장소·경로·commit·Git blob SHA·SHA-256·크기·확인 시각과 보관 계정을 남긴다. 원본 내용/token은 포함하지 않고 technicalClaimApproved false·cloudWrites false로 표시한다. 저장창 이후와 partial wx 저장/rename 직전에 현재 권한·로그인 세대를 확인한다. JSON 파일 바이트의 별도 SHA-256도 반환한다. 미확인 파일·취소·세션 변경은 보관하지 않는다. 기존 Drive의 자료 업로드 경로로 별도 등록할 수 있는 JSON이며 자동 Drive 전송이나 프로젝트 이력 저장은 하지 않는다.
 
 Node536개/Native7개 PASS. 새 export2개는 원격 재검증 callback·허용 metadata·원본/token 제외·취소/세션/미확인 거부를 검증한다. 실제 native 폼에서 URL/version 요청·변경 비활성 및 genuine Main 로컬 내보내기 거부를 확인했다. UI 성공/파일 경로는 fixture이며 실제 Main saveDialog 성공·회사 Drive 보관 검수는 별도다. 독립 검토 중요한 문제 없음. Windows e39b3a6은 새 GitHub 검증과 보관 기능 미포함. 전체61개 인수/운영 배포 미완료.
+
+### 최신 검토 빌드와 실제 인증 CSV 서버 호출 검증
+
+최신 Windows 검토 빌드의 소스는 d3d7dc75a9636ea847a25c51c7d29b685c0df567이다. GitHub 검증·JSON 보관까지 포함하며 ASAR 108개 CRM 소스 파일 바이트 일치와 packaged GitHub7/공유조회8/게시8/CSV가져오기8 총31개 검사를 통과했다. 앞선 절의 e39b3a6 미포함 표시는 당시 진행 기록이다. GitHub CI35163853372는 desktop/backend-and-rules 모두 SUCCESS다.
+
+functions/test-rnd-callable-emulator.mjs는 동일 로컬 demo Auth/Database/Functions에서 기존 복원 검증 후 CSV 검증을 순차 실행한다. 실제 Auth 계정 로그인 token과 HTTP onCall, 신선한 Admin SDK 승인 조회, 회사 root 트랜잭션으로 기존 감사 기록의 동시 재확인과 정확한 원본 해시 응답을 확인했다. 더 최신 프로젝트 revision·방문·회사 자료가 보존되며 익명/잘못된 요청/다른 승인 계정/원본 file 충돌/승인 회수/비밀번호 변경 필요/역할 불일치/비활성 Auth 계정은 변경 없이 거부된다. 로컬 통합 복원10/CSV6 검사 PASS, 독립 검토 중요한 문제 없음.
+
+CSV 감사와 Drive reference는 서버 runtime으로 만든 격리 fixture를 미리 저장한다. 기존 기록 재확인은 Google API를 호출하지 않는 경로이므로 실제 새 원본 다운로드·신규 CSV 게시·회사 Drive·Main 게시 성공을 검증하지 않았다. 기본 비활성 API의 FAILED_PRECONDITION 차단도 실제 HTTP에서 확인했다. CI의 CSV/복원 활성화는 emulator 테스트 step에만 적용하며 운영 설정·배포는 변경하지 않는다. 원래61개 인수는5/61 PASS로 유지한다.
