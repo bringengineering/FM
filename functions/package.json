@@ -8,8 +8,8 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run test"
+    "build": "tsc -p tsconfig.json && node scripts/bundle-rnd-runtime.mjs",
+    "test": "node scripts/bundle-rnd-runtime.mjs && vitest run test"
   },
   "dependencies": {
     "@fontsource/noto-sans-kr": "^5.2.8",
