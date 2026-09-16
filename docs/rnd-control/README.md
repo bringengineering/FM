@@ -510,3 +510,10 @@ getCSVAudit의 원격 응답을 JSON 파싱 전에 스트림으로 읽고 실제
 ### 최신 Windows 검토 빌드 갱신 · 6cca3df
 
 위 단계별 메모의 Windows 18e8d0a/신규 guard 미포함 상태는 해당 단계 당시의 기록이다. 현재 제공하는 Windows 검토 ZIP은 6cca3df 소스로 새로 빌드했으며 감사 복원 형식 guard와 스트리밍 조회 한도를 포함한다. 101개 src 파일의 ASAR 바이트 일치 PASS. 새 packaged 감사 조회 5개/기존 CSV 가져오기 8개/공유 복원 화면 4개 시험 PASS. 감사 UI 성공과 공유 복원 승인 동작은 fixture이며 실제 Main의 회사 조회/저장은 로컬 시험에서 거부한다. 최신 결과 파일과 source verification/build manifest/ZIP 전체 파일 hash를 함께 제공한다. 그 밖의 함께 실린 옛 시험 로그는 해당 과거 단계의 증거로 읽어야 한다. 회사 실계정 승인/원본/원격 게시 happy path 및 전체 61개 인수 완료는 아직 검증되지 않았다. 운영 설치/업데이트/Rules·Functions 배포를 하지 않았다.
+
+
+### CSV 공유 게시 Main 호출 기반
+
+csv-audit-publisher.js는 trusted Main에서 승인/로그인 세대·계정별 검증 job·인증 정보 callback을 받아 서버 게시를 호출하는 내부 서비스다. renderer 요청으로는 jobId/providerFileId만 허용한다. 고정 HTTPS endpoint, redirect error, 120초 timeout을 사용하고 bearer CRM token과 Drive token은 Main 내부 호출에만 사용한다. 응답을 128KiB streaming 한도로 읽고 작업/프로젝트/RECORDED 상태/해시가 정확히 맞는 작은 receipt만 반환한다. 서버 메시지·credential은 반환하지 않고 결과 불명 시 같은 기록 조회를 안내하며 자동 재시도하지 않는다. 현재 승인을 각 대기 이후 다시 확인하고 로그인 교체나 role 변경 시 응답을 거부한다.
+
+전체 CRM Node 513개 PASS. 신규 4개 시험은 fixedendpoint/ID제한/owner·viewer·disabled거부/credential·response세션변경/위조응답·서버disabled·transportuncertain 및 민감 오류문자열 비노출을 fixture로 검증한다. 아직 실제 Main Drive 연결 인증 상태·IPC·renderer 게시 버튼에 연결하지 않은 기반이다. 운영 미배포이며 Windows 6cca3df 빌드에는 이 추가 module이 포함되지 않았다. 실제 회사 게시 성공/로컬 게시 receipt·팀 화면 통합은 후속 작업이다.

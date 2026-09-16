@@ -1,0 +1,17 @@
+const Core=require('../core'),{readBoundedJSON}=require('./bounded-json');
+const id=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value);
+/** Trusted Main dependencies only. Credentials, job, endpoint never come from renderer. No auto retry. */
+function createCSVAuditPublisher({enabled,access,captureSession,isCurrent,getJob,credentials,fetch:request=globalThis.fetch}){let busy=false;return async input=>{
+ const flag=()=>{if(!enabled())throw Error('CSV 공유 게시 기능이 활성화되지 않았습니다');};flag();
+ const owned=structuredClone(input);if(!owned||Array.isArray(owned)||Object.keys(owned).length!==2||Object.keys(owned).some(k=>!['jobId','providerFileId'].includes(k))||!id(owned.jobId)||!id(owned.providerFileId))throw Error('CSV 게시 요청 오류');if(busy)throw Error('CSV 게시 확인이 진행 중입니다');busy=true;
+ try{const binding=captureSession(),actor=structuredClone(await access());Core.assertMutationAllowed(actor);
+ const check=async()=>{flag();if(!isCurrent(binding))throw Error('로그인 세션이 변경되었습니다');const current=await access();Core.assertMutationAllowed(current);if(!isCurrent(binding)||current.uid!==actor.uid||current.email!==actor.email||current.role!==actor.role)throw Error('로그인 세션이 변경되었습니다');};
+ await check();const job=structuredClone(await getJob(actor.uid,owned.jobId));await check();if(job?.id!==owned.jobId||job.actorUid!==actor.uid||job.actorEmail!==actor.email||!id(job.source?.projectId))throw Error('CSV 원래 계정 연결 오류');
+ const credential=structuredClone(await credentials());await check();if(typeof credential?.firebaseToken!=='string'||!credential.firebaseToken||credential.firebaseToken.length>16384||typeof credential.driveToken!=='string'||!credential.driveToken||credential.driveToken.length>12000)throw Error('CRM·회사 Drive 연결을 확인하세요');
+ let response;try{response=await request('https://asia-southeast1-bring-fm.cloudfunctions.net/rndPublishCSVImport',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+credential.firebaseToken},body:JSON.stringify({data:{job,providerFileId:owned.providerFileId,driveToken:credential.driveToken}}),signal:AbortSignal.timeout(120000),redirect:'error'});}catch{await check();throw Error('CSV 게시 결과 확인 불가 · 같은 작업 기록을 조회하세요. 자동 재시도하지 않습니다');}finally{credential.firebaseToken='';credential.driveToken='';}
+ await check();let payload;try{payload=await readBoundedJSON(response,128*1024,()=>{if(!isCurrent(binding))throw Error('로그인 세션이 변경되었습니다');});}catch{await check();throw Error('CSV 게시 응답 확인 불가 · 같은 작업 기록을 조회하세요');}await check();
+ if(!response.ok||payload?.error){const messages={FAILED_PRECONDITION:'서버 CSV 게시 기능이 활성화되지 않았습니다',UNAUTHENTICATED:'CRM 로그인을 다시 확인하세요',PERMISSION_DENIED:'현재 CRM·R&D 게시 승인을 확인하세요',UNAVAILABLE:'게시 결과 확인이 필요합니다 · 같은 작업 기록을 조회하세요'};throw Error(messages[payload?.error?.status]??'CSV 게시를 확인하지 못했습니다 · 자동 재시도하지 않습니다');}
+ const result=payload?.result;if(result?.id!==job.id||result.projectId!==job.source.projectId||result.status!=='RECORDED'||typeof result.contentSHA256!=='string'||!/^[a-f0-9]{64}$/.test(result.contentSHA256))throw Error('CSV 게시 결과 연결 오류');return{id:result.id,projectId:result.projectId,status:result.status,contentSHA256:result.contentSHA256};
+ }finally{busy=false;}
+};}
+module.exports={createCSVAuditPublisher};
