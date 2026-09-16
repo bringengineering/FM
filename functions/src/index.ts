@@ -1,4 +1,4 @@
-import {authenticateRestoreCallable} from './rnd/restore-auth.js';
+import {authenticateRestoreCallable,RestoreAuthorizationError} from './rnd/restore-auth.js';
 import {createServerRestoreRuntime} from './rnd/restore-runtime.js';
 import {createRestoreApprovalSession,createRestoreSessionUpdater} from './rnd/restore-session.js';
 import {runRestoreRootTransaction} from './rnd/restore-transaction.js';
@@ -4375,7 +4375,7 @@ export const rebuildMapProjectionOnMediaWrite = onValueWritten(
 
 function requireSharedRestoreEnabled(){if(process.env.BRING_RND_SHARED_RESTORE_ENABLED!=='1')throw new HttpsError('failed-precondition','공유 복원 API가 활성화되지 않았습니다');}
 function restoreRequestData(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value)||Buffer.byteLength(JSON.stringify(value),'utf8')>16*1024*1024)throw new HttpsError('invalid-argument','복원 요청 형식/크기 오류');return structuredClone(value as Record<string,unknown>);}
-async function restoreActor(request:CallableRequest<unknown>){return authenticateRestoreCallable(request.auth,{getAccount:uid=>getAuth().getUser(uid),getApprovals:async uid=>{const [crm,rnd]=await Promise.all([adminDatabase.ref('crmCompany/access/'+uid).get(),adminDatabase.ref('rndAccess/'+uid).get()]);return{crm:crm.val(),rnd:rnd.val()};}});}
+async function restoreActor(request:CallableRequest<unknown>){try{return await authenticateRestoreCallable(request.auth,{getAccount:uid=>getAuth().getUser(uid),getApprovals:async uid=>{const [crm,rnd]=await Promise.all([adminDatabase.ref('crmCompany/access/'+uid).get(),adminDatabase.ref('rndAccess/'+uid).get()]);return{crm:crm.val(),rnd:rnd.val()};}});}catch(error){if(error instanceof RestoreAuthorizationError)throw new HttpsError(error.code,error.message);throw error;}}
 export const rndPrepareSharedRestore = onCall({region:'asia-southeast1',timeoutSeconds:120,memory:'1GiB'},async request=>{
  requireSharedRestoreEnabled();const data=restoreRequestData(request.data),actor=await restoreActor(request),runtime=createServerRestoreRuntime();const value=(await adminDatabase.ref('rndControl').get()).val();const snapshot={value,etag:'server-digest-'+runtime.digest(value),actorUid:actor.uid,contentSHA256:runtime.digest(value)};
  const plan=await runtime.prepare({backup:data.backup,reviewed:data.reviewed,reason:data.reason},{access:()=>restoreActor(request),readSnapshot:async()=>snapshot});const mutation=runtime.compile({snapshot,plan,operationId:randomUUID(),at:new Date().toISOString()});await restoreActor(request);const session=createRestoreApprovalSession({actor,mutation,expectedSnapshotSHA256:snapshot.contentSHA256,now:Date.now()});

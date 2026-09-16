@@ -5,3 +5,11 @@ it('restore auth rejects unapproved/disabled/mismatched/password-change users an
 
 it('callable adapter maps verified Firebase auth_time and reads current account/approvals',async()=>{const calls:string[]=[];const result=await authenticateRestoreCallable({uid:'a',token:{email:token.email,auth_time:1000}},{getAccount:async uid=>{calls.push('account:'+uid);return account;},getApprovals:async uid=>{calls.push('approval:'+uid);return{crm:grant,rnd:grant};}});expect(result.authTime).toBe(1000);expect(calls.sort()).toEqual(['account:a','approval:a']);});
 it('missing verified callable auth is refused before any account lookup',async()=>{let reads=0;await expect(authenticateRestoreCallable(undefined,{getAccount:async()=>{reads++;return account;},getApprovals:async()=>{reads++;return{crm:grant,rnd:grant};}})).rejects.toThrow(/restore/i);expect(reads).toBe(0);});
+
+it('restore auth exposes typed authentication and permission denials without wrapping service outages',async()=>{
+ expect(()=>requireRestoreAdministrator({token,account,crm:grant,rnd:{...grant,role:'member'}})).toThrow(expect.objectContaining({code:'permission-denied'}));
+ expect(()=>requireRestoreAdministrator({token,account,crm:null,rnd:grant})).toThrow(expect.objectContaining({code:'permission-denied'}));
+ expect(()=>requireRestoreAdministrator({token,account:{...account,disabled:true},crm:grant,rnd:grant})).toThrow(expect.objectContaining({code:'unauthenticated'}));
+ await expect(authenticateRestoreCallable(undefined,{getAccount:async()=>account,getApprovals:async()=>({crm:grant,rnd:grant})})).rejects.toMatchObject({code:'unauthenticated'});
+ const outage=new Error('account service unavailable');await expect(authenticateRestoreCallable({uid:'a',token:{email:token.email,auth_time:1000}},{getAccount:async()=>{throw outage;},getApprovals:async()=>({crm:grant,rnd:grant})})).rejects.toBe(outage);
+});
