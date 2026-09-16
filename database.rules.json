@@ -1062,6 +1062,30 @@
                 ".validate": "newData.hasChildren([\"id\", \"projectId\", \"experimentId\", \"planRevision\", \"name\", \"unit\", \"baseline\", \"result\", \"direction\", \"calculatorVersion\", \"inputMethod\", \"baselineSnapshotId\", \"baselineManifestHash\", \"resultSnapshotId\", \"resultManifestHash\", \"baselineLocator\", \"resultLocator\", \"method\", \"limitations\", \"recordedBy\", \"at\"]) && newData.child('id').val() === $record && newData.child('projectId').val() === $id && newData.child('recordedBy').val() === auth.uid && newData.child('baseline').isNumber() && newData.child('baseline').val() >= 0 && newData.child('result').isNumber() && newData.child('result').val() >= 0 && newData.child('calculatorVersion').val() === 'improvement-v1' && (newData.child('direction').val() === 'lower_better' || newData.child('direction').val() === 'higher_better') && ((newData.child('baseline').val() === 0 && !newData.child('percent').exists() && newData.child('calculationReason').isString()) || (newData.child('baseline').val() > 0 && newData.child('percent').isNumber() && newData.child('percent').val() === (newData.child('direction').val() === 'lower_better' ? newData.child('baseline').val() - newData.child('result').val() : newData.child('result').val() - newData.child('baseline').val()) / newData.child('baseline').val() * 100)) && newData.parent().parent().child('datasetSnapshots').child(newData.child('baselineSnapshotId').val()).exists() && newData.parent().parent().child('datasetSnapshots').child(newData.child('baselineSnapshotId').val()).child('experimentId').val() === newData.child('experimentId').val() && newData.parent().parent().child('datasetSnapshots').child(newData.child('baselineSnapshotId').val()).child('planRevision').val() === newData.child('planRevision').val() && newData.parent().parent().child('datasetSnapshots').child(newData.child('baselineSnapshotId').val()).child('manifestHash').val() === newData.child('baselineManifestHash').val() && newData.parent().parent().child('datasetSnapshots').child(newData.child('resultSnapshotId').val()).exists() && newData.parent().parent().child('datasetSnapshots').child(newData.child('resultSnapshotId').val()).child('experimentId').val() === newData.child('experimentId').val() && newData.parent().parent().child('datasetSnapshots').child(newData.child('resultSnapshotId').val()).child('planRevision').val() === newData.child('planRevision').val() && newData.parent().parent().child('datasetSnapshots').child(newData.child('resultSnapshotId').val()).child('manifestHash').val() === newData.child('resultManifestHash').val()"
               }
             }
+          },
+          "crmContexts": {
+            "$context": {
+              ".write": "(auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists() && !data.exists()) && root.child('rndAccess').child(auth.uid).child('enabled').val() === true && root.child('rndAccess').child(auth.uid).child('email').val() === auth.token.email && root.child('rndAccess').child(auth.uid).child('role').val() === root.child('crmCompany/access').child(auth.uid).child('role').val()",
+              ".validate": "(newData.hasChildren([\"id\", \"version\", \"projectId\", \"sourceRevision\", \"frozenBy\", \"frozenAt\", \"frozenAtEpochMs\", \"sourceUpdatedAt\", \"fetchedAt\", \"testMode\", \"reason\", \"manifestHash\", \"snapshotJSON\", \"customerIdsJSON\", \"buildingIdsJSON\"])) && (newData.child('id').val() === $context) && (newData.child('version').val() === 1) && (newData.child('projectId').val() === $id) && (newData.child('sourceRevision').isNumber() && newData.child('sourceRevision').val() === newData.parent().parent().child('revision').val() - 1) && (newData.child('frozenBy').val() === auth.uid) && (newData.child('testMode').val() === false) && (newData.child('sourceUpdatedAt').isString() && newData.child('sourceUpdatedAt').val() === root.child('crmShared/data/updatedAt').val()) && (newData.child('frozenAtEpochMs').isNumber() && newData.child('frozenAtEpochMs').val() >= now - 300000 && newData.child('frozenAtEpochMs').val() <= now + 300000) && (newData.child('manifestHash').isString() && newData.child('manifestHash').val().matches(/^[a-f0-9]{64}$/)) && (newData.child('reason').isString() && newData.child('reason').val().length > 0 && newData.child('reason').val().length <= 2000 && newData.child('reason').val().matches(/.*[^ ].*/)) && (newData.child('snapshotJSON').isString() && newData.child('snapshotJSON').val().length <= 2097152) && (newData.child('frozenAt').isString() && newData.child('frozenAt').val().length > 0) && (newData.child('fetchedAt').isString() && newData.child('fetchedAt').val().length > 0) && (newData.child('customerIdsJSON').isString() && newData.child('customerIdsJSON').val().length > 0) && (newData.child('buildingIdsJSON').isString() && newData.child('buildingIdsJSON').val().length > 0)",
+              "$other": {
+                ".validate": false
+              },
+              "id": {},
+              "version": {},
+              "projectId": {},
+              "sourceRevision": {},
+              "frozenBy": {},
+              "frozenAt": {},
+              "frozenAtEpochMs": {},
+              "sourceUpdatedAt": {},
+              "fetchedAt": {},
+              "testMode": {},
+              "reason": {},
+              "manifestHash": {},
+              "snapshotJSON": {},
+              "customerIdsJSON": {},
+              "buildingIdsJSON": {}
+            }
           }
         }
       },

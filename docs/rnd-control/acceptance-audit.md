@@ -1,6 +1,6 @@
 # 원래 기획서 61개 검수 항목 대조
 
-398개 Node 시험 및 Windows 화면 시험 통과는 61개 전체 검수 통과를 뜻하지 않습니다. 부분 구현과 시험 근거를 기록했지만 실제 운영 계정·원본 복구·배포 검수를 대신하지 않습니다. NOT_RUN은 해당 범위 전체가 아직 검증되지 않았다는 의미입니다.
+410개 Node 시험 및 Windows 화면 시험 통과는 61개 전체 검수 통과를 뜻하지 않습니다. 부분 구현과 시험 근거를 기록했지만 실제 운영 계정·원본 복구·배포 검수를 대신하지 않습니다. NOT_RUN은 해당 범위 전체가 아직 검증되지 않았다는 의미입니다.
 
 | ID | 종합 결과 | 현재 근거와 남은 작업 |
 |---|---|---|
@@ -48,7 +48,7 @@
 | EVD-06 | NOT_RUN | 관리자 결정·승인 근거·이유·시각 저장. 후속업무 엔터티 필요 |
 | CRM-01 | NOT_RUN | 별도 rndControl 경로. CRM 읽기전용 snapshot 어댑터 필요 |
 | CRM-02 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
-| CRM-03 | NOT_RUN | Main GET 전용 CRM context·원장 ID/DB key·개인 상세 제외·조회/갱신시각·미연결/누락/과거 상태와 CRM UI 구현. 실제 회사 계정 및 프로젝트 고정 snapshot 보관 검수는 남음 |
+| CRM-03 | NOT_RUN | Main GET 전용 CRM context와 프로젝트별 선택 ID·관계·보관 이유·SHA256·시각·당시 revision 고정 보관 구현. 일반 저장 변조/삭제 거부, DB append-only·동시 revision 시험, native 지연 편집/세션 정리 및 내부 Markdown 포함·검토용 제외 확인. 실제 회사 원장/두 PC, JSON 내용의 DB 출처 신뢰 보강 및 승인 복원 검수는 남음 |
 | CRM-04 | NOT_RUN | JSON 보관/복원 있음. dry-run·충돌목록·rollback manifest 필요 |
 | UX-01 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | UX-02 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
@@ -60,7 +60,7 @@
 | OUT-03 | NOT_RUN | GitHub 저장소/path/40자리 SHA·미고정 경고·링크/버전 불일치 차단·Markdown 출력 구현. 실제 원격 코드 존재·주장 근거와 수동 등록 검수는 남음 |
 | OPS-01 | NOT_RUN | 빈 workspace 복원·관계·바이너리 해시 시험 필요 |
 | OPS-02 | NOT_RUN | metadata-only/binaryFilesIncluded=false·생성시각·개수·revision·DS 파일 참조·SHA manifest 및 변조/목록 불일치 거부 구현. 실제 다운로드 파일과 모든 원본 참조 범위 검수 필요 |
-| OPS-03 | NOT_RUN | 기존 CRM 포함 398개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료 |
+| OPS-03 | NOT_RUN | 기존 CRM 포함 410개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료 |
 | OPS-04 | NOT_RUN | 운영 seed 기본 실행 없음. 복원은 해시/목록/관계 사전 검증 및 명시 확인 후 신규 초안만 추가, 같은 ID 유지. 모든 직접 호출·운영 dry-run 정책 검수 필요 |
 | OPS-05 | NOT_RUN | 실계정 시험 미실행. 개발·Emulator 시험 지속 |
 | OPS-06 | NOT_RUN | BRING_RND_ENABLED=0 시작 시 메뉴·Main R&D 요청 차단 및 데이터 삭제 없는 재활성 절차 구현. 실제 운영 자료/두 PC 복귀 검수는 남음 |

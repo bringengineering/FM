@@ -268,8 +268,14 @@
     {
       "id": "CRM-03",
       "result": "NOT_RUN",
-      "reason": "Main GET 전용 CRM context·원장 ID/DB key·개인 상세 제외·조회/갱신시각·미연결/누락/과거 상태와 CRM UI 구현. 실제 회사 계정 및 프로젝트 고정 snapshot 보관 검수는 남음",
-      "evidence": []
+      "reason": "Main GET 전용 CRM context와 프로젝트별 선택 ID·관계·보관 이유·SHA256·시각·당시 revision 고정 보관 구현. 일반 저장 변조/삭제 거부, DB append-only·동시 revision 시험, native 지연 편집/세션 정리 및 내부 Markdown 포함·검토용 제외 확인. 실제 회사 원장/두 PC, JSON 내용의 DB 출처 신뢰 보강 및 승인 복원 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-crm-context.test.js",
+        "desktop-crm/test/rnd-crm-freeze.test.js",
+        "desktop-crm/test/rnd-crm-export.test.js",
+        "desktop-crm/test-rnd-crm-freeze-electron.mjs",
+        "desktop-crm/test-rnd-rules.mjs"
+      ]
     },
     {
       "id": "CRM-04",
@@ -343,7 +349,7 @@
     {
       "id": "OPS-03",
       "result": "NOT_RUN",
-      "reason": "기존 CRM 포함 398개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료",
+      "reason": "기존 CRM 포함 410개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료",
       "evidence": [
         "desktop-crm/test-rnd-electron.mjs",
         "desktop-crm/test-rnd-disabled-electron.mjs"

@@ -17,6 +17,7 @@ if(window.bringCRM?.rndList){
 }
 const publishConnection=()=>window.dispatchEvent(new CustomEvent('rnd-connection',{detail:{store,upload:async(file,onState,context)=>{if(window.bringCRM?.rndUpload){onState('Drive 자료 선택·업로드 중');const result=await window.bringCRM.rndUpload(context);if(result.canceled)throw Error('파일 선택을 취소했습니다');return result;}if(!config.driveOwnershipConfirmed)throw Error('회사 보관권한 확인 필요');return uploadEvidence({file,rootFolderId:config.driveRootFolderId,token,onState});}}}));
 window.addEventListener('rnd-request-connection',publishConnection);
+publishConnection();
 setInterval(publishConnection,1500);
 form.elements.date.value=new Date().toLocaleDateString('sv-SE');
 form.addEventListener('input',()=>dirty=true);window.addEventListener('beforeunload',event=>{if(dirty||visitDrafts.size){event.preventDefault();event.returnValue='';}});

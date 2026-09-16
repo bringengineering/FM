@@ -4,7 +4,7 @@
 
 기존 BRING CRM src/index.html·app.js에 R&D 통합 관리 메뉴와 전용 화면을 연결했다. 신규 기능은 desktop-crm/src/rnd-control 폴더에 있다. preload.js는 R&D 읽기·저장 IPC만 노출하며, 인증 토큰은 main.js와 repository.js 안에서 처리한다.
 
-R&D 원장은 별도 rndControl/projects·rndControl/visits이다. 기존 crmCompany 원장을 변경하거나 복사하지 않는다. 승인 사용자는 기존 crmCompany/access와 별도 rndAccess의 활성·이메일·역할 일치를 확인한다. Firebase Functions를 추가하거나 배포 금지 정책을 변경하지 않았다.
+R&D 원장은 별도 rndControl/projects·rndControl/visits이다. 기존 CRM 원장을 변경하지 않는다. 프로젝트별 CRM 고정 자료는 허용된 읽기 전용 메타데이터와 선택 원장 ID만 R&D 경로에 보관한다. 승인 사용자는 기존 crmCompany/access와 별도 rndAccess의 활성·이메일·역할 일치를 확인한다. Firebase Functions를 추가하거나 배포 금지 정책을 변경하지 않았다.
 
 ## 현재 기능
 
@@ -318,3 +318,18 @@ Firebase 배열 빈 자리 처리: CRM context는 배열의 null/undefined 빈 �
 CRM context 내용 검증: crm-context-v1 manifest는 원장 ID·건수·조회/갱신시각·시험 모드를 포함한 SHA256을 기록하고 변경을 검사합니다. 화면에서 검증값을 확인할 수 있습니다. checksum은 작성자·원장 출처·서버 승인에 대한 서명이 아니며 프로젝트별 고정 보관은 아직 구현하지 않았습니다. Node 400개, 별도 native 기준선/CRM context 시험 및 Windows packaged 화면 시험 통과.
 
 CI 실행 35138349335(9c935d0)는 기존 FIELD 시험의 전역 Storage.setItem 오류 주입이 Firebase SDK 저장에도 영향을 주어 실패했습니다. 두 자동 저장 시험을 실제 초안 key로 한정하고 실패 key 호출도 확인하도록 수정했습니다. 로컬 FIELD 전체 결과는 44 files 통과, 454 tests 통과·기존 71 skipped이며 FIELD typecheck도 통과했습니다. 이 수정의 GitHub CI는 별도 확인 대상입니다.
+
+### 프로젝트별 CRM 고정 자료
+고객·건물 원장 ID 선택과 보관 이유를 입력해 현재 프로젝트에 고정 보관합니다. Main은 CRM 원장을 새로 GET하고 승인·UID·역할·이메일을 재확인합니다. 미공유 프로젝트·동시편집 충돌·누락/과거/갱신시각 미확인 자료·선택 ID 누락·건물 고객 연결 불일치는 거부합니다. 기존 고정 자료를 수정/삭제하지 않고 새 기록을 추가합니다. 일반 프로젝트 저장으로 기록을 새로 추가할 수 없습니다.
+
+기록은 snapshotJSON, 선택 ID JSON, 내용 SHA256, 수집/원장 갱신/보관 시각, 보관자 UID, 당시 프로젝트 revision을 보관합니다. JSON 문자열로 Firebase의 빈 배열 생략을 피합니다. 내용 checksum은 작성자·원장 출처·승인 여부의 인증 서명이 아닙니다. Main 수집 경로를 우회하는 직접 DB 요청의 JSON 내부 내용과 SHA256을 Rules만으로 확인할 수는 없으며 이 출처 신뢰 보강은 추가 개발 범위입니다.
+
+DB Rules는 승인된 쓰기 역할의 새 기록만 허용하고 보관자 UID·프로젝트 ID·source revision·현재 CRM 갱신시각·보관 epoch 시각·SHA 형식·허용 필드를 확인합니다. 시험 모드 자료는 운영 DB에 저장하지 못합니다. 관리자도 기존 기록 수정·삭제가 거부됩니다. Emulator에서 이 거부, JSON 내용 유지 및 동시 두 기록의 단일 revision 승자/이전 기록 보존을 확인했습니다. 운영 Rules는 미배포입니다.
+
+고정 자료는 내부 Markdown 묶음에 원장 ID·관계·보관 이유·수집 자료와 함께 포함됩니다. 외부 검토용 내보내기는 전용 공개 범위 승인이 구현될 때까지 모든 CRM 고정 자료를 제외합니다. 메타데이터 백업에는 자료가 유지되지만 신규 공유 프로젝트로 이 기록까지 복구하려면 별도의 승인된 복원 작업을 추가해야 합니다.
+
+화면 저장 대기 중 바뀐 프로젝트 편집은 덮지 않습니다. 최신 공유본과 비교·선택 재적용 후 일반 저장하면 새 CRM 고정 자료를 유지합니다. 로그아웃/세션 초기화 후 지연 응답으로 이전 프로젝트를 복원하지 않습니다. 실제 Main 저장과 공유 조회를 포함한 native 시험은 명시적 시험 고객/건물 fixture로 수행했으며 회사 원장 검수가 아닙니다. 화면 준비 직후 연결을 전달해 첫 1.5초 안의 저장 연결 누락도 수정했습니다.
+
+Node 410개와 신규 CRM 고정 자료 native·Windows packaged 시험, 전체 native·packaged R&D 화면/비활성화 시험, 전체 R&D Rules Emulator 시험이 통과했습니다. GitHub CI 35138938715(8b7ded9)는 Windows desktop 및 backend-and-rules 모두 통과했습니다. 이번 고정 자료 커밋의 CI·실제 회사 원장/다중 PC 검수는 별도 확인 대상입니다.
+
+CRM 고정 자료 코드 리뷰에서 지연 응답 후 미제출 산출물 입력·blur 전 제목이 덮이는 문제를 발견하고 수정했습니다. 현재 프로젝트의 CRM 보관 폼 외 미반영 입력이 있으면 최신 공유본 수용/화면 재렌더를 미루고 입력을 유지합니다. 독립 리뷰 재확인에서 해당 Important 항목은 해소되었으며 별도 Critical/Important 항목은 없었습니다. 실제 Main 생성 내부/검토용 ZIP을 Python으로 검사해 CRM 자료 제외·CRC·UTF-8·파일 크기/SHA256·모든 상대 링크를 확인했습니다. 근거: crm-context-review.md 및 native/packaged CRM 고정 시험 로그.
