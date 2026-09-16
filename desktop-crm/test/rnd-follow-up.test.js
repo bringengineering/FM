@@ -10,6 +10,14 @@ test('follow-up creation preserves decision and responsible parties in an immuta
  assert.throws(()=>applyFollowUp(project,[],{...create,due:'2026-02-30'},admin),/기한/);
  assert.throws(()=>applyFollowUp(project,[],{...create,decisionId:'missing'},admin),/결정/);
 });
+test('follow-up replay handles Firebase key order and refuses forged states and cross-project chains',async()=>{
+ const {applyFollowUp,followUpTasks}=await load();let events=applyFollowUp(project,[],create,admin);
+ events=applyFollowUp(project,events,{type:'transition',eventId:'evt2',taskId:'t',previousEventId:'evt1',status:'active',reason:'Started'},owner);
+ assert.equal(followUpTasks([...events].reverse())[0].status,'active');
+ for(const patch of [{status:'done'},{actorRole:'member'},{due:'2026-02-30'},{resultUrl:'javascript:alert(1)'}])assert.throws(()=>followUpTasks([{...events[0],...patch}]));
+ assert.throws(()=>followUpTasks([events[0],{...events[1],projectId:'other'}]));
+ assert.throws(()=>followUpTasks([events[0],{...events[1],actorUid:'unassigned'}]));
+});
 test('follow-up lifecycle records each transition without changing earlier events and requires assigned review',async()=>{
  const {applyFollowUp,followUpTasks}=await load();let events=applyFollowUp(project,[],create,admin);const first=structuredClone(events[0]);
  events=applyFollowUp(project,events,{type:'transition',eventId:'evt2',taskId:'t',previousEventId:'evt1',status:'active',reason:'Started'},owner);
@@ -26,4 +34,14 @@ test('stale, duplicate and unsafe result events are refused and viewer cannot mu
  assert.throws(()=>applyFollowUp(project,events,{...active,previousEventId:'evt2'},owner),/중복/);
  assert.throws(()=>applyFollowUp(project,events,{...active,eventId:'evt3',previousEventId:'evt2',status:'review',result:'Complete',resultUrl:'javascript:alert(1)'},owner),/결과/);
  assert.throws(()=>applyFollowUp(project,events,{...active,eventId:'evt3',previousEventId:'evt2'}, {uid:'v',role:'viewer'}),/권한/);
+});
+
+test('historical follow-up rejects unknown fields and malformed completion metadata',async()=>{
+ const {applyFollowUp,followUpTasks}=await load();const events=applyFollowUp(project,[],create,admin);
+ assert.throws(()=>followUpTasks([{...events[0],accessToken:'secret'}]),/필드/);
+ assert.throws(()=>followUpTasks([{...events[0],previousEventId:false}]),/연결/);
+ let chain=applyFollowUp(project,events,{type:'transition',eventId:'evt2',taskId:'t',previousEventId:'evt1',status:'active',reason:'Started'},owner);
+ chain=applyFollowUp(project,chain,{type:'transition',eventId:'evt3',taskId:'t',previousEventId:'evt2',status:'review',reason:'Ready',result:'Report',resultUrl:'https://example.com/report'},owner);
+ chain=applyFollowUp(project,chain,{type:'transition',eventId:'evt4',taskId:'t',previousEventId:'evt3',status:'done',reason:'Checked'},reviewer);
+ assert.throws(()=>followUpTasks(chain.map(e=>e.id==='evt4'?{...e,selfReviewReason:'invented'}:e)),/완료/);
 });
