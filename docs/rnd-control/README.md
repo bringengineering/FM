@@ -423,3 +423,11 @@ functions/src/rnd/csv-import-transaction.ts에 검증된 감사 명세를 privat
 Compiler는 async 전에 계정·명세·검증기/해시 함수 참조를 보관하며 checksum·ID·계정·로컬 초안 상태를 결합한다. WeakMap에 등록된 동결 handle만 updater가 받아들이며 복사한 handle과 임의 request object는 거부한다. 매 transaction retry에 현재 CRM/RND 승인·계정 이메일·쓰기 역할·비밀번호 변경 상태를 확인한다. 새 기록은 현재 공유 프로젝트 revision이 같을 때만 importJobs에 추가하고 모든 방문·프로젝트·다른 회사 자료를 보존한다. 정확히 같은 기존 감사 기록은 이후 프로젝트 변경이 있어도 중복 게시하지 않고 재확인한다. 같은 ID의 다른 내용은 덮어쓰지 않는다.
 
 신규 helper 시험 4개·전체 Functions 48 files/1,158 tests·TypeScript 빌드와 기존 검증 runtime 14개 패키징 PASS. helper 시험의 domain validator는 격리용 stub이며 실제 원본 인증/공유 게시의 근거가 아니다. 새 helper의 실제 Admin SDK 동시 transaction/emulator, callable 인증·Drive·실시각 연결, 직접 DB 쓰기 차단·조회 Rules와 팀 화면/복원은 미완료다. 전체 회사 root transaction의 규모/비용 검토도 남아 있다. 운영 배포하지 않았다. Windows 검토 실행 파일은 기존 9def771 소스이며 이번 서버 helper는 포함된 UI 기능이 아니다.
+
+### CSV 공유 게시 서버 인증 기반
+
+csv-import-auth.ts가 검증된 Firebase callable request.auth의 UID/이메일/auth_time을 최신 Admin SDK 계정과 현재 CRM/RND 승인에 결합한다. 비활성화·UID/이메일 불일치·로그인 회수 시각·미승인/비활성 승인·viewer·서로 다른 역할·비밀번호 변경 대기는 거부한다. member/admin 역할은 현재 두 승인 기록에서 결정하며 token의 역할 주장은 사용하지 않는다. 기존 관리자 전용 공유 복원 인증은 바꾸지 않았다.
+
+인증 실패와 게시 승인 실패는 각각 unauthenticated/permission-denied의 typed error로 구분하고 SDK 계정/자료 서비스 장애를 권한 오류로 숨기지 않는다. await 전에 검증된 로그인 정보를 복제하며 SDK에서 받은 전체 계정·인증 토큰은 publisher 객체에 포함하지 않는다. 엔드포인트는 반드시 Firebase onCall이 제공한 request.auth만 넘겨야 한다. request body나 임의 decoded JWT를 이 내부 helper에 전달하면 안 된다.
+
+신규 인증 시험 6개·전체 Functions 49 files/1,164 tests·TypeScript 빌드/기존 검증 runtime 패키징 PASS. JWT 서명 검증은 이 helper가 수행하는 것이 아니며 실제 callable/SDK/emulator 연결은 아직 미완료다. Drive/domain/runtime·게시 트랜잭션·클라이언트와 통합하고 게시 직전 현재 계정/원본을 확인하는 작업이 남았다. 운영 미배포이며 Windows 검토 실행 파일은 이전 9def771 소스를 유지한다.
