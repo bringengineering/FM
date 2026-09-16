@@ -60,4 +60,4 @@ function createCSVJobLedger(directory){
  driveReceipt:(uid,jobId,input)=>record(uid,jobId,input,true)
  };
 }
-module.exports={createCSVJobLedger,csvJobLimits:limits,csvJobDigest:digest};
+module.exports={createCSVJobLedger,csvJobLimits:limits,csvJobDigest:digest,validateCSVJob:validate};
