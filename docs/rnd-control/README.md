@@ -491,3 +491,10 @@ rndCSVAuditHistory -> secureHandle crm:rnd-csv-audit-history -> 현재 승인/�
 현재 프로젝트와 가져오기 작업 ID로 보관된 감사 요약을 읽는 별도 panel을 실제 R&D 화면에 연결했다. viewer도 사용할 수 있으며 현재 PC 이력에 없는 공유 작업 ID도 직접 조회한다. 게시 계정/시각·원본 출처·건수·원본/감사 해시를 textContent로 표시한다. 입력 변경·취소·로그인 초기화·프로젝트 변경은 조회 세대를 바꾸어 늦은 결과를 거부한다. 화면은 읽기 전용이고 보관 당시 감사 자료를 보여 주며 방문 공유 적용이나 현재 Drive 성공을 뜻하지 않는다.
 
 Native Electron 시험에서 viewer 요약/원래 게시 계정·HTML 텍스트 안전·취소 늦은 결과·프로젝트 교체 늦은 결과·genuine Main/preload의 로컬 시험 실제회사 조회 거부 PASS. UI 성공 데이터는 명시한 fixture이며 실제 Main 원격 성공/실계정 사용을 증명하지 않는다. 전체 Node 503개 PASS. 새 화면의 Windows 검토 패키지는 빌드 및 실행 결과/manifest를 별도 확인해야 한다. 운영 미배포.
+
+
+### 기존 공유 CSV 감사 복원 보존
+
+실제 metadata restore 준비/compile 경로가 snapshot의 importJobs 감사 이력을 바이트 표현 그대로 보존하는 시험을 추가했다. 기존 게시 계정·시각·Drive 참조·불변 작업 JSON을 새 복원 기록으로 바꾸지 않고 방문 기록도 재적용하지 않는다. 감사 목록이 배열/숫자/문자열로 손상된 경우 compiler가 복원을 거부한다. absent/null collection을 새로 만들거나 역사 기록을 현재 계정으로 재게시하지 않는다.
+
+전체 CRM Node 505개 PASS. 보존 시험의 감사 자료는 fixture이며 domain 인증/실계정 증거가 아니다. 기존 root snapshot 변경 검사는 동시 추가된 감사 이력을 덮어쓰지 않는 기반이며 실제 CSV 게시/복원 동시 SDK 시험과 감사 내보내기/backup 포함은 별도로 남아 있다. Windows 검토 파일은 직전 18e8d0a 빌드이며 신규 guard는 아직 포함하지 않았다.
