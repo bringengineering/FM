@@ -341,3 +341,5 @@ GitHub CI 35140606062(a813b0d)는 프로젝트별 CRM 고정 자료·DB 불변/�
 후속 실행 업무 개발 착수: follow-up.mjs에 결정 연결·담당/검토자·기한·완료 기준·불변 상태 이벤트의 domain 처리 로직을 추가했습니다. 담당자 진행/검토 요청과 지정 검토자 완료 확정, 자기검토 이유, 결과 자료 링크, stale/중복 이벤트 거부를 시험했습니다. Node 414개 통과. 현재 domain 기반만 구현했으며 Main 공유 저장·서버 task head 제약·UI·보고서 연결은 계획에 따라 이어서 구현해야 합니다. 기존 Windows 검토본에는 이 후속 업무 화면이 아직 없습니다. 개발 계획: docs/superpowers/plans/2026-09-17-decision-follow-up.md. 코드 경로 검사 21d0710의 CI 35140917469는 desktop 및 backend-and-rules 모두 통과했습니다.
 
 후속 업무 통합 갱신: Main·원자적 이벤트/task head·Rules·CRM 생성/진행/검토/완료·프로젝트별 입력 초안·지연 응답·검색/포트폴리오·내부 Markdown 이력을 연결했습니다. Node421 및 focused native 시험 통과. 실제 Main ZIP의 CRC/해시/UTF8와 검토용 제외 확인. 기존 Windows 검토본 갱신 및 packaged 후속 업무 검수는 아직 미완료입니다. decision-follow-up-integration.md, follow-up-ui-review.md에 상세 범위를 기록했습니다.
+
+Windows 후속 업무 검토본 갱신: dcbdfe6 소스로 x64 디렉터리 빌드를 만들고 packaged 후속 업무/기존 CRM·R&D/CRM 고정 보관/비활성화 시험을 모두 통과했습니다. ASAR의 src75개가 해당 커밋 소스와 바이트 단위 일치합니다. 전달 ZIP에는 해시 목록과 packaged 시험 로그를 포함합니다. 설치·운영 배포·회사 실계정/Drive/두 PC 검수는 완료되지 않았습니다.

@@ -402,7 +402,7 @@
       "condition": "결정 승인",
       "expected": "검토 근거의 지정 버전·결정자·사유·후속업무·시각 저장",
       "result": "NOT_RUN",
-      "note": "관리자 결정·승인 근거·이유·시각 및 후속 업무 Main/UI·불변 이벤트·원자적 task head·Rules 연결 구현. Node421, 전체 emulator Rules, native 생성/진행/검토/자기검토 완료·재조회·프로젝트별 입력·지연응답·계정정리·내부 ZIP/검토 제외 시험 통과. 회사 실계정 및 packaged 후속 업무 검수 미완료; 전체 gate PASS 근거는 아직 부족",
+      "note": "관리자 결정·승인 근거·이유·시각 및 후속 업무 Main/UI·불변 이벤트·원자적 task head·Rules 연결 구현. Node421, 전체 emulator Rules, native 생성/진행/검토/자기검토 완료·재조회·프로젝트별 입력·지연응답·계정정리·내부 ZIP/검토 제외 시험 통과. packaged 후속 업무 검수 및 Main ZIP/프로젝트별 지연 입력 시험 통과. 회사 실계정/실제 공유 환경 검수 미완료; 전체 gate PASS 근거는 아직 부족",
       "evidence": [
         "desktop-crm/test/rnd-follow-up.test.js",
         "desktop-crm/test-rnd-follow-up-rules.mjs",
@@ -561,7 +561,7 @@
       "condition": "운영 릴리스 점검",
       "expected": "기존 Firebase 설정/Functions 배포금지/기존 CRM 가드 유지",
       "result": "NOT_RUN",
-      "note": "기존 CRM 포함 411개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료",
+      "note": "현재 소스 Node421 통과. dcbdfe6 Windows x64 검토본의 기존 CRM/R&D·후속 업무·CRM 고정·비활성화 실행 시험 통과, ASAR src75 파일 바이트 일치. 운영 배포·설정·회사 계정·두 PC·종합 릴리스 검수는 미완료",
       "evidence": [
         "desktop-crm/test-rnd-electron.mjs",
         "desktop-crm/test-rnd-disabled-electron.mjs"
