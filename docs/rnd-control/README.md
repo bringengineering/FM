@@ -470,3 +470,10 @@ Functions 53 files/1,179 tests PASS. 로컬 demo database 실제 SDK 동시 두 
 rndControl/importJobs를 현재 두 승인 기록의 enabled/email/일치하는 admin·member·viewer 역할로 읽을 수 있도록 규칙을 추가했다. 클라이언트의 생성/수정/삭제/상위 multipath 쓰기는 모두 거부하며 서버 게시 API만 기록을 추가한다. 관리자 상위 rndControl read의 권한 상속도 두 승인의 비밀번호 변경 대기 검사로 제한했다. csv-audit-rules.py는 기존 생성 작업의 마지막에 연결하며 반복 실행의 바이트 동일성을 확인했다.
 
 실제 database emulator에서 세 역할의 collection/개별 감사 조회, 모든 직접 쓰기 거부, 미승인·회수·역할/이메일 불일치·비밀번호 변경 대기 거부 및 별도 승인 계정의 원래 감사 조회 PASS. 기존 전체 R&D rule suite도 PASS. 새 rule suite는 CI에 연결했다. DB에 넣은 감사 자료는 권한 시험 fixture이며 domain 형식이나 회사 실계정 운용의 근거가 아니다. Rules는 운영 미배포. Main의 팀 조회 서비스/화면, 보고서·backup/restore 보존과 회사 검수는 후속 작업이다. Windows 검토 빌드는 기존 버전이다.
+
+
+### 공유 CSV 감사 조회 서비스 기반
+
+csv-audit-history.js는 trusted Main 승인 조회/원격 감사 조회 dependency로 동작하는 읽기 전용 서비스다. projectId/jobId만 복제해 받고 현재 승인된 admin/member/viewer와 로그인 세대를 조회/검증/응답 직전마다 확인한다. 원격 응답을 소유 복제한 뒤 실제 감사 validator로 검증하고 요청 프로젝트/작업 ID가 정확히 맞아야 요약을 반환한다. 원래 게시자·게시 시각·프로젝트 버전·출처/매핑·기록 해시·Drive 참조·건수와 첫 50개 ID만 반환하며 importJobJSON/CSV 원본/초안 본문은 전달하지 않는다. Drive URL은 고정 google.com file 경로로 재구성한다. 보관 조회이며 현재 Drive 원본 재검증이나 가져온 방문의 공유 적용 완료를 뜻하지 않는다.
+
+서비스 시험 4개와 전체 desktop Node 502개 PASS. 서비스 시험 validator는 stub이며 실제 감사 domain validator 시험은 별도로 존재한다. 아직 Main 원격 repository 조회·preload IPC·팀 화면에 연결하지 않은 내부 서비스 기반이다. 운영 미배포이며 Windows 9def771 검토 빌드에는 신규 서비스가 포함되지 않았다. source ZIP만 최신화한다.
