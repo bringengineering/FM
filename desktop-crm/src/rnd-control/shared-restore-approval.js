@@ -13,4 +13,9 @@ async function prepareSharedRestoreApproval({backup,reviewed,preview,reason}){
  const plan={kind:'BRING_RND_SHARED_RESTORE_APPROVAL_PLAN',version:1,scope:'metadata-only',actorUid:current.actorUid,reason:approvalReason,backupArchiveSHA256:current.backupArchiveSHA256,reviewedBinding:binding(current),projects,visits};
  return {...plan,planSHA256:createHash('sha256').update(canonical(plan)).digest('hex'),canApply:false,requiredNextStep:'Atomic shared snapshot re-read, approved restore authorization and compare-and-swap commit'};
 }
-module.exports={prepareSharedRestoreApproval};
+async function prepareAtomicRestoreApproval({backup,reviewed,reason,access,readSnapshot}){
+ const source=structuredClone(backup),review=structuredClone(reviewed);const initial=await access();if(!initial?.uid||!initial.email||initial.role!=='admin'||initial.mustChangePassword)throw Error('공유 복원 승인은 관리자만 가능합니다');const actor={...initial};const snapshot=structuredClone(await readSnapshot());if(snapshot.actorUid!==actor.uid||typeof snapshot.etag!=='string'||!snapshot.etag||!/^[0-9a-f]{64}$/.test(snapshot.contentSHA256??''))throw Error('공유 복원 스냅샷 검증 실패');
+ const preview=require('./shared-restore-preview').createSharedRestorePreview({access:async()=>{const now=await access();if(now?.uid!==actor.uid||now?.email!==actor.email||now?.role!==actor.role)throw Error('로그인 세션이 변경되었습니다');return now;},list:async key=>{const records=snapshot.value?.[key];if(records!==undefined&&records!==null&&(typeof records!=='object'||Array.isArray(records)))throw Error('공유 스냅샷 목록 형식 오류');return Object.values(records??{});}});
+ const plan=await prepareSharedRestoreApproval({backup:source,reviewed:review,reason,preview});const bound={...plan,snapshotETag:snapshot.etag,snapshotSHA256:snapshot.contentSHA256};return {...bound,atomicPlanSHA256:createHash('sha256').update(canonical(bound)).digest('hex')};
+}
+module.exports={prepareSharedRestoreApproval,prepareAtomicRestoreApproval};
