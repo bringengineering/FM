@@ -1,0 +1,6 @@
+# Restore preview details
+Requirement: existing UX-02 dry-run/conflict list needs specific project IDs and revisions before adding drafts. Existing same-ID records remain unchanged. This step does not implement shared immutable-history restoration or rollback manifest.
+Design: extend previewImport with per-project entries (id, action, incoming title/revision, current title/revision), validate current duplicates/revisions, render exact entries in existing confirmation. No cloud writes. Names rendered as dialog text, never HTML. Preserve existing additions/conflicts API.
+Steps: failing Node tests for details/invalid revisions/current duplicate IDs; implement domain entries; integrate confirmation text; run focused and full RND Node suite; independent review; commit/push. Native/packaged UI evidence remains required before broader UX-02 PASS.
+
+Checkpoint: red test observed missing entries, then focused tests4/full Node424 pass. Native actual CRM confirmation exposes conflict IDs/titles; dismiss preserves current state and accept creates only local additions; Main rejects get for unsaved addition. Independent implementation review: no Critical/Important issue. Large-import dialog readability, packaged check and delivery refresh remain. UX-02 stays unproven; immutable shared restoration/rollback manifest pending.

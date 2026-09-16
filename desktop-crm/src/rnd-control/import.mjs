@@ -1,5 +1,10 @@
 import {validateProject} from './archive.mjs';
-export function previewImport(current,incoming){if(!Array.isArray(current)||!Array.isArray(incoming)||!incoming.length)throw Error('복원할 프로젝트가 없습니다');incoming.forEach(p=>{validateProject(p);validateResearchLinks(p);});if(new Set(incoming.map(p=>p.id)).size!==incoming.length)throw Error('중복 프로젝트 ID');const ids=new Set(current.map(p=>p.id));return{additions:incoming.filter(p=>!ids.has(p.id)).map(p=>p.id),conflicts:incoming.filter(p=>ids.has(p.id)).map(p=>p.id),total:incoming.length};}
+export function previewImport(current,incoming){
+ if(!Array.isArray(current)||!Array.isArray(incoming)||!incoming.length)throw Error('복원할 프로젝트가 없습니다');
+ for(const list of [current,incoming]){if(list.some(p=>!p||typeof p.id!=='string'||!p.id)||new Set(list.map(p=>p.id)).size!==list.length)throw Error('중복 또는 누락 프로젝트 ID');for(const p of list)if(!Number.isSafeInteger(p.revision??0)||(p.revision??0)<0)throw Error('프로젝트 revision 오류');}
+ incoming.forEach(p=>{validateProject(p);validateResearchLinks(p);});const existing=new Map(current.map(p=>[p.id,p]));const entries=incoming.map(p=>{const old=existing.get(p.id);return{id:p.id,action:old?'KEEP_EXISTING':'ADD_DRAFT',incomingTitle:p.title,incomingRevision:p.revision??0,currentTitle:old?.title??null,currentRevision:old?old.revision??0:null};});
+ return{additions:entries.filter(e=>e.action==='ADD_DRAFT').map(e=>e.id),conflicts:entries.filter(e=>e.action==='KEEP_EXISTING').map(e=>e.id),total:incoming.length,entries};
+}
 export function applyImport(current,incoming){const plan=previewImport(current,incoming);return structuredClone([...current,...incoming.filter(p=>plan.additions.includes(p.id))]);}
 
 export function validateResearchLinks(project){const r=project.research;if(!r)return;const kinds=['experiments','evidence','decisions','hypotheses','hypothesisAssessments','datasetSnapshots','disclosureApprovals','metricResults','followUpEvents','observations'];const maps={};for(const kind of kinds){const list=r[kind]??[];if(!Array.isArray(list))throw Error('연구 기록 목록 형식 오류');maps[kind]=new Map();for(const record of list){if(!record||typeof record.id!=='string'||!record.id||maps[kind].has(record.id))throw Error('연구 기록 ID 누락 또는 중복');if(record.projectId!==undefined&&record.projectId!==project.id)throw Error('다른 프로젝트 연구 기록');maps[kind].set(record.id,record);}}

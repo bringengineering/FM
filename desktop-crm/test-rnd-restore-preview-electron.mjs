@@ -1,0 +1,15 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createMetadataBackup} from './src/rnd-control/backup.mjs';
+const require=createRequire(import.meta.url);
+const app=await electron.launch({executablePath:require('electron'),args:['.'],cwd:dirname(fileURLToPath(import.meta.url)),env:{...process.env,BRING_CRM_LOCAL_ONLY:'1',BRING_CRM_SCREENSHOT_ROLE:'admin'}});
+try{
+ const page=await app.firstWindow();await page.waitForSelector('[data-view=rndControl]');await page.locator('[data-action=finish-guide]').click();await page.locator('[data-view=rndControl]').click();await page.waitForFunction(()=>document.getElementById('login').hidden);
+ await page.locator('#newProject').click();await page.locator('.rnd-text-dialog input').fill('Current restore project');await page.locator('.rnd-text-dialog').getByRole('button',{name:'확인',exact:true}).click();await page.locator('#portfolioSave').click();await page.waitForFunction(()=>document.getElementById('portfolioStatus').textContent.includes('공유 저장 완료'));
+ const current=await page.evaluate(()=>window.BringRndProject.current());const incoming=structuredClone(current);incoming.title='Backup conflict title';const addition=structuredClone(current);addition.id='restore-preview-addition';addition.title='New restored draft';addition.revision=0;delete addition.research;const backup=await createMetadataBackup([incoming,addition],incoming.id);const payload={name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))};
+ let message='';page.once('dialog',async dialog=>{message=dialog.message();await dialog.dismiss();});await page.locator('#archiveImport').setInputFiles(payload);await page.waitForFunction(()=>document.getElementById('archiveImport').value==='');assert.match(message,new RegExp(current.id));assert.ok(message.includes('Backup conflict title'));assert.ok(message.includes('Current restore project'));assert.ok(message.includes('restore-preview-addition'));assert.equal(await page.locator('#projectPicker option[value="restore-preview-addition"]').count(),0);
+ page.once('dialog',async dialog=>dialog.accept());await page.locator('#archiveImport').setInputFiles(payload);await page.locator('#projectPicker option[value="restore-preview-addition"]').waitFor({state:'attached'});assert.equal(await page.evaluate(()=>window.BringRndProject.current().title),'Current restore project');await assert.rejects(()=>page.evaluate(id=>window.bringCRM.rndGet('projects',id),addition.id),/먼저 공유 저장/);console.log('PASS native restore conflict IDs/titles, cancel no-change, accept addition draft-only and existing project retained (local fixture)');
+}finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});}

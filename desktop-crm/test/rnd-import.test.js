@@ -9,3 +9,10 @@ test('research import protects metric reference ledger, lineage root and reviewe
  assert.throws(()=>previewImport([],[p]),/고정 버전/);p.research.decisions[0].sources[0].version='v1';assert.equal(previewImport([],[p]).additions.length,1);
  p.research.decisions[0].evidenceIds=['v','v'];assert.throws(()=>previewImport([],[p]),/중복/);
 });
+
+test('restore preview identifies every conflict and source/current revision without modifying records',async()=>{
+ const {createProject}=await import('../src/rnd-control/portfolio.mjs');const {previewImport}=await import('../src/rnd-control/import.mjs');
+ const current=createProject('p','Current');current.revision=4;const incoming=createProject('p','Backup');incoming.revision=2;const addition=createProject('q','New');const before=JSON.stringify([current,incoming,addition]);
+ const plan=previewImport([current],[incoming,addition]);assert.deepEqual(plan.entries,[{id:'p',action:'KEEP_EXISTING',incomingTitle:'Backup',incomingRevision:2,currentTitle:'Current',currentRevision:4},{id:'q',action:'ADD_DRAFT',incomingTitle:'New',incomingRevision:0,currentTitle:null,currentRevision:null}]);assert.equal(JSON.stringify([current,incoming,addition]),before);
+ assert.throws(()=>previewImport([current,current],[addition]),/ID/);incoming.revision=-1;assert.throws(()=>previewImport([current],[incoming]),/revision/);incoming.revision=1.5;assert.throws(()=>previewImport([current],[incoming]),/revision/);
+});
