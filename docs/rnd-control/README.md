@@ -574,3 +574,10 @@ CRM Node523개 PASS: 신규6개는 ID-only/currenthistory/cancel/session/mismatc
 ### 최신 Windows 감사 요약 내보내기 검토 빌드 · 7d13461
 
 최신 Windows 검토 ZIP을7d13461 소스로 갱신했다. 확인 사본에서 공유 조회 연결·Main 서버 재조회 기반 감사 요약 ZIP 보관을 포함한다. src104개 ASAR byte 일치 PASS. packaged 공유 감사 조회/내보내기 화면7개·게시/확인 사본 조회 화면7개·CSV 가져오기8개 PASS. 이전66ee323 제외 메모는 해당 단계 당시 상태다. export 성공 반환과 감사 성공 데이터는 fixture이며 genuine Main 회사 조회/게시/내보내기는 로컬 시험에서 거부한다. 실제 saveDialog+서버조회+파일보관 happy path와 회사계정 두PC/원격게시·전체61개 인수는 미완료다. 다른 동봉 로그는 과거 단계 증거일 수 있다. 운영 설치·업데이트·Rules/Functions 배포하지 않았다.
+
+
+### 감사 요약 ZIP 실제 도메인·파일 저장 경로 검증
+
+새 통합 시험은 CSV 실제 parser/preview·ledger 원본 보관·audit builder·history 기본 감사 validator·export service를 연결하고 임시 디렉터리에 partial write/check/rename으로 ZIP을 저장한 뒤 다시 읽는다. ZIP entry CRC·게시 원래 계정·출처/감사 SHA·manifest JSON hash·원본 CSV/job 변경 없음 PASS. 변조된 게시 계정은 기본 감사 validator가 saveDialog callback 전에 거부한다. 전체 CRM Node524개 PASS.
+
+파일 I/O와 도메인 검증은 실제이고 권한/auth·Drive 참조·readAudit 저장소와 saveDialog는 fixture/injected이다. genuine Main의 remote/saveDialog happy path나 회사 원격 성공 증거로 확대하지 않는다. production src/Windows7d13461은 변경하지 않았다. 전체61개 인수 및 운영 배포 미완료.
