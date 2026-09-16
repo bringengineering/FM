@@ -17,7 +17,8 @@ export async function compileCSVImportPublication(input:{actor:CSVActor;audit:un
  const handle=Object.freeze({id:audit.id,projectId:audit.projectId,contentSHA256});compiled.set(handle,{actor,audit,digest,contentSHA256});return handle;
 }
 /** Append-only root updater. Rechecks both approvals/project on every Admin SDK transaction retry. */
-export function createCSVImportRootUpdater(publication:CompiledCSVImportPublication){
+export function createCSVImportRootUpdater(publication:CompiledCSVImportPublication,options:{acknowledgeSameJob?:boolean}={}){
+ const acknowledgeSameJob=options.acknowledgeSameJob===true;
  const owned=compiled.get(publication);if(!owned)throw Error('CSV private compiled publication required');
  const actor=structuredClone(owned.actor),audit=structuredClone(owned.audit),digest=owned.digest,expected=owned.contentSHA256;
  return(current:unknown):RecordValue|undefined=>{
@@ -27,7 +28,7 @@ export function createCSVImportRootUpdater(publication:CompiledCSVImportPublicat
   const control=child(current,'rndControl');if(!record(control))return undefined;
   const jobs=child(control,'importJobs');if(jobs!==undefined&&jobs!==null&&!record(jobs))return undefined;
   const existing=child(jobs,String(audit.id));
-  if(existing!==undefined)return digest(existing)===expected?structuredClone(current):undefined;
+  if(existing!==undefined){const same=acknowledgeSameJob&&record(existing)&&record(existing.driveReference)&&record(audit.driveReference)&&existing.kind===audit.kind&&existing.version===audit.version&&existing.id===audit.id&&existing.projectId===audit.projectId&&existing.status===audit.status&&existing.cloudVisitWrites===false&&existing.publishedByUID===actor.uid&&existing.publishedByEmail===actor.email&&typeof audit.importJobJSON==='string'&&existing.importJobJSON===audit.importJobJSON&&existing.importJobSHA256===audit.importJobSHA256&&existing.sourceSHA256===audit.sourceSHA256&&existing.driveReference.providerFileId===audit.driveReference.providerFileId;return digest(existing)===expected||same?structuredClone(current):undefined;}
   const project=child(child(control,'projects'),String(audit.projectId));if(!record(project)||project.id!==audit.projectId||project.revision!==audit.projectRevision||audit.publishedByRole!==actor.role)return undefined;
   const next=structuredClone(current),nextControl=next.rndControl as RecordValue;nextControl.importJobs={...(record(jobs)?structuredClone(jobs):{}),[String(audit.id)]:structuredClone(audit)};return next;
  };

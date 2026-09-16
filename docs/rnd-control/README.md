@@ -456,3 +456,10 @@ rndPublishCSVImport는 기본 비활성(BRING_RND_CSV_PUBLICATION_ENABLED가 정
 같은 owned job/fileId의 이미 보관된 감사 명세는 실제 validator로 검사하고 기존 서버 시각/내용으로 재확인한다. 다른 job 내용/다른 Drive 파일은 거부한다. 새 게시 시 원본 Drive 재검증을 수행하며 기존 기록 재확인은 과거 감사 기록의 보관 확인이다. SDK transport 오류나 commit snapshot 불일치는 결과 불명으로 구분한다. 자동 재시도/방문 적용은 없다. 원래 계정의 role이 바뀌면 새 역할의 현재 두 승인을 요구하며 기존 명세의 과거 역할은 수정하지 않는다.
 
 Functions 53 files/1,177 tests·TypeScript/cloud package PASS. 실제 export의 기본 거부/검증된 인증 필요/잘못된 body 거부를 실행했다. 새 게시/재확인/충돌/권한 회수/프로젝트 변경/결과 불명 시험은 격리한 transaction 및 domain validator stub이며 실제 Admin SDK emulator 동시성/회사 실계정 Drive 게시를 증명하지 않는다. CSV callable의 emulator 성공 경로, 동시 같은-job 게시, append-only 조회 Rules·팀 화면·backup/restore 보존 연결은 남아 있다. 전체 회사 root transaction의 비용/규모 검토가 필요하며 Windows 검토 빌드는 9def771 그대로다. archive manifest는 배포 선택자를 제공하지 않고 functionsDeploymentAllowed=false를 유지한다.
+
+
+### CSV 동일 작업 동시 게시 검증
+
+실제 Admin SDK 에뮬레이터에서 두 요청이 같은 작업을 동시에 준비/게시하는 시험을 추가했다. 최초 방식의 transaction 실패 후 조회만으로는 SDK pending write가 확정되기 전 요청을 거부하는 경합을 재현했다. 서버만 선택할 수 있는 same-job confirmation 옵션을 root updater에 추가하여 동일 immutable importJobJSON/해시·원본 해시·프로젝트·소유자·Drive file의 기존 감사 기록을 transaction 안에서 보존한다. 기본 helper는 기존 exact digest 규칙을 유지한다. 실제 transaction 결과의 감사 명세를 domain validator와 same-job/file binding으로 다시 확인한 뒤 보관된 실제 해시를 응답한다. 새 감사 명세로 기존 시각/기록을 덮어쓰지 않는다. 실패 뒤 재확인도 한 번으로 제한한다.
+
+Functions 53 files/1,179 tests PASS. 로컬 demo database 실제 SDK 동시 두 요청/원본 감사 한 건/같은 응답 해시·변경된 프로젝트 보존 재확인·권한 회수 거부 PASS. CSV parser·불변 job ledger·감사 domain 검증은 실제 runtime을 사용한다. 인증/Drive 참조는 명시한 fixture이며 실제 callable 인증이나 회사 Drive 원본 검증의 근거는 아니다. test-rnd-csv-transaction.mjs 및 emulator 결과를 제공한다. 회사 실계정/두 PC 검수, callable emulator 성공 경로, 팀 조회/Rules/backup·restore 연결은 계속 남아 있다. 운영 미배포, 기존 Windows 검토 빌드 유지.
