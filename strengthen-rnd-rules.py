@@ -126,6 +126,7 @@ for group, fields in [('minutes',['travel','check','work','report','contact','ot
 visit_sum = ' + '.join("newData.child('minutes/"+field+"').val()" for field in ['travel','check','work','report','contact','other'])
 visit_checks.append('('+visit_sum+") >= newData.child('totalMinutes').val() - 0.01 && ("+visit_sum+") <= newData.child('totalMinutes').val() + 0.01")
 visit_checks.append("newData.child('evidenceUrl').val().matches(/^https?:\\/\\/.+/)")
+visit_checks.append("!newData.child('restorationSourceRevision').exists() || (newData.child('restorationSourceRevision').isNumber() && newData.child('restorationSourceRevision').val() >= 0 && newData.child('restorationSourceRevision').val() % 1 === 0)")
 for check in visit_checks:
  if check not in visits['.validate']:
   visits['.validate'] += ' && ('+check+')'
