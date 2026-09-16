@@ -333,3 +333,7 @@ DB Rules는 승인된 쓰기 역할의 새 기록만 허용하고 보관자 UID�
 Node 410개와 신규 CRM 고정 자료 native·Windows packaged 시험, 전체 native·packaged R&D 화면/비활성화 시험, 전체 R&D Rules Emulator 시험이 통과했습니다. GitHub CI 35138938715(8b7ded9)는 Windows desktop 및 backend-and-rules 모두 통과했습니다. 이번 고정 자료 커밋의 CI·실제 회사 원장/다중 PC 검수는 별도 확인 대상입니다.
 
 CRM 고정 자료 코드 리뷰에서 지연 응답 후 미제출 산출물 입력·blur 전 제목이 덮이는 문제를 발견하고 수정했습니다. 현재 프로젝트의 CRM 보관 폼 외 미반영 입력이 있으면 최신 공유본 수용/화면 재렌더를 미루고 입력을 유지합니다. 독립 리뷰 재확인에서 해당 Important 항목은 해소되었으며 별도 Critical/Important 항목은 없었습니다. 실제 Main 생성 내부/검토용 ZIP을 Python으로 검사해 CRM 자료 제외·CRC·UTF-8·파일 크기/SHA256·모든 상대 링크를 확인했습니다. 근거: crm-context-review.md 및 native/packaged CRM 고정 시험 로그.
+
+GitHub 코드 경로 검증 보강: SHA가 있어도 blob 파일 경로 누락·경로 이동·인코딩된 구분자/제어문자·잘못된 escape·commit 뒤 추가 경로가 있으면 등록을 거부합니다. Node 411개 통과. 인증된 읽기 전용 GitHub API로 a813b0d 커밋 존재와 Main/CRM context/code source 파일 3개의 원격 blob 바이트가 같은 로컬 커밋과 일치함을 확인했습니다. github-source-verification.json은 해당 커밋/파일/관측 시각에 한정된 근거이며 일반 등록 자료의 자동 원격 검증이나 연구 주장의 타당성을 증명하지 않습니다.
+
+GitHub CI 35140606062(a813b0d)는 프로젝트별 CRM 고정 자료·DB 불변/동시 저장 시험을 포함해 Windows desktop과 backend-and-rules 모두 통과했습니다. 후속 코드 경로 검사 커밋은 별도 CI 확인 대상입니다.
