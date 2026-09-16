@@ -1,0 +1,30 @@
+const test=require('node:test');const assert=require('node:assert/strict');const {createRndDrive}=require('../src/rnd-control/drive');
+test('Drive requires company account and write-capable CRM role',async()=>{const service=createRndDrive({auth:()=>({user:{uid:'u',role:'viewer'}})});await assert.rejects(()=>service.upload({}),/권한/);});
+test('wrong Google account cannot establish Drive connection',async()=>{const service=createRndDrive({auth:()=>({user:{uid:'u',role:'member'}}),fetch:async()=>({ok:true,json:async()=>({email:'other@example.com',email_verified:true})})});await assert.rejects(()=>service.connect('token'),/회사/);});
+test('Drive connection verifies company ownership of root',async()=>{let calls=0;const service=createRndDrive({auth:()=>({user:{uid:'u',role:'member'}}),fetch:async()=>({ok:true,json:async()=>++calls===1?{email:'bringengineering1008@gmail.com',email_verified:true}:{id:'root',mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:'other@example.com'}]}})});await assert.rejects(()=>service.connect('token'),/보관/);});
+test('missing token never pretends to upload',async()=>{const service=createRndDrive({auth:()=>({user:{uid:'u',role:'member'}})});await assert.rejects(()=>service.upload({}),/Drive/);});
+test('dataset verification reads remote bytes and rejects mismatched content',async()=>{const {createHash}=require('node:crypto');const company='bringengineering1008@gmail.com';const expected=Buffer.from('original');const sha256=createHash('sha256').update(expected).digest('hex');let altered=false;const service=createRndDrive({rootFolderId:'root',auth:()=>({user:{uid:'u',role:'member'}}),fetch:async url=>{if(url.includes('userinfo'))return{ok:true,json:async()=>({email:company,email_verified:true})};if(url.includes('alt=media'))return{ok:true,arrayBuffer:async()=>altered?Buffer.from('modified'):expected};if(url.includes('/files/root?'))return{ok:true,json:async()=>({id:'root',mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:company}]})};return{ok:true,json:async()=>({id:'f',size:expected.length,parents:['root'],owners:[{emailAddress:company}],mimeType:'text/csv',appProperties:{rndVersion:'v',artifactId:'a',projectId:'p',sha256}})};}});await service.connect('token');const ref={providerFileId:'f',versionId:'v',artifactId:'a',projectId:'p',sha256};const verified=await service.verifyVersion(ref);assert.equal(verified.sha256,sha256);assert.equal(verified.sizeBytes,expected.length);altered=true;await assert.rejects(()=>service.verifyVersion(ref),/해시/);});
+const testInput={projectId:'p',artifactId:'a',versionId:'v',fileName:'x.csv',bytes:Buffer.from('x')};
+test('overlapping uploads are refused before Drive folder calls and session changes stop continuation',async()=>{
+ let release,calls=0;const pending=new Promise(resolve=>release=resolve),company='bringengineering1008@gmail.com';
+ const service=createRndDrive({auth:()=>({user:{uid:'u',role:'member'}}),fetch:async url=>{
+  calls++;if(url.includes('userinfo'))return{ok:true,json:async()=>({email:company,email_verified:true})};
+  if(calls===2)return{ok:true,json:async()=>({mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:company}]})};
+  await pending;return{ok:true,json:async()=>({files:[]})};
+ }});await service.connect('token');const first=service.upload(testInput);
+ await assert.rejects(()=>service.upload(testInput),/진행 중/);assert.equal(calls,3);
+ service.clear();release();await assert.rejects(()=>first,/세션/);assert.equal(calls,3);
+ await assert.rejects(()=>service.upload(testInput),/재연결/);
+});
+test('reconnecting same Drive account during verification invalidates old read even with same token',async()=>{
+ const company='bringengineering1008@gmail.com',bytes=Buffer.from('data'),sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');let release,started;const pending=new Promise(resolve=>release=resolve),mediaStarted=new Promise(resolve=>started=resolve);
+ const service=createRndDrive({rootFolderId:'root',auth:()=>({user:{uid:'u',role:'member'}}),fetch:async url=>{
+ if(url.includes('userinfo'))return{ok:true,json:async()=>({email:company,email_verified:true})};if(url.includes('alt=media')){started();await pending;return{ok:true,arrayBuffer:async()=>bytes};}
+ if(url.includes('/files/root?'))return{ok:true,json:async()=>({mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:company}]})};
+ return{ok:true,json:async()=>({id:'f',size:bytes.length,parents:['root'],owners:[{emailAddress:company}],appProperties:{rndVersion:'v',artifactId:'a',projectId:'p',sha256}})};
+ }});await service.connect('same-token');const reading=service.verifyVersion({providerFileId:'f',versionId:'v',artifactId:'a',projectId:'p',sha256});await mediaStarted;await service.connect('same-token');release();await assert.rejects(()=>reading,/세션/);
+});
+test('Drive upload refuses disguised executable before any folder or transfer request',async()=>{
+ const company='bringengineering1008@gmail.com';let calls=0;const service=createRndDrive({auth:()=>({user:{uid:'u',role:'member'}}),fetch:async url=>{calls++;return{ok:true,json:async()=>url.includes('userinfo')?{email:company,email_verified:true}:{mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:company}]}};}});await service.connect('token');
+ await assert.rejects(()=>service.upload({projectId:'p',artifactId:'a',versionId:'v',fileName:'fake.pdf',bytes:Buffer.from('MZ00')}),/실행파일/);assert.equal(calls,2);
+});

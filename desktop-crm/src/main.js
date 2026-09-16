@@ -3733,6 +3733,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     checkPending: async () => requestFieldPendingUploads(),
     signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
     finishCrmLogout: async () => {
+      rndDrive.clear();
       cancelFieldRequests("FIELD_LOGOUT");
       if (fieldView) fieldView.setVisible(false);
       fieldViewVisible = false;
@@ -3748,6 +3749,93 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     fieldLogoutInFlight = null;
   }
 });
+
+const { createRndRepository } = require("./rnd-control/repository");
+const rndModuleEnabled=process.env.BRING_RND_ENABLED!=="0";
+function assertRndModuleEnabled(){if(!rndModuleEnabled)throw new Error("R&D 모듈이 운영 설정에서 비활성화되었습니다 · 원본 데이터는 보존됩니다");}
+secureHandle("crm:rnd-module-state",()=>({enabled:rndModuleEnabled}));
+const rndTestRecords = { projects: {}, visits: {} };
+const rndTestAccess={};
+secureHandle("crm:rnd-access-admin", async input=>{assertRndModuleEnabled();
+ const actor=assertMainMutationAllowed();if(actor.role!=="admin")throw new Error("CRM 관리자 권한이 필요합니다");
+ if(!input||!["get","save","inspect"].includes(input.action)||typeof input.uid!=="string"||!/^[a-zA-Z0-9_-]{1,128}$/.test(input.uid))throw new Error("승인 대상 UID가 필요합니다");
+ if(localTestMode){if(input.action==="inspect")throw new Error("로컬 시험에서는 실제 감사 원장을 조회하지 않습니다");if(input.action==="get")return{uid:input.uid,crm:input.uid===actor.uid?actor:null,rnd:rndTestAccess[input.uid]??null,etag:JSON.stringify(rndTestAccess[input.uid]??null)};if(input.uid!==actor.uid||typeof input.enabled!=="boolean"||!input.reason?.trim())throw new Error("로컬 시험에서는 현재 시험 관리자만 승인합니다");if(input.expectedETag!==JSON.stringify(rndTestAccess[input.uid]??null))throw new Error("R&D 승인 충돌: 다시 조회하세요");return rndTestAccess[input.uid]={enabled:input.enabled,email:actor.email,role:actor.role,approvedBy:actor.uid,approvedAt:new Date().toISOString(),reason:input.reason.trim()};}
+ if(!remoteClient)throw new Error("CRM 로그인 연결이 필요합니다");
+ const service=require("./rnd-control/access-admin").createAccessAdmin({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch});
+ const result=input.action==="get"?await service.get(input.uid):input.action==="inspect"?await service.inspect(input.uid,input.auditId):await service.save(input);if(input.action==="save"&&input.uid===actor.uid)rndDrive.clear();return result;
+});
+async function assertRndAccess(write=false){assertRndModuleEnabled();
+ if(localTestMode){const user=authState().user;if(!user?.uid||user.mustChangePassword||!['admin','member','viewer'].includes(user.role)||write&&user.role==='viewer')throw new Error("R&D 변경 권한이 없습니다");return user;}
+ if(!remoteClient)throw new Error("CRM 로그인 연결이 필요합니다");
+ try{return await require("./rnd-control/access").createAccessCheck({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch})(write);}catch(error){rndDrive.clear();throw new Error("R&D 접근 승인을 확인하세요 · "+error.message);}
+}
+const rndDrive = require("./rnd-control/drive").createRndDrive({auth:authState});
+let rndUploadLedger;function uploadLedger(){return rndUploadLedger??=require("./rnd-control/upload-ledger").createUploadLedger(path.join(app.getPath("userData"),"rnd-upload-recovery"));}
+secureHandle("crm:rnd-restore-upload",async input=>{await assertRndAccess(true);if(localTestMode)throw new Error("로컬 시험에서는 실제 Drive 원본을 복구하지 않습니다");return require("./rnd-control/upload-recovery").createUploadRecovery({access:assertRndAccess,ledger:uploadLedger(),getProject:id=>rndRepository().get("projects",id),verifyVersion:ref=>rndDrive.verifyVersion(ref)})(input);});
+secureHandle("crm:rnd-upload-recovery",async()=>{const actor=await assertRndAccess();if(localTestMode)return [];const records=await uploadLedger().list(actor.uid);const current=await assertRndAccess();if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");return records;});
+secureHandle("crm:rnd-drive-connect", async()=>{assertMainMutationAllowed();const actor=await assertRndAccess(true);if(localTestMode)throw new Error("시험 모드에서는 실제 회사 Drive에 연결하지 않습니다");const token=await require("./rnd-control/drive-auth").authorizeCompanyDrive({openExternal:url=>shell.openExternal(url)});const current=await assertRndAccess(true);if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");return rndDrive.connect(token);});
+secureHandle("crm:rnd-drive-upload", async input=>{assertMainMutationAllowed();const actor=await assertRndAccess(true);if(localTestMode)throw new Error("시험 모드에서는 실제 회사 Drive로 전송하지 않습니다");const result=await dialog.showOpenDialog(mainWindow,{title:"R&D 원본 자료 선택",properties:["openFile"]});if(result.canceled)return {canceled:true};const target=result.filePaths[0];const stat=await fs.stat(target);require("./rnd-control/file-policy").assertUploadFile({fileName:path.basename(target),sizeBytes:stat.size});const current=await assertRndAccess(true);if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");let uploaded;try{uploaded=await rndDrive.upload({...input,fileName:path.basename(target),bytes:await fs.readFile(target)});}catch(error){if(error.recoveryRecord){try{await uploadLedger().record(actor.uid,error.recoveryRecord);}catch(recordError){throw new Error(error.message+" · 검증 미완료 복구 기록 저장 실패: "+recordError.message);}}throw error;}const active=await assertRndAccess(true);if(active.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");try{await uploadLedger().record(actor.uid,{...uploaded,projectId:input.projectId,artifactId:input.artifactId});}catch(error){throw new Error("Drive 업로드 완료 · 파일 ID "+uploaded.id+" · 복구 기록 저장 실패: "+error.message);}return uploaded;});
+let rndSaveLedger;function saveLedger(){return rndSaveLedger??=require("./rnd-control/save-ledger").createSaveLedger(path.join(app.getPath("userData"),"rnd-save-attempts"));}secureHandle("crm:rnd-save-attempts",async()=>{const actor=await assertRndAccess();if(localTestMode)return [];const records=await saveLedger().list(actor.uid);const current=await assertRndAccess();if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");return records;});secureHandle("crm:rnd-check-save-attempt",async input=>{await assertRndAccess();if(localTestMode)throw new Error("시험 모드에서는 실제 저장 작업을 대조하지 않습니다");return require("./rnd-control/save-recovery").createSaveRecovery({access:()=>assertRndAccess(),ledger:saveLedger(),get:(collection,id)=>rndRepository().get(collection,id)}).check(input);});function rndRepository(){
+ if(!remoteClient) throw new Error("CRM 로그인 연결이 필요합니다");
+ return createRndRepository({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch,onWriteAttempt:(uid,record)=>saveLedger().record(uid,record)});
+}
+secureHandle("crm:rnd-export", async input=>{
+ await assertRndAccess(false);
+ const user=authState().user;if(!user?.uid||user.mustChangePassword||!['admin','member','viewer'].includes(user.role))throw new Error("CRM 로그인이 필요합니다");
+ if(!input||!['internal','review'].includes(input.mode))throw new Error("내보내기 범위를 선택하세요");
+ const repo=localTestMode?null:rndRepository();const load=()=>localTestMode?Promise.resolve(rndTestRecords.projects[input.projectId]):repo.get("projects",input.projectId);
+ const previous=await load();if(!previous||previous.revision!==input.revision)throw new Error("공유 저장한 최신 프로젝트를 확인하세요");
+ const {hydrateProject}=await import(pathToFileURL(path.join(__dirname,"rnd-control/archive.mjs")).href);const {buildRndExport}=await import(pathToFileURL(path.join(__dirname,"rnd-control/export.mjs")).href);
+ const exported=buildRndExport(hydrateProject(previous),{mode:input.mode});
+ if(input.mode==='review'){for(const ds of previous.research?.datasetSnapshots?Object.values(previous.research.datasetSnapshots):[]){if(!exported.manifest.includedDatasets.includes(ds.id))continue;if(localTestMode)throw new Error("시험 모드에서는 검토용 Drive 원본을 확인하지 않습니다");for(const ref of Object.values(ds.versionRefs??{}))await rndDrive.verifyVersion({...ref,projectId:previous.id});}}
+ const result=await dialog.showSaveDialog(mainWindow,{title:"R&D Markdown ZIP 보관",defaultPath:`BRING-RND-${previous.id}-r${previous.revision}-${input.mode}.zip`,filters:[{name:"Markdown ZIP",extensions:["zip"]}]});if(result.canceled)return{canceled:true};
+ const latest=await load();if(authState().user?.uid!==user.uid||latest?.revision!==previous.revision)throw new Error("로그인 또는 프로젝트 버전이 바뀌었습니다. 다시 내보내세요");
+ const bytes=require("./rnd-control/zip").zipTextFiles(exported.files);const pending=result.filePath+"."+require("node:crypto").randomUUID()+".partial";try{await fs.writeFile(pending,bytes,{flag:"wx"});await fs.rename(pending,result.filePath);}finally{await fs.rm(pending,{force:true});}return{saved:true,path:result.filePath,files:exported.manifest.files.length,excluded:exported.manifest.excluded.length,originalFilesIncluded:false};
+});
+secureHandle("crm:rnd-workflow", async input=>{
+ await assertRndAccess(true);
+ const user=assertMainMutationAllowed(input);
+ const repo=localTestMode?null:rndRepository();
+ const previous=localTestMode?rndTestRecords.projects[input.projectId]:await repo.get("projects",input.projectId);
+ if(!previous)throw new Error("프로젝트를 먼저 공유 저장하세요");
+ if(previous.revision!==input.expectedRevision)throw new Error("프로젝트 버전이 바뀌었습니다. 최신 내용을 다시 확인하세요");
+ const {applyResearch}=await import(pathToFileURL(path.join(__dirname,"rnd-control/research.mjs")).href);
+ const {hydrateProject}=await import(pathToFileURL(path.join(__dirname,"rnd-control/archive.mjs")).href);
+ let command=input.command;
+ if(command?.type==="freezeDataset"){if(localTestMode)throw new Error("시험 모드에서는 실제 Drive 자료를 검증하지 않습니다");if(!Array.isArray(command.dataset?.versionRefs)||!command.dataset.versionRefs.length||command.dataset.versionRefs.length>100)throw new Error("자료 버전을 선택하세요");const refs=[];for(const ref of command.dataset.versionRefs)refs.push(await rndDrive.verifyVersion({...ref,projectId:previous.id}));command={...command,dataset:{...command.dataset,versionRefs:refs}};}
+ const next=applyResearch(hydrateProject(previous),command,user);
+ if(localTestMode)return rndTestRecords.projects[next.id]={...next,revision:previous.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
+ return repo.save("projects",next,{allowResearchChange:true});
+});
+secureHandle("crm:rnd-get", async input => {
+ await assertRndAccess(false);
+ if(!input || !["projects","visits"].includes(input.collection) || typeof input.id!=="string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.id))throw new Error("R&D 대상 ID 오류");
+ const user=authState().user;if(!user || user.mustChangePassword || !["admin","member","viewer"].includes(user.role))throw new Error("로그인이 필요합니다");
+ if(localTestMode){const value=rndTestRecords[input.collection][input.id];if(!value)throw new Error("프로젝트를 먼저 공유 저장하세요");return structuredClone(value);}
+ return rndRepository().get(input.collection,input.id);
+});
+secureHandle("crm:rnd-list", async collection => {
+ await assertRndAccess(false);
+ if(!["projects","visits"].includes(collection)) throw new Error("R&D 대상 오류");
+ if(!authState().user || authState().user.mustChangePassword) throw new Error("로그인이 필요합니다");
+ if(localTestMode) return Object.values(rndTestRecords[collection]);
+ return rndRepository().list(collection);
+});
+secureHandle("crm:rnd-save", async input => {
+ await assertRndAccess(true);
+ const actor = assertMainMutationAllowed(input);
+ if(!input || !["projects","visits"].includes(input.collection)) throw new Error("R&D 대상 오류");
+ const domain = await import(pathToFileURL(path.join(__dirname,"rnd-control",input.collection==="projects"?"archive.mjs":"baseline.mjs")).href);
+ const data = input.collection==="projects" ? domain.validateProject(input.data) : domain.validateVisit(input.data);
+ if(localTestMode){
+  const before=rndTestRecords[input.collection][data.id];if(input.collection==="visits")require("./rnd-control/repository").assertVisitProjectBinding(before,data);
+  if((before?.revision??0)!==(data.revision??0)) throw new Error("동시편집 충돌");
+  if(require("./rnd-control/repository").researchFingerprint(before?.research)!==require("./rnd-control/repository").researchFingerprint(data.research))throw new Error("연구 판정은 전용 승인 작업으로 변경하세요");
+  return rndTestRecords[input.collection][data.id]={...data,revision:(data.revision??0)+1,updatedBy:actor.uid,updatedAt:new Date().toISOString()};
+ }
+ return rndRepository().save(input.collection,data);
+});
+
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {

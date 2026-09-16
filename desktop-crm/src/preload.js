@@ -1,6 +1,19 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  rndRestoreUpload: input => ipcRenderer.invoke("crm:rnd-restore-upload",input),
+  rndCheckSaveAttempt: input => ipcRenderer.invoke("crm:rnd-check-save-attempt",input),
+  rndSaveAttempts: () => ipcRenderer.invoke("crm:rnd-save-attempts"),
+  rndUploadRecovery: () => ipcRenderer.invoke("crm:rnd-upload-recovery"),
+  rndModuleState: () => ipcRenderer.invoke("crm:rnd-module-state"),
+  rndAccessAdmin: input => ipcRenderer.invoke("crm:rnd-access-admin",input),
+  rndConnectDrive: () => ipcRenderer.invoke("crm:rnd-drive-connect"),
+  rndUpload: input => ipcRenderer.invoke("crm:rnd-drive-upload", input),
+  rndExport: input => ipcRenderer.invoke("crm:rnd-export", input),
+  rndWorkflow: input => ipcRenderer.invoke("crm:rnd-workflow", input),
+  rndGet: (collection,id) => ipcRenderer.invoke("crm:rnd-get", {collection,id}),
+  rndList: collection => ipcRenderer.invoke("crm:rnd-list", collection),
+  rndSave: input => ipcRenderer.invoke("crm:rnd-save", input),
   authState: () => ipcRenderer.invoke("crm:auth-state"),
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
   loginWithGoogle: () => ipcRenderer.invoke("crm:auth-google-login"),

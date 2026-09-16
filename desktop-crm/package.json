@@ -12,14 +12,18 @@
     "crm:migration:export": "electron scripts/export-crm-staging.js",
     "crm:migration:verify": "node scripts/verify-crm-staging.js",
     "smoke": "set BRING_CRM_SMOKE=1&& electron .",
-    "build:win": "electron-builder --win nsis --x64"
+    "build:win": "electron-builder --win nsis --x64",
+    "rnd:release:check": "node scripts/rnd-release-check.js",
+    "build:rnd:review": "electron-builder --win --dir --x64 --publish never"
   },
   "dependencies": {
     "electron-updater": "6.8.9"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
     "electron": "39.8.5",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "firebase": "12.19.0"
   },
   "build": {
     "appId": "kr.co.bringengineering.crm",

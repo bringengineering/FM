@@ -1,0 +1,32 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const app=await electron.launch({executablePath:require('electron'),args:['.'],env:{...process.env,BRING_CRM_LOCAL_ONLY:'1',BRING_CRM_SCREENSHOT_ROLE:'admin'}});
+try{
+ const page=await app.firstWindow();page.on('pageerror',error=>console.log('PAGE ERROR',error.message));await page.waitForSelector('[data-view=rndControl]');
+ await page.locator('[data-action=finish-guide]').click();
+ await page.locator('[data-view=rndControl]').click();
+ await page.waitForFunction(()=>document.getElementById('login').hidden);await page.locator('#saveAttemptsRead').click();await page.waitForFunction(()=>document.getElementById('saveAttemptsOutput').textContent.includes('완료 여부는'));assert.deepEqual(await page.evaluate(()=>window.bringCRM.rndSaveAttempts()),[]);await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('crm:rnd-save-attempts');ipcMain.handle('crm:rnd-save-attempts',()=>[{operationId:'op',collection:'visits',recordId:'v',revision:1,at:'2026-09-17'}]);ipcMain.removeHandler('crm:rnd-check-save-attempt');ipcMain.handle('crm:rnd-check-save-attempt',()=>({status:'CURRENT_MATCH',message:'현재 공유 기록과 작업 ID·버전·내용 일치'}));});await page.locator('#saveAttemptsRead').click();await page.locator('#saveAttemptsOutput button').click();await page.waitForFunction(()=>document.getElementById('saveAttemptsOutput').textContent.includes('내용 일치'));
+ await page.locator('#newProject').click();
+ await page.locator('.rnd-text-dialog input').fill('Baseline restore test');
+ await page.locator('.rnd-text-dialog').getByRole('button',{name:'확인',exact:true}).click();
+ const json=await page.evaluate(async()=>{
+  const {createMetadataBackup}=await import('./rnd-control/backup.mjs');
+  const p=window.BringRndProject.current();
+  const v={id:'restored-visit',projectId:p.id,revision:5,buildingId:'b',operator:'o',reason:'r',serviceScope:'s',costBasis:'c',evidenceUrl:'https://example.com',date:'2026-09-17',minutes:{travel:0,check:0,work:0,report:0,contact:0,other:0},costs:{labor:0,transport:0,materials:0,outsourcing:0},totalMinutes:0};
+  return JSON.stringify(await createMetadataBackup([p],p.id,[v]));
+ });
+ page.once('dialog',dialog=>dialog.accept());
+ await page.locator('#import').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(json)});
+ const restored=page.getByRole('button',{name:'복원 초안 restored-visit · 원본 r5 · 미공유',exact:true});
+ await restored.waitFor();await page.evaluate(()=>{window.backupBlob=null;URL.createObjectURL=blob=>{window.backupBlob=blob;return 'blob:test-backup';};HTMLAnchorElement.prototype.click=function(){};});await page.evaluate(()=>{window.dispatchEvent(new CustomEvent('rnd-connection',{detail:{store:{listVisits:async()=>[]},drive:null,user:{uid:'test',role:'admin'}}}));document.getElementById('archiveExport').click();});await page.waitForFunction(()=>window.backupBlob!==null);assert.equal(await page.evaluate(async()=>JSON.parse(await window.backupBlob.text()).visits[0].id),'restored-visit');
+ assert.equal(await page.evaluate(()=>window.BringRndBaselinePending()),true);assert.equal(await page.evaluate(()=>window.BringRndBaselineDrafts()[0].id),'restored-visit');assert.equal(await page.evaluate(()=>window.BringRndBaselineDrafts()[0].revision),0);
+ assert.match(await page.locator('#summary').textContent(),/복원 초안 1개/);
+ page.once('dialog',dialog=>dialog.accept());await restored.click();
+ assert.equal(await page.locator('#visitForm [name=buildingId]').inputValue(),'b');const originalProject=await page.evaluate(()=>window.BringRndProject.current().id);await page.evaluate(()=>{const picker=document.getElementById('projectPicker');picker.add(new Option('Other project','other-project'));picker.value='other-project';});await page.locator('#export').click();assert.equal(await page.evaluate(async()=>JSON.parse(await window.backupBlob.text()).visit.projectId),originalProject);assert.match(await page.locator('#baselineProjectBinding').textContent(),/연결은 유지/);
+ const bindingError=await page.evaluate(async text=>{const v={...JSON.parse(text).visits[0],id:'binding-ipc-test',revision:0};const saved=await window.bringCRM.rndSave({collection:'visits',data:v});try{await window.bringCRM.rndSave({collection:'visits',data:{...saved,projectId:'other-project'}});return '';}catch(error){return error.message;}},json);assert.match(bindingError,/연결 프로젝트/);await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('crm:rnd-save');ipcMain.handle('crm:rnd-save',(_event,input)=>new Promise(resolve=>{globalThis.rndDelayedVisitSave=()=>resolve({...input.data,revision:99});}));});await page.locator('#visitForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>document.getElementById('status').textContent.includes('원격 저장 확인 중'));page.once('dialog',dialog=>dialog.accept());await page.locator('#newVisit').click();await app.evaluate(()=>globalThis.rndDelayedVisitSave());await page.waitForTimeout(100);assert.equal(await page.locator('#visitForm [name=buildingId]').inputValue(),'');await page.locator('#export').click();const newDraft=await page.evaluate(async()=>JSON.parse(await window.backupBlob.text()).visit);assert.notEqual(newDraft.id,'restored-visit');assert.equal(newDraft.revision,0);assert.equal(newDraft.projectId,'other-project');assert.equal(await page.evaluate(()=>window.BringRndBaselineDrafts().length),1);await page.evaluate(()=>window.dispatchEvent(new Event('rnd-session-reset')));
+ assert.equal(await page.locator('#records button').count(),0);
+ assert.equal(await page.evaluate(()=>window.BringRndBaselinePending()),false);
+ console.log('PASS delayed baseline save cannot overwrite a newly started record');console.log('PASS native baseline backup creates reviewed unsaved draft, retains source revision, and clears on session reset');
+}finally{await app.evaluate(({app})=>app.exit(0));}

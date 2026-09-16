@@ -1,0 +1,8 @@
+const http=require('node:http');const crypto=require('node:crypto');
+function authorizeCompanyDrive({openExternal,authPageUrl='https://bring-fm.web.app/rnd-drive-auth/',timeoutMs=180000}){
+ return new Promise((resolve,reject)=>{const state=crypto.randomBytes(32).toString('base64url');let timer,done=false;const finish=(error,token)=>{if(done)return;done=true;clearTimeout(timer);server.close();if(error)reject(error);else resolve(token);};const origin=new URL(authPageUrl).origin;
+ const server=http.createServer((req,res)=>{if(req.method!=='POST'||req.url!=='/callback'||req.headers.origin!==origin){res.writeHead(403).end('Not allowed');return;}let body='';req.on('data',chunk=>{body+=chunk;if(body.length>20000){res.writeHead(413).end();req.destroy();finish(Error('Drive 인증 응답이 너무 큽니다'));}});req.on('end',()=>{try{const f=new URLSearchParams(body);if(f.get('state')!==state)throw Error('Drive 인증 확인값 오류');const token=f.get('drive_access_token');if(!token||token.length>12000)throw Error('Drive 인증 토큰이 없습니다');res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}).end('<meta charset="utf-8"><h2>Drive 인증을 확인하고 있습니다.</h2><p>BRING CRM으로 돌아가 연결 결과를 확인하세요.</p>');finish(null,token);}catch(e){res.writeHead(400).end('Drive authentication failed');finish(e);}});});
+ server.on('error',e=>finish(e));server.listen(0,'127.0.0.1',async()=>{try{const url=new URL(authPageUrl);url.searchParams.set('port',String(server.address().port));url.searchParams.set('state',state);await openExternal(url.toString());}catch(e){finish(e);}});timer=setTimeout(()=>finish(Error('Drive 연결 시간이 초과됐습니다. 인증 페이지 배포 여부를 확인하세요')),timeoutMs);
+ });
+}
+module.exports={authorizeCompanyDrive};
