@@ -1,10 +1,11 @@
+import {mountFollowUp} from './follow-up-ui.mjs';
 import {sourceKind} from './source-kind.mjs';
 import {codeSource,codeSourceLabel} from './code-source.mjs';
 import {evidenceLabels,calculateImprovement} from './evidence-quality.mjs';
 import {askRndText} from './dialogs.mjs';
 import {hydrateProject} from './archive.mjs';
 const $=id=>(window.BringRndHost?.querySelector('#'+id)??document.getElementById(id));const area=document.createElement('section');area.id='researchArea';area.innerHTML='<h2>가설·실험·근거·결정</h2><p>프로젝트 초안을 공유 저장한 후 사용하세요. 계획 승인은 지정 검토자의 CRM 로그인으로 처리합니다. H0~H7의 상태는 실험 결과와 별도로 검토해야 합니다.</p><button id="researchRefresh" type="button">연구 기록 조회</button><p id="researchStatus" role="status">연구 기록 미조회</p><div id="experimentRecords"></div><details><summary>새 실험계획 작성</summary><form id="experimentForm"></form></details><details id="revisePlanDetails"><summary>승인 계획의 변경 버전 작성</summary><form id="revisePlanForm"></form></details><details><summary>실험 종료·데이터 버전 고정</summary><form id="closeExperimentForm"></form></details><details><summary>근거 등록</summary><form id="evidenceForm"></form></details><div id="evidenceRecords"></div><details><summary>사업 결정</summary><form id="decisionForm"></form></details><div id="decisionRecords"></div>';
-$('baselineArea').before(area);
+$('baselineArea').before(area);mountFollowUp(area);
 const metricArea=document.createElement('div');metricArea.innerHTML='<details><summary>원본 연결 수치 결과 기록</summary><p>동결 원본에서 읽은 수동 입력값입니다. 열·행·구간과 집계 방법을 기록하고 검토자가 원본과 대조하세요.</p><form id="metricResultForm"></form></details><div id="metricResultRecords"></div>';area.append(metricArea);
 
 const qualityArea=document.createElement('div');qualityArea.innerHTML='<details><summary>문헌·시뮬레이션·가정 참고 근거</summary><form id="referenceEvidenceForm"></form></details><details><summary>시간·원가 개선율 계산 초안</summary><form id="improvementForm"><label>기준값<input name="baseline" type="number" min="0" step="any"></label><label>결과값<input name="result" type="number" min="0" step="any"></label><label>개선 방향<select name="direction"><option value="lower_better">낮을수록 개선</option><option value="higher_better">높을수록 개선</option></select></label><button>계산</button></form><p id="improvementResult"></p></details>';area.append(qualityArea);

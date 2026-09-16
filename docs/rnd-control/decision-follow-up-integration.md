@@ -17,3 +17,9 @@ Independent scoped review found timestamp/date/text and URL parity gaps. These w
 The generated follow-up-policy.mjs and server Rules share a deliberately conservative result-link profile: HTTP(S), DNS host containing a letter, ASCII path/query/fragment, no explicit port, no percent-encoded query keys and no credential-like query-key substrings. Ordinary version query strings and fragments are accepted. This keeps domain validation and direct DB writes consistent; it is not a general-purpose URL validator. Rules/policy regeneration is idempotent.
 
 Latest local verification: Node 420/420; complete emulator suite including follow-up cases passes. Earlier integration commit e2f8bc9 GitHub CI 35141597664 succeeded. The Rules have not been deployed and company login/real shared-drive checks remain pending. CRM follow-up forms, reports/search and packaged Main/UI verification still remain.
+
+## UI wiring checkpoint
+
+A native R&D follow-up panel now contains creation and transition forms, task cards and immutable per-task history. Commands use existing Main workflow IPC and the latest local task predecessor. The panel tracks pending work for the CRM logout guard and discards delayed replies after session reset. It preserves newer form input and defers applying shared results when other unsaved input exists. No renderer author/completion identity is submitted.
+
+Node 420/420 and the existing native Electron integration smoke suite pass with this module mounted. This smoke evidence checks CRM/module initialization and previous workflows; it does not yet exercise the new follow-up creation/review lifecycle, delayed follow-up responses or packaged follow-up forms. Those focused checks remain pending, as do task reporting/search and production membership/account checks. The production DB Rules and new Windows review build remain undeployed/unbuilt.
