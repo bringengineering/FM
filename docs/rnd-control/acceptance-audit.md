@@ -1,6 +1,6 @@
 # 원래 기획서 61개 검수 항목 대조
 
-411개 Node 시험 및 Windows 화면 시험 통과는 61개 전체 검수 통과를 뜻하지 않습니다. 부분 구현과 시험 근거를 기록했지만 실제 운영 계정·원본 복구·배포 검수를 대신하지 않습니다. NOT_RUN은 해당 범위 전체가 아직 검증되지 않았다는 의미입니다.
+모델·네이티브·패키지·GitHub CI 시험 통과는 원래61개 전체 인수 통과를 뜻하지 않습니다. 아래에는 확인한 구현과 증거 범위, 실제 회사 계정·원본 복구·운영 검수를 구분합니다. NOT_RUN은 해당 항목 전체가 아직 검증되지 않았다는 의미입니다.
 
 | ID | 종합 결과 | 현재 근거와 남은 작업 |
 |---|---|---|
@@ -27,7 +27,7 @@
 | EXP-06 | NOT_RUN | 데이터셋 대상·기간·제외 기준·독립 ID·보관 버전·manifestHash 동결 구현. Main의 Drive 바이트 재검증과 모의 해시 불일치 거부 시험 확인. 직접 요청 구조 규칙 강화와 실Drive 시험 필요 |
 | EXP-07 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | FILE-01 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
-| FILE-02 | NOT_RUN | 회사 Drive 미설정 연결 거부. 상태 코드 통일 필요 |
+| FILE-02 | NOT_RUN | Drive 상태 READY/STORAGE_NOT_CONFIGURED/DRIVE_REAUTH_REQUIRED/CRM_ACCESS_REQUIRED와 만료·권한 회수·회사 root 소유/쓰기 권한 검사 구현. 연결 취소/재연결 및 UID·이메일·역할 변경 후 늦은 응답 차단 Node 검증. 실제 회사 Drive 미설정/만료와 전체 화면 검수는 남음 |
 | FILE-03 | NOT_RUN | 버전 ID 재사용 기반 서비스. 전송 중단 복구 실시험 필요 |
 | FILE-04 | NOT_RUN | 메인 메모리 토큰·만료 처리. 실계정 만료 시험 필요 |
 | FILE-05 | NOT_RUN | 원본 업로드 후 DB 저장 별도. 복구 원장·operationId 필요 |
@@ -49,7 +49,7 @@
 | CRM-01 | NOT_RUN | 별도 rndControl 경로. CRM 읽기전용 snapshot 어댑터 필요 |
 | CRM-02 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | CRM-03 | NOT_RUN | Main GET 전용 CRM context와 프로젝트별 선택 ID·관계·보관 이유·SHA256·시각·당시 revision 고정 보관 구현. 일반 저장 변조/삭제 거부, DB append-only·동시 revision 시험, native 지연 편집/세션 정리 및 내부 Markdown 포함·검토용 제외 확인. 실제 회사 원장/두 PC, JSON 내용의 DB 출처 신뢰 보강 및 승인 복원 검수는 남음 |
-| CRM-04 | NOT_RUN | JSON 보관/복원 있음. dry-run·충돌목록·rollback manifest 필요 |
+| CRM-04 | NOT_RUN | CSV 엄격 파싱·출처/추출시각·mapping·충돌 dry-run·명시 확인·불변 원본/job·로컬 초안 rollback과 Main 확인 receipt 구현. 공유 감사는 원본 해시/바이트 재검증 후 별도 명시 게시하며 CRM 방문 자동 쓰기는 없음. 실제 SDK CSV/복원 동시성, Auth/Functions 기존 감사 재확인 및 packaged 가져오기/게시/조회 시험 통과. 새 Google 원본 다운로드→게시, 실제 회사 승인·CRM 원본 대조·두 PC 종합 검수는 미완료 |
 | UX-01 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | UX-02 | NOT_RUN | 실계정 또는 수동 시나리오 검수가 필요함 |
 | UX-03 | NOT_RUN | 세션 조회 메타데이터 색인·종류 필터·50개 페이지·범위 표시·10,000행 AND 검색/페이지 시험과 CRM 화면 이동 구현. 원격 10,000개 자료 성능·조회 누락 종합 시험은 남음 |
@@ -57,10 +57,10 @@
 | UX-05 | NOT_RUN | 저장 실패 표시·세션 초안 유지. 네트워크 단절 실시험 필요 |
 | OUT-01 | PASS | ID·공유 revision·출처·상대 엔터티 링크를 포함한 Markdown ZIP 구현. CRM 앱 출력·Python ZIP CRC/UTF-8/SHA256/크기/모든 상대 링크 확인. Vault 직접 쓰기 경로 없음 |
 | OUT-02 | NOT_RUN | 관리자 검토용 공개 범위 승인·취소·연결 자료 bundleHash·불변 이력·선별 manifest 구현 및 모델/서버 시험 확인. 가정/문헌/실측 분류와 실제 Drive 승인 자료 묶음 검수 필요 |
-| OUT-03 | NOT_RUN | GitHub 저장소/path/40자리 SHA·미고정 경고·링크/버전 불일치 및 잘못된 경로 차단·Markdown 출력 구현. a813b0d 파일 3개 실제 원격 blob 일치 증거 확보. 일반 등록 자료의 자동 원격 검증·주장 근거·수동 시나리오는 남음 |
+| OUT-03 | NOT_RUN | GitHub 고정 저장소/path/40자리 commit 표시·미고정 경고·Markdown 출력 구현. Main 고정 API commit/file 크기·canonical base64·Git blob SHA·SHA-256 검증과 JSON 결과 보관, 입력/프로젝트/세션 늦은 응답 차단 시험. 실제 FM 원격 파일과 Git 바이트 일치 증거 있음(CRM 승인 fixture). 실제 Main 승인 계정 성공·JSON 보관 성공·Drive 보관·일반 코드 근거 종합 검수는 남음 |
 | OPS-01 | NOT_RUN | 빈 workspace 복원·관계·바이너리 해시 시험 필요 |
 | OPS-02 | NOT_RUN | metadata-only/binaryFilesIncluded=false·생성시각·개수·revision·DS 파일 참조·SHA manifest 및 변조/목록 불일치 거부 구현. 실제 다운로드 파일과 모든 원본 참조 범위 검수 필요 |
-| OPS-03 | NOT_RUN | 기존 CRM 포함 411개 Node 시험 및 Windows 기본/비활성 실행 시험 통과. 운영 배포·설정·계정·종합 릴리스 검수는 미완료 |
+| OPS-03 | NOT_RUN | 2fa2000 GitHub CI35164541300 desktop/backend-and-rules 모두 SUCCESS(실제 Auth/Functions 복원·CSV 재확인 포함). Windows d3d7dc7은 동일 CRM runtime src108 바이트 일치와 packaged GitHub7/조회8/게시8/가져오기8 총31개 PASS. 소스 패치는 기준976cc5f의 임시 Git index 적용 결과가 전체 HEAD tree와 일치. 실제 운영 Firebase/Drive 설정·회사 계정·두 PC·설치/updater·종합61개 검수는 미완료이며 운영 배포하지 않음 |
 | OPS-04 | NOT_RUN | 운영 seed 기본 실행 없음. 복원은 해시/목록/관계 사전 검증 및 명시 확인 후 신규 초안만 추가, 같은 ID 유지. 모든 직접 호출·운영 dry-run 정책 검수 필요 |
 | OPS-05 | NOT_RUN | 실계정 시험 미실행. 개발·Emulator 시험 지속 |
 | OPS-06 | NOT_RUN | BRING_RND_ENABLED=0 시작 시 메뉴·Main R&D 요청 차단 및 데이터 삭제 없는 재활성 절차 구현. 실제 운영 자료/두 PC 복귀 검수는 남음 |

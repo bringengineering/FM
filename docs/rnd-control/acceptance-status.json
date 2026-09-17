@@ -240,8 +240,11 @@
       "condition": "Drive 설정/공용 root 접근 미완료",
       "expected": "STORAGE_NOT_CONFIGURED. 링크/초안은 허용, 공식 업로드 READY 금지",
       "result": "NOT_RUN",
-      "note": "회사 Drive 미설정 연결 거부. 상태 코드 통일 필요",
-      "evidence": []
+      "note": "Drive 상태 READY/STORAGE_NOT_CONFIGURED/DRIVE_REAUTH_REQUIRED/CRM_ACCESS_REQUIRED와 만료·권한 회수·회사 root 소유/쓰기 권한 검사 구현. 연결 취소/재연결 및 UID·이메일·역할 변경 후 늦은 응답 차단 Node 검증. 실제 회사 Drive 미설정/만료와 전체 화면 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-drive.test.js",
+        "desktop-crm/test/rnd-drive-connection-flow.test.js"
+      ]
     },
     {
       "id": "FILE-03",
@@ -457,7 +460,7 @@
       "condition": "기존 파일/CSV import",
       "expected": "dry-run·충돌목록·승인·rollback manifest, 원본 보존",
       "result": "NOT_RUN",
-      "note": "JSON 백업 검토·원본 유지·초안 추가·전후 명세 다운로드 및 최신 세션 되돌리기 UI 구현. Node428/native/packaged101건 페이지·취소·실행·미제출/공유저장 거부·지연 검증 후 입력/프로젝트 변경 거부·세션 초기화 검수 통과. 원래 dirty 상태와 Main 공유 자료 유지. 일반 명세 재실행/승인 공유 복원/CSV 전체 범위·회사 운영 검수 미완료 Development update: server-approved metadata restore Main/preload/UI connection and local Auth HTTP transport verified; company route, CSV and full operational gate remain unverified.",
+      "note": "CSV 엄격 파싱·출처/추출시각·mapping·충돌 dry-run·명시 확인·불변 원본/job·로컬 초안 rollback과 Main 확인 receipt 구현. 공유 감사는 원본 해시/바이트 재검증 후 별도 명시 게시하며 CRM 방문 자동 쓰기는 없음. 실제 SDK CSV/복원 동시성, Auth/Functions 기존 감사 재확인 및 packaged 가져오기/게시/조회 시험 통과. 새 Google 원본 다운로드→게시, 실제 회사 승인·CRM 원본 대조·두 PC 종합 검수는 미완료",
       "evidence": [
         "desktop-crm/test/rnd-import.test.js",
         "desktop-crm/test-rnd-restore-preview-electron.mjs",
@@ -470,7 +473,17 @@
         "desktop-crm/test/rnd-shared-restore-client.test.js",
         "desktop-crm/test-rnd-shared-restore-electron.mjs",
         "functions/test-rnd-restore-callable-emulator.mjs",
-        "docs/rnd-control/shared-restore-integration.md"
+        "docs/rnd-control/shared-restore-integration.md",
+        "desktop-crm/test/rnd-csv-import.test.js",
+        "desktop-crm/test/rnd-csv-job-ledger.test.js",
+        "desktop-crm/test/rnd-csv-rollback.test.js",
+        "desktop-crm/test/rnd-csv-import-audit.test.js",
+        "desktop-crm/test-rnd-csv-import-electron.mjs",
+        "desktop-crm/test-rnd-csv-audit-publish-electron.mjs",
+        "desktop-crm/test-rnd-csv-audit-history-electron.mjs",
+        "functions/test-rnd-csv-transaction.mjs",
+        "functions/test-rnd-csv-callable-emulator.mjs",
+        "rnd-csv-callable-emulator-results.txt"
       ]
     },
     {
@@ -548,10 +561,15 @@
       "condition": "GitHub 코드 근거 등록",
       "expected": "저장소·path·commit SHA 표시. 미고정 branch 링크는 미고정 경고",
       "result": "NOT_RUN",
-      "note": "GitHub 저장소/path/40자리 SHA·미고정 경고·링크/버전 불일치 및 잘못된 경로 차단·Markdown 출력 구현. a813b0d 파일 3개 실제 원격 blob 일치 증거 확보. 일반 등록 자료의 자동 원격 검증·주장 근거·수동 시나리오는 남음",
+      "note": "GitHub 고정 저장소/path/40자리 commit 표시·미고정 경고·Markdown 출력 구현. Main 고정 API commit/file 크기·canonical base64·Git blob SHA·SHA-256 검증과 JSON 결과 보관, 입력/프로젝트/세션 늦은 응답 차단 시험. 실제 FM 원격 파일과 Git 바이트 일치 증거 있음(CRM 승인 fixture). 실제 Main 승인 계정 성공·JSON 보관 성공·Drive 보관·일반 코드 근거 종합 검수는 남음",
       "evidence": [
         "desktop-crm/test/rnd-code-source.test.js",
-        "docs/rnd-control/github-source-verification.json"
+        "docs/rnd-control/github-source-verification.json",
+        "desktop-crm/test/rnd-code-source-verification.test.js",
+        "desktop-crm/test/rnd-code-source-export.test.js",
+        "desktop-crm/test-rnd-code-source-electron.mjs",
+        "desktop-crm/rnd-code-source-live-verification.json",
+        "desktop-crm/rnd-code-source-packaged-results.txt"
       ]
     },
     {
@@ -581,10 +599,15 @@
       "condition": "운영 릴리스 점검",
       "expected": "기존 Firebase 설정/Functions 배포금지/기존 CRM 가드 유지",
       "result": "NOT_RUN",
-      "note": "현재 소스 Node421 통과. dcbdfe6 Windows x64 검토본의 기존 CRM/R&D·후속 업무·CRM 고정·비활성화 실행 시험 통과, ASAR src75 파일 바이트 일치. 운영 배포·설정·회사 계정·두 PC·종합 릴리스 검수는 미완료",
+      "note": "2fa2000 GitHub CI35164541300 desktop/backend-and-rules 모두 SUCCESS(실제 Auth/Functions 복원·CSV 재확인 포함). Windows d3d7dc7은 동일 CRM runtime src108 바이트 일치와 packaged GitHub7/조회8/게시8/가져오기8 총31개 PASS. 소스 패치는 기준976cc5f의 임시 Git index 적용 결과가 전체 HEAD tree와 일치. 실제 운영 Firebase/Drive 설정·회사 계정·두 PC·설치/updater·종합61개 검수는 미완료이며 운영 배포하지 않음",
       "evidence": [
         "desktop-crm/test-rnd-electron.mjs",
-        "desktop-crm/test-rnd-disabled-electron.mjs"
+        "desktop-crm/test-rnd-disabled-electron.mjs",
+        "rnd-github-ci-results.json",
+        "rnd-source-patch-apply-results.json",
+        "desktop-crm/rnd-packaged-source-verification.json",
+        "desktop-crm/rnd-code-source-packaged-results.txt",
+        "docs/rnd-control/rollback.md"
       ]
     },
     {
