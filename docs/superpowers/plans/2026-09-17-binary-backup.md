@@ -43,3 +43,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 매핑 Main/preload 연결: review가 최신 root 재확인 후 trusted onReview callback으로 preview/actor/private SDK binding/currentIds를 Main store에 등록하고 다시 session 검사한다. Main store는 client identity마다 고정 database/token/fetch reader를 사용하며 client 변경 시 이전 store를 clear한다. rndMapOriginalRestore은 입력 previewId/targets만 세션 mapper에 전달하고 첫 approval await 전 SDK generation을 고정한다. 전체Node583, 실제Electron localguard/fixture화면11 PASS, 독립 검토 중요한 문제 없음. 매핑 정상 회사 성공·UI 대상입력·원본 복원실행은 미연결/미검증. Windows5653c53은 이번 store/API 수정 미포함이다.
+
+
+복원 매핑 CRM 입력 연결: 프로젝트·기준선·감사마다 기본 restored-UUID 신규 ID를 제안하고 변경할 수 있다. 페이지 입력은 collection별 Map에 보관하며 API에는 previewId/targets만 보낸다. 잘못된 ID 입력을 사전 거부하고 Main의 읽기전용 결과 kind/previewId/flag/hash를 대조한다. 입력 변경/editVersion 및 review generation/dispose로 늦은 매핑 결과를 차단하고 검토 재조회/clear/로그인 변경 시 입력·결과를 비운다. Native13 PASS(회사 Main localguard+UI fixture), Node583 PASS, 독립 검토 중요한 문제 없음. 회사 정상 매핑·실제 복원 실행은 미검증/미연결. Windows5653c53에는 이번 mapping UI/API 기반 미포함이다.
