@@ -7,6 +7,7 @@ async function prepareOriginalBackupSnapshot(input,selectedId){
  for(const project of projects)for(const dataset of project.research?.datasetSnapshots??[]){if(dataset.projectId!==project.id)throw Error('백업 데이터셋 프로젝트 연결 오류');if(!verifyDatasetManifest(dataset))throw Error('백업 동결 데이터셋 manifest 오류');}
  const visits=collection(value.visits),importJobs=[];
  for(const audit of collection(value.importJobs)){const verified=await validateCSVImportAudit(audit);if(!projects.some(p=>p.id===verified.projectId))throw Error('백업 감사 프로젝트 연결 오류');importJobs.push(verified);}
+ for(const audit of collection(value.restoredImportAudits)){const verified=await require('./restored-csv-audit').validateRestoredCSVImportAudit(audit);if(!projects.some(p=>p.id===verified.projectId))throw Error('복원 감사 프로젝트 연결 오류');}
  const metadataBackup=await createMetadataBackup(projects,selectedId,visits);
  return{projects,visits,importJobs,selectedId,metadataManifest:metadataBackup.manifest,additionalMetadata:Object.fromEntries(Object.entries(value).filter(([key])=>!['projects','visits','importJobs'].includes(key)))};
 }
