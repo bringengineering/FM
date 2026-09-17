@@ -22,6 +22,23 @@ export function createRestoreApprovalSession({actor,mutation,expectedSnapshotSHA
  if(!Number.isSafeInteger(now)||now<0||!Number.isSafeInteger(now+600000)||!actor.uid||!actor.email||!Number.isSafeInteger(actor.authTime)||actor.authTime<=0||mutation.audit.actorUid!==actor.uid)throw Error('Invalid restore approval session');
  return{id:mutation.operationId,actorUid:actor.uid,actorEmail:actor.email,actorAuthTime:actor.authTime,state:'PENDING',createdAt:now,expiresAt:now+600000,expectedSnapshotSHA256,mutation:structuredClone(mutation)};
 }
+/** Server-owned root transaction callback: current approvals and snapshot checked on every retry. */
+export function createRestoreSessionRootStoreUpdater(input:{actor:Actor;session:RestoreApprovalSession;digest:(value:unknown)=>string;now:()=>number}){
+ const actor=structuredClone(input.actor),session=structuredClone(input.session),digest=input.digest;
+ if(session.actorUid!==actor.uid||session.actorEmail!==actor.email||session.actorAuthTime!==actor.authTime)throw Error('Restore session actor binding invalid');
+ // Validate the actual compiled mutation before allowing it into server-owned state.
+ createRestoreRootUpdater({actor,mutation:session.mutation,expectedSnapshotSHA256:session.expectedSnapshotSHA256,digest});
+ const store=createRestoreSessionStoreUpdater({session,now:input.now});
+ return(current:unknown):Root|undefined=>{
+  if(!record(current))return undefined;
+  for(const grant of [own(own(own(current,'crmCompany'),'access'),actor.uid),own(own(current,'rndAccess'),actor.uid)])if(!record(grant)||grant.enabled!==true||grant.email!==actor.email||grant.role!=='admin'||grant.mustChangePassword===true)return undefined;
+  if(digest(own(current,'rndControl')??null)!==session.expectedSnapshotSHA256)return undefined;
+  const sessions=own(current,'rndRestoreSessions');if(sessions!=null&&!record(sessions))return undefined;
+  const owner=store(own(sessions,actor.uid)??null);if(!owner)return undefined;
+  const next=structuredClone(current),updated=structuredClone(sessions??{}) as Root;
+  Object.defineProperty(updated,actor.uid,{value:owner,enumerable:true,writable:true,configurable:true});next.rndRestoreSessions=updated;return next;
+ };
+}
 /** Resolve the request from server-owned state inside every root transaction retry. */
 export function createRestoreSessionUpdater(input:{actor:Actor;sessionId:string;digest:(value:unknown)=>string;now:()=>number}) {
  const actor=structuredClone(input.actor),id=input.sessionId,digest=input.digest,clock=input.now;
