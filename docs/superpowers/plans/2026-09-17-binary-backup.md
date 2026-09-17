@@ -9,4 +9,4 @@
 5. 회사 CRM의 기존 백업 버튼 옆에 원본 포함 경로를 연결한다. 크기·파일 수·완료 범위와 원본 제외 여부를 실제 manifest에 맞춰 표시한다. 복원은 신규 대상·관계 대조·원본 해시 확인 및 명시 승인으로 별도 구현한다.
 6. 실제 ZIP 파서로 비UTF8 원본·CRC·manifest/hash·변조·누락·세션 변경·저장 취소·용량 초과를 검증한다. Native/packaged 경로와 별도 회사 Drive·두 PC·빈 workspace 복구 검증까지 완료하기 전 OPS-01 PASS로 올리지 않는다.
 
-현재: 1단계 writer와 2단계 trusted downloadVersion을 구현했다. 다운로드는 원본 크기·해시 검증 후 내부 callback 소비용 바이트와 reference만 반환하고 IPC로 노출하지 않는다. Google 응답 fixture 시험만 통과했다. 3~6단계 Main 백업·UI·실제 Drive·전체 복원은 미완료.
+현재: 1단계 writer·2단계 trusted downloadVersion·3단계 내부 builder를 구현했다. builder는 프로젝트/방문/감사 기록의 고정 참조를 열거하고 실제 바이트를 재검증한 ZIP/manifest를 생성한다. 다운로드→builder 통합은 Google 응답 fixture 시험이다. Main authoritative snapshot 조회·권한·저장창과 UI 연결, 실제 Drive·전체 복원은 미완료다. builder manifest는 fullBackup false/restoreReady false를 유지한다.

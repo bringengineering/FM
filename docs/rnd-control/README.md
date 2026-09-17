@@ -650,3 +650,11 @@ zipBinaryFiles는 Buffer/Uint8Array의 원본 바이트를 UTF-8 변환 없이 �
 trusted Drive adapter downloadVersion은 회사 보관 root·소유권/공용Drive·project/artifact/version·metadata 해시 검증과 원본 스트림 SHA-256 검증을 재사용한다. 남은 백업 용량 maxBytes(0~100MiB 정수)를 metadata 및 각 chunk에 적용하며 선언 크기를 초과하는 스트림을 중단한다. chunk는 복사해 보관하고 전체 크기·해시가 맞는 경우에만 reference/원본bytes를 내부 호출자에게 반환한다. 다운로드는 bounded streaming 응답만 사용하며 arrayBuffer 대체 경로를 허용하지 않는다. reader는 실패/세션 변경에서도 취소한다. 기존 verifyVersion은 metadata만 반환하고 IPC/preload에 다운로드 바이트 경로를 추가하지 않았다.
 
 Google 응답 fixture 다운로드3개/기존Drive12개·전체Node545 PASS, 서버 build 및1179개 시험 PASS, 독립 검토 중요한 문제 없음. 실제 회사 Drive 성공 또는 Main/UI 원본 백업은 검증하지 않았다. 다음은 공유 자료 참조 열거·백업 manifest·Main 저장창·UI 연결이며 OPS-01 전체 인수는 그대로 미완료다. Windows856ec61은 이 새 다운로드 미포함이다.
+
+### 고정 원본 참조 열거와 백업 manifest builder
+
+original-backup.js는 승인·검증을 담당하는 신뢰된 Main 호출자가 제공할 프로젝트/방문/importJobs snapshot과 check/download callback을 받는 내부 builder다. 고정 providerFileId·project/artifact/version·SHA·크기를 검증하고 중복 파일을 한 번만 내려받는다. 같은 파일 ID의 다른 연결·해시는 충돌로 거부하며 다른 프로젝트에 붙은 참조도 다운로드 전에 거부한다. metadata20MiB/참조1000개/노드10만/깊이64와 전체ZIP100MiB를 제한한다. 각 다운로드 전후 세션 callback, 반환 연결·크기·실제 바이트 SHA를 확인하고 metadata.json/originals/manifest.json을 생성한다.
+
+manifest는 모든 열거 원본 포함 여부와 metadata/원본 해시를 기록하되 fullBackup false/restoreReady false로 표시한다. 고정 회사 파일로 검증되지 않은 외부 URL 개수도 남긴다. Main authoritative 자료 검증·저장창·UI·실제 파일 복원을 아직 연결하지 않았으므로 전체 완전성을 주장하지 않는다. Drive download의 내부 reference에는 검증된 projectId를 추가했으며 기존 verifyVersion 응답은 유지한다.
+
+builder3개 및 실제 Drive adapter→builder→ZIP 통합1개 포함 Node549 PASS, 서버 build/1179개 PASS, 독립 검토 중요한 문제 없음. Google HTTP는 fixture, Main/회사 실연동은 미검증이다. Windows856ec61은 새 writer/download/builder 미포함. 전체61개 인수 및 운영 배포 미완료.
