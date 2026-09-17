@@ -34,3 +34,6 @@
 
 
 빈 작업공간 복원검토 지원: trusted snapshot reader의 allowEmptyRoot는 기본 false이며 Main 복원검토에서만 true이다. valid ETag와 실제 JSON null을 받은 경우 value:{} 및 emptyRoot:true로 명시적으로 정규화한다. 배열/primitive/버전없음은 계속 거부하고 원본 보관은 null을 거부한다. 검토 전후 ETag·정규화 root 해시·emptyRoot flag를 함께 대조해 null에서 {}로 바뀌는 상황도 중단한다. 결과의 sharedEmptyRoot가 정규화 범위를 표시하며 root 해시는 raw HTTP 서명이 아니다. 전체 Node576 PASS. 실제 회사 빈 workspace·전체 복원 실행은 미검증이며 Windows13c48fe은 이번 수정 미포함이다.
+
+
+원본 복원 대상 매핑 기반: createOriginalRestoreMapping은 Main 내부 fresh preview/current ID 목록을 전제로 프로젝트·기준선·감사의 모든 source ID에 정확히 하나의 신규 target ID를 지정한다. 현재 ID와 충돌·target 중복·누락/여분·부모 프로젝트 누락을 거부한다. 기준선·감사·원본의 targetProjectId는 프로젝트 매핑에서만 유도하며 source SHA/ZIP/current 해시를 mappingSHA에 묶는다. 원본은 새 업로드 검증 계획이며 immutable 감사 기록의 재작성 또는 기존 Drive ID 자동 재사용은 수행하지 않는다. 실제 비UTF8 원본 ZIP→검증 preview→mapping 통합 및 거부 시험3개 포함 전체 Node579 PASS. canApply/cloudWrites/originVerified/restoreReady false. Main/UI 매핑 입력·승인된 실제 복구·회사 실검증은 다음 단계다. Windows5653c53은 이번 mapping 미포함이다.
