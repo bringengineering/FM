@@ -49,3 +49,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 매핑 입력 오류 수정 재검증: 기존 모든 error에서 review를 삭제해 단순 target ID 충돌 후 수정 재검증이 불가능했다. pre/post validateCurrent의 로그인/권한/만료/공유 root/record 무효화 오류만 review를 삭제하고 순수 target map 검증 오류는 유효 review를 보존한다. 재요청은 사용자 명시 입력 수정이며 자동 재시도·실행·쓰기 없음. 같은 review ID로 새 record가 등록된 경우 이전 실패는 새 record를 삭제하지 않는다. 실제 mapper 충돌→수정성공→root변경무효화 및 clear/lastaccess 기존회귀 포함 Node584 PASS. 실제 회사 매핑/원본 복원은 미검증. Windowsa9d3420은 이번 retry 수정 미포함이다.
+
+
+복원 원본의 Main 내부 준비: review의 trusted filepicker 경로를 onReview/private store에만 기록하고 IPC 결과에는 포함하지 않는다. store.prepare는 기존 mapping freshness 검증 후 bounded 파일 재읽기·검토 당시 ZIP SHA 일치·actual ZIP 원본 verifier·세션/현재 root 재검증을 거쳐 내부 작업에만 mapping/verified source bytes를 반환한다. prepare IPC/preload는 없고 일반 매핑 API는 계속 bytes 없는 결과만 반환한다. 파일 변경·읽기/무결성 실패·로그인/자료 변경은 review를 무효화한다. 실제 비UTF8 원본 ZIP→preview→private preparation/hash변조 거부 회귀 포함 Node585 PASS. 신규 대상 자료 생성·Drive 원본 업로드·승인된 복구 실행은 다음 단계이며 회사 성공 미검증. Windows25fdfa7은 이번 private source 준비 미포함이다.
