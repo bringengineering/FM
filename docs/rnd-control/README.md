@@ -664,3 +664,9 @@ builder3개 및 실제 Drive adapter→builder→ZIP 통합1개 포함 Node549 P
 original-backup-export.js는 projectId만 받는 신뢰된 Main dependency 기반 서비스다. 공유 전체 자료를 조회하므로 승인된 관리자만 허용한다. 첫 승인 await 전 로그인 세대를 고정하고 모든 대기 이후 UID/이메일/역할/비밀번호 상태를 재확인한다. snapshot을 복사하고 선택 프로젝트의 존재를 확인한 뒤 검증·ZIP builder를 실행한다. 저장창 전과 저장창 후 실제 저장 직전에 authoritative 자료를 다시 읽어 ETag와 raw 내용 SHA를 모두 대조한다. 변경·취소·권한 회수는 저장하지 않으며 반환은 경로·파일수·fullBackup false/restoreReady false 등 소형 결과뿐이다. 추가 Drive/DB 쓰기는 없다.
 
 내부 callback fixture 시험2개 및 Node551 PASS, 독립 검토 중요한 문제 없음. Main IPC/preload·실제 bounded snapshot reader·공유 metadata 검증·partial 파일 저장·CRM UI는 아직 연결하지 않았다. 실제 저장창/회사 자료 백업 성공과 전체 복원 인수는 미완료다. Windows856ec61은 새 백업 서비스 미포함이다.
+
+### 백업용 bounded 공유 자료 조회
+
+original-backup-snapshot.js는 신뢰된 HTTPS database root 설정에서 고정 rndControl.json GET만 수행한다. redirect를 거부하고20초 제한·ETag 조회를 적용한다. 첫 승인 await 전 세대를 캡처하고 승인된 관리자/UID/이메일/역할을 인증 정보 조회와 응답 대기 이후 다시 검사한다. 토큰은 내부 인증 쿼리에만 사용하고 반환하지 않는다. 응답은 fatal UTF-8 스트림20MiB 제한으로 읽으며 chunk마다 로그인 세대를 검사한다. arrayBuffer/json fallback을 사용하지 않고 실패의 JSON 본문은 renderer 메시지에 노출하지 않는다. 정상·실패 모두 응답 body 취소를 시도한다.
+
+반환은 파싱한 value·ETag·actorUid·JSON.stringify(value)의 SHA-256이다. 원문 HTTP 바이트의 인증/서명 해시는 아니다. fixture2개와 전체 Node553 PASS, 독립 검토 중요한 문제 없음. 실제 회사 DB 조회/IPC·백업 저장창/화면 성공은 아직 검증하지 않았다. 다음은 이 reader와 metadata 검증·Main/preload·partial 파일 저장·UI 연결이다. Windows856ec61은 새 백업 reader 미포함이고 전체61개 인수는5/61로 유지한다.
