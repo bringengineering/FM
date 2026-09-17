@@ -658,3 +658,9 @@ original-backup.js는 승인·검증을 담당하는 신뢰된 Main 호출자가
 manifest는 모든 열거 원본 포함 여부와 metadata/원본 해시를 기록하되 fullBackup false/restoreReady false로 표시한다. 고정 회사 파일로 검증되지 않은 외부 URL 개수도 남긴다. Main authoritative 자료 검증·저장창·UI·실제 파일 복원을 아직 연결하지 않았으므로 전체 완전성을 주장하지 않는다. Drive download의 내부 reference에는 검증된 projectId를 추가했으며 기존 verifyVersion 응답은 유지한다.
 
 builder3개 및 실제 Drive adapter→builder→ZIP 통합1개 포함 Node549 PASS, 서버 build/1179개 PASS, 독립 검토 중요한 문제 없음. Google HTTP는 fixture, Main/회사 실연동은 미검증이다. Windows856ec61은 새 writer/download/builder 미포함. 전체61개 인수 및 운영 배포 미완료.
+
+### 원본 보관 내보내기의 내부 실행 서비스
+
+original-backup-export.js는 projectId만 받는 신뢰된 Main dependency 기반 서비스다. 공유 전체 자료를 조회하므로 승인된 관리자만 허용한다. 첫 승인 await 전 로그인 세대를 고정하고 모든 대기 이후 UID/이메일/역할/비밀번호 상태를 재확인한다. snapshot을 복사하고 선택 프로젝트의 존재를 확인한 뒤 검증·ZIP builder를 실행한다. 저장창 전과 저장창 후 실제 저장 직전에 authoritative 자료를 다시 읽어 ETag와 raw 내용 SHA를 모두 대조한다. 변경·취소·권한 회수는 저장하지 않으며 반환은 경로·파일수·fullBackup false/restoreReady false 등 소형 결과뿐이다. 추가 Drive/DB 쓰기는 없다.
+
+내부 callback fixture 시험2개 및 Node551 PASS, 독립 검토 중요한 문제 없음. Main IPC/preload·실제 bounded snapshot reader·공유 metadata 검증·partial 파일 저장·CRM UI는 아직 연결하지 않았다. 실제 저장창/회사 자료 백업 성공과 전체 복원 인수는 미완료다. Windows856ec61은 새 백업 서비스 미포함이다.
