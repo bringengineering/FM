@@ -29,7 +29,7 @@ async function buildOriginalBackup(input,{check,download}){
   await check();const original=await download(ref,{maxBytes:100*1024*1024-total});await check();
   if(!(original?.bytes instanceof Uint8Array)||bindingKeys.some(k=>original.reference?.[k]!==ref[k])||original.bytes.byteLength!==ref.sizeBytes||hash(original.bytes)!==ref.sha256)throw Error('백업 원본 바이트·연결 검증 실패');
   total+=original.bytes.byteLength;if(total>100*1024*1024)throw Error('백업 원본 용량 제한');
-  const path='originals/'+ref.providerFileId+'.bin';files[path]=Buffer.from(original.bytes);inventory.push({...ref,path});
+  const path='originals/'+ref.providerFileId+'.bin';files[path]=Buffer.from(original.bytes);const presentation={};if(original.fileName!==undefined){require('./file-policy').assertUploadFile({fileName:original.fileName,sizeBytes:original.bytes.byteLength,bytes:original.bytes});presentation.fileName=original.fileName;}if(original.mimeType!==undefined){if(typeof original.mimeType!=='string'||original.mimeType.length>127||! /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/.test(original.mimeType))throw Error('원본 MIME 형식 오류');presentation.mimeType=original.mimeType;}inventory.push({...ref,path,...presentation});
  }
  const manifest={kind:'BRING_RND_ENUMERATED_ORIGINAL_PACKAGE',version:1,generatedAt:new Date().toISOString(),scope:'authoritative-snapshot-and-enumerated-fixed-originals',metadataSHA256:hash(metadata),files:inventory,unverifiedLinkCount,allEnumeratedOriginalsIncluded:true,fullBackup:false,restoreReady:false,cloudWrites:false};
  files['manifest.json']=Buffer.from(JSON.stringify(manifest,null,2));await check();return{bytes:zipBinaryFiles(files),manifest};

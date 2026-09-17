@@ -55,3 +55,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 원본의 새 대상 연결 준비: private store.prepare에서 실제 ZIP 재검증 이후 prepareRestoreOriginals를 실행한다. source record SHA·metadata manifest SHA·mapping SHA·프로젝트 부모 연결·원본 inventory·크기/SHA를 확인하고 source provider/project/artifact/version/hash를 출처로 보존한다. 새 target project와 mapping에 고정된 artifact/version ID를 생성하며 같은 artifact의 여러 버전은 새 artifact를 공유한다. 원본은 독립 Buffer로 복사하고 중복 참조는 inventory 기준 한 건으로 준비한다. mapping은 첫 await 이전에 복사해 지연 권한 검사 중 호출자 변경이 결과에 반영되지 않는다. 실제 비UTF8 ZIP/중복참조·변조거부·세션경계·입력소유권 회귀 포함 Node589 PASS. cloudWrites/canApply/restoreReady=false이며 새 IPC나 실제 업로드·공유복원 실행은 없다. 다음 단계는 승인된 업로드 실행, 지속 복구 기록, 원본 참조 교체와 동결 데이터/불변 감사의 출처 보존이다. 전체 운영 인수5/61 및 회사 Drive/전체복원 미검증 상태는 유지한다.
+
+
+원본 복원 파일명 보존: trusted Drive download가 실제 name에서 정확한 versionId__ 접두어만 제거하고 MIME과 함께 반환한다. builder는 optional fileName을 기존 확장자/실행파일/경로 정책으로 검사하고 MIME을 제한한 뒤 inventory에 보관한다. verifier는 optional 필드를 동일한 정책으로 재검사하고 전체 key/value를 대조하며 과거 필드 없는 ZIP도 읽는다. private restore plan은 fileName/MIME을 전달하고 이름 없는 과거 보관본은 requiresFileName=true로 표시한다. 이름은 보관본의 서술 정보이며 회사 출처 인증을 뜻하지 않는다. 실제 업로드/공유 복원은 아직 미연결. Drive→builder→ZIP검증 및 private 준비/잘못된 경로 회귀 포함 Node590 PASS.

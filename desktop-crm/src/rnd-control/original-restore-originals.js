@@ -25,7 +25,7 @@ async function prepareRestoreOriginals({source,mapping:inputMapping},{check}){
   // IDs are stable within this reviewed mapping and distinct from archival IDs. Multiple versions share their new artifact.
   const id=(type,parts)=>'restored_'+sha(JSON.stringify([type,mappingSHA256,...parts]));
   const target={projectId:plan.targetProjectId,artifactId:id('artifact',[ref.projectId,ref.artifactId]),versionId:id('version',[ref.projectId,ref.artifactId,ref.versionId,ref.providerFileId]),sha256:ref.sha256,sizeBytes:ref.sizeBytes};
-  originals.push({source:Object.fromEntries(fields.map(field=>[field,ref[field]])),target,bytes:Buffer.from(bytes)});
+  originals.push({source:Object.fromEntries(fields.map(field=>[field,ref[field]])),target,fileName:ref.fileName??null,mimeType:ref.mimeType??null,requiresFileName:ref.fileName===undefined,bytes:Buffer.from(bytes)});
  }
  if(inventory.size)fail();await check();
  return{kind:'BRING_RND_ORIGINAL_REUPLOAD_PREPARATION',version:1,previewId:mapping.previewId,mappingSHA256,sourceZipSHA256:mapping.sourceZipSHA256,originals,canApply:false,cloudWrites:false,restoreReady:false,originVerified:false};

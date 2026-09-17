@@ -9,3 +9,9 @@ test('original package verifier denies tampered metadata, missing/extra files, i
  for(const change of [files=>files.delete('originals/f.bin'),files=>files.set('extra.bin',bytes),files=>files.set('metadata.json',Buffer.from('{}')),files=>{const m=JSON.parse(files.get('manifest.json'));m.files[0].versionId='other';files.set('manifest.json',Buffer.from(JSON.stringify(m)));}]){const files=readStoredZip(original.bytes);change(files);await assert.rejects(()=>verifyOriginalBackup(zipBinaryFiles(Object.fromEntries(files)),{check:async()=>{}}));}
  await assert.rejects(()=>verifyOriginalBackup(original.bytes,{check:async()=>{throw Error('세션');}}),/세션/);
 });
+
+test('original package preserves optional upload filename and MIME while legacy packages remain readable',async()=>{
+ const {verifyOriginalBackup}=require('../src/rnd-control/original-backup-verification');const original=await buildOriginalBackup({projects:[{id:'p',refs:[ref]}],visits:[],importJobs:[]},{check:async()=>{},download:async()=>({reference:ref,bytes,fileName:'측정.csv',mimeType:'text/csv'})});
+ const result=await verifyOriginalBackup(original.bytes,{check:async()=>{}});assert.equal(result.manifest.files[0].fileName,'측정.csv');assert.equal(result.manifest.files[0].mimeType,'text/csv');assert.deepEqual(result.originals.get('originals/f.bin'),bytes);
+ await assert.rejects(()=>buildOriginalBackup({projects:[{id:'p',refs:[ref]}]},{check:async()=>{},download:async()=>({reference:ref,bytes,fileName:'../bad.csv',mimeType:'text/csv'})}),/파일명/);
+});
