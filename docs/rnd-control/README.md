@@ -644,3 +644,9 @@ helper 5개 경계와 실제 Main handler VM 회귀에서 수정 전 세대 변�
 zipBinaryFiles는 Buffer/Uint8Array의 원본 바이트를 UTF-8 변환 없이 저장하고 각 entry CRC·크기·안전한 상대 경로·ZIP 파일명 한도를 검증한다. 총100MiB 제한은 각 데이터 복사 전에 적용한다. 기존 zipTextFiles는 문자열 전용20MiB를 유지한다. 임의 바이너리·빈 파일·metadata 동시 포함·경로/타입/용량 거부 회귀2개 및 전체 Node542 PASS, 독립 검토 중요한 문제 없음.
 
 이는 writer 기반만 추가한 것이다. 실제 회사 Drive 다운로드·Main/UI 백업·전체 참조 목록과 원본 복원은 아직 연결하지 않았다. OPS-01 인수는 올리지 않는다. [원본 포함 백업 구현 계획](../superpowers/plans/2026-09-17-binary-backup.md)을 이어서 수행한다. Windows856ec61은 저장 확인 수정까지 포함하며 새 writer는 미포함이다.
+
+### 백업용 내부 Drive 원본 다운로드
+
+trusted Drive adapter downloadVersion은 회사 보관 root·소유권/공용Drive·project/artifact/version·metadata 해시 검증과 원본 스트림 SHA-256 검증을 재사용한다. 남은 백업 용량 maxBytes(0~100MiB 정수)를 metadata 및 각 chunk에 적용하며 선언 크기를 초과하는 스트림을 중단한다. chunk는 복사해 보관하고 전체 크기·해시가 맞는 경우에만 reference/원본bytes를 내부 호출자에게 반환한다. 다운로드는 bounded streaming 응답만 사용하며 arrayBuffer 대체 경로를 허용하지 않는다. reader는 실패/세션 변경에서도 취소한다. 기존 verifyVersion은 metadata만 반환하고 IPC/preload에 다운로드 바이트 경로를 추가하지 않았다.
+
+Google 응답 fixture 다운로드3개/기존Drive12개·전체Node545 PASS, 서버 build 및1179개 시험 PASS, 독립 검토 중요한 문제 없음. 실제 회사 Drive 성공 또는 Main/UI 원본 백업은 검증하지 않았다. 다음은 공유 자료 참조 열거·백업 manifest·Main 저장창·UI 연결이며 OPS-01 전체 인수는 그대로 미완료다. Windows856ec61은 이 새 다운로드 미포함이다.
