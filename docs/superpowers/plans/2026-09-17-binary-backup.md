@@ -67,3 +67,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 이력 Main/preload 연결: noargs rndOriginalRestoreHistory API를 추가하고 Main 첫 approval 전에 SDK binding을 고정한다. 회사 localtest는 disk 접근 전에 거부하며 Main userData 원장 singleton을 사용한다. service는 현재 관리자 UID/email/role/password/session을 disk await 전후 확인하고 ownUID 최대100개 요약만 반환한다. file/events/path/bytes 없이 verified/uncertain/pending 수와 상태를 제공하고 restoreReady/databaseWrites=false를 유지한다. 입력/viewer/async session변경 및 actualMain VM 초기guard 회귀 포함 Node609 PASS. UI 표시·업로드 승인실행 연결·실제회사 성공 미완료; Windows3da07e5는 이번 API 미포함.
+
+
+복원 업로드 이력 CRM 화면 연결: 별도 details 패널에 noargs 조회 버튼과20건 pagination을 추가하고 Main 요약의 flag/status/count/attemptID를 검사해 textContent로만 표시한다. 실제 복원완료가 아닌 업로드기록임을 안내한다. session/project/connection 세대 및 dispose는 기존/늦은결과를 비우며 stale finally가 새 버튼 상태를 바꾸지 않는다. 기존 CRM secondary 버튼과 폰트/스타일을 사용한다. 단위3개·전체Node612·실제Electron Main/preload localguard 포함14개 PASS. 양성표시 단위시험은 fixture이며 회사 정상조회/실제복원/업로드 승인실행 미검증이다.
