@@ -64,3 +64,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 업로드 영속 원장 구현: createOriginalRestoreJournal은 계정별 최대100개의 atomic quota directory와 UID/mapping/sourceZIP에 고정된 attempt directory로 독립 writer의 중복 예약을 차단한다. manifest/event는 wx partial 파일·FileHandle.sync·exclusive directory 내 rename으로 공개하며 저장 도중 남은 slot은 보존하고 incomplete로 조회한다. terminal/start 슬롯은 overwrite하지 않고 source/target/hash/size와 event schema를 쓰기·읽기 모두 검증한다. read는 파일당1MiB bounded buffer이며 UID 조회를 격리한다. 검토에서 발견한 pre-existing Windows junction 외부쓰기 문제를 actual 재현 후 root조상부터 target까지 lstat/realpath guard로 수정했다. 실제 디스크 재개·동시writer·quota·partial·tamper읽기·uploader+realjournal replay·Windows junction 9개/전체Node605/독립검토 PASS. privileged OS 동시directoryswap·정전 내구성·회사 출처 인증을 주장하지 않는다. Main버튼/승인실행 연결 및 회사Drive 성공은 아직 미연결/미검증; Windows3da07e5에는 journal/coordinator 미포함이다.
+
+
+복원 이력 Main/preload 연결: noargs rndOriginalRestoreHistory API를 추가하고 Main 첫 approval 전에 SDK binding을 고정한다. 회사 localtest는 disk 접근 전에 거부하며 Main userData 원장 singleton을 사용한다. service는 현재 관리자 UID/email/role/password/session을 disk await 전후 확인하고 ownUID 최대100개 요약만 반환한다. file/events/path/bytes 없이 verified/uncertain/pending 수와 상태를 제공하고 restoreReady/databaseWrites=false를 유지한다. 입력/viewer/async session변경 및 actualMain VM 초기guard 회귀 포함 Node609 PASS. UI 표시·업로드 승인실행 연결·실제회사 성공 미완료; Windows3da07e5는 이번 API 미포함.
