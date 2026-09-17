@@ -31,3 +31,6 @@
 
 
 복원 검토 CRM 화면 연결: 기존 secondary 버튼과 details 패널로 Main의 무인자 API를 호출해 프로젝트·기준선·감사 충돌과 원본 재업로드 목록을 50개씩 표시한다. textContent만 사용하며 프로젝트/로그인/연결/검토 지우기의 매번 새 generation으로 오래된 완료/실패를 차단하고 기존 목록을 지운다. 적용 버튼은 아직 없다. 실제 Electron Main 로컬 차단·UI fixture HTML 비실행/페이지/ A-B-A/clear/logout 등10 PASS, Node574 PASS, 독립 검토 중요한 문제 없음. 정상 화면 결과는 fixture이고 회사 원본/실제복원 성공은 미검증이다. 다음은 신규대상 mapping 및 승인된 원본 복구 실행이다.
+
+
+빈 작업공간 복원검토 지원: trusted snapshot reader의 allowEmptyRoot는 기본 false이며 Main 복원검토에서만 true이다. valid ETag와 실제 JSON null을 받은 경우 value:{} 및 emptyRoot:true로 명시적으로 정규화한다. 배열/primitive/버전없음은 계속 거부하고 원본 보관은 null을 거부한다. 검토 전후 ETag·정규화 root 해시·emptyRoot flag를 함께 대조해 null에서 {}로 바뀌는 상황도 중단한다. 결과의 sharedEmptyRoot가 정규화 범위를 표시하며 root 해시는 raw HTTP 서명이 아니다. 전체 Node576 PASS. 실제 회사 빈 workspace·전체 복원 실행은 미검증이며 Windows13c48fe은 이번 수정 미포함이다.
