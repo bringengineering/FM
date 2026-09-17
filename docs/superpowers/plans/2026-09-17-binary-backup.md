@@ -73,3 +73,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 원본 재업로드 Main/preload 실행 연결: rndUploadOriginalRestore는 previewId/targets만 받고 BRING_RND_ORIGINAL_REUPLOAD_ENABLED=1에서만 실행한다(기본off/운영설정변경없음). Main 시작 SDK를 첫 await전에 고정하고 mutationguard/currentapprovedadmin/localtestdeny/globalbusy를 적용한다. 실행 service는 freshadmin UID/email/SDK와 private sessions.mapping의 authoritative root를 매 guard에서 재확인한다. DriveREADY와 private original ZIP 준비/전체batch정책을 검사한 후 native cancel-default 승인창에 파일수/bytes/대상과 sourceZIP/mapping SHA·출처미인증·공유복원별도 안내를 표시한다. 승인 후 private영속journal과 companyDrive adapter를 사용한다. cancel/권한/SDK변경/잘못된 IPC입력/Drive연결없음 회귀3개+MainVM/실제Electronlocalguard 포함 Node616/native15/독립검토 PASS. 실제회사 업로드/공유복원성공 및 UI버튼 연결은 아직 미완료.
+
+
+원본 재업로드 CRM 버튼 연결: 검토 panel에 secondary 실행 버튼을 추가한다. 유효한 같은 editVersion의 mapping receipt와 원본이 있어야 enable하며 입력 수정/새검토/session/connection/project 변경은 무효화한다. IPC는 previewId/targets만 보내고 pending동안 input/load/clear/map을 잠근다. 반환sourceZIP/mapping/preview·flag·attemptID·expectedfilecount·project/refschema를 대조하며 textContent로 원본 업로드 완료와 공유복원 별도임을 표시한다. 결과불명확/error는 원장을 확인하게 안내하고 자동retry없이 mappingreceipt를 소비한다. 단위3개/전체Node619/실제Electron16(새 버튼양성매핑은fixture, 실제Mainlocaldeny) 및 독립검토 PASS. 실제회사 전송/공유복원은 미검증; runtimegate 기본off/운영설정변경없음.
