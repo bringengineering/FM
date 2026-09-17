@@ -52,3 +52,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 원본의 Main 내부 준비: review의 trusted filepicker 경로를 onReview/private store에만 기록하고 IPC 결과에는 포함하지 않는다. store.prepare는 기존 mapping freshness 검증 후 bounded 파일 재읽기·검토 당시 ZIP SHA 일치·actual ZIP 원본 verifier·세션/현재 root 재검증을 거쳐 내부 작업에만 mapping/verified source bytes를 반환한다. prepare IPC/preload는 없고 일반 매핑 API는 계속 bytes 없는 결과만 반환한다. 파일 변경·읽기/무결성 실패·로그인/자료 변경은 review를 무효화한다. 실제 비UTF8 원본 ZIP→preview→private preparation/hash변조 거부 회귀 포함 Node585 PASS. 신규 대상 자료 생성·Drive 원본 업로드·승인된 복구 실행은 다음 단계이며 회사 성공 미검증. Windows25fdfa7은 이번 private source 준비 미포함이다.
+
+
+복원 원본의 새 대상 연결 준비: private store.prepare에서 실제 ZIP 재검증 이후 prepareRestoreOriginals를 실행한다. source record SHA·metadata manifest SHA·mapping SHA·프로젝트 부모 연결·원본 inventory·크기/SHA를 확인하고 source provider/project/artifact/version/hash를 출처로 보존한다. 새 target project와 mapping에 고정된 artifact/version ID를 생성하며 같은 artifact의 여러 버전은 새 artifact를 공유한다. 원본은 독립 Buffer로 복사하고 중복 참조는 inventory 기준 한 건으로 준비한다. mapping은 첫 await 이전에 복사해 지연 권한 검사 중 호출자 변경이 결과에 반영되지 않는다. 실제 비UTF8 ZIP/중복참조·변조거부·세션경계·입력소유권 회귀 포함 Node589 PASS. cloudWrites/canApply/restoreReady=false이며 새 IPC나 실제 업로드·공유복원 실행은 없다. 다음 단계는 승인된 업로드 실행, 지속 복구 기록, 원본 참조 교체와 동결 데이터/불변 감사의 출처 보존이다. 전체 운영 인수5/61 및 회사 Drive/전체복원 미검증 상태는 유지한다.
