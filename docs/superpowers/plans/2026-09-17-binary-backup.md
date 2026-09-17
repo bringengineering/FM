@@ -37,3 +37,6 @@
 
 
 원본 복원 대상 매핑 기반: createOriginalRestoreMapping은 Main 내부 fresh preview/current ID 목록을 전제로 프로젝트·기준선·감사의 모든 source ID에 정확히 하나의 신규 target ID를 지정한다. 현재 ID와 충돌·target 중복·누락/여분·부모 프로젝트 누락을 거부한다. 기준선·감사·원본의 targetProjectId는 프로젝트 매핑에서만 유도하며 source SHA/ZIP/current 해시를 mappingSHA에 묶는다. 원본은 새 업로드 검증 계획이며 immutable 감사 기록의 재작성 또는 기존 Drive ID 자동 재사용은 수행하지 않는다. 실제 비UTF8 원본 ZIP→검증 preview→mapping 통합 및 거부 시험3개 포함 전체 Node579 PASS. canApply/cloudWrites/originVerified/restoreReady false. Main/UI 매핑 입력·승인된 실제 복구·회사 실검증은 다음 단계다. Windows5653c53은 이번 mapping 미포함이다.
+
+
+Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/current ID는 trusted add로만 등록하고 renderer mapping은 previewId와 targets만 받는다. 최대3건·10분·preview4MiB 한도이며 권한/시작 SDK 세대·record identity·만료를 access await 전후에 확인한다. 매핑 전후 authoritative root ETag/정규화empty/hash를 재검증하고 실패 시 검토를 삭제한다. clear/eviction은 대기 중 결과도 무효화한다. 실제 clear during readSnapshot 및 마지막 async access 회귀3개 포함 전체 Node582 PASS. 현재는 내부 세션 기반만 구현했으며 Main API 등록·UI 매핑 입력·원본 복구 실행은 다음 단계다. Windows5653c53에는 이번 mapping/session 기반 미포함이다.
