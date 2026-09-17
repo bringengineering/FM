@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadWorkReports: () => ipcRenderer.invoke("crm:work-reports-load"),
   saveWorkReport: input => ipcRenderer.invoke("crm:work-report-save", input),
   uploadWorkReportPhoto: input => ipcRenderer.invoke("crm:work-report-photo-upload", input),
+  browseWorkReportDrive: input => ipcRenderer.invoke("crm:work-report-drive-browse", input),
+  planWorkReportDrivePhotos: input => ipcRenderer.invoke("crm:work-report-drive-plan", input),
   scanWorkReportPhotos: input => ipcRenderer.invoke("crm:work-report-photos-scan", input),
   loadObjectives: () => ipcRenderer.invoke("crm:objectives-load"),
   loadGrowth: () => ipcRenderer.invoke("crm:growth-load"),
