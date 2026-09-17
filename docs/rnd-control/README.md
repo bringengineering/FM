@@ -670,3 +670,9 @@ original-backup-export.js는 projectId만 받는 신뢰된 Main dependency 기�
 original-backup-snapshot.js는 신뢰된 HTTPS database root 설정에서 고정 rndControl.json GET만 수행한다. redirect를 거부하고20초 제한·ETag 조회를 적용한다. 첫 승인 await 전 세대를 캡처하고 승인된 관리자/UID/이메일/역할을 인증 정보 조회와 응답 대기 이후 다시 검사한다. 토큰은 내부 인증 쿼리에만 사용하고 반환하지 않는다. 응답은 fatal UTF-8 스트림20MiB 제한으로 읽으며 chunk마다 로그인 세대를 검사한다. arrayBuffer/json fallback을 사용하지 않고 실패의 JSON 본문은 renderer 메시지에 노출하지 않는다. 정상·실패 모두 응답 body 취소를 시도한다.
 
 반환은 파싱한 value·ETag·actorUid·JSON.stringify(value)의 SHA-256이다. 원문 HTTP 바이트의 인증/서명 해시는 아니다. fixture2개와 전체 Node553 PASS, 독립 검토 중요한 문제 없음. 실제 회사 DB 조회/IPC·백업 저장창/화면 성공은 아직 검증하지 않았다. 다음은 이 reader와 metadata 검증·Main/preload·partial 파일 저장·UI 연결이다. Windows856ec61은 새 백업 reader 미포함이고 전체61개 인수는5/61로 유지한다.
+
+### 원본 보관 Main 저장창 연결
+
+Main/preload rndExportOriginalBackup을 연결했다. renderer는 projectId만 제공하고 Main은 첫 승인 await 전에 고정한 세대로 bounded 회사 snapshot reader·metadata 검증·Drive download·ZIP service를 호출한다. keyed ID와 프로젝트 hydrate, 동결 데이터셋 manifest, 기준선 관계, CSV 감사 무결성/프로젝트 연결을 검증한다. 알려진 collection 외 공유 metadata도 additionalMetadata에 보관한다. 저장창은 전체 복원 백업이 아니라 원본 자료 보관 ZIP임을 표시하고, UUID partial wx 파일 작성·권한/세대 확인·rename 및 잔여 partial 정리를 수행한다. 원본 바이트/token을 IPC에 반환하지 않는다.
+
+Node555/Native2 PASS, 독립 검토 중요한 문제 없음. Main handler VM의 첫 await/로컬 차단, metadata ID/기준선 거부를 검증했다. 실제 Electron Main/preload에서도 로컬 시험의 회사 snapshot/download/saveDialog 호출 차단을 확인했다. 정상 저장창·회사 자료 백업 성공/전체 원본 복원은 미검증이며 UI 버튼은 다음 단계다. Windows856ec61은 새 백업 연결 미포함, 전체61개 인수는5/61 그대로다.
