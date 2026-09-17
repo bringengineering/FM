@@ -46,3 +46,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 매핑 CRM 입력 연결: 프로젝트·기준선·감사마다 기본 restored-UUID 신규 ID를 제안하고 변경할 수 있다. 페이지 입력은 collection별 Map에 보관하며 API에는 previewId/targets만 보낸다. 잘못된 ID 입력을 사전 거부하고 Main의 읽기전용 결과 kind/previewId/flag/hash를 대조한다. 입력 변경/editVersion 및 review generation/dispose로 늦은 매핑 결과를 차단하고 검토 재조회/clear/로그인 변경 시 입력·결과를 비운다. Native13 PASS(회사 Main localguard+UI fixture), Node583 PASS, 독립 검토 중요한 문제 없음. 회사 정상 매핑·실제 복원 실행은 미검증/미연결. Windows5653c53에는 이번 mapping UI/API 기반 미포함이다.
+
+
+매핑 입력 오류 수정 재검증: 기존 모든 error에서 review를 삭제해 단순 target ID 충돌 후 수정 재검증이 불가능했다. pre/post validateCurrent의 로그인/권한/만료/공유 root/record 무효화 오류만 review를 삭제하고 순수 target map 검증 오류는 유효 review를 보존한다. 재요청은 사용자 명시 입력 수정이며 자동 재시도·실행·쓰기 없음. 같은 review ID로 새 record가 등록된 경우 이전 실패는 새 record를 삭제하지 않는다. 실제 mapper 충돌→수정성공→root변경무효화 및 clear/lastaccess 기존회귀 포함 Node584 PASS. 실제 회사 매핑/원본 복원은 미검증. Windowsa9d3420은 이번 retry 수정 미포함이다.
