@@ -638,3 +638,9 @@ Main 업로드 복구 IPC는 첫 권한 조회 전부터 remote client와 SDK �
 Main 저장 작업 결과 대조 IPC도 첫 승인 await 전에 client/SDK 세대를 캡처하고 같은 binding으로 helper를 실행한다. 초기 승인과 계정별 저장 원장, 현재 공유 자료 조회 및 조회 실패 처리마다 세대·UID·이메일·역할을 다시 확인한다. 같은 계정으로 재로그인해도 이전 요청은 결과를 반환하지 않는다. 현재 자료의 작업 ID·revision·전체 내용 해시가 맞는지를 조회할 뿐 추가 저장은 하지 않는다. READ_FAILED는 현재 저장 여부를 확정할 수 없다는 의미를 유지한다.
 
 helper 5개 경계와 실제 Main handler VM 회귀에서 수정 전 세대 변경 누락 실패를 재현했다. 수정 후 전체 Node540 PASS, 실제 disk 원장 재시작/추가 쓰기 금지 시험도 유지됐다. 권한·SDK는 fixture이며 회사 로그인 성공/실제 장애 복구를 검증한 것은 아니다. Windows 최신0f42daa는 앞선 업로드 복구 수정까지 포함하며 이번 저장 확인 수정은 아직 미포함이다. 전체61개 인수 및 운영 배포 미완료.
+
+### 원본 포함 백업의 바이너리 ZIP 기반
+
+zipBinaryFiles는 Buffer/Uint8Array의 원본 바이트를 UTF-8 변환 없이 저장하고 각 entry CRC·크기·안전한 상대 경로·ZIP 파일명 한도를 검증한다. 총100MiB 제한은 각 데이터 복사 전에 적용한다. 기존 zipTextFiles는 문자열 전용20MiB를 유지한다. 임의 바이너리·빈 파일·metadata 동시 포함·경로/타입/용량 거부 회귀2개 및 전체 Node542 PASS, 독립 검토 중요한 문제 없음.
+
+이는 writer 기반만 추가한 것이다. 실제 회사 Drive 다운로드·Main/UI 백업·전체 참조 목록과 원본 복원은 아직 연결하지 않았다. OPS-01 인수는 올리지 않는다. [원본 포함 백업 구현 계획](../superpowers/plans/2026-09-17-binary-backup.md)을 이어서 수행한다. Windows856ec61은 저장 확인 수정까지 포함하며 새 writer는 미포함이다.
