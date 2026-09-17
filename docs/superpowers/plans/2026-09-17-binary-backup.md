@@ -28,3 +28,6 @@
 
 
 복원 검토 Main/preload 연결: createOriginalRestoreReview는 renderer 인자를 거부하고 Main 파일선택/한도 읽기/관리자·시작 세대 확인 후 authoritative 공유 root를 조회·domain 검증하고 실제 ZIP preview를 생성한다. 전후 ETag와 원본 root JSON 해시가 다르면 결과를 중단한다. 검토 결과는 적용 불가와 읽기 전용 상태를 유지한다. Main/preload rndReviewOriginalRestore을 연결했으며 actual Electron 로컬 접근 차단5개 및 전체 Node574 PASS, 독립 검토 중요한 문제 없음. UI 검토 목록/대상 mapping/승인된 실제 원본 복구는 다음 단계다. Windows60caed6은 이번 preview/review/Main API 미포함이고 실제 회사 성공/전체 복원은 미완료다.
+
+
+복원 검토 CRM 화면 연결: 기존 secondary 버튼과 details 패널로 Main의 무인자 API를 호출해 프로젝트·기준선·감사 충돌과 원본 재업로드 목록을 50개씩 표시한다. textContent만 사용하며 프로젝트/로그인/연결/검토 지우기의 매번 새 generation으로 오래된 완료/실패를 차단하고 기존 목록을 지운다. 적용 버튼은 아직 없다. 실제 Electron Main 로컬 차단·UI fixture HTML 비실행/페이지/ A-B-A/clear/logout 등10 PASS, Node574 PASS, 독립 검토 중요한 문제 없음. 정상 화면 결과는 fixture이고 회사 원본/실제복원 성공은 미검증이다. 다음은 신규대상 mapping 및 승인된 원본 복구 실행이다.
