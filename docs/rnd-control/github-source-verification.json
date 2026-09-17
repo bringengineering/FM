@@ -1,0 +1,31 @@
+{
+  "kind": "BRING_RND_GITHUB_SOURCE_VERIFICATION",
+  "version": 1,
+  "repository": "bringengineering/FM",
+  "commitSHA": "a813b0df0ec3ca482fcb26b84499ba18e158610d",
+  "observedAt": "2026-09-16T19:28:37.369366+00:00",
+  "files": [
+    {
+      "path": "desktop-crm/src/rnd-control/crm-context-service.js",
+      "gitBlobSHA": "109a357cd6f262d1cafd58560bb68f3de4aaaab1",
+      "sizeBytes": 6787,
+      "contentSHA256": "2eed80669e49cb7ceb50d2be7047d1566efddbebdac8c2c6d7272ac34b78b948",
+      "status": "REMOTE_BYTES_MATCH_COMMIT"
+    },
+    {
+      "path": "desktop-crm/src/rnd-control/code-source.mjs",
+      "gitBlobSHA": "218de4a41602671a18e686290a394da87d63ee4b",
+      "sizeBytes": 1258,
+      "contentSHA256": "dfbf05d2d84b0d26de7da449cce5d1f3afd8fd2539029fa91be592f3d2b1bf36",
+      "status": "REMOTE_BYTES_MATCH_COMMIT"
+    },
+    {
+      "path": "desktop-crm/src/main.js",
+      "gitBlobSHA": "04cd8ee2a19c7dececcbd1eb6780f90cdcec309b",
+      "sizeBytes": 269124,
+      "contentSHA256": "2dfe9c25fef650e1844caec390b22512a6aaaad7aea40b71eff7924e596c40ba",
+      "status": "REMOTE_BYTES_MATCH_COMMIT"
+    }
+  ],
+  "scope": "Authenticated read-only GitHub API comparison for these three files at this exact commit; no proof of research claim, no arbitrary source registration workflow verification"
+}

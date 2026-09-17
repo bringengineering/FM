@@ -98,6 +98,7 @@
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
+    rndControl: ["연구·개발·실증·사업화", "R&D 통합 관리"],
     dashboard: ["오늘의 업무", "한눈에 보기"],
     cases: ["접수부터 사후관리까지", "케이스"],
     payments: ["건물별 납부 예정과 입금 확인", "입금 캘린더"],
@@ -978,6 +979,7 @@
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const fieldView = currentView === "fieldOperations";
+    if(currentView === "rndControl") { primaryActionButton.hidden = true; fieldOperatorControl.hidden = true; return; }
     searchEl.placeholder = fieldView ? "현장 업무 검색" : "고객·건물·연락처 검색";
     searchEl.value = fieldView ? fieldNavigationState.search : crmSearchValue;
     primaryActionButton.hidden = fieldView && !canWriteCRM();
@@ -1005,7 +1007,8 @@
 
   function render() {
     pageMeta();
-    if (currentView === "dashboard") renderDashboard();
+    if (currentView === "rndControl") window.BringRndUI.render(main, api);
+    else if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "customers") renderCustomers();
@@ -4398,6 +4401,11 @@
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     if (action === "logout") {
+      const pendingRnd = window.BringRndProject?.pendingState?.();
+      if (pendingRnd && (pendingRnd.projects || pendingRnd.forms || pendingRnd.uploads || window.BringRndBaselinePending?.() || window.BringRndCrmContextPending?.() || window.BringRndFollowUpPending?.() || window.BringRndFollowUpDraftsPending?.() || window.BringRndObservationPending?.() || window.BringRndObservationDraftsPending?.() || window.BringRndRollbackPending?.() || window.BringRndSharedRestorePreviewPending?.())) {
+        const confirmedRnd = await requestConfirmation({title:"R&D 입력 내용을 확인해 주세요",description:"미공유 초안이나 입력 중인 폼이 있습니다. 필요한 기록을 공유 저장하거나 파일로 보관한 뒤 로그아웃해 주세요.",target:`미공유 프로젝트 ${pendingRnd.projects}개 · 입력한 폼 ${pendingRnd.forms}개 · 업로드 대기 ${pendingRnd.uploads}개`,warning:"로그아웃하면 이 기기의 R&D 세션 입력은 정리됩니다.",confirmLabel:"입력 정리 후 로그아웃",cancelLabel:"돌아가서 보관",tone:"warning"});
+        if (!confirmedRnd) return;
+      }
       let result = await api.logout({ confirmed: false });
       if (result && result.code === "FIELD_LOGOUT_PENDING") {
         const count = Number(result.pendingUploads && result.pendingUploads.count || 0);
@@ -4413,6 +4421,7 @@
         result = await api.logout({ confirmed: true });
       }
       if (!result || !result.ok) return showToast(result && result.error || "로그아웃 전에 현장 업무 저장 상태를 확인해 주세요.", "error");
+      window.dispatchEvent(new CustomEvent("rnd-session-reset", {detail:{user:null}}));
       location.reload();
     }
     else if (action === "check-update") {

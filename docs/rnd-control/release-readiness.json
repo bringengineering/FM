@@ -1,0 +1,425 @@
+{
+  "kind": "BRING_RND_RELEASE_READINESS",
+  "gateCount": 61,
+  "eligible": false,
+  "passed": 5,
+  "remaining": [
+    {
+      "id": "AUTH-01",
+      "result": "NOT_RUN",
+      "reason": "비로그인 DB 거부 시험 있음. 화면 세션 접근·공개 메타데이터 별도 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "AUTH-02",
+      "result": "NOT_RUN",
+      "reason": "Main 별도 rndAccess 승인 확인·관리자 조회/승인/취소 UI·감사 요청 연결·ETag 충돌 처리 및 Emulator 거부 시험 구현. 실제 승인 회사 계정 2개 운영 검수 필요",
+      "evidence": [
+        "desktop-crm/test/rnd-access.test.js",
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "AUTH-03",
+      "result": "NOT_RUN",
+      "reason": "계정 이메일/역할 변경·실시간 로그인 이벤트 우선·초안/자료/승인 폼 초기화·늦은 응답 차단 구현. 실제 권한 취소 후 두 PC와 Drive 연결 회수 검수 필요",
+      "evidence": [
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "AUTH-04",
+      "result": "NOT_RUN",
+      "reason": "서버 viewer 쓰기 거부 확인. 승인·import 직접 호출 추가 시험 예정",
+      "evidence": []
+    },
+    {
+      "id": "AUTH-05",
+      "result": "NOT_RUN",
+      "reason": "서버의 미지정 계획 승인 거부 확인. 근거 승인 우회 추가 시험 예정",
+      "evidence": []
+    },
+    {
+      "id": "AUTH-06",
+      "result": "NOT_RUN",
+      "reason": "자기검토 사유·여부 저장. 별도 계정 수동 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "AUTH-07",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-01",
+      "result": "NOT_RUN",
+      "reason": "기본 프로젝트 자동 생성 제거. CRM 앱의 빈 상태·생성 취소·명시적 생성 확인. 빈 운영 workspace 실계정 검수는 남음",
+      "evidence": [
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "PRJ-03",
+      "result": "NOT_RUN",
+      "reason": "프로젝트+체계+코드 ID와 근거 framework 연결 구현. 다른 체계 근거 거부 모델 시험 확인. import 연결 전 과정 추가 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-04",
+      "result": "NOT_RUN",
+      "reason": "산출물 모델 승인 검증 있음. 서버 승인 필드 검증 보완",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-05",
+      "result": "NOT_RUN",
+      "reason": "필수/선택 구분 및 필수 0개 준비율 — 모델 시험 확인. 전체 운영 화면 검수는 남음",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-06",
+      "result": "NOT_RUN",
+      "reason": "필수 승인 1/4와 준비율 25% 모델 확인. CRM 구분 저장 시험 확인",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-07",
+      "result": "NOT_RUN",
+      "reason": "서버 원자적 revision 검사·클라이언트 충돌 안내. 비교·재적용 UI 필요",
+      "evidence": []
+    },
+    {
+      "id": "PRJ-08",
+      "result": "NOT_RUN",
+      "reason": "Main operationId 생성·응답 유실 후 전체 내용 재조회 확인·재쓰기 금지 구현 및 모델 시험 확인. 프로세스 종료 후 영구 원장·실제 네트워크 장애 검수 남음",
+      "evidence": []
+    },
+    {
+      "id": "EXP-01",
+      "result": "NOT_RUN",
+      "reason": "미완성 초안 저장·작성자 보완·누락 계획 승인 거부 모델/서버/CRM 화면 시험 확인. 전체 시작 우회/보완 흐름 종합 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-research.test.js",
+        "desktop-crm/test-rnd-rules.mjs",
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "EXP-03",
+      "result": "NOT_RUN",
+      "reason": "inconclusive 종료 시험 확인. aborted·반대 결과 별도 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "EXP-05",
+      "result": "NOT_RUN",
+      "reason": "파일 수·행수·독립 대상 수 분리 저장 및 모델 시험 확인. 실제 100개 파일/3동 시나리오 추가 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "EXP-06",
+      "result": "NOT_RUN",
+      "reason": "데이터셋 대상·기간·제외 기준·독립 ID·보관 버전·manifestHash 동결 구현. Main의 Drive 바이트 재검증과 모의 해시 불일치 거부 시험 확인. 직접 요청 구조 규칙 강화와 실Drive 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "EXP-07",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "FILE-01",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "FILE-02",
+      "result": "NOT_RUN",
+      "reason": "Drive 상태 READY/STORAGE_NOT_CONFIGURED/DRIVE_REAUTH_REQUIRED/CRM_ACCESS_REQUIRED와 만료·권한 회수·회사 root 소유/쓰기 권한 검사 구현. 연결 취소/재연결 및 UID·이메일·역할 변경 후 늦은 응답 차단 Node 검증. 실제 회사 Drive 미설정/만료와 전체 화면 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-drive.test.js",
+        "desktop-crm/test/rnd-drive-connection-flow.test.js"
+      ]
+    },
+    {
+      "id": "FILE-03",
+      "result": "NOT_RUN",
+      "reason": "버전 ID 재사용 기반 서비스. 전송 중단 복구 실시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-04",
+      "result": "NOT_RUN",
+      "reason": "메인 메모리 토큰·만료 처리. 실계정 만료 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-05",
+      "result": "NOT_RUN",
+      "reason": "원본 업로드 후 DB 저장 별도. 복구 원장·operationId 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-06",
+      "result": "NOT_RUN",
+      "reason": "같은 version ID 재시도 재사용. 다중 실험 관계 엔터티 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-07",
+      "result": "NOT_RUN",
+      "reason": "동시 업로드 리스·고아 파일 복구 목록 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-08",
+      "result": "NOT_RUN",
+      "reason": "근거 source 고정·서버 변경 방지. ArtifactVersion 엔터티 확대 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-09",
+      "result": "NOT_RUN",
+      "reason": "원격 파일 상태 재검증·현재 유효성 경고 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-10",
+      "result": "NOT_RUN",
+      "reason": "업로드·Drive 원본 확인·DS 참조·복구 원장 한도를 100MiB로 정렬. Main 파일 선택과 Drive 서비스에서 승인 확장자·실행 바이너리 차단·큰 자료 링크 안내 구현. 경계·실행파일 위장 회귀 시험 통과. 실제 100MiB 전송·운영 형식 검수는 남음; 실제 100MiB 바이트의 모의 API 업로드/재사용/원본 스트림·변조 거절 시험 확인",
+      "evidence": [
+        "desktop-crm/test/rnd-file-policy.test.js",
+        "desktop-crm/src/rnd-control/file-policy.js",
+        "desktop-crm/test-rnd-large-file.mjs"
+      ]
+    },
+    {
+      "id": "FILE-11",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "FILE-12",
+      "result": "NOT_RUN",
+      "reason": "가변 링크와 보관 스냅샷 분류 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-13",
+      "result": "NOT_RUN",
+      "reason": "원격 바이트 SHA256·크기·소유권·공용 root 경로·버전 확인 구현. 바이트 불일치 모의 거부 시험. 실제 공급자 전송 오류 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "FILE-14",
+      "result": "NOT_RUN",
+      "reason": "프로젝트별 미공유 경고 보강. 로그아웃 초안 정리 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "EVD-01",
+      "result": "NOT_RUN",
+      "reason": "실측 유형 등록 시 동결 자료와 직접 측정 확인 필요. 개선 주장에 기준·결과 동결 자료와 계산 버전 원장 연결을 강제. 실제 원본 수치 대조와 전체 승인 검수는 미완료",
+      "evidence": []
+    },
+    {
+      "id": "EVD-02",
+      "result": "NOT_RUN",
+      "reason": "미분류/실측/문헌/시뮬레이션/가정 유형·원출처·한계 표시 구현. 문헌 등록/검토·유형 변경 거부 서버 시험 확인. 모든 유형의 실제 자료·계산 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "EVD-03",
+      "result": "NOT_RUN",
+      "reason": "승인 source 변경 방지. 접근불가 경고·외부 묶음 제외 필요",
+      "evidence": []
+    },
+    {
+      "id": "EVD-05",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "EVD-06",
+      "result": "NOT_RUN",
+      "reason": "관리자 결정·승인 근거·이유·시각 및 후속 업무 Main/UI·불변 이벤트·원자적 task head·Rules 연결 구현. Node421, 전체 emulator Rules, native 생성/진행/검토/자기검토 완료·재조회·프로젝트별 입력·지연응답·계정정리·내부 ZIP/검토 제외 시험 통과. packaged 후속 업무 검수 및 Main ZIP/프로젝트별 지연 입력 시험 통과. 회사 실계정/실제 공유 환경 검수 미완료; 전체 gate PASS 근거는 아직 부족",
+      "evidence": [
+        "desktop-crm/test/rnd-follow-up.test.js",
+        "desktop-crm/test-rnd-follow-up-rules.mjs",
+        "desktop-crm/test-rnd-follow-up-electron.mjs",
+        "desktop-crm/test/rnd-follow-up-reporting.test.js",
+        "docs/rnd-control/decision-follow-up-integration.md"
+      ]
+    },
+    {
+      "id": "CRM-01",
+      "result": "NOT_RUN",
+      "reason": "별도 rndControl 경로. CRM 읽기전용 snapshot 어댑터 필요",
+      "evidence": []
+    },
+    {
+      "id": "CRM-02",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "CRM-03",
+      "result": "NOT_RUN",
+      "reason": "Main GET 전용 CRM context와 프로젝트별 선택 ID·관계·보관 이유·SHA256·시각·당시 revision 고정 보관 구현. 일반 저장 변조/삭제 거부, DB append-only·동시 revision 시험, native 지연 편집/세션 정리 및 내부 Markdown 포함·검토용 제외 확인. 실제 회사 원장/두 PC, JSON 내용의 DB 출처 신뢰 보강 및 승인 복원 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-crm-context.test.js",
+        "desktop-crm/test/rnd-crm-freeze.test.js",
+        "desktop-crm/test/rnd-crm-export.test.js",
+        "desktop-crm/test-rnd-crm-freeze-electron.mjs",
+        "desktop-crm/test-rnd-rules.mjs"
+      ]
+    },
+    {
+      "id": "CRM-04",
+      "result": "NOT_RUN",
+      "reason": "CSV 엄격 파싱·출처/추출시각·mapping·충돌 dry-run·명시 확인·불변 원본/job·로컬 초안 rollback과 Main 확인 receipt 구현. 공유 감사는 원본 해시/바이트 재검증 후 별도 명시 게시하며 CRM 방문 자동 쓰기는 없음. 실제 SDK CSV/복원 동시성, Auth/Functions 기존 감사 재확인 및 packaged 가져오기/게시/조회 시험 통과. 새 Google 원본 다운로드→게시, 실제 회사 승인·CRM 원본 대조·두 PC 종합 검수는 미완료",
+      "evidence": [
+        "desktop-crm/test/rnd-import.test.js",
+        "desktop-crm/test-rnd-restore-preview-electron.mjs",
+        "docs/superpowers/plans/2026-09-17-restore-preview-details.md",
+        "docs/superpowers/plans/2026-09-17-restore-review-dialog.md",
+        "desktop-crm/test/rnd-restore-manifest.test.js",
+        "docs/rnd-control/restore-manifest.md",
+        "docs/superpowers/plans/2026-09-17-rollback-ui.md",
+        "desktop-crm/test-rnd-rollback-edge-electron.mjs",
+        "desktop-crm/test/rnd-shared-restore-client.test.js",
+        "desktop-crm/test-rnd-shared-restore-electron.mjs",
+        "functions/test-rnd-restore-callable-emulator.mjs",
+        "docs/rnd-control/shared-restore-integration.md",
+        "desktop-crm/test/rnd-csv-import.test.js",
+        "desktop-crm/test/rnd-csv-job-ledger.test.js",
+        "desktop-crm/test/rnd-csv-rollback.test.js",
+        "desktop-crm/test/rnd-csv-import-audit.test.js",
+        "desktop-crm/test-rnd-csv-import-electron.mjs",
+        "desktop-crm/test-rnd-csv-audit-publish-electron.mjs",
+        "desktop-crm/test-rnd-csv-audit-history-electron.mjs",
+        "functions/test-rnd-csv-transaction.mjs",
+        "functions/test-rnd-csv-callable-emulator.mjs",
+        "rnd-csv-callable-emulator-results.txt"
+      ]
+    },
+    {
+      "id": "UX-01",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "UX-02",
+      "result": "NOT_RUN",
+      "reason": "실계정 또는 수동 시나리오 검수가 필요함",
+      "evidence": []
+    },
+    {
+      "id": "UX-03",
+      "result": "NOT_RUN",
+      "reason": "세션 조회 메타데이터 색인·종류 필터·50개 페이지·범위 표시·10,000행 AND 검색/페이지 시험과 CRM 화면 이동 구현. 원격 10,000개 자료 성능·조회 누락 종합 시험은 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-search.test.js",
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "UX-04",
+      "result": "NOT_RUN",
+      "reason": "주요 UI textContent 사용. 위험 URL·CSV·전체 삽입 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "UX-05",
+      "result": "NOT_RUN",
+      "reason": "저장 실패 표시·세션 초안 유지. 네트워크 단절 실시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "OUT-02",
+      "result": "NOT_RUN",
+      "reason": "관리자 검토용 공개 범위 승인·취소·연결 자료 bundleHash·불변 이력·선별 manifest 구현 및 모델/서버 시험 확인. 가정/문헌/실측 분류와 실제 Drive 승인 자료 묶음 검수 필요",
+      "evidence": []
+    },
+    {
+      "id": "OUT-03",
+      "result": "NOT_RUN",
+      "reason": "GitHub 고정 저장소/path/40자리 commit 표시·미고정 경고·Markdown 출력 구현. Main 고정 API commit/file 크기·canonical base64·Git blob SHA·SHA-256 검증과 JSON 결과 보관, 입력/프로젝트/세션 늦은 응답 차단 시험. 실제 FM 원격 파일과 Git 바이트 일치 증거 있음(CRM 승인 fixture). 실제 Main 승인 계정 성공·JSON 보관 성공·Drive 보관·일반 코드 근거 종합 검수는 남음",
+      "evidence": [
+        "desktop-crm/test/rnd-code-source.test.js",
+        "docs/rnd-control/github-source-verification.json",
+        "desktop-crm/test/rnd-code-source-verification.test.js",
+        "desktop-crm/test/rnd-code-source-export.test.js",
+        "desktop-crm/test-rnd-code-source-electron.mjs",
+        "desktop-crm/rnd-code-source-live-verification.json",
+        "desktop-crm/rnd-code-source-packaged-results.txt"
+      ]
+    },
+    {
+      "id": "OPS-01",
+      "result": "NOT_RUN",
+      "reason": "빈 workspace 복원·관계·바이너리 해시 시험 필요",
+      "evidence": []
+    },
+    {
+      "id": "OPS-02",
+      "result": "NOT_RUN",
+      "reason": "metadata-only/binaryFilesIncluded=false·생성시각·개수·revision·DS 파일 참조·SHA manifest 및 변조/목록 불일치 거부 구현. 실제 다운로드 파일과 모든 원본 참조 범위 검수 필요",
+      "evidence": [
+        "desktop-crm/test/rnd-backup.test.js",
+        "desktop-crm/test-rnd-electron.mjs"
+      ]
+    },
+    {
+      "id": "OPS-03",
+      "result": "NOT_RUN",
+      "reason": "2fa2000 GitHub CI35164541300 desktop/backend-and-rules 모두 SUCCESS(실제 Auth/Functions 복원·CSV 재확인 포함). Windows d3d7dc7은 동일 CRM runtime src108 바이트 일치와 packaged GitHub7/조회8/게시8/가져오기8 총31개 PASS. 소스 패치는 기준976cc5f의 임시 Git index 적용 결과가 전체 HEAD tree와 일치. 실제 운영 Firebase/Drive 설정·회사 계정·두 PC·설치/updater·종합61개 검수는 미완료이며 운영 배포하지 않음",
+      "evidence": [
+        "desktop-crm/test-rnd-electron.mjs",
+        "desktop-crm/test-rnd-disabled-electron.mjs",
+        "rnd-github-ci-results.json",
+        "rnd-source-patch-apply-results.json",
+        "desktop-crm/rnd-packaged-source-verification.json",
+        "desktop-crm/rnd-code-source-packaged-results.txt",
+        "docs/rnd-control/rollback.md"
+      ]
+    },
+    {
+      "id": "OPS-04",
+      "result": "NOT_RUN",
+      "reason": "운영 seed 기본 실행 없음. 복원은 해시/목록/관계 사전 검증 및 명시 확인 후 신규 초안만 추가, 같은 ID 유지. 모든 직접 호출·운영 dry-run 정책 검수 필요",
+      "evidence": [
+        "desktop-crm/test/rnd-import.test.js"
+      ]
+    },
+    {
+      "id": "OPS-05",
+      "result": "NOT_RUN",
+      "reason": "실계정 시험 미실행. 개발·Emulator 시험 지속",
+      "evidence": []
+    },
+    {
+      "id": "OPS-06",
+      "result": "NOT_RUN",
+      "reason": "BRING_RND_ENABLED=0 시작 시 메뉴·Main R&D 요청 차단 및 데이터 삭제 없는 재활성 절차 구현. 실제 운영 자료/두 PC 복귀 검수는 남음",
+      "evidence": [
+        "desktop-crm/test-rnd-disabled-electron.mjs",
+        "docs/rnd-control/rollback.md"
+      ]
+    },
+    {
+      "id": "OPS-07",
+      "result": "NOT_RUN",
+      "reason": "서버 연구 이력/결정 삭제·수정 거부 시험. 산출물 이력 추가 검수 필요",
+      "evidence": []
+    }
+  ],
+  "evidenceScope": "Recorded acceptance evidence; actual source, runtime and company deployment verification still required"
+}

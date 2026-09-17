@@ -61,7 +61,7 @@ const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.
 const localTestRole = ["admin", "member", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
-  app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
+  app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid) + "-" + crypto.randomUUID()));
 }
 let localOperationsData = null;
 let localCanonicalBuildingUnits = Object.create(null);
@@ -3733,6 +3733,8 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     checkPending: async () => requestFieldPendingUploads(),
     signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
     finishCrmLogout: async () => {
+      rndDrive.clear();
+      rndSharedRestore?.clear();
       cancelFieldRequests("FIELD_LOGOUT");
       if (fieldView) fieldView.setVisible(false);
       fieldViewVisible = false;
@@ -3748,6 +3750,149 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     fieldLogoutInFlight = null;
   }
 });
+
+const { createRndRepository } = require("./rnd-control/repository");
+const rndModuleEnabled=process.env.BRING_RND_ENABLED!=="0";
+function assertRndModuleEnabled(){if(!rndModuleEnabled)throw new Error("R&D 모듈이 운영 설정에서 비활성화되었습니다 · 원본 데이터는 보존됩니다");}
+secureHandle("crm:rnd-module-state",()=>({enabled:rndModuleEnabled}));
+const rndTestRecords = { projects: {}, visits: {} };
+const rndTestAccess={};
+secureHandle("crm:rnd-access-admin", async input=>{assertRndModuleEnabled();
+ const actor=assertMainMutationAllowed();if(actor.role!=="admin")throw new Error("CRM 관리자 권한이 필요합니다");
+ if(!input||!["get","save","inspect"].includes(input.action)||typeof input.uid!=="string"||!/^[a-zA-Z0-9_-]{1,128}$/.test(input.uid))throw new Error("승인 대상 UID가 필요합니다");
+ if(localTestMode){if(input.action==="inspect")throw new Error("로컬 시험에서는 실제 감사 원장을 조회하지 않습니다");if(input.action==="get")return{uid:input.uid,crm:input.uid===actor.uid?actor:null,rnd:rndTestAccess[input.uid]??null,etag:JSON.stringify(rndTestAccess[input.uid]??null)};if(input.uid!==actor.uid||typeof input.enabled!=="boolean"||!input.reason?.trim())throw new Error("로컬 시험에서는 현재 시험 관리자만 승인합니다");if(input.expectedETag!==JSON.stringify(rndTestAccess[input.uid]??null))throw new Error("R&D 승인 충돌: 다시 조회하세요");return rndTestAccess[input.uid]={enabled:input.enabled,email:actor.email,role:actor.role,approvedBy:actor.uid,approvedAt:new Date().toISOString(),reason:input.reason.trim()};}
+ if(!remoteClient)throw new Error("CRM 로그인 연결이 필요합니다");
+ const service=require("./rnd-control/access-admin").createAccessAdmin({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch});
+ const result=input.action==="get"?await service.get(input.uid):input.action==="inspect"?await service.inspect(input.uid,input.auditId):await service.save(input);if(input.action==="save"&&input.uid===actor.uid)rndDrive.clear();return result;
+});
+async function assertRndAccess(write=false){assertRndModuleEnabled();
+ if(localTestMode){const user=authState().user;if(!user?.uid||user.mustChangePassword||!['admin','member','viewer'].includes(user.role)||write&&user.role==='viewer')throw new Error("R&D 변경 권한이 없습니다");return user;}
+ if(!remoteClient)throw new Error("CRM 로그인 연결이 필요합니다");
+ try{return await require("./rnd-control/access").createAccessCheck({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch})(write);}catch(error){rndDrive.clear();throw new Error("R&D 접근 승인을 확인하세요 · "+error.message);}
+}
+const rndDrive = require("./rnd-control/drive").createRndDrive({auth:authState});
+let rndUploadLedger;function uploadLedger(){return rndUploadLedger??=require("./rnd-control/upload-ledger").createUploadLedger(path.join(app.getPath("userData"),"rnd-upload-recovery"));}
+secureHandle("crm:rnd-restore-upload",async input=>{const binding=csvSessionBinding();await assertRndAccess(true);if(!csvSessionCurrent(binding))throw Error("복구 중 로그인 세션이 변경되었습니다");if(localTestMode)throw new Error("로컬 시험에서는 실제 Drive 원본을 복구하지 않습니다");return require("./rnd-control/upload-recovery").createUploadRecovery({access:assertRndAccess,captureSession:()=>binding,isCurrent:csvSessionCurrent,ledger:uploadLedger(),getProject:id=>rndRepository().get("projects",id),verifyVersion:ref=>rndDrive.verifyVersion(ref)})(input);});
+secureHandle("crm:rnd-upload-recovery",async()=>{const actor=await assertRndAccess();if(localTestMode)return [];const records=await uploadLedger().list(actor.uid);const current=await assertRndAccess();if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");return records;});
+let rndDriveConnectionFlow;
+let originalRestoreSessionState=null;
+function originalRestoreSessionStore(){if(originalRestoreSessionState?.client!==remoteClient){originalRestoreSessionState?.store.clear();const client=remoteClient,store=require('./rnd-control/original-restore-sessions').createOriginalRestoreSessions({access:()=>assertRndAccess(false),isCurrent:csvSessionCurrent,readSource:(file,check)=>require('./rnd-control/original-backup-inspection').readOriginalBackupFile(file,{open:(...args)=>fs.open(...args),check}),readSnapshot:require('./rnd-control/original-backup-snapshot').createOriginalBackupSnapshotReader({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,allowEmptyRoot:true,token:()=>client.ensureIdToken(false),databaseUrl:client.firebase.databaseUrl,fetch:(...args)=>client.fetch(...args)})});originalRestoreSessionState={client,store};}return originalRestoreSessionState.store;}
+let rndOriginalRestoreJournal;function originalRestoreJournal(){return rndOriginalRestoreJournal??=require('./rnd-control/original-restore-journal').createOriginalRestoreJournal(path.join(app.getPath('userData'),'rnd-original-restore-history'));}
+secureHandle('crm:rnd-original-restore-history',async input=>{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 원본 복원 기록을 조회하지 않습니다');return require('./rnd-control/original-restore-history').createOriginalRestoreHistory({access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent,journal:originalRestoreJournal()})(input);});
+let originalRestoreUploadBusy=false;
+secureHandle('crm:rnd-upload-original-restore',async input=>{if(originalRestoreUploadBusy)throw Error('원본 재업로드가 진행 중입니다');originalRestoreUploadBusy=true;try{const binding=csvSessionBinding();assertMainMutationAllowed();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 원본을 재업로드하지 않습니다');if(process.env.BRING_RND_ORIGINAL_REUPLOAD_ENABLED!=='1')throw Error('원본 재업로드 실행 기능이 활성화되지 않았습니다');return await require('./rnd-control/original-restore-upload-execution').createOriginalRestoreUploadExecution({enabled:true,access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent,sessions:originalRestoreSessionStore(),journal:originalRestoreJournal(),drive:rndDrive,confirm:async source=>{const result=await dialog.showMessageBox(mainWindow,{type:'warning',title:'회사 Drive 원본 재업로드 승인',message:`원본 ${source.fileCount}개를 새 프로젝트 연결로 재업로드할까요?`,detail:`총 ${source.totalBytes} bytes · 대상 ${source.targetProjectIds.length}개: ${source.targetProjectIds.slice(0,20).join(', ')}\n보관본 SHA: ${source.sourceZipSHA256}\n매핑 SHA: ${source.mappingSHA256}\n회사 출처는 인증되지 않은 보관본입니다. 원본 업로드와 로컬 처리 기록만 생성하며 공유 자료 복원은 별도 단계입니다.`,buttons:['원본 재업로드 승인','취소'],defaultId:1,cancelId:1,noLink:true});return result.response===0;}})(input);}finally{originalRestoreUploadBusy=false;}});
+let originalRestoreReferenceBusy=false;
+secureHandle('crm:rnd-verify-original-restore',async input=>{if(originalRestoreReferenceBusy)throw Error('Original reference verification is already running');originalRestoreReferenceBusy=true;try{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 원본을 재검증하지 않습니다');return await require('./rnd-control/original-restore-reference-execution').createOriginalRestoreReferenceExecution({access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent,sessions:originalRestoreSessionStore(),journal:originalRestoreJournal(),drive:rndDrive,prepareResult:require('./rnd-control/original-restore-preparation').prepareOriginalRestoreSummary})(input);}finally{originalRestoreReferenceBusy=false;}});
+secureHandle('crm:rnd-map-original-restore',async input=>{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 원본 복원 매핑을 검증하지 않습니다');return originalRestoreSessionStore().mapping(input);});
+secureHandle('crm:rnd-review-original-restore',async input=>{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 원본 복원을 검토하지 않습니다');const options={access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent},files=require('./rnd-control/original-backup-inspection');return require('./rnd-control/original-restore-review').createOriginalRestoreReview({...options,onReview:entry=>originalRestoreSessionStore().add(entry),chooseFile:()=>dialog.showOpenDialog(mainWindow,{title:'원본 복원 사전 검토 · 자료 변경 없음',properties:['openFile'],filters:[{name:'원본 보관 ZIP',extensions:['zip']}]}),read:(file,check)=>files.readOriginalBackupFile(file,{open:(...args)=>fs.open(...args),check}),readSnapshot:require('./rnd-control/original-backup-snapshot').createOriginalBackupSnapshotReader({...options,allowEmptyRoot:true,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:(...args)=>remoteClient.fetch(...args)}),prepare:async value=>{const names=['projects','visits','importJobs'];for(const name of names){const collection=value[name];if(collection!=null&&(typeof collection!=='object'||Array.isArray(collection)||Object.entries(collection).some(([id,row])=>!row||row.id!==id)))throw Error('공유 복원 검토 ID 연결 오류');}const projects=Object.values(value.projects??{});if(projects.length)return require('./rnd-control/original-backup-metadata').prepareOriginalBackupSnapshot(value,projects[0].id);return{projects:[],visits:Object.values(value.visits??{}),importJobs:Object.values(value.importJobs??{})};}})(input);});
+secureHandle('crm:rnd-inspect-original-backup',async input=>{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 회사 보관본을 열지 않습니다');const service=require('./rnd-control/original-backup-inspection');return service.createOriginalBackupInspection({access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent,chooseFile:()=>dialog.showOpenDialog(mainWindow,{title:'원본 보관본 무결성 검증 · 복원하지 않음',properties:['openFile'],filters:[{name:'원본 보관 ZIP',extensions:['zip']}]}),read:(file,check)=>service.readOriginalBackupFile(file,{open:(...args)=>fs.open(...args),check}),validate:async metadata=>{const collections={};for(const name of ['projects','visits','importJobs']){if(!Array.isArray(metadata[name])||metadata[name].some(row=>!row||typeof row.id!=='string')||new Set(metadata[name].map(row=>row.id)).size!==metadata[name].length)throw Error('보관본 자료 목록 ID 오류');collections[name]=Object.fromEntries(metadata[name].map(row=>[row.id,row]));}await require('./rnd-control/original-backup-metadata').prepareOriginalBackupSnapshot(collections,metadata.selectedId);}})(input);});
+secureHandle('crm:rnd-export-original-backup',async input=>{const binding=csvSessionBinding();await assertRndAccess(false);if(!csvSessionCurrent(binding))throw Error('로그인 세션이 변경되었습니다');if(localTestMode)throw Error('로컬 시험에서는 실제 회사 원본을 보관하지 않습니다');const options={access:()=>assertRndAccess(false),captureSession:()=>binding,isCurrent:csvSessionCurrent};const readSnapshot=require('./rnd-control/original-backup-snapshot').createOriginalBackupSnapshotReader({...options,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:(...args)=>remoteClient.fetch(...args)});return require('./rnd-control/original-backup-export').createOriginalBackupExport({...options,readSnapshot,prepareSnapshot:require('./rnd-control/original-backup-metadata').prepareOriginalBackupSnapshot,download:(ref,limits)=>rndDrive.downloadVersion(ref,limits),chooseFile:()=>dialog.showSaveDialog(mainWindow,{title:'공유 원본 자료 보관 · 전체 복원 백업 아님',defaultPath:'BRING-RND-originals.zip',filters:[{name:'원본 자료 보관 ZIP',extensions:['zip']}]}),save:async(filePath,bytes,check)=>{const pending=filePath+'.'+require('node:crypto').randomUUID()+'.partial';try{await fs.writeFile(pending,bytes,{flag:'wx'});await check();await fs.rename(pending,filePath);}finally{await fs.rm(pending,{force:true});}}})(input);});
+secureHandle('crm:rnd-export-code-source',async input=>{await assertRndAccess(false);if(localTestMode)throw Error('로컬 시험에서는 실제 GitHub 확인 자료를 내보내지 않습니다');const verify=require('./rnd-control/code-source-verification').createCodeSourceVerification({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,token:async()=>process.env.BRING_RND_GITHUB_READ_TOKEN??'',fetch:(...args)=>remoteClient.fetch(...args)});return require('./rnd-control/code-source-export').createCodeSourceExport({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,verify,chooseFile:({commitSHA})=>dialog.showSaveDialog(mainWindow,{title:'GitHub 코드 파일 확인 결과 보관',defaultPath:`BRING-GITHUB-${commitSHA}.json`,filters:[{name:'코드 확인 JSON',extensions:['json']}]}),save:async(filePath,text,check)=>{const pending=filePath+'.'+require('node:crypto').randomUUID()+'.partial';try{await fs.writeFile(pending,text,{flag:'wx',encoding:'utf8'});await check();await fs.rename(pending,filePath);}finally{await fs.rm(pending,{force:true});}}})(input);});
+secureHandle('crm:rnd-verify-code-source',async input=>{await assertRndAccess(false);if(localTestMode)throw Error('로컬 시험에서는 실제 GitHub 코드 근거를 조회하지 않습니다');return require('./rnd-control/code-source-verification').createCodeSourceVerification({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,token:async()=>process.env.BRING_RND_GITHUB_READ_TOKEN??'',fetch:(...args)=>remoteClient.fetch(...args)})(input);});
+secureHandle("crm:rnd-drive-connect",async()=>{assertMainMutationAllowed();await assertRndAccess(true);if(localTestMode)throw Error("시험 모드에서는 실제 회사 Drive에 연결하지 않습니다");const flow=rndDriveConnectionFlow??=require('./rnd-control/drive-connection-flow').createDriveConnectionFlow({enabled:()=>rndModuleEnabled&&!localTestMode,access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,authorize:()=>require('./rnd-control/drive-auth').authorizeCompanyDrive({openExternal:url=>shell.openExternal(url)}),connect:token=>rndDrive.connect(token),clear:()=>rndDrive.clear()});return flow();});
+secureHandle("crm:rnd-drive-upload", async input=>{assertMainMutationAllowed();const actor=await assertRndAccess(true);if(localTestMode)throw new Error("시험 모드에서는 실제 회사 Drive로 전송하지 않습니다");const result=await dialog.showOpenDialog(mainWindow,{title:"R&D 원본 자료 선택",properties:["openFile"]});if(result.canceled)return {canceled:true};const target=result.filePaths[0];const stat=await fs.stat(target);require("./rnd-control/file-policy").assertUploadFile({fileName:path.basename(target),sizeBytes:stat.size});const current=await assertRndAccess(true);if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");let uploaded;try{uploaded=await rndDrive.upload({...input,fileName:path.basename(target),bytes:await fs.readFile(target)});}catch(error){if(error.recoveryRecord){try{await uploadLedger().record(actor.uid,error.recoveryRecord);}catch(recordError){throw new Error(error.message+" · 검증 미완료 복구 기록 저장 실패: "+recordError.message);}}throw error;}const active=await assertRndAccess(true);if(active.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");try{await uploadLedger().record(actor.uid,{...uploaded,projectId:input.projectId,artifactId:input.artifactId});}catch(error){throw new Error("Drive 업로드 완료 · 파일 ID "+uploaded.id+" · 복구 기록 저장 실패: "+error.message);}return uploaded;});
+let rndSaveLedger;function saveLedger(){return rndSaveLedger??=require("./rnd-control/save-ledger").createSaveLedger(path.join(app.getPath("userData"),"rnd-save-attempts"));}secureHandle("crm:rnd-save-attempts",async()=>{const actor=await assertRndAccess();if(localTestMode)return [];const records=await saveLedger().list(actor.uid);const current=await assertRndAccess();if(current.uid!==actor.uid)throw new Error("로그인 세션이 변경되었습니다");return records;});secureHandle("crm:rnd-check-save-attempt",async input=>{const binding=csvSessionBinding();await assertRndAccess();if(!csvSessionCurrent(binding))throw Error("로그인 세션이 변경되었습니다");if(localTestMode)throw new Error("시험 모드에서는 실제 저장 작업을 대조하지 않습니다");return require("./rnd-control/save-recovery").createSaveRecovery({access:()=>assertRndAccess(),captureSession:()=>binding,isCurrent:csvSessionCurrent,ledger:saveLedger(),get:(collection,id)=>rndRepository().get(collection,id)}).check(input);});async function loadRndCrmContext(){const actor={...await assertRndAccess()};let raw;if(localTestMode)raw={customers:process.env.BRING_CRM_RND_CONTEXT_FIXTURE==='1'?[{id:'rnd-test-customer',name:'시험 고객'}]:[],buildings:process.env.BRING_CRM_RND_CONTEXT_FIXTURE==='1'?[{id:'rnd-test-building',name:'시험 건물',ownerCustomerId:'rnd-test-customer'}]:[],updatedAt:new Date().toISOString()};else{if(!remoteClient)throw new Error("CRM 연결이 필요합니다");raw=await remoteClient.fetchRemotePayload();}const current=await assertRndAccess();if(current.uid!==actor.uid||current.role!==actor.role||current.email!==actor.email)throw new Error("로그인 세션이 변경되었습니다");return require("./rnd-control/crm-context").createCrmContextSnapshot(raw,{fetchedAt:new Date().toISOString(),testMode:localTestMode});}
+secureHandle("crm:rnd-crm-context",loadRndCrmContext);
+function rndRepository(){
+ if(!remoteClient) throw new Error("CRM 로그인 연결이 필요합니다");
+ return createRndRepository({auth:authState,token:()=>remoteClient.ensureIdToken(false),databaseUrl:remoteClient.firebase.databaseUrl,fetch:remoteClient.fetch,onWriteAttempt:(uid,record)=>saveLedger().record(uid,record)});
+}
+secureHandle("crm:rnd-export", async input=>{
+ await assertRndAccess(false);
+ const user=authState().user;if(!user?.uid||user.mustChangePassword||!['admin','member','viewer'].includes(user.role))throw new Error("CRM 로그인이 필요합니다");
+ if(!input||!['internal','review'].includes(input.mode))throw new Error("내보내기 범위를 선택하세요");
+ const repo=localTestMode?null:rndRepository();const load=()=>localTestMode?Promise.resolve(rndTestRecords.projects[input.projectId]):repo.get("projects",input.projectId);
+ const previous=await load();if(!previous||previous.revision!==input.revision)throw new Error("공유 저장한 최신 프로젝트를 확인하세요");
+ const {hydrateProject}=await import(pathToFileURL(path.join(__dirname,"rnd-control/archive.mjs")).href);const {buildRndExport}=await import(pathToFileURL(path.join(__dirname,"rnd-control/export.mjs")).href);
+ const exported=buildRndExport(hydrateProject(previous),{mode:input.mode});
+ if(input.mode==='review'){for(const ds of previous.research?.datasetSnapshots?Object.values(previous.research.datasetSnapshots):[]){if(!exported.manifest.includedDatasets.includes(ds.id))continue;if(localTestMode)throw new Error("시험 모드에서는 검토용 Drive 원본을 확인하지 않습니다");for(const ref of Object.values(ds.versionRefs??{}))await rndDrive.verifyVersion({...ref,projectId:previous.id});}}
+ const result=await dialog.showSaveDialog(mainWindow,{title:"R&D Markdown ZIP 보관",defaultPath:`BRING-RND-${previous.id}-r${previous.revision}-${input.mode}.zip`,filters:[{name:"Markdown ZIP",extensions:["zip"]}]});if(result.canceled)return{canceled:true};
+ const latest=await load();if(authState().user?.uid!==user.uid||latest?.revision!==previous.revision)throw new Error("로그인 또는 프로젝트 버전이 바뀌었습니다. 다시 내보내세요");
+ const bytes=require("./rnd-control/zip").zipTextFiles(exported.files);const pending=result.filePath+"."+require("node:crypto").randomUUID()+".partial";try{await fs.writeFile(pending,bytes,{flag:"wx"});await fs.rename(pending,result.filePath);}finally{await fs.rm(pending,{force:true});}return{saved:true,path:result.filePath,files:exported.manifest.files.length,excluded:exported.manifest.excluded.length,originalFilesIncluded:false};
+});
+secureHandle("crm:rnd-workflow", async input=>{
+ await assertRndAccess(true);
+ const user=assertMainMutationAllowed(input);
+ const repo=localTestMode?null:rndRepository();
+ const previous=localTestMode?rndTestRecords.projects[input.projectId]:await repo.get("projects",input.projectId);
+ if(!previous)throw new Error("프로젝트를 먼저 공유 저장하세요");
+ if(previous.revision!==input.expectedRevision)throw new Error("프로젝트 버전이 바뀌었습니다. 최신 내용을 다시 확인하세요");
+ const {applyResearch}=await import(pathToFileURL(path.join(__dirname,"rnd-control/research.mjs")).href);
+ const {hydrateProject}=await import(pathToFileURL(path.join(__dirname,"rnd-control/archive.mjs")).href);
+ let command=input.command;
+ if(command?.type==="freezeDataset"){if(localTestMode)throw new Error("시험 모드에서는 실제 Drive 자료를 검증하지 않습니다");if(!Array.isArray(command.dataset?.versionRefs)||!command.dataset.versionRefs.length||command.dataset.versionRefs.length>100)throw new Error("자료 버전을 선택하세요");const refs=[];for(const ref of command.dataset.versionRefs)refs.push(await rndDrive.verifyVersion({...ref,projectId:previous.id}));command={...command,dataset:{...command.dataset,versionRefs:refs}};}
+ const next=applyResearch(hydrateProject(previous),command,user);
+ if(localTestMode)return rndTestRecords.projects[next.id]={...next,revision:previous.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
+ return repo.save("projects",next,{allowResearchChange:true});
+});
+function csvSessionBinding(){return localTestMode?{local:true,role:localTestRole}:{client:remoteClient,guard:remoteClient?.captureSessionGuard()};}
+function csvSessionCurrent(binding){return binding?.local?localTestMode&&binding.role===localTestRole:binding?.client===remoteClient&&!!remoteClient?.sessionGuardActive(binding.guard);}
+function csvPreviewService(){return require("./rnd-control/csv-preview-service").createCSVPreviewService({access:()=>assertRndAccess(true),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent});}
+let rndCSVLedger;function csvLedger(){return rndCSVLedger??=require('./rnd-control/csv-job-ledger').createCSVJobLedger(path.join(app.getPath('userData'),'rnd-csv-import-jobs'));}function csvJobService(){const ledger=csvLedger();return require('./rnd-control/csv-job-service').createCSVJobService({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,preview:csvPreviewService(),ledger});}
+secureHandle('crm:rnd-preview-csv',async input=>csvPreviewService()(input));
+secureHandle('crm:rnd-csv-create-job',async input=>csvJobService().create(input));
+secureHandle('crm:rnd-csv-jobs',async()=>csvJobService().list());
+secureHandle('crm:rnd-csv-get-job',async input=>csvJobService().get(input));
+secureHandle('crm:rnd-csv-receipt',async input=>csvJobService().receipt(input));
+secureHandle('crm:rnd-csv-drive-source',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 Drive로 전송하지 않습니다');return require('./rnd-control/csv-drive-source').createCSVDriveSource({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,ledger:csvLedger(),getProject:id=>rndRepository().get('projects',id),upload:input=>rndDrive.upload(input)})(input);});
+secureHandle('crm:rnd-csv-drive-verify',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 Drive 원본을 검증하지 않습니다');return require('./rnd-control/csv-drive-verification').createCSVDriveVerification({access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,ledger:csvLedger(),getProject:id=>rndRepository().get('projects',id),verifyVersion:ref=>rndDrive.verifyVersion(ref)})(input);});
+let rndCSVAuditPublisher;
+secureHandle('crm:rnd-csv-publish-audit',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 공유 감사 기록을 게시하지 않습니다');const publisher=rndCSVAuditPublisher??=require('./rnd-control/csv-audit-publisher').createCSVAuditPublisher({enabled:()=>rndModuleEnabled&&!localTestMode&&process.env.BRING_RND_CSV_PUBLICATION_ENABLED==='1',access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,getJob:(uid,id)=>csvLedger().get(uid,id),saveReceipt:(uid,id,receipt)=>csvLedger().publicationReceipt(uid,id,receipt),credentials:()=>rndDrive.withConnectionToken(async driveToken=>({firebaseToken:await remoteClient.ensureIdToken(false),driveToken})),fetch:(...args)=>remoteClient.fetch(...args)});return publisher(input);});
+secureHandle('crm:rnd-csv-audit-history',async input=>{await assertRndAccess(false);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 공유 감사 이력을 조회하지 않습니다');return require('./rnd-control/csv-audit-history').createCSVAuditHistory({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,readAudit:id=>rndRepository().getCSVAudit(id)})(input);});
+secureHandle('crm:rnd-csv-export-audit',async input=>{await assertRndAccess(false);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 감사 자료를 내보내지 않습니다');const history=require('./rnd-control/csv-audit-history').createCSVAuditHistory({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,readAudit:id=>rndRepository().getCSVAudit(id)});return require('./rnd-control/csv-audit-export').createCSVAuditExport({access:()=>assertRndAccess(false),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,readHistory:history,chooseFile:({jobId})=>dialog.showSaveDialog(mainWindow,{title:'CSV 공유 감사 요약 보관',defaultPath:`BRING-RND-CSV-AUDIT-${jobId}.zip`,filters:[{name:'감사 요약 ZIP',extensions:['zip']}]}),save:async(filePath,bytes,check)=>{const pending=filePath+'.'+require('node:crypto').randomUUID()+'.partial';try{await fs.writeFile(pending,bytes,{flag:'wx'});await check();await fs.rename(pending,filePath);}finally{await fs.rm(pending,{force:true});}}})(input);});
+secureHandle('crm:rnd-csv-prepare-audit',async input=>{await assertRndAccess(true);if(localTestMode)throw Error('로컬 시험에서는 실제 회사 Drive 공유 감사 명세를 준비하지 않습니다');const options={access:()=>assertRndAccess(true),captureSession:csvSessionBinding,isCurrent:csvSessionCurrent,ledger:csvLedger(),getProject:id=>rndRepository().get('projects',id)};return require('./rnd-control/csv-audit-preparation').createCSVAuditPreparation({...options,verifySource:require('./rnd-control/csv-drive-verification').createCSVDriveVerification({...options,verifyVersion:ref=>rndDrive.verifyVersion(ref)})})(input);});
+secureHandle("crm:rnd-preview-shared-restore",async input=>require("./rnd-control/shared-restore-preview").createSharedRestorePreview({access:()=>assertRndAccess(false),list:collection=>localTestMode?Promise.resolve(structuredClone(Object.values(rndTestRecords[collection]))):rndRepository().list(collection)})(input));
+let rndSharedRestore;
+function sharedRestoreClient(){
+ assertRndModuleEnabled();assertMainMutationAllowed();
+ if(localTestMode||process.env.BRING_RND_SHARED_RESTORE_ENABLED!=='1')throw new Error('공유 복원 실행 기능이 활성화되지 않았습니다');
+ if(!remoteClient)throw new Error('CRM 로그인 연결이 필요합니다');
+ return rndSharedRestore??=require('./rnd-control/shared-restore-client').createSharedRestoreClient({enabled:()=>rndModuleEnabled&&!localTestMode&&process.env.BRING_RND_SHARED_RESTORE_ENABLED==='1',access:()=>assertRndAccess(true),captureSession:()=>({client:remoteClient,guard:remoteClient.captureSessionGuard()}),isCurrent:binding=>binding?.client===remoteClient&&remoteClient.sessionGuardActive(binding.guard),token:()=>remoteClient.ensureIdToken(false),baseUrl:'https://asia-southeast1-bring-fm.cloudfunctions.net',fetch:(...args)=>remoteClient.fetch(...args)});
+}
+secureHandle('crm:rnd-prepare-shared-restore',input=>sharedRestoreClient().prepare(input));
+secureHandle('crm:rnd-commit-shared-restore',input=>sharedRestoreClient().commit(input));
+secureHandle("crm:rnd-get", async input => {
+ await assertRndAccess(false);
+ if(!input || !["projects","visits"].includes(input.collection) || typeof input.id!=="string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.id))throw new Error("R&D 대상 ID 오류");
+ const user=authState().user;if(!user || user.mustChangePassword || !["admin","member","viewer"].includes(user.role))throw new Error("로그인이 필요합니다");
+ if(localTestMode){const value=rndTestRecords[input.collection][input.id];if(!value)throw new Error("프로젝트를 먼저 공유 저장하세요");return structuredClone(value);}
+ return rndRepository().get(input.collection,input.id);
+});
+secureHandle("crm:rnd-list", async collection => {
+ await assertRndAccess(false);
+ if(!["projects","visits"].includes(collection)) throw new Error("R&D 대상 오류");
+ if(!authState().user || authState().user.mustChangePassword) throw new Error("로그인이 필요합니다");
+ if(localTestMode) return Object.values(rndTestRecords[collection]);
+ return rndRepository().list(collection);
+});
+secureHandle("crm:rnd-freeze-crm-context",async input=>{
+ const repo=localTestMode?null:rndRepository();
+ return require("./rnd-control/crm-context-service").createCrmContextService({
+  access:write=>assertRndAccess(write),getContext:loadRndCrmContext,
+  getProject:async id=>{if(!localTestMode)return repo.get("projects",id);const value=rndTestRecords.projects[id];if(!value)throw new Error("프로젝트를 먼저 공유 저장하세요");return structuredClone(value);},
+  saveProject:async(data,options)=>{
+   await assertRndAccess(true);if(!localTestMode)return repo.save("projects",data,options);
+   const previous=rndTestRecords.projects[data.id];if(previous?.revision!==data.revision)throw new Error("동시편집 충돌");
+   require("./rnd-control/crm-context-service").assertCrmContextChange(previous,data,{allowAppend:true});
+   const user=await assertRndAccess(true);require("./rnd-control/crm-context-service").assertCrmContextChange(previous,data,{allowAppend:true,actorUid:user.uid});return rndTestRecords.projects[data.id]={...data,revision:data.revision+1,updatedBy:user.uid,updatedAt:new Date().toISOString()};
+  }
+ }).freeze(input);
+});
+secureHandle("crm:rnd-save", async input => {
+ await assertRndAccess(true);
+ const actor = assertMainMutationAllowed(input);
+ if(!input || !["projects","visits"].includes(input.collection)) throw new Error("R&D 대상 오류");
+ const domain = await import(pathToFileURL(path.join(__dirname,"rnd-control",input.collection==="projects"?"archive.mjs":"baseline.mjs")).href);
+ const data = input.collection==="projects" ? domain.validateProject(input.data) : domain.validateVisit(input.data);
+ if(localTestMode){
+  const before=rndTestRecords[input.collection][data.id];if(input.collection==="projects")require("./rnd-control/crm-context-service").assertCrmContextChange(before,data);if(input.collection==="visits")require("./rnd-control/repository").assertVisitProjectBinding(before,data);
+  if((before?.revision??0)!==(data.revision??0)) throw new Error("동시편집 충돌");
+  if(require("./rnd-control/repository").researchFingerprint(before?.research)!==require("./rnd-control/repository").researchFingerprint(data.research))throw new Error("연구 판정은 전용 승인 작업으로 변경하세요");
+  return rndTestRecords[input.collection][data.id]={...data,revision:(data.revision??0)+1,updatedBy:actor.uid,updatedAt:new Date().toISOString()};
+ }
+ return rndRepository().save(input.collection,data);
+});
+
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {

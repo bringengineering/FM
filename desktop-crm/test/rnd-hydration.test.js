@@ -1,0 +1,2 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+test('Firebase omitted empty arrays restore as empty research collections',async()=>{const {hydrateProject}=await import('../src/rnd-control/archive.mjs');const {createProject}=await import('../src/rnd-control/portfolio.mjs');const p=createProject('p','연구');delete p.history;delete p.assessments;p.items.forEach(x=>delete x.evidence);const result=hydrateProject(p);assert.deepEqual(result.history,[]);assert.deepEqual(result.assessments,[]);assert.deepEqual(result.items[0].evidence,[]);});

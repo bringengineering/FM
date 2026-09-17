@@ -1,0 +1,11 @@
+function createUploadRecovery({access,ledger,getProject,verifyVersion,captureSession,isCurrent}){
+ if(typeof captureSession!=='function'||typeof isCurrent!=='function')throw Error('복구 로그인 세션 검사가 필요합니다');
+ return async input=>{
+ for(const key of ['projectId','artifactId','versionId'])if(typeof input?.[key]!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(input[key]))throw Error('복구 자료 ID 형식 오류');
+ const binding=captureSession(),actor={...await access(true)};const guard=async()=>{if(!isCurrent(binding))throw Error('복구 중 로그인 세션이 변경되었습니다');const current=await access(true);if(!isCurrent(binding)||current.uid!==actor.uid||current.role!==actor.role||current.email!==actor.email)throw Error('복구 중 로그인 세션이 변경되었습니다');};
+ await guard();
+ const records=await ledger.list(actor.uid);await guard();const record=records.find(r=>r.projectId===input.projectId&&r.artifactId===input.artifactId&&r.versionId===input.versionId);if(!record)throw Error('현재 계정의 복구 기록이 없습니다');
+ const project=await getProject(input.projectId);await guard();const items=Array.isArray(project?.items)?project.items:Object.values(project?.items??{});if(project?.id!==input.projectId||!items.some(item=>item?.id===record.artifactId))throw Error('공유 프로젝트의 산출물 연결을 확인하세요');
+ const verified=await verifyVersion(record);await guard();if(verified.providerFileId!==record.providerFileId||verified.versionId!==record.versionId||verified.artifactId!==record.artifactId||verified.sha256!==record.sha256||verified.sizeBytes!==record.sizeBytes)throw Error('복구 원본이 기록된 버전·해시·크기와 다릅니다');if(typeof verified.verifiedAt!=='string'||!Number.isFinite(Date.parse(verified.verifiedAt)))throw Error('복구 원본 검증 시각 오류');const latest=await getProject(input.projectId);await guard();const latestItems=Array.isArray(latest?.items)?latest.items:Object.values(latest?.items??{});if(latest?.id!==project.id||(latest.revision??0)!==(project.revision??0)||!latestItems.some(item=>item?.id===record.artifactId))throw Error('복구 중 공유 프로젝트가 변경되었습니다 · 다시 조회하세요');return{projectId:record.projectId,artifactId:record.artifactId,versionId:record.versionId,providerFileId:record.providerFileId,sha256:record.sha256,sizeBytes:record.sizeBytes,verifiedAt:verified.verifiedAt,url:'https://drive.google.com/file/d/'+record.providerFileId+'/view'};
+ };}
+module.exports={createUploadRecovery};
