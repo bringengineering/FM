@@ -22,6 +22,8 @@ async function buildOriginalBackup(input,{check,download}){
  for(const project of snapshot.projects)walk(project,project.id,0);
  for(const visit of snapshot.visits??[])walk(visit,visit?.projectId,0);
  for(const audit of snapshot.importJobs??[])walk(audit,audit?.projectId,0);
+ // Unknown shared collections are preserved too; their file refs require explicit project bindings.
+ walk(snapshot.additionalMetadata,undefined,0);
  const files={'metadata.json':metadata},inventory=[];let total=metadata.length;
  for(const ref of [...refs.values()].sort((a,b)=>a.providerFileId.localeCompare(b.providerFileId))){
   await check();const original=await download(ref,{maxBytes:100*1024*1024-total});await check();
