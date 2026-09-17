@@ -626,3 +626,9 @@ Node536개/Native7개 PASS. 새 export2개는 원격 재검증 callback·허용 
 functions/test-rnd-callable-emulator.mjs는 동일 로컬 demo Auth/Database/Functions에서 기존 복원 검증 후 CSV 검증을 순차 실행한다. 실제 Auth 계정 로그인 token과 HTTP onCall, 신선한 Admin SDK 승인 조회, 회사 root 트랜잭션으로 기존 감사 기록의 동시 재확인과 정확한 원본 해시 응답을 확인했다. 더 최신 프로젝트 revision·방문·회사 자료가 보존되며 익명/잘못된 요청/다른 승인 계정/원본 file 충돌/승인 회수/비밀번호 변경 필요/역할 불일치/비활성 Auth 계정은 변경 없이 거부된다. 로컬 통합 복원10/CSV6 검사 PASS, 독립 검토 중요한 문제 없음.
 
 CSV 감사와 Drive reference는 서버 runtime으로 만든 격리 fixture를 미리 저장한다. 기존 기록 재확인은 Google API를 호출하지 않는 경로이므로 실제 새 원본 다운로드·신규 CSV 게시·회사 Drive·Main 게시 성공을 검증하지 않았다. 기본 비활성 API의 FAILED_PRECONDITION 차단도 실제 HTTP에서 확인했다. CI의 CSV/복원 활성화는 emulator 테스트 step에만 적용하며 운영 설정·배포는 변경하지 않는다. 원래61개 인수는5/61 PASS로 유지한다.
+
+### 업로드 복구 요청의 로그인 세대 고정
+
+Main 업로드 복구 IPC는 첫 권한 조회 전부터 remote client와 SDK 로그인 세대를 고정한다. 첫 조회 이후와 계정별 원장·공유 프로젝트·Drive 원본 검증·최신 프로젝트 조회 이후에 고정 세대와 신선한 UID/이메일/역할을 재확인한다. 같은 UID로 로그아웃 후 재로그인한 경우도 이전 요청은 복구 결과를 반환하지 않는다. helper는 신뢰된 세대 검사 callback이 없으면 생성하지 않는다. 복구는 원본 검증 metadata만 반환하며 자동 파일 삭제·자료 연결 쓰기를 하지 않는다.
+
+회귀 검사에서 기존 서비스와 Main의 첫 await가 세대 변경을 놓치는 실패를 먼저 확인한 뒤 수정했다. helper 초기 승인/원장/프로젝트/Drive 검증/최신 조회 5개 대기 경계와 실제 Main handler 코드의 첫 승인 대기를 검사했다. Main handler는 VM에서 신뢰된 SDK/권한 fixture로 실행하므로 실제 로그인·Drive 성공 검증은 아니다. 전체 Node538 PASS, 회사 계정·Drive 종합 검수 미완료. 현재 Windows d3d7dc7 검토본은 이 새 수정 미포함이다.

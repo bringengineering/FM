@@ -7,7 +7,7 @@ test('save recovery captures identity independently from mutable access state',a
 });
 test('upload recovery stops in-place role mutation before reading project or downloading bytes',async()=>{
  const user={uid:'u',role:'member',email:'u@example.test'};let reads=0,downloads=0;
- const recover=createUploadRecovery({access:async()=>user,ledger:{list:async()=>{user.role='viewer';return[];}},getProject:async()=>{reads++;},verifyVersion:async()=>{downloads++;}});
+ const recover=createUploadRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>user,ledger:{list:async()=>{user.role='viewer';return[];}},getProject:async()=>{reads++;},verifyVersion:async()=>{downloads++;}});
  await assert.rejects(()=>recover({projectId:'p',artifactId:'a',versionId:'v'}),/세션/);
  assert.equal(reads,0);assert.equal(downloads,0);
 });
