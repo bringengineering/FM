@@ -58,3 +58,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 원본 복원 파일명 보존: trusted Drive download가 실제 name에서 정확한 versionId__ 접두어만 제거하고 MIME과 함께 반환한다. builder는 optional fileName을 기존 확장자/실행파일/경로 정책으로 검사하고 MIME을 제한한 뒤 inventory에 보관한다. verifier는 optional 필드를 동일한 정책으로 재검사하고 전체 key/value를 대조하며 과거 필드 없는 ZIP도 읽는다. private restore plan은 fileName/MIME을 전달하고 이름 없는 과거 보관본은 requiresFileName=true로 표시한다. 이름은 보관본의 서술 정보이며 회사 출처 인증을 뜻하지 않는다. 실제 업로드/공유 복원은 아직 미연결. Drive→builder→ZIP검증 및 private 준비/잘못된 경로 회귀 포함 Node590 PASS.
+
+
+원본 복원 재업로드 coordinator: createOriginalRestoreUploader는 trusted Main 내부에만 있고 enabled=false가 기본이며 현재 IPC/버튼에는 연결하지 않는다. prepare/check/authorize/journal/upload adapter를 요구한다. 전체 batch 파일 정책·크기/SHA·중복 버전을 첫 전송 이전에 확인하고 독립 복사하며 mapping/sourceZIP에 결합한 관리자 승인을 검사한다. journal.begin은 영속/원자적 단일 예약이라는 필수 계약으로 전송보다 앞서 실행하고 per-file 시작/검증완료/결과미확인 기록을 append한다. Drive 반환 중 로그아웃되어도 최초 actor의 완료 receipt를 먼저 보존한 뒤 실패한다. exact target/hash/size에 맞는 검증미완료 recovery 파일ID만 기록하며 자동재시도/공유 DB 쓰기는 없다. 주입 adapter 시험6개/Node596 PASS; 실제 영속 journal 구현·Main 연결·회사 업로드 성공은 아직 미구현/미검증. Windows3da07e5에는 coordinator 미포함이다.
