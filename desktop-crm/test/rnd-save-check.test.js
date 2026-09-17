@@ -5,18 +5,18 @@ const attempt={operationId:'op',collection:'visits',recordId:'v',revision:1,cont
 const actor={uid:'u',role:'member',email:'u@example.test'};
 test('persistent save check requires matching operation, revision, and complete contents',async()=>{
  for(const [observed,expected] of [[value,'CURRENT_MATCH'],[{...value,totalMinutes:1},'CURRENT_DIFFERENT'],[{...value,operationId:'other'},'CURRENT_DIFFERENT']]){
-  const service=createSaveRecovery({access:async()=>actor,ledger:{list:async()=>[attempt]},get:async()=>observed});
+  const service=createSaveRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>actor,ledger:{list:async()=>[attempt]},get:async()=>observed});
   assert.equal((await service.check({operationId:'op'})).status,expected);
  }
 });
 test('save check rejects another UID operation before reading shared records',async()=>{
- let reads=0;const service=createSaveRecovery({access:async()=>actor,ledger:{list:async uid=>{assert.equal(uid,'u');return[];}},get:async()=>{reads++;}});
+ let reads=0;const service=createSaveRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>actor,ledger:{list:async uid=>{assert.equal(uid,'u');return[];}},get:async()=>{reads++;}});
  await assert.rejects(()=>service.check({operationId:'op'}),/현재 계정/);assert.equal(reads,0);
 });
 test('save check rejects session change after remote read and keeps unreadable outcome unknown',async()=>{
  let user=actor;
- const service=createSaveRecovery({access:async()=>user,ledger:{list:async()=>[attempt]},get:async()=>{user={...actor,uid:'other'};return value;}});
+ const service=createSaveRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>user,ledger:{list:async()=>[attempt]},get:async()=>{user={...actor,uid:'other'};return value;}});
  await assert.rejects(()=>service.check({operationId:'op'}),/세션/);
- const failed=createSaveRecovery({access:async()=>actor,ledger:{list:async()=>[attempt]},get:async()=>{throw Error('offline');}});
+ const failed=createSaveRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>actor,ledger:{list:async()=>[attempt]},get:async()=>{throw Error('offline');}});
  assert.equal((await failed.check({operationId:'op'})).status,'READ_FAILED');
 });

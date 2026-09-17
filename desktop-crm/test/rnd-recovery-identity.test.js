@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {createSaveRecovery}=require('../src/rnd-control/save-recovery'),{createUploadRecovery}=require('../src/rnd-control/upload-recovery');
 test('save recovery captures identity independently from mutable access state',async()=>{
  const user={uid:'u',role:'member',email:'old@example.test'};let reads=0;
- const service=createSaveRecovery({access:async()=>user,ledger:{list:async()=>{user.email='new@example.test';return[];}},get:async()=>{reads++;}});
+ const service=createSaveRecovery({captureSession:()=>1,isCurrent:guard=>guard===1,access:async()=>user,ledger:{list:async()=>{user.email='new@example.test';return[];}},get:async()=>{reads++;}});
  await assert.rejects(()=>service.check({operationId:'op'}),/세션/);assert.equal(reads,0);
 });
 test('upload recovery stops in-place role mutation before reading project or downloading bytes',async()=>{

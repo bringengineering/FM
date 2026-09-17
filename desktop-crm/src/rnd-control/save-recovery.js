@@ -1,10 +1,12 @@
 const {createHash}=require('node:crypto');
 const {researchFingerprint}=require('./repository');
-function createSaveRecovery({access,ledger,get}){
+function createSaveRecovery({access,ledger,get,captureSession,isCurrent}){
+ if(typeof captureSession!=='function'||typeof isCurrent!=='function')throw Error('저장 확인 로그인 세션 검사가 필요합니다');
  return{async check(input){
   if(!/^[a-zA-Z0-9_-]{1,128}$/.test(input?.operationId??''))throw Error('저장 작업 ID 오류');
-  const actor={...await access()};
-  const same=async()=>{const current=await access();if(current.uid!==actor.uid||current.role!==actor.role||current.email!==actor.email)throw Error('로그인 세션이 변경되었습니다');};
+  const binding=captureSession(),actor={...await access()};
+  const same=async()=>{if(!isCurrent(binding))throw Error('로그인 세션이 변경되었습니다');const current=await access();if(!isCurrent(binding)||current.uid!==actor.uid||current.role!==actor.role||current.email!==actor.email)throw Error('로그인 세션이 변경되었습니다');};
+  await same();
   const records=await ledger.list(actor.uid);await same();
   const attempt=records.find(x=>x.operationId===input.operationId);
   if(!attempt)throw Error('현재 계정의 저장 작업 기록이 아닙니다');
