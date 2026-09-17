@@ -19,3 +19,6 @@
 
 
 추가 공유 metadata 원본 누락 수정: additionalMetadata는 JSON으로만 보관되고 고정 원본 열거에서는 빠져 있었다. builder가 이 영역도 동일한 한도·참조 검증·중복 정리 대상으로 열거한다. 알려지지 않은 collection의 참조는 명시 projectId가 필요하며 불완전/외부 프로젝트/같은 파일ID 다른 버전은 다운로드 전에 거부한다. builder→verifier 연결과 collection 간 dedup/collision 회귀3개 포함 Node569 PASS. fullBackup/restoreReady/originVerified false는 유지하며 실제 회사 출처·전체 복원은 미완료다.
+
+
+동결 데이터셋 소속 검증: prepareOriginalBackupSnapshot에서 manifestHash와 별개로 dataset.projectId가 부모 project.id와 일치하는지 확인한다. createDatasetSnapshot으로 생성한 해시 정상 q 데이터셋을 p에 붙이는 기존 통과를 회귀 시험으로 확인한 뒤 거부하도록 수정했다. 정상 q 연결은 유지한다. 전체 Node570 PASS. 이 경로는 Main 원본 보관과 보관본 검증의 domain 검사 양쪽에서 사용된다. 실제 회사 Drive·전체 복원/61개 인수는 미완료 상태다.
