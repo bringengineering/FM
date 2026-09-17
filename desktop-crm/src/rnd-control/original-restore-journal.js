@@ -33,12 +33,14 @@ function createOriginalRestoreJournal(directory,{maxAttempts=100}={}){
   const parent=location(id),started=path.join(parent,index+'-started'),terminal=path.join(parent,index+'-terminal');if(event.type!=='UPLOAD_STARTED'){const previous=await read(path.join(started,'event.json'));if(previous.type!=='UPLOAD_STARTED'||contextFields.some(k=>previous[k]!==event[k]))fail();}
   const slot=event.type==='UPLOAD_STARTED'?started:terminal;try{await mkdir(slot);}catch(error){if(error.code==='EEXIST')throw Error('이미 기록된 복원 파일 상태 · 중복 실행하지 않습니다');throw error;}await write(path.join(slot,'event.json'),event);
  }
- async function list(uid){if(!key(uid))fail();const quota=path.join(root,'quotas',uid);let slots;try{slots=await readdir(quota);}catch(error){if(error.code==='ENOENT')return[];throw error;}if(slots.length>100||slots.some(s=>! /^(0|[1-9][0-9]?)$/.test(s)))fail();const records=[];
-  for(const slot of slots.sort((a,b)=>Number(a)-Number(b))){let id,m;try{id=(await read(path.join(quota,slot,'attempt.json'))).attemptId;m=await manifest(id);}catch(error){if(error.code==='ENOENT'){records.push({attemptId:id??null,incomplete:true,events:[]});continue;}throw error;}if(m.actorUid!==uid)fail();const events=[];let incomplete=false;
+ async function get(uid,id){if(!key(uid))fail();const m=await manifest(id);if(m.actorUid!==uid)throw Error('복원 원장 계정 연결 오류');const events=[];let incomplete=false;
    for(let i=0;i<m.files.length;i++)for(const phase of ['started','terminal']){const folder=path.join(location(id),i+'-'+phase);try{await stat(folder);}catch(error){if(error.code==='ENOENT')continue;throw error;}try{const {event,index}=validateEvent(m,await read(path.join(folder,'event.json')));if(index!==i||(phase==='started')!==(event.type==='UPLOAD_STARTED'))fail();events.push(event);}catch(error){if(error.code==='ENOENT'){incomplete=true;continue;}throw error;}}
-   records.push({...m,attemptId:id,events,incomplete});
+return{...m,attemptId:id,events,incomplete};}
+ async function list(uid){if(!key(uid))fail();const quota=path.join(root,'quotas',uid);let slots;try{slots=await readdir(quota);}catch(error){if(error.code==='ENOENT')return[];throw error;}if(slots.length>100||slots.some(s=>! /^(0|[1-9][0-9]?)$/.test(s)))fail();const records=[];
+  for(const slot of slots.sort((a,b)=>Number(a)-Number(b))){let id,m;try{id=(await read(path.join(quota,slot,'attempt.json'))).attemptId;m=await manifest(id);}catch(error){if(error.code==='ENOENT'){records.push({attemptId:id??null,incomplete:true,events:[]});continue;}throw error;}if(m.actorUid!==uid)fail();records.push(await get(uid,id));
+
   }return records;
  }
- return{begin,append,list};
+ return{begin,append,list,get};
 }
 module.exports={createOriginalRestoreJournal};

@@ -23,3 +23,5 @@ test('private upload preparation owns its mapping across awaited checks',async()
  const {prepareRestoreOriginals}=require('../src/rnd-control/original-restore-originals'),f=await fixture(),expected=f.mapping.sourceZipSHA256;let n=0;
  const plan=await prepareRestoreOriginals(f,{check:async()=>{if(++n===3)f.mapping.sourceZipSHA256='changed';}});assert.equal(plan.sourceZipSHA256,expected);
 });
+
+test('reopening a fresh review of the same source and target preserves reupload IDs for recovery',async()=>{const {prepareRestoreOriginals}=require('../src/rnd-control/original-restore-originals'),f=await fixture(),first=await prepareRestoreOriginals(f,{check:async()=>{}});f.mapping.previewId='fresh-review';const {mappingSHA256,...body}=f.mapping;f.mapping.mappingSHA256=sha(JSON.stringify(body));const next=await prepareRestoreOriginals(f,{check:async()=>{}});assert.deepEqual(next.originals[0].target,first.originals[0].target);assert.notEqual(next.mappingSHA256,first.mappingSHA256);});

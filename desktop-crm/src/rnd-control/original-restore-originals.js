@@ -22,9 +22,9 @@ async function prepareRestoreOriginals({source,mapping:inputMapping},{check}){
  for(const plan of mapping.originals){
   await check();const ref=inventory.get(plan.sourceProviderFileId);if(!ref||plan.action!=='REQUIRES_VERIFIED_REUPLOAD'||ref.path!=='originals/'+ref.providerFileId+'.bin'||plan.sourceProjectId!==ref.projectId||plan.targetProjectId!==projects.get(ref.projectId)||plan.artifactId!==ref.artifactId||plan.sourceVersionId!==ref.versionId||plan.sha256!==ref.sha256||plan.sizeBytes!==ref.sizeBytes||!fields.slice(0,4).every(field=>key(ref[field])))fail();inventory.delete(ref.providerFileId);
   const bytes=source.originals.get(ref.path);if(!(bytes instanceof Uint8Array)||!Number.isSafeInteger(ref.sizeBytes)||ref.sizeBytes<1||bytes.byteLength!==ref.sizeBytes||sha(bytes)!==ref.sha256)fail();total+=bytes.byteLength;if(total>100*1024*1024)fail();
-  // IDs are stable within this reviewed mapping and distinct from archival IDs. Multiple versions share their new artifact.
-  const id=(type,parts)=>'restored_'+sha(JSON.stringify([type,mappingSHA256,...parts]));
-  const target={projectId:plan.targetProjectId,artifactId:id('artifact',[ref.projectId,ref.artifactId]),versionId:id('version',[ref.projectId,ref.artifactId,ref.versionId,ref.providerFileId]),sha256:ref.sha256,sizeBytes:ref.sizeBytes};
+  // IDs remain stable across fresh reviews of the same fixed source and target and distinct from archival IDs. Multiple versions share their new artifact.
+  const id=(type,parts)=>'restored_'+sha(JSON.stringify([type,...parts]));
+  const target={projectId:plan.targetProjectId,artifactId:id('artifact',[plan.targetProjectId,ref.projectId,ref.artifactId]),versionId:id('version',[plan.targetProjectId,ref.projectId,ref.artifactId,ref.versionId,ref.providerFileId,ref.sha256,ref.sizeBytes]),sha256:ref.sha256,sizeBytes:ref.sizeBytes};
   originals.push({source:Object.fromEntries(fields.map(field=>[field,ref[field]])),target,fileName:ref.fileName??null,mimeType:ref.mimeType??null,requiresFileName:ref.fileName===undefined,bytes:Buffer.from(bytes)});
  }
  if(inventory.size)fail();await check();
