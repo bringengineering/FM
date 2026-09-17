@@ -9,4 +9,4 @@
 5. 회사 CRM의 기존 백업 버튼 옆에 원본 포함 경로를 연결한다. 크기·파일 수·완료 범위와 원본 제외 여부를 실제 manifest에 맞춰 표시한다. 복원은 신규 대상·관계 대조·원본 해시 확인 및 명시 승인으로 별도 구현한다.
 6. 실제 ZIP 파서로 비UTF8 원본·CRC·manifest/hash·변조·누락·세션 변경·저장 취소·용량 초과를 검증한다. Native/packaged 경로와 별도 회사 Drive·두 PC·빈 workspace 복구 검증까지 완료하기 전 OPS-01 PASS로 올리지 않는다.
 
-현재: 1단계 writer·2단계 trusted downloadVersion·3단계 내부 builder를 구현했다. builder는 프로젝트/방문/감사 기록의 고정 참조를 열거하고 실제 바이트를 재검증한 ZIP/manifest를 생성한다. 다운로드→builder 통합은 Google 응답 fixture 시험이다. Main authoritative snapshot 조회·권한·저장창과 UI 연결, 실제 Drive·전체 복원은 미완료다. builder manifest는 fullBackup false/restoreReady false를 유지한다.
+현재: writer, trusted downloadVersion, 참조 열거 builder, Main의 승인된 bounded 공유 snapshot 조회·권한·저장창·partial 저장 및 preload와 CRM 버튼 연결을 구현했다. UI는 미공유 초안·입력·저장·업로드를 차단하며 프로젝트/연결/로그인 세대 변경 시 오래된 결과를 표시하지 않는다. Node 558개와 실제 Electron 화면·preload·Main 로컬 회사 접근 차단 3개가 통과했다. 다운로드→builder 및 UI 완료 경로는 fixture 시험이며 실제 회사 Drive 성공·packaged 최신 화면·전체 복원은 미완료다. manifest의 fullBackup false/restoreReady false와 OPS-01 미통과 상태를 유지한다.
