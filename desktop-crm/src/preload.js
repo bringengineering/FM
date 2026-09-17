@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  rndUploadOriginalRestore: input => ipcRenderer.invoke('crm:rnd-upload-original-restore',input),
   rndOriginalRestoreHistory: () => ipcRenderer.invoke('crm:rnd-original-restore-history'),
   rndMapOriginalRestore: input => ipcRenderer.invoke('crm:rnd-map-original-restore',input),
   rndReviewOriginalRestore: () => ipcRenderer.invoke('crm:rnd-review-original-restore'),

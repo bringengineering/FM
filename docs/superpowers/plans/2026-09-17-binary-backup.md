@@ -70,3 +70,6 @@ Main 내부 복원 매핑 세션 기반: 검토 preview/actor/SDK binding/curren
 
 
 복원 업로드 이력 CRM 화면 연결: 별도 details 패널에 noargs 조회 버튼과20건 pagination을 추가하고 Main 요약의 flag/status/count/attemptID를 검사해 textContent로만 표시한다. 실제 복원완료가 아닌 업로드기록임을 안내한다. session/project/connection 세대 및 dispose는 기존/늦은결과를 비우며 stale finally가 새 버튼 상태를 바꾸지 않는다. 기존 CRM secondary 버튼과 폰트/스타일을 사용한다. 단위3개·전체Node612·실제Electron Main/preload localguard 포함14개 PASS. 양성표시 단위시험은 fixture이며 회사 정상조회/실제복원/업로드 승인실행 미검증이다.
+
+
+원본 재업로드 Main/preload 실행 연결: rndUploadOriginalRestore는 previewId/targets만 받고 BRING_RND_ORIGINAL_REUPLOAD_ENABLED=1에서만 실행한다(기본off/운영설정변경없음). Main 시작 SDK를 첫 await전에 고정하고 mutationguard/currentapprovedadmin/localtestdeny/globalbusy를 적용한다. 실행 service는 freshadmin UID/email/SDK와 private sessions.mapping의 authoritative root를 매 guard에서 재확인한다. DriveREADY와 private original ZIP 준비/전체batch정책을 검사한 후 native cancel-default 승인창에 파일수/bytes/대상과 sourceZIP/mapping SHA·출처미인증·공유복원별도 안내를 표시한다. 승인 후 private영속journal과 companyDrive adapter를 사용한다. cancel/권한/SDK변경/잘못된 IPC입력/Drive연결없음 회귀3개+MainVM/실제Electronlocalguard 포함 Node616/native15/독립검토 PASS. 실제회사 업로드/공유복원성공 및 UI버튼 연결은 아직 미완료.

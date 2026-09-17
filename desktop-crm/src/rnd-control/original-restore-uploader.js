@@ -14,7 +14,7 @@ function createOriginalRestoreUploader({enabled=false,prepare,authorize,check,jo
     total+=item.bytes.byteLength;if(total>100*1024*1024)throw Error('복원 업로드 용량 제한');const id=target.projectId+':'+target.artifactId+':'+target.versionId;if(versions.has(id))throw Error('복원 업로드 중복 버전');versions.add(id);assertUploadFile({fileName:item.fileName,sizeBytes:target.sizeBytes,bytes:item.bytes});
     return{source,target,fileName:item.fileName,mimeType:item.mimeType??'application/octet-stream',bytes:Buffer.from(item.bytes)};
    });
-   const binding={previewId:incoming.previewId,mappingSHA256:incoming.mappingSHA256,sourceZipSHA256:incoming.sourceZipSHA256},approval=structuredClone(await authorize({...binding}));await check();
+   const binding={previewId:incoming.previewId,mappingSHA256:incoming.mappingSHA256,sourceZipSHA256:incoming.sourceZipSHA256},approval=structuredClone(await authorize({...binding,fileCount:originals.length,totalBytes:total,targetProjectIds:[...new Set(originals.map(item=>item.target.projectId))]}));await check();
    if(approval?.approved!==true||!key(approval.actorUid)||Object.keys(binding).some(k=>approval[k]!==binding[k]))throw Error('현재 복원 업로드 승인 확인이 필요합니다');
    const attemptId=await journal.begin({...binding,actorUid:approval.actorUid,files:originals.map(({source,target})=>({sourceProviderFileId:source.providerFileId,target}))});if(!key(attemptId))throw Error('복원 업로드 예약 기록 오류');await check();
    const receipts=[];
