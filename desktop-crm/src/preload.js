@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  rndReviewOriginalRestore: () => ipcRenderer.invoke('crm:rnd-review-original-restore'),
   rndInspectOriginalBackup: () => ipcRenderer.invoke('crm:rnd-inspect-original-backup'),
   rndExportOriginalBackup: input => ipcRenderer.invoke('crm:rnd-export-original-backup',input),
   rndCSVCreateJob: input => ipcRenderer.invoke('crm:rnd-csv-create-job',input),

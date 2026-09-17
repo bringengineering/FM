@@ -25,3 +25,6 @@
 
 
 원본 복원 사전검토 기반: createOriginalRestorePreview는 bounded ZIP을 실제 verifier로 읽고 source/current 프로젝트·기준선·감사 domain 및 연구 참조 연결을 검증한다. 프로젝트·기준선·감사 ID 충돌은 기존 대상을 덮어쓰지 않고 신규 대상 ID가 필요하다고 표시하며 신규 기록도 승인된 생성이 필요하다. 모든 원본은 복구 후 새 회사 Drive 원본 검증이 필요한 항목으로 기록한다. 원본/현재 해시는 향후 승인 및 CAS 재조회용 일관성 근거이며 출처 인증이 아니다. 원본bytes·전체metadata를 반환하지 않고 canApply/restoreReady/originVerified false와 cloudWrites false를 유지한다. 실제 비UTF8 원본을 넣은 ZIP의 검토, 충돌, 잘못된 연구 연결, 변조ZIP, 세션 변경 시험 포함 Node572 PASS. Main/UI 검토 연결·대상 mapping·원본 복구 실행은 다음 단계다. Windows60caed6에는 이번 preview 기반이 아직 포함되지 않는다.
+
+
+복원 검토 Main/preload 연결: createOriginalRestoreReview는 renderer 인자를 거부하고 Main 파일선택/한도 읽기/관리자·시작 세대 확인 후 authoritative 공유 root를 조회·domain 검증하고 실제 ZIP preview를 생성한다. 전후 ETag와 원본 root JSON 해시가 다르면 결과를 중단한다. 검토 결과는 적용 불가와 읽기 전용 상태를 유지한다. Main/preload rndReviewOriginalRestore을 연결했으며 actual Electron 로컬 접근 차단5개 및 전체 Node574 PASS, 독립 검토 중요한 문제 없음. UI 검토 목록/대상 mapping/승인된 실제 원본 복구는 다음 단계다. Windows60caed6은 이번 preview/review/Main API 미포함이고 실제 회사 성공/전체 복원은 미완료다.

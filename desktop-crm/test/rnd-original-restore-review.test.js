@@ -1,0 +1,5 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+test('original restore review refuses renderer sources, changed shared snapshot and changed session',async()=>{
+ const {createOriginalRestoreReview}=require('../src/rnd-control/original-restore-review');let generation=1,reads=0;const source={etag:'e',value:{projects:{}}};const options={access:async()=>({uid:'u',email:'u@test',role:'admin'}),captureSession:()=>generation,isCurrent:g=>g===generation,chooseFile:async()=>({filePaths:['trusted']}),read:async()=>Buffer.from('fixture'),readSnapshot:async()=>{reads++;return structuredClone(source);},prepare:async()=>({projects:[],visits:[],importJobs:[]}),preview:async()=>({canApply:false})};
+ assert.equal((await createOriginalRestoreReview(options)()).sharedETag,'e');assert.equal(reads,2);await assert.rejects(()=>createOriginalRestoreReview(options)({bytes:'forged'}));await assert.rejects(()=>createOriginalRestoreReview({...options,preview:async()=>{source.etag='changed';return{};}})(),/변경/);await assert.rejects(()=>createOriginalRestoreReview({...options,chooseFile:async()=>{generation++;return{filePaths:['trusted']};}})(),/세션/);
+});

@@ -16,3 +16,7 @@ test('inspection Main captures initiating login and rejects local company access
  const source=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8').split('\n').find(line=>line.startsWith("secureHandle('crm:rnd-inspect-original-backup',"));assert.ok(source);
  for(const changed of [true,false]){let generation=1,handler,calls=0;vm.runInNewContext(source,{secureHandle:(_name,fn)=>handler=fn,csvSessionBinding:()=>generation,csvSessionCurrent:g=>g===generation,assertRndAccess:async()=>{if(changed)generation++;},localTestMode:true,require:()=>{calls++;throw Error('must not read');}});await assert.rejects(()=>handler(),changed?/세션/:/로컬 시험/);assert.equal(calls,0);}
 });
+
+test('original restore review Main refuses stale login and local company file selection',async()=>{
+ const line=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8').split('\n').find(line=>line.startsWith("secureHandle('crm:rnd-review-original-restore',"));assert.ok(line);for(const change of [true,false]){let generation=1,handler;vm.runInNewContext(line,{secureHandle:(_name,fn)=>handler=fn,csvSessionBinding:()=>generation,csvSessionCurrent:g=>generation===g,assertRndAccess:async()=>{if(change)generation++;},localTestMode:true});await assert.rejects(()=>handler(),change?/세션/:/로컬 시험/);}
+});
