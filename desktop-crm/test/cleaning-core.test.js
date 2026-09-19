@@ -107,3 +107,60 @@ test("calculates operational KPIs from active orders", () => {
   assert.equal(result.totalContributionProfit, 110000);
   assert.equal(result.fiveMinuteResponseRate, 50);
 });
+
+test("creates a dispatch linked to one order and team", () => {
+  const dispatch = Cleaning.createCleaningDispatch({
+    cleaningOrderId: "cln_1",
+    teamId: "team_1",
+    teamName: "직영 1팀",
+    scheduledAt: "2026-09-25T09:00",
+    headcount: 3
+  }, { email: "owner@bring.local" }, "2026-09-20T00:00:00Z");
+  assert.equal(dispatch.cleaningOrderId, "cln_1");
+  assert.equal(dispatch.teamName, "직영 1팀");
+  assert.equal(dispatch.status, "assigned");
+  assert.equal(dispatch.createdBy, "owner@bring.local");
+});
+
+test("requires evidence on completion and incident field reports", () => {
+  assert.throws(
+    () => Cleaning.createCleaningReport({ cleaningOrderId: "cln_1", type: "completion", note: "완료" }),
+    error => error && error.code === "CLEANING_REPORT_EVIDENCE_REQUIRED"
+  );
+  const report = Cleaning.createCleaningReport({
+    cleaningOrderId: "cln_1",
+    type: "completion",
+    note: "작업 완료",
+    photoUrls: ["https://example.com/after.jpg"],
+    facilityFindings: "욕실 환풍기 작동 불량"
+  });
+  assert.equal(report.photoUrls.length, 1);
+  assert.match(report.facilityFindings, /환풍기/);
+});
+
+test("derives QC result from the 100 point responsibility review", () => {
+  assert.equal(Cleaning.createCleaningQcReview({ cleaningOrderId: "cln_1", score: 94 }).result, "passed");
+  assert.equal(Cleaning.createCleaningQcReview({ cleaningOrderId: "cln_1", score: 85 }).result, "conditional");
+  assert.equal(Cleaning.createCleaningQcReview({ cleaningOrderId: "cln_1", score: 70 }).result, "rework");
+  assert.throws(
+    () => Cleaning.createCleaningQcReview({ cleaningOrderId: "cln_1", score: 101 }),
+    error => error && error.code === "CLEANING_QC_SCORE_INVALID"
+  );
+});
+
+test("creates a durable message log from an approved template", () => {
+  const message = Cleaning.createCleaningMessage({
+    cleaningOrderId: "cln_1",
+    templateId: "quote_sent",
+    recipient: "010-1234-5678",
+    variables: {
+      customerName: "홍길동",
+      totalAmount: "330,000",
+      scheduledAt: "9월 25일 09:00",
+      quoteUrl: "https://example.com/q/1"
+    }
+  }, { email: "owner@bring.local" }, "2026-09-20T00:00:00Z");
+  assert.equal(message.status, "draft");
+  assert.match(message.body, /현장 추가금이 없습니다/);
+  assert.equal(message.createdBy, "owner@bring.local");
+});

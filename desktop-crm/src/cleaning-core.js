@@ -189,6 +189,99 @@
     };
   }
 
+  function recordId(prefix, sourceId) {
+    return text(sourceId) || prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function recordMeta(source, actor, at, prefix) {
+    const timestamp = text(at) || new Date().toISOString();
+    return {
+      id: recordId(prefix, source && source.id),
+      createdAt: timestamp,
+      createdBy: text(actor && actor.email),
+      updatedAt: timestamp,
+      updatedBy: text(actor && actor.email)
+    };
+  }
+
+  function createCleaningDispatch(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.teamName)) throw cleaningError("CLEANING_TEAM_REQUIRED", "배차 팀을 입력해 주세요.", "teamName");
+    if (!text(raw.scheduledAt)) throw cleaningError("CLEANING_SCHEDULE_REQUIRED", "작업 일정을 입력해 주세요.", "scheduledAt");
+    return Object.assign(recordMeta(raw, actor, at, "cld"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      teamId: text(raw.teamId),
+      teamName: text(raw.teamName),
+      teamType: ["direct", "partner"].includes(raw.teamType) ? raw.teamType : "direct",
+      scheduledAt: text(raw.scheduledAt),
+      arrivalAt: text(raw.arrivalAt),
+      headcount: Math.max(1, Math.round(number(raw.headcount) || 1)),
+      vehicle: text(raw.vehicle),
+      instructions: text(raw.instructions),
+      status: ["assigned", "accepted", "departed", "arrived", "completed"].includes(raw.status) ? raw.status : "assigned"
+    });
+  }
+
+  function createCleaningReport(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    const type = ["arrival", "progress", "completion", "incident"].includes(raw.type) ? raw.type : "";
+    const photoUrls = (Array.isArray(raw.photoUrls) ? raw.photoUrls : []).map(text).filter(Boolean);
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!type) throw cleaningError("CLEANING_REPORT_TYPE_INVALID", "보고 유형을 선택해 주세요.", "type");
+    if (["completion", "incident"].includes(type) && !photoUrls.length) {
+      throw cleaningError("CLEANING_REPORT_EVIDENCE_REQUIRED", "완료·사고 보고에는 사진 증빙이 필요합니다.", "photoUrls");
+    }
+    return Object.assign(recordMeta(raw, actor, at, "clr"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      type,
+      note: text(raw.note),
+      photoUrls,
+      progressPercent: Math.max(0, Math.min(100, Math.round(number(raw.progressPercent)))),
+      expectedCompletionAt: text(raw.expectedCompletionAt),
+      facilityFindings: text(raw.facilityFindings),
+      incidentSeverity: text(raw.incidentSeverity)
+    });
+  }
+
+  function createCleaningQcReview(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    const score = number(raw.score);
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!Number.isFinite(Number(raw.score)) || score < 0 || score > 100) {
+      throw cleaningError("CLEANING_QC_SCORE_INVALID", "책임검수 점수는 0점부터 100점까지 입력해 주세요.", "score");
+    }
+    const result = score >= 90 ? "passed" : score >= 80 ? "conditional" : "rework";
+    return Object.assign(recordMeta(raw, actor, at, "clq"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      score: roundRate(score),
+      result,
+      scopeCompleted: raw.scopeCompleted !== false,
+      photoComplete: raw.photoComplete !== false,
+      finishComplete: raw.finishComplete !== false,
+      note: text(raw.note),
+      reworkScope: result === "passed" ? "" : text(raw.reworkScope)
+    });
+  }
+
+  function createCleaningMessage(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.recipient)) throw cleaningError("CLEANING_MESSAGE_RECIPIENT_REQUIRED", "수신번호를 입력해 주세요.", "recipient");
+    const body = renderMessageTemplate(raw.templateId, raw.variables || {});
+    return Object.assign(recordMeta(raw, actor, at, "clm"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      templateId: text(raw.templateId),
+      recipient: text(raw.recipient),
+      channel: ["sms", "alimtalk"].includes(raw.channel) ? raw.channel : "sms",
+      body,
+      variables: Object.assign({}, raw.variables || {}),
+      status: ["draft", "sent", "failed"].includes(raw.status) ? raw.status : "draft",
+      sentAt: text(raw.sentAt),
+      failureReason: text(raw.failureReason)
+    });
+  }
+
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
@@ -199,6 +292,10 @@
     calculateCleaningQuote,
     transitionCleaningOrder,
     renderMessageTemplate,
-    calculateCleaningKpis
+    calculateCleaningKpis,
+    createCleaningDispatch,
+    createCleaningReport,
+    createCleaningQcReview,
+    createCleaningMessage
   });
 });

@@ -1980,6 +1980,34 @@
     openDrawer();
   }
 
+  function cleaningDispatchEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>배차 등록</h2><p>${esc(order.customerName)} · ${esc(order.address)}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningDispatchForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>팀 유형</span><select name="teamType"><option value="direct">직영</option><option value="partner">Partner</option></select></label><label class="field"><span>팀명 *</span><input name="teamName" required placeholder="직영 1팀"></label><label class="field"><span>작업 일정 *</span><input name="scheduledAt" type="datetime-local" value="${attr(String(order.scheduledAt || "").slice(0,16))}" required></label><label class="field"><span>투입인원 *</span><input name="headcount" type="number" min="1" value="2" required></label><label class="field"><span>차량</span><input name="vehicle" placeholder="차량번호 또는 차량명"></label><label class="field full"><span>작업 지시</span><textarea name="instructions" rows="3">${esc(order.scope || "")}</textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">배차 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningReportEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>현장보고 등록</h2><p>${esc(order.customerName)} · 사진과 시설 이상을 남깁니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningReportForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>보고 유형 *</span><select name="type" required><option value="arrival">도착</option><option value="progress">중간</option><option value="completion">완료</option><option value="incident">사고·파손</option></select></label><label class="field"><span>진행률</span><input name="progressPercent" type="number" min="0" max="100" value="0"></label><label class="field full"><span>보고 내용</span><textarea name="note" rows="3"></textarea></label><label class="field full"><span>사진 링크</span><textarea name="photoUrls" rows="3" placeholder="한 줄에 하나씩 입력"></textarea><small>완료·사고 보고에는 사진 링크가 최소 1개 필요합니다.</small></label><label class="field full"><span>시설 이상 징후</span><textarea name="facilityFindings" rows="3" placeholder="누수·전기·설비·마감·안전 등"></textarea></label><label class="field"><span>예상 완료</span><input name="expectedCompletionAt" type="datetime-local"></label><label class="field"><span>사고 심각도</span><select name="incidentSeverity"><option value="">해당 없음</option><option value="low">경미</option><option value="medium">주의</option><option value="high">긴급</option></select></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">보고 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningQcEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>브링케어 책임검수</h2><p>90점 이상만 최종 완료 처리할 수 있습니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningQcForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>검수 점수 *</span><input name="score" type="number" min="0" max="100" value="90" required></label><label class="field full"><span>검수 메모</span><textarea name="note" rows="3"></textarea></label><label class="field full"><span>보완·재작업 범위</span><textarea name="reworkScope" rows="3"></textarea></label><label class="field"><span><input name="scopeCompleted" type="checkbox" checked> 계약범위 완료</span></label><label class="field"><span><input name="photoComplete" type="checkbox" checked> 사진증빙 완료</span></label><label class="field"><span><input name="finishComplete" type="checkbox" checked> 마감정리 완료</span></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">검수 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningMessageEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 문자 초안</h2><p>현재 단계에서는 발송하지 않고 CRM에 초안만 저장합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningMessageForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">실제 발송은 문자·알림톡 업체 연동 후 활성화합니다.</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>수신번호 *</span><input name="recipient" value="${attr(order.phone || "")}" required></label><label class="field"><span>채널</span><select name="channel"><option value="sms">문자</option><option value="alimtalk">알림톡</option></select></label><label class="field full"><span>메시지 *</span><select name="templateId" required><option value="quote_sent">견적 발송</option><option value="deposit_request">계약금 요청</option><option value="reservation_confirmed">예약 확정</option><option value="day_before">작업 전날</option><option value="departed">출발</option><option value="arrived">도착</option><option value="qc_completed">검수 완료·잔금</option><option value="complaint_received">불만 접수</option><option value="rework_confirmed">재작업 확정</option></select></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">발송대기 초안 저장</button></div></form>`;
+    openModal();
+  }
+
   function renderArchivedSalesProspects() {
     const archived = (store.salesProspects || []).filter(item => item && item.archivedAt);
     if (!archived.length) return "";
@@ -3380,6 +3408,14 @@
       cleaningOrderEditor(cleaningOrderEdit.dataset.cleaningOrderEdit);
       return;
     }
+    const cleaningDispatchAdd = event.target.closest("[data-cleaning-dispatch-add]");
+    if (cleaningDispatchAdd) { cleaningDispatchEditor(cleaningDispatchAdd.dataset.cleaningDispatchAdd); return; }
+    const cleaningReportAdd = event.target.closest("[data-cleaning-report-add]");
+    if (cleaningReportAdd) { cleaningReportEditor(cleaningReportAdd.dataset.cleaningReportAdd); return; }
+    const cleaningQcAdd = event.target.closest("[data-cleaning-qc-add]");
+    if (cleaningQcAdd) { cleaningQcEditor(cleaningQcAdd.dataset.cleaningQcAdd); return; }
+    const cleaningMessageAdd = event.target.closest("[data-cleaning-message-add]");
+    if (cleaningMessageAdd) { cleaningMessageEditor(cleaningMessageAdd.dataset.cleaningMessageAdd); return; }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -4240,6 +4276,91 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningDispatchForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningDispatch({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          teamType: raw.teamType,
+          teamName: raw.teamName,
+          scheduledAt: raw.scheduledAt,
+          headcount: raw.headcount,
+          vehicle: raw.vehicle,
+          instructions: raw.instructions
+        }, salesActor());
+        store.cleaningDispatches.push(item);
+        logAudit({ category: "청소", targetType: "배차", targetId: item.id, targetLabel: item.teamName, action: "청소 배차 등록", reason: item.cleaningOrderId });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("배차를 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "배차를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningReportForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningReport({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          type: raw.type,
+          progressPercent: raw.progressPercent,
+          note: raw.note,
+          photoUrls: String(raw.photoUrls || "").split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
+          facilityFindings: raw.facilityFindings,
+          expectedCompletionAt: raw.expectedCompletionAt,
+          incidentSeverity: raw.incidentSeverity
+        }, salesActor());
+        store.cleaningReports.push(item);
+        logAudit({ category: "청소", targetType: "현장보고", targetId: item.id, targetLabel: item.type, action: "청소 현장보고 등록", reason: item.cleaningOrderId });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("현장보고를 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "현장보고를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningQcForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningQcReview({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          score: raw.score,
+          note: raw.note,
+          reworkScope: raw.reworkScope,
+          scopeCompleted: Boolean(form.elements.scopeCompleted.checked),
+          photoComplete: Boolean(form.elements.photoComplete.checked),
+          finishComplete: Boolean(form.elements.finishComplete.checked)
+        }, salesActor());
+        store.cleaningQcReviews.push(item);
+        logAudit({ category: "청소", targetType: "책임검수", targetId: item.id, targetLabel: item.score + "점", action: "청소 책임검수 등록", reason: item.result });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast(item.result === "passed" ? "책임검수를 통과했습니다." : "보완·재작업 대상으로 기록했습니다.", item.result === "passed" ? "success" : "error");
+      } catch (error) { showToast(error.message || "책임검수를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningMessageForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const order = cleaningOrderById(form.dataset.cleaningOrderId);
+      if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+      const variables = {
+        customerName: order.customerName,
+        totalAmount: Core.money(order.totalAmount).toLocaleString("ko-KR"),
+        scheduledAt: order.scheduledAt || "일정 확인 중",
+        quoteUrl: "CRM 주문 " + order.id,
+        depositAmount: Core.money(order.depositAmount).toLocaleString("ko-KR"),
+        paymentUrl: "결제 링크 준비 중",
+        serviceType: order.serviceType,
+        address: order.address,
+        arrivalAt: order.scheduledAt || "도착시간 확인 중",
+        teamName: store.cleaningDispatches.filter(item => item.cleaningOrderId === order.id).at(-1)?.teamName || "브링케어 담당팀",
+        reportUrl: "완료보고서 준비 중",
+        balanceAmount: Core.money(order.balanceAmount).toLocaleString("ko-KR"),
+        orderId: order.id,
+        owner: order.owner || salesActorName(),
+        responseDueAt: "30분 이내",
+        reworkAt: order.scheduledAt || "일정 협의",
+        scope: order.scope || "확정 범위"
+      };
+      try {
+        const item = Cleaning.createCleaningMessage({
+          cleaningOrderId: order.id,
+          templateId: raw.templateId,
+          recipient: raw.recipient,
+          channel: raw.channel,
+          variables,
+          status: "draft"
+        }, salesActor());
+        store.cleaningMessages.push(item);
+        logAudit({ category: "청소", targetType: "고객 메시지", targetId: item.id, targetLabel: item.templateId, action: "발송대기 문자 초안 저장", reason: order.id });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(order.id); showToast("문자 초안을 발송대기로 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "문자 초안을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningOrderForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {

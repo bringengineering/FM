@@ -45,3 +45,31 @@ test("cleaning order detail and ordered transition are wired", async () => {
   assert.match(app, /data-cleaning-order-next/);
   assert.match(app, /Cleaning\.transitionCleaningOrder/);
 });
+
+test("dispatch field report QC and message editors are connected to durable collections", async () => {
+  const app = await source("app.js");
+  for (const editor of [
+    "cleaningDispatchEditor", "cleaningReportEditor", "cleaningQcEditor", "cleaningMessageEditor"
+  ]) assert.match(app, new RegExp("function " + editor + "\\(orderId\\)"));
+  for (const form of [
+    "cleaningDispatchForm", "cleaningReportForm", "cleaningQcForm", "cleaningMessageForm"
+  ]) assert.match(app, new RegExp('id="' + form + '"'));
+  for (const pair of [
+    ["createCleaningDispatch", "cleaningDispatches"],
+    ["createCleaningReport", "cleaningReports"],
+    ["createCleaningQcReview", "cleaningQcReviews"],
+    ["createCleaningMessage", "cleaningMessages"]
+  ]) {
+    assert.match(app, new RegExp("Cleaning\\." + pair[0]));
+    assert.match(app, new RegExp("store\\." + pair[1] + "\\.push"));
+  }
+});
+
+test("order detail exposes operational actions without pretending a message was sent", async () => {
+  const ui = await source("cleaning-ui.js");
+  assert.match(ui, /data-cleaning-dispatch-add/);
+  assert.match(ui, /data-cleaning-report-add/);
+  assert.match(ui, /data-cleaning-qc-add/);
+  assert.match(ui, /data-cleaning-message-add/);
+  assert.match(ui, /발송대기|draft/);
+});
