@@ -144,3 +144,11 @@ test("cleaning rework scheduling completion reinspection and CS closure are wire
   assert.match(app, /reworks:\s*store\.cleaningReworks/);
   assert.match(app, /linkedCase\.resolution\s*=\s*"재작업 및 재검수 완료"/);
 });
+
+test("closing a cleaning order creates one retention funnel and exposes action updates", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.createCleaningRetentionPlan/);
+  assert.match(app, /store\.cleaningRetentionActions\.push/);
+  assert.match(app, /Cleaning\.updateCleaningRetentionAction/);
+  assert.match(app, /retentionActions:\s*store\.cleaningRetentionActions/);
+});

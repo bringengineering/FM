@@ -347,3 +347,19 @@ test("runs rework through schedule completion reinspection and closure evidence"
   const closed = Cleaning.transitionCleaningRework(passed, "closed", { actor: { email: "ops@bring.local" }, at: "2026-09-22T12:00:00Z" });
   assert.equal(closed.closedAt, "2026-09-22T12:00:00Z");
 });
+
+test("creates a retention funnel after a completed cleaning order", () => {
+  const actions = Cleaning.createCleaningRetentionPlan({ id: "cln_1", customerId: "cus_1", serviceType: "move_in", closedAt: "2026-09-20T00:00:00Z" });
+  assert.deepEqual(actions.map(item => item.type), ["review", "building_care", "repeat_referral"]);
+  assert.equal(actions[0].dueAt, "2026-09-21T00:00:00.000Z");
+  assert.equal(actions[1].dueAt, "2026-09-27T00:00:00.000Z");
+  assert.equal(actions[2].dueAt, "2026-10-20T00:00:00.000Z");
+  assert.ok(actions.every(item => item.status === "planned"));
+});
+
+test("tracks retention conversion without pretending a draft was sent", () => {
+  const item = Cleaning.updateCleaningRetentionAction({ id: "ret_1", status: "planned", type: "review" }, "draft", { email: "sales@bring.local" }, "2026-09-21T00:00:00Z");
+  assert.equal(item.status, "draft");
+  assert.equal(item.sentAt, "");
+  assert.equal(Cleaning.updateCleaningRetentionAction(item, "sent", {}, "2026-09-21T01:00:00Z").sentAt, "2026-09-21T01:00:00Z");
+});

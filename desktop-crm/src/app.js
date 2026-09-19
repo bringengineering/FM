@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks"]
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -538,7 +538,7 @@
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks"
+    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1997,6 +1997,7 @@
       cases: store.cleaningCases,
       cancellations: store.cleaningCancellations,
       reworks: store.cleaningReworks,
+      retentionActions: store.cleaningRetentionActions,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -3552,6 +3553,23 @@
       } catch (error) { showToast(error.message || "재작업 상태를 갱신하지 못했습니다.", "error"); }
       return;
     }
+    const retentionAction = event.target.closest("[data-cleaning-retention-draft], [data-cleaning-retention-sent], [data-cleaning-retention-responded], [data-cleaning-retention-converted]");
+    if (retentionAction) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 후속조치를 변경할 수 없습니다.", "error");
+      const actionId = retentionAction.dataset.cleaningRetentionDraft || retentionAction.dataset.cleaningRetentionSent || retentionAction.dataset.cleaningRetentionResponded || retentionAction.dataset.cleaningRetentionConverted;
+      const index = store.cleaningRetentionActions.findIndex(item => item.id === actionId);
+      if (index < 0) return showToast("후속조치 기록을 찾지 못했습니다.", "error");
+      const nextStatus = retentionAction.dataset.cleaningRetentionDraft ? "draft" : retentionAction.dataset.cleaningRetentionSent ? "sent" : retentionAction.dataset.cleaningRetentionResponded ? "responded" : "converted";
+      try {
+        const nextAction = Cleaning.updateCleaningRetentionAction(store.cleaningRetentionActions[index], nextStatus, salesActor());
+        store.cleaningRetentionActions[index] = nextAction;
+        logAudit({ category: "청소", targetType: "고객 후속조치", targetId: nextAction.id, targetLabel: nextAction.type, action: `후속조치 ${nextStatus}`, reason: nextAction.cleaningOrderId });
+        scheduleSave();
+        renderCleaningOrderDrawer(nextAction.cleaningOrderId);
+        showToast("고객 후속조치 상태를 갱신했습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 후속조치를 갱신하지 못했습니다.", "error"); }
+      return;
+    }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -3561,8 +3579,12 @@
       const next = Cleaning.CLEANING_ORDER_STAGES[index + 1];
       if (!next) return showToast("이미 종결된 주문입니다.");
       try {
-        const updated = Cleaning.transitionCleaningOrder(order, next.id, { qcReviews: store.cleaningQcReviews, actor: salesActor(), at: new Date().toISOString() });
+        const transitionedAt = new Date().toISOString();
+        const updated = Cleaning.transitionCleaningOrder(order, next.id, { qcReviews: store.cleaningQcReviews, actor: salesActor(), at: transitionedAt });
         store.cleaningOrders[store.cleaningOrders.findIndex(item => item.id === order.id)] = updated;
+        if (updated.stage === "closed" && !store.cleaningRetentionActions.some(item => item.cleaningOrderId === updated.id)) {
+          Cleaning.createCleaningRetentionPlan(Object.assign({}, updated, { closedAt: transitionedAt }), salesActor()).forEach(item => store.cleaningRetentionActions.push(item));
+        }
         logAudit({ category: "청소", targetType: "청소 주문", targetId: order.id, targetLabel: order.customerName, action: `단계 변경: ${order.stage} → ${next.id}`, reason: "Cleaning Sales Center 단계 진행" });
         scheduleSave();
         renderCleaningOrderDrawer(order.id);

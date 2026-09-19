@@ -519,6 +519,49 @@
     });
   }
 
+  function createCleaningRetentionPlan(source, actor) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.id)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    const baseText = text(raw.closedAt) || text(raw.updatedAt);
+    const base = new Date(baseText);
+    if (!baseText || !Number.isFinite(base.getTime())) throw cleaningError("CLEANING_CLOSED_AT_REQUIRED", "청소 종결 시간이 필요합니다.", "closedAt");
+    return [
+      { type: "review", days: 1 },
+      { type: "building_care", days: 7 },
+      { type: "repeat_referral", days: 30 }
+    ].map(definition => {
+      const due = new Date(base.getTime() + definition.days * 86400000);
+      return Object.assign(recordMeta({ id: `clrtn_${raw.id}_${definition.type}` }, actor, base.toISOString(), "clrtn"), {
+        cleaningOrderId: text(raw.id),
+        customerId: text(raw.customerId),
+        type: definition.type,
+        status: "planned",
+        dueAt: due.toISOString(),
+        draftAt: "",
+        sentAt: "",
+        respondedAt: "",
+        convertedAt: "",
+        note: ""
+      });
+    });
+  }
+
+  function updateCleaningRetentionAction(source, nextStatus, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const allowed = { planned: ["draft"], draft: ["sent"], sent: ["responded", "converted"], responded: ["converted"], converted: [] };
+    if (!(allowed[current.status] || []).includes(nextStatus)) throw cleaningError("CLEANING_RETENTION_TRANSITION_INVALID", "후속조치 상태를 순서대로 처리해 주세요.", "status");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, {
+      status: nextStatus,
+      draftAt: nextStatus === "draft" ? timestamp : text(current.draftAt),
+      sentAt: nextStatus === "sent" ? timestamp : text(current.sentAt),
+      respondedAt: nextStatus === "responded" ? timestamp : text(current.respondedAt),
+      convertedAt: nextStatus === "converted" ? timestamp : text(current.convertedAt),
+      updatedAt: timestamp,
+      updatedBy: text(actor && actor.email)
+    });
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -571,6 +614,8 @@
     transitionCleaningCancellation,
     createCleaningRework,
     transitionCleaningRework,
+    createCleaningRetentionPlan,
+    updateCleaningRetentionAction,
     calculateCleaningDashboard
   });
 });

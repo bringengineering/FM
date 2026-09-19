@@ -7,7 +7,7 @@ const Core = require("../src/core.js");
 const COLLECTIONS = [
   "cleaningOrders", "cleaningDispatches", "cleaningReports",
   "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-  "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks"
+  "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"
 ];
 
 test("blank and sanitized stores preserve every cleaning collection", () => {
