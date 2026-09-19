@@ -12,7 +12,23 @@
   function autoClick(e){const target=e.target.closest('button');if(!target)return;if(target.hasAttribute('data-auto-stop'))void autoRequest({action:'auto-stop'});if(target.hasAttribute('data-auto-start')){if(version===null){message('서버 기기 목록을 먼저 새로고침해 주세요.');return;}try{const snapshot=getPublication();if(confirm(`현재 편성과 공지를 고정하고, 업무 실적·오늘 일정을 1분마다 모든 승인된 TV에 자동 게시할까요?\n공지: ${snapshot.notice||'(없음)'}\n관리자 프로그램이 실행 중이어야 하며, 화면에서 편집한 새 공지·편성은 다시 시작해야 반영됩니다.\n직원 이름과 공지의 공개 범위를 확인해 주세요.`))void autoRequest({action:'auto-start',playlist:snapshot.playlist,notice:snapshot.notice,expectedVersion:version});}catch(error){message(error.message||'게시 자료를 확인해 주세요.');}}}
   function message(text){if(!closed)status.textContent=text;}
   function locking(value){busy=value;if(!closed)host.querySelectorAll('button').forEach(b=>b.disabled=value);}
-  async function load(){const data=await request({action:'list'});if(closed)return;version=Number.isSafeInteger(data.version)?data.version:null;list.replaceChildren();for(const device of data.devices){const row=host.ownerDocument.createElement('div');row.className='wb-playlist-row';const name=host.ownerDocument.createElement('span');name.textContent=device.name+' · '+(device.revokedAt?'해제됨':'승인됨');row.append(name);if(!device.revokedAt){const button=host.ownerDocument.createElement('button');button.type='button';button.className='secondary-button';button.textContent='연결 해제';button.dataset.device=device.id;row.append(button);}list.append(row);}if(!data.devices.length)list.textContent='등록된 TV가 없습니다.';}
+  async function load(){
+   const data=await request({action:'list'});if(closed)return;
+   version=Number.isSafeInteger(data.version)?data.version:null;list.replaceChildren();
+   for(const device of data.devices){
+    const row=host.ownerDocument.createElement('div');row.className='wb-playlist-row';
+    const name=host.ownerDocument.createElement('span');name.textContent=device.name+' · '+(device.revokedAt?'해제됨':'승인됨');row.append(name);
+    const seen=host.ownerDocument.createElement('small'),date=new Date(device.lastSeenAt);
+    if(Number.isFinite(device.lastSeenAt)&&device.lastSeenAt>0&&Number.isFinite(date.getTime())){
+     seen.textContent='마지막 서버 접속 ';const time=host.ownerDocument.createElement('time');
+     time.dateTime=date.toISOString();time.textContent=date.toLocaleString('ko-KR');seen.append(time);
+    }else seen.textContent='서버 접속 기록 없음';
+    row.append(seen);
+    if(!device.revokedAt){const button=host.ownerDocument.createElement('button');button.type='button';button.className='secondary-button';button.textContent='연결 해제';button.dataset.device=device.id;row.append(button);}list.append(row);
+   }
+   if(!data.devices.length)list.textContent='등록된 TV가 없습니다.';
+   else{const help=host.ownerDocument.createElement('p');help.textContent='접속 시각은 목록 새로고침 시 확인됩니다. 실제 TV 화면 표시는 별도로 확인해 주세요.';list.append(help);}
+  }
   async function run(input){if(busy||closed)return;locking(true);message('서버 확인 중…');try{if(input.action!=='list'){const result=await request(input);if(closed)return;message(input.action==='publish'?`운영보드를 게시했습니다. 버전 ${result.version} · TV 수신 확인은 별도입니다.`:input.action==='approve'?'기기를 승인했습니다.':'기기 연결을 해제했습니다.');}await load();if(input.action==='list')message('기기 목록을 확인했습니다.');}catch(error){version=null;if(!closed){list.replaceChildren();message(error?.message||'TV 서버 연결을 확인할 수 없습니다.');}}finally{locking(false);}}
   function submit(e){e.preventDefault();const code=host.querySelector('[name="code"]').value.trim().toUpperCase(),name=host.querySelector('[name="name"]').value.trim();if(!/^[A-F0-9]{8}$/.test(code)||!name){message('8자리 등록 코드와 기기 이름을 입력해 주세요.');return;}void run({action:'approve',code,name});}
   function click(e){const target=e.target.closest('button');if(!target||busy)return;if(target.hasAttribute('data-device-refresh'))void run({action:'list'});if(target.dataset.device&&confirm('이 TV의 서버 조회 권한을 해제할까요? 다시 사용하려면 재등록해야 합니다.'))void run({action:'revoke',deviceId:target.dataset.device});if(target.hasAttribute('data-device-publish')){if(version===null){message('먼저 서버 기기 목록을 새로고침해 주세요.');return;}try{const snapshot=getPublication();if(confirm(`현재 실적·일정·편성을 모든 승인된 TV에 게시할까요?\n공지: ${snapshot.notice||'(없음)'}\n직원 이름과 공지에 개인정보가 없는지 확인해 주세요.\n게시 시점의 자료이며 자동 갱신 게시가 아닙니다.`))void run({action:'publish',snapshot,expectedVersion:version});}catch(error){message(error.message||'게시 자료를 준비하지 못했습니다.');}}}
