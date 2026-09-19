@@ -8,7 +8,7 @@
  async function check(){if(busy)return;busy=true;try{
   if(pending){const result=await api.poll();if(result.expired){pending=false;status.textContent='등록 코드가 만료되었습니다. 다시 등록해 주세요.';pairing.hidden=true;}else if(result.paired){pending=false;paired=true;pairing.hidden=true;}else{status.textContent='관리자 승인 대기 중';return;}}
   const result=await api.display();paired=result.paired;offline=false;if(!paired){board=null;status.textContent=result.revoked?'기기가 해제되었습니다. 재등록이 필요합니다.':'TV 등록을 시작해 주세요.';draw();return;}
-  if(result.board?.version!==board?.version){board=result.board;index=0;page=0;tick=0;}
+  if(result.board?.version!==board?.version){const changed=JSON.stringify(result.board?.playlist)!==JSON.stringify(board?.playlist);board=result.board;if(changed){index=0;page=0;tick=0;}else{const key=current()?.key,count=key==='people'?board.model.people.length:key==='schedule'?board.model.schedule.entries.length:0;page=Math.min(page,Math.max(0,Math.ceil(count/6)-1));}}
   lastSuccess=new Date().toLocaleTimeString('ko-KR');status.textContent=board?'서버 연결됨 · 게시된 자료 표시 중':'승인됨 · 관리자의 게시를 기다립니다.';document.querySelector('#connect').hidden=true;draw();
  }catch(_){offline=true;status.textContent='서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도합니다.';draw();}finally{busy=false;document.querySelector('#connect').hidden=paired;}}
  document.querySelector('#connect').onclick=async()=>{if(busy)return;busy=true;try{const result=await api.start();pending=true;pairing.hidden=false;document.querySelector('#pair-code').textContent=result.code;document.querySelector('#pair-expiry').textContent='만료: '+new Date(result.expiresAt).toLocaleTimeString('ko-KR');status.textContent='CRM 회사 운영보드에서 이 코드를 승인해 주세요.';}catch(_){status.textContent='등록 서버가 아직 준비되지 않았거나 연결되지 않습니다.';}finally{busy=false;}};

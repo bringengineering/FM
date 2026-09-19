@@ -1,5 +1,16 @@
 // @vitest-environment node
 import {test,expect} from 'vitest';import {JSDOM} from 'jsdom';import fs from 'node:fs';import path from 'node:path';
+test('automatic publication requires consent, freezes approved layout, and exposes stop',async()=>{
+ const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
+ const calls:any[]=[];const host=w.document.querySelector('main');let allow=false;
+ const snapshot={notice:'공지',playlist:[{key:'people',enabled:true,seconds:30}]};
+ const dispose=w.BringWallboardAdmin.mount(host,{confirm:()=>allow,getPublication:()=>snapshot,request:async(i:any)=>{calls.push(i);return i.action==='list'?{version:2,devices:[]}:{active:i.action==='auto-start',version:3,publishedAt:123};}});
+ await new Promise(r=>setTimeout(r,0));expect(host.querySelector('[data-auto-start]')).not.toBeNull();
+ host.querySelector('[data-auto-start]').click();expect(calls.some(i=>i.action==='auto-start')).toBe(false);
+ allow=true;host.querySelector('[data-auto-start]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'auto-start',...snapshot,expectedVersion:2});
+ host.querySelector('[data-auto-stop]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'auto-stop'});
+ dispose();dom.window.close();
+});
 test('publication requires confirmation and uses loaded server revision',async()=>{
  const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
  const calls:any[]=[];let allow=false;const host=w.document.querySelector('main');const snapshot={notice:'확인된 공지'};

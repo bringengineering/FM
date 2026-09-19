@@ -58,3 +58,10 @@ Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-
 - The bundled local runtime supports compatibility date 2026-05-22, so the fixture uses that date. Production remains 2026-08-30. This is local runtime evidence, not verification of production configuration/date or Firebase login.
 - Production Worker dry-run bundling passed, including shared desktop publication schema. No remote resources or deployments were created.
 - Next required work: automatic source publication, Windows encryption/restart and installer, actual production bindings/approval, two-computer acceptance. The remote TV feature is not yet production-ready.
+
+## Automatic publication implementation
+- Added explicit start/stop controls and main-process 60-second publisher; navigating away from the board does not stop it. App exit stops it, restart requires renewed opt-in. This is not an always-on cloud scheduler.
+- Publication freezes the approved notice/playlist; work aggregates and today's service schedule are re-read. Source uses read-only server requests, not `loadStore`, because that existing function can resume pending writes and merge local data.
+- Authentication change stops publication. Requests never overlap. Source/network failure keeps the previous revision and displays an error; authorization or revision conflict stops the publisher. Manual publishing stops this local automatic publisher.
+- TV playback keeps its current scene/page when only data version changes, preventing frequent refreshes from starving later scenes.
+- Verified desktop suite: 2167 passed, 2 skipped, 0 failures. Three focused UI suites: 9 passed. No production deployment/installation performed. Actual two-computer automatic delivery and Windows installer remain unverified.

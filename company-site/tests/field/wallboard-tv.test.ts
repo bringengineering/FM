@@ -1,5 +1,12 @@
 // @vitest-environment node
 import {test,expect} from 'vitest';import {JSDOM} from 'jsdom';import fs from 'node:fs';import path from 'node:path';
+test('new data does not restart an unchanged playlist before later scenes are shown',async()=>{
+ const source=(name:string)=>fs.readFileSync(path.resolve('../desktop-crm/src',name),'utf8');const dom=new JSDOM(source('wallboard-tv.html'),{runScripts:'outside-only'});const w=dom.window as any;
+ const timers:any[]=[];w.setInterval=(fn:any)=>{timers.push(fn);return timers.length;};w.clearInterval=()=>{};let version=1;
+ w.bringTV={display:async()=>({paired:true,board:{version,publishedAt:1,dataDate:'2026-09-20',notice:'공지',playlist:[{key:'notice',enabled:true,seconds:10},{key:'status',enabled:true,seconds:10}],model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,unknown:0}}})};
+ w.eval(source('company-wallboard.js'));w.eval(source('wallboard-tv-renderer.js'));await new Promise(r=>setTimeout(r,0));for(let n=0;n<10;n++)timers[1]();expect(w.document.querySelector('#scene-title').textContent).toBe('업무 진행 현황');
+ version++;w.document.querySelector('#refresh').click();await new Promise(r=>setTimeout(r,0));expect(w.document.querySelector('#scene-title').textContent).toBe('업무 진행 현황');w.dispatchEvent(new w.Event('beforeunload'));dom.window.close();
+});
 test('read-only TV enrolls then displays publication and removes it when revoked',async()=>{
  const source=(name:string)=>fs.readFileSync(path.resolve('../desktop-crm/src',name),'utf8');
  const dom=new JSDOM(source('wallboard-tv.html'),{runScripts:'outside-only'});const w=dom.window as any;
