@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
+    ["marketingLeadInbox", "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -537,6 +537,7 @@
     "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+    "marketingLeadInbox",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
     "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"
   ];
@@ -1945,6 +1946,7 @@
     const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments });
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
+      inboundLeads: store.marketingLeadInbox,
       orders: store.cleaningOrders,
       partners: store.cleaningPartners,
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
@@ -1960,13 +1962,40 @@
     });
   }
 
-  function cleaningOrderEditor(orderId) {
-    const order = cleaningOrderById(orderId) || {};
+  function cleaningServiceFromLead(value) {
+    const text = String(value || "");
+    if (/공용부/.test(text)) return "common_area";
+    if (/정기/.test(text)) return "recurring";
+    if (/입주|이사|퇴실|원룸|아파트/.test(text)) return "move_in";
+    return "other";
+  }
+
+  function cleaningScheduleFromLead(lead) {
+    const needs = String(lead && lead.needs || "");
+    const date = needs.match(/희망일 1순위:\s*(\d{4}-\d{2}-\d{2})/)?.[1] || "";
+    const timeText = needs.match(/희망시간:\s*([^\n]+)/)?.[1] || "";
+    const time = timeText.match(/(\d{1,2}):(\d{2})/);
+    return date ? `${date}T${time ? `${String(time[1]).padStart(2, "0")}:${time[2]}` : "09:00"}` : "";
+  }
+
+  function cleaningOrderEditor(orderId, leadInput) {
+    const lead = leadInput && typeof leadInput === "object" ? leadInput : null;
+    const order = cleaningOrderById(orderId) || (lead ? {
+      customerName: lead.name,
+      phone: lead.phone,
+      serviceType: cleaningServiceFromLead(lead.service),
+      address: lead.location,
+      scheduledAt: cleaningScheduleFromLead(lead),
+      scope: [lead.service, lead.buildingInfo, lead.needs].filter(Boolean).join("\n"),
+      exclusions: "",
+      marketingLeadId: lead.id || lead.requestId
+    } : {});
     const selected = value => order.serviceType === value ? " selected" : "";
     const priceSelected = value => order.priceProduct === value ? " selected" : "";
     const standardChecked = order.quoteMode !== "manual" ? " checked" : "";
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${order.id ? "청소 주문 수정" : "새 청소 주문"}</h2><p>상담·견적·일정을 한 번에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
       <form id="cleaningOrderForm" class="modal-body" data-cleaning-order-id="${attr(order.id || "")}">
+        <input type="hidden" name="marketingLeadId" value="${attr(order.marketingLeadId || "")}">
         <div class="info-box"><strong>현장 추가금 없음</strong><br>사전 확정 범위와 제외 범위를 고객에게 명확히 안내합니다.</div>
         <div class="form-grid" style="margin-top:14px">
           <label class="field"><span>고객명 *</span><input name="customerName" value="${attr(order.customerName || "")}" required></label>
@@ -3499,6 +3528,14 @@
       renderCleaningOrderDrawer(cleaningOrderOpen.dataset.cleaningOrderOpen);
       return;
     }
+    const cleaningLeadConvert = event.target.closest("[data-cleaning-lead-convert]");
+    if (cleaningLeadConvert) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 견적 문의를 주문으로 전환할 수 없습니다.", "error");
+      const lead = store.marketingLeadInbox.find(item => item && item.id === cleaningLeadConvert.dataset.cleaningLeadConvert);
+      if (!lead) return showToast("견적 문의를 찾지 못했습니다.", "error");
+      cleaningOrderEditor("", lead);
+      return;
+    }
     const cleaningPartnerOpen = event.target.closest("[data-cleaning-partner-open]");
     if (cleaningPartnerOpen) { cleaningPartnerEditor(cleaningPartnerOpen.dataset.cleaningPartnerOpen); return; }
     const cleaningOrderEdit = event.target.closest("[data-cleaning-order-edit]");
@@ -4788,6 +4825,16 @@
         item.updatedBy = actor.email || "";
         if (existing) store.cleaningOrders[store.cleaningOrders.findIndex(order => order.id === existing.id)] = item;
         else store.cleaningOrders.push(item);
+        if (!existing && raw.marketingLeadId) {
+          const lead = store.marketingLeadInbox.find(record => record && record.id === String(raw.marketingLeadId));
+          if (lead && lead.status !== "converted") {
+            lead.status = "converted";
+            lead.convertedOrderId = item.id;
+            lead.convertedAt = new Date().toISOString();
+            lead.convertedBy = actor.email || salesActorName();
+            logAudit({ category: "청소", targetType: "홈페이지 견적문의", targetId: lead.id, targetLabel: lead.name || lead.phone, action: "청소 주문 전환", reason: item.id });
+          }
+        }
         logAudit({ category: "청소", targetType: "청소 주문", targetId: item.id, targetLabel: item.customerName, action: existing ? "청소 주문 수정" : "청소 주문 등록", reason: "Cleaning Sales Center" });
         scheduleSave();
         closeModal();

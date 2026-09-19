@@ -194,6 +194,7 @@
       },
       customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], securityAssets: [], auditLogs: [], securityIncidents: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
+      marketingLeadInbox: [],
       cleaningOrders: [], cleaningDispatches: [], cleaningReports: [], cleaningQcReviews: [], cleaningMessages: [], cleaningPartners: [], cleaningPayments: [], cleaningSettlements: [], cleaningCases: [], cleaningCancellations: [], cleaningReworks: [], cleaningRetentionActions: [], cleaningCustomerReports: [], cleaningQuotes: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
@@ -243,6 +244,15 @@
       salesActivities: Array.isArray(src.salesActivities) ? src.salesActivities.filter(Boolean) : [],
       salesEvents: Array.isArray(src.salesEvents) ? src.salesEvents.filter(Boolean) : [],
       salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
+      marketingLeadInbox: Array.isArray(src.marketingLeadInbox) ? src.marketingLeadInbox.filter(Boolean).flatMap(lead => {
+        const item = Object.assign({}, lead);
+        const id = String(item.id || item.requestId || "").trim();
+        if (!id) return [];
+        item.id = id;
+        item.requestId = String(item.requestId || id);
+        item.status = String(item.status || "new");
+        return [item];
+      }) : [],
       cleaningOrders: Array.isArray(src.cleaningOrders) ? src.cleaningOrders.filter(Boolean) : [],
       cleaningDispatches: Array.isArray(src.cleaningDispatches) ? src.cleaningDispatches.filter(Boolean) : [],
       cleaningReports: Array.isArray(src.cleaningReports) ? src.cleaningReports.filter(Boolean) : [],

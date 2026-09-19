@@ -201,3 +201,17 @@ test("renders customer quote evidence and explicit issue action", () => {
   assert.match(detail, /data-cleaning-quote-issue="q1"/);
   assert.match(detail, /data-cleaning-quote-add="o1"/);
 });
+
+test("renders new website estimate leads as an immediate response inbox", () => {
+  const center = UI.renderCleaningCenter({
+    stages, orders: [], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [],
+    inboundLeads: [{ id: "lead_web_1", name: "홍길동", phone: "010-1234-5678", location: "원주시", service: "아파트 입주청소", submittedAt: "2026-09-20T09:00:00.000Z", status: "new" }],
+    writable: true
+  });
+  assert.match(center, /견적 신청함/);
+  assert.match(center, /신규 문의 1건/);
+  assert.match(center, /홍길동/);
+  assert.match(center, /010-1234-5678/);
+  assert.match(center, /즉시 연락/);
+  assert.match(center, /data-cleaning-lead-convert="lead_web_1"/);
+});

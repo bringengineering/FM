@@ -19,7 +19,7 @@ test("desktop entry loads and navigates to the integrated cleaning center", asyn
 
 test("cleaning order editor exposes explicit customer scope price and no-surcharge fields", async () => {
   const app = await source("app.js");
-  assert.match(app, /function cleaningOrderEditor\(orderId\)/);
+  assert.match(app, /function cleaningOrderEditor\(orderId,\s*leadInput\)/);
   assert.match(app, /id="cleaningOrderForm"/);
   for (const name of ["customerName", "phone", "serviceType", "address", "scheduledAt", "totalAmount", "depositAmount", "scope", "exclusions"]) {
     assert.match(app, new RegExp('name="' + name + '"'));
@@ -210,4 +210,16 @@ test("customer quote drafts are created and explicitly issued from the order", a
   assert.match(app, /store\.cleaningQuotes\.push/);
   assert.match(app, /Cleaning\.issueCleaningQuoteDocument/);
   assert.match(app, /quotes:\s*store\.cleaningQuotes/);
+});
+
+test("website estimate inbox prefills a cleaning order and closes the lead after conversion", async () => {
+  const app = await source("app.js");
+  assert.match(app, /inboundLeads:\s*store\.marketingLeadInbox/);
+  assert.match(app, /data-cleaning-lead-convert/);
+  assert.match(app, /cleaningOrderEditor\("",\s*lead\)/);
+  assert.match(app, /name="marketingLeadId"/);
+  const submit = app.match(/else if \(form\.id === "cleaningOrderForm"\) \{([\s\S]*?)\n\s*\} else if/)?.[1] || "";
+  assert.match(submit, /raw\.marketingLeadId/);
+  assert.match(submit, /lead\.status\s*=\s*"converted"/);
+  assert.match(submit, /lead\.convertedOrderId\s*=\s*item\.id/);
 });
