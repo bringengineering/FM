@@ -2122,11 +2122,25 @@
     openDrawer();
   }
 
-  function cleaningPartnerEditor(partnerId) {
+  function cleaningPartnerEditor(partnerId, leadInput) {
     ensureCleaningStore();
-    const partner = store.cleaningPartners.find(item => item && item.id === String(partnerId || "")) || {};
+    const lead = leadInput && typeof leadInput === "object" ? leadInput : null;
+    const partner = store.cleaningPartners.find(item => item && item.id === String(partnerId || "")) || (lead ? {
+      businessName: lead.businessName || lead.name,
+      representative: lead.name,
+      phone: lead.phone,
+      businessNumber: lead.businessNumber,
+      regions: [lead.location].filter(Boolean),
+      services: String(lead.services || "").split(",").filter(Boolean),
+      headcount: lead.headcount,
+      dailyCapacity: lead.dailyCapacity,
+      vehicle: lead.vehicle,
+      invoiceAvailable: lead.invoiceAvailable,
+      insured: lead.insured,
+      marketingLeadId: lead.id || lead.requestId
+    } : {});
     const checked = value => value ? " checked" : "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${partner.id ? "Cleaning Partner 수정" : "Cleaning Partner 등록"}</h2><p>지원정보와 유상 시험작업 2건을 함께 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPartnerForm" class="modal-body" data-cleaning-partner-id="${attr(partner.id || "")}"><div class="form-grid"><label class="field"><span>상호 *</span><input name="businessName" value="${attr(partner.businessName || "")}" required></label><label class="field"><span>대표자 *</span><input name="representative" value="${attr(partner.representative || "")}" required></label><label class="field"><span>연락처 *</span><input name="phone" value="${attr(partner.phone || "")}" required></label><label class="field"><span>사업자번호</span><input name="businessNumber" value="${attr(partner.businessNumber || "")}"></label><label class="field"><span>활동지역</span><input name="regions" value="${attr((partner.regions || []).join(", "))}" placeholder="원주, 횡성"></label><label class="field"><span>인원</span><input name="headcount" type="number" min="0" value="${attr(partner.headcount || "")}"></label><label class="field"><span>일 최대건수</span><input name="dailyCapacity" type="number" min="0" value="${attr(partner.dailyCapacity || "")}"></label><label class="field"><span>차량</span><input name="vehicle" value="${attr(partner.vehicle || "")}"></label><label class="field"><span><input name="businessRegistered" type="checkbox"${checked(partner.businessRegistered)}> 사업자등록 확인</span></label><label class="field"><span><input name="invoiceAvailable" type="checkbox"${checked(partner.invoiceAvailable)}> 세금계산서 가능</span></label><label class="field"><span><input name="insured" type="checkbox"${checked(partner.insured)}> 배상책임보험</span></label><label class="field"><span><input name="moveInService" type="checkbox"${checked((partner.services || []).includes("move_in"))}> 입주청소 가능</span></label><label class="field"><span><input name="commonAreaService" type="checkbox"${checked((partner.services || []).includes("common_area"))}> 공용부청소 가능</span></label><label class="field"><span>유상 시험작업 1 점수</span><input name="trial1Score" type="number" min="0" max="100"></label><label class="field"><span>유상 시험작업 2 점수</span><input name="trial2Score" type="number" min="0" max="100"></label><label class="field"><span><input name="approveAfterTrials" type="checkbox"> 2건 통과 시 조건부 승인</span></label></div><div class="info-box">시험작업 2건 평균 80점 이상이며 중대 위반이 없어야 조건부 승인됩니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">Partner 저장</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${partner.id ? "Cleaning Partner 수정" : "Cleaning Partner 등록"}</h2><p>지원정보와 유상 시험작업 2건을 함께 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPartnerForm" class="modal-body" data-cleaning-partner-id="${attr(partner.id || "")}"><input type="hidden" name="marketingLeadId" value="${attr(partner.marketingLeadId || "")}"><div class="form-grid"><label class="field"><span>상호 *</span><input name="businessName" value="${attr(partner.businessName || "")}" required></label><label class="field"><span>대표자 *</span><input name="representative" value="${attr(partner.representative || "")}" required></label><label class="field"><span>연락처 *</span><input name="phone" value="${attr(partner.phone || "")}" required></label><label class="field"><span>사업자번호</span><input name="businessNumber" value="${attr(partner.businessNumber || "")}"></label><label class="field"><span>활동지역</span><input name="regions" value="${attr((partner.regions || []).join(", "))}" placeholder="원주, 횡성"></label><label class="field"><span>인원</span><input name="headcount" type="number" min="0" value="${attr(partner.headcount || "")}"></label><label class="field"><span>일 최대건수</span><input name="dailyCapacity" type="number" min="0" value="${attr(partner.dailyCapacity || "")}"></label><label class="field"><span>차량</span><input name="vehicle" value="${attr(partner.vehicle || "")}"></label><label class="field"><span><input name="businessRegistered" type="checkbox"${checked(partner.businessRegistered)}> 사업자등록 확인</span></label><label class="field"><span><input name="invoiceAvailable" type="checkbox"${checked(partner.invoiceAvailable)}> 세금계산서 가능</span></label><label class="field"><span><input name="insured" type="checkbox"${checked(partner.insured)}> 배상책임보험</span></label><label class="field"><span><input name="moveInService" type="checkbox"${checked((partner.services || []).includes("move_in"))}> 입주청소 가능</span></label><label class="field"><span><input name="commonAreaService" type="checkbox"${checked((partner.services || []).includes("common_area"))}> 공용부청소 가능</span></label><label class="field"><span>유상 시험작업 1 점수</span><input name="trial1Score" type="number" min="0" max="100"></label><label class="field"><span>유상 시험작업 2 점수</span><input name="trial2Score" type="number" min="0" max="100"></label><label class="field"><span><input name="approveAfterTrials" type="checkbox"> 2건 통과 시 조건부 승인</span></label></div><div class="info-box">시험작업 2건 평균 80점 이상이며 중대 위반이 없어야 조건부 승인됩니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">Partner 저장</button></div></form>`;
     openModal();
   }
 
@@ -3612,6 +3626,14 @@
       cleaningOrderEditor("", lead);
       return;
     }
+    const cleaningPartnerLead = event.target.closest("[data-cleaning-partner-lead]");
+    if (cleaningPartnerLead) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 Partner 지원서를 심사할 수 없습니다.", "error");
+      const lead = store.marketingLeadInbox.find(item => item && item.id === cleaningPartnerLead.dataset.cleaningPartnerLead);
+      if (!lead) return showToast("Partner 지원서를 찾지 못했습니다.", "error");
+      cleaningPartnerEditor("", lead);
+      return;
+    }
     const cleaningPartnerOpen = event.target.closest("[data-cleaning-partner-open]");
     if (cleaningPartnerOpen) { cleaningPartnerEditor(cleaningPartnerOpen.dataset.cleaningPartnerOpen); return; }
     const cleaningOrderEdit = event.target.closest("[data-cleaning-order-edit]");
@@ -4774,7 +4796,8 @@
           insured: form.elements.insured.checked,
           headcount: raw.headcount,
           dailyCapacity: raw.dailyCapacity,
-          vehicle: raw.vehicle
+          vehicle: raw.vehicle,
+          marketingLeadId: raw.marketingLeadId
         }), salesActor(), existing?.createdAt);
         if (form.elements.approveAfterTrials.checked) {
           item = Cleaning.approveCleaningPartner(item, [
@@ -4784,6 +4807,15 @@
         }
         if (existing) store.cleaningPartners[store.cleaningPartners.findIndex(value => value.id === existing.id)] = item;
         else store.cleaningPartners.push(item);
+        if (!existing && raw.marketingLeadId) {
+          const lead = store.marketingLeadInbox.find(record => record && record.id === String(raw.marketingLeadId));
+          if (lead && lead.status !== "converted") {
+            lead.status = "converted";
+            lead.convertedPartnerId = item.id;
+            lead.convertedAt = new Date().toISOString();
+            lead.convertedBy = salesActor().email || salesActorName();
+          }
+        }
         logAudit({ category: "청소", targetType: "Cleaning Partner", targetId: item.id, targetLabel: item.businessName, action: existing ? "Partner 수정" : "Partner 등록", reason: item.status });
         scheduleSave(); closeModal(); renderCleaningCenter(); showToast("Cleaning Partner를 저장했습니다.", "success");
       } catch (error) { showToast(error.message || "Partner를 저장하지 못했습니다.", "error"); }

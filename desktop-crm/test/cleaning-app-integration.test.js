@@ -76,7 +76,7 @@ test("order detail exposes operational actions without pretending a message was 
 
 test("Partner registration and approval evidence are stored in the cleaning module", async () => {
   const app = await source("app.js");
-  assert.match(app, /function cleaningPartnerEditor\(partnerId\)/);
+  assert.match(app, /function cleaningPartnerEditor\(partnerId, leadInput\)/);
   assert.match(app, /id="cleaningPartnerForm"/);
   assert.match(app, /Cleaning\.createCleaningPartner/);
   assert.match(app, /store\.cleaningPartners\.push/);
@@ -222,6 +222,17 @@ test("website estimate inbox prefills a cleaning order and closes the lead after
   assert.match(submit, /raw\.marketingLeadId/);
   assert.match(submit, /lead\.status\s*=\s*"converted"/);
   assert.match(submit, /lead\.convertedOrderId\s*=\s*item\.id/);
+});
+
+test("website Partner applications open screening and close after Partner registration", async () => {
+  const [app, ui] = await Promise.all([source("app.js"), source("cleaning-ui.js")]);
+  assert.match(ui, /leadType\s*===\s*"partner_application"/);
+  assert.match(ui, /data-cleaning-partner-lead/);
+  assert.match(app, /cleaningPartnerEditor\("",\s*lead\)/);
+  assert.match(app, /name="marketingLeadId"/);
+  const submit = app.match(/else if \(form\.id === "cleaningPartnerForm"\) \{([\s\S]*?)\n\s*\} else if/)?.[1] || "";
+  assert.match(submit, /raw\.marketingLeadId/);
+  assert.match(submit, /lead\.convertedPartnerId\s*=\s*item\.id/);
 });
 
 test("new website estimate leads alert the signed-in operator on remote arrival", async () => {

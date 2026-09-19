@@ -471,6 +471,7 @@
       vehicle: text(raw.vehicle),
       headcount: Math.max(0, Math.round(number(raw.headcount))),
       dailyCapacity: Math.max(0, Math.round(number(raw.dailyCapacity))),
+      marketingLeadId: text(raw.marketingLeadId),
       status: ["applicant", "screening", "trial", "conditional", "approved", "hold", "stop"].includes(raw.status) ? raw.status : "applicant",
       grade: ["S", "A", "B", "C"].includes(raw.grade) ? raw.grade : "C",
       trialAverage: roundRate(raw.trialAverage),
