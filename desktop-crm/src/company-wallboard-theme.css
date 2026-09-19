@@ -49,6 +49,11 @@
 .wb-time-now { position: absolute; height: 28px; width: 3px; background: var(--red); top: -8px; }
 .wb-time-labels { display: flex; justify-content: space-between; color: var(--soft); font-size: 18px; margin: 12px 0 24px; }
 .wb-schedule-grid .wb-card strong { font-size: 40px; }
+.wb-roadmap-board, .wb-roadmap-summary > div, .wb-portfolio-bars, .wb-weekly-chart,
+.wb-health-grid article, .wb-milestone-list, .wb-schedule-day, .wb-schedule-week { background: var(--panel); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.wb-roadmap-project > i, .wb-weekly-chart i { background: var(--blue); }
+.wb-roadmap-person small, .wb-roadmap-summary span, .wb-roadmap-summary small, .wb-portfolio-bars small,
+.wb-milestone-list span, .wb-schedule-day span, .wb-schedule-week span { color: var(--soft); }
 @media (min-width: 1001px) and (max-height: 800px) {
   .wb-stage:fullscreen { padding: 20px 28px; gap: 16px; }
   .wb-stage:fullscreen > header { padding-bottom: 12px; }

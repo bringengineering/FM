@@ -25,10 +25,10 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
  const value=await response.json();assert.deepEqual(Object.keys(value),['version']);assert.match(value.version,/^tv-web-\d{4}-\d{2}-\d{2}-\d+$/);
 });
 
-test('web TV client rotates five scenes, refreshes remotely and renders server text safely',async()=>{
+test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.doesNotThrow(()=>new vm.Script(source), 'served TV client must be valid JavaScript');
- for(const key of ['people','status','issues','notice','schedule'])assert.match(source,new RegExp(`['"]${key}['"]`));
+ for(const key of ['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice'])assert.match(source,new RegExp(`['"]${key}['"]`));
  assert.match(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
  assert.match(source,/localStorage/);assert.match(source,/visibilityState/);assert.match(source,/AUTH_REQUIRED/);
  assert.match(source,/INVALID_TOKEN/);assert.match(source,/begin\(\)/);assert.match(source,/Array\.isArray\(value\.model\.people\)/);
@@ -40,6 +40,7 @@ test('web TV client rotates five scenes, refreshes remotely and renders server t
 test('web TV stylesheet compacts content for 720p height',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(source,/@media\(max-height:800px\)/);assert.match(source,/\.timeline \.row/);
+ assert.match(source,/\.roadmap-layout/);assert.match(source,/\.overall-progress/);
 });
 
 test('unknown TV asset paths fail closed',async()=>{

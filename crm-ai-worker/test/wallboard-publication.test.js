@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {validatePublication} from '../src/wallboard-publication.js';
 import {createPairingService} from '../src/wallboard-pairing.js';
-const snapshot=()=>({model:{counts:{assigned:1,doing:0,submitted:0,returned:0,done:0},total:1,overdue:0,unknown:0,people:[{name:'직원',total:1,done:0,overdue:0}],schedule:{available:true,entries:[]}},playlist:[{key:'people',enabled:true,seconds:30}],notice:'이번 주 업무 확인',dataDate:'2026-09-20'});
+const snapshot=()=>({model:{counts:{assigned:1,doing:0,submitted:0,returned:0,done:0},total:1,overdue:0,unknown:0,people:[{name:'직원',total:1,done:0,overdue:0}],roadmap:{range:{from:'2026-08-24',to:'2026-10-18',todayOffset:49,weeks:[{start:'2026-08-24',end:'2026-08-30',label:'8월 4주'}]},lanes:[{assigneeName:'직원',projectCount:1,progress:30,assignments:[{projectName:'CRM',startDate:'2026-09-01',endDate:'2026-09-30',progress:30,health:'normal',layout:{left:14,width:53,clippedStart:false,clippedEnd:false}}]}]},portfolio:{overallProgress:30,healthCounts:{normal:1,check:0,risk:0,done:0},projects:[{name:'CRM',owner:'직원',progress:30,health:'normal',open:1}],weeklyDone:[{label:'8/24',count:0}],milestones:[]},schedule:{available:true,entries:[],today:[],week:[]}},playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'이번 주 업무 확인',dataDate:'2026-09-20'});
 test('publication accepts only safe consistent display fields',()=>{
  assert.deepEqual(validatePublication(snapshot()),snapshot());
  const bad=snapshot();bad.model.phone='secret';assert.throws(()=>validatePublication(bad),/INVALID_INPUT/);
