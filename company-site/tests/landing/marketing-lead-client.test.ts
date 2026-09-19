@@ -25,7 +25,7 @@ describe("submitMarketingLead", () => {
     const result = await submitMarketingLead(input);
     expect(mocks.ensureToken).toHaveBeenCalledTimes(1);
     expect(result.receiptId).toMatch(/^lead_[A-Za-z0-9_-]{16,100}$/);
-    expect(mocks.ref).toHaveBeenCalledWith(expect.anything(), `crmCompany/marketingLeadInbox/${result.receiptId}`);
+    expect(mocks.ref).toHaveBeenCalledWith(expect.anything(), `crmCompany/data/marketingLeadInbox/${result.receiptId}`);
     expect(mocks.set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ...input, requestId: result.receiptId, submittedAt: { ".sv": "timestamp" }, status: "new" }));
   });
 

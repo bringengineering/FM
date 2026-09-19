@@ -748,6 +748,32 @@
         },
         "salesOpportunities": {
           ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "marketingLeadInbox": {
+          "$leadId": {
+            ".write": "((auth == null && !data.exists() && newData.exists() && newData.numChildren() === 15 && newData.child('status').val() === 'new' && newData.child('consent').val() === true) || (auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))))",
+            ".validate": "$leadId.matches(/^lead_[A-Za-z0-9_-]{16,100}$/) && newData.hasChildren(['name','phone','location','needs','buildingInfo','customerType','service','sourcePath','utmSource','utmCampaign','utmTerm','consent','requestId','submittedAt','status']) && newData.child('requestId').val() === $leadId && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 80 && newData.child('phone').isString() && newData.child('phone').val().matches(/^010-[0-9]{4}-[0-9]{4}$/) && newData.child('location').isString() && newData.child('location').val().length <= 200 && newData.child('needs').isString() && newData.child('needs').val().length <= 2000 && newData.child('buildingInfo').isString() && newData.child('buildingInfo').val().length <= 1000 && newData.child('customerType').isString() && newData.child('customerType').val().length <= 80 && newData.child('service').isString() && newData.child('service').val().length <= 200 && newData.child('sourcePath').isString() && newData.child('sourcePath').val().length <= 500 && newData.child('utmSource').isString() && newData.child('utmSource').val().length <= 200 && newData.child('utmCampaign').isString() && newData.child('utmCampaign').val().length <= 200 && newData.child('utmTerm').isString() && newData.child('utmTerm').val().length <= 200 && newData.child('consent').val() === true && newData.child('submittedAt').isNumber() && newData.child('submittedAt').val() <= now && (newData.child('status').val() === 'new' || newData.child('status').val() === 'converted') && (!newData.child('id').exists() || newData.child('id').val() === $leadId) && (!newData.child('convertedOrderId').exists() || (newData.child('convertedOrderId').isString() && newData.child('convertedOrderId').val().length <= 120)) && (!newData.child('convertedAt').exists() || (newData.child('convertedAt').isString() && newData.child('convertedAt').val().length <= 40)) && (!newData.child('convertedBy').exists() || (newData.child('convertedBy').isString() && newData.child('convertedBy').val().length <= 320))",
+            "name": { ".validate": true },
+            "phone": { ".validate": true },
+            "location": { ".validate": true },
+            "needs": { ".validate": true },
+            "buildingInfo": { ".validate": true },
+            "customerType": { ".validate": true },
+            "service": { ".validate": true },
+            "sourcePath": { ".validate": true },
+            "utmSource": { ".validate": true },
+            "utmCampaign": { ".validate": true },
+            "utmTerm": { ".validate": true },
+            "consent": { ".validate": true },
+            "requestId": { ".validate": true },
+            "submittedAt": { ".validate": true },
+            "status": { ".validate": true },
+            "id": { ".validate": true },
+            "convertedOrderId": { ".validate": true },
+            "convertedAt": { ".validate": true },
+            "convertedBy": { ".validate": true },
+            "$other": { ".validate": false }
+          }
         }
       },
       "messageDeliveries": {

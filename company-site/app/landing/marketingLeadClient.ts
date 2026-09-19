@@ -17,6 +17,6 @@ export async function submitMarketingLead(input: MarketingLeadInput) {
   } catch (error) {
     if (!(error instanceof Error) || error.message !== "field_app_check_unavailable") throw error;
   }
-  await set(ref(database, `crmCompany/marketingLeadInbox/${id}`), { ...input, requestId: id, submittedAt: serverTimestamp(), status: "new" });
+  await set(ref(database, `crmCompany/data/marketingLeadInbox/${id}`), { ...input, requestId: id, submittedAt: serverTimestamp(), status: "new" });
   return { receiptId: id };
 }
