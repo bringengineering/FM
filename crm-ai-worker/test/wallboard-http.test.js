@@ -25,6 +25,25 @@ test('device version is validated, persisted and returned only to administrators
  await f.worker.fetch(req('revoke',{deviceId:device.deviceId}),f.env);
  assert.equal((await f.worker.fetch(req('display',{clientVersion:'0.1.3'},device.deviceToken),f.env)).status,401);
 });
+test('only verified administrators schedule an exact TV version',async()=>{
+ const staff=setup('staff@example.com');
+ assert.equal((await staff.worker.fetch(req('schedule-update',{deviceId:crypto.randomUUID(),targetVersion:'0.2.0'}),staff.env)).status,403);
+ assert.equal(staff.forwarded.length,0);
+ const admin=setup(),deviceId=crypto.randomUUID();
+ assert.equal((await admin.worker.fetch(req('schedule-update',{deviceId,targetVersion:'0.2.0'}),admin.env)).status,200);
+ assert.deepEqual(admin.forwarded[0].input,{deviceId,targetVersion:'0.2.0'});
+ assert.deepEqual(admin.forwarded[0].identity,{uid:'verified-user',isAdmin:true});
+ assert.equal((await admin.worker.fetch(req('schedule-update',{deviceId,targetVersion:'latest'}),admin.env)).status,400);
+ assert.equal((await admin.worker.fetch(req('cancel-update',{deviceId}),admin.env)).status,200);
+});
+test('TV reports only bounded update state through its own device token',async()=>{
+ const f=setup(),token='a'.repeat(64);
+ assert.equal((await f.worker.fetch(req('display',{clientVersion:'0.1.2',updateStatus:'failed',updateError:'NETWORK'},token),f.env)).status,200);
+ assert.deepEqual(f.forwarded[0].input,{clientVersion:'0.1.2',updateStatus:'failed',updateError:'NETWORK'});
+ assert.equal(f.forwarded[0].token,token);assert.equal(f.forwarded[0].identity,null);
+ assert.equal((await f.worker.fetch(req('display',{clientVersion:'0.1.2',updateStatus:'unknown'},token),f.env)).status,400);
+ assert.equal((await f.worker.fetch(req('display',{clientVersion:'0.1.2',updateStatus:'failed',updateError:'<secret>'},token),f.env)).status,400);
+});
 test('wallboard routes fail closed without explicit enablement, storage or limiter',async()=>{
  const {worker,env}=setup();
  assert.equal((await worker.fetch(req('start'),{})).status,503);

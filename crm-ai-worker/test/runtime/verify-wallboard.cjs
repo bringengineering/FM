@@ -23,12 +23,16 @@ const snapshot={model:{counts:{assigned:1,doing:0,submitted:0,returned:0,done:0}
   const publications=await Promise.all([call('publish',{snapshot,expectedVersion:0}),call('publish',{snapshot,expectedVersion:0})]);
   assert.deepEqual(publications.map(x=>x.status).sort(),[200,409]);
   assert.equal((await call('display',{clientVersion:'0.1.2'},device.deviceToken)).body.board.version,1);
+  assert.equal((await call('schedule-update',{deviceId:device.deviceId,targetVersion:'0.2.0'})).status,200);
   await server.stop();server=null;
   server=await start();
-  assert.equal((await call('list')).body.devices[0].clientVersion,'0.1.2');
-  assert.equal((await call('display',{},device.deviceToken)).body.board.version,1);
+  let listed=(await call('list')).body.devices[0];assert.equal(listed.clientVersion,'0.1.2');assert.equal(listed.targetVersion,'0.2.0');
+  const commanded=await call('display',{clientVersion:'0.1.2',updateStatus:'downloading'},device.deviceToken);
+  assert.deepEqual(commanded.body.update,{targetVersion:'0.2.0'});assert.equal(commanded.body.board.version,1);
+  assert.equal((await call('display',{clientVersion:'0.2.0',updateStatus:'installed'},device.deviceToken)).body.update,null);
+  listed=(await call('list')).body.devices[0];assert.equal(listed.targetVersion,null);assert.equal(listed.updateStatus,'installed');
   assert.equal((await call('revoke',{deviceId:device.deviceId})).status,200);
   assert.equal((await call('display',{},device.deviceToken)).status,401);
-  console.log('PASS: actual local SQLite runtime — single redemption, revision conflict, restart persistence, revocation');
+  console.log('PASS: actual local SQLite runtime — single redemption, revision conflict, update persistence, completion, revocation');
  }finally{if(server)await server.stop();}
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

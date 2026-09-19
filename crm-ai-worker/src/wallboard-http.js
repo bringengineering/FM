@@ -1,4 +1,4 @@
-const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],display:['clientVersion']};
+const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],'schedule-update':['deviceId','targetVersion'],'cancel-update':['deviceId'],display:['clientVersion','updateStatus','updateError']};
 const status={AUTH_REQUIRED:401,FORBIDDEN:403,INVALID_INPUT:400,INPUT_TOO_LARGE:413,RATE_LIMITED:429};
 const reply=(code,http,cors)=>Response.json({ok:false,code},{status:http,headers:{...cors,'cache-control':'no-store','x-content-type-options':'nosniff'}});
 async function body(request,limit=4096){
@@ -22,8 +22,10 @@ export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!actions[action].includes(k)))return reply('INVALID_INPUT',400,cors);
   const token=/^Bearer\s+([^\s]+)$/i.exec(request.headers.get('authorization')||'')?.[1]||'';
   if(action==='display'&&input.clientVersion!==undefined&&(typeof input.clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(input.clientVersion)))return reply('INVALID_INPUT',400,cors);
+  if(action==='display'&&input.updateStatus!==undefined&&!['idle','downloading','ready','installing','installed','failed'].includes(input.updateStatus))return reply('INVALID_INPUT',400,cors);
+  if(action==='display'&&input.updateError!==undefined&&(typeof input.updateError!=='string'||!/^[A-Z0-9_]{1,80}$/.test(input.updateError)))return reply('INVALID_INPUT',400,cors);
   let identity=null;
-  if(['approve','revoke','list','publish'].includes(action)){
+  if(['approve','revoke','list','publish','schedule-update','cancel-update'].includes(action)){
    const verified=await verifyIdentity(token);
    const admins=new Set(String(env.CRM_ADMIN_EMAILS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
    if(!verified?.emailVerified||!admins.has(verified.email))return reply('FORBIDDEN',403,cors);
@@ -31,6 +33,8 @@ export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
   }
   if(action==='approve'&&(!/^[A-F0-9]{8}$/.test(input.code)||typeof input.name!=='string'||!input.name.trim()||input.name.length>60))return reply('INVALID_INPUT',400,cors);
   if(action==='revoke'&&(typeof input.deviceId!=='string'||!/^[a-f0-9-]{36}$/.test(input.deviceId)))return reply('INVALID_INPUT',400,cors);
+  if(['schedule-update','cancel-update'].includes(action)&&(typeof input.deviceId!=='string'||!/^[a-f0-9-]{36}$/.test(input.deviceId)))return reply('INVALID_INPUT',400,cors);
+  if(action==='schedule-update'&&(typeof input.targetVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(input.targetVersion)))return reply('INVALID_INPUT',400,cors);
   if(['poll','display'].includes(action)&&!/^[a-f0-9]{64}$/.test(token))return reply('AUTH_REQUIRED',401,cors);
   const stub=env.WALLBOARD_DEVICES.get(env.WALLBOARD_DEVICES.idFromName('bring-company-wallboard'));
   const response=await stub.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,input,identity,token:['poll','display'].includes(action)?token:''})}));
