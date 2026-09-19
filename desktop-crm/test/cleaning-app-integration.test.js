@@ -134,3 +134,13 @@ test("cleaning cancellation approval payment and linked CS closure are wired", a
   assert.match(app, /linkedCase\.status\s*=\s*"resolved"/);
   assert.match(app, /cancellations:\s*store\.cleaningCancellations/);
 });
+
+test("cleaning rework scheduling completion reinspection and CS closure are wired", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningReworkEditor\(orderId\)/);
+  assert.match(app, /id="cleaningReworkForm"/);
+  assert.match(app, /Cleaning\.createCleaningRework/);
+  assert.match(app, /Cleaning\.transitionCleaningRework/);
+  assert.match(app, /reworks:\s*store\.cleaningReworks/);
+  assert.match(app, /linkedCase\.resolution\s*=\s*"재작업 및 재검수 완료"/);
+});

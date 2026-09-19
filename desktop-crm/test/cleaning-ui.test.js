@@ -121,3 +121,15 @@ test("renders cancellation approval and payment actions without claiming early p
   assert.match(detail, /data-cleaning-cancellation-approve="x1"/);
   assert.doesNotMatch(detail, /data-cleaning-cancellation-paid="x1"/);
 });
+
+test("renders rework schedule and evidence-gated actions", () => {
+  const detail = UI.renderCleaningOrderDetail({
+    order: { id: "cln_1", customerName: "홍길동" }, stages,
+    dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [],
+    reworks: [{ id: "rw1", cleaningOrderId: "cln_1", status: "scheduled", scope: "욕실 재청소", scheduledAt: "2026-09-22T09:00", teamName: "직영 1팀" }], writable: true
+  });
+  assert.match(detail, /재작업 1건/);
+  assert.match(detail, /욕실 재청소/);
+  assert.match(detail, /data-cleaning-rework-add="cln_1"/);
+  assert.match(detail, /data-cleaning-rework-complete="rw1"/);
+});

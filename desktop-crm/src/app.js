@@ -1996,6 +1996,7 @@
       payments: store.cleaningPayments,
       cases: store.cleaningCases,
       cancellations: store.cleaningCancellations,
+      reworks: store.cleaningReworks,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -2062,6 +2063,16 @@
     const hoursBeforeService = Number.isFinite(scheduled) ? Math.floor((scheduled - Date.now()) / 3600000) : 0;
     const openCases = store.cleaningCases.filter(item => item.cleaningOrderId === order.id && item.status !== "resolved");
     modalContent.innerHTML = `<div class="modal-head"><div><h2>취소·환불 접수</h2><p>${esc(order.customerName)} · 환불 예정액은 승인 전 계산값입니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningCancellationForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>취소 주체 *</span><select name="cancelledBy"><option value="customer">고객</option><option value="bringcare">브링케어</option><option value="partner">Partner</option><option value="weather">불가항력</option><option value="other">기타</option></select></label><label class="field"><span>확인된 수납액</span><input name="paidAmount" type="number" min="0" value="${attr(paidAmount)}" required></label><label class="field"><span>작업까지 남은 시간</span><input name="hoursBeforeService" type="number" value="${attr(hoursBeforeService)}" required></label><label class="field"><span>연결 CS</span><select name="cleaningCaseId"><option value="">없음</option>${openCases.map(item => `<option value="${attr(item.id)}">LEVEL ${esc(item.level)} · ${esc(item.description)}</option>`).join("")}</select></label><label class="field full"><span>사유 *</span><textarea name="reason" rows="3" required></textarea></label><label class="field full"><span>증빙 링크</span><textarea name="evidenceUrls" rows="2"></textarea></label></div><div class="info-box">72시간 전 100% · 24~72시간 90% · 24시간 미만 70%를 기본안으로 계산하며, 당일과 예외 건은 관리자 승인이 필요합니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">환불 요청 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningReworkEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    const failedQcs = store.cleaningQcReviews.filter(item => item.cleaningOrderId === order.id && item.result !== "passed");
+    const openCases = store.cleaningCases.filter(item => item.cleaningOrderId === order.id && item.status !== "resolved");
+    const dispatch = store.cleaningDispatches.filter(item => item.cleaningOrderId === order.id).at(-1);
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>재작업 예약</h2><p>${esc(order.customerName)} · 재작업 범위와 일정을 확정합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningReworkForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>연결 CS</span><select name="cleaningCaseId"><option value="">없음</option>${openCases.map(item => `<option value="${attr(item.id)}">LEVEL ${esc(item.level)} · ${esc(item.description)}</option>`).join("")}</select></label><label class="field"><span>실패 QC</span><select name="failedQcReviewId"><option value="">선택</option>${failedQcs.map(item => `<option value="${attr(item.id)}">${esc(item.score)}점 · ${esc(item.reworkScope || item.note)}</option>`).join("")}</select></label><label class="field"><span>재작업 일정 *</span><input name="scheduledAt" type="datetime-local" required></label><label class="field"><span>담당팀 *</span><input name="teamName" value="${attr(dispatch?.teamName || "")}" required></label><label class="field full"><span>재작업 범위 *</span><textarea name="scope" rows="3" required>${esc(failedQcs.at(-1)?.reworkScope || "")}</textarea></label></div><input type="hidden" name="teamId" value="${attr(dispatch?.teamId || "")}"><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">재작업 예약</button></div></form>`;
     openModal();
   }
 
@@ -3516,6 +3527,31 @@
       if (linkedCase) { linkedCase.status = "resolved"; linkedCase.resolution = `환불 ${krw(item.refundAmount)} 지급완료`; linkedCase.resolvedAt = item.refundPaidAt; linkedCase.updatedAt = item.refundPaidAt; }
       logAudit({ category: "청소", targetType: "환불", targetId: item.id, targetLabel: krw(item.refundAmount), action: "환불 지급완료", reason: item.reasonCode }); scheduleSave(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("환불 지급과 연결 CS 종결을 기록했습니다.", "success"); return;
     }
+    const cleaningReworkAdd = event.target.closest("[data-cleaning-rework-add]");
+    if (cleaningReworkAdd) { cleaningReworkEditor(cleaningReworkAdd.dataset.cleaningReworkAdd); return; }
+    const reworkAction = event.target.closest("[data-cleaning-rework-complete], [data-cleaning-rework-pass], [data-cleaning-rework-close]");
+    if (reworkAction) {
+      const reworkId = reworkAction.dataset.cleaningReworkComplete || reworkAction.dataset.cleaningReworkPass || reworkAction.dataset.cleaningReworkClose;
+      const index = store.cleaningReworks.findIndex(item => item.id === reworkId);
+      if (index < 0) return showToast("재작업 기록을 찾지 못했습니다.", "error");
+      const current = store.cleaningReworks[index];
+      try {
+        let next;
+        if (reworkAction.dataset.cleaningReworkComplete) {
+          const report = store.cleaningReports.filter(item => item.cleaningOrderId === current.cleaningOrderId && item.type === "completion").at(-1);
+          next = Cleaning.transitionCleaningRework(current, "completed", { completionReportId: report?.id, actor: salesActor() });
+        } else if (reworkAction.dataset.cleaningReworkPass) {
+          const qc = store.cleaningQcReviews.filter(item => item.cleaningOrderId === current.cleaningOrderId && item.result === "passed").at(-1);
+          next = Cleaning.transitionCleaningRework(current, "passed", { qcReviewId: qc?.id, qcResult: qc?.result, actor: salesActor() });
+        } else {
+          next = Cleaning.transitionCleaningRework(current, "closed", { actor: salesActor() });
+          const linkedCase = store.cleaningCases.find(item => item.id === next.cleaningCaseId);
+          if (linkedCase) { linkedCase.status = "resolved"; linkedCase.resolution = "재작업 및 재검수 완료"; linkedCase.resolvedAt = next.closedAt; linkedCase.updatedAt = next.closedAt; }
+        }
+        store.cleaningReworks[index] = next; logAudit({ category: "청소", targetType: "재작업", targetId: next.id, targetLabel: next.scope, action: `재작업 ${next.status}`, reason: next.cleaningOrderId }); scheduleSave(); renderCleaningOrderDrawer(next.cleaningOrderId); showToast("재작업 상태를 갱신했습니다.", "success");
+      } catch (error) { showToast(error.message || "재작업 상태를 갱신하지 못했습니다.", "error"); }
+      return;
+    }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -4380,6 +4416,12 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningReworkForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningRework({ cleaningOrderId: form.dataset.cleaningOrderId, cleaningCaseId: raw.cleaningCaseId, failedQcReviewId: raw.failedQcReviewId, scope: raw.scope, scheduledAt: raw.scheduledAt, teamId: raw.teamId, teamName: raw.teamName }, salesActor());
+        store.cleaningReworks.push(item); logAudit({ category: "청소", targetType: "재작업", targetId: item.id, targetLabel: item.scope, action: "재작업 예약", reason: item.scheduledAt }); scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("재작업을 예약했습니다.", "success");
+      } catch (error) { showToast(error.message || "재작업을 예약하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningCancellationForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {
