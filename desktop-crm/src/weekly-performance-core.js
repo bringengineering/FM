@@ -26,10 +26,10 @@
     return Number.isFinite(stamp) ? stamp : -Infinity;
   }
   function summarize({ orders, asOf, period = 'all' } = {}) {
-    period = period === 'current-week' ? period : 'all';
+    period = ['current-week', 'previous-week'].includes(period) ? period : 'all';
     const today = day(asOf);
     if (!Array.isArray(orders) || today === null) return { available: false, period, counts: null, completion: null, rows: [] };
-    const monday = today - ((new Date(today).getUTCDay() + 6) % 7) * 86400000;
+    const monday = today - ((new Date(today).getUTCDay() + 6) % 7) * 86400000 - (period === 'previous-week' ? 7 * 86400000 : 0);
     const sunday = monday + 6 * 86400000;
     const range = { start: new Date(monday).toISOString().slice(0, 10), end: new Date(sunday).toISOString().slice(0, 10) };
     const diagnostics = { duplicates: 0, idless: 0, unknownStatus: 0, cancelled: 0, undated: 0 };
@@ -52,7 +52,7 @@
       const invalid = (Boolean(order.startDate) && start === null) || (Boolean(order.dueDate) && due === null) || (start !== null && due !== null && start > due);
       const undated = invalid || (start === null && due === null);
       if (undated) diagnostics.undated++;
-      if (period === 'current-week' && (undated || (start ?? due) > sunday || (due ?? start) < monday)) continue;
+      if (period !== 'all' && (undated || (start ?? due) > sunday || (due ?? start) < monday)) continue;
       counts[order.status]++; counts.total++;
       if (!undated && due !== null && due < today && order.status !== 'done') counts.overdue++;
       const seen = new Set(), results = [];
@@ -66,5 +66,11 @@
     }
     return { available: true, period, range, counts, completion: counts.total ? counts.done / counts.total * 100 : null, diagnostics, rows };
   }
-  return { summarize };
+  function selectPeriod(options) {
+    const summary = summarize(options);
+    if (!summary.available) return { ...summary, diagnostics: {}, orders: [] };
+    const ids = new Set(summary.rows.map(row => row.id));
+    return { ...summary, orders: options.orders.filter(order => ids.has(text(order && order.id).trim())) };
+  }
+  return { summarize, selectPeriod };
 });

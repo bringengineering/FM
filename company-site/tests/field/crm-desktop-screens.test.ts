@@ -49,6 +49,7 @@ const SCREENS: Array<[string, string]> = [
   ["operationsIntelligence", "운영"],
   ["buildingDocuments", "문서"],
   ["workReports", "작업 결과보고서 작성"],
+  ["companyWallboard", "회사 운영보드"],
   ["customerNotices", "문구는 단계가 정하고"],
   ["forms", "점검표·확인서"],
   ["security", "열쇠"],
@@ -151,7 +152,12 @@ async function boot(): Promise<Booted> {
     },
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
-    scanWorkReportPhotos: {
+    driveStatus: { connected: true, email: "test@example.test" },
+    browseWorkReportDrive: { ok: true, folder: { id: "root", name: "내 드라이브" }, entries: [
+      { id: "p1", name: "20260831_172901.jpg", kind: "file", mimeType: "image/jpeg" },
+      { id: "p2", name: "20260901_101819.jpg", kind: "file", mimeType: "image/jpeg" },
+    ] },
+    planWorkReportDrivePhotos: {
       ok: true,
       plan: {
         folderName: "입주청소(햇빛빌라)_블로그_20260831",
@@ -324,12 +330,12 @@ describe("desktop CRM screens actually render", () => {
     booted = await boot();
   }, 60000);
 
-  it("처음 화면이 여덟 폴더를 다 내준다", () => {
+  it("처음 화면이 운영보드를 포함한 아홉 폴더를 다 내준다", () => {
     const cards = [...booted.document.querySelectorAll("[data-workspace-enter]")];
-    expect(cards.length).toBe(8);
+    expect(cards.length).toBe(9);
     // 폴더를 고르는 자리는 여기뿐이다. 하나라도 빠지면 그 폴더는 갈 길이 없다.
     const folders = cards.map(card => (card as HTMLElement).dataset.workspaceEnterFolder || "");
-    for (const folder of ["customer-management", "project", "calendar", "office", "bi", "documents", "workflow"]) {
+    for (const folder of ["company-wallboard", "customer-management", "project", "calendar", "office", "bi", "documents", "workflow"]) {
       expect(folders, folder).toContain(folder);
     }
   });
@@ -499,22 +505,20 @@ describe("desktop CRM screens actually render", () => {
     const box = booted.document.querySelector(".wr-drive") as HTMLElement | null;
     expect(box, "Drive 에서 끌어오는 자리가 있어야 한다").toBeTruthy();
 
-    // 주소창을 통째로 붙여 넣는다. ID 만 떼어내라고 시키면 안 쓴다.
-    const idInput = box!.querySelector("[data-report-drive-id]") as HTMLInputElement;
-    const scan = box!.querySelector("[data-report-drive-scan]") as HTMLButtonElement;
-    expect(scan.disabled, "폴더를 적기 전에는 잠겨 있어야 한다").toBe(true);
-    idInput.value = "https://drive.google.com/drive/folders/17EWMXA834daN5r9ZedRWrhJHWR8ppB7q";
-    idInput.dispatchEvent(new booted.window.Event("input", { bubbles: true }));
-    await sleep(60);
-    expect(scan.disabled, "폴더를 적으면 열려야 한다").toBe(false);
-
+    // 최신 화면은 주소 입력 대신 앱 안에서 Drive 사진을 직접 고른다.
+    (box!.querySelector("[data-report-drive-open]") as HTMLButtonElement).click();
+    await sleep(150);
+    const scan = booted.document.querySelector("[data-report-drive-plan]") as HTMLButtonElement;
+    expect(scan.disabled, "사진 선택 전에는 가져오기를 막는다").toBe(true);
+    (booted.document.querySelector('[data-report-drive-file="p1"]') as HTMLButtonElement).click();
+    (booted.document.querySelector('[data-report-drive-file="p2"]') as HTMLButtonElement).click();
+    expect(scan.disabled).toBe(false);
     const before = booted.calls.length;
     scan.click();
     await sleep(250);
-    const asked = booted.calls.slice(before).find(call => call.name === "scanWorkReportPhotos");
+    const asked = booted.calls.slice(before).find(call => call.name === "planWorkReportDrivePhotos");
     expect(asked, "훑기 통로로 실제로 나가야 한다").toBeTruthy();
-    // 링크가 아니라 떼어낸 ID 가 나가야 한다.
-    expect((asked!.input as { folderId: string }).folderId).toBe("17EWMXA834daN5r9ZedRWrhJHWR8ppB7q");
+    expect((asked!.input as { fileIds: string[] }).fileIds).toEqual(["p1", "p2"]);
 
     const table = booted.document.querySelector(".wr-drive-table") as HTMLElement | null;
     expect(table, "무엇이 어디에 붙는지 표가 나와야 한다").toBeTruthy();

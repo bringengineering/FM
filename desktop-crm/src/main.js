@@ -134,6 +134,8 @@ let fieldAuthenticationRequired = false;
 let crmAuthWindow = null;
 let crmAuthenticationRequestCount = 0;
 let remoteClient = null;
+let wallboardPublisher = null;
+let wallboardPublisherUid = "";
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
@@ -4520,6 +4522,9 @@ async function initializeRemote() {
     onCustomerPhotos: photos => sendToRenderer("crm:customer-photos", sanitizeCustomerPhotoMap(photos)),
     onOfficeData: applyRemoteOfficeData,
     onAuthState: state => {
+      const wallboardUid = state?.user?.mustChangePassword ? "" : String(state?.user?.uid || "");
+      if (wallboardUid !== wallboardPublisherUid) wallboardPublisher?.stop();
+      wallboardPublisherUid = wallboardUid;
       if (FIELD_OPERATIONS_ENABLED) syncFieldSession(state);
       officeNotificationSessionEpoch += 1;
       closeOfficeNotifications();
@@ -7916,6 +7921,50 @@ async function createWindow() {
 }
 
 secureHandle("crm:auth-state", () => authState());
+secureCanonicalHandle("crm:wallboard-admin", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
+  const { requestWallboardAdmin } = require("./wallboard-admin-client");
+  const { resolveTvChannel } = require("./tv-update-policy");
+  if (["auto-start", "auto-stop", "auto-status"].includes(input?.action)) {
+    if (localTestMode) throw new Error("로컬 미리보기에서는 자동 게시를 사용할 수 없습니다.");
+    if (!wallboardPublisher) {
+      const { createWallboardPublisher, loadWallboardSource } = require("./wallboard-publisher");
+      wallboardPublisher = createWallboardPublisher({
+        getIdentity: () => remoteClient?.authState().user?.mustChangePassword ? "" : String(remoteClient?.authState().user?.uid || ""),
+        load: () => loadWallboardSource(remoteClient),
+        publish: async (publication, owner) => {
+          const client = remoteClient;
+          const idToken = await client.ensureIdToken(false);
+          if (client !== remoteClient || client.authState().user?.uid !== owner) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+          return requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken, input: publication, fetchImpl: (url, options) => net.fetch(url, options) });
+        }
+      });
+    }
+    if (input.action === "auto-start") return wallboardPublisher.start(input);
+    if (input.action === "auto-stop") return wallboardPublisher.stop();
+    return wallboardPublisher.status();
+  }
+  if (input?.action === "publish") wallboardPublisher?.stop();
+  const fetchImpl = (url, options) => net.fetch(url, options);
+  const idToken = await remoteClient.ensureIdToken(false);
+  if (input?.action === "schedule-update") {
+    let channel;
+    try {
+      channel = await resolveTvChannel({ fetchImpl });
+    } catch {
+      throw new Error("검증된 TV 최신 버전을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    if (input.targetVersion !== channel.version) throw new Error("최신 TV 버전이 변경되었습니다. 기기 목록을 새로고침해 주세요.");
+  }
+  const result = await requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken, input, fetchImpl });
+  if (input?.action !== "list") return result;
+  try {
+    const channel = await resolveTvChannel({ fetchImpl });
+    return { ...result, latestVersion: channel.version };
+  } catch {
+    return { ...result, latestVersion: null };
+  }
+});
 secureCanonicalHandle("crm:ai-assist", async input => {
   if (!remoteClient || !remoteClient.authState().user) {
     throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });

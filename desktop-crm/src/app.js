@@ -59,6 +59,7 @@
   let store = Core.blankStore();
   let currentView = "dashboard";
   let currentWorkspace = null;
+  let disposeCompanyWallboard = null;
   let officeMessengerPresence = "";
   let officeMessengerPresenceTask = Promise.resolve(true);
   let currentMarketingView = "marketingOverview";
@@ -208,6 +209,7 @@
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "일일업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
+    companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
@@ -686,6 +688,7 @@
   }
 
   function setCurrentAuth(value) {
+    if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     const previousAtlasIdentity = atlasIdentity(currentAuth && currentAuth.user);
     const previousUid = currentAuthUid();
     const marketingIdentityKey = auth => { const user = auth && auth.user || {}; return [user.uid, user.accessRole, user.marketingRole].map(item => String(item || "").slice(0, 160)).join("|"); };
@@ -1545,6 +1548,17 @@
     else if (currentView === "objectives") renderObjectives();
     else if (currentView === "dailyLog") renderDailyLog();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
+    else if (currentView === "companyWallboard") {
+      if (disposeCompanyWallboard) disposeCompanyWallboard();
+      disposeCompanyWallboard = window.BringCompanyWallboard.mount(main, {
+        manage: typeof api.wallboardAdmin === "function" ? input => api.wallboardAdmin(input) : undefined,
+        load: async () => {
+          const [work, calendar] = await Promise.all([api.loadWorkOrders(), api.load().catch(() => null)]);
+          return { ...work, calendar };
+        },
+        isActive: () => currentView === "companyWallboard" && currentWorkspace === "operations" && Boolean(currentAuth.user),
+      });
+    }
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
@@ -1787,6 +1801,7 @@
   });
 
   function render() {
+    if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     // 오늘 연락할 고객을 회사 텔레그램으로 민다. 하루에 한 번만 간다 —
     // 여기가 몇 번 불리든 안에서 막는다.
     void maybeAutoSendTelegram();
@@ -4986,7 +5001,7 @@
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
-    scope: "mine", editing: null, busyId: "", performancePeriod: "all", performanceAvailable: false, performanceOrders: [],
+    scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
   };
 
   const workOrderCore = () => window.BringWorkOrderCore;
@@ -5342,18 +5357,18 @@
 
   function weeklyPerformancePanel(orders, scopeLabel, asOf) {
     const C = window.BringWeeklyPerformanceCore;
-    const period = workOrderState.performancePeriod === "current-week" ? "current-week" : "all";
+    const period = ["current-week", "previous-week"].includes(workOrderState.performancePeriod) ? workOrderState.performancePeriod : "all";
     const editing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
     const stamp = new Date(workOrderState.refreshedAt || NaN);
     const refreshed = Number.isFinite(stamp.getTime()) ? stamp.toLocaleString("ko-KR") : "확인되지 않음";
-    const heading = `<header><div><h3>기록 기반 성과 현황 · 읽기 전용</h3><p>${esc(scopeLabel)} · 마지막 갱신 ${esc(refreshed)}</p></div><div role="group" aria-label="성과 집계 기간">${[["all", "전체 기간"], ["current-week", "이번 주 일정"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${editing ? "disabled" : ""}>${label}</button>`).join("")}</div></header>`;
+    const heading = `<header><div><h3>기록 기반 성과 현황 · 읽기 전용</h3><p>${esc(scopeLabel)} · 마지막 갱신 ${esc(refreshed)}</p></div><div role="group" aria-label="성과 집계 기간">${[["current-week", "이번 주 일정"], ["previous-week", "지난주 일정"], ["all", "전체 기간"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${editing ? "disabled" : ""}>${label}</button>`).join("")}</div></header>`;
     const summary = C && C.summarize({ orders, asOf, period });
     if (workOrderState.loading || workOrderState.error || !workOrderState.loaded || workOrderState.performanceAvailable === false || !summary || !summary.available) return `<section class="office-panel weekly-performance">${heading}<p role="status">집계 불가 · ${esc(workOrderState.loading ? "불러오는 중" : workOrderState.error || "조회 결과를 확인하지 못했습니다.")}</p></section>`;
     const labels = { assigned: "배정", doing: "진행", submitted: "제출 · 검수 대기", returned: "반려", done: "관리자 완료 처리" };
     const d = summary.diagnostics;
     const rows = summary.rows.slice(0, 50);
     return `<section class="office-panel weekly-performance">${heading}
-      <p>${period === "all" ? "전체 기간 누적 상태" : `이번 주 일정 겹침 · ${esc(summary.range.start)} ~ ${esc(summary.range.end)} (월~일)`} · 완료 처리율은 관리자 완료 처리 / 집계 대상 지시입니다. 독립 검증된 성과가 아니며 제출은 완료에 포함하지 않습니다.</p>
+      <p>${period === "all" ? "전체 기간 누적 상태" : `${period === "previous-week" ? "지난주" : "이번 주"} 일정 겹침 · ${esc(summary.range.start)} ~ ${esc(summary.range.end)} (월~일)`} · 완료 처리율은 관리자 완료 처리 / 집계 대상 지시입니다. 독립 검증된 성과가 아니며 제출은 완료에 포함하지 않습니다.</p>
       ${editing ? `<p>편집 내용을 보존하기 위해 편집 종료 후 기간을 바꿀 수 있습니다.</p>` : ""}
       <div class="performance-counts">${Object.entries(labels).map(([key, label]) => `<article><span>${label}</span><b>${summary.counts[key]}</b></article>`).join("")}</div>
       <p>집계 대상 ${summary.counts.total}건 · 기한 지남 ${summary.counts.overdue}건 · 완료 처리율 ${summary.completion === null ? "산정 불가 (대상 없음)" : `${summary.completion.toFixed(1)}%`}</p>
@@ -5380,7 +5395,7 @@
     const orders = selected === "__all" ? workOrderState.orders : selected === "__none"
       ? workOrderState.orders.filter(item => !item.projectId)
       : P.ordersOf(workOrderState.orders, selected);
-    const scoped = workOrderState.scope === "mine"
+    let scoped = workOrderState.scope === "mine"
       ? W.forAssignee(orders, workOrderState.uid)
       : orders;
     // The separate server projection keeps raw validation inputs and notes.
@@ -5390,6 +5405,16 @@
     const performanceScoped = workOrderState.scope === "mine"
       ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
       : performanceProjectOrders;
+    const period = workOrderState.performancePeriod || "all";
+    const periodCore = window.BringWeeklyPerformanceCore;
+    const periodSummary = periodCore && periodCore.selectPeriod
+      ? periodCore.selectPeriod({ orders: workOrderState.performanceAvailable === false ? null : performanceScoped, asOf: today, period }) : null;
+    if (period !== "all") {
+      const visibleIds = new Set(periodSummary && periodSummary.orders ? periodSummary.orders.map(item => item.id) : []);
+      scoped = scoped.filter(item => visibleIds.has(item.id));
+    }
+    const periodEditing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
+    const periodControls = `<div class="office-panel"><div role="group" aria-label="업무와 성과 조회 기간">${[["current-week", "이번 주"], ["previous-week", "지난주"], ["all", "전체 기간"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${periodEditing ? "disabled" : ""}>${label}</button>`).join("")}</div><p>${period === "all" ? "전체 기간 업무" : periodSummary && periodSummary.available ? `${esc(periodSummary.range.start)} ~ ${esc(periodSummary.range.end)} · 일정이 겹치는 업무` : "기간 조회 확인 필요"} · 목록과 성과에 같은 기간을 적용합니다.</p>${periodSummary && periodSummary.diagnostics.undated ? `<p>일정 확인 필요 ${periodSummary.diagnostics.undated}건 · 전체 기간에서 확인하세요.</p>` : ""}${periodEditing ? "<p>작성 내용을 보존하기 위해 편집 종료 후 기간을 변경할 수 있습니다.</p>" : ""}</div>`;
     const summary = P.summarize(scoped, today);
     const orphans = workOrderState.orders.filter(item => !item.projectId).length;
 
@@ -5422,6 +5447,7 @@
       ${status}
       ${tabs ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
       ${weeklyExecutionPanel()}
+      ${periodControls}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
       ${workOrderState.importOpen ? directiveImporter() : ""}
@@ -11807,7 +11833,7 @@
     const performancePeriod = event.target.closest("[data-performance-period]");
     if (performancePeriod) {
       if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("편집을 마친 뒤 기간을 변경해 주세요."); return; }
-      workOrderState.performancePeriod = performancePeriod.dataset.performancePeriod === "current-week" ? "current-week" : "all";
+      workOrderState.performancePeriod = ["current-week", "previous-week"].includes(performancePeriod.dataset.performancePeriod) ? performancePeriod.dataset.performancePeriod : "all";
       renderWorkOrders();
       return;
     }
@@ -15738,7 +15764,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
