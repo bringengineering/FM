@@ -6,6 +6,7 @@ const fail=code=>{throw Object.assign(new Error(code),{code});};
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
 const version=value=>typeof value==='string'&&/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(value)?value:null;
 const updateStatuses=new Set(['idle','downloading','ready','installing','installed','failed']);
+const clientTypes=new Set(['electron','web']);
 async function hash(value){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join('');}
 function admin(identity){if(identity?.isAdmin!==true||typeof identity.uid!=='string'||!identity.uid)fail('FORBIDDEN');}
 function initialize(s,now){
@@ -17,12 +18,13 @@ export function createPairingService({repository,now=Date.now}){
  if(typeof repository?.transaction!=='function')throw new TypeError('Atomic repository required');
  async function run(fn){const result=await repository.transaction(s=>{initialize(s,now());return fn(s);});if(result?.error)fail(result.error);return result;}
  return {
-  async begin(){
+  async begin(clientType='electron'){
+   if(!clientTypes.has(clientType))fail('INVALID_INPUT');
    const pendingToken=token(),digest=await hash(pendingToken);
    return run(s=>{
     if(Object.keys(s.pending).length>=20)return {error:'RATE_LIMITED'};
     let code;do{code=crypto.randomUUID().replaceAll('-','').slice(0,8).toUpperCase();}while(Object.values(s.pending).some(p=>p.code===code));
-    const expiresAt=now()+TTL;s.pending[digest]={code,expiresAt,status:'pending'};
+    const expiresAt=now()+TTL;s.pending[digest]={code,expiresAt,status:'pending',clientType};
     return {code,pendingToken,expiresAt};
    });
   },
@@ -48,14 +50,14 @@ export function createPairingService({repository,now=Date.now}){
     if(p.status==='pending')return {status:'pending'};
     if(Object.values(s.devices).filter(d=>!d.revokedAt).length>=20)return {error:'DEVICE_LIMIT'};
     const deviceId=crypto.randomUUID();
-    s.devices[deviceHash]={id:deviceId,name:p.name,approvedBy:p.approvedBy,createdAt:now(),lastSeenAt:null,revokedAt:null};
+    s.devices[deviceHash]={id:deviceId,name:p.name,clientType:clientTypes.has(p.clientType)?p.clientType:'electron',approvedBy:p.approvedBy,createdAt:now(),lastSeenAt:null,revokedAt:null};
     delete s.pending[digest];return {status:'approved',deviceId,deviceToken};
    });
   },
   async authenticate(deviceToken){
    if(typeof deviceToken!=='string'||!/^[a-f0-9]{64}$/.test(deviceToken))fail('INVALID_TOKEN');
    const digest=await hash(deviceToken);
-   return run(s=>{const d=s.devices[digest];if(!d||d.revokedAt!==null)return {error:'INVALID_TOKEN'};d.lastSeenAt=now();return {id:d.id,name:d.name};});
+   return run(s=>{const d=s.devices[digest];if(!d||d.revokedAt!==null)return {error:'INVALID_TOKEN'};d.lastSeenAt=now();return {id:d.id,name:d.name,clientType:clientTypes.has(d.clientType)?d.clientType:'electron'};});
   },
   async revoke(deviceId,identity){
    admin(identity);
@@ -67,6 +69,7 @@ export function createPairingService({repository,now=Date.now}){
    return run(s=>{
     const device=Object.values(s.devices).find(d=>d.id===deviceId&&d.revokedAt===null);
     if(!device)return {error:'NOT_FOUND'};
+    if((clientTypes.has(device.clientType)?device.clientType:'electron')==='web')return {error:'INVALID_INPUT'};
     device.targetVersion=targetVersion;device.updateStatus='scheduled';device.updateError=null;
     device.updateApprovedBy=identity.uid;device.updateApprovedAt=now();device.updateConsumedAt=null;device.updateCompletedAt=null;
     return {status:'scheduled',targetVersion};
@@ -97,15 +100,17 @@ export function createPairingService({repository,now=Date.now}){
    return run(s=>{
     const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};
     device.lastSeenAt=now();if(clientVersion!==undefined)device.clientVersion=clientVersion;
+    if(Number.isSafeInteger(s.board?.version))device.receivedVersion=s.board.version;
     if(device.targetVersion&&clientVersion===device.targetVersion){
      device.targetVersion=null;device.updateStatus='installed';device.updateError=null;device.updateCompletedAt=now();device.updateApprovedBy=null;device.updateConsumedAt=null;
     }else if(device.targetVersion&&report.updateStatus!==undefined){
      device.updateStatus=report.updateStatus;device.updateError=report.updateStatus==='failed'?(report.updateError||'UNKNOWN'):null;
      if(report.updateStatus!=='idle'&&device.updateConsumedAt===null)device.updateConsumedAt=now();
     }
-    return {board:s.board?structuredClone(s.board):null,update:device.targetVersion&&clientVersion!==device.targetVersion?{targetVersion:device.targetVersion}:null};
+    const clientType=clientTypes.has(device.clientType)?device.clientType:'electron';
+    return {board:s.board?structuredClone(s.board):null,update:clientType==='electron'&&device.targetVersion&&clientVersion!==device.targetVersion?{targetVersion:device.targetVersion}:null};
    });
   },
-  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt,clientVersion,targetVersion,updateStatus,updateError,updateApprovedAt,updateConsumedAt,updateCompletedAt})=>({id,name,createdAt,lastSeenAt,revokedAt,clientVersion:clientVersion||null,targetVersion:targetVersion||null,updateStatus:updateStatus||'idle',updateError:updateError||null,updateApprovedAt:updateApprovedAt||null,updateConsumedAt:updateConsumedAt||null,updateCompletedAt:updateCompletedAt||null}))}));}
+  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,clientType,createdAt,lastSeenAt,revokedAt,receivedVersion,clientVersion,targetVersion,updateStatus,updateError,updateApprovedAt,updateConsumedAt,updateCompletedAt})=>({id,name,clientType:clientTypes.has(clientType)?clientType:'electron',createdAt,lastSeenAt,revokedAt,receivedVersion:Number.isSafeInteger(receivedVersion)?receivedVersion:null,clientVersion:clientVersion||null,targetVersion:targetVersion||null,updateStatus:updateStatus||'idle',updateError:updateError||null,updateApprovedAt:updateApprovedAt||null,updateConsumedAt:updateConsumedAt||null,updateCompletedAt:updateCompletedAt||null}))}));}
  };
 }

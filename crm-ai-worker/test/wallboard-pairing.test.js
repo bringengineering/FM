@@ -65,3 +65,26 @@ test('update approval is admin-only, cancellable and unavailable after revocatio
  await assert.rejects(f.service.scheduleUpdate(device.deviceId,'0.2.0',admin),/NOT_FOUND/);
  await assert.rejects(f.service.readBoard(device.deviceToken,'0.1.2',{updateStatus:'failed',updateError:'NETWORK'}),/INVALID_TOKEN/);
 });
+test('web devices keep their type and never receive desktop update commands',async()=>{
+ const f=fixture();const pending=await f.service.begin('web');
+ await f.service.approve(pending.code,'회의실 웹 TV',admin);
+ const device=await f.service.poll(pending.pendingToken);
+ let listed=(await f.service.list(admin)).devices[0];
+ assert.equal(listed.clientType,'web');
+ await assert.rejects(f.service.scheduleUpdate(device.deviceId,'0.2.0',admin),/INVALID_INPUT/);
+ assert.deepEqual((await f.service.readBoard(device.deviceToken)).update,null);
+});
+test('legacy and explicit desktop devices are normalized as electron clients',async()=>{
+ const f=fixture();const pending=await f.service.begin();
+ await f.service.approve(pending.code,'기존 TV',admin);
+ const device=await f.service.poll(pending.pendingToken);
+ assert.equal((await f.service.list(admin)).devices[0].clientType,'electron');
+ assert.equal((await f.service.authenticate(device.deviceToken)).clientType,'electron');
+ await assert.rejects(f.service.begin('browser'),/INVALID_INPUT/);
+});
+test('device list reports the latest publication version actually received',async()=>{
+ const f=fixture();const pending=await f.service.begin('web');await f.service.approve(pending.code,'웹 TV',admin);const device=await f.service.poll(pending.pendingToken);
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[]}},playlist:[{key:'status',enabled:true,seconds:15}],notice:'',dataDate:'2026-09-20'};
+ await f.service.publish(snapshot,0,admin);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,null);
+ await f.service.readBoard(device.deviceToken);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,1);
+});

@@ -2,7 +2,8 @@ import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js"
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { readDailyReportPayload, sendDailyReportTelegram } from "./daily-report-telegram.js";
-import { wallboardRequest } from "./wallboard-http.js";
+import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
+import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
@@ -271,6 +272,8 @@ export function createWorker(options = {}) {
       if (url.pathname.startsWith('/v1/wallboard/')) return wallboardRequest(request, env, {
         cors, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl),
       });
+      if (url.pathname.startsWith('/tv/api/')) return wallboardWebRequest(request, env);
+      if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
       }
