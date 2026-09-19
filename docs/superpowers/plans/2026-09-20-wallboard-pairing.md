@@ -51,3 +51,10 @@
 
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
+
+## Actual local Worker runtime verification
+- Added isolated `test/runtime/verify-wallboard.cjs` with a local-only fixture/config. Its synthetic administrator identity is for this fixture only; never deploy it. Production Firebase verification is unchanged.
+- Verified real workerd SQLite Durable Object storage: concurrent enrollment redemption yields one success and one unauthorized response; concurrent version-0 publications yield one success and one conflict; a complete runtime stop/restart preserves the board/device; revoked devices receive 401.
+- The bundled local runtime supports compatibility date 2026-05-22, so the fixture uses that date. Production remains 2026-08-30. This is local runtime evidence, not verification of production configuration/date or Firebase login.
+- Production Worker dry-run bundling passed, including shared desktop publication schema. No remote resources or deployments were created.
+- Next required work: automatic source publication, Windows encryption/restart and installer, actual production bindings/approval, two-computer acceptance. The remote TV feature is not yet production-ready.
