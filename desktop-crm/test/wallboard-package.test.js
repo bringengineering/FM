@@ -4,3 +4,6 @@ test('TV package is isolated from CRM identity, source, release feed and output'
  assert.equal(config.appId,'kr.co.bringengineering.wallboard');assert.equal(config.productName,'BRING TV');assert.equal(config.extraMetadata.main,'src/wallboard-tv-main.js');assert.equal(config.extraMetadata.name,'bring-tv');assert.equal(config.directories.output,'dist-tv');assert.equal(config.artifactName,'BRING.TV.Setup.${version}.${ext}');assert.deepEqual(config.publish,[{provider:'github',owner:'bringengineering',repo:'FM',channel:'latest-tv'}]);
  assert.ok(config.files.includes('src/wallboard-tv-main.js'));assert.ok(!config.files.includes('src/**/*'));assert.ok(!config.files.includes('src/main.js'));assert.ok(!config.files.includes('src/remote.js'));assert.equal(config.nsis.runAfterFinish,false);assert.equal(config.nsis.deleteAppDataOnUninstall,false);
 });
+test('TV package version is supplied only by the protected release job',()=>{
+ const file=require.resolve('../electron-builder.tv.cjs'),previous=process.env.BRING_TV_VERSION;process.env.BRING_TV_VERSION='0.2.0';delete require.cache[file];try{assert.equal(require(file).extraMetadata.version,'0.2.0');}finally{if(previous===undefined)delete process.env.BRING_TV_VERSION;else process.env.BRING_TV_VERSION=previous;delete require.cache[file];}
+});
