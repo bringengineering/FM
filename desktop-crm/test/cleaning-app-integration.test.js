@@ -246,3 +246,12 @@ test("quote and completion report previews print customer-facing documents", asy
   assert.match(app, /서창환/);
   assert.match(app, /현장 추가금 없음/);
 });
+
+test("the cleaning center exposes a safe message outbox and queue action", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCleaningMessageOutbox\(store\.cleaningMessages\)/);
+  assert.match(app, /messageOutbox,/);
+  assert.match(app, /data-cleaning-message-queue/);
+  assert.match(app, /Cleaning\.queueCleaningMessage/);
+  assert.match(app, /공급사 연동 후 자동 전송/);
+});

@@ -1968,6 +1968,7 @@
     });
     const followUpDashboard = Cleaning.calculateCleaningFollowUpDashboard(store.cleaningRetentionActions);
     const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments });
+    const messageOutbox = Cleaning.calculateCleaningMessageOutbox(store.cleaningMessages);
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       inboundLeads: store.marketingLeadInbox,
@@ -1977,6 +1978,7 @@
       dashboard,
       followUpDashboard,
       alerts,
+      messageOutbox,
       priceBook: Cleaning.CLEANING_PRICE_BOOK,
       serviceCatalog: Cleaning.CLEANING_SERVICE_CATALOG,
       salesStandards: Cleaning.CLEANING_SALES_STANDARDS,
@@ -3659,6 +3661,19 @@
     if (cleaningQcAdd) { cleaningQcEditor(cleaningQcAdd.dataset.cleaningQcAdd); return; }
     const cleaningMessageAdd = event.target.closest("[data-cleaning-message-add]");
     if (cleaningMessageAdd) { cleaningMessageEditor(cleaningMessageAdd.dataset.cleaningMessageAdd); return; }
+    const cleaningMessageQueue = event.target.closest("[data-cleaning-message-queue]");
+    if (cleaningMessageQueue) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 문자를 승인할 수 없습니다.", "error");
+      const index = store.cleaningMessages.findIndex(item => item && item.id === cleaningMessageQueue.dataset.cleaningMessageQueue);
+      if (index < 0) return showToast("고객 문자 초안을 찾지 못했습니다.", "error");
+      try {
+        const item = Cleaning.queueCleaningMessage(store.cleaningMessages[index], salesActor());
+        store.cleaningMessages[index] = item;
+        logAudit({ category: "청소", targetType: "고객 메시지", targetId: item.id, targetLabel: item.templateId, action: "발송 승인·대기열 등록", reason: item.cleaningOrderId });
+        scheduleSave(); renderCleaningCenter(); showToast("발송을 승인했습니다. 공급사 연동 후 자동 전송됩니다.", "success");
+      } catch (error) { showToast(error.message || "문자를 발송대기에 넣지 못했습니다.", "error"); }
+      return;
+    }
     const cleaningPaymentAdd = event.target.closest("[data-cleaning-payment-add]");
     if (cleaningPaymentAdd) { cleaningPaymentEditor(cleaningPaymentAdd.dataset.cleaningPaymentAdd); return; }
     const cleaningSettlementAdd = event.target.closest("[data-cleaning-settlement-add]");

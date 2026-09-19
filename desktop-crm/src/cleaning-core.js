@@ -391,10 +391,58 @@
       channel: ["sms", "alimtalk"].includes(raw.channel) ? raw.channel : "sms",
       body,
       variables: Object.assign({}, raw.variables || {}),
-      status: ["draft", "sent", "failed"].includes(raw.status) ? raw.status : "draft",
+      status: ["draft", "queued", "sent", "failed"].includes(raw.status) ? raw.status : "draft",
+      queuedAt: text(raw.queuedAt),
       sentAt: text(raw.sentAt),
+      provider: text(raw.provider),
+      providerMessageId: text(raw.providerMessageId),
+      attemptCount: Math.max(0, Math.round(number(raw.attemptCount))),
       failureReason: text(raw.failureReason)
     });
+  }
+
+  function queueCleaningMessage(source, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    if (!["draft", "failed"].includes(current.status)) throw cleaningError("CLEANING_MESSAGE_NOT_QUEUEABLE", "초안 또는 실패 상태의 문자만 발송대기에 넣을 수 있습니다.", "status");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, {
+      status: "queued", queuedAt: timestamp, sentAt: "", providerMessageId: "", failureReason: "",
+      updatedAt: timestamp, updatedBy: text(actor && actor.email)
+    });
+  }
+
+  function recordCleaningMessageDelivery(source, result, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const delivery = result && typeof result === "object" ? result : {};
+    if (current.status !== "queued") throw cleaningError("CLEANING_MESSAGE_NOT_QUEUED", "발송대기 상태의 문자만 전달 결과를 기록할 수 있습니다.", "status");
+    if (!["sent", "failed"].includes(delivery.status)) throw cleaningError("CLEANING_MESSAGE_DELIVERY_INVALID", "전달 결과는 성공 또는 실패여야 합니다.", "status");
+    if (delivery.status === "sent" && !text(delivery.providerMessageId)) throw cleaningError("CLEANING_MESSAGE_PROVIDER_ID_REQUIRED", "성공 처리에는 공급사 메시지 ID가 필요합니다.", "providerMessageId");
+    if (delivery.status === "failed" && !text(delivery.failureReason)) throw cleaningError("CLEANING_MESSAGE_FAILURE_REASON_REQUIRED", "실패 처리에는 실패 사유가 필요합니다.", "failureReason");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, {
+      status: delivery.status,
+      provider: text(delivery.provider),
+      providerMessageId: text(delivery.providerMessageId),
+      sentAt: delivery.status === "sent" ? timestamp : "",
+      failureReason: delivery.status === "failed" ? text(delivery.failureReason) : "",
+      attemptCount: Math.max(0, Math.round(number(current.attemptCount))) + 1,
+      updatedAt: timestamp,
+      updatedBy: text(actor && actor.email)
+    });
+  }
+
+  function calculateCleaningMessageOutbox(messages) {
+    const rows = (Array.isArray(messages) ? messages : []).filter(item => item && !item.archivedAt);
+    const rank = { failed: 0, draft: 1, queued: 2 };
+    const priorityMessages = rows.filter(item => Object.prototype.hasOwnProperty.call(rank, item.status))
+      .sort((left, right) => rank[left.status] - rank[right.status] || String(left.updatedAt || left.createdAt || left.queuedAt || "").localeCompare(String(right.updatedAt || right.createdAt || right.queuedAt || "")));
+    return {
+      drafts: rows.filter(item => item.status === "draft").length,
+      queued: rows.filter(item => item.status === "queued").length,
+      failed: rows.filter(item => item.status === "failed").length,
+      sent: rows.filter(item => item.status === "sent").length,
+      priorityMessages
+    };
   }
 
   function partnerGrade(score) {
@@ -814,6 +862,9 @@
     createCleaningReport,
     createCleaningQcReview,
     createCleaningMessage,
+    queueCleaningMessage,
+    recordCleaningMessageDelivery,
+    calculateCleaningMessageOutbox,
     partnerGrade,
     createCleaningPartner,
     approveCleaningPartner,

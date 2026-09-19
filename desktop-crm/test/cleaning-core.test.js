@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const Cleaning = require("../src/cleaning-core.js");
+const actor = { email: "owner@bring.local" };
 
 test("exposes the approved cleaning order lifecycle", () => {
   assert.deepEqual(Cleaning.CLEANING_ORDER_STAGES.map(item => item.id), [
@@ -169,6 +170,38 @@ test("creates a durable message log from an approved template", () => {
   assert.equal(message.status, "draft");
   assert.match(message.body, /현장 추가금이 없습니다/);
   assert.equal(message.createdBy, "owner@bring.local");
+});
+
+test("queues a reviewed customer message without pretending it was delivered", () => {
+  const draft = Cleaning.createCleaningMessage({ cleaningOrderId: "o1", templateId: "arrived", recipient: "010-1234-5678", variables: {} }, actor, "2026-09-20T09:00:00.000Z");
+  const queued = Cleaning.queueCleaningMessage(draft, actor, "2026-09-20T09:05:00.000Z");
+  assert.equal(queued.status, "queued");
+  assert.equal(queued.queuedAt, "2026-09-20T09:05:00.000Z");
+  assert.equal(queued.sentAt, "");
+  assert.throws(() => Cleaning.queueCleaningMessage(queued, actor), /초안 또는 실패/);
+});
+
+test("records provider delivery success or failure with evidence", () => {
+  const queued = Cleaning.queueCleaningMessage(Cleaning.createCleaningMessage({ cleaningOrderId: "o1", templateId: "arrived", recipient: "010-1234-5678", variables: {} }, actor), actor);
+  assert.throws(() => Cleaning.recordCleaningMessageDelivery(queued, { status: "sent" }, actor), /메시지 ID/);
+  const sent = Cleaning.recordCleaningMessageDelivery(queued, { status: "sent", provider: "atalk", providerMessageId: "msg_1" }, actor, "2026-09-20T09:06:00.000Z");
+  assert.equal(sent.status, "sent");
+  assert.equal(sent.providerMessageId, "msg_1");
+  assert.equal(sent.sentAt, "2026-09-20T09:06:00.000Z");
+  const failed = Cleaning.recordCleaningMessageDelivery(queued, { status: "failed", provider: "atalk", failureReason: "발신번호 미등록" }, actor);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.failureReason, "발신번호 미등록");
+});
+
+test("summarizes the message outbox for operator action", () => {
+  const outbox = Cleaning.calculateCleaningMessageOutbox([
+    { id: "m1", status: "draft", createdAt: "2026-09-20T08:00:00.000Z" },
+    { id: "m2", status: "queued", queuedAt: "2026-09-20T08:30:00.000Z" },
+    { id: "m3", status: "failed", updatedAt: "2026-09-20T08:40:00.000Z" },
+    { id: "m4", status: "sent" }
+  ]);
+  assert.deepEqual({ drafts: outbox.drafts, queued: outbox.queued, failed: outbox.failed }, { drafts: 1, queued: 1, failed: 1 });
+  assert.deepEqual(outbox.priorityMessages.map(item => item.id), ["m3", "m1", "m2"]);
 });
 
 test("creates a probationary Partner and blocks approval before two paid trials", () => {

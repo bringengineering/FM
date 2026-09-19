@@ -222,3 +222,12 @@ test("renders a printable completion report action", () => {
   assert.match(detail, /data-cleaning-customer-report-preview="cr1"/);
   assert.match(detail, /출력·PDF/);
 });
+
+test("renders the reviewed message outbox without claiming queued messages were sent", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [{ id: "o1", customerName: "홍길동" }], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [], messageOutbox: { drafts: 1, queued: 1, failed: 1, sent: 2, priorityMessages: [{ id: "m1", cleaningOrderId: "o1", templateId: "quote_sent", recipient: "010-1234-5678", status: "draft", body: "견적 안내" }, { id: "m2", cleaningOrderId: "o1", templateId: "arrived", recipient: "010-1234-5678", status: "queued", body: "도착 안내" }] }, writable: true });
+  assert.match(center, /문자 발송대기함/);
+  assert.match(center, /검토 초안/);
+  assert.match(center, /공급사 전송대기/);
+  assert.match(center, /data-cleaning-message-queue="m1"/);
+  assert.doesNotMatch(center, /data-cleaning-message-sent="m2"/);
+});
