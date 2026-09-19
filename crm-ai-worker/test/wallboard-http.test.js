@@ -45,3 +45,8 @@ test('request boundary rejects oversized payloads, missing polling tokens and wr
  assert.equal((await f.worker.fetch(new Request('https://gateway.test/v1/wallboard/start'),f.env)).status,405);
  assert.equal(f.forwarded.length,0);
 });
+test('publication requires administrator while display uses only device token',async()=>{
+ const f=setup('staff@example.com');assert.equal((await f.worker.fetch(req('publish',{snapshot:{},expectedVersion:0}),f.env)).status,403);
+ const a=setup();assert.equal((await a.worker.fetch(req('display',{},'a'.repeat(64)),a.env)).status,200);assert.equal(a.forwarded[0].token,'a'.repeat(64));assert.equal(a.forwarded[0].identity,null);
+ assert.equal((await a.worker.fetch(req('display',{},'staff-token'),a.env)).status,401);
+});

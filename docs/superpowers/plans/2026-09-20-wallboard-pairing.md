@@ -28,5 +28,12 @@
 - Verified desktop tests: 2157 passed, 2 skipped. Three DOM test files: 27 passed.
 - Actual production registration remains unavailable until backend deployment. Windows TV enrollment/display client is not implemented yet.
 
+## Published board delivery
+- Added strict publication schema: bounded staff aggregates, exact count totals, generic schedule entries, date, notice and approved playlist keys. Unexpected fields are rejected recursively.
+- `publish` requires verified administrator identity and expected version; concurrent outdated publication is rejected rather than overwriting newer content.
+- `display` requires device token and checks revocation in the same transaction as reading board data; response never contains pairing/admin credentials.
+- Server-generated version/publishedAt accompany the source data date. No automatic refresh or freshness claim is added: current publication is an explicit snapshot.
+- Worker suite: 52 passed. Actual cloud runtime and desktop publication button still require implementation/verification.
+
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/

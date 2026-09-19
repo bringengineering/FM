@@ -22,11 +22,13 @@ export class WallboardDevices {
     case 'approve':result=await this.service.approve(input.code,input.name,identity);break;
     case 'revoke':result=await this.service.revoke(input.deviceId,identity);break;
     case 'list':result=await this.service.list(identity);break;
+    case 'publish':result=await this.service.publish(input.snapshot,input.expectedVersion,identity);break;
+    case 'display':result=await this.service.readBoard(token);break;
     default:return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
    }
    return Response.json({ok:true,...result},{headers});
   }catch(error){
-   const statuses={INVALID_INPUT:400,INVALID_CODE:400,INVALID_TOKEN:401,FORBIDDEN:403,NOT_FOUND:404,RATE_LIMITED:429,DEVICE_LIMIT:409};
+   const statuses={INVALID_INPUT:400,INVALID_CODE:400,INVALID_TOKEN:401,FORBIDDEN:403,NOT_FOUND:404,RATE_LIMITED:429,DEVICE_LIMIT:409,VERSION_CONFLICT:409};
    const code=Object.hasOwn(statuses,error?.code)?error.code:'WALLBOARD_UNAVAILABLE';
    return Response.json({ok:false,code},{status:statuses[code]||503,headers});
   }

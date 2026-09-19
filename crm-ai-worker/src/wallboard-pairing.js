@@ -1,4 +1,5 @@
 // Repository must provide durable, serializable transactions. Never use eventual KV.
+import {validatePublication} from './wallboard-publication.js';
 // Identity is trusted only after the HTTP boundary verifies the employee token.
 const TTL=10*60*1000;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
@@ -58,6 +59,16 @@ export function createPairingService({repository,now=Date.now}){
    admin(identity);
    return run(s=>{const d=Object.values(s.devices).find(d=>d.id===deviceId);if(!d)return {error:'NOT_FOUND'};d.revokedAt=now();return {status:'revoked'};});
   },
-  async list(identity){admin(identity);return run(s=>({devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt})=>({id,name,createdAt,lastSeenAt,revokedAt}))}));}
+  async publish(input,expectedVersion,identity){
+   admin(identity);const snapshot=validatePublication(input);
+   if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
+   return run(s=>{if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};return {version:s.board.version,publishedAt:s.board.publishedAt};});
+  },
+  async readBoard(deviceToken){
+   if(typeof deviceToken!=='string'||!/^[a-f0-9]{64}$/.test(deviceToken))fail('INVALID_TOKEN');
+   const digest=await hash(deviceToken);
+   return run(s=>{const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};device.lastSeenAt=now();return {board:s.board?structuredClone(s.board):null};});
+  },
+  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt})=>({id,name,createdAt,lastSeenAt,revokedAt}))}));}
  };
 }
