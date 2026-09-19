@@ -1,4 +1,5 @@
 name = "bring-crm-ai-gateway"
+account_id = "3c3bcd08bb6ed3a7a8f98c292386c327"
 main = "src/index.js"
 compatibility_date = "2026-08-30"
 workers_dev = true
@@ -14,6 +15,7 @@ ALLOWED_ORIGINS = "app://bring-crm,https://bring-fm.web.app"
 DOCUMENT_DELIVERY_ENABLED = "false"
 KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
 TELEGRAM_DAILY_REPORT_ENABLED = "true"
+WALLBOARD_ENABLED = "true"
 
 [[ratelimits]]
 name = "AI_RATE_LIMITER"
@@ -30,3 +32,19 @@ id = "e2ff82add8014f11aebf8bd1f6d95f8e"
 [[kv_namespaces]]
 binding = "DOCUMENT_DELIVERY"
 id = "e45a57c874534b76b90107d43ad4a759"
+
+[[durable_objects.bindings]]
+name = "WALLBOARD_DEVICES"
+class_name = "WallboardDevices"
+
+[[migrations]]
+tag = "wallboard-sqlite-v1"
+new_sqlite_classes = ["WallboardDevices"]
+
+[[ratelimits]]
+name = "WALLBOARD_RATE_LIMITER"
+namespace_id = "10082"
+
+[ratelimits.simple]
+limit = 60
+period = 60
