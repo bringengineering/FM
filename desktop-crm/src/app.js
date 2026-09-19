@@ -6673,12 +6673,28 @@
     reports: [], admin: false, canWork: false, uid: "",
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "",
-    driveOpen: false, driveFolderId: "", driveFolderName: "", driveScanning: false,
+    driveScanning: false,
     drivePlan: null, driveLeftovers: [], driveError: "",
+    drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
+    driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
     aiLoading: false, aiError: "", aiDraftAt: "",
   };
 
   const reportCore = () => window.BringWorkReportCore;
+
+  function resetReportDriveSelection() {
+    reportState.driveScanning = false;
+    reportState.drivePlan = null;
+    reportState.driveLeftovers = [];
+    reportState.driveError = "";
+    reportState.drivePickerOpen = false;
+    reportState.driveBrowserLoading = false;
+    reportState.driveBrowserError = "";
+    reportState.driveBrowserTruncated = false;
+    reportState.driveBrowserEntries = [];
+    reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
+    reportState.driveSelected = new Map();
+  }
 
   async function loadWorkReports() {
     if (reportState.loading) return;
@@ -6921,8 +6937,59 @@
   //
   // 끌어온 것은 초안일 뿐이다. 상태를 올리지 않고, 전·후를 못 가른 것은
   // 못 갈랐다고 적는다. 사람이 보고 고친 다음에 저장한다.
+  function reportDriveFileSize(value) {
+    const bytes = Math.max(0, Number(value || 0));
+    if (!bytes) return "크기 미확인";
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)}MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  }
+
+  function reportDrivePicker() {
+    if (!reportState.drivePickerOpen) return "";
+    const selected = reportState.driveSelected instanceof Map ? reportState.driveSelected : new Map();
+    const path = Array.isArray(reportState.driveBrowserPath) && reportState.driveBrowserPath.length
+      ? reportState.driveBrowserPath
+      : [{ id: "root", name: "내 드라이브" }];
+    const entries = Array.isArray(reportState.driveBrowserEntries) ? reportState.driveBrowserEntries : [];
+    const folders = entries.filter(entry => entry && entry.kind === "folder");
+    const files = entries.filter(entry => entry && entry.kind === "file");
+    const breadcrumb = path.map((part, index) => `<button type="button" data-report-drive-breadcrumb="${index}"${index === path.length - 1 ? " disabled" : ""}>${esc(part.name || "폴더")}</button>${index < path.length - 1 ? `<span aria-hidden="true">›</span>` : ""}`).join("");
+    const tiles = folders.concat(files).map(entry => {
+      if (entry.kind === "folder") {
+        return `<button type="button" class="wr-drive-entry is-folder" data-report-drive-folder="${attr(entry.id)}" data-report-drive-folder-name="${attr(entry.name)}">
+          <span class="wr-drive-entry-icon" aria-hidden="true">▰</span><b>${esc(entry.name || "이름 없는 폴더")}</b><small>폴더 열기</small>
+        </button>`;
+      }
+      const isSelected = selected.has(String(entry.id));
+      const heic = /heic|heif/u.test(String(entry.mimeType || ""));
+      return `<button type="button" class="wr-drive-entry is-photo${isSelected ? " is-selected" : ""}" data-report-drive-file="${attr(entry.id)}" aria-pressed="${isSelected ? "true" : "false"}">
+        <span class="wr-drive-entry-check" aria-hidden="true">${isSelected ? "✓" : ""}</span>
+        <span class="wr-drive-entry-icon" aria-hidden="true">▧</span><b>${esc(entry.name || "사진")}</b><small>${esc(heic ? "HEIC · JPG 변환 필요" : reportDriveFileSize(entry.size))}</small>
+      </button>`;
+    }).join("");
+    const emptyText = reportState.driveBrowserLoading
+      ? "Drive 폴더를 불러오는 중입니다…"
+      : (reportState.driveBrowserError || "이 폴더에는 선택할 사진이 없습니다.");
+    return `<div class="wr-drive-picker-layer" role="dialog" aria-modal="true" aria-labelledby="wr-drive-picker-title">
+      <section class="wr-drive-picker">
+        <header><div><span class="wr-drive-picker-logo" aria-hidden="true">D</span><div><h4 id="wr-drive-picker-title">Google Drive에서 작업 사진 선택</h4><p>폴더를 열고 보고서에 넣을 사진을 여러 장 고르세요.</p></div></div><button type="button" class="close-button" data-report-drive-close aria-label="Drive 선택창 닫기">×</button></header>
+        <div class="wr-drive-picker-body">
+          <nav aria-label="Drive 위치"><button type="button" class="is-active"><span aria-hidden="true">▣</span>내 드라이브</button><button type="button" disabled><span aria-hidden="true">◷</span>최근 항목</button><small>${esc(driveState.email || "회사 계정")}</small></nav>
+          <div class="wr-drive-browser">
+            <label class="wr-drive-search"><span aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" data-report-drive-search placeholder="현재 폴더에서 파일 검색" autocomplete="off"></label>
+            <div class="wr-drive-breadcrumb">${breadcrumb}</div>
+            ${reportState.driveBrowserTruncated ? `<p class="wr-drive-limit">항목이 많은 폴더라 일부만 표시했습니다. 하위 폴더로 나눠 선택해 주세요.</p>` : ""}
+            <div class="wr-drive-entry-grid" data-report-drive-entry-grid>${tiles || `<div class="wr-drive-browser-empty">${esc(emptyText)}</div>`}</div>
+          </div>
+        </div>
+        <footer><span data-report-drive-selected-count><b>${selected.size}개</b> 사진 선택됨</span><div><button type="button" class="secondary-button" data-report-drive-close>취소</button><button type="button" class="primary-button" data-report-drive-plan${reportState.driveScanning || !selected.size ? " disabled" : ""}>${reportState.driveScanning ? "분류 중…" : "선택한 사진 가져오기"}</button></div></footer>
+      </section>
+    </div>`;
+  }
+
   function reportDriveBox(R) {
     const plan = reportState.drivePlan;
+    const selected = reportState.driveSelected instanceof Map ? reportState.driveSelected.size : 0;
     const rows = plan
       ? plan.buckets.map(bucket => {
         const item = bucket.itemKey ? (R.itemsFor(plan.kind || reportState.draft.kind, []).find(entry => entry.key === bucket.itemKey) || null) : null;
@@ -6936,17 +7003,21 @@
         </tr>`;
       }).join("")
       : "";
+    const connected = driveState.loaded && driveState.connected;
     return `<div class="wide wr-drive">
       <div class="wr-drive-head">
-        <b>Drive 폴더에서 끌어오기</b>
-        <small>폴더 안의 위치별 폴더가 그대로 보고서 항목이 됩니다.</small>
+        <b>회사 Drive에서 사진 선택</b>
+        <small>주소나 폴더 ID를 입력하지 않고 Drive 화면에서 직접 고릅니다.</small>
+        ${connected ? `<em><i></i>연결됨</em>` : ""}
       </div>
-      <div class="wr-drive-form">
-        <input type="text" data-report-drive-id value="${esc(reportState.driveFolderId)}" placeholder="Drive 폴더 링크 또는 ID" spellcheck="false">
-        <input type="text" data-report-drive-name value="${esc(reportState.driveFolderName)}" placeholder="폴더 이름 (예: 입주청소(햇빛빌라)_블로그_20260831)" spellcheck="false">
-        <button type="button" class="mini-button" data-report-drive-scan${reportState.driveScanning || !reportState.driveFolderId ? " disabled" : ""}>${reportState.driveScanning ? "읽는 중…" : "읽어 보기"}</button>
+      <div class="wr-drive-launch">
+        <span class="wr-drive-launch-icon" aria-hidden="true">D</span>
+        <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : "폴더를 찾아 들어가 필요한 사진을 여러 장 선택하세요.") : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
+        ${connected
+          ? `<button type="button" class="primary-button" data-report-drive-open${reportState.driveBrowserLoading ? " disabled" : ""}>Drive에서 사진 선택</button>`
+          : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>회사 Drive 연결</button>`}
       </div>
-      ${reportState.driveError ? `<p class="wr-drive-error">${esc(reportState.driveError)}</p>` : ""}
+      ${reportState.driveError ? `<p class="wr-drive-error" role="alert">${esc(reportState.driveError)}</p>` : ""}
       ${plan ? `
         ${plan.warnings.length ? `<ul class="wr-drive-warn">${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
@@ -6955,42 +7026,146 @@
         </table></div>
         <div class="wr-drive-actions">
           <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount ? "" : " disabled"}>이 사진들로 초안 채우기</button>
-          <small>${plan.photoCount}장 · 항목에 붙는 폴더 ${plan.matched}개${plan.unmatched.length ? ` · 못 붙인 폴더 ${plan.unmatched.length}개` : ""}</small>
+          <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${plan.matched}개${plan.unmatched.length ? ` · 확인할 구역 ${plan.unmatched.length}개` : ""}</small>
         </div>` : ""}
     </div>`;
   }
 
-  // 링크를 그대로 붙여 넣어도 되게 한다. 사람은 ID 만 떼어내지 않는다.
-  function reportDriveFolderId(value) {
-    const raw = String(value || "").trim();
-    const inUrl = raw.match(/\/folders\/([A-Za-z0-9_-]{10,})/u);
-    if (inUrl) return inUrl[1];
-    const query = raw.match(/[?&]id=([A-Za-z0-9_-]{10,})/u);
-    if (query) return query[1];
-    return /^[A-Za-z0-9_-]{10,}$/u.test(raw) ? raw : "";
+  function preserveReportDraft() {
+    const current = readReportForm();
+    if (current) reportState.draft = current;
   }
 
-  async function scanReportDriveFolder() {
-    if (reportState.driveScanning) return;
-    const R = reportCore();
-    if (!R) return;
+  async function refreshReportDriveStatus() {
+    try {
+      driveState = Object.assign({ loaded: true }, await api.driveStatus());
+    } catch {
+      driveState = { connected: false, email: "", loaded: true };
+    }
+    if (currentView === "workReports") renderWorkReports();
+    return driveState;
+  }
+
+  async function connectReportDrive() {
+    if (!reportState.canWork) return;
+    preserveReportDraft();
+    reportState.driveError = "";
+    showToast("브라우저에서 회사 Google 계정으로 계속해 주세요.");
+    try {
+      driveState = Object.assign({ loaded: true }, await api.connectDrive());
+      reportState.driveBrowserEntries = [];
+      reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
+      reportState.driveSelected = new Map();
+      reportState.drivePlan = null;
+      showToast("회사 Drive 에 연결했습니다.", "success");
+      await openReportDrivePicker();
+    } catch (error) {
+      reportState.driveError = error && error.message || "Drive 에 연결하지 못했습니다.";
+      renderWorkReports();
+    }
+  }
+
+  async function loadReportDriveFolder(folderId, folderName, path) {
+    if (reportState.driveBrowserLoading) return;
+    preserveReportDraft();
+    reportState.driveBrowserLoading = true;
+    reportState.driveBrowserError = "";
+    reportState.driveBrowserTruncated = false;
+    if (Array.isArray(path) && path.length) reportState.driveBrowserPath = path;
+    renderWorkReports();
+    try {
+      const result = await api.browseWorkReportDrive({ folderId });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "Drive 폴더를 열지 못했습니다.");
+      reportState.driveBrowserEntries = Array.isArray(result.entries) ? result.entries : [];
+      reportState.driveBrowserTruncated = result.truncated === true;
+      const currentPath = reportState.driveBrowserPath;
+      if (currentPath.length) currentPath[currentPath.length - 1].name = String(result.folder && result.folder.name || folderName || "Drive 폴더");
+    } catch (error) {
+      reportState.driveBrowserEntries = [];
+      reportState.driveBrowserError = error && error.message || "Drive 폴더를 열지 못했습니다.";
+    } finally {
+      reportState.driveBrowserLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
+  async function openReportDrivePicker() {
+    preserveReportDraft();
+    if (!driveState.loaded) await refreshReportDriveStatus();
+    if (!driveState.connected) {
+      reportState.driveError = "회사 Drive 에 먼저 연결해 주세요.";
+      renderWorkReports();
+      return;
+    }
+    reportState.drivePickerOpen = true;
+    reportState.driveError = "";
+    const path = Array.isArray(reportState.driveBrowserPath) && reportState.driveBrowserPath.length
+      ? reportState.driveBrowserPath
+      : [{ id: "root", name: "내 드라이브" }];
+    reportState.driveBrowserPath = path;
+    renderWorkReports();
+    if (!reportState.driveBrowserEntries.length) {
+      const current = path[path.length - 1];
+      await loadReportDriveFolder(current.id, current.name, path);
+    }
+  }
+
+  async function enterReportDriveFolder(folderId, folderName) {
+    const entry = reportState.driveBrowserEntries.find(item => item && item.kind === "folder" && String(item.id) === String(folderId));
+    if (!entry) return showToast("Drive 화면에서 폴더를 다시 선택해 주세요.", "error");
+    const path = reportState.driveBrowserPath.concat([{ id: entry.id, name: entry.name || folderName || "폴더" }]);
+    await loadReportDriveFolder(entry.id, entry.name, path);
+  }
+
+  async function returnReportDriveBreadcrumb(index) {
+    const at = Number(index);
+    if (!Number.isInteger(at) || at < 0 || at >= reportState.driveBrowserPath.length - 1) return;
+    const path = reportState.driveBrowserPath.slice(0, at + 1);
+    const current = path[path.length - 1];
+    await loadReportDriveFolder(current.id, current.name, path);
+  }
+
+  function toggleReportDriveFile(fileId, control) {
+    const entry = reportState.driveBrowserEntries.find(item => item && item.kind === "file" && String(item.id) === String(fileId));
+    if (!entry) return;
+    if (!(reportState.driveSelected instanceof Map)) reportState.driveSelected = new Map();
+    if (reportState.driveSelected.has(fileId)) reportState.driveSelected.delete(fileId);
+    else {
+      if (reportState.driveSelected.size >= 100) return showToast("사진은 한 번에 100장까지 선택할 수 있습니다.", "error");
+      reportState.driveSelected.set(fileId, entry);
+    }
+    const chosen = reportState.driveSelected.has(fileId);
+    control.classList.toggle("is-selected", chosen);
+    control.setAttribute("aria-pressed", chosen ? "true" : "false");
+    const check = control.querySelector(".wr-drive-entry-check");
+    if (check) check.textContent = chosen ? "✓" : "";
+    const count = document.querySelector("[data-report-drive-selected-count]");
+    if (count) count.innerHTML = `<b>${reportState.driveSelected.size}개</b> 사진 선택됨`;
+    const submit = document.querySelector("[data-report-drive-plan]");
+    if (submit) submit.disabled = !reportState.driveSelected.size || reportState.driveScanning;
+  }
+
+  async function planSelectedReportDrivePhotos() {
+    if (reportState.driveScanning || !(reportState.driveSelected instanceof Map) || !reportState.driveSelected.size) return;
+    preserveReportDraft();
     reportState.driveScanning = true;
     reportState.driveError = "";
     renderWorkReports();
     try {
-      const result = await api.scanWorkReportPhotos({
-        folderId: reportState.driveFolderId,
-        folderName: reportState.driveFolderName,
+      const result = await api.planWorkReportDrivePhotos({
+        fileIds: [...reportState.driveSelected.keys()],
         kind: reportState.draft ? reportState.draft.kind : "",
       });
-      if (!result || result.ok !== true) throw new Error((result && result.error) || "폴더를 읽지 못했습니다.");
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
       reportState.drivePlan = result.plan;
+      reportState.drivePickerOpen = false;
+      showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 분류를 확인해 주세요.`, "success");
     } catch (error) {
       reportState.drivePlan = null;
-      reportState.driveError = error && error.message || "폴더를 읽지 못했습니다.";
+      reportState.driveError = error && error.message || "선택한 사진을 분류하지 못했습니다.";
     } finally {
       reportState.driveScanning = false;
-      renderWorkReports();
+      if (currentView === "workReports") renderWorkReports();
     }
   }
 
@@ -7141,7 +7316,7 @@
             </div>
           </section>
           <section class="wr-ai-card wr-ai-photo-card">
-            <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>Drive 폴더로 한 번에 불러오거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
+            <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
             <div class="wr-ai-photo-guide"><span>1</span><p><b>작업 전·후 사진을 등록하세요.</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
             ${reportState.canWork ? reportDriveBox(R) : ""}
             <div class="wr-ai-manual-head"><div><b>항목별 직접 등록</b><small>AI는 사진 원본을 받지 않으며, 확인된 항목과 사진 수만 보고 문장을 만듭니다.</small></div><span>${draft.items.length}개 구역</span></div>
@@ -7179,6 +7354,7 @@
           </section>
         </aside>
       </div>
+      ${reportDrivePicker()}
     </form>`;
   }
 
@@ -7233,6 +7409,7 @@
     try {
       const saved = await api.saveWorkReport(checked.report);
       reportState.draft = null;
+      resetReportDriveSelection();
       reportState.aiError = "";
       reportState.aiDraftAt = "";
       reportState.selectedId = saved.id;
@@ -11159,9 +11336,11 @@
       const R = reportCore();
       if (R) {
         reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() });
+        resetReportDriveSelection();
         reportState.aiError = "";
         reportState.aiDraftAt = "";
         renderWorkReports();
+        if (!driveState.loaded) void refreshReportDriveStatus();
       }
       return;
     }
@@ -11172,9 +11351,11 @@
       if (found) {
         reportState.draft = found;
         reportState.selectedId = found.id;
+        resetReportDriveSelection();
         reportState.aiError = "";
         reportState.aiDraftAt = "";
         renderWorkReports();
+        if (!driveState.loaded) void refreshReportDriveStatus();
       }
       return;
     }
@@ -11249,7 +11430,24 @@
     }
     if (event.target.closest("[data-telegram-send]")) { void sendTelegramNow(true); return; }
     if (event.target.closest("[data-telegram-forget]")) { void forgetTelegram(); return; }
-    if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }
+    if (event.target.closest("[data-report-drive-connect]")) { await connectReportDrive(); return; }
+    if (event.target.closest("[data-report-drive-open]")) { await openReportDrivePicker(); return; }
+    if (event.target.closest("[data-report-drive-close]")) {
+      preserveReportDraft();
+      reportState.drivePickerOpen = false;
+      renderWorkReports();
+      return;
+    }
+    const reportDriveFolder = event.target.closest("[data-report-drive-folder]");
+    if (reportDriveFolder) {
+      await enterReportDriveFolder(reportDriveFolder.dataset.reportDriveFolder, reportDriveFolder.dataset.reportDriveFolderName);
+      return;
+    }
+    const reportDriveBreadcrumb = event.target.closest("[data-report-drive-breadcrumb]");
+    if (reportDriveBreadcrumb) { await returnReportDriveBreadcrumb(reportDriveBreadcrumb.dataset.reportDriveBreadcrumb); return; }
+    const reportDriveFile = event.target.closest("[data-report-drive-file]");
+    if (reportDriveFile) { toggleReportDriveFile(reportDriveFile.dataset.reportDriveFile, reportDriveFile); return; }
+    if (event.target.closest("[data-report-drive-plan]")) { await planSelectedReportDrivePhotos(); return; }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
     if (event.target.closest("[data-report-history]")) {
@@ -11265,6 +11463,7 @@
     }
     if (event.target.closest("[data-report-cancel]")) {
       reportState.draft = null;
+      resetReportDriveSelection();
       reportState.aiError = "";
       reportState.aiDraftAt = "";
       renderWorkReports();
@@ -13478,6 +13677,7 @@
     }
     if (event.target.matches("[data-report-kind]")) {
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
+      reportState.drivePlan = null;
       syncReportDraft();
       return;
     }
@@ -15144,16 +15344,13 @@
       renderObjectives();
       return;
     }
-    if (event.target.matches("[data-report-drive-id]")) {
-      // 링크째로 붙여 넣어도 되게 ID 를 떼어낸다. 다시 그리지 않는다 —
-      // 그리면 커서가 튄다. 단추만 열고 닫는다.
-      reportState.driveFolderId = reportDriveFolderId(event.target.value);
-      const scan = document.querySelector("[data-report-drive-scan]");
-      if (scan) scan.disabled = !reportState.driveFolderId || reportState.driveScanning;
-      return;
-    }
-    if (event.target.matches("[data-report-drive-name]")) {
-      reportState.driveFolderName = String(event.target.value || "");
+    if (event.target.matches("[data-report-drive-search]")) {
+      const query = String(event.target.value || "").trim().toLocaleLowerCase("ko");
+      const grid = event.target.closest(".wr-drive-picker")?.querySelector("[data-report-drive-entry-grid]");
+      grid?.querySelectorAll(".wr-drive-entry").forEach(entry => {
+        const name = String(entry.querySelector("b")?.textContent || "").toLocaleLowerCase("ko");
+        entry.hidden = Boolean(query && !name.includes(query));
+      });
       return;
     }
     if (captureSupplyManualForm(event.target)) return;

@@ -29,12 +29,16 @@ function topLevelBody(source, name) {
 }
 
 test("훑기 통로가 세 곳에 다 등록돼 있고 읽기로 분류된다", () => {
-  const channel = "crm:work-report-photos-scan";
-  assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel));
-  // 아무것도 안 바꾼다. 바꾸는 것으로 분류하면 필요 없는 권한을 쓴다.
-  assert.equal(MutationPolicy.classification(channel), "control");
-  assert.ok(mainSource.includes(`secureHandle("${channel}"`));
-  assert.ok(preloadSource.includes(`"${channel}"`));
+  for (const channel of ["crm:work-report-photos-scan", "crm:work-report-drive-browse", "crm:work-report-drive-plan"]) {
+    assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel));
+    // 아무것도 안 바꾼다. 바꾸는 것으로 분류하면 필요 없는 권한을 쓴다.
+    assert.equal(MutationPolicy.classification(channel), "control");
+    assert.ok(mainSource.includes(`"${channel}"`));
+    assert.ok(preloadSource.includes(`"${channel}"`));
+  }
+  // 새 선택기는 오직 메인 CRM 문서에서만 호출할 수 있다.
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-drive-browse"'));
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-drive-plan"'));
 });
 
 test("마케팅 전용 계정은 사진을 훑지 못한다", () => {
@@ -64,14 +68,33 @@ test("Drive 를 두 층까지만 훑는다", () => {
   assert.match(body.slice(0, 2000), /scanned\.truncated/u, "덜 읽었으면 화면에 말해야 한다");
 });
 
-test("화면이 링크를 붙여 넣어도 ID 를 떼어낸다", () => {
-  // 사람은 주소창을 통째로 복사한다. ID 만 떼어내라고 시키면 안 쓴다.
-  const source = functionBody(appSource, "reportDriveFolderId");
-  assert.match(source, /folders/u);
-  const pick = new Function(`${source} return reportDriveFolderId;`)();
-  assert.equal(pick("https://drive.google.com/drive/folders/17EWMXA834daN5r9ZedRWrhJHWR8ppB7q"), "17EWMXA834daN5r9ZedRWrhJHWR8ppB7q");
-  assert.equal(pick("17EWMXA834daN5r9ZedRWrhJHWR8ppB7q"), "17EWMXA834daN5r9ZedRWrhJHWR8ppB7q");
-  assert.equal(pick("그냥 글자"), "");
+test("결과보고서 화면은 주소 입력 대신 Drive 파일 선택기를 쓴다", () => {
+  const source = functionBody(appSource, "reportDriveBox");
+  assert.match(source, /data-report-drive-open/u);
+  assert.match(source, /Drive에서 사진 선택/u);
+  assert.doesNotMatch(source, /data-report-drive-id|data-report-drive-name/u);
+  assert.match(appSource, /function reportDrivePicker\(/u);
+  assert.match(appSource, /data-report-drive-file/u);
+  assert.match(appSource, /data-report-drive-folder/u);
+  assert.match(appSource, /선택한 사진 가져오기/u);
+});
+
+test("Drive 탐색기는 토큰과 사진 원본을 렌더러로 보내지 않는다", () => {
+  const browse = topLevelBody(mainSource, "browseWorkReportDrive");
+  assert.match(browse, /reportDrivePickerReady\(\)/u);
+  assert.match(browse, /picker\.folders\.has\(folderId\)/u);
+  assert.match(browse, /REPORT_DRIVE_IMAGE_MIME/u);
+  assert.doesNotMatch(browse.slice(browse.lastIndexOf("return {")), /accessToken/u, "반환 객체에 토큰을 싣지 않아야 한다");
+  assert.doesNotMatch(browse, /downloadFile|alt=media|arrayBuffer/u, "선택 단계에서 사진 원본을 받지 않아야 한다");
+});
+
+test("선택한 사진 계획은 화면에 실제로 표시한 파일만 허용한다", () => {
+  const plan = topLevelBody(mainSource, "planSelectedWorkReportPhotos");
+  assert.match(plan, /REPORT_DRIVE_MAX_FILES/u);
+  assert.match(plan, /picker\.files\.get\(id\)/u);
+  assert.match(plan, /DRIVE_FILE_NOT_LISTED/u);
+  assert.match(plan, /ReportPhotoPlan\.planFromTree/u);
+  assert.doesNotMatch(plan, /downloadFile|alt=media|arrayBuffer/u);
 });
 
 test("끌어온 것이 사람이 적은 것을 덮지 않는다", () => {

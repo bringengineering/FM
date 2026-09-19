@@ -3147,6 +3147,44 @@ async function runDocumentDelivery(action, input) {
 // 다시 켜면 다시 연결하면 된다.
 let driveSession = null;
 
+const REPORT_DRIVE_IMAGE_MIME = new Set([
+  "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
+]);
+const REPORT_DRIVE_MAX_FILES = 100;
+let reportDrivePickerSession = null;
+
+function resetReportDrivePickerSession() {
+  reportDrivePickerSession = {
+    folders: new Map([["root", { id: "root", name: "내 드라이브", parentId: "" }]]),
+    files: new Map(),
+  };
+}
+
+function reportDrivePickerId(value, allowRoot = false) {
+  const id = String(value || "").trim();
+  if (allowRoot && id === "root") return id;
+  return /^[A-Za-z0-9_-]{10,200}$/u.test(id) ? id : "";
+}
+
+function reportDriveViewLink(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:") return "";
+    if (!["drive.google.com", "docs.google.com"].includes(url.hostname)) return "";
+    return url.toString().slice(0, 1000);
+  } catch {
+    return "";
+  }
+}
+
+function reportDrivePickerReady() {
+  if (!driveSessionView().connected) {
+    throw Object.assign(new Error("회사 Drive 에 먼저 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  if (!reportDrivePickerSession) resetReportDrivePickerSession();
+  return reportDrivePickerSession;
+}
+
 function driveSessionView() {
   if (!driveSession) return { connected: false, email: "", expiresAt: "" };
   if (Date.parse(driveSession.expiresAt) <= Date.now()) {
@@ -3165,6 +3203,7 @@ async function connectDrive() {
   driveConnectAbortController = controller;
   try {
     driveSession = await remoteClient.receiveDriveToken({ signal: controller.signal });
+    resetReportDrivePickerSession();
     return driveSessionView();
   } finally {
     if (driveConnectAbortController === controller) driveConnectAbortController = null;
@@ -3173,6 +3212,7 @@ async function connectDrive() {
 
 function disconnectDrive() {
   driveSession = null;
+  resetReportDrivePickerSession();
   return driveSessionView();
 }
 
@@ -3501,6 +3541,140 @@ async function sendTelegramContactAlert(input) {
   if (TelegramCore.text(options.slot, 20)) stamp.lastAutoSlot = TelegramCore.text(options.slot, 20);
   await writeTelegramSettings(Object.assign({}, saved, stamp));
   return { ok: true, sent: true, count: alerts.length, reason: "" };
+}
+
+/**
+ * 결과보고서용 Drive 탐색기.
+ *
+ * 렌더러는 토큰을 받지 않는다. 여기서 목록을 읽고, 보고서에 쓸 수 있는
+ * 폴더와 사진의 제한된 메타데이터만 돌려준다. 또한 이 목록에서 실제로
+ * 보여 준 ID만 세션에 기억해 두어, 화면이 임의의 Drive ID를 조회하거나
+ * 보고서에 끼워 넣을 수 없게 한다.
+ */
+async function browseWorkReportDrive(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 결과보고서 사진을 볼 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const picker = reportDrivePickerReady();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const folderId = reportDrivePickerId(options.folderId, true);
+  if (!folderId || !picker.folders.has(folderId)) {
+    throw Object.assign(new Error("Drive 화면에서 폴더를 다시 선택해 주세요."), { code: "DRIVE_FOLDER_NOT_LISTED" });
+  }
+
+  const listed = await BuildingDocsDrive.listFolder(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    folderId,
+    { maxPages: 5 },
+  );
+  const current = picker.folders.get(folderId) || { id: folderId, name: "Drive 폴더", parentId: "" };
+  const folders = listed.folders
+    .map(item => ({
+      id: reportDrivePickerId(item && item.id),
+      name: String(item && item.name || "이름 없는 폴더").trim().slice(0, 180),
+      mimeType: BuildingDocsDrive.FOLDER_MIME,
+      parentId: folderId,
+      kind: "folder",
+    }))
+    .filter(item => item.id)
+    .slice(0, 200);
+  const imageFiles = listed.files
+    .filter(item => REPORT_DRIVE_IMAGE_MIME.has(String(item && item.mimeType || "").toLowerCase()));
+  const files = imageFiles
+    .map(item => ({
+      id: reportDrivePickerId(item && item.id),
+      name: String(item && item.name || "사진").trim().slice(0, 220),
+      mimeType: String(item && item.mimeType || "").toLowerCase().slice(0, 80),
+      size: Math.max(0, Number(item && item.size || 0)),
+      createdTime: String(item && item.createdTime || "").slice(0, 40),
+      webViewLink: reportDriveViewLink(item && item.webViewLink),
+      parentId: folderId,
+      parentName: current.name,
+      kind: "file",
+    }))
+    .filter(item => item.id)
+    .slice(0, 400);
+
+  folders.forEach(item => picker.folders.set(item.id, item));
+  files.forEach(item => picker.files.set(item.id, item));
+  return {
+    ok: true,
+    folder: { id: current.id, name: current.name },
+    entries: folders.concat(files),
+    truncated: listed.truncated || listed.folders.length > folders.length || imageFiles.length > files.length,
+  };
+}
+
+function reportDriveFolderAncestors(picker, folderId) {
+  const result = [];
+  const visited = new Set();
+  let currentId = folderId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    result.push(currentId);
+    currentId = String(picker.folders.get(currentId)?.parentId || "");
+  }
+  if (!result.includes("root")) result.push("root");
+  return result;
+}
+
+function reportDriveCommonFolder(picker, files) {
+  if (!files.length) return picker.folders.get("root");
+  const first = reportDriveFolderAncestors(picker, files[0].parentId);
+  const rest = files.slice(1).map(file => new Set(reportDriveFolderAncestors(picker, file.parentId)));
+  const commonId = first.find(id => rest.every(set => set.has(id))) || "root";
+  return picker.folders.get(commonId) || picker.folders.get("root");
+}
+
+function normalizeReportDriveWord(value) {
+  return String(value || "").normalize("NFKC").replace(/[\s·・.,_()[\]{}-]/gu, "").toLowerCase();
+}
+
+function reportDriveBucketName(file, parent, kind) {
+  if (ReportPhotoPlan.itemKeyForFolder(kind, parent && parent.name)) return parent.name;
+  const word = normalizeReportDriveWord(file && file.name);
+  const hints = ReportPhotoPlan.FOLDER_HINTS[kind] || {};
+  const hit = Object.keys(hints).find(label => word.includes(normalizeReportDriveWord(label)));
+  return hit || String(parent && parent.name || "");
+}
+
+/** 선택한 사진만으로 자동 분류 초안을 만든다. 원본 바이트는 받지 않는다. */
+async function planSelectedWorkReportPhotos(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 결과보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const picker = reportDrivePickerReady();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : [])
+    .map(value => reportDrivePickerId(value))
+    .filter(Boolean))];
+  if (!ids.length) throw Object.assign(new Error("가져올 사진을 선택해 주세요."), { code: "DRIVE_PHOTO_REQUIRED" });
+  if (ids.length > REPORT_DRIVE_MAX_FILES) {
+    throw Object.assign(new Error(`사진은 한 번에 ${REPORT_DRIVE_MAX_FILES}장까지 선택할 수 있습니다.`), { code: "DRIVE_PHOTO_LIMIT" });
+  }
+  const files = ids.map(id => picker.files.get(id));
+  if (files.some(file => !file)) {
+    throw Object.assign(new Error("Drive 화면에 표시된 사진만 가져올 수 있습니다."), { code: "DRIVE_FILE_NOT_LISTED" });
+  }
+  const kind = Object.hasOwn(ReportPhotoPlan.FOLDER_HINTS, String(options.kind || "")) ? String(options.kind) : "";
+  const grouped = new Map();
+  files.forEach(file => {
+    const parent = picker.folders.get(file.parentId) || { id: file.parentId, name: file.parentName || "" };
+    const folderName = reportDriveBucketName(file, parent, kind);
+    const itemKey = ReportPhotoPlan.itemKeyForFolder(kind, folderName);
+    const groupKey = itemKey ? `item:${itemKey}` : `folder:${parent.id}`;
+    if (!grouped.has(groupKey)) grouped.set(groupKey, { name: folderName, files: [] });
+    grouped.get(groupKey).files.push(file);
+  });
+  const common = reportDriveCommonFolder(picker, files);
+  const plan = ReportPhotoPlan.planFromTree(
+    { name: String(common && common.name || ""), folders: [...grouped.values()], files: [] },
+    { kind },
+  );
+  plan.selectedCount = files.length;
+  return { ok: true, plan };
 }
 
 /**
@@ -7910,6 +8084,8 @@ secureCanonicalHandle("crm:building-atlas-load", input => buildingAtlasResponse(
 secureCanonicalHandle("crm:building-atlas-save", input => buildingAtlasResponse(() => remoteClient.saveBuildingAtlas(input)));
 secureCanonicalHandle("crm:work-report-save", input => remoteClient.saveWorkReport(input));
 secureCanonicalHandle("crm:work-report-photo-upload", input => uploadWorkReportPhoto(input));
+secureCanonicalHandle("crm:work-report-drive-browse", input => browseWorkReportDrive(input));
+secureCanonicalHandle("crm:work-report-drive-plan", input => planSelectedWorkReportPhotos(input));
 secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));
 secureHandle("crm:objectives-load", () => remoteClient.loadObjectives());
 secureHandle("crm:growth-load", () => remoteClient.loadGrowth());
