@@ -168,3 +168,10 @@ test("customer completion report is generated from field and QC evidence and exp
   assert.match(app, /Cleaning\.deliverCleaningCustomerReport/);
   assert.match(app, /customerReports:\s*store\.cleaningCustomerReports/);
 });
+
+test("cleaning center receives the retention workload dashboard", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCleaningFollowUpDashboard/);
+  assert.match(app, /followUpDashboard/);
+  assert.match(app, /store\.cleaningRetentionActions/);
+});

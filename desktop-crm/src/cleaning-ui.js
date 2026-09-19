@@ -29,6 +29,10 @@
     });
     const kpis = options.kpis || {};
     const dashboard = options.dashboard || {};
+    const followUpDashboard = options.followUpDashboard || {};
+    const priorityActions = active(followUpDashboard.priorityActions);
+    const retentionLabel = value => ({ review: "리뷰 요청", building_care: "건물관리 상담", repeat_referral: "재구매·추천" }[value] || value || "후속조치");
+    const orderName = orderId => orders.find(item => item.id === orderId)?.customerName || orderId || "고객 미확인";
     const writable = options.writable !== false;
     return '<section class="cleaning-center" aria-labelledby="cleaningCenterTitle">' +
       '<header class="cleaning-hero"><div><span class="cleaning-eyebrow">BRING CARE</span><h2 id="cleaningCenterTitle">Cleaning Sales Center</h2><p>문의부터 책임검수·결제·CS까지 한 주문으로 관리합니다.</p></div>' +
@@ -42,6 +46,7 @@
         '<article><span>5분 응답률</span><b>' + esc(kpis.fiveMinuteResponseRate || 0) + '%</b></article>' +
       '</div>' +
       '<div class="cleaning-cash-kpis"><article><span>확인 입금</span><b>' + money(dashboard.confirmedPayments) + '원</b></article><article><span>미수금</span><b>' + money(dashboard.receivables) + '원</b></article><article><span>재작업 주문</span><b>' + esc(dashboard.reworkOrders || 0) + '건</b></article><article><span>활성 Partner</span><b>' + esc(dashboard.activePartners || 0) + '팀</b></article><article><span>수익률 경고</span><b>' + esc(dashboard.marginWarningOrders || 0) + '건</b></article></div>' +
+      '<section class="cleaning-partners"><header><div><span class="cleaning-eyebrow">RETENTION</span><h3>후속조치 대시보드</h3><p>오늘 연락할 고객과 놓친 후속조치를 먼저 처리합니다.</p></div></header><div class="cleaning-cash-kpis"><article><span>기한 초과</span><b>' + esc(followUpDashboard.overdue || 0) + '건</b></article><article><span>오늘 예정</span><b>' + esc(followUpDashboard.dueToday || 0) + '건</b></article><article><span>초안 대기</span><b>' + esc(followUpDashboard.drafts || 0) + '건</b></article><article><span>발송 후 무응답</span><b>' + esc(followUpDashboard.awaitingResponse || 0) + '건</b></article><article><span>전환 완료</span><b>' + esc(followUpDashboard.converted || 0) + '건</b></article></div>' + (priorityActions.length ? '<div class="cleaning-order-grid">' + priorityActions.map(item => '<article class="cleaning-order-card"><button type="button" data-cleaning-order-open="' + esc(item.cleaningOrderId) + '"><div><span>' + esc(retentionLabel(item.type)) + '</span><strong>' + esc(orderName(item.cleaningOrderId)) + '</strong><small>' + esc(item.status) + '</small></div><dl><div><dt>예정일</dt><dd>' + esc(item.dueAt || "-") + '</dd></div></dl></button></article>').join("") + '</div>' : '<div class="cleaning-partner-empty">오늘 처리할 후속조치가 없습니다.</div>') + '</section>' +
       '<nav class="cleaning-stage-filter" aria-label="청소 주문 단계">' +
         [{ id: "all", label: "전체" }].concat(stages).map(stage => '<button type="button" data-cleaning-stage="' + esc(stage.id) + '" aria-pressed="' + String(selectedStage === stage.id) + '">' + esc(stage.label) + '<em>' + (stage.id === "all" ? orders.length : orders.filter(order => order.stage === stage.id).length) + '</em></button>').join("") +
       '</nav>' +

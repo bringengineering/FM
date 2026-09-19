@@ -148,3 +148,12 @@ test("renders customer completion report evidence and explicit delivery action",
   assert.match(detail, /data-cleaning-customer-report-deliver="cr1"/);
   assert.match(detail, /data-cleaning-customer-report-add="cln_1"/);
 });
+
+test("renders the retention workload dashboard with actionable orders", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [{ id: "o1", customerName: "홍길동" }], partners: [], kpis: {}, dashboard: {}, followUpDashboard: { overdue: 1, dueToday: 2, drafts: 1, awaitingResponse: 1, converted: 3, priorityActions: [{ id: "a1", cleaningOrderId: "o1", type: "review", status: "planned", dueAt: "2026-09-20" }] }, writable: true });
+  assert.match(center, /후속조치 대시보드/);
+  assert.match(center, /기한 초과/);
+  assert.match(center, /오늘 예정/);
+  assert.match(center, /홍길동/);
+  assert.match(center, /data-cleaning-order-open="o1"/);
+});

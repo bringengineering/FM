@@ -1941,12 +1941,14 @@
       partners: store.cleaningPartners,
       settlements: store.cleaningSettlements
     });
+    const followUpDashboard = Cleaning.calculateCleaningFollowUpDashboard(store.cleaningRetentionActions);
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       orders: store.cleaningOrders,
       partners: store.cleaningPartners,
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
       dashboard,
+      followUpDashboard,
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
       writable: canWriteCRM()

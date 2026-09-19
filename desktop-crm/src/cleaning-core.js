@@ -592,6 +592,29 @@
     return Object.assign({}, current, { status: "delivered", deliveredAt: timestamp, deliveredBy: text(actor && actor.email), updatedAt: timestamp, updatedBy: text(actor && actor.email) });
   }
 
+  function calculateCleaningFollowUpDashboard(actions, at) {
+    const rows = (Array.isArray(actions) ? actions : []).filter(Boolean);
+    const now = new Date(text(at) || new Date().toISOString());
+    const seoulDay = value => {
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) : "";
+    };
+    const today = seoulDay(now);
+    const open = rows.filter(item => item.status !== "converted");
+    const priorityActions = open.filter(item => {
+      const due = seoulDay(item.dueAt);
+      return due && due <= today;
+    }).sort((left, right) => String(left.dueAt || "").localeCompare(String(right.dueAt || "")));
+    return {
+      overdue: open.filter(item => { const due = seoulDay(item.dueAt); return due && due < today; }).length,
+      dueToday: open.filter(item => seoulDay(item.dueAt) === today).length,
+      drafts: rows.filter(item => item.status === "draft").length,
+      awaitingResponse: rows.filter(item => item.status === "sent").length,
+      converted: rows.filter(item => item.status === "converted").length,
+      priorityActions
+    };
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -648,6 +671,7 @@
     updateCleaningRetentionAction,
     createCleaningCustomerReport,
     deliverCleaningCustomerReport,
+    calculateCleaningFollowUpDashboard,
     calculateCleaningDashboard
   });
 });

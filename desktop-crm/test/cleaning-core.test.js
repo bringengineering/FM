@@ -388,3 +388,19 @@ test("marks a customer completion report delivered only by explicit confirmation
   assert.equal(delivered.status, "delivered");
   assert.equal(delivered.deliveredAt, "2026-09-20T13:00:00Z");
 });
+
+test("calculates the Seoul-day retention workload without hiding overdue actions", () => {
+  const result = Cleaning.calculateCleaningFollowUpDashboard([
+    { id: "a1", cleaningOrderId: "o1", type: "review", status: "planned", dueAt: "2026-09-19T12:00:00Z" },
+    { id: "a2", cleaningOrderId: "o2", type: "building_care", status: "planned", dueAt: "2026-09-20T03:00:00Z" },
+    { id: "a3", cleaningOrderId: "o3", type: "repeat_referral", status: "draft", dueAt: "2026-09-20T04:00:00Z" },
+    { id: "a4", cleaningOrderId: "o4", type: "review", status: "sent", dueAt: "2026-09-20T05:00:00Z" },
+    { id: "a5", cleaningOrderId: "o5", type: "review", status: "converted", dueAt: "2026-09-18T05:00:00Z" }
+  ], "2026-09-20T06:00:00Z");
+  assert.equal(result.overdue, 1);
+  assert.equal(result.dueToday, 3);
+  assert.equal(result.drafts, 1);
+  assert.equal(result.awaitingResponse, 1);
+  assert.equal(result.converted, 1);
+  assert.deepEqual(result.priorityActions.map(item => item.id), ["a1", "a2", "a3", "a4"]);
+});
