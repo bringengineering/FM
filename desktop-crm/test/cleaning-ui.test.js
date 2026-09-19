@@ -107,3 +107,17 @@ test("renders CS ticket status and a ticket action on the order", () => {
   assert.match(detail, /욕실 누락/);
   assert.match(detail, /data-cleaning-case-add="cln_1"/);
 });
+
+test("renders cancellation approval and payment actions without claiming early payment", () => {
+  const detail = UI.renderCleaningOrderDetail({
+    order: { id: "cln_1", customerName: "홍길동" }, stages,
+    dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [],
+    cancellations: [{ id: "x1", cleaningOrderId: "cln_1", status: "requested", refundAmount: 90000, refundRate: 90 }],
+    writable: true
+  });
+  assert.match(detail, /환불요청 1건/);
+  assert.match(detail, /90,000원/);
+  assert.match(detail, /data-cleaning-cancellation-add="cln_1"/);
+  assert.match(detail, /data-cleaning-cancellation-approve="x1"/);
+  assert.doesNotMatch(detail, /data-cleaning-cancellation-paid="x1"/);
+});

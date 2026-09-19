@@ -123,3 +123,14 @@ test("cleaning CS tickets are created from the order and stored durably", async 
   assert.match(app, /store\.cleaningCases\.push/);
   assert.match(app, /cases:\s*store\.cleaningCases/);
 });
+
+test("cleaning cancellation approval payment and linked CS closure are wired", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningCancellationEditor\(orderId\)/);
+  assert.match(app, /id="cleaningCancellationForm"/);
+  assert.match(app, /Cleaning\.createCleaningCancellation/);
+  assert.match(app, /Cleaning\.transitionCleaningCancellation/);
+  assert.match(app, /type:\s*"refund"/);
+  assert.match(app, /linkedCase\.status\s*=\s*"resolved"/);
+  assert.match(app, /cancellations:\s*store\.cleaningCancellations/);
+});

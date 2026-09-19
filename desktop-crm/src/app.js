@@ -1995,6 +1995,7 @@
       messages: store.cleaningMessages,
       payments: store.cleaningPayments,
       cases: store.cleaningCases,
+      cancellations: store.cleaningCancellations,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -2050,6 +2051,17 @@
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
     const dispatch = store.cleaningDispatches.filter(item => item.cleaningOrderId === order.id).at(-1);
     modalContent.innerHTML = `<div class="modal-head"><div><h2>CS 티켓 접수</h2><p>${esc(order.customerName)} · 접수 즉시 LEVEL과 응답기한을 계산합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningCaseForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>유형 *</span><select name="type" required><option value="missing">청소누락</option><option value="quality">품질불만</option><option value="late">지각</option><option value="attitude">작업자 태도</option><option value="damage">파손</option><option value="loss">분실</option><option value="surcharge">추가금</option><option value="schedule">일정</option><option value="misunderstanding">고객 오해</option><option value="refund">환불</option><option value="legal">법적 분쟁 가능</option><option value="other">기타</option></select></label><label class="field"><span>책임주체</span><select name="responsibility"><option value="undetermined">조사 중</option><option value="bringcare">브링케어</option><option value="partner">Partner</option><option value="customer">고객</option></select></label><label class="field"><span>요청 해결</span><select name="requestedResolution"><option value="explanation">설명</option><option value="rework">재작업</option><option value="refund">환불</option><option value="compensation">보상</option></select></label><label class="field"><span>예상 비용</span><input name="cost" type="number" min="0" step="1000" value="0"></label><label class="field full"><span>CS 내용 *</span><textarea name="description" rows="4" required></textarea></label><label class="field full"><span>사진 링크</span><textarea name="photoUrls" rows="3" placeholder="한 줄에 하나씩 입력"></textarea></label><label class="field"><span>담당자</span><input name="owner" value="${attr(salesActor().email || "")}"></label></div><div class="info-box">LEVEL 1 고객센터 · LEVEL 2 운영/재작업 · LEVEL 3 관리자/보상 · LEVEL 4 대표/법적분쟁으로 자동 분류합니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">CS 접수</button></div><input type="hidden" name="partnerId" value="${attr(dispatch && dispatch.teamType === "partner" ? dispatch.teamId : "")}"></form>`;
+    openModal();
+  }
+
+  function cleaningCancellationEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    const paidAmount = store.cleaningPayments.filter(item => item.cleaningOrderId === order.id && item.status === "confirmed").reduce((sum, item) => sum + (item.type === "refund" ? -Core.money(item.amount) : Core.money(item.amount)), 0);
+    const scheduled = new Date(order.scheduledAt).getTime();
+    const hoursBeforeService = Number.isFinite(scheduled) ? Math.floor((scheduled - Date.now()) / 3600000) : 0;
+    const openCases = store.cleaningCases.filter(item => item.cleaningOrderId === order.id && item.status !== "resolved");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>취소·환불 접수</h2><p>${esc(order.customerName)} · 환불 예정액은 승인 전 계산값입니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningCancellationForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>취소 주체 *</span><select name="cancelledBy"><option value="customer">고객</option><option value="bringcare">브링케어</option><option value="partner">Partner</option><option value="weather">불가항력</option><option value="other">기타</option></select></label><label class="field"><span>확인된 수납액</span><input name="paidAmount" type="number" min="0" value="${attr(paidAmount)}" required></label><label class="field"><span>작업까지 남은 시간</span><input name="hoursBeforeService" type="number" value="${attr(hoursBeforeService)}" required></label><label class="field"><span>연결 CS</span><select name="cleaningCaseId"><option value="">없음</option>${openCases.map(item => `<option value="${attr(item.id)}">LEVEL ${esc(item.level)} · ${esc(item.description)}</option>`).join("")}</select></label><label class="field full"><span>사유 *</span><textarea name="reason" rows="3" required></textarea></label><label class="field full"><span>증빙 링크</span><textarea name="evidenceUrls" rows="2"></textarea></label></div><div class="info-box">72시간 전 100% · 24~72시간 90% · 24시간 미만 70%를 기본안으로 계산하며, 당일과 예외 건은 관리자 승인이 필요합니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">환불 요청 저장</button></div></form>`;
     openModal();
   }
 
@@ -3484,6 +3496,26 @@
     if (cleaningSettlementAdd) { cleaningSettlementEditor(cleaningSettlementAdd.dataset.cleaningSettlementAdd); return; }
     const cleaningCaseAdd = event.target.closest("[data-cleaning-case-add]");
     if (cleaningCaseAdd) { cleaningCaseEditor(cleaningCaseAdd.dataset.cleaningCaseAdd); return; }
+    const cleaningCancellationAdd = event.target.closest("[data-cleaning-cancellation-add]");
+    if (cleaningCancellationAdd) { cleaningCancellationEditor(cleaningCancellationAdd.dataset.cleaningCancellationAdd); return; }
+    const cleaningCancellationApprove = event.target.closest("[data-cleaning-cancellation-approve]");
+    if (cleaningCancellationApprove) {
+      const index = store.cleaningCancellations.findIndex(item => item.id === cleaningCancellationApprove.dataset.cleaningCancellationApprove);
+      if (index < 0) return showToast("환불 요청을 찾지 못했습니다.", "error");
+      const item = Cleaning.transitionCleaningCancellation(store.cleaningCancellations[index], "approved", salesActor());
+      store.cleaningCancellations[index] = item; logAudit({ category: "청소", targetType: "환불", targetId: item.id, targetLabel: krw(item.refundAmount), action: "환불 승인", reason: item.reasonCode }); scheduleSave(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("환불을 승인했습니다. 실제 지급 후 지급완료를 눌러주세요.", "success"); return;
+    }
+    const cleaningCancellationPaid = event.target.closest("[data-cleaning-cancellation-paid]");
+    if (cleaningCancellationPaid) {
+      const index = store.cleaningCancellations.findIndex(item => item.id === cleaningCancellationPaid.dataset.cleaningCancellationPaid);
+      if (index < 0) return showToast("환불 승인을 찾지 못했습니다.", "error");
+      const item = Cleaning.transitionCleaningCancellation(store.cleaningCancellations[index], "paid", salesActor());
+      store.cleaningCancellations[index] = item;
+      store.cleaningPayments.push(Cleaning.createCleaningPayment({ cleaningOrderId: item.cleaningOrderId, type: "refund", method: "other", provider: "관리자 지급확인", amount: item.refundAmount, status: "confirmed", paidAt: item.refundPaidAt, transactionId: item.id, memo: item.reason }, salesActor()));
+      const linkedCase = store.cleaningCases.find(value => value.id === item.cleaningCaseId);
+      if (linkedCase) { linkedCase.status = "resolved"; linkedCase.resolution = `환불 ${krw(item.refundAmount)} 지급완료`; linkedCase.resolvedAt = item.refundPaidAt; linkedCase.updatedAt = item.refundPaidAt; }
+      logAudit({ category: "청소", targetType: "환불", targetId: item.id, targetLabel: krw(item.refundAmount), action: "환불 지급완료", reason: item.reasonCode }); scheduleSave(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("환불 지급과 연결 CS 종결을 기록했습니다.", "success"); return;
+    }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -4348,6 +4380,22 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningCancellationForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningCancellation({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          cleaningCaseId: raw.cleaningCaseId,
+          cancelledBy: raw.cancelledBy,
+          paidAmount: raw.paidAmount,
+          hoursBeforeService: raw.hoursBeforeService,
+          reason: raw.reason,
+          evidenceUrls: String(raw.evidenceUrls || "").split(/\r?\n|,/).map(value => value.trim()).filter(Boolean)
+        }, salesActor());
+        store.cleaningCancellations.push(item);
+        logAudit({ category: "청소", targetType: "환불", targetId: item.id, targetLabel: krw(item.refundAmount), action: "취소·환불 요청", reason: item.reasonCode });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast(`환불 예정액 ${krw(item.refundAmount)} 요청을 저장했습니다.`, "success");
+      } catch (error) { showToast(error.message || "취소·환불 요청을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningCaseForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {

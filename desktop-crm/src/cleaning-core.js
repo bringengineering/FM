@@ -460,6 +460,7 @@
     const quote = calculateCleaningCancellation(raw);
     return Object.assign(recordMeta(raw, actor, at, "clx"), quote, {
       cleaningOrderId: text(raw.cleaningOrderId),
+      cleaningCaseId: text(raw.cleaningCaseId),
       cancelledBy: ["customer", "bringcare", "partner", "weather", "other"].includes(raw.cancelledBy) ? raw.cancelledBy : "customer",
       hoursBeforeService: number(raw.hoursBeforeService),
       paidAmount: Math.max(0, roundWon(raw.paidAmount)),
@@ -470,6 +471,23 @@
       approvedBy: text(raw.approvedBy),
       refundPaidAt: text(raw.refundPaidAt),
       policyVersion: text(raw.policyVersion) || "BRING-CARE-CANCEL-v0.1"
+    });
+  }
+
+  function transitionCleaningCancellation(source, nextStatus, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const allowed = { requested: ["approved", "rejected"], approved: ["paid"], rejected: [], paid: [] };
+    if (!(allowed[current.status] || []).includes(nextStatus)) {
+      throw cleaningError("CLEANING_CANCELLATION_TRANSITION_INVALID", nextStatus === "paid" ? "환불은 관리자 승인 후 지급완료로 처리할 수 있습니다." : "취소·환불 상태를 순서대로 처리해 주세요.", "status");
+    }
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, {
+      status: nextStatus,
+      approvedAt: nextStatus === "approved" ? timestamp : text(current.approvedAt),
+      approvedBy: nextStatus === "approved" ? text(actor && actor.email) : text(current.approvedBy),
+      refundPaidAt: nextStatus === "paid" ? timestamp : text(current.refundPaidAt),
+      updatedAt: timestamp,
+      updatedBy: text(actor && actor.email)
     });
   }
 
@@ -522,6 +540,7 @@
     createCleaningCase,
     calculateCleaningCancellation,
     createCleaningCancellation,
+    transitionCleaningCancellation,
     calculateCleaningDashboard
   });
 });

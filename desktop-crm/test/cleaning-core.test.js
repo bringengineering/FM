@@ -328,3 +328,11 @@ test("creates an auditable cancellation request without pretending the refund wa
   assert.equal(item.refundAmount, 297000);
   assert.equal(item.refundPaidAt, "");
 });
+
+test("requires approval before a cancellation can be marked paid", () => {
+  const requested = Cleaning.createCleaningCancellation({ cleaningOrderId: "cln_1", paidAmount: 100000, cancelledBy: "customer", hoursBeforeService: 30, reason: "변경" });
+  assert.throws(() => Cleaning.transitionCleaningCancellation(requested, "paid"), /승인/);
+  const approved = Cleaning.transitionCleaningCancellation(requested, "approved", { email: "owner@bring.local" }, "2026-09-20T02:00:00Z");
+  const paid = Cleaning.transitionCleaningCancellation(approved, "paid", { email: "owner@bring.local" }, "2026-09-20T03:00:00Z");
+  assert.equal(paid.refundPaidAt, "2026-09-20T03:00:00Z");
+});
