@@ -70,3 +70,9 @@ Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-
 - Built separate TV 0.1.0 NSIS x64 preview installer with a strict source allowlist, independent app identity/output and no CRM update feed.
 - Verified actual ASAR metadata and 13 allowed source assets; CRM main/session files absent. Packaging regression test passed.
 - Installer is unsigned; not installed and not uploaded. See `docs/superpowers/reports/2026-09-20-tv-preview-installation.md` for artifact hash and remaining gates. Production activation, native encryption/restart, actual TV acceptance and remote program updates remain unfinished.
+
+## Latest CRM merge and native storage verification
+- Merged production branch through `2fbdf33` (Drive photo browser); preserved both the new report picker and the wallboard route. Updated the pre-existing screen test from removed folder-ID controls to the new selection flow; confirmed selecting two photos produces only a draft, not a server save.
+- Extracted the existing Windows vault into `wallboard-vault.js` for direct verification. Using actual Electron safeStorage on this Windows computer, a synthetic token is encrypted (plaintext absent on disk), recovered in a separate process, cleared and confirmed absent. No browser/window or network opened in this test; no real credentials used.
+- Desktop suite: 2171 passed / 2 skipped / 0 failed. Four UI suites: 31 passed.
+- Rebuilt isolated preview installer 0.1.1 with the verified vault and checked actual packaged metadata/module inclusion. Not installed; actual TV hardware and remote program updates remain unverified.

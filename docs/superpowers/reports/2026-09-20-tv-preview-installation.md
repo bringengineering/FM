@@ -1,5 +1,12 @@
 # BRING TV Windows 검증용 설치본
 
+## 최신 검증본 0.1.1
+- 파일: `desktop-crm/dist-tv/BRING.TV.Preview.Setup.0.1.1.exe`.
+- SHA-256: `D8F7C48A6F6465149167C70E81B1FF99C57806201EB79B683915CCBF1B426DA4`.
+- 실제 Windows Electron 보호 저장소에서 합성 인증값의 암호화 저장→별도 프로세스 복구→삭제 검증 완료. 실제 TV 기기에서의 검증을 대체하지 않음.
+- 회사 서버 배포는 완료됐으며 상세 기록은 `2026-09-20-tv-server-deployment.md` 참고. 관리자 UI는 설치된 CRM에 아직 업데이트하지 않았고, TV도 아직 설치·승인하지 않음.
+- 아래 0.1.0 항목은 이전 검증본의 이력이다. 새 검증에는 0.1.1을 사용한다.
+
 ## 현재 상태
 
 - Windows x64 설치본: `desktop-crm/dist-tv/BRING.TV.Preview.Setup.0.1.0.exe`
