@@ -82,3 +82,9 @@ test('legacy and explicit desktop devices are normalized as electron clients',as
  assert.equal((await f.service.authenticate(device.deviceToken)).clientType,'electron');
  await assert.rejects(f.service.begin('browser'),/INVALID_INPUT/);
 });
+test('device list reports the latest publication version actually received',async()=>{
+ const f=fixture();const pending=await f.service.begin('web');await f.service.approve(pending.code,'웹 TV',admin);const device=await f.service.poll(pending.pendingToken);
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[]}},playlist:[{key:'status',enabled:true,seconds:15}],notice:'',dataDate:'2026-09-20'};
+ await f.service.publish(snapshot,0,admin);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,null);
+ await f.service.readBoard(device.deviceToken);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,1);
+});

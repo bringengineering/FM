@@ -65,6 +65,7 @@ export async function wallboardWebRequest(request,env){
  const origin=request.headers.get('origin');
  if(origin&&origin!==url.origin)return webReply({ok:false,code:'FORBIDDEN'},403);
  try{
+  if(!await webRateLimit(request,env))return webReply({ok:false,code:'RATE_LIMITED'},429);
   if(path==='/tv/api/display'){
    if(request.method!=='GET')return webReply({ok:false,code:'METHOD_NOT_ALLOWED'},405);
    const token=cookieValue(request,'bring_tv_session');
@@ -74,7 +75,6 @@ export async function wallboardWebRequest(request,env){
    return webReply(data);
   }
   if(request.method!=='POST')return webReply({ok:false,code:'METHOD_NOT_ALLOWED'},405);
-  if(!await webRateLimit(request,env))return webReply({ok:false,code:'RATE_LIMITED'},429);
   if(path==='/tv/api/pair/start'){
    const response=await webCommand(env,'start',{clientType:'web'}),data=await response.json();
    return webReply(data,response.status);

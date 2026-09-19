@@ -22,7 +22,13 @@ test('web TV client rotates five scenes, refreshes remotely and renders server t
  for(const key of ['people','status','issues','notice','schedule'])assert.match(source,new RegExp(`['"]${key}['"]`));
  assert.match(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
  assert.match(source,/localStorage/);assert.match(source,/visibilityState/);assert.match(source,/AUTH_REQUIRED/);
+ assert.match(source,/INVALID_TOKEN/);assert.match(source,/begin\(\)/);assert.match(source,/Array\.isArray\(value\.model\.people\)/);
+ assert.match(source,/page/);assert.match(source,/slice\(page\*6,page\*6\+6\)/);
  assert.doesNotMatch(source,/\b(phone|consultation|password|detailedAddress)\b/i);
+});
+test('web TV stylesheet compacts content for 720p height',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(source,/@media\(max-height:800px\)/);assert.match(source,/\.timeline \.row/);
 });
 
 test('unknown TV asset paths fail closed',async()=>{

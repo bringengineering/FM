@@ -17,13 +17,16 @@
    version=Number.isSafeInteger(data.version)?data.version:null;latestVersion=typeof data.latestVersion==='string'?data.latestVersion:null;list.replaceChildren();
    for(const device of data.devices){
     const row=host.ownerDocument.createElement('div');row.className='wb-playlist-row';
-    const name=host.ownerDocument.createElement('span');name.textContent=device.name+' · '+(device.revokedAt?'해제됨':'승인됨');row.append(name);
+    const recentlySeen=Number.isFinite(device.lastSeenAt)&&Date.now()-device.lastSeenAt<45000;
+    const connectionState=device.revokedAt?'해제됨':recentlySeen?'연결됨':'접속 확인 필요';
+    const name=host.ownerDocument.createElement('span');name.textContent=device.name+' · '+connectionState;row.append(name);
     const seen=host.ownerDocument.createElement('small'),date=new Date(device.lastSeenAt);
     if(Number.isFinite(device.lastSeenAt)&&device.lastSeenAt>0&&Number.isFinite(date.getTime())){
      seen.textContent='마지막 서버 접속 ';const time=host.ownerDocument.createElement('time');
      time.dateTime=date.toISOString();time.textContent=date.toLocaleString('ko-KR');seen.append(time);
     }else seen.textContent='서버 접속 기록 없음';
     row.append(seen);
+    const receipt=host.ownerDocument.createElement('small');receipt.textContent='수신 게시 버전 '+(device.receivedVersion??'미확인')+' · 현재 게시 버전 '+(version??'미확인');row.append(receipt);
     if(device.clientType==='electron'){
      const versionLabel=host.ownerDocument.createElement('small');versionLabel.textContent=latestVersion?'현재 '+(device.clientVersion||'미확인')+' · 최신 '+latestVersion:'TV 버전 '+(device.clientVersion||'미확인')+' · 최신 버전 확인 불가';row.append(versionLabel);
      const labels={idle:'대기',scheduled:'업데이트 예약됨',cancelled:'업데이트 취소됨',downloading:'다운로드 중',ready:'설치 준비됨',installing:'설치 중',installed:'설치 확인됨',failed:'업데이트 실패'};

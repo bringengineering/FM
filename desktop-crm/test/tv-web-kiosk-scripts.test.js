@@ -5,6 +5,7 @@ test('Windows installer creates only a current-user Edge kiosk startup shortcut'
  assert.match(source,/bring-crm-ai-gateway\.bringengineering1008\.workers\.dev\/tv/);
  assert.match(source,/Startup/);assert.match(source,/--kiosk/);assert.match(source,/WScript\.Shell/);
  assert.doesNotMatch(source,/param\s*\([^)]*Url/i);assert.doesNotMatch(source,/RunAs|AllUsers|CommonStartup/i);
+ assert.match(source,/if \(\$env:ProgramFiles\)/);assert.match(source,/if \(\$\{env:ProgramFiles\(x86\)\}\)/);
 });
 test('Windows uninstaller removes only the named BRING TV shortcut',()=>{
  const source=fs.readFileSync(path.join(root,'release/uninstall-bring-tv-web-kiosk.ps1'),'utf8');

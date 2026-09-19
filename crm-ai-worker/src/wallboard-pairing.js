@@ -100,6 +100,7 @@ export function createPairingService({repository,now=Date.now}){
    return run(s=>{
     const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};
     device.lastSeenAt=now();if(clientVersion!==undefined)device.clientVersion=clientVersion;
+    if(Number.isSafeInteger(s.board?.version))device.receivedVersion=s.board.version;
     if(device.targetVersion&&clientVersion===device.targetVersion){
      device.targetVersion=null;device.updateStatus='installed';device.updateError=null;device.updateCompletedAt=now();device.updateApprovedBy=null;device.updateConsumedAt=null;
     }else if(device.targetVersion&&report.updateStatus!==undefined){
@@ -110,6 +111,6 @@ export function createPairingService({repository,now=Date.now}){
     return {board:s.board?structuredClone(s.board):null,update:clientType==='electron'&&device.targetVersion&&clientVersion!==device.targetVersion?{targetVersion:device.targetVersion}:null};
    });
   },
-  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,clientType,createdAt,lastSeenAt,revokedAt,clientVersion,targetVersion,updateStatus,updateError,updateApprovedAt,updateConsumedAt,updateCompletedAt})=>({id,name,clientType:clientTypes.has(clientType)?clientType:'electron',createdAt,lastSeenAt,revokedAt,clientVersion:clientVersion||null,targetVersion:targetVersion||null,updateStatus:updateStatus||'idle',updateError:updateError||null,updateApprovedAt:updateApprovedAt||null,updateConsumedAt:updateConsumedAt||null,updateCompletedAt:updateCompletedAt||null}))}));}
+  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,clientType,createdAt,lastSeenAt,revokedAt,receivedVersion,clientVersion,targetVersion,updateStatus,updateError,updateApprovedAt,updateConsumedAt,updateCompletedAt})=>({id,name,clientType:clientTypes.has(clientType)?clientType:'electron',createdAt,lastSeenAt,revokedAt,receivedVersion:Number.isSafeInteger(receivedVersion)?receivedVersion:null,clientVersion:clientVersion||null,targetVersion:targetVersion||null,updateStatus:updateStatus||'idle',updateError:updateError||null,updateApprovedAt:updateApprovedAt||null,updateConsumedAt:updateConsumedAt||null,updateCompletedAt:updateCompletedAt||null}))}));}
  };
 }

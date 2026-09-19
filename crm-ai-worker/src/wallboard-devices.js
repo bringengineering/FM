@@ -6,8 +6,9 @@ export class WallboardDevices {
  constructor(ctx){
   this.service=createPairingService({repository:{transaction:fn=>ctx.storage.transaction(async tx=>{
    const state=await tx.get('pairing')||{};
+   const before=JSON.stringify(state);
    const result=await fn(state);
-   await tx.put('pairing',state);
+   if(JSON.stringify(state)!==before)await tx.put('pairing',state);
    return result;
   })}});
  }

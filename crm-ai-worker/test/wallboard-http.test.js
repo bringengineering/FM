@@ -114,3 +114,15 @@ test('web TV endpoints reject foreign origins, missing sessions and revoked sess
  const revoked=await f.worker.fetch(new Request('https://gateway.test/tv/api/display',{headers:{cookie}}),f.env);
  assert.equal(revoked.status,401);assert.match(revoked.headers.get('set-cookie'),/Max-Age=0/i);
 });
+test('web display is rate limited before hitting durable storage',async()=>{
+ const f=setup();f.env.WALLBOARD_RATE_LIMITER={limit:async()=>({success:false})};
+ const response=await f.worker.fetch(new Request('https://gateway.test/tv/api/display',{headers:{cookie:'bring_tv_session='+'a'.repeat(64)}}),f.env);
+ assert.equal(response.status,429);assert.equal(f.forwarded.length,0);
+});
+test('durable adapter does not rewrite unchanged state for an invalid device token',async()=>{
+ let puts=0;const initial={pending:{},devices:{},attempts:{}};
+ const storage={transaction:async fn=>fn({get:async()=>structuredClone(initial),put:async()=>{puts++;}})};
+ const object=new WallboardDevices({storage});
+ const response=await object.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'display',input:{},identity:null,token:'a'.repeat(64)})}));
+ assert.equal(response.status,401);assert.equal(puts,0);
+});
