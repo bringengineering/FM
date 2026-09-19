@@ -237,3 +237,60 @@ test("attaches unit economics to an order and warns below the target margin", ()
   assert.equal(order.contributionMargin, 27.15);
   assert.equal(order.marginStatus, "below_target");
 });
+
+test("records customer payments separately from Partner settlement", () => {
+  const payment = Cleaning.createCleaningPayment({
+    cleaningOrderId: "cln_1",
+    type: "deposit",
+    method: "card",
+    amount: 66000,
+    provider: "payapp",
+    status: "confirmed",
+    paidAt: "2026-09-20T03:00:00Z"
+  });
+  assert.equal(payment.amount, 66000);
+  assert.equal(payment.status, "confirmed");
+  assert.equal(payment.type, "deposit");
+});
+
+test("builds weekly Partner settlement and holds only disputed orders", () => {
+  const settlement = Cleaning.createCleaningSettlement({
+    partnerId: "clp_1",
+    periodStart: "2026-09-14",
+    periodEnd: "2026-09-20",
+    paymentDueAt: "2026-09-23",
+    rows: [
+      { cleaningOrderId: "cln_1", partnerPay: 180000, qcPassed: true, reportComplete: true, disputed: false },
+      { cleaningOrderId: "cln_2", partnerPay: 220000, qcPassed: true, reportComplete: true, disputed: true },
+      { cleaningOrderId: "cln_3", partnerPay: 150000, qcPassed: false, reportComplete: true, disputed: false }
+    ]
+  });
+  assert.equal(settlement.payableAmount, 180000);
+  assert.equal(settlement.heldAmount, 370000);
+  assert.deepEqual(settlement.payableOrderIds, ["cln_1"]);
+  assert.deepEqual(settlement.heldOrderIds, ["cln_2", "cln_3"]);
+});
+
+test("calculates owner dashboard with receivables quality and supply warnings", () => {
+  const result = Cleaning.calculateCleaningDashboard({
+    orders: [
+      { id: "1", stage: "closed", totalAmount: 330000, contributionProfit: 90000, marginStatus: "below_target" },
+      { id: "2", stage: "qc_review", totalAmount: 500000, contributionProfit: 180000, marginStatus: "on_target" }
+    ],
+    payments: [
+      { cleaningOrderId: "1", status: "confirmed", amount: 330000 },
+      { cleaningOrderId: "2", status: "pending", amount: 100000 }
+    ],
+    qcReviews: [
+      { cleaningOrderId: "1", result: "passed" },
+      { cleaningOrderId: "2", result: "rework" }
+    ],
+    partners: [{ id: "p1", status: "approved" }, { id: "p2", status: "hold" }]
+  });
+  assert.equal(result.totalSales, 830000);
+  assert.equal(result.confirmedPayments, 330000);
+  assert.equal(result.receivables, 500000);
+  assert.equal(result.reworkOrders, 1);
+  assert.equal(result.activePartners, 1);
+  assert.equal(result.marginWarningOrders, 1);
+});

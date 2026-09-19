@@ -74,3 +74,23 @@ test("renders Partner readiness and unit economics without mixing control status
   assert.match(detail, /81,450원/);
   assert.match(detail, /목표 미달/);
 });
+
+test("renders owner cash quality and payment settlement actions", () => {
+  const center = UI.renderCleaningCenter({
+    stages, orders: [], partners: [], kpis: {},
+    dashboard: { confirmedPayments: 330000, receivables: 500000, reworkOrders: 1, activePartners: 2, marginWarningOrders: 3 },
+    selectedStage: "all", writable: true
+  });
+  assert.match(center, /확인 입금/);
+  assert.match(center, /330,000원/);
+  assert.match(center, /미수금/);
+  assert.match(center, /500,000원/);
+  const detail = UI.renderCleaningOrderDetail({
+    order: { id: "cln_1", customerName: "홍길동" }, stages,
+    dispatches: [], reports: [], qcReviews: [], messages: [],
+    payments: [{ id: "p1", cleaningOrderId: "cln_1", status: "confirmed", amount: 66000 }],
+    writable: true
+  });
+  assert.match(detail, /입금 66,000원/);
+  assert.match(detail, /data-cleaning-payment-add/);
+});

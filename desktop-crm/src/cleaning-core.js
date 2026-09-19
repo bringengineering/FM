@@ -360,6 +360,77 @@
     });
   }
 
+  function createCleaningPayment(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!["deposit", "balance", "refund", "other"].includes(raw.type)) throw cleaningError("CLEANING_PAYMENT_TYPE_INVALID", "결제 유형을 선택해 주세요.", "type");
+    if (number(raw.amount) <= 0) throw cleaningError("CLEANING_PAYMENT_AMOUNT_INVALID", "결제금액은 0원보다 커야 합니다.", "amount");
+    return Object.assign(recordMeta(raw, actor, at, "clpay"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      type: raw.type,
+      method: ["bank", "card", "cash", "other"].includes(raw.method) ? raw.method : "bank",
+      provider: text(raw.provider),
+      amount: roundWon(raw.amount),
+      status: ["pending", "confirmed", "failed", "refunded"].includes(raw.status) ? raw.status : "pending",
+      paidAt: text(raw.paidAt),
+      transactionId: text(raw.transactionId),
+      memo: text(raw.memo)
+    });
+  }
+
+  function createCleaningSettlement(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.partnerId)) throw cleaningError("CLEANING_PARTNER_REQUIRED", "정산할 Partner가 필요합니다.", "partnerId");
+    if (!text(raw.periodStart) || !text(raw.periodEnd)) throw cleaningError("CLEANING_SETTLEMENT_PERIOD_REQUIRED", "정산기간을 입력해 주세요.", "periodStart");
+    const rows = (Array.isArray(raw.rows) ? raw.rows : []).map(item => ({
+      cleaningOrderId: text(item && item.cleaningOrderId),
+      partnerPay: roundWon(item && item.partnerPay),
+      qcPassed: Boolean(item && item.qcPassed),
+      reportComplete: Boolean(item && item.reportComplete),
+      disputed: Boolean(item && item.disputed),
+      holdReason: text(item && item.holdReason)
+    })).filter(item => item.cleaningOrderId);
+    const payable = rows.filter(item => item.qcPassed && item.reportComplete && !item.disputed);
+    const held = rows.filter(item => !item.qcPassed || !item.reportComplete || item.disputed);
+    return Object.assign(recordMeta(raw, actor, at, "cls"), {
+      partnerId: text(raw.partnerId),
+      periodStart: text(raw.periodStart),
+      periodEnd: text(raw.periodEnd),
+      paymentDueAt: text(raw.paymentDueAt),
+      rows,
+      payableOrderIds: payable.map(item => item.cleaningOrderId),
+      heldOrderIds: held.map(item => item.cleaningOrderId),
+      payableAmount: payable.reduce((sum, item) => sum + item.partnerPay, 0),
+      heldAmount: held.reduce((sum, item) => sum + item.partnerPay, 0),
+      status: payable.length ? "ready" : "held",
+      paidAt: text(raw.paidAt)
+    });
+  }
+
+  function calculateCleaningDashboard(input) {
+    const data = input && typeof input === "object" ? input : {};
+    const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
+    const payments = (Array.isArray(data.payments) ? data.payments : []).filter(Boolean);
+    const qcReviews = (Array.isArray(data.qcReviews) ? data.qcReviews : []).filter(Boolean);
+    const partners = (Array.isArray(data.partners) ? data.partners : []).filter(item => item && !item.archivedAt);
+    const totalSales = orders.reduce((sum, item) => sum + roundWon(item.totalAmount), 0);
+    const confirmedPayments = payments.filter(item => item.status === "confirmed").reduce((sum, item) => {
+      return sum + (item.type === "refund" ? -roundWon(item.amount) : roundWon(item.amount));
+    }, 0);
+    return {
+      activeOrders: orders.filter(item => item.stage !== "closed").length,
+      closedOrders: orders.filter(item => item.stage === "closed").length,
+      totalSales,
+      confirmedPayments,
+      receivables: Math.max(0, totalSales - confirmedPayments),
+      totalContributionProfit: orders.reduce((sum, item) => sum + roundWon(item.contributionProfit), 0),
+      marginWarningOrders: orders.filter(item => item.marginStatus === "below_target").length,
+      reworkOrders: new Set(qcReviews.filter(item => item.result === "rework").map(item => item.cleaningOrderId)).size,
+      activePartners: partners.filter(item => ["conditional", "approved"].includes(item.status)).length,
+      heldPartners: partners.filter(item => ["hold", "stop"].includes(item.status)).length
+    };
+  }
+
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
@@ -379,6 +450,9 @@
     createCleaningPartner,
     approveCleaningPartner,
     changeCleaningPartnerControl,
-    applyCleaningEconomics
+    applyCleaningEconomics,
+    createCleaningPayment,
+    createCleaningSettlement,
+    calculateCleaningDashboard
   });
 });

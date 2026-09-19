@@ -94,3 +94,22 @@ test("order form captures variable costs and saves calculated contribution econo
   assert.match(submit, /Cleaning\.applyCleaningEconomics/);
   assert.match(submit, /targetContributionMargin/);
 });
+
+test("customer payment and weekly Partner settlement use separate durable records", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningPaymentEditor\(orderId\)/);
+  assert.match(app, /id="cleaningPaymentForm"/);
+  assert.match(app, /Cleaning\.createCleaningPayment/);
+  assert.match(app, /store\.cleaningPayments\.push/);
+  assert.match(app, /function cleaningSettlementEditor\(partnerId\)/);
+  assert.match(app, /id="cleaningSettlementForm"/);
+  assert.match(app, /Cleaning\.createCleaningSettlement/);
+  assert.match(app, /store\.cleaningSettlements\.push/);
+});
+
+test("cleaning center receives the owner dashboard calculation", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCleaningDashboard/);
+  assert.match(app, /payments:\s*store\.cleaningPayments/);
+  assert.match(app, /settlements:\s*store\.cleaningSettlements/);
+});

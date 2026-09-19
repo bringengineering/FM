@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners"]
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -537,7 +537,8 @@
     "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
-    "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners"
+    "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
+    "cleaningPayments", "cleaningSettlements"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1933,11 +1934,19 @@
 
   function renderCleaningCenter() {
     ensureCleaningStore();
+    const dashboard = Cleaning.calculateCleaningDashboard({
+      orders: store.cleaningOrders,
+      payments: store.cleaningPayments,
+      qcReviews: store.cleaningQcReviews,
+      partners: store.cleaningPartners,
+      settlements: store.cleaningSettlements
+    });
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       orders: store.cleaningOrders,
       partners: store.cleaningPartners,
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
+      dashboard,
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
       writable: canWriteCRM()
@@ -1984,6 +1993,7 @@
       reports: store.cleaningReports,
       qcReviews: store.cleaningQcReviews,
       messages: store.cleaningMessages,
+      payments: store.cleaningPayments,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -2000,7 +2010,8 @@
   function cleaningDispatchEditor(orderId) {
     const order = cleaningOrderById(orderId);
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>배차 등록</h2><p>${esc(order.customerName)} · ${esc(order.address)}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningDispatchForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>팀 유형</span><select name="teamType"><option value="direct">직영</option><option value="partner">Partner</option></select></label><label class="field"><span>팀명 *</span><input name="teamName" required placeholder="직영 1팀"></label><label class="field"><span>작업 일정 *</span><input name="scheduledAt" type="datetime-local" value="${attr(String(order.scheduledAt || "").slice(0,16))}" required></label><label class="field"><span>투입인원 *</span><input name="headcount" type="number" min="1" value="2" required></label><label class="field"><span>차량</span><input name="vehicle" placeholder="차량번호 또는 차량명"></label><label class="field full"><span>작업 지시</span><textarea name="instructions" rows="3">${esc(order.scope || "")}</textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">배차 저장</button></div></form>`;
+    const partnerOptions = store.cleaningPartners.filter(item => ["approved", "conditional"].includes(item.status)).map(item => `<option value="${attr(item.id)}">${esc(item.businessName)} · ${esc(item.grade || "C")}</option>`).join("");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>배차 등록</h2><p>${esc(order.customerName)} · ${esc(order.address)}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningDispatchForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>팀 유형</span><select name="teamType"><option value="direct">직영</option><option value="partner">Partner</option></select></label><label class="field"><span>Partner 연결</span><select name="teamId"><option value="">직영 또는 미지정</option>${partnerOptions}</select></label><label class="field"><span>팀명 *</span><input name="teamName" required placeholder="직영 1팀 또는 Partner 상호"></label><label class="field"><span>작업 일정 *</span><input name="scheduledAt" type="datetime-local" value="${attr(String(order.scheduledAt || "").slice(0,16))}" required></label><label class="field"><span>투입인원 *</span><input name="headcount" type="number" min="1" value="2" required></label><label class="field"><span>차량</span><input name="vehicle" placeholder="차량번호 또는 차량명"></label><label class="field full"><span>작업 지시</span><textarea name="instructions" rows="3">${esc(order.scope || "")}</textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">배차 저장</button></div></form>`;
     openModal();
   }
 
@@ -2022,6 +2033,29 @@
     const order = cleaningOrderById(orderId);
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
     modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 문자 초안</h2><p>현재 단계에서는 발송하지 않고 CRM에 초안만 저장합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningMessageForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">실제 발송은 문자·알림톡 업체 연동 후 활성화합니다.</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>수신번호 *</span><input name="recipient" value="${attr(order.phone || "")}" required></label><label class="field"><span>채널</span><select name="channel"><option value="sms">문자</option><option value="alimtalk">알림톡</option></select></label><label class="field full"><span>메시지 *</span><select name="templateId" required><option value="quote_sent">견적 발송</option><option value="deposit_request">계약금 요청</option><option value="reservation_confirmed">예약 확정</option><option value="day_before">작업 전날</option><option value="departed">출발</option><option value="arrived">도착</option><option value="qc_completed">검수 완료·잔금</option><option value="complaint_received">불만 접수</option><option value="rework_confirmed">재작업 확정</option></select></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">발송대기 초안 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningPaymentEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    const remaining = Math.max(0, Core.money(order.totalAmount) - store.cleaningPayments.filter(item => item.cleaningOrderId === order.id && item.status === "confirmed").reduce((sum, item) => sum + Core.money(item.amount), 0));
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 결제 기록</h2><p>${esc(order.customerName)} · 고객 수납만 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPaymentForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">Partner 지급은 별도 주간정산에서 관리합니다. 현재 미수 예상액 ${esc(krw(remaining))}</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>결제구분 *</span><select name="type"><option value="deposit">계약금</option><option value="balance">잔금</option><option value="refund">환불</option><option value="other">기타</option></select></label><label class="field"><span>결제수단 *</span><select name="method"><option value="bank">계좌이체</option><option value="card">카드</option><option value="cash">현금</option><option value="other">기타</option></select></label><label class="field"><span>금액 *</span><input name="amount" type="number" min="1" value="${attr(remaining || order.depositAmount || "")}" required></label><label class="field"><span>상태</span><select name="status"><option value="confirmed">입금확인</option><option value="pending">확인대기</option><option value="failed">실패</option><option value="refunded">환불완료</option></select></label><label class="field"><span>결제업체</span><input name="provider" placeholder="계좌이체 또는 PayApp"></label><label class="field"><span>결제일시</span><input name="paidAt" type="datetime-local"></label><label class="field full"><span>거래번호·메모</span><input name="transactionId" placeholder="거래번호"><textarea name="memo" rows="2"></textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">결제 기록 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningSettlementEditor(partnerId) {
+    const partner = store.cleaningPartners.find(item => item && item.id === String(partnerId || ""));
+    if (!partner) return showToast("Cleaning Partner를 찾지 못했습니다.", "error");
+    const assignedIds = new Set(store.cleaningDispatches.filter(item => item.teamType === "partner" && item.teamId === partner.id).map(item => item.cleaningOrderId));
+    const alreadySettled = new Set(store.cleaningSettlements.flatMap(item => item.rows || []).map(item => item.cleaningOrderId));
+    const orders = store.cleaningOrders.filter(order => assignedIds.has(order.id) && Core.money(order.partnerPay) > 0 && !alreadySettled.has(order.id));
+    const rows = orders.map(order => {
+      const qcPassed = store.cleaningQcReviews.some(item => item.cleaningOrderId === order.id && item.result === "passed");
+      const reportComplete = store.cleaningReports.some(item => item.cleaningOrderId === order.id && item.type === "completion");
+      return `<tr><td><input type="checkbox" name="orderIds" value="${attr(order.id)}" checked></td><td>${esc(order.customerName || order.id)}</td><td>${esc(krw(order.partnerPay))}</td><td>${qcPassed ? "QC 통과" : "QC 대기"}</td><td>${reportComplete ? "보고완료" : "보고대기"}</td><td><input type="checkbox" name="disputed__${attr(order.id)}"> 분쟁</td></tr>`;
+    }).join("");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>Partner 주간정산</h2><p>${esc(partner.businessName)} · 정상 주문과 보류 주문을 분리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningSettlementForm" class="modal-body" data-cleaning-partner-id="${attr(partner.id)}"><div class="form-grid"><label class="field"><span>정산 시작 *</span><input name="periodStart" type="date" required></label><label class="field"><span>정산 종료 *</span><input name="periodEnd" type="date" required></label><label class="field"><span>지급 예정일 *</span><input name="paymentDueAt" type="date" required></label></div><div class="data-table-wrap" style="margin-top:14px"><table class="data-table"><thead><tr><th>선택</th><th>주문</th><th>지급액</th><th>QC</th><th>완료보고</th><th>분쟁</th></tr></thead><tbody>${rows || '<tr><td colspan="6">정산 가능한 배정 주문이 없습니다.</td></tr>'}</tbody></table></div><div class="info-box">월~일 완료 주문을 다음 주 수요일 지급하며, 분쟁 또는 증빙 미완료 주문만 개별 보류합니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" ${orders.length ? "" : "disabled"}>주간정산 생성</button></div></form>`;
     openModal();
   }
 
@@ -3435,6 +3469,10 @@
     if (cleaningQcAdd) { cleaningQcEditor(cleaningQcAdd.dataset.cleaningQcAdd); return; }
     const cleaningMessageAdd = event.target.closest("[data-cleaning-message-add]");
     if (cleaningMessageAdd) { cleaningMessageEditor(cleaningMessageAdd.dataset.cleaningMessageAdd); return; }
+    const cleaningPaymentAdd = event.target.closest("[data-cleaning-payment-add]");
+    if (cleaningPaymentAdd) { cleaningPaymentEditor(cleaningPaymentAdd.dataset.cleaningPaymentAdd); return; }
+    const cleaningSettlementAdd = event.target.closest("[data-cleaning-settlement-add]");
+    if (cleaningSettlementAdd) { cleaningSettlementEditor(cleaningSettlementAdd.dataset.cleaningSettlementAdd); return; }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -4299,6 +4337,49 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningPaymentForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const item = Cleaning.createCleaningPayment({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          type: raw.type,
+          method: raw.method,
+          amount: raw.amount,
+          status: raw.status,
+          provider: raw.provider,
+          paidAt: raw.paidAt,
+          transactionId: raw.transactionId,
+          memo: raw.memo
+        }, salesActor());
+        store.cleaningPayments.push(item);
+        logAudit({ category: "청소", targetType: "고객결제", targetId: item.id, targetLabel: krw(item.amount), action: "고객 결제 기록", reason: item.status });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("고객 결제를 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 결제를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningSettlementForm") {
+      const data = new FormData(form);
+      const raw = Object.fromEntries(data.entries());
+      try {
+        const rows = data.getAll("orderIds").map(orderId => {
+          const order = cleaningOrderById(orderId);
+          return {
+            cleaningOrderId: orderId,
+            amount: Core.money(order && order.partnerPay),
+            qcPassed: store.cleaningQcReviews.some(item => item.cleaningOrderId === orderId && item.result === "passed"),
+            reportComplete: store.cleaningReports.some(item => item.cleaningOrderId === orderId && item.type === "completion"),
+            disputed: Boolean(form.elements[`disputed__${orderId}`]?.checked)
+          };
+        });
+        const item = Cleaning.createCleaningSettlement({
+          partnerId: form.dataset.cleaningPartnerId,
+          periodStart: raw.periodStart,
+          periodEnd: raw.periodEnd,
+          paymentDueAt: raw.paymentDueAt,
+          rows
+        }, salesActor());
+        store.cleaningSettlements.push(item);
+        logAudit({ category: "청소", targetType: "Partner 정산", targetId: item.id, targetLabel: krw(item.payableAmount), action: "Partner 주간정산 생성", reason: `보류 ${krw(item.heldAmount)}` });
+        scheduleSave(); closeModal(); renderCleaningCenter(); showToast(`지급 ${krw(item.payableAmount)} · 보류 ${krw(item.heldAmount)}로 정산했습니다.`, "success");
+      } catch (error) { showToast(error.message || "Partner 정산을 생성하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningPartnerForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {
@@ -4336,6 +4417,7 @@
         const item = Cleaning.createCleaningDispatch({
           cleaningOrderId: form.dataset.cleaningOrderId,
           teamType: raw.teamType,
+          teamId: raw.teamId,
           teamName: raw.teamName,
           scheduledAt: raw.scheduledAt,
           headcount: raw.headcount,
