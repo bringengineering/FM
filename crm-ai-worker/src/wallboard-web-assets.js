@@ -29,7 +29,7 @@ async function refresh(){if(busy)return;busy=true;try{const data=await api('disp
 function move(step){const scenes=active();index=(index+step+scenes.length)%scenes.length;elapsed=0;render();}
 byId('previous').addEventListener('click',()=>move(-1));byId('next').addEventListener('click',()=>move(1));
 setInterval(()=>{byId('clock').textContent=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});if(document.visibilityState==='visible'&&board){const seconds=active()[index]?.seconds||15;if(++elapsed>=seconds)move(1);}},1000);
-setInterval(()=>{if(pendingToken)void poll();else void refresh();},5000);setInterval(()=>{if(!pendingToken)void refresh();},15000);
+setInterval(()=>{if(pendingToken)void poll();},5000);setInterval(()=>{if(!pendingToken)void refresh();},15000);
 board=restore();render();void refresh();
 })();`;
 
