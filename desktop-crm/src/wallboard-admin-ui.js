@@ -2,7 +2,7 @@
  'use strict';
  function mount(host,{request,getPublication,confirm=message=>root.confirm(message)}){
   let closed=false,busy=false,version=null,latestVersion=null;
-  host.innerHTML='<details class="wb-playlist"><summary>TV 기기 승인·관리</summary><p>TV에 표시된 8자리 코드를 입력하세요. 서버 연결 준비가 필요하며, 현재 미리보기와 별개입니다.</p><form class="wb-controls"><label>등록 코드 <input name="code" maxlength="8" required pattern="[A-Fa-f0-9]{8}" autocomplete="off"></label><label>기기 이름 <input name="name" maxlength="60" required placeholder="예: 회의실 TV"></label><button class="primary-button" type="submit">기기 승인</button><button type="button" data-device-refresh>목록 새로고침</button></form><p role="status" aria-live="polite"></p><div data-device-list></div></details>';
+  host.innerHTML='<details class="wb-playlist"><summary>TV 기기 승인·관리</summary><p>TV 컴퓨터에서 https://bring-crm-ai-gateway.bringengineering1008.workers.dev/tv 를 열고 표시된 8자리 코드를 입력하세요. 웹 TV는 무료이며 화면이 자동 반영됩니다.</p><form class="wb-controls"><label>등록 코드 <input name="code" maxlength="8" required pattern="[A-Fa-f0-9]{8}" autocomplete="off"></label><label>기기 이름 <input name="name" maxlength="60" required placeholder="예: 회의실 TV"></label><button class="primary-button" type="submit">기기 승인</button><button type="button" data-device-refresh>목록 새로고침</button></form><p role="status" aria-live="polite"></p><div data-device-list></div></details>';
   const status=host.querySelector('[role="status"]'),list=host.querySelector('[data-device-list]');
   if(getPublication){const button=host.ownerDocument.createElement('button');button.type='button';button.className='primary-button';button.dataset.devicePublish='';button.textContent='현재 운영보드 TV에 게시';host.querySelector('form').after(button);}
   let autoTimer=null,autoBusy=false;
@@ -24,12 +24,14 @@
      time.dateTime=date.toISOString();time.textContent=date.toLocaleString('ko-KR');seen.append(time);
     }else seen.textContent='서버 접속 기록 없음';
     row.append(seen);
-    const versionLabel=host.ownerDocument.createElement('small');versionLabel.textContent=latestVersion?'현재 '+(device.clientVersion||'미확인')+' · 최신 '+latestVersion:'TV 버전 '+(device.clientVersion||'미확인')+' · 최신 버전 확인 불가';row.append(versionLabel);
-    const labels={idle:'대기',scheduled:'업데이트 예약됨',cancelled:'업데이트 취소됨',downloading:'다운로드 중',ready:'설치 준비됨',installing:'설치 중',installed:'설치 확인됨',failed:'업데이트 실패'};
-    const updateState=host.ownerDocument.createElement('small');updateState.textContent='업데이트 상태 '+(labels[device.updateStatus]||labels.idle)+(device.updateError?' · 오류 '+device.updateError:'');row.append(updateState);
+    if(device.clientType==='electron'){
+     const versionLabel=host.ownerDocument.createElement('small');versionLabel.textContent=latestVersion?'현재 '+(device.clientVersion||'미확인')+' · 최신 '+latestVersion:'TV 버전 '+(device.clientVersion||'미확인')+' · 최신 버전 확인 불가';row.append(versionLabel);
+     const labels={idle:'대기',scheduled:'업데이트 예약됨',cancelled:'업데이트 취소됨',downloading:'다운로드 중',ready:'설치 준비됨',installing:'설치 중',installed:'설치 확인됨',failed:'업데이트 실패'};
+     const updateState=host.ownerDocument.createElement('small');updateState.textContent='업데이트 상태 '+(labels[device.updateStatus]||labels.idle)+(device.updateError?' · 오류 '+device.updateError:'');row.append(updateState);
+    }else{const webState=host.ownerDocument.createElement('small');webState.textContent='웹 TV · 웹 자동반영 · 프로그램 업데이트 불필요';row.append(webState);}
     if(!device.revokedAt){
-     if(device.targetVersion){const cancel=host.ownerDocument.createElement('button');cancel.type='button';cancel.className='secondary-button';cancel.textContent='업데이트 예약 취소';cancel.dataset.deviceUpdateCancel=device.id;row.append(cancel);}
-     else if(latestVersion&&device.clientVersion!==latestVersion){const update=host.ownerDocument.createElement('button');update.type='button';update.className='primary-button';update.textContent=latestVersion+' 업데이트 예약';update.dataset.deviceUpdate=device.id;update.dataset.targetVersion=latestVersion;update.dataset.deviceName=device.name;row.append(update);}
+     if(device.clientType==='electron'&&device.targetVersion){const cancel=host.ownerDocument.createElement('button');cancel.type='button';cancel.className='secondary-button';cancel.textContent='업데이트 예약 취소';cancel.dataset.deviceUpdateCancel=device.id;row.append(cancel);}
+     else if(device.clientType==='electron'&&latestVersion&&device.clientVersion!==latestVersion){const update=host.ownerDocument.createElement('button');update.type='button';update.className='primary-button';update.textContent=latestVersion+' 업데이트 예약';update.dataset.deviceUpdate=device.id;update.dataset.targetVersion=latestVersion;update.dataset.deviceName=device.name;row.append(update);}
      const button=host.ownerDocument.createElement('button');button.type='button';button.className='secondary-button';button.textContent='연결 해제';button.dataset.device=device.id;row.append(button);
     }list.append(row);
    }
