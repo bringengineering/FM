@@ -30,7 +30,8 @@ const WORKFLOW_ACTIONS = new Set([
 const SHARED_COLLECTIONS = Object.freeze([
   "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
   "securityAssets", "auditLogs", "securityIncidents",
-  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
+  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+  "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners"
 ]);
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;

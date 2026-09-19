@@ -5,6 +5,8 @@
   const Sales = window.BringSalesCore;
   const SalesUI = window.BringSalesUI;
   const SalesStandards = window.BringSalesStandards;
+  const Cleaning = window.BringCleaningCore;
+  const CleaningUI = window.BringCleaningUI;
   const DriveImportUI = window.BringDriveImportUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
@@ -49,6 +51,7 @@
   let customerSalesStageFilter = "all";
   let salesStageFilter = "all";
   let salesBoardMode = "focus";
+  let cleaningStageFilter = "all";
   let contractTypeFilter = "전체";
   let contractStatusFilter = "전체";
   let partnerVendorIndustryFilter = "전체 업종";
@@ -101,6 +104,7 @@
     fieldOperations: ["BRING FIELD", "현장 업무"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
+    cleaningCenter: ["문의부터 책임검수까지", "청소센터"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
     relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
     partnerVendors: ["연락할 업체 정보를 한곳에서", "연락 업체"],
@@ -522,10 +526,18 @@
     return value;
   }
 
+  function ensureCleaningStore(target) {
+    const value = target || store;
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners"]
+      .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
+    return value;
+  }
+
   const sharedStoreCollections = [
     "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
     "securityAssets", "auditLogs", "securityIncidents",
-    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
+    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+    "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -944,11 +956,14 @@
     if (fieldView) {
       primaryActionButton.dataset.action = "new-field-job";
       primaryActionButton.textContent = "＋ 현장 업무 (준비 중)";
+    } else if (currentView === "cleaningCenter") {
+      primaryActionButton.dataset.action = "new-cleaning-order";
+      primaryActionButton.textContent = "＋ 새 청소 주문";
     } else {
       primaryActionButton.dataset.action = "new-customer";
       primaryActionButton.textContent = "＋ 새 고객";
     }
-    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "pipeline"].includes(currentView);
+    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "pipeline", "cleaningCenter"].includes(currentView);
     if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
   }
 
@@ -962,6 +977,7 @@
     else if (currentView === "fieldOperations") renderFieldOperations();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
+    else if (currentView === "cleaningCenter") renderCleaningCenter();
     else if (currentView === "contracts") renderContracts();
     else if (currentView === "relationships") renderRelationships();
     else if (currentView === "partnerVendors") renderPartnerVendors();
@@ -1908,6 +1924,60 @@
       now,
       writable: canWriteCRM()
     }) + renderArchivedSalesProspects();
+  }
+
+  function cleaningOrderById(id) {
+    ensureCleaningStore();
+    return store.cleaningOrders.find(item => item && item.id === String(id || "")) || null;
+  }
+
+  function renderCleaningCenter() {
+    ensureCleaningStore();
+    main.innerHTML = CleaningUI.renderCleaningCenter({
+      stages: Cleaning.CLEANING_ORDER_STAGES,
+      orders: store.cleaningOrders,
+      kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
+      selectedStage: cleaningStageFilter,
+      query: searchEl.value,
+      writable: canWriteCRM()
+    });
+  }
+
+  function cleaningOrderEditor(orderId) {
+    const order = cleaningOrderById(orderId) || {};
+    const selected = value => order.serviceType === value ? " selected" : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${order.id ? "청소 주문 수정" : "새 청소 주문"}</h2><p>상담·견적·일정을 한 번에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
+      <form id="cleaningOrderForm" class="modal-body" data-cleaning-order-id="${attr(order.id || "")}">
+        <div class="info-box"><strong>현장 추가금 없음</strong><br>사전 확정 범위와 제외 범위를 고객에게 명확히 안내합니다.</div>
+        <div class="form-grid" style="margin-top:14px">
+          <label class="field"><span>고객명 *</span><input name="customerName" value="${attr(order.customerName || "")}" required></label>
+          <label class="field"><span>연락처 *</span><input name="phone" value="${attr(order.phone || "")}" required inputmode="tel"></label>
+          <label class="field"><span>서비스 *</span><select name="serviceType" required><option value="">선택</option><option value="move_in"${selected("move_in")}>입주청소</option><option value="common_area"${selected("common_area")}>공용부청소</option><option value="recurring"${selected("recurring")}>정기관리</option><option value="other"${selected("other")}>기타</option></select></label>
+          <label class="field"><span>희망 작업일 *</span><input name="scheduledAt" type="datetime-local" value="${attr(order.scheduledAt ? String(order.scheduledAt).slice(0,16) : "")}" required></label>
+          <label class="field full"><span>현장 주소 *</span><input name="address" value="${attr(order.address || "")}" required></label>
+          <label class="field"><span>총 결제금액</span><input name="totalAmount" type="number" min="0" step="1000" value="${attr(order.totalAmount || "")}"></label>
+          <label class="field"><span>계약금</span><input name="depositAmount" type="number" min="0" step="1000" value="${attr(order.depositAmount || "")}"></label>
+          <label class="field full"><span>작업범위 *</span><textarea name="scope" rows="3" required>${esc(order.scope || "")}</textarea></label>
+          <label class="field full"><span>제외범위</span><textarea name="exclusions" rows="2">${esc(order.exclusions || "")}</textarea></label>
+        </div>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">주문 저장</button></div>
+      </form>`;
+    openModal();
+  }
+
+  function renderCleaningOrderDrawer(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>청소 주문 상세</h2><p>${esc(order.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body">${CleaningUI.renderCleaningOrderDetail({
+      order,
+      stages: Cleaning.CLEANING_ORDER_STAGES,
+      dispatches: store.cleaningDispatches,
+      reports: store.cleaningReports,
+      qcReviews: store.cleaningQcReviews,
+      messages: store.cleaningMessages,
+      writable: canWriteCRM()
+    })}</div>`;
+    openDrawer();
   }
 
   function renderArchivedSalesProspects() {
@@ -3292,6 +3362,43 @@
       renderPipeline();
       return;
     }
+    const cleaningStage = event.target.closest("[data-cleaning-stage]");
+    if (cleaningStage) {
+      cleaningStageFilter = cleaningStage.dataset.cleaningStage || "all";
+      renderCleaningCenter();
+      return;
+    }
+    const cleaningOrderOpen = event.target.closest("[data-cleaning-order-open]");
+    if (cleaningOrderOpen) {
+      renderCleaningOrderDrawer(cleaningOrderOpen.dataset.cleaningOrderOpen);
+      return;
+    }
+    const cleaningOrderEdit = event.target.closest("[data-cleaning-order-edit]");
+    if (cleaningOrderEdit) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 수정할 수 없습니다.", "error");
+      closeDrawer();
+      cleaningOrderEditor(cleaningOrderEdit.dataset.cleaningOrderEdit);
+      return;
+    }
+    const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
+    if (cleaningOrderNext) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
+      const order = cleaningOrderById(cleaningOrderNext.dataset.cleaningOrderNext);
+      if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+      const index = Cleaning.CLEANING_ORDER_STAGES.findIndex(item => item.id === order.stage);
+      const next = Cleaning.CLEANING_ORDER_STAGES[index + 1];
+      if (!next) return showToast("이미 종결된 주문입니다.");
+      try {
+        const updated = Cleaning.transitionCleaningOrder(order, next.id, { qcReviews: store.cleaningQcReviews, actor: salesActor(), at: new Date().toISOString() });
+        store.cleaningOrders[store.cleaningOrders.findIndex(item => item.id === order.id)] = updated;
+        logAudit({ category: "청소", targetType: "청소 주문", targetId: order.id, targetLabel: order.customerName, action: `단계 변경: ${order.stage} → ${next.id}`, reason: "Cleaning Sales Center 단계 진행" });
+        scheduleSave();
+        renderCleaningOrderDrawer(order.id);
+        if (currentView === "cleaningCenter") renderCleaningCenter();
+        showToast(`${next.label} 단계로 변경했습니다.`, "success");
+      } catch (error) { showToast(error.message || "단계를 변경하지 못했습니다.", "error"); }
+      return;
+    }
     const salesBoardModeControl = event.target.closest("[data-sales-board-mode]");
     if (salesBoardModeControl) {
       const nextMode = salesBoardModeControl.dataset.salesBoardMode;
@@ -3926,6 +4033,10 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 대상 건물을 등록할 수 없습니다.", "error");
       salesProspectEditor("");
     }
+    else if (action === "new-cleaning-order") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 등록할 수 없습니다.", "error");
+      cleaningOrderEditor("");
+    }
     else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
     else if (action === "reconnect-field") {
       fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 다시 연결하고 있습니다.", ready: false });
@@ -4129,6 +4240,40 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningOrderForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        ensureCleaningStore();
+        const existing = cleaningOrderById(form.dataset.cleaningOrderId);
+        const actor = salesActor();
+        const values = Object.assign({}, existing || {}, {
+          id: existing?.id,
+          customerName: String(raw.customerName || "").trim(),
+          phone: String(raw.phone || "").trim(),
+          serviceType: raw.serviceType,
+          address: String(raw.address || "").trim(),
+          scheduledAt: String(raw.scheduledAt || "").trim(),
+          totalAmount: Number(raw.totalAmount) || 0,
+          depositAmount: Number(raw.depositAmount) || 0,
+          balanceAmount: Math.max(0, (Number(raw.totalAmount) || 0) - (Number(raw.depositAmount) || 0)),
+          scope: String(raw.scope || "").trim(),
+          exclusions: String(raw.exclusions || "").trim(),
+          owner: existing?.owner || salesActorName(),
+          inquiryAt: existing?.inquiryAt || new Date().toISOString()
+        });
+        const item = Cleaning.createCleaningOrder(values, actor, existing?.createdAt || new Date().toISOString());
+        item.updatedAt = new Date().toISOString();
+        item.updatedBy = actor.email || "";
+        if (existing) store.cleaningOrders[store.cleaningOrders.findIndex(order => order.id === existing.id)] = item;
+        else store.cleaningOrders.push(item);
+        logAudit({ category: "청소", targetType: "청소 주문", targetId: item.id, targetLabel: item.customerName, action: existing ? "청소 주문 수정" : "청소 주문 등록", reason: "Cleaning Sales Center" });
+        scheduleSave();
+        closeModal();
+        currentView = "cleaningCenter";
+        render();
+        renderCleaningOrderDrawer(item.id);
+        showToast(existing ? "청소 주문을 수정했습니다." : "청소 주문을 등록했습니다.", "success");
+      } catch (error) { showToast(error.message || "청소 주문을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesProspectForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!assertSalesInputSafe(raw)) return;
@@ -4736,8 +4881,9 @@
     if (currentView === "partnerVendors") renderPartnerVendors();
     if (currentView === "partnerQuotes") renderPartnerQuotes();
     if (currentView === "pipeline") renderPipeline();
+    if (currentView === "cleaningCenter") renderCleaningCenter();
   });
-  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "fieldOperations") return; if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "fieldOperations") return; if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline", "cleaningCenter"].includes(currentView)) currentView = "customers"; render(); } });
   fieldOperatorSelect.addEventListener("change", async () => {
     const previousOperatorId = selectedFieldOperatorId;
     const nextOperatorId = String(fieldOperatorSelect.value || "");
@@ -4994,6 +5140,7 @@ document.addEventListener("keydown", event => {
     try {
       store = Core.sanitizeStore(initialData || await api.load());
       ensureSalesStore(store);
+      ensureCleaningStore(store);
       await refreshRendererOverlays(false).catch(() => undefined);
       await loadFieldTeamProfiles();
       dataPath = await api.dataPath();
@@ -5001,7 +5148,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "fieldOperations", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "fieldOperations", "consultations", "pipeline", "cleaningCenter", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

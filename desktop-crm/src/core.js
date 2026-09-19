@@ -194,6 +194,7 @@
       },
       customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], securityAssets: [], auditLogs: [], securityIncidents: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
+      cleaningOrders: [], cleaningDispatches: [], cleaningReports: [], cleaningQcReviews: [], cleaningMessages: [], cleaningPartners: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
         createAccessRole({ name: "업무 담당자", canView: true, canEdit: true, canDownload: false, canManageSecurity: false }),
@@ -242,6 +243,12 @@
       salesActivities: Array.isArray(src.salesActivities) ? src.salesActivities.filter(Boolean) : [],
       salesEvents: Array.isArray(src.salesEvents) ? src.salesEvents.filter(Boolean) : [],
       salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
+      cleaningOrders: Array.isArray(src.cleaningOrders) ? src.cleaningOrders.filter(Boolean) : [],
+      cleaningDispatches: Array.isArray(src.cleaningDispatches) ? src.cleaningDispatches.filter(Boolean) : [],
+      cleaningReports: Array.isArray(src.cleaningReports) ? src.cleaningReports.filter(Boolean) : [],
+      cleaningQcReviews: Array.isArray(src.cleaningQcReviews) ? src.cleaningQcReviews.filter(Boolean) : [],
+      cleaningMessages: Array.isArray(src.cleaningMessages) ? src.cleaningMessages.filter(Boolean) : [],
+      cleaningPartners: Array.isArray(src.cleaningPartners) ? src.cleaningPartners.filter(Boolean) : [],
       updatedAt: src.updatedAt || iso()
     };
   }
