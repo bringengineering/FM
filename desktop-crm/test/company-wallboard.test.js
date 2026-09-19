@@ -1,5 +1,11 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const C=require('../src/company-wallboard');
+test('shared notice scene does not mislabel the remote TV as local preview',()=>{
+ const html=C.scene(null,'notice',0,'<회사 공지>');
+ assert.match(html,/&lt;회사 공지&gt;/);
+ assert.doesNotMatch(html,/이 컴퓨터에서만|미리보기/);
+ assert.match(html,/회사 운영 공지/);
+});
 test('schedule timeline marks next unfinished timed entry and separates unknown time',()=>{
  const m=C.project({orders:[],calendar:{serviceRecords:[
   {scheduledDate:'2026-09-20',startTime:'08:00',status:'planned'},

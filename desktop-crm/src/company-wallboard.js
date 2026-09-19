@@ -30,7 +30,7 @@
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5)){
-  if(key==='notice')return `<div class="wb-announcement"><span>TEAM NOTICE</span><h2>${esc(notice||'등록된 공지가 없습니다')}</h2><p>이 컴퓨터에서만 표시하는 미리보기 공지</p></div>`;
+  if(key==='notice')return `<div class="wb-announcement"><span>TEAM NOTICE</span><h2>${esc(notice||'등록된 공지가 없습니다')}</h2><p>회사 운영 공지</p></div>`;
   if(!m)return '<div class="wb-empty">아직 확인된 자료가 없습니다.</div>';
   if(key==='schedule'){
    if(!m.schedule?.available)return '<div class="wb-empty">일정을 확인할 수 없습니다. 연결 상태를 확인해 주세요.</div>';
