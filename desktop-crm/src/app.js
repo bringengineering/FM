@@ -1952,6 +1952,7 @@
       followUpDashboard,
       alerts,
       priceBook: Cleaning.CLEANING_PRICE_BOOK,
+      salesStandards: Cleaning.CLEANING_SALES_STANDARDS,
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
       writable: canWriteCRM()

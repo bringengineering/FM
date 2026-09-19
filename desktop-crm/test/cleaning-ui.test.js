@@ -174,3 +174,11 @@ test("renders the sales quick price and no-onsite-surcharge rule", () => {
   assert.match(center, /현장 추가금 금지/);
   assert.match(center, /사전 승인/);
 });
+
+test("renders the approved consultation scripts and FAQ", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [], priceBook: {}, salesStandards: { version: "BRING-CARE-SALES-v0.1", scripts: [{ id: "opening", title: "첫 인사", body: "브링케어입니다." }], faqs: [{ question: "현장 추가금이 있나요?", answer: "확정 범위에는 없습니다." }], requiredQuestions: ["평수 또는 면적"] }, writable: true });
+  assert.match(center, /상담 스크립트·FAQ/);
+  assert.match(center, /첫 인사/);
+  assert.match(center, /현장 추가금이 있나요/);
+  assert.match(center, /평수 또는 면적/);
+});

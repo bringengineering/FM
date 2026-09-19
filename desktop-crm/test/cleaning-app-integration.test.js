@@ -198,3 +198,8 @@ test("cleaning order form applies the approved price book with an explicit manua
   assert.match(submit, /priceBookVersion/);
   assert.match(submit, /별도견적 대상/);
 });
+
+test("cleaning center receives the approved sales standards", async () => {
+  const app = await source("app.js");
+  assert.match(app, /salesStandards:\s*Cleaning\.CLEANING_SALES_STANDARDS/);
+});

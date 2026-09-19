@@ -49,6 +49,32 @@
       { productCode: "common_area_monthly4", label: "공용부 6층 월 4회", basis: "6층", amount: 119000 }
     ])
   });
+  const CLEANING_SALES_STANDARDS = Object.freeze({
+    version: "BRING-CARE-SALES-v0.1",
+    requiredQuestions: Object.freeze(["고객명과 연락처", "청소 주소", "희망 작업일", "평수 또는 면적", "입주·퇴실·이사 여부", "공실 여부", "심한 오염·곰팡이·폐기물 여부", "엘리베이터·주차 가능 여부", "사진 확인 가능 여부"]),
+    scripts: Object.freeze([
+      { id: "opening", title: "첫 인사", body: "안녕하세요, 브링케어입니다. 문의하신 청소 범위와 일정을 확인한 뒤 현장 추가금 없는 확정 견적으로 안내드리겠습니다." },
+      { id: "needs", title: "요구사항 확인", body: "청소 주소와 평수, 희망 날짜, 현재 공실 여부를 먼저 확인하겠습니다. 곰팡이·기름때·폐기물처럼 사진 확인이 필요한 부분이 있을까요?" },
+      { id: "scope", title: "작업범위 설명", body: "기본 범위와 제외 범위를 견적서에 나눠 적어드리고, 확정된 범위는 브링케어가 작업 완료와 책임검수까지 관리합니다." },
+      { id: "price", title: "가격 안내", body: "브링케어 표준가격표 기준으로 안내드리며, 사진 확인이 필요한 항목은 작업 전에 금액까지 확정합니다. 현장에서 임의로 금액을 올리지 않습니다." },
+      { id: "expensive", title: "가격이 비싸다고 할 때", body: "최저가만 비교하면 더 저렴한 곳이 있을 수 있습니다. 브링케어 가격에는 상담, 배차, 작업기록, 책임검수, 문제 발생 시 단일창구 대응이 포함됩니다." },
+      { id: "comparison", title: "타 업체와 비교할 때", body: "작업범위, 제외항목, 현장 추가금 가능 여부, 문제 발생 시 책임주체를 같은 조건으로 비교해보시길 권합니다." },
+      { id: "discount", title: "할인 요청", body: "현장 가격을 임의로 바꾸지는 않습니다. 적용 가능한 공식 패키지나 묶음 할인이 있는지 확인해드리겠습니다." },
+      { id: "photo", title: "사진 요청", body: "정확한 확정 견적을 위해 주방, 화장실, 창틀, 베란다와 오염이 심한 부분 사진을 보내주세요. 사진 확인 후 금액과 범위를 확정해드리겠습니다." },
+      { id: "closing", title: "예약 마감", body: "안내드린 작업범위, 제외범위, 총금액, 날짜가 맞는지 함께 확인하겠습니다. 계약금 확인 후 예약과 담당팀 배차가 확정됩니다." },
+      { id: "b2b", title: "B2B 문의", body: "건물·사무실의 위치, 층수, 방문주기, 공용시설, 현재 불편사항을 확인한 뒤 청소뿐 아니라 정기점검과 건물관리 전환까지 제안드리겠습니다." }
+    ]),
+    faqs: Object.freeze([
+      { question: "현장 추가금이 있나요?", answer: "사전에 확정한 작업범위에는 현장 추가금이 없습니다. 추가 작업은 사진 확인과 고객 승인 후 작업 전에만 확정합니다." },
+      { question: "누가 작업하나요?", answer: "브링케어 기준을 통과한 직영팀 또는 Partner팀이 작업하며, 고객 응대와 품질 책임은 브링케어가 맡습니다." },
+      { question: "작업이 마음에 들지 않으면 어떻게 하나요?", answer: "완료사진과 책임검수 기록을 확인하고, 누락이 확인되면 재작업 절차로 책임지고 처리합니다." },
+      { question: "정확한 견적에 무엇이 필요한가요?", answer: "주소, 평수, 날짜, 공실 여부와 주방·화장실·창틀·베란다·특수오염 사진이 필요합니다." },
+      { question: "결제는 언제 하나요?", answer: "계약금 확인 후 예약이 확정되며 작업과 책임검수 완료 후 잔금을 안내합니다." },
+      { question: "일정 변경이나 취소가 가능한가요?", answer: "가능합니다. 작업까지 남은 시간과 귀책사유에 따라 확정된 취소·환불 기준을 적용합니다." },
+      { question: "준공·특수청소도 바로 가격을 받을 수 있나요?", answer: "현장 편차가 커서 사진 또는 현장 확인 후 관리자 승인 견적으로 안내합니다." },
+      { question: "청소 후 건물관리도 가능한가요?", answer: "가능합니다. 공용부 청소, 정기점검, 시설 이상 기록과 현장 대응을 묶어 상담해드립니다." }
+    ])
+  });
   const text = value => String(value == null ? "" : value).trim();
   const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
   const roundWon = value => Math.round(number(value));
@@ -719,6 +745,7 @@
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
     CLEANING_PRICE_BOOK,
+    CLEANING_SALES_STANDARDS,
     standardCleaningPrice,
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,

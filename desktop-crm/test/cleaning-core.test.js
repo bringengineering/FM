@@ -443,3 +443,10 @@ test("cleaning orders preserve the price book evidence used for the quote", () =
   assert.equal(order.priceBookVersion, "BRING-CARE-PRICE-v0.1");
   assert.equal(order.standardPriceAmount, 319000);
 });
+
+test("exposes the approved sales script and FAQ library", () => {
+  assert.equal(Cleaning.CLEANING_SALES_STANDARDS.version, "BRING-CARE-SALES-v0.1");
+  assert.deepEqual(Cleaning.CLEANING_SALES_STANDARDS.scripts.map(item => item.id), ["opening", "needs", "scope", "price", "expensive", "comparison", "discount", "photo", "closing", "b2b"]);
+  assert.ok(Cleaning.CLEANING_SALES_STANDARDS.faqs.some(item => /추가금/.test(item.question) && /없습니다/.test(item.answer)));
+  assert.ok(Cleaning.CLEANING_SALES_STANDARDS.requiredQuestions.includes("평수 또는 면적"));
+});
