@@ -744,7 +744,7 @@
   function applyCustomerPhotos(value, renderAfter = true) {
     customerPhotos = normalizeCustomerPhotoMap(value);
     if (!renderAfter || !appInitialized) return customerPhotos;
-    render();
+    if (currentView !== "companyWallboard") render();
     if (selectedCustomerId && customerById(selectedCustomerId)) {
       if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
       else renderCustomerDrawer(selectedCustomerId);
@@ -778,7 +778,9 @@
       synchronizedStore = merge(synchronizedStore);
       pendingRemoteStore = merge(pendingRemoteStore);
       queuedSave = merge(queuedSave);
-      if (renderAfter && appInitialized) render();
+      if (renderAfter && appInitialized) {
+        if (currentView !== "companyWallboard") render();
+      }
       return overlays;
     }).finally(() => {
       if (overlayRefreshPromise === refreshPromise) overlayRefreshPromise = null;
@@ -942,7 +944,7 @@
     store = next;
     ensureSalesStore(store);
     synchronizedStore = cloneStore(next);
-    render();
+    if (currentView !== "companyWallboard") render();
     if (selectedCustomerId) {
       if (!customerById(selectedCustomerId)) closeDrawer();
       else if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
