@@ -10,6 +10,8 @@ describe("public marketing lead intake rules", () => {
     expect(leadRule[".write"]).toContain("auth == null");
     expect(leadRule[".write"]).toContain("!data.exists()");
     expect(leadRule[".write"]).toContain("newData.numChildren() === 15");
+    expect(leadRule[".write"]).toContain("newData.numChildren() === 25");
+    expect(leadRule.leadType[".validate"]).toContain("partner_application");
     expect(leadRule[".validate"]).toContain("newData.child('requestId').val() === $leadId");
     expect(leadRule[".validate"]).toContain("newData.child('phone').val().matches(/^010-");
     expect(leadRule.$other[".validate"]).toBe(false);

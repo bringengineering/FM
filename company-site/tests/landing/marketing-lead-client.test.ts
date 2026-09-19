@@ -33,4 +33,29 @@ describe("submitMarketingLead", () => {
     await expect(submitMarketingLead({ ...input, phone: "010-0000" })).rejects.toThrow(/010-1234-5678/);
     expect(mocks.set).not.toHaveBeenCalled();
   });
+
+  it("accepts a structured Cleaning Partner application in the same CRM inbox", async () => {
+    const result = await submitMarketingLead({
+      ...input,
+      name: "박파트너",
+      customerType: "cleaning_partner",
+      service: "Cleaning Partner 지원",
+      leadType: "partner_application",
+      businessName: "원주클린",
+      businessNumber: "123-45-67890",
+      services: "move_in,common_area",
+      headcount: 3,
+      dailyCapacity: 2,
+      vehicle: "1톤 탑차",
+      experienceYears: 4,
+      invoiceAvailable: true,
+      insured: false,
+    });
+    expect(mocks.set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      requestId: result.receiptId,
+      leadType: "partner_application",
+      businessName: "원주클린",
+      headcount: 3,
+    }));
+  });
 });
