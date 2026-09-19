@@ -64,6 +64,33 @@ test("rejects skipped lifecycle transitions", () => {
   );
 });
 
+test("creates a routed call ticket with a five-minute callback deadline", () => {
+  const ticket = Cleaning.createCleaningCallTicket({
+    callerName: "김고객", phone: "010-1234-5678", ivrOption: "1", status: "missed",
+    occurredAt: "2026-09-20T01:00:00.000Z"
+  }, actor, "2026-09-20T01:00:00.000Z");
+  assert.equal(ticket.queue, "new_consultation");
+  assert.equal(ticket.assignedTo, "대표이사 서창환");
+  assert.equal(ticket.callbackDueAt, "2026-09-20T01:05:00.000Z");
+});
+
+test("completes a call ticket only with a recorded outcome", () => {
+  const ticket = Cleaning.createCleaningCallTicket({ callerName: "김고객", phone: "010-1234-5678", ivrOption: "2" }, actor, "2026-09-20T01:00:00.000Z");
+  assert.throws(() => Cleaning.completeCleaningCallTicket(ticket, {}, actor), /상담 결과/);
+  const done = Cleaning.completeCleaningCallTicket(ticket, { outcome: "견적상담 전환", note: "9월 25일 희망" }, actor, "2026-09-20T01:08:00.000Z");
+  assert.equal(done.status, "completed");
+  assert.equal(done.outcome, "견적상담 전환");
+});
+
+test("allows a missed-call message draft to link to a call ticket before an order exists", () => {
+  const message = Cleaning.createCleaningMessage({
+    cleaningCallTicketId: "clc_1", templateId: "missed_call", recipient: "010-1234-5678",
+    variables: { consultationUrl: "https://bring-care.co.kr/consult" }
+  }, actor, "2026-09-20T01:00:00.000Z");
+  assert.equal(message.cleaningCallTicketId, "clc_1");
+  assert.equal(message.status, "draft");
+});
+
 test("requires a passed QC review before customer completion", () => {
   assert.throws(
     () => Cleaning.transitionCleaningOrder(

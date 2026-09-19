@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["marketingLeadInbox", "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
+    ["marketingLeadInbox", "cleaningCallTickets", "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -538,6 +538,7 @@
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "marketingLeadInbox",
+    "cleaningCallTickets",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
     "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"
   ];
@@ -1972,6 +1973,7 @@
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       inboundLeads: store.marketingLeadInbox,
+      callTickets: store.cleaningCallTickets,
       orders: store.cleaningOrders,
       partners: store.cleaningPartners,
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
@@ -2120,6 +2122,15 @@
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
+  }
+
+  function cleaningCallTicketEditor(ticketId) {
+    ensureCleaningStore();
+    const ticket = store.cleaningCallTickets.find(item => item && item.id === String(ticketId || "")) || {};
+    const selected = value => String(ticket.ivrOption || "1") === value ? " selected" : "";
+    const statusSelected = value => String(ticket.status || "in_progress") === value ? " selected" : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${ticket.id ? "전화 상담 처리" : "전화 문의 접수"}</h2><p>1번 신규상담 · 2번 예약변경 · 3번 작업·AS로 분류합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningCallTicketForm" class="modal-body" data-cleaning-call-ticket-id="${attr(ticket.id || "")}"><div class="form-grid"><label class="field"><span>고객명</span><input name="callerName" value="${attr(ticket.callerName || "")}"></label><label class="field"><span>전화번호 *</span><input name="phone" value="${attr(ticket.phone || "")}" required inputmode="tel"></label><label class="field"><span>IVR 분류 *</span><select name="ivrOption"><option value="1"${selected("1")}>1번 신규상담</option><option value="2"${selected("2")}>2번 예약·변경</option><option value="3"${selected("3")}>3번 작업·AS</option></select></label><label class="field"><span>통화 상태 *</span><select name="status"><option value="in_progress"${statusSelected("in_progress")}>통화·상담 중</option><option value="missed"${statusSelected("missed")}>부재중</option><option value="callback_due"${statusSelected("callback_due")}>콜백 대기</option><option value="completed"${statusSelected("completed")}>상담 완료</option></select></label><label class="field"><span>담당자</span><input name="assignedTo" value="${attr(ticket.assignedTo || "대표이사 서창환")}"></label><label class="field"><span>녹취·통화기록 참조</span><input name="recordingRef" value="${attr(ticket.recordingRef || "")}" placeholder="통신사 녹취 ID 또는 링크"></label><label class="field full"><span>상담 결과</span><input name="outcome" value="${attr(ticket.outcome || "")}" placeholder="예: 입주청소 견적상담 전환"></label><label class="field full"><span>상담 메모</span><textarea name="note" rows="4">${esc(ticket.note || "")}</textarea></label></div><div class="info-box">부재중으로 저장하면 5분 콜백 기한과 고객 안내문자 초안을 자동 생성합니다. 실제 발송은 문자 공급사 연동 후 승인됩니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">상담 저장</button></div></form>`;
+    openModal();
   }
 
   function cleaningPartnerEditor(partnerId, leadInput) {
@@ -3618,6 +3629,12 @@
       renderCleaningOrderDrawer(cleaningOrderOpen.dataset.cleaningOrderOpen);
       return;
     }
+    const cleaningCallOpen = event.target.closest("[data-cleaning-call-open]");
+    if (cleaningCallOpen) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 전화 상담을 처리할 수 없습니다.", "error");
+      cleaningCallTicketEditor(cleaningCallOpen.dataset.cleaningCallOpen);
+      return;
+    }
     const cleaningLeadConvert = event.target.closest("[data-cleaning-lead-convert]");
     if (cleaningLeadConvert) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 견적 문의를 주문으로 전환할 수 없습니다.", "error");
@@ -4486,6 +4503,10 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 등록할 수 없습니다.", "error");
       cleaningOrderEditor("");
     }
+    else if (action === "new-cleaning-call") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 전화 문의를 등록할 수 없습니다.", "error");
+      cleaningCallTicketEditor("");
+    }
     else if (action === "new-cleaning-partner") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 Partner를 등록할 수 없습니다.", "error");
       cleaningPartnerEditor("");
@@ -4778,6 +4799,30 @@
         logAudit({ category: "청소", targetType: "Partner 정산", targetId: item.id, targetLabel: krw(item.payableAmount), action: "Partner 주간정산 생성", reason: `보류 ${krw(item.heldAmount)}` });
         scheduleSave(); closeModal(); renderCleaningCenter(); showToast(`지급 ${krw(item.payableAmount)} · 보류 ${krw(item.heldAmount)}로 정산했습니다.`, "success");
       } catch (error) { showToast(error.message || "Partner 정산을 생성하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningCallTicketForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        ensureCleaningStore();
+        const existing = store.cleaningCallTickets.find(item => item && item.id === form.dataset.cleaningCallTicketId);
+        let item = Cleaning.createCleaningCallTicket(Object.assign({}, existing || {}, {
+          id: existing?.id, callerName: raw.callerName, phone: raw.phone, ivrOption: raw.ivrOption,
+          status: raw.status, assignedTo: raw.assignedTo, recordingRef: raw.recordingRef,
+          outcome: raw.outcome, note: raw.note, occurredAt: existing?.occurredAt
+        }), salesActor(), existing?.createdAt);
+        if (raw.status === "completed") item = Cleaning.completeCleaningCallTicket(item, { outcome: raw.outcome, note: raw.note }, salesActor());
+        if (["missed", "callback_due"].includes(item.status) && !item.followUpMessageId) {
+          const message = Cleaning.createCleaningMessage({
+            cleaningCallTicketId: item.id, templateId: "missed_call", recipient: item.phone,
+            variables: { consultationUrl: "https://bring-care.co.kr/consult" }, status: "draft"
+          }, salesActor());
+          store.cleaningMessages.push(message);
+          item.followUpMessageId = message.id;
+        }
+        if (existing) store.cleaningCallTickets[store.cleaningCallTickets.findIndex(value => value.id === existing.id)] = item;
+        else store.cleaningCallTickets.push(item);
+        logAudit({ category: "청소", targetType: "전화 상담", targetId: item.id, targetLabel: item.callerName || item.phone, action: existing ? "전화 상담 처리" : "전화 문의 접수", reason: item.status });
+        scheduleSave(); closeModal(); renderCleaningCenter(); showToast(item.status === "completed" ? "상담 결과를 저장했습니다." : "전화 문의를 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "전화 상담을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningPartnerForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {

@@ -6,6 +6,7 @@ const test = require("node:test");
 const Core = require("../src/core.js");
 const COLLECTIONS = [
   "marketingLeadInbox",
+  "cleaningCallTickets",
   "cleaningOrders", "cleaningDispatches", "cleaningReports",
   "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
   "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"

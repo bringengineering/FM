@@ -26,6 +26,17 @@ test("renders KPI cards pipeline filters and the no-site-surcharge promise", () 
   assert.match(html, /새 청소 주문/);
 });
 
+test("renders the call center queue with IVR route and callback urgency", () => {
+  const html = UI.renderCleaningCenter({
+    stages, orders: [], kpis: {}, writable: true,
+    callTickets: [{ id: "clc_1", callerName: "김고객", phone: "010-1234-5678", queue: "new_consultation", status: "missed", callbackDueAt: "2026-09-20T01:05:00.000Z" }]
+  });
+  assert.match(html, /전화 상담함/);
+  assert.match(html, /신규상담/);
+  assert.match(html, /data-cleaning-call-open="clc_1"/);
+  assert.match(html, /부재중/);
+});
+
 test("renders an actionable empty state", () => {
   const html = UI.renderCleaningCenter({ stages, orders: [], kpis: {}, selectedStage: "all", writable: true });
   assert.match(html, /등록된 청소 주문이 없습니다/);

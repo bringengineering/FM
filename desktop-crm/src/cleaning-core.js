@@ -381,11 +381,12 @@
 
   function createCleaningMessage(source, actor, at) {
     const raw = source && typeof source === "object" ? source : {};
-    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.cleaningOrderId) && !text(raw.cleaningCallTicketId)) throw cleaningError("CLEANING_MESSAGE_CONTEXT_REQUIRED", "연결할 주문 또는 전화상담이 필요합니다.", "cleaningOrderId");
     if (!text(raw.recipient)) throw cleaningError("CLEANING_MESSAGE_RECIPIENT_REQUIRED", "수신번호를 입력해 주세요.", "recipient");
     const body = renderMessageTemplate(raw.templateId, raw.variables || {});
     return Object.assign(recordMeta(raw, actor, at, "clm"), {
       cleaningOrderId: text(raw.cleaningOrderId),
+      cleaningCallTicketId: text(raw.cleaningCallTicketId),
       templateId: text(raw.templateId),
       recipient: text(raw.recipient),
       channel: ["sms", "alimtalk"].includes(raw.channel) ? raw.channel : "sms",
@@ -399,6 +400,34 @@
       attemptCount: Math.max(0, Math.round(number(raw.attemptCount))),
       failureReason: text(raw.failureReason)
     });
+  }
+
+  const CALL_QUEUE_BY_IVR = Object.freeze({ "1": "new_consultation", "2": "reservation_change", "3": "service_cs" });
+
+  function createCleaningCallTicket(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    const timestamp = text(raw.occurredAt) || text(at) || new Date().toISOString();
+    if (!text(raw.phone)) throw cleaningError("CLEANING_CALL_PHONE_REQUIRED", "전화번호를 입력해 주세요.", "phone");
+    const ivrOption = Object.prototype.hasOwnProperty.call(CALL_QUEUE_BY_IVR, String(raw.ivrOption)) ? String(raw.ivrOption) : "1";
+    const status = ["ringing", "missed", "callback_due", "in_progress", "completed"].includes(raw.status) ? raw.status : "in_progress";
+    const missed = ["missed", "callback_due"].includes(status);
+    return Object.assign(recordMeta(raw, actor, timestamp, "clc"), {
+      callerName: text(raw.callerName), phone: text(raw.phone), ivrOption,
+      queue: CALL_QUEUE_BY_IVR[ivrOption], status, direction: "inbound",
+      assignedTo: text(raw.assignedTo) || "대표이사 서창환",
+      occurredAt: timestamp,
+      callbackDueAt: missed ? new Date(new Date(timestamp).getTime() + 5 * 60 * 1000).toISOString() : text(raw.callbackDueAt),
+      completedAt: text(raw.completedAt), outcome: text(raw.outcome), note: text(raw.note),
+      recordingRef: text(raw.recordingRef), followUpMessageId: text(raw.followUpMessageId)
+    });
+  }
+
+  function completeCleaningCallTicket(source, result, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const values = result && typeof result === "object" ? result : {};
+    if (!text(values.outcome)) throw cleaningError("CLEANING_CALL_OUTCOME_REQUIRED", "상담 결과를 입력해 주세요.", "outcome");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, { status: "completed", outcome: text(values.outcome), note: text(values.note), completedAt: timestamp, updatedAt: timestamp, updatedBy: text(actor && actor.email) });
   }
 
   function queueCleaningMessage(source, actor, at) {
@@ -863,6 +892,8 @@
     createCleaningReport,
     createCleaningQcReview,
     createCleaningMessage,
+    createCleaningCallTicket,
+    completeCleaningCallTicket,
     queueCleaningMessage,
     recordCleaningMessageDelivery,
     calculateCleaningMessageOutbox,

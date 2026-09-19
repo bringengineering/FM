@@ -266,3 +266,14 @@ test("the cleaning center exposes a safe message outbox and queue action", async
   assert.match(app, /Cleaning\.queueCleaningMessage/);
   assert.match(app, /공급사 연동 후 자동 전송/);
 });
+
+test("call center intake routes IVR calls and prepares missed-call follow-up messages", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningCallTicketEditor/);
+  assert.match(app, /id="cleaningCallTicketForm"/);
+  assert.match(app, /name="ivrOption"/);
+  assert.match(app, /Cleaning\.createCleaningCallTicket/);
+  assert.match(app, /Cleaning\.completeCleaningCallTicket/);
+  assert.match(app, /cleaningCallTickets/);
+  assert.match(app, /templateId:\s*"missed_call"/);
+});
