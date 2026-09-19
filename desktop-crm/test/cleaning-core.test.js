@@ -429,6 +429,19 @@ test("exposes the approved Bring Care v0.1 quick price book", () => {
   assert.equal(Cleaning.standardCleaningPrice({ productCode: "studio", area: 19 }).manualQuote, true);
 });
 
+test("exposes five launch products with explicit included review and excluded scopes", () => {
+  assert.equal(Cleaning.CLEANING_SERVICE_CATALOG.version, "BRING-CARE-SCOPE-v1.0");
+  assert.deepEqual(Cleaning.CLEANING_SERVICE_CATALOG.products.map(item => item.code), [
+    "studio_reset", "apartment_move_in", "common_area_recurring", "office_single", "vacancy_turnover"
+  ]);
+  for (const product of Cleaning.CLEANING_SERVICE_CATALOG.products) {
+    assert.ok(product.included.length > 0);
+    assert.ok(product.preapproval.length > 0);
+    assert.ok(product.excluded.length > 0);
+    assert.equal(product.noOnsiteSurcharge, true);
+  }
+});
+
 test("price book forbids field-decided surcharges and requires preapproval", () => {
   assert.equal(Cleaning.CLEANING_PRICE_BOOK.noOnsiteSurcharge, true);
   assert.equal(Cleaning.CLEANING_PRICE_BOOK.additionalWorkRule, "preapproved_only");

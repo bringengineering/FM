@@ -49,6 +49,37 @@
       { productCode: "common_area_monthly4", label: "공용부 6층 월 4회", basis: "6층", amount: 119000 }
     ])
   });
+  const CLEANING_SERVICE_CATALOG = Object.freeze({
+    version: "BRING-CARE-SCOPE-v1.0",
+    rule: "견적서에 포함·계약 전 승인·제외를 표시하고 현장에서 가격을 변경하지 않는다.",
+    products: Object.freeze([
+      Object.freeze({ code: "studio_reset", name: "원룸 입주·퇴실 리셋클린", priceMode: "standard", noOnsiteSurcharge: true,
+        included: Object.freeze(["현관·방·바닥", "주방·싱크볼·상판", "욕실 전체", "창틀·내부유리", "베란다", "비어 있는 수납 내부", "가전 외부"]),
+        preapproval: Object.freeze(["가전 내부", "심한 곰팡이·니코틴·기름때", "대량 스티커·접착제", "가구·가전·대량폐기물"]),
+        excluded: Object.freeze(["외부 고소작업", "전문 방역·복원·철거", "고객이 알리지 않은 공사잔재"]),
+        requiredEvidence: Object.freeze(["공실 여부", "주방·욕실·창틀·베란다 사진", "오염·폐기물 사진"]) }),
+      Object.freeze({ code: "apartment_move_in", name: "아파트 입주·이사클린", priceMode: "standard", noOnsiteSurcharge: true,
+        included: Object.freeze(["현관·방·바닥", "주방·욕실", "창틀·내부유리", "베란다", "비어 있는 수납 내부", "일반 입주분진"]),
+        preapproval: Object.freeze(["가전 내부", "대량 스티커", "특수오염", "추가 화장실·베란다·복층"]),
+        excluded: Object.freeze(["외부 고소유리", "실리콘·페인트·시멘트 제거", "준공·인테리어 전문청소"]),
+        requiredEvidence: Object.freeze(["평수", "방·욕실·베란다 수", "전체 공간과 특수오염 사진"]) }),
+      Object.freeze({ code: "common_area_recurring", name: "공용부 정기청소", priceMode: "standard", noOnsiteSurcharge: true,
+        included: Object.freeze(["공동현관", "계단·복도", "난간", "엘리베이터 내부", "우편함 외부", "일반 먼지·생활오염"]),
+        preapproval: Object.freeze(["주차장", "옥상", "외부 쓰레기장", "유리창", "대량폐기물", "제설·낙엽 집중작업"]),
+        excluded: Object.freeze(["고소 외벽·유리", "폐기물 운반·처리", "방역·소독", "시설 수리"]),
+        requiredEvidence: Object.freeze(["층수·동수", "방문주기", "공용시설 사진", "현재 문제와 희망요일"]) }),
+      Object.freeze({ code: "office_single", name: "상가·사무실 단회청소", priceMode: "manual", noOnsiteSurcharge: true,
+        included: Object.freeze(["바닥·문·내부유리", "수납 외부", "화장실·탕비공간", "일반 먼지 제거"]),
+        preapproval: Object.freeze(["집기 이동", "영업중 작업", "왁스코팅", "카펫 세척", "후드·덕트"]),
+        excluded: Object.freeze(["고소유리", "전문 설비 분해", "공사잔재·준공청소"]),
+        requiredEvidence: Object.freeze(["면적·업종", "집기와 바닥재", "주방·화장실", "희망 작업시간", "사진 또는 사전방문"]) }),
+      Object.freeze({ code: "vacancy_turnover", name: "공실 정비청소", priceMode: "manual", noOnsiteSurcharge: true,
+        included: Object.freeze(["공실 기본청소", "기존 파손 기록", "설비 이상 육안기록", "완료사진", "임대 가능상태 보고"]),
+        preapproval: Object.freeze(["잔존물 정리", "소모품 교체", "간단 보수", "악취·곰팡이", "열쇠 인수인계"]),
+        excluded: Object.freeze(["전문 폐기물 처리", "전기·가스·수도 전문수리", "도배·장판·도장", "철거·복원"]),
+        requiredEvidence: Object.freeze(["건물·호실", "퇴실상태 사진", "잔존물·파손", "필요한 정비 범위"]) })
+    ])
+  });
   const CLEANING_SALES_STANDARDS = Object.freeze({
     version: "BRING-CARE-SALES-v0.1",
     requiredQuestions: Object.freeze(["고객명과 연락처", "청소 주소", "희망 작업일", "평수 또는 면적", "입주·퇴실·이사 여부", "공실 여부", "심한 오염·곰팡이·폐기물 여부", "엘리베이터·주차 가능 여부", "사진 확인 가능 여부"]),
@@ -768,6 +799,7 @@
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
     CLEANING_PRICE_BOOK,
+    CLEANING_SERVICE_CATALOG,
     CLEANING_SALES_STANDARDS,
     standardCleaningPrice,
     MESSAGE_TEMPLATES,

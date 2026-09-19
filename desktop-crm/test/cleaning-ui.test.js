@@ -183,6 +183,16 @@ test("renders the approved consultation scripts and FAQ", () => {
   assert.match(center, /평수 또는 면적/);
 });
 
+test("renders launch product scope cards with preapproval and exclusions", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [], priceBook: {}, serviceCatalog: { version: "BRING-CARE-SCOPE-v1.0", products: [{ code: "studio_reset", name: "원룸 리셋클린", included: ["욕실"], preapproval: ["심한 곰팡이"], excluded: ["외부 고소작업"], noOnsiteSurcharge: true }] }, writable: true });
+  assert.match(center, /Launch 상품·작업범위/);
+  assert.match(center, /원룸 리셋클린/);
+  assert.match(center, /기본 포함<\/strong> · 욕실/);
+  assert.match(center, /계약 전 승인<\/strong> · 심한 곰팡이/);
+  assert.match(center, /제외<\/strong> · 외부 고소작업/);
+  assert.match(center, /현장 추가금 없음/);
+});
+
 test("renders customer quote evidence and explicit issue action", () => {
   const detail = UI.renderCleaningOrderDetail({ order: { id: "o1", customerName: "홍길동" }, stages, dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [], reworks: [], retentionActions: [], customerReports: [], quotes: [{ id: "q1", cleaningOrderId: "o1", status: "draft", totalAmount: 319000, validUntil: "2026-09-27", scope: "주방·욕실", exclusions: "폐기물" }], writable: true });
   assert.match(detail, /고객 견적서 1건/);
