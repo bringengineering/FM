@@ -40,6 +40,8 @@
 .wb-playlist-row button { min-height: 44px; padding: 8px 16px; }
 .wb-playlist-row button:disabled { opacity: .45; cursor: default; }
 .wb-playlist p { color: var(--soft); margin-bottom: 0; }
+.wb-controls input[name="code"] { width: 150px; text-transform: uppercase; }
+.wb-controls input[name="name"] { width: 220px; }
 .wb-time-summary { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; font-size: 22px; }
 .wb-time-summary b { color: var(--blue); }
 .wb-time-track { height: 12px; position: relative; background: var(--line); border-radius: 999px; margin: 0 8px; }

@@ -7742,6 +7742,11 @@ async function createWindow() {
 }
 
 secureHandle("crm:auth-state", () => authState());
+secureCanonicalHandle("crm:wallboard-admin", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
+  const { requestWallboardAdmin } = require("./wallboard-admin-client");
+  return requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken: await remoteClient.ensureIdToken(false), input, fetchImpl: (url, options) => net.fetch(url, options) });
+});
 secureCanonicalHandle("crm:ai-assist", async input => {
   if (!remoteClient || !remoteClient.authState().user) {
     throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });

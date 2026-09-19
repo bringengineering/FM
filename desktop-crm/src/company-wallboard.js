@@ -47,7 +47,7 @@
   if(key==='issues')return `<div class="wb-grid">${card('기한 초과',m.overdue,'외부 대기·개인 지연 원인은 별도 확인')}${card('대표 검수 대기',m.counts.submitted,'제출을 완료 실적으로 집계하지 않습니다')}${card('보완 요청',m.counts.returned,'보완 내용은 원본 업무에서 확인')}</div>`;
   return `<div class="wb-bars">${Object.entries(labels).map(([k,label])=>`<div><span>${label}</span><progress value="${m.counts[k]}" max="${m.total||1}" aria-label="${label} ${m.counts[k]}건"></progress><strong>${m.counts[k]}건</strong></div>`).join('')}</div><p>조회 권한 내 전체 기간 ${m.total}건 · 검수 완료율 ${m.total?Math.round(m.counts.done/m.total*100)+'%':'산정 불가'} · 상태 확인 필요 ${m.unknown}건</p>`;
  }
- function mount(host,{load,isActive=()=>true}){
+ function mount(host,{load,manage,isActive=()=>true}){
   let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='';
   const storageKey='bring.wallboard.playlist.v1';
   let settings=scenes.map(([key])=>({key,enabled:true,seconds:30})),storageError='';
@@ -65,6 +65,8 @@
   function save(){try{host.ownerDocument.defaultView.localStorage.setItem(storageKey,JSON.stringify(settings));storageError='';}catch(_){storageError='설정을 저장하지 못했습니다. 현재 화면에서만 적용됩니다.';}}
   host.innerHTML=`<section class="wb-manager"><header><h2>회사 운영보드</h2><p>로컬 TV 미리보기 · 원격 TV 미연결 · 업무 원문과 고객정보는 표시하지 않습니다.</p></header><div class="wb-controls"><button type="button" data-wb="prev">이전</button><button type="button" data-wb="pause">화면 고정</button><button type="button" data-wb="next">다음</button><label>화면당 초 <input data-wb-seconds type="number" min="10" max="120" value="30"></label><button type="button" data-wb="full">전체화면</button><button type="button" data-wb="refresh">새로고침</button></div><label class="wb-notice-input">공지 미리보기 · 개인정보 입력 금지<input data-wb-notice maxlength="160" placeholder="공지 문구를 입력하세요"></label><section class="wb-stage"><header><div><small>BRING · COMPANY BOARD</small><h1></h1></div><time></time></header><div class="wb-content"></div><footer></footer></section></section>`;
   const stage=host.querySelector('.wb-stage'),content=host.querySelector('.wb-content');
+  let disposeAdmin=()=>{};
+  if(typeof manage==='function'&&globalThis.BringWallboardAdmin){const adminHost=host.ownerDocument.createElement('section');stage.before(adminHost);disposeAdmin=globalThis.BringWallboardAdmin.mount(adminHost,{request:manage});}
   host.querySelector('[data-wb-seconds]').closest('label').remove();
   const editor=host.ownerDocument.createElement('details');editor.className='wb-playlist';editor.open=true;stage.before(editor);
   function edit(){editor.innerHTML=`<summary>화면 편성 · 이 컴퓨터에만 저장</summary><div class="wb-playlist-rows">${settings.map((s,i)=>`<div class="wb-playlist-row"><label><input type="checkbox" data-wb-enabled="${s.key}" ${s.enabled?'checked':''}>${scenes.find(x=>x[0]===s.key)[1]}</label><label>노출 시간 <input type="number" min="10" max="120" value="${s.seconds}" data-wb-duration="${s.key}"> 초</label><button type="button" class="secondary-button" data-wb-up="${s.key}" ${i===0?'disabled':''} aria-label="${scenes.find(x=>x[0]===s.key)[1]} 앞으로 이동">위로</button></div>`).join('')}</div><p>10~120초 · 공지 문구는 저장하지 않습니다.</p>`;}
@@ -80,7 +82,7 @@
   host.addEventListener('click',configure);
   const timer=setInterval(()=>{if(!isActive()){dispose();return;}if(!paused&&current()&&++tick>=current().seconds)next(1);else if(current()?.key==='schedule')draw();else stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');},1000);
   const poll=setInterval(()=>void refresh(),60000);
-  function dispose(){closed=true;clearInterval(timer);clearInterval(poll);host.removeEventListener('click',click);host.removeEventListener('click',configure);host.removeEventListener('change',change);stage.replaceChildren();}
+  function dispose(){closed=true;disposeAdmin();clearInterval(timer);clearInterval(poll);host.removeEventListener('click',click);host.removeEventListener('click',configure);host.removeEventListener('change',change);stage.replaceChildren();}
   void refresh();return dispose;
  }
  return {project,schedule,scene,mount};

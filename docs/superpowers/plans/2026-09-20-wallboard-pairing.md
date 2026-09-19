@@ -21,5 +21,12 @@
 - Payload reads are bounded to 4096 bytes. Enrollment token is accepted only through Authorization and never forwarded for administrator actions. Responses are no-store.
 - No Wrangler bindings/migrations were added and no cloud deployment was performed.
 
+## Administrator UI progress
+- Added `wallboard-admin-ui.js` under the board with registration code/name, refreshable device list and confirmation before revoke.
+- Added canonical IPC/preload bridge. Employee ID token stays in main process; client accepts only list/approve/revoke and a fixed gateway origin, disables redirects, uses timeout and sanitizes returned fields.
+- Registered the bridge as a mutation in the existing marketing restriction policy. Server remains authoritative for administrator permissions.
+- Verified desktop tests: 2157 passed, 2 skipped. Three DOM test files: 27 passed.
+- Actual production registration remains unavailable until backend deployment. Windows TV enrollment/display client is not implemented yet.
+
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
