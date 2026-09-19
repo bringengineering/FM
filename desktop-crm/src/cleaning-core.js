@@ -407,6 +407,34 @@
     });
   }
 
+  function createCleaningCase(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    const type = ["missing", "quality", "late", "attitude", "damage", "loss", "surcharge", "schedule", "misunderstanding", "refund", "legal", "other"].includes(raw.type) ? raw.type : "other";
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.description)) throw cleaningError("CLEANING_CASE_DESCRIPTION_REQUIRED", "CS 내용을 입력해 주세요.", "description");
+    const level = type === "legal" ? 4 : ["damage", "loss", "refund"].includes(type) || roundWon(raw.cost) > 0 ? 3 : ["missing", "quality", "late", "attitude", "surcharge"].includes(type) ? 2 : 1;
+    const createdAt = text(at) || new Date().toISOString();
+    const responseHours = ({ 1: 4, 2: 2, 3: 1, 4: 0.5 })[level];
+    const responseDueAt = new Date(new Date(createdAt).getTime() + responseHours * 60 * 60 * 1000).toISOString();
+    return Object.assign(recordMeta(raw, actor, createdAt, "clc"), {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      customerId: text(raw.customerId),
+      partnerId: text(raw.partnerId),
+      type,
+      level,
+      status: ["open", "investigating", "rework", "refund", "compensation", "resolved"].includes(raw.status) ? raw.status : "open",
+      description: text(raw.description),
+      photoUrls: (Array.isArray(raw.photoUrls) ? raw.photoUrls : []).map(text).filter(Boolean),
+      responsibility: ["bringcare", "partner", "customer", "undetermined"].includes(raw.responsibility) ? raw.responsibility : "undetermined",
+      requestedResolution: text(raw.requestedResolution),
+      resolution: text(raw.resolution),
+      cost: roundWon(raw.cost),
+      owner: text(raw.owner),
+      responseDueAt,
+      resolvedAt: text(raw.resolvedAt)
+    });
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -453,6 +481,7 @@
     applyCleaningEconomics,
     createCleaningPayment,
     createCleaningSettlement,
+    createCleaningCase,
     calculateCleaningDashboard
   });
 });

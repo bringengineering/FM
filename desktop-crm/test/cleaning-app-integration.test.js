@@ -114,3 +114,12 @@ test("cleaning center receives the owner dashboard calculation", async () => {
   assert.match(app, /payments:\s*store\.cleaningPayments/);
   assert.match(app, /settlements:\s*store\.cleaningSettlements/);
 });
+
+test("cleaning CS tickets are created from the order and stored durably", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningCaseEditor\(orderId\)/);
+  assert.match(app, /id="cleaningCaseForm"/);
+  assert.match(app, /Cleaning\.createCleaningCase/);
+  assert.match(app, /store\.cleaningCases\.push/);
+  assert.match(app, /cases:\s*store\.cleaningCases/);
+});

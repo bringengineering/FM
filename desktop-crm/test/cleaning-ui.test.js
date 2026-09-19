@@ -94,3 +94,16 @@ test("renders owner cash quality and payment settlement actions", () => {
   assert.match(detail, /입금 66,000원/);
   assert.match(detail, /data-cleaning-payment-add/);
 });
+
+test("renders CS ticket status and a ticket action on the order", () => {
+  const detail = UI.renderCleaningOrderDetail({
+    order: { id: "cln_1", customerName: "홍길동" }, stages,
+    dispatches: [], reports: [], qcReviews: [], messages: [], payments: [],
+    cases: [{ id: "c1", cleaningOrderId: "cln_1", type: "quality", level: 2, status: "open", description: "욕실 누락" }],
+    writable: true
+  });
+  assert.match(detail, /CS 1건/);
+  assert.match(detail, /LEVEL 2/);
+  assert.match(detail, /욕실 누락/);
+  assert.match(detail, /data-cleaning-case-add="cln_1"/);
+});

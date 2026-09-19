@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements"]
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -538,7 +538,7 @@
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-    "cleaningPayments", "cleaningSettlements"
+    "cleaningPayments", "cleaningSettlements", "cleaningCases"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1994,6 +1994,7 @@
       qcReviews: store.cleaningQcReviews,
       messages: store.cleaningMessages,
       payments: store.cleaningPayments,
+      cases: store.cleaningCases,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -2041,6 +2042,14 @@
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
     const remaining = Math.max(0, Core.money(order.totalAmount) - store.cleaningPayments.filter(item => item.cleaningOrderId === order.id && item.status === "confirmed").reduce((sum, item) => sum + Core.money(item.amount), 0));
     modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 결제 기록</h2><p>${esc(order.customerName)} · 고객 수납만 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPaymentForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">Partner 지급은 별도 주간정산에서 관리합니다. 현재 미수 예상액 ${esc(krw(remaining))}</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>결제구분 *</span><select name="type"><option value="deposit">계약금</option><option value="balance">잔금</option><option value="refund">환불</option><option value="other">기타</option></select></label><label class="field"><span>결제수단 *</span><select name="method"><option value="bank">계좌이체</option><option value="card">카드</option><option value="cash">현금</option><option value="other">기타</option></select></label><label class="field"><span>금액 *</span><input name="amount" type="number" min="1" value="${attr(remaining || order.depositAmount || "")}" required></label><label class="field"><span>상태</span><select name="status"><option value="confirmed">입금확인</option><option value="pending">확인대기</option><option value="failed">실패</option><option value="refunded">환불완료</option></select></label><label class="field"><span>결제업체</span><input name="provider" placeholder="계좌이체 또는 PayApp"></label><label class="field"><span>결제일시</span><input name="paidAt" type="datetime-local"></label><label class="field full"><span>거래번호·메모</span><input name="transactionId" placeholder="거래번호"><textarea name="memo" rows="2"></textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">결제 기록 저장</button></div></form>`;
+    openModal();
+  }
+
+  function cleaningCaseEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    const dispatch = store.cleaningDispatches.filter(item => item.cleaningOrderId === order.id).at(-1);
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>CS 티켓 접수</h2><p>${esc(order.customerName)} · 접수 즉시 LEVEL과 응답기한을 계산합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningCaseForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="form-grid"><label class="field"><span>유형 *</span><select name="type" required><option value="missing">청소누락</option><option value="quality">품질불만</option><option value="late">지각</option><option value="attitude">작업자 태도</option><option value="damage">파손</option><option value="loss">분실</option><option value="surcharge">추가금</option><option value="schedule">일정</option><option value="misunderstanding">고객 오해</option><option value="refund">환불</option><option value="legal">법적 분쟁 가능</option><option value="other">기타</option></select></label><label class="field"><span>책임주체</span><select name="responsibility"><option value="undetermined">조사 중</option><option value="bringcare">브링케어</option><option value="partner">Partner</option><option value="customer">고객</option></select></label><label class="field"><span>요청 해결</span><select name="requestedResolution"><option value="explanation">설명</option><option value="rework">재작업</option><option value="refund">환불</option><option value="compensation">보상</option></select></label><label class="field"><span>예상 비용</span><input name="cost" type="number" min="0" step="1000" value="0"></label><label class="field full"><span>CS 내용 *</span><textarea name="description" rows="4" required></textarea></label><label class="field full"><span>사진 링크</span><textarea name="photoUrls" rows="3" placeholder="한 줄에 하나씩 입력"></textarea></label><label class="field"><span>담당자</span><input name="owner" value="${attr(salesActor().email || "")}"></label></div><div class="info-box">LEVEL 1 고객센터 · LEVEL 2 운영/재작업 · LEVEL 3 관리자/보상 · LEVEL 4 대표/법적분쟁으로 자동 분류합니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">CS 접수</button></div><input type="hidden" name="partnerId" value="${attr(dispatch && dispatch.teamType === "partner" ? dispatch.teamId : "")}"></form>`;
     openModal();
   }
 
@@ -3473,6 +3482,8 @@
     if (cleaningPaymentAdd) { cleaningPaymentEditor(cleaningPaymentAdd.dataset.cleaningPaymentAdd); return; }
     const cleaningSettlementAdd = event.target.closest("[data-cleaning-settlement-add]");
     if (cleaningSettlementAdd) { cleaningSettlementEditor(cleaningSettlementAdd.dataset.cleaningSettlementAdd); return; }
+    const cleaningCaseAdd = event.target.closest("[data-cleaning-case-add]");
+    if (cleaningCaseAdd) { cleaningCaseEditor(cleaningCaseAdd.dataset.cleaningCaseAdd); return; }
     const cleaningOrderNext = event.target.closest("[data-cleaning-order-next]");
     if (cleaningOrderNext) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 주문 단계를 변경할 수 없습니다.", "error");
@@ -4337,6 +4348,26 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningCaseForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        const order = cleaningOrderById(form.dataset.cleaningOrderId);
+        const item = Cleaning.createCleaningCase({
+          cleaningOrderId: form.dataset.cleaningOrderId,
+          customerId: order && order.customerId,
+          partnerId: raw.partnerId,
+          type: raw.type,
+          description: raw.description,
+          photoUrls: String(raw.photoUrls || "").split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
+          responsibility: raw.responsibility,
+          requestedResolution: raw.requestedResolution,
+          cost: raw.cost,
+          owner: raw.owner
+        }, salesActor());
+        store.cleaningCases.push(item);
+        logAudit({ category: "청소", targetType: "CS", targetId: item.id, targetLabel: `LEVEL ${item.level}`, action: "청소 CS 접수", reason: item.type });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast(`LEVEL ${item.level} CS를 접수했습니다.`, item.level >= 3 ? "error" : "success");
+      } catch (error) { showToast(error.message || "CS를 접수하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningPaymentForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {

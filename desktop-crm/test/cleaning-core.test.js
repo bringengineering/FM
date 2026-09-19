@@ -294,3 +294,23 @@ test("calculates owner dashboard with receivables quality and supply warnings", 
   assert.equal(result.activePartners, 1);
   assert.equal(result.marginWarningOrders, 1);
 });
+
+test("creates a cleaning CS ticket with automatic escalation and response SLA", () => {
+  const ticket = Cleaning.createCleaningCase({
+    cleaningOrderId: "cln_1",
+    customerId: "cus_1",
+    partnerId: "clp_1",
+    type: "quality",
+    description: "욕실 청소 누락",
+    responsibility: "partner",
+    requestedResolution: "rework"
+  }, { email: "ops@bring.local" }, "2026-09-20T01:00:00Z");
+  assert.equal(ticket.level, 2);
+  assert.equal(ticket.status, "open");
+  assert.equal(ticket.responseDueAt, "2026-09-20T03:00:00.000Z");
+});
+
+test("escalates damage refund and legal dispute cases", () => {
+  assert.equal(Cleaning.createCleaningCase({ cleaningOrderId: "1", type: "damage", description: "파손", requestedResolution: "compensation" }).level, 3);
+  assert.equal(Cleaning.createCleaningCase({ cleaningOrderId: "1", type: "legal", description: "법적 분쟁 예고" }).level, 4);
+});
