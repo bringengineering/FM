@@ -73,3 +73,24 @@ test("order detail exposes operational actions without pretending a message was 
   assert.match(ui, /data-cleaning-message-add/);
   assert.match(ui, /발송대기|draft/);
 });
+
+test("Partner registration and approval evidence are stored in the cleaning module", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningPartnerEditor\(partnerId\)/);
+  assert.match(app, /id="cleaningPartnerForm"/);
+  assert.match(app, /Cleaning\.createCleaningPartner/);
+  assert.match(app, /store\.cleaningPartners\.push/);
+  assert.match(app, /name="trial1Score"/);
+  assert.match(app, /name="trial2Score"/);
+  assert.match(app, /Cleaning\.approveCleaningPartner/);
+});
+
+test("order form captures variable costs and saves calculated contribution economics", async () => {
+  const app = await source("app.js");
+  for (const name of ["partnerPay", "directLabor", "advertisingCost", "paymentFeeRate", "parkingCost", "suppliesCost", "csReworkCost"]) {
+    assert.match(app, new RegExp('name="' + name + '"'));
+  }
+  const submit = app.match(/else if \(form\.id === "cleaningOrderForm"\) \{([\s\S]*?)\n\s*\} else if/)?.[1] || "";
+  assert.match(submit, /Cleaning\.applyCleaningEconomics/);
+  assert.match(submit, /targetContributionMargin/);
+});

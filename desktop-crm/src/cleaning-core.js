@@ -282,6 +282,84 @@
     });
   }
 
+  function partnerGrade(score) {
+    const value = number(score);
+    if (value >= 90) return "S";
+    if (value >= 80) return "A";
+    if (value >= 70) return "B";
+    return "C";
+  }
+
+  function createCleaningPartner(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.businessName)) throw cleaningError("CLEANING_PARTNER_NAME_REQUIRED", "Partner 상호를 입력해 주세요.", "businessName");
+    if (!text(raw.representative)) throw cleaningError("CLEANING_PARTNER_REPRESENTATIVE_REQUIRED", "대표자명을 입력해 주세요.", "representative");
+    if (!text(raw.phone)) throw cleaningError("CLEANING_PARTNER_PHONE_REQUIRED", "연락처를 입력해 주세요.", "phone");
+    return Object.assign(recordMeta(raw, actor, at, "clp"), {
+      businessName: text(raw.businessName),
+      representative: text(raw.representative),
+      phone: text(raw.phone),
+      businessNumber: text(raw.businessNumber),
+      regions: (Array.isArray(raw.regions) ? raw.regions : []).map(text).filter(Boolean),
+      services: (Array.isArray(raw.services) ? raw.services : []).filter(value => SERVICE_TYPES.includes(value)),
+      businessRegistered: Boolean(raw.businessRegistered),
+      invoiceAvailable: Boolean(raw.invoiceAvailable),
+      insured: Boolean(raw.insured),
+      vehicle: text(raw.vehicle),
+      headcount: Math.max(0, Math.round(number(raw.headcount))),
+      dailyCapacity: Math.max(0, Math.round(number(raw.dailyCapacity))),
+      status: ["applicant", "screening", "trial", "conditional", "approved", "hold", "stop"].includes(raw.status) ? raw.status : "applicant",
+      grade: ["S", "A", "B", "C"].includes(raw.grade) ? raw.grade : "C",
+      trialAverage: roundRate(raw.trialAverage),
+      probationEndsAt: text(raw.probationEndsAt),
+      controlReason: text(raw.controlReason)
+    });
+  }
+
+  function approveCleaningPartner(source, trials, actor, at) {
+    const partner = createCleaningPartner(source, actor, source && source.createdAt);
+    const validTrials = (Array.isArray(trials) ? trials : []).filter(item => item && item.paid === true);
+    if (validTrials.length < 2) throw cleaningError("CLEANING_PARTNER_TRIALS_REQUIRED", "유상 시험작업 2건이 필요합니다.", "trials");
+    if (validTrials.some(item => item.majorViolation === true)) {
+      throw cleaningError("CLEANING_PARTNER_MAJOR_VIOLATION", "중대 위반이 있는 Partner는 승인할 수 없습니다.", "trials");
+    }
+    const average = validTrials.reduce((sum, item) => sum + number(item.score), 0) / validTrials.length;
+    if (average < 80) throw cleaningError("CLEANING_PARTNER_TRIAL_SCORE_LOW", "시험작업 평균 80점 이상이 필요합니다.", "trials");
+    const approvedAt = new Date(text(at) || new Date().toISOString());
+    const probationEndsAt = new Date(approvedAt.getTime());
+    probationEndsAt.setUTCMonth(probationEndsAt.getUTCMonth() + 3);
+    return Object.assign({}, partner, {
+      status: "conditional",
+      grade: partnerGrade(average),
+      trialAverage: roundRate(average),
+      approvedAt: approvedAt.toISOString(),
+      probationEndsAt: probationEndsAt.toISOString(),
+      updatedAt: approvedAt.toISOString(),
+      updatedBy: text(actor && actor.email)
+    });
+  }
+
+  function changeCleaningPartnerControl(source, status, reason, actor, at) {
+    if (!["hold", "stop", "approved"].includes(status)) throw cleaningError("CLEANING_PARTNER_CONTROL_INVALID", "Partner 통제 상태가 올바르지 않습니다.", "status");
+    if (["hold", "stop"].includes(status) && !text(reason)) throw cleaningError("CLEANING_PARTNER_CONTROL_REASON_REQUIRED", "통제 사유를 입력해 주세요.", "reason");
+    return Object.assign({}, source || {}, {
+      status,
+      controlReason: text(reason),
+      updatedAt: text(at) || new Date().toISOString(),
+      updatedBy: text(actor && actor.email)
+    });
+  }
+
+  function applyCleaningEconomics(source, costs, targetMargin) {
+    const rawCosts = costs && typeof costs === "object" ? costs : {};
+    const result = calculateCleaningQuote(Object.assign({}, rawCosts, { totalAmount: source && source.totalAmount }));
+    const target = number(targetMargin) || 30;
+    return Object.assign({}, source || {}, rawCosts, result, {
+      targetContributionMargin: target,
+      marginStatus: result.contributionMargin >= target ? "on_target" : "below_target"
+    });
+  }
+
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
@@ -296,6 +374,11 @@
     createCleaningDispatch,
     createCleaningReport,
     createCleaningQcReview,
-    createCleaningMessage
+    createCleaningMessage,
+    partnerGrade,
+    createCleaningPartner,
+    approveCleaningPartner,
+    changeCleaningPartnerControl,
+    applyCleaningEconomics
   });
 });

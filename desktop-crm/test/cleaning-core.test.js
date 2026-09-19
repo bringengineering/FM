@@ -164,3 +164,76 @@ test("creates a durable message log from an approved template", () => {
   assert.match(message.body, /현장 추가금이 없습니다/);
   assert.equal(message.createdBy, "owner@bring.local");
 });
+
+test("creates a probationary Partner and blocks approval before two paid trials", () => {
+  const partner = Cleaning.createCleaningPartner({
+    businessName: "원주클린",
+    representative: "김대표",
+    phone: "010-1111-2222",
+    regions: ["원주"],
+    services: ["move_in"],
+    businessRegistered: true,
+    invoiceAvailable: true
+  }, { email: "owner@bring.local" }, "2026-09-20T00:00:00Z");
+  assert.equal(partner.status, "applicant");
+  assert.equal(partner.grade, "C");
+  assert.throws(
+    () => Cleaning.approveCleaningPartner(partner, [{ paid: true, score: 90 }]),
+    error => error && error.code === "CLEANING_PARTNER_TRIALS_REQUIRED"
+  );
+});
+
+test("approves a Partner after two paid trials averaging at least 80 without violations", () => {
+  const approved = Cleaning.approveCleaningPartner(
+    Cleaning.createCleaningPartner({
+      businessName: "원주클린",
+      representative: "김대표",
+      phone: "010-1111-2222",
+      regions: ["원주"],
+      services: ["move_in"],
+      businessRegistered: true
+    }),
+    [
+      { paid: true, score: 82, majorViolation: false },
+      { paid: true, score: 88, majorViolation: false }
+    ],
+    { email: "owner@bring.local" },
+    "2026-09-25T00:00:00Z"
+  );
+  assert.equal(approved.status, "conditional");
+  assert.equal(approved.trialAverage, 85);
+  assert.equal(approved.probationEndsAt, "2026-12-25T00:00:00.000Z");
+});
+
+test("grades Partner performance and separates performance from HOLD STOP controls", () => {
+  assert.equal(Cleaning.partnerGrade(95), "S");
+  assert.equal(Cleaning.partnerGrade(85), "A");
+  assert.equal(Cleaning.partnerGrade(75), "B");
+  assert.equal(Cleaning.partnerGrade(60), "C");
+  const held = Cleaning.changeCleaningPartnerControl(
+    { id: "clp_1", status: "approved", grade: "A" },
+    "hold",
+    "사진 조작 의심"
+  );
+  assert.equal(held.status, "hold");
+  assert.equal(held.grade, "A");
+});
+
+test("attaches unit economics to an order and warns below the target margin", () => {
+  const order = Cleaning.applyCleaningEconomics(
+    { id: "cln_1", totalAmount: 330000 },
+    {
+      partnerPay: 180000,
+      directLabor: 0,
+      advertisingCost: 10000,
+      paymentFeeRate: 3.5,
+      parkingCost: 5000,
+      suppliesCost: 12000,
+      csReworkCost: 0
+    },
+    30
+  );
+  assert.equal(order.contributionProfit, 81450);
+  assert.equal(order.contributionMargin, 27.15);
+  assert.equal(order.marginStatus, "below_target");
+});

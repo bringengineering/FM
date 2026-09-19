@@ -1936,6 +1936,7 @@
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       orders: store.cleaningOrders,
+      partners: store.cleaningPartners,
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
@@ -1957,6 +1958,14 @@
           <label class="field full"><span>현장 주소 *</span><input name="address" value="${attr(order.address || "")}" required></label>
           <label class="field"><span>총 결제금액</span><input name="totalAmount" type="number" min="0" step="1000" value="${attr(order.totalAmount || "")}"></label>
           <label class="field"><span>계약금</span><input name="depositAmount" type="number" min="0" step="1000" value="${attr(order.depositAmount || "")}"></label>
+          <label class="field"><span>Partner 지급액</span><input name="partnerPay" type="number" min="0" step="1000" value="${attr(order.partnerPay || "")}"></label>
+          <label class="field"><span>직영 인건비</span><input name="directLabor" type="number" min="0" step="1000" value="${attr(order.directLabor || "")}"></label>
+          <label class="field"><span>광고비</span><input name="advertisingCost" type="number" min="0" step="1000" value="${attr(order.advertisingCost || "")}"></label>
+          <label class="field"><span>결제수수료율</span><input name="paymentFeeRate" type="number" min="0" max="100" step="0.1" value="${attr(order.paymentFeeRate ?? 3.5)}"></label>
+          <label class="field"><span>주차비</span><input name="parkingCost" type="number" min="0" step="1000" value="${attr(order.parkingCost || "")}"></label>
+          <label class="field"><span>소모품비</span><input name="suppliesCost" type="number" min="0" step="1000" value="${attr(order.suppliesCost || "")}"></label>
+          <label class="field"><span>CS·재작업비</span><input name="csReworkCost" type="number" min="0" step="1000" value="${attr(order.csReworkCost || "")}"></label>
+          <label class="field"><span>목표 공헌이익률</span><input name="targetContributionMargin" type="number" min="0" max="100" step="0.1" value="${attr(order.targetContributionMargin || 30)}"></label>
           <label class="field full"><span>작업범위 *</span><textarea name="scope" rows="3" required>${esc(order.scope || "")}</textarea></label>
           <label class="field full"><span>제외범위</span><textarea name="exclusions" rows="2">${esc(order.exclusions || "")}</textarea></label>
         </div>
@@ -1978,6 +1987,14 @@
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
+  }
+
+  function cleaningPartnerEditor(partnerId) {
+    ensureCleaningStore();
+    const partner = store.cleaningPartners.find(item => item && item.id === String(partnerId || "")) || {};
+    const checked = value => value ? " checked" : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${partner.id ? "Cleaning Partner 수정" : "Cleaning Partner 등록"}</h2><p>지원정보와 유상 시험작업 2건을 함께 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPartnerForm" class="modal-body" data-cleaning-partner-id="${attr(partner.id || "")}"><div class="form-grid"><label class="field"><span>상호 *</span><input name="businessName" value="${attr(partner.businessName || "")}" required></label><label class="field"><span>대표자 *</span><input name="representative" value="${attr(partner.representative || "")}" required></label><label class="field"><span>연락처 *</span><input name="phone" value="${attr(partner.phone || "")}" required></label><label class="field"><span>사업자번호</span><input name="businessNumber" value="${attr(partner.businessNumber || "")}"></label><label class="field"><span>활동지역</span><input name="regions" value="${attr((partner.regions || []).join(", "))}" placeholder="원주, 횡성"></label><label class="field"><span>인원</span><input name="headcount" type="number" min="0" value="${attr(partner.headcount || "")}"></label><label class="field"><span>일 최대건수</span><input name="dailyCapacity" type="number" min="0" value="${attr(partner.dailyCapacity || "")}"></label><label class="field"><span>차량</span><input name="vehicle" value="${attr(partner.vehicle || "")}"></label><label class="field"><span><input name="businessRegistered" type="checkbox"${checked(partner.businessRegistered)}> 사업자등록 확인</span></label><label class="field"><span><input name="invoiceAvailable" type="checkbox"${checked(partner.invoiceAvailable)}> 세금계산서 가능</span></label><label class="field"><span><input name="insured" type="checkbox"${checked(partner.insured)}> 배상책임보험</span></label><label class="field"><span><input name="moveInService" type="checkbox"${checked((partner.services || []).includes("move_in"))}> 입주청소 가능</span></label><label class="field"><span><input name="commonAreaService" type="checkbox"${checked((partner.services || []).includes("common_area"))}> 공용부청소 가능</span></label><label class="field"><span>유상 시험작업 1 점수</span><input name="trial1Score" type="number" min="0" max="100"></label><label class="field"><span>유상 시험작업 2 점수</span><input name="trial2Score" type="number" min="0" max="100"></label><label class="field"><span><input name="approveAfterTrials" type="checkbox"> 2건 통과 시 조건부 승인</span></label></div><div class="info-box">시험작업 2건 평균 80점 이상이며 중대 위반이 없어야 조건부 승인됩니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">Partner 저장</button></div></form>`;
+    openModal();
   }
 
   function cleaningDispatchEditor(orderId) {
@@ -3401,6 +3418,8 @@
       renderCleaningOrderDrawer(cleaningOrderOpen.dataset.cleaningOrderOpen);
       return;
     }
+    const cleaningPartnerOpen = event.target.closest("[data-cleaning-partner-open]");
+    if (cleaningPartnerOpen) { cleaningPartnerEditor(cleaningPartnerOpen.dataset.cleaningPartnerOpen); return; }
     const cleaningOrderEdit = event.target.closest("[data-cleaning-order-edit]");
     if (cleaningOrderEdit) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 수정할 수 없습니다.", "error");
@@ -4073,6 +4092,10 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 등록할 수 없습니다.", "error");
       cleaningOrderEditor("");
     }
+    else if (action === "new-cleaning-partner") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 Partner를 등록할 수 없습니다.", "error");
+      cleaningPartnerEditor("");
+    }
     else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
     else if (action === "reconnect-field") {
       fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 다시 연결하고 있습니다.", ready: false });
@@ -4276,6 +4299,37 @@
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningPartnerForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        ensureCleaningStore();
+        const existing = store.cleaningPartners.find(item => item && item.id === form.dataset.cleaningPartnerId);
+        let item = Cleaning.createCleaningPartner(Object.assign({}, existing || {}, {
+          id: existing?.id,
+          businessName: raw.businessName,
+          representative: raw.representative,
+          phone: raw.phone,
+          businessNumber: raw.businessNumber,
+          regions: String(raw.regions || "").split(",").map(value => value.trim()).filter(Boolean),
+          services: [form.elements.moveInService.checked ? "move_in" : "", form.elements.commonAreaService.checked ? "common_area" : ""].filter(Boolean),
+          businessRegistered: form.elements.businessRegistered.checked,
+          invoiceAvailable: form.elements.invoiceAvailable.checked,
+          insured: form.elements.insured.checked,
+          headcount: raw.headcount,
+          dailyCapacity: raw.dailyCapacity,
+          vehicle: raw.vehicle
+        }), salesActor(), existing?.createdAt);
+        if (form.elements.approveAfterTrials.checked) {
+          item = Cleaning.approveCleaningPartner(item, [
+            { paid: true, score: Number(raw.trial1Score), majorViolation: false },
+            { paid: true, score: Number(raw.trial2Score), majorViolation: false }
+          ], salesActor());
+        }
+        if (existing) store.cleaningPartners[store.cleaningPartners.findIndex(value => value.id === existing.id)] = item;
+        else store.cleaningPartners.push(item);
+        logAudit({ category: "청소", targetType: "Cleaning Partner", targetId: item.id, targetLabel: item.businessName, action: existing ? "Partner 수정" : "Partner 등록", reason: item.status });
+        scheduleSave(); closeModal(); renderCleaningCenter(); showToast("Cleaning Partner를 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "Partner를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningDispatchForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {
@@ -4382,7 +4436,16 @@
           owner: existing?.owner || salesActorName(),
           inquiryAt: existing?.inquiryAt || new Date().toISOString()
         });
-        const item = Cleaning.createCleaningOrder(values, actor, existing?.createdAt || new Date().toISOString());
+        let item = Cleaning.createCleaningOrder(values, actor, existing?.createdAt || new Date().toISOString());
+        item = Cleaning.applyCleaningEconomics(item, {
+          partnerPay: Number(raw.partnerPay) || 0,
+          directLabor: Number(raw.directLabor) || 0,
+          advertisingCost: Number(raw.advertisingCost) || 0,
+          paymentFeeRate: Number(raw.paymentFeeRate) || 0,
+          parkingCost: Number(raw.parkingCost) || 0,
+          suppliesCost: Number(raw.suppliesCost) || 0,
+          csReworkCost: Number(raw.csReworkCost) || 0
+        }, Number(raw.targetContributionMargin) || 30);
         item.updatedAt = new Date().toISOString();
         item.updatedBy = actor.email || "";
         if (existing) store.cleaningOrders[store.cleaningOrders.findIndex(order => order.id === existing.id)] = item;

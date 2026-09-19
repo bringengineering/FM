@@ -48,3 +48,29 @@ test("renders order detail with scope financial and QC context", () => {
   assert.match(html, /94점/);
   assert.match(html, /메시지 1건/);
 });
+
+test("renders Partner readiness and unit economics without mixing control status with grade", () => {
+  const center = UI.renderCleaningCenter({
+    stages,
+    orders: [],
+    partners: [
+      { id: "clp_1", businessName: "원주클린", representative: "김대표", regions: ["원주"], services: ["move_in"], status: "conditional", grade: "A", trialAverage: 85 }
+    ],
+    kpis: {},
+    selectedStage: "all",
+    writable: true
+  });
+  assert.match(center, /Partner 운영/);
+  assert.match(center, /원주클린/);
+  assert.match(center, /조건부 승인/);
+  assert.match(center, /등급 A/);
+  assert.match(center, /data-action="new-cleaning-partner"/);
+
+  const detail = UI.renderCleaningOrderDetail({
+    order: { id: "cln_1", customerName: "홍길동", contributionProfit: 81450, contributionMargin: 27.15, targetContributionMargin: 30, marginStatus: "below_target" },
+    stages, dispatches: [], reports: [], qcReviews: [], messages: [], writable: true
+  });
+  assert.match(detail, /공헌이익/);
+  assert.match(detail, /81,450원/);
+  assert.match(detail, /목표 미달/);
+});
