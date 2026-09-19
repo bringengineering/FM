@@ -314,3 +314,17 @@ test("escalates damage refund and legal dispute cases", () => {
   assert.equal(Cleaning.createCleaningCase({ cleaningOrderId: "1", type: "damage", description: "파손", requestedResolution: "compensation" }).level, 3);
   assert.equal(Cleaning.createCleaningCase({ cleaningOrderId: "1", type: "legal", description: "법적 분쟁 예고" }).level, 4);
 });
+
+test("calculates the recommended customer-friendly cancellation outcome", () => {
+  assert.deepEqual(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 80 }), { refundRate: 100, refundAmount: 330000, feeAmount: 0, approvalRequired: false, reasonCode: "CUSTOMER_D3_PLUS" });
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 30 }).refundAmount, 297000);
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 5 }).refundAmount, 231000);
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "partner", hoursBeforeService: 5 }).refundRate, 100);
+});
+
+test("creates an auditable cancellation request without pretending the refund was paid", () => {
+  const item = Cleaning.createCleaningCancellation({ cleaningOrderId: "cln_1", paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 30, reason: "이사일 변경" });
+  assert.equal(item.status, "requested");
+  assert.equal(item.refundAmount, 297000);
+  assert.equal(item.refundPaidAt, "");
+});

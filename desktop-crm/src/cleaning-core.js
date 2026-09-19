@@ -435,6 +435,44 @@
     });
   }
 
+  function calculateCleaningCancellation(source) {
+    const raw = source && typeof source === "object" ? source : {};
+    const paidAmount = Math.max(0, roundWon(raw.paidAmount));
+    const cancelledBy = ["customer", "bringcare", "partner", "weather", "other"].includes(raw.cancelledBy) ? raw.cancelledBy : "customer";
+    const hours = number(raw.hoursBeforeService);
+    let refundRate = 100;
+    let reasonCode = "PROVIDER_OR_FORCE_MAJEURE";
+    let approvalRequired = cancelledBy === "other";
+    if (cancelledBy === "customer") {
+      if (hours >= 72) { refundRate = 100; reasonCode = "CUSTOMER_D3_PLUS"; }
+      else if (hours >= 24) { refundRate = 90; reasonCode = "CUSTOMER_D1_TO_D3"; }
+      else if (hours >= 0) { refundRate = 70; reasonCode = "CUSTOMER_SAME_DAY"; approvalRequired = true; }
+      else { refundRate = 0; reasonCode = "SERVICE_STARTED"; approvalRequired = true; }
+    }
+    const refundAmount = roundWon(paidAmount * refundRate / 100);
+    return { refundRate, refundAmount, feeAmount: paidAmount - refundAmount, approvalRequired, reasonCode };
+  }
+
+  function createCleaningCancellation(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.reason)) throw cleaningError("CLEANING_CANCELLATION_REASON_REQUIRED", "취소·환불 사유를 입력해 주세요.", "reason");
+    const quote = calculateCleaningCancellation(raw);
+    return Object.assign(recordMeta(raw, actor, at, "clx"), quote, {
+      cleaningOrderId: text(raw.cleaningOrderId),
+      cancelledBy: ["customer", "bringcare", "partner", "weather", "other"].includes(raw.cancelledBy) ? raw.cancelledBy : "customer",
+      hoursBeforeService: number(raw.hoursBeforeService),
+      paidAmount: Math.max(0, roundWon(raw.paidAmount)),
+      reason: text(raw.reason),
+      evidenceUrls: (Array.isArray(raw.evidenceUrls) ? raw.evidenceUrls : []).map(text).filter(Boolean),
+      status: ["requested", "approved", "rejected", "paid"].includes(raw.status) ? raw.status : "requested",
+      approvedAt: text(raw.approvedAt),
+      approvedBy: text(raw.approvedBy),
+      refundPaidAt: text(raw.refundPaidAt),
+      policyVersion: text(raw.policyVersion) || "BRING-CARE-CANCEL-v0.1"
+    });
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -482,6 +520,8 @@
     createCleaningPayment,
     createCleaningSettlement,
     createCleaningCase,
+    calculateCleaningCancellation,
+    createCleaningCancellation,
     calculateCleaningDashboard
   });
 });
