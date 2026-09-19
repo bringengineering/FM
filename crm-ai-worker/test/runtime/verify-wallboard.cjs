@@ -8,7 +8,7 @@ const snapshot={model:{counts:{assigned:1,doing:0,submitted:0,returned:0,done:0}
 (async()=>{
  const persist=await mkdtemp(path.join(os.tmpdir(),'bring-wallboard-runtime-'));
  let server;
- const start=()=>unstable_dev(path.join(__dirname,'wallboard.fixture.js'),{config:path.join(__dirname,'wrangler.toml'),local:true,ip:'127.0.0.1',port:0,persistTo:persist,experimental:{disableExperimentalWarning:true}});
+ const start=()=>unstable_dev(path.join(__dirname,'wallboard.fixture.js'),{config:path.join(__dirname,'wrangler.toml'),local:true,ip:'127.0.0.1',port:0,persistTo:persist,experimental:{disableExperimentalWarning:true,watch:false}});
  const call=async(action,input={},token='local-test-admin')=>{
   const res=await server.fetch('/v1/wallboard/'+action,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify(input)});
   return {status:res.status,body:await res.json()};
@@ -22,9 +22,10 @@ const snapshot={model:{counts:{assigned:1,doing:0,submitted:0,returned:0,done:0}
   const device=polls.find(x=>x.status===200).body;
   const publications=await Promise.all([call('publish',{snapshot,expectedVersion:0}),call('publish',{snapshot,expectedVersion:0})]);
   assert.deepEqual(publications.map(x=>x.status).sort(),[200,409]);
-  assert.equal((await call('display',{},device.deviceToken)).body.board.version,1);
+  assert.equal((await call('display',{clientVersion:'0.1.2'},device.deviceToken)).body.board.version,1);
   await server.stop();server=null;
   server=await start();
+  assert.equal((await call('list')).body.devices[0].clientVersion,'0.1.2');
   assert.equal((await call('display',{},device.deviceToken)).body.board.version,1);
   assert.equal((await call('revoke',{deviceId:device.deviceId})).status,200);
   assert.equal((await call('display',{},device.deviceToken)).status,401);
