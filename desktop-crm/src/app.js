@@ -624,6 +624,29 @@
     if (currentSync.updatedAt) saved.textContent = `최신 반영 ${dateText(currentSync.updatedAt)}`;
   }
 
+  function notifyNewCleaningLeads(previousStore, nextStore) {
+    const previousIds = new Set((previousStore?.marketingLeadInbox || [])
+      .filter(item => item && ["new", "contact_required"].includes(item.status || "new"))
+      .map(item => String(item.id || item.requestId || "")));
+    const added = (nextStore?.marketingLeadInbox || []).filter(item => item
+      && ["new", "contact_required"].includes(item.status || "new")
+      && !previousIds.has(String(item.id || item.requestId || "")));
+    if (!added.length) return;
+    const lead = added[added.length - 1];
+    const summary = added.length > 1
+      ? `${added.length}건이 새로 접수됐습니다.`
+      : `${lead.name || "고객"} · ${lead.phone || "연락처 확인 필요"}`;
+    showToast(`새 견적 문의: ${summary}`, "success");
+    if (typeof Notification === "function" && Notification.permission === "granted") {
+      const notification = new Notification("브링케어 새 견적 문의", { body: summary, silent: false });
+      notification.onclick = () => {
+        currentView = "cleaningCenter";
+        render();
+        window.focus();
+      };
+    }
+  }
+
   function applyRemoteStore(data) {
     const next = preserveRendererOverlays(data, store);
     if (saveTimer || saveInFlight || modal.classList.contains("open") || drawer.classList.contains("open") || confirmationLayer.classList.contains("open")) {
@@ -633,6 +656,7 @@
     const currentTime = Date.parse(store.updatedAt || 0) || 0;
     const nextTime = Date.parse(next.updatedAt || 0) || 0;
     if (nextTime && currentTime && nextTime < currentTime) return;
+    notifyNewCleaningLeads(store, next);
     store = next;
     ensureSalesStore(store);
     synchronizedStore = cloneStore(next);

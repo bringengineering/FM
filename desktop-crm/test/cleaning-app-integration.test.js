@@ -223,3 +223,12 @@ test("website estimate inbox prefills a cleaning order and closes the lead after
   assert.match(submit, /lead\.status\s*=\s*"converted"/);
   assert.match(submit, /lead\.convertedOrderId\s*=\s*item\.id/);
 });
+
+test("new website estimate leads alert the signed-in operator on remote arrival", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function notifyNewCleaningLeads\(previousStore, nextStore\)/);
+  assert.match(app, /새 견적 문의/);
+  assert.match(app, /showToast\(/);
+  assert.match(app, /new Notification\(/);
+  assert.match(app, /function applyRemoteStore\(data\)[\s\S]*?notifyNewCleaningLeads\(store, next\)/);
+});
