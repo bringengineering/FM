@@ -32,6 +32,14 @@ test('administrator UI labels web auto updates and limits EXE controls to electr
  assert.match(source,/웹 자동반영/);assert.match(source,/clientType==='electron'/);assert.match(source,/\/tv/);
  assert.match(source,/수신 게시 버전/);assert.match(source,/연결됨/);
 });
+test('background CRM updates do not remount the company wallboard while an approval code is being entered',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
+ const section=(startText,endText)=>{const start=source.indexOf(startText),end=source.indexOf(endText,start);assert.ok(start>=0&&end>start,`${startText} implementation should exist`);return source.slice(start,end);};
+ const guarded=/if \(currentView !== "companyWallboard"\) render\(\);/;
+ assert.match(section('function applyCustomerPhotos(', 'async function refreshCustomerPhotos('),guarded);
+ assert.match(section('async function refreshRendererOverlays(', 'async function refreshDriveImportCandidates('),guarded);
+ assert.match(section('function applyRemoteStore(data) {', 'function flushPendingRemote()'),guarded);
+});
 test('administrator can schedule and cancel one exact TV version',async()=>{
  const deviceId='11111111-1111-4111-8111-111111111111',calls=[];
  const fetchImpl=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return Response.json({ok:true,status:url.endsWith('schedule-update')?'scheduled':'cancelled',targetVersion:url.endsWith('schedule-update')?'0.2.0':undefined});};
