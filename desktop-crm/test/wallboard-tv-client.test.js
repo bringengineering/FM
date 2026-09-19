@@ -1,5 +1,9 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {createTvClient}=require('../src/wallboard-tv-client');
+test('TV sends its installed version with authenticated display requests',async()=>{
+ let sent;const client=createTvClient({clientVersion:'0.1.2',vault:{read:async()=>'b'.repeat(64)},request:async(...args)=>{sent=args;return {board:null};}});
+ await client.display();assert.deepEqual(sent,['display','b'.repeat(64),{clientVersion:'0.1.2'}]);
+});
 test('TV enrollment keeps credentials behind the bridge and revocation clears them',async()=>{
  let saved=null;let revoked=false;const client=createTvClient({vault:{read:async()=>saved,write:async value=>{saved=value;},clear:async()=>{saved=null;}},request:async(action,token)=>{
   if(action==='start')return {code:'ABC12345',pendingToken:'a'.repeat(64),expiresAt:Date.now()+600000};

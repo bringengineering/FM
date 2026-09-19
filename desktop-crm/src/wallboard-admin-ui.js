@@ -24,6 +24,7 @@
      time.dateTime=date.toISOString();time.textContent=date.toLocaleString('ko-KR');seen.append(time);
     }else seen.textContent='서버 접속 기록 없음';
     row.append(seen);
+    const versionLabel=host.ownerDocument.createElement('small');versionLabel.textContent='TV 버전 '+(device.clientVersion||'미확인');row.append(versionLabel);
     if(!device.revokedAt){const button=host.ownerDocument.createElement('button');button.type='button';button.className='secondary-button';button.textContent='연결 해제';button.dataset.device=device.id;row.append(button);}list.append(row);
    }
    if(!data.devices.length)list.textContent='등록된 TV가 없습니다.';

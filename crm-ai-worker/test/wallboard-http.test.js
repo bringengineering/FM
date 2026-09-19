@@ -8,6 +8,23 @@ function setup(email='admin@example.com',verified=true){
  const worker=createWorker({fetchImpl:async()=>Response.json({users:[{localId:'verified-user',email,emailVerified:verified}]})});
  return {worker,env,forwarded};
 }
+test('device version is validated, persisted and returned only to administrators',async()=>{
+ let state;const storage={transaction:async fn=>{const result=await fn({get:async()=>structuredClone(state),put:async(_key,data)=>{state=structuredClone(data);}});return result;}};
+ const f=setup();f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});
+ const start=await (await f.worker.fetch(req('start'),f.env)).json();
+ await f.worker.fetch(req('approve',{code:start.code,name:'TV'}),f.env);
+ const device=await (await f.worker.fetch(req('poll',{},start.pendingToken),f.env)).json();
+ const read=await f.worker.fetch(req('display',{clientVersion:'0.1.2'},device.deviceToken),f.env);
+ assert.equal(read.status,200);
+ assert.equal(JSON.stringify(await read.json()).includes('clientVersion'),false);
+ let list=await (await f.worker.fetch(req('list'),f.env)).json();
+ assert.equal(list.devices[0].clientVersion,'0.1.2');
+ assert.equal((await f.worker.fetch(req('display',{clientVersion:'<script>'},device.deviceToken),f.env)).status,400);
+ assert.equal((await f.worker.fetch(req('display',{},device.deviceToken),f.env)).status,200);
+ list=await (await f.worker.fetch(req('list'),f.env)).json();assert.equal(list.devices[0].clientVersion,'0.1.2');
+ await f.worker.fetch(req('revoke',{deviceId:device.deviceId}),f.env);
+ assert.equal((await f.worker.fetch(req('display',{clientVersion:'0.1.3'},device.deviceToken),f.env)).status,401);
+});
 test('wallboard routes fail closed without explicit enablement, storage or limiter',async()=>{
  const {worker,env}=setup();
  assert.equal((await worker.fetch(req('start'),{})).status,503);

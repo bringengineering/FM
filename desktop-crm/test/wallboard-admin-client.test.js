@@ -1,5 +1,9 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {requestWallboardAdmin}=require('../src/wallboard-admin-client');
+test('administrator receives validated device version with unknown fallback',async()=>{
+ const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:0,devices:[{id:'a',name:'TV',clientVersion:'0.1.2'},{id:'b',clientVersion:'<script>'}]})});
+ assert.equal(data.devices[0].clientVersion,'0.1.2');assert.equal(data.devices[1].clientVersion,null);
+});
 test('publication carries revision and exposes a conflict instead of pretending success',async()=>{
  const args={baseUrl:'https://gateway.example',idToken:'secret',input:{action:'publish',snapshot:{notice:'test'},expectedVersion:2}};
  const result=await requestWallboardAdmin({...args,fetchImpl:async()=>Response.json({ok:true,version:3,publishedAt:1000})});assert.equal(result.version,3);

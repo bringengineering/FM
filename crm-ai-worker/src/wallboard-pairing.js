@@ -64,11 +64,12 @@ export function createPairingService({repository,now=Date.now}){
    if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
    return run(s=>{if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};return {version:s.board.version,publishedAt:s.board.publishedAt};});
   },
-  async readBoard(deviceToken){
+  async readBoard(deviceToken,clientVersion){
+   if(clientVersion!==undefined&&(typeof clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(clientVersion)))throw Object.assign(new Error('INVALID_INPUT'),{code:'INVALID_INPUT'});
    if(typeof deviceToken!=='string'||!/^[a-f0-9]{64}$/.test(deviceToken))fail('INVALID_TOKEN');
    const digest=await hash(deviceToken);
-   return run(s=>{const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};device.lastSeenAt=now();return {board:s.board?structuredClone(s.board):null};});
+   return run(s=>{const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};device.lastSeenAt=now();if(clientVersion!==undefined)device.clientVersion=clientVersion;return {board:s.board?structuredClone(s.board):null};});
   },
-  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt})=>({id,name,createdAt,lastSeenAt,revokedAt}))}));}
+  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt,clientVersion})=>({id,name,createdAt,lastSeenAt,revokedAt,clientVersion:clientVersion||null}))}));}
  };
 }

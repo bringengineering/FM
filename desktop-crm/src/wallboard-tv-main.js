@@ -9,9 +9,9 @@ let window;
 app.whenReady().then(async()=>{
  const credential=path.join(app.getPath('userData'),'device.bin');
  const vault=createWindowsVault({credential,safeStorage});
- const client=createTvClient({vault,request:async(action,token)=>{
+ const client=createTvClient({vault,clientVersion:app.getVersion(),request:async(action,token,input={})=>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
-  try{const response=await net.fetch(endpoint+action,{method:'POST',redirect:'error',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:'{}',signal:controller.signal});const data=await response.json();if(!response.ok||data.ok!==true)throw Object.assign(new Error('TV 서버 연결을 확인해 주세요.'),{code:data.code});return data;}finally{clearTimeout(timer);}
+  try{const response=await net.fetch(endpoint+action,{method:'POST',redirect:'error',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:JSON.stringify(input),signal:controller.signal});const data=await response.json();if(!response.ok||data.ok!==true)throw Object.assign(new Error('TV 서버 연결을 확인해 주세요.'),{code:data.code});return data;}finally{clearTimeout(timer);}
  }});
  window=new BrowserWindow({width:1280,height:720,autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'wallboard-tv-preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());

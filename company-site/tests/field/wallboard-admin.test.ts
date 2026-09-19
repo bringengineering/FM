@@ -5,12 +5,14 @@ test('device list distinguishes last server access from actual screen verificati
  w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
  const host=w.document.querySelector('main'),seen=Date.parse('2026-09-20T01:23:00Z');
  const stop=w.BringWallboardAdmin.mount(host,{request:async()=>({version:1,devices:[
-  {id:'a',name:'회의실',lastSeenAt:seen},{id:'b',name:'미접속',lastSeenAt:null},
+  {id:'a',name:'회의실',lastSeenAt:seen,clientVersion:'0.1.2'},{id:'b',name:'미접속',lastSeenAt:null},
   {id:'c',name:'해제 TV',lastSeenAt:seen,revokedAt:seen+1}
  ]})});
  await new Promise(r=>setTimeout(r,0));
  const rows=host.querySelectorAll('.wb-playlist-row');
  expect(rows[0].textContent).toContain('마지막 서버 접속');
+ expect(rows[0].textContent).toContain('TV 버전 0.1.2');
+ expect(rows[1].textContent).toContain('TV 버전 미확인');
  expect(rows[0].querySelector('time')?.dateTime).toBe(new Date(seen).toISOString());
  expect(rows[1].textContent).toContain('서버 접속 기록 없음');
  expect(rows[2].textContent).toContain('해제됨');

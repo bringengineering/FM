@@ -16,7 +16,7 @@ async function requestWallboardAdmin({baseUrl,idToken,input,fetchImpl=globalThis
   if(action==='list'){
    if(!Array.isArray(data.devices)||data.devices.length>1000)fail('WALLBOARD_UNAVAILABLE');
    if(!Number.isSafeInteger(data.version)||data.version<0)fail('WALLBOARD_UNAVAILABLE');
-   return {ok:true,version:data.version,devices:data.devices.map(d=>({id:String(d.id||''),name:String(d.name||'').slice(0,60),createdAt:Number(d.createdAt)||0,lastSeenAt:Number(d.lastSeenAt)||null,revokedAt:Number(d.revokedAt)||null}))};
+   return {ok:true,version:data.version,devices:data.devices.map(d=>({id:String(d.id||''),name:String(d.name||'').slice(0,60),createdAt:Number(d.createdAt)||0,lastSeenAt:Number(d.lastSeenAt)||null,revokedAt:Number(d.revokedAt)||null,clientVersion:typeof d.clientVersion==='string'&&/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(d.clientVersion)?d.clientVersion:null}))};
   }
   if(action==='publish'){if(data.version!==input.expectedVersion+1||!Number.isFinite(data.publishedAt))fail('WALLBOARD_UNAVAILABLE');return {ok:true,version:data.version,publishedAt:data.publishedAt};}
   if(data.status!==(action==='approve'?'approved':'revoked'))fail('WALLBOARD_UNAVAILABLE');

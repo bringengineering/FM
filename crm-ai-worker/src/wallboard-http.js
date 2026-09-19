@@ -1,4 +1,4 @@
-const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],display:[]};
+const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],display:['clientVersion']};
 const status={AUTH_REQUIRED:401,FORBIDDEN:403,INVALID_INPUT:400,INPUT_TOO_LARGE:413,RATE_LIMITED:429};
 const reply=(code,http,cors)=>Response.json({ok:false,code},{status:http,headers:{...cors,'cache-control':'no-store','x-content-type-options':'nosniff'}});
 async function body(request,limit=4096){
@@ -21,6 +21,7 @@ export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
   const input=await body(request,action==='publish'?65536:4096);
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!actions[action].includes(k)))return reply('INVALID_INPUT',400,cors);
   const token=/^Bearer\s+([^\s]+)$/i.exec(request.headers.get('authorization')||'')?.[1]||'';
+  if(action==='display'&&input.clientVersion!==undefined&&(typeof input.clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(input.clientVersion)))return reply('INVALID_INPUT',400,cors);
   let identity=null;
   if(['approve','revoke','list','publish'].includes(action)){
    const verified=await verifyIdentity(token);
