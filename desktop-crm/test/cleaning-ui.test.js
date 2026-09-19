@@ -165,3 +165,12 @@ test("renders cleaning response and receivable alerts", () => {
   assert.match(center, /홍길동/);
   assert.match(center, /data-cleaning-order-open="o1"/);
 });
+
+test("renders the sales quick price and no-onsite-surcharge rule", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [], priceBook: { version: "BRING-CARE-PRICE-v0.1", quickPrices: [{ label: "원룸 6평 이하", amount: 149000 }, { label: "아파트 24평", amount: 319000 }, { label: "공용부 6층 월 4회", amount: 119000 }], noOnsiteSurcharge: true, additionalWorkRule: "preapproved_only" }, writable: true });
+  assert.match(center, /판매 기준표/);
+  assert.match(center, /원룸 6평 이하/);
+  assert.match(center, /149,000원/);
+  assert.match(center, /현장 추가금 금지/);
+  assert.match(center, /사전 승인/);
+});

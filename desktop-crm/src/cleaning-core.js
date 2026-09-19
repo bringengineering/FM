@@ -24,6 +24,31 @@
   ]);
 
   const SERVICE_TYPES = Object.freeze(["move_in", "common_area", "recurring", "other"]);
+  const CLEANING_PRICE_BOOK = Object.freeze({
+    version: "BRING-CARE-PRICE-v0.1",
+    launchRegion: "원주",
+    noOnsiteSurcharge: true,
+    additionalWorkRule: "preapproved_only",
+    includedScopes: Object.freeze(["현관", "바닥", "주방", "싱크대", "수납장", "화장실", "창틀", "내부 유리", "베란다", "배수구", "붙박이장"]),
+    excludedScopes: Object.freeze(["폐기물 처리", "외부 고소 유리", "대형 곰팡이 제거", "가전 분해청소", "특수오염 복원"]),
+    quickPrices: Object.freeze([
+      { productCode: "studio", label: "원룸 6평 이하", basis: "6평 이하", amount: 149000 },
+      { productCode: "studio", label: "원룸 7~9평", basis: "7~9평", amount: 169000 },
+      { productCode: "studio", label: "원룸 10~12평", basis: "10~12평", amount: 199000 },
+      { productCode: "studio", label: "원룸 13~15평", basis: "13~15평", amount: 229000 },
+      { productCode: "studio", label: "원룸 16~18평", basis: "16~18평", amount: 259000 },
+      { productCode: "apartment", label: "아파트 20평 이하", basis: "20평 이하", amount: 269000 },
+      { productCode: "apartment", label: "아파트 24평", basis: "21~24평", amount: 319000 },
+      { productCode: "apartment", label: "아파트 28평", basis: "25~28평", amount: 359000 },
+      { productCode: "apartment", label: "아파트 32평", basis: "29~32평", amount: 399000 },
+      { productCode: "apartment", label: "아파트 36평", basis: "33~36평", amount: 449000 },
+      { productCode: "apartment", label: "아파트 40평", basis: "37~40평", amount: 499000 },
+      { productCode: "common_area_monthly4", label: "공용부 3층 이하 월 4회", basis: "3층 이하", amount: 79000 },
+      { productCode: "common_area_monthly4", label: "공용부 4층 월 4회", basis: "4층", amount: 89000 },
+      { productCode: "common_area_monthly4", label: "공용부 5층 월 4회", basis: "5층", amount: 99000 },
+      { productCode: "common_area_monthly4", label: "공용부 6층 월 4회", basis: "6층", amount: 119000 }
+    ])
+  });
   const text = value => String(value == null ? "" : value).trim();
   const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
   const roundWon = value => Math.round(number(value));
@@ -34,6 +59,30 @@
     error.code = code;
     if (field) error.field = field;
     return error;
+  }
+
+  function standardCleaningPrice(source) {
+    const raw = source && typeof source === "object" ? source : {};
+    const productCode = text(raw.productCode);
+    const area = number(raw.area);
+    const floors = number(raw.floors);
+    const hours = number(raw.hours);
+    let amount = 0;
+    let manualQuote = false;
+    if (productCode === "studio") {
+      amount = area <= 6 ? 149000 : area <= 9 ? 169000 : area <= 12 ? 199000 : area <= 15 ? 229000 : area <= 18 ? 259000 : 0;
+      manualQuote = area <= 0 || area >= 19;
+    } else if (productCode === "apartment") {
+      amount = area <= 20 ? 269000 : area <= 24 ? 319000 : area <= 28 ? 359000 : area <= 32 ? 399000 : area <= 36 ? 449000 : area <= 40 ? 499000 : Math.round(area * 12500);
+      manualQuote = area <= 0;
+    } else if (productCode === "common_area_monthly4") {
+      amount = floors <= 3 ? 79000 : floors === 4 ? 89000 : floors === 5 ? 99000 : floors === 6 ? 119000 : 0;
+      manualQuote = floors <= 0 || floors >= 7;
+    } else if (productCode === "office_single") {
+      amount = hours <= 2 ? 69000 : hours <= 3 ? 89000 : hours <= 4 ? 119000 : hours <= 6 ? 169000 : hours <= 8 ? 219000 : 0;
+      manualQuote = hours <= 0 || hours > 8;
+    } else manualQuote = true;
+    return { productCode, amount: manualQuote ? 0 : amount, manualQuote, priceBookVersion: CLEANING_PRICE_BOOK.version, noOnsiteSurcharge: true };
   }
 
   function normalizeCleaningOrder(source) {
@@ -664,6 +713,8 @@
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
+    CLEANING_PRICE_BOOK,
+    standardCleaningPrice,
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,
     validateCleaningOrder,

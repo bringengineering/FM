@@ -417,3 +417,21 @@ test("raises response deposit and balance alerts from confirmed evidence", () =>
   assert.deepEqual(alerts.map(item => item.type), ["response_overdue", "deposit_overdue", "balance_overdue"]);
   assert.equal(alerts[2].amount, 230000);
 });
+
+test("exposes the approved Bring Care v0.1 quick price book", () => {
+  assert.equal(Cleaning.CLEANING_PRICE_BOOK.version, "BRING-CARE-PRICE-v0.1");
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "studio", area: 6 }).amount, 149000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "studio", area: 18 }).amount, 259000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "apartment", area: 24 }).amount, 319000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "apartment", area: 32 }).amount, 399000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "common_area_monthly4", floors: 6 }).amount, 119000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "office_single", hours: 3 }).amount, 89000);
+  assert.equal(Cleaning.standardCleaningPrice({ productCode: "studio", area: 19 }).manualQuote, true);
+});
+
+test("price book forbids field-decided surcharges and requires preapproval", () => {
+  assert.equal(Cleaning.CLEANING_PRICE_BOOK.noOnsiteSurcharge, true);
+  assert.equal(Cleaning.CLEANING_PRICE_BOOK.additionalWorkRule, "preapproved_only");
+  assert.ok(Cleaning.CLEANING_PRICE_BOOK.includedScopes.includes("화장실"));
+  assert.ok(Cleaning.CLEANING_PRICE_BOOK.excludedScopes.includes("폐기물 처리"));
+});

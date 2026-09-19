@@ -1951,6 +1951,7 @@
       dashboard,
       followUpDashboard,
       alerts,
+      priceBook: Cleaning.CLEANING_PRICE_BOOK,
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
       writable: canWriteCRM()

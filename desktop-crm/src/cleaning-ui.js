@@ -32,6 +32,8 @@
     const followUpDashboard = options.followUpDashboard || {};
     const priorityActions = active(followUpDashboard.priorityActions);
     const alerts = active(options.alerts);
+    const priceBook = options.priceBook || {};
+    const quickPrices = active(priceBook.quickPrices);
     const retentionLabel = value => ({ review: "리뷰 요청", building_care: "건물관리 상담", repeat_referral: "재구매·추천" }[value] || value || "후속조치");
     const orderName = orderId => orders.find(item => item.id === orderId)?.customerName || orderId || "고객 미확인";
     const writable = options.writable !== false;
@@ -39,6 +41,7 @@
       '<header class="cleaning-hero"><div><span class="cleaning-eyebrow">BRING CARE</span><h2 id="cleaningCenterTitle">Cleaning Sales Center</h2><p>문의부터 책임검수·결제·CS까지 한 주문으로 관리합니다.</p></div>' +
       (writable ? '<button type="button" class="primary-button" data-action="new-cleaning-order">＋ 새 청소 주문</button>' : '') + '</header>' +
       '<aside class="cleaning-promise"><strong>현장 추가금 없음</strong><span>사전 확정 범위는 브링케어가 약속한 금액 그대로 책임집니다.</span></aside>' +
+      '<section class="cleaning-partners"><header><div><span class="cleaning-eyebrow">' + esc(priceBook.version || "PRICE BOOK") + '</span><h3>판매 기준표</h3><p><strong>현장 추가금 금지.</strong> 추가 작업은 사진 확인과 고객센터의 사전 승인 후 견적에 포함합니다.</p></div></header>' + (quickPrices.length ? '<div class="cleaning-partner-grid">' + quickPrices.map(item => '<article><div><span>' + esc(item.basis || "기준") + '</span><strong>' + esc(item.label) + '</strong><small>' + money(item.amount) + '원</small></div></article>').join("") + '</div>' : '<div class="cleaning-partner-empty">등록된 판매가격이 없습니다.</div>') + '</section>' +
       '<div class="cleaning-kpis">' +
         '<article><span>진행 주문</span><b>' + esc(kpis.activeOrders || 0) + '</b></article>' +
         '<article><span>종결 주문</span><b>' + esc(kpis.closedOrders || 0) + '</b></article>' +
