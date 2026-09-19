@@ -672,6 +672,29 @@
     return Object.assign({}, current, { status: "delivered", deliveredAt: timestamp, deliveredBy: text(actor && actor.email), updatedAt: timestamp, updatedBy: text(actor && actor.email) });
   }
 
+  function createCleaningQuoteDocument(source, actor, at) {
+    const order = source && typeof source === "object" ? source : {};
+    if (!text(order.id)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (roundWon(order.totalAmount) <= 0) throw cleaningError("CLEANING_QUOTE_AMOUNT_REQUIRED", "견적금액을 먼저 확정해 주세요.", "totalAmount");
+    if (!text(order.scope)) throw cleaningError("CLEANING_QUOTE_SCOPE_REQUIRED", "견적서에 작업범위를 입력해 주세요.", "scope");
+    const createdAt = text(at) || new Date().toISOString();
+    const validUntil = new Date(new Date(createdAt).getTime() + 7 * 86400000).toISOString();
+    return Object.assign(recordMeta({}, actor, createdAt, "clqt"), {
+      cleaningOrderId: text(order.id), customerId: text(order.customerId), customerName: text(order.customerName), phone: text(order.phone),
+      address: text(order.address), scheduledAt: text(order.scheduledAt), serviceType: text(order.serviceType),
+      scope: text(order.scope), exclusions: text(order.exclusions), totalAmount: roundWon(order.totalAmount), depositAmount: roundWon(order.depositAmount), balanceAmount: roundWon(order.balanceAmount),
+      priceBookVersion: text(order.priceBookVersion), quoteMode: text(order.quoteMode), noOnsiteSurcharge: true,
+      status: "draft", validUntil, issuedAt: "", issuedBy: ""
+    });
+  }
+
+  function issueCleaningQuoteDocument(source, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    if (current.status !== "draft") throw cleaningError("CLEANING_QUOTE_ALREADY_ISSUED", "초안 상태의 견적서만 발행할 수 있습니다.", "status");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, { status: "issued", issuedAt: timestamp, issuedBy: text(actor && actor.email), updatedAt: timestamp, updatedBy: text(actor && actor.email) });
+  }
+
   function calculateCleaningFollowUpDashboard(actions, at) {
     const rows = (Array.isArray(actions) ? actions : []).filter(Boolean);
     const now = new Date(text(at) || new Date().toISOString());
@@ -776,6 +799,8 @@
     updateCleaningRetentionAction,
     createCleaningCustomerReport,
     deliverCleaningCustomerReport,
+    createCleaningQuoteDocument,
+    issueCleaningQuoteDocument,
     calculateCleaningFollowUpDashboard,
     calculateCleaningAlerts,
     calculateCleaningDashboard

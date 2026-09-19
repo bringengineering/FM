@@ -182,3 +182,12 @@ test("renders the approved consultation scripts and FAQ", () => {
   assert.match(center, /현장 추가금이 있나요/);
   assert.match(center, /평수 또는 면적/);
 });
+
+test("renders customer quote evidence and explicit issue action", () => {
+  const detail = UI.renderCleaningOrderDetail({ order: { id: "o1", customerName: "홍길동" }, stages, dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [], reworks: [], retentionActions: [], customerReports: [], quotes: [{ id: "q1", cleaningOrderId: "o1", status: "draft", totalAmount: 319000, validUntil: "2026-09-27", scope: "주방·욕실", exclusions: "폐기물" }], writable: true });
+  assert.match(detail, /고객 견적서 1건/);
+  assert.match(detail, /319,000원/);
+  assert.match(detail, /현장 추가금 없음/);
+  assert.match(detail, /data-cleaning-quote-issue="q1"/);
+  assert.match(detail, /data-cleaning-quote-add="o1"/);
+});

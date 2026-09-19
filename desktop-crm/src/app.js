@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports"]
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -538,7 +538,7 @@
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports"
+    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -2010,6 +2010,7 @@
       reworks: store.cleaningReworks,
       retentionActions: store.cleaningRetentionActions,
       customerReports: store.cleaningCustomerReports,
+      quotes: store.cleaningQuotes,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -3510,6 +3511,36 @@
     if (cleaningDispatchAdd) { cleaningDispatchEditor(cleaningDispatchAdd.dataset.cleaningDispatchAdd); return; }
     const cleaningReportAdd = event.target.closest("[data-cleaning-report-add]");
     if (cleaningReportAdd) { cleaningReportEditor(cleaningReportAdd.dataset.cleaningReportAdd); return; }
+    const cleaningQuoteAdd = event.target.closest("[data-cleaning-quote-add]");
+    if (cleaningQuoteAdd) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 견적서를 만들 수 없습니다.", "error");
+      const order = cleaningOrderById(cleaningQuoteAdd.dataset.cleaningQuoteAdd);
+      if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+      try {
+        const item = Cleaning.createCleaningQuoteDocument(order, salesActor());
+        store.cleaningQuotes.push(item);
+        logAudit({ category: "청소", targetType: "고객 견적서", targetId: item.id, targetLabel: order.customerName, action: "견적서 초안 생성", reason: order.id });
+        scheduleSave(); renderCleaningOrderDrawer(order.id); showToast("고객 견적서 초안을 만들었습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 견적서를 만들지 못했습니다.", "error"); }
+      return;
+    }
+    const cleaningQuoteIssue = event.target.closest("[data-cleaning-quote-issue]");
+    if (cleaningQuoteIssue) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 견적서를 발행할 수 없습니다.", "error");
+      const index = store.cleaningQuotes.findIndex(item => item.id === cleaningQuoteIssue.dataset.cleaningQuoteIssue);
+      if (index < 0) return showToast("고객 견적서를 찾지 못했습니다.", "error");
+      try {
+        const item = Cleaning.issueCleaningQuoteDocument(store.cleaningQuotes[index], salesActor());
+        store.cleaningQuotes[index] = item;
+        const orderIndex = store.cleaningOrders.findIndex(order => order.id === item.cleaningOrderId);
+        if (orderIndex >= 0 && store.cleaningOrders[orderIndex].stage === "quoting") {
+          store.cleaningOrders[orderIndex] = Cleaning.transitionCleaningOrder(store.cleaningOrders[orderIndex], "quote_sent", { actor: salesActor(), at: item.issuedAt, qcReviews: store.cleaningQcReviews });
+        }
+        logAudit({ category: "청소", targetType: "고객 견적서", targetId: item.id, targetLabel: item.customerName, action: "고객 발행 확인", reason: item.cleaningOrderId });
+        scheduleSave(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("고객 견적서 발행을 확인했습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 견적서를 발행하지 못했습니다.", "error"); }
+      return;
+    }
     const cleaningQcAdd = event.target.closest("[data-cleaning-qc-add]");
     if (cleaningQcAdd) { cleaningQcEditor(cleaningQcAdd.dataset.cleaningQcAdd); return; }
     const cleaningMessageAdd = event.target.closest("[data-cleaning-message-add]");

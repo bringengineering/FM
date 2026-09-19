@@ -203,3 +203,11 @@ test("cleaning center receives the approved sales standards", async () => {
   const app = await source("app.js");
   assert.match(app, /salesStandards:\s*Cleaning\.CLEANING_SALES_STANDARDS/);
 });
+
+test("customer quote drafts are created and explicitly issued from the order", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.createCleaningQuoteDocument/);
+  assert.match(app, /store\.cleaningQuotes\.push/);
+  assert.match(app, /Cleaning\.issueCleaningQuoteDocument/);
+  assert.match(app, /quotes:\s*store\.cleaningQuotes/);
+});

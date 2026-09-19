@@ -450,3 +450,18 @@ test("exposes the approved sales script and FAQ library", () => {
   assert.ok(Cleaning.CLEANING_SALES_STANDARDS.faqs.some(item => /추가금/.test(item.question) && /없습니다/.test(item.answer)));
   assert.ok(Cleaning.CLEANING_SALES_STANDARDS.requiredQuestions.includes("평수 또는 면적"));
 });
+
+test("creates an auditable customer quote with scope exclusions and no surcharge promise", () => {
+  const quote = Cleaning.createCleaningQuoteDocument({ id: "o1", customerId: "c1", customerName: "홍길동", phone: "010-0000-0000", address: "원주시", scheduledAt: "2026-09-30T09:00:00Z", serviceType: "move_in", totalAmount: 319000, depositAmount: 100000, scope: "주방·욕실", exclusions: "폐기물", priceBookVersion: "BRING-CARE-PRICE-v0.1", quoteMode: "standard" }, { email: "sales@bring.local" }, "2026-09-20T00:00:00Z");
+  assert.equal(quote.status, "draft");
+  assert.equal(quote.validUntil, "2026-09-27T00:00:00.000Z");
+  assert.equal(quote.noOnsiteSurcharge, true);
+  assert.equal(quote.totalAmount, 319000);
+  assert.equal(quote.issuedAt, "");
+});
+
+test("issues a customer quote only by explicit confirmation", () => {
+  const issued = Cleaning.issueCleaningQuoteDocument({ id: "q1", status: "draft", cleaningOrderId: "o1", issuedAt: "" }, { email: "sales@bring.local" }, "2026-09-20T01:00:00Z");
+  assert.equal(issued.status, "issued");
+  assert.equal(issued.issuedAt, "2026-09-20T01:00:00Z");
+});
