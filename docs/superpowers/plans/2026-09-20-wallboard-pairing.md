@@ -35,5 +35,12 @@
 - Server-generated version/publishedAt accompany the source data date. No automatic refresh or freshness claim is added: current publication is an explicit snapshot.
 - Worker suite: 52 passed. Actual cloud runtime and desktop publication button still require implementation/verification.
 
+## Desktop publication control
+- Added explicit publish button with notice/privacy confirmation, source date and current local playlist.
+- Uses last loaded server revision; conflicts fail visibly and require refresh. Source load failure or age over two minutes blocks publication.
+- Main-process bridge handles credentials; renderer receives only sanitized revision/timestamps and roster fields.
+- Verification: desktop 2158 passed / 2 skipped; UI suites 28 passed.
+- Still manual snapshot publication: continuous automatic refresh publication and dedicated Windows TV playback are unfinished. Cloud storage/deployment and actual TV acceptance tests remain mandatory.
+
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/

@@ -1,5 +1,14 @@
 // @vitest-environment node
 import {test,expect} from 'vitest';import {JSDOM} from 'jsdom';import fs from 'node:fs';import path from 'node:path';
+test('publication requires confirmation and uses loaded server revision',async()=>{
+ const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
+ const calls:any[]=[];let allow=false;const host=w.document.querySelector('main');const snapshot={notice:'확인된 공지'};
+ const stop=w.BringWallboardAdmin.mount(host,{confirm:()=>allow,getPublication:()=>snapshot,request:async(i:any)=>{calls.push(i);return i.action==='list'?{version:3,devices:[]}:{version:4,publishedAt:1000};}});
+ await new Promise(r=>setTimeout(r,0));expect(host.querySelector('[data-device-publish]')).not.toBeNull();
+ host.querySelector('[data-device-publish]').click();expect(calls.filter(i=>i.action==='publish')).toHaveLength(0);
+ allow=true;host.querySelector('[data-device-publish]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'publish',snapshot,expectedVersion:3});expect(host.textContent).toContain('게시했습니다');
+ stop();dom.window.close();
+});
 test('TV admin approves explicit code, refreshes and confirms before revoking',async()=>{
  const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;
  w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));

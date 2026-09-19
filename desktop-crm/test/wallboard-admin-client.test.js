@@ -1,5 +1,10 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {requestWallboardAdmin}=require('../src/wallboard-admin-client');
+test('publication carries revision and exposes a conflict instead of pretending success',async()=>{
+ const args={baseUrl:'https://gateway.example',idToken:'secret',input:{action:'publish',snapshot:{notice:'test'},expectedVersion:2}};
+ const result=await requestWallboardAdmin({...args,fetchImpl:async()=>Response.json({ok:true,version:3,publishedAt:1000})});assert.equal(result.version,3);
+ await assert.rejects(requestWallboardAdmin({...args,fetchImpl:async()=>Response.json({ok:false,code:'VERSION_CONFLICT'},{status:409})}),/다른 관리자/);
+});
 test('client restricts commands and fixed endpoint without returning credentials',async()=>{
  let sent;const result=await requestWallboardAdmin({baseUrl:'https://gateway.example/v1/assist',idToken:'secret',input:{action:'approve',code:'ABC12345',name:'TV'},fetchImpl:async(url,options)=>{sent={url,options};return Response.json({ok:true,status:'approved'});}});
  assert.equal(sent.url,'https://gateway.example/v1/wallboard/approve');assert.equal(sent.options.headers.authorization,'Bearer secret');assert.equal(sent.options.redirect,'error');assert.deepEqual(result,{ok:true,status:'approved'});
