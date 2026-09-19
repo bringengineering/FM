@@ -73,6 +73,7 @@ test('schedule exposes safe titles and owners for today and current week',()=>{
 test('roadmap and schedule scenes render TV visual contracts',()=>{
  const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
  const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/전체 프로젝트 진행률/);assert.match(roadmap,/42%/);
+ assert.match(roadmap,/wb-roadmap-performance/);assert.match(roadmap,/wb-progress-ring/);
  const today=C.scene(m,'scheduleToday',0);assert.match(today,/소방 점검/);assert.match(today,/김현진/);
  const week=C.scene(m,'scheduleWeek',0);assert.match(week,/wb-schedule-week/);
 });

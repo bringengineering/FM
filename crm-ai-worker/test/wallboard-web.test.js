@@ -41,6 +41,7 @@ test('web TV stylesheet compacts content for 720p height',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(source,/@media\(max-height:800px\)/);assert.match(source,/\.timeline \.row/);
  assert.match(source,/\.roadmap-layout/);assert.match(source,/\.overall-progress/);
+ assert.match(source,/\.roadmap-performance/);assert.match(source,/\.progress-ring/);assert.match(source,/conic-gradient/);
 });
 
 test('unknown TV asset paths fail closed',async()=>{
