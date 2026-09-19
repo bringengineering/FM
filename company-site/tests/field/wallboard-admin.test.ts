@@ -52,3 +52,14 @@ test('TV admin approves explicit code, refreshes and confirms before revoking',a
  confirm=true;host.querySelector('[data-device]').click();await new Promise(r=>setTimeout(r,0));expect(requests).toContainEqual({action:'revoke',deviceId:'d'});
  stop();dom.window.close();
 });
+test('administrator schedules the verified latest version per device and can cancel it',async()=>{
+ const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;
+ w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
+ const deviceId='11111111-1111-4111-8111-111111111111',requests:any[]=[];let allow=false;const host=w.document.querySelector('main');let scheduled=false;
+ const stop=w.BringWallboardAdmin.mount(host,{confirm:()=>allow,request:async(input:any)=>{requests.push(input);if(input.action==='list')return {version:1,latestVersion:'0.2.0',devices:[{id:deviceId,name:'회의실 TV',clientVersion:'0.1.2',targetVersion:scheduled?'0.2.0':null,updateStatus:scheduled?'downloading':'idle'}]};if(input.action==='schedule-update'){scheduled=true;return {status:'scheduled',targetVersion:'0.2.0'};}if(input.action==='cancel-update'){scheduled=false;return {status:'cancelled'};}return {status:'revoked'};}});
+ await new Promise(r=>setTimeout(r,0));expect(host.textContent).toContain('현재 0.1.2');expect(host.textContent).toContain('최신 0.2.0');
+ const update=host.querySelector('[data-device-update]') as HTMLButtonElement;expect(update).not.toBeNull();update.click();expect(requests.some(x=>x.action==='schedule-update')).toBe(false);
+ allow=true;update.click();await new Promise(r=>setTimeout(r,0));expect(requests).toContainEqual({action:'schedule-update',deviceId,targetVersion:'0.2.0'});expect(host.textContent).toContain('다운로드 중');
+ const cancel=host.querySelector('[data-device-update-cancel]') as HTMLButtonElement;expect(cancel).not.toBeNull();cancel.click();await new Promise(r=>setTimeout(r,0));expect(requests).toContainEqual({action:'cancel-update',deviceId});
+ stop();dom.window.close();
+});

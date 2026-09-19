@@ -7924,6 +7924,7 @@ secureHandle("crm:auth-state", () => authState());
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
+  const { resolveTvChannel } = require("./tv-update-policy");
   if (["auto-start", "auto-stop", "auto-status"].includes(input?.action)) {
     if (localTestMode) throw new Error("로컬 미리보기에서는 자동 게시를 사용할 수 없습니다.");
     if (!wallboardPublisher) {
@@ -7944,7 +7945,25 @@ secureCanonicalHandle("crm:wallboard-admin", async input => {
     return wallboardPublisher.status();
   }
   if (input?.action === "publish") wallboardPublisher?.stop();
-  return requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken: await remoteClient.ensureIdToken(false), input, fetchImpl: (url, options) => net.fetch(url, options) });
+  const fetchImpl = (url, options) => net.fetch(url, options);
+  const idToken = await remoteClient.ensureIdToken(false);
+  if (input?.action === "schedule-update") {
+    let channel;
+    try {
+      channel = await resolveTvChannel({ fetchImpl });
+    } catch {
+      throw new Error("검증된 TV 최신 버전을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    if (input.targetVersion !== channel.version) throw new Error("최신 TV 버전이 변경되었습니다. 기기 목록을 새로고침해 주세요.");
+  }
+  const result = await requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken, input, fetchImpl });
+  if (input?.action !== "list") return result;
+  try {
+    const channel = await resolveTvChannel({ fetchImpl });
+    return { ...result, latestVersion: channel.version };
+  } catch {
+    return { ...result, latestVersion: null };
+  }
 });
 secureCanonicalHandle("crm:ai-assist", async input => {
   if (!remoteClient || !remoteClient.authState().user) {

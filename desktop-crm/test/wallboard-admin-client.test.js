@@ -17,3 +17,17 @@ test('client restricts commands and fixed endpoint without returning credentials
 test('client maps disabled server to clear unavailable message',async()=>{
  await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:false,code:'WALLBOARD_UNAVAILABLE'},{status:503})}),/아직 준비/);
 });
+test('device list validates remote update state without exposing arbitrary server data',async()=>{
+ const id='11111111-1111-4111-8111-111111111111';
+ const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:4,devices:[{id,name:'회의실 TV',clientVersion:'0.1.2',targetVersion:'0.2.0',updateStatus:'downloading',updateError:null,updateApprovedAt:10,updateConsumedAt:20,updateCompletedAt:0},{id:'bad',targetVersion:'latest',updateStatus:'<script>',updateError:'secret'}]})});
+ assert.deepEqual(data.devices[0],{id,name:'회의실 TV',createdAt:0,lastSeenAt:null,revokedAt:null,clientVersion:'0.1.2',targetVersion:'0.2.0',updateStatus:'downloading',updateError:null,updateApprovedAt:10,updateConsumedAt:20,updateCompletedAt:null});
+ assert.equal(data.devices[1].targetVersion,null);assert.equal(data.devices[1].updateStatus,'idle');assert.equal(data.devices[1].updateError,null);
+});
+test('administrator can schedule and cancel one exact TV version',async()=>{
+ const deviceId='11111111-1111-4111-8111-111111111111',calls=[];
+ const fetchImpl=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return Response.json({ok:true,status:url.endsWith('schedule-update')?'scheduled':'cancelled',targetVersion:url.endsWith('schedule-update')?'0.2.0':undefined});};
+ assert.deepEqual(await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'schedule-update',deviceId,targetVersion:'0.2.0'},fetchImpl}),{ok:true,status:'scheduled',targetVersion:'0.2.0'});
+ assert.deepEqual(await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'cancel-update',deviceId},fetchImpl}),{ok:true,status:'cancelled'});
+ assert.deepEqual(calls.map(x=>x.body),[{deviceId,targetVersion:'0.2.0'},{deviceId}]);
+ await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'schedule-update',deviceId,targetVersion:'latest'}}),/입력/);
+});
