@@ -336,3 +336,14 @@ test("requires approval before a cancellation can be marked paid", () => {
   const paid = Cleaning.transitionCleaningCancellation(approved, "paid", { email: "owner@bring.local" }, "2026-09-20T03:00:00Z");
   assert.equal(paid.refundPaidAt, "2026-09-20T03:00:00Z");
 });
+
+test("runs rework through schedule completion reinspection and closure evidence", () => {
+  const scheduled = Cleaning.createCleaningRework({ cleaningOrderId: "cln_1", cleaningCaseId: "clc_1", failedQcReviewId: "clq_1", scope: "욕실 재청소", scheduledAt: "2026-09-22T09:00:00Z", teamName: "직영 1팀" });
+  assert.equal(scheduled.status, "scheduled");
+  assert.throws(() => Cleaning.transitionCleaningRework(scheduled, "completed", {}), /완료보고/);
+  const completed = Cleaning.transitionCleaningRework(scheduled, "completed", { completionReportId: "clr_2" });
+  assert.throws(() => Cleaning.transitionCleaningRework(completed, "passed", {}), /재검수/);
+  const passed = Cleaning.transitionCleaningRework(completed, "passed", { qcReviewId: "clq_2", qcResult: "passed" });
+  const closed = Cleaning.transitionCleaningRework(passed, "closed", { actor: { email: "ops@bring.local" }, at: "2026-09-22T12:00:00Z" });
+  assert.equal(closed.closedAt, "2026-09-22T12:00:00Z");
+});

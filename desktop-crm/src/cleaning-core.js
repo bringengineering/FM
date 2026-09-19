@@ -491,6 +491,34 @@
     });
   }
 
+  function createCleaningRework(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!text(raw.scope)) throw cleaningError("CLEANING_REWORK_SCOPE_REQUIRED", "재작업 범위를 입력해 주세요.", "scope");
+    if (!text(raw.scheduledAt)) throw cleaningError("CLEANING_REWORK_SCHEDULE_REQUIRED", "재작업 일정을 입력해 주세요.", "scheduledAt");
+    return Object.assign(recordMeta(raw, actor, at, "clrw"), {
+      cleaningOrderId: text(raw.cleaningOrderId), cleaningCaseId: text(raw.cleaningCaseId), failedQcReviewId: text(raw.failedQcReviewId),
+      scope: text(raw.scope), scheduledAt: text(raw.scheduledAt), teamId: text(raw.teamId), teamName: text(raw.teamName),
+      status: "scheduled", completionReportId: "", reinspectionQcReviewId: "", closedAt: ""
+    });
+  }
+
+  function transitionCleaningRework(source, nextStatus, context) {
+    const current = source && typeof source === "object" ? source : {};
+    const allowed = { scheduled: ["completed"], completed: ["passed"], passed: ["closed"], closed: [] };
+    if (!(allowed[current.status] || []).includes(nextStatus)) throw cleaningError("CLEANING_REWORK_TRANSITION_INVALID", "재작업 상태를 순서대로 처리해 주세요.", "status");
+    if (nextStatus === "completed" && !text(context && context.completionReportId)) throw cleaningError("CLEANING_REWORK_REPORT_REQUIRED", "재작업 완료보고가 필요합니다.", "completionReportId");
+    if (nextStatus === "passed" && (!text(context && context.qcReviewId) || context.qcResult !== "passed")) throw cleaningError("CLEANING_REWORK_QC_REQUIRED", "재검수를 통과해야 합니다.", "qcReviewId");
+    const timestamp = text(context && context.at) || new Date().toISOString();
+    return Object.assign({}, current, {
+      status: nextStatus,
+      completionReportId: nextStatus === "completed" ? text(context.completionReportId) : text(current.completionReportId),
+      reinspectionQcReviewId: nextStatus === "passed" ? text(context.qcReviewId) : text(current.reinspectionQcReviewId),
+      closedAt: nextStatus === "closed" ? timestamp : text(current.closedAt),
+      updatedAt: timestamp, updatedBy: text(context && context.actor && context.actor.email)
+    });
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -541,6 +569,8 @@
     calculateCleaningCancellation,
     createCleaningCancellation,
     transitionCleaningCancellation,
+    createCleaningRework,
+    transitionCleaningRework,
     calculateCleaningDashboard
   });
 });
