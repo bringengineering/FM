@@ -28,4 +28,3 @@ $shortcut.Save()
 
 Write-Host 'BRING TV 자동 실행 설정이 완료되었습니다.'
 Write-Host "다음 Windows 로그인부터 자동으로 열립니다: $tvUrl"
-

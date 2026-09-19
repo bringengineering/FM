@@ -29,4 +29,3 @@
 ## 제거
 
 `uninstall-bring-tv-web-kiosk.ps1`을 실행합니다. BRING TV 시작프로그램 바로가기만 제거하며 Edge의 다른 설정과 자료는 삭제하지 않습니다.
-

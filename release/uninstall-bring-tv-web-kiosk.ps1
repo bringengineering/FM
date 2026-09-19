@@ -9,4 +9,3 @@ if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
 } else {
     Write-Host '제거할 BRING TV 자동 실행 바로가기가 없습니다.'
 }
-
