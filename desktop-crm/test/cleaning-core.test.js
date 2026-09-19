@@ -95,6 +95,12 @@ test("renders approved message templates only when every variable is present", (
   );
 });
 
+test("renders approved retention messages for review building care and repeat referral", () => {
+  assert.match(Cleaning.renderMessageTemplate("review_request", { customerName: "홍길동", reviewUrl: "https://example.com/review" }), /리뷰/);
+  assert.match(Cleaning.renderMessageTemplate("building_care_offer", { customerName: "홍길동", consultationUrl: "https://example.com/care" }), /건물관리/);
+  assert.match(Cleaning.renderMessageTemplate("repeat_referral", { customerName: "홍길동", consultationUrl: "https://example.com/repeat" }), /재이용|추천/);
+});
+
 test("calculates operational KPIs from active orders", () => {
   const result = Cleaning.calculateCleaningKpis([
     { id: "1", stage: "inquiry", totalAmount: 100000, contributionProfit: 20000, inquiryAt: "2026-09-20T00:00:00Z", firstResponseAt: "2026-09-20T00:04:00Z" },

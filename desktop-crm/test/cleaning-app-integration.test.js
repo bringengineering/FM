@@ -153,6 +153,14 @@ test("closing a cleaning order creates one retention funnel and exposes action u
   assert.match(app, /retentionActions:\s*store\.cleaningRetentionActions/);
 });
 
+test("preparing a retention action creates one linked customer message draft", async () => {
+  const app = await source("app.js");
+  assert.match(app, /retentionTemplateByType/);
+  assert.match(app, /retentionActionId:\s*nextAction\.id/);
+  assert.match(app, /store\.cleaningMessages\.push/);
+  assert.match(app, /후속조치 문자 초안/);
+});
+
 test("customer completion report is generated from field and QC evidence and explicitly delivered", async () => {
   const app = await source("app.js");
   assert.match(app, /Cleaning\.createCleaningCustomerReport/);

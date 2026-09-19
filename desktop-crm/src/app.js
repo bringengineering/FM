@@ -3593,6 +3593,34 @@
       try {
         const nextAction = Cleaning.updateCleaningRetentionAction(store.cleaningRetentionActions[index], nextStatus, salesActor());
         store.cleaningRetentionActions[index] = nextAction;
+        if (nextStatus === "draft" && !store.cleaningMessages.some(item => item.retentionActionId === nextAction.id)) {
+          const order = cleaningOrderById(nextAction.cleaningOrderId);
+          const retentionTemplateByType = { review: "review_request", building_care: "building_care_offer", repeat_referral: "repeat_referral" };
+          const message = Cleaning.createCleaningMessage({
+            cleaningOrderId: nextAction.cleaningOrderId,
+            retentionActionId: nextAction.id,
+            templateId: retentionTemplateByType[nextAction.type],
+            recipient: order && order.phone,
+            channel: "sms",
+            status: "draft",
+            variables: {
+              customerName: order && order.customerName,
+              reviewUrl: "리뷰 링크 등록 필요",
+              consultationUrl: "상담 링크 등록 필요"
+            }
+          }, salesActor());
+          store.cleaningMessages.push(message);
+          logAudit({ category: "청소", targetType: "고객 메시지", targetId: message.id, targetLabel: message.templateId, action: "후속조치 문자 초안 생성", reason: nextAction.id });
+        }
+        if (nextStatus === "sent") {
+          const linkedMessage = store.cleaningMessages.find(item => item.retentionActionId === nextAction.id && item.status === "draft");
+          if (linkedMessage) {
+            linkedMessage.status = "sent";
+            linkedMessage.sentAt = nextAction.sentAt;
+            linkedMessage.updatedAt = nextAction.sentAt;
+            linkedMessage.updatedBy = nextAction.updatedBy;
+          }
+        }
         logAudit({ category: "청소", targetType: "고객 후속조치", targetId: nextAction.id, targetLabel: nextAction.type, action: `후속조치 ${nextStatus}`, reason: nextAction.cleaningOrderId });
         scheduleSave();
         renderCleaningOrderDrawer(nextAction.cleaningOrderId);

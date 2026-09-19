@@ -160,7 +160,10 @@
     arrived: "브링케어 담당팀이 현장에 도착했습니다. 작업 전 상태를 기록한 후 확정 범위에 따라 진행하겠습니다.",
     qc_completed: "브링케어 책임검사가 완료되었습니다. 완료보고서: {reportUrl}, 잔금: {balanceAmount}원, 결제: {paymentUrl}.",
     complaint_received: "말씀해주신 불편사항이 접수되었습니다. 주문번호: {orderId}, 담당자: {owner}, {responseDueAt}까지 안내드리겠습니다.",
-    rework_confirmed: "확인 결과 보완 작업을 진행하기로 했습니다. 재방문 일시: {reworkAt}, 보완 범위: {scope}. 책임지고 마무리하겠습니다."
+    rework_confirmed: "확인 결과 보완 작업을 진행하기로 했습니다. 재방문 일시: {reworkAt}, 보완 범위: {scope}. 책임지고 마무리하겠습니다.",
+    review_request: "{customerName} 고객님, 브링케어를 이용해주셔서 감사합니다. 서비스 경험을 짧게 남겨주시면 더 나은 현장을 만드는 데 반영하겠습니다. 리뷰 작성: {reviewUrl}",
+    building_care_offer: "{customerName} 고객님, 청소 이후에도 건물의 공용부 청결·시설 점검·현장 대응이 필요하시면 브링케어가 한 창구에서 관리해드립니다. 건물관리 상담: {consultationUrl}",
+    repeat_referral: "{customerName} 고객님, 다시 청소가 필요하시거나 주변에 믿을 수 있는 청소팀이 필요한 분이 계시면 브링케어로 연결해주세요. 재이용·추천 상담: {consultationUrl}"
   });
 
   function renderMessageTemplate(templateId, values) {
@@ -211,6 +214,7 @@
     if (!text(raw.scheduledAt)) throw cleaningError("CLEANING_SCHEDULE_REQUIRED", "작업 일정을 입력해 주세요.", "scheduledAt");
     return Object.assign(recordMeta(raw, actor, at, "cld"), {
       cleaningOrderId: text(raw.cleaningOrderId),
+      retentionActionId: text(raw.retentionActionId),
       teamId: text(raw.teamId),
       teamName: text(raw.teamName),
       teamType: ["direct", "partner"].includes(raw.teamType) ? raw.teamType : "direct",
