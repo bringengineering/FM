@@ -2048,6 +2048,56 @@
     openModal();
   }
 
+  function cleaningDocumentMeta(items) {
+    return `<dl class="cleaning-document-meta">${items.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value || "-")}</dd></div>`).join("")}</dl>`;
+  }
+
+  function cleaningDocumentShell(title, body) {
+    return `<article class="cleaning-document-sheet"><header class="cleaning-document-brand"><div><b>BRING CARE</b><span>브링케어 · 대표이사 서창환</span></div><strong>${esc(title)}</strong></header>${body}<footer class="cleaning-document-sign">브링케어 고객센터 033-746-8919<br>대표이사 서창환</footer></article>`;
+  }
+
+  function openCleaningDocumentPreview(title, documentHtml) {
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${esc(title)} 미리보기</h2><p>인쇄 창에서 ‘PDF로 저장’을 선택하면 고객용 PDF가 만들어집니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="cleaning-document-preview">${documentHtml}</div><div class="cleaning-document-actions"><button type="button" class="secondary-button" data-action="close-modal">닫기</button><button type="button" class="primary-button" data-cleaning-document-print>출력·PDF 저장</button></div>`;
+    openModal();
+  }
+
+  function cleaningQuotePreview(quoteId) {
+    const quote = store.cleaningQuotes.find(item => item && item.id === String(quoteId || ""));
+    if (!quote) return showToast("고객 견적서를 찾지 못했습니다.", "error");
+    const body = cleaningDocumentMeta([
+      ["견적번호", quote.id], ["발행일", dateText(quote.issuedAt || quote.createdAt)],
+      ["고객명", quote.customerName], ["연락처", quote.phone],
+      ["현장", quote.address], ["작업 예정", dateText(quote.scheduledAt)],
+      ["유효기간", dateText(quote.validUntil)], ["가격기준", quote.priceBookVersion || "관리자 확정견적"]
+    ]) + `<section class="cleaning-document-section"><h3>작업범위</h3><p>${esc(quote.scope || "-")}</p></section><section class="cleaning-document-section"><h3>제외범위</h3><p>${esc(quote.exclusions || "없음")}</p></section><div class="cleaning-document-total"><span>총 견적금액</span><strong>${krw(quote.totalAmount)}</strong></div>${quote.depositAmount ? `<section class="cleaning-document-section"><h3>결제 일정</h3><p>예약금 ${esc(krw(quote.depositAmount))}\n잔금 ${esc(krw(quote.balanceAmount))}</p></section>` : ""}<div class="cleaning-document-promise">확정된 기본 작업범위에는 현장 추가금이 없습니다.</div>`;
+    openCleaningDocumentPreview("청소 견적서", cleaningDocumentShell("청소 견적서", body));
+  }
+
+  function cleaningCustomerReportPreview(reportId) {
+    const report = store.cleaningCustomerReports.find(item => item && item.id === String(reportId || ""));
+    if (!report) return showToast("고객 완료보고서를 찾지 못했습니다.", "error");
+    const safePhotos = (report.photoUrls || []).filter(value => {
+      try { return new URL(value).protocol === "https:"; } catch (_) { return false; }
+    });
+    const body = cleaningDocumentMeta([
+      ["보고서번호", report.id], ["주문번호", report.cleaningOrderId],
+      ["고객명", report.customerName], ["서비스", report.serviceType],
+      ["현장", report.address], ["작업완료", dateText(report.completedAt)],
+      ["BRING 책임검수", `QC ${report.qcScore || 0}점 · 통과`], ["전달상태", report.status === "delivered" ? "고객 전달 완료" : "전달 전"]
+    ]) + `<section class="cleaning-document-section"><h3>완료 작업범위</h3><p>${esc(report.scope || "-")}</p></section><section class="cleaning-document-section"><h3>완료 특이사항</h3><p>${esc(report.completionNote || "특이사항 없음")}</p></section><section class="cleaning-document-section"><h3>시설 점검사항</h3><p>${esc(report.facilityFindings || "추가 관리 필요사항 없음")}</p></section><section class="cleaning-document-section"><h3>책임검수 의견</h3><p>${esc(report.qcNote || "BRING 책임검수 완료")}</p></section>${safePhotos.length ? `<section class="cleaning-document-section"><h3>완료 사진</h3><div class="cleaning-document-photos">${safePhotos.map(url => `<img src="${attr(url)}" alt="청소 완료 사진">`).join("")}</div></section>` : ""}<div class="cleaning-document-promise">브링케어가 작업 결과를 확인하고 책임검수를 완료했습니다.</div>`;
+    openCleaningDocumentPreview("청소 완료보고서", cleaningDocumentShell("청소 완료보고서", body));
+  }
+
+  function printCleaningDocument() {
+    const sheet = modalContent.querySelector(".cleaning-document-sheet");
+    const printRoot = document.getElementById("cleaningPrintRoot");
+    if (!sheet || !printRoot) return showToast("출력할 고객 문서를 찾지 못했습니다.", "error");
+    printRoot.innerHTML = sheet.outerHTML;
+    const cleanup = () => { printRoot.innerHTML = ""; };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    window.print();
+  }
+
   function renderCleaningOrderDrawer(orderId) {
     const order = cleaningOrderById(orderId);
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
@@ -3603,6 +3653,8 @@
       } catch (error) { showToast(error.message || "고객 견적서를 발행하지 못했습니다.", "error"); }
       return;
     }
+    const cleaningQuotePreviewButton = event.target.closest("[data-cleaning-quote-preview]");
+    if (cleaningQuotePreviewButton) { cleaningQuotePreview(cleaningQuotePreviewButton.dataset.cleaningQuotePreview); return; }
     const cleaningQcAdd = event.target.closest("[data-cleaning-qc-add]");
     if (cleaningQcAdd) { cleaningQcEditor(cleaningQcAdd.dataset.cleaningQcAdd); return; }
     const cleaningMessageAdd = event.target.closest("[data-cleaning-message-add]");
@@ -3687,6 +3739,10 @@
       } catch (error) { showToast(error.message || "전달 상태를 변경하지 못했습니다.", "error"); }
       return;
     }
+    const customerReportPreviewButton = event.target.closest("[data-cleaning-customer-report-preview]");
+    if (customerReportPreviewButton) { cleaningCustomerReportPreview(customerReportPreviewButton.dataset.cleaningCustomerReportPreview); return; }
+    const cleaningDocumentPrint = event.target.closest("[data-cleaning-document-print]");
+    if (cleaningDocumentPrint) { printCleaningDocument(); return; }
     const retentionAction = event.target.closest("[data-cleaning-retention-draft], [data-cleaning-retention-sent], [data-cleaning-retention-responded], [data-cleaning-retention-converted]");
     if (retentionAction) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 후속조치를 변경할 수 없습니다.", "error");

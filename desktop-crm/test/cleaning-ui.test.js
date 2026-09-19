@@ -200,6 +200,7 @@ test("renders customer quote evidence and explicit issue action", () => {
   assert.match(detail, /현장 추가금 없음/);
   assert.match(detail, /data-cleaning-quote-issue="q1"/);
   assert.match(detail, /data-cleaning-quote-add="o1"/);
+  assert.match(detail, /data-cleaning-quote-preview="q1"/);
 });
 
 test("renders new website estimate leads as an immediate response inbox", () => {
@@ -214,4 +215,10 @@ test("renders new website estimate leads as an immediate response inbox", () => 
   assert.match(center, /010-1234-5678/);
   assert.match(center, /즉시 연락/);
   assert.match(center, /data-cleaning-lead-convert="lead_web_1"/);
+});
+
+test("renders a printable completion report action", () => {
+  const detail = UI.renderCleaningOrderDetail({ order: { id: "o1", customerName: "홍길동" }, stages, dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [], reworks: [], retentionActions: [], quotes: [], customerReports: [{ id: "cr1", cleaningOrderId: "o1", status: "draft", qcScore: 98, photoUrls: ["https://example.com/a.jpg"] }], writable: true });
+  assert.match(detail, /data-cleaning-customer-report-preview="cr1"/);
+  assert.match(detail, /출력·PDF/);
 });

@@ -232,3 +232,17 @@ test("new website estimate leads alert the signed-in operator on remote arrival"
   assert.match(app, /new Notification\(/);
   assert.match(app, /function applyRemoteStore\(data\)[\s\S]*?notifyNewCleaningLeads\(store, next\)/);
 });
+
+test("quote and completion report previews print customer-facing documents", async () => {
+  const [html, css, app] = await Promise.all([source("index.html"), source("styles.css"), source("app.js")]);
+  assert.match(html, /id="cleaningPrintRoot"/);
+  assert.match(css, /@media print/);
+  assert.match(css, /cleaning-document-sheet/);
+  assert.match(app, /function cleaningQuotePreview\(quoteId\)/);
+  assert.match(app, /function cleaningCustomerReportPreview\(reportId\)/);
+  assert.match(app, /data-cleaning-quote-preview/);
+  assert.match(app, /data-cleaning-customer-report-preview/);
+  assert.match(app, /window\.print\(\)/);
+  assert.match(app, /서창환/);
+  assert.match(app, /현장 추가금 없음/);
+});
