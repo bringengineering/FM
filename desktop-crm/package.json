@@ -9,7 +9,9 @@
   "scripts": {
     "start": "electron .",
     "tv": "electron src/wallboard-tv-main.js",
-    "build:tv": "electron-builder --config electron-builder.tv.cjs --win nsis --x64 --publish never",
+    "build:tv": "set BRING_TV_NO_PUBLISH=1&& electron-builder --config electron-builder.tv.cjs --win nsis --x64 --publish never && node scripts/tv-release/write-update-manifest.js --dist dist-tv",
+    "verify:tv-release": "node scripts/tv-release/verify-assets.js",
+    "write:tv-channel": "node scripts/tv-release/write-channel-pointer.js",
     "test": "node --test test/*.test.js",
     "crm:migration:export": "electron scripts/export-crm-staging.js",
     "crm:migration:verify": "node scripts/verify-crm-staging.js",
