@@ -41,3 +41,53 @@ export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
   return new Response(response.body,{status:response.status,headers:{...cors,'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
  }catch(error){const code=Object.hasOwn(status,error?.code)?error.code:'WALLBOARD_UNAVAILABLE';return reply(code,status[code]||503,cors);}
 }
+
+const webHeaders={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'};
+const sessionCookie=value=>`bring_tv_session=${value}; HttpOnly; Secure; SameSite=Strict; Path=/tv; Max-Age=31536000`;
+const clearSessionCookie='bring_tv_session=; HttpOnly; Secure; SameSite=Strict; Path=/tv; Max-Age=0';
+function webReply(value,statusCode=200,headers={}){return new Response(JSON.stringify(value),{status:statusCode,headers:{...webHeaders,...headers}});}
+function cookieValue(request,name){
+ for(const part of String(request.headers.get('cookie')||'').split(';')){const [key,...rest]=part.trim().split('=');if(key===name)return rest.join('=');}
+ return '';
+}
+async function webRateLimit(request,env){
+ const rate=await env.WALLBOARD_RATE_LIMITER.limit({key:'wallboard-web:'+String(request.headers.get('cf-connecting-ip')||'unknown')});
+ return rate?.success===true;
+}
+async function webCommand(env,action,input={},token=''){
+ const stub=env.WALLBOARD_DEVICES.get(env.WALLBOARD_DEVICES.idFromName('bring-company-wallboard'));
+ return stub.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,input,identity:null,token})}));
+}
+export async function wallboardWebRequest(request,env){
+ const url=new URL(request.url),path=url.pathname;
+ if(!['/tv/api/pair/start','/tv/api/pair/poll','/tv/api/display'].includes(path))return webReply({ok:false,code:'NOT_FOUND'},404);
+ if(env.WALLBOARD_ENABLED!=='true'||!env.WALLBOARD_DEVICES||!env.WALLBOARD_RATE_LIMITER)return webReply({ok:false,code:'WALLBOARD_UNAVAILABLE'},503);
+ const origin=request.headers.get('origin');
+ if(origin&&origin!==url.origin)return webReply({ok:false,code:'FORBIDDEN'},403);
+ try{
+  if(path==='/tv/api/display'){
+   if(request.method!=='GET')return webReply({ok:false,code:'METHOD_NOT_ALLOWED'},405);
+   const token=cookieValue(request,'bring_tv_session');
+   if(!/^[a-f0-9]{64}$/.test(token))return webReply({ok:false,code:'AUTH_REQUIRED'},401,{'set-cookie':clearSessionCookie});
+   const response=await webCommand(env,'display',{},token),data=await response.json();
+   if(!response.ok)return webReply(data,response.status,response.status===401?{'set-cookie':clearSessionCookie}:{});
+   return webReply(data);
+  }
+  if(request.method!=='POST')return webReply({ok:false,code:'METHOD_NOT_ALLOWED'},405);
+  if(!await webRateLimit(request,env))return webReply({ok:false,code:'RATE_LIMITED'},429);
+  if(path==='/tv/api/pair/start'){
+   const response=await webCommand(env,'start',{clientType:'web'}),data=await response.json();
+   return webReply(data,response.status);
+  }
+  const input=await body(request,4096),pendingToken=String(input?.pendingToken||'');
+  if(Object.keys(input||{}).some(key=>key!=='pendingToken')||!/^[a-f0-9]{64}$/.test(pendingToken))return webReply({ok:false,code:'INVALID_INPUT'},400);
+  const response=await webCommand(env,'poll',{},pendingToken),data=await response.json();
+  if(!response.ok)return webReply(data,response.status);
+  if(data.status!=='approved')return webReply({ok:true,status:'pending'});
+  if(!/^[a-f0-9]{64}$/.test(data.deviceToken))return webReply({ok:false,code:'WALLBOARD_UNAVAILABLE'},503);
+  return webReply({ok:true,status:'approved',deviceId:data.deviceId},200,{'set-cookie':sessionCookie(data.deviceToken)});
+ }catch(error){
+  const code=Object.hasOwn(status,error?.code)?error.code:'WALLBOARD_UNAVAILABLE';
+  return webReply({ok:false,code},status[code]||503);
+ }
+}

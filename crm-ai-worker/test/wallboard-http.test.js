@@ -86,3 +86,31 @@ test('publication requires administrator while display uses only device token',a
  const a=setup();assert.equal((await a.worker.fetch(req('display',{},'a'.repeat(64)),a.env)).status,200);assert.equal(a.forwarded[0].token,'a'.repeat(64));assert.equal(a.forwarded[0].identity,null);
  assert.equal((await a.worker.fetch(req('display',{},'staff-token'),a.env)).status,401);
 });
+test('web TV pairs through same-origin endpoints and keeps its device token in a protected cookie',async()=>{
+ let state;const storage={transaction:async fn=>{let value=structuredClone(state);const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
+ const f=setup();f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});
+ const startResponse=await f.worker.fetch(new Request('https://gateway.test/tv/api/pair/start',{method:'POST',headers:{origin:'https://gateway.test'}}),f.env);
+ assert.equal(startResponse.status,200);assert.equal(startResponse.headers.get('access-control-allow-origin'),null);
+ const start=await startResponse.json();assert.match(start.code,/^[A-F0-9]{8}$/);assert.match(start.pendingToken,/^[a-f0-9]{64}$/);
+ await f.worker.fetch(req('approve',{code:start.code,name:'회의실 웹 TV'}),f.env);
+ const pollResponse=await f.worker.fetch(new Request('https://gateway.test/tv/api/pair/poll',{method:'POST',headers:{origin:'https://gateway.test','content-type':'application/json'},body:JSON.stringify({pendingToken:start.pendingToken})}),f.env);
+ const polled=await pollResponse.json();assert.equal(polled.status,'approved');assert.equal('deviceToken' in polled,false);
+ const cookie=pollResponse.headers.get('set-cookie');assert.match(cookie,/^bring_tv_session=[a-f0-9]{64};/);assert.match(cookie,/HttpOnly/i);assert.match(cookie,/Secure/i);assert.match(cookie,/SameSite=Strict/i);assert.match(cookie,/Path=\/tv/i);
+ const display=await f.worker.fetch(new Request('https://gateway.test/tv/api/display',{headers:{cookie:cookie.split(';')[0]}}),f.env);
+ assert.equal(display.status,200);assert.equal(display.headers.get('cache-control'),'no-store');
+ const list=await (await f.worker.fetch(req('list'),f.env)).json();assert.equal(list.devices[0].clientType,'web');
+});
+test('web TV endpoints reject foreign origins, missing sessions and revoked sessions',async()=>{
+ const f=setup();
+ assert.equal((await f.worker.fetch(new Request('https://gateway.test/tv/api/pair/start',{method:'POST',headers:{origin:'https://evil.example'}}),f.env)).status,403);
+ assert.equal((await f.worker.fetch(new Request('https://gateway.test/tv/api/display'),f.env)).status,401);
+ let state;const storage={transaction:async fn=>{let value=structuredClone(state);const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
+ f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});
+ const start=await (await f.worker.fetch(new Request('https://gateway.test/tv/api/pair/start',{method:'POST',headers:{origin:'https://gateway.test'}}),f.env)).json();
+ await f.worker.fetch(req('approve',{code:start.code,name:'웹 TV'}),f.env);
+ const poll=await f.worker.fetch(new Request('https://gateway.test/tv/api/pair/poll',{method:'POST',headers:{origin:'https://gateway.test','content-type':'application/json'},body:JSON.stringify({pendingToken:start.pendingToken})}),f.env);
+ const cookie=poll.headers.get('set-cookie').split(';')[0];const deviceId=(await (await f.worker.fetch(req('list'),f.env)).json()).devices[0].id;
+ await f.worker.fetch(req('revoke',{deviceId}),f.env);
+ const revoked=await f.worker.fetch(new Request('https://gateway.test/tv/api/display',{headers:{cookie}}),f.env);
+ assert.equal(revoked.status,401);assert.match(revoked.headers.get('set-cookie'),/Max-Age=0/i);
+});
