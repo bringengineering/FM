@@ -4,6 +4,8 @@ import {validatePublication} from './wallboard-publication.js';
 const TTL=10*60*1000;
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
+const version=value=>typeof value==='string'&&/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(value)?value:null;
+const updateStatuses=new Set(['idle','downloading','ready','installing','installed','failed']);
 async function hash(value){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join('');}
 function admin(identity){if(identity?.isAdmin!==true||typeof identity.uid!=='string'||!identity.uid)fail('FORBIDDEN');}
 function initialize(s,now){
@@ -59,17 +61,51 @@ export function createPairingService({repository,now=Date.now}){
    admin(identity);
    return run(s=>{const d=Object.values(s.devices).find(d=>d.id===deviceId);if(!d)return {error:'NOT_FOUND'};d.revokedAt=now();return {status:'revoked'};});
   },
+  async scheduleUpdate(deviceId,targetVersion,identity){
+   admin(identity);
+   if(typeof deviceId!=='string'||!deviceId||!version(targetVersion))fail('INVALID_INPUT');
+   return run(s=>{
+    const device=Object.values(s.devices).find(d=>d.id===deviceId&&d.revokedAt===null);
+    if(!device)return {error:'NOT_FOUND'};
+    device.targetVersion=targetVersion;device.updateStatus='scheduled';device.updateError=null;
+    device.updateApprovedBy=identity.uid;device.updateApprovedAt=now();device.updateConsumedAt=null;device.updateCompletedAt=null;
+    return {status:'scheduled',targetVersion};
+   });
+  },
+  async cancelUpdate(deviceId,identity){
+   admin(identity);
+   if(typeof deviceId!=='string'||!deviceId)fail('INVALID_INPUT');
+   return run(s=>{
+    const device=Object.values(s.devices).find(d=>d.id===deviceId&&d.revokedAt===null);
+    if(!device)return {error:'NOT_FOUND'};
+    device.targetVersion=null;device.updateStatus='cancelled';device.updateError=null;device.updateApprovedBy=null;device.updateApprovedAt=null;device.updateConsumedAt=null;
+    return {status:'cancelled'};
+   });
+  },
   async publish(input,expectedVersion,identity){
    admin(identity);const snapshot=validatePublication(input);
    if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
    return run(s=>{if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};return {version:s.board.version,publishedAt:s.board.publishedAt};});
   },
-  async readBoard(deviceToken,clientVersion){
+  async readBoard(deviceToken,clientVersion,report={}){
    if(clientVersion!==undefined&&(typeof clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(clientVersion)))throw Object.assign(new Error('INVALID_INPUT'),{code:'INVALID_INPUT'});
+   if(!report||typeof report!=='object'||Array.isArray(report)||Object.keys(report).some(k=>!['updateStatus','updateError'].includes(k)))fail('INVALID_INPUT');
+   if(report.updateStatus!==undefined&&!updateStatuses.has(report.updateStatus))fail('INVALID_INPUT');
+   if(report.updateError!==undefined&&(typeof report.updateError!=='string'||!/^[A-Z0-9_]{1,80}$/.test(report.updateError)))fail('INVALID_INPUT');
    if(typeof deviceToken!=='string'||!/^[a-f0-9]{64}$/.test(deviceToken))fail('INVALID_TOKEN');
    const digest=await hash(deviceToken);
-   return run(s=>{const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};device.lastSeenAt=now();if(clientVersion!==undefined)device.clientVersion=clientVersion;return {board:s.board?structuredClone(s.board):null};});
+   return run(s=>{
+    const device=s.devices[digest];if(!device||device.revokedAt!==null)return {error:'INVALID_TOKEN'};
+    device.lastSeenAt=now();if(clientVersion!==undefined)device.clientVersion=clientVersion;
+    if(device.targetVersion&&clientVersion===device.targetVersion){
+     device.targetVersion=null;device.updateStatus='installed';device.updateError=null;device.updateCompletedAt=now();device.updateApprovedBy=null;device.updateConsumedAt=null;
+    }else if(device.targetVersion&&report.updateStatus!==undefined){
+     device.updateStatus=report.updateStatus;device.updateError=report.updateStatus==='failed'?(report.updateError||'UNKNOWN'):null;
+     if(report.updateStatus!=='idle'&&device.updateConsumedAt===null)device.updateConsumedAt=now();
+    }
+    return {board:s.board?structuredClone(s.board):null,update:device.targetVersion&&clientVersion!==device.targetVersion?{targetVersion:device.targetVersion}:null};
+   });
   },
-  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt,clientVersion})=>({id,name,createdAt,lastSeenAt,revokedAt,clientVersion:clientVersion||null}))}));}
+  async list(identity){admin(identity);return run(s=>({version:s.board?.version||0,devices:Object.values(s.devices).map(({id,name,createdAt,lastSeenAt,revokedAt,clientVersion,targetVersion,updateStatus,updateError,updateApprovedAt,updateConsumedAt,updateCompletedAt})=>({id,name,createdAt,lastSeenAt,revokedAt,clientVersion:clientVersion||null,targetVersion:targetVersion||null,updateStatus:updateStatus||'idle',updateError:updateError||null,updateApprovedAt:updateApprovedAt||null,updateConsumedAt:updateConsumedAt||null,updateCompletedAt:updateCompletedAt||null}))}));}
  };
 }

@@ -38,3 +38,30 @@ test('approval attempts and pending enrollment are bounded',async()=>{
  await assert.rejects(f.service.begin(),/RATE_LIMITED/);
  f.advance(600001);assert.ok((await f.service.begin()).code);
 });
+test('administrator schedules one immutable target and device reports completion',async()=>{
+ const f=fixture();const pending=await f.service.begin();
+ await f.service.approve(pending.code,'회의실 TV',admin);
+ const device=await f.service.poll(pending.pendingToken);
+ assert.deepEqual(await f.service.scheduleUpdate(device.deviceId,'0.2.0',admin),{status:'scheduled',targetVersion:'0.2.0'});
+ let display=await f.service.readBoard(device.deviceToken,'0.1.2',{updateStatus:'idle'});
+ assert.deepEqual(display.update,{targetVersion:'0.2.0'});
+ display=await f.service.readBoard(device.deviceToken,'0.1.2',{updateStatus:'downloading'});
+ assert.deepEqual(display.update,{targetVersion:'0.2.0'});
+ let listed=(await f.service.list(admin)).devices[0];
+ assert.equal(listed.clientVersion,'0.1.2');assert.equal(listed.targetVersion,'0.2.0');assert.equal(listed.updateStatus,'downloading');
+ display=await f.service.readBoard(device.deviceToken,'0.2.0',{updateStatus:'installed'});
+ assert.equal(display.update,null);
+ listed=(await f.service.list(admin)).devices[0];
+ assert.equal(listed.clientVersion,'0.2.0');assert.equal(listed.targetVersion,null);assert.equal(listed.updateStatus,'installed');assert.equal(listed.updateError,null);
+});
+test('update approval is admin-only, cancellable and unavailable after revocation',async()=>{
+ const f=fixture();const pending=await f.service.begin();await f.service.approve(pending.code,'TV',admin);const device=await f.service.poll(pending.pendingToken);
+ await assert.rejects(f.service.scheduleUpdate(device.deviceId,'0.2.0',{uid:'staff',isAdmin:false}),/FORBIDDEN/);
+ await assert.rejects(f.service.scheduleUpdate(device.deviceId,'latest',admin),/INVALID_INPUT/);
+ await f.service.scheduleUpdate(device.deviceId,'0.2.0',admin);
+ assert.deepEqual(await f.service.cancelUpdate(device.deviceId,admin),{status:'cancelled'});
+ assert.equal((await f.service.readBoard(device.deviceToken,'0.1.2',{updateStatus:'idle'})).update,null);
+ await f.service.revoke(device.deviceId,admin);
+ await assert.rejects(f.service.scheduleUpdate(device.deviceId,'0.2.0',admin),/NOT_FOUND/);
+ await assert.rejects(f.service.readBoard(device.deviceToken,'0.1.2',{updateStatus:'failed',updateError:'NETWORK'}),/INVALID_TOKEN/);
+});

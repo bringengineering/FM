@@ -21,9 +21,11 @@ export class WallboardDevices {
     case 'poll':result=await this.service.poll(token);break;
     case 'approve':result=await this.service.approve(input.code,input.name,identity);break;
     case 'revoke':result=await this.service.revoke(input.deviceId,identity);break;
+    case 'schedule-update':result=await this.service.scheduleUpdate(input.deviceId,input.targetVersion,identity);break;
+    case 'cancel-update':result=await this.service.cancelUpdate(input.deviceId,identity);break;
     case 'list':result=await this.service.list(identity);break;
     case 'publish':result=await this.service.publish(input.snapshot,input.expectedVersion,identity);break;
-    case 'display':result=await this.service.readBoard(token,input.clientVersion);break;
+    case 'display':result=await this.service.readBoard(token,input.clientVersion,{updateStatus:input.updateStatus,updateError:input.updateError});break;
     default:return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
    }
    return Response.json({ok:true,...result},{headers});
