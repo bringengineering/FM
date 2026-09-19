@@ -59,6 +59,7 @@
   let store = Core.blankStore();
   let currentView = "dashboard";
   let currentWorkspace = null;
+  let disposeCompanyWallboard = null;
   let officeMessengerPresence = "";
   let officeMessengerPresenceTask = Promise.resolve(true);
   let currentMarketingView = "marketingOverview";
@@ -208,6 +209,7 @@
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "일일업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
+    companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
@@ -686,6 +688,7 @@
   }
 
   function setCurrentAuth(value) {
+    if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     const previousAtlasIdentity = atlasIdentity(currentAuth && currentAuth.user);
     const previousUid = currentAuthUid();
     const marketingIdentityKey = auth => { const user = auth && auth.user || {}; return [user.uid, user.accessRole, user.marketingRole].map(item => String(item || "").slice(0, 160)).join("|"); };
@@ -1545,6 +1548,13 @@
     else if (currentView === "objectives") renderObjectives();
     else if (currentView === "dailyLog") renderDailyLog();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
+    else if (currentView === "companyWallboard") {
+      if (disposeCompanyWallboard) disposeCompanyWallboard();
+      disposeCompanyWallboard = window.BringCompanyWallboard.mount(main, {
+        load: () => api.loadWorkOrders(),
+        isActive: () => currentView === "companyWallboard" && currentWorkspace === "operations" && Boolean(currentAuth.user),
+      });
+    }
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
@@ -1787,6 +1797,7 @@
   });
 
   function render() {
+    if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     // 오늘 연락할 고객을 회사 텔레그램으로 민다. 하루에 한 번만 간다 —
     // 여기가 몇 번 불리든 안에서 막는다.
     void maybeAutoSendTelegram();
@@ -15552,7 +15563,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

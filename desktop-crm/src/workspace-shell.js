@@ -65,6 +65,7 @@
   // navFolder 는 사이드바의 data-nav-folder 값과 같아야 한다. 짝이 어긋나면
   // 고른 폴더가 통째로 사라진다. 검사가 그 짝을 지킨다.
   const LANDING_FOLDERS = Object.freeze([
+    { workspace: "operations", navFolder: "company-wallboard", view: "companyWallboard", title: "회사 운영보드", description: "TV 시각화·업무 현황·화면 순환" },
     { workspace: "operations", navFolder: "customer-management", view: "customers", title: "CRM", description: "고객·건물·협력업체·공실·견적서" },
     { workspace: "operations", navFolder: "project", view: "workOrders", title: "프로젝트 관리", description: "업무지시·할 일·민원" },
     { workspace: "operations", navFolder: "calendar", view: "buildingCalendar", title: "ERP·일정", description: "업무·계약 일정과 입금·매입" },
