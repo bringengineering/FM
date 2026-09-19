@@ -14,4 +14,5 @@ test('TV production storage is dedicated SQLite with bounded request rate',()=>{
  assert.match(config,/\[\[durable_objects.bindings\]\]\s+name = "WALLBOARD_DEVICES"\s+class_name = "WallboardDevices"/);
  assert.match(config,/new_sqlite_classes = \["WallboardDevices"\]/);
  assert.match(config,/name = "WALLBOARD_RATE_LIMITER"\s+namespace_id = "10082"/);
+ assert.match(config,/name = "WALLBOARD_RATE_LIMITER"[\s\S]*?limit = 240\s+period = 60/);
 });
