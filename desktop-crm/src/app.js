@@ -1551,7 +1551,10 @@
     else if (currentView === "companyWallboard") {
       if (disposeCompanyWallboard) disposeCompanyWallboard();
       disposeCompanyWallboard = window.BringCompanyWallboard.mount(main, {
-        load: () => api.loadWorkOrders(),
+        load: async () => {
+          const [work, calendar] = await Promise.all([api.loadWorkOrders(), api.load().catch(() => null)]);
+          return { ...work, calendar };
+        },
         isActive: () => currentView === "companyWallboard" && currentWorkspace === "operations" && Boolean(currentAuth.user),
       });
     }
