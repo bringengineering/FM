@@ -14,5 +14,12 @@
 - [ ] Add approved display snapshot and versioned playlist publication with server-side schema validation.
 - [ ] Verify actual two-client playback, revocation and restart before production deployment.
 
+## HTTP/storage implementation progress
+- Added `/v1/wallboard/start|poll|approve|revoke|list` POST routes. They return unavailable unless explicit enablement, dedicated storage binding and rate limiter all exist.
+- Administrator identity comes only from the existing Firebase verifier plus verified email/admin allowlist. Request bodies cannot inject identity.
+- `WallboardDevices` adapter stores pairing state inside a durable storage transaction. Node tests use a transactional stand-in; actual Cloudflare runtime verification is still required.
+- Payload reads are bounded to 4096 bytes. Enrollment token is accepted only through Authorization and never forwarded for administrator actions. Responses are no-store.
+- No Wrangler bindings/migrations were added and no cloud deployment was performed.
+
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
