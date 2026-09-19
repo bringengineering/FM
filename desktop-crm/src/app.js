@@ -4363,7 +4363,7 @@
           const order = cleaningOrderById(orderId);
           return {
             cleaningOrderId: orderId,
-            amount: Core.money(order && order.partnerPay),
+            partnerPay: Core.money(order && order.partnerPay),
             qcPassed: store.cleaningQcReviews.some(item => item.cleaningOrderId === orderId && item.result === "passed"),
             reportComplete: store.cleaningReports.some(item => item.cleaningOrderId === orderId && item.type === "completion"),
             disputed: Boolean(form.elements[`disputed__${orderId}`]?.checked)

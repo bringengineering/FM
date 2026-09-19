@@ -105,6 +105,7 @@ test("customer payment and weekly Partner settlement use separate durable record
   assert.match(app, /id="cleaningSettlementForm"/);
   assert.match(app, /Cleaning\.createCleaningSettlement/);
   assert.match(app, /store\.cleaningSettlements\.push/);
+  assert.match(app, /partnerPay:\s*Core\.money\(order\s*&&\s*order\.partnerPay\)/);
 });
 
 test("cleaning center receives the owner dashboard calculation", async () => {
