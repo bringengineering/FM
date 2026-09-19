@@ -435,3 +435,11 @@ test("price book forbids field-decided surcharges and requires preapproval", () 
   assert.ok(Cleaning.CLEANING_PRICE_BOOK.includedScopes.includes("화장실"));
   assert.ok(Cleaning.CLEANING_PRICE_BOOK.excludedScopes.includes("폐기물 처리"));
 });
+
+test("cleaning orders preserve the price book evidence used for the quote", () => {
+  const order = Cleaning.normalizeCleaningOrder({ id: "o1", priceProduct: "apartment", priceBasis: 24, priceBookVersion: "BRING-CARE-PRICE-v0.1", quoteMode: "standard", standardPriceAmount: 319000 });
+  assert.equal(order.priceProduct, "apartment");
+  assert.equal(order.priceBasis, 24);
+  assert.equal(order.priceBookVersion, "BRING-CARE-PRICE-v0.1");
+  assert.equal(order.standardPriceAmount, 319000);
+});

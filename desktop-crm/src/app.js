@@ -1961,6 +1961,8 @@
   function cleaningOrderEditor(orderId) {
     const order = cleaningOrderById(orderId) || {};
     const selected = value => order.serviceType === value ? " selected" : "";
+    const priceSelected = value => order.priceProduct === value ? " selected" : "";
+    const standardChecked = order.quoteMode !== "manual" ? " checked" : "";
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${order.id ? "청소 주문 수정" : "새 청소 주문"}</h2><p>상담·견적·일정을 한 번에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
       <form id="cleaningOrderForm" class="modal-body" data-cleaning-order-id="${attr(order.id || "")}">
         <div class="info-box"><strong>현장 추가금 없음</strong><br>사전 확정 범위와 제외 범위를 고객에게 명확히 안내합니다.</div>
@@ -1970,6 +1972,9 @@
           <label class="field"><span>서비스 *</span><select name="serviceType" required><option value="">선택</option><option value="move_in"${selected("move_in")}>입주청소</option><option value="common_area"${selected("common_area")}>공용부청소</option><option value="recurring"${selected("recurring")}>정기관리</option><option value="other"${selected("other")}>기타</option></select></label>
           <label class="field"><span>희망 작업일 *</span><input name="scheduledAt" type="datetime-local" value="${attr(order.scheduledAt ? String(order.scheduledAt).slice(0,16) : "")}" required></label>
           <label class="field full"><span>현장 주소 *</span><input name="address" value="${attr(order.address || "")}" required></label>
+          <label class="field"><span>가격상품</span><select name="priceProduct"><option value="">직접견적</option><option value="studio"${priceSelected("studio")}>원룸 입주·퇴실</option><option value="apartment"${priceSelected("apartment")}>아파트 입주·이사</option><option value="common_area_monthly4"${priceSelected("common_area_monthly4")}>공용부 월 4회</option><option value="office_single"${priceSelected("office_single")}>사무실·상가 단건</option></select></label>
+          <label class="field"><span>평수·층수·작업시간</span><input name="priceBasis" type="number" min="0" step="1" value="${attr(order.priceBasis || "")}" placeholder="상품에 맞는 기준 숫자"></label>
+          <label class="field full"><span><input name="useStandardPrice" type="checkbox"${standardChecked}> BRING 표준가격 자동 적용</span><small>별도견적 대상은 체크를 해제하고 관리자 확인 후 직접 금액을 입력합니다.</small></label>
           <label class="field"><span>총 결제금액</span><input name="totalAmount" type="number" min="0" step="1000" value="${attr(order.totalAmount || "")}"></label>
           <label class="field"><span>계약금</span><input name="depositAmount" type="number" min="0" step="1000" value="${attr(order.depositAmount || "")}"></label>
           <label class="field"><span>Partner 지급액</span><input name="partnerPay" type="number" min="0" step="1000" value="${attr(order.partnerPay || "")}"></label>
@@ -4709,6 +4714,13 @@
         ensureCleaningStore();
         const existing = cleaningOrderById(form.dataset.cleaningOrderId);
         const actor = salesActor();
+        const useStandardPrice = Boolean(form.elements.useStandardPrice.checked);
+        const priceProduct = String(raw.priceProduct || "").trim();
+        const priceBasis = Number(raw.priceBasis) || 0;
+        const priceInput = priceProduct === "common_area_monthly4" ? { productCode: priceProduct, floors: priceBasis } : priceProduct === "office_single" ? { productCode: priceProduct, hours: priceBasis } : { productCode: priceProduct, area: priceBasis };
+        const standardPrice = useStandardPrice ? Cleaning.standardCleaningPrice(priceInput) : null;
+        if (useStandardPrice && standardPrice.manualQuote) throw new Error("별도견적 대상입니다. 관리자 확인 후 표준가격 자동 적용을 해제하고 금액을 입력해 주세요.");
+        const totalAmount = useStandardPrice ? standardPrice.amount : Number(raw.totalAmount) || 0;
         const values = Object.assign({}, existing || {}, {
           id: existing?.id,
           customerName: String(raw.customerName || "").trim(),
@@ -4716,9 +4728,14 @@
           serviceType: raw.serviceType,
           address: String(raw.address || "").trim(),
           scheduledAt: String(raw.scheduledAt || "").trim(),
-          totalAmount: Number(raw.totalAmount) || 0,
+          totalAmount,
           depositAmount: Number(raw.depositAmount) || 0,
-          balanceAmount: Math.max(0, (Number(raw.totalAmount) || 0) - (Number(raw.depositAmount) || 0)),
+          balanceAmount: Math.max(0, totalAmount - (Number(raw.depositAmount) || 0)),
+          priceProduct,
+          priceBasis,
+          priceBookVersion: useStandardPrice ? standardPrice.priceBookVersion : String(existing?.priceBookVersion || ""),
+          quoteMode: useStandardPrice ? "standard" : "manual",
+          standardPriceAmount: useStandardPrice ? standardPrice.amount : 0,
           scope: String(raw.scope || "").trim(),
           exclusions: String(raw.exclusions || "").trim(),
           owner: existing?.owner || salesActorName(),

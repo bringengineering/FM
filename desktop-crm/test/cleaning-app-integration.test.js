@@ -187,3 +187,14 @@ test("cleaning center receives the approved sales price book", async () => {
   const app = await source("app.js");
   assert.match(app, /priceBook:\s*Cleaning\.CLEANING_PRICE_BOOK/);
 });
+
+test("cleaning order form applies the approved price book with an explicit manual-quote escape", async () => {
+  const app = await source("app.js");
+  assert.match(app, /name="priceProduct"/);
+  assert.match(app, /name="priceBasis"/);
+  assert.match(app, /name="useStandardPrice"/);
+  const submit = app.match(/else if \(form\.id === "cleaningOrderForm"\) \{([\s\S]*?)\n\s*\} else if/)?.[1] || "";
+  assert.match(submit, /Cleaning\.standardCleaningPrice/);
+  assert.match(submit, /priceBookVersion/);
+  assert.match(submit, /별도견적 대상/);
+});
