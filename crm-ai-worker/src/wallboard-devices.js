@@ -17,7 +17,7 @@ export class WallboardDevices {
    if(request.method!=='POST'||new URL(request.url).pathname!=='/command')return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
    const {action,input,identity,token}=await request.json();let result;
    switch(action){
-    case 'start':result=await this.service.begin();break;
+    case 'start':result=await this.service.begin(input?.clientType);break;
     case 'poll':result=await this.service.poll(token);break;
     case 'approve':result=await this.service.approve(input.code,input.name,identity);break;
     case 'revoke':result=await this.service.revoke(input.deviceId,identity);break;
