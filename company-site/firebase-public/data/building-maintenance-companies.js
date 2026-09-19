@@ -1,0 +1,4879 @@
+window.BRING_BUILDING_MAINTENANCE_DATA = {
+  "source": {
+    "excel": "건물관리_경쟁사_정리.xlsx",
+    "googleSheet": "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/edit"
+  },
+  "generatedFrom": [
+    "회사_종합",
+    "Google Sheet CSV"
+  ],
+  "note": "엑셀 경쟁사는 지역 중심점, 구글시트 유지보수 업체는 주소 기반 지오코딩 좌표를 우선 사용합니다.",
+  "companies": [
+    {
+      "id": "excel-01",
+      "no": 1,
+      "name": "에스앤아이코퍼레이션(S&I)",
+      "category": "대기업 종합FM/보안",
+      "service": "FM·PM, 시설관리, 공간관리 브랜드 '샌디(SANDI)'",
+      "feature": "국내 FM 1위. 업계 최초 원격관리 솔루션·FM대학·샌디몰 이커머스 운영",
+      "operation": "혼합",
+      "region": "LG그룹 계열사+외부(KB·서울대 등)/전국",
+      "scale": "대기업, LG 지분 100%, 매출 6천억+",
+      "url": "https://sni.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-02",
+      "no": 2,
+      "name": "HDC랩스",
+      "category": "대기업 종합FM/보안",
+      "service": "시설관리+홈네트워크+스마트빌딩",
+      "feature": "통합관리 플랫폼 'insite' 자체개발, AIoT 플랫폼화. 스마트홈 B2C 확장",
+      "operation": "혼합",
+      "region": "국민은행본점·롯데홈쇼핑 등 100여 사업장/전국",
+      "address": "06722 서울특별시 서초구 효령로 346 HDC랩스타워",
+      "scale": "코스닥 상장(A039570), 매출 6천억+",
+      "url": "https://www.hdc-labs.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "HDC랩스타워",
+          "lat": 37.48629336,
+          "lng": 127.0218655,
+          "source": "address",
+          "precision": "address"
+        }
+      ]
+    },
+    {
+      "id": "excel-03",
+      "no": 3,
+      "name": "SK쉴더스",
+      "category": "대기업 종합FM/보안",
+      "service": "보안(ADT캡스+인포섹)+시설관리 FM",
+      "feature": "국내 유일 융합보안. FM플랫폼 SUMiTS. 인력형 자회사 캡스텍은 26년 매각추진",
+      "operation": "혼합",
+      "region": "대형빌딩·공공·병원/전국",
+      "scale": "대기업, 보안 Big3",
+      "url": "https://www.skshieldus.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-04",
+      "no": 4,
+      "name": "SK텔레캅 / KT텔레캅",
+      "category": "대기업 종합FM/보안",
+      "service": "통신사 계열 보안+빌딩 통합관리",
+      "feature": "통신결합 할인, 플랫폼 기반 보안. 건물관리는 보안의 부가서비스",
+      "operation": "비상주(원격)",
+      "region": "기업/매장/전국",
+      "scale": "대기업 계열",
+      "url": "https://www.kttelecop.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-05",
+      "no": 5,
+      "name": "솔비텍",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "현장점검 앱 '이체크폼', 리포팅툴 'AI Report'",
+      "feature": "시설점검 기록 전자화 SW. GS인증 1등급. QR/NFC 설비이력관리",
+      "operation": "해당없음(SW)",
+      "region": "시설점검 필요 사업장/B2B",
+      "scale": "중소 SW",
+      "url": "https://www.solbitech.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-06",
+      "no": 6,
+      "name": "Jump(도란시스템/구 이메인텍)",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "설비관리(CMMS)·시설관리(FMS) 클라우드 솔루션",
+      "feature": "국내 유일 CSAP(클라우드 보안인증) FMS. 월 5만원~ 구독제",
+      "operation": "해당없음(SW)",
+      "region": "공장·빌딩·아파트·공공/B2B",
+      "scale": "중소 SW",
+      "url": "https://jumpms.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-07",
+      "no": 7,
+      "name": "빌딩케어(디원더)",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "상업용 건물관리 SW(임대료·관리비 청구/수납, 세금계산서, 협업툴)",
+      "feature": "전국 400여채, 관리자산 4조원+, S&I 협업. 뉴욕 진출 추진",
+      "operation": "해당없음(SW)",
+      "region": "중소형 부동산 자산관리사·건물주/B2B",
+      "scale": "스타트업, 투자유치",
+      "url": "https://www.buildingcare.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-08",
+      "no": 8,
+      "name": "자이로소프트",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "2D/3D 기반 공간/시설관리 솔루션, 디지털 트윈",
+      "feature": "SK텔레콤·국립중앙박물관·연세의료원 등 구축. 디지털트윈 강점",
+      "operation": "해당없음(SW)",
+      "region": "대기업·공공·대학/B2B",
+      "scale": "2002년 설립 SW",
+      "url": "https://www.gyrosoft.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-09",
+      "no": 9,
+      "name": "한국공간데이터(클리니어/클리니어빌딩)",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "사무실청소+건물관리 앱 '올인원 공간관리'",
+      "feature": "직접 서비스+가맹사업(클리니어위드) 병행. 청소 SaaS화",
+      "operation": "혼합",
+      "region": "사무실·병원·카페/B2B",
+      "scale": "2018년 설립",
+      "url": "https://www.thecleanier.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-10",
+      "no": 10,
+      "name": "오피스너(두꺼비세상)",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "대형 오피스/지식산업센터 특화 - 전자투표·AI CCTV·유휴공간 수익화",
+      "feature": "38,000호실+. 그랑서울·현대테라타워 등. '관리'를 넘어 '수익화'",
+      "operation": "해당없음(SW)",
+      "region": "오피스빌딩·지식산업센터/B2B",
+      "scale": "대형 상업용 1위 지향",
+      "url": "https://www.officener.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-11",
+      "no": 11,
+      "name": "이비즈네트웍스",
+      "category": "시설관리 SaaS/소프트웨어",
+      "service": "호텔위탁운영+건물관리 통합 SW",
+      "feature": "자체 OTA 관리 시스템. 호텔/리조트 운영 특화",
+      "operation": "해당없음(SW)",
+      "region": "호텔·리조트·복합시설",
+      "scale": "중소 SW+임대업",
+      "url": "https://ebiznetworks.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-12",
+      "no": 12,
+      "name": "둥지(컨텍터스)",
+      "category": "프롭테크 플랫폼(비상주)",
+      "service": "중소형 빌딩 구독형 시설·임대차·행정관리",
+      "feature": "IoT 기반 비상주 순환관리로 1세대 상주관리 고정비 문제 해결. 시리즈A 투자",
+      "operation": "비상주",
+      "region": "중소형 빌딩·대형빌딩 일부/전국",
+      "scale": "스타트업, 연매출 20억+",
+      "url": "https://www.doongji.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-13",
+      "no": 13,
+      "name": "k피엠씨(케이빌)",
+      "category": "프롭테크 플랫폼(비상주)",
+      "service": "빌딩·오피스텔·상가·빌라 전문관리, 입주민앱 '누림'",
+      "feature": "AI 건물관리서비스 개발 중. 순회점검+긴급출동. 9,800세대+",
+      "operation": "혼합(상주/비상주)",
+      "region": "집합건물·빌딩/전국",
+      "scale": "프롭테크",
+      "url": "https://www.k-pmc.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-14",
+      "no": 14,
+      "name": "모빌리티시스템스(빌즈)",
+      "category": "임대관리 특화",
+      "service": "빌라 동대표·총무 대행, 관리비 고지서, 주차장 공유 앱",
+      "feature": "빌라/다세대 특화. 주차공유 수익모델",
+      "operation": "비상주",
+      "region": "빌라·다세대·꼬마빌딩",
+      "scale": "중소 프롭테크",
+      "url": "https://vills.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-15",
+      "no": 15,
+      "name": "우리레오PMC",
+      "category": "임대관리 특화",
+      "service": "기업형 주택임대관리(임대료수금·명도·퇴거 대행)",
+      "feature": "공동주택1위 우리관리+일본 레오팔레스21 한일합작사. 수수료 월세 5~10%. 자체 시스템 개발",
+      "operation": "비상주",
+      "region": "오피스텔·도생·빌라·아파트/전국",
+      "scale": "약 4,000가구 관리",
+      "url": "http://www.woorileopmc.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-16",
+      "no": 16,
+      "name": "렘스자산관리(REMS)",
+      "category": "임대관리 특화",
+      "service": "중소형 수익형부동산(오피스/상가) 자산관리(PM) 컨설팅",
+      "feature": "1996년~, 논리·분석 기반 PM. 중소규모 빌딩 특화",
+      "operation": "혼합",
+      "region": "중소형 빌딩·상가/서울",
+      "scale": "2006년 설립",
+      "url": "https://remsamc.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-17",
+      "no": 17,
+      "name": "관리의달인(제이앤제이프로퍼티)",
+      "category": "행정/법무 대행",
+      "service": "관리단 설립, 건축물관리계획서·장기수선·해체계획서 등 법정서류 대행",
+      "feature": "직접 청소/경비 아닌 법무·행정 대행 전문. 디지털 회의록 시스템",
+      "operation": "해당없음",
+      "region": "집합건물·상가·오피스텔/전국",
+      "scale": "프롭테크(K-Proptech)",
+      "url": "https://jnjproperty.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-18",
+      "no": 18,
+      "name": "가심비",
+      "category": "견적비교/마켓플레이스",
+      "service": "토목·건축설계·시공·건물종합관리 견적 비교 앱",
+      "feature": "직접 서비스 아닌 여러 업체 견적 비교 마켓플레이스(조사 중 유일)",
+      "operation": "해당없음(중개)",
+      "region": "건물주·건축주",
+      "scale": "비교플랫폼",
+      "url": "https://ksgasimbi.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-19",
+      "no": 19,
+      "name": "엠지알브이(맹그로브/MGRV)",
+      "category": "공유주거 개발사(관리아님)",
+      "service": "코리빙하우스 기획·개발·운영",
+      "feature": "건물관리가 아니라 공유주거 부동산 임팩트 디벨로퍼. 실시간 공실조회",
+      "operation": "해당없음",
+      "region": "1인가구/서울·제주·고성",
+      "scale": "스타트업, 캐나다연기금 JV",
+      "url": "https://mangrove.city/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "제주",
+          "lat": 33.4996,
+          "lng": 126.5312,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "고성",
+          "lat": 38.3806,
+          "lng": 128.4676,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-20",
+      "no": 20,
+      "name": "에스원",
+      "category": "지역 전통 종합관리",
+      "service": "세콤(보안)+건물관리(블루스캔)+FM/PM+스마트케어존+부동산컨설팅",
+      "feature": "보안기업 출발, 60년 건물관리 노하우. 부동산종합서비스로 확장",
+      "operation": "혼합",
+      "region": "대형빌딩·복합시설/전국",
+      "scale": "대기업",
+      "url": "https://www.s1.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-21",
+      "no": 21,
+      "name": "한국관리",
+      "category": "지역 전통 종합관리",
+      "service": "시설·미화·보안·주차관리+기계설비성능점검",
+      "feature": "20년 노하우. 건물사고예방·에너지절감·수명연장 표방",
+      "operation": "상주",
+      "region": "빌딩/전국",
+      "scale": "중소",
+      "url": "http://hms21.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-22",
+      "no": 22,
+      "name": "메리트아이티",
+      "category": "지역 전통 종합관리",
+      "service": "건물종합관리(부동산자산·유지·관리비·보안·주차)",
+      "feature": "인천 지역 건물관리 대표 업체",
+      "operation": "상주",
+      "region": "빌딩/인천",
+      "scale": "중소",
+      "url": "http://www.bcmo.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "인천",
+          "lat": 37.4563,
+          "lng": 126.7052,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-23",
+      "no": 23,
+      "name": "혜성IBS",
+      "category": "지역 전통 종합관리",
+      "service": "건물종합관리(시설·경비·청소/미화)",
+      "feature": "대전·세종·충청권. 웨딩홀·병원 등 다양한 건물유형",
+      "operation": "상주",
+      "region": "빌딩·병원·웨딩/대전·충청",
+      "scale": "중소",
+      "url": "https://hsibs.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "대전",
+          "lat": 36.3504,
+          "lng": 127.3845,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "세종",
+          "lat": 36.4801,
+          "lng": 127.289,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "충청",
+          "lat": 36.6357,
+          "lng": 127.4914,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-24",
+      "no": 24,
+      "name": "신일관리",
+      "category": "지역 전통 종합관리",
+      "service": "생활숙박시설·오피스텔·빌딩·공동주택 종합관리",
+      "feature": "데이터 기반 관리설계. 상주/일반관리 선택형",
+      "operation": "혼합",
+      "region": "생숙·오피스텔·빌딩/전국",
+      "scale": "중소",
+      "url": "https://shinilmanagement.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-25",
+      "no": 25,
+      "name": "이엔씨종합관리",
+      "category": "지역 전통 종합관리",
+      "service": "원룸·오피스텔·빌딩·빌라·아파트 시설+임차관리",
+      "feature": "원룸~아파트까지 전국 단위 건물시설+임차관리",
+      "operation": "혼합",
+      "region": "원룸·오피스텔·빌딩/전국",
+      "scale": "중소",
+      "url": "https://enctotal.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-26",
+      "no": 26,
+      "name": "강안시스템",
+      "category": "지역 전통 종합관리",
+      "service": "시설관리+미화+경비(보안)+근로자파견+생산도급",
+      "feature": "부산 지역. 건물관리+인력파견 결합",
+      "operation": "상주",
+      "region": "빌딩/부산",
+      "scale": "중소",
+      "url": "https://www.kangan.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "부산",
+          "lat": 35.1796,
+          "lng": 129.0756,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-27",
+      "no": 27,
+      "name": "강토디앤아이씨",
+      "category": "지역 전통 종합관리",
+      "service": "시설+보안+미화+주차+에너지+자산관리",
+      "feature": "경기 화성(동탄). 건물 특성별 종합 관리솔루션",
+      "operation": "상주",
+      "region": "빌딩/경기 화성",
+      "scale": "중소",
+      "url": "https://gangto.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "화성",
+          "lat": 37.1995,
+          "lng": 126.8312,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "동탄",
+          "lat": 37.2009,
+          "lng": 127.072,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-28",
+      "no": 28,
+      "name": "천하종합관리",
+      "category": "지역 전통 종합관리",
+      "service": "건물관리·시설·경비·청소·미화·임대관리 용역",
+      "feature": "수원·대구. 산업단지/공장 경비·미화 용역 중심. 제대군인고용우수기업",
+      "operation": "상주",
+      "region": "공장·산업단지/수원·대구",
+      "scale": "중소",
+      "url": "http://www.chunhabm.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "수원",
+          "lat": 37.2636,
+          "lng": 127.0286,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "대구",
+          "lat": 35.8714,
+          "lng": 128.6014,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-29",
+      "no": 29,
+      "name": "SM종합관리",
+      "category": "지역 전통 종합관리",
+      "service": "관리비부과·수납·회계·시설·하자진단·보안",
+      "feature": "하자진단 전문가 파견. 세스코와 방역 업무협약",
+      "operation": "혼합",
+      "region": "오피스텔·상가·빌딩·아파트",
+      "scale": "중소",
+      "url": "https://www.smtm2220.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-30",
+      "no": 30,
+      "name": "데일리시큐리티",
+      "category": "지역 전통 종합관리",
+      "service": "건물관리·시설·경비·청소미화+관리비 비교진단",
+      "feature": "관리비 비교진단 특허기술로 관리비 절감원인 분석",
+      "operation": "상주",
+      "region": "빌딩/경기 용인",
+      "scale": "중소(2014설립)",
+      "url": "https://dailysecurity.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "용인",
+          "lat": 37.2411,
+          "lng": 127.1776,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-31",
+      "no": 31,
+      "name": "행복건물관리",
+      "category": "지역 전통 종합관리",
+      "service": "시설·청소·보안·에너지+가전클리닝·방역소독",
+      "feature": "통합관리에 가전클리닝·방역까지 결합",
+      "operation": "상주",
+      "region": "건물/전국",
+      "scale": "중소",
+      "url": "https://행복건물관리.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-32",
+      "no": 32,
+      "name": "fmcnc(에프엠씨앤씨)",
+      "category": "지역 전통 종합관리",
+      "service": "건물시설관리+건축물클리닝",
+      "feature": "표준화된 서비스 품질관리 표방",
+      "operation": "상주",
+      "region": "건물",
+      "scale": "중소",
+      "url": "https://www.fmcnc.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-33",
+      "no": 33,
+      "name": "아스타아이비에스",
+      "category": "지역 전통 종합관리",
+      "service": "건물관리·경비·파견·위생관리",
+      "feature": "서울 구로, 1995년 설립(구 중원종합건물관리). ISO/KS 인증",
+      "operation": "상주",
+      "region": "빌딩/서울",
+      "scale": "중소",
+      "url": "https://www.astaibs.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-34",
+      "no": 34,
+      "name": "이노서브 에프엠·비엠",
+      "category": "지역 전통 종합관리",
+      "service": "종합건물관리+호텔/리조트 지원서비스+근로자파견",
+      "feature": "서울 서초. 호텔/리조트 지원서비스 포함",
+      "operation": "상주",
+      "region": "건물·호텔·리조트/서울",
+      "scale": "중소(101명)",
+      "url": "https://www.innoserve.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-35",
+      "no": 35,
+      "name": "더빌코리아",
+      "category": "지역 전통 종합관리",
+      "service": "건물종합관리·위생/미화·경비·파견·도장/방수",
+      "feature": "충북 청주 기반 중부권 대형업체(구 민재산업개발). 고용부 강소기업",
+      "operation": "상주",
+      "region": "상업·업무·주거빌딩/충청",
+      "scale": "중소",
+      "url": "http://tbkor.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "충청",
+          "lat": 36.6357,
+          "lng": 127.4914,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "충북",
+          "lat": 36.6357,
+          "lng": 127.4914,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "청주",
+          "lat": 36.6424,
+          "lng": 127.489,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-36",
+      "no": 36,
+      "name": "세강",
+      "category": "지역 전통 종합관리",
+      "service": "임대주택·상가·빌딩 종합관리, 빌라관리사무소 운영",
+      "feature": "빌라/다세대 특화. 상주~비상주 맞춤. 빌라관리사무소 운영",
+      "operation": "혼합",
+      "region": "빌라·다세대·빌딩",
+      "scale": "중소",
+      "url": "https://segang.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-37",
+      "no": 37,
+      "name": "삼성종합관리",
+      "category": "지역 전통 종합관리",
+      "service": "건물관리·미화·경비·시설관리·소독/방역",
+      "feature": "인천 미추홀구. 20년 경력(삼성전자와 무관)",
+      "operation": "상주",
+      "region": "건물/인천",
+      "scale": "중소",
+      "url": "http://ssbim.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "인천",
+          "lat": 37.4563,
+          "lng": 126.7052,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-38",
+      "no": 38,
+      "name": "아이비에스앤티",
+      "category": "지역 전통 종합관리",
+      "service": "건물(시설)관리·위생관리 용역",
+      "feature": "대전 중구 기반(혜성IBS와 'IBS' 계열 관계)",
+      "operation": "상주",
+      "region": "건물/대전",
+      "scale": "중소",
+      "url": "http://건물종합관리.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "대전",
+          "lat": 36.3504,
+          "lng": 127.3845,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-39",
+      "no": 39,
+      "name": "모두의관리",
+      "category": "지역 전통 종합관리",
+      "service": "건물종합관리+HR 아웃소싱(파견·도급·콜센터·케이터링)",
+      "feature": "건물관리와 인력파견을 묶은 종합 HR 아웃소싱 모델",
+      "operation": "상주",
+      "region": "건물·제조·물류/전국",
+      "scale": "중소",
+      "url": "https://www.modoobiz.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-40",
+      "no": 40,
+      "name": "조은주택관리(주은으로 오기)",
+      "category": "지역 전통 종합관리",
+      "service": "중소형 빌딩·다세대·상가·빌라 전문 관리사무소",
+      "feature": "2007년 설립. 소형 건물 위주(파일엔 '주은'으로 표기됨)",
+      "operation": "상주",
+      "region": "다세대·상가·빌라/서울",
+      "scale": "중소",
+      "url": "http://www.16445896.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-41",
+      "no": 41,
+      "name": "탐스",
+      "category": "지역 전통 종합관리",
+      "service": "건물관리(청소·소독·보안·주차)+전기설비공사+태양광발전",
+      "feature": "건물관리에 태양광발전(신재생에너지) 결합. ASML·램리서치 수주",
+      "operation": "상주",
+      "region": "공장·연구소·상가/전국",
+      "scale": "중소",
+      "url": "https://www.etams.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-42",
+      "no": 42,
+      "name": "이화솔루션",
+      "category": "지역 전통 종합관리",
+      "service": "경비+미화 중심 건물관리",
+      "feature": "서울 송파. 경비·미화 위주",
+      "operation": "상주",
+      "region": "건물/서울",
+      "scale": "중소",
+      "url": "https://ewhasolution.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "서울",
+          "lat": 37.5665,
+          "lng": 126.978,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-43",
+      "no": 43,
+      "name": "집앤땅",
+      "category": "지역 전통 종합관리",
+      "service": "빌딩관리·시설관리",
+      "feature": "중소형 빌딩·시설관리 표방(사이트 설명 비공개로 상세 제한)",
+      "operation": "상주",
+      "region": "빌딩",
+      "scale": "중소",
+      "url": "https://jntproperty.com/",
+      "status": "정보부족",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-44",
+      "no": 44,
+      "name": "위즈시스",
+      "category": "수리/시공 소규모",
+      "service": "원룸·오피스텔 CCTV·출입관리·공용인터넷 설치",
+      "feature": "2002년~. 관리업체가 아닌 설비 시공업체",
+      "operation": "해당없음",
+      "region": "원룸·오피스텔",
+      "scale": "소규모",
+      "url": "http://wizsys.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-45",
+      "no": 45,
+      "name": "인정피에스(INJUNGPS)",
+      "category": "수리/시공 소규모",
+      "service": "기계식 주차설비 유지보수/제조설치",
+      "feature": "건물관리 전반 아닌 주차설비 전문",
+      "operation": "해당없음",
+      "region": "주차설비 보유 건물",
+      "scale": "중소",
+      "url": "http://www.injungps.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-46",
+      "no": 46,
+      "name": "생활수리사무소",
+      "category": "수리/시공 소규모",
+      "service": "누수·배관 등 소규모 수리·시공",
+      "feature": "전주 지역 개인사업체. 후불제·견적 투명성",
+      "operation": "해당없음",
+      "region": "아파트·빌라·상가/전북",
+      "scale": "개인사업체",
+      "url": "https://liferepairoffice.imweb.me/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": [
+        {
+          "label": "전북",
+          "lat": 35.7175,
+          "lng": 127.153,
+          "source": "region",
+          "precision": "region"
+        },
+        {
+          "label": "전주",
+          "lat": 35.8242,
+          "lng": 127.148,
+          "source": "region",
+          "precision": "region"
+        }
+      ]
+    },
+    {
+      "id": "excel-47",
+      "no": 47,
+      "name": "청솔안전관리",
+      "category": "수리/시공 소규모",
+      "service": "빌라/원룸 건물관리, 하자보수, 계단청소",
+      "feature": "소형 주거건물 위주",
+      "operation": "상주",
+      "region": "빌라·원룸",
+      "scale": "소규모",
+      "url": "https://www.csfms.co.kr/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-48",
+      "no": 48,
+      "name": "위펀(wefun)",
+      "category": "기타/생활서비스",
+      "service": "B2B 라이프스타일 플랫폼(간식·사무실운영·공간관리·청소) '건물관리24'",
+      "feature": "건물관리가 본업 아님. 사무실 복지·운영 대행 주력. 9,400여 기업",
+      "operation": "해당없음",
+      "region": "기업 사무실/B2B",
+      "scale": "스타트업, IPO 추진",
+      "url": "https://wefuncorp.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "excel-49",
+      "no": 49,
+      "name": "영구크린",
+      "category": "기타/생활서비스",
+      "service": "이사·청소·인터넷가입+건물관리(시설·경비·미화) 토털서비스",
+      "feature": "건물관리가 본업 아닌 생활서비스 플랫폼. 2008년 설립",
+      "operation": "해당없음",
+      "region": "가정·사무실/전국",
+      "scale": "중소",
+      "url": "https://www.mcygclean.com/",
+      "status": "확인완료",
+      "source": "excel",
+      "sourceLabel": "경쟁사 엑셀",
+      "locations": []
+    },
+    {
+      "id": "sheet-001",
+      "no": 1,
+      "name": "우리종합설비",
+      "category": "누수·배관",
+      "service": "누수탐지/하수구/고압세척/수도설비",
+      "feature": "",
+      "operation": "010-4858-7625 033-742-7625",
+      "region": "강원도 원주시 단계동 886-4",
+      "scale": "",
+      "url": "https://blog.naver.com/pms7625",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/F5swtyvo",
+      "phone": "010-4858-7625 033-742-7625",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단계동",
+          "lat": 37.3493,
+          "lng": 127.9311,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-002",
+      "no": 2,
+      "name": "웰빙종합설비",
+      "category": "누수·배관",
+      "service": "누수, 하수구, 방수",
+      "feature": "홈청전문업체. 누수, 하수구, 방수 상담 가능, 공사 부위 2년 A/S 쿠폰 제공",
+      "operation": "0507-1388-7468",
+      "region": "강원 원주시 단구로 29",
+      "address": "강원 원주시 단구로 29",
+      "scale": "",
+      "url": "https://blog.naver.com/byung7468",
+      "extraUrl": "https://www.instagram.com/wonju_wellbingnusu?igsh=MTVqNzJxNHI0dXBkMA%3D%3D",
+      "naverUrl": "https://naver.me/FhUHMhpd",
+      "phone": "0507-1388-7468",
+      "rating": "리뷰 128",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "명륜동 단구로",
+          "lat": 37.3386297,
+          "lng": 127.9444602,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-003",
+      "no": 3,
+      "name": "신원주 전기공사/출장수리",
+      "category": "전기·조명",
+      "service": "전기공사/누전수리/조명/콘센트",
+      "feature": "전기 문제 해결, 원주 지역 24시간 출동 가능. 전기공사, 누전수리, 조명공사, 콘센트/차단기 교체",
+      "operation": "010-9616-1155 0507-1333-6085",
+      "region": "강원 원주시 치악로1524번길 20 2층",
+      "address": "강원 원주시 치악로1524번길 20 2층",
+      "scale": "",
+      "url": "https://litt.ly/ssonghyo",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5WOYybis",
+      "phone": "010-9616-1155 0507-1333-6085",
+      "rating": "★★★★★ / 리뷰 5",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "치악로1524번길",
+          "lat": 37.3212946,
+          "lng": 127.9667854,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-004",
+      "no": 4,
+      "name": "원주 늘푸른 도배장판",
+      "category": "도배공사",
+      "service": "도배/장판/페인트",
+      "feature": "",
+      "operation": "010-5017-7135",
+      "region": "강원 원주시 태장동 819-38",
+      "scale": "",
+      "url": "https://soomgo.com/profile/users/15930897",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GZ6KUuAY",
+      "phone": "010-5017-7135",
+      "rating": "★★★★★",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "태장동",
+          "lat": 37.3818,
+          "lng": 127.9488,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-005",
+      "no": 5,
+      "name": "방수&코킹",
+      "category": "방수·코킹",
+      "service": "방수/타일/미장",
+      "feature": "",
+      "operation": "0507-1476-8583",
+      "region": "충남 아산시 배방읍 중리 59-2",
+      "scale": "",
+      "url": "http://xn--vh3bo2im2c04n9vb.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5r3Vlero",
+      "phone": "0507-1476-8583",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "배방읍",
+          "lat": 36.7771,
+          "lng": 127.0646,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-006",
+      "no": 6,
+      "name": "원주열쇠.공공열쇠",
+      "category": "문·창호·도어락",
+      "service": "도어락/열쇠",
+      "feature": "",
+      "operation": "033-744-4080 033-745-1433 010-8684-6910",
+      "region": "강원 원주시 일산동 326-25",
+      "scale": "",
+      "url": "https://033-744-4080.ezbuilder.co.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xuFof5Mj",
+      "phone": "033-744-4080 033-745-1433 010-8684-6910",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "일산동",
+          "lat": 37.3528,
+          "lng": 127.9448,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-007",
+      "no": 7,
+      "name": "원주디지털도어락24시출장열쇠전문",
+      "category": "문·창호·도어락",
+      "service": "디지털도어락/열쇠 출장",
+      "feature": "",
+      "operation": "033-743-1382",
+      "region": "강원 원주시 일산동 154-290",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fpxbf1Xl",
+      "phone": "033-743-1382",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "일산동",
+          "lat": 37.3488,
+          "lng": 127.944,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-008",
+      "no": 8,
+      "name": "리페어존!!",
+      "category": "냉난방·보일러",
+      "service": "보일러/전등/집수리",
+      "feature": "비고: 숨고 기준 고용 27회 경력 12년",
+      "operation": "숨고 고객센터 경유",
+      "region": "강원 원주시",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://soomgo.com/profile/users/13808578?from=seo",
+      "phone": "숨고 고객센터 경유",
+      "rating": "★★★★★",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "원주",
+          "lat": 37.3407,
+          "lng": 127.9172,
+          "source": "address-region",
+          "precision": "city"
+        }
+      ]
+    },
+    {
+      "id": "sheet-009",
+      "no": 9,
+      "name": "기동설비",
+      "category": "냉난방·보일러",
+      "service": "보일러/설비",
+      "feature": "비고: 숨고 기준 고용 2회 경력 20년",
+      "operation": "숨고 고객센터 경유",
+      "region": "강원 원주시",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://soomgo.com/profile/users/15946298?from=seo",
+      "phone": "숨고 고객센터 경유",
+      "rating": "★★★★★",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "원주",
+          "lat": 37.33845,
+          "lng": 127.9172,
+          "source": "address-region",
+          "precision": "city"
+        }
+      ]
+    },
+    {
+      "id": "sheet-010",
+      "no": 10,
+      "name": "원주에어컨청소클린업",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 청소",
+      "feature": "작업 단가: 벽걸이 에어컨 - 80,000원 스탠드 에어컨 - 110,000원 투인원 에어컨 - 180,000원 가정용 원웨이 천장형 에어컨 - 1대 100,000원, 2대 90,000원, 3대 80,000원, 4대이상, 70,000원 천장형 4웨이 에어컨 - 일반 가정 혹은 사무실 - 110,000원, 식당및 오염도 최상제품 - 130,000원 (높이 3미터 이상 추가비 20,000) 천장형 원형 에어컨 - 140,000원 (높이 3미터 이상 20,000원 추가)",
+      "operation": "010-8254-4553",
+      "region": "강원 원주시 흥업면 흥업리",
+      "scale": "벽걸이 에어컨 - 80,000원 스탠드 에어컨 - 110,000원 투인원 에어컨 - 180,000원 가정용 원웨이 천장형 에어컨 - 1대 100,000원, 2대 90,000원, 3대 80,000원, 4대이상, 70,000원 천장형 4웨이 에어컨 - 일반 가정 혹은 사무실 - 110,000원, 식당및 오염도 최상제품 - 130,000원 (높이 3미터 이상 추가비 20,000) 천장형 원형 에어컨 - 140,000원 (높이 3미터 이상 20,000원 추가)",
+      "url": "https://blog.naver.com/mekjoo07",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fy2zbpm1",
+      "phone": "010-8254-4553",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "흥업면",
+          "lat": 37.3033,
+          "lng": 127.9221,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-011",
+      "no": 11,
+      "name": "원클린",
+      "category": "청소·위생",
+      "service": "준공청소/유리창/저수조/물탱크",
+      "feature": "",
+      "operation": "0507-1309-3066",
+      "region": "강원 원주시 태장동 1365-1",
+      "scale": "",
+      "url": "https://blog.naver.com/joa8610",
+      "extraUrl": "https://www.instagram.com/_one_clean/",
+      "naverUrl": "https://naver.me/5BwfDtM2",
+      "phone": "0507-1309-3066",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "태장동",
+          "lat": 37.3842,
+          "lng": 127.9476,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-012",
+      "no": 12,
+      "name": "신세계방역&종합환경",
+      "category": "청소·위생",
+      "service": "방역/물탱크/저수조 청소",
+      "feature": "비고: 경력 27년",
+      "operation": "033-742-1677",
+      "region": "강원권",
+      "scale": "",
+      "url": "https://soomgo.com/profile/users/15619724?from=seo",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GL8e6dzS",
+      "phone": "033-742-1677",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "강원권",
+          "lat": 37.3454,
+          "lng": 127.919,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-013",
+      "no": 13,
+      "name": "주식회사 창영",
+      "category": "소방·안전",
+      "service": "소방시설관리/점검",
+      "feature": "비고: 확인필요",
+      "operation": "0507-1319-9513",
+      "region": "원주시 판부면 서곡리 442-1",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G1po2g4m",
+      "phone": "0507-1319-9513",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "판부면",
+          "lat": 37.286,
+          "lng": 127.9709,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-014",
+      "no": 14,
+      "name": "주식회사대원소방",
+      "category": "소방·안전",
+      "service": "소방시설관리/점검",
+      "feature": "",
+      "operation": "033-761-6634",
+      "region": "원주시 판부면 매봉길 10-6 101호",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5T0lPfom",
+      "phone": "033-761-6634",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "판부면",
+          "lat": 37.2916,
+          "lng": 127.9677,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-015",
+      "no": 15,
+      "name": "중부소방 주식회사",
+      "category": "소방·안전",
+      "service": "소방시설공사",
+      "feature": "",
+      "operation": "033-761-0119",
+      "region": "강원특별자치도 원주시 흥업면 남원로 125",
+      "scale": "",
+      "url": "https://blog.naver.com/jbf0119",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GWi0O2qG",
+      "phone": "033-761-0119",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "흥업면",
+          "lat": 37.3041,
+          "lng": 127.9181,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-016",
+      "no": 16,
+      "name": "북원소방",
+      "category": "소방·안전",
+      "service": "주택용소방시설 판매",
+      "feature": "비고: 확인필요",
+      "operation": "033-744-0704",
+      "region": "원주시 단구동 1686-4",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GahUWJeN",
+      "phone": "033-744-0704",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단구동",
+          "lat": 37.3162,
+          "lng": 127.9617,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-017",
+      "no": 17,
+      "name": "현진종합장식",
+      "category": "도배공사",
+      "service": "인테리어/리모델링",
+      "feature": "비고: 곰팡이 제거 가능",
+      "operation": "0507-1389-2482 010-8969-9198",
+      "region": "강원 원주시 단구동 1669-6",
+      "scale": "",
+      "url": "https://blog.naver.com/lyi7540",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GxkzaB4O",
+      "phone": "0507-1389-2482 010-8969-9198",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단구동",
+          "lat": 37.3166,
+          "lng": 127.9613,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-018",
+      "no": 18,
+      "name": "부엉이인테리어",
+      "category": "도배공사",
+      "service": "벽지/장판/마루",
+      "feature": "",
+      "operation": "0507-1351-3097",
+      "region": "강원 원주시 무실동 1669-1",
+      "scale": "",
+      "url": "https://blog.naver.com/lovergksmf10",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/57VutxDg",
+      "phone": "0507-1351-3097",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "무실동",
+          "lat": 37.3347,
+          "lng": 127.9277,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-019",
+      "no": 19,
+      "name": "고운도배",
+      "category": "도배공사",
+      "service": "도배/누수/장판/마루/필름/몰딩",
+      "feature": "비고: 입주도배 사장님이 직접시공 국가기술자격증을 보유",
+      "operation": "0507-1405-2996",
+      "region": "강원 원주시 관설동 1767-3",
+      "scale": "",
+      "url": "https://blog.naver.com/gowoondobae",
+      "extraUrl": "https://www.instagram.com/gowoondobae",
+      "naverUrl": "https://naver.me/F0AlOeRV",
+      "phone": "0507-1405-2996",
+      "rating": "★★★★★",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "관설동",
+          "lat": 37.3025,
+          "lng": 127.9745,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-020",
+      "no": 20,
+      "name": "달인누수탐지",
+      "category": "누수·배관",
+      "service": "주택누수탐사, 아파트누수탐사, 학교누수탐사, 공장누수탐사, 마을상수도누수탐사, 관공서누수탐사, 기업체누수탐사, 소방누수탐사",
+      "feature": "달인누수탐지. 각종 누수탐사 전문, 예약 및 방문접수·출장 가능",
+      "operation": "0507-1394-8959",
+      "region": "강원 원주시 우산공단길 23",
+      "address": "강원 원주시 우산공단길 23",
+      "scale": "",
+      "url": "https://www.youtube.com/@nusuin",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FG3ERBn5",
+      "phone": "0507-1394-8959",
+      "rating": "리뷰 37",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "우산동 우산공단길",
+          "lat": 37.3819345,
+          "lng": 127.9367981,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-021",
+      "no": 21,
+      "name": "누수탐지",
+      "category": "누수·배관",
+      "service": "누수상담, 화장실 누수검사, 난방배관 누수검사, 수도배관 누수검사, 배관 누수공사, 방수공사, 공장 누수탐지, 건물 빌딩 누수탐지",
+      "feature": "출장비 0원, 미해결 시 0원. 아랫층 누수와 각종 누수 공사를 24시간 대응",
+      "operation": "0507-976-9753",
+      "region": "강원 원주시 남산로 77 3층 367호",
+      "address": "강원 원주시 남산로 77 3층 367호",
+      "scale": "",
+      "url": "https://blog.naver.com/wnalsl7",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FQuI60qj",
+      "phone": "0507-976-9753",
+      "rating": "리뷰 56",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "일산동 남산로",
+          "lat": 37.3522204,
+          "lng": 127.9405115,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-022",
+      "no": 22,
+      "name": "그랜드욕실앤타일",
+      "category": "타일공사",
+      "service": "미장/타일/방수공사",
+      "feature": "",
+      "operation": "010-4788-9355",
+      "region": "강원 원주시 단구동 121-36",
+      "scale": "",
+      "url": "https://blog.naver.com/pyc8318",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xVB5n3Rx",
+      "phone": "010-4788-9355",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단구동",
+          "lat": 37.3162,
+          "lng": 127.9613,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-023",
+      "no": 23,
+      "name": "이누스 현대타일 원주대리점",
+      "category": "타일공사",
+      "service": "미장/타일/방수공사",
+      "feature": "비고: 원주, 횡성, 문막, 제천, 춘천 출장 가능",
+      "operation": "033-764-9936",
+      "region": "강원 원주시 단계동 800-23",
+      "scale": "",
+      "url": "https://blog.naver.com/inus1110",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FbqzefkI",
+      "phone": "033-764-9936",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단계동",
+          "lat": 37.3473,
+          "lng": 127.9283,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-024",
+      "no": 24,
+      "name": "원주 에어컨청소 세탁기청소 맘편안크린",
+      "category": "냉난방·에어컨",
+      "service": "에어컨청소/세탁기청소",
+      "feature": "비고: 분해 후 내부 오염 집중 세척",
+      "operation": "010-5115-5270",
+      "region": "강원 원주시 일산동 193-27",
+      "scale": "",
+      "url": "https://blog.naver.com/comfortcleaning",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/IGZU2FJQ",
+      "phone": "010-5115-5270",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "일산동",
+          "lat": 37.3504,
+          "lng": 127.9452,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-025",
+      "no": 25,
+      "name": "쿤",
+      "category": "냉난방·에어컨",
+      "service": "이전 설치, 신제품 판매 및 설치, 천장형 에어컨 설치, 투인원 에어컨 설치, 스탠드 에어컨 설치, 벽걸이 에어컨 설치, 냉매 보충",
+      "feature": "춘천, 원주, 횡성 에어컨 전문. 캐리어, LG, 삼성 신제품 판매와 이전 설치 가능",
+      "operation": "010-8376-7516",
+      "region": "강원 원주시 이화2길 30 201호",
+      "address": "강원 원주시 이화2길 30 201호",
+      "scale": "변동",
+      "url": "https://blog.naver.com/hoon375",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xPUgNnak",
+      "phone": "010-8376-7516",
+      "rating": "리뷰 18",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "무실동 이화2길",
+          "lat": 37.3394793,
+          "lng": 127.9338854,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-026",
+      "no": 26,
+      "name": "청솔냉열",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치",
+      "feature": "흥업면 광터길 소재 에어컨 업체. 설치 및 판매, 주차 가능",
+      "operation": "0507-1430-0293",
+      "region": "강원 원주시 흥업면 광터길 143-7",
+      "address": "강원 원주시 흥업면 광터길 143-7",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FCZzzp9B",
+      "phone": "0507-1430-0293",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "흥업면 광터길",
+          "lat": 37.337188,
+          "lng": 127.8825043,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-027",
+      "no": 27,
+      "name": "원주에어컨청소세탁기청소 늘클린",
+      "category": "냉난방·에어컨",
+      "service": "에어컨청소/세탁기청소",
+      "feature": "비고: 내부 직원으로 구성된 전문 청소팀 영업배상책임보험 1억원에 가입된 업체 고가의 인증된 안전 약품 사용 / 작업 단가: 외주없는 내부 정규팀 시공 - 변동벽걸이에어컨청소 - 80,000원스탠드에어컨청소 - 120,000원투인원에어컨청소(스탠드+벽걸이) - 180,000원시스템에어컨청소 1way(가정용) - 90,000원시스템에어컨청소 4way(업소용) - 130,000원창문형 에어컨 청소 - 100,000원에어컨냉매충전 - 80,000원세탁기 청소 (통돌이) - 120,000원세탁기 청소 (드럼) - 180,000원",
+      "operation": "0507-1424-3091",
+      "region": "강원 원주시 무실동 1837-11",
+      "scale": "외주없는 내부 정규팀 시공 - 변동벽걸이에어컨청소 - 80,000원스탠드에어컨청소 - 120,000원투인원에어컨청소(스탠드+벽걸이) - 180,000원시스템에어컨청소 1way(가정용) - 90,000원시스템에어컨청소 4way(업소용) - 130,000원창문형 에어컨 청소 - 100,000원에어컨냉매충전 - 80,000원세탁기 청소 (통돌이) - 120,000원세탁기 청소 (드럼) - 180,000원",
+      "url": "https://blog.naver.com/neulclean365",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xmBfmHqU",
+      "phone": "0507-1424-3091",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "무실동",
+          "lat": 37.3311,
+          "lng": 127.9301,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-028",
+      "no": 28,
+      "name": "원주에어컨청소세탁기청소 지오홈케어",
+      "category": "냉난방·에어컨",
+      "service": "에어컨청소/세탁기청소/냉매충전",
+      "feature": "작업 단가: 변동",
+      "operation": "0507-1396-7234",
+      "region": "강원 원주시 단구동 1684-1",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FJbYBUbK",
+      "phone": "0507-1396-7234",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "단구동",
+          "lat": 37.3202,
+          "lng": 127.9589,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-029",
+      "no": 29,
+      "name": "원주에어컨청소 세탁기청소 케어마스터",
+      "category": "냉난방·에어컨",
+      "service": "에어컨청소/세탁기청소",
+      "feature": "비고: 완벽분해청소 / 작업 단가: 변동",
+      "operation": "0507-1418-8485",
+      "region": "강원 원주시 행구동 1863",
+      "scale": "변동",
+      "url": "https://www.instagram.com/caremaster_wonjuhttps://blog.naver.com/bok4048",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xAAFL6iS",
+      "phone": "0507-1418-8485",
+      "rating": "",
+      "status": "구글시트",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 구글시트",
+      "locations": [
+        {
+          "label": "행구동",
+          "lat": 37.3444,
+          "lng": 127.9883,
+          "source": "address-region",
+          "precision": "neighborhood"
+        }
+      ]
+    },
+    {
+      "id": "sheet-030",
+      "no": 30,
+      "name": "문막전기",
+      "category": "전기·조명",
+      "service": "전기·통신·소방자재, 자동제어 판넬 제작, PLC 및 자동화 설비 수리보수",
+      "feature": "원주 의료고등학교 정문 옆",
+      "operation": "033-735-5020",
+      "region": "강원 원주시 문막읍 구암길 3",
+      "address": "강원 원주시 문막읍 구암길 3",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5K6LN0va",
+      "phone": "033-735-5020",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 구암길",
+          "lat": 37.3205025,
+          "lng": 127.8222761,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-031",
+      "no": 31,
+      "name": "흥남전기",
+      "category": "전기·조명",
+      "service": "전기자재, 전기공사, LED 등기구, 자동화 전기자재",
+      "feature": "문막 톨게이트 앞 원주의료고등학교 옆. 자동화 전기자재·전기공사 전기자재·각종 LED 등기구 보유",
+      "operation": "033-744-1197",
+      "region": "강원 원주시 문막읍 원문로 1746",
+      "address": "강원 원주시 문막읍 원문로 1746",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5KqrgrTv",
+      "phone": "033-744-1197",
+      "rating": "4.18 / 리뷰 49",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 원문로",
+          "lat": 37.3117679,
+          "lng": 127.8215796,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-032",
+      "no": 32,
+      "name": "강원전기",
+      "category": "전기·조명",
+      "service": "전기공사, 실내 배관·배선, 조명기구 교체, 인테리어 전기, 누전",
+      "feature": "소중한 우리 가족을 위한 전기공사. 친절상담, 언제든 견적 문의 환영",
+      "operation": "0507-1313-2571",
+      "region": "강원 원주시 문막읍 개나루길 6",
+      "address": "강원 원주시 문막읍 개나루길 6",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/59vSMnG3",
+      "phone": "0507-1313-2571",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 개나루길",
+          "lat": 37.2896206,
+          "lng": 127.817889,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-033",
+      "no": 33,
+      "name": "우진전기상사",
+      "category": "전기·조명",
+      "service": "전기자재, 소방자재, 통신자재, 전기공사 자재, 인테리어 조명",
+      "feature": "1층은 전기자재·소방자재·통신자재, 2층은 인테리어 조명 전시 판매. 외곽 배달 영업으로 토요일 영업시간 유동적",
+      "operation": "0507-1478-3046",
+      "region": "강원 원주시 호저면 원문로 482",
+      "address": "강원 원주시 호저면 원문로 482",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/IgMSfcMD",
+      "phone": "0507-1478-3046",
+      "rating": "리뷰 11",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "호저면 원문로",
+          "lat": 37.3595188,
+          "lng": 127.9195424,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-034",
+      "no": 34,
+      "name": "케이티엠에스",
+      "category": "통신·방송장비",
+      "service": "통신, 방송장비 제조",
+      "feature": "통신·방송장비 제조 업체",
+      "operation": "033-742-8071",
+      "region": "강원 원주시 시청로 96",
+      "address": "강원 원주시 시청로 96",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xQJRV33o",
+      "phone": "033-742-8071",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 시청로",
+          "lat": 37.3371653,
+          "lng": 127.9224741,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-035",
+      "no": 35,
+      "name": "삼성인터폰",
+      "category": "통신·방송장비",
+      "service": "통신, 방송장비 제조",
+      "feature": "통신·방송장비 제조 업체",
+      "operation": "033-765-0443",
+      "region": "강원 원주시 무실로 415",
+      "address": "강원 원주시 무실로 415",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GsBZxdmc",
+      "phone": "033-765-0443",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 무실로",
+          "lat": 37.3288871,
+          "lng": 127.9293212,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-036",
+      "no": 36,
+      "name": "한얼누리",
+      "category": "전기·조명",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 이화4길 35",
+      "address": "강원 원주시 이화4길 35",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FKG8JkqA",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 이화4길",
+          "lat": 37.3405479,
+          "lng": 127.9324992,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-037",
+      "no": 37,
+      "name": "이은종합설비",
+      "category": "설비·수도·가스",
+      "service": "전기, 가스, 수도사업, 변기·하수구 수리, 수도꼭지, 전등 교체, 용접",
+      "feature": "용접, 철물제작, 연수도 녹임, 변기하수 수리, 수도꼭지, 전등교체 등 주변 어려운 일을 해결",
+      "operation": "0507-1314-0572",
+      "region": "강원 원주시 한지공원길 102 105동 404호",
+      "address": "강원 원주시 한지공원길 102 105동 404호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GP2GN9UR",
+      "phone": "0507-1314-0572",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 한지공원길",
+          "lat": 37.330171,
+          "lng": 127.9428004,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-038",
+      "no": 38,
+      "name": "대한전기조명",
+      "category": "전기·조명",
+      "service": "전기자재, 조명 판매, 전기공사",
+      "feature": "전기 자재 및 조명 판매. 간단한 전기 공사도 가능. 연락처 010-5378-2286",
+      "operation": "0507-1329-9876",
+      "region": "강원 원주시 무실로 50",
+      "address": "강원 원주시 무실로 50",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FtoKN9WW",
+      "phone": "0507-1329-9876",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 무실로",
+          "lat": 37.3448546,
+          "lng": 127.9441106,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-039",
+      "no": 39,
+      "name": "원주 서비스센터",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 서비스센터",
+      "operation": "033-748-2635",
+      "region": "강원 원주시 갈머리길 2",
+      "address": "강원 원주시 갈머리길 2",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xsZhgYXe",
+      "phone": "033-748-2635",
+      "rating": "리뷰 29",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "일산동 갈머리길",
+          "lat": 37.352201,
+          "lng": 127.9450007,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-040",
+      "no": 40,
+      "name": "태성전기전자",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 원일로 300-1",
+      "address": "강원 원주시 원일로 300-1",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GhwanNXL",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 원일로",
+          "lat": 37.353676,
+          "lng": 127.9457974,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-041",
+      "no": 41,
+      "name": "부광전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 정지길 195-20",
+      "address": "강원 원주시 정지길 195-20",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Gowo92Ho",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 정지길",
+          "lat": 37.3564962,
+          "lng": 127.949279,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-042",
+      "no": 42,
+      "name": "이레전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-742-2947",
+      "region": "강원 원주시 우산로 77",
+      "address": "강원 원주시 우산로 77",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5zU7454U",
+      "phone": "033-742-2947",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우산로",
+          "lat": 37.3704231,
+          "lng": 127.9368398,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-043",
+      "no": 43,
+      "name": "우산전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 진광길 11",
+      "address": "강원 원주시 진광길 11",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xD8nRC12",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 진광길",
+          "lat": 37.3717192,
+          "lng": 127.9406437,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-044",
+      "no": 44,
+      "name": "강원전기판넬",
+      "category": "전자·전기",
+      "service": "전자, 전기, 각종 판넬, 전기온수기",
+      "feature": "전기·전자, 각종 판넬, 전기온수기 취급",
+      "operation": "033-731-0404",
+      "region": "강원 원주시 북원로 2559",
+      "address": "강원 원주시 북원로 2559",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5JqRnqAm",
+      "phone": "033-731-0404",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "북원로 원주우리병원 인근",
+          "lat": 37.3709,
+          "lng": 127.9452,
+          "source": "address-region",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-045",
+      "no": 45,
+      "name": "가나전기공사",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "033-764-0326",
+      "region": "강원 원주시 월운정안길 7",
+      "address": "강원 원주시 월운정안길 7",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GqfuGcQ9",
+      "phone": "033-764-0326",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 월운정",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-046",
+      "no": 46,
+      "name": "부흥전기상사",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-734-5542",
+      "region": "강원 원주시 입춘내길 26",
+      "address": "강원 원주시 입춘내길 26",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FhuGvall",
+      "phone": "033-734-5542",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 입춘내길",
+          "lat": 37.3355201,
+          "lng": 127.9688627,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-047",
+      "no": 47,
+      "name": "아이엔티",
+      "category": "전자·전기",
+      "service": "전자, 전기, 전기공사, 전기자재, 자재납품",
+      "feature": "대표 키워드: 전기공사, 전기자재, 자재납품, 원주전기",
+      "operation": "033-761-0102",
+      "region": "강원 원주시 강변로 203",
+      "address": "강원 원주시 강변로 203",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5NeyTb3R",
+      "phone": "033-761-0102",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 강변로",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-048",
+      "no": 48,
+      "name": "케이슬라",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "",
+      "region": "강원 원주시 치악로 1521 402호",
+      "address": "강원 원주시 치악로 1521 402호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x9VrFOOk",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "치악로 1521",
+          "lat": 37.3199734,
+          "lng": 127.9653454,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-049",
+      "no": 49,
+      "name": "신우전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-766-2656",
+      "region": "강원 원주시 소초면 살여울길 65",
+      "address": "강원 원주시 소초면 살여울길 65",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/551gYkVL",
+      "phone": "033-766-2656",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 살여울길",
+          "lat": 37.415,
+          "lng": 128.001,
+          "source": "address-region",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-050",
+      "no": 50,
+      "name": "원영전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-742-6301",
+      "region": "강원 원주시 소초면 치악로 2378-33",
+      "address": "강원 원주시 소초면 치악로 2378-33",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xaTFYQdm",
+      "phone": "033-742-6301",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 치악로",
+          "lat": 37.4058804,
+          "lng": 127.9960013,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-051",
+      "no": 51,
+      "name": "속뚫설비",
+      "category": "누수·배관",
+      "service": "배관, 냉난방공사, 하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척",
+      "feature": "원주 지역 중심 하수구·싱크대·변기 막힘 등 배관 문제 전문 해결. 24시간 긴급출동",
+      "operation": "010-8555-8357",
+      "region": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "address": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5sunJlpS",
+      "phone": "010-8555-8357",
+      "rating": "리뷰 42",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 신지정로",
+          "lat": 37.38155,
+          "lng": 127.8850508,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-052",
+      "no": 52,
+      "name": "원주 뻥뚜러설비",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 고압세척, 배관내시경, 누수탐지, 관로해빙",
+      "feature": "막힌 변기·배수구 전문, 하수구 청소, 배관 내시경 촬영, 언수도 녹임, 각종 관로 해빙",
+      "operation": "",
+      "region": "강원 원주시 둔전길 177",
+      "address": "강원 원주시 둔전길 177",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GDaRm7XC",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "흥업리 둔전길",
+          "lat": 37.3138915,
+          "lng": 127.9145255,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-053",
+      "no": 53,
+      "name": "에이스설비 누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수공사, 하수구 막힘, 싱크대 막힘, 수전설치, 변기수리, 변기교체, 누수 피해복구, 연수도 녹임, 배관고압세척",
+      "feature": "원주 전지역 누수탐지·하수구막힘 전문업체. 배관 관련 문제 해결, 첨단 장비 보유",
+      "operation": "0507-1477-5518",
+      "region": "강원 원주시 오성마을길 63-25 201동 239호",
+      "address": "강원 원주시 오성마을길 63-25 201동 239호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eUnbRvT",
+      "phone": "0507-1477-5518",
+      "rating": "리뷰 292",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3175741,
+          "lng": 127.947819,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-054",
+      "no": 54,
+      "name": "누수탐지 오성마을",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수설비, 누수공사",
+      "feature": "원탑누수배관. 원주 누수탐지 전문, 첨단 장비로 미세 누수까지 탐지",
+      "operation": "",
+      "region": "강원 원주시 판부면 오성마을길 24 101호",
+      "address": "강원 원주시 판부면 오성마을길 24 101호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eDYFIDK",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3189069,
+          "lng": 127.9521183,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-055",
+      "no": 55,
+      "name": "가람누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 하수구, 수도설비",
+      "feature": "원주누수·원주하수구·원주수도설비. 작은 일에도 최선을 다하는 누수·배관 업체",
+      "operation": "033-733-0585",
+      "region": "강원 원주시 시청로 40",
+      "address": "강원 원주시 시청로 40",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xUZGlXT4",
+      "phone": "033-733-0585",
+      "rating": "리뷰 39",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3382323,
+          "lng": 127.9234637,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-056",
+      "no": 56,
+      "name": "원주하수구케어",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 세면대 막힘, 배관내시경, 고압세척",
+      "feature": "원주 무실동 위치. 하수구·배관 막힘 뚫음과 청소 전문, 24시간 영업",
+      "operation": "0507-1424-6482",
+      "region": "강원 원주시 시청로 68 105동",
+      "address": "강원 원주시 시청로 68 105동",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xnOzaAQy",
+      "phone": "0507-1424-6482",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3392286,
+          "lng": 127.9244749,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-057",
+      "no": 57,
+      "name": "바람아이 토탈케어",
+      "category": "누수·배관",
+      "service": "누수탐지, 특수방수, 옥상방수, 하수구 막힘, 에어컨 청소",
+      "feature": "시스템에어컨 세척, 누수탐지, 특수방수, 옥상방수, 하수구 막힘 등 토탈케어. 강원·충청·경기 출장 가능",
+      "operation": "010-5372-0513",
+      "region": "강원 원주시 시청로 92 무실주공3단지아파트",
+      "address": "강원 원주시 시청로 92 무실주공3단지아파트",
+      "scale": "변동",
+      "url": "https://blog.naver.com/oiorof",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xM5a9X5T",
+      "phone": "010-5372-0513",
+      "rating": "리뷰 52",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.334896,
+          "lng": 127.927036,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-058",
+      "no": 58,
+      "name": "부부누수탐지공사",
+      "category": "누수·배관",
+      "service": "수도배관누수탐지, 발코니천장누수, 욕실천장누수",
+      "feature": "수도배관 누수탐지, 피해세대 복구공사, 위생도기 교체공사, 각종 홈서비스 공사",
+      "operation": "",
+      "region": "강원 원주시 무실로 380",
+      "address": "강원 원주시 무실로 380",
+      "scale": "변동",
+      "url": "https://www.youtube.com/@watermaster7347",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5ECAN8gq",
+      "phone": "010-5290-7347",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실로",
+          "lat": 37.3448546,
+          "lng": 127.9441106,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-059",
+      "no": 59,
+      "name": "프로원누수테크",
+      "category": "누수·배관",
+      "service": "누수탐지, 아파트누수, 상가누수, 주택누수, 공장누수, 보일러난방배관청소, 욕실비철개방수공사, 누수도배",
+      "feature": "난방시공 전문건설업 면허 등록 업체. 전문 누수탐지 공사와 방수공사를 주요 업무로 운영",
+      "operation": "0507-1349-0440",
+      "region": "강원 원주시 남원로469번길 7-13 1층",
+      "address": "강원 원주시 남원로469번길 7-13 1층",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/502wNPPP",
+      "phone": "0507-1349-0440",
+      "rating": "리뷰 93",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 남원로469번길",
+          "lat": 37.3264399,
+          "lng": 127.9414022,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-060",
+      "no": 60,
+      "name": "하수구막힘 단관초교길",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 해동",
+      "feature": "원주 전지역 24시간 출장 가능. 최신 장비 보유, 하수구·변기·싱크대 막힘 전문",
+      "operation": "0507-1348-1738",
+      "region": "강원 원주시 단관초교길 26-6 101-w1호",
+      "address": "강원 원주시 단관초교길 26-6 101-w1호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GzdJfV3w",
+      "phone": "0507-1348-1738",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 단관초교길",
+          "lat": 37.3166566,
+          "lng": 127.963621,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-061",
+      "no": 61,
+      "name": "하수구행님",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척, 관로탐지, 수전교체, 부속교체",
+      "feature": "원주·횡성·충주·여주·제천 지역 하수구 막힘, 변기 막힘, 싱크대 막힘 전문",
+      "operation": "0507-1368-8671",
+      "region": "강원 원주시 나비허리길 120-6 201호",
+      "address": "강원 원주시 나비허리길 120-6 201호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xhPJ2wzR",
+      "phone": "0507-1368-8671",
+      "rating": "리뷰 150",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 나비허리길",
+          "lat": 37.3206453,
+          "lng": 127.9622577,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-062",
+      "no": 62,
+      "name": "하수구막힘 뚫는곳역류",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척, 배관내시경",
+      "feature": "하수구·싱크대·변기 막힘과 역류 문제 대응. 예약, 방문접수·출장, 간편결제, 주차 가능",
+      "operation": "0507-1391-5067",
+      "region": "강원 원주시 라옹정길 51-3 3층",
+      "address": "강원 원주시 라옹정길 51-3 3층",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GB3xMYJi",
+      "phone": "0507-1391-5067",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 라옹정길",
+          "lat": 37.3200507,
+          "lng": 127.9611898,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-063",
+      "no": 63,
+      "name": "원주배관클린",
+      "category": "누수·배관",
+      "service": "변기 막힘, 배관공사, 언수도 녹임, 누수탐지, 고압세척, 싱크대 막힘, 하수구 막힘",
+      "feature": "원주 하수구 막힘, 싱크대 막힘, 변기 막힘, 배관 관리 전문. 작업 후 3개월 A/S, 고압세척 1년 보증",
+      "operation": "033-900-0482",
+      "region": "강원 원주시 강변로 119 104동 302호",
+      "address": "강원 원주시 강변로 119 104동 302호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fr06blTr",
+      "phone": "033-900-0482",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 강변로",
+          "lat": 37.3608242,
+          "lng": 127.9496115,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-064",
+      "no": 64,
+      "name": "달인하수구",
+      "category": "누수·배관",
+      "service": "하수구 막힘 뚫음, 싱크대 막힘 뚫음, 변기 막힘 뚫음, 하수구 고압세척, 수도난방 누수탐지, 배관내시경검사",
+      "feature": "원주시 지역 하수도 전문. 예약 가능, 무료 견적상담 쿠폰 제공",
+      "operation": "",
+      "region": "강원 원주시 서원대로 500",
+      "address": "강원 원주시 서원대로 500",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xFL6oSbn",
+      "phone": "",
+      "rating": "리뷰 434",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 서원대로",
+          "lat": 37.3253502,
+          "lng": 127.9576053,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-065",
+      "no": 65,
+      "name": "달인하수구고압세척",
+      "category": "누수·배관",
+      "service": "하수구 막힘 뚫음, 싱크대 막힘 뚫음, 변기 막힘 뚫음, 하수구 고압세척, 수도난방 누수탐지, 배관내시경검사",
+      "feature": "미세누수 위치탐지, 하수구·변기·싱크대 해결 전문 업체",
+      "operation": "0507-1355-8544",
+      "region": "강원 원주시 나비허리길 5",
+      "address": "강원 원주시 나비허리길 5",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/F5aHoFad",
+      "phone": "0507-1355-8544",
+      "rating": "리뷰 298",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 나비허리길",
+          "lat": 37.3242518,
+          "lng": 127.9594627,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-066",
+      "no": 66,
+      "name": "가나누수탐지설비",
+      "category": "누수·배관",
+      "service": "누수탐지설비, 난방누수, 매설관 누수탐지, 수도배관 누수탐지",
+      "feature": "누수탐지 전문 설비 업체. 난방누수, 매설관 누수탐지, 수도배관 누수탐지 대응",
+      "operation": "033-762-8912",
+      "region": "강원 원주시 남원로527번길 6-42",
+      "address": "강원 원주시 남원로527번길 6-42",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xcnyDz8F",
+      "phone": "033-762-8912",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 남원로527번길",
+          "lat": 37.3335041,
+          "lng": 127.9452441,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-067",
+      "no": 67,
+      "name": "하수구막힘 한지공원길",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 배관내시경, 고압세척, 누수탐지",
+      "feature": "하수구 막힘, 싱크대 막힘, 변기 막힘 긴급 출동. 리뷰 작성 페이백 쿠폰 제공",
+      "operation": "0507-1434-5447",
+      "region": "강원 원주시 한지공원길 102",
+      "address": "강원 원주시 한지공원길 102",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FW0ekkLm",
+      "phone": "0507-1434-5447",
+      "rating": "리뷰 1,683",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 한지공원길",
+          "lat": 37.330171,
+          "lng": 127.9428004,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-068",
+      "no": 68,
+      "name": "원주하수구 누수",
+      "category": "누수·배관",
+      "service": "하수구 공사, 누수, 배관, 냉난방공사",
+      "feature": "원주시 개운동 24시간 하수구 공사 및 누수 대응. 방문접수·출장, 예약 가능",
+      "operation": "",
+      "region": "강원 원주시 개운2길 21-2",
+      "address": "강원 원주시 개운2길 21-2",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5f5T6cKC",
+      "phone": "",
+      "rating": "리뷰 10",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 개운2길",
+          "lat": 37.339727,
+          "lng": 127.9586974,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-069",
+      "no": 69,
+      "name": "푸른누수탐지공사",
+      "category": "누수·배관",
+      "service": "누수탐지, 배관공사",
+      "feature": "개운로 소재 누수탐지 공사 업체. 24시간 영업, 예약 및 방문접수·출장 가능",
+      "operation": "010-8394-0814",
+      "region": "강원 원주시 개운로 104 103호",
+      "address": "강원 원주시 개운로 104 103호",
+      "scale": "",
+      "url": "https://blog.naver.com/puleun_eng",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FJbpFAvD",
+      "phone": "010-8394-0814",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 개운로",
+          "lat": 37.3392655,
+          "lng": 127.9609358,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-070",
+      "no": 70,
+      "name": "원주누수",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 배관내시경, 누수탐지, 수전교체, 언수도 해빙",
+      "feature": "수도 누수탐지 전문 업체. 원주 전지역 배관설비와 하수구 막힘 대응",
+      "operation": "0507-1397-5510",
+      "region": "강원 원주시 개운로 20",
+      "address": "강원 원주시 개운로 20",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GFB7oiqR",
+      "phone": "0507-1397-5510",
+      "rating": "리뷰 88",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 개운로",
+          "lat": 37.3392875,
+          "lng": 127.9599044,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-071",
+      "no": 71,
+      "name": "유일설비 누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 하수구 막힘",
+      "feature": "원주 하수구 막혔을 때 누수탐지 전문 대응. 방문접수·출장, 예약 가능",
+      "operation": "",
+      "region": "강원 원주시 서원대로 290",
+      "address": "강원 원주시 서원대로 290",
+      "scale": "",
+      "url": "https://blog.naver.com/yuil0404",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x3jrg329",
+      "phone": "010-6744-0005",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 서원대로",
+          "lat": 37.3265308,
+          "lng": 127.956477,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-072",
+      "no": 72,
+      "name": "용수종합공사",
+      "category": "누수·배관",
+      "service": "누수탐지 전문공사, 설비공사, 방수, 타일, 수전교체",
+      "feature": "신축 리모델링, 판넬, 집수리, 누수탐지, 설비공사 대응",
+      "operation": "0507-1303-3859",
+      "region": "강원 원주시 이화3길 40-14 1층",
+      "address": "강원 원주시 이화3길 40-14 1층",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xwoMb2Te",
+      "phone": "0507-1303-3859",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화3길",
+          "lat": 37.3391573,
+          "lng": 127.9328074,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-073",
+      "no": 73,
+      "name": "대한배관세척사협회 강원지부",
+      "category": "누수·배관",
+      "service": "배관세척, 하수구, 누수탐지",
+      "feature": "배관세척 협회 강원지부. 24시간 영업, 단체 이용 가능, 방문접수·출장, 예약 가능",
+      "operation": "0507-1311-4943",
+      "region": "강원 원주시 소삼터길 10-4 1층",
+      "address": "강원 원주시 소삼터길 10-4 1층",
+      "scale": "변동",
+      "url": "https://kpcja.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FfsDp4jV",
+      "phone": "0507-1311-4943",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 소삼터길",
+          "lat": 37.3477568,
+          "lng": 127.9358514,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-074",
+      "no": 74,
+      "name": "제일설비공사",
+      "category": "누수·배관",
+      "service": "누수, 해빙, 하수구, 배관, 난방공사",
+      "feature": "원주 단구로 소재 설비공사 업체. 방문접수·출장 가능",
+      "operation": "033-766-2261",
+      "region": "강원 원주시 단구로 45",
+      "address": "강원 원주시 단구로 45",
+      "scale": "",
+      "url": "http://www.ok114.co.kr/0337662261",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5Hy4EvMW",
+      "phone": "033-766-2261",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 단구로",
+          "lat": 37.3228199,
+          "lng": 127.9568309,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-075",
+      "no": 75,
+      "name": "원주누수119",
+      "category": "누수·배관",
+      "service": "누수탐지 및 수리, 배관 설비, 욕실 인테리어 및 리모델링, 하수관 공사, 하수관 청소 및 세척, 하수관 비시경 촬영",
+      "feature": "원주 전지역 30분 신속 출동. 못 잡으면 0원, 누수 전문 해결사",
+      "operation": "033-745-0472",
+      "region": "강원 원주시 무실로 107",
+      "address": "강원 원주시 무실로 107",
+      "scale": "변동",
+      "url": "http://01032731544.m7114.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xv3QjXnT",
+      "phone": "033-745-0472",
+      "rating": "리뷰 509",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원동 무실로",
+          "lat": 37.3448546,
+          "lng": 127.9441106,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-076",
+      "no": 76,
+      "name": "원주하수구막힘 배관누수",
+      "category": "누수·배관",
+      "service": "변기 막힘, 싱크대 막힘, 하수구 막힘, 고압세척",
+      "feature": "전지역 연중무휴 24시간. 못 뚫으면 0원, 하수구·싱크대·변기 막힘과 배관누수 대응",
+      "operation": "0507-1309-2714",
+      "region": "강원 원주시 남산로 77 3층 344호",
+      "address": "강원 원주시 남산로 77 3층 344호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xONJmvs7",
+      "phone": "0507-1309-2714",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "일산동 남산로",
+          "lat": 37.3522204,
+          "lng": 127.9405115,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-077",
+      "no": 77,
+      "name": "변기막힘 봉산로",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 고압세척, 배관공사, 해동",
+      "feature": "원주 전지역 24시간 출장 가능. 배달, 예약, 단체 이용 가능, 방문접수·출장",
+      "operation": "0507-1359-7954",
+      "region": "강원 원주시 봉산로 28 2층",
+      "address": "강원 원주시 봉산로 28 2층",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Gj7eAMUT",
+      "phone": "0507-1359-7954",
+      "rating": "리뷰 193",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "인동 봉산로",
+          "lat": 37.346839,
+          "lng": 127.9573253,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-078",
+      "no": 78,
+      "name": "명품누수탐지공사",
+      "category": "누수·배관",
+      "service": "누수탐지, 도누수, 배관교체",
+      "feature": "원주 태학교길 소재 누수탐지 공사 업체",
+      "operation": "033-744-9387",
+      "region": "강원 원주시 태학교길 8",
+      "address": "강원 원주시 태학교길 8",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GFBKlKqY",
+      "phone": "033-744-9387",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "평원동 태학교길",
+          "lat": 37.3534867,
+          "lng": 127.9524209,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-079",
+      "no": 79,
+      "name": "번개누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지",
+      "feature": "원주 학성길 소재 누수탐지 업체",
+      "operation": "033-744-7804",
+      "region": "강원 원주시 학성길 38",
+      "address": "강원 원주시 학성길 38",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xzHykzvc",
+      "phone": "033-744-7804",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 학성길",
+          "lat": 37.3541389,
+          "lng": 127.9384707,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-080",
+      "no": 80,
+      "name": "하수구막힘뚫음",
+      "category": "누수·배관",
+      "service": "싱크대 막힘, 하수구 문제, 변기 막힘",
+      "feature": "각종 싱크대 막힘, 하수구 관련 문제, 변기막힘 증상 해결. 방문상담 가능",
+      "operation": "010-6777-3322",
+      "region": "강원 원주시 백간길 55 2층 201-15호",
+      "address": "강원 원주시 백간길 55 2층 201-15호",
+      "scale": "변동",
+      "url": "https://blog.naver.com/red982034",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xwm1NBhI",
+      "phone": "010-6777-3322",
+      "rating": "리뷰 400",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 백간길",
+          "lat": 37.351976,
+          "lng": 127.929768,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-081",
+      "no": 81,
+      "name": "달인설비 하수구막힘",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 배관공사, 고압세척, 누수탐지, 언수도 녹임",
+      "feature": "오시기 전에 꼭 전화 부탁. 24시간 하수구·싱크대·변기 막힘 해결",
+      "operation": "",
+      "region": "강원 원주시 백간길 55 201-18호",
+      "address": "강원 원주시 백간길 55 201-18호",
+      "scale": "변동",
+      "url": "https://wjhasugu.aidc.kr",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GI3huT9K",
+      "phone": "",
+      "rating": "리뷰 128",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 백간길",
+          "lat": 37.351976,
+          "lng": 127.929768,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-082",
+      "no": 82,
+      "name": "해결누수종합설비",
+      "category": "누수·배관",
+      "service": "누수 검사, 누수 탐지, 청음 누수 탐지, 가스식 누수 탐지, 열화상 내시경 검사, 방수 공사",
+      "feature": "원주 누수 해결 전문. 24시간 영업, 주차 가능",
+      "operation": "010-4510-7484",
+      "region": "강원 원주시 현충로 234",
+      "address": "강원 원주시 현충로 234",
+      "scale": "변동",
+      "url": "https://blog.naver.com/nusu_solution",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xcnafLDx",
+      "phone": "010-4510-7484",
+      "rating": "리뷰 194",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3793399,
+          "lng": 127.9486778,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-083",
+      "no": 83,
+      "name": "다뚫배관클리닉",
+      "category": "누수·배관",
+      "service": "싱크대 배관 막힘, 공용 배관 막힘, 고압세척, 관로탐지, 누수탐지",
+      "feature": "상가, 펜션, 주택, 아파트 하수구·변기·싱크대 막힘과 고압세척 전문",
+      "operation": "0507-1404-7481",
+      "region": "강원 원주시 흥양로51번길 20 404동 207호",
+      "address": "강원 원주시 흥양로51번길 20 404동 207호",
+      "scale": "변동",
+      "url": "https://www.facebook.com/jaemyeong7452",
+      "extraUrl": "유튜브 · 인스타그램 · 블로그",
+      "naverUrl": "https://naver.me/xDJZ1RG4",
+      "phone": "0507-1404-7481",
+      "rating": "리뷰 143",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 흥양로51번길",
+          "lat": 37.385368,
+          "lng": 127.9566,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-084",
+      "no": 84,
+      "name": "누수탐정",
+      "category": "누수·배관",
+      "service": "누수탐지",
+      "feature": "흥양로 두진백로아파트 소재 누수탐정. 22시까지 영업",
+      "operation": "0507-1411-1597",
+      "region": "강원 원주시 흥양로 64 두진백로아파트 102동 1309호",
+      "address": "강원 원주시 흥양로 64 두진백로아파트 102동 1309호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5pqnJSSy",
+      "phone": "0507-1411-1597",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 흥양로",
+          "lat": 37.3832536,
+          "lng": 127.954515,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-085",
+      "no": 85,
+      "name": "하수구막힘 싱크대막힘",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 배관내시경",
+      "feature": "복원상가길 소재 하수구·싱크대 막힘 전문. 방문상담 가능",
+      "operation": "0507-1388-7090",
+      "region": "강원 원주시 북원상가길 13 북원상가 2층 13-에이07호",
+      "address": "강원 원주시 북원상가길 13 북원상가 2층 13-에이07호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G0DuZZPD",
+      "phone": "0507-1388-7090",
+      "rating": "리뷰 919",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 북원상가길",
+          "lat": 37.3841401,
+          "lng": 127.9509566,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-086",
+      "no": 86,
+      "name": "고고설비 고압세척",
+      "category": "누수·배관",
+      "service": "하수구 싱크대 막힘 뚫음, 하수구 고압세척, 변기 막힘 뚫음, 누수탐지 및 수리, 언수도 녹임 해빙, 배관 청소, 보일러 분배기 온수기 설치 교체, 부동전 교체, 수전 변기 교체",
+      "feature": "복원상가 2층 소재 하수구 전문 업체. 내시경, 관로탐지, 고압세척, 가스탐지 최신 장비 장착",
+      "operation": "",
+      "region": "강원 원주시 북원상가길 13 북원상가 2층 13-비08호",
+      "address": "강원 원주시 북원상가길 13 북원상가 2층 13-비08호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FBMU1fry",
+      "phone": "",
+      "rating": "리뷰 216",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 북원상가길",
+          "lat": 37.3841401,
+          "lng": 127.9509566,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-087",
+      "no": 87,
+      "name": "원주에어컨설치 문막시장",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 견적문의, 상담",
+      "feature": "문막시장1길 소재 에어컨 설치 업체. 24시간 영업, 견적 문의와 상담 가능",
+      "operation": "0507-1320-6676",
+      "region": "강원 원주시 문막읍 문막시장1길 77",
+      "address": "강원 원주시 문막읍 문막시장1길 77",
+      "scale": "변동",
+      "url": "https://eodthf89.wixsite.com/wonju-aircon",
+      "extraUrl": "블로그",
+      "naverUrl": "https://naver.me/FRLapxMT",
+      "phone": "0507-1320-6676",
+      "rating": "리뷰 38",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 문막시장1길",
+          "lat": 37.3042652,
+          "lng": 127.8154576,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-088",
+      "no": 88,
+      "name": "윤에어컨",
+      "category": "냉난방·에어컨",
+      "service": "벽걸이에어컨설치, 스탠드에어컨설치, 투인원에어컨설치, 중대형에어컨설치, 가스충전, 에어컨철거, 에어컨청소",
+      "feature": "원주, 여주, 이천, 양평, 횡성, 충주, 제천 출장 전문 에어컨 설치·청소 업체",
+      "operation": "0507-1307-0852",
+      "region": "강원 원주시 문막읍 원문로 1700 103동 403호",
+      "address": "강원 원주시 문막읍 원문로 1700 103동 403호",
+      "scale": "변동",
+      "url": "https://blog.naver.com/cay5896",
+      "extraUrl": "https://cafe.naver.com/woon5896",
+      "naverUrl": "https://naver.me/53lZ5Whf",
+      "phone": "0507-1307-0852",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 원문로",
+          "lat": 37.2745618,
+          "lng": 127.771119,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-089",
+      "no": 89,
+      "name": "성신에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치",
+      "feature": "문막읍 구암길 소재 에어컨 설치 업체",
+      "operation": "033-733-0655",
+      "region": "강원 원주시 문막읍 구암길 9",
+      "address": "강원 원주시 문막읍 구암길 9",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xqbObkrG",
+      "phone": "033-733-0655",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 구암길",
+          "lat": 37.3205025,
+          "lng": 127.8222761,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-090",
+      "no": 90,
+      "name": "영에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 시공",
+      "feature": "지정면 조엄로 이지더원 어반포레 인근 에어컨 업체. 원주 자이센트로 B타입 LG 단배관 4실 시공 사례",
+      "operation": "0507-1321-4827",
+      "region": "강원 원주시 지정면 조엄로 391 이지더원 어반포레",
+      "address": "강원 원주시 지정면 조엄로 391 이지더원 어반포레",
+      "scale": "",
+      "url": "https://blog.naver.com/6511130",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5yPulK0b",
+      "phone": "0507-1321-4827",
+      "rating": "리뷰 65",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3744635,
+          "lng": 127.8662187,
+          "source": "address-geocode",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-091",
+      "no": 91,
+      "name": "원주에어컨설치 지정면",
+      "category": "냉난방·에어컨",
+      "service": "원주에어컨설치, 원주냉난방기설치, 벽걸이에어컨설치, 투인원에어컨설치, 시스템에어컨설치, 에어컨가스충전, 스탠드에어컨설치",
+      "feature": "원주, 횡성, 평창, 진부, 홍천, 제천, 충주, 여주 지역 출장 가능. 24시간 영업",
+      "operation": "0507-1374-4144",
+      "region": "강원 원주시 지정면 조엄로 393 105",
+      "address": "강원 원주시 지정면 조엄로 393 105",
+      "scale": "변동",
+      "url": "https://blog.naver.com/lco3353",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GyYBzffF",
+      "phone": "0507-1374-4144",
+      "rating": "리뷰 11",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3496763,
+          "lng": 127.8525081,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-092",
+      "no": 92,
+      "name": "에어컨씻쓰리",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 청소",
+      "feature": "지정면 유보라 아이비파크 소재 에어컨 설치·청소 업체. 방문접수·출장 가능",
+      "operation": "0507-1336-3430",
+      "region": "강원 원주시 지정면 조엄로 393 유보라 아이비파크 1단지 114동 2층 3호",
+      "address": "강원 원주시 지정면 조엄로 393 유보라 아이비파크 1단지 114동 2층 3호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xv6WlE5V",
+      "phone": "0507-1336-3430",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3496763,
+          "lng": 127.8525081,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-093",
+      "no": 93,
+      "name": "현진시스템",
+      "category": "냉난방·에어컨",
+      "service": "시스템에어컨설치, 에어컨 이전설치, 스탠드에어컨설치, 벽걸이에어컨설치, 냉난방기설치, 에어컨판매, 에어컨AS, 에어컨수리",
+      "feature": "원주 전역 에어컨 설치·수리·AS 대응. 예약 및 방문접수·출장 가능",
+      "operation": "",
+      "region": "강원 원주시 송삼길 2",
+      "address": "강원 원주시 송삼길 2",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/ximn3Fpx",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 송삼길",
+          "lat": 37.3259758,
+          "lng": 127.9204182,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-094",
+      "no": 94,
+      "name": "원주 에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "원주 에어컨설치, 벽걸이에어컨설치, 스탠드에어컨설치, 2in1 에어컨설치, 매립배관 설치, 에어컨 이전설치",
+      "feature": "시청로 소재 에어컨 설치 업체. 블로그 운영, 22시까지 영업",
+      "operation": "",
+      "region": "강원 원주시 시청로 40",
+      "address": "강원 원주시 시청로 40",
+      "scale": "변동",
+      "url": "https://blog.naver.com/bars0617",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FqWjJlBL",
+      "phone": "",
+      "rating": "리뷰 5",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3382323,
+          "lng": 127.9234637,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-095",
+      "no": 95,
+      "name": "경동나비엔 원주동부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 가스보일러, 전기온수기",
+      "feature": "경동나비엔 공식 대리점. 일반가스보일러, 콘덴싱가스보일러, 전기온수기 설치 상담",
+      "operation": "033-748-7977",
+      "region": "강원 원주시 만대로 196-6 2층",
+      "address": "강원 원주시 만대로 196-6 2층",
+      "scale": "가격표 있음",
+      "url": "https://blog.naver.com/ncb35322k",
+      "extraUrl": "스마트스토어",
+      "naverUrl": "https://naver.me/xMnGMuy6",
+      "phone": "033-748-7977",
+      "rating": "리뷰 16",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 만대로",
+          "lat": 37.3400495,
+          "lng": 127.9200143,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-096",
+      "no": 96,
+      "name": "수상한난방 보일러 에어컨 원주점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 에어컨 설치, 온수기, 안전점검",
+      "feature": "단구동 천매마을 위치. 보일러와 에어컨 기본 설치비, 안전점검 대응",
+      "operation": "0507-1398-1035",
+      "region": "강원 원주시 천매봉길 82-16 101호",
+      "address": "강원 원주시 천매봉길 82-16 101호",
+      "scale": "가격표 있음",
+      "url": "https://smartstore.naver.com/kwesv",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xDC32E9b",
+      "phone": "0507-1398-1035",
+      "rating": "리뷰 99",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 천매봉길",
+          "lat": 37.3237779,
+          "lng": 127.9426222,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-097",
+      "no": 97,
+      "name": "대성보일러 원주중부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성보일러 공식대리점. 판부면 오성마을길 소재",
+      "operation": "0507-1416-8577",
+      "region": "강원 원주시 판부면 오성마을길 67-9 101호",
+      "address": "강원 원주시 판부면 오성마을길 67-9 101호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xs3Kb5Jz",
+      "phone": "0507-1416-8577",
+      "rating": "리뷰 66",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3191204,
+          "lng": 127.9481689,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-098",
+      "no": 98,
+      "name": "경동나비엔 신원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 청정환기시스템, 프리미엄 보일러",
+      "feature": "경동나비엔 공식인증 대리점. 청정환기시스템과 프리미엄 보일러 취급",
+      "operation": "0507-1402-1764",
+      "region": "강원 원주시 강변로 55 경동나비엔",
+      "address": "강원 원주시 강변로 55 경동나비엔",
+      "scale": "가격표 있음",
+      "url": "https://blog.naver.com/hotboiler111",
+      "extraUrl": "홈페이지",
+      "naverUrl": "https://naver.me/FwGBG5oW",
+      "phone": "0507-1402-1764",
+      "rating": "리뷰 54",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 강변로",
+          "lat": 37.369855,
+          "lng": 127.9472583,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-099",
+      "no": 99,
+      "name": "박정남의에어컨클린",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 청소, 에어컨 설치",
+      "feature": "라옹정길 소재 에어컨 클린 업체. 방문접수·출장 가능",
+      "operation": "033-762-8885",
+      "region": "강원 원주시 라옹정길 20-4",
+      "address": "강원 원주시 라옹정길 20-4",
+      "scale": "가격표 있음",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5Bc8Oedn",
+      "phone": "033-762-8885",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 라옹정길",
+          "lat": 37.3190654,
+          "lng": 127.9639999,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-100",
+      "no": 100,
+      "name": "원주1동보일러에어컨 단구초교",
+      "category": "냉난방·보일러",
+      "service": "보일러, 에어컨",
+      "feature": "단구초교길 소재 보일러·에어컨 업체. 전화, 문자, 네이버톡톡 상담 가능",
+      "operation": "",
+      "region": "강원 원주시 단구초교길 6-19 1층",
+      "address": "강원 원주시 단구초교길 6-19 1층",
+      "scale": "",
+      "url": "https://blog.naver.com/zzazal-1",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5owOah5a",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 단구초교길",
+          "lat": 37.3216967,
+          "lng": 127.9643588,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-101",
+      "no": 101,
+      "name": "린나이 케이가스텍",
+      "category": "냉난방·보일러",
+      "service": "친환경콘덴싱보일러, 저녹스일반가스보일러, 가스온수기, 전기온수기, 전기레인지, 가스레인지, 주방기구",
+      "feature": "린나이 공식인증. 단구동 판부농협 맞은편 보일러·가스기기 업체",
+      "operation": "0507-1339-8573",
+      "region": "강원 원주시 치악로 1532 1층",
+      "address": "강원 원주시 치악로 1532 1층",
+      "scale": "변동",
+      "url": "https://blog.naver.com/ssopiha",
+      "extraUrl": "홈페이지",
+      "naverUrl": "https://naver.me/xF4tPYwU",
+      "phone": "0507-1339-8573",
+      "rating": "리뷰 63",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 치악로",
+          "lat": 37.3191851,
+          "lng": 127.9668541,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-102",
+      "no": 102,
+      "name": "귀뚜라미보일러 원주동부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주보일러 귀뚜라미 대흥아파트 설치 후기 운영",
+      "operation": "033-761-7252",
+      "region": "강원 원주시 치악로 1555 귀뚜라미보일러 원주동부대리점",
+      "address": "강원 원주시 치악로 1555 귀뚜라미보일러 원주동부대리점",
+      "scale": "",
+      "url": "https://ok114.co.kr/0337617252",
+      "extraUrl": "블로그",
+      "naverUrl": "https://naver.me/GVVbY7I5",
+      "phone": "033-761-7252",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 치악로",
+          "lat": 37.3221134,
+          "lng": 127.9629108,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-103",
+      "no": 103,
+      "name": "경동나비엔 DK에너지솔루션",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 시스템 대리점. 단사정길 소재, 방문접수·출장 가능",
+      "operation": "",
+      "region": "강원 원주시 단사정길 25 1층",
+      "address": "강원 원주시 단사정길 25 1층",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xNpQj1na",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 단사정길",
+          "lat": 37.3290423,
+          "lng": 127.9606968,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-104",
+      "no": 104,
+      "name": "원주1동보일러에어컨 단구초교 2",
+      "category": "냉난방·보일러",
+      "service": "보일러, 에어컨",
+      "feature": "단구초교길 소재 보일러·에어컨 업체. 전화, 문자, 네이버톡톡 상담 가능",
+      "operation": "",
+      "region": "강원 원주시 단구초교길 6-19 1층",
+      "address": "강원 원주시 단구초교길 6-19 1층",
+      "scale": "",
+      "url": "https://blog.naver.com/zzazal-1",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xE6g6D6w",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 단구초교길",
+          "lat": 37.3216967,
+          "lng": 127.9643588,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-105",
+      "no": 105,
+      "name": "경동나비엔 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 공식 대리점. 남원로 소재 보일러 업체",
+      "operation": "0507-1404-0159",
+      "region": "강원 원주시 남원로 603",
+      "address": "강원 원주시 남원로 603",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GXAKLPPx",
+      "phone": "0507-1404-0159",
+      "rating": "리뷰 7",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 남원로",
+          "lat": 37.313125,
+          "lng": 127.9295932,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-106",
+      "no": 106,
+      "name": "대성보일러 원주온수기 전문점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 온수기 설치",
+      "feature": "대성보일러 공식대리점. 원주 온수기 전문점",
+      "operation": "033-734-8577",
+      "region": "강원 원주시 이화3길 31",
+      "address": "강원 원주시 이화3길 31",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GmpxGAvF",
+      "phone": "033-734-8577",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화3길",
+          "lat": 37.3381408,
+          "lng": 127.9326004,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-107",
+      "no": 107,
+      "name": "강추에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 기본설치",
+      "feature": "이화3길 소재 에어컨 설치 업체. 에어컨 기본 설치비 포함 상품 안내",
+      "operation": "0507-1316-6248",
+      "region": "강원 원주시 이화3길 16-3",
+      "address": "강원 원주시 이화3길 16-3",
+      "scale": "에어컨투900 기본설치비 포함 350,000원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FlBTSUX2",
+      "phone": "0507-1316-6248",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화3길",
+          "lat": 37.3377819,
+          "lng": 127.9338913,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-108",
+      "no": 108,
+      "name": "롯데기공가스보일러 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "가스보일러 설치, 보일러 AS",
+      "feature": "롯데기공 가스보일러 원주대리점",
+      "operation": "033-762-6029",
+      "region": "강원 원주시 이화4길 9",
+      "address": "강원 원주시 이화4길 9",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/51urL6zQ",
+      "phone": "033-762-6029",
+      "rating": "리뷰 10",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화4길",
+          "lat": 37.3418171,
+          "lng": 127.9342309,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-109",
+      "no": 109,
+      "name": "에어컨설치나라",
+      "category": "냉난방·에어컨",
+      "service": "스탠드 재설치, 벽걸이 재설치, 투인원 재설치, 냉매 보충",
+      "feature": "냉난방기 설치 업체. 스탠드·벽걸이·투인원 재설치와 냉매 보충 가격표 제공",
+      "operation": "",
+      "region": "강원 원주시 이화4길 62",
+      "address": "강원 원주시 이화4길 62",
+      "scale": "가격표 있음",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GmtGr1Df",
+      "phone": "",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화4길",
+          "lat": 37.3421873,
+          "lng": 127.9334477,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-110",
+      "no": 110,
+      "name": "귀뚜라미 원주중앙대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주 중앙대리점",
+      "operation": "033-742-9004",
+      "region": "강원 원주시 남산로 69 1층 101호",
+      "address": "강원 원주시 남산로 69 1층 101호",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xHEZNwqx",
+      "phone": "033-742-9004",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "일산동 남산로",
+          "lat": 37.3450087,
+          "lng": 127.9430494,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-111",
+      "no": 111,
+      "name": "린나이 남원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "린나이 공식인증대리점. 남원주대리점",
+      "operation": "033-765-3651",
+      "region": "강원 원주시 북원로 2250",
+      "address": "강원 원주시 북원로 2250",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GTnl3Amr",
+      "phone": "033-765-3651",
+      "rating": "리뷰 30",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로",
+          "lat": 37.3765042,
+          "lng": 127.944677,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-112",
+      "no": 112,
+      "name": "귀뚜라미보일러 원주홈시스점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주 홈시스점",
+      "operation": "033-732-5577",
+      "region": "강원 원주시 봉화로 99",
+      "address": "강원 원주시 봉화로 99",
+      "scale": "",
+      "url": "http://kiturami.nasoft.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FW6Ged81",
+      "phone": "033-732-5577",
+      "rating": "리뷰 114",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 봉화로",
+          "lat": 37.3533438,
+          "lng": 127.9279964,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-113",
+      "no": 113,
+      "name": "귀뚜라미보일러 강원지사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "봉화서부로 소재 귀뚜라미보일러 강원지사",
+      "operation": "070-4713-9811",
+      "region": "강원 원주시 봉화서부로 14-3",
+      "address": "강원 원주시 봉화서부로 14-3",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xzHyz3WD",
+      "phone": "070-4713-9811",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 봉화서부로",
+          "lat": 37.3569477,
+          "lng": 127.9204001,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-114",
+      "no": 114,
+      "name": "에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 판매, 에어컨 설치, 에어컨 수리",
+      "feature": "단계초교 후문 앞 에어컨 설치 업체. 벽걸이·스탠드·천장형 설치 가격표 제공",
+      "operation": "",
+      "region": "강원 원주시 원문로110번길 21 1층",
+      "address": "강원 원주시 원문로110번길 21 1층",
+      "scale": "벽걸이 6-8평 기본설치비 100,000원, 스탠드 설치 120,000원부터",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5tJntRhS",
+      "phone": "",
+      "rating": "리뷰 91",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 원문로110번길",
+          "lat": 37.3583817,
+          "lng": 127.9346061,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-115",
+      "no": 115,
+      "name": "대성보일러 원주서부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성쎌틱 에너시스 공식대리점. 원주 서부대리점",
+      "operation": "033-765-8577",
+      "region": "강원 원주시 우산로 276 마동 102호",
+      "address": "강원 원주시 우산로 276 마동 102호",
+      "scale": "",
+      "url": "https://blog.naver.com/hihyun3838",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GprwyPf0",
+      "phone": "033-765-8577",
+      "rating": "평점 3.81 · 리뷰 81",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우산로",
+          "lat": 37.3833665,
+          "lng": 127.9396612,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-116",
+      "no": 116,
+      "name": "보일러할인마트",
+      "category": "냉난방·보일러",
+      "service": "보일러 판매, 보일러 설치",
+      "feature": "귀뚜라미, 린나이, 대성 보일러 취급. 북원로 소재 보일러 업체",
+      "operation": "0507-1326-4433",
+      "region": "강원 원주시 북원로 2699-1 1층 1호",
+      "address": "강원 원주시 북원로 2699-1 1층 1호",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FtGbKo9B",
+      "phone": "0507-1326-4433",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "가현동 북원로",
+          "lat": 37.3845638,
+          "lng": 127.9472948,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-117",
+      "no": 117,
+      "name": "투투에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 수리",
+      "feature": "상지대길 소재 에어컨 업체. 에어컨 설치와 AS 상담 가능",
+      "operation": "0507-1344-2678",
+      "region": "강원 원주시 상지대길 66-65",
+      "address": "강원 원주시 상지대길 66-65",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FSSj43jZ",
+      "phone": "0507-1344-2678",
+      "rating": "리뷰 4",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 상지대길",
+          "lat": 37.3716607,
+          "lng": 127.9350819,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-118",
+      "no": 118,
+      "name": "경동나비엔 서원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 공식인증 대리점. 서원주대리점",
+      "operation": "033-765-6739",
+      "region": "강원 원주시 현충로 210 1층",
+      "address": "강원 원주시 현충로 210 1층",
+      "scale": "상품 구성 및 월 구독료 2,900원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FG38Oopg",
+      "phone": "033-765-6739",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3725743,
+          "lng": 127.9498376,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-119",
+      "no": 119,
+      "name": "936에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 이전 설치, 에어컨 판매, 에어컨 설치, 냉매 가스 충전",
+      "feature": "북원로2475번길 소재 에어컨 전문 업체. 24시간 영업",
+      "operation": "0507-1447-0165",
+      "region": "강원 원주시 북원로2475번길 86-5 1층",
+      "address": "강원 원주시 북원로2475번길 86-5 1층",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5vc0IdYZ",
+      "phone": "0507-1447-0165",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로2475번길",
+          "lat": 37.3666562,
+          "lng": 127.9334497,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-120",
+      "no": 120,
+      "name": "에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "벽걸이 에어컨 설치, 스탠드 에어컨 설치, 투인원 에어컨 설치, 천장형 에어컨 설치, 냉난방기 설치",
+      "feature": "우무개로 소재 24시간 에어컨 설치 업체",
+      "operation": "0507-1363-3298",
+      "region": "강원 원주시 우무개로 66 에어컨설치",
+      "address": "강원 원주시 우무개로 66",
+      "scale": "가격표 있음",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xBw85oLc",
+      "phone": "0507-1363-3298",
+      "rating": "리뷰 19",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우무개로",
+          "lat": 37.3653827,
+          "lng": 127.9345609,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-121",
+      "no": 121,
+      "name": "강남심야보일러&에어렉스",
+      "category": "냉난방·보일러",
+      "service": "심야보일러, 자동전기, 전기패널, 온돌 난방",
+      "feature": "북원로 소재 보일러 및 에어렉스 난방 업체",
+      "operation": "033-731-0055",
+      "region": "강원 원주시 북원로 2451-7",
+      "address": "강원 원주시 북원로 2451-7",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Gq9Y9jRN",
+      "phone": "033-731-0055",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로",
+          "lat": 37.3631304,
+          "lng": 127.9390147,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-122",
+      "no": 122,
+      "name": "신흥사설비",
+      "category": "냉난방·보일러",
+      "service": "누수탐지, 온수기 수리, 온수기 판매, 심야전기보일러 수리, 심야전기보일러 설치",
+      "feature": "원일로 소재 설비 업체. 보일러와 온수기, 누수탐지 서비스 제공",
+      "operation": "",
+      "region": "강원 원주시 원일로 288",
+      "address": "강원 원주시 원일로 288",
+      "scale": "변동",
+      "url": "http://ok114.co.kr/0339007070",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5Z1A5RwT",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 원일로",
+          "lat": 37.3599654,
+          "lng": 127.9410455,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-123",
+      "no": 123,
+      "name": "캐리어 원주총판",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기 판매, 냉난방기 설치, 에어컨 설치",
+      "feature": "캐리어 원주총판. 현충로 소재 냉난방기 업체",
+      "operation": "0507-1392-7680",
+      "region": "강원 원주시 현충로 72",
+      "address": "강원 원주시 현충로 72",
+      "scale": "",
+      "url": "https://blog.naver.com/carrierwonju",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x7elgcgX",
+      "phone": "0507-1392-7680",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3623513,
+          "lng": 127.9547712,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-124",
+      "no": 124,
+      "name": "성능에어컨냉난방시스템",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 이전설치 전문, 벽걸이 에어컨 설치, 스탠드 에어컨 설치, 멀티 에어컨 설치",
+      "feature": "원일로 소재 에어컨·냉난방 시스템 업체. 중고 판매와 고가 매입 안내",
+      "operation": "0507-1306-8039",
+      "region": "강원 원주시 원일로 198 1층",
+      "address": "강원 원주시 원일로 198 1층",
+      "scale": "변동",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x4F5LMJG",
+      "phone": "0507-1306-8039",
+      "rating": "리뷰 28",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 원일로",
+          "lat": 37.3547979,
+          "lng": 127.9451569,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-125",
+      "no": 125,
+      "name": "린나이가스기구 원주점",
+      "category": "냉난방·보일러",
+      "service": "린나이 가스기구, 보일러 판매, 보일러 설치",
+      "feature": "중앙로 소재 린나이 가스기구 및 보일러 취급점",
+      "operation": "033-745-4456",
+      "region": "강원 원주시 중앙로 158",
+      "address": "강원 원주시 중앙로 158",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xWIxGqNb",
+      "phone": "033-745-4456",
+      "rating": "리뷰 12",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 중앙로",
+          "lat": 37.3518261,
+          "lng": 127.9490204,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-126",
+      "no": 126,
+      "name": "신바람 에어컨",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기, 새제품, 중고, 이전설치, 매입",
+      "feature": "개봉길 소재 에어컨 업체. 냉난방기와 신제품·중고·이전설치 상담 가능",
+      "operation": "0507-1480-1525",
+      "region": "강원 원주시 개봉길 35 단독",
+      "address": "강원 원주시 개봉길 35",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GxLXTFWu",
+      "phone": "0507-1480-1525",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 개봉길",
+          "lat": 37.3437118,
+          "lng": 127.9555827,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-127",
+      "no": 127,
+      "name": "린나이 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 린나이 가스기구, 보일러 AS",
+      "feature": "봉산로 소재 린나이 원주대리점. 원주초등학교 인근",
+      "operation": "033-744-3651",
+      "region": "강원 원주시 봉산로 30",
+      "address": "강원 원주시 봉산로 30",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G3Pa51C3",
+      "phone": "033-744-3651",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "봉산동 봉산로",
+          "lat": 37.3466983,
+          "lng": 127.9591186,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-128",
+      "no": 128,
+      "name": "태광전자",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기 총판, 냉난방기 렌탈, 냉난방기 AS",
+      "feature": "강변로 소재 냉난방기 업체. 렌탈과 AS 상담 가능",
+      "operation": "033-747-9006",
+      "region": "강원 원주시 강변로 389",
+      "address": "강원 원주시 강변로 389",
+      "scale": "",
+      "url": "https://blog.naver.com/ascs00",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5N155GGk",
+      "phone": "033-747-9006",
+      "rating": "리뷰 7",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 강변로",
+          "lat": 37.3419036,
+          "lng": 127.961964,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-129",
+      "no": 129,
+      "name": "태경엔지니어링",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 수리, 보일러 AS",
+      "feature": "오리현길 소재 보일러 업체. 방문접수와 출장 가능",
+      "operation": "033-764-0708",
+      "region": "강원 원주시 오리현길 1",
+      "address": "강원 원주시 오리현길 1",
+      "scale": "",
+      "url": "http://taegyeongeng.alltheway.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G02L4nBO",
+      "phone": "033-764-0708",
+      "rating": "리뷰 5",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 오리현길",
+          "lat": 37.3398347,
+          "lng": 127.966046,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-130",
+      "no": 130,
+      "name": "조은전자",
+      "category": "냉난방·에어컨",
+      "service": "에어커튼 설치, 비데 설치, 주방후드 설치, 에어컨 가스 보충",
+      "feature": "양지로 소재 에어컨·전자 설치 업체. 특판과 AS 상담 가능",
+      "operation": "010-5657-9850",
+      "region": "강원 원주시 양지로 160",
+      "address": "강원 원주시 양지로 160",
+      "scale": "변동",
+      "url": "https://blog.naver.com/kbu6248",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xONKJ7YC",
+      "phone": "010-5657-9850",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.3354384,
+          "lng": 127.9877767,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-131",
+      "no": 131,
+      "name": "마린에어솔루션",
+      "category": "냉난방·에어컨",
+      "service": "시스템에어컨, 냉난방기 설치, 에어컨 AS",
+      "feature": "양지로 소재 시스템에어컨 전문기업",
+      "operation": "033-744-8934",
+      "region": "강원 원주시 양지로 26 5층",
+      "address": "강원 원주시 양지로 26 5층",
+      "scale": "",
+      "url": "https://blog.naver.com/dachos11",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xOdU2no5",
+      "phone": "033-744-8934",
+      "rating": "리뷰 41",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.3245927,
+          "lng": 127.9816052,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-132",
+      "no": 132,
+      "name": "대성보일러 강원지사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성쎌틱 에너시스 강원지사. 건강로 소재 보일러 업체",
+      "operation": "033-766-4545",
+      "region": "강원 원주시 건강로 17-1 반곡동 1910-2",
+      "address": "강원 원주시 건강로 17-1",
+      "scale": "",
+      "url": "https://blog.naver.com/celtic_wonju",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fc67Nsvq",
+      "phone": "033-766-4545",
+      "rating": "리뷰 63",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 건강로",
+          "lat": 37.3260147,
+          "lng": 127.9878209,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-133",
+      "no": 133,
+      "name": "보일러에어컨장이 원주본사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 에어컨 설치, 에어컨 수리, 에어컨 청소",
+      "feature": "양지로 소재 보일러·에어컨 설치 및 수리 업체",
+      "operation": "033-766-0822",
+      "region": "강원 원주시 양지로 58 상가 202호",
+      "address": "강원 원주시 양지로 58 상가 202호",
+      "scale": "보일러설치 580,000원, 에어컨설치 150,000원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GvWGbpLJ",
+      "phone": "033-766-0822",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.326588,
+          "lng": 127.984721,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    }
+  ],
+  "categories": [
+    "대기업 종합FM/보안",
+    "시설관리 SaaS/소프트웨어",
+    "프롭테크 플랫폼(비상주)",
+    "임대관리 특화",
+    "행정/법무 대행",
+    "견적비교/마켓플레이스",
+    "공유주거 개발사(관리아님)",
+    "지역 전통 종합관리",
+    "수리/시공 소규모",
+    "기타/생활서비스",
+    "누수·배관",
+    "전기·조명",
+    "전자·전기",
+    "통신·방송장비",
+    "설비·수도·가스",
+    "도배공사",
+    "방수·코킹",
+    "문·창호·도어락",
+    "냉난방·보일러",
+    "냉난방·에어컨",
+    "청소·위생",
+    "소방·안전",
+    "타일공사"
+  ],
+  "summary": {
+    "excel": 49,
+    "googleSheet": 133,
+    "total": 182,
+    "mapped": 152,
+    "geocoded": 0
+  }
+};

@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+
+const LEGACY_PROJECT_ID = "bring-fm-hj";
+
+async function findLegacyProjectReferences(entry, matches = []) {
+  const stat = await readdir(entry, { withFileTypes: true });
+  for (const item of stat) {
+    const child = new URL(item.name + (item.isDirectory() ? "/" : ""), entry);
+    if (item.isDirectory()) {
+      await findLegacyProjectReferences(child, matches);
+      continue;
+    }
+    const contents = await readFile(child);
+    if (contents.includes(Buffer.from(LEGACY_PROJECT_ID))) {
+      matches.push(child.pathname);
+    }
+  }
+  return matches;
+}
 
 async function render(pathname = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -74,7 +92,7 @@ test("mail bridge accepts only the two published Bring Care origins", async () =
     new URL("../public/consult-mail-bridge.html", import.meta.url),
     "utf8",
   );
-  assert.match(bridge, /https:\/\/bring-fm-hj\.web\.app/);
+  assert.match(bridge, /https:\/\/bring-fm\.web\.app/);
   assert.match(
     bridge,
     /https:\/\/bring-care-fm\.bringengineering1008\.chatgpt\.site/,
@@ -82,4 +100,98 @@ test("mail bridge accepts only the two published Bring Care origins", async () =
   assert.match(bridge, /bring-consult-submit/);
   assert.match(bridge, /bring-consult-result/);
   assert.match(bridge, /formsubmit\.co\/ajax\/bringengineering1008@gmail\.com/);
+});
+
+test("active Firebase hosting sources and exported assets target bring-fm only", async () => {
+  const activeDirectories = [
+    new URL("../app/", import.meta.url),
+    new URL("../public/", import.meta.url),
+    new URL("../firebase-public/", import.meta.url),
+  ];
+  const matches = [];
+
+  for (const directory of activeDirectories) {
+    await findLegacyProjectReferences(directory, matches);
+  }
+
+  const repositoryMap = await readFile(
+    new URL("../../wonju-map.html", import.meta.url),
+  );
+  if (repositoryMap.includes(Buffer.from(LEGACY_PROJECT_ID))) {
+    matches.push("wonju-map.html");
+  }
+
+  assert.deepEqual(matches, []);
+
+  const [
+    exportedHome,
+    exportedConsult,
+    exportedField,
+    exportedBridge,
+    exportedMap,
+    assetManifest,
+  ] =
+    await Promise.all([
+      readFile(new URL("../firebase-public/index.html", import.meta.url), "utf8"),
+      readFile(
+        new URL("../firebase-public/consult/index.html", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../firebase-public/field/index.html", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../firebase-public/consult-mail-bridge.html", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../firebase-public/wonju-map.html", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../firebase-public/.vite/manifest.json", import.meta.url),
+        "utf8",
+      ),
+    ]);
+
+  assert.match(exportedHome, /https:\/\/bring-fm\.web\.app\/og\.png/);
+  assert.match(
+    exportedConsult,
+    /https:\/\/bring-fm\.web\.app\/consult-mail-bridge\.html/,
+  );
+  assert.match(
+    exportedField,
+    /https:\/\/bring-fm\.web\.app\/field\/manifest\.webmanifest/,
+  );
+  assert.match(exportedBridge, /https:\/\/bring-fm\.web\.app/);
+  assert.match(exportedMap, /projectId:\s*"bring-fm"/);
+  assert.match(
+    exportedMap,
+    /https:\/\/bring-fm-default-rtdb\.asia-southeast1\.firebasedatabase\.app/,
+  );
+
+  const fieldAssetPath = JSON.parse(assetManifest)[
+    "app/field/components/v2/FieldV2App.tsx"
+  ].file;
+  const fieldAsset = await readFile(
+    new URL(`../firebase-public/${fieldAssetPath}`, import.meta.url),
+    "utf8",
+  );
+  assert.match(fieldAsset, /authDomain:[`"]bring-fm\.firebaseapp\.com[`"]/);
+  assert.match(fieldAsset, /projectId:[`"]bring-fm[`"]/);
+});
+
+test("the retired project reference remains confined to the GET-only migration adapter", async () => {
+  const migrationAdapter = await readFile(
+    new URL("../../desktop-crm/src/crm-staged-migration.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migrationAdapter, /bring-fm-hj/);
+  assert.match(migrationAdapter, /toUpperCase\(\) !== "GET"/);
+  assert.match(
+    migrationAdapter,
+    /fetchImpl\(url, \{ method: "GET", headers: \{ Accept: "application\/json" \} \}\)/,
+  );
 });

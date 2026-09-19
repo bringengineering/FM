@@ -1,0 +1,83 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const load=()=>import('../src/building-atlas/crm-host.mjs');
+test('host reference callbacks reject cross-building targets and ignore obsolete mounts',async()=>{const seen=[];const s=await setup({onSelectRecord:v=>seen.push(v),validateReference:()=>true});const old=s.mounts[0];assert.equal(old.validateReference({buildingId:'b',type:'unit',id:'u'}),false);assert.equal(old.validateReference({buildingId:'a',type:'unit',id:'u'}),true);old.onSelectRecord({buildingId:'a',record:{id:'r'}});assert.equal(seen.at(-1).record.id,'r');await s.handle.selectBuilding('b');const count=seen.length;old.onSelectRecord({buildingId:'a',record:{id:'late'}});assert.equal(seen.length,count);assert.equal(old.validateReference({buildingId:'a',type:'unit',id:'u'}),false);s.handle.dispose();});
+test('embedded host supports guarded explicit empty selection without falling back to first building',async()=>{const s=await setup({initialBuildingId:null,embedded:true});assert.equal(s.mounts.length,0);assert.equal(typeof s.handle.selectBuilding,'function');assert.equal(await s.handle.selectBuilding('b'),true);assert.deepEqual(s.reads,['b']);s.$('atlas-native').shadowRoot={querySelector:()=>({open:true})};assert.equal(await s.handle.selectBuilding(null),false);assert.equal(s.mounts.length,1);s.handle.dispose();});
+const model=(name='A')=>({version:1,building:{name,address:'주소',floors:1,width:16,depth:12},records:[]});
+class Node {
+ constructor(tag,ownerDocument){Object.assign(this,{tag,ownerDocument,children:[],value:'',hidden:false,disabled:false});}
+ append(...nodes){this.children.push(...nodes);}
+ replaceChildren(...nodes){this.children=nodes;}
+ setAttribute(k,v){this[k]=v;}
+ querySelector(s){if(s==='dialog[open]')return this.dialog||null;return this.children.find(n=>n.id===s.slice(1))||this.children.map(n=>n.querySelector(s)).find(Boolean)||null;}
+}
+function fixture(){const document={createElement:tag=>new Node(tag,document)};return document.createElement('div');}
+test('CRM context follows selected building, refreshes, and never enters model or practice',async()=>{
+ const seen=[];let label='연락처 010-test';
+ const s=await setup({getBuildingContext:id=>{seen.push(id);return [{title:'고객',lines:[label]}];}});
+ const text=node=>[node.textContent||'',...node.children.map(text)].join(' ');
+ assert.match(text(s.$('atlas-crm-context')),/010-test/);
+ assert.ok(!JSON.stringify(s.mounts[0].initialPortfolio).includes('010-test'));
+ s.$('atlas-building').value='b';await s.$('atlas-building').onchange();assert.equal(seen.at(-1),'b');
+ label='변경 연락처';s.handle.updateBuildings([{id:'b',name:'B'}]);assert.match(text(s.$('atlas-crm-context')),/변경 연락처/);
+ s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();assert.equal(s.$('atlas-crm-context').hidden,true);
+ assert.equal(s.writes.length,0);s.handle.dispose();
+});
+async function setup(extra={}){const host=fixture(),mounts=[],reads=[],writes=[];const api={loadBuildingAtlas:async({buildingId})=>{reads.push(buildingId);return {ok:true,record:{buildingId,revision:1,model:model()},etag:'v1',canWrite:true}},saveBuildingAtlas:async p=>{writes.push(p);return {ok:true,record:{buildingId:p.buildingId,revision:p.expectedRevision+1,model:p.model},etag:'v2',canWrite:true}}};const {mountCrmAtlas}=await load();const handle=await mountCrmAtlas({host,buildings:[{id:'a',name:'A',address:'주소'},{id:'b',name:'B',address:'주소2'}],api,mountNative:async args=>{mounts.push(args);return {dispose:()=>{args.disposed=true}}},...extra});return {host,mounts,reads,writes,handle,api,$:id=>host.querySelector('#'+id)};}
+test('building basics allowlist strips private properties and archived buildings',async()=>{const {buildingBasics}=await load();assert.deepEqual(buildingBasics([{id:'a',name:'A',address:'B',phone:'secret'},{id:'b',name:'B',archivedAt:1}]),[{id:'a',name:'A',address:'B'}]);});
+test('import validates all candidates and version-specific byte limits',async()=>{const {parseImport}=await load();assert.equal(parseImport(JSON.stringify(model()),100).length,1);assert.throws(()=>parseImport(JSON.stringify(model()),8000001),/8MB/);assert.throws(()=>parseImport(JSON.stringify({version:2,activeId:'a',items:[{id:'a',data:model()},{id:'b',data:{}}]}),100));assert.throws(()=>parseImport('{}',30000001),/30MB/);});
+test('company opens exactly one CRM item without writes; labels refresh preserves native mount',async()=>{const s=await setup({initialBuildingId:'b'});assert.deepEqual(s.reads,['b']);assert.equal(s.writes.length,0);assert.equal(s.mounts[0].initialPortfolio.items.length,1);assert.equal(s.mounts[0].initialPortfolio.activeId,'b');s.handle.updateBuildings([{id:'b',name:'Renamed',address:'new',phone:'private'}]);assert.equal(s.mounts.length,1);assert.equal(s.$('atlas-building').children[0].textContent,'Renamed · new');s.handle.dispose();assert.equal(s.mounts[0].disposed,true);});
+test('native save awaits server and rejects mismatched target',async()=>{const s=await setup();const p=structuredClone(s.mounts[0].initialPortfolio);p.items[0].data.building.name='edit';const result=await s.mounts[0].savePortfolio(p);assert.equal(result.items[0].data.building.name,'edit');assert.equal(s.writes.length,1);p.items[0].id='b';await assert.rejects(s.mounts[0].savePortfolio(p),/건물/);s.handle.dispose();});
+test('failed read is visibly an error, never empty or creation',async()=>{const s=await setup({api:{loadBuildingAtlas:async()=>({ok:false,error:{code:'DENIED',message:'접근 거부'}})}});assert.equal(s.mounts.length,0);assert.match(s.$('atlas-status').textContent,/접근 거부/);assert.equal(s.$('atlas-create').hidden,true);s.handle.dispose();});
+test('failed save keeps draft and requestLeave defaults to cancel',async()=>{const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'v1',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,error:{message:'offline'}})}});await assert.rejects(s.mounts[0].savePortfolio(s.mounts[0].initialPortfolio),/offline/);assert.equal(await s.handle.requestLeave(),false);await s.$('atlas-refresh').onclick();assert.equal(s.mounts.length,1);s.handle.dispose();});
+test('practice is memory only and switching back reads fresh after discard confirmation',async()=>{const s=await setup({confirm:async()=>true});s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();assert.equal(s.mounts[1].mode,'practice');await s.mounts[1].savePortfolio(s.mounts[1].initialPortfolio);assert.equal(s.writes.length,0);s.$('atlas-mode').value='company';await s.$('atlas-mode').onchange();assert.equal(s.reads.length,2);s.handle.dispose();});
+test('empty creation requires confirmation and labels provisional dimensions',async()=>{const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true})}});assert.equal(s.$('atlas-create').hidden,false);await s.$('atlas-create').onclick();assert.equal(s.mounts.length,0);assert.match(s.$('atlas-status').textContent,/없/);s.handle.dispose();});
+test('open native dialog prevents leave without discard confirmation',async()=>{const s=await setup();s.$('atlas-native').shadowRoot={querySelector:()=>({open:true})};assert.equal(await s.handle.requestLeave(),false);s.handle.dispose();});
+test('import previews source and target, requires backup and confirmations, preserves preview on failure',async()=>{const prompts=[],downloads=[];const s=await setup({confirm:async text=>{prompts.push(text);return true},download:async(...args)=>downloads.push(args)});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model('Source'))}];await s.$('atlas-file').onchange();assert.equal(s.$('atlas-review').hidden,false);assert.match(s.$('atlas-target').textContent,/a/);await s.$('atlas-import-confirm').onclick();assert.equal(s.writes.length,0);await s.$('atlas-backup').onclick();await s.$('atlas-import-confirm').onclick();assert.equal(downloads.length,1);assert.equal(s.writes.length,1);assert.equal(s.writes[0].buildingId,'a');assert.ok(prompts.some(p=>p.includes('Source')&&p.includes('a')));s.handle.dispose();});
+test('save disables switching and leave; stale native result disposed after switching',async()=>{let finish;const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'v1',canWrite:true}),saveBuildingAtlas:p=>new Promise(r=>finish=()=>r({ok:true,record:{buildingId:'a',revision:2,model:p.model},etag:'v2',canWrite:true}))}});const pending=s.mounts[0].savePortfolio(s.mounts[0].initialPortfolio);assert.equal(s.$('atlas-mode').disabled,true);assert.equal(await s.handle.requestLeave(),false);finish();await pending;assert.equal(s.$('atlas-mode').disabled,false);s.handle.dispose();});
+test('late file read cannot open import review after target switch',async()=>{let finish;const s=await setup();s.$('atlas-file').files=[{size:100,text:()=>new Promise(r=>finish=()=>r(JSON.stringify(model())))}];const pending=s.$('atlas-file').onchange();s.$('atlas-building').value='b';await s.$('atlas-building').onchange();finish();await pending;assert.equal(s.$('atlas-review').hidden,true);assert.equal(s.writes.length,0);s.handle.dispose();});
+test('abort while initial native mount pending disposes late renderer and clears host immediately',async()=>{const host=fixture(),signal=new AbortController();let finish,started,disposed=0;const ready=new Promise(r=>started=r);const {mountCrmAtlas}=await load();const pending=mountCrmAtlas({host,buildings:[{id:'a',name:'A'}],api:{loadBuildingAtlas:async()=>({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'1',canWrite:true})},signal:signal.signal,mountNative:()=>{started();return new Promise(r=>finish=()=>r({dispose:()=>disposed++}))}});await ready;signal.abort();assert.equal(host.children.length,0);finish();const h=await pending;assert.equal(disposed,1);h.dispose();});
+test('abort during initial read prevents mounting late data',async()=>{const host=fixture(),abort=new AbortController();let finish,mounts=0;const {mountCrmAtlas}=await load();const pending=mountCrmAtlas({host,buildings:[{id:'a',name:'A'}],api:{loadBuildingAtlas:()=>new Promise(r=>finish=()=>r({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'1',canWrite:true}))},signal:abort.signal,mountNative:async()=>{mounts++;return {dispose(){}}}});abort.abort();assert.equal(host.children.length,0);finish();await pending;assert.equal(mounts,0);});
+test('failed import retains visible preview and draft until explicit discard',async()=>{const s=await setup({confirm:async()=>true,download:async()=>{},api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,error:{message:'import offline'}})}});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model())}];await s.$('atlas-file').onchange();await s.$('atlas-import-confirm').onclick();assert.equal(s.$('atlas-review').hidden,false);assert.match(s.$('atlas-status').textContent,/import offline/);s.handle.dispose();});
+test('import cannot overwrite a newer edit with a stale backup during confirmation',async()=>{let finish;let prompts=0;const s=await setup({download:async()=>{},confirm:()=>++prompts===1?new Promise(r=>finish=()=>r(true)):true});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model('Imported'))}];await s.$('atlas-file').onchange();await s.$('atlas-backup').onclick();const pending=s.$('atlas-import-confirm').onclick();const p=structuredClone(s.mounts[0].initialPortfolio);p.items[0].data.building.name='new edit';await s.mounts[0].savePortfolio(p);finish();await pending;assert.equal(s.writes.length,1);assert.equal(s.$('atlas-review').hidden,false);assert.match(s.$('atlas-status').textContent,/백업/);s.handle.dispose();});
+test('failed first import never offers create over preserved draft',async()=>{const s=await setup({confirm:async()=>true,api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,error:{message:'offline'}})}});s.$('atlas-file').files=[{size:100,text:async()=>JSON.stringify(model())}];await s.$('atlas-file').onchange();await s.$('atlas-import-confirm').onclick();assert.equal(s.$('atlas-create').hidden,true);s.handle.dispose();});
+test('practice supports adding multiple buildings and replacing the entire portfolio without company writes',async()=>{
+ const s=await setup();s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();const save=s.mounts[1].savePortfolio;
+ const multiple={version:2,activeId:'new-building',items:[{id:'practice',data:model()},{id:'new-building',data:model('New')}]};
+ assert.deepEqual(await save(multiple),multiple);
+ const replacement={version:2,activeId:'from-backup',items:[{id:'from-backup',data:model('Backup')}]};
+ const result=await save(replacement);assert.deepEqual(result,replacement);assert.notEqual(result,replacement);assert.notEqual(result.items[0].data,replacement.items[0].data);
+ assert.equal(s.writes.length,0);assert.equal(await s.handle.requestLeave(),false);s.handle.dispose();
+});
+test('practice validates every model and unique IDs and active selection in full portfolios',async()=>{
+ const s=await setup();s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();const save=s.mounts[1].savePortfolio;
+ for(const p of [
+  {version:2,activeId:'practice',items:[{id:'practice',data:model()},{id:'bad',data:{}}]},
+  {version:2,activeId:'practice',items:[{id:'practice',data:model()},{id:'practice',data:model()}]},
+  {version:2,activeId:'missing',items:[{id:'other',data:model()}]},
+  {version:1,activeId:'practice',items:[{id:'practice',data:model()}]}
+ ])await assert.rejects(save(p));
+ assert.equal(s.writes.length,0);assert.equal(await s.handle.requestLeave(),true);s.handle.dispose();
+});
+test('company still rejects multiple models or a replacement active ID',async()=>{
+ const s=await setup();const save=s.mounts[0].savePortfolio;
+ await assert.rejects(save({version:2,activeId:'a',items:[{id:'a',data:model()},{id:'b',data:model()}]}),/CRM 건물/);
+ await assert.rejects(save({version:2,activeId:'b',items:[{id:'b',data:model()}]}),/CRM 건물/);
+ assert.equal(s.writes.length,0);s.handle.dispose();
+});
+test('provisional confirmation accurately discloses basement and one above-ground floor',async()=>{
+ const prompts=[];const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:null,etag:'empty',canWrite:true})},confirm:async text=>{prompts.push(text);return true}});
+ await s.$('atlas-create').onclick();assert.match(prompts[0],/지하 1층.*지상 1층/);assert.match(s.$('atlas-status').textContent,/지하 1층.*지상 1층/);assert.equal(s.mounts[0].initialPortfolio.items[0].data.building.floors,1);s.handle.dispose();
+});
+test('real IPC string error is displayed and preserves the top-level error code',async()=>{
+ const denied=await setup({api:{loadBuildingAtlas:async()=>({ok:false,code:'ATLAS_FORBIDDEN',error:'이 회사 건물에 접근할 수 없습니다.'})}});
+ assert.equal(denied.$('atlas-status').textContent,'이 회사 건물에 접근할 수 없습니다.');assert.equal(denied.mounts.length,0);denied.handle.dispose();
+ const s=await setup({api:{loadBuildingAtlas:async()=>({ok:true,record:{buildingId:'a',revision:1,model:model()},etag:'v1',canWrite:true}),saveBuildingAtlas:async()=>({ok:false,code:'ATLAS_CONFLICT',error:'다른 사용자가 먼저 변경했습니다.'})}});
+ await assert.rejects(s.mounts[0].savePortfolio(s.mounts[0].initialPortfolio),error=>error.code==='ATLAS_CONFLICT'&&error.message==='다른 사용자가 먼저 변경했습니다.');
+ assert.equal(s.$('atlas-status').textContent,'다른 사용자가 먼저 변경했습니다.');assert.equal(await s.handle.requestLeave(),false);s.handle.dispose();
+});
+test('persistent notice prohibits safety decisions from estimated models and example pipes',async()=>{
+ const s=await setup();const notice=s.$('atlas-notice');assert.equal(notice.hidden,false);
+ for(const phrase of ['추정 모형','설비 위치','예시 배관','시공','차단','소방 대응','구조 안전','사용하면 안 됩니다'])assert.ok(notice.textContent.includes(phrase),phrase);
+ s.$('atlas-mode').value='practice';await s.$('atlas-mode').onchange();assert.equal(notice.hidden,false);assert.match(notice.textContent,/사용하면 안 됩니다/);s.handle.dispose();
+});
