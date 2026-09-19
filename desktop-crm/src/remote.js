@@ -32,7 +32,7 @@ const SHARED_COLLECTIONS = Object.freeze([
   "securityAssets", "auditLogs", "securityIncidents",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
   "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-  "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"
+  "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports"
 ]);
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;

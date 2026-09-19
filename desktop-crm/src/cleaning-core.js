@@ -562,6 +562,32 @@
     });
   }
 
+  function createCleaningCustomerReport(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    const order = raw.order && typeof raw.order === "object" ? raw.order : {};
+    const completionReport = raw.completionReport && typeof raw.completionReport === "object" ? raw.completionReport : {};
+    const qcReview = raw.qcReview && typeof raw.qcReview === "object" ? raw.qcReview : {};
+    if (!text(order.id)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (completionReport.type !== "completion" || !text(completionReport.id)) throw cleaningError("CLEANING_CUSTOMER_REPORT_COMPLETION_REQUIRED", "고객 완료보고서를 만들려면 사진이 포함된 현장 완료보고가 필요합니다.", "completionReportId");
+    const photoUrls = (Array.isArray(completionReport.photoUrls) ? completionReport.photoUrls : []).map(text).filter(Boolean);
+    if (!photoUrls.length) throw cleaningError("CLEANING_CUSTOMER_REPORT_PHOTO_REQUIRED", "고객 완료보고서에는 완료 사진이 필요합니다.", "photoUrls");
+    if (qcReview.result !== "passed" || !text(qcReview.id)) throw cleaningError("CLEANING_CUSTOMER_REPORT_QC_REQUIRED", "책임검수를 통과해야 고객 완료보고서를 만들 수 있습니다.", "qcReviewId");
+    return Object.assign(recordMeta({}, actor, at, "clcr"), {
+      cleaningOrderId: text(order.id), customerId: text(order.customerId), customerName: text(order.customerName),
+      serviceType: text(order.serviceType), address: text(order.address), scope: text(order.scope), scheduledAt: text(order.scheduledAt),
+      completionReportId: text(completionReport.id), qcReviewId: text(qcReview.id), completedAt: text(completionReport.reportedAt) || text(completionReport.createdAt),
+      qcScore: roundRate(qcReview.score), qcNote: text(qcReview.note), completionNote: text(completionReport.note), photoUrls,
+      facilityFindings: text(completionReport.facilityFindings), status: "draft", deliveredAt: "", deliveredBy: ""
+    });
+  }
+
+  function deliverCleaningCustomerReport(source, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    if (current.status !== "draft") throw cleaningError("CLEANING_CUSTOMER_REPORT_ALREADY_DELIVERED", "초안 상태의 완료보고서만 전달 완료로 처리할 수 있습니다.", "status");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, { status: "delivered", deliveredAt: timestamp, deliveredBy: text(actor && actor.email), updatedAt: timestamp, updatedBy: text(actor && actor.email) });
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -616,6 +642,8 @@
     transitionCleaningRework,
     createCleaningRetentionPlan,
     updateCleaningRetentionAction,
+    createCleaningCustomerReport,
+    deliverCleaningCustomerReport,
     calculateCleaningDashboard
   });
 });

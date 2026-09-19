@@ -363,3 +363,22 @@ test("tracks retention conversion without pretending a draft was sent", () => {
   assert.equal(item.sentAt, "");
   assert.equal(Cleaning.updateCleaningRetentionAction(item, "sent", {}, "2026-09-21T01:00:00Z").sentAt, "2026-09-21T01:00:00Z");
 });
+
+test("creates a customer completion report only from completion evidence and passed QC", () => {
+  const report = Cleaning.createCleaningCustomerReport({
+    order: { id: "cln_1", customerId: "cus_1", customerName: "홍길동", serviceType: "move_in", address: "원주시", scope: "욕실·주방", scheduledAt: "2026-09-20T09:00:00Z" },
+    completionReport: { id: "clr_1", type: "completion", reportedAt: "2026-09-20T12:00:00Z", photoUrls: ["https://example.com/after-1.jpg"], note: "작업 완료" },
+    qcReview: { id: "clq_1", result: "passed", score: 96, reviewedAt: "2026-09-20T12:30:00Z" }
+  }, { email: "ops@bring.local" }, "2026-09-20T12:35:00Z");
+  assert.equal(report.status, "draft");
+  assert.equal(report.qcScore, 96);
+  assert.deepEqual(report.photoUrls, ["https://example.com/after-1.jpg"]);
+  assert.equal(report.deliveredAt, "");
+  assert.throws(() => Cleaning.createCleaningCustomerReport({ order: { id: "cln_1" }, completionReport: { type: "progress" }, qcReview: { result: "passed" } }), /완료보고/);
+});
+
+test("marks a customer completion report delivered only by explicit confirmation", () => {
+  const delivered = Cleaning.deliverCleaningCustomerReport({ id: "clcr_1", status: "draft", cleaningOrderId: "cln_1", deliveredAt: "" }, { email: "sales@bring.local" }, "2026-09-20T13:00:00Z");
+  assert.equal(delivered.status, "delivered");
+  assert.equal(delivered.deliveredAt, "2026-09-20T13:00:00Z");
+});

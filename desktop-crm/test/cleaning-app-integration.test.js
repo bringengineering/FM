@@ -152,3 +152,11 @@ test("closing a cleaning order creates one retention funnel and exposes action u
   assert.match(app, /Cleaning\.updateCleaningRetentionAction/);
   assert.match(app, /retentionActions:\s*store\.cleaningRetentionActions/);
 });
+
+test("customer completion report is generated from field and QC evidence and explicitly delivered", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.createCleaningCustomerReport/);
+  assert.match(app, /store\.cleaningCustomerReports\.push/);
+  assert.match(app, /Cleaning\.deliverCleaningCustomerReport/);
+  assert.match(app, /customerReports:\s*store\.cleaningCustomerReports/);
+});

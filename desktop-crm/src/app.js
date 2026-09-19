@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"]
+    ["cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -538,7 +538,7 @@
     "securityAssets", "auditLogs", "securityIncidents",
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
-    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions"
+    "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1998,6 +1998,7 @@
       cancellations: store.cleaningCancellations,
       reworks: store.cleaningReworks,
       retentionActions: store.cleaningRetentionActions,
+      customerReports: store.cleaningCustomerReports,
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -3551,6 +3552,35 @@
         }
         store.cleaningReworks[index] = next; logAudit({ category: "청소", targetType: "재작업", targetId: next.id, targetLabel: next.scope, action: `재작업 ${next.status}`, reason: next.cleaningOrderId }); scheduleSave(); renderCleaningOrderDrawer(next.cleaningOrderId); showToast("재작업 상태를 갱신했습니다.", "success");
       } catch (error) { showToast(error.message || "재작업 상태를 갱신하지 못했습니다.", "error"); }
+      return;
+    }
+    const customerReportAdd = event.target.closest("[data-cleaning-customer-report-add]");
+    if (customerReportAdd) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 완료보고서를 만들 수 없습니다.", "error");
+      const order = cleaningOrderById(customerReportAdd.dataset.cleaningCustomerReportAdd);
+      if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+      if (store.cleaningCustomerReports.some(item => item.cleaningOrderId === order.id)) return showToast("이미 고객 완료보고서가 있습니다.");
+      try {
+        const completionReport = store.cleaningReports.filter(item => item.cleaningOrderId === order.id && item.type === "completion").at(-1);
+        const qcReview = store.cleaningQcReviews.filter(item => item.cleaningOrderId === order.id && item.result === "passed").at(-1);
+        const item = Cleaning.createCleaningCustomerReport({ order, completionReport, qcReview }, salesActor());
+        store.cleaningCustomerReports.push(item);
+        logAudit({ category: "청소", targetType: "고객 완료보고", targetId: item.id, targetLabel: order.customerName, action: "완료보고서 초안 생성", reason: order.id });
+        scheduleSave(); renderCleaningOrderDrawer(order.id); showToast("고객 완료보고서 초안을 만들었습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 완료보고서를 만들지 못했습니다.", "error"); }
+      return;
+    }
+    const customerReportDeliver = event.target.closest("[data-cleaning-customer-report-deliver]");
+    if (customerReportDeliver) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 전달 상태를 변경할 수 없습니다.", "error");
+      const index = store.cleaningCustomerReports.findIndex(item => item.id === customerReportDeliver.dataset.cleaningCustomerReportDeliver);
+      if (index < 0) return showToast("고객 완료보고서를 찾지 못했습니다.", "error");
+      try {
+        const item = Cleaning.deliverCleaningCustomerReport(store.cleaningCustomerReports[index], salesActor());
+        store.cleaningCustomerReports[index] = item;
+        logAudit({ category: "청소", targetType: "고객 완료보고", targetId: item.id, targetLabel: item.customerName, action: "고객 전달 확인", reason: item.cleaningOrderId });
+        scheduleSave(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("고객 전달 완료를 기록했습니다.", "success");
+      } catch (error) { showToast(error.message || "전달 상태를 변경하지 못했습니다.", "error"); }
       return;
     }
     const retentionAction = event.target.closest("[data-cleaning-retention-draft], [data-cleaning-retention-sent], [data-cleaning-retention-responded], [data-cleaning-retention-converted]");
