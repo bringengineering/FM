@@ -1,5 +1,5 @@
 (function(){
- const api=window.bringTV,stage=document.querySelector('.wb-stage'),status=document.querySelector('#connection'),pairing=document.querySelector('#pairing');
+ const api=window.bringTV,stage=document.querySelector('.wb-stage'),status=document.querySelector('#connection'),updateStatus=document.querySelector('#update-state'),pairing=document.querySelector('#pairing');
  const labels={people:'사람별 업무',status:'업무 진행 현황',issues:'확인할 이슈',notice:'회사 공지',schedule:'시간표'};
  let board=null,paired=false,pending=false,busy=false,index=0,page=0,tick=0,lastSuccess='',offline=false;
  const current=()=>board?.playlist.filter(p=>p.enabled)[index];
@@ -7,7 +7,7 @@
  }
  async function check(){if(busy)return;busy=true;try{
   if(pending){const result=await api.poll();if(result.expired){pending=false;status.textContent='등록 코드가 만료되었습니다. 다시 등록해 주세요.';pairing.hidden=true;}else if(result.paired){pending=false;paired=true;pairing.hidden=true;}else{status.textContent='관리자 승인 대기 중';return;}}
-  const result=await api.display();paired=result.paired;offline=false;if(!paired){board=null;status.textContent=result.revoked?'기기가 해제되었습니다. 재등록이 필요합니다.':'TV 등록을 시작해 주세요.';draw();return;}
+  const result=await api.display();paired=result.paired;offline=false;const updateMessages={downloading:'업데이트 다운로드 중',ready:'업데이트 준비 완료 · 잠시 후 재시작',installing:'업데이트 설치를 위해 재시작 중',installed:'최신 버전 설치 완료',failed:'업데이트 확인 필요'};updateStatus.textContent=updateMessages[result.updateState?.status]||'';if(!paired){board=null;status.textContent=result.revoked?'기기가 해제되었습니다. 재등록이 필요합니다.':'TV 등록을 시작해 주세요.';draw();return;}
   if(result.board?.version!==board?.version){const changed=JSON.stringify(result.board?.playlist)!==JSON.stringify(board?.playlist);board=result.board;if(changed){index=0;page=0;tick=0;}else{const key=current()?.key,count=key==='people'?board.model.people.length:key==='schedule'?board.model.schedule.entries.length:0;page=Math.min(page,Math.max(0,Math.ceil(count/6)-1));}}
   lastSuccess=new Date().toLocaleTimeString('ko-KR');status.textContent=board?'서버 연결됨 · 게시된 자료 표시 중':'승인됨 · 관리자의 게시를 기다립니다.';document.querySelector('#connect').hidden=true;draw();
  }catch(_){offline=true;status.textContent='서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도합니다.';draw();}finally{busy=false;document.querySelector('#connect').hidden=paired;}}

@@ -18,3 +18,9 @@ test('read-only TV enrolls then displays publication and removes it when revoked
  revoked=true;w.document.querySelector('#refresh').click();await new Promise(r=>setTimeout(r,0));expect(w.document.querySelector('.wb-stage').hidden).toBe(true);expect(w.document.querySelector('#connect').hidden).toBe(false);
  w.dispatchEvent(new w.Event('beforeunload'));expect(timers.size).toBe(0);dom.window.close();
 });
+test('TV shows a bounded update state without exposing update internals',async()=>{
+ const source=(name:string)=>fs.readFileSync(path.resolve('../desktop-crm/src',name),'utf8');const dom=new JSDOM(source('wallboard-tv.html'),{runScripts:'outside-only'});const w=dom.window as any;
+ w.setInterval=()=>1;w.clearInterval=()=>{};w.bringTV={display:async()=>({paired:true,board:null,updateState:{status:'downloading',error:''}})};
+ w.eval(source('company-wallboard.js'));w.eval(source('wallboard-tv-renderer.js'));await new Promise(r=>setTimeout(r,0));
+ expect(w.document.querySelector('#update-state').textContent).toContain('업데이트 다운로드 중');expect(w.document.body.textContent).not.toContain('github.com');dom.window.close();
+});
