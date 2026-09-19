@@ -277,3 +277,14 @@ test("call center intake routes IVR calls and prepares missed-call follow-up mes
   assert.match(app, /cleaningCallTickets/);
   assert.match(app, /templateId:\s*"missed_call"/);
 });
+
+test("payment requests link PayApp URLs, message drafts, and confirmed receipts", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function cleaningPaymentRequestEditor/);
+  assert.match(app, /id="cleaningPaymentRequestForm"/);
+  assert.match(app, /Cleaning\.createCleaningPaymentRequest/);
+  assert.match(app, /Cleaning\.attachCleaningPaymentLink/);
+  assert.match(app, /templateId:\s*"payment_request"/);
+  assert.match(app, /raw\.paymentRequestId/);
+  assert.match(app, /Cleaning\.reconcileCleaningPaymentRequest/);
+});

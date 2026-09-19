@@ -263,6 +263,7 @@
 
   const MESSAGE_TEMPLATES = Object.freeze({
     missed_call: "안녕하세요 고객님, 브링케어 대표이사 서창환입니다. 전화 주셨는데 바로 연결해드리지 못해 죄송합니다. 빠른 상담: {consultationUrl}",
+    payment_request: "{customerName} 고객님, 브링케어 {paymentLabel} {amount}원 결제를 요청드립니다. 안전한 결제링크: {paymentUrl}",
     quote_sent: "{customerName} 고객님의 브링케어 견적서가 발행되었습니다. 견적금액: {totalAmount}원, 작업예정일: {scheduledAt}, 견적 확인: {quoteUrl}. 안내된 작업범위에는 현장 추가금이 없습니다.",
     deposit_request: "예약 확정을 위해 계약금 {depositAmount}원 결제를 부탁드립니다. 결제링크: {paymentUrl}",
     reservation_confirmed: "브링케어 예약이 확정되었습니다. 서비스: {serviceType}, 일시: {scheduledAt}, 주소: {address}. 현장 추가금 없이 사전 확정 범위대로 진행합니다.",
@@ -567,8 +568,40 @@
       status: ["pending", "confirmed", "failed", "refunded"].includes(raw.status) ? raw.status : "pending",
       paidAt: text(raw.paidAt),
       transactionId: text(raw.transactionId),
+      paymentRequestId: text(raw.paymentRequestId),
+      evidenceUrl: text(raw.evidenceUrl),
       memo: text(raw.memo)
     });
+  }
+
+  function createCleaningPaymentRequest(source, actor, at) {
+    const raw = source && typeof source === "object" ? source : {};
+    if (!text(raw.cleaningOrderId)) throw cleaningError("CLEANING_ORDER_REQUIRED", "연결할 청소 주문이 필요합니다.", "cleaningOrderId");
+    if (!["deposit", "balance", "full"].includes(raw.type)) throw cleaningError("CLEANING_PAYMENT_REQUEST_TYPE_INVALID", "결제요청 유형을 선택해 주세요.", "type");
+    if (number(raw.amount) <= 0) throw cleaningError("CLEANING_PAYMENT_AMOUNT_INVALID", "결제금액은 0원보다 커야 합니다.", "amount");
+    return Object.assign(recordMeta(raw, actor, at, "clpr"), {
+      cleaningOrderId: text(raw.cleaningOrderId), type: raw.type, amount: roundWon(raw.amount),
+      provider: text(raw.provider) || "payapp", paymentUrl: text(raw.paymentUrl), expiresAt: text(raw.expiresAt),
+      status: text(raw.paymentUrl) ? "link_ready" : "draft", customerMessageId: text(raw.customerMessageId),
+      cleaningPaymentId: text(raw.cleaningPaymentId), paidAt: text(raw.paidAt), transactionId: text(raw.transactionId)
+    });
+  }
+
+  function attachCleaningPaymentLink(source, paymentUrl, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const url = text(paymentUrl);
+    if (!/^https:\/\/[^\s]+$/i.test(url)) throw cleaningError("CLEANING_PAYMENT_URL_INVALID", "HTTPS 결제링크를 입력해 주세요.", "paymentUrl");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, { paymentUrl: url, status: "link_ready", updatedAt: timestamp, updatedBy: text(actor && actor.email) });
+  }
+
+  function reconcileCleaningPaymentRequest(source, payment, actor, at) {
+    const current = source && typeof source === "object" ? source : {};
+    const record = payment && typeof payment === "object" ? payment : {};
+    if (record.status !== "confirmed") throw cleaningError("CLEANING_PAYMENT_NOT_CONFIRMED", "입금확인된 결제 기록만 연결할 수 있습니다.", "status");
+    if (roundWon(record.amount) !== roundWon(current.amount)) throw cleaningError("CLEANING_PAYMENT_AMOUNT_MISMATCH", "결제요청 금액과 입금확인 금액이 다릅니다.", "amount");
+    const timestamp = text(at) || new Date().toISOString();
+    return Object.assign({}, current, { status: "paid", cleaningPaymentId: text(record.id), paidAt: text(record.paidAt) || timestamp, transactionId: text(record.transactionId), updatedAt: timestamp, updatedBy: text(actor && actor.email) });
   }
 
   function createCleaningSettlement(source, actor, at) {
@@ -903,6 +936,9 @@
     changeCleaningPartnerControl,
     applyCleaningEconomics,
     createCleaningPayment,
+    createCleaningPaymentRequest,
+    attachCleaningPaymentLink,
+    reconcileCleaningPaymentRequest,
     createCleaningSettlement,
     createCleaningCase,
     calculateCleaningCancellation,

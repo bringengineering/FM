@@ -91,6 +91,22 @@ test("allows a missed-call message draft to link to a call ticket before an orde
   assert.equal(message.status, "draft");
 });
 
+test("creates a payment request without pretending an unverified link was sent", () => {
+  const draft = Cleaning.createCleaningPaymentRequest({ cleaningOrderId: "cln_1", type: "deposit", amount: 66000, provider: "payapp" }, actor, "2026-09-20T02:00:00.000Z");
+  assert.equal(draft.status, "draft");
+  const ready = Cleaning.attachCleaningPaymentLink(draft, "https://payapp.kr/pay/abc123", actor, "2026-09-20T02:01:00.000Z");
+  assert.equal(ready.status, "link_ready");
+  assert.match(ready.paymentUrl, /^https:\/\//);
+});
+
+test("marks a payment request paid only from a confirmed payment record", () => {
+  const request = Cleaning.attachCleaningPaymentLink(Cleaning.createCleaningPaymentRequest({ cleaningOrderId: "cln_1", type: "balance", amount: 264000 }, actor), "https://payapp.kr/pay/balance", actor);
+  assert.throws(() => Cleaning.reconcileCleaningPaymentRequest(request, { status: "pending", amount: 264000 }, actor), /입금확인/);
+  const paid = Cleaning.reconcileCleaningPaymentRequest(request, { id: "clpay_1", status: "confirmed", amount: 264000, transactionId: "tx_1" }, actor, "2026-09-20T02:10:00.000Z");
+  assert.equal(paid.status, "paid");
+  assert.equal(paid.cleaningPaymentId, "clpay_1");
+});
+
 test("requires a passed QC review before customer completion", () => {
   assert.throws(
     () => Cleaning.transitionCleaningOrder(

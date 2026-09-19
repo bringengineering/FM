@@ -7,6 +7,7 @@ const Core = require("../src/core.js");
 const COLLECTIONS = [
   "marketingLeadInbox",
   "cleaningCallTickets",
+  "cleaningPaymentRequests",
   "cleaningOrders", "cleaningDispatches", "cleaningReports",
   "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
   "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"

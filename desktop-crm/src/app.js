@@ -528,7 +528,7 @@
 
   function ensureCleaningStore(target) {
     const value = target || store;
-    ["marketingLeadInbox", "cleaningCallTickets", "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
+    ["marketingLeadInbox", "cleaningCallTickets", "cleaningPaymentRequests", "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners", "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"]
       .forEach(collection => { if (!Array.isArray(value[collection])) value[collection] = []; });
     return value;
   }
@@ -539,6 +539,7 @@
     "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
     "marketingLeadInbox",
     "cleaningCallTickets",
+    "cleaningPaymentRequests",
     "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
     "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"
   ];
@@ -1963,6 +1964,7 @@
     const dashboard = Cleaning.calculateCleaningDashboard({
       orders: store.cleaningOrders,
       payments: store.cleaningPayments,
+      paymentRequests: store.cleaningPaymentRequests,
       qcReviews: store.cleaningQcReviews,
       partners: store.cleaningPartners,
       settlements: store.cleaningSettlements
@@ -2184,11 +2186,21 @@
     openModal();
   }
 
+  function cleaningPaymentRequestEditor(orderId) {
+    const order = cleaningOrderById(orderId);
+    if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
+    const confirmed = store.cleaningPayments.filter(item => item.cleaningOrderId === order.id && item.status === "confirmed").reduce((sum, item) => sum + Core.money(item.amount), 0);
+    const remaining = Math.max(0, Core.money(order.totalAmount) - confirmed);
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 결제 요청</h2><p>${esc(order.customerName)} · PayApp 링크를 등록하면 문자 초안을 만듭니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPaymentRequestForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">결제업체가 발급한 HTTPS 링크만 저장합니다. 실제 입금은 별도의 입금 확인 기록으로 검증합니다.</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>결제구분 *</span><select name="type"><option value="deposit">계약금</option><option value="balance">잔금</option><option value="full">전액</option></select></label><label class="field"><span>금액 *</span><input name="amount" type="number" min="1" step="1000" value="${attr(remaining || order.depositAmount || order.totalAmount)}" required></label><label class="field"><span>결제업체 *</span><select name="provider"><option value="payapp">PayApp</option><option value="bank">계좌이체</option><option value="other">기타</option></select></label><label class="field"><span>유효기한</span><input name="expiresAt" type="datetime-local"></label><label class="field full"><span>결제링크</span><input name="paymentUrl" type="url" placeholder="https://payapp.kr/..." autocomplete="off"></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">결제요청 저장</button></div></form>`;
+    openModal();
+  }
+
   function cleaningPaymentEditor(orderId) {
     const order = cleaningOrderById(orderId);
     if (!order) return showToast("청소 주문을 찾지 못했습니다.", "error");
     const remaining = Math.max(0, Core.money(order.totalAmount) - store.cleaningPayments.filter(item => item.cleaningOrderId === order.id && item.status === "confirmed").reduce((sum, item) => sum + Core.money(item.amount), 0));
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 결제 기록</h2><p>${esc(order.customerName)} · 고객 수납만 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPaymentForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">Partner 지급은 별도 주간정산에서 관리합니다. 현재 미수 예상액 ${esc(krw(remaining))}</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>결제구분 *</span><select name="type"><option value="deposit">계약금</option><option value="balance">잔금</option><option value="refund">환불</option><option value="other">기타</option></select></label><label class="field"><span>결제수단 *</span><select name="method"><option value="bank">계좌이체</option><option value="card">카드</option><option value="cash">현금</option><option value="other">기타</option></select></label><label class="field"><span>금액 *</span><input name="amount" type="number" min="1" value="${attr(remaining || order.depositAmount || "")}" required></label><label class="field"><span>상태</span><select name="status"><option value="confirmed">입금확인</option><option value="pending">확인대기</option><option value="failed">실패</option><option value="refunded">환불완료</option></select></label><label class="field"><span>결제업체</span><input name="provider" placeholder="계좌이체 또는 PayApp"></label><label class="field"><span>결제일시</span><input name="paidAt" type="datetime-local"></label><label class="field full"><span>거래번호·메모</span><input name="transactionId" placeholder="거래번호"><textarea name="memo" rows="2"></textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">결제 기록 저장</button></div></form>`;
+    const pendingRequests = store.cleaningPaymentRequests.filter(item => item.cleaningOrderId === order.id && item.status !== "paid");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 입금 확인</h2><p>${esc(order.customerName)} · 실제 수납 증거를 확인한 뒤 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningPaymentForm" class="modal-body" data-cleaning-order-id="${attr(order.id)}"><div class="info-box">Partner 지급은 별도 주간정산에서 관리합니다. 현재 미수 예상액 ${esc(krw(remaining))}</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>연결 결제요청</span><select name="paymentRequestId"><option value="">직접 입금</option>${pendingRequests.map(item => `<option value="${attr(item.id)}">${esc(item.type)} · ${esc(krw(item.amount))}</option>`).join("")}</select></label><label class="field"><span>결제구분 *</span><select name="type"><option value="deposit">계약금</option><option value="balance">잔금</option><option value="refund">환불</option><option value="other">기타</option></select></label><label class="field"><span>결제수단 *</span><select name="method"><option value="bank">계좌이체</option><option value="card">카드</option><option value="cash">현금</option><option value="other">기타</option></select></label><label class="field"><span>금액 *</span><input name="amount" type="number" min="1" value="${attr(remaining || order.depositAmount || "")}" required></label><label class="field"><span>상태</span><select name="status"><option value="confirmed">입금확인</option><option value="pending">확인대기</option><option value="failed">실패</option><option value="refunded">환불완료</option></select></label><label class="field"><span>결제업체</span><input name="provider" placeholder="계좌이체 또는 PayApp"></label><label class="field"><span>결제일시</span><input name="paidAt" type="datetime-local"></label><label class="field full"><span>거래번호</span><input name="transactionId" placeholder="PayApp 또는 은행 거래번호"></label><label class="field full"><span>영수증·증빙 URL</span><input name="evidenceUrl" type="url" placeholder="https://..."></label><label class="field full"><span>메모</span><textarea name="memo" rows="2"></textarea></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">입금 확인 저장</button></div></form>`;
     openModal();
   }
 
@@ -3715,6 +3727,8 @@
     }
     const cleaningPaymentAdd = event.target.closest("[data-cleaning-payment-add]");
     if (cleaningPaymentAdd) { cleaningPaymentEditor(cleaningPaymentAdd.dataset.cleaningPaymentAdd); return; }
+    const cleaningPaymentRequestAdd = event.target.closest("[data-cleaning-payment-request-add]");
+    if (cleaningPaymentRequestAdd) { cleaningPaymentRequestEditor(cleaningPaymentRequestAdd.dataset.cleaningPaymentRequestAdd); return; }
     const cleaningSettlementAdd = event.target.closest("[data-cleaning-settlement-add]");
     if (cleaningSettlementAdd) { cleaningSettlementEditor(cleaningSettlementAdd.dataset.cleaningSettlementAdd); return; }
     const cleaningCaseAdd = event.target.closest("[data-cleaning-case-add]");
@@ -4756,6 +4770,43 @@
         logAudit({ category: "청소", targetType: "CS", targetId: item.id, targetLabel: `LEVEL ${item.level}`, action: "청소 CS 접수", reason: item.type });
         scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast(`LEVEL ${item.level} CS를 접수했습니다.`, item.level >= 3 ? "error" : "success");
       } catch (error) { showToast(error.message || "CS를 접수하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningPaymentRequestForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try {
+        ensureCleaningStore();
+        const order = cleaningOrderById(form.dataset.cleaningOrderId);
+        if (!order) throw new Error("청소 주문을 찾지 못했습니다.");
+        let item = Cleaning.createCleaningPaymentRequest({
+          cleaningOrderId: order.id,
+          type: raw.type,
+          amount: raw.amount,
+          provider: raw.provider,
+          expiresAt: raw.expiresAt
+        }, salesActor());
+        if (raw.paymentUrl) item = Cleaning.attachCleaningPaymentLink(item, raw.paymentUrl, salesActor());
+        if (item.status === "link_ready") {
+          const labels = { deposit: "계약금", balance: "잔금", full: "결제금" };
+          const message = Cleaning.createCleaningMessage({
+            cleaningOrderId: order.id,
+            templateId: "payment_request",
+            recipient: order.phone,
+            variables: {
+              customerName: order.customerName,
+              paymentLabel: labels[item.type] || "결제금",
+              amount: Core.money(item.amount).toLocaleString("ko-KR"),
+              paymentUrl: item.paymentUrl
+            },
+            status: "draft"
+          }, salesActor());
+          store.cleaningMessages.push(message);
+          item.customerMessageId = message.id;
+          item.status = "message_draft";
+        }
+        store.cleaningPaymentRequests.push(item);
+        logAudit({ category: "청소", targetType: "결제요청", targetId: item.id, targetLabel: krw(item.amount), action: "고객 결제요청 저장", reason: item.status });
+        scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId);
+        showToast(item.customerMessageId ? "결제요청과 고객 문자 초안을 저장했습니다." : "결제요청을 저장했습니다. 링크 등록 후 문자 초안을 만들 수 있습니다.", "success");
+      } catch (error) { showToast(error.message || "결제요청을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "cleaningPaymentForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {
@@ -4768,9 +4819,19 @@
           provider: raw.provider,
           paidAt: raw.paidAt,
           transactionId: raw.transactionId,
+          paymentRequestId: raw.paymentRequestId,
+          evidenceUrl: raw.evidenceUrl,
           memo: raw.memo
         }, salesActor());
+        let reconciledRequest = null;
+        let requestIndex = -1;
+        if (raw.paymentRequestId) {
+          requestIndex = store.cleaningPaymentRequests.findIndex(value => value.id === raw.paymentRequestId);
+          if (requestIndex < 0) throw new Error("연결할 결제요청을 찾지 못했습니다.");
+          reconciledRequest = Cleaning.reconcileCleaningPaymentRequest(store.cleaningPaymentRequests[requestIndex], item, salesActor());
+        }
         store.cleaningPayments.push(item);
+        if (reconciledRequest) store.cleaningPaymentRequests[requestIndex] = reconciledRequest;
         logAudit({ category: "청소", targetType: "고객결제", targetId: item.id, targetLabel: krw(item.amount), action: "고객 결제 기록", reason: item.status });
         scheduleSave(); closeModal(); renderCleaningOrderDrawer(item.cleaningOrderId); showToast("고객 결제를 저장했습니다.", "success");
       } catch (error) { showToast(error.message || "고객 결제를 저장하지 못했습니다.", "error"); }

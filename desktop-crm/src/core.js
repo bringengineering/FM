@@ -196,6 +196,7 @@
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
       marketingLeadInbox: [],
       cleaningCallTickets: [],
+      cleaningPaymentRequests: [],
       cleaningOrders: [], cleaningDispatches: [], cleaningReports: [], cleaningQcReviews: [], cleaningMessages: [], cleaningPartners: [], cleaningPayments: [], cleaningSettlements: [], cleaningCases: [], cleaningCancellations: [], cleaningReworks: [], cleaningRetentionActions: [], cleaningCustomerReports: [], cleaningQuotes: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
@@ -255,6 +256,7 @@
         return [item];
       }) : [],
       cleaningCallTickets: Array.isArray(src.cleaningCallTickets) ? src.cleaningCallTickets.filter(Boolean) : [],
+      cleaningPaymentRequests: Array.isArray(src.cleaningPaymentRequests) ? src.cleaningPaymentRequests.filter(Boolean) : [],
       cleaningOrders: Array.isArray(src.cleaningOrders) ? src.cleaningOrders.filter(Boolean) : [],
       cleaningDispatches: Array.isArray(src.cleaningDispatches) ? src.cleaningDispatches.filter(Boolean) : [],
       cleaningReports: Array.isArray(src.cleaningReports) ? src.cleaningReports.filter(Boolean) : [],

@@ -33,6 +33,7 @@ const SHARED_COLLECTIONS = Object.freeze([
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
   "marketingLeadInbox",
   "cleaningCallTickets",
+  "cleaningPaymentRequests",
   "cleaningOrders", "cleaningDispatches", "cleaningReports", "cleaningQcReviews", "cleaningMessages", "cleaningPartners",
   "cleaningPayments", "cleaningSettlements", "cleaningCases", "cleaningCancellations", "cleaningReworks", "cleaningRetentionActions", "cleaningCustomerReports", "cleaningQuotes"
 ]);
