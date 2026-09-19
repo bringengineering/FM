@@ -175,3 +175,10 @@ test("cleaning center receives the retention workload dashboard", async () => {
   assert.match(app, /followUpDashboard/);
   assert.match(app, /store\.cleaningRetentionActions/);
 });
+
+test("cleaning center receives response and receivable alerts", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCleaningAlerts/);
+  assert.match(app, /alerts,/);
+  assert.match(app, /payments:\s*store\.cleaningPayments/);
+});

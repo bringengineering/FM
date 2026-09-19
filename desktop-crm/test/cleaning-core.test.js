@@ -404,3 +404,16 @@ test("calculates the Seoul-day retention workload without hiding overdue actions
   assert.equal(result.converted, 1);
   assert.deepEqual(result.priorityActions.map(item => item.id), ["a1", "a2", "a3", "a4"]);
 });
+
+test("raises response deposit and balance alerts from confirmed evidence", () => {
+  const alerts = Cleaning.calculateCleaningAlerts({
+    orders: [
+      { id: "o1", customerName: "신규", stage: "inquiry", inquiryAt: "2026-09-20T00:00:00Z" },
+      { id: "o2", customerName: "견적", stage: "quote_sent", updatedAt: "2026-09-19T00:00:00Z", depositAmount: 100000 },
+      { id: "o3", customerName: "완료", stage: "customer_completed", updatedAt: "2026-09-20T00:00:00Z", totalAmount: 330000, depositAmount: 100000, balanceAmount: 230000 }
+    ],
+    payments: [{ cleaningOrderId: "o3", type: "deposit", status: "confirmed", amount: 100000 }]
+  }, "2026-09-20T00:06:00Z");
+  assert.deepEqual(alerts.map(item => item.type), ["response_overdue", "deposit_overdue", "balance_overdue"]);
+  assert.equal(alerts[2].amount, 230000);
+});

@@ -615,6 +615,28 @@
     };
   }
 
+  function calculateCleaningAlerts(input, at) {
+    const data = input && typeof input === "object" ? input : {};
+    const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt && item.stage !== "closed");
+    const payments = (Array.isArray(data.payments) ? data.payments : []).filter(item => item && item.status === "confirmed");
+    const nowMs = new Date(text(at) || new Date().toISOString()).getTime();
+    const elapsed = value => nowMs - new Date(value || "").getTime();
+    const alerts = [];
+    orders.filter(order => order.stage === "inquiry" && order.inquiryAt && !order.firstResponseAt && elapsed(order.inquiryAt) > 5 * 60 * 1000)
+      .forEach(order => alerts.push({ id: `response_overdue_${order.id}`, cleaningOrderId: order.id, type: "response_overdue", label: "신규문의 5분 초과", amount: 0, dueAt: new Date(new Date(order.inquiryAt).getTime() + 5 * 60 * 1000).toISOString() }));
+    orders.filter(order => ["quote_sent", "reservation_pending"].includes(order.stage) && order.updatedAt && elapsed(order.updatedAt) > 24 * 60 * 60 * 1000).forEach(order => {
+      const paid = payments.filter(item => item.cleaningOrderId === order.id && item.type === "deposit").reduce((sum, item) => sum + roundWon(item.amount), 0);
+      const amount = Math.max(0, roundWon(order.depositAmount) - paid);
+      if (amount > 0) alerts.push({ id: `deposit_overdue_${order.id}`, cleaningOrderId: order.id, type: "deposit_overdue", label: "견적 후 24시간 예약금 미확인", amount, dueAt: new Date(new Date(order.updatedAt).getTime() + 24 * 60 * 60 * 1000).toISOString() });
+    });
+    orders.filter(order => order.stage === "customer_completed").forEach(order => {
+      const paid = payments.filter(item => item.cleaningOrderId === order.id && item.type === "balance").reduce((sum, item) => sum + roundWon(item.amount), 0);
+      const amount = Math.max(0, roundWon(order.balanceAmount) - paid);
+      if (amount > 0) alerts.push({ id: `balance_overdue_${order.id}`, cleaningOrderId: order.id, type: "balance_overdue", label: "작업 완료 후 잔금 미확인", amount, dueAt: text(order.updatedAt) });
+    });
+    return alerts;
+  }
+
   function calculateCleaningDashboard(input) {
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
@@ -672,6 +694,7 @@
     createCleaningCustomerReport,
     deliverCleaningCustomerReport,
     calculateCleaningFollowUpDashboard,
+    calculateCleaningAlerts,
     calculateCleaningDashboard
   });
 });

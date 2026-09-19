@@ -1942,6 +1942,7 @@
       settlements: store.cleaningSettlements
     });
     const followUpDashboard = Cleaning.calculateCleaningFollowUpDashboard(store.cleaningRetentionActions);
+    const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments });
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       orders: store.cleaningOrders,
@@ -1949,6 +1950,7 @@
       kpis: Cleaning.calculateCleaningKpis(store.cleaningOrders),
       dashboard,
       followUpDashboard,
+      alerts,
       selectedStage: cleaningStageFilter,
       query: searchEl.value,
       writable: canWriteCRM()

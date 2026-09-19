@@ -157,3 +157,11 @@ test("renders the retention workload dashboard with actionable orders", () => {
   assert.match(center, /홍길동/);
   assert.match(center, /data-cleaning-order-open="o1"/);
 });
+
+test("renders cleaning response and receivable alerts", () => {
+  const center = UI.renderCleaningCenter({ stages, orders: [{ id: "o1", customerName: "홍길동" }], partners: [], kpis: {}, dashboard: {}, followUpDashboard: {}, alerts: [{ id: "response_overdue_o1", cleaningOrderId: "o1", type: "response_overdue", label: "신규문의 5분 초과", amount: 0 }], writable: true });
+  assert.match(center, /영업·수금 경고/);
+  assert.match(center, /신규문의 5분 초과/);
+  assert.match(center, /홍길동/);
+  assert.match(center, /data-cleaning-order-open="o1"/);
+});
