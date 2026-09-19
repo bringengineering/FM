@@ -65,3 +65,8 @@ Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-
 - Authentication change stops publication. Requests never overlap. Source/network failure keeps the previous revision and displays an error; authorization or revision conflict stops the publisher. Manual publishing stops this local automatic publisher.
 - TV playback keeps its current scene/page when only data version changes, preventing frequent refreshes from starving later scenes.
 - Verified desktop suite: 2167 passed, 2 skipped, 0 failures. Three focused UI suites: 9 passed. No production deployment/installation performed. Actual two-computer automatic delivery and Windows installer remain unverified.
+
+## Windows preview packaging
+- Built separate TV 0.1.0 NSIS x64 preview installer with a strict source allowlist, independent app identity/output and no CRM update feed.
+- Verified actual ASAR metadata and 13 allowed source assets; CRM main/session files absent. Packaging regression test passed.
+- Installer is unsigned; not installed and not uploaded. See `docs/superpowers/reports/2026-09-20-tv-preview-installation.md` for artifact hash and remaining gates. Production activation, native encryption/restart, actual TV acceptance and remote program updates remain unfinished.

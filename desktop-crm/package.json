@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "tv": "electron src/wallboard-tv-main.js",
+    "build:tv": "electron-builder --config electron-builder.tv.cjs --win nsis --x64 --publish never",
     "test": "node --test test/*.test.js",
     "crm:migration:export": "electron scripts/export-crm-staging.js",
     "crm:migration:verify": "node scripts/verify-crm-staging.js",
