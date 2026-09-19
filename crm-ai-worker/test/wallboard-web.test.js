@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {createWorker} from '../src/index.js';
 
 const worker=createWorker();
@@ -19,6 +20,7 @@ test('web TV shell and same-origin assets are served with strict security header
 
 test('web TV client rotates five scenes, refreshes remotely and renders server text safely',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.doesNotThrow(()=>new vm.Script(source), 'served TV client must be valid JavaScript');
  for(const key of ['people','status','issues','notice','schedule'])assert.match(source,new RegExp(`['"]${key}['"]`));
  assert.match(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
  assert.match(source,/localStorage/);assert.match(source,/visibilityState/);assert.match(source,/AUTH_REQUIRED/);
