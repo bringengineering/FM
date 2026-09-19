@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "tv": "electron src/wallboard-tv-main.js",
     "test": "node --test test/*.test.js",
     "crm:migration:export": "electron scripts/export-crm-staging.js",
     "crm:migration:verify": "node scripts/verify-crm-staging.js",

@@ -42,5 +42,12 @@
 - Verification: desktop 2158 passed / 2 skipped; UI suites 28 passed.
 - Still manual snapshot publication: continuous automatic refresh publication and dedicated Windows TV playback are unfinished. Cloud storage/deployment and actual TV acceptance tests remain mandatory.
 
+## Windows TV client implementation
+- Added separate `wallboard-tv-main.js` entry (`npm run tv` for developer execution), its own BRING-TV user-data directory, restricted preload and read-only renderer.
+- Device token stays in main process; Windows safeStorage encryption is required before persistence. Renderer receives only code/expiry or validated publication. CRM staff session is not loaded.
+- TV polls approval every 5 seconds while pending, and publications every 60 seconds; playback follows posted ordering/durations. Revocation removes displayed board. Offline state retains the last display with a warning.
+- Shared publication schema is reused by Worker and desktop. Tests cover enrollment secrecy, temporary network failure, revocation and renderer lifecycle.
+- No installed TV executable yet. Actual Windows encryption/restart, TV viewport verification, Worker bundling with shared schema, cloud runtime, deployment and automatic source refresh remain unverified/unfinished.
+
 No deployment configuration or cloud resources changed. Existing AI, Telegram and Kakao endpoints remain unchanged.
 Storage reference: https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
