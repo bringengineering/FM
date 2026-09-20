@@ -222,6 +222,9 @@ test("website estimate inbox prefills a cleaning order and closes the lead after
   assert.match(submit, /raw\.marketingLeadId/);
   assert.match(submit, /lead\.status\s*=\s*"converted"/);
   assert.match(submit, /lead\.convertedOrderId\s*=\s*item\.id/);
+  assert.match(app, /creativeId:\s*lead\.utmContent/);
+  assert.match(app, /name="creativeId"/);
+  assert.match(submit, /creativeId:\s*String\(raw\.creativeId/);
 });
 
 test("website Partner applications open screening and close after Partner registration", async () => {

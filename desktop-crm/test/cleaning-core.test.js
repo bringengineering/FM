@@ -533,6 +533,14 @@ test("cleaning orders preserve the price book evidence used for the quote", () =
   assert.equal(order.standardPriceAmount, 319000);
 });
 
+test("cleaning orders preserve Lead and Creative ID attribution", () => {
+  const order = Cleaning.normalizeCleaningOrder({ id: "o1", marketingLeadId: "lead_123", creativeId: "CR-0007", sourceChannel: "naver", sourceCampaign: "launch" });
+  assert.equal(order.marketingLeadId, "lead_123");
+  assert.equal(order.creativeId, "CR-0007");
+  assert.equal(order.sourceChannel, "naver");
+  assert.equal(order.sourceCampaign, "launch");
+});
+
 test("exposes the approved sales script and FAQ library", () => {
   assert.equal(Cleaning.CLEANING_SALES_STANDARDS.version, "BRING-CARE-SALES-v0.1");
   assert.deepEqual(Cleaning.CLEANING_SALES_STANDARDS.scripts.map(item => item.id), ["opening", "needs", "scope", "price", "expensive", "comparison", "discount", "photo", "closing", "b2b"]);

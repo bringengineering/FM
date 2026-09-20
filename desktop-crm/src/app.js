@@ -2029,7 +2029,10 @@
       scheduledAt: cleaningScheduleFromLead(lead),
       scope: [lead.service, lead.buildingInfo, lead.needs].filter(Boolean).join("\n"),
       exclusions: "",
-      marketingLeadId: lead.id || lead.requestId
+      marketingLeadId: lead.id || lead.requestId,
+      creativeId: lead.utmContent || "",
+      sourceChannel: lead.utmSource || "",
+      sourceCampaign: lead.utmCampaign || ""
     } : {});
     const selected = value => order.serviceType === value ? " selected" : "";
     const priceSelected = value => order.priceProduct === value ? " selected" : "";
@@ -2037,6 +2040,9 @@
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${order.id ? "청소 주문 수정" : "새 청소 주문"}</h2><p>상담·견적·일정을 한 번에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
       <form id="cleaningOrderForm" class="modal-body" data-cleaning-order-id="${attr(order.id || "")}">
         <input type="hidden" name="marketingLeadId" value="${attr(order.marketingLeadId || "")}">
+        <input type="hidden" name="creativeId" value="${attr(order.creativeId || "")}">
+        <input type="hidden" name="sourceChannel" value="${attr(order.sourceChannel || "")}">
+        <input type="hidden" name="sourceCampaign" value="${attr(order.sourceCampaign || "")}">
         <div class="info-box"><strong>현장 추가금 없음</strong><br>사전 확정 범위와 제외 범위를 고객에게 명확히 안내합니다.</div>
         <div class="form-grid" style="margin-top:14px">
           <label class="field"><span>고객명 *</span><input name="customerName" value="${attr(order.customerName || "")}" required></label>
@@ -5077,6 +5083,10 @@
           standardPriceAmount: useStandardPrice ? standardPrice.amount : 0,
           scope: String(raw.scope || "").trim(),
           exclusions: String(raw.exclusions || "").trim(),
+          marketingLeadId: String(raw.marketingLeadId || existing?.marketingLeadId || "").trim(),
+          creativeId: String(raw.creativeId || existing?.creativeId || "").trim(),
+          sourceChannel: String(raw.sourceChannel || existing?.sourceChannel || "").trim(),
+          sourceCampaign: String(raw.sourceCampaign || existing?.sourceCampaign || "").trim(),
           owner: existing?.owner || salesActorName(),
           inquiryAt: existing?.inquiryAt || new Date().toISOString()
         });

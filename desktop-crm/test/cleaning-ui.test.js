@@ -60,6 +60,14 @@ test("renders order detail with scope financial and QC context", () => {
   assert.match(html, /메시지 1건/);
 });
 
+test("renders Creative ID and acquisition attribution on the order", () => {
+  const html = UI.renderCleaningOrderDetail({ order: { id: "o1", customerName: "홍길동", creativeId: "CR-0007", sourceChannel: "naver", sourceCampaign: "launch" } });
+  assert.match(html, /Creative ID/);
+  assert.match(html, /CR-0007/);
+  assert.match(html, /naver/);
+  assert.match(html, /launch/);
+});
+
 test("renders Partner readiness and unit economics without mixing control status with grade", () => {
   const center = UI.renderCleaningCenter({
     stages,
