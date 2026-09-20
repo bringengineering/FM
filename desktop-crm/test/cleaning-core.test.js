@@ -399,16 +399,18 @@ test("escalates damage refund and legal dispute cases", () => {
 });
 
 test("calculates the recommended customer-friendly cancellation outcome", () => {
-  assert.deepEqual(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 80 }), { refundRate: 100, refundAmount: 330000, feeAmount: 0, approvalRequired: false, reasonCode: "CUSTOMER_D3_PLUS" });
-  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 30 }).refundAmount, 297000);
-  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 5 }).refundAmount, 231000);
+  assert.deepEqual(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 80 }), { refundRate: 100, refundAmount: 330000, feeAmount: 0, approvalRequired: true, reasonCode: "CUSTOMER_48H_PLUS" });
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 30 }).refundAmount, 264000);
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 5 }).refundAmount, 165000);
+  assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: -1 }).refundAmount, 0);
   assert.equal(Cleaning.calculateCleaningCancellation({ paidAmount: 330000, cancelledBy: "partner", hoursBeforeService: 5 }).refundRate, 100);
 });
 
 test("creates an auditable cancellation request without pretending the refund was paid", () => {
   const item = Cleaning.createCleaningCancellation({ cleaningOrderId: "cln_1", paidAmount: 330000, cancelledBy: "customer", hoursBeforeService: 30, reason: "이사일 변경" });
   assert.equal(item.status, "requested");
-  assert.equal(item.refundAmount, 297000);
+  assert.equal(item.refundAmount, 264000);
+  assert.equal(item.policyVersion, "BRING-CARE-CANCEL-v1.0");
   assert.equal(item.refundPaidAt, "");
 });
 

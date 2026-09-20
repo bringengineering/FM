@@ -762,12 +762,12 @@
     const hours = number(raw.hoursBeforeService);
     let refundRate = 100;
     let reasonCode = "PROVIDER_OR_FORCE_MAJEURE";
-    let approvalRequired = cancelledBy === "other";
+    let approvalRequired = paidAmount > 0;
     if (cancelledBy === "customer") {
-      if (hours >= 72) { refundRate = 100; reasonCode = "CUSTOMER_D3_PLUS"; }
-      else if (hours >= 24) { refundRate = 90; reasonCode = "CUSTOMER_D1_TO_D3"; }
-      else if (hours >= 0) { refundRate = 70; reasonCode = "CUSTOMER_SAME_DAY"; approvalRequired = true; }
-      else { refundRate = 0; reasonCode = "SERVICE_STARTED"; approvalRequired = true; }
+      if (hours >= 48) { refundRate = 100; reasonCode = "CUSTOMER_48H_PLUS"; }
+      else if (hours >= 24) { refundRate = 80; reasonCode = "CUSTOMER_24_TO_48H"; }
+      else if (hours >= 0) { refundRate = 50; reasonCode = "CUSTOMER_UNDER_24H"; }
+      else { refundRate = 0; reasonCode = "TEAM_ARRIVED_OR_SERVICE_STARTED"; }
     }
     const refundAmount = roundWon(paidAmount * refundRate / 100);
     return { refundRate, refundAmount, feeAmount: paidAmount - refundAmount, approvalRequired, reasonCode };
@@ -790,7 +790,7 @@
       approvedAt: text(raw.approvedAt),
       approvedBy: text(raw.approvedBy),
       refundPaidAt: text(raw.refundPaidAt),
-      policyVersion: text(raw.policyVersion) || "BRING-CARE-CANCEL-v0.1"
+      policyVersion: text(raw.policyVersion) || "BRING-CARE-CANCEL-v1.0"
     });
   }
 
