@@ -18,3 +18,10 @@ test('Windows uninstaller removes only the named BRING TV shortcut',()=>{
  assert.match(source,/BRING TV 운영보드\.lnk/);assert.match(source,/Remove-Item\s+-LiteralPath/);
  assert.doesNotMatch(source,/Remove-Item[^\r\n]*-Recurse|Cookies|User Data|Downloads/i);
 });
+test('integrated TV package includes a safe recovery prompt',()=>{
+ const promptPath=path.join(root,'release/tv-web-kiosk-package-v1.0.3/BRING-TV-설치복구-프롬프트.txt');
+ const source=fs.readFileSync(promptPath,'utf8');
+ assert.match(source,/BRING-TV-설치-오류\.txt/);
+ assert.match(source,/bring-crm-ai-gateway\.bringengineering1008\.workers\.dev\/tv/);
+ assert.match(source,/비밀번호.*인증코드.*공유하지/);
+});
