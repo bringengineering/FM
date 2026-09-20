@@ -186,6 +186,12 @@ test("cleaning center receives response and receivable alerts", async () => {
   assert.match(app, /payments:\s*store\.cleaningPayments/);
 });
 
+test("cleaning center receives the external integration launch gate", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCleaningIntegrationReadiness/);
+  assert.match(app, /integrationReadiness/);
+});
+
 test("cleaning center receives the approved sales price book", async () => {
   const app = await source("app.js");
   assert.match(app, /priceBook:\s*Cleaning\.CLEANING_PRICE_BOOK/);

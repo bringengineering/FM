@@ -565,6 +565,18 @@ test("does not guess when more than one customer has the same phone", () => {
   assert.equal(Cleaning.matchCleaningCustomer({ phone: "01012345678" }, customers), "");
 });
 
+test("calculates launch readiness without storing provider secrets", () => {
+  const result = Cleaning.calculateCleaningIntegrationReadiness({
+    publicNumber: "1544-0000", officeNumber: "033-746-8919", forwardingNumber: "010-1234-5678",
+    ivrReady: true, senderVerified: true, kakaoVerified: false, payappApproved: false,
+    callTestPassed: true, messageTestPassed: false, paymentTestPassed: false
+  });
+  assert.equal(result.completed, 6);
+  assert.equal(result.total, 10);
+  assert.equal(result.ready, false);
+  assert.ok(result.items.every(item => !("apiKey" in item)));
+});
+
 test("exposes the approved sales script and FAQ library", () => {
   assert.equal(Cleaning.CLEANING_SALES_STANDARDS.version, "BRING-CARE-SALES-v0.1");
   assert.deepEqual(Cleaning.CLEANING_SALES_STANDARDS.scripts.map(item => item.id), ["opening", "needs", "scope", "price", "expensive", "comparison", "discount", "photo", "closing", "b2b"]);

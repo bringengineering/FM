@@ -1984,6 +1984,7 @@
     const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments, dispatches: store.cleaningDispatches });
     const messageOutbox = Cleaning.calculateCleaningMessageOutbox(store.cleaningMessages);
     const creativePerformance = Cleaning.calculateCreativePerformance({ leads: store.marketingLeadInbox, orders: store.cleaningOrders });
+    const integrationReadiness = Cleaning.calculateCleaningIntegrationReadiness(store.settings.cleaningIntegrations);
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       inboundLeads: store.marketingLeadInbox,
@@ -1996,6 +1997,7 @@
       alerts,
       messageOutbox,
       creativePerformance,
+      integrationReadiness,
       priceBook: Cleaning.CLEANING_PRICE_BOOK,
       serviceCatalog: Cleaning.CLEANING_SERVICE_CATALOG,
       salesStandards: Cleaning.CLEANING_SALES_STANDARDS,

@@ -272,3 +272,10 @@ test("renders the reviewed message outbox without claiming queued messages were 
   assert.match(center, /data-cleaning-message-queue="m1"/);
   assert.doesNotMatch(center, /data-cleaning-message-sent="m2"/);
 });
+
+test("renders the external integration launch gate", () => {
+  const center = UI.renderCleaningCenter({ stages: [], orders: [], partners: [], kpis: {}, integrationReadiness: { completed: 6, total: 10, ready: false, items: [{ key: "publicNumber", label: "대표번호", complete: true }, { key: "kakaoVerified", label: "카카오채널 인증", complete: false }] }, writable: true });
+  assert.match(center, /외부 연동 준비/);
+  assert.match(center, /6\/10/);
+  assert.match(center, /카카오채널 인증/);
+});

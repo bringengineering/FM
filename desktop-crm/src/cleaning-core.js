@@ -215,6 +215,25 @@
     return matches.length === 1 ? text(matches[0].id) : "";
   }
 
+  function calculateCleaningIntegrationReadiness(source) {
+    const raw = source && typeof source === "object" ? source : {};
+    const definitions = [
+      ["publicNumber", "15xx·16xx 대표번호", Boolean(text(raw.publicNumber))],
+      ["officeNumber", "사무실번호 연결", Boolean(text(raw.officeNumber))],
+      ["forwardingNumber", "대표 착신번호", Boolean(text(raw.forwardingNumber))],
+      ["ivrReady", "ARS 1·2·3번", raw.ivrReady === true],
+      ["senderVerified", "문자 발신번호 인증", raw.senderVerified === true],
+      ["kakaoVerified", "카카오채널 인증", raw.kakaoVerified === true],
+      ["payappApproved", "PayApp 가맹 승인", raw.payappApproved === true],
+      ["callTestPassed", "대표번호 시험통화", raw.callTestPassed === true],
+      ["messageTestPassed", "문자·알림톡 시험발송", raw.messageTestPassed === true],
+      ["paymentTestPassed", "1,000원 실결제·환불", raw.paymentTestPassed === true]
+    ];
+    const items = definitions.map(([key, label, complete]) => Object.freeze({ key, label, complete }));
+    const completed = items.filter(item => item.complete).length;
+    return Object.freeze({ completed, total: items.length, ready: completed === items.length, items: Object.freeze(items) });
+  }
+
   function cleaningPhotoArchive(orderId, folderUrl) {
     const id = text(orderId);
     if (!id) throw cleaningError("CLEANING_ORDER_REQUIRED", "사진 보관함에 연결할 주문이 필요합니다.", "orderId");
@@ -1027,6 +1046,7 @@
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,
     matchCleaningCustomer,
+    calculateCleaningIntegrationReadiness,
     cleaningPhotoArchive,
     validateCleaningOrder,
     createCleaningOrder,
