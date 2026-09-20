@@ -141,6 +141,7 @@ test("renders approved message templates only when every variable is present", (
 
 test("renders approved retention messages for review building care and repeat referral", () => {
   assert.match(Cleaning.renderMessageTemplate("review_request", { customerName: "홍길동", reviewUrl: "https://example.com/review" }), /리뷰/);
+  assert.match(Cleaning.renderMessageTemplate("satisfaction_check", { customerName: "홍길동" }), /만족|불편/);
   assert.match(Cleaning.renderMessageTemplate("building_care_offer", { customerName: "홍길동", consultationUrl: "https://example.com/care" }), /건물관리/);
   assert.match(Cleaning.renderMessageTemplate("repeat_referral", { customerName: "홍길동", consultationUrl: "https://example.com/repeat" }), /재이용|추천/);
 });
@@ -432,10 +433,11 @@ test("runs rework through schedule completion reinspection and closure evidence"
 
 test("creates a retention funnel after a completed cleaning order", () => {
   const actions = Cleaning.createCleaningRetentionPlan({ id: "cln_1", customerId: "cus_1", serviceType: "move_in", closedAt: "2026-09-20T00:00:00Z" });
-  assert.deepEqual(actions.map(item => item.type), ["review", "building_care", "repeat_referral"]);
+  assert.deepEqual(actions.map(item => item.type), ["review", "satisfaction", "building_care", "repeat_referral"]);
   assert.equal(actions[0].dueAt, "2026-09-21T00:00:00.000Z");
-  assert.equal(actions[1].dueAt, "2026-09-27T00:00:00.000Z");
-  assert.equal(actions[2].dueAt, "2026-10-20T00:00:00.000Z");
+  assert.equal(actions[1].dueAt, "2026-09-23T00:00:00.000Z");
+  assert.equal(actions[2].dueAt, "2026-09-27T00:00:00.000Z");
+  assert.equal(actions[3].dueAt, "2026-10-20T00:00:00.000Z");
   assert.ok(actions.every(item => item.status === "planned"));
 });
 

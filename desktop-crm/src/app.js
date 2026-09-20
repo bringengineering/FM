@@ -3861,7 +3861,7 @@
         store.cleaningRetentionActions[index] = nextAction;
         if (nextStatus === "draft" && !store.cleaningMessages.some(item => item.retentionActionId === nextAction.id)) {
           const order = cleaningOrderById(nextAction.cleaningOrderId);
-          const retentionTemplateByType = { review: "review_request", building_care: "building_care_offer", repeat_referral: "repeat_referral" };
+          const retentionTemplateByType = { review: "review_request", satisfaction: "satisfaction_check", building_care: "building_care_offer", repeat_referral: "repeat_referral" };
           const message = Cleaning.createCleaningMessage({
             cleaningOrderId: nextAction.cleaningOrderId,
             retentionActionId: nextAction.id,

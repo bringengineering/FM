@@ -176,6 +176,12 @@ test("renders retention funnel status and action controls", () => {
   assert.match(detail, /data-cleaning-retention-draft="ret1"/);
 });
 
+test("renders the D+3 satisfaction follow-up", () => {
+  const detail = UI.renderCleaningOrderDetail({ order: { id: "cln_1", customerName: "홍길동" }, stages, dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [], reworks: [], retentionActions: [{ id: "ret3", cleaningOrderId: "cln_1", type: "satisfaction", status: "planned", dueAt: "2026-09-23" }], writable: true });
+  assert.match(detail, /D\+3 만족도 확인/);
+  assert.match(detail, /data-cleaning-retention-draft="ret3"/);
+});
+
 test("renders customer completion report evidence and explicit delivery action", () => {
   const detail = UI.renderCleaningOrderDetail({ order: { id: "cln_1", customerName: "홍길동" }, stages, dispatches: [], reports: [], qcReviews: [], messages: [], payments: [], cases: [], cancellations: [], reworks: [], retentionActions: [], customerReports: [{ id: "cr1", cleaningOrderId: "cln_1", status: "draft", qcScore: 96, photoUrls: ["https://example.com/after.jpg"], completedAt: "2026-09-20" }], writable: true });
   assert.match(detail, /고객 완료보고 1건/);

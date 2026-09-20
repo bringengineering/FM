@@ -158,6 +158,7 @@ test("preparing a retention action creates one linked customer message draft", a
   assert.match(app, /retentionTemplateByType/);
   assert.match(app, /retentionActionId:\s*nextAction\.id/);
   assert.match(app, /store\.cleaningMessages\.push/);
+  assert.match(app, /satisfaction:\s*"satisfaction_check"/);
   assert.match(app, /후속조치 문자 초안/);
 });
 
