@@ -206,6 +206,15 @@
     };
   }
 
+  function matchCleaningCustomer(source, customers) {
+    const phone = text(source && source.phone).replace(/\D/g, "");
+    if (!phone) return "";
+    const matches = (Array.isArray(customers) ? customers : []).filter(item => {
+      return item && !item.archivedAt && text(item.phone).replace(/\D/g, "") === phone;
+    });
+    return matches.length === 1 ? text(matches[0].id) : "";
+  }
+
   function cleaningPhotoArchive(orderId, folderUrl) {
     const id = text(orderId);
     if (!id) throw cleaningError("CLEANING_ORDER_REQUIRED", "사진 보관함에 연결할 주문이 필요합니다.", "orderId");
@@ -999,6 +1008,7 @@
     standardCleaningPrice,
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,
+    matchCleaningCustomer,
     cleaningPhotoArchive,
     validateCleaningOrder,
     createCleaningOrder,

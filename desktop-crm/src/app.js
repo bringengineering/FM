@@ -5070,8 +5070,10 @@
         const standardPrice = useStandardPrice ? Cleaning.standardCleaningPrice(priceInput) : null;
         if (useStandardPrice && standardPrice.manualQuote) throw new Error("별도견적 대상입니다. 관리자 확인 후 표준가격 자동 적용을 해제하고 금액을 입력해 주세요.");
         const totalAmount = useStandardPrice ? standardPrice.amount : Number(raw.totalAmount) || 0;
+        const matchedCustomerId = existing?.customerId || Cleaning.matchCleaningCustomer({ phone: raw.phone }, store.customers);
         const values = Object.assign({}, existing || {}, {
           id: existing?.id,
+          customerId: matchedCustomerId,
           customerName: String(raw.customerName || "").trim(),
           phone: String(raw.phone || "").trim(),
           serviceType: raw.serviceType,

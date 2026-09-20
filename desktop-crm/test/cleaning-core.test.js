@@ -543,6 +543,23 @@ test("cleaning orders preserve Lead and Creative ID attribution", () => {
   assert.equal(order.sourceCampaign, "launch");
 });
 
+test("links a cleaning order to one existing customer by normalized phone", () => {
+  const customers = [
+    { id: "cus_1", name: "홍길동", phone: "010-1234-5678" },
+    { id: "cus_2", name: "김대표", phone: "010-9999-0000" }
+  ];
+  assert.equal(Cleaning.matchCleaningCustomer({ phone: "010 1234 5678" }, customers), "cus_1");
+  assert.equal(Cleaning.matchCleaningCustomer({ phone: "010-0000-0000" }, customers), "");
+});
+
+test("does not guess when more than one customer has the same phone", () => {
+  const customers = [
+    { id: "cus_1", phone: "010-1234-5678" },
+    { id: "cus_2", phone: "01012345678" }
+  ];
+  assert.equal(Cleaning.matchCleaningCustomer({ phone: "01012345678" }, customers), "");
+});
+
 test("exposes the approved sales script and FAQ library", () => {
   assert.equal(Cleaning.CLEANING_SALES_STANDARDS.version, "BRING-CARE-SALES-v0.1");
   assert.deepEqual(Cleaning.CLEANING_SALES_STANDARDS.scripts.map(item => item.id), ["opening", "needs", "scope", "price", "expensive", "comparison", "discount", "photo", "closing", "b2b"]);

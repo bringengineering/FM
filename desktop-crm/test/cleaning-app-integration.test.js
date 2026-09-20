@@ -31,6 +31,7 @@ test("cleaning order saves through the existing shared save and audit path", asy
   const app = await source("app.js");
   const submit = app.match(/else if \(form\.id === "cleaningOrderForm"\) \{([\s\S]*?)\n\s*\} else if/)?.[1] || "";
   assert.match(submit, /Cleaning\.createCleaningOrder/);
+  assert.match(submit, /Cleaning\.matchCleaningCustomer/);
   assert.match(submit, /store\.cleaningOrders/);
   assert.match(submit, /logAudit\(/);
   assert.match(submit, /scheduleSave\(\)/);
