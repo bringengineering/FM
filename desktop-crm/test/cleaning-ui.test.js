@@ -68,6 +68,14 @@ test("renders Creative ID and acquisition attribution on the order", () => {
   assert.match(html, /launch/);
 });
 
+test("renders Creative ID performance from Lead to contribution profit", () => {
+  const html = UI.renderCleaningCenter({ creativePerformance: [{ creativeId: "CR-0007", leads: 10, quotes: 6, contracts: 2, revenue: 600000, contributionProfit: 180000, attributedAdSpend: 80000, cpl: 8000, cac: 40000 }], stages: [], orders: [], partners: [], writable: false });
+  assert.match(html, /CREATIVE PERFORMANCE/);
+  assert.match(html, /CR-0007/);
+  assert.match(html, /Lead 10/);
+  assert.match(html, /공헌이익 180,000원/);
+});
+
 test("renders Partner readiness and unit economics without mixing control status with grade", () => {
   const center = UI.renderCleaningCenter({
     stages,

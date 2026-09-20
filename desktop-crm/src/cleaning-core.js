@@ -928,6 +928,36 @@
     };
   }
 
+  function calculateCreativePerformance(input) {
+    const data = input && typeof input === "object" ? input : {};
+    const leads = (Array.isArray(data.leads) ? data.leads : []).filter(item => item && !item.archivedAt);
+    const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt);
+    const ids = new Set();
+    leads.forEach(item => { const id = text(item.utmContent); if (/^CR-[0-9]{4,8}$/.test(id)) ids.add(id); });
+    orders.forEach(item => { const id = text(item.creativeId); if (/^CR-[0-9]{4,8}$/.test(id)) ids.add(id); });
+    const stageIndex = value => CLEANING_ORDER_STAGES.findIndex(item => item.id === value);
+    return [...ids].sort().map(creativeId => {
+      const attributedLeads = leads.filter(item => text(item.utmContent) === creativeId);
+      const attributedOrders = orders.filter(item => text(item.creativeId) === creativeId);
+      const quoted = attributedOrders.filter(item => stageIndex(item.stage) >= stageIndex("quote_sent"));
+      const contracted = attributedOrders.filter(item => stageIndex(item.stage) >= stageIndex("deposit_paid"));
+      const attributedAdSpend = attributedOrders.reduce((sum, item) => sum + roundWon(item.advertisingCost), 0);
+      const revenue = contracted.reduce((sum, item) => sum + roundWon(item.totalAmount), 0);
+      const contributionProfit = contracted.reduce((sum, item) => sum + roundWon(item.contributionProfit), 0);
+      return {
+        creativeId,
+        leads: attributedLeads.length,
+        quotes: quoted.length,
+        contracts: contracted.length,
+        revenue,
+        contributionProfit,
+        attributedAdSpend,
+        cpl: attributedLeads.length ? Math.round(attributedAdSpend / attributedLeads.length) : 0,
+        cac: contracted.length ? Math.round(attributedAdSpend / contracted.length) : 0
+      };
+    });
+  }
+
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
@@ -979,6 +1009,7 @@
     issueCleaningQuoteDocument,
     calculateCleaningFollowUpDashboard,
     calculateCleaningAlerts,
+    calculateCreativePerformance,
     calculateCleaningDashboard
   });
 });

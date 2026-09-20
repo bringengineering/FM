@@ -302,3 +302,9 @@ test("Cleaning Center mutations are guarded by business role", async () => {
   assert.match(app, /cleaningSettlementForm:\s*"settlement"/);
   assert.match(app, /data-cleaning-cancellation-approve.*refund_approve/s);
 });
+
+test("Cleaning Center receives Creative ID performance", async () => {
+  const app = await source("app.js");
+  assert.match(app, /Cleaning\.calculateCreativePerformance/);
+  assert.match(app, /creativePerformance,/);
+});

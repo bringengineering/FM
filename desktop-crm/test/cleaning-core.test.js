@@ -576,3 +576,22 @@ test("enforces least-privilege Cleaning Center roles", () => {
   assert.equal(Cleaning.normalizeCleaningRole("sales", "viewer"), "viewer");
   assert.equal(Cleaning.normalizeCleaningRole("marketing", "admin"), "owner");
 });
+
+test("calculates Creative ID funnel through contribution profit", () => {
+  const rows = Cleaning.calculateCreativePerformance({
+    leads: [{ id: "l1", utmContent: "CR-0007" }, { id: "l2", utmContent: "CR-0007" }, { id: "l3", utmContent: "CR-0008" }],
+    orders: [
+      { id: "o1", creativeId: "CR-0007", stage: "deposit_paid", totalAmount: 300000, contributionProfit: 90000, advertisingCost: 20000 },
+      { id: "o2", creativeId: "CR-0007", stage: "quote_sent", totalAmount: 200000, contributionProfit: 60000, advertisingCost: 10000 }
+    ]
+  });
+  assert.deepEqual(rows.map(item => item.creativeId), ["CR-0007", "CR-0008"]);
+  assert.equal(rows[0].leads, 2);
+  assert.equal(rows[0].quotes, 2);
+  assert.equal(rows[0].contracts, 1);
+  assert.equal(rows[0].revenue, 300000);
+  assert.equal(rows[0].contributionProfit, 90000);
+  assert.equal(rows[0].attributedAdSpend, 30000);
+  assert.equal(rows[0].cpl, 15000);
+  assert.equal(rows[0].cac, 30000);
+});

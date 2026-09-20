@@ -1983,6 +1983,7 @@
     const followUpDashboard = Cleaning.calculateCleaningFollowUpDashboard(store.cleaningRetentionActions);
     const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments });
     const messageOutbox = Cleaning.calculateCleaningMessageOutbox(store.cleaningMessages);
+    const creativePerformance = Cleaning.calculateCreativePerformance({ leads: store.marketingLeadInbox, orders: store.cleaningOrders });
     main.innerHTML = CleaningUI.renderCleaningCenter({
       stages: Cleaning.CLEANING_ORDER_STAGES,
       inboundLeads: store.marketingLeadInbox,
@@ -1994,6 +1995,7 @@
       followUpDashboard,
       alerts,
       messageOutbox,
+      creativePerformance,
       priceBook: Cleaning.CLEANING_PRICE_BOOK,
       serviceCatalog: Cleaning.CLEANING_SERVICE_CATALOG,
       salesStandards: Cleaning.CLEANING_SALES_STANDARDS,
