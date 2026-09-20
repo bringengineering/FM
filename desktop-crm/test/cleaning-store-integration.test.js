@@ -42,3 +42,9 @@ test("remote sync and app rebase register every cleaning collection", async () =
   }
   assert.match(app, /function ensureCleaningStore\(/);
 });
+
+test("authenticated sessions preserve the assigned Cleaning Center role", async () => {
+  const remote = await readFile(path.join(__dirname, "..", "src", "remote.js"), "utf8");
+  assert.match(remote, /cleaningRole:/);
+  assert.match(remote, /access\.cleaningRole/);
+});

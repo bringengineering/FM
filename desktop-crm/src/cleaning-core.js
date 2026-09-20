@@ -24,6 +24,13 @@
   ]);
 
   const SERVICE_TYPES = Object.freeze(["move_in", "common_area", "recurring", "other"]);
+  const CLEANING_ROLE_PERMISSIONS = Object.freeze({
+    owner: Object.freeze(["*"]),
+    sales: Object.freeze(["call", "lead", "order", "order_progress", "quote", "message", "payment_request", "retention"]),
+    operations: Object.freeze(["order", "order_progress", "partner", "dispatch", "field_report", "qc", "case", "cancellation_request", "rework", "customer_report", "payment_confirm", "settlement"]),
+    marketing: Object.freeze(["lead_source"]),
+    viewer: Object.freeze([])
+  });
   const CLEANING_PRICE_BOOK = Object.freeze({
     version: "BRING-CARE-PRICE-v0.1",
     launchRegion: "원주",
@@ -116,6 +123,18 @@
     error.code = code;
     if (field) error.field = field;
     return error;
+  }
+
+  function normalizeCleaningRole(value, accountRole) {
+    if (accountRole === "admin") return "owner";
+    if (accountRole === "viewer") return "viewer";
+    const role = text(value);
+    return Object.prototype.hasOwnProperty.call(CLEANING_ROLE_PERMISSIONS, role) ? role : "operations";
+  }
+
+  function canCleaningAction(role, action) {
+    const allowed = CLEANING_ROLE_PERMISSIONS[text(role)] || CLEANING_ROLE_PERMISSIONS.viewer;
+    return allowed.includes("*") || allowed.includes(text(action));
   }
 
   function standardCleaningPrice(source) {
@@ -909,9 +928,12 @@
   return Object.freeze({
     CLEANING_ORDER_STAGES,
     SERVICE_TYPES,
+    CLEANING_ROLE_PERMISSIONS,
     CLEANING_PRICE_BOOK,
     CLEANING_SERVICE_CATALOG,
     CLEANING_SALES_STANDARDS,
+    normalizeCleaningRole,
+    canCleaningAction,
     standardCleaningPrice,
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,

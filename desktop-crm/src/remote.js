@@ -479,6 +479,7 @@ class FirebaseRemoteClient {
         displayName: this.session.displayName || "",
         photoUrl: this.session.photoUrl || "",
         role: ["admin", "member", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        cleaningRole: ["owner", "sales", "operations", "marketing", "viewer"].includes(this.session.cleaningRole) ? this.session.cleaningRole : "viewer",
         mustChangePassword: this.session.mustChangePassword === true
       } : null,
       error: this.lastError || ""
@@ -622,6 +623,7 @@ class FirebaseRemoteClient {
       displayName: sessionRef.displayName || "",
       photoUrl: sessionRef.photoUrl || "",
       role: sessionRef.role || "member",
+      cleaningRole: sessionRef.cleaningRole || "viewer",
       mustChangePassword: sessionRef.mustChangePassword === true,
       fieldAuthIntegrated: sessionRef.fieldAuthIntegrated === true
     });
@@ -719,6 +721,7 @@ class FirebaseRemoteClient {
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
       role: hints && hints.role || "viewer",
+      cleaningRole: hints && hints.cleaningRole || "viewer",
       mustChangePassword: hints && hints.mustChangePassword === true,
       fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
@@ -835,6 +838,12 @@ class FirebaseRemoteClient {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     sessionRef.role = role;
+    const assignedCleaningRole = String(access.cleaningRole || "");
+    sessionRef.cleaningRole = role === "admin"
+      ? "owner"
+      : role === "viewer"
+        ? "viewer"
+        : ["sales", "operations", "marketing"].includes(assignedCleaningRole) ? assignedCleaningRole : "operations";
     sessionRef.mustChangePassword = access.mustChangePassword === true;
     return access;
   }

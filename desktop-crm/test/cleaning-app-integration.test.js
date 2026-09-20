@@ -288,3 +288,14 @@ test("payment requests link PayApp URLs, message drafts, and confirmed receipts"
   assert.match(app, /raw\.paymentRequestId/);
   assert.match(app, /Cleaning\.reconcileCleaningPaymentRequest/);
 });
+
+test("Cleaning Center mutations are guarded by business role", async () => {
+  const app = await source("app.js");
+  assert.match(app, /function currentCleaningRole\(\)/);
+  assert.match(app, /function requireCleaningAction\(action\)/);
+  assert.match(app, /Cleaning\.canCleaningAction\(currentCleaningRole\(\), action\)/);
+  assert.match(app, /cleaningFormPermissions/);
+  assert.match(app, /cleaningPaymentForm:\s*"payment_confirm"/);
+  assert.match(app, /cleaningSettlementForm:\s*"settlement"/);
+  assert.match(app, /data-cleaning-cancellation-approve.*refund_approve/s);
+});

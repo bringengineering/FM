@@ -554,3 +554,17 @@ test("issues a customer quote only by explicit confirmation", () => {
   assert.equal(issued.status, "issued");
   assert.equal(issued.issuedAt, "2026-09-20T01:00:00Z");
 });
+
+test("enforces least-privilege Cleaning Center roles", () => {
+  assert.equal(Cleaning.canCleaningAction("owner", "refund_approve"), true);
+  assert.equal(Cleaning.canCleaningAction("sales", "quote"), true);
+  assert.equal(Cleaning.canCleaningAction("sales", "dispatch"), false);
+  assert.equal(Cleaning.canCleaningAction("operations", "dispatch"), true);
+  assert.equal(Cleaning.canCleaningAction("operations", "refund_approve"), false);
+  assert.equal(Cleaning.canCleaningAction("marketing", "lead_source"), true);
+  assert.equal(Cleaning.canCleaningAction("marketing", "payment_confirm"), false);
+  assert.equal(Cleaning.canCleaningAction("viewer", "order"), false);
+  assert.equal(Cleaning.normalizeCleaningRole("unknown", "member"), "operations");
+  assert.equal(Cleaning.normalizeCleaningRole("sales", "viewer"), "viewer");
+  assert.equal(Cleaning.normalizeCleaningRole("marketing", "admin"), "owner");
+});

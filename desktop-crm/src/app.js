@@ -704,6 +704,17 @@
     return (!currentAuth.required && !currentAuth.enforceRoles) || ["admin", "member"].includes(currentAuth.user && currentAuth.user.role);
   }
 
+  function currentCleaningRole() {
+    const user = currentAuth && currentAuth.user || {};
+    return Cleaning.normalizeCleaningRole(user.cleaningRole, user.role || ((!currentAuth.required && !currentAuth.enforceRoles) ? "admin" : "viewer"));
+  }
+
+  function requireCleaningAction(action) {
+    if (canWriteCRM() && Cleaning.canCleaningAction(currentCleaningRole(), action)) return true;
+    showToast("현재 Cleaning Center 역할에는 이 업무 권한이 없습니다.", "error");
+    return false;
+  }
+
   function canAdministerSecurity() {
     return (!currentAuth.required && !currentAuth.enforceRoles) || currentAuth.user && currentAuth.user.role === "admin";
   }
@@ -3641,6 +3652,23 @@
       renderCleaningOrderDrawer(cleaningOrderOpen.dataset.cleaningOrderOpen);
       return;
     }
+    const cleaningClickPermissions = [
+      ["[data-cleaning-call-open]", "call"], ["[data-cleaning-lead-convert]", "lead"],
+      ["[data-cleaning-partner-lead], [data-cleaning-partner-open]", "partner"],
+      ["[data-cleaning-order-edit]", "order"], ["[data-cleaning-order-next]", "order_progress"],
+      ["[data-cleaning-dispatch-add]", "dispatch"], ["[data-cleaning-report-add]", "field_report"],
+      ["[data-cleaning-quote-add], [data-cleaning-quote-issue]", "quote"],
+      ["[data-cleaning-qc-add]", "qc"], ["[data-cleaning-message-add], [data-cleaning-message-queue]", "message"],
+      ["[data-cleaning-payment-request-add]", "payment_request"], ["[data-cleaning-payment-add]", "payment_confirm"],
+      ["[data-cleaning-settlement-add]", "settlement"], ["[data-cleaning-case-add]", "case"],
+      ["[data-cleaning-cancellation-add]", "cancellation_request"], ["[data-cleaning-cancellation-approve], [data-cleaning-cancellation-paid]", "refund_approve"],
+      ["[data-cleaning-rework-add], [data-cleaning-rework-complete], [data-cleaning-rework-pass], [data-cleaning-rework-close]", "rework"],
+      ["[data-cleaning-customer-report-add], [data-cleaning-customer-report-deliver]", "customer_report"],
+      ["[data-cleaning-retention-draft], [data-cleaning-retention-sent], [data-cleaning-retention-responded], [data-cleaning-retention-converted]", "retention"]
+    ];
+    for (const [selector, permission] of cleaningClickPermissions) {
+      if (event.target.closest(selector) && !requireCleaningAction(permission)) return;
+    }
     const cleaningCallOpen = event.target.closest("[data-cleaning-call-open]");
     if (cleaningCallOpen) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 전화 상담을 처리할 수 없습니다.", "error");
@@ -4710,6 +4738,14 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
+    const cleaningFormPermissions = {
+      cleaningCallTicketForm: "call", cleaningOrderForm: "order", cleaningPartnerForm: "partner",
+      cleaningDispatchForm: "dispatch", cleaningReportForm: "field_report", cleaningQcForm: "qc",
+      cleaningMessageForm: "message", cleaningPaymentRequestForm: "payment_request", cleaningPaymentForm: "payment_confirm",
+      cleaningCaseForm: "case", cleaningCancellationForm: "cancellation_request", cleaningReworkForm: "rework",
+      cleaningSettlementForm: "settlement"
+    };
+    if (cleaningFormPermissions[form.id] && !requireCleaningAction(cleaningFormPermissions[form.id])) return;
     if (form.id === "driveImportApprovalForm" || form.id === "driveImportRejectionForm") {
       if (!canAdministerSecurity()) return showToast("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "error");
       const item = driveImportCandidateById(form.dataset.driveFileId);
