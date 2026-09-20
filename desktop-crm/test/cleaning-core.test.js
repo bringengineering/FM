@@ -488,12 +488,17 @@ test("raises response deposit and balance alerts from confirmed evidence", () =>
     orders: [
       { id: "o1", customerName: "신규", stage: "inquiry", inquiryAt: "2026-09-20T00:00:00Z" },
       { id: "o2", customerName: "견적", stage: "quote_sent", updatedAt: "2026-09-19T00:00:00Z", depositAmount: 100000 },
-      { id: "o3", customerName: "완료", stage: "customer_completed", updatedAt: "2026-09-20T00:00:00Z", totalAmount: 330000, depositAmount: 100000, balanceAmount: 230000 }
+      { id: "o3", customerName: "완료", stage: "customer_completed", updatedAt: "2026-09-20T00:00:00Z", totalAmount: 330000, depositAmount: 100000, balanceAmount: 230000 },
+      { id: "o4", customerName: "미배차", stage: "dispatch_pending", scheduledAt: "2026-09-20T12:00:00Z" },
+      { id: "o5", customerName: "미수락", stage: "dispatched", scheduledAt: "2026-09-20T10:00:00Z" }
     ],
-    payments: [{ cleaningOrderId: "o3", type: "deposit", status: "confirmed", amount: 100000 }]
+    payments: [{ cleaningOrderId: "o3", type: "deposit", status: "confirmed", amount: 100000 }],
+    dispatches: [{ id: "d5", cleaningOrderId: "o5", status: "assigned", createdAt: "2026-09-19T23:00:00Z" }]
   }, "2026-09-20T00:06:00Z");
-  assert.deepEqual(alerts.map(item => item.type), ["response_overdue", "deposit_overdue", "balance_overdue"]);
+  assert.deepEqual(alerts.map(item => item.type), ["response_overdue", "deposit_overdue", "balance_overdue", "dispatch_missing", "dispatch_unaccepted"]);
   assert.equal(alerts[2].amount, 230000);
+  assert.match(alerts[3].label, /배차/);
+  assert.match(alerts[4].label, /수락/);
 });
 
 test("exposes the approved Bring Care v0.1 quick price book", () => {

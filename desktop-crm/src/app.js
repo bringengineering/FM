@@ -1981,7 +1981,7 @@
       settlements: store.cleaningSettlements
     });
     const followUpDashboard = Cleaning.calculateCleaningFollowUpDashboard(store.cleaningRetentionActions);
-    const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments });
+    const alerts = Cleaning.calculateCleaningAlerts({ orders: store.cleaningOrders, payments: store.cleaningPayments, dispatches: store.cleaningDispatches });
     const messageOutbox = Cleaning.calculateCleaningMessageOutbox(store.cleaningMessages);
     const creativePerformance = Cleaning.calculateCreativePerformance({ leads: store.marketingLeadInbox, orders: store.cleaningOrders });
     main.innerHTML = CleaningUI.renderCleaningCenter({

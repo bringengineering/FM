@@ -181,6 +181,7 @@ test("cleaning center receives the retention workload dashboard", async () => {
 test("cleaning center receives response and receivable alerts", async () => {
   const app = await source("app.js");
   assert.match(app, /Cleaning\.calculateCleaningAlerts/);
+  assert.match(app, /dispatches:\s*store\.cleaningDispatches/);
   assert.match(app, /alerts,/);
   assert.match(app, /payments:\s*store\.cleaningPayments/);
 });

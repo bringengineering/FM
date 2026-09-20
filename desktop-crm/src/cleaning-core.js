@@ -924,6 +924,7 @@
     const data = input && typeof input === "object" ? input : {};
     const orders = (Array.isArray(data.orders) ? data.orders : []).filter(item => item && !item.archivedAt && item.stage !== "closed");
     const payments = (Array.isArray(data.payments) ? data.payments : []).filter(item => item && item.status === "confirmed");
+    const dispatches = (Array.isArray(data.dispatches) ? data.dispatches : []).filter(Boolean);
     const nowMs = new Date(text(at) || new Date().toISOString()).getTime();
     const elapsed = value => nowMs - new Date(value || "").getTime();
     const alerts = [];
@@ -938,6 +939,23 @@
       const paid = payments.filter(item => item.cleaningOrderId === order.id && item.type === "balance").reduce((sum, item) => sum + roundWon(item.amount), 0);
       const amount = Math.max(0, roundWon(order.balanceAmount) - paid);
       if (amount > 0) alerts.push({ id: `balance_overdue_${order.id}`, cleaningOrderId: order.id, type: "balance_overdue", label: "작업 완료 후 잔금 미확인", amount, dueAt: text(order.updatedAt) });
+    });
+    orders.forEach(order => {
+      const scheduledMs = new Date(order.scheduledAt || "").getTime();
+      if (!Number.isFinite(scheduledMs) || scheduledMs <= nowMs) return;
+      const orderDispatches = dispatches.filter(item => item.cleaningOrderId === order.id)
+        .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+      const latest = orderDispatches[0];
+      const untilService = scheduledMs - nowMs;
+      if (!latest && ["deposit_paid", "dispatch_pending"].includes(order.stage) && untilService <= 24 * 60 * 60 * 1000) {
+        alerts.push({ id: `dispatch_missing_${order.id}`, cleaningOrderId: order.id, type: "dispatch_missing", label: "작업 24시간 이내 미배차", amount: 0, dueAt: text(order.scheduledAt) });
+      } else if (latest && latest.status === "assigned") {
+        const assignedMs = new Date(latest.createdAt || "").getTime();
+        const awaitingMs = Number.isFinite(assignedMs) ? nowMs - assignedMs : 0;
+        if (awaitingMs >= 30 * 60 * 1000 || untilService <= 12 * 60 * 60 * 1000) {
+          alerts.push({ id: `dispatch_unaccepted_${order.id}`, cleaningOrderId: order.id, type: "dispatch_unaccepted", label: "배차팀 수락 미확인", amount: 0, dueAt: text(order.scheduledAt) });
+        }
+      }
     });
     return alerts;
   }
