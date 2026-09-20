@@ -190,6 +190,8 @@ test("cleaning center receives the external integration launch gate", async () =
   const app = await source("app.js");
   assert.match(app, /Cleaning\.calculateCleaningIntegrationReadiness/);
   assert.match(app, /integrationReadiness/);
+  assert.match(app, /id="cleaningIntegrationForm"/);
+  assert.match(app, /normalizeCleaningIntegrationSetup/);
 });
 
 test("cleaning center receives the approved sales price book", async () => {

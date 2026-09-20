@@ -2158,6 +2158,13 @@
     openModal();
   }
 
+  function cleaningIntegrationEditor() {
+    const item = Cleaning.normalizeCleaningIntegrationSetup(store.settings.cleaningIntegrations || {});
+    const checked = key => item[key] ? " checked" : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>외부 연동 설정</h2><p>개통 상태와 인수시험 결과만 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="cleaningIntegrationForm" class="modal-body"><div class="info-box">API 키·비밀번호·인증서는 입력하거나 저장하지 마세요.</div><div class="form-grid" style="margin-top:14px"><label class="field"><span>대표번호</span><input name="publicNumber" value="${attr(item.publicNumber)}" placeholder="15xx-xxxx"></label><label class="field"><span>사무실번호</span><input name="officeNumber" value="${attr(item.officeNumber || "033-746-8919")}"></label><label class="field"><span>착신번호</span><input name="forwardingNumber" value="${attr(item.forwardingNumber)}"></label><label class="field"><span>전화 공급사</span><input name="provider" value="${attr(item.provider)}" placeholder="아톡비즈 또는 LG U+"></label><label class="field"><span>문자 공급사</span><input name="smsProvider" value="${attr(item.smsProvider)}"></label><label class="field"><span>카카오채널 URL</span><input name="kakaoChannelUrl" type="url" value="${attr(item.kakaoChannelUrl)}"></label><label class="field"><span>결제 공급사</span><input name="paymentProvider" value="${attr(item.paymentProvider || "PayApp")}"></label><label class="field"><span><input type="checkbox" name="ivrReady"${checked("ivrReady")}> ARS 준비</span></label><label class="field"><span><input type="checkbox" name="senderVerified"${checked("senderVerified")}> 발신번호 인증</span></label><label class="field"><span><input type="checkbox" name="kakaoVerified"${checked("kakaoVerified")}> 카카오 인증</span></label><label class="field"><span><input type="checkbox" name="payappApproved"${checked("payappApproved")}> PayApp 승인</span></label><label class="field"><span><input type="checkbox" name="callTestPassed"${checked("callTestPassed")}> 시험통화 통과</span></label><label class="field"><span><input type="checkbox" name="messageTestPassed"${checked("messageTestPassed")}> 시험문자 통과</span></label><label class="field"><span><input type="checkbox" name="paymentTestPassed"${checked("paymentTestPassed")}> 실결제·환불 통과</span></label></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">설정 저장</button></div></form>`;
+    openModal();
+  }
+
   function cleaningPartnerEditor(partnerId, leadInput) {
     ensureCleaningStore();
     const lead = leadInput && typeof leadInput === "object" ? leadInput : null;
@@ -4561,6 +4568,10 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 전화 문의를 등록할 수 없습니다.", "error");
       cleaningCallTicketEditor("");
     }
+    else if (action === "edit-cleaning-integrations") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 연동 설정을 변경할 수 없습니다.", "error");
+      cleaningIntegrationEditor();
+    }
     else if (action === "new-cleaning-partner") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 Partner를 등록할 수 없습니다.", "error");
       cleaningPartnerEditor("");
@@ -4908,6 +4919,11 @@
         logAudit({ category: "청소", targetType: "Partner 정산", targetId: item.id, targetLabel: krw(item.payableAmount), action: "Partner 주간정산 생성", reason: `보류 ${krw(item.heldAmount)}` });
         scheduleSave(); closeModal(); renderCleaningCenter(); showToast(`지급 ${krw(item.payableAmount)} · 보류 ${krw(item.heldAmount)}로 정산했습니다.`, "success");
       } catch (error) { showToast(error.message || "Partner 정산을 생성하지 못했습니다.", "error"); }
+    } else if (form.id === "cleaningIntegrationForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      store.settings.cleaningIntegrations = Cleaning.normalizeCleaningIntegrationSetup(raw);
+      logAudit({ category: "청소", targetType: "외부 연동", targetId: "cleaning-integrations", targetLabel: "대표전화·문자·카카오·결제", action: "연동 준비상태 저장", reason: "비밀정보 제외" });
+      scheduleSave(); closeModal(); renderCleaningCenter(); showToast("외부 연동 준비상태를 저장했습니다.", "success");
     } else if (form.id === "cleaningCallTicketForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       try {

@@ -234,6 +234,22 @@
     return Object.freeze({ completed, total: items.length, ready: completed === items.length, items: Object.freeze(items) });
   }
 
+  function normalizeCleaningIntegrationSetup(source) {
+    const raw = source && typeof source === "object" ? source : {};
+    return {
+      publicNumber: text(raw.publicNumber), officeNumber: text(raw.officeNumber), forwardingNumber: text(raw.forwardingNumber),
+      provider: text(raw.provider), smsProvider: text(raw.smsProvider), kakaoChannelUrl: text(raw.kakaoChannelUrl),
+      paymentProvider: text(raw.paymentProvider),
+      ivrReady: raw.ivrReady === true || raw.ivrReady === "on",
+      senderVerified: raw.senderVerified === true || raw.senderVerified === "on",
+      kakaoVerified: raw.kakaoVerified === true || raw.kakaoVerified === "on",
+      payappApproved: raw.payappApproved === true || raw.payappApproved === "on",
+      callTestPassed: raw.callTestPassed === true || raw.callTestPassed === "on",
+      messageTestPassed: raw.messageTestPassed === true || raw.messageTestPassed === "on",
+      paymentTestPassed: raw.paymentTestPassed === true || raw.paymentTestPassed === "on"
+    };
+  }
+
   function cleaningPhotoArchive(orderId, folderUrl) {
     const id = text(orderId);
     if (!id) throw cleaningError("CLEANING_ORDER_REQUIRED", "사진 보관함에 연결할 주문이 필요합니다.", "orderId");
@@ -1047,6 +1063,7 @@
     normalizeCleaningOrder,
     matchCleaningCustomer,
     calculateCleaningIntegrationReadiness,
+    normalizeCleaningIntegrationSetup,
     cleaningPhotoArchive,
     validateCleaningOrder,
     createCleaningOrder,

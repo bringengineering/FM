@@ -278,4 +278,5 @@ test("renders the external integration launch gate", () => {
   assert.match(center, /외부 연동 준비/);
   assert.match(center, /6\/10/);
   assert.match(center, /카카오채널 인증/);
+  assert.match(center, /data-action="edit-cleaning-integrations"/);
 });

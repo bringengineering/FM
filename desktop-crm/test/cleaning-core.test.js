@@ -577,6 +577,13 @@ test("calculates launch readiness without storing provider secrets", () => {
   assert.ok(result.items.every(item => !("apiKey" in item)));
 });
 
+test("normalizes only non-secret external integration settings", () => {
+  const setup = Cleaning.normalizeCleaningIntegrationSetup({ publicNumber: " 1544-0000 ", officeNumber: "033-746-8919", provider: "아톡비즈", apiKey: "never-store", ivrReady: "on" });
+  assert.equal(setup.publicNumber, "1544-0000");
+  assert.equal(setup.ivrReady, true);
+  assert.equal(setup.apiKey, undefined);
+});
+
 test("exposes the approved sales script and FAQ library", () => {
   assert.equal(Cleaning.CLEANING_SALES_STANDARDS.version, "BRING-CARE-SALES-v0.1");
   assert.deepEqual(Cleaning.CLEANING_SALES_STANDARDS.scripts.map(item => item.id), ["opening", "needs", "scope", "price", "expensive", "comparison", "discount", "photo", "closing", "b2b"]);
