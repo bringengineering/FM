@@ -2052,6 +2052,7 @@
           <label class="field"><span>서비스 *</span><select name="serviceType" required><option value="">선택</option><option value="move_in"${selected("move_in")}>입주청소</option><option value="common_area"${selected("common_area")}>공용부청소</option><option value="recurring"${selected("recurring")}>정기관리</option><option value="other"${selected("other")}>기타</option></select></label>
           <label class="field"><span>희망 작업일 *</span><input name="scheduledAt" type="datetime-local" value="${attr(order.scheduledAt ? String(order.scheduledAt).slice(0,16) : "")}" required></label>
           <label class="field full"><span>현장 주소 *</span><input name="address" value="${attr(order.address || "")}" required></label>
+          <label class="field full"><span>공유 사진 보관함 URL</span><input name="photoFolderUrl" type="url" value="${attr(order.photoFolderUrl || "")}" placeholder="https://drive.google.com/drive/folders/..."><small>주문 저장 후 ORD 주문번호 기준의 Before·Process·After·CS 폴더명을 자동 지정합니다.</small></label>
           <label class="field"><span>가격상품</span><select name="priceProduct"><option value="">직접견적</option><option value="studio"${priceSelected("studio")}>원룸 입주·퇴실</option><option value="apartment"${priceSelected("apartment")}>아파트 입주·이사</option><option value="common_area_monthly4"${priceSelected("common_area_monthly4")}>공용부 월 4회</option><option value="office_single"${priceSelected("office_single")}>사무실·상가 단건</option></select></label>
           <label class="field"><span>평수·층수·작업시간</span><input name="priceBasis" type="number" min="0" step="1" value="${attr(order.priceBasis || "")}" placeholder="상품에 맞는 기준 숫자"></label>
           <label class="field full"><span><input name="useStandardPrice" type="checkbox"${standardChecked}> BRING 표준가격 자동 적용</span><small>별도견적 대상은 체크를 해제하고 관리자 확인 후 직접 금액을 입력합니다.</small></label>
@@ -2140,6 +2141,7 @@
       retentionActions: store.cleaningRetentionActions,
       customerReports: store.cleaningCustomerReports,
       quotes: store.cleaningQuotes,
+      photoArchive: Cleaning.cleaningPhotoArchive(order.id, order.photoFolderUrl),
       writable: canWriteCRM()
     })}</div>`;
     openDrawer();
@@ -5089,10 +5091,12 @@
           creativeId: String(raw.creativeId || existing?.creativeId || "").trim(),
           sourceChannel: String(raw.sourceChannel || existing?.sourceChannel || "").trim(),
           sourceCampaign: String(raw.sourceCampaign || existing?.sourceCampaign || "").trim(),
+          photoFolderUrl: String(raw.photoFolderUrl || existing?.photoFolderUrl || "").trim(),
           owner: existing?.owner || salesActorName(),
           inquiryAt: existing?.inquiryAt || new Date().toISOString()
         });
         let item = Cleaning.createCleaningOrder(values, actor, existing?.createdAt || new Date().toISOString());
+        item.photoFolderName = Cleaning.cleaningPhotoArchive(item.id, item.photoFolderUrl).folderName;
         item = Cleaning.applyCleaningEconomics(item, {
           partnerPay: Number(raw.partnerPay) || 0,
           directLabor: Number(raw.directLabor) || 0,

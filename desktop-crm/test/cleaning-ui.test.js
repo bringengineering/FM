@@ -76,6 +76,14 @@ test("renders Creative ID performance from Lead to contribution profit", () => {
   assert.match(html, /공헌이익 180,000원/);
 });
 
+test("renders the Order ID photo archive and its four evidence sections", () => {
+  const html = UI.renderCleaningOrderDetail({ order: { id: "cln_ab-123", customerName: "홍길동" }, photoArchive: { folderName: "ORD-AB-123", folderUrl: "https://drive.google.com/drive/folders/folder123", sections: [{ code: "01_BEFORE" }, { code: "02_PROCESS" }, { code: "03_AFTER" }, { code: "04_CS" }] } });
+  assert.match(html, /사진 보관함/);
+  assert.match(html, /ORD-AB-123/);
+  assert.match(html, /01_BEFORE/);
+  assert.match(html, /04_CS/);
+});
+
 test("renders Partner readiness and unit economics without mixing control status with grade", () => {
   const center = UI.renderCleaningCenter({
     stages,

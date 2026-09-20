@@ -595,3 +595,18 @@ test("calculates Creative ID funnel through contribution profit", () => {
   assert.equal(rows[0].cpl, 15000);
   assert.equal(rows[0].cac, 30000);
 });
+
+test("creates one deterministic Order photo archive manifest", () => {
+  const manifest = Cleaning.cleaningPhotoArchive("cln_ab-123", "https://drive.google.com/drive/folders/folder123");
+  assert.equal(manifest.folderName, "ORD-AB-123");
+  assert.equal(manifest.folderUrl, "https://drive.google.com/drive/folders/folder123");
+  assert.deepEqual(manifest.sections.map(item => item.code), ["01_BEFORE", "02_PROCESS", "03_AFTER", "04_CS"]);
+  assert.equal(manifest.fileName("욕실", "before", 2, "jpg"), "ORD-AB-123_욕실_BEFORE_02.jpg");
+  assert.throws(() => Cleaning.cleaningPhotoArchive("cln_ab-123", "http://unsafe.test/folder"), /HTTPS/);
+});
+
+test("cleaning orders preserve the shared photo archive link", () => {
+  const order = Cleaning.normalizeCleaningOrder({ id: "cln_ab-123", photoFolderName: "ORD-AB-123", photoFolderUrl: "https://drive.google.com/drive/folders/folder123" });
+  assert.equal(order.photoFolderName, "ORD-AB-123");
+  assert.equal(order.photoFolderUrl, "https://drive.google.com/drive/folders/folder123");
+});

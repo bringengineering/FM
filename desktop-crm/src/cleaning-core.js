@@ -188,6 +188,8 @@
       creativeId: text(raw.creativeId),
       sourceChannel: text(raw.sourceChannel),
       sourceCampaign: text(raw.sourceCampaign),
+      photoFolderName: text(raw.photoFolderName),
+      photoFolderUrl: text(raw.photoFolderUrl),
       scope: text(raw.scope),
       exclusions: text(raw.exclusions),
       nextAction: text(raw.nextAction),
@@ -202,6 +204,31 @@
       updatedBy: text(raw.updatedBy),
       archivedAt: text(raw.archivedAt)
     };
+  }
+
+  function cleaningPhotoArchive(orderId, folderUrl) {
+    const id = text(orderId);
+    if (!id) throw cleaningError("CLEANING_ORDER_REQUIRED", "사진 보관함에 연결할 주문이 필요합니다.", "orderId");
+    const url = text(folderUrl);
+    if (url && !/^https:\/\/[^\s]+$/i.test(url)) throw cleaningError("CLEANING_PHOTO_FOLDER_URL_INVALID", "공유 사진 보관함은 HTTPS 주소를 사용해 주세요.", "folderUrl");
+    const suffix = id.replace(/^cln[_-]?/i, "").replace(/[^A-Za-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toUpperCase() || "ORDER";
+    const folderName = `ORD-${suffix}`;
+    const sections = Object.freeze([
+      Object.freeze({ code: "01_BEFORE", label: "작업 전" }),
+      Object.freeze({ code: "02_PROCESS", label: "작업 중" }),
+      Object.freeze({ code: "03_AFTER", label: "작업 완료" }),
+      Object.freeze({ code: "04_CS", label: "CS·사고" })
+    ]);
+    return Object.freeze({
+      folderName, folderUrl: url, sections,
+      fileName(space, phase, sequence, extension) {
+        const safeSpace = text(space).replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, "_") || "공간";
+        const safePhase = ["before", "process", "after", "cs"].includes(text(phase).toLowerCase()) ? text(phase).toUpperCase() : "EVIDENCE";
+        const safeSequence = String(Math.max(1, Math.round(number(sequence)))).padStart(2, "0");
+        const safeExtension = text(extension).replace(/[^A-Za-z0-9]/g, "").toLowerCase() || "jpg";
+        return `${folderName}_${safeSpace}_${safePhase}_${safeSequence}.${safeExtension}`;
+      }
+    });
   }
 
   function validateCleaningOrder(source) {
@@ -970,6 +997,7 @@
     standardCleaningPrice,
     MESSAGE_TEMPLATES,
     normalizeCleaningOrder,
+    cleaningPhotoArchive,
     validateCleaningOrder,
     createCleaningOrder,
     calculateCleaningQuote,

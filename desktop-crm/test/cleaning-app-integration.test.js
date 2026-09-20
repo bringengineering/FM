@@ -308,3 +308,11 @@ test("Cleaning Center receives Creative ID performance", async () => {
   assert.match(app, /Cleaning\.calculateCreativePerformance/);
   assert.match(app, /creativePerformance,/);
 });
+
+test("orders expose a shared Order ID photo archive", async () => {
+  const app = await source("app.js");
+  assert.match(app, /name="photoFolderUrl"/);
+  assert.match(app, /Cleaning\.cleaningPhotoArchive/);
+  assert.match(app, /item\.photoFolderName\s*=/);
+  assert.match(app, /photoArchive:/);
+});
