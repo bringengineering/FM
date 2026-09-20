@@ -6,6 +6,7 @@ export function campaignContext(href: string) {
     utmSource: url.searchParams.get("utm_source") || "",
     utmCampaign: url.searchParams.get("utm_campaign") || "",
     utmTerm: url.searchParams.get("utm_term") || "",
+    utmContent: url.searchParams.get("utm_content") || "",
   };
 }
 

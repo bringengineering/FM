@@ -1,7 +1,7 @@
 import { ref, serverTimestamp, set } from "firebase/database";
 import { database, ensureFieldAppCheckToken } from "../field/lib/firebase.client";
 
-export type MarketingLeadInput = { name: string; phone: string; location: string; needs: string; buildingInfo: string; customerType: string; service: string; sourcePath: string; utmSource: string; utmCampaign: string; utmTerm: string; consent: boolean; leadType?: "partner_application"; businessName?: string; businessNumber?: string; services?: string; headcount?: number; dailyCapacity?: number; vehicle?: string; experienceYears?: number; invoiceAvailable?: boolean; insured?: boolean };
+export type MarketingLeadInput = { name: string; phone: string; location: string; needs: string; buildingInfo: string; customerType: string; service: string; sourcePath: string; utmSource: string; utmCampaign: string; utmTerm: string; utmContent?: string; consent: boolean; leadType?: "partner_application"; businessName?: string; businessNumber?: string; services?: string; headcount?: number; dailyCapacity?: number; vehicle?: string; experienceYears?: number; invoiceAvailable?: boolean; insured?: boolean };
 
 function requestId() {
   const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "") || `${Date.now()}${Math.random().toString(36).slice(2)}`;
@@ -17,6 +17,6 @@ export async function submitMarketingLead(input: MarketingLeadInput) {
   } catch (error) {
     if (!(error instanceof Error) || error.message !== "field_app_check_unavailable") throw error;
   }
-  await set(ref(database, `crmCompany/data/marketingLeadInbox/${id}`), { ...input, requestId: id, submittedAt: serverTimestamp(), status: "new" });
+  await set(ref(database, `crmCompany/data/marketingLeadInbox/${id}`), { ...input, utmContent: input.utmContent || "", requestId: id, submittedAt: serverTimestamp(), status: "new" });
   return { receiptId: id };
 }

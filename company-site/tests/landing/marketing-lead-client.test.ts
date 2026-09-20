@@ -15,7 +15,7 @@ import { submitMarketingLead } from "../../app/landing/marketingLeadClient";
 const input = {
   name: "김건물", phone: "010-1234-5678", location: "원주시 단계동", needs: "계단 정기청소",
   buildingInfo: "4층", customerType: "building_owner", service: "계단·공용부 청소", sourcePath: "/stair-cleaning",
-  utmSource: "naver", utmCampaign: "stair", utmTerm: "원주계단청소", consent: true,
+  utmSource: "naver", utmCampaign: "stair", utmTerm: "원주계단청소", utmContent: "CR-0007", consent: true,
 };
 
 describe("submitMarketingLead", () => {
@@ -27,6 +27,7 @@ describe("submitMarketingLead", () => {
     expect(result.receiptId).toMatch(/^lead_[A-Za-z0-9_-]{16,100}$/);
     expect(mocks.ref).toHaveBeenCalledWith(expect.anything(), `crmCompany/data/marketingLeadInbox/${result.receiptId}`);
     expect(mocks.set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ...input, requestId: result.receiptId, submittedAt: { ".sv": "timestamp" }, status: "new" }));
+    expect(mocks.set).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ utmContent: "CR-0007" }));
   });
 
   it("rejects a non-mobile placeholder before writing", async () => {

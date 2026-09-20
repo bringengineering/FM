@@ -102,6 +102,7 @@ describe("BuildingCareProposalRequest", () => {
       utmSource: "naver",
       utmCampaign: "building-proposal",
       utmTerm: "원주건물관리",
+      utmContent: "",
       consent: true,
     });
     expect(
