@@ -4,6 +4,8 @@ test('Windows installer creates only a current-user Edge kiosk startup shortcut'
  const source=fs.readFileSync(path.join(root,'release/install-bring-tv-web-kiosk.ps1'),'utf8');
  assert.match(source,/bring-crm-ai-gateway\.bringengineering1008\.workers\.dev\/tv/);
  assert.match(source,/Startup/);assert.match(source,/--kiosk/);assert.match(source,/WScript\.Shell/);
+ assert.match(source,/BRING-TV[\\/]EdgeProfile/);assert.match(source,/--user-data-dir/);
+ assert.match(source,/New-Item[^\r\n]*-ItemType Directory/);
  assert.doesNotMatch(source,/param\s*\([^)]*Url/i);assert.doesNotMatch(source,/RunAs|AllUsers|CommonStartup/i);
  assert.match(source,/if \(\$env:ProgramFiles\)/);assert.match(source,/if \(\$\{env:ProgramFiles\(x86\)\}\)/);
 });

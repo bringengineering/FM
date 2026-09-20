@@ -31,6 +31,7 @@ test('web TV client rotates roadmap performance and schedule scenes safely',asyn
  for(const key of ['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice'])assert.match(source,new RegExp(`['"]${key}['"]`));
  assert.match(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
  assert.match(source,/localStorage/);assert.match(source,/visibilityState/);assert.match(source,/AUTH_REQUIRED/);
+ assert.match(source,/bring-public-wallboard-pairing/);assert.match(source,/restorePairing/);assert.match(source,/clearPairing/);
  assert.match(source,/INVALID_TOKEN/);assert.match(source,/begin\(\)/);assert.match(source,/Array\.isArray\(value\.model\.people\)/);
  assert.match(source,/page/);assert.match(source,/slice\(page\*6,page\*6\+6\)/);
  assert.match(source,/\/tv\/version/);assert.match(source,/60000/);assert.match(source,/location\.replace/);

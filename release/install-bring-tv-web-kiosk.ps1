@@ -11,6 +11,14 @@ if (-not $edgePath) {
     throw 'Microsoft Edge를 찾지 못했습니다. Edge 설치를 확인한 뒤 다시 실행해 주세요.'
 }
 
+if (-not $env:LOCALAPPDATA) {
+    throw '현재 Windows 사용자의 로컬 저장소를 찾지 못했습니다.'
+}
+$profileDirectory = Join-Path $env:LOCALAPPDATA 'BRING-TV\EdgeProfile'
+if (-not (Test-Path -LiteralPath $profileDirectory -PathType Container)) {
+    New-Item -ItemType Directory -Path $profileDirectory -Force | Out-Null
+}
+
 $startupDirectory = [Environment]::GetFolderPath('Startup')
 if (-not $startupDirectory -or -not (Test-Path -LiteralPath $startupDirectory -PathType Container)) {
     throw '현재 Windows 사용자의 시작프로그램 폴더를 찾지 못했습니다.'
@@ -20,7 +28,7 @@ $shortcutPath = Join-Path $startupDirectory 'BRING TV 운영보드.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $edgePath
-$shortcut.Arguments = "--kiosk `"$tvUrl`" --edge-kiosk-type=fullscreen --no-first-run"
+$shortcut.Arguments = "--kiosk `"$tvUrl`" --edge-kiosk-type=fullscreen --user-data-dir=`"$profileDirectory`" --no-first-run"
 $shortcut.WorkingDirectory = Split-Path -Parent $edgePath
 $shortcut.Description = 'BRING 회사 운영보드 웹 TV'
 $shortcut.Save()
