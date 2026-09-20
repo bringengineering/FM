@@ -1,6 +1,6 @@
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
 const root=path.join(__dirname,'../..');
-test('Windows installer creates only a current-user Edge kiosk startup shortcut',()=>{
+test('Windows installer creates only a current-user browser kiosk startup shortcut',()=>{
  const source=fs.readFileSync(path.join(root,'release/install-bring-tv-web-kiosk.ps1'),'utf8');
  assert.match(source,/bring-crm-ai-gateway\.bringengineering1008\.workers\.dev\/tv/);
  assert.match(source,/Startup/);assert.match(source,/--kiosk/);assert.match(source,/WScript\.Shell/);
@@ -8,6 +8,10 @@ test('Windows installer creates only a current-user Edge kiosk startup shortcut'
  assert.match(source,/New-Item[^\r\n]*-ItemType Directory/);
  assert.doesNotMatch(source,/param\s*\([^)]*Url/i);assert.doesNotMatch(source,/RunAs|AllUsers|CommonStartup/i);
  assert.match(source,/if \(\$env:ProgramFiles\)/);assert.match(source,/if \(\$\{env:ProgramFiles\(x86\)\}\)/);
+ assert.match(source,/Google[\\/]Chrome[\\/]Application[\\/]chrome\.exe/);
+ assert.match(source,/SpecialFolders\.Item\('Startup'\)/);
+ assert.match(source,/BRING-TV-설치-오류\.txt/);
+ assert.match(source,/Start-Process/);
 });
 test('Windows uninstaller removes only the named BRING TV shortcut',()=>{
  const source=fs.readFileSync(path.join(root,'release/uninstall-bring-tv-web-kiosk.ps1'),'utf8');
