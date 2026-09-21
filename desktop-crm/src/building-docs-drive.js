@@ -16,6 +16,7 @@
   "use strict";
 
   const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+  const DRIVE_DRIVES_URL = "https://www.googleapis.com/drive/v3/drives";
   const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
   const FOLDER_MIME = "application/vnd.google-apps.folder";
 
@@ -205,6 +206,7 @@
     if (!id) throw fail("어느 폴더인지 정해 주세요.", "VALIDATION_ERROR");
     const settings = options && typeof options === "object" ? options : {};
     const maxPages = Number(settings.maxPages) > 0 ? Number(settings.maxPages) : 5;
+    const driveId = text(settings.driveId);
     const query = `'${quote(id)}' in parents and trashed = false`;
     const files = [];
     let pageToken = "";
@@ -212,6 +214,7 @@
       const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(query)}`
         + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)"
         + "&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true"
+        + (driveId ? `&corpora=drive&driveId=${encodeURIComponent(driveId)}` : "")
         + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
       const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "폴더 읽기");
       (Array.isArray(got.files) ? got.files : []).forEach(file => files.push(file));
@@ -223,6 +226,24 @@
       files: files.filter(file => file.mimeType !== FOLDER_MIME),
       truncated: Boolean(pageToken),
     };
+  }
+
+  /** 로그인한 계정이 구성원으로 참여한 공유 드라이브 목록만 읽는다. */
+  async function listSharedDrives(deps, options) {
+    const { fetchImpl, accessToken } = deps;
+    const settings = options && typeof options === "object" ? options : {};
+    const maxPages = Number(settings.maxPages) > 0 ? Number(settings.maxPages) : 5;
+    const drives = [];
+    let pageToken = "";
+    for (let page = 0; page < maxPages; page += 1) {
+      const url = `${DRIVE_DRIVES_URL}?fields=nextPageToken,drives(id,name)&pageSize=100`
+        + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+      const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "공유 드라이브 읽기");
+      (Array.isArray(got.drives) ? got.drives : []).forEach(drive => drives.push(drive));
+      pageToken = text(got.nextPageToken);
+      if (!pageToken) break;
+    }
+    return { drives, truncated: Boolean(pageToken) };
   }
 
   /**
@@ -465,6 +486,7 @@
     ensureFolder,
     ensureFolderPath,
     listFolder,
+    listSharedDrives,
     scanPhotoFolder,
     downloadFile,
     findExisting,
@@ -472,6 +494,7 @@
     RESUMABLE_THRESHOLD_BYTES,
     MAX_FILE_BYTES,
     DRIVE_FILES_URL,
+    DRIVE_DRIVES_URL,
     DRIVE_UPLOAD_URL,
     FOLDER_MIME,
   });

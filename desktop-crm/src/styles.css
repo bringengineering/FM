@@ -872,6 +872,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-drive-entry.is-selected { border-color: #3182F6; background: #EDF5FF; box-shadow: 0 0 0 1px #3182F6 inset; }
 .wr-drive-entry-icon { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 9px; border-radius: 9px; background: #F2F4F6; color: #6B7684; font-size: 18px; }
 .wr-drive-entry.is-folder .wr-drive-entry-icon { background: #FFF6E5; color: #C77A00; }
+.wr-drive-entry.is-shared-drive .wr-drive-entry-icon { background: #E8F3FF; color: #1B64DA; }
 .wr-drive-entry.is-photo .wr-drive-entry-icon { background: #E8F3FF; color: #1B64DA; }
 .wr-drive-entry b,.wr-drive-entry small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wr-drive-entry b { font-size: 10px; }

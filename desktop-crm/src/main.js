@@ -3155,6 +3155,7 @@ let reportDrivePickerSession = null;
 
 function resetReportDrivePickerSession() {
   reportDrivePickerSession = {
+    drives: new Map(),
     folders: new Map([["root", { id: "root", name: "내 드라이브", parentId: "" }]]),
     files: new Map(),
   };
@@ -3558,23 +3559,50 @@ async function browseWorkReportDrive(input) {
   }
   const picker = reportDrivePickerReady();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (options.location === "shared-drives") {
+    const listed = await BuildingDocsDrive.listSharedDrives(
+      { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+      { maxPages: 5 },
+    );
+    const drives = listed.drives
+      .map(item => ({
+        id: reportDrivePickerId(item && item.id),
+        name: String(item && item.name || "이름 없는 공유 드라이브").trim().slice(0, 180),
+        parentId: "",
+        driveId: reportDrivePickerId(item && item.id),
+        kind: "sharedDrive",
+      }))
+      .filter(item => item.id)
+      .slice(0, 200);
+    drives.forEach(item => {
+      picker.drives.set(item.id, item);
+      picker.folders.set(item.id, item);
+    });
+    return {
+      ok: true,
+      folder: { id: "shared-drives", name: "공유 드라이브" },
+      entries: drives,
+      truncated: listed.truncated || listed.drives.length > drives.length,
+    };
+  }
   const folderId = reportDrivePickerId(options.folderId, true);
   if (!folderId || !picker.folders.has(folderId)) {
     throw Object.assign(new Error("Drive 화면에서 폴더를 다시 선택해 주세요."), { code: "DRIVE_FOLDER_NOT_LISTED" });
   }
 
+  const current = picker.folders.get(folderId) || { id: folderId, name: "Drive 폴더", parentId: "", driveId: "" };
   const listed = await BuildingDocsDrive.listFolder(
     { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
     folderId,
-    { maxPages: 5 },
+    { maxPages: 5, driveId: String(current && current.driveId || "") },
   );
-  const current = picker.folders.get(folderId) || { id: folderId, name: "Drive 폴더", parentId: "" };
   const folders = listed.folders
     .map(item => ({
       id: reportDrivePickerId(item && item.id),
       name: String(item && item.name || "이름 없는 폴더").trim().slice(0, 180),
       mimeType: BuildingDocsDrive.FOLDER_MIME,
       parentId: folderId,
+      driveId: String(current.driveId || ""),
       kind: "folder",
     }))
     .filter(item => item.id)

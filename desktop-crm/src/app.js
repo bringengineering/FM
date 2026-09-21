@@ -6678,6 +6678,7 @@
     driveScanning: false,
     drivePlan: null, driveLeftovers: [], driveError: "",
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
+    driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
     aiLoading: false, aiError: "", aiDraftAt: "",
   };
@@ -6693,6 +6694,7 @@
     reportState.driveBrowserLoading = false;
     reportState.driveBrowserError = "";
     reportState.driveBrowserTruncated = false;
+    reportState.driveBrowserSpace = "my";
     reportState.driveBrowserEntries = [];
     reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
     reportState.driveSelected = new Map();
@@ -6953,13 +6955,14 @@
       ? reportState.driveBrowserPath
       : [{ id: "root", name: "내 드라이브" }];
     const entries = Array.isArray(reportState.driveBrowserEntries) ? reportState.driveBrowserEntries : [];
-    const folders = entries.filter(entry => entry && entry.kind === "folder");
+    const folders = entries.filter(entry => entry && (entry.kind === "folder" || entry.kind === "sharedDrive"));
     const files = entries.filter(entry => entry && entry.kind === "file");
     const breadcrumb = path.map((part, index) => `<button type="button" data-report-drive-breadcrumb="${index}"${index === path.length - 1 ? " disabled" : ""}>${esc(part.name || "폴더")}</button>${index < path.length - 1 ? `<span aria-hidden="true">›</span>` : ""}`).join("");
     const tiles = folders.concat(files).map(entry => {
-      if (entry.kind === "folder") {
-        return `<button type="button" class="wr-drive-entry is-folder" data-report-drive-folder="${attr(entry.id)}" data-report-drive-folder-name="${attr(entry.name)}">
-          <span class="wr-drive-entry-icon" aria-hidden="true">▰</span><b>${esc(entry.name || "이름 없는 폴더")}</b><small>폴더 열기</small>
+      if (entry.kind === "folder" || entry.kind === "sharedDrive") {
+        const shared = entry.kind === "sharedDrive";
+        return `<button type="button" class="wr-drive-entry ${shared ? "is-shared-drive" : "is-folder"}" data-report-drive-folder="${attr(entry.id)}" data-report-drive-folder-name="${attr(entry.name)}">
+          <span class="wr-drive-entry-icon" aria-hidden="true">${shared ? "▦" : "▰"}</span><b>${esc(entry.name || (shared ? "이름 없는 공유 드라이브" : "이름 없는 폴더"))}</b><small>${shared ? "공유 드라이브 열기" : "폴더 열기"}</small>
         </button>`;
       }
       const isSelected = selected.has(String(entry.id));
@@ -6976,9 +6979,9 @@
       <section class="wr-drive-picker">
         <header><div><span class="wr-drive-picker-logo" aria-hidden="true">D</span><div><h4 id="wr-drive-picker-title">Google Drive에서 작업 사진 선택</h4><p>폴더를 열고 보고서에 넣을 사진을 여러 장 고르세요.</p></div></div><button type="button" class="close-button" data-report-drive-close aria-label="Drive 선택창 닫기">×</button></header>
         <div class="wr-drive-picker-body">
-          <nav aria-label="Drive 위치"><button type="button" class="is-active"><span aria-hidden="true">▣</span>내 드라이브</button><button type="button" disabled><span aria-hidden="true">◷</span>최근 항목</button><small>${esc(driveState.email || "회사 계정")}</small></nav>
+          <nav aria-label="Drive 위치"><button type="button" data-report-drive-space="my" class="${reportState.driveBrowserSpace === "my" ? "is-active" : ""}"><span aria-hidden="true">▣</span>내 드라이브</button><button type="button" data-report-drive-space="shared" class="${reportState.driveBrowserSpace === "shared" ? "is-active" : ""}"><span aria-hidden="true">▦</span>공유 드라이브</button><small>${esc(driveState.email || "회사 계정")}</small></nav>
           <div class="wr-drive-browser">
-            <label class="wr-drive-search"><span aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" data-report-drive-search placeholder="현재 폴더에서 파일 검색" autocomplete="off"></label>
+            <label class="wr-drive-search"><span aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" data-report-drive-search placeholder="${reportState.driveBrowserSpace === "shared" && path.length === 1 ? "공유 드라이브에서 검색" : "현재 폴더에서 파일 검색"}" autocomplete="off"></label>
             <div class="wr-drive-breadcrumb">${breadcrumb}</div>
             ${reportState.driveBrowserTruncated ? `<p class="wr-drive-limit">항목이 많은 폴더라 일부만 표시했습니다. 하위 폴더로 나눠 선택해 주세요.</p>` : ""}
             <div class="wr-drive-entry-grid" data-report-drive-entry-grid>${tiles || `<div class="wr-drive-browser-empty">${esc(emptyText)}</div>`}</div>
@@ -7055,6 +7058,7 @@
     showToast("브라우저에서 회사 Google 계정으로 계속해 주세요.");
     try {
       driveState = Object.assign({ loaded: true }, await api.connectDrive());
+      reportState.driveBrowserSpace = "my";
       reportState.driveBrowserEntries = [];
       reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
       reportState.driveSelected = new Map();
@@ -7091,6 +7095,41 @@
     }
   }
 
+  async function loadReportSharedDrives(path) {
+    if (reportState.driveBrowserLoading) return;
+    preserveReportDraft();
+    reportState.driveBrowserLoading = true;
+    reportState.driveBrowserError = "";
+    reportState.driveBrowserTruncated = false;
+    reportState.driveBrowserPath = Array.isArray(path) && path.length ? path : [{ id: "shared-drives", name: "공유 드라이브" }];
+    renderWorkReports();
+    try {
+      const result = await api.browseWorkReportDrive({ location: "shared-drives" });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "공유 드라이브 목록을 열지 못했습니다.");
+      reportState.driveBrowserEntries = Array.isArray(result.entries) ? result.entries : [];
+      reportState.driveBrowserTruncated = result.truncated === true;
+    } catch (error) {
+      reportState.driveBrowserEntries = [];
+      reportState.driveBrowserError = error && error.message || "공유 드라이브 목록을 열지 못했습니다.";
+    } finally {
+      reportState.driveBrowserLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
+  async function switchReportDriveSpace(space) {
+    if (reportState.driveBrowserLoading) return;
+    const next = space === "shared" ? "shared" : "my";
+    reportState.driveBrowserSpace = next;
+    reportState.driveBrowserEntries = [];
+    reportState.driveBrowserError = "";
+    const path = next === "shared"
+      ? [{ id: "shared-drives", name: "공유 드라이브" }]
+      : [{ id: "root", name: "내 드라이브" }];
+    if (next === "shared") await loadReportSharedDrives(path);
+    else await loadReportDriveFolder("root", "내 드라이브", path);
+  }
+
   async function openReportDrivePicker() {
     preserveReportDraft();
     if (!driveState.loaded) await refreshReportDriveStatus();
@@ -7113,7 +7152,7 @@
   }
 
   async function enterReportDriveFolder(folderId, folderName) {
-    const entry = reportState.driveBrowserEntries.find(item => item && item.kind === "folder" && String(item.id) === String(folderId));
+    const entry = reportState.driveBrowserEntries.find(item => item && ["folder", "sharedDrive"].includes(item.kind) && String(item.id) === String(folderId));
     if (!entry) return showToast("Drive 화면에서 폴더를 다시 선택해 주세요.", "error");
     const path = reportState.driveBrowserPath.concat([{ id: entry.id, name: entry.name || folderName || "폴더" }]);
     await loadReportDriveFolder(entry.id, entry.name, path);
@@ -7124,7 +7163,8 @@
     if (!Number.isInteger(at) || at < 0 || at >= reportState.driveBrowserPath.length - 1) return;
     const path = reportState.driveBrowserPath.slice(0, at + 1);
     const current = path[path.length - 1];
-    await loadReportDriveFolder(current.id, current.name, path);
+    if (current.id === "shared-drives") await loadReportSharedDrives(path);
+    else await loadReportDriveFolder(current.id, current.name, path);
   }
 
   function toggleReportDriveFile(fileId, control) {
@@ -11440,6 +11480,8 @@
       renderWorkReports();
       return;
     }
+    const reportDriveSpace = event.target.closest("[data-report-drive-space]");
+    if (reportDriveSpace) { await switchReportDriveSpace(reportDriveSpace.dataset.reportDriveSpace); return; }
     const reportDriveFolder = event.target.closest("[data-report-drive-folder]");
     if (reportDriveFolder) {
       await enterReportDriveFolder(reportDriveFolder.dataset.reportDriveFolder, reportDriveFolder.dataset.reportDriveFolderName);

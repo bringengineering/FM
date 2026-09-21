@@ -193,3 +193,28 @@ test("공유 드라이브에서도 찾을 수 있게 요청한다", async () => 
   assert.match(fake.calls[0].url, /supportsAllDrives=true/u);
   assert.match(fake.calls[0].url, /includeItemsFromAllDrives=true/u);
 });
+
+test("참여 중인 공유 드라이브를 페이지 제한 안에서 읽는다", async () => {
+  const fake = fakeDrive([
+    { body: { drives: [{ id: "shared-drive-01", name: "브링 업무자료" }], nextPageToken: "next page" } },
+    { body: { drives: [{ id: "shared-drive-02", name: "현장 사진" }] } },
+  ]);
+  const listed = await Drive.listSharedDrives(deps(fake), { maxPages: 2 });
+  assert.deepEqual(listed.drives.map(item => item.id), ["shared-drive-01", "shared-drive-02"]);
+  assert.equal(listed.truncated, false);
+  assert.ok(fake.calls[0].url.startsWith(Drive.DRIVE_DRIVES_URL));
+  assert.match(fake.calls[0].url, /fields=nextPageToken,drives\(id,name\)/u);
+  assert.match(fake.calls[1].url, /pageToken=next%20page/u);
+  assert.equal(fake.calls[0].url.includes("token-abc"), false);
+  assert.equal(fake.calls[0].options.headers.authorization, "Bearer token-abc");
+});
+
+test("공유 드라이브 폴더를 읽을 때 그 드라이브 범위만 조회한다", async () => {
+  const fake = fakeDrive([{ body: { files: [] } }]);
+  await Drive.listFolder(deps(fake), "shared-drive-01", { driveId: "shared-drive-01", maxPages: 1 });
+  const url = new URL(fake.calls[0].url);
+  assert.equal(url.searchParams.get("corpora"), "drive");
+  assert.equal(url.searchParams.get("driveId"), "shared-drive-01");
+  assert.equal(url.searchParams.get("supportsAllDrives"), "true");
+  assert.equal(url.searchParams.get("includeItemsFromAllDrives"), "true");
+});
