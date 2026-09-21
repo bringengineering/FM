@@ -6979,9 +6979,9 @@
       <section class="wr-drive-picker">
         <header><div><span class="wr-drive-picker-logo" aria-hidden="true">D</span><div><h4 id="wr-drive-picker-title">Google Drive에서 작업 사진 선택</h4><p>폴더를 열고 보고서에 넣을 사진을 여러 장 고르세요.</p></div></div><button type="button" class="close-button" data-report-drive-close aria-label="Drive 선택창 닫기">×</button></header>
         <div class="wr-drive-picker-body">
-          <nav aria-label="Drive 위치"><button type="button" data-report-drive-space="my" class="${reportState.driveBrowserSpace === "my" ? "is-active" : ""}"><span aria-hidden="true">▣</span>내 드라이브</button><button type="button" data-report-drive-space="shared" class="${reportState.driveBrowserSpace === "shared" ? "is-active" : ""}"><span aria-hidden="true">▦</span>공유 드라이브</button><small>${esc(driveState.email || "회사 계정")}</small></nav>
+          <nav aria-label="Drive 위치"><button type="button" data-report-drive-space="my" class="${reportState.driveBrowserSpace === "my" ? "is-active" : ""}"><span aria-hidden="true">▣</span>내 드라이브</button><button type="button" data-report-drive-space="shared-with-me" class="${reportState.driveBrowserSpace === "shared-with-me" ? "is-active" : ""}"><span aria-hidden="true">♣</span>공유 문서함</button><button type="button" data-report-drive-space="shared" class="${reportState.driveBrowserSpace === "shared" ? "is-active" : ""}"><span aria-hidden="true">▦</span>공유 드라이브</button><small>${esc(driveState.email || "회사 계정")}</small></nav>
           <div class="wr-drive-browser">
-            <label class="wr-drive-search"><span aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" data-report-drive-search placeholder="${reportState.driveBrowserSpace === "shared" && path.length === 1 ? "공유 드라이브에서 검색" : "현재 폴더에서 파일 검색"}" autocomplete="off"></label>
+            <label class="wr-drive-search"><span aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" data-report-drive-search placeholder="${reportState.driveBrowserSpace === "shared" && path.length === 1 ? "공유 드라이브에서 검색" : reportState.driveBrowserSpace === "shared-with-me" && path.length === 1 ? "공유받은 폴더와 사진 검색" : "현재 폴더에서 파일 검색"}" autocomplete="off"></label>
             <div class="wr-drive-breadcrumb">${breadcrumb}</div>
             ${reportState.driveBrowserTruncated ? `<p class="wr-drive-limit">항목이 많은 폴더라 일부만 표시했습니다. 하위 폴더로 나눠 선택해 주세요.</p>` : ""}
             <div class="wr-drive-entry-grid" data-report-drive-entry-grid>${tiles || `<div class="wr-drive-browser-empty">${esc(emptyText)}</div>`}</div>
@@ -7117,16 +7117,41 @@
     }
   }
 
+  async function loadReportSharedWithMe(path) {
+    if (reportState.driveBrowserLoading) return;
+    preserveReportDraft();
+    reportState.driveBrowserLoading = true;
+    reportState.driveBrowserError = "";
+    reportState.driveBrowserTruncated = false;
+    reportState.driveBrowserPath = Array.isArray(path) && path.length ? path : [{ id: "shared-with-me", name: "공유 문서함" }];
+    renderWorkReports();
+    try {
+      const result = await api.browseWorkReportDrive({ location: "shared-with-me" });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "공유 문서함을 열지 못했습니다.");
+      reportState.driveBrowserEntries = Array.isArray(result.entries) ? result.entries : [];
+      reportState.driveBrowserTruncated = result.truncated === true;
+    } catch (error) {
+      reportState.driveBrowserEntries = [];
+      reportState.driveBrowserError = error && error.message || "공유 문서함을 열지 못했습니다.";
+    } finally {
+      reportState.driveBrowserLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
   async function switchReportDriveSpace(space) {
     if (reportState.driveBrowserLoading) return;
-    const next = space === "shared" ? "shared" : "my";
+    const next = ["shared", "shared-with-me"].includes(space) ? space : "my";
     reportState.driveBrowserSpace = next;
     reportState.driveBrowserEntries = [];
     reportState.driveBrowserError = "";
     const path = next === "shared"
       ? [{ id: "shared-drives", name: "공유 드라이브" }]
+      : next === "shared-with-me"
+        ? [{ id: "shared-with-me", name: "공유 문서함" }]
       : [{ id: "root", name: "내 드라이브" }];
     if (next === "shared") await loadReportSharedDrives(path);
+    else if (next === "shared-with-me") await loadReportSharedWithMe(path);
     else await loadReportDriveFolder("root", "내 드라이브", path);
   }
 
@@ -7147,7 +7172,9 @@
     renderWorkReports();
     if (!reportState.driveBrowserEntries.length) {
       const current = path[path.length - 1];
-      await loadReportDriveFolder(current.id, current.name, path);
+      if (current.id === "shared-drives") await loadReportSharedDrives(path);
+      else if (current.id === "shared-with-me") await loadReportSharedWithMe(path);
+      else await loadReportDriveFolder(current.id, current.name, path);
     }
   }
 
@@ -7164,6 +7191,7 @@
     const path = reportState.driveBrowserPath.slice(0, at + 1);
     const current = path[path.length - 1];
     if (current.id === "shared-drives") await loadReportSharedDrives(path);
+    else if (current.id === "shared-with-me") await loadReportSharedWithMe(path);
     else await loadReportDriveFolder(current.id, current.name, path);
   }
 

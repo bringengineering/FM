@@ -3156,7 +3156,10 @@ let reportDrivePickerSession = null;
 function resetReportDrivePickerSession() {
   reportDrivePickerSession = {
     drives: new Map(),
-    folders: new Map([["root", { id: "root", name: "내 드라이브", parentId: "" }]]),
+    folders: new Map([
+      ["root", { id: "root", name: "내 드라이브", parentId: "" }],
+      ["shared-with-me", { id: "shared-with-me", name: "공유 문서함", parentId: "root" }],
+    ]),
     files: new Map(),
   };
 }
@@ -3559,6 +3562,46 @@ async function browseWorkReportDrive(input) {
   }
   const picker = reportDrivePickerReady();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (options.location === "shared-with-me") {
+    const listed = await BuildingDocsDrive.listSharedWithMe(
+      { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+      { maxPages: 5 },
+    );
+    const folders = listed.folders
+      .map(item => ({
+        id: reportDrivePickerId(item && item.id),
+        name: String(item && item.name || "이름 없는 공유 폴더").trim().slice(0, 180),
+        mimeType: BuildingDocsDrive.FOLDER_MIME,
+        parentId: "shared-with-me",
+        driveId: "",
+        kind: "folder",
+      }))
+      .filter(item => item.id)
+      .slice(0, 200);
+    const files = listed.files
+      .filter(item => REPORT_DRIVE_IMAGE_MIME.has(String(item && item.mimeType || "").toLowerCase()))
+      .map(item => ({
+        id: reportDrivePickerId(item && item.id),
+        name: String(item && item.name || "사진").trim().slice(0, 220),
+        mimeType: String(item && item.mimeType || "").toLowerCase().slice(0, 80),
+        size: Math.max(0, Number(item && item.size || 0)),
+        createdTime: String(item && item.createdTime || "").slice(0, 40),
+        webViewLink: reportDriveViewLink(item && item.webViewLink),
+        parentId: "shared-with-me",
+        parentName: "공유 문서함",
+        kind: "file",
+      }))
+      .filter(item => item.id)
+      .slice(0, 400);
+    folders.forEach(item => picker.folders.set(item.id, item));
+    files.forEach(item => picker.files.set(item.id, item));
+    return {
+      ok: true,
+      folder: { id: "shared-with-me", name: "공유 문서함" },
+      entries: folders.concat(files),
+      truncated: listed.truncated || listed.folders.length > folders.length || listed.files.length > files.length,
+    };
+  }
   if (options.location === "shared-drives") {
     const listed = await BuildingDocsDrive.listSharedDrives(
       { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },

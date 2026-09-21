@@ -79,14 +79,27 @@ test("결과보고서 화면은 주소 입력 대신 Drive 파일 선택기를 �
   assert.match(appSource, /선택한 사진 가져오기/u);
 });
 
-test("사진 선택기는 내 드라이브와 공유 드라이브를 오갈 수 있다", () => {
+test("사진 선택기는 내 드라이브와 공유 문서함, 공유 드라이브를 오갈 수 있다", () => {
   const picker = functionBody(appSource, "reportDrivePicker");
   assert.match(picker, /data-report-drive-space="my"/u);
+  assert.match(picker, /data-report-drive-space="shared-with-me"/u);
   assert.match(picker, /data-report-drive-space="shared"/u);
+  assert.match(picker, /공유 문서함/u);
   assert.match(picker, /공유 드라이브 열기/u);
+  assert.match(appSource, /async function loadReportSharedWithMe\(/u);
   assert.match(appSource, /async function loadReportSharedDrives\(/u);
   assert.match(appSource, /async function switchReportDriveSpace\(/u);
+  assert.match(appSource, /location: "shared-with-me"/u);
   assert.match(appSource, /location: "shared-drives"/u);
+});
+
+test("공유 문서함도 서버가 실제로 나열한 폴더와 사진만 허용한다", () => {
+  const browse = topLevelBody(mainSource, "browseWorkReportDrive");
+  assert.match(browse, /BuildingDocsDrive\.listSharedWithMe/u);
+  assert.match(browse, /parentId: "shared-with-me"/u);
+  assert.match(browse, /folders\.forEach\(item => picker\.folders\.set\(item\.id, item\)\)/u);
+  assert.match(browse, /files\.forEach\(item => picker\.files\.set\(item\.id, item\)\)/u);
+  assert.match(browse, /picker\.folders\.has\(folderId\)/u);
 });
 
 test("공유 드라이브는 서버가 실제로 나열한 ID만 폴더로 허용한다", () => {

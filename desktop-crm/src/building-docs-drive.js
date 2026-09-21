@@ -246,6 +246,31 @@
     return { drives, truncated: Boolean(pageToken) };
   }
 
+  /** 로그인한 계정의 '공유 문서함'에 직접 공유된 폴더와 파일을 읽는다. */
+  async function listSharedWithMe(deps, options) {
+    const { fetchImpl, accessToken } = deps;
+    const settings = options && typeof options === "object" ? options : {};
+    const maxPages = Number(settings.maxPages) > 0 ? Number(settings.maxPages) : 5;
+    const files = [];
+    let pageToken = "";
+    for (let page = 0; page < maxPages; page += 1) {
+      const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent("sharedWithMe and trashed = false")}`
+        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)"
+        + "&pageSize=200&orderBy=modifiedTime%20desc&corpora=user&spaces=drive"
+        + "&supportsAllDrives=true&includeItemsFromAllDrives=true"
+        + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+      const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "공유 문서함 읽기");
+      (Array.isArray(got.files) ? got.files : []).forEach(file => files.push(file));
+      pageToken = text(got.nextPageToken);
+      if (!pageToken) break;
+    }
+    return {
+      folders: files.filter(file => file.mimeType === FOLDER_MIME),
+      files: files.filter(file => file.mimeType !== FOLDER_MIME),
+      truncated: Boolean(pageToken),
+    };
+  }
+
   /**
    * 폴더와 그 바로 아래 폴더까지만 훑는다.
    *
@@ -487,6 +512,7 @@
     ensureFolderPath,
     listFolder,
     listSharedDrives,
+    listSharedWithMe,
     scanPhotoFolder,
     downloadFile,
     findExisting,
