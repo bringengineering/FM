@@ -13,6 +13,7 @@ const preloadSource = read("preload.js");
 const indexSource = read("index.html");
 const pdfSource = read("work-report-pdf.js");
 const driveSource = read("building-docs-drive.js");
+const stylesSource = read("styles.css");
 
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -28,8 +29,8 @@ function topLevelBody(source, name) {
   return source.slice(start, end < 0 ? undefined : end);
 }
 
-test("훑기 통로가 세 곳에 다 등록돼 있고 읽기로 분류된다", () => {
-  for (const channel of ["crm:work-report-photos-scan", "crm:work-report-drive-browse", "crm:work-report-drive-plan"]) {
+test("훑기 통로가 모두 등록돼 있고 읽기로 분류된다", () => {
+  for (const channel of ["crm:work-report-photos-scan", "crm:work-report-drive-browse", "crm:work-report-drive-thumbnail", "crm:work-report-drive-plan"]) {
     assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel));
     // 아무것도 안 바꾼다. 바꾸는 것으로 분류하면 필요 없는 권한을 쓴다.
     assert.equal(MutationPolicy.classification(channel), "control");
@@ -38,6 +39,7 @@ test("훑기 통로가 세 곳에 다 등록돼 있고 읽기로 분류된다", 
   }
   // 새 선택기는 오직 메인 CRM 문서에서만 호출할 수 있다.
   assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-drive-browse"'));
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-drive-thumbnail"'));
   assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-drive-plan"'));
 });
 
@@ -98,7 +100,7 @@ test("공유 문서함도 서버가 실제로 나열한 폴더와 사진만 허�
   assert.match(browse, /BuildingDocsDrive\.listSharedWithMe/u);
   assert.match(browse, /parentId: "shared-with-me"/u);
   assert.match(browse, /folders\.forEach\(item => picker\.folders\.set\(item\.id, item\)\)/u);
-  assert.match(browse, /files\.forEach\(item => picker\.files\.set\(item\.id, item\)\)/u);
+  assert.match(browse, /picker\.files\.set\(item\.id, publicFile\)/u);
   assert.match(browse, /picker\.folders\.has\(folderId\)/u);
 });
 
@@ -118,6 +120,30 @@ test("Drive 탐색기는 토큰과 사진 원본을 렌더러로 보내지 않�
   assert.match(browse, /REPORT_DRIVE_IMAGE_MIME/u);
   assert.doesNotMatch(browse.slice(browse.lastIndexOf("return {")), /accessToken/u, "반환 객체에 토큰을 싣지 않아야 한다");
   assert.doesNotMatch(browse, /downloadFile|alt=media|arrayBuffer/u, "선택 단계에서 사진 원본을 받지 않아야 한다");
+  assert.match(browse, /files\.map\(reportDrivePublicFile\)/u, "비공개 썸네일 주소를 목록 응답에서 제거해야 한다");
+  const publicFile = mainSource.slice(mainSource.indexOf("function reportDrivePublicFile("), mainSource.indexOf("function reportDrivePickerReady("));
+  assert.doesNotMatch(publicFile, /thumbnailLink|accessToken/u);
+});
+
+test("사진 미리보기는 표시된 파일만 작게, 보이는 순서대로 불러온다", () => {
+  const thumbnail = topLevelBody(mainSource, "loadWorkReportDriveThumbnail");
+  assert.match(thumbnail, /picker\.files\.has\(fileId\)/u);
+  assert.match(thumbnail, /DRIVE_FILE_NOT_LISTED/u);
+  assert.match(mainSource, /REPORT_DRIVE_THUMBNAIL_MAX_BYTES = 512 \* 1024/u);
+  assert.match(mainSource, /redirect: "manual"/u);
+  assert.match(mainSource, /reportDriveThumbnailLink\(new URL\(location, current\)\.toString\(\)\)/u);
+  assert.match(mainSource, /REPORT_DRIVE_THUMBNAIL_MIME\.has\(mimeType\)/u);
+  assert.match(appSource, /data-report-drive-thumbnail/u);
+  assert.match(appSource, /new IntersectionObserver/u);
+  assert.match(appSource, /api\.loadWorkReportDriveThumbnail\(\{ fileId \}\)/u);
+});
+
+test("Drive 선택창은 화면 안에 고정되고 사진 목록만 스크롤된다", () => {
+  assert.match(stylesSource, /\.wr-drive-picker \{[^}]*grid-template-rows: auto minmax\(0,1fr\) auto/u);
+  assert.match(stylesSource, /\.wr-drive-picker-body \{[^}]*min-height: 0;[^}]*overflow: hidden/u);
+  assert.match(stylesSource, /\.wr-drive-browser \{[^}]*flex-direction: column;[^}]*min-height: 0;[^}]*overflow: hidden/u);
+  assert.match(stylesSource, /\.wr-drive-entry-grid \{[^}]*overflow-y: auto/u);
+  assert.match(stylesSource, /\.wr-drive-entry-preview img \{[^}]*object-fit: cover/u);
 });
 
 test("선택한 사진 계획은 화면에 실제로 표시한 파일만 허용한다", () => {

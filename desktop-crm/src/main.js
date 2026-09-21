@@ -3151,6 +3151,8 @@ const REPORT_DRIVE_IMAGE_MIME = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
 ]);
 const REPORT_DRIVE_MAX_FILES = 100;
+const REPORT_DRIVE_THUMBNAIL_MAX_BYTES = 512 * 1024;
+const REPORT_DRIVE_THUMBNAIL_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 let reportDrivePickerSession = null;
 
 function resetReportDrivePickerSession() {
@@ -3161,6 +3163,7 @@ function resetReportDrivePickerSession() {
       ["shared-with-me", { id: "shared-with-me", name: "공유 문서함", parentId: "root" }],
     ]),
     files: new Map(),
+    thumbnails: new Map(),
   };
 }
 
@@ -3179,6 +3182,32 @@ function reportDriveViewLink(value) {
   } catch {
     return "";
   }
+}
+
+function reportDriveThumbnailLink(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password) return "";
+    if (!/(^|\.)googleusercontent\.com$/iu.test(url.hostname)) return "";
+    const href = url.toString();
+    return href.length <= 2000 ? href : "";
+  } catch {
+    return "";
+  }
+}
+
+function reportDrivePublicFile(file) {
+  return {
+    id: file.id,
+    name: file.name,
+    mimeType: file.mimeType,
+    size: file.size,
+    createdTime: file.createdTime,
+    webViewLink: file.webViewLink,
+    parentId: file.parentId,
+    parentName: file.parentName,
+    kind: "file",
+  };
 }
 
 function reportDrivePickerReady() {
@@ -3587,6 +3616,7 @@ async function browseWorkReportDrive(input) {
         size: Math.max(0, Number(item && item.size || 0)),
         createdTime: String(item && item.createdTime || "").slice(0, 40),
         webViewLink: reportDriveViewLink(item && item.webViewLink),
+        thumbnailLink: reportDriveThumbnailLink(item && item.thumbnailLink),
         parentId: "shared-with-me",
         parentName: "공유 문서함",
         kind: "file",
@@ -3594,11 +3624,16 @@ async function browseWorkReportDrive(input) {
       .filter(item => item.id)
       .slice(0, 400);
     folders.forEach(item => picker.folders.set(item.id, item));
-    files.forEach(item => picker.files.set(item.id, item));
+    files.forEach(item => {
+      const publicFile = reportDrivePublicFile(item);
+      picker.files.set(item.id, publicFile);
+      if (item.thumbnailLink) picker.thumbnails.set(item.id, item.thumbnailLink);
+      else picker.thumbnails.delete(item.id);
+    });
     return {
       ok: true,
       folder: { id: "shared-with-me", name: "공유 문서함" },
-      entries: folders.concat(files),
+      entries: folders.concat(files.map(reportDrivePublicFile)),
       truncated: listed.truncated || listed.folders.length > folders.length || listed.files.length > files.length,
     };
   }
@@ -3660,6 +3695,7 @@ async function browseWorkReportDrive(input) {
       size: Math.max(0, Number(item && item.size || 0)),
       createdTime: String(item && item.createdTime || "").slice(0, 40),
       webViewLink: reportDriveViewLink(item && item.webViewLink),
+      thumbnailLink: reportDriveThumbnailLink(item && item.thumbnailLink),
       parentId: folderId,
       parentName: current.name,
       kind: "file",
@@ -3668,13 +3704,95 @@ async function browseWorkReportDrive(input) {
     .slice(0, 400);
 
   folders.forEach(item => picker.folders.set(item.id, item));
-  files.forEach(item => picker.files.set(item.id, item));
+  files.forEach(item => {
+    const publicFile = reportDrivePublicFile(item);
+    picker.files.set(item.id, publicFile);
+    if (item.thumbnailLink) picker.thumbnails.set(item.id, item.thumbnailLink);
+    else picker.thumbnails.delete(item.id);
+  });
   return {
     ok: true,
     folder: { id: current.id, name: current.name },
-    entries: folders.concat(files),
+    entries: folders.concat(files.map(reportDrivePublicFile)),
     truncated: listed.truncated || listed.folders.length > folders.length || imageFiles.length > files.length,
   };
+}
+
+async function readReportDriveThumbnailBody(response) {
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize > REPORT_DRIVE_THUMBNAIL_MAX_BYTES) {
+    throw Object.assign(new Error("사진 미리보기가 너무 큽니다."), { code: "DRIVE_THUMBNAIL_TOO_LARGE" });
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    throw Object.assign(new Error("사진 미리보기를 읽지 못했습니다."), { code: "DRIVE_THUMBNAIL_FAILED" });
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    size += part.value.byteLength;
+    if (size > REPORT_DRIVE_THUMBNAIL_MAX_BYTES) {
+      await reader.cancel();
+      throw Object.assign(new Error("사진 미리보기가 너무 큽니다."), { code: "DRIVE_THUMBNAIL_TOO_LARGE" });
+    }
+    chunks.push(Buffer.from(part.value));
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function fetchReportDriveThumbnail(value, accessToken) {
+  let current = reportDriveThumbnailLink(value);
+  if (!current) return { ok: true, dataUrl: "" };
+  for (let redirect = 0; redirect < 4; redirect += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(current, {
+        headers: { authorization: `Bearer ${accessToken}` },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        const next = location ? reportDriveThumbnailLink(new URL(location, current).toString()) : "";
+        if (!next) throw Object.assign(new Error("사진 미리보기 주소를 확인하지 못했습니다."), { code: "DRIVE_THUMBNAIL_FAILED" });
+        current = next;
+        continue;
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+      }
+      if (!response.ok) throw Object.assign(new Error("사진 미리보기를 불러오지 못했습니다."), { code: "DRIVE_THUMBNAIL_FAILED" });
+      const mimeType = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!REPORT_DRIVE_THUMBNAIL_MIME.has(mimeType)) {
+        throw Object.assign(new Error("지원하지 않는 사진 미리보기 형식입니다."), { code: "DRIVE_THUMBNAIL_TYPE" });
+      }
+      const bytes = await readReportDriveThumbnailBody(response);
+      if (!bytes.length) return { ok: true, dataUrl: "" };
+      return { ok: true, dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}` };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw Object.assign(new Error("사진 미리보기 이동 횟수가 너무 많습니다."), { code: "DRIVE_THUMBNAIL_FAILED" });
+}
+
+async function loadWorkReportDriveThumbnail(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 결과보고서 사진을 볼 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const picker = reportDrivePickerReady();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const fileId = reportDrivePickerId(options.fileId);
+  if (!fileId || !picker.files.has(fileId)) {
+    throw Object.assign(new Error("Drive 화면에 표시된 사진만 미리 볼 수 있습니다."), { code: "DRIVE_FILE_NOT_LISTED" });
+  }
+  const accessToken = String(driveSession && driveSession.accessToken || "");
+  if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  return fetchReportDriveThumbnail(picker.thumbnails.get(fileId), accessToken);
 }
 
 function reportDriveFolderAncestors(picker, folderId) {
@@ -8175,6 +8293,7 @@ secureCanonicalHandle("crm:building-atlas-save", input => buildingAtlasResponse(
 secureCanonicalHandle("crm:work-report-save", input => remoteClient.saveWorkReport(input));
 secureCanonicalHandle("crm:work-report-photo-upload", input => uploadWorkReportPhoto(input));
 secureCanonicalHandle("crm:work-report-drive-browse", input => browseWorkReportDrive(input));
+secureCanonicalHandle("crm:work-report-drive-thumbnail", input => loadWorkReportDriveThumbnail(input));
 secureCanonicalHandle("crm:work-report-drive-plan", input => planSelectedWorkReportPhotos(input));
 secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));
 secureHandle("crm:objectives-load", () => remoteClient.loadObjectives());

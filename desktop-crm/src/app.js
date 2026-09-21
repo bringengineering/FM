@@ -6680,8 +6680,10 @@
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
     driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
+    driveThumbnails: new Map(), driveThumbnailLoading: new Set(), driveThumbnailGeneration: 0,
     aiLoading: false, aiError: "", aiDraftAt: "",
   };
+  let reportDriveThumbnailObserver = null;
 
   const reportCore = () => window.BringWorkReportCore;
 
@@ -6698,6 +6700,11 @@
     reportState.driveBrowserEntries = [];
     reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
     reportState.driveSelected = new Map();
+    reportState.driveThumbnailGeneration = Number(reportState.driveThumbnailGeneration || 0) + 1;
+    reportState.driveThumbnails = new Map();
+    reportState.driveThumbnailLoading = new Set();
+    if (reportDriveThumbnailObserver) reportDriveThumbnailObserver.disconnect();
+    reportDriveThumbnailObserver = null;
   }
 
   async function loadWorkReports() {
@@ -6930,6 +6937,7 @@
             </table></div>`
           : `<div class="office-empty"><b>아직 낸 보고서가 없습니다</b><span>${reportState.canWork ? "‘새 보고서’ 를 누르고 작업 종류만 고르면 항목이 깔립니다." : "작업자가 보고서를 내면 여기에 쌓입니다."}</span></div>`}
       </section>`;
+    scheduleReportDriveThumbnailLoading();
   }
 
   const reportPhotoPlan = () => window.BringReportPhotoPlan;
@@ -6967,9 +6975,13 @@
       }
       const isSelected = selected.has(String(entry.id));
       const heic = /heic|heif/u.test(String(entry.mimeType || ""));
+      const thumbnail = reportState.driveThumbnails instanceof Map ? String(reportState.driveThumbnails.get(String(entry.id)) || "") : "";
+      const preview = thumbnail
+        ? `<span class="wr-drive-entry-preview"><img src="${attr(thumbnail)}" alt=""></span>`
+        : `<span class="wr-drive-entry-preview is-loading" data-report-drive-thumbnail="${attr(entry.id)}"><span class="wr-drive-entry-icon" aria-hidden="true">▧</span></span>`;
       return `<button type="button" class="wr-drive-entry is-photo${isSelected ? " is-selected" : ""}" data-report-drive-file="${attr(entry.id)}" aria-pressed="${isSelected ? "true" : "false"}">
         <span class="wr-drive-entry-check" aria-hidden="true">${isSelected ? "✓" : ""}</span>
-        <span class="wr-drive-entry-icon" aria-hidden="true">▧</span><b>${esc(entry.name || "사진")}</b><small>${esc(heic ? "HEIC · JPG 변환 필요" : reportDriveFileSize(entry.size))}</small>
+        ${preview}<b>${esc(entry.name || "사진")}</b><small>${esc(heic ? "HEIC · JPG 변환 필요" : reportDriveFileSize(entry.size))}</small>
       </button>`;
     }).join("");
     const emptyText = reportState.driveBrowserLoading
@@ -6990,6 +7002,92 @@
         <footer><span data-report-drive-selected-count><b>${selected.size}개</b> 사진 선택됨</span><div><button type="button" class="secondary-button" data-report-drive-close>취소</button><button type="button" class="primary-button" data-report-drive-plan${reportState.driveScanning || !selected.size ? " disabled" : ""}>${reportState.driveScanning ? "분류 중…" : "선택한 사진 가져오기"}</button></div></footer>
       </section>
     </div>`;
+  }
+
+  function reportDriveThumbnailDataUrl(value) {
+    const url = String(value || "");
+    const prefix = url.match(/^data:image\/(?:jpeg|png|webp);base64,/u);
+    if (!prefix || url.length > 720000) return "";
+    return /^[A-Za-z0-9+/]+={0,2}$/u.test(url.slice(prefix[0].length)) ? url : "";
+  }
+
+  function paintReportDriveThumbnail(fileId, dataUrl) {
+    document.querySelectorAll("[data-report-drive-thumbnail]").forEach(target => {
+      if (String(target.dataset.reportDriveThumbnail || "") !== String(fileId || "")) return;
+      target.removeAttribute("data-report-drive-thumbnail");
+      target.classList.remove("is-loading", "is-unavailable");
+      if (!dataUrl) {
+        target.classList.add("is-unavailable");
+        target.title = "미리보기 없음";
+        return;
+      }
+      const image = document.createElement("img");
+      image.alt = "";
+      image.decoding = "async";
+      image.src = dataUrl;
+      target.replaceChildren(image);
+    });
+  }
+
+  function rememberReportDriveThumbnail(fileId, dataUrl) {
+    if (!(reportState.driveThumbnails instanceof Map)) reportState.driveThumbnails = new Map();
+    reportState.driveThumbnails.delete(fileId);
+    reportState.driveThumbnails.set(fileId, dataUrl);
+    while (reportState.driveThumbnails.size > 48) {
+      reportState.driveThumbnails.delete(reportState.driveThumbnails.keys().next().value);
+    }
+  }
+
+  async function loadReportDriveThumbnail(fileId) {
+    if (!fileId || !reportState.drivePickerOpen) return;
+    if (!(reportState.driveThumbnails instanceof Map)) reportState.driveThumbnails = new Map();
+    if (!(reportState.driveThumbnailLoading instanceof Set)) reportState.driveThumbnailLoading = new Set();
+    if (reportState.driveThumbnails.has(fileId)) {
+      paintReportDriveThumbnail(fileId, reportState.driveThumbnails.get(fileId));
+      return;
+    }
+    if (reportState.driveThumbnailLoading.has(fileId)) return;
+    const loading = reportState.driveThumbnailLoading;
+    loading.add(fileId);
+    const generation = Number(reportState.driveThumbnailGeneration || 0);
+    try {
+      const result = await api.loadWorkReportDriveThumbnail({ fileId });
+      if (generation !== Number(reportState.driveThumbnailGeneration || 0)) return;
+      const dataUrl = result && result.ok === true ? reportDriveThumbnailDataUrl(result.dataUrl) : "";
+      rememberReportDriveThumbnail(fileId, dataUrl);
+      paintReportDriveThumbnail(fileId, dataUrl);
+    } catch {
+      if (generation !== Number(reportState.driveThumbnailGeneration || 0)) return;
+      rememberReportDriveThumbnail(fileId, "");
+      paintReportDriveThumbnail(fileId, "");
+    } finally {
+      loading.delete(fileId);
+    }
+  }
+
+  function activateReportDriveThumbnailLoading() {
+    if (reportDriveThumbnailObserver) reportDriveThumbnailObserver.disconnect();
+    reportDriveThumbnailObserver = null;
+    if (!reportState.drivePickerOpen) return;
+    const targets = [...document.querySelectorAll("[data-report-drive-thumbnail]")];
+    if (!targets.length) return;
+    if (!("IntersectionObserver" in window)) {
+      targets.slice(0, 24).forEach(target => void loadReportDriveThumbnail(String(target.dataset.reportDriveThumbnail || "")));
+      return;
+    }
+    const root = document.querySelector("[data-report-drive-entry-grid]");
+    reportDriveThumbnailObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        reportDriveThumbnailObserver?.unobserve(entry.target);
+        void loadReportDriveThumbnail(String(entry.target.dataset.reportDriveThumbnail || ""));
+      });
+    }, { root, rootMargin: "180px 0px", threshold: 0.01 });
+    targets.forEach(target => reportDriveThumbnailObserver.observe(target));
+  }
+
+  function scheduleReportDriveThumbnailLoading() {
+    requestAnimationFrame(activateReportDriveThumbnailLoading);
   }
 
   function reportDriveBox(R) {
@@ -7062,6 +7160,9 @@
       reportState.driveBrowserEntries = [];
       reportState.driveBrowserPath = [{ id: "root", name: "내 드라이브" }];
       reportState.driveSelected = new Map();
+      reportState.driveThumbnailGeneration = Number(reportState.driveThumbnailGeneration || 0) + 1;
+      reportState.driveThumbnails = new Map();
+      reportState.driveThumbnailLoading = new Set();
       reportState.drivePlan = null;
       showToast("회사 Drive 에 연결했습니다.", "success");
       await openReportDrivePicker();
@@ -13668,6 +13769,7 @@
       showToast("브라우저에서 회사 Google 계정으로 계속해 주세요.");
       try {
         driveState = Object.assign({ loaded: true }, await api.connectDrive());
+        resetReportDriveSelection();
         renderBuildingDocuments();
         showToast("회사 Drive 에 연결했습니다.", "success");
       } catch (error) {
@@ -13676,6 +13778,7 @@
     }
     else if (action === "disconnect-drive") {
       try { driveState = Object.assign({ loaded: true }, await api.disconnectDrive()); } catch { driveState = { connected: false, email: "", loaded: true }; }
+      resetReportDriveSelection();
       renderBuildingDocuments();
     }
     else if (action === "set-building-docs-folder") {

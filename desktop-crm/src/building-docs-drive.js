@@ -212,7 +212,7 @@
     let pageToken = "";
     for (let page = 0; page < maxPages; page += 1) {
       const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(query)}`
-        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)"
+        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink,thumbnailLink)"
         + "&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true"
         + (driveId ? `&corpora=drive&driveId=${encodeURIComponent(driveId)}` : "")
         + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
@@ -255,7 +255,7 @@
     let pageToken = "";
     for (let page = 0; page < maxPages; page += 1) {
       const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent("sharedWithMe and trashed = false")}`
-        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)"
+        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink,thumbnailLink)"
         + "&pageSize=200&orderBy=modifiedTime%20desc&corpora=user&spaces=drive"
         + "&supportsAllDrives=true&includeItemsFromAllDrives=true"
         + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");

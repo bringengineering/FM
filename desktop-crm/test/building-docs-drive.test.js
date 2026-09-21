@@ -224,6 +224,7 @@ test("공유 문서함의 직접 공유 항목을 페이지 제한 안에서 읽
   assert.equal(first.searchParams.get("spaces"), "drive");
   assert.equal(first.searchParams.get("supportsAllDrives"), "true");
   assert.equal(first.searchParams.get("includeItemsFromAllDrives"), "true");
+  assert.match(first.searchParams.get("fields"), /thumbnailLink/u);
   assert.match(fake.calls[1].url, /pageToken=next%20page/u);
   assert.equal(fake.calls[0].url.includes("token-abc"), false);
   assert.equal(fake.calls[0].options.headers.authorization, "Bearer token-abc");
@@ -237,4 +238,5 @@ test("공유 드라이브 폴더를 읽을 때 그 드라이브 범위만 조회
   assert.equal(url.searchParams.get("driveId"), "shared-drive-01");
   assert.equal(url.searchParams.get("supportsAllDrives"), "true");
   assert.equal(url.searchParams.get("includeItemsFromAllDrives"), "true");
+  assert.match(url.searchParams.get("fields"), /thumbnailLink/u);
 });
