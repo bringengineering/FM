@@ -32,6 +32,7 @@ const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const BuildingDocsDrive = require("./building-docs-drive");
 const { createDriveSessionStore } = require("./drive-session-store");
 const ReportPhotoPlan = require("./report-photo-plan");
+const HeicJpegConverter = require("./heic-jpeg-converter");
 const TelegramCore = require("./telegram-core");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
@@ -3926,7 +3927,7 @@ async function planSelectedWorkReportPhotos(input) {
   const common = reportDriveCommonFolder(picker, files);
   const plan = ReportPhotoPlan.planFromTree(
     { name: String(common && common.name || ""), folders: [...grouped.values()], files: [] },
-    { kind },
+    { kind, buildingName: String(options.buildingName || "").trim().slice(0, 200) },
   );
   plan.selectedCount = files.length;
   return { ok: true, plan };
@@ -4065,6 +4066,8 @@ async function exportWorkReport(input) {
   if (!seal) throw Object.assign(new Error("보고서 인감을 먼저 등록해 주세요. 설정에서 견적서 인감을 등록하면 같이 쓰입니다."), { code: "QUOTE_SEAL_REQUIRED" });
 
   const images = {};
+  let heicConverted = 0;
+  let photoFailures = 0;
   if (driveSessionView().connected) {
     const photos = report.items.flatMap(item => [...item.before, ...item.after]);
     for (const photo of photos.slice(0, 40)) {
@@ -4074,11 +4077,19 @@ async function exportWorkReport(input) {
           { fileId: photo.driveFileId },
         );
         if (fetched && fetched.content) {
-          images[photo.id] = `data:${fetched.mimeType || "image/jpeg"};base64,${Buffer.from(fetched.content).toString("base64")}`;
+          const original = Buffer.from(fetched.content);
+          const isHeic = HeicJpegConverter.looksLikeHeic(original)
+            || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
+            || /\.hei[cf]$/iu.test(String(fetched.name || ""));
+          const content = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
+          const mimeType = isHeic ? "image/jpeg" : (fetched.mimeType || "image/jpeg");
+          if (isHeic) heicConverted += 1;
+          images[photo.id] = `data:${mimeType};base64,${content.toString("base64")}`;
         }
       } catch (_error) {
         // 한 장을 못 받았다고 보고서 전체를 못 내면 안 된다. 그 자리는
         // '사진 없음' 으로 남고, 사람이 보고 다시 붙일 수 있다.
+        photoFailures += 1;
       }
     }
   }
@@ -4096,7 +4107,7 @@ async function exportWorkReport(input) {
   });
   const bytes = await createReportPdfBytes(documentHtml, "work-report");
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
-  return { ok: true, copyType, photos: Object.keys(images).length };
+  return { ok: true, copyType, photos: Object.keys(images).length, heicConverted, photoFailures };
 }
 
 // 수주 진행 결과물. 건물별·단계별로 쌓는다. 날짜로 나누면 "우산동 빌딩

@@ -76,7 +76,7 @@ test("사진은 인쇄 직전에 받아 문서 안에 박는다", () => {
   // Drive 에 로그인할 수 없다.
   const body = functionBody(mainSource, "exportWorkReport");
   assert.match(body, /BuildingDocsDrive\.downloadFile/u);
-  assert.match(body, /data:\$\{fetched\.mimeType \|\| "image\/jpeg"\};base64,/u);
+  assert.match(body, /data:\$\{mimeType\};base64,\$\{content\.toString\("base64"\)\}/u);
   // 한 장을 못 받았다고 보고서 전체를 못 내면 안 된다.
   assert.match(body, /catch \(_error\) \{/u);
   // 너무 큰 파일은 받지 않는다. 사진 스무 장이 각각 20MB 면 인쇄가 멈춘다.
@@ -218,6 +218,17 @@ test("두 벌을 각각 낼 수 있다", () => {
   const start = appSource.indexOf("async function exportWorkReportPdf(");
   const body = appSource.slice(start, start + 1200);
   assert.match(body, /copyType,/u);
+});
+
+test("HEIC 사진은 제한된 작업 스레드에서 JPG로 바꿔 PDF에 넣는다", () => {
+  assert.match(mainSource, /const HeicJpegConverter = require\("\.\/heic-jpeg-converter"\)/u);
+  const start = mainSource.indexOf("async function exportWorkReport(");
+  const body = mainSource.slice(start, mainSource.indexOf("\n// 수주 진행 결과물", start));
+  assert.match(body, /HeicJpegConverter\.looksLikeHeic/u);
+  assert.match(body, /await HeicJpegConverter\.convertToJpeg/u);
+  assert.match(body, /mimeType = isHeic \? "image\/jpeg"/u);
+  assert.match(body, /heicConverted/u);
+  assert.match(body, /photoFailures/u);
 });
 
 test("새 화면이 없는 클래스에 기대지 않는다", () => {

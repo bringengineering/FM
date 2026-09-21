@@ -6981,7 +6981,7 @@
         : `<span class="wr-drive-entry-preview is-loading" data-report-drive-thumbnail="${attr(entry.id)}"><span class="wr-drive-entry-icon" aria-hidden="true">▧</span></span>`;
       return `<button type="button" class="wr-drive-entry is-photo${isSelected ? " is-selected" : ""}" data-report-drive-file="${attr(entry.id)}" aria-pressed="${isSelected ? "true" : "false"}">
         <span class="wr-drive-entry-check" aria-hidden="true">${isSelected ? "✓" : ""}</span>
-        ${preview}<b>${esc(entry.name || "사진")}</b><small>${esc(heic ? "HEIC · JPG 변환 필요" : reportDriveFileSize(entry.size))}</small>
+        ${preview}<b>${esc(entry.name || "사진")}</b><small>${esc(heic ? "HEIC · PDF에서 자동 변환" : reportDriveFileSize(entry.size))}</small>
       </button>`;
     }).join("");
     const emptyText = reportState.driveBrowserLoading
@@ -7258,6 +7258,12 @@
 
   async function openReportDrivePicker() {
     preserveReportDraft();
+    if (!reportState.draft || !reportState.draft.buildingId) {
+      showToast("건물을 먼저 골라 주세요.", "error");
+      const building = document.querySelector("[data-report-building]");
+      if (building) building.focus();
+      return;
+    }
     if (!driveState.loaded) await refreshReportDriveStatus();
     if (!driveState.connected) {
       reportState.driveError = "회사 Drive 에 먼저 연결해 주세요.";
@@ -7326,6 +7332,7 @@
       const result = await api.planWorkReportDrivePhotos({
         fileIds: [...reportState.driveSelected.keys()],
         kind: reportState.draft ? reportState.draft.kind : "",
+        buildingName: reportState.draft ? reportState.draft.buildingName : "",
       });
       if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
       reportState.drivePlan = result.plan;
@@ -7705,6 +7712,7 @@
     if (!report) return;
     reportState.busyKey = reportId;
     renderWorkReports();
+    showToast("PDF용 사진을 준비하고 있습니다. HEIC 사진은 JPG로 자동 변환합니다.");
     try {
       const result = await api.exportWorkReport({
         report,
@@ -7714,7 +7722,9 @@
       });
       if (result && result.canceled) return;
       if (!result || !result.ok) throw new Error((result && result.error) || "보고서를 만들지 못했습니다.");
-      showToast(`${R.copyOf(copyType).label} PDF 를 저장했습니다.`, "success");
+      const converted = Math.max(0, Number(result.heicConverted || 0));
+      const failed = Math.max(0, Number(result.photoFailures || 0));
+      showToast(`${R.copyOf(copyType).label} PDF 를 저장했습니다.${converted ? ` HEIC ${converted}장을 JPG로 변환했습니다.` : ""}${failed ? ` 사진 ${failed}장은 불러오지 못해 제외했습니다.` : ""}`, failed ? "error" : "success");
     } catch (error) {
       showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
     } finally {

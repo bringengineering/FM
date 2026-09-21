@@ -124,17 +124,25 @@ test("가장 크게 벌어진 자리 하나에서만 자른다", () => {
   assert.equal(early.after.length, 3);
 });
 
-test("아이폰 사진은 못 연다고 말해 준다", () => {
-  // 크롬이 HEIC 를 못 연다. 조용히 넘기면 사람은 왜 빈칸인지 모른다.
+test("아이폰 사진도 분류하고 PDF에서 자동 변환한다고 말해 준다", () => {
   const plan = P.planFromTree({
     name: "입주청소(햇빛빌라)_블로그_20260831",
     folders: [{ name: "화장실", files: [jpg("20260831_172901.jpg"), heic("IMG_4310.HEIC"), heic("IMG_4311.HEIC")] }],
   });
   assert.equal(plan.heicCount, 2);
-  assert.ok(plan.warnings.some(line => line.includes("HEIC")), plan.warnings.join(" / "));
+  assert.ok(plan.warnings.some(line => line.includes("HEIC") && line.includes("자동 변환") && line.includes("원본")), plan.warnings.join(" / "));
   assert.equal(plan.buckets[0].heic.length, 2);
-  // 못 여는 사진은 전·후 계산에 안 들어간다.
-  assert.equal(plan.buckets[0].before.length + plan.buckets[0].after.length + plan.buckets[0].unsorted.length, 1);
+  assert.equal(plan.photoCount, 3);
+  assert.equal(plan.buckets[0].before.length + plan.buckets[0].after.length + plan.buckets[0].unsorted.length, 3);
+});
+
+test("CRM에서 고른 건물을 폴더 이름보다 우선한다", () => {
+  const plan = P.planFromTree({
+    name: "활동 사진",
+    folders: [{ name: "화장실", files: [jpg("20260831_172901.jpg")] }],
+  }, { kind: "moveIn", buildingName: "다올하우스" });
+  assert.equal(plan.buildingName, "다올하우스");
+  assert.ok(!plan.warnings.some(line => line.includes("건물")), plan.warnings.join(" / "));
 });
 
 test("폴더 나무를 통째로 보고 계획을 짠다", () => {

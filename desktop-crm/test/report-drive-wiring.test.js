@@ -152,7 +152,18 @@ test("선택한 사진 계획은 화면에 실제로 표시한 파일만 허용�
   assert.match(plan, /picker\.files\.get\(id\)/u);
   assert.match(plan, /DRIVE_FILE_NOT_LISTED/u);
   assert.match(plan, /ReportPhotoPlan\.planFromTree/u);
+  assert.match(plan, /buildingName: String\(options\.buildingName/u);
   assert.doesNotMatch(plan, /downloadFile|alt=media|arrayBuffer/u);
+});
+
+test("Drive 사진 선택 전에 CRM 건물을 먼저 고르게 한다", () => {
+  const open = functionBody(appSource, "openReportDrivePicker");
+  assert.match(open, /preserveReportDraft\(\)/u);
+  assert.match(open, /!reportState\.draft\.buildingId/u);
+  assert.match(open, /건물을 먼저 골라 주세요/u);
+  const plan = functionBody(appSource, "planSelectedReportDrivePhotos");
+  assert.match(plan, /buildingName: reportState\.draft/u);
+  assert.match(appSource, /HEIC · PDF에서 자동 변환/u);
 });
 
 test("끌어온 것이 사람이 적은 것을 덮지 않는다", () => {

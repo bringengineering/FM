@@ -19,7 +19,8 @@
     "build:win": "electron-builder --win nsis --x64"
   },
   "dependencies": {
-    "electron-updater": "6.8.9"
+    "electron-updater": "6.8.9",
+    "heic-convert": "2.1.0"
   },
   "devDependencies": {
     "electron": "39.8.10",

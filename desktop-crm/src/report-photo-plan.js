@@ -30,7 +30,8 @@
 // 1. 사진을 여기서 받지 않는다. 목록만 보고 계획을 짠다.
 // 2. 상태를 완료로 올리지 않는다. 사진이 있다는 것과 다 했다는 것은
 //    다른 말이다. 사람이 보고 올린다.
-// 3. HEIC 를 열려고 하지 않는다. 못 여는 것을 못 연다고 말한다.
+// 3. HEIC 원본은 화면에서 직접 열지 않는다. 보고서 사진으로는 분류하고,
+//    PDF 를 만들 때 로컬 변환기가 JPG 사본을 만든다.
 (function attachReportPhotoPlan(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -41,8 +42,7 @@
   const text = (value, limit = 300) => String(value == null ? "" : value).trim().slice(0, limit);
   const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
 
-  // 크롬은 HEIC 를 못 연다. 전자 앱도 크롬이다. 링크로 두든 문서에 박든
-  // 화면에도 PDF 에도 빈칸으로 나온다 — 그러니 미리 말해 준다.
+  // 크롬은 HEIC 를 직접 못 연지만 PDF 내보내기에서는 JPG 사본으로 바꾼다.
   const VIEWABLE = Object.freeze(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
   const UNVIEWABLE = Object.freeze(["image/heif", "image/heic"]);
 
@@ -253,7 +253,7 @@
         if (other.length) skipped.push({ folder: text(folder && folder.name, 120), count: other.length, why: "사진이 아닙니다." });
         return;
       }
-      const split = splitBeforeAfter(images);
+      const split = splitBeforeAfter(images.concat(heic));
       buckets.push({
         folder: text(folder && folder.name, 120),
         itemKey: itemKeyForFolder(kind, folder && folder.name),
@@ -271,15 +271,16 @@
     const photoCount = buckets.reduce((sum, bucket) => sum + bucket.before.length + bucket.after.length + bucket.unsorted.length, 0);
     const warnings = [];
     if (!kind) warnings.push("폴더 이름으로는 작업 종류를 알 수 없습니다. 위에서 골라 주세요.");
-    if (!parsed.building) warnings.push("폴더 이름에 건물이 없습니다. 건물을 골라 주세요.");
-    if (heicCount) warnings.push(`아이폰 사진(HEIC) ${heicCount}장은 화면과 PDF 에서 안 열립니다. JPG 로 바꿔 올려 주세요.`);
+    const buildingName = text(settings.buildingName, 200) || parsed.building;
+    if (!buildingName) warnings.push("건물을 먼저 골라 주세요.");
+    if (heicCount) warnings.push(`아이폰 사진(HEIC) ${heicCount}장은 PDF 생성 시 JPG로 자동 변환됩니다. 원본은 변경되지 않습니다.`);
     const unsure = buckets.filter(bucket => !bucket.confident && (bucket.unsorted.length || bucket.before.length + bucket.after.length));
     if (unsure.length) warnings.push(`${unsure.length}곳은 작업 전·후를 가르지 못했습니다. 직접 골라 주세요.`);
 
     return {
       folderName: parsed.raw,
       work: parsed.work,
-      buildingName: parsed.building,
+      buildingName,
       workDate: parsed.date,
       kind,
       buckets,
