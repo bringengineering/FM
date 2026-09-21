@@ -6738,7 +6738,8 @@
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "",
     driveScanning: false,
-    drivePlan: null, driveLeftovers: [], driveError: "",
+    drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
+    driveClassificationLoading: false, driveClassifications: [],
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
     driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
@@ -6752,6 +6753,9 @@
   function resetReportDriveSelection() {
     reportState.driveScanning = false;
     reportState.drivePlan = null;
+    reportState.driveBasePlan = null;
+    reportState.driveClassificationLoading = false;
+    reportState.driveClassifications = [];
     reportState.driveLeftovers = [];
     reportState.driveError = "";
     reportState.drivePickerOpen = false;
@@ -7075,9 +7079,11 @@
   }
 
   function paintReportDriveThumbnail(fileId, dataUrl) {
-    document.querySelectorAll("[data-report-drive-thumbnail]").forEach(target => {
-      if (String(target.dataset.reportDriveThumbnail || "") !== String(fileId || "")) return;
+    document.querySelectorAll("[data-report-drive-thumbnail],[data-report-ai-thumbnail]").forEach(target => {
+      const targetId = String(target.dataset.reportDriveThumbnail || target.dataset.reportAiThumbnail || "");
+      if (targetId !== String(fileId || "")) return;
       target.removeAttribute("data-report-drive-thumbnail");
+      target.removeAttribute("data-report-ai-thumbnail");
       target.classList.remove("is-loading", "is-unavailable");
       if (!dataUrl) {
         target.classList.add("is-unavailable");
@@ -7102,7 +7108,7 @@
   }
 
   async function loadReportDriveThumbnail(fileId) {
-    if (!fileId || !reportState.drivePickerOpen) return;
+    if (!fileId) return;
     if (!(reportState.driveThumbnails instanceof Map)) reportState.driveThumbnails = new Map();
     if (!(reportState.driveThumbnailLoading instanceof Set)) reportState.driveThumbnailLoading = new Set();
     if (reportState.driveThumbnails.has(fileId)) {
@@ -7131,19 +7137,18 @@
   function activateReportDriveThumbnailLoading() {
     if (reportDriveThumbnailObserver) reportDriveThumbnailObserver.disconnect();
     reportDriveThumbnailObserver = null;
-    if (!reportState.drivePickerOpen) return;
-    const targets = [...document.querySelectorAll("[data-report-drive-thumbnail]")];
+    const targets = [...document.querySelectorAll("[data-report-drive-thumbnail],[data-report-ai-thumbnail]")];
     if (!targets.length) return;
     if (!("IntersectionObserver" in window)) {
-      targets.slice(0, 24).forEach(target => void loadReportDriveThumbnail(String(target.dataset.reportDriveThumbnail || "")));
+      targets.slice(0, 36).forEach(target => void loadReportDriveThumbnail(String(target.dataset.reportDriveThumbnail || target.dataset.reportAiThumbnail || "")));
       return;
     }
-    const root = document.querySelector("[data-report-drive-entry-grid]");
+    const root = reportState.drivePickerOpen ? document.querySelector("[data-report-drive-entry-grid]") : null;
     reportDriveThumbnailObserver = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (!entry.isIntersecting) return;
         reportDriveThumbnailObserver?.unobserve(entry.target);
-        void loadReportDriveThumbnail(String(entry.target.dataset.reportDriveThumbnail || ""));
+        void loadReportDriveThumbnail(String(entry.target.dataset.reportDriveThumbnail || entry.target.dataset.reportAiThumbnail || ""));
       });
     }, { root, rootMargin: "180px 0px", threshold: 0.01 });
     targets.forEach(target => reportDriveThumbnailObserver.observe(target));
@@ -7156,7 +7161,7 @@
   function reportDriveBox(R) {
     const plan = reportState.drivePlan;
     const selected = reportState.driveSelected instanceof Map ? reportState.driveSelected.size : 0;
-    const reportItems = plan ? R.itemsFor(plan.kind || reportState.draft.kind, []) : [];
+    const reportItems = plan ? (typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(plan.kind || reportState.draft.kind) : R.itemsFor(plan.kind || reportState.draft.kind, [])) : [];
     const reportItemKeys = new Set(reportItems.map(item => item.key));
     const effectiveItemKey = bucket => {
       const automatic = String(bucket && bucket.itemKey || "");
@@ -7166,6 +7171,17 @@
     const unresolvedCount = plan ? plan.buckets.filter(bucket => !effectiveItemKey(bucket)
       && bucket.before.length + bucket.after.length + bucket.unsorted.length > 0).length : 0;
     const matchedCount = plan ? plan.buckets.filter(bucket => effectiveItemKey(bucket)).length : 0;
+    const classifications = plan && Array.isArray(plan.aiClassifications) ? plan.aiClassifications : [];
+    const selectedFiles = reportState.driveSelected instanceof Map ? reportState.driveSelected : new Map();
+    const classificationCards = classifications.map(row => {
+      const file = selectedFiles.get(String(row.id)) || {};
+      const thumbnail = reportState.driveThumbnails instanceof Map ? String(reportState.driveThumbnails.get(String(row.id)) || "") : "";
+      const preview = thumbnail
+        ? `<span class="wr-ai-photo-thumb"><img src="${attr(thumbnail)}" alt=""></span>`
+        : `<span class="wr-ai-photo-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span aria-hidden="true">▧</span></span>`;
+      const selectedKey = row.category === "review" ? "" : String(row.category || "");
+      return `<article class="wr-ai-photo-card${selectedKey ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${selectedKey ? `AI 추천 ${Number(row.confidence || 0)}%` : "직접 확인 필요"}${row.reason ? ` · ${esc(row.reason)}` : ""}</span><select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></div></article>`;
+    }).join("");
     const rows = plan
       ? plan.buckets.map((bucket, index) => {
         const key = effectiveItemKey(bucket);
@@ -7174,7 +7190,9 @@
           <td>${esc(bucket.folder || "(폴더 밖)")}</td>
           <td>${bucket.itemKey && item
             ? esc(item.label)
-            : `<label class="wr-drive-item-picker"><span>${item ? "연결 항목" : "붙일 항목 선택"}</span><select data-report-drive-item="${index}"><option value="">보고서 항목 선택</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === key ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label>`}</td>
+            : plan.aiClassified
+              ? `<span class="wr-drive-loose">위 사진별 항목을 선택하세요</span>`
+              : `<label class="wr-drive-item-picker"><span>${item ? "연결 항목" : "붙일 항목 선택"}</span><select data-report-drive-item="${index}"><option value="">보고서 항목 선택</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === key ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label>`}</td>
           <td>${bucket.before.length}</td>
           <td>${bucket.after.length}</td>
           <td>${bucket.unsorted.length ? `<span class="wr-drive-unsure">${bucket.unsorted.length}</span>` : "0"}</td>
@@ -7199,12 +7217,14 @@
       ${reportState.driveError ? `<p class="wr-drive-error" role="alert">${esc(reportState.driveError)}</p>` : ""}
       ${plan ? `
         ${plan.warnings.length ? `<ul class="wr-drive-warn">${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        ${plan.kind === "moveIn" ? `<div class="wr-ai-classify-bar"><div><b>사진 구역 자동 분류</b><small>원본 대신 메타데이터를 제거한 작은 JPEG만 회사 AI에 전송합니다. 주소·연락처·Drive 링크는 보내지 않습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected || selected > 30 ? " disabled" : ""}>${reportState.driveClassificationLoading ? "AI가 사진 분류 중…" : plan.aiClassified ? "✨ AI로 다시 분류" : "✨ AI로 사진 구역 분류"}</button></div>` : ""}
+        ${classificationCards ? `<div class="wr-ai-photo-review"><header><b>사진별 분류 확인</b><span>${classifications.length}장 · ${classifications.filter(row => row.category === "review").length}장 확인 필요</span></header><div>${classificationCards}</div></div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
           <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th><th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <div class="wr-drive-actions">
-          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount && !unresolvedCount ? "" : " disabled"}>${unresolvedCount ? "보고서 항목을 먼저 선택하세요" : "이 사진들로 초안 채우기"}</button>
+          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount && !unresolvedCount && !reportState.driveClassificationLoading ? "" : " disabled"}>${unresolvedCount ? (plan.aiClassified ? "분류할 사진을 먼저 확인하세요" : "보고서 항목을 먼저 선택하세요") : "분류 확인 후 초안에 적용"}</button>
           <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${matchedCount}개${unresolvedCount ? ` · 선택할 구역 ${unresolvedCount}개` : ""}</small>
         </div>` : ""}
     </div>`;
@@ -7240,6 +7260,8 @@
       reportState.driveThumbnails = new Map();
       reportState.driveThumbnailLoading = new Set();
       reportState.drivePlan = null;
+      reportState.driveBasePlan = null;
+      reportState.driveClassifications = [];
       showToast("회사 Drive 에 연결했습니다.", "success");
       await openReportDrivePicker();
     } catch (error) {
@@ -7453,16 +7475,65 @@
         buildingName: reportState.draft ? reportState.draft.buildingName : "",
       });
       if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
+      reportState.driveBasePlan = result.plan;
       reportState.drivePlan = result.plan;
+      reportState.driveClassifications = [];
       reportState.drivePickerOpen = false;
       showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 분류를 확인해 주세요.`, "success");
     } catch (error) {
       reportState.drivePlan = null;
+      reportState.driveBasePlan = null;
+      reportState.driveClassifications = [];
       reportState.driveError = error && error.message || "선택한 사진을 분류하지 못했습니다.";
     } finally {
       reportState.driveScanning = false;
       if (currentView === "workReports") renderWorkReports();
     }
+  }
+
+  async function classifyReportDrivePhotos() {
+    const P = reportPhotoPlan();
+    const basePlan = reportState.driveBasePlan || reportState.drivePlan;
+    if (!P || !basePlan || reportState.driveClassificationLoading) return;
+    const fileIds = [...(reportState.driveSelected instanceof Map ? reportState.driveSelected.keys() : [])];
+    if (!fileIds.length) return showToast("분류할 사진을 다시 선택해 주세요.", "error");
+    if (fileIds.length > 30) return showToast("AI 사진 분류는 한 번에 30장까지 가능합니다.", "error");
+    preserveReportDraft();
+    reportState.driveClassificationLoading = true;
+    reportState.driveError = "";
+    renderWorkReports();
+    try {
+      const result = await api.classifyWorkReportPhotos({ fileIds, kind: "moveIn" });
+      if (!result || result.ok !== true || !Array.isArray(result.classifications)) throw new Error((result && result.error) || "AI 사진 분류 결과를 확인하지 못했습니다.");
+      reportState.driveClassifications = result.classifications;
+      reportState.drivePlan = P.applyPhotoClassifications(basePlan, result.classifications);
+      const review = result.classifications.filter(row => row.category === "review").length;
+      showToast(`AI가 사진 ${result.classifications.length}장을 분류했습니다.${review ? ` ${review}장은 직접 확인해 주세요.` : " 구역을 확인해 주세요."}`, review ? "" : "success");
+    } catch (error) {
+      reportState.driveError = error && error.message || "AI 사진 분류를 완료하지 못했습니다.";
+    } finally {
+      reportState.driveClassificationLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
+  function assignReportPhotoCategory(fileIdValue, itemKeyValue) {
+    const R = reportCore();
+    const P = reportPhotoPlan();
+    const basePlan = reportState.driveBasePlan;
+    if (!R || !P || !basePlan) return;
+    const fileId = String(fileIdValue || "");
+    const allowed = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor("moveIn") : R.itemsFor("moveIn", [])).map(item => item.key));
+    const itemKey = String(itemKeyValue || "");
+    const category = allowed.has(itemKey) ? itemKey : "review";
+    const rows = Array.isArray(reportState.driveClassifications) ? reportState.driveClassifications.slice() : [];
+    const index = rows.findIndex(row => String(row && row.id || "") === fileId);
+    const next = { id: fileId, category, confidence: category === "review" ? 0 : 100, reason: category === "review" ? "사용자가 확인할 항목으로 남겼습니다." : "사용자가 직접 선택했습니다." };
+    if (index >= 0) rows[index] = next;
+    else rows.push(next);
+    reportState.driveClassifications = rows;
+    reportState.drivePlan = P.applyPhotoClassifications(basePlan, rows);
+    renderWorkReports();
   }
 
   function applyReportDrivePlan() {
@@ -7471,7 +7542,7 @@
     const plan = reportState.drivePlan;
     if (!R || !P || !plan) return;
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
-    const allowedKeys = new Set(R.itemsFor(draft.kind, []).map(item => item.key));
+    const allowedKeys = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(draft.kind) : R.itemsFor(draft.kind, [])).map(item => item.key));
     const resolvedBucketKey = bucket => {
       const automatic = String(bucket && bucket.itemKey || "");
       const manual = String(bucket && bucket.manualItemKey || "");
@@ -7499,6 +7570,9 @@
         note: item.note || found.note,
       });
     });
+    made.draft.items.forEach(item => {
+      if (!merged.some(existing => existing.key === item.key)) merged.push(item);
+    });
     reportState.draft = R.normalizeReport(Object.assign({}, draft, {
       items: merged,
       buildingName: draft.buildingName || made.draft.buildingName,
@@ -7517,7 +7591,7 @@
     const index = Number(indexValue);
     if (!R || !plan || !Number.isInteger(index) || index < 0 || index >= plan.buckets.length) return;
     preserveReportDraft();
-    const allowed = new Set(R.itemsFor(plan.kind || reportState.draft.kind, []).map(item => item.key));
+    const allowed = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(plan.kind || reportState.draft.kind) : R.itemsFor(plan.kind || reportState.draft.kind, [])).map(item => item.key));
     const itemKey = String(itemKeyValue || "");
     plan.buckets[index].manualItemKey = allowed.has(itemKey) ? itemKey : "";
     renderWorkReports();
@@ -11823,6 +11897,7 @@
     const reportDriveFile = event.target.closest("[data-report-drive-file]");
     if (reportDriveFile) { toggleReportDriveFile(reportDriveFile.dataset.reportDriveFile); return; }
     if (event.target.closest("[data-report-drive-plan]")) { await planSelectedReportDrivePhotos(); return; }
+    if (event.target.closest("[data-report-photo-classify]")) { await classifyReportDrivePhotos(); return; }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
     if (event.target.closest("[data-report-history]")) {
@@ -14019,6 +14094,10 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-report-photo-category]")) {
+      assignReportPhotoCategory(event.target.dataset.reportPhotoCategory, event.target.value);
+      return;
+    }
     if (event.target.matches("[data-report-drive-item]")) {
       assignReportDriveBucket(event.target.dataset.reportDriveItem, event.target.value);
       return;
@@ -14059,6 +14138,8 @@
     if (event.target.matches("[data-report-kind]")) {
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
       reportState.drivePlan = null;
+      reportState.driveBasePlan = null;
+      reportState.driveClassifications = [];
       syncReportDraft();
       return;
     }

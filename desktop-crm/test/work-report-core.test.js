@@ -39,6 +39,13 @@ test("종류를 바꿔도 적어 둔 것이 날아가지 않는다", () => {
   assert.equal(stairs.some(item => item.key === "floor"), false);
 });
 
+test("가전 청소 항목은 사진이 선택된 보고서에만 나타난다", () => {
+  assert.equal(R.itemsFor("moveIn").some(item => ["aircon", "refrigerator", "hood"].includes(item.key)), false);
+  const withAppliance = R.itemsFor("moveIn", [{ key: "aircon" }, { key: "refrigerator" }, { key: "hood" }]);
+  assert.deepEqual(withAppliance.filter(item => ["aircon", "refrigerator", "hood"].includes(item.key)).map(item => item.label), ["주방 후드·필터", "에어컨 필터·커버", "냉장고 선반·서랍"]);
+  assert.equal(R.normalizeReport({ kind: "moveIn", items: withAppliance }).items.length, 10);
+});
+
 test("후 사진만으로는 완료가 안 된다", () => {
   // 후 사진만 있으면 원래 깨끗했는지 우리가 닦은 것인지 알 수 없다.
   assert.equal(R.itemIssue(shot({ before: [] })), "작업 전 사진이 없습니다.");

@@ -58,6 +58,9 @@
       바닥: "floor", 거실: "floor", 방: "floor",
       창호: "window", 창틀: "window", 샷시: "window", 새시: "window", 유리: "window",
       주방: "kitchen", 싱크대: "kitchen", 씽크대: "kitchen",
+      후드: "hood", 후드필터: "hood", 렌지후드: "hood",
+      에어컨: "aircon", 에어컨필터: "aircon",
+      냉장고: "refrigerator", 냉장고선반: "refrigerator", 냉장고서랍: "refrigerator",
       욕실: "bath", 화장실: "bath", 욕조: "bath",
       베란다: "veranda", 발코니: "veranda",
       붙박이장: "storage", 신발장: "storage", 수납: "storage", 가구: "storage",
@@ -153,7 +156,7 @@
     if (!word) return "";
     if (table[word]) return table[word];
     // 정확히 안 맞으면 들어 있는지 본다. "계단실 바닥" 은 "계단" 을 품는다.
-    const hit = Object.keys(table).find(key => word.includes(key));
+    const hit = Object.keys(table).sort((left, right) => right.length - left.length).find(key => word.includes(key));
     return hit ? table[hit] : "";
   }
 
@@ -312,12 +315,14 @@
     }
     const toPhoto = file => core.normalizePhoto({
       id: text(file && file.id, 80),
+      driveFileId: text(file && file.id, 120),
       name: text(file && (file.name || file.title), 200),
       webViewLink: text(file && (file.webViewLink || file.viewUrl), 500),
       caption: "",
     });
 
-    const items = core.itemsFor(kind, []).map(item => Object.assign({}, item));
+    const selectedItems = rows(made.buckets).map(bucket => ({ key: text(bucket && bucket.itemKey, 40) })).filter(item => item.key);
+    const items = core.itemsFor(kind, selectedItems).map(item => Object.assign({}, item));
     const byKey = new Map(items.map(item => [item.key, item]));
     const leftovers = [];
 
@@ -350,11 +355,80 @@
     };
   }
 
+  const AI_CATEGORY_LABELS = Object.freeze({
+    floor: "바닥",
+    window: "창호·새시",
+    kitchen: "싱크대·상하부장",
+    hood: "주방 후드·필터",
+    bath: "욕실",
+    veranda: "베란다",
+    storage: "붙박이장·수납",
+    aircon: "에어컨 필터·커버",
+    refrigerator: "냉장고 선반·서랍",
+    finish: "기타 가전·마감",
+    review: "분류 확인 필요",
+  });
+
+  // AI는 구역만 추천한다. 작업 전·후는 기존 촬영시각 판정을 그대로 둔다.
+  // 원본 계획을 매번 다시 묶으므로 사용자가 한 사진의 분류를 바꿔도 다른
+  // 사진의 단계나 메타데이터가 손실되지 않는다.
+  function applyPhotoClassifications(plan, classifications) {
+    const source = plan && typeof plan === "object" ? plan : {};
+    const decisions = new Map(rows(classifications).map(row => [text(row && row.id, 200), {
+      id: text(row && row.id, 200),
+      category: Object.hasOwn(AI_CATEGORY_LABELS, text(row && row.category, 40)) ? text(row.category, 40) : "review",
+      confidence: Math.max(0, Math.min(100, Math.round(Number(row && row.confidence) || 0))),
+      reason: text(row && row.reason, 120),
+    }]).filter(([id]) => id));
+    const grouped = new Map();
+    const add = (file, phase, original, originalIndex) => {
+      const decision = decisions.get(text(file && file.id, 200)) || { category: "review", confidence: 0, reason: "분류 결과가 없어 확인이 필요합니다." };
+      const category = decision.category;
+      const itemKey = category === "review" ? "" : category;
+      const groupKey = itemKey ? `ai:${itemKey}` : "ai:review";
+      if (!grouped.has(groupKey)) grouped.set(groupKey, {
+        folder: AI_CATEGORY_LABELS[category] || "분류 확인 필요",
+        itemKey,
+        before: [], after: [], unsorted: [], heic: [], skipped: 0,
+        confident: category !== "review",
+        reason: category === "review" ? "AI가 확정하지 않았습니다. 사진별 항목을 직접 골라 주세요." : "AI 사진 분류 추천입니다. 저장 전 확인해 주세요.",
+        sourceBuckets: [],
+      });
+      const target = grouped.get(groupKey);
+      const decorated = Object.assign({}, file, {
+        aiItemKey: itemKey,
+        aiConfidence: decision.confidence,
+        aiReason: decision.reason,
+        aiSourceBucket: originalIndex,
+      });
+      target[phase].push(decorated);
+      if (unviewable(file && file.mimeType)) target.heic.push(decorated);
+      if (!target.sourceBuckets.includes(originalIndex)) target.sourceBuckets.push(originalIndex);
+    };
+    rows(source.buckets).forEach((bucket, bucketIndex) => {
+      ["before", "after", "unsorted"].forEach(phase => rows(bucket && bucket[phase]).forEach(file => add(file, phase, bucket, bucketIndex)));
+    });
+    const buckets = [...grouped.values()];
+    const warnings = rows(source.warnings).filter(line => !String(line).includes("AI 사진 분류"));
+    warnings.push("AI 사진 분류는 추천입니다. 사진별 구역을 확인한 뒤 초안에 적용해 주세요.");
+    const reviewCount = rows(classifications).filter(row => text(row && row.category, 40) === "review").length;
+    if (reviewCount) warnings.push(`${reviewCount}장은 AI가 확정하지 않았습니다. 직접 구역을 골라 주세요.`);
+    return Object.assign({}, source, {
+      buckets,
+      warnings,
+      matched: buckets.filter(bucket => bucket.itemKey).length,
+      unmatched: buckets.filter(bucket => !bucket.itemKey).map(bucket => bucket.folder),
+      aiClassified: true,
+      aiClassifications: [...decisions.values()],
+    });
+  }
+
   return Object.freeze({
     VIEWABLE,
     UNVIEWABLE,
     GAP_MINUTES,
     FOLDER_HINTS,
+    AI_CATEGORY_LABELS,
     parseFolderName,
     parseDateChunk,
     kindFromWords,
@@ -366,6 +440,7 @@
     splitBeforeAfter,
     planFromTree,
     toReportDraft,
+    applyPhotoClassifications,
     text,
     rows,
   });

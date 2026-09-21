@@ -55,6 +55,7 @@ const {
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
+const { classifyPhotosWithGateway, MAX_PHOTOS: MAX_AI_CLASSIFICATION_PHOTOS, MAX_JPEG_BYTES: MAX_AI_CLASSIFICATION_JPEG_BYTES } = require("./ai-photo-classifier-client");
 const { sendDailyLogToTelegram } = require("./daily-log-telegram-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
@@ -158,6 +159,7 @@ const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog"
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
+const CRM_AI_PHOTO_CLASSIFY_URL = new URL("/v1/photo-classify", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
@@ -3860,6 +3862,101 @@ async function loadWorkReportDriveThumbnail(input) {
   const accessToken = String(driveSession && driveSession.accessToken || "");
   if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
   return fetchReportDriveThumbnail(picker.thumbnails.get(fileId), accessToken);
+}
+
+function safeClassificationJpeg(sourceBuffer) {
+  const source = nativeImage.createFromBuffer(sourceBuffer);
+  if (!source || source.isEmpty()) throw Object.assign(new Error("사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
+  const size = source.getSize();
+  const longest = Math.max(1, Number(size.width || 0), Number(size.height || 0));
+  const attempts = [
+    { edge: 768, quality: 68 },
+    { edge: 640, quality: 58 },
+    { edge: 512, quality: 48 },
+    { edge: 420, quality: 40 },
+  ];
+  for (const attempt of attempts) {
+    const scale = Math.min(1, attempt.edge / longest);
+    const resized = source.resize({
+      width: Math.max(1, Math.round(Number(size.width || 1) * scale)),
+      height: Math.max(1, Math.round(Number(size.height || 1) * scale)),
+      quality: "good",
+    });
+    const jpeg = resized.toJPEG(attempt.quality);
+    if (jpeg.length && jpeg.length <= MAX_AI_CLASSIFICATION_JPEG_BYTES) {
+      return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+    }
+  }
+  throw Object.assign(new Error("사진 축소본이 허용 크기를 넘습니다."), { code: "PHOTO_PREVIEW_TOO_LARGE" });
+}
+
+async function workReportClassificationSource(file, picker, accessToken) {
+  const thumbnailLink = picker.thumbnails.get(file.id);
+  if (thumbnailLink) {
+    try {
+      const preview = await fetchReportDriveThumbnail(thumbnailLink, accessToken);
+      const match = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/u.exec(String(preview && preview.dataUrl || ""));
+      if (match) return safeClassificationJpeg(Buffer.from(match[1], "base64"));
+    } catch (_) {
+      // Google 미리보기가 없을 때만 아래의 제한된 원본 다운로드로 보완한다.
+    }
+  }
+  const fetched = await BuildingDocsDrive.downloadFile(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken },
+    { fileId: file.id },
+  );
+  if (!fetched || !fetched.content) throw Object.assign(new Error("사진을 읽지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
+  const original = Buffer.from(fetched.content);
+  const isHeic = HeicJpegConverter.looksLikeHeic(original)
+    || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || file.mimeType || ""))
+    || /\.hei[cf]$/iu.test(String(fetched.name || file.name || ""));
+  const viewable = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
+  return safeClassificationJpeg(viewable);
+}
+
+async function classifySelectedWorkReportPhotos(input) {
+  if (!remoteClient || !authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 결과보고서 사진을 분류할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (options.kind !== "moveIn") throw Object.assign(new Error("입주청소 사진만 AI로 구역을 분류할 수 있습니다."), { code: "INVALID_INPUT" });
+  const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
+  if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
+  if (ids.length > MAX_AI_CLASSIFICATION_PHOTOS) throw Object.assign(new Error(`AI 사진 분류는 한 번에 ${MAX_AI_CLASSIFICATION_PHOTOS}장까지 가능합니다.`), { code: "INPUT_TOO_LARGE" });
+  const picker = reportDrivePickerReady();
+  const files = ids.map(id => picker.files.get(id));
+  if (files.some(file => !file)) throw Object.assign(new Error("Drive 화면에 표시된 사진만 분류할 수 있습니다."), { code: "DRIVE_FILE_NOT_LISTED" });
+  const accessToken = String(driveSession && driveSession.accessToken || "");
+  if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+
+  const images = [];
+  const unavailable = [];
+  let cursor = 0;
+  async function prepare() {
+    while (cursor < files.length) {
+      const index = cursor;
+      cursor += 1;
+      const file = files[index];
+      try {
+        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken) };
+      } catch (_) {
+        unavailable.push({ id: file.id, category: "review", confidence: 0, reason: "사진 축소본을 만들지 못해 직접 확인이 필요합니다." });
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => prepare()));
+  const prepared = images.filter(Boolean);
+  if (!prepared.length) throw Object.assign(new Error("AI에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
+  const idToken = await remoteClient.ensureIdToken(false);
+  const result = await classifyPhotosWithGateway({
+    endpoint: CRM_AI_PHOTO_CLASSIFY_URL,
+    idToken,
+    input: { kind: "moveIn", images: prepared },
+    fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
+  });
+  return Object.assign({}, result, {
+    classifications: result.classifications.concat(unavailable),
+    warnings: result.warnings.concat(unavailable.length ? [`${unavailable.length}장은 축소본을 만들지 못해 직접 확인해야 합니다.`] : []),
+  });
 }
 
 function reportDriveFolderAncestors(picker, folderId) {
@@ -8272,6 +8369,7 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     fetchImpl: (url, options) => net.fetch(url, options)
   });
 });
+secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
 secureCanonicalHandle("crm:daily-log-telegram-send", async input => {
   const request = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const report = request.report && typeof request.report === "object" && !Array.isArray(request.report)

@@ -56,7 +56,7 @@ test("하위 폴더 이름이 보고서 항목이 된다", () => {
 test("이어 준 항목은 그 작업에 진짜로 있는 항목이다", () => {
   // 없는 열쇠에 이어 두면 사진이 어디에도 안 붙는다.
   Object.entries(P.FOLDER_HINTS).forEach(([kind, table]) => {
-    const keys = W.itemsFor(kind, []).map(item => item.key);
+    const keys = (W.itemCatalogFor ? W.itemCatalogFor(kind) : W.itemsFor(kind, [])).map(item => item.key);
     Object.entries(table).forEach(([folder, itemKey]) => {
       assert.ok(keys.includes(itemKey), `${kind} 에 ${itemKey} 가 없다 (${folder})`);
     });
@@ -261,4 +261,30 @@ test("작업 종류를 모르면 초안을 안 만든다", () => {
 test("모듈을 못 받으면 계산하지 않는다", () => {
   // 여기서 항목을 다시 만들면 두 벌이 되고 한쪽이 반드시 뒤처진다.
   assert.equal(P.toReportDraft({}, {}).code, "CORE_MISSING");
+});
+
+test("AI 사진 분류는 전후를 유지하고 에어컨·냉장고·후드를 따로 묶는다", () => {
+  const plan = P.planFromTree({
+    name: "입주청소(예초집)_20260921",
+    folders: [{ name: "활동 사진", files: [jpg("20260921_090000.jpg"), jpg("20260921_140000.jpg"), jpg("20260921_141000.jpg")] }],
+  });
+  const files = plan.buckets[0].before.concat(plan.buckets[0].after);
+  const classified = P.applyPhotoClassifications(plan, [
+    { id: files[0].id, category: "aircon", confidence: 94, reason: "필터" },
+    { id: files[1].id, category: "refrigerator", confidence: 88, reason: "선반" },
+    { id: files[2].id, category: "hood", confidence: 96, reason: "후드" },
+  ]);
+  assert.deepEqual(classified.buckets.map(bucket => bucket.itemKey), ["aircon", "refrigerator", "hood"]);
+  assert.equal(classified.buckets[0].before.length, 1, "AI가 전후 단계는 바꾸지 않는다");
+  assert.equal(classified.buckets[1].after.length + classified.buckets[2].after.length, 2);
+  const made = P.toReportDraft(classified, { core: W });
+  assert.deepEqual(made.draft.items.filter(item => ["aircon", "refrigerator", "hood"].includes(item.key)).map(item => item.key), ["hood", "aircon", "refrigerator"]);
+});
+
+test("확신 없는 AI 사진은 보고서 항목에 자동으로 붙이지 않는다", () => {
+  const photo = jpg("20260921_090000.jpg");
+  const plan = P.planFromTree({ name: "입주청소(예초집)_20260921", folders: [{ name: "활동 사진", files: [photo] }] });
+  const classified = P.applyPhotoClassifications(plan, [{ id: photo.id, category: "review", confidence: 42, reason: "대상이 흐림" }]);
+  assert.equal(classified.buckets[0].itemKey, "");
+  assert.equal(P.toReportDraft(classified, { core: W }).leftovers.length, 1);
 });

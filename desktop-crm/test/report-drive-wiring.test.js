@@ -30,7 +30,7 @@ function topLevelBody(source, name) {
 }
 
 test("훑기 통로가 모두 등록돼 있고 읽기로 분류된다", () => {
-  for (const channel of ["crm:work-report-photos-scan", "crm:work-report-drive-browse", "crm:work-report-drive-thumbnail", "crm:work-report-drive-plan"]) {
+  for (const channel of ["crm:work-report-photos-scan", "crm:work-report-drive-browse", "crm:work-report-drive-thumbnail", "crm:work-report-drive-plan", "crm:work-report-photo-classify"]) {
     assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel));
     // 아무것도 안 바꾼다. 바꾸는 것으로 분류하면 필요 없는 권한을 쓴다.
     assert.equal(MutationPolicy.classification(channel), "control");
@@ -181,6 +181,24 @@ test("선택한 사진 계획은 화면에 실제로 표시한 파일만 허용�
   assert.doesNotMatch(plan, /downloadFile|alt=media|arrayBuffer/u);
 });
 
+test("AI 사진 분류는 표시된 파일의 작은 JPEG만 전송하고 사람 확인 뒤 적용한다", () => {
+  const classify = topLevelBody(mainSource, "classifySelectedWorkReportPhotos");
+  assert.match(classify, /picker\.files\.get\(id\)/u);
+  assert.match(classify, /MAX_AI_CLASSIFICATION_PHOTOS/u);
+  assert.match(classify, /workReportClassificationSource/u);
+  assert.match(mainSource, /safeClassificationJpeg/u);
+  assert.match(mainSource, /toJPEG/u);
+  assert.match(mainSource, /MAX_AI_CLASSIFICATION_JPEG_BYTES/u);
+  assert.match(classify, /classifyPhotosWithGateway/u);
+  assert.doesNotMatch(classify, /webViewLink|ownerContact|siteAddress/u);
+  const box = functionBody(appSource, "reportDriveBox");
+  assert.match(box, /AI로 사진 구역 분류/u);
+  assert.match(box, /data-report-photo-category/u);
+  assert.match(box, /분류 확인 후 초안에 적용/u);
+  assert.match(appSource, /async function classifyReportDrivePhotos/u);
+  assert.match(appSource, /function assignReportPhotoCategory/u);
+});
+
 test("Drive 사진 선택 전에 CRM 건물을 먼저 고르게 한다", () => {
   const open = functionBody(appSource, "openReportDrivePicker");
   assert.match(open, /preserveReportDraft\(\)/u);
@@ -262,7 +280,7 @@ test("문서번호는 같은 보고서면 늘 같다", () => {
 
 test("폴더 잇는 표가 진짜 항목만 가리킨다", () => {
   Object.entries(P.FOLDER_HINTS).forEach(([kind, table]) => {
-    const keys = W.itemsFor(kind, []).map(item => item.key);
+    const keys = (W.itemCatalogFor ? W.itemCatalogFor(kind) : W.itemsFor(kind, [])).map(item => item.key);
     Object.values(table).forEach(itemKey => assert.ok(keys.includes(itemKey), `${kind}/${itemKey}`));
   });
 });

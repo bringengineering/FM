@@ -58,7 +58,10 @@
       items: Object.freeze([
         { key: "floor", label: "바닥", detail: "전실 바닥 쓸기·물걸레·얼룩 제거" },
         { key: "window", label: "창호·새시", detail: "창틀 홈·레일 먼지 제거, 유리 양면 닦기" },
-        { key: "kitchen", label: "주방", detail: "싱크대 상하부장 내·외부, 후드·가스대 기름때 제거" },
+        { key: "kitchen", label: "주방", detail: "싱크대 상하부장 내·외부, 가스대 기름때 제거" },
+        { key: "hood", label: "주방 후드·필터", detail: "후드 외부와 탈착 가능한 필터의 기름때 제거", optional: true },
+        { key: "aircon", label: "에어컨 필터·커버", detail: "탈착 가능한 필터·커버의 먼지 제거 및 세척", optional: true },
+        { key: "refrigerator", label: "냉장고 선반·서랍", detail: "탈착 가능한 선반·서랍·내부 플라스틱 세척", optional: true },
         { key: "bath", label: "욕실", detail: "타일·줄눈·변기·세면대 물때 제거, 배수구 청소" },
         { key: "veranda", label: "베란다", detail: "바닥·배수구·세탁기 자리 청소" },
         { key: "storage", label: "붙박이장·수납", detail: "장 내부 먼지 제거, 선반 닦기" },
@@ -201,10 +204,18 @@
     const kind = kindOf(kindKey);
     if (!kind) return [];
     const saved = rows(existing).map(item => normalizeItem(item));
-    return kind.items.map(standard => {
+    const savedKeys = new Set(saved.map(item => item.key));
+    return kind.items.filter(standard => !standard.optional || savedKeys.has(standard.key)).map(standard => {
       const found = saved.find(item => item.key === standard.key);
       return normalizeItem(found || { key: standard.key, status: "done" }, standard);
     });
+  }
+
+  // AI 분류와 수동 선택 화면에는 사진이 있을 때만 나타나는 선택 항목까지
+  // 모두 보여 준다. 실제 보고서에는 itemsFor가 선택된 선택 항목만 남긴다.
+  function itemCatalogFor(kindKey) {
+    const kind = kindOf(kindKey);
+    return kind ? kind.items.map(standard => Object.assign({}, standard)) : [];
   }
 
   function normalizeReport(source) {
@@ -390,6 +401,7 @@
     normalizeItem,
     normalizeReport,
     itemsFor,
+    itemCatalogFor,
     itemIssue,
     validateReport,
     progress,

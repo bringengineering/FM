@@ -4,11 +4,13 @@ import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { readDailyReportPayload, sendDailyReportTelegram } from "./daily-report-telegram.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
+import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-09-08-v7";
+const SERVICE_VERSION = "2026-09-21-v8";
 const ASSIST_PATH = "/v1/assist";
+const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
 const DOCUMENT_DELIVERY_PATH = "/v1/document-delivery";
@@ -280,10 +282,10 @@ export function createWorker(options = {}) {
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
       const isDailyReportTelegram = url.pathname === DAILY_REPORT_TELEGRAM_PATH;
-      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery && !isDailyReportTelegram) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, PHOTO_CLASSIFY_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery && !isDailyReportTelegram) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
-      if ([ASSIST_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
+      if ([ASSIST_PATH, PHOTO_CLASSIFY_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
@@ -299,6 +301,17 @@ export function createWorker(options = {}) {
           return json({ ok: true, requestId: requestId(), ...sent }, 200, cors);
         }
         await enforceLimits(identity, env, now);
+        if (url.pathname === PHOTO_CLASSIFY_PATH) {
+          const photos = await readPhotoClassificationPayload(request);
+          const classified = await classifyPhotos(photos, env, fetchImpl, Math.max(timeoutMs, 30_000));
+          return json({
+            ok: true,
+            requestId: requestId(),
+            classifications: classified.classifications,
+            warnings: ["사진 축소본은 분류에만 사용되며 이 서비스에 저장하지 않습니다."],
+            usage: classified.usage,
+          }, 200, cors);
+        }
         if (url.pathname === TRANSCRIBE_PATH) {
           const audio = await readAudioPayload(request);
           const transcript = await callGroqTranscription(audio, env, fetchImpl, timeoutMs);
