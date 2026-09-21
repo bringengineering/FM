@@ -2422,6 +2422,17 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       updatedAt: NOW,
       updatedBy: "crm-legacy-member",
     }));
+    // 진행률을 바꾸지 않고 역사만 끼워 넣을 수는 없다.
+    await assertFails(set(ref(member, `${at("h1")}/progressUpdates/pu_extra1`), {
+      id: "pu_extra1",
+      fromProgress: 60,
+      toProgress: 60,
+      note: "실제 진행률 변경 없이 역사만 추가합니다.",
+      nextAction: "",
+      createdAt: NOW,
+      createdBy: "crm-legacy-member",
+      createdByName: "황우중",
+    }));
     await assertFails(update(ref(member, at("h1")), { hours: 1, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
     await assertFails(update(ref(member, at("h1")), { weight: 5, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
     await assertFails(update(ref(member, at("h1")), { deliverable: "아무거나", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
