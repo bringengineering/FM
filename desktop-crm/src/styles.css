@@ -917,7 +917,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-drive-picker>footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; border-top: 1px solid #E5E8EB; background: #F7F9FC; }
 .wr-drive-picker>footer>span { color: #8B95A1; font-size: 10px; }
 .wr-drive-picker>footer>span b { color: #3182F6; }
-.wr-drive-picker>footer>div { display: flex; gap: 7px; }
+.wr-drive-picker>footer>div { display: flex; gap: 7px; flex-wrap: wrap; }
 @media (max-width: 760px) {
   .wr-drive-launch { grid-template-columns: auto minmax(0,1fr); }
   .wr-drive-launch button { grid-column: 1/-1; }

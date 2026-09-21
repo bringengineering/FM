@@ -6965,6 +6965,7 @@
     const entries = Array.isArray(reportState.driveBrowserEntries) ? reportState.driveBrowserEntries : [];
     const folders = entries.filter(entry => entry && (entry.kind === "folder" || entry.kind === "sharedDrive"));
     const files = entries.filter(entry => entry && entry.kind === "file");
+    const allCurrentFilesSelected = files.length > 0 && files.every(entry => selected.has(String(entry.id)));
     const breadcrumb = path.map((part, index) => `<button type="button" data-report-drive-breadcrumb="${index}"${index === path.length - 1 ? " disabled" : ""}>${esc(part.name || "폴더")}</button>${index < path.length - 1 ? `<span aria-hidden="true">›</span>` : ""}`).join("");
     const tiles = folders.concat(files).map(entry => {
       if (entry.kind === "folder" || entry.kind === "sharedDrive") {
@@ -6999,7 +7000,7 @@
             <div class="wr-drive-entry-grid" data-report-drive-entry-grid>${tiles || `<div class="wr-drive-browser-empty">${esc(emptyText)}</div>`}</div>
           </div>
         </div>
-        <footer><span data-report-drive-selected-count><b>${selected.size}개</b> 사진 선택됨</span><div><button type="button" class="secondary-button" data-report-drive-close>취소</button><button type="button" class="primary-button" data-report-drive-plan${reportState.driveScanning || !selected.size ? " disabled" : ""}>${reportState.driveScanning ? "분류 중…" : "선택한 사진 가져오기"}</button></div></footer>
+        <footer><span data-report-drive-selected-count><b>${selected.size}개</b> 사진 선택됨</span><div><button type="button" class="secondary-button" data-report-drive-select-all aria-pressed="${allCurrentFilesSelected ? "true" : "false"}"${reportState.driveScanning || !files.length ? " disabled" : ""}>${allCurrentFilesSelected ? "모두 해제" : "모두 선택"}</button><button type="button" class="secondary-button" data-report-drive-close>취소</button><button type="button" class="primary-button" data-report-drive-plan${reportState.driveScanning || !selected.size ? " disabled" : ""}>${reportState.driveScanning ? "분류 중…" : "선택한 사진 가져오기"}</button></div></footer>
       </section>
     </div>`;
   }
@@ -7302,7 +7303,57 @@
     else await loadReportDriveFolder(current.id, current.name, path);
   }
 
-  function toggleReportDriveFile(fileId, control) {
+  function visibleReportDriveFileControls() {
+    return [...document.querySelectorAll("[data-report-drive-file]")].filter(control => !control.hidden);
+  }
+
+  function syncReportDriveSelectionControls() {
+    if (!(reportState.driveSelected instanceof Map)) reportState.driveSelected = new Map();
+    const controls = visibleReportDriveFileControls();
+    controls.forEach(control => {
+      const chosen = reportState.driveSelected.has(String(control.dataset.reportDriveFile || ""));
+      control.classList.toggle("is-selected", chosen);
+      control.setAttribute("aria-pressed", chosen ? "true" : "false");
+      const check = control.querySelector(".wr-drive-entry-check");
+      if (check) check.textContent = chosen ? "✓" : "";
+    });
+    const count = document.querySelector("[data-report-drive-selected-count]");
+    if (count) count.innerHTML = `<b>${reportState.driveSelected.size}개</b> 사진 선택됨`;
+    const submit = document.querySelector("[data-report-drive-plan]");
+    if (submit) submit.disabled = !reportState.driveSelected.size || reportState.driveScanning;
+    const selectAll = document.querySelector("[data-report-drive-select-all]");
+    if (selectAll) {
+      const allSelected = controls.length > 0 && controls.every(control => reportState.driveSelected.has(String(control.dataset.reportDriveFile || "")));
+      selectAll.textContent = allSelected ? "모두 해제" : "모두 선택";
+      selectAll.setAttribute("aria-pressed", allSelected ? "true" : "false");
+      selectAll.disabled = !controls.length || reportState.driveScanning;
+    }
+  }
+
+  function toggleAllVisibleReportDriveFiles() {
+    if (reportState.driveScanning) return;
+    if (!(reportState.driveSelected instanceof Map)) reportState.driveSelected = new Map();
+    const controls = visibleReportDriveFileControls();
+    const entries = new Map((Array.isArray(reportState.driveBrowserEntries) ? reportState.driveBrowserEntries : [])
+      .filter(entry => entry && entry.kind === "file")
+      .map(entry => [String(entry.id), entry]));
+    const visibleIds = controls.map(control => String(control.dataset.reportDriveFile || "")).filter(id => entries.has(id));
+    if (!visibleIds.length) return;
+    const allSelected = visibleIds.every(id => reportState.driveSelected.has(id));
+    if (allSelected) visibleIds.forEach(id => reportState.driveSelected.delete(id));
+    else {
+      let limited = false;
+      visibleIds.forEach(id => {
+        if (reportState.driveSelected.has(id)) return;
+        if (reportState.driveSelected.size >= 100) { limited = true; return; }
+        reportState.driveSelected.set(id, entries.get(id));
+      });
+      if (limited) showToast("사진은 한 번에 100장까지 선택할 수 있습니다.", "error");
+    }
+    syncReportDriveSelectionControls();
+  }
+
+  function toggleReportDriveFile(fileId) {
     const entry = reportState.driveBrowserEntries.find(item => item && item.kind === "file" && String(item.id) === String(fileId));
     if (!entry) return;
     if (!(reportState.driveSelected instanceof Map)) reportState.driveSelected = new Map();
@@ -7311,15 +7362,7 @@
       if (reportState.driveSelected.size >= 100) return showToast("사진은 한 번에 100장까지 선택할 수 있습니다.", "error");
       reportState.driveSelected.set(fileId, entry);
     }
-    const chosen = reportState.driveSelected.has(fileId);
-    control.classList.toggle("is-selected", chosen);
-    control.setAttribute("aria-pressed", chosen ? "true" : "false");
-    const check = control.querySelector(".wr-drive-entry-check");
-    if (check) check.textContent = chosen ? "✓" : "";
-    const count = document.querySelector("[data-report-drive-selected-count]");
-    if (count) count.innerHTML = `<b>${reportState.driveSelected.size}개</b> 사진 선택됨`;
-    const submit = document.querySelector("[data-report-drive-plan]");
-    if (submit) submit.disabled = !reportState.driveSelected.size || reportState.driveScanning;
+    syncReportDriveSelectionControls();
   }
 
   async function planSelectedReportDrivePhotos() {
@@ -11675,8 +11718,9 @@
     }
     const reportDriveBreadcrumb = event.target.closest("[data-report-drive-breadcrumb]");
     if (reportDriveBreadcrumb) { await returnReportDriveBreadcrumb(reportDriveBreadcrumb.dataset.reportDriveBreadcrumb); return; }
+    if (event.target.closest("[data-report-drive-select-all]")) { toggleAllVisibleReportDriveFiles(); return; }
     const reportDriveFile = event.target.closest("[data-report-drive-file]");
-    if (reportDriveFile) { toggleReportDriveFile(reportDriveFile.dataset.reportDriveFile, reportDriveFile); return; }
+    if (reportDriveFile) { toggleReportDriveFile(reportDriveFile.dataset.reportDriveFile); return; }
     if (event.target.closest("[data-report-drive-plan]")) { await planSelectedReportDrivePhotos(); return; }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
@@ -15592,6 +15636,7 @@
         const name = String(entry.querySelector("b")?.textContent || "").toLocaleLowerCase("ko");
         entry.hidden = Boolean(query && !name.includes(query));
       });
+      syncReportDriveSelectionControls();
       return;
     }
     if (event.target.matches("[data-report-site-detail]")) {

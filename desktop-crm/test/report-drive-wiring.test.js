@@ -81,6 +81,30 @@ test("결과보고서 화면은 주소 입력 대신 Drive 파일 선택기를 �
   assert.match(appSource, /선택한 사진 가져오기/u);
 });
 
+test("현재 화면의 사진을 모두 선택하고 같은 버튼으로 모두 해제한다", () => {
+  const picker = functionBody(appSource, "reportDrivePicker");
+  assert.match(picker, /data-report-drive-select-all/u);
+  assert.match(picker, /allCurrentFilesSelected \? "모두 해제" : "모두 선택"/u);
+  assert.match(picker, /aria-pressed/u);
+
+  const visible = functionBody(appSource, "visibleReportDriveFileControls");
+  assert.match(visible, /\[data-report-drive-file\]/u);
+  assert.match(visible, /!control\.hidden/u, "검색으로 숨긴 사진은 모두 선택 범위에 넣지 않는다");
+
+  const toggleAll = functionBody(appSource, "toggleAllVisibleReportDriveFiles");
+  assert.match(toggleAll, /visibleReportDriveFileControls\(\)/u);
+  assert.match(toggleAll, /entry\.kind === "file"/u);
+  assert.match(toggleAll, /allSelected/u);
+  assert.match(toggleAll, /driveSelected\.delete\(id\)/u);
+  assert.match(toggleAll, /driveSelected\.set\(id, entries\.get\(id\)\)/u);
+  assert.match(toggleAll, /driveSelected\.size >= 100/u, "전체 선택도 기존 100장 제한을 지킨다");
+  assert.match(toggleAll, /syncReportDriveSelectionControls\(\)/u);
+
+  assert.match(appSource, /closest\("\[data-report-drive-select-all\]"\)[^\n]*toggleAllVisibleReportDriveFiles\(\)/u);
+  const searchHandler = appSource.slice(appSource.indexOf('event.target.matches("[data-report-drive-search]")'));
+  assert.match(searchHandler.slice(0, 1000), /syncReportDriveSelectionControls\(\)/u, "검색 결과가 달라지면 버튼 상태도 다시 계산한다");
+});
+
 test("사진 선택기는 내 드라이브와 공유 문서함, 공유 드라이브를 오갈 수 있다", () => {
   const picker = functionBody(appSource, "reportDrivePicker");
   assert.match(picker, /data-report-drive-space="my"/u);
@@ -144,6 +168,7 @@ test("Drive 선택창은 화면 안에 고정되고 사진 목록만 스크롤�
   assert.match(stylesSource, /\.wr-drive-browser \{[^}]*flex-direction: column;[^}]*min-height: 0;[^}]*overflow: hidden/u);
   assert.match(stylesSource, /\.wr-drive-entry-grid \{[^}]*overflow-y: auto/u);
   assert.match(stylesSource, /\.wr-drive-entry-preview img \{[^}]*object-fit: cover/u);
+  assert.match(stylesSource, /\.wr-drive-picker>footer>div \{[^}]*flex-wrap: wrap/u, "버튼 셋이 좁은 화면에서 겹치지 않아야 한다");
 });
 
 test("선택한 사진 계획은 화면에 실제로 표시한 파일만 허용한다", () => {
