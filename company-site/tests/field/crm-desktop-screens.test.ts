@@ -283,13 +283,10 @@ async function boot(): Promise<Booted> {
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };
   }
-  api.read = async () => ({
-    ok: true,
-    data: {
-      customers: [], buildings: [{ id: "b1", name: "우산동 빌딩", address: "강원 원주시" }],
-      contracts: [], cases: [], tasks: [], activities: [], vacancies: [], partnerVendors: [],
-      quotes: [], relationships: [], payments: [], settings: { owner: "김현진" },
-    },
+  api.load = async () => ({
+    customers: [], buildings: [{ id: "b1", name: "우산동 빌딩", address: "강원 원주시" }],
+    contracts: [], cases: [], tasks: [], activities: [], vacancies: [], partnerVendors: [],
+    quotes: [], relationships: [], payments: [], settings: { owner: "김현진" },
   });
   api.getSession = async () => ({ ok: true, user: { uid: "u-admin", email: "admin@bring.test", role: "admin", displayName: "서창환" } });
   api.onUpdateState = () => {};
@@ -505,16 +502,26 @@ describe("desktop CRM screens actually render", () => {
     const box = booted.document.querySelector(".wr-drive") as HTMLElement | null;
     expect(box, "Drive 에서 끌어오는 자리가 있어야 한다").toBeTruthy();
 
+    // 사진이 어느 현장의 것인지 알아야 Drive 선택창이 열린다.
+    const building = booted.document.querySelector("[data-report-building]") as HTMLSelectElement | null;
+    expect(building, "건물 선택란이 있어야 한다").toBeTruthy();
+    const buildingId = [...building!.options].find(option => option.value)?.value || "";
+    expect(buildingId, "선택할 수 있는 건물이 있어야 한다").not.toBe("");
+    building!.value = buildingId;
+    building!.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(100);
+
     // 최신 화면은 주소 입력 대신 앱 안에서 Drive 사진을 직접 고른다.
-    (box!.querySelector("[data-report-drive-open]") as HTMLButtonElement).click();
+    (booted.document.querySelector("[data-report-drive-open]") as HTMLButtonElement).click();
     await sleep(150);
-    const scan = booted.document.querySelector("[data-report-drive-plan]") as HTMLButtonElement;
-    expect(scan.disabled, "사진 선택 전에는 가져오기를 막는다").toBe(true);
+    const scan = booted.document.querySelector("[data-report-drive-plan]") as HTMLButtonElement | null;
+    expect(scan, "건물을 고른 뒤에는 Drive 사진 선택창이 열려야 한다").toBeTruthy();
+    expect(scan!.disabled, "사진 선택 전에는 가져오기를 막는다").toBe(true);
     (booted.document.querySelector('[data-report-drive-file="p1"]') as HTMLButtonElement).click();
     (booted.document.querySelector('[data-report-drive-file="p2"]') as HTMLButtonElement).click();
-    expect(scan.disabled).toBe(false);
+    expect(scan!.disabled).toBe(false);
     const before = booted.calls.length;
-    scan.click();
+    scan!.click();
     await sleep(250);
     const asked = booted.calls.slice(before).find(call => call.name === "planWorkReportDrivePhotos");
     expect(asked, "훑기 통로로 실제로 나가야 한다").toBeTruthy();
@@ -528,7 +535,14 @@ describe("desktop CRM screens actually render", () => {
     expect(shown, "못 붙인 폴더도 숨기지 않는다").toContain("공간기획");
     expect(shown, "못 여는 사진은 미리 말해 준다").toContain("HEIC");
 
-    // 초안에 얹는다.
+    // 자동으로 못 붙인 폴더는 사람이 보고서 항목을 골라야 초안에 얹을 수 있다.
+    const unmatched = booted.document.querySelector('[data-report-drive-item="1"]') as HTMLSelectElement | null;
+    expect(unmatched, "못 붙인 폴더의 보고서 항목을 고르는 칸이 있어야 한다").toBeTruthy();
+    const reportItemKey = [...unmatched!.options].find(option => option.value)?.value || "";
+    expect(reportItemKey).not.toBe("");
+    unmatched!.value = reportItemKey;
+    unmatched!.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(100);
     const apply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
     expect(apply.disabled).toBe(false);
     apply.click();
