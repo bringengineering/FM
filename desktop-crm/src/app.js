@@ -7111,11 +7111,11 @@
       <div class="wr-drive-head">
         <b>회사 Drive에서 사진 선택</b>
         <small>주소나 폴더 ID를 입력하지 않고 Drive 화면에서 직접 고릅니다.</small>
-        ${connected ? `<em><i></i>연결됨</em>` : ""}
+        ${connected ? `<em><i></i>${driveState.restored ? "자동 복원됨" : "연결 유지됨"}</em>` : ""}
       </div>
       <div class="wr-drive-launch">
         <span class="wr-drive-launch-icon" aria-hidden="true">D</span>
-        <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : "폴더를 찾아 들어가 필요한 사진을 여러 장 선택하세요.") : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
+        <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : driveState.restored ? "다시 연결하지 않고 바로 사진을 선택할 수 있습니다." : "연결 정보가 안전하게 저장되었습니다.") : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
         ${connected
           ? `<button type="button" class="primary-button" data-report-drive-open${reportState.driveBrowserLoading ? " disabled" : ""}>Drive에서 사진 선택</button>`
           : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>회사 Drive 연결</button>`}

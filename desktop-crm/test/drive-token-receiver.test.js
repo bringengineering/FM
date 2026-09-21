@@ -180,7 +180,7 @@ test("창을 닫으면 Drive 연결도 그 자리에서 끝난다", () => {
   // 남고 다시 누를수록 쌓인다. 사용자는 멈춘 줄도 모른다.
   const connect = mainSource.slice(
     mainSource.indexOf("async function connectDrive"),
-    mainSource.indexOf("async function connectDrive") + 900,
+    mainSource.indexOf("async function disconnectDrive"),
   );
   assert.match(connect, /receiveDriveToken\(\{ signal: controller\.signal \}\)/u, "신호를 넘겨야 한다");
   // 다시 누르면 앞선 시도를 먼저 끊는다.

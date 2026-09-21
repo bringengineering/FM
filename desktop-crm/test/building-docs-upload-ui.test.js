@@ -10,6 +10,7 @@ const read = name => fs.readFileSync(path.join(__dirname, "../src", name), "utf8
 const appSource = read("app.js");
 const mainSource = read("main.js");
 const preloadSource = read("preload.js");
+const driveSessionStoreSource = read("drive-session-store.js");
 
 const CHANNELS = [
   "crm:drive-status",
@@ -72,16 +73,17 @@ test("파일 내용은 화면 쪽으로 건너가지 않는다", () => {
   assert.match(picker, /filePath,/u);
 });
 
-test("Drive 토큰은 디스크에 남기지 않는다", () => {
-  // 왜 저장하지 않는지 적어 둔 머리말까지 포함해서 본다.
+test("Drive 토큰은 Windows 보호 저장소로만 암호화해 저장한다", () => {
   const block = mainSource.slice(
     mainSource.indexOf("// --- 건물 문서함 Drive 연결"),
     mainSource.indexOf("async function pickBuildingDocuments"),
   );
   assert.ok(block.length > 0);
-  // 한 시간이면 만료되는 값이라 저장할 이유가 없고, 저장 안 하면 샐 자리도 없다.
-  assert.doesNotMatch(block, /encodeProtectedJson|writeFile|safeStorage/u);
-  assert.match(block, /메모리에만 둔다/u);
+  assert.match(block, /createDriveSessionStore/u);
+  assert.match(block, /encodeProtectedJson/u);
+  assert.match(block, /ownerUid/u);
+  assert.match(driveSessionStoreSource, /decoded\.encrypted !== true/u);
+  assert.doesNotMatch(driveSessionStoreSource, /JSON\.stringify\(session\)/u, "세션을 평문으로 직접 쓰지 않는다");
 });
 
 test("화면 상태에 Drive 토큰을 들고 있지 않다", () => {

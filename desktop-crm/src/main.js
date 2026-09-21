@@ -30,6 +30,7 @@ const BuildingReportCore = require("./building-report-core");
 const OwnerOsReportCore = require("./owner-os-report-core");
 const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const BuildingDocsDrive = require("./building-docs-drive");
+const { createDriveSessionStore } = require("./drive-session-store");
 const ReportPhotoPlan = require("./report-photo-plan");
 const TelegramCore = require("./telegram-core");
 const ServiceReportCore = require("./service-report-core");
@@ -1342,6 +1343,10 @@ function quoteSealFile() {
 
 function ownerOsSettingsFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-owner-os.json");
+}
+
+function driveSessionFile() {
+  return path.join(path.dirname(dataFile()), "bring-crm-drive-session.json");
 }
 
 // 대표OS 주소와 비밀키. 견적 공급자 정보와 같은 방식으로 이 PC 의 보안
@@ -3142,10 +3147,11 @@ async function runDocumentDelivery(action, input) {
 
 // --- 건물 문서함 Drive 연결 -------------------------------------------------
 //
-// 접근 토큰은 디스크에 남기지 않고 메모리에만 둔다. 한 시간이면 만료되는 값이라
-// 굳이 저장할 이유가 없고, 저장하지 않으면 새어 나갈 자리도 없다. 프로그램을
-// 다시 켜면 다시 연결하면 된다.
+// Drive 접근 토큰은 Windows 사용자 보호 영역으로 암호화한 뒤 이 PC에만 둔다.
+// 평문·Firebase·렌더러에는 남기지 않는다. 앱 재실행 때 CRM 사용자 UID가 같고
+// 토큰 만료 전인 경우에만 복원하며, 연결 해제·사용자 변경·만료 시 폐기한다.
 let driveSession = null;
+let driveSessionStore = null;
 
 const REPORT_DRIVE_IMAGE_MIME = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
@@ -3165,6 +3171,47 @@ function resetReportDrivePickerSession() {
     files: new Map(),
     thumbnails: new Map(),
   };
+}
+
+function protectedDriveSessionStore() {
+  if (!driveSessionStore) {
+    driveSessionStore = createDriveSessionStore({
+      fs,
+      safeStorage,
+      target: driveSessionFile(),
+      encode: encodeProtectedJson,
+      decode: decodeProtectedJson,
+    });
+  }
+  return driveSessionStore;
+}
+
+function driveSessionOwnerUid() {
+  const user = authState().user;
+  return user && !user.mustChangePassword ? String(user.uid || "") : "";
+}
+
+async function restoreDriveSession() {
+  const ownerUid = driveSessionOwnerUid();
+  if (!ownerUid || localTestMode) return driveSessionView();
+  try {
+    const saved = await protectedDriveSessionStore().load(ownerUid);
+    driveSession = saved ? Object.assign({}, saved, { restored: true }) : null;
+  } catch (error) {
+    driveSession = null;
+    console.warn("Drive connection restore failed", error && error.code ? error.code : "DRIVE_SESSION_RESTORE_FAILED");
+  }
+  resetReportDrivePickerSession();
+  return driveSessionView();
+}
+
+function clearDriveSessionForChangedUser(nextUid) {
+  if (!driveSession || driveSession.ownerUid === String(nextUid || "")) return;
+  driveSession = null;
+  resetReportDrivePickerSession();
+  void protectedDriveSessionStore().clear().catch(() => {
+    console.warn("Drive connection cleanup failed");
+  });
 }
 
 function reportDrivePickerId(value, allowRoot = false) {
@@ -3219,31 +3266,50 @@ function reportDrivePickerReady() {
 }
 
 function driveSessionView() {
-  if (!driveSession) return { connected: false, email: "", expiresAt: "" };
+  if (!driveSession) return { connected: false, email: "", expiresAt: "", restored: false };
   if (Date.parse(driveSession.expiresAt) <= Date.now()) {
     driveSession = null;
-    return { connected: false, email: "", expiresAt: "" };
+    resetReportDrivePickerSession();
+    void protectedDriveSessionStore().clear().catch(() => {
+      console.warn("Expired Drive connection cleanup failed");
+    });
+    return { connected: false, email: "", expiresAt: "", restored: false };
   }
-  return { connected: true, email: driveSession.email, expiresAt: driveSession.expiresAt };
+  return {
+    connected: true,
+    email: driveSession.email,
+    expiresAt: driveSession.expiresAt,
+    restored: driveSession.restored === true,
+  };
 }
 
 async function connectDrive() {
-  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const ownerUid = driveSessionOwnerUid();
+  if (!ownerUid) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!remoteClient) throw Object.assign(new Error("로그인 모듈을 사용할 수 없습니다."), { code: "DRIVE_CONNECT_FAILED" });
   // 앞선 시도가 아직 콜백을 기다리고 있으면 먼저 끊는다. 안 그러면 서버가 쌓인다.
   if (driveConnectAbortController) driveConnectAbortController.abort();
   const controller = new AbortController();
   driveConnectAbortController = controller;
   try {
-    driveSession = await remoteClient.receiveDriveToken({ signal: controller.signal });
+    const received = await remoteClient.receiveDriveToken({ signal: controller.signal });
+    const saved = await protectedDriveSessionStore().save(Object.assign({}, received, { ownerUid }));
+    driveSession = Object.assign({}, saved, { restored: false });
     resetReportDrivePickerSession();
     return driveSessionView();
+  } catch (error) {
+    if (error && ["LOCAL_ENCRYPTION_UNAVAILABLE", "PROTECTED_DATA_INVALID", "DRIVE_SESSION_INVALID"].includes(error.code)) {
+      driveSession = null;
+      throw Object.assign(new Error("Drive 연결 정보를 이 PC에 안전하게 저장할 수 없습니다."), { code: "DRIVE_SESSION_SAVE_FAILED" });
+    }
+    throw error;
   } finally {
     if (driveConnectAbortController === controller) driveConnectAbortController = null;
   }
 }
 
-function disconnectDrive() {
+async function disconnectDrive() {
+  await protectedDriveSessionStore().clear();
   driveSession = null;
   resetReportDrivePickerSession();
   return driveSessionView();
@@ -4712,6 +4778,7 @@ async function initializeRemote() {
     onOfficeData: applyRemoteOfficeData,
     onAuthState: state => {
       const wallboardUid = state?.user?.mustChangePassword ? "" : String(state?.user?.uid || "");
+      clearDriveSessionForChangedUser(wallboardUid);
       if (wallboardUid !== wallboardPublisherUid) wallboardPublisher?.stop();
       wallboardPublisherUid = wallboardUid;
       if (FIELD_OPERATIONS_ENABLED) syncFieldSession(state);
@@ -8490,6 +8557,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
       closeCrmAuthWindow();
       localOfficeMessageFiles = Object.create(null);
       try {
+        await disconnectDrive();
         if (remoteClient) await remoteClient.logout();
       } finally {
         await cleanupOfficeAttachmentCache();
@@ -8518,6 +8586,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
       localOfficeMessageFiles = Object.create(null);
       destroyFieldView();
       try {
+        await disconnectDrive();
         if (remoteClient) await remoteClient.logout();
       } finally {
         await cleanupOfficeAttachmentCache();
@@ -8886,6 +8955,7 @@ app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("kr.co.bringengineering.crm");
   await cleanupStaleOfficeAttachmentCaches();
   await initializeRemote();
+  await restoreDriveSession();
   Menu.setApplicationMenu(buildMenu());
   await createWindow();
   configureUpdater();
