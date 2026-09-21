@@ -141,6 +141,31 @@ test("결과보고서 작성 화면이 사진 검토와 AI 초안을 한 흐름�
   assert.match(body, /결과보고서 저장/u);
 });
 
+test("건물을 고르면 등록 주소를 쓰고 상세주소는 별도 빈칸으로 받는다", () => {
+  const editorStart = appSource.indexOf("function reportEditor(");
+  const editor = appSource.slice(editorStart, appSource.indexOf("\n  function readReportForm(", editorStart));
+  assert.match(editor, /data-report-building/u);
+  assert.match(editor, /name="siteAddress"[^>]*readonly/u);
+  assert.match(editor, /name="siteAddressDetail"[^>]*data-report-site-detail/u);
+  assert.match(editor, /고객·건물 관리에서 자동입력/u);
+  assert.match(editor, /wr-ai-location-summary/u);
+
+  const addressStart = appSource.indexOf("function workReportBuildingAddress(");
+  const addressHelpers = appSource.slice(addressStart, editorStart);
+  assert.match(addressHelpers, /building\.roadAddress \|\| building\.jibunAddress \|\| building\.address/u);
+  assert.match(addressHelpers, /saved\.startsWith\(prefix\)/u, "기존 보고서의 상세주소를 다시 분리해야 한다");
+
+  const readStart = appSource.indexOf("function readReportForm(");
+  const readBody = appSource.slice(readStart, appSource.indexOf("\n  function syncReportDraft(", readStart));
+  assert.match(readBody, /raw\.siteAddressDetail/u);
+  assert.match(readBody, /\[baseAddress, detailAddress\]\.filter\(Boolean\)\.join\(" "\)\.slice\(0, 300\)/u);
+
+  const changeStart = appSource.indexOf('if (event.target.matches("[data-report-building]"))');
+  const changeBody = appSource.slice(changeStart, changeStart + 900);
+  assert.match(changeBody, /form\.elements\.siteAddress\.value = workReportBuildingAddress\(building\)/u);
+  assert.match(changeBody, /form\.elements\.siteAddressDetail\.value = ""/u, "건물 변경 시 이전 호실을 지워야 한다");
+});
+
 test("AI 초안에는 확인된 사실만 보내고 사진·연락처·주소는 보내지 않는다", () => {
   const start = appSource.indexOf("function workReportAiContent(");
   const contentBody = appSource.slice(start, appSource.indexOf("\n  async function createWorkReportAiDraft(", start));

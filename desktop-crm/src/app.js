@@ -7297,8 +7297,29 @@
     }
   }
 
+  function workReportBuildingAddress(building) {
+    return String(building && (building.roadAddress || building.jibunAddress || building.address) || "").trim();
+  }
+
+  // 저장 형식은 기존 siteAddress 한 칸을 그대로 쓴다. 화면에서만 건물 주소와
+  // 상세주소를 나눠 보여 주면 기존 보고서·PDF·서버 규칙을 깨지 않고 호실을
+  // 따로 입력할 수 있다.
+  function workReportAddressParts(report, building) {
+    const saved = String(report && report.siteAddress || "").trim();
+    const buildingAddress = workReportBuildingAddress(building);
+    if (!buildingAddress) return { base: saved, detail: "" };
+    if (!saved || saved === buildingAddress) return { base: buildingAddress, detail: "" };
+    const prefix = `${buildingAddress} `;
+    if (saved.startsWith(prefix)) return { base: buildingAddress, detail: saved.slice(prefix.length).trim() };
+    // 예전 보고서의 주소가 현재 건물 주소와 다르면 역사 기록을 덮어쓰지 않는다.
+    return { base: saved, detail: "" };
+  }
+
   function reportEditor(R, draft) {
     const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || null;
+    const addressParts = workReportAddressParts(draft, selectedBuilding);
+    const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
     const blockers = R.blockers(draft);
     const sum = R.summarizeItems(draft);
     const basicReady = Boolean(draft.buildingId && draft.workDate);
@@ -7342,20 +7363,36 @@
       <div class="wr-ai-layout">
         <div class="wr-ai-main">
           <section class="wr-ai-card">
-            <header><span class="wr-ai-card-icon">01</span><div><h4>기본 정보</h4><p>보고서에 표시할 현장과 작업 정보를 입력합니다.</p></div></header>
+            <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>건물을 선택하면 저장된 현장 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>건물</span><select name="buildingId" required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || item.address || item.id)}</option>`).join("")}</select></label>
+              <label><span>건물 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
+            </div>
+            <section class="wr-ai-location">
+              <header><b>현장 위치</b><span>↗ 고객·건물 관리에서 자동입력</span></header>
+              <div class="wr-ai-location-grid">
+                <label><span>현장 주소</span><div class="wr-ai-address-input"><i aria-hidden="true">⌖</i><input type="text" name="siteAddress" maxlength="300" value="${esc(addressParts.base)}" placeholder="건물을 선택하면 자동으로 입력됩니다" readonly></div></label>
+                <label><span>상세주소 <em>직접 입력</em></span><input type="text" name="siteAddressDetail" data-report-site-detail maxlength="60" value="${esc(addressParts.detail)}" placeholder="예: 301호"></label>
+              </div>
+              <p>ⓘ 건물을 바꾸면 현장 주소만 자동 변경되며, 상세주소는 비워 둡니다.</p>
+            </section>
+            <div class="wr-ai-section-divider"></div>
+            <header class="wr-ai-subheading"><span class="wr-ai-card-icon">02</span><div><h4>작업 세부 정보</h4><p>일정과 인원, 작업 범위를 입력합니다.</p></div></header>
+            <div class="wr-ai-form-grid">
               <label><span>작업일</span><input type="date" name="workDate" value="${esc(draft.workDate)}" required${supplyDateBounds()}></label>
               <label><span>작업 인원</span><input type="text" name="workerName" maxlength="120" value="${esc(draft.workerName)}" placeholder="예: 황우중 외 1명"></label>
               <label><span>작업 범위</span><input type="text" name="area" maxlength="60" value="${esc(draft.area)}" placeholder="예: 지상 1~5층 계단실"></label>
               <label><span>구분</span><select name="category">${R.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label class="wide"><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
-              <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
-              <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
-              <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
-              <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
             </div>
+            <details class="wr-ai-optional"${optionalOpen ? " open" : ""}>
+              <summary>계약·요청자 정보 입력 <span>선택사항</span></summary>
+              <div class="wr-ai-form-grid">
+                <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
+                <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
+                <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+                <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
+              </div>
+            </details>
           </section>
           <section class="wr-ai-card wr-ai-photo-card">
             <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
@@ -7373,6 +7410,14 @@
           </section>
         </div>
         <aside class="wr-ai-side">
+          <section class="wr-ai-card wr-ai-location-summary">
+            <header><div><span>LIVE CHECK</span><h4>입력 내용 확인</h4></div><em class="${addressParts.base ? "is-ready" : ""}">${addressParts.base ? "✓ 주소 연결됨" : "주소 확인 필요"}</em></header>
+            <dl>
+              <div><dt>선택 건물</dt><dd data-report-summary-building>${esc(selectedBuilding && (selectedBuilding.name || selectedBuilding.address) || "건물을 선택해 주세요")}</dd></div>
+              <div><dt>현장 주소</dt><dd data-report-summary-address>${esc(addressParts.base || "주소가 아직 없습니다")}</dd></div>
+              <div><dt>상세주소</dt><dd data-report-summary-detail class="${addressParts.detail ? "" : "needs-input"}">${esc(addressParts.detail || "상세주소를 입력해 주세요")}</dd></div>
+            </dl>
+          </section>
           <section class="wr-ai-card wr-ai-analysis">
             <header><div><span>PHOTO CHECK</span><h4>사진 분류 확인</h4></div><em>${issueCount ? `${issueCount}개 확인 필요` : "모두 확인"}</em></header>
             <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div><div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
@@ -7409,6 +7454,8 @@
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = R.normalizeReport(reportState.draft);
     const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const baseAddress = String(raw.siteAddress || workReportBuildingAddress(building) || "").trim();
+    const detailAddress = String(raw.siteAddressDetail || "").trim();
     const items = previous.items.map(item => {
       const statusEl = form.querySelector(`[data-report-status="${item.key}"]`);
       const noteEl = form.querySelector(`[data-report-note="${item.key}"]`);
@@ -7421,7 +7468,7 @@
       kind: String(raw.kind || previous.kind),
       buildingId: String(raw.buildingId || ""),
       buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
-      siteAddress: String(raw.siteAddress || (building && building.address) || ""),
+      siteAddress: [baseAddress, detailAddress].filter(Boolean).join(" ").slice(0, 300),
       workDate: String(raw.workDate || ""),
       workerName: String(raw.workerName || ""),
       area: String(raw.area || ""),
@@ -13725,6 +13772,15 @@
       syncReportDraft();
       return;
     }
+    if (event.target.matches("[data-report-building]")) {
+      const form = event.target.form;
+      const building = (store.buildings || []).find(item => String(item && item.id || "") === String(event.target.value || ""));
+      if (form && form.elements.siteAddress) form.elements.siteAddress.value = workReportBuildingAddress(building);
+      // 같은 호수가 다른 건물로 넘어가는 실수를 막는다.
+      if (form && form.elements.siteAddressDetail) form.elements.siteAddressDetail.value = "";
+      syncReportDraft();
+      return;
+    }
     if (event.target.matches("[data-report-status]")) {
       // 상태를 바꾸면 무엇이 더 필요한지가 바뀐다. 눌러 보고서야 아는 것보다
       // 그 자리에서 보이는 편이 낫다.
@@ -15395,6 +15451,15 @@
         const name = String(entry.querySelector("b")?.textContent || "").toLocaleLowerCase("ko");
         entry.hidden = Boolean(query && !name.includes(query));
       });
+      return;
+    }
+    if (event.target.matches("[data-report-site-detail]")) {
+      const summary = document.querySelector("[data-report-summary-detail]");
+      const value = String(event.target.value || "").trim();
+      if (summary) {
+        summary.textContent = value || "상세주소를 입력해 주세요";
+        summary.classList.toggle("needs-input", !value);
+      }
       return;
     }
     if (captureSupplyManualForm(event.target)) return;

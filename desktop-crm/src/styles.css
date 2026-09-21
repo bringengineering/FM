@@ -643,8 +643,35 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-ai-form-grid label { gap: 6px; }
 .wr-ai-form-grid label.wide { grid-column: 1/-1; }
 .wr-ai-form-grid label>span { color: #4E5968; font-size: 10px; font-weight: 850; }
+.wr-ai-form-grid label>span em,.wr-ai-location-grid label>span em { margin-left: 3px; color: #3182F6; font-size: 8px; font-style: normal; font-weight: 850; }
 .wr-ai-form-grid input,.wr-ai-form-grid select,.wr-ai-form-grid textarea { min-height: 40px; border-color: #DFE3E8; }
 .wr-ai-form-grid input:focus,.wr-ai-form-grid select:focus,.wr-ai-form-grid textarea:focus { border-color: #3182F6; outline: 0; box-shadow: 0 0 0 3px rgba(49,130,246,.1); }
+.wr-ai-location { margin-top: 13px; padding: 13px; border: 1px solid #CFE4FF; border-radius: 13px; background: #F1F7FF; }
+.wr-ai-location>header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.wr-ai-location>header b { color: #253548; font-size: 11px; }
+.wr-ai-location>header span { color: #1B64DA; font-size: 9px; font-weight: 750; }
+.wr-ai-location-grid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(150px,.65fr); gap: 11px 12px; }
+.wr-ai-location-grid label { gap: 6px; }
+.wr-ai-location-grid label>span { color: #4E5968; font-size: 10px; font-weight: 850; }
+.wr-ai-location-grid input { min-height: 40px; border-color: #D6E3F2; background: #fff; }
+.wr-ai-location-grid input:focus { border-color: #3182F6; outline: 0; box-shadow: 0 0 0 3px rgba(49,130,246,.1); }
+.wr-ai-address-input { position: relative; }
+.wr-ai-address-input i { position: absolute; top: 50%; left: 12px; z-index: 1; color: #3182F6; font-size: 13px; font-style: normal; transform: translateY(-50%); }
+.wr-ai-address-input input { padding-left: 32px; color: #253548; font-weight: 700; }
+.wr-ai-location>p { margin: 9px 0 0; color: #6B7D90; font-size: 9px; line-height: 1.5; }
+.wr-ai-section-divider { height: 1px; margin: 16px -17px 0; background: #E5E8EB; }
+.wr-ai-card>header.wr-ai-subheading { margin: 15px 0 12px; }
+.wr-ai-optional { margin-top: 14px; border-top: 1px solid #E5E8EB; }
+.wr-ai-optional summary { padding: 13px 0; color: #333D4B; font-size: 10px; font-weight: 850; cursor: pointer; }
+.wr-ai-optional summary span { margin-left: 4px; color: #8B95A1; font-size: 8px; font-weight: 650; }
+.wr-ai-optional[open] summary { margin-bottom: 2px; }
+.wr-ai-location-summary>header em { padding: 5px 7px; border-radius: 999px; background: #FFF6E5; color: #C77A00; font-size: 8px; font-style: normal; font-weight: 900; white-space: nowrap; }
+.wr-ai-location-summary>header em.is-ready { background: #E6F8F0; color: #00875A; }
+.wr-ai-location-summary dl { margin: 0; }
+.wr-ai-location-summary dl>div { padding: 10px 0; border-top: 1px solid #EDF0F3; }
+.wr-ai-location-summary dt { margin-bottom: 4px; color: #8B95A1; font-size: 8px; }
+.wr-ai-location-summary dd { margin: 0; color: #333D4B; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.wr-ai-location-summary dd.needs-input { color: #C77A00; }
 .wr-ai-photo-guide { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 11px 12px; border: 1px solid #CFE4FF; border-radius: 11px; background: #F7FBFF; }
 .wr-ai-photo-guide>span { display: grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 8px; background: #3182F6; color: #fff; font-size: 10px; font-weight: 900; }
 .wr-ai-photo-guide p,.wr-ai-photo-guide b,.wr-ai-photo-guide small { display: block; margin: 0; }
@@ -708,7 +735,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .wr-ai-step:nth-child(-n+2) { border-bottom: 1px solid #F2F4F6; }
   .wr-ai-layout { padding: 9px; }
   .wr-ai-title { align-items: flex-start; padding: 17px; }
-  .wr-ai-form-grid,.wr-ai-editor .wr-items,.wr-ai-side { grid-template-columns: 1fr; }
+  .wr-ai-form-grid,.wr-ai-location-grid,.wr-ai-editor .wr-items,.wr-ai-side { grid-template-columns: 1fr; }
+  .wr-ai-location>header { align-items: flex-start; flex-direction: column; gap: 4px; }
   .wr-ai-finish { grid-column: auto; }
   .wr-ai-review-row { grid-template-columns: minmax(0,1fr) auto; }
   .wr-ai-review-row em { grid-column: 1/-1; padding-left: 14px; }
