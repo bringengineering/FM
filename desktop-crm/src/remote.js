@@ -4426,7 +4426,24 @@ class FirebaseRemoteClient {
           if (current.assigneeUid !== session.uid) continue;
           if (!WorkOrderCore.OPEN.includes(current.status)) continue;
           if (current.progress === item.progress) continue;
-          const updated = await this.updateWorkOrderProgress({ id: item.orderId, progress: item.progress });
+          const worked = record.entries
+            .filter(entry => entry.orderId === item.orderId)
+            .map(entry => `${entry.title}${entry.note ? ` · ${entry.note}` : ""}`)
+            .filter(Boolean)
+            .join(" / ")
+            .slice(0, 500);
+          const nextAction = record.plans
+            .filter(plan => plan.orderId === item.orderId)
+            .map(plan => plan.title)
+            .filter(Boolean)
+            .join(" / ")
+            .slice(0, 300);
+          const updated = await this.updateWorkOrderProgress({
+            id: item.orderId,
+            progress: item.progress,
+            progressNote: worked || `일일업무보고서 ${record.date} · ${item.hours}시간 기록`,
+            nextAction,
+          });
           // 보고서를 보낸 화면도 같은 업무지시 원본을 즉시 갱신할 수 있도록
           // 서버에 실제로 저장된 상태와 수정 시각을 함께 돌려준다. 화면에서
           // 시간을 새로 만들면 다른 컴퓨터에서 고친 기록처럼 보일 수 있다.
@@ -4554,6 +4571,8 @@ class FirebaseRemoteClient {
       status: existing ? WorkOrderCore.normalizeOrder(existing).status : checked.order.status,
       progress: existing ? WorkOrderCore.normalizeOrder(existing).progress : checked.order.progress,
       reviewNote: existing ? WorkOrderCore.normalizeOrder(existing).reviewNote : "",
+      latestProgressUpdateId: existing ? WorkOrderCore.normalizeOrder(existing).latestProgressUpdateId : "",
+      progressUpdates: existing ? WorkOrderCore.normalizeOrder(existing).progressUpdates : [],
       createdBy: (existing && existing.createdBy) || String(session.displayName || session.email || "관리자"),
       createdAt: (existing && existing.createdAt) || now,
       updatedAt: now,
@@ -4565,6 +4584,9 @@ class FirebaseRemoteClient {
     const persisted = Object.assign({}, record);
     // RTDB removes empty arrays. Compare the actual wire shape, not a phantom [].
     if (!record.results.length) delete persisted.results;
+    if (record.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(record.progressUpdates);
+    else delete persisted.progressUpdates;
+    if (!record.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
     try {
       await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
     } catch (error) {
@@ -4618,6 +4640,14 @@ class FirebaseRemoteClient {
       throw createError("내 지시가 아닙니다.", "NOT_ASSIGNEE");
     }
 
+    const progressRequested = Object.prototype.hasOwnProperty.call(source, "progress");
+    const requestedProgress = progressRequested ? WorkOrderCore.progressOf(source.progress) : current.progress;
+    const progressNote = WorkOrderCore.text(source.progressNote, 500);
+    const nextAction = WorkOrderCore.text(source.nextAction, 300);
+    if (progressRequested && requestedProgress !== current.progress && !progressNote) {
+      throw createError("진행률을 바꿀 때 이번에 진행한 내용을 함께 적어 주세요.", "PROGRESS_NOTE_REQUIRED");
+    }
+
     const addResult = source.result && typeof source.result === "object"
       ? WorkOrderCore.normalizeResult(source.result)
       : null;
@@ -4629,8 +4659,8 @@ class FirebaseRemoteClient {
 
     // 진행률은 담당자도 고친다. 상태만 옮길 수 있으면 "80% 왔다" 를 적을
     // 길이 없어서, 결국 그 숫자가 다시 카톡으로 간다.
-    const withProgress = Object.prototype.hasOwnProperty.call(source, "progress")
-      ? Object.assign({}, withResult, { progress: WorkOrderCore.progressOf(source.progress) })
+    const withProgress = progressRequested
+      ? Object.assign({}, withResult, { progress: requestedProgress })
       : withResult;
 
     // 간트에서 끌어 기간을 옮기는 길. 지시 내용이 아니라 일정이라 관리자만
@@ -4685,6 +4715,27 @@ class FirebaseRemoteClient {
       throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");
     }
 
+    if (record.progress !== current.progress) {
+      if (current.progressUpdates.length >= 200) {
+        throw createError("이 업무의 진행 기록이 200건에 도달했습니다. 관리자에게 기록 보관을 요청해 주세요.", "PROGRESS_HISTORY_FULL");
+      }
+      const now = new Date().toISOString();
+      const update = WorkOrderCore.normalizeProgressUpdate({
+        id: `pu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        fromProgress: current.progress,
+        toProgress: record.progress,
+        note: progressNote || `${WorkOrderCore.statusLabel(record.status)} 상태로 변경했습니다.`,
+        nextAction,
+        createdAt: now,
+        createdBy: session.uid,
+        createdByName: String(session.displayName || session.email || session.uid),
+      });
+      record = Object.assign({}, record, {
+        latestProgressUpdateId: update.id,
+        progressUpdates: [...current.progressUpdates, update],
+      });
+    }
+
     // 담당자는 지시 내용을 못 고친다. 규칙도 같은 것을 막지만, 여기서 먼저
     // 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
     if (!admin && !WorkOrderCore.sameInstruction(current, record)) {
@@ -4696,6 +4747,9 @@ class FirebaseRemoteClient {
     });
     const persisted = Object.assign({}, saved);
     if (!saved.results.length) delete persisted.results;
+    if (saved.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(saved.progressUpdates);
+    else delete persisted.progressUpdates;
+    if (!saved.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
     try {
       await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
     } catch (error) {

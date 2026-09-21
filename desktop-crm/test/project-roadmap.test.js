@@ -90,6 +90,9 @@ test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미�
   assert.match(main, /Boolean\(interactivePreviewView\)/u);
   assert.match(main, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview"/u);
+  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-progress-preview"/u);
+  assert.match(main, /trigger\.dataset\.woProgress = 'preview-1'/u);
+  assert.match(main, /noteRequired: note\?\.required === true/u);
   assert.match(main, /data-workspace-enter-folder="project"/u);
   assert.match(main, /data-live-refresh="projectRoadmap"/u);
   assert.match(main, /todayLabels: labels\.length/u);

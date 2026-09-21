@@ -5173,7 +5173,7 @@
       .slice()
       .sort((a, b) => (a.startDate || a.dueDate || "9999").localeCompare(b.startDate || b.dueDate || "9999"));
     const project = P.sortProjects(workOrderState.projects).find(item => item.id === assignment.projectId);
-    const recent = P.recentProgress(workOrderState.orders, assignment.orderIds, 6);
+    const legacyRecent = P.recentProgress(workOrderState.orders, assignment.orderIds, 6);
     const open = orders.filter(item => P.OPEN_STATUSES.includes(item.status));
     const next = open.filter(item => !item.dueDate || item.dueDate >= today);
     const memberName = uid => {
@@ -5193,13 +5193,32 @@
       </article>`;
     }).join("");
 
-    const recentRows = recent.map(order => {
-      const when = String(order.updatedAt || order.createdAt || "").slice(0, 10) || "날짜 미정";
-      const actor = order.updatedBy ? memberName(order.updatedBy) : (order.assigneeName || "담당자");
-      const note = order.reviewNote
-        ? `다시 요청: ${order.reviewNote}`
-        : (order.results && order.results.length ? `결과물 ${order.results.length}건 · ${W.statusLabel(order.status)}` : `${W.statusLabel(order.status)} · 진행률 ${order.progress}%`);
-      return `<li><time>${esc(when)}</time><i></i><div><b>${esc(order.title)}</b><span>${esc(note)}</span><small>${esc(actor)}</small></div></li>`;
+    const historyEvents = orders.flatMap(order => order.progressUpdates.map(update => ({
+          order,
+          at: update.createdAt,
+          actor: update.createdByName || memberName(update.createdBy),
+          note: `진행률 ${update.fromProgress}% → ${update.toProgress}% · ${update.note}`,
+          nextAction: update.nextAction,
+        })));
+    const historyOrderIds = new Set(historyEvents.map(event => event.order.id));
+    const legacyEvents = legacyRecent
+      .filter(order => !historyOrderIds.has(order.id))
+      .map(order => ({
+        order,
+        at: order.updatedAt || order.createdAt,
+        actor: order.updatedBy ? memberName(order.updatedBy) : (order.assigneeName || "담당자"),
+        note: order.reviewNote
+          ? `다시 요청: ${order.reviewNote}`
+          : (order.results && order.results.length ? `결과물 ${order.results.length}건 · ${W.statusLabel(order.status)}` : `${W.statusLabel(order.status)} · 진행률 ${order.progress}%`),
+        nextAction: "",
+      }));
+    const progressEvents = [...historyEvents, ...legacyEvents]
+      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")))
+      .slice(0, 6);
+    const recentRows = progressEvents.map(event => {
+      const when = String(event.at || "").slice(0, 10) || "날짜 미정";
+      const nextText = event.nextAction ? ` · 다음: ${event.nextAction}` : "";
+      return `<li><time>${esc(when)}</time><i></i><div><b>${esc(event.order.title)}</b><span>${esc(event.note)}</span><small>${esc(`${event.actor}${nextText}`)}</small></div></li>`;
     }).join("");
     const projectProgressRow = project && project.progressUpdatedAt
       ? `<li><time>${esc(project.progressUpdatedAt.slice(0, 10))}</time><i></i><div><b>${esc(project.name)}</b><span>${esc(project.progressNote || `프로젝트 진행률 ${project.progress}%`)}</span><small>프로젝트 진행률 ${project.progress}%</small></div></li>`
@@ -6491,23 +6510,66 @@
     }
   }
 
-  async function setWorkOrderProgress(orderId, value) {
+  function openWorkOrderProgressEditor(orderId, value) {
     const W = workOrderCore();
     if (!W || workOrderState.busyId) return;
     const next = W.progressOf(value);
     const current = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
-    if (current.progress === next) return;
+    if (!current.id || current.progress === next) return;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>진행률 수정</h2><p>${esc(current.title)}</p></div><button class="close-button" data-action="close-modal" aria-label="진행률 수정 창 닫기">×</button></div>
+      <form class="modal-body work-order-progress-form" data-wo-progress-form data-order-id="${esc(current.id)}" data-from-progress="${current.progress}">
+        <section class="work-order-progress-summary">
+          <div><span>기존 진행률</span><b>${current.progress}%</b></div><i>→</i><label><span>변경할 진행률</span><div><input type="number" name="progress" min="0" max="100" step="5" value="${next}" required data-wo-progress-modal-input><b>%</b></div></label>
+        </section>
+        <div class="work-order-progress-preview" aria-hidden="true"><i data-wo-progress-modal-preview style="width:${next}%"></i></div>
+        <label class="field"><span>이번에 진행한 내용 *</span><textarea name="progressNote" rows="4" maxlength="500" required autofocus placeholder="무엇을 어떻게 진행했는지 구체적으로 작성해 주세요. 예: 접수 화면 구성과 담당자 지정 기능 연결 완료"></textarea><small class="hint">진행한 작업과 확인한 결과를 함께 적으면 다음 사람이 바로 이어서 볼 수 있습니다.</small></label>
+        <label class="field"><span>다음 진행 예정</span><input type="text" name="nextAction" maxlength="300" placeholder="예: 자동 알림 전송 테스트 및 오류 문구 정리"></label>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">변경 내용 저장</button></div>
+      </form>`;
+    openModal();
+    setTimeout(() => modalContent.querySelector('[name="progressNote"]')?.focus(), 30);
+  }
+
+  async function setWorkOrderProgress(orderId, value, progressNote, nextAction, form) {
+    const W = workOrderCore();
+    if (!W || workOrderState.busyId) return;
+    const next = W.progressOf(value);
+    const current = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
+    const note = String(progressNote || "").trim();
+    if (current.progress === next) return showToast("현재 진행률과 같습니다.", "error");
+    if (!note) return showToast("이번에 진행한 내용을 입력해 주세요.", "error");
     workOrderState.busyId = orderId;
+    const submit = form && form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
     try {
-      await api.updateWorkOrderProgress({ id: orderId, progress: next });
+      await api.updateWorkOrderProgress({
+        id: orderId,
+        progress: next,
+        progressNote: note,
+        nextAction: String(nextAction || "").trim(),
+      });
       workOrderState.loaded = false;
+      closeModal();
+      showToast(`진행률 ${current.progress}% → ${next}%와 진행 내용을 저장했습니다.`, "success");
       await loadWorkOrders();
     } catch (error) {
       showToast(error && error.message || "진행률을 바꾸지 못했습니다.", "error");
     } finally {
       workOrderState.busyId = "";
+      if (submit && document.contains(submit)) submit.disabled = false;
       renderWorkOrderSurface();
     }
+  }
+
+  async function saveWorkOrderProgressFromForm(form) {
+    const raw = Object.fromEntries(new FormData(form).entries());
+    await setWorkOrderProgress(
+      String(form.dataset.orderId || ""),
+      raw.progress,
+      raw.progressNote,
+      raw.nextAction,
+      form,
+    );
   }
 
   function currentProjectOrders(P) {
@@ -14317,7 +14379,13 @@
       return;
     }
     const woProgress = event.target.closest("[data-wo-progress]");
-    if (woProgress) { void setWorkOrderProgress(woProgress.dataset.woProgress, woProgress.value); return; }
+    if (woProgress) {
+      const order = workOrderCore()?.normalizeOrder(workOrderState.orders.find(item => item && item.id === woProgress.dataset.woProgress));
+      const proposed = woProgress.value;
+      if (order && order.id) woProgress.value = order.progress;
+      openWorkOrderProgressEditor(woProgress.dataset.woProgress, proposed);
+      return;
+    }
     // 항목 종류를 바꾸면 "고를 것" 칸이 열리고 닫힌다.
     const fieldType = event.target.closest('[data-form-field="type"]');
     if (fieldType) {
@@ -14335,6 +14403,7 @@
     if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
     if (form.id === "dailyLogExportForm") { await exportMonthlyDailyLogsFromForm(form); return; }
+    if (form.matches("[data-wo-progress-form]")) { await saveWorkOrderProgressFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
     if (form.matches("[data-report-form]")) { await saveWorkReportFromForm(); return; }
@@ -15624,6 +15693,12 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-wo-progress-modal-input]")) {
+      const value = workOrderCore()?.progressOf(event.target.value) || 0;
+      const preview = event.target.form?.querySelector("[data-wo-progress-modal-preview]");
+      if (preview) preview.style.width = `${value}%`;
+      return;
+    }
     if (event.target.matches("[data-okr-quarter]")) {
       okrState.quarter = String(event.target.value || "");
       renderObjectives();

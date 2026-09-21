@@ -5097,6 +5097,34 @@ async function createWindow() {
           state: window.__crmTest?.snapshot(),
         };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-progress-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="project"]')?.click();
+        await wait(180);
+        window.__crmSmokeNavigate('projectRoadmap');
+        await wait(180);
+        document.querySelector('[data-live-refresh="projectRoadmap"]')?.click();
+        await wait(420);
+        const trigger = document.createElement('input');
+        trigger.type = 'number';
+        trigger.dataset.woProgress = 'preview-1';
+        trigger.value = '75';
+        document.body.append(trigger);
+        trigger.dispatchEvent(new Event('change', { bubbles: true }));
+        trigger.remove();
+        await wait(100);
+        const note = document.querySelector('[data-wo-progress-form] [name="progressNote"]');
+        const next = document.querySelector('[data-wo-progress-form] [name="nextAction"]');
+        if (note) note.value = '고객 검색 화면 구성과 담당자 필터 연결을 완료했습니다.';
+        if (next) next.value = '검색 속도 점검과 빈 결과 안내 문구를 정리합니다.';
+        return {
+          pass: Boolean(note && next && document.querySelector('[data-wo-progress-modal-preview]')),
+          modalOpen: document.querySelector('.modal-layer')?.classList.contains('open') === true,
+          noteRequired: note?.required === true,
+          state: window.__crmTest?.snapshot(),
+        };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8178,7 +8206,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

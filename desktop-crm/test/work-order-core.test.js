@@ -123,6 +123,39 @@ test("모르는 칸과 상태는 조용히 버린다", () => {
   assert.deepEqual(W.normalizeOrder({ ...full, results: [{ id: "r1" }] }).results, []);
 });
 
+test("진행률 변경 기록은 Firebase 객체와 배열을 같은 순서로 읽는다", () => {
+  const updates = {
+    pu_later: {
+      id: "pu_later", fromProgress: 35, toProgress: 60, note: "알림 전송을 연결했습니다.",
+      nextAction: "오류 문구 확인", createdAt: "2026-09-21T10:00:00.000Z", createdBy: "u1", createdByName: "김현진",
+    },
+    pu_first: {
+      id: "pu_first", fromProgress: 0, toProgress: 35, note: "접수 화면을 구성했습니다.",
+      nextAction: "담당자 연결", createdAt: "2026-09-21T09:00:00.000Z", createdBy: "u1", createdByName: "김현진",
+    },
+  };
+  const normalized = W.normalizeOrder({ ...full, progressUpdates: updates }).progressUpdates;
+  assert.deepEqual(normalized.map(item => item.id), ["pu_first", "pu_later"]);
+  assert.equal(normalized[0].note, "접수 화면을 구성했습니다.");
+  assert.deepEqual(Object.keys(W.progressUpdatesMap(normalized)), ["pu_first", "pu_later"]);
+  assert.equal(W.normalizeOrder({ ...full, latestProgressUpdateId: "pu_later" }).latestProgressUpdateId, "pu_later");
+});
+
+test("진행률 기록은 내용과 다음 할 일의 길이를 제한하고 불완전한 기록을 버린다", () => {
+  const normalized = W.normalizeOrder({
+    ...full,
+    progressUpdates: [
+      { id: "pu_good", fromProgress: -10, toProgress: 130, note: "가".repeat(600), nextAction: "나".repeat(400), createdAt: "2026-09-21T09:00:00.000Z", createdBy: "u1", createdByName: "김현진" },
+      { id: "pu_no_note", fromProgress: 0, toProgress: 10, createdAt: "2026-09-21T09:00:00.000Z", createdBy: "u1" },
+    ],
+  }).progressUpdates;
+  assert.equal(normalized.length, 1);
+  assert.equal(normalized[0].fromProgress, 0);
+  assert.equal(normalized[0].toProgress, 100);
+  assert.equal(normalized[0].note.length, 500);
+  assert.equal(normalized[0].nextAction.length, 300);
+});
+
 // --- 예상 소요시간·가중치·산출물 ---
 
 const order = (patch = {}) => Object.assign({}, full, patch);

@@ -10,6 +10,7 @@ function snapshot(value) {
   return { val: () => value ?? null, exists: () => value != null,
     child: key => snapshot(key.split('/').reduce((v, k) => v?.[k], value)),
     hasChildren: keys => keys.every(key => value?.[key] != null),
+    numChildren: () => (value && typeof value === 'object' ? Object.keys(value).length : 0),
     isString: () => typeof value === 'string' };
 }
 function evaluate(expression, before, after, role = 'member') {
@@ -43,4 +44,13 @@ test('submitted reports stay unchanged through review, returned reports may be r
 test('report addition cannot bypass assignee or viewer write restrictions', () => {
   assert.equal(evaluate(rule['.validate'], { ...order, assigneeUid: 'other' }, { ...order, assigneeUid: 'other', outcomeReport: '{}' }), false);
   assert.equal(evaluate(rule['.write'], order, { ...order, outcomeReport: '{}' }, 'viewer'), false);
+});
+test('a progress change is tied to exactly one matching latest history record', () => {
+  const updateId = 'pu_test1';
+  const history = { [updateId]: { fromProgress: 0, toProgress: 50 } };
+  const changed = { ...order, progress: 50, latestProgressUpdateId: updateId, progressUpdates: history };
+  assert.equal(evaluate(rule['.validate'], { ...order, progress: 0 }, changed), true);
+  assert.equal(evaluate(rule['.validate'], { ...order, progress: 0 }, { ...changed, progressUpdates: { [updateId]: { fromProgress: 0, toProgress: 40 } } }), false);
+  assert.equal(evaluate(rule['.validate'], { ...order, progress: 0 }, { ...changed, latestProgressUpdateId: 'pu_missing' }), false);
+  assert.equal(evaluate(rule['.validate'], { ...order, progress: 0 }, { ...changed, progress: 0 }), false);
 });

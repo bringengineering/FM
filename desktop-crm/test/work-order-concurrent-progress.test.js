@@ -21,12 +21,16 @@ function client(role='member',race=false,status='doing'){
  return {api:context.client,stats:()=>({record,puts,reads})};
 }
 test('progress saves against the exact server snapshot version',async()=>{
- const c=client();await c.api.updateWorkOrderProgress({id:'work1',progress:50});
+ const c=client();await c.api.updateWorkOrderProgress({id:'work1',progress:50,progressNote:'접수 화면과 담당자 연결을 마쳤습니다.',nextAction:'알림 전송 테스트'});
  assert.equal(c.stats().reads,1);assert.equal(c.stats().puts,1);assert.equal(c.stats().record.progress,50);
+ const updates=Object.values(c.stats().record.progressUpdates||{});
+ assert.equal(updates.length,1);assert.equal(updates[0].fromProgress,0);assert.equal(updates[0].toProgress,50);
+  assert.equal(updates[0].note,'접수 화면과 담당자 연결을 마쳤습니다.');assert.equal(updates[0].createdBy,'u');
+ assert.equal(c.stats().record.latestProgressUpdateId,updates[0].id);
 });
 test('concurrent review survives and caller receives actionable work conflict',async()=>{
  const c=client('member',true);
- await assert.rejects(c.api.updateWorkOrderProgress({id:'work1',progress:50}),e=>e.code==='WORK_ORDER_CONFLICT');
+ await assert.rejects(c.api.updateWorkOrderProgress({id:'work1',progress:50,progressNote:'화면 구성 완료'}),e=>e.code==='WORK_ORDER_CONFLICT');
  assert.equal(c.stats().puts,0);assert.equal(c.stats().record.reviewNote,'other user update');
 });
 test('viewer cannot start a work update',async()=>{
@@ -38,9 +42,14 @@ test('validated report survives normalization and later progress writes',async()
  const report={summary:'사진 확인',contribution:'촬영',metrics:[{label:'공간',target:10,actual:8,unit:'곳'}],evidence:[{title:'현장 기록',url:'https://example.com/proof'}]};
  const saved=await c.api.updateWorkOrderProgress({id:'work1',outcomeReport:JSON.stringify(report)});
  assert.equal(JSON.parse(saved.outcomeReport).metrics[0].actual,8);
- const again=await c.api.updateWorkOrderProgress({id:'work1',progress:80});
+ const again=await c.api.updateWorkOrderProgress({id:'work1',progress:80,progressNote:'검수 결과를 반영했습니다.'});
  assert.equal(again.outcomeReport,saved.outcomeReport);
  assert.equal(W.normalizeOrder({id:'old'}).outcomeReport,undefined,'legacy records gain no new mandatory field');
+});
+test('progress changes require a concrete work note',async()=>{
+ const c=client();
+ await assert.rejects(c.api.updateWorkOrderProgress({id:'work1',progress:50}),e=>e.code==='PROGRESS_NOTE_REQUIRED');
+ assert.equal(c.stats().puts,0);
 });
 test('stale report editor cannot overwrite a newer saved report',async()=>{
  const c=client();

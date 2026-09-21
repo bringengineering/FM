@@ -489,6 +489,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-row-progress strong { color: #4E5968; font-size: 9px; }
 .roadmap-progress-input { display: flex; align-items: center; gap: 3px; color: #8B95A1; font-size: 8px; font-weight: 800; }
 .roadmap-progress-input input { width: 48px; height: 28px; padding: 0 5px; border: 1px solid #DDE3EA; border-radius: 7px; color: #333D4B; font: inherit; font-size: 9px; }
+.work-order-progress-form { display: grid; gap: 16px; }
+.work-order-progress-summary { display: grid; grid-template-columns: minmax(110px, 1fr) auto minmax(150px, 1.25fr); align-items: center; gap: 14px; padding: 14px 15px; border: 1px solid #DDE7F2; border-radius: 12px; background: #FBFCFD; }
+.work-order-progress-summary > div > span, .work-order-progress-summary > div > b, .work-order-progress-summary label > span { display: block; }
+.work-order-progress-summary span { color: #8B95A1; font-size: 9px; font-weight: 850; }
+.work-order-progress-summary > div > b { margin-top: 5px; color: #4E5968; font-size: 16px; }
+.work-order-progress-summary > i { color: #B0B8C1; font-size: 16px; font-style: normal; }
+.work-order-progress-summary label > div { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.work-order-progress-summary input { width: 82px; height: 38px; padding: 0 10px; border: 1px solid #B7D2F6; border-radius: 9px; outline: 0; background: #fff; color: #1B64DA; font-size: 14px; font-weight: 900; }
+.work-order-progress-summary input:focus { border-color: #3182F6; box-shadow: 0 0 0 3px rgba(49,130,246,.12); }
+.work-order-progress-summary label b { color: #8B95A1; font-size: 11px; }
+.work-order-progress-preview { height: 7px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
+.work-order-progress-preview i { display: block; height: 100%; border-radius: inherit; background: #3182F6; transition: width .16s ease; }
+@media (max-width: 560px) {
+  .work-order-progress-summary { grid-template-columns: 1fr auto 1fr; gap: 9px; padding: 12px; }
+  .work-order-progress-summary input { width: 68px; }
+}
 .roadmap-updates { position: relative; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
 .roadmap-updates li { display: grid; grid-template-columns: 66px 9px 1fr; gap: 7px; padding: 7px 0; }
 .roadmap-updates time { color: #8B95A1; font-size: 8px; }

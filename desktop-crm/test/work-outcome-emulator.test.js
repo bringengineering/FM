@@ -47,6 +47,15 @@ test('Firebase enforces outcome bounds, review lock, preservation and owner scop
   const reopened=await reviewer.dbReadWithEtag('workOrders/one',false,reviewer.captureSessionGuard());
   assert.equal(reopened.value.outcomeReport,saved.outcomeReport);
   await assert.rejects(employee.updateWorkOrderProgress({id:'one',outcomeReport:report,expectedOutcomeReport:''}),e=>e.code==='WORK_OUTCOME_CONFLICT');
-  const summary=require('../src/weekly-performance-core').summarize({orders:[reopened.value],asOf:'2026-09-14'});
+  await employee.updateWorkOrderProgress({id:'one',progress:50,progressNote:'접수 화면 연결을 완료했습니다.',nextAction:'알림 전송 점검'});
+  const progressed=await reviewer.dbReadWithEtag('workOrders/one',false,reviewer.captureSessionGuard());
+  const latestId=progressed.value.latestProgressUpdateId;
+  assert.equal(progressed.value.progressUpdates[latestId].fromProgress,0);
+  assert.equal(progressed.value.progressUpdates[latestId].toProgress,50);
+  assert.equal(progressed.value.progressUpdates[latestId].note,'접수 화면 연결을 완료했습니다.');
+  const forgedId='pu_forged1';
+  const forged={...progressed.value,progress:60,latestProgressUpdateId:forgedId,updatedBy:'member',progressUpdates:{...progressed.value.progressUpdates,[forgedId]:{id:forgedId,fromProgress:50,toProgress:55,note:'불일치 기록',nextAction:'',createdAt:'2026-09-21T12:00:00.000Z',createdBy:'member',createdByName:'member'}}};
+  assert.equal((await request(route,forged,'member')).status,401,'latest history must match the new progress');
+  const summary=require('../src/weekly-performance-core').summarize({orders:[progressed.value],asOf:'2026-09-14'});
   assert.equal(summary.rows[0].outcome.report.metrics[0].actual,8);
 });

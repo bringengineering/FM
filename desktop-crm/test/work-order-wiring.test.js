@@ -96,6 +96,34 @@ test("규칙이 모르는 칸과 https 아닌 링크를 막는다", () => {
   }
 });
 
+test("진행률을 바꿀 때 진행 내용을 필수로 받고 변경 이력을 보존한다", () => {
+  const progress = methodBody(remoteSource, "updateWorkOrderProgress");
+  assert.match(progress, /PROGRESS_NOTE_REQUIRED/u);
+  assert.match(progress, /progressUpdates: \[\.\.\.current\.progressUpdates, update\]/u);
+  assert.match(progress, /progressUpdatesMap\(saved\.progressUpdates\)/u);
+
+  const progressRules = order.progressUpdates;
+  assert.match(progressRules[".validate"], /numChildren\(\) <= 200/u);
+  assert.match(progressRules[".validate"], /numChildren\(\) >= data\.numChildren\(\)/u);
+  assert.match(progressRules.$updateId[".validate"], /newData\.child\('createdBy'\)\.val\(\) === auth\.uid/u);
+  assert.equal(progressRules.$updateId.$other[".validate"], false);
+  assert.match(order[".validate"], /progressUpdates'\)\.numChildren\(\).*\+ 1/u);
+  assert.match(order[".validate"], /latestProgressUpdateId/u);
+  assert.match(order[".validate"], /child\('fromProgress'\).*data\.child\('progress'\)/u);
+  assert.match(order[".validate"], /child\('toProgress'\).*newData\.child\('progress'\)/u);
+  assert.ok(order.latestProgressUpdateId, "최신 진행 기록 ID도 허용 필드여야 한다");
+});
+
+test("진행률 입력은 바로 저장하지 않고 진행 내용 작성 창을 연다", () => {
+  const editor = appSource.slice(appSource.indexOf("function openWorkOrderProgressEditor("), appSource.indexOf("function currentProjectOrders("));
+  assert.match(editor, /이번에 진행한 내용 \*/u);
+  assert.match(editor, /name="progressNote"[^>]+required/u);
+  assert.match(editor, /name="nextAction"/u);
+  assert.match(editor, /api\.updateWorkOrderProgress\(\{[\s\S]*progressNote: note[\s\S]*nextAction:/u);
+  assert.match(appSource, /openWorkOrderProgressEditor\(woProgress\.dataset\.woProgress, proposed\)/u);
+  assert.match(appSource, /form\.matches\("\[data-wo-progress-form\]"\)/u);
+});
+
 test("결과물은 Drive 에 지시별로 쌓인다", () => {
   // 건물 폴더에 섞으면 나중에 어느 지시의 결과인지 알 수 없다.
   const upload = mainSource.slice(

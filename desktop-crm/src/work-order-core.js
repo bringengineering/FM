@@ -173,6 +173,36 @@
     };
   }
 
+  // 진행률 숫자만 바뀌면 30%가 무엇을 뜻하는지 다음 사람이 알 수 없다.
+  // 그래서 변경 전·후 값과 그때 실제로 한 일을 한 묶음으로 보관한다.
+  function normalizeProgressUpdate(value) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return {
+      id: text(source.id, 80),
+      fromProgress: progressOf(source.fromProgress),
+      toProgress: progressOf(source.toProgress),
+      note: text(source.note, 500),
+      nextAction: text(source.nextAction, 300),
+      createdAt: text(source.createdAt, 40),
+      createdBy: text(source.createdBy, 128),
+      createdByName: text(source.createdByName, 80),
+    };
+  }
+
+  function progressUpdatesOf(value) {
+    const list = Array.isArray(value)
+      ? value.filter(Boolean)
+      : (value && typeof value === "object" ? Object.values(value).filter(Boolean) : []);
+    const seen = new Set();
+    return list.map(normalizeProgressUpdate)
+      .filter(item => item.id && item.note && item.createdAt && item.createdBy && !seen.has(item.id) && seen.add(item.id))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }
+
+  function progressUpdatesMap(value) {
+    return Object.fromEntries(progressUpdatesOf(value).map(item => [item.id, item]));
+  }
+
   function normalizeOrder(value) {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
     return {
@@ -205,6 +235,8 @@
       dueDate: isDate(source.dueDate) ? text(source.dueDate, 10) : "",
       status: isStatus(source.status) ? source.status : "assigned",
       reviewNote: text(source.reviewNote, 500),
+      latestProgressUpdateId: text(source.latestProgressUpdateId, 80),
+      progressUpdates: progressUpdatesOf(source.progressUpdates),
       ...(typeof source.outcomeReport === "string" ? { outcomeReport: source.outcomeReport } : {}),
       results: rows(source.results).map(normalizeResult).filter(item => item.id && item.driveFileId),
       createdBy: text(source.createdBy, 80),
@@ -390,6 +422,9 @@
     hoursOf,
     weightOf,
     normalizeResult,
+    normalizeProgressUpdate,
+    progressUpdatesOf,
+    progressUpdatesMap,
     normalizeOrder,
     validateOrder,
     moveStatus,

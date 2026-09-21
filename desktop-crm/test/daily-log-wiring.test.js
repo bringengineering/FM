@@ -92,6 +92,8 @@ test("되올리는 것은 자기 지시, 아직 안 끝난 것뿐이다", () => 
   // 한 건이 안 되어도 일지는 이미 저장됐다. 여기서 터뜨리면 저장이 취소된 줄 안다.
   assert.match(save, /failed\.push/u);
   assert.match(save, /const updated = await this\.updateWorkOrderProgress/u);
+  assert.match(save, /progressNote: worked/u, "일지에서 올린 진행률에도 실제 작업 내용이 남아야 한다");
+  assert.match(save, /nextAction,/u, "같은 업무지시에 연결된 다음 계획도 함께 남겨야 한다");
   assert.match(save, /updatedAt: updated\.updatedAt/u, "로드맵 최근 진행사항에 실제 저장 시각을 넘겨야 한다");
 });
 
