@@ -7156,12 +7156,25 @@
   function reportDriveBox(R) {
     const plan = reportState.drivePlan;
     const selected = reportState.driveSelected instanceof Map ? reportState.driveSelected.size : 0;
+    const reportItems = plan ? R.itemsFor(plan.kind || reportState.draft.kind, []) : [];
+    const reportItemKeys = new Set(reportItems.map(item => item.key));
+    const effectiveItemKey = bucket => {
+      const automatic = String(bucket && bucket.itemKey || "");
+      const manual = String(bucket && bucket.manualItemKey || "");
+      return reportItemKeys.has(automatic) ? automatic : reportItemKeys.has(manual) ? manual : "";
+    };
+    const unresolvedCount = plan ? plan.buckets.filter(bucket => !effectiveItemKey(bucket)
+      && bucket.before.length + bucket.after.length + bucket.unsorted.length > 0).length : 0;
+    const matchedCount = plan ? plan.buckets.filter(bucket => effectiveItemKey(bucket)).length : 0;
     const rows = plan
-      ? plan.buckets.map(bucket => {
-        const item = bucket.itemKey ? (R.itemsFor(plan.kind || reportState.draft.kind, []).find(entry => entry.key === bucket.itemKey) || null) : null;
+      ? plan.buckets.map((bucket, index) => {
+        const key = effectiveItemKey(bucket);
+        const item = key ? (reportItems.find(entry => entry.key === key) || null) : null;
         return `<tr class="${item ? "" : "is-loose"}">
           <td>${esc(bucket.folder || "(폴더 밖)")}</td>
-          <td>${item ? esc(item.label) : `<span class="wr-drive-loose">붙일 항목 없음</span>`}</td>
+          <td>${bucket.itemKey && item
+            ? esc(item.label)
+            : `<label class="wr-drive-item-picker"><span>${item ? "연결 항목" : "붙일 항목 선택"}</span><select data-report-drive-item="${index}"><option value="">보고서 항목 선택</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === key ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label>`}</td>
           <td>${bucket.before.length}</td>
           <td>${bucket.after.length}</td>
           <td>${bucket.unsorted.length ? `<span class="wr-drive-unsure">${bucket.unsorted.length}</span>` : "0"}</td>
@@ -7191,8 +7204,8 @@
           <tbody>${rows}</tbody>
         </table></div>
         <div class="wr-drive-actions">
-          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount ? "" : " disabled"}>이 사진들로 초안 채우기</button>
-          <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${plan.matched}개${plan.unmatched.length ? ` · 확인할 구역 ${plan.unmatched.length}개` : ""}</small>
+          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount && !unresolvedCount ? "" : " disabled"}>${unresolvedCount ? "보고서 항목을 먼저 선택하세요" : "이 사진들로 초안 채우기"}</button>
+          <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${matchedCount}개${unresolvedCount ? ` · 선택할 구역 ${unresolvedCount}개` : ""}</small>
         </div>` : ""}
     </div>`;
   }
@@ -7458,7 +7471,21 @@
     const plan = reportState.drivePlan;
     if (!R || !P || !plan) return;
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
-    const made = P.toReportDraft(plan, { core: R, kind: draft.kind });
+    const allowedKeys = new Set(R.itemsFor(draft.kind, []).map(item => item.key));
+    const resolvedBucketKey = bucket => {
+      const automatic = String(bucket && bucket.itemKey || "");
+      const manual = String(bucket && bucket.manualItemKey || "");
+      return allowedKeys.has(automatic) ? automatic : allowedKeys.has(manual) ? manual : "";
+    };
+    const unresolved = plan.buckets.filter(bucket => !resolvedBucketKey(bucket)
+      && bucket.before.length + bucket.after.length + bucket.unsorted.length > 0);
+    if (unresolved.length) { showToast("연결되지 않은 Drive 폴더의 보고서 항목을 먼저 선택해 주세요.", "error"); return; }
+    const resolvedPlan = Object.assign({}, plan, {
+      buckets: plan.buckets.map(bucket => Object.assign({}, bucket, {
+        itemKey: resolvedBucketKey(bucket),
+      })),
+    });
+    const made = P.toReportDraft(resolvedPlan, { core: R, kind: draft.kind });
     if (!made.ok) { showToast(made.error, "error"); return; }
 
     // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
@@ -7481,6 +7508,18 @@
     reportState.driveLeftovers = made.leftovers;
     const added = made.draft.items.reduce((sum, item) => sum + item.before.length + item.after.length, 0);
     showToast(`사진 ${added}장을 초안에 얹었습니다.${made.leftovers.length ? ` 못 붙인 폴더 ${made.leftovers.length}개는 그대로 뒀습니다.` : ""} 확인하고 저장해 주세요.`, "success");
+    renderWorkReports();
+  }
+
+  function assignReportDriveBucket(indexValue, itemKeyValue) {
+    const R = reportCore();
+    const plan = reportState.drivePlan;
+    const index = Number(indexValue);
+    if (!R || !plan || !Number.isInteger(index) || index < 0 || index >= plan.buckets.length) return;
+    preserveReportDraft();
+    const allowed = new Set(R.itemsFor(plan.kind || reportState.draft.kind, []).map(item => item.key));
+    const itemKey = String(itemKeyValue || "");
+    plan.buckets[index].manualItemKey = allowed.has(itemKey) ? itemKey : "";
     renderWorkReports();
   }
 
@@ -13980,6 +14019,10 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-report-drive-item]")) {
+      assignReportDriveBucket(event.target.dataset.reportDriveItem, event.target.value);
+      return;
+    }
     if (event.target.matches("[data-weekly-file]")) { await loadPrivateWeeklyPack(event.target); return; }
     if (event.target.matches("[data-operations-query], [data-operations-building], [data-operations-owner]")) {
       const field = event.target;

@@ -874,6 +874,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-drive-table { margin-top: 9px; font-size: 12px; }
 .wr-drive-table tr.is-loose { background: #FBFAF7; }
 .wr-drive-loose { color: #C77A00; }
+.wr-drive-item-picker { display: grid; gap: 4px; min-width: 145px; }
+.wr-drive-item-picker span { color: #C77A00; font-size: 10px; font-weight: 850; }
+.wr-drive-item-picker select { width: 100%; min-height: 34px; padding: 6px 30px 6px 9px; border: 1px solid #F0C98C; border-radius: 8px; background: #fff; color: #173F5F; font-size: 11px; font-weight: 750; }
 .wr-drive-unsure { color: #C77A00; font-weight: 700; }
 .wr-drive-why { color: #8B95A1; }
 .wr-drive-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }

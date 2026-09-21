@@ -201,10 +201,26 @@ test("끌어온 것이 사람이 적은 것을 덮지 않는다", () => {
   assert.doesNotMatch(body, /api\.saveWorkReport/u);
 });
 
+test("자동 연결되지 않은 Drive 폴더는 사람이 보고서 항목을 고른 뒤 적용한다", () => {
+  const box = functionBody(appSource, "reportDriveBox");
+  assert.match(box, /data-report-drive-item/u);
+  assert.match(box, /보고서 항목 선택/u);
+  assert.match(box, /보고서 항목을 먼저 선택하세요/u);
+  assert.match(box, /unresolvedCount/u);
+  const assign = functionBody(appSource, "assignReportDriveBucket");
+  assert.match(assign, /R\.itemsFor/u);
+  assert.match(assign, /manualItemKey/u);
+  assert.match(assign, /allowed\.has\(itemKey\)/u);
+  const apply = functionBody(appSource, "applyReportDrivePlan");
+  assert.match(apply, /resolvedPlan/u);
+  assert.match(apply, /bucket\.manualItemKey/u);
+  assert.match(apply, /연결되지 않은 Drive 폴더/u);
+});
+
 test("화면과 규칙이 같은 모듈을 쓴다", () => {
   // 화면이 항목 잇는 표를 따로 들면 서버와 어긋난다.
   const body = functionBody(appSource, "applyReportDrivePlan");
-  assert.match(body, /P\.toReportDraft\(plan, \{ core: R, kind: draft\.kind \}\)/u);
+  assert.match(body, /P\.toReportDraft\(resolvedPlan, \{ core: R, kind: draft\.kind \}\)/u);
   assert.ok(indexSource.includes('<script src="./report-photo-plan.js"></script>'));
   // main.js 도 같은 모듈을 쓴다.
   assert.match(mainSource, /const ReportPhotoPlan = require\("\.\/report-photo-plan"\)/u);
