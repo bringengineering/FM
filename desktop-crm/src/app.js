@@ -5315,12 +5315,13 @@
     const laneHtml = lanes.map((lane, laneIndex) => {
       const bars = lane.assignments.map((assignment, index) => {
         const box = P.roadmapLayout(assignment, range);
+        const extensionBox = P.roadmapExtensionLayout(assignment, range);
         const label = mode === "people" ? assignment.projectName : assignment.assigneeName;
         if (!box) {
           return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
         }
-        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " is-extended" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? (assignment.previousEndDate ? ` · 기간 연장 (${assignment.previousEndDate} → ${assignment.endDate})` : ` · 기간 연장 (${assignment.endDate})`) : ""}`)}">
-          <i style="width:${assignment.progress}%"></i><span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
+        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " has-extension" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? ` · 기간 연장 (${assignment.extensionStartDate} → ${assignment.extensionEndDate})` : ""}`)}">
+          <i style="width:${assignment.progress}%"></i>${extensionBox ? `<u class="roadmap-extension-segment" aria-hidden="true" style="left:${extensionBox.left.toFixed(3)}%;width:${extensionBox.width.toFixed(3)}%"></u>` : ""}<span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
         </button>`;
       }).join("");
       const laneOpen = lane.assignments.reduce((sum, item) => sum + item.open, 0);
@@ -6556,6 +6557,7 @@
     }
     const checked = P.validateProject(Object.assign({}, previous, {
       endDate: nextEndDate,
+      previousEndDate: previous.endDate,
       extensionNote: String(raw.extensionNote || ""),
     }));
     if (!checked.ok) return showToast(checked.error, "error");

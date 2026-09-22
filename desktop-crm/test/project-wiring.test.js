@@ -50,7 +50,9 @@ test("프로젝트는 관리자만 만들고 지우지 못한다", () => {
   assert.match(save, /progressUpdatedAt: progressChanged \? now/u);
   assert.match(save, /endDateExtended/u);
   assert.match(save, /!before\.endDate \|\| checked\.project\.endDate > before\.endDate/u);
-  assert.match(save, /previousEndDate: endDateExtended \? before\.endDate/u);
+  assert.match(save, /extensionBaseline/u);
+  assert.match(save, /before\.endDate \|\| checked\.project\.previousEndDate/u);
+  assert.match(save, /previousEndDate: endDateExtended \? extensionBaseline/u);
   assert.match(save, /extendedAt: endDateExtended \? now/u);
   assert.match(save, /extendedBy: endDateExtended \? session\.uid/u);
   for (const field of ["previousEndDate", "extensionNote", "extendedAt", "extendedBy"]) {

@@ -350,6 +350,22 @@
     };
   }
 
+  // 프로젝트 막대 전체가 아니라 기존 마감일 다음 날부터 새 마감일까지의
+  // 구간만 막대 안쪽 좌표로 돌려준다. 화면에서는 이 조각만 다른 색으로
+  // 덮어 원래 일정과 연장 일정을 한 프로젝트 안에서 구분한다.
+  function roadmapExtensionLayout(item, range) {
+    const originalEnd = isDate(item && item.extensionStartDate) ? text(item.extensionStartDate, 10) : "";
+    const extendedEnd = isDate(item && item.extensionEndDate) ? text(item.extensionEndDate, 10) : "";
+    if (!originalEnd || !extendedEnd || originalEnd >= extendedEnd) return null;
+    const whole = roadmapLayout(item, range);
+    const extension = roadmapLayout({ startDate: addDays(originalEnd, 1), endDate: extendedEnd }, range);
+    if (!whole || !extension || whole.width <= 0) return null;
+    const left = Math.max(0, Math.min(100, ((extension.left - whole.left) / whole.width) * 100));
+    const right = Math.max(left, Math.min(100, ((extension.left + extension.width - whole.left) / whole.width) * 100));
+    if (right <= left) return null;
+    return { left, width: right - left };
+  }
+
   function roadmapStatus(list) {
     if (list.every(item => item.status === "done")) return "done";
     if (list.some(item => item.status === "returned")) return "returned";
@@ -409,6 +425,13 @@
       const taskProgress = list.length ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length) : 0;
       const projectStart = project && isDate(project.startDate) ? project.startDate : "";
       const projectEnd = project && isDate(project.endDate) ? project.endDate : "";
+      const lastTaskEnd = ends.length ? ends[ends.length - 1] : "";
+      const storedExtensionStart = project && isDate(project.previousEndDate) ? project.previousEndDate : "";
+      const inferredExtensionStart = project && project.extendedAt && projectEnd && lastTaskEnd && projectEnd > lastTaskEnd
+        ? lastTaskEnd : "";
+      const extensionStartDate = storedExtensionStart || inferredExtensionStart;
+      const extensionEndDate = projectEnd;
+      const extended = Boolean(extensionStartDate && extensionEndDate && extensionStartDate < extensionEndDate);
       const assignment = {
         key: `${group.laneKey}::${group.groupKey}`,
         projectId: text(first.projectId, 80),
@@ -416,9 +439,11 @@
         assigneeUid: text(first.assigneeUid, 128),
         assigneeName: text(first.assigneeName, 80) || "담당자 없음",
         startDate: [projectStart, starts[0]].filter(Boolean).sort()[0] || "",
-        endDate: [projectEnd, ends.length ? ends[ends.length - 1] : ""].filter(Boolean).sort().pop() || "",
-        extended: Boolean(project && project.endDate && project.extendedAt),
+        endDate: [projectEnd, lastTaskEnd].filter(Boolean).sort().pop() || "",
+        extended,
         previousEndDate: project ? project.previousEndDate : "",
+        extensionStartDate,
+        extensionEndDate,
         // 업무지시가 붙은 막대는 언제나 그 지시들의 현재 진행률을 쓴다.
         // 프로젝트 진행사항을 따로 적어 둔 뒤 일일업무보고서에서 지시를
         // 올려도 예전 프로젝트 숫자가 계속 보이면 세 화면이 서로 다른 말을
@@ -443,6 +468,8 @@
       if (!overlapsRange({ startDate: project.startDate, dueDate: project.endDate }, range)) return;
       const laneKey = mode === "people" ? "__none" : project.id;
       const lane = ensureLane(laneKey, mode === "people" ? "담당자 미정" : project.name, mode === "people" ? "담당자" : "프로젝트");
+      const extensionStartDate = isDate(project.previousEndDate) ? project.previousEndDate : "";
+      const extensionEndDate = isDate(project.endDate) ? project.endDate : "";
       lane.assignments.push({
         key: `${laneKey}::project:${project.id}`,
         projectId: project.id,
@@ -451,8 +478,10 @@
         assigneeName: "담당자 미정",
         startDate: project.startDate,
         endDate: project.endDate,
-        extended: Boolean(project.endDate && project.extendedAt),
+        extended: Boolean(extensionStartDate && extensionEndDate && extensionStartDate < extensionEndDate),
         previousEndDate: project.previousEndDate,
+        extensionStartDate,
+        extensionEndDate,
         progress: project.progress,
         progressNote: project.progressNote,
         status: project.status === "done" ? "done" : "assigned",
@@ -559,6 +588,7 @@
     roadmapRange,
     overlapsRange,
     roadmapLayout,
+    roadmapExtensionLayout,
     roadmapRows,
     recentProgress,
     sortProjects,

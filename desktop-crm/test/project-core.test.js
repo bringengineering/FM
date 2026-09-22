@@ -213,6 +213,8 @@ test("기간을 연장한 프로젝트는 로드맵 막대에 연장 상태를 �
   const assignment = lanes[0].assignments[0];
   assert.equal(assignment.extended, true);
   assert.equal(assignment.previousEndDate, "2026-09-25");
+  assert.equal(assignment.extensionStartDate, "2026-09-25");
+  assert.equal(assignment.extensionEndDate, "2026-10-02");
   assert.equal(assignment.endDate, "2026-10-02");
 });
 
@@ -229,6 +231,22 @@ test("기존 프로젝트 마감일이 없어도 업무지시 종료일 기준 �
   });
   assert.equal(lanes[0].assignments[0].extended, true);
   assert.equal(lanes[0].assignments[0].previousEndDate, "");
+});
+
+test("연장 구간은 기존 프로젝트 막대 안의 오른쪽 부분만 차지한다", () => {
+  const range = P.roadmapRange("2026-09-21", 0);
+  const segment = P.roadmapExtensionLayout({
+    startDate: "2026-09-01",
+    endDate: "2026-10-14",
+    extensionStartDate: "2026-09-30",
+    extensionEndDate: "2026-10-14",
+  }, range);
+  assert.ok(segment);
+  assert.ok(segment.left > 0);
+  assert.ok(segment.width > 0);
+  assert.ok(segment.left + segment.width <= 100.001);
+  assert.ok(segment.left + segment.width >= 99.999);
+  assert.equal(P.roadmapExtensionLayout({ startDate: "2026-09-01", endDate: "2026-10-14" }, range), null);
 });
 
 test("일일업무보고서에서 올라온 업무지시 진행률이 프로젝트 막대에도 반영된다", () => {

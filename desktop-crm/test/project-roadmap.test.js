@@ -129,8 +129,11 @@ test("기존 상세 디자인 안에서 프로젝트 기간을 연장하고 연�
   assert.match(app, /새 마감일은 현재 마감일보다 늦어야 합니다\./u);
   assert.doesNotMatch(app, /프로젝트 마감일을 먼저 설정해 주세요\./u);
   assert.match(app, /기간 연장을 저장하거나 취소한 뒤 이동해 주세요\./u);
-  assert.match(app, /assignment\.extended \? " is-extended"/u);
-  assert.match(css, /\.roadmap-bar\.is-extended\s*\{[^}]*border-color:[^}]*background:/u);
+  assert.match(app, /roadmapExtensionLayout\(assignment, range\)/u);
+  assert.match(app, /class="roadmap-extension-segment"/u);
+  assert.match(app, /assignment\.extended \? " has-extension"/u);
+  assert.match(css, /\.roadmap-extension-segment\s*\{[^}]*background:/u);
+  assert.doesNotMatch(css, /\.roadmap-bar\.is-extended\s*\{/u);
   assert.match(css, /\.roadmap-extension-editor/u);
 });
 
