@@ -142,8 +142,16 @@ jobs:
       - if: steps.reserve.outputs.reuse_assets != 'true'
         run: npm test
         working-directory: desktop-crm
-      - if: steps.reserve.outputs.reuse_assets != 'true'
-        run: npm run build:win -- --publish never
+      - name: Require the BRING-FM Google Drive Desktop OAuth client ID
+        if: steps.reserve.outputs.reuse_assets != 'true'
+        env:
+          BRING_CRM_GOOGLE_DRIVE_CLIENT_ID: ${{ vars.BRING_CRM_GOOGLE_DRIVE_CLIENT_ID }}
+        run: node desktop-crm/scripts/release/check-drive-oauth-client.js --client-id "$env:BRING_CRM_GOOGLE_DRIVE_CLIENT_ID"
+      - name: Build installer with the Google Drive Desktop OAuth client ID
+        if: steps.reserve.outputs.reuse_assets != 'true'
+        env:
+          BRING_CRM_GOOGLE_DRIVE_CLIENT_ID: ${{ vars.BRING_CRM_GOOGLE_DRIVE_CLIENT_ID }}
+        run: npm run build:win -- --publish never "-c.extraMetadata.driveOAuthClientId=$env:BRING_CRM_GOOGLE_DRIVE_CLIENT_ID"
         working-directory: desktop-crm
       - name: Verify exact installer, blockmap, and update manifest
         if: steps.reserve.outputs.reuse_assets != 'true'

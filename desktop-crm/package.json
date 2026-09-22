@@ -6,6 +6,7 @@
   "author": "BRING Engineering",
   "license": "UNLICENSED",
   "private": true,
+  "driveOAuthClientId": "",
   "scripts": {
     "start": "electron .",
     "tv": "electron src/wallboard-tv-main.js",

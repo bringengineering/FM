@@ -76,6 +76,25 @@ test("최근 진행사항은 제목·날짜·내용·작성자를 읽기 쉬운 
   assert.match(css, /\.roadmap-updates div small\s*\{[^}]*font-size:\s*10px/u);
 });
 
+test("로드맵 프로젝트를 누르면 편집기 대신 상세 화면으로 이동한다", () => {
+  const laneStart = app.indexOf("const laneHtml = lanes.map");
+  const laneEnd = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">', laneStart);
+  const lanes = app.slice(laneStart, laneEnd);
+  assert.match(lanes, /data-roadmap-select/u);
+  assert.doesNotMatch(lanes, /data-roadmap-project-progress/u);
+
+  const selectAt = app.indexOf('const roadmapSelect = event.target.closest("[data-roadmap-select]")');
+  const progressAt = app.indexOf('const roadmapProjectProgress = event.target.closest("[data-roadmap-project-progress]")');
+  assert.ok(selectAt >= 0 && progressAt > selectAt, "상세 선택을 진행사항 편집보다 먼저 처리해야 한다");
+  assert.match(app, /requestAnimationFrame\(\(\) => document\.querySelector\("\.roadmap-detail"\)\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)\)/u);
+
+  const detailStart = app.indexOf("function roadmapDetail(");
+  const detailEnd = app.indexOf("\n  function renderProjectRoadmap(", detailStart);
+  const detail = app.slice(detailStart, detailEnd);
+  assert.match(detail, /class="roadmap-project-title" data-roadmap-select=/u);
+  assert.match(detail, /data-roadmap-project-progress=.*＋ 진행사항 추가/u);
+});
+
 test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
   const heroStart = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">');
   const heroEnd = app.indexOf("${status}", heroStart);
@@ -122,6 +141,9 @@ test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미�
   assert.match(main, /noteRequired: note\?\.required === true/u);
   assert.match(main, /data-workspace-enter-folder="project"/u);
   assert.match(main, /data-live-refresh="projectRoadmap"/u);
+  assert.match(main, /const project = document\.querySelector\('\.roadmap-bar\[data-roadmap-select\]'\)/u);
+  assert.match(main, /progressModalOpen/u);
+  assert.match(main, /scrollTop: document\.querySelector\('\.main-content'\)\?\.scrollTop/u);
   assert.match(main, /todayLabels: labels\.length/u);
 });
 

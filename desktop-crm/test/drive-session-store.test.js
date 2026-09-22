@@ -45,13 +45,21 @@ function session(overrides = {}) {
   }, overrides);
 }
 
+function refreshSession(overrides = {}) {
+  return session(Object.assign({
+    refreshToken: "placeholder-drive-refresh-token",
+    clientId: "123456789-bringcrm.apps.googleusercontent.com",
+  }, overrides));
+}
+
 test("Drive session is encrypted and restores for the same CRM user after restart", async t => {
   const f = await fixture(t);
-  await f.create().save(session());
+  await f.create().save(refreshSession());
   const raw = await fs.readFile(f.target, "utf8");
   assert.doesNotMatch(raw, /placeholder-drive-access-token/u);
+  assert.doesNotMatch(raw, /placeholder-drive-refresh-token/u);
   assert.doesNotMatch(raw, /company@example\.com/u);
-  assert.deepEqual(await f.create().load("crm-user-1"), session());
+  assert.deepEqual(await f.create().load("crm-user-1"), refreshSession());
 });
 
 test("expired Drive sessions are discarded instead of being restored", async t => {
@@ -67,6 +75,20 @@ test("expired Drive sessions are discarded instead of being restored", async t =
   await writer.save(session({ expiresAt: "2026-09-20T01:00:00.000Z" }));
   assert.equal(await f.create().load("crm-user-1"), null);
   await assert.rejects(fs.readFile(f.target), error => error && error.code === "ENOENT");
+});
+
+test("expired access tokens remain restorable when encrypted refresh credentials exist", async t => {
+  const f = await fixture(t);
+  const writer = createDriveSessionStore({
+    fs,
+    safeStorage: f.safeStorage,
+    target: f.target,
+    encode: encodeProtectedJson,
+    decode: decodeProtectedJson,
+    now: () => Date.parse("2026-09-20T00:00:00.000Z"),
+  });
+  await writer.save(refreshSession({ expiresAt: "2026-09-20T01:00:00.000Z" }));
+  assert.deepEqual(await f.create().load("crm-user-1"), refreshSession({ expiresAt: "2026-09-20T01:00:00.000Z" }));
 });
 
 test("a different CRM user cannot inherit the saved Drive connection", async t => {
@@ -97,4 +119,6 @@ test("normalization rejects whitespace tokens and nearly expired credentials", (
   assert.equal(normalizeDriveSession(session({ expiresAt: "2026-09-21T00:00:20.000Z" }), { now }), null);
   assert.equal(normalizeDriveSession(session({ expiresAt: "2026-09-21T03:00:00.000Z" }), { now }), null);
   assert.equal(normalizeDriveSession(session({ ownerUid: "" }), { now }), null);
+  assert.equal(normalizeDriveSession(refreshSession({ refreshToken: "bad token" }), { now }), null);
+  assert.equal(normalizeDriveSession(refreshSession({ clientId: "not-a-google-client" }), { now }), null);
 });

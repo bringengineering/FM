@@ -5252,14 +5252,14 @@
     const projectProgressRow = project && project.progressUpdatedAt
       ? `<li><time>${esc(project.progressUpdatedAt.slice(0, 10))}</time><i></i><div><b>${esc(project.name)}</b><span>${esc(project.progressNote || `프로젝트 진행률 ${project.progress}%`)}</span><small>프로젝트 진행률 ${project.progress}%</small></div></li>`
       : "";
-    const projectName = project && workOrderState.admin
-      ? `<button type="button" class="roadmap-project-title" data-roadmap-project-progress="${esc(project.id)}">${esc(assignment.projectName)}</button>`
+    const projectName = project
+      ? `<button type="button" class="roadmap-project-title" data-roadmap-select="${esc(assignment.key)}">${esc(assignment.projectName)}</button>`
       : esc(assignment.projectName);
     const extensionEditor = project ? roadmapProjectExtensionEditor(P, project) : "";
 
     return `<section class="roadmap-detail">
       <header>
-        <div><span>${project ? "선택한 프로젝트 · 이름을 누르면 진행사항 추가" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
+        <div><span>${project ? "선택한 프로젝트 · 진행 현황과 다음 일정을 확인하세요" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
         <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions">${project.endDate ? `<button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}">기간 연장</button>` : ""}<button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
       </header>
       ${extensionEditor}
@@ -5317,9 +5317,9 @@
         const box = P.roadmapLayout(assignment, range);
         const label = mode === "people" ? assignment.projectName : assignment.assigneeName;
         if (!box) {
-          return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"${assignment.projectId && workOrderState.admin ? ` data-roadmap-project-progress="${esc(assignment.projectId)}"` : ""}><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
+          return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
         }
-        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " is-extended" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}"${assignment.projectId && workOrderState.admin ? ` data-roadmap-project-progress="${esc(assignment.projectId)}"` : ""} title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? ` · 기간 연장 (${assignment.previousEndDate} → ${assignment.endDate})` : ""}`)}">
+        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " is-extended" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? ` · 기간 연장 (${assignment.previousEndDate} → ${assignment.endDate})` : ""}`)}">
           <i style="width:${assignment.progress}%"></i><span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
         </button>`;
       }).join("");
@@ -5334,8 +5334,8 @@
       const laneSummary = mode === "projects"
         ? `${laneWorkOrderCount ? `업무지시 ${laneWorkOrderCount}건 · ` : ""}${lane.assignments.length}명 담당 · 진행 ${laneOpen}건`
         : `${laneProjectCount}개 프로젝트${laneWorkOrderCount ? ` · 업무지시 ${laneWorkOrderCount}건` : ""} · 진행 ${laneOpen}건`;
-      const laneName = isProjectLane && workOrderState.admin
-        ? `<button type="button" class="roadmap-project-name" data-roadmap-project-progress="${esc(lane.key)}">${esc(lane.label)}</button>`
+      const laneName = isProjectLane && lane.assignments[0]
+        ? `<button type="button" class="roadmap-project-name" data-roadmap-select="${esc(lane.assignments[0].key)}">${esc(lane.label)}</button>`
         : `<b>${esc(lane.label)}</b>`;
       return `<article class="roadmap-lane" style="--lane-height:${height}px">
         <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div>${laneName}<small>${esc(laneSummary)}</small><span><i style="width:${laneProgress}%"></i></span></div></div>
@@ -7267,14 +7267,14 @@
       <div class="wr-drive-head">
         <b>회사 Drive에서 사진 선택</b>
         <small>주소나 폴더 ID를 입력하지 않고 Drive 화면에서 직접 고릅니다.</small>
-        ${connected ? `<em><i></i>${driveState.restored ? "자동 복원됨" : "연결 유지됨"}</em>` : ""}
+        ${connected ? `<em><i></i>${driveState.autoRefresh ? "자동 연결됨" : driveState.restored ? "자동 복원됨" : "연결 유지됨"}</em>` : ""}
       </div>
       <div class="wr-drive-launch">
         <span class="wr-drive-launch-icon" aria-hidden="true">D</span>
-        <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : driveState.restored ? "다시 연결하지 않고 바로 사진을 선택할 수 있습니다." : "연결 정보가 안전하게 저장되었습니다.") : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
+        <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.reconnectRequired ? "Drive 재연결이 필요합니다" : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : driveState.autoRefresh ? "업데이트 후에도 보안 연결을 자동으로 갱신합니다." : driveState.restored ? "다시 연결하지 않고 바로 사진을 선택할 수 있습니다." : "연결 정보가 안전하게 저장되었습니다.") : driveState.reconnectRequired ? "Google 권한이 만료되거나 해제되었습니다. 한 번 다시 연결하면 이후 업데이트에서 자동 복원됩니다." : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
         ${connected
           ? `<button type="button" class="primary-button" data-report-drive-open${reportState.driveBrowserLoading ? " disabled" : ""}>Drive에서 사진 선택</button>`
-          : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>회사 Drive 연결</button>`}
+          : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>${driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button>`}
       </div>
       ${reportState.driveError ? `<p class="wr-drive-error" role="alert">${esc(reportState.driveError)}</p>` : ""}
       ${plan ? `
@@ -9187,8 +9187,8 @@
     const driveBar = !canWriteCRM() ? "" : !rootFolderId
       ? `<div class="info-box building-docs-drive"><b>Drive 폴더가 아직 없습니다</b><span>회사 Drive 에 문서함으로 쓸 폴더를 만들고 주소를 넣어 주세요.</span><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 지정</button></div>`
       : !driveState.connected
-        ? `<div class="info-box building-docs-drive"><b>Drive 에 연결되지 않았습니다</b><span>연결하면 CRM 에서 바로 서류를 올릴 수 있습니다. 연결 전에는 링크만 붙일 수 있습니다.</span><button type="button" class="mini-button" data-action="connect-drive">회사 Drive 연결</button><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button></div>`
-        : `<div class="info-box building-docs-drive connected"><b>Drive 연결됨</b><span>${esc(driveState.email || "회사 계정")} · 올린 파일은 이 계정 소유가 됩니다.</span><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button><button type="button" class="mini-button return" data-action="disconnect-drive">연결 해제</button></div>`;
+        ? `<div class="info-box building-docs-drive"><b>${driveState.reconnectRequired ? "Drive 재연결이 필요합니다" : "Drive 에 연결되지 않았습니다"}</b><span>${driveState.reconnectRequired ? "Google 권한이 만료되거나 해제되었습니다. 다시 연결하면 이후 업데이트에서 자동 복원됩니다." : "연결하면 CRM 에서 바로 서류를 올릴 수 있습니다. 연결 전에는 링크만 붙일 수 있습니다."}</span><button type="button" class="mini-button" data-action="connect-drive">${driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button></div>`
+        : `<div class="info-box building-docs-drive connected"><b>${driveState.autoRefresh ? "Drive 자동 연결됨" : "Drive 연결됨"}</b><span>${esc(driveState.email || "회사 계정")} · ${driveState.autoRefresh ? "업데이트 후에도 연결을 자동으로 갱신합니다." : "올린 파일은 이 계정 소유가 됩니다."}</span><button type="button" class="mini-button" data-action="set-building-docs-folder">폴더 변경</button><button type="button" class="mini-button return" data-action="disconnect-drive">연결 해제</button></div>`;
 
     if (!buildings.length) {
       main.innerHTML = hero + empty("등록된 건물이 없습니다", "고객·건물 관리에서 건물을 먼저 등록하면 문서함이 만들어집니다.", `<button class="primary-button" data-view="customers">고객·건물 관리로 이동 →</button>`);
@@ -12335,6 +12335,13 @@
       }
       return;
     }
+    const roadmapSelect = event.target.closest("[data-roadmap-select]");
+    if (roadmapSelect) {
+      projectRoadmapState.selectedKey = roadmapSelect.dataset.roadmapSelect;
+      renderProjectRoadmap();
+      requestAnimationFrame(() => document.querySelector(".roadmap-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
     const roadmapProjectProgress = event.target.closest("[data-roadmap-project-progress]");
     if (roadmapProjectProgress) {
       const P = projectCore();
@@ -12342,18 +12349,10 @@
       const project = P && P.sortProjects(workOrderState.projects).find(item => item.id === projectId);
       if (!project) return showToast("프로젝트 정보를 찾지 못했습니다.", "error");
       if (!workOrderState.admin) return showToast("프로젝트 진행사항 추가는 관리자만 할 수 있습니다.", "error");
-      if (roadmapProjectProgress.dataset.roadmapSelect) projectRoadmapState.selectedKey = roadmapProjectProgress.dataset.roadmapSelect;
       projectRoadmapState.extensionProjectId = "";
       workOrderState.projectEditing = P.normalizeProject(project);
       renderProjectRoadmap();
       document.querySelector("[data-wo-project-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const roadmapSelect = event.target.closest("[data-roadmap-select]");
-    if (roadmapSelect) {
-      projectRoadmapState.selectedKey = roadmapSelect.dataset.roadmapSelect;
-      renderProjectRoadmap();
-      document.querySelector(".roadmap-detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;
     }
     const roadmapNew = event.target.closest("[data-roadmap-new]");

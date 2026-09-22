@@ -175,24 +175,16 @@ test("Drive 가 여는 주소와 허용 목록이 실제로 맞는다", () => {
   });
 });
 
-test("창을 닫으면 Drive 연결도 그 자리에서 끝난다", () => {
-  // 창만 닫히고 기다리는 쪽이 살아 있으면, 콜백을 받는 로컬 서버가 3분 동안
-  // 남고 다시 누를수록 쌓인다. 사용자는 멈춘 줄도 모른다.
+test("Drive OAuth 연결은 취소 신호로 중단되고 중복 대기를 남기지 않는다", () => {
+  // 브라우저 인증을 다시 누른 뒤에도 앞선 loopback 서버가 남으면 콜백을
+  // 잘못 받을 수 있다. 현재 시도에만 묶인 취소 신호를 반드시 넘긴다.
   const connect = mainSource.slice(
     mainSource.indexOf("async function connectDrive"),
     mainSource.indexOf("async function disconnectDrive"),
   );
-  assert.match(connect, /receiveDriveToken\(\{ signal: controller\.signal \}\)/u, "신호를 넘겨야 한다");
+  assert.match(connect, /DriveOAuth\.authorizeDrive\(\{[\s\S]*signal: controller\.signal/u, "신호를 넘겨야 한다");
   // 다시 누르면 앞선 시도를 먼저 끊는다.
   assert.match(connect, /if \(driveConnectAbortController\) driveConnectAbortController\.abort\(\)/u);
   // 끝나면 치운다.
   assert.match(connect, /finally \{[\s\S]*driveConnectAbortController = null/u);
-
-  // 창이 닫힐 때 실제로 그 신호를 끊는지.
-  const opener = mainSource.slice(
-    mainSource.indexOf("async function openCrmGoogleAuth"),
-    mainSource.indexOf("async function openCrmEmailAuth"),
-  );
-  assert.match(opener, /const driveAbortController = driveConnectAbortController;/u);
-  assert.match(opener, /driveConnectAbortController === driveAbortController[\s\S]*driveAbortController\.abort\(\)/u);
 });

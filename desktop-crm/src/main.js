@@ -1,5 +1,6 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, nativeImage, net, Notification, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const packageMetadata = require("../package.json");
 const CrmUpdatePolicy = require("./crm-update-policy");
 const {
   createFieldPendingReadinessCoordinator,
@@ -31,6 +32,7 @@ const OwnerOsReportCore = require("./owner-os-report-core");
 const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const BuildingDocsDrive = require("./building-docs-drive");
 const { createDriveSessionStore } = require("./drive-session-store");
+const DriveOAuth = require("./drive-oauth");
 const ReportPhotoPlan = require("./report-photo-plan");
 const HeicJpegConverter = require("./heic-jpeg-converter");
 const TelegramCore = require("./telegram-core");
@@ -165,6 +167,15 @@ const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
 const CRM_DAILY_LOG_TELEGRAM_URL = new URL("/v1/telegram/daily-report", CRM_AI_GATEWAY_URL).href;
+// OAuth client IDs are public identifiers, not secrets. A Desktop-app client is
+// still supplied outside source so each installation can use the company Google
+// Cloud project without ever bundling a client secret.
+const CRM_DRIVE_OAUTH_CLIENT_ID = DriveOAuth.normalizeBringFmClientId(
+  process.env.BRING_CRM_GOOGLE_DRIVE_CLIENT_ID
+    || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID
+    || packageMetadata.driveOAuthClientId
+    || "",
+);
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -3151,11 +3162,17 @@ async function runDocumentDelivery(action, input) {
 
 // --- 건물 문서함 Drive 연결 -------------------------------------------------
 //
-// Drive 접근 토큰은 Windows 사용자 보호 영역으로 암호화한 뒤 이 PC에만 둔다.
-// 평문·Firebase·렌더러에는 남기지 않는다. 앱 재실행 때 CRM 사용자 UID가 같고
-// 토큰 만료 전인 경우에만 복원하며, 연결 해제·사용자 변경·만료 시 폐기한다.
+// Drive 접근·갱신 토큰은 Windows 사용자 보호 영역으로 암호화한 뒤 이 PC에만
+// 둔다. 평문·Firebase·렌더러에는 남기지 않는다. 앱 재실행 때 CRM 사용자
+// UID가 같아야만 복원하고, 접근 토큰은 만료 전에 메인 프로세스에서 갱신한다.
 let driveSession = null;
 let driveSessionStore = null;
+let driveRefreshPromise = null;
+let driveSessionEpoch = 0;
+let driveReconnectRequired = false;
+
+const DRIVE_REFRESH_WINDOW_MS = 5 * 60 * 1000;
+const DRIVE_REQUEST_HOSTS = new Set(["www.googleapis.com"]);
 
 const REPORT_DRIVE_IMAGE_MIME = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
@@ -3200,9 +3217,26 @@ async function restoreDriveSession() {
   if (!ownerUid || localTestMode) return driveSessionView();
   try {
     const saved = await protectedDriveSessionStore().load(ownerUid);
-    driveSession = saved ? Object.assign({}, saved, { restored: true }) : null;
+    const allowedSavedSession = saved && DriveOAuth.normalizeBringFmClientId(saved.clientId);
+    if (saved && !allowedSavedSession) await protectedDriveSessionStore().clear();
+    driveSession = allowedSavedSession ? Object.assign({}, saved, { restored: true }) : null;
+    driveReconnectRequired = Boolean(saved && !allowedSavedSession);
+    driveSessionEpoch += 1;
+    if (driveHasRefreshCredentials(driveSession) && driveAccessTokenNeedsRefresh(driveSession)) {
+      try {
+        await ensureDriveAccessToken(true);
+      } catch (error) {
+        // A temporary network failure must not erase the refresh token. The next
+        // Drive action retries. Revoked credentials are cleared by the helper.
+        if (!error || error.code !== "DRIVE_AUTH_REQUIRED") {
+          console.warn("Drive connection refresh deferred", error && error.code ? error.code : "DRIVE_REFRESH_FAILED");
+        }
+      }
+    }
   } catch (error) {
     driveSession = null;
+    driveReconnectRequired = false;
+    driveSessionEpoch += 1;
     console.warn("Drive connection restore failed", error && error.code ? error.code : "DRIVE_SESSION_RESTORE_FAILED");
   }
   resetReportDrivePickerSession();
@@ -3212,6 +3246,8 @@ async function restoreDriveSession() {
 function clearDriveSessionForChangedUser(nextUid) {
   if (!driveSession || driveSession.ownerUid === String(nextUid || "")) return;
   driveSession = null;
+  driveReconnectRequired = false;
+  driveSessionEpoch += 1;
   resetReportDrivePickerSession();
   void protectedDriveSessionStore().clear().catch(() => {
     console.warn("Drive connection cleanup failed");
@@ -3270,21 +3306,123 @@ function reportDrivePickerReady() {
 }
 
 function driveSessionView() {
-  if (!driveSession) return { connected: false, email: "", expiresAt: "", restored: false };
-  if (Date.parse(driveSession.expiresAt) <= Date.now()) {
+  if (!driveSession) return { connected: false, email: "", expiresAt: "", restored: false, autoRefresh: false, reconnectRequired: driveReconnectRequired };
+  const autoRefresh = driveHasRefreshCredentials(driveSession);
+  if (!autoRefresh && Date.parse(driveSession.expiresAt) <= Date.now()) {
     driveSession = null;
+    driveReconnectRequired = true;
+    driveSessionEpoch += 1;
     resetReportDrivePickerSession();
     void protectedDriveSessionStore().clear().catch(() => {
       console.warn("Expired Drive connection cleanup failed");
     });
-    return { connected: false, email: "", expiresAt: "", restored: false };
+    return { connected: false, email: "", expiresAt: "", restored: false, autoRefresh: false, reconnectRequired: true };
   }
   return {
     connected: true,
     email: driveSession.email,
     expiresAt: driveSession.expiresAt,
     restored: driveSession.restored === true,
+    autoRefresh,
+    reconnectRequired: false,
   };
+}
+
+function driveHasRefreshCredentials(session) {
+  return Boolean(session && session.refreshToken && DriveOAuth.normalizeBringFmClientId(session.clientId));
+}
+
+function driveAccessTokenNeedsRefresh(session, force = false) {
+  if (!session || force || !session.accessToken) return true;
+  const expiresAt = Date.parse(String(session.expiresAt || ""));
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now() + DRIVE_REFRESH_WINDOW_MS;
+}
+
+async function clearInvalidDriveSession(expectedEpoch, requireReconnect = true) {
+  if (Number.isFinite(expectedEpoch) && driveSessionEpoch !== expectedEpoch) return;
+  await protectedDriveSessionStore().clear();
+  if (Number.isFinite(expectedEpoch) && driveSessionEpoch !== expectedEpoch) return;
+  driveSession = null;
+  driveReconnectRequired = requireReconnect;
+  driveSessionEpoch += 1;
+  resetReportDrivePickerSession();
+}
+
+async function ensureDriveAccessToken(force = false) {
+  const ownerUid = driveSessionOwnerUid();
+  const current = driveSession;
+  if (!ownerUid || !current || current.ownerUid !== ownerUid) {
+    throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  if (!driveAccessTokenNeedsRefresh(current, force)) return current.accessToken;
+  if (!driveHasRefreshCredentials(current)) {
+    await clearInvalidDriveSession(driveSessionEpoch);
+    throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  if (driveRefreshPromise) return driveRefreshPromise;
+  const expectedEpoch = driveSessionEpoch;
+  const attempt = (async () => {
+    try {
+      const refreshed = await DriveOAuth.refreshAccessToken({
+        clientId: current.clientId,
+        refreshToken: current.refreshToken,
+        fetchImpl: (url, init) => net.fetch(url, init),
+      });
+      if (driveSessionEpoch !== expectedEpoch || driveSessionOwnerUid() !== ownerUid || driveSession !== current) {
+        throw Object.assign(new Error("CRM 로그인 상태가 변경되었습니다."), { code: "SESSION_CHANGED" });
+      }
+      const saved = await protectedDriveSessionStore().save(Object.assign({}, current, refreshed, { ownerUid }));
+      if (driveSessionEpoch !== expectedEpoch || driveSessionOwnerUid() !== ownerUid || driveSession !== current) {
+        throw Object.assign(new Error("CRM 로그인 상태가 변경되었습니다."), { code: "SESSION_CHANGED" });
+      }
+      driveSession = Object.assign({}, saved, { restored: current.restored === true });
+      driveSessionEpoch += 1;
+      return driveSession.accessToken;
+    } catch (error) {
+      if (error && error.code === "DRIVE_RECONNECT_REQUIRED") {
+        await clearInvalidDriveSession(expectedEpoch, true);
+        throw Object.assign(new Error("Google에서 Drive 권한이 해제되었습니다. 회사 Drive를 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+      }
+      throw error;
+    }
+  })();
+  const wrapped = attempt.finally(() => {
+    if (driveRefreshPromise === wrapped) driveRefreshPromise = null;
+  });
+  driveRefreshPromise = wrapped;
+  return wrapped;
+}
+
+function allowedDriveRequestUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return "";
+    if (!DRIVE_REQUEST_HOSTS.has(url.hostname) && !/(^|\.)googleusercontent\.com$/iu.test(url.hostname)) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+async function authenticatedDriveFetch(value, init = {}, retried = false) {
+  const url = allowedDriveRequestUrl(value);
+  if (!url) throw Object.assign(new Error("허용되지 않은 Drive 주소입니다."), { code: "DRIVE_URL_DENIED" });
+  const accessToken = await ensureDriveAccessToken(retried);
+  const headers = new Headers(init.headers || {});
+  headers.set("authorization", `Bearer ${accessToken}`);
+  const response = await fetch(url, Object.assign({}, init, { headers }));
+  if (response.status === 401 && !retried && driveHasRefreshCredentials(driveSession)) {
+    try { await response.body?.cancel(); } catch (_) {}
+    return authenticatedDriveFetch(url, init, true);
+  }
+  return response;
+}
+
+function driveApiDeps() {
+  // The Drive helper insists on an accessToken field when validating input.
+  // The real credential is attached inside authenticatedDriveFetch and never
+  // leaves the Electron main process.
+  return { fetchImpl: authenticatedDriveFetch, accessToken: "managed-in-main-process" };
 }
 
 async function connectDrive() {
@@ -3296,9 +3434,22 @@ async function connectDrive() {
   const controller = new AbortController();
   driveConnectAbortController = controller;
   try {
-    const received = await remoteClient.receiveDriveToken({ signal: controller.signal });
+    if (!CRM_DRIVE_OAUTH_CLIENT_ID) {
+      throw Object.assign(new Error("BRING-FM Drive 연결 설정을 확인해 주세요."), { code: "DRIVE_OAUTH_CONFIG_INVALID" });
+    }
+    const received = await DriveOAuth.authorizeDrive({
+      clientId: CRM_DRIVE_OAUTH_CLIENT_ID,
+      fetchImpl: (url, init) => net.fetch(url, init),
+      openExternal: url => shell.openExternal(url),
+      signal: controller.signal,
+    });
+    if (driveSessionOwnerUid() !== ownerUid) {
+      throw Object.assign(new Error("CRM 로그인 상태가 변경되었습니다."), { code: "SESSION_CHANGED" });
+    }
     const saved = await protectedDriveSessionStore().save(Object.assign({}, received, { ownerUid }));
     driveSession = Object.assign({}, saved, { restored: false });
+    driveReconnectRequired = false;
+    driveSessionEpoch += 1;
     resetReportDrivePickerSession();
     return driveSessionView();
   } catch (error) {
@@ -3315,6 +3466,8 @@ async function connectDrive() {
 async function disconnectDrive() {
   await protectedDriveSessionStore().clear();
   driveSession = null;
+  driveReconnectRequired = false;
+  driveSessionEpoch += 1;
   resetReportDrivePickerSession();
   return driveSessionView();
 }
@@ -3380,7 +3533,7 @@ async function uploadBuildingDocument(input) {
 
   const content = await fs.readFile(filePath);
   const uploaded = await BuildingDocsDrive.uploadDocument(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     {
       rootFolderId: String(options.rootFolderId || ""),
       buildingName: String(options.buildingName || ""),
@@ -3663,7 +3816,7 @@ async function browseWorkReportDrive(input) {
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   if (options.location === "shared-with-me") {
     const listed = await BuildingDocsDrive.listSharedWithMe(
-      { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+      driveApiDeps(),
       { maxPages: 5 },
     );
     const folders = listed.folders
@@ -3709,7 +3862,7 @@ async function browseWorkReportDrive(input) {
   }
   if (options.location === "shared-drives") {
     const listed = await BuildingDocsDrive.listSharedDrives(
-      { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+      driveApiDeps(),
       { maxPages: 5 },
     );
     const drives = listed.drives
@@ -3740,7 +3893,7 @@ async function browseWorkReportDrive(input) {
 
   const current = picker.folders.get(folderId) || { id: folderId, name: "Drive 폴더", parentId: "", driveId: "" };
   const listed = await BuildingDocsDrive.listFolder(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     folderId,
     { maxPages: 5, driveId: String(current && current.driveId || "") },
   );
@@ -3812,15 +3965,14 @@ async function readReportDriveThumbnailBody(response) {
   return Buffer.concat(chunks, size);
 }
 
-async function fetchReportDriveThumbnail(value, accessToken) {
+async function fetchReportDriveThumbnail(value) {
   let current = reportDriveThumbnailLink(value);
   if (!current) return { ok: true, dataUrl: "" };
   for (let redirect = 0; redirect < 4; redirect += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(current, {
-        headers: { authorization: `Bearer ${accessToken}` },
+      const response = await authenticatedDriveFetch(current, {
         redirect: "manual",
         signal: controller.signal,
       });
@@ -3860,9 +4012,7 @@ async function loadWorkReportDriveThumbnail(input) {
   if (!fileId || !picker.files.has(fileId)) {
     throw Object.assign(new Error("Drive 화면에 표시된 사진만 미리 볼 수 있습니다."), { code: "DRIVE_FILE_NOT_LISTED" });
   }
-  const accessToken = String(driveSession && driveSession.accessToken || "");
-  if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
-  return fetchReportDriveThumbnail(picker.thumbnails.get(fileId), accessToken);
+  return fetchReportDriveThumbnail(picker.thumbnails.get(fileId));
 }
 
 function safeClassificationJpeg(sourceBuffer) {
@@ -4055,7 +4205,7 @@ async function scanWorkReportPhotos(input) {
   if (!folderId) throw Object.assign(new Error("어느 폴더인지 정해 주세요."), { code: "FOLDER_REQUIRED" });
 
   const scanned = await BuildingDocsDrive.scanPhotoFolder(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     folderId,
     {},
   );
@@ -4090,7 +4240,7 @@ async function uploadWorkReportPhoto(input) {
   const content = await fs.readFile(filePath);
   const day = String(options.workDate || new Date().toISOString()).slice(0, 10);
   const uploaded = await BuildingDocsDrive.uploadDocument(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     {
       rootFolderId: String(options.rootFolderId || ""),
       folderPath: ["결과보고서", String(options.buildingName || "건물 없음"), `${day}_${String(options.kindLabel || "작업")}`],
@@ -4171,7 +4321,7 @@ async function exportWorkReport(input) {
     for (const photo of photos.slice(0, 40)) {
       try {
         const fetched = await BuildingDocsDrive.downloadFile(
-          { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+          driveApiDeps(),
           { fileId: photo.driveFileId },
         );
         if (fetched && fetched.content) {
@@ -4232,7 +4382,7 @@ async function uploadDeliveryFile(input) {
   const content = await fs.readFile(filePath);
   const day = String(options.uploadedAt || new Date().toISOString()).slice(0, 10);
   const uploaded = await BuildingDocsDrive.uploadDocument(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     {
       rootFolderId: String(options.rootFolderId || ""),
       folderPath: ["수주 진행", buildingName || "건물 없음", stageLabel],
@@ -4275,7 +4425,7 @@ async function uploadWorkOrderResult(input) {
   const content = await fs.readFile(filePath);
   const day = String(options.uploadedAt || new Date().toISOString()).slice(0, 10);
   const uploaded = await BuildingDocsDrive.uploadDocument(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    driveApiDeps(),
     {
       rootFolderId: String(options.rootFolderId || ""),
       // 달 · 사람 · 지시 순으로 쌓는다. Drive 에서 찾는 이유는 거의 늘
@@ -5185,12 +5335,22 @@ async function createWindow() {
         await wait(180);
         document.querySelector('[data-live-refresh="projectRoadmap"]')?.click();
         await wait(420);
+        const project = document.querySelector('.roadmap-bar[data-roadmap-select]');
+        project?.click();
+        await wait(700);
+        const detail = document.querySelector('.roadmap-detail');
+        const progressModalOpen = document.querySelector('.modal-layer')?.classList.contains('open') === true;
         const labels = [...document.querySelectorAll('.roadmap-today-label')];
         const repeated = [...document.querySelectorAll('.roadmap-lane-track')]
           .some(track => track.textContent.includes('오늘'));
         return {
           pass: window.__crmTest?.snapshot().view === 'projectRoadmap'
+            && Boolean(project && detail) && !progressModalOpen
             && labels.length === 1 && !repeated,
+          projectSelected: Boolean(project),
+          detailVisible: Boolean(detail),
+          progressModalOpen,
+          scrollTop: document.querySelector('.main-content')?.scrollTop || 0,
           todayLabels: labels.length,
           repeated,
           state: window.__crmTest?.snapshot(),

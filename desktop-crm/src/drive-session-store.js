@@ -2,10 +2,13 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 
 const MAX_ACCESS_TOKEN_LENGTH = 12000;
+const MAX_REFRESH_TOKEN_LENGTH = 12000;
+const MAX_CLIENT_ID_LENGTH = 320;
 const MAX_EMAIL_LENGTH = 200;
 const MAX_UID_LENGTH = 128;
 const RESTORE_SAFETY_WINDOW_MS = 30 * 1000;
 const MAX_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
+const CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{6,300}\.apps\.googleusercontent\.com$/u;
 
 function cleanText(value, maximum) {
   const text = String(value || "").trim();
@@ -16,20 +19,32 @@ function cleanText(value, maximum) {
 function normalizeDriveSession(input, options = {}) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const accessToken = cleanText(source.accessToken, MAX_ACCESS_TOKEN_LENGTH);
+  const refreshToken = cleanText(source.refreshToken, MAX_REFRESH_TOKEN_LENGTH);
+  const rawClientId = cleanText(source.clientId, MAX_CLIENT_ID_LENGTH);
+  const clientId = CLIENT_ID_PATTERN.test(rawClientId) ? rawClientId : "";
   const ownerUid = cleanText(source.ownerUid, MAX_UID_LENGTH);
   const email = String(source.email || "").trim().slice(0, MAX_EMAIL_LENGTH);
   const expiresAtMs = Date.parse(String(source.expiresAt || ""));
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
-  if (!accessToken || !ownerUid || /\s/u.test(accessToken) || !Number.isFinite(expiresAtMs)) return null;
-  if (expiresAtMs <= now + RESTORE_SAFETY_WINDOW_MS) return null;
+  const refreshCapable = Boolean(refreshToken && clientId);
+  if ((!accessToken && !refreshCapable) || !ownerUid || !Number.isFinite(expiresAtMs)) return null;
+  if (accessToken && /\s/u.test(accessToken)) return null;
+  if (refreshToken && /\s/u.test(refreshToken)) return null;
+  if (!refreshCapable && (refreshToken || rawClientId)) return null;
+  if (!refreshCapable && expiresAtMs <= now + RESTORE_SAFETY_WINDOW_MS) return null;
   if (expiresAtMs > now + MAX_SESSION_LIFETIME_MS) return null;
   if (/[\u0000-\u001f\u007f]/u.test(email)) return null;
-  return {
+  const session = {
     accessToken,
     expiresAt: new Date(expiresAtMs).toISOString(),
     email,
     ownerUid,
   };
+  if (refreshCapable) {
+    session.refreshToken = refreshToken;
+    session.clientId = clientId;
+  }
+  return session;
 }
 
 function createDriveSessionStore(options = {}) {
