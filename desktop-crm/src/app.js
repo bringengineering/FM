@@ -5164,9 +5164,9 @@
     </form>`;
   }
 
-  function roadmapProjectExtensionEditor(P, project) {
+  function roadmapProjectExtensionEditor(P, project, fallbackEndDate) {
     if (!project || !project.id || projectRoadmapState.extensionProjectId !== project.id) return "";
-    const currentEnd = project.endDate;
+    const currentEnd = project.endDate || fallbackEndDate;
     const nextEnd = P.addDays(currentEnd, 14);
     return `<form class="roadmap-extension-editor" data-roadmap-extension-form data-project-id="${esc(project.id)}" data-current-end="${esc(currentEnd)}">
       <label class="roadmap-extension-current"><span>현재 마감일</span><b>${esc(currentEnd)}</b></label>
@@ -5255,12 +5255,12 @@
     const projectName = project
       ? `<button type="button" class="roadmap-project-title" data-roadmap-select="${esc(assignment.key)}">${esc(assignment.projectName)}</button>`
       : esc(assignment.projectName);
-    const extensionEditor = project ? roadmapProjectExtensionEditor(P, project) : "";
+    const extensionEditor = project ? roadmapProjectExtensionEditor(P, project, assignment.endDate || today) : "";
 
     return `<section class="roadmap-detail">
       <header>
         <div><span>${project ? "선택한 프로젝트 · 진행 현황과 다음 일정을 확인하세요" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
-        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions">${project.endDate ? `<button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}">기간 연장</button>` : ""}<button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions"><button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}" data-roadmap-project-base-end="${esc(assignment.endDate || today)}">기간 연장</button><button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
       </header>
       ${extensionEditor}
       <div class="roadmap-detail-grid">
@@ -5319,7 +5319,7 @@
         if (!box) {
           return `<button type="button" class="roadmap-undated${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${12 + index * 46}px" data-roadmap-select="${esc(assignment.key)}"><b>${esc(label)}</b><span>날짜 미정 · ${assignment.progress}%</span></button>`;
         }
-        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " is-extended" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? ` · 기간 연장 (${assignment.previousEndDate} → ${assignment.endDate})` : ""}`)}">
+        return `<button type="button" class="roadmap-bar status-${esc(assignment.status)}${assignment.extended ? " is-extended" : ""}${assignment.key === projectRoadmapState.selectedKey ? " is-selected" : ""}" style="top:${10 + index * 46}px;left:${box.left.toFixed(3)}%;width:${Math.max(3.5, box.width).toFixed(3)}%" data-roadmap-select="${esc(assignment.key)}" title="${esc(`${label} · ${assignment.startDate || "미정"} ~ ${assignment.endDate || "미정"} · ${assignment.progress}%${assignment.extended ? (assignment.previousEndDate ? ` · 기간 연장 (${assignment.previousEndDate} → ${assignment.endDate})` : ` · 기간 연장 (${assignment.endDate})`) : ""}`)}">
           <i style="width:${assignment.progress}%"></i><span><b>${esc(label)}</b><em>${assignment.progress}%</em></span>
         </button>`;
       }).join("");
@@ -12310,9 +12310,9 @@
       const project = P && P.sortProjects(workOrderState.projects).find(item => item.id === projectId);
       if (!project) return showToast("프로젝트 정보를 찾지 못했습니다.", "error");
       if (!workOrderState.admin) return showToast("프로젝트 기간 연장은 관리자만 할 수 있습니다.", "error");
-      if (!project.endDate) return showToast("프로젝트 마감일을 먼저 설정해 주세요.", "error");
+      const baseEndDate = String(roadmapProjectExtend.dataset.roadmapProjectBaseEnd || project.endDate || todayKey());
       projectRoadmapState.extensionProjectId = project.id;
-      workOrderState.projectEditing = P.normalizeProject(project);
+      workOrderState.projectEditing = P.normalizeProject(Object.assign({}, project, { endDate: baseEndDate }));
       renderProjectRoadmap();
       document.querySelector("[data-roadmap-extension-form]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;

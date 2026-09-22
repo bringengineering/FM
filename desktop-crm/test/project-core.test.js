@@ -216,6 +216,21 @@ test("기간을 연장한 프로젝트는 로드맵 막대에 연장 상태를 �
   assert.equal(assignment.endDate, "2026-10-02");
 });
 
+test("기존 프로젝트 마감일이 없어도 업무지시 종료일 기준 연장을 표시한다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }],
+    projects: [{
+      id: "p1", name: "기존 프로젝트", endDate: "2026-10-02",
+      previousEndDate: "", extendedAt: "2026-09-20T00:00:00.000Z", extendedBy: "admin",
+    }],
+    orders: [order({ id: "a", projectId: "p1", assigneeUid: "u1", dueDate: "2026-09-18" })],
+  });
+  assert.equal(lanes[0].assignments[0].extended, true);
+  assert.equal(lanes[0].assignments[0].previousEndDate, "");
+});
+
 test("일일업무보고서에서 올라온 업무지시 진행률이 프로젝트 막대에도 반영된다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),

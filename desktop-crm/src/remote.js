@@ -4328,8 +4328,8 @@ class FirebaseRemoteClient {
     const progressChanged = !existing
       || before.progress !== checked.project.progress
       || before.progressNote !== checked.project.progressNote;
-    const endDateExtended = Boolean(existing && before.endDate
-      && checked.project.endDate && checked.project.endDate > before.endDate);
+    const endDateExtended = Boolean(existing && checked.project.endDate
+      && (!before.endDate || checked.project.endDate > before.endDate));
     const record = Object.assign({}, checked.project, {
       assignees: Object.fromEntries(assignees.map(item => [item.uid, item])),
       owner: assignees.length ? assignees.map(item => item.name).join(", ").slice(0, 80) : checked.project.owner,

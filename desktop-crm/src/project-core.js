@@ -417,7 +417,7 @@
         assigneeName: text(first.assigneeName, 80) || "담당자 없음",
         startDate: [projectStart, starts[0]].filter(Boolean).sort()[0] || "",
         endDate: [projectEnd, ends.length ? ends[ends.length - 1] : ""].filter(Boolean).sort().pop() || "",
-        extended: Boolean(project && project.previousEndDate && project.extendedAt),
+        extended: Boolean(project && project.endDate && project.extendedAt),
         previousEndDate: project ? project.previousEndDate : "",
         // 업무지시가 붙은 막대는 언제나 그 지시들의 현재 진행률을 쓴다.
         // 프로젝트 진행사항을 따로 적어 둔 뒤 일일업무보고서에서 지시를
@@ -451,7 +451,7 @@
         assigneeName: "담당자 미정",
         startDate: project.startDate,
         endDate: project.endDate,
-        extended: Boolean(project.previousEndDate && project.extendedAt),
+        extended: Boolean(project.endDate && project.extendedAt),
         previousEndDate: project.previousEndDate,
         progress: project.progress,
         progressNote: project.progressNote,
