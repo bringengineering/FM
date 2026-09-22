@@ -7810,7 +7810,7 @@
               </div>
             </details>
           </section>
-          <section class="wr-ai-card wr-ai-photo-card">
+          <section class="wr-ai-card wr-ai-photo-section">
             <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
             <div class="wr-ai-photo-guide"><span>1</span><p><b>작업 전·후 사진을 등록하세요.</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
             ${reportState.canWork ? reportDriveBox(R) : ""}
