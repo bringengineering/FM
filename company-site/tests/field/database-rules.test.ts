@@ -2208,6 +2208,20 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       { uid: `member-${index}`, name: `담당자 ${index}` },
     ]));
     await assertFails(set(ref(admin, at("p10")), project("p10", { assignees: tooMany })));
+    // 기간 연장은 새 마감일과 서버가 남긴 직전 마감일·작성자만 허용한다.
+    await assertSucceeds(set(ref(admin, at("p11")), project("p11", {
+      endDate: "2026-09-11",
+      previousEndDate: "2026-08-28",
+      extensionNote: "현장 검수 일정 반영",
+      extendedAt: "2026-09-06T01:00:00.000Z",
+      extendedBy: "crm-admin",
+    })));
+    await assertFails(set(ref(admin, at("p12")), project("p12", {
+      extensionNote: "가".repeat(301),
+    })));
+    await assertFails(set(ref(admin, at("p13")), project("p13", {
+      previousEndDate: "2026년 8월 28일",
+    })));
     await assertFails(remove(ref(admin, at("p1"))));
   });
 

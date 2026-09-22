@@ -96,6 +96,22 @@ test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가
   assert.match(app, /프로젝트에 연결되지 않은 업무/u);
 });
 
+test("기존 상세 디자인 안에서 프로젝트 기간을 연장하고 연장 막대를 구분한다", () => {
+  assert.match(app, /data-roadmap-project-extend/u);
+  assert.match(app, /function roadmapProjectExtensionEditor\(/u);
+  assert.match(app, /data-roadmap-extension-form/u);
+  assert.match(app, /name="newEndDate"[^>]*type="date"[^>]*required/u);
+  assert.match(app, /name="extensionNote"[^>]*maxlength="300"/u);
+  for (const days of [7, 14, 30]) assert.match(app, new RegExp(`data-roadmap-extension-days="${days}"`, "u"));
+  assert.match(app, /프로젝트 기간만 변경되며 연결된 업무지시 일정은 유지됩니다\./u);
+  assert.match(app, /saveProjectExtensionFromForm/u);
+  assert.match(app, /새 마감일은 현재 마감일보다 늦어야 합니다\./u);
+  assert.match(app, /기간 연장을 저장하거나 취소한 뒤 이동해 주세요\./u);
+  assert.match(app, /assignment\.extended \? " is-extended"/u);
+  assert.match(css, /\.roadmap-bar\.is-extended\s*\{[^}]*border-color:[^}]*background:/u);
+  assert.match(css, /\.roadmap-extension-editor/u);
+});
+
 test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미리보기를 허용한다", () => {
   assert.match(main, /BRING_CRM_PREVIEW_VIEW === "projectRoadmap" \? "projectRoadmap" : ""/u);
   assert.match(main, /Boolean\(interactivePreviewView\)/u);

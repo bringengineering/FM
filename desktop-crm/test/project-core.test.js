@@ -198,6 +198,24 @@ test("업무지시가 없는 새 프로젝트도 진행률과 기한으로 로�
   assert.equal(lanes[0].assignments[0].progressNote, "기획 완료");
 });
 
+test("기간을 연장한 프로젝트는 로드맵 막대에 연장 상태를 전달한다", () => {
+  const lanes = P.roadmapRows({
+    range: P.roadmapRange("2026-09-07", 0),
+    mode: "people",
+    members: [{ uid: "u1", displayName: "김민서" }],
+    projects: [{
+      id: "p1", name: "CRM", startDate: "2026-09-01", endDate: "2026-10-02",
+      previousEndDate: "2026-09-25", extensionNote: "현장 검수 반영",
+      extendedAt: "2026-09-20T00:00:00.000Z", extendedBy: "admin",
+    }],
+    orders: [order({ id: "a", projectId: "p1", assigneeUid: "u1", dueDate: "2026-09-18" })],
+  });
+  const assignment = lanes[0].assignments[0];
+  assert.equal(assignment.extended, true);
+  assert.equal(assignment.previousEndDate, "2026-09-25");
+  assert.equal(assignment.endDate, "2026-10-02");
+});
+
 test("일일업무보고서에서 올라온 업무지시 진행률이 프로젝트 막대에도 반영된다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),
@@ -237,6 +255,8 @@ test("프로젝트 진행사항은 0부터 100까지 정수로 정규화한다",
   assert.equal(P.normalizeProject({ progress: 140 }).progress, 100);
   assert.equal(P.normalizeProject({ progress: -5 }).progress, 0);
   assert.equal(P.normalizeProject({ progressNote: "가".repeat(600) }).progressNote.length, 500);
+  assert.equal(P.normalizeProject({ extensionNote: "나".repeat(400) }).extensionNote.length, 300);
+  assert.equal(P.normalizeProject({ previousEndDate: "2026-09-30", extendedAt: "2026-10-01T00:00:00.000Z" }).previousEndDate, "2026-09-30");
 });
 
 test("드래그한 칸을 날짜로 되돌린다", () => {

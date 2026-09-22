@@ -48,6 +48,14 @@ test("프로젝트는 관리자만 만들고 지우지 못한다", () => {
   assert.match(rules.projects.$projectId.progressNote[".validate"], /length <= 500/u);
   assert.match(save, /progressChanged/u);
   assert.match(save, /progressUpdatedAt: progressChanged \? now/u);
+  assert.match(save, /endDateExtended/u);
+  assert.match(save, /previousEndDate: endDateExtended \? before\.endDate/u);
+  assert.match(save, /extendedAt: endDateExtended \? now/u);
+  assert.match(save, /extendedBy: endDateExtended \? session\.uid/u);
+  for (const field of ["previousEndDate", "extensionNote", "extendedAt", "extendedBy"]) {
+    assert.ok(rules.projects.$projectId[field], `기간 연장 규칙에 없는 칸: ${field}`);
+  }
+  assert.match(rules.projects.$projectId.extensionNote[".validate"], /length <= 300/u);
 });
 
 test("프로젝트는 활성 팀원을 여러 담당자로 선택해 저장한다", () => {
