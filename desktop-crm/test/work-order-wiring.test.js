@@ -103,11 +103,13 @@ test("진행률을 바꿀 때 진행 내용을 필수로 받고 변경 이력을
   assert.match(progress, /progressUpdatesMap\(saved\.progressUpdates\)/u);
 
   const progressRules = order.progressUpdates;
-  assert.match(progressRules[".validate"], /numChildren\(\) <= 200/u);
-  assert.match(progressRules[".validate"], /numChildren\(\) >= data\.numChildren\(\)/u);
-  assert.match(progressRules.$updateId[".validate"], /newData\.child\('createdBy'\)\.val\(\) === auth\.uid/u);
+  const updateRules = progressRules.$updateId[".validate"];
+  assert.match(updateRules, /newData\.child\('createdBy'\)\.val\(\) === auth\.uid/u);
+  assert.match(updateRules, /latestProgressUpdateId'\)\.val\(\) === \$updateId/u);
+  assert.match(updateRules, /fromProgress'\)\.val\(\) === data\.parent\(\)\.parent\(\)\.child\('progress'\)\.val\(\)/u);
+  assert.match(updateRules, /toProgress'\)\.val\(\) === newData\.parent\(\)\.parent\(\)\.child\('progress'\)\.val\(\)/u);
   assert.equal(progressRules.$updateId.$other[".validate"], false);
-  assert.match(order[".validate"], /progressUpdates'\)\.numChildren\(\).*\+ 1/u);
+  assert.doesNotMatch(JSON.stringify(order), /numChildren/u, "Realtime Database 규칙에 없는 메서드를 쓰면 배포 자체가 막힌다");
   assert.match(order[".validate"], /latestProgressUpdateId/u);
   assert.match(order[".validate"], /child\('fromProgress'\).*data\.child\('progress'\)/u);
   assert.match(order[".validate"], /child\('toProgress'\).*newData\.child\('progress'\)/u);

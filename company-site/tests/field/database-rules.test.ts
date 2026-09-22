@@ -2401,8 +2401,38 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     });
 
     await assertSucceeds(set(ref(admin, at("h1")), order("h1")));
-    // 담당자는 진행률만 옮긴다.
-    await assertSucceeds(update(ref(member, at("h1")), { progress: 60, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    // 숫자만 바꾸면 어떤 일을 했는지 남지 않는다. 진행 내역이 없는 변경은 막는다.
+    await assertFails(update(ref(member, at("h1")), { progress: 60, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    const progressUpdateId = "pu_member1";
+    await assertSucceeds(update(ref(member, at("h1")), {
+      progress: 60,
+      latestProgressUpdateId: progressUpdateId,
+      progressUpdates: {
+        [progressUpdateId]: {
+          id: progressUpdateId,
+          fromProgress: 10,
+          toProgress: 60,
+          note: "층수 손상 위치를 확인하고 사진을 정리했습니다.",
+          nextAction: "보수 업체 견적을 받습니다.",
+          createdAt: NOW,
+          createdBy: "crm-legacy-member",
+          createdByName: "황우중",
+        },
+      },
+      updatedAt: NOW,
+      updatedBy: "crm-legacy-member",
+    }));
+    // 진행률을 바꾸지 않고 역사만 끼워 넣을 수는 없다.
+    await assertFails(set(ref(member, `${at("h1")}/progressUpdates/pu_extra1`), {
+      id: "pu_extra1",
+      fromProgress: 60,
+      toProgress: 60,
+      note: "실제 진행률 변경 없이 역사만 추가합니다.",
+      nextAction: "",
+      createdAt: NOW,
+      createdBy: "crm-legacy-member",
+      createdByName: "황우중",
+    }));
     await assertFails(update(ref(member, at("h1")), { hours: 1, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
     await assertFails(update(ref(member, at("h1")), { weight: 5, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
     await assertFails(update(ref(member, at("h1")), { deliverable: "아무거나", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
