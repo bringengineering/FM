@@ -56,6 +56,7 @@ const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
 const { classifyPhotosWithGateway, MAX_PHOTOS: MAX_AI_CLASSIFICATION_PHOTOS, MAX_JPEG_BYTES: MAX_AI_CLASSIFICATION_JPEG_BYTES } = require("./ai-photo-classifier-client");
+const WindowsKoreanInput = require("./windows-korean-input");
 const { sendDailyLogToTelegram } = require("./daily-log-telegram-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
@@ -5097,6 +5098,7 @@ async function createWindow() {
       sandbox: true
     }
   });
+  WindowsKoreanInput.warm();
   mainWindow.webContents.on("did-start-loading", () => hideValueScopeView());
   mainWindow.webContents.on("did-start-loading", () => {
     officeMessengerPresence = false;
@@ -8313,6 +8315,7 @@ async function createWindow() {
 }
 
 secureHandle("crm:auth-state", () => authState());
+secureCanonicalHandle("crm:input-language-korean", () => WindowsKoreanInput.requestKoreanInput(mainWindow));
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
@@ -9111,5 +9114,6 @@ app.on("before-quit", event => {
     applicationResourcesClosed = true;
     remoteClient.close();
   }
+  WindowsKoreanInput.stop();
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-load", input),
   saveBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-save", input),
   authState: () => ipcRenderer.invoke("crm:auth-state"),
+  requestKoreanInput: () => ipcRenderer.invoke("crm:input-language-korean"),
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
   loginWithGoogle: () => ipcRenderer.invoke("crm:auth-google-login"),
   changePassword: password => ipcRenderer.invoke("crm:auth-change-password", password),
