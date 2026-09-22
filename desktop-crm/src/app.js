@@ -5237,8 +5237,8 @@
           <div class="roadmap-section-head"><div><b>일정과 현재 진행</b><span>진행 중 ${open.length}건 · 앞으로 ${next.length}건</span></div>${workOrderState.admin ? `<button type="button" class="mini-button" data-roadmap-new data-project-id="${esc(assignment.projectId)}" data-assignee-uid="${esc(assignment.assigneeUid)}">＋ 다음 일정</button>` : ""}</div>
           <div class="roadmap-schedule-list">${scheduleRows || `<p class="roadmap-empty">연결된 일정이 없습니다.</p>`}</div>
         </section>
-        <section>
-          <div class="roadmap-section-head"><div><b>최근 진행사항</b><span>업무지시에서 변경된 최신 순서</span></div></div>
+        <section class="roadmap-recent-section">
+          <div class="roadmap-section-head roadmap-recent-head"><div><b>최근 진행사항</b><span>업무지시에서 변경된 최신 순서</span></div></div>
           <ol class="roadmap-updates">${(projectProgressRow || recentRows) ? `${projectProgressRow}${recentRows}` : `<li class="roadmap-empty">아직 진행 기록이 없습니다.</li>`}</ol>
         </section>
       </div>

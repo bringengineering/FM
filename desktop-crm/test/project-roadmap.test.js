@@ -65,6 +65,17 @@ test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 �
   assert.match(detail, /업무지시에서 변경된 최신 순서/u);
 });
 
+test("최근 진행사항은 제목·날짜·내용·작성자를 읽기 쉬운 크기로 표시한다", () => {
+  assert.match(app, /<section class="roadmap-recent-section">/u);
+  assert.match(app, /class="roadmap-section-head roadmap-recent-head"/u);
+  assert.match(css, /\.roadmap-recent-head b\s*\{[^}]*font-size:\s*15px/u);
+  assert.match(css, /\.roadmap-recent-head span\s*\{[^}]*font-size:\s*11px/u);
+  assert.match(css, /\.roadmap-updates time\s*\{[^}]*font-size:\s*10px[^}]*font-weight:\s*700/u);
+  assert.match(css, /\.roadmap-updates div b\s*\{[^}]*font-size:\s*12px[^}]*font-weight:\s*900/u);
+  assert.match(css, /\.roadmap-updates div span\s*\{[^}]*font-size:\s*10px/u);
+  assert.match(css, /\.roadmap-updates div small\s*\{[^}]*font-size:\s*10px/u);
+});
+
 test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
   const heroStart = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">');
   const heroEnd = app.indexOf("${status}", heroStart);
