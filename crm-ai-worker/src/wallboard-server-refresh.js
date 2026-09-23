@@ -11,12 +11,15 @@ function rows(value){
  if(!value||typeof value!=='object'||Array.isArray(value))fail('WALLBOARD_UNAVAILABLE');
  return Object.entries(value).filter(([,item])=>item&&typeof item==='object'&&!Array.isArray(item)).map(([id,item])=>({id,...item}));
 }
-async function readSource(path,{env,idToken,fetchImpl}){
+async function readSource(path,{env,idToken,fetchImpl,readTimeoutMs}){
  const root=String(env.WALLBOARD_FIREBASE_DATABASE_URL||'').replace(/\/$/,'');
  if(!/^https:\/\/[a-z0-9.-]+\.firebasedatabase\.app$/i.test(root))fail('WALLBOARD_UNAVAILABLE');
  const url=new URL(`${root}/crmCompany/${path}.json`);
  url.searchParams.set('auth',idToken);
- const response=await fetchImpl(url.toString(),{method:'GET',cache:'no-store',headers:{accept:'application/json'}});
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),readTimeoutMs);
+ try{
+ const response=await fetchImpl(url.toString(),{method:'GET',cache:'no-store',headers:{accept:'application/json'},signal:controller.signal});
  if(response.status===401||response.status===403)fail('FORBIDDEN');
  if(!response.ok)fail('WALLBOARD_UNAVAILABLE');
  const contentLength=Number(response.headers.get('content-length'));
@@ -30,6 +33,8 @@ async function readSource(path,{env,idToken,fetchImpl}){
  for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
  try{const value=JSON.parse(new TextDecoder().decode(bytes));if(value!==null&&(!value||typeof value!=='object'||Array.isArray(value)))fail('WALLBOARD_UNAVAILABLE');return value;}
  catch{fail('WALLBOARD_UNAVAILABLE');}
+ }catch(error){if(error?.code)throw error;fail('WALLBOARD_UNAVAILABLE');}
+ finally{clearTimeout(timeout);}
 }
 async function command(stub,action,input={}){
  const response=await stub.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,input,identity:{uid:'server-refresh',isAdmin:true},token:''})}));
@@ -37,9 +42,10 @@ async function command(stub,action,input={}){
  if(!response.ok||!result.ok)fail(result.code==='VERSION_CONFLICT'?'VERSION_CONFLICT':'WALLBOARD_UNAVAILABLE');
  return result;
 }
-export async function refreshWallboardFromFirebase({idToken,identity,env,fetchImpl=fetch,now=Date.now}){
+export async function refreshWallboardFromFirebase({idToken,identity,env,fetchImpl=fetch,now=Date.now,readTimeoutMs=8000}){
  if(!identity?.uid||!identity.emailVerified||!idToken||!env?.WALLBOARD_DEVICES)fail('FORBIDDEN');
- const values=await Promise.all(paths.map(path=>readSource(path,{env,idToken,fetchImpl})));
+ const timeout=Number.isInteger(readTimeoutMs)&&readTimeoutMs>=1&&readTimeoutMs<=15000?readTimeoutMs:8000;
+ const values=await Promise.all(paths.map(path=>readSource(path,{env,idToken,fetchImpl,readTimeoutMs:timeout})));
  const source=Object.fromEntries(paths.map((path,index)=>[path,values[index]]));
  const members=rows(source.access).filter(user=>user.enabled===true&&user.mustChangePassword!==true).map(user=>({uid:user.id,displayName:String(source.teamProfiles?.[user.id]?.displayName||user.displayName||'')}));
  const orders=rows(source.workOrders);

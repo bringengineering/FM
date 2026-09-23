@@ -87,3 +87,17 @@ for(const [reason,options] of [['denied',{denied:'projects'}],['oversize',{overs
   assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
  });
 }
+
+test('a stalled Firebase read times out without publishing a partial TV board',async()=>{
+ const f=fixture();
+ let aborted=0;
+ const hangingFetch=(_url,options)=>new Promise((_resolve,reject)=>{
+  options.signal?.addEventListener('abort',()=>{aborted+=1;reject(Object.assign(new Error('aborted'),{name:'AbortError'}));},{once:true});
+ });
+ const refresh=refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:hangingFetch,now:()=>Date.parse('2026-09-24T02:00:00Z'),readTimeoutMs:5});
+ const bounded=Promise.race([refresh,new Promise((_,reject)=>setTimeout(()=>reject(new Error('READ_TIMEOUT_MISSING')),100))]);
+ await assert.rejects(bounded,error=>error.code==='WALLBOARD_UNAVAILABLE');
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(aborted,5);
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
