@@ -997,6 +997,11 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 
 /* Project workspace R1: quiet shell, solid reading surfaces. */
 .project-workspace-home{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr);gap:14px;margin:0 0 18px;padding:14px;border:1px solid #DDE3E8;border-radius:18px;background:rgba(255,255,255,.66)}
+.project-workspace-health{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.project-workspace-health>div{display:grid;gap:5px;min-width:0;padding:16px 18px;border:1px solid #E5E8EB;border-radius:13px;background:#fff}
+.project-workspace-health span{color:#52616F;font-size:14px;font-weight:700}
+.project-workspace-health strong{color:#202B36;font-size:25px;line-height:1.2;overflow-wrap:anywhere}
+.project-workspace-health small{color:#52616F;font-size:12px;line-height:1.4}
 .project-workspace-today,.project-workspace-projects{min-width:0;padding:18px;border:1px solid #E5E8EB;border-radius:15px;background:#fff}
 .project-workspace-today>header,.project-workspace-projects>header{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:14px}
 .project-workspace-today>header span,.project-workspace-projects>header span{color:#52616F;font-size:12px}
@@ -1016,6 +1021,7 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-legacy{grid-column:1/-1;padding:12px 14px;border:1px solid #E5E8EB;border-radius:11px;background:rgba(255,255,255,.84)}
 .project-workspace-legacy summary{color:#52616F;font-size:13px;font-weight:700;cursor:pointer}
 .project-workspace-legacy p{margin:10px 0;color:#52616F;font-size:12px;line-height:1.5}
+.project-workspace-legacy>.mini-button{margin:0 0 6px;min-height:44px}
 .project-workspace-legacy .wo-project-tabs{margin:10px 0 0}
 @media(max-width:1050px){.project-workspace-home{grid-template-columns:1fr}.project-workspace-legacy{grid-column:1}}
-@media(max-width:640px){.project-workspace-action-list button{grid-template-columns:1fr}.project-workspace-project-list button{grid-template-columns:1fr}.project-workspace-project-list em{grid-column:1;grid-row:auto;text-align:left}}
+@media(max-width:640px){.project-workspace-health{grid-template-columns:1fr}.project-workspace-action-list button{grid-template-columns:1fr}.project-workspace-project-list button{grid-template-columns:1fr}.project-workspace-project-list em{grid-column:1;grid-row:auto;text-align:left}}

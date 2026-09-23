@@ -3,6 +3,7 @@
 // Uses synthetic preview data and a fresh headless profile, never the installed CRM.
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { chromium } = require('playwright');
 
@@ -51,6 +52,24 @@ async function main() {
       await dialog.locator('[data-close]').click();
       console.log(`PASS ${width}px: header controls visible and report dialog reachable`);
     }
+    for (const width of [1366, 1920]) {
+      await page.setViewportSize({ width, height: width === 1366 ? 768 : 1080 });
+      const home = page.locator('.project-workspace-home');
+      await home.waitFor({ state: 'visible' });
+      assert.equal(await home.locator('.project-workspace-health > div').count(), 3);
+      assert.equal(await home.locator('.project-workspace-project-list button').count(), 6);
+      const horizontalOverflow = await home.evaluate(element => element.scrollWidth > element.clientWidth + 1);
+      assert.equal(horizontalOverflow, false, `Project home overflows at ${width}px`);
+      const screenshot = path.join(os.tmpdir(), `bring-project-workspace-${width}.png`);
+      await home.screenshot({ path: screenshot });
+      console.log(`PASS ${width}px: project home metrics and list visible; screenshot ${screenshot}`);
+    }
+    const firstAction = page.locator('.project-workspace-action-list [data-wo-open-card]').first();
+    const targetId = await firstAction.getAttribute('data-wo-open-card');
+    await firstAction.click();
+    await page.locator(`.wo-card[data-wo-card="${targetId}"]`).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-performance-period="all"]').first().getAttribute('aria-pressed'), 'true');
+    console.log('PASS today action opens the original work order outside the initial period filter');
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();

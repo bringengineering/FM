@@ -46,3 +46,21 @@ test('새 스타일은 프로젝트 작업공간 범위로 제한한다', () => 
   assert.match(css, /\.project-workspace-today/u);
   assert.match(css, /\.project-workspace-projects/u);
 });
+
+test('프로젝트 홈은 서버에서 읽은 업무의 검수·지연·대기를 서로 다른 지표로 표시한다', () => {
+  const source = read('app.js');
+  const start = source.indexOf('function renderWorkOrders()');
+  const end = source.indexOf('function dueSoonBoard(', start);
+  const render = source.slice(start, end);
+  assert.match(render, /workspaceCore\.health/u);
+  assert.match(render, /workspaceCore\.health\(\{ orders: workOrderState\.performanceOrders/u);
+  assert.match(render, /healthReady = Boolean\(workOrderState\.performanceAvailable/u);
+  assert.match(render, /workspaceCore\.completion\(workOrderState\.performanceOrders, item\.id\)/u);
+  assert.match(render, /업무 검수 완료/u);
+  assert.match(render, /기한 초과/u);
+  assert.match(render, /검수 대기/u);
+  assert.match(render, /건수 기준/u);
+  assert.match(render, /조회 확인 필요/u);
+  assert.match(render, /data-wo-project="__none"/u);
+  assert.match(render, /분류 필요/u);
+});
