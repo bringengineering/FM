@@ -42,6 +42,6 @@ test('project and work-order writes use the post-save wallboard signal', () => {
     ['crm:work-order-save', 'saveWorkOrder'],
     ['crm:work-order-progress', 'updateWorkOrderProgress']
   ]) {
-    assert.match(main, new RegExp(`secureCanonicalHandle\\("${channel}", input => saveAndSignalWallboard\\(\\(\\) => remoteClient\\.${method}\\(input\\), \\(`));
+    assert.match(main, new RegExp(`secureCanonicalHandle\\("${channel}", input => saveAndSignalWallboard\\(\\(\\) => remoteClient\\.${method}\\(input\\), signalWallboardAfterSave\\)`));
   }
 });

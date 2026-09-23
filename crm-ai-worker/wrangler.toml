@@ -15,6 +15,7 @@ ALLOWED_ORIGINS = "app://bring-crm,https://bring-fm.web.app"
 DOCUMENT_DELIVERY_ENABLED = "false"
 KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
 WALLBOARD_ENABLED = "true"
+WALLBOARD_FIREBASE_DATABASE_URL = "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 [[ratelimits]]
 name = "AI_RATE_LIMITER"

@@ -86,6 +86,20 @@ test('publication requires administrator while display uses only device token',a
  const a=setup();assert.equal((await a.worker.fetch(req('display',{},'a'.repeat(64)),a.env)).status,200);assert.equal(a.forwarded[0].token,'a'.repeat(64));assert.equal(a.forwarded[0].identity,null);
  assert.equal((await a.worker.fetch(req('display',{},'staff-token'),a.env)).status,401);
 });
+test('verified staff may request server refresh without sending raw CRM data',async()=>{
+ const f=setup('staff@example.com');
+ const calls=[];
+ const worker=createWorker({fetchImpl:async()=>Response.json({users:[{localId:'staff-uid',email:'staff@example.com',emailVerified:true}]}),refreshWallboard:async input=>{calls.push(input);return {version:3,publishedAt:1234};}});
+ const response=await worker.fetch(req('refresh'),f.env);
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true,version:3,publishedAt:1234});
+ assert.equal(calls[0].identity.uid,'staff-uid');
+ assert.equal(calls[0].idToken,'staff-token');
+ assert.equal((await worker.fetch(req('refresh',{orders:[]}),f.env)).status,400);
+ assert.equal(calls.length,1);
+ const unverified=setup('staff@example.com',false);
+ assert.equal((await unverified.worker.fetch(req('refresh'),unverified.env)).status,403);
+});
 test('web TV pairs through same-origin endpoints and keeps its device token in a protected cookie',async()=>{
  let state;const storage={transaction:async fn=>{let value=structuredClone(state);const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
  const f=setup();f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});

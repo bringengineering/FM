@@ -25,15 +25,18 @@
  }
  function roadLayout(start,end,range){if(!day(start)&&!day(end))return null;const a=day(start)||end,b=day(end)||a;if(b<range.from||a>range.to)return null;const visibleStart=a<range.from?range.from:a,visibleEnd=b>range.to?range.to:b;return {left:between(range.from,visibleStart)/56*100,width:Math.max(1,between(visibleStart,visibleEnd)+1)/56*100,clippedStart:a<range.from,clippedEnd:b>range.to};}
  function health(project,orders,today){if(project.status==='done'||(orders.length&&orders.every(item=>item.status==='done')))return 'done';if(day(project.endDate)&&project.endDate<today||orders.some(item=>item.status!=='done'&&day(item.dueDate)&&item.dueDate<today))return 'risk';if(orders.some(item=>item.status!=='done'&&(!day(item.dueDate)||item.dueDate<=addDays(today,7))))return 'check';return 'normal';}
- function schedule(store,today){
+ function schedule(store,today,members=[]){
   if(!store||!Array.isArray(store.serviceRecords)||!day(today))return {available:false,entries:[],today:[],week:[]};
   const statuses={planned:'예정',in_progress:'진행 중',completed:'완료'};
+  const serviceLabels={inspection:'점검',repair:'수리',cleaning:'청소',stair_cleaning:'계단 청소',grounds_cutting:'예초',meeting:'회의'};
+  const teamNames=new Set((Array.isArray(members)?members:[]).map(member=>String(member?.displayName||'').trim()).filter(name=>name.length<=40&&/^[\p{L} .·-]{2,40}$/u.test(name)));
   const monday=weekStart(today),sunday=addDays(monday,6);
   const safe=store.serviceRecords.filter(r=>r&&day(r.scheduledDate)&&r.scheduledDate>=monday&&r.scheduledDate<=sunday&&r.status!=='cancelled').map(r=>{
    const raw=r.startTime||r.scheduledTime||r.time;
    const time=typeof raw==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(raw)?raw:'시간 미정';
    const endTime=typeof r.endTime==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(r.endTime)?r.endTime:'';
-   return {date:r.scheduledDate,time,endTime,title:text(r.title||'회사 일정',80),owner:text(r.owner||'담당자 미정',40),status:statuses[r.status]||'상태 확인 필요'};
+   const owner=String(r.owner||'').trim();
+   return {date:r.scheduledDate,time,endTime,title:serviceLabels[r.serviceType]||'회사 일정',owner:teamNames.has(owner)?owner:'담당자 미정',status:statuses[r.status]||'상태 확인 필요'};
   }).sort((a,b)=>a.date.localeCompare(b.date)||(a.time==='시간 미정')-(b.time==='시간 미정')||a.time.localeCompare(b.time)||a.title.localeCompare(b.title,'ko'));
   const todayRows=safe.filter(entry=>entry.date===today);
   return {available:true,entries:todayRows.map(({time,status})=>({time,status})),today:todayRows,week:safe};
@@ -64,7 +67,7 @@
    if(day(o.dueDate)&&o.dueDate<today&&o.status!=='done'){overdue++;p.overdue++;}
   }
   const extra=roadmapAndPortfolio(data,[...latest.values()],today);
-  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today),...extra};
+  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),...extra};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){

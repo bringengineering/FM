@@ -26,7 +26,7 @@ test('schedule shows only valid today entries without private fields',()=>{
   {id:'d',scheduledDate:'2026-09-20',status:'cancelled'}
  ]},'2026-09-20');
  assert.equal(m.entries.length,2);assert.equal(m.entries[0].time,'09:30');
- assert.equal(m.entries[1].time,'시간 미정');assert.equal(m.today[0].title,'secret');
+ assert.equal(m.entries[1].time,'시간 미정');assert.equal(m.today[0].title,'회사 일정');
  assert.equal(C.schedule(null,'2026-09-20').available,false);
  assert.equal(C.schedule({serviceRecords:[]},'2026-09-20').available,true);
 });
@@ -60,21 +60,31 @@ test('roadmap projects entered progress and excludes private source fields',()=>
  assert.ok(!JSON.stringify(m).includes('private goal'));
 });
 test('schedule exposes safe titles and owners for today and current week',()=>{
- const m=C.project({orders:[],projects:[],members:[],calendar:{serviceRecords:[
-  {scheduledDate:'2026-09-20',startTime:'09:30',endTime:'10:30',status:'planned',title:'소방 점검',owner:'김현진',phone:'010-1111-2222',address:'강원 원주시'},
+ const m=C.project({orders:[],projects:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[
+  {scheduledDate:'2026-09-20',startTime:'09:30',endTime:'10:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진',phone:'010-1111-2222',address:'강원 원주시'},
   {scheduledDate:'2026-09-19',status:'completed',title:'공용부 청소',owner:'황우중'},
   {scheduledDate:'2026-09-20',status:'cancelled',title:'취소 일정'}
  ]}},'2026-09-20');
- assert.deepEqual(m.schedule.today[0],{date:'2026-09-20',time:'09:30',endTime:'10:30',title:'소방 점검',owner:'김현진',status:'예정'});
+ assert.deepEqual(m.schedule.today[0],{date:'2026-09-20',time:'09:30',endTime:'10:30',title:'점검',owner:'김현진',status:'예정'});
  assert.equal(m.schedule.week.length,2);
  assert.ok(!JSON.stringify(m.schedule).includes('010-'));
  assert.ok(!JSON.stringify(m.schedule).includes('강원 원주시'));
 });
+test('TV schedule uses fixed service labels and verified team names instead of free-text customer details',()=>{
+ const m=C.project({orders:[],projects:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[
+  {scheduledDate:'2026-09-24',startTime:'09:30',status:'planned',serviceType:'cleaning',title:'홍길동 010-9169-0000 원주시 청소',owner:'고객 홍길동'},
+  {scheduledDate:'2026-09-24',startTime:'13:00',status:'planned',serviceType:'inspection',title:'101호 소방점검',owner:'김현진'}
+ ]}},'2026-09-24');
+ assert.deepEqual(m.schedule.today.map(item=>[item.title,item.owner]),[['청소','담당자 미정'],['점검','김현진']]);
+ assert.ok(!JSON.stringify(m.schedule).includes('홍길동'));
+ assert.ok(!JSON.stringify(m.schedule).includes('010-'));
+ assert.ok(!JSON.stringify(m.schedule).includes('101호'));
+});
 test('roadmap and schedule scenes render TV visual contracts',()=>{
- const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
+ const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
  const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/전체 프로젝트 진행률/);assert.match(roadmap,/42%/);
  assert.match(roadmap,/wb-roadmap-performance/);assert.match(roadmap,/wb-progress-ring/);
- const today=C.scene(m,'scheduleToday',0);assert.match(today,/소방 점검/);assert.match(today,/김현진/);
+ const today=C.scene(m,'scheduleToday',0);assert.match(today,/점검/);assert.match(today,/김현진/);assert.doesNotMatch(today,/소방 점검/);
  const week=C.scene(m,'scheduleWeek',0);assert.match(week,/wb-schedule-week/);
 });
 test('roadmap stacks multiple project bars instead of overlapping them',()=>{

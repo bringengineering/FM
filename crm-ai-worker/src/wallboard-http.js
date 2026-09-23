@@ -1,4 +1,4 @@
-const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],'schedule-update':['deviceId','targetVersion'],'cancel-update':['deviceId'],display:['clientVersion','updateStatus','updateError']};
+const actions={start:[],poll:[],approve:['code','name'],revoke:['deviceId'],list:[],publish:['snapshot','expectedVersion'],refresh:[],'schedule-update':['deviceId','targetVersion'],'cancel-update':['deviceId'],display:['clientVersion','updateStatus','updateError']};
 const status={AUTH_REQUIRED:401,FORBIDDEN:403,INVALID_INPUT:400,INPUT_TOO_LARGE:413,RATE_LIMITED:429};
 const reply=(code,http,cors)=>Response.json({ok:false,code},{status:http,headers:{...cors,'cache-control':'no-store','x-content-type-options':'nosniff'}});
 async function body(request,limit=4096){
@@ -9,7 +9,7 @@ async function body(request,limit=4096){
  const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
  try{return JSON.parse(new TextDecoder().decode(bytes)||'{}');}catch{throw Object.assign(new Error(),{code:'INVALID_INPUT'});}
 }
-export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
+export async function wallboardRequest(request,env,{verifyIdentity,refreshWallboard,cors={}}){
  const action=new URL(request.url).pathname.slice('/v1/wallboard/'.length);
  if(!Object.hasOwn(actions,action))return reply('NOT_FOUND',404,cors);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
@@ -21,6 +21,15 @@ export async function wallboardRequest(request,env,{verifyIdentity,cors={}}){
   const input=await body(request,action==='publish'?65536:4096);
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!actions[action].includes(k)))return reply('INVALID_INPUT',400,cors);
   const token=/^Bearer\s+([^\s]+)$/i.exec(request.headers.get('authorization')||'')?.[1]||'';
+  if(action==='refresh'){
+   const identity=await verifyIdentity(token);
+   if(!identity?.emailVerified||!identity.uid)return reply('FORBIDDEN',403,cors);
+   const perUser=await env.WALLBOARD_RATE_LIMITER.limit({key:'wallboard-refresh:'+identity.uid});
+   if(!perUser.success)return reply('RATE_LIMITED',429,cors);
+   if(typeof refreshWallboard!=='function')return reply('WALLBOARD_UNAVAILABLE',503,cors);
+   const result=await refreshWallboard({idToken:token,identity,env});
+   return Response.json({ok:true,version:result.version,publishedAt:result.publishedAt},{headers:{...cors,'cache-control':'no-store','x-content-type-options':'nosniff'}});
+  }
   if(action==='display'&&input.clientVersion!==undefined&&(typeof input.clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(input.clientVersion)))return reply('INVALID_INPUT',400,cors);
   if(action==='display'&&input.updateStatus!==undefined&&!['idle','downloading','ready','installing','installed','failed'].includes(input.updateStatus))return reply('INVALID_INPUT',400,cors);
   if(action==='display'&&input.updateError!==undefined&&(typeof input.updateError!=='string'||!/^[A-Z0-9_]{1,80}$/.test(input.updateError)))return reply('INVALID_INPUT',400,cors);

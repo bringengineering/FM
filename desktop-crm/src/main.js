@@ -43,6 +43,7 @@ const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
+const { requestWallboardRefresh } = require("./wallboard-refresh-client");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -5095,6 +5096,25 @@ function ensureWallboardLiveSync() {
   return wallboardLiveSync;
 }
 
+function signalWallboardAfterSave() {
+  wallboardLiveSync?.notify();
+  const client = remoteClient;
+  const uid = client?.authState().user?.uid;
+  if (!uid) return;
+  void (async () => {
+    const idToken = await client.ensureIdToken(false);
+    if (client !== remoteClient || client.authState().user?.uid !== uid) return;
+    await requestWallboardRefresh({
+      baseUrl: CRM_AI_GATEWAY_URL,
+      idToken,
+      fetchImpl: (url, options) => net.fetch(url, options)
+    });
+  })().catch(() => {
+    // The write is already confirmed. A TV refresh failure must not undo it.
+    // Existing admin-side reconciliation will retry while the app is open.
+  });
+}
+
 function trustedIpc(event) {
   try {
     const url = new URL(event.senderFrame && event.senderFrame.url || event.sender.getURL());
@@ -8523,12 +8543,12 @@ secureCanonicalHandle("crm:leave-request-save", input => remoteClient.saveLeaveR
 secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveRequest(input));
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
-secureCanonicalHandle("crm:work-order-save", input => saveAndSignalWallboard(() => remoteClient.saveWorkOrder(input), () => wallboardLiveSync?.notify()));
+secureCanonicalHandle("crm:work-order-save", input => saveAndSignalWallboard(() => remoteClient.saveWorkOrder(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
-secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), () => wallboardLiveSync?.notify()));
-secureCanonicalHandle("crm:work-order-progress", input => saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), () => wallboardLiveSync?.notify()));
+secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), signalWallboardAfterSave));
+secureCanonicalHandle("crm:work-order-progress", input => saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
 secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
 secureCanonicalHandle("crm:project-weekly-report-export", input => exportProjectWeeklyReport(input));
