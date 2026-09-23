@@ -1,4 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
+const fs=require('node:fs');const path=require('node:path');
 const C=require('../src/company-wallboard');
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
  const html=C.scene(null,'notice',0,'<회사 공지>');
@@ -82,7 +83,7 @@ test('TV schedule uses fixed service labels and verified team names instead of f
 });
 test('roadmap and schedule scenes render TV visual contracts',()=>{
  const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
- const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/전체 프로젝트 진행률/);assert.match(roadmap,/42%/);
+ const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/입력 진도 평균/);assert.match(roadmap,/42%/);
  assert.match(roadmap,/wb-roadmap-performance/);assert.match(roadmap,/wb-progress-ring/);
  const today=C.scene(m,'scheduleToday',0);assert.match(today,/점검/);assert.match(today,/김현진/);assert.doesNotMatch(today,/소방 점검/);
  const week=C.scene(m,'scheduleWeek',0);assert.match(week,/wb-schedule-week/);
@@ -119,4 +120,23 @@ test('roadmap gives every assignment its own row when one person owns four proje
  const html=C.scene(m,'roadmap',0,'','09:00','day','2026-09-24');
  assert.equal((html.match(/class="wb-roadmap-assignment"/g)||[]).length,4);
  assert.doesNotMatch(html,/top:10px|top:48px/);
+});
+
+test('roadmap separates entered progress from manager-reviewed completion',()=>{
+ const m=C.project({projects:[{id:'p1',name:'실증',status:'active',progress:70}],orders:[
+  {id:'a',projectId:'p1',status:'done',progress:70},
+  {id:'b',projectId:'p1',status:'submitted',progress:70}
+ ]},'2026-09-24');
+ assert.equal(m.portfolio.overallProgress,70);
+ const html=C.scene(m,'roadmap',0);
+ assert.match(html,/입력 진도 평균/);
+ assert.match(html,/업무 검수 완료율/);
+ assert.match(html,/50%/);
+ assert.match(html,/1\/2건/);
+ assert.match(html,/건수 기준/);
+ const empty=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap',0);
+ assert.match(empty,/업무 검수 완료율/);
+ assert.match(empty,/집계 대기/);
+ const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
+ assert.match(css,/\.wb-review-metric/u);
 });
