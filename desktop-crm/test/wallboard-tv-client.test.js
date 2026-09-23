@@ -1,5 +1,9 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {createTvClient}=require('../src/wallboard-tv-client');
+test('installed TV checks for a newly published board every ten seconds',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/wallboard-tv-renderer.js'),'utf8');
+ assert.match(source,/refreshTicks>=2/);assert.doesNotMatch(source,/refreshTicks>=12/);
+});
 test('TV sends its installed version with authenticated display requests',async()=>{
  let sent;const client=createTvClient({clientVersion:'0.1.2',vault:{read:async()=>'b'.repeat(64)},request:async(...args)=>{sent=args;return {board:null};}});
  await client.display();assert.deepEqual(sent,['display','b'.repeat(64),{clientVersion:'0.1.2',updateStatus:'idle'}]);

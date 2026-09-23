@@ -14,7 +14,7 @@
  document.querySelector('#connect').onclick=async()=>{if(busy)return;busy=true;try{const result=await api.start();pending=true;pairing.hidden=false;document.querySelector('#pair-code').textContent=result.code;document.querySelector('#pair-expiry').textContent='만료: '+new Date(result.expiresAt).toLocaleTimeString('ko-KR');status.textContent='CRM 회사 운영보드에서 이 코드를 승인해 주세요.';}catch(_){status.textContent='등록 서버가 아직 준비되지 않았거나 연결되지 않습니다.';}finally{busy=false;}};
  document.querySelector('#refresh').onclick=check;document.querySelector('#fullscreen').onclick=()=>api.fullscreen();
  let refreshTicks=0;
- const refresh=setInterval(()=>{if(pending||++refreshTicks>=12){refreshTicks=0;void check();}},5000);
+ const refresh=setInterval(()=>{if(pending||++refreshTicks>=2){refreshTicks=0;void check();}},5000);
  const playback=setInterval(()=>{const item=current();if(item){const count=item.key==='people'?board.model.people.length:item.key==='schedule'?board.model.schedule.entries.length:0;if(++tick>=item.seconds){tick=0;if(page+1<Math.ceil(count/6))page++;else{page=0;index=(index+1)%board.playlist.filter(p=>p.enabled).length;}}}draw();},1000);
  window.addEventListener('beforeunload',()=>{clearInterval(refresh);clearInterval(playback);});void check();
 })();
