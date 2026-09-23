@@ -193,3 +193,21 @@ test('each project keeps entered progress distinct from deduplicated reviewed wo
  assert.match(html,/입력 진도/);
  assert.match(html,/wb-portfolio-review/);
 });
+
+test('weekly approvals are grouped by Korea date across the UTC Sunday boundary',()=>{
+ const monday=C.project({projects:[],orders:[
+  {id:'approved-monday',status:'done',updatedAt:'2026-09-20T16:00:00Z'}
+ ]},'2026-09-24');
+ assert.equal(monday.portfolio.weeklyDone.at(-1).count,1);
+ assert.equal(monday.portfolio.weeklyDone.at(-2).count,0);
+ const next=C.project({projects:[],orders:[
+  {id:'approved-next-monday',status:'done',updatedAt:'2026-09-27T16:00:00Z'}
+ ]},'2026-09-24');
+ assert.equal(next.portfolio.weeklyDone.at(-1).count,0);
+});
+test('legacy completed work without a valid approval timestamp is reported outside weekly bars',()=>{
+ const m=C.project({projects:[],orders:[{id:'old',status:'done',updatedAt:''}]},'2026-09-24');
+ assert.equal(m.portfolio.unattributedDone,1);
+ assert.equal(m.portfolio.weeklyDone.reduce((sum,item)=>sum+item.count,0),0);
+ assert.match(C.scene(m,'weeklyTrend'),/완료 시각 확인 필요 1건/);
+});

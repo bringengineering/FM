@@ -29,6 +29,15 @@ test('new project review counts are optional for old TV snapshots and bounded fo
  delete partial.model.portfolio.projects[0].reviewedTotal;
  assert.throws(()=>validatePublication(partial),/INVALID_INPUT/);
 });
+test('legacy undated completed-work count is optional for old snapshots and bounded for new ones',()=>{
+ const old=snapshot();assert.deepEqual(validatePublication(old),old);
+ const next=snapshot();next.model.counts.assigned=0;next.model.counts.done=1;next.model.people[0].done=1;next.model.portfolio.unattributedDone=1;
+ assert.deepEqual(validatePublication(next),next);
+ next.model.portfolio.unattributedDone=2;
+ assert.throws(()=>validatePublication(next),/INVALID_INPUT/);
+ next.model.portfolio.unattributedDone=-1;
+ assert.throws(()=>validatePublication(next),/INVALID_INPUT/);
+});
 test('published board uses optimistic revision and requires unrevoked device on every read',async()=>{
  let state={};let queue=Promise.resolve();const repository={transaction:fn=>{const p=queue.then(()=>fn(state));queue=p.catch(()=>{});return p;}};
  const service=createPairingService({repository,now:()=>1000}),admin={uid:'a',isAdmin:true};

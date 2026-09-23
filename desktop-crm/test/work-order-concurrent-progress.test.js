@@ -28,6 +28,14 @@ test('progress saves against the exact server snapshot version',async()=>{
   assert.equal(updates[0].note,'접수 화면과 담당자 연결을 마쳤습니다.');assert.equal(updates[0].createdBy,'u');
  assert.equal(c.stats().record.latestProgressUpdateId,updates[0].id);
 });
+test('approval update timestamp is written with done status and then the order is immutable',async()=>{
+ const c=client('admin',false,'submitted');
+ const saved=await c.api.updateWorkOrderProgress({id:'work1',status:'done'});
+ assert.equal(saved.status,'done');
+ assert.ok(Number.isFinite(Date.parse(saved.updatedAt)));
+ await assert.rejects(c.api.updateWorkOrderProgress({id:'work1',progress:100}),e=>e.code==='WORK_ORDER_DONE');
+ assert.equal(c.stats().record.updatedAt,saved.updatedAt);
+});
 test('concurrent review survives and caller receives actionable work conflict',async()=>{
  const c=client('member',true);
  await assert.rejects(c.api.updateWorkOrderProgress({id:'work1',progress:50,progressNote:'화면 구성 완료'}),e=>e.code==='WORK_ORDER_CONFLICT');
