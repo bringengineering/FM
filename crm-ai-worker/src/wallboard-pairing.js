@@ -90,6 +90,17 @@ export function createPairingService({repository,now=Date.now}){
    if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
    return run(s=>{if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};return {version:s.board.version,publishedAt:s.board.publishedAt};});
   },
+  async publishIfChanged(input,expectedVersion,identity){
+   admin(identity);const snapshot=validatePublication(input);
+   if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
+   return run(s=>{
+    if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};
+    const prior=s.board;
+    if(prior&&JSON.stringify({model:prior.model,playlist:prior.playlist,notice:prior.notice,dataDate:prior.dataDate})===JSON.stringify(snapshot))return {version:prior.version,publishedAt:prior.publishedAt};
+    s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};
+    return {version:s.board.version,publishedAt:s.board.publishedAt};
+   });
+  },
   async readBoard(deviceToken,clientVersion,report={}){
    if(clientVersion!==undefined&&(typeof clientVersion!=='string'||!/^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(clientVersion)))throw Object.assign(new Error('INVALID_INPUT'),{code:'INVALID_INPUT'});
    if(!report||typeof report!=='object'||Array.isArray(report)||Object.keys(report).some(k=>!['updateStatus','updateError'].includes(k)))fail('INVALID_INPUT');

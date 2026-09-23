@@ -140,3 +140,12 @@ test('durable adapter does not rewrite unchanged state for an invalid device tok
  const response=await object.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'display',input:{},identity:null,token:'a'.repeat(64)})}));
  assert.equal(response.status,401);assert.equal(puts,0);
 });
+test('private durable command accepts the idempotent server publish action',async()=>{
+ let state;
+ const storage={transaction:async fn=>{let value=structuredClone(state)||{};const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
+ const object=new WallboardDevices({storage});
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{from:'2026-08-31',to:'2026-10-25',todayOffset:36,weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]}},playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'',dataDate:'2026-09-20'};
+ const call=async (expectedVersion=0)=>object.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'publish-if-changed',input:{snapshot,expectedVersion},identity:{uid:'server-refresh',isAdmin:true}})}));
+ const first=await (await call()).json();assert.equal(first.version,1);
+ const second=await (await call(1)).json();assert.equal(second.version,1);
+});

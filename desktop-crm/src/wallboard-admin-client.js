@@ -24,7 +24,7 @@ async function requestWallboardAdmin({baseUrl,idToken,input,fetchImpl=globalThis
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
  try{
   const response=await fetchImpl(new URL('/v1/wallboard/'+action,url).href,{method:'POST',redirect:'error',headers:{authorization:'Bearer '+idToken,'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
-  const data=await response.json();if(!response.ok||data.ok!==true)fail(data.code||'WALLBOARD_UNAVAILABLE');
+  const data=await response.json();if(!response.ok||data.ok!==true){if(action==='publish'&&data.code==='INVALID_INPUT')throw Object.assign(new Error('TV에 표시할 프로젝트명·공지의 연락처나 입력값을 확인해 주세요.'),{code:'INVALID_INPUT'});fail(data.code||'WALLBOARD_UNAVAILABLE');}
   if(action==='list'){
    if(!Array.isArray(data.devices)||data.devices.length>1000)fail('WALLBOARD_UNAVAILABLE');
    if(!Number.isSafeInteger(data.version)||data.version<0)fail('WALLBOARD_UNAVAILABLE');

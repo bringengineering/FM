@@ -16,19 +16,20 @@ const sources={
 function fixture(overrides={}){
  const reads=[],commands=[];
  let version=0;
- const presentation={playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:'이번 주 결과 확인'};
+ const presentation={playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:overrides.notice||'이번 주 결과 확인'};
  const fetchImpl=async (url,options={})=>{
   const parsed=new URL(url),resource=parsed.pathname.slice('/crmCompany/'.length,-'.json'.length);
   reads.push({resource,auth:parsed.searchParams.get('auth'),method:options.method||'GET',cache:options.cache});
   if(overrides.denied===resource)return new Response('permission denied',{status:403});
   if(overrides.oversize===resource)return new Response('x'.repeat(2*1024*1024+1));
   if(overrides.malformed===resource)return new Response('[]');
-  return new Response(JSON.stringify(sources[resource]??null),{headers:{'content-type':'application/json'}});
+  const value=resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:sources[resource];
+  return new Response(JSON.stringify(value??null),{headers:{'content-type':'application/json'}});
  };
  const stub={fetch:async request=>{
   const command=await request.json();commands.push(command);
   if(command.action==='list')return Response.json({ok:true,version,presentation,devices:[]});
-  if(command.action==='publish'){
+  if(command.action==='publish-if-changed'){
    assert.equal(command.input.expectedVersion,version);
    version+=1;
    return Response.json({ok:true,version,publishedAt:1000+version});
@@ -45,7 +46,7 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.deepEqual(result,{version:1,publishedAt:1001});
  assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','data/serviceRecords','projects','teamProfiles','workOrders']);
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
- assert.equal(f.commands[1].action,'publish');
+ assert.equal(f.commands[1].action,'publish-if-changed');
  const snapshot=f.commands[1].input.snapshot;
  assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
@@ -55,11 +56,34 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.ok(!JSON.stringify(f.commands).includes('010-1234-5678'));
  assert.ok(!JSON.stringify(result).includes(token));
 });
+test('free-text project contact details are never included in the public board',async()=>{
+ const f=fixture({projectName:'홍길동 010-1234-5678 hong@example.com'});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const published=JSON.stringify(f.commands.find(item=>item.action==='publish-if-changed'));
+ assert.ok(!published.includes('010-1234-5678'));
+ assert.ok(!published.includes('hong@example.com'));
+ assert.ok(!published.includes('홍길동'));
+ assert.match(published,/프로젝트명 확인 필요/);
+});
+test('a prior presentation notice with a phone number is not republished',async()=>{
+ const f=fixture({notice:'고객 홍길동 010-1234-5678'});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const snapshot=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot;
+ assert.equal(snapshot.notice,'공지 내용 확인 필요');
+ assert.ok(!JSON.stringify(snapshot).includes('홍길동'));
+ assert.ok(!JSON.stringify(snapshot).includes('010-1234-5678'));
+});
+test('publication size limit counts UTF-8 bytes rather than JavaScript characters',async()=>{
+ const projectMap=Object.fromEntries(Array.from({length:100},(_,index)=>['p'+index,{id:'p'+index,name:'가'.repeat(120),status:'active',progress:20}]));
+ const f=fixture({projectMap});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}));
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
 
 for(const [reason,options] of [['denied',{denied:'projects'}],['oversize',{oversize:'workOrders'}],['malformed',{malformed:'access'}]]){
  test(`${reason} Firebase source cannot replace the published TV board`,async()=>{
   const f=fixture(options);
   await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}));
-  assert.equal(f.commands.some(item=>item.action==='publish'),false);
+  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
  });
 }

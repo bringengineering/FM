@@ -88,3 +88,13 @@ test('device list reports the latest publication version actually received',asyn
  await f.service.publish(snapshot,0,admin);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,null);
  await f.service.readBoard(device.deviceToken);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,1);
 });
+test('server publication is idempotent for an unchanged snapshot but advances for new source data',async()=>{
+ const f=fixture();
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{from:'2026-08-31',to:'2026-10-25',todayOffset:36,weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]}},playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'',dataDate:'2026-09-20'};
+ const first=await f.service.publishIfChanged(snapshot,0,admin);
+ assert.equal(first.version,1);
+ const unchanged=await f.service.publishIfChanged(snapshot,1,admin);
+ assert.deepEqual(unchanged,first);
+ const changed=await f.service.publishIfChanged({...snapshot,notice:'새 공지'},1,admin);
+ assert.equal(changed.version,2);
+});

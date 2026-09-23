@@ -3,7 +3,8 @@ const shape=(value,keys)=>{if(!value||typeof value!=='object'||Array.isArray(val
 const count=n=>{if(!Number.isSafeInteger(n)||n<0||n>1000000)invalid();};
 const pct=n=>{if(!Number.isInteger(n)||n<0||n>100)invalid();};
 const finite=(n,min,max)=>{if(typeof n!=='number'||!Number.isFinite(n)||n<min||n>max)invalid();};
-const text=(s,max)=>{if(typeof s!=='string'||s.length>max||/[\u0000-\u0008\u000b-\u001f]/.test(s))invalid();};
+const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
+const text=(s,max)=>{if(typeof s!=='string'||s.length>max||/[\u0000-\u0008\u000b-\u001f]/.test(s)||contactPattern.test(s))invalid();};
 const date=value=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value)invalid();};
 const optionalDate=value=>{if(value!=='')date(value);};
 const health=value=>{if(!['normal','check','risk','done'].includes(value))invalid();};

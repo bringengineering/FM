@@ -36,6 +36,23 @@ test('projection excludes private text and deduplicates identifiers',()=>{
  const before=JSON.stringify(input),m=C.project(input,'2026-09-19');
  assert.equal(m.total,1);assert.equal(m.counts.done,1);assert.ok(!JSON.stringify(m).includes('secret-phone'));assert.equal(JSON.stringify(input),before);
 });
+test('project names containing customer contact details are masked in the shared TV model',()=>{
+ const model=C.project({orders:[],projects:[{id:'p1',name:'홍길동 010-1234-5678',status:'active',progress:30}]},'2026-09-24');
+ assert.equal(model.portfolio.projects[0].name,'프로젝트명 확인 필요');
+ assert.equal(model.roadmap.lanes[0].assignments[0].projectName,'프로젝트명 확인 필요');
+ assert.ok(!JSON.stringify(model).includes('홍길동'));
+});
+test('a task assignee field containing a phone number is not shown as an employee',()=>{
+ const model=C.project({orders:[{id:'o1',status:'doing',assigneeName:'고객 010-1234-5678'}],projects:[]},'2026-09-24');
+ assert.equal(model.people[0].name,'담당자 미정');
+ assert.ok(!JSON.stringify(model).includes('010-1234-5678'));
+});
+test('project owner contact details are masked in roadmap and portfolio',()=>{
+ const model=C.project({orders:[],projects:[{id:'p1',name:'실증',owner:'고객 010-1234-5678',status:'active',progress:30}]},'2026-09-24');
+ assert.equal(model.portfolio.projects[0].owner,'담당자 미정');
+ assert.equal(model.roadmap.lanes[0].assigneeName,'담당자 미정');
+ assert.ok(!JSON.stringify(model).includes('010-1234-5678'));
+});
 test('invalid source is unavailable, unknown status never becomes completed',()=>{
  assert.throws(()=>C.project({},'2026-09-19'));
  const m=C.project({orders:[{id:'a',status:'future'},{id:'b',status:'doing',dueDate:'2026-02-30'}]},'2026-09-19');
@@ -139,6 +156,21 @@ test('roadmap separates entered progress from manager-reviewed completion',()=>{
  assert.match(empty,/집계 대기/);
  const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
  assert.match(css,/\.wb-review-metric/u);
+});
+
+test('company progress keeps completed projects in the displayed denominator',()=>{
+ const model=C.project({orders:[],projects:[
+  {id:'finished',name:'완료 사업',status:'done',progress:100},
+  {id:'working',name:'진행 사업',status:'active',progress:20}
+ ]},'2026-09-24');
+ assert.equal(model.portfolio.projects.length,2);
+ assert.equal(model.portfolio.overallProgress,60);
+});
+test('empty portfolio displays no denominator rather than a false zero percent',()=>{
+ const html=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap');
+ assert.match(html,/입력 진도 평균/);
+ assert.match(html,/대상 프로젝트 없음/);
+ assert.doesNotMatch(html,/wb-progress-ring[^>]*><strong>0%<\/strong>/);
 });
 
 test('each project keeps entered progress distinct from deduplicated reviewed work',()=>{

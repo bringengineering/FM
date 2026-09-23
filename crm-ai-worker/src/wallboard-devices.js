@@ -26,6 +26,7 @@ export class WallboardDevices {
     case 'cancel-update':result=await this.service.cancelUpdate(input.deviceId,identity);break;
     case 'list':result=await this.service.list(identity);break;
     case 'publish':result=await this.service.publish(input.snapshot,input.expectedVersion,identity);break;
+    case 'publish-if-changed':result=await this.service.publishIfChanged(input.snapshot,input.expectedVersion,identity);break;
     case 'display':result=await this.service.readBoard(token,input.clientVersion,{updateStatus:input.updateStatus,updateError:input.updateError});break;
     default:return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
    }

@@ -33,7 +33,10 @@
 
 - [x] Add a failing client test for a token-authenticated empty `POST` to `/v1/wallboard/refresh`, and retain the existing failed-save/no-signal tests. RED confirmed.
 - [x] Implement a bounded background refresh using the existing session token, no redirected endpoint, and a 15-second timeout. Keep confirmed saves successful if refresh fails. Existing local administrator reconciliation remains a fallback.
-- [ ] Expose a bounded warning for a failed remote refresh in the wallboard sync status.
+- [x] Expose a bounded warning for a failed remote refresh in the wallboard sync status, separately from local reconciliation and without raw errors.
+- [x] Trigger refresh after a confirmed building-schedule write, but not after an idempotent replay.
+- [x] Keep completed projects in the portfolio progress denominator and show `—` when there are no projects.
+- [x] Make server publications idempotent for unchanged snapshots while preserving the existing manual publish behavior.
 - [ ] Run Electron and browser TV visual QA, `git diff --check`, then commit only intended files; preserve unrelated dirty files.
 - [ ] Record release order: Worker route and compatible schema first, then desktop; do not claim the 10-second or administrator-PC-off criterion until a real two-account/two-device test passes. No automatic production deploy in this plan.
 

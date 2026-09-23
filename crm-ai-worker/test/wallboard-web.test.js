@@ -24,6 +24,10 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
  assert.match(response.headers.get('content-type'),/application\/json/);
  const value=await response.json();assert.deepEqual(Object.keys(value),['version']);assert.match(value.version,/^tv-web-\d{4}-\d{2}-\d{2}-\d+$/);
 });
+test('changed TV presentation assets advance the client application version',async()=>{
+ const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-24-3'});
+});
 
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -73,6 +77,11 @@ test('web TV roadmap separates input progress and reviewed work without new publ
  assert.match(source,/건수 기준/);
  const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(css,/\.review-metric/);
+});
+test('web TV distinguishes no projects from measured zero progress',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/대상 프로젝트 없음/);
+ assert.match(source,/model\.portfolio\.projects\.length\?model\.portfolio\.overallProgress\+'%'\:'—'/);
 });
 test('web TV portfolio labels each project input progress and reviewed completion with a legacy fallback',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();

@@ -44,6 +44,7 @@ const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
 const { requestWallboardRefresh } = require("./wallboard-refresh-client");
+const { createWallboardRefreshStatus } = require("./wallboard-refresh-status");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -145,6 +146,7 @@ let remoteClient = null;
 let wallboardPublisher = null;
 let wallboardPublisherUid = "";
 let wallboardLiveSync = null;
+const wallboardRefreshStatus = createWallboardRefreshStatus();
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
@@ -5014,7 +5016,7 @@ async function initializeRemote() {
     onAuthState: state => {
       const wallboardUid = state?.user?.mustChangePassword ? "" : String(state?.user?.uid || "");
       clearDriveSessionForChangedUser(wallboardUid);
-      if (wallboardUid !== wallboardPublisherUid) wallboardPublisher?.stop();
+      if (wallboardUid !== wallboardPublisherUid) { wallboardPublisher?.stop(); wallboardRefreshStatus.reset(); }
       wallboardPublisherUid = wallboardUid;
       if (wallboardUid) {
         wallboardLiveSync = ensureWallboardLiveSync();
@@ -5104,12 +5106,15 @@ function signalWallboardAfterSave() {
   void (async () => {
     const idToken = await client.ensureIdToken(false);
     if (client !== remoteClient || client.authState().user?.uid !== uid) return;
-    await requestWallboardRefresh({
+    const result = await requestWallboardRefresh({
       baseUrl: CRM_AI_GATEWAY_URL,
       idToken,
       fetchImpl: (url, options) => net.fetch(url, options)
     });
-  })().catch(() => {
+    if (client !== remoteClient || client.authState().user?.uid !== uid) return;
+    wallboardRefreshStatus.succeeded(result);
+  })().catch(error => {
+    if (client === remoteClient && client.authState().user?.uid === uid) wallboardRefreshStatus.failed(error);
     // The write is already confirmed. A TV refresh failure must not undo it.
     // Existing admin-side reconciliation will retry while the app is open.
   });
@@ -8418,7 +8423,7 @@ secureHandle("crm:auth-state", () => authState());
 secureCanonicalHandle("crm:input-language-korean", () => WindowsKoreanInput.requestKoreanInput(mainWindow));
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
-  if (input?.action === "live-status") return ensureWallboardLiveSync().status();
+  if (input?.action === "live-status") return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};
   if (input?.action === "live-sync") return ensureWallboardLiveSync().reconcile();
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
   const { resolveTvChannel } = require("./tv-update-policy");
@@ -8913,6 +8918,7 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
     if (!result || !result.record) {
       return buildingScheduleErrorEnvelope(Object.assign(new Error("SESSION_CHANGED"), { code: "SESSION_CHANGED" }));
     }
+    if (!result.repeated && !localTestMode) signalWallboardAfterSave();
     const operationsSync = result.record.status === "completed"
       ? await trySyncCompletedWorkRecord(result.record)
       : { status: "not-required", sourceWorkRecordId: String(result.record.id || "") };
