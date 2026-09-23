@@ -9,7 +9,12 @@
   const STATUSES = new Set(['assigned', 'doing', 'submitted', 'returned', 'done']);
   const text = value => String(value == null ? '' : value).trim();
   const rows = value => Array.isArray(value) ? value.filter(Boolean) : [];
-  const date = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value)) ? text(value) : '';
+  const date = value => {
+    const key = text(value);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return '';
+    const parsed = Date.parse(`${key}T00:00:00Z`);
+    return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === key ? key : '';
+  };
   const addDays = (value, amount) => new Date(Date.parse(`${value}T00:00:00Z`) + amount * 86400000).toISOString().slice(0, 10);
 
   function uniqueOrders(orders, knownOnly = true) {
@@ -78,5 +83,20 @@
     return { done, total: linked.length, percent: Math.round(done / linked.length * 100) };
   }
 
-  return Object.freeze({ partitionProjects, todayQueue, completion });
+  function health(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    const today = date(source.today);
+    if (!today) return null;
+    const orders = uniqueOrders(source.orders);
+    const open = orders.filter(item => item.status !== 'done');
+    return {
+      done: orders.length - open.length,
+      total: orders.length,
+      overdue: open.filter(item => date(item.dueDate) && date(item.dueDate) < today).length,
+      review: open.filter(item => item.status === 'submitted').length,
+      undated: open.filter(item => !date(item.dueDate)).length,
+    };
+  }
+
+  return Object.freeze({ partitionProjects, todayQueue, completion, health });
 });

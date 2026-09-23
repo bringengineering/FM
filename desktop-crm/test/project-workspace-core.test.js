@@ -64,3 +64,26 @@ test('같은 ID의 최신 상태가 알 수 없으면 오래된 완료를 실적
   ];
   assert.equal(Workspace.completion(orders, 'p1'), null);
 });
+
+test('프로젝트 홈 지표는 고유 원본 업무의 검수·지연·대기를 분리해 센다', () => {
+  const orders = [
+    { id: 'done', status: 'done', dueDate: '2026-09-20' },
+    { id: 'review', status: 'submitted', dueDate: '2026-09-23' },
+    { id: 'late', status: 'doing', dueDate: '2026-09-21' },
+    { id: 'undated', status: 'returned' },
+    { id: 'stale', status: 'done', updatedAt: '2026-09-22T00:00:00Z' },
+    { id: 'stale', status: 'unknown', updatedAt: '2026-09-23T00:00:00Z' },
+    { id: 'late', status: 'assigned', dueDate: '2026-09-21', updatedAt: '2026-09-20T00:00:00Z' },
+  ];
+  assert.deepEqual(Workspace.health({ orders, today: '2026-09-24' }), {
+    done: 1, total: 4, overdue: 2, review: 1, undated: 1,
+  });
+  assert.equal(Workspace.health({ orders, today: 'invalid' }), null);
+});
+
+test('달력에 없는 날짜는 마감으로 집계하지 않는다', () => {
+  assert.equal(Workspace.health({ orders: [], today: '2026-02-30' }), null);
+  assert.deepEqual(Workspace.health({ orders: [{ id: 'bad-date', status: 'doing', dueDate: '2026-02-30' }], today: '2026-09-24' }), {
+    done: 0, total: 1, overdue: 0, review: 0, undated: 1,
+  });
+});
