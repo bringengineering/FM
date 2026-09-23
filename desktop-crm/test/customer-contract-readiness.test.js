@@ -11,7 +11,7 @@ test("shared CRM store preserves bounded customer contract readiness", () => {
   assert.equal(store.contractReadiness[0].sourceRevisionId, "rev-1");
 });
 
-test("contract editor exposes approved source, owner, due date, evidence and missing-item tasks", () => {
+test("contract editor exposes approved source, owner, due date and evidence", () => {
   const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
-  for (const phrase of ["계약 준비 도우미", "승인된 기준 문서", "고객·건물주", "회사 준비", "협력업체", "서명·교부", "미완료 항목을 할 일로 추가", "sourceRevisionId"]) assert.match(app, new RegExp(phrase));
+  for (const phrase of ["계약 준비 도우미", "승인된 기준 문서", "고객·건물주", "회사 준비", "협력업체", "서명·교부", "sourceRevisionId"]) assert.match(app, new RegExp(phrase));
 });

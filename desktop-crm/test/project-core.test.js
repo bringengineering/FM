@@ -249,7 +249,7 @@ test("연장 구간은 기존 프로젝트 막대 안의 오른쪽 부분만 차
   assert.equal(P.roadmapExtensionLayout({ startDate: "2026-09-01", endDate: "2026-10-14" }, range), null);
 });
 
-test("일일업무보고서에서 올라온 업무지시 진행률이 프로젝트 막대에도 반영된다", () => {
+test("업무지시 진행률이 프로젝트 막대에도 반영된다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),
     mode: "people",

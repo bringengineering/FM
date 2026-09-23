@@ -32,11 +32,8 @@ const SCREENS: Array<[string, string]> = [
   ["vacancies", "공실"],
   ["quotes", "견적"],
   ["deliveryFlow", "견적서에서 입금까지"],
-  ["dailyLog", "무엇에 몇 시간을 썼는지 그 자리에서"],
   ["workOrders", "표의 한 줄이 곧 업무지시"],
-  ["objectives", "이번 분기에 무엇을 이루려 하는가"],
   ["growth", "다음 단계가 무엇인지 적어 둡니다"],
-  ["tasks", "할 일"],
   ["cases", "민원"],
   ["buildingCalendar", "업무일정"],
   ["supplies", "우리 물품"],
@@ -136,20 +133,6 @@ async function boot(): Promise<Booted> {
         { id: "gr1", uid: "u-admin", name: "서창환", quarter: "2026-Q3", level: "L3", skills: { field: "L3", owner: "L2", record: "L3", plan: "L3", tool: "L3", biz: "L3" }, did: "계단청소 12건", nextStep: "건물 한 채를 통째로 맡아 본다" },
       ],
     },
-    loadObjectives: {
-      ...empty,
-      objectives: [
-        {
-          id: "ob1", quarter: "2026-Q3", title: "원주에서 계단청소를 자리잡힌 일로 만든다",
-          why: "단발 청소로는 매달 다시 영업해야 한다.", ownerUid: "u-admin", ownerName: "서창환",
-          track: "biz", status: "active", projectIds: ["p1"],
-          keyResults: [
-            { id: "k1", title: "정기 계약 건수", unit: "count", baseline: 0, target: 10, current: 7, ownerUid: "u-admin", ownerName: "서창환" },
-            { id: "k2", title: "재계약률", unit: "percent", baseline: 0, target: 80, current: 20, ownerUid: "", ownerName: "" },
-          ],
-        },
-      ],
-    },
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
     driveStatus: { connected: true, email: "test@example.test" },
@@ -195,7 +178,7 @@ async function boot(): Promise<Booted> {
       ],
       projects: [
         { id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
-        // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
+        // 아직 업무가 연결되지 않은 프로젝트도 로드맵에서 확인할 수 있어야 한다.
         { id: "p2", name: "회사 서버", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
       ],
       // 이번 주 지시서. 머리말만 담고 지시 줄은 안 담는다 — 복사해 두면 갈라진다.
@@ -218,25 +201,6 @@ async function boot(): Promise<Booted> {
         // 이번 주에 걸친 지시. 지시서를 보내려면 이 주에 뭔가 있어야 한다.
         { id: "o5", title: "3층 누수 확인", why: "임차인이 두 번 민원을 넣었습니다", what: "천장을 열어 배관을 봅니다", doneWhen: "사진 3장과 원인 한 줄", deliverable: "20260906_3층누수.xlsx", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "assigned", startDate: mondayOf(new Date()), dueDate: mondayOf(new Date()), progress: 0, hours: 8, weight: 100 },
         { id: "o4", title: "떠도는 일", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "", track: "etc", status: "assigned", dueDate: "", startDate: "", progress: 0, raci: { R: ["u-admin"], A: ["u-admin"] } },
-      ],
-    },
-    loadDailyLogs: {
-      ...empty,
-      name: "서창환",
-      logs: [
-        // 어제 것. 오늘 자리가 비어 있어도 화면이 도는지 보려고 다른 날로 둔다.
-        {
-          id: "u-admin_2026-09-05", uid: "u-admin", name: "서창환", date: "2026-09-05",
-          entries: [
-            { id: "e1", start: "09:00", end: "11:00", title: "BRING OFFICE 통합", nature: "innovation", orderId: "o1", progress: 60, note: "" },
-            { id: "e2", start: "11:00", end: "18:00", title: "철근콘크리트 수강", nature: "routine", orderId: "", progress: 100, note: "" },
-          ],
-          plans: [{ id: "p1", title: "견적서 화면 마무리", nature: "innovation", hours: 3, dueDate: "2026-09-06", orderId: "" }],
-          blockers: "당근 비즈프로필 권한이 아직 안 넘어왔습니다.",
-          ideas: "", feedback: "", requests: "",
-          submittedAt: "2026-09-05T18:00:00.000Z", confirmedBy: "", confirmedAt: "",
-          updatedAt: "2026-09-05T18:00:00.000Z", updatedBy: "u-admin",
-        },
       ],
     },
     assist: {
@@ -274,12 +238,6 @@ async function boot(): Promise<Booted> {
   for (const name of names) {
     api[name] = async (input: unknown) => {
       calls.push({ name, input });
-      if (name === "saveDailyLog") {
-        const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
-        const now = "2026-09-07T09:01:02.000Z";
-        return { log: { ...value, uid: "u-admin", name: "서창환", submittedAt: value.submit === true ? now : "", updatedAt: now }, rolled: [], failed: [] };
-      }
-      if (name === "sendTelegramDailyLog") return { ok: true, requestId: "tg-screen-1", sent: true, duplicate: false };
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };
   }
@@ -559,58 +517,6 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 
-  it("분기 목표가 목표와 이어지지 않은 일을 같이 보여 준다", async () => {
-    // 이 화면의 값어치는 목표판을 예쁘게 채우는 데 있지 않고, **지금 하는
-    // 일 중에 무엇이 목표와 상관없는지**를 드러내는 데 있다.
-    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
-    await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="objectives"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
-    await sleep(150);
-    navItem.click();
-    await sleep(250);
-
-    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
-    expect(shown).toContain("원주에서 계단청소를 자리잡힌 일로 만든다");
-    // 핵심결과 두 개의 평균은 (0.7 + 0.25) / 2 = 0.475 → 48%
-    expect(shown, "진척도를 사람이 적지 않고 값에서 센다").toContain("48%");
-    expect(shown).toContain("정기 계약 건수");
-    expect(shown).toContain("7건 / 10건");
-
-    // 목표에 안 붙은 것을 실제로 세어 보여 준다. 붙인 프로젝트는 p1 뿐이다.
-    expect(shown, "이어지지 않은 일을 드러내야 한다").toContain("이 일들은 어느 목표에 닿는지 적혀 있지 않습니다");
-
-    // RACI 설명이 화면에 있어야 한다 — 팀원이 처음 보는 말이다.
-    expect(shown).toContain("끝났는지 판단하고 책임지는 한 사람");
-
-    const bars = booted.document.querySelectorAll(".okr-bar i");
-    expect(bars.length, "핵심결과마다 막대가 하나씩").toBe(2);
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-
-  it("핵심결과 없이는 목표를 저장할 수 없다", async () => {
-    const newButton = [...booted.document.querySelectorAll("button")]
-      .find(button => (button.textContent || "").trim() === "새 목표") as HTMLElement | undefined;
-    expect(newButton, "새 목표 단추가 있어야 한다").toBeTruthy();
-    newButton!.click();
-    await sleep(180);
-
-    const form = booted.document.querySelector("[data-okr-form]") as HTMLFormElement;
-    expect(form, "목표 편집기가 열려야 한다").toBeTruthy();
-    // 기본으로 핵심결과 한 줄이 깔려 있어야 한다 — 빈 폼을 주면 사람은
-    // 그 칸을 안 채우고 저장부터 누른다.
-    expect(form.querySelectorAll("[data-okr-kr-row]").length).toBe(1);
-
-    const before = booted.calls.length;
-    form.dispatchEvent(new booted.window.Event("submit", { bubbles: true, cancelable: true }));
-    await sleep(200);
-    // 제목·책임자·핵심결과가 비어 있으므로 서버로 나가면 안 된다.
-    expect(booted.calls.slice(before).some(call => call.name === "saveObjective"),
-      "덜 채운 목표가 저장되면 안 된다").toBe(false);
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-
   it("성장 화면이 다음 단계와 이번 주 1on1 을 같이 보여 준다", async () => {
     // 이 화면의 값어치는 레벨을 붙이는 데 있지 않고, **다음에 무엇을
     // 배울지가 적혀 있게** 하는 데 있다.
@@ -795,190 +701,6 @@ describe("desktop CRM screens actually render", () => {
     // 이미 빠졌는데 "수강 7시간" 을 또 더하면 학생은 늘 넘침으로 뜬다.
     const study = made.find(call => (call.input as { id: string }).id === "pj-study");
     expect((study!.input as { offCapacity: boolean }).offCapacity).toBe(true);
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-  it("오늘 화면에서 고정 시간표를 적고 보내면 지시와 업무방으로 올라간다", async () => {
-    // 같은 숫자를 일지에 한 번, 지시에 또 한 번 적게 하면 둘은 반드시 어긋난다.
-    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
-    await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
-    await sleep(150);
-    navItem.click();
-    await sleep(300);
-
-    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
-    expect(shown()).toContain("일일 업무일지");
-    // 오늘은 아직 안 썼다. 어제 것이 딸려 오면 날짜를 잘못 고른 것이다.
-    expect(shown()).toContain("아직 안 보냄");
-    // 빈 하루는 09:00~18:00 한 시간짜리 아홉 줄로 열린다. 매일 [줄 넣기] 를
-    // 아홉 번 눌러야 같은 화면이 되면 아무도 안 쓴다.
-    expect(shown()).toContain("오전 09:00");
-    expect(shown()).toContain("오후 06:00");
-    expect(shown()).toContain("왼쪽 시간은 변경할 수 없습니다");
-    const titles = [...booted.document.querySelectorAll('[data-dl-field="title"]')] as HTMLInputElement[];
-    expect(titles.length, "아홉 줄이 깔려 있어야 한다").toBe(9);
-    // 시간 칸은 고치는 것이 아니다. 고칠 수 있으면 09:00~18:00 이 뜻을 잃는다.
-    expect(booted.document.querySelector('[data-dl-field="start"]'), "시간 칸은 입력이 아니다").toBeNull();
-
-    // 앞의 네 줄에 적는다. 한 줄이 한 시간이니 네 줄이면 네 시간이다.
-    const picks = [...booted.document.querySelectorAll('[data-dl-field="orderId"]')] as HTMLSelectElement[];
-    const mine = [...picks[0].options].find(option => option.textContent === "지난 것");
-    expect(mine, "내가 물고 있는 지시가 골라져야 한다").toBeTruthy();
-    for (let index = 0; index < 4; index += 1) {
-      titles[index].value = "3층 누수 확인";
-      // 네 줄 다 지시에 붙인다. 안 붙이면 그 시간이 "시킨 일 밖" 으로 잡힌다.
-      picks[index].value = mine!.value;
-    }
-    const progress = booted.document.querySelector('[data-dl-field="progress"]') as HTMLInputElement;
-    progress.value = "80";
-    // change 는 칸을 떠날 때 온다 — 글자 칸은 안 걸려서 커서가 안 튄다.
-    progress.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
-    await sleep(200);
-
-    // 합계가 그 자리에서 다시 나와야 한다.
-    expect(shown(), "시각에서 뽑은 시간이 나와야 한다").toContain("4시간");
-    expect(shown(), "지시를 골랐으니 지시 밖은 0 이다").toContain("0시간");
-
-    const before = booted.calls.length;
-    (booted.document.querySelector("[data-dl-submit]") as HTMLElement).click();
-    await sleep(150);
-    const confirmation = booted.document.querySelector(".confirmation-layer.open") as HTMLElement | null;
-    expect(confirmation, "업무방에 공개하기 전에 확인창이 나와야 한다").toBeTruthy();
-    expect(confirmation!.textContent).toContain("브링엔지니어링 업무방");
-    (confirmation!.querySelector('[data-confirm-choice="confirm"]') as HTMLElement).click();
-    await sleep(400);
-    const sent = booted.calls.slice(before).find(call => call.name === "saveDailyLog");
-    expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
-    const body = sent!.input as { submit: boolean; date: string; entries: Array<{ title: string; start: string; end: string; orderId: string; progress: number }> };
-    expect(body.submit, "보내기는 저장과 다르다").toBe(true);
-    // 적은 네 줄만 간다. 안 적은 다섯 줄은 보낼 것이 없다.
-    expect(body.entries.length).toBe(4);
-    expect(body.entries[0].title).toBe("3층 누수 확인");
-    expect(body.entries[0].start).toBe("09:00");
-    expect(body.entries[3].end).toBe("13:00");
-    expect(body.entries[0].progress).toBe(80);
-    expect(body.entries[0].orderId).toBe("o1");
-    const telegram = booted.calls.slice(before).find(call => call.name === "sendTelegramDailyLog");
-    expect(telegram, "CRM 저장 뒤 회사 봇 전송 통로로 나가야 한다").toBeTruthy();
-    expect(booted.calls.indexOf(sent!)).toBeLessThan(booted.calls.indexOf(telegram!));
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-
-  it("한 줄도 없으면 보내지 못하고, 친 것을 날리지 않는다", async () => {
-    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
-    await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
-    await sleep(150);
-    navItem.click();
-    await sleep(300);
-
-    // 막힌 것만 적고 줄은 안 적었다.
-    const blockers = booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement;
-    blockers.value = "건물주가 전화를 안 받습니다.";
-    const before = booted.calls.length;
-    (booted.document.querySelector("[data-dl-submit]") as HTMLElement).click();
-    await sleep(300);
-    expect(booted.calls.slice(before).some(call => call.name === "saveDailyLog"),
-      "무엇을 했는지가 없으면 보내지 않는다").toBe(false);
-    // 다시 치게 하면 다음부터 안 쓴다.
-    const kept = booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement;
-    expect(kept.value, "친 것을 날리지 않는다").toBe("건물주가 전화를 안 받습니다.");
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-
-  it("대표는 누가 안 썼는지를 먼저 본다", async () => {
-    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
-    await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
-    await sleep(150);
-    navItem.click();
-    await sleep(300);
-
-    // 어제로 옮긴다. 받은 보고가 있는 날이다.
-    const dateInput = booted.document.querySelector("[data-dl-date]") as HTMLInputElement;
-    dateInput.value = "2026-09-05";
-    dateInput.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
-    await sleep(200);
-    (booted.document.querySelector('[data-dl-tab="team"]') as HTMLElement).click();
-    await sleep(250);
-
-    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
-    expect(shown).toContain("받은 보고");
-    // 서창환은 냈고 황우중은 안 냈다.
-    expect(shown).toContain("서창환");
-    expect(shown, "안 쓴 사람이 드러나야 한다").toContain("아직 안 썼습니다");
-    // 09~11 혁신 2시간 + 11~18 기존 7시간 = 9시간.
-    expect(shown).toContain("9시간");
-    // 수업 7시간은 지시에 안 붙었다. 그 합계가 대표가 봐야 할 숫자다.
-    expect(shown).toContain("7h");
-    // 숫자로 안 남는 것이 대개 더 중요하다.
-    expect(shown).toContain("당근 비즈프로필 권한이 아직 안 넘어왔습니다.");
-
-    const confirm = booted.document.querySelector("[data-dl-confirm]") as HTMLElement;
-    expect(confirm, "보낸 일지는 확인할 수 있어야 한다").toBeTruthy();
-    const before = booted.calls.length;
-    confirm.click();
-    await sleep(300);
-    const asked = booted.calls.slice(before).find(call => call.name === "confirmDailyLog");
-    expect(asked, "확인 통로로 나가야 한다").toBeTruthy();
-    expect((asked!.input as { uid: string; date: string })).toEqual({ uid: "u-admin", date: "2026-09-05" });
-    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
-  it("AI 초안은 화면에 뜬 숫자만 넘기고, 만들자마자 저장하지 않는다", async () => {
-    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
-    await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
-    await sleep(150);
-    navItem.click();
-    await sleep(300);
-
-    // 앞선 검사가 날짜와 탭을 옮겨 놓았을 수 있다. 화면을 내 일지·오늘로
-    // 되돌린다 — 검사끼리 순서에 기대면 하나를 옮길 때마다 다른 게 깨진다.
-    (booted.document.querySelector('[data-dl-tab="mine"]') as HTMLElement | null)?.click();
-    await sleep(150);
-    const back = booted.document.querySelector("[data-dl-date]") as HTMLInputElement;
-    back.value = new Date().toISOString().slice(0, 10);
-    back.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
-    await sleep(200);
-
-    // 네 줄 적는다. 아무것도 없으면 초안을 만들 것도 없다.
-    const dlTitles = [...booted.document.querySelectorAll('[data-dl-field="title"]')] as HTMLInputElement[];
-    const dlPicks = [...booted.document.querySelectorAll('[data-dl-field="orderId"]')] as HTMLSelectElement[];
-    const dlOrder = ([...dlPicks[0].options].find(option => option.textContent === "지난 것") as HTMLOptionElement).value;
-    for (let index = 0; index < 4; index += 1) {
-      dlTitles[index].value = "3층 누수 확인";
-      dlPicks[index].value = dlOrder;
-    }
-    (booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement).value = "건물주가 전화를 안 받습니다.";
-
-    const before = booted.calls.length;
-    (booted.document.querySelector("[data-dl-ai]") as HTMLElement).click();
-    await sleep(400);
-    const asked = booted.calls.slice(before).find(call => call.name === "assist");
-    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
-    const sent = asked!.input as { task: string; content: string };
-    expect(sent.task).toBe("daily_report");
-    // 화면에 뜬 숫자를 그대로 넘긴다. 여기서 새로 세면 보고서와 화면이 다른
-    // 말을 하고, 그러면 둘 다 못 믿는다.
-    expect(sent.content).toContain("채운 시간: 4시간");
-    // 지시는 번호가 아니라 이름으로 간다. 번호만 주면 AI 가 지어낸다.
-    expect(sent.content).toContain("지시: 지난 것");
-    // 사람이 적은 말은 줄이지 않고 그대로 넘어가야 한다.
-    expect(sent.content).toContain("건물주가 전화를 안 받습니다.");
-    // 칸 이름이 새어 나가면 AI 가 그걸 문장에 옮겨 적는다.
-    expect(sent.content).not.toContain("weightedProgress");
-
-    // 만들자마자 서버에 쓰지 않는다. 아무도 안 읽은 글이 대표에게 올라간다.
-    expect(booted.calls.slice(before).some(call => call.name === "saveDailyLog"),
-      "초안을 만들면서 저장하면 안 된다").toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
   it("쓰던 지시서를 붙여 넣으면 읽어 보여 주고, 누르면 지시가 만들어진다", async () => {
@@ -1236,10 +958,9 @@ describe("desktop CRM screens actually render", () => {
     expect(sheet()).toContain("이번 주 지시서가 아직 없습니다");
     expect(sheet(), "남의 것을 펼치면 내 것은 접힌다").not.toContain("임차인이 두 번 민원을 넣었고");
 
-    // 진행률은 「일일업무보고서」에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
     handle().click();
     await sleep(200);
-    expect(sheet()).toContain("진행은 「일일업무보고서」에서 적습니다");
+    expect(sheet()).toContain("진행률은 업무지시 상세에서 기록하며");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
   it("견적서에서 결과보고서로, 결과보고서에서 고객 알림으로 이어진다", async () => {

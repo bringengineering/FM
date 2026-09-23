@@ -103,14 +103,7 @@ textarea {
 .sales-kanban-card footer,
 .sales-kanban-card footer b { font-size: 10px; }
 
-/* Tasks, workflow and settings */
-.task-title strong { font-size: 13px; }
-.task-title span { font-size: 11px; }
-.task-meta-label { color: #8B95A1; font-size: 10px; }
-.task-meta strong,
-.task-meta time b,
-.task-customer-button { font-size: 12px; }
-.task-meta time small { font-size: 10px; }
+/* Workflow and settings */
 .workflow-card header strong { font-size: 13px; }
 .workflow-card header span { font-size: 11px; }
 .progress-ring { font-size: 11px; }
@@ -149,8 +142,6 @@ textarea {
 .timeline-item time { font-size: 10px; }
 .step-item { font-size: 11px; }
 .step-item i { font-size: 9px; }
-.detail-section .task-list span { font-size: 12px !important; }
-.detail-section .task-list time { font-size: 10px !important; }
 .toast { font-size: 12px; }
 .warning-box,
 .info-box { font-size: 12px; }
@@ -456,9 +447,6 @@ textarea {
 .timeline-delete,
 .record-delete-button { min-height: 30px; padding: 6px 9px; font-size: 10px; }
 
-.task-title strong { color: #191F28; font-size: 13px; }
-.task-title span { color: #4E5968; font-size: 11px; }
-
 .case-trash-action,
 .case-browser-mode button,
 .case-trash-notice span,
@@ -570,10 +558,8 @@ textarea { font-size: 14px; }
 .timeline-item time { font-size: 11px; }
 .timeline-delete,
 .record-delete-button { font-size: 11px; }
-.building-record b,
-.customer-task-record > span { font-size: 13px; }
+.building-record b { font-size: 13px; }
 .building-record span,
-.customer-task-record time,
 .record-danger-zone span { color: #4E5968; font-size: 11px; }
 .record-danger-zone b { font-size: 13px; }
 

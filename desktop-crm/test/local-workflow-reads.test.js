@@ -10,7 +10,7 @@ test('roadmap explicit local demo retains sample with editing disabled',()=>{
  assert.match(app,/data\.localOnly === true && currentView === "projectRoadmap"/);
  assert.match(app,/projectRoadmapPreviewPayload\(\), admin: false, canWork: false/);
 });
-const channels={'forms-load':['loadForms','templates','entries'],'work-orders-load':['loadWorkOrders','orders','projects','capacity','directives','members'],'daily-logs-load':['loadDailyLogs','logs'],'supplies-load':['loadSupplies','items','moves','costs'],'delivery-flows-load':['loadDeliveryFlows','flows'],'work-reports-load':['loadWorkReports','reports']};
+const channels={'forms-load':['loadForms','templates','entries'],'work-orders-load':['loadWorkOrders','orders','projects','capacity','directives','members'],'supplies-load':['loadSupplies','items','moves','costs'],'delivery-flows-load':['loadDeliveryFlows','flows'],'work-reports-load':['loadWorkReports','reports']};
 function handler(channel,local,client){let callback;const start=source.indexOf('function readWorkflowCollection('),end=source.indexOf('\n}\n',start);const context={localTestMode:local,remoteClient:client,secureHandle:(_channel,fn)=>callback=fn};if(start!==-1)vm.runInNewContext(source.slice(start,end+3),context);vm.runInNewContext(source.split('\n').find(line=>line.startsWith(`secureHandle("crm:${channel}"`)),context);return callback;}
 for(const [channel,[method,...arrays]] of Object.entries(channels)){
  test(`${channel} preview never dereferences remote and returns detached read-only collections`,async()=>{const load=handler(channel,true,null);const result=await load();for(const key of arrays)assert.ok(Array.isArray(result[key]),key);assert.equal(result.canWork,false);assert.equal(result.admin,false);result[arrays[0]].push('test');assert.equal((await load())[arrays[0]].length,0);});
@@ -26,8 +26,8 @@ async function consumeWorkOrders(load,{view='projectRoadmap',search='?demo=1',st
  let fixtureCalls=0;
  const context={
   workOrderState:{orders:[],projects:[],members:[],capacity:[],directives:[],admin:false,canWork:false,loaded:false,loading:false,...state},
-  currentView:view,location:{search},URLSearchParams,api:{loadWorkOrders:load},dailyLogState:{loading:false},
-  renderWorkOrders(){},renderProjectRoadmap(){},renderDailyLog(){},updateWorkOrderBadge(){},
+  currentView:view,location:{search},URLSearchParams,api:{loadWorkOrders:load},
+  renderWorkOrders(){},renderProjectRoadmap(){},updateWorkOrderBadge(){},
   projectRoadmapPreviewPayload(){fixtureCalls++;return {orders:[{id:'demo-order'}],projects:[{id:'demo-project'}],members:[],capacity:[],directives:[],uid:'preview',admin:true,canWork:true};},
  };
  vm.runInNewContext(app.slice(start,end),context);

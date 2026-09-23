@@ -110,7 +110,6 @@
   let selectedPartnerVendorDetailId = "";
   let partnerQuoteIndustryFilter = "전체 업종";
   let partnerQuoteStatusFilter = "전체";
-  let taskStatusFilter = "전체";
   let workFilters = { status: "all", buildingId: "all", serviceType: "all" };
   let contractWorkManagementExpanded = false;
   let workCalendarMonth = Core.dayKey().slice(0, 7);
@@ -202,16 +201,13 @@
     relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
     partnerVendors: ["협력 업체 정보를 한곳에서", "협력 업체"],
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
-    tasks: ["놓치지 말아야 할 후속조치", "영업 할 일"],
     officeHome: ["브링의 업무를 한 곳에서", "BRING OFFICE"],
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
-    dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "일일업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
     companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
-    objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
@@ -566,9 +562,12 @@
   };
   const customerIsRelationshipCustomer = customer => Boolean(customer && (customer.stage === "계약 확정" || customerSalesProgress(customer).filterIds.includes("paid_management")));
   const customerActivities = id => store.activities.filter(item => item.customerId === id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-  const customerTasks = id => store.tasks.filter(item => item.customerId === id).sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)));
   const dueKey = value => value ? Core.dayKey(value) : "";
   const todayKey = () => Core.dayKey();
+  const quarterOfDate = value => {
+    const date = /^\d{4}-\d{2}-\d{2}$/u.test(String(value || "")) ? String(value) : todayKey();
+    return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
+  };
   const addDaysIso = (value, days) => {
     const date = value ? new Date(value) : new Date();
     if (Number.isNaN(date.getTime())) return "";
@@ -1416,11 +1415,6 @@
       quoteUrl: quote.quoteUrl, region: quote.region || "원주"
     }));
     data.partnerQuotes.forEach((quote, index) => { quote.vendorId = data.partnerVendors[index].id; });
-    data.tasks = [
-      Core.createTask({ customerId: customers[0].id, title: "누수 비교견적 2건 전달", dueAt: todayKey(), priority: "높음", owner: "김현진" }),
-      Core.createTask({ customerId: customers[1].id, title: "현장 사진 정리", dueAt: todayKey(), priority: "보통", owner: "김현진" }),
-      Core.createTask({ customerId: customers[2].id, title: "통합관리 제안서 초안", dueAt: Core.dayKey(date(1)), priority: "높음", owner: "김현진" })
-    ];
     const demoActor = { email: "demo@invalid.local" };
     data.salesProspects = [
       Sales.createSalesProspect({ id: "spr_demo_01", name: "데모 원룸 A", address: "가상주소 A · 화면검증용", region: "원주 데모권역", source: "building_sign", owner: "황우중", priority: "high", stage: "listing_received", vacancyCount: 1, upcomingVacancyCount: 1, lastActivityAt: date(-1), nextAction: "광고 게시 증거 확인", nextActionAt: date(0) }, demoActor),
@@ -1503,9 +1497,6 @@
       requestAnimationFrame(() => calendarFolder?.scrollIntoView({ block: "nearest" }));
     }
     document.getElementById("navCaseCount").textContent = activeCases().length;
-    // 열려 있는 할 일만 센다. 완료까지 세면 숫자가 줄지 않아 아무도 안 본다.
-    const taskBadge = document.getElementById("navTaskCount");
-    if (taskBadge) taskBadge.textContent = openTasks().length;
     document.getElementById("navPaymentCount").textContent = paymentRows("all").filter(item => item.status === "overdue" || item.status === "manual_unpaid" || item.status === "review").length;
     document.getElementById("navCustomerCount").textContent = store.customers.length;
     document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
@@ -1547,8 +1538,6 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
     else if (currentView === "growth") renderGrowth();
-    else if (currentView === "objectives") renderObjectives();
-    else if (currentView === "dailyLog") renderDailyLog();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
     else if (currentView === "companyWallboard") {
       if (disposeCompanyWallboard) disposeCompanyWallboard();
@@ -1583,7 +1572,6 @@
     else if (currentView === "relationships") renderRelationships();
     else if (currentView === "partnerVendors") renderPartnerVendors();
     else if (currentView === "partnerQuotes") renderPartnerQuotes();
-    else if (currentView === "tasks") renderTasks();
     else if (["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) {
       const officeView = currentView;
       window.BringOffice.render({
@@ -2031,14 +2019,13 @@
     main.innerHTML = `
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
-        <div class="brief-actions"><span class="brief-value">예상 매출 <b>${esc(compactMoney(stats.pipelineValue))}원</b></span><button class="secondary-button" data-view="tasks">할 일 보기</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>
+        <div class="brief-actions"><span class="brief-value">예상 매출 <b>${esc(compactMoney(stats.pipelineValue))}원</b></span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>
       </section>
       ${store.customers.length === 0 ? `<section class="starter-map"><div><span>처음 시작하기</span><h3>먼저 고객 한 명을 등록해 보세요</h3><p>고객과 건물을 연결하면 영업 관리의 건물 단계가 자동으로 표시됩니다.</p></div><div class="starter-steps"><b class="active">1 고객 등록</b><i>→</i><b>2 건물 연결</b><i>→</i><b>3 영업 단계 확인</b></div><button class="primary-button" data-action="new-customer">고객 등록하기 →</button></section>` : ""}
       <div class="kpi-grid">
         ${kpi("전체 고객", stats.totalCustomers, "등록된 고객 수", "#55aee8")}
         ${kpi("오늘 연락할 고객", stats.todayContacts, "오늘 연락 예정", "#5cc9d8", stats.todayContacts ? "good" : "")}
         ${kpi("늦어진 연락", stats.overdueContacts, "우선 확인 필요", "#f47d86", stats.overdueContacts ? "alert" : "")}
-        ${kpi("진행 중인 할 일", stats.openTasks, `기한 지난 업무 ${stats.overdueTasks}건`, "#79a9ee", stats.overdueTasks ? "alert" : "")}
       </div>
       ${operationsCheckMarkup()}
       <div class="dashboard-grid">
@@ -2949,11 +2936,10 @@
         const activeContracts = store.contracts.filter(contract => (contract.customerId === customer.id || buildingIds.has(contract.buildingId)) && contract.status !== "종료").length;
         const caseMap = new Map(buildings.flatMap(building => buildingCases(building)).map(item => [workflowCaseKey(item), item]));
         const openCases = [...caseMap.values()].filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length).length;
-        const openTasks = customerTasks(customer.id).filter(task => task.status !== "완료" && task.status !== "취소").length;
         const legacyAddress = String(customer.address || "").trim();
         const roadAddressLabel = String(customer.roadAddress || (!customer.jibunAddress && legacyAddress) || "").trim() || "미입력";
         const jibunAddressLabel = String(customer.jibunAddress || "").trim() || "미입력";
-        return `<article class="partner-vendor-card customer-management-card" data-customer-hub-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(customerDisplayName(customer))} 상세 보기"><header><div class="customer-management-card-heading">${customerAvatar(customer)}<div>${managementStatusBadge(managementStatusForCustomer(customer))}<h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type].filter(Boolean).join(" · ") || "고객 추가 정보 미입력")}</p></div></div><button type="button" class="quote-card-edit" data-customer-hub-edit="${attr(customer.id)}">고객 수정</button></header><div class="partner-vendor-contact customer-address-contact"><div><span>연락처</span><b>${esc(customerPhoneText(customer.phone) || "미입력")}</b></div><div><span>도로명 주소</span><b>${esc(roadAddressLabel)}</b></div><div><span>지번 주소</span><b>${esc(jibunAddressLabel)}</b></div></div><footer><span>계약 ${activeContracts}건 · 민원 ${openCases}건 · 할 일 ${openTasks}건</span><button type="button" data-customer-open="${attr(customer.id)}">전체 상세</button></footer></article>`;
+        return `<article class="partner-vendor-card customer-management-card" data-customer-hub-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(customerDisplayName(customer))} 상세 보기"><header><div class="customer-management-card-heading">${customerAvatar(customer)}<div>${managementStatusBadge(managementStatusForCustomer(customer))}<h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type].filter(Boolean).join(" · ") || "고객 추가 정보 미입력")}</p></div></div><button type="button" class="quote-card-edit" data-customer-hub-edit="${attr(customer.id)}">고객 수정</button></header><div class="partner-vendor-contact customer-address-contact"><div><span>연락처</span><b>${esc(customerPhoneText(customer.phone) || "미입력")}</b></div><div><span>도로명 주소</span><b>${esc(roadAddressLabel)}</b></div><div><span>지번 주소</span><b>${esc(jibunAddressLabel)}</b></div></div><footer><span>계약 ${activeContracts}건 · 민원 ${openCases}건</span><button type="button" data-customer-open="${attr(customer.id)}">전체 상세</button></footer></article>`;
       }).join("")}</div>` : empty(Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "조건에 맞는 고객이 없습니다" : "등록된 고객이 없습니다", Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "검색어나 관리 상태를 바꿔 다시 확인해 주세요." : "고객을 등록하면 연결 건물과 업무 현황을 함께 관리할 수 있습니다.", `<button class="primary-button" data-action="new-customer">＋ 첫 고객 등록</button>`)}`;
   }
 
@@ -3024,7 +3010,6 @@
     const caseMap = new Map(buildings.flatMap(building => buildingCases(building)).map(item => [workflowCaseKey(item), item]));
     const cases = [...caseMap.values()].sort((left, right) => String(right.updatedAt || right.receivedAt || "").localeCompare(String(left.updatedAt || left.receivedAt || "")));
     const activities = customerActivities(customer.id);
-    const tasks = customerTasks(customer.id).filter(task => task.status !== "완료" && task.status !== "취소");
     const openCases = cases.filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length);
     const activeContracts = contracts.filter(item => item.status !== "종료");
     const closedContracts = contracts.filter(item => item.status === "종료");
@@ -3039,7 +3024,7 @@
       const detailText = [activity.result && `결과 ${activity.result}`, activity.nextAction && `다음 ${activity.nextAction}`, activity.owner && `담당 ${activity.owner}`].filter(Boolean).join(" · ");
       return `<div class="building-detail-record customer-consultation-record"><div><b>${esc(activity.summary || "기록 내용 없음")}</b><span>${esc(detailText || "결과·다음 할 일 미입력")}</span></div><em>${esc([activity.type || "상담", dateText(activity.occurredAt)].filter(Boolean).join(" · "))}</em></div>`;
     }).join("");
-    const essentialSections = `<section class="building-detail-section wide"><header><b>고객 요청·후속조치</b><span>${tasks.length}건</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section>${activeContracts.length ? `<section class="building-detail-section"><header><b>진행 계약</b><span>${activeContracts.length}건</span></header><div class="building-detail-body">${activeContractRecords}</div></section>` : ""}${openCases.length ? `<section class="building-detail-section"><header><b>진행 민원</b><span>${openCases.length}건</span></header><div class="building-detail-body">${openCaseRecords}</div></section>` : ""}`;
+    const essentialSections = `<section class="building-detail-section wide"><header><b>고객 요청·후속조치</b></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section>${activeContracts.length ? `<section class="building-detail-section"><header><b>진행 계약</b><span>${activeContracts.length}건</span></header><div class="building-detail-body">${activeContractRecords}</div></section>` : ""}${openCases.length ? `<section class="building-detail-section"><header><b>진행 민원</b><span>${openCases.length}건</span></header><div class="building-detail-body">${openCaseRecords}</div></section>` : ""}`;
     const consultationDetails = `<details class="customer-secondary-details customer-consultation-details" data-customer-consultations="${attr(customer.id)}"><summary><span><b>상담 기록</b><small>고객과 나눈 내용과 다음 조치를 펼쳐서 확인합니다.</small></span><em>${activities.length}건</em></summary><div class="customer-secondary-body customer-consultation-body"><div class="building-detail-body">${activityRecords || `<div class="building-detail-empty">아직 등록된 상담 기록이 없습니다.</div>`}</div></div></details>`;
     const secondaryCount = closedContracts.length + completedCases.length;
     const secondarySections = `${closedContracts.length ? `<section class="building-detail-section"><header><b>종료 계약</b><span>${closedContracts.length}건</span></header><div class="building-detail-body">${closedContractRecords}</div></section>` : ""}${completedCases.length ? `<section class="building-detail-section"><header><b>완료 민원</b><span>${completedCases.length}건</span></header><div class="building-detail-body">${completedCaseRecords}</div></section>` : ""}`;
@@ -3055,9 +3040,9 @@
       return `<details class="customer-secondary-details customer-rental-details" data-customer-rental-details="${attr(managedBuilding.id)}"><summary><span><b>임대·공실 정보</b><small>${esc(managedBuilding.name || "선택 건물")} · 금액은 원 단위</small></span><em>공실 ${esc(vacancyLabel)}</em></summary><div class="customer-secondary-body customer-rental-body"><div class="customer-rental-toolbar"><span>선택한 건물의 대표 임대 조건입니다.</span><div><button type="button" class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">수정</button><button type="button" class="mini-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황 보기</button></div></div><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(managedBuilding.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(managedBuilding.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(managedBuilding.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacancySubline)}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(managedBuilding.maintenanceIncludes, managedBuilding.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(managedBuilding.roomTypes, managedBuilding.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(managedBuilding.roomOptions, managedBuilding.roomOptionOther))}</span></div></div></div></details>`;
     })() : "";
     const buildingActions = managedBuilding ? `<span class="customer-action-divider" aria-hidden="true"></span><button class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">임대·공실 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(managedBuilding.id)}">건물주 입금</button>` : "";
-    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email, customer.roadAddress || customer.address || customer.jibunAddress].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p></div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
+    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email, customer.roadAddress || customer.address || customer.jibunAddress].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p></div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button>${buildingActions}</div></header>
       <div class="building-hub-detail-scroll"><div class="building-identity-strip customer-essential-summary"><div><b>연락처</b><span>${esc(customerPhoneText(customer.phone) || "-")}</span></div><div><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div><b>담당자</b><span>${esc(customer.owner || "미입력")}</span></div><div><b>중요도</b><span>${priorityClass(customer.priority)}</span></div></div>
-      <div class="building-hub-kpis customer-hub-kpis"><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${activeContracts[0] ? esc(contractTypes(activeContracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
+      <div class="building-hub-kpis customer-hub-kpis"><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${activeContracts[0] ? esc(contractTypes(activeContracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div></div>
       <div class="building-detail-grid customer-priority-grid">${essentialSections}</div>${consultationDetails}${secondaryDetails}${rentalDetails}</div>`;
   }
 
@@ -3293,8 +3278,7 @@
     const commonContracts=[...new Map((store.contracts||[]).filter(item=>customerId&&item.customerId===customerId&&!item.buildingId).map(item=>[item.id||item,item])).values()];
     contracts.lines=[...(contracts.lines||[]),...commonContracts.map(item=>line([item.name,item.status,item.startDate,item.endDate,item.amount,"고객 공통 · 위치 미지정"]))];
     const related=item=>item.buildingId?Boolean(buildingId&&item.buildingId===buildingId):Boolean(customerId&&item.customerId===customerId);
-    const tasks=(store.tasks||[]).filter(item=>!item.archivedAt&&related(item));
-    const work=section("민원·작업","민원·작업 진행");work.lines=[...(work.lines||[]),...tasks.map(item=>line([item.title,item.status,item.dueAt,item.owner,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))];
+    const work=section("민원·작업","민원·작업 진행");
     return [{title:"상담",lines:(store.activities||[]).filter(related).map(item=>line([dateText(item.occurredAt),item.type,item.summary,item.result,item.nextAction,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))},contracts,work,section("일정","일정·서비스 작업"),section("호실","등록된 층·호실"),section("사진","민원·작업 사진")];
   }
 
@@ -4337,613 +4321,8 @@
     }
   }
 
-  // --- 오늘 ---
-  //
-  // 애들이 매일 엑셀에 적고 저녁에 파일로 보내던 자리다. 그래서 낮에 막혀
-  // 있어도 저녁까지 아무도 몰랐고, 일지의 "AI 견적서 3H" 가 어느 지시의 몇
-  // %인지는 어디에도 없었다.
-  //
-  // 화면에 친 것을 글자마다 상태로 옮기지 않는다. 그러면 칠 때마다 다시
-  // 그려서 커서가 튄다. 누르는 순간 한 번에 읽는다 — 시간표 편집기와 같다.
-  let dailyLogState = {
-    logs: [], admin: false, canWork: false, uid: "", name: "",
-    loaded: false, loading: false, error: "", refreshedAt: 0,
-    date: "", draft: null, busy: false, tab: "mine",
-  };
-
-  const dailyLogCore = () => window.BringDailyLogCore;
-
-  // resetDraft 를 켠 쪽만 초안을 버린다. 저장·확인 뒤에는 서버 것이 맞으니
-  // 버려야 하고, 그 밖의 다시 읽기는 **치던 것을 절대 건드리면 안 된다.**
-  //
-  // 이걸 거꾸로 두었다가 한 번 당했다. 화면에 들어오면 다시 읽는데, 그 응답이
-  // 돌아오는 사이에 사람이 [줄 넣기] 를 누르면 응답이 그 줄을 지웠다. 부르는
-  // 쪽이 "지금은 초안이 없다" 고 보고 부른 것이라, 판단을 부를 때 하면 늦는다.
-  async function loadDailyLogs(resetDraft) {
-    if (dailyLogState.loading) return;
-    dailyLogState.loading = true;
-    dailyLogState.error = "";
-    if (currentView === "dailyLog") renderDailyLog();
-    try {
-      const data = await api.loadDailyLogs();
-      dailyLogState.logs = Array.isArray(data && data.logs) ? data.logs : [];
-      dailyLogState.admin = data && data.admin === true;
-      dailyLogState.canWork = data && data.canWork === true;
-      dailyLogState.uid = String((data && data.uid) || "");
-      dailyLogState.name = String((data && data.name) || "");
-      dailyLogState.loaded = true;
-      dailyLogState.refreshedAt = Date.now();
-      // 불러온 것으로 초안을 다시 잡는다. 저장하고 나면 서버 것이 맞다.
-      if (resetDraft) dailyLogState.draft = null;
-    } catch (error) {
-      dailyLogState.error = error && error.message || "일지를 불러오지 못했습니다.";
-    } finally {
-      dailyLogState.loading = false;
-      updateDailyLogBadge();
-      if (currentView === "dailyLog") renderDailyLog();
-    }
-  }
-
-  // 사이드바 숫자. 대표에게는 아직 확인 안 한 일지, 담당자에게는 오늘 아직
-  // 안 보낸 것을 센다.
-  function updateDailyLogBadge() {
-    const badge = document.getElementById("navDailyLogCount");
-    if (!badge) return;
-    const D = dailyLogCore();
-    let count = 0;
-    if (D) {
-      if (dailyLogState.admin) {
-        count = dailyLogState.logs.filter(item => item.submittedAt && !item.confirmedBy).length;
-      } else {
-        const today = todayKey();
-        const mine = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === today);
-        count = mine && mine.submittedAt ? 0 : 1;
-      }
-    }
-    badge.textContent = String(count);
-    badge.hidden = count === 0;
-  }
-
-  const dailyLogDate = () => dailyLogState.date || todayKey();
-
-  function dailyLogTimeLabel(value) {
-    const matched = /^(\d{2}):(\d{2})$/u.exec(String(value || ""));
-    if (!matched) return "--:--";
-    const hour = Number(matched[1]);
-    const displayHour = hour % 12 || 12;
-    return `${hour < 12 ? "오전" : "오후"} ${String(displayHour).padStart(2, "0")}:${matched[2]}`;
-  }
-
-  // 새 일지는 09:00~18:00의 한 시간 단위 표를 먼저 보여 준다. 직원이 매일
-  // [줄 넣기]를 아홉 번 눌러야 같은 화면을 만드는 방식이면 빈 일지가 기본
-  // 화면처럼 보인다. 내용은 비워 두되 시간대만 정해 두어 바로 적을 수 있게 한다.
-  function defaultDailyLogEntries(date) {
-    return Array.from({ length: 9 }, (_, index) => {
-      const startHour = index + 9;
-      const endHour = startHour + 1;
-      const start = `${String(startHour).padStart(2, "0")}:00`;
-      const end = `${String(endHour).padStart(2, "0")}:00`;
-      return {
-        id: `dl_${String(date || todayKey()).replace(/-/gu, "")}_${String(startHour).padStart(2, "0")}00`,
-        start,
-        end,
-        title: "",
-        nature: "routine",
-        orderId: "",
-        progress: 0,
-      };
-    });
-  }
-
-  // 임시 저장에는 실제로 적은 줄만 남는다. 그 자료를 그대로 그리면 저장 뒤
-  // 비어 있던 시간대가 사라지므로, 저장된 줄은 같은 시간 자리에 되돌려 놓고
-  // 빠진 기본 시간대만 빈 줄로 다시 채운다. 기본 범위 밖의 기존 기록도 버리지
-  // 않고 뒤에 그대로 둔다.
-  function restoreDailyLogTimeGrid(D, source, date) {
-    const day = D.normalizeDay(source);
-    const used = new Set();
-    const entries = defaultDailyLogEntries(date).map(slot => {
-      const foundIndex = day.entries.findIndex((item, index) => (
-        !used.has(index) && item.start === slot.start && item.end === slot.end
-      ));
-      if (foundIndex < 0) return slot;
-      used.add(foundIndex);
-      return day.entries[foundIndex];
-    });
-    day.entries.forEach((item, index) => {
-      if (!used.has(index)) entries.push(item);
-    });
-    return D.normalizeDay(Object.assign({}, day, { entries }));
-  }
-
-  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 처음 쓰는 날뿐 아니라
-  // 임시 저장을 다시 불러온 뒤에도 09:00~18:00 시간표를 빠짐없이 펼친다.
-  function dailyLogDraft(D) {
-    if (dailyLogState.draft) return D.normalizeDay(dailyLogState.draft);
-    const date = dailyLogDate();
-    const found = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === date);
-    return restoreDailyLogTimeGrid(D, found || {
-      uid: dailyLogState.uid,
-      name: dailyLogState.name,
-      date,
-    }, date);
-  }
-
-  function dailyLogExportPeople() {
-    const people = (workOrderState.members || []).filter(item => item && item.uid).map(item => ({
-      uid: String(item.uid),
-      name: String(item.displayName || item.email || item.uid),
-    }));
-    if (!people.some(item => item.uid === dailyLogState.uid) && dailyLogState.uid) {
-      people.push({ uid: dailyLogState.uid, name: dailyLogState.name || dailyLogState.uid });
-    }
-    return (dailyLogState.admin ? people : people.filter(item => item.uid === dailyLogState.uid))
-      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  }
-
-  function refreshDailyLogExportPreview(form) {
-    const D = dailyLogCore();
-    if (!D || !form) return;
-    const month = String(form.elements.month && form.elements.month.value || "");
-    const uid = String(form.elements.userId && form.elements.userId.value || "");
-    const summary = D.monthRollup({ days: dailyLogState.logs, uid, month, asOf: todayKey() });
-    const values = {
-      days: `${summary.written}일`,
-      hours: `${summary.hours}시간`,
-      entries: `${summary.entries}건`,
-      orders: `${summary.linkedOrders}건`,
-    };
-    Object.entries(values).forEach(([key, value]) => {
-      const node = form.querySelector(`[data-dl-export-stat="${key}"]`);
-      if (node) node.textContent = value;
-    });
-    const notice = form.querySelector("[data-dl-export-notice]");
-    if (notice) notice.textContent = summary.written
-      ? `저장된 보고서 ${summary.written}일을 날짜·시간 순서로 내보냅니다.`
-      : "선택한 달에 저장된 업무보고서가 없습니다.";
-    const submit = form.querySelector("[data-dl-export-submit]");
-    if (submit) submit.disabled = !summary.written;
-  }
-
-  function openDailyLogExport() {
-    const people = dailyLogExportPeople();
-    if (!people.length) { showToast("내보낼 구성원을 찾지 못했습니다.", "error"); return; }
-    const month = /^\d{4}-\d{2}$/u.test(dailyLogDate().slice(0, 7)) ? dailyLogDate().slice(0, 7) : todayKey().slice(0, 7);
-    const selectedUid = people.some(item => item.uid === dailyLogState.uid) ? dailyLogState.uid : people[0].uid;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>월간 Excel 내보내기</h2><p>저장된 일일업무보고서를 한 달 단위로 정리합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="내보내기 창 닫기">×</button></div>
-      <form id="dailyLogExportForm" class="modal-body dl-export-form">
-        <div class="dl-export-fields">
-          <label class="field"><span>대상 월</span><input type="month" name="month" value="${attr(month)}" required></label>
-          <label class="field"><span>구성원</span><select name="userId" required>${people.map(person => `<option value="${attr(person.uid)}"${person.uid === selectedUid ? " selected" : ""}>${esc(person.name)}</option>`).join("")}</select></label>
-        </div>
-        <section class="dl-export-preview">
-          <header><div><span>자료 확인</span><h3>Excel에 들어갈 내용</h3></div><small data-dl-export-notice></small></header>
-          <div class="dl-export-stats"><div><span>작성된 날짜</span><b data-dl-export-stat="days">0일</b></div><div><span>총 업무시간</span><b data-dl-export-stat="hours">0시간</b></div><div><span>상세 기록</span><b data-dl-export-stat="entries">0건</b></div><div><span>연결 업무지시</span><b data-dl-export-stat="orders">0건</b></div></div>
-          <div class="dl-export-sheets"><div><i>1</i><span><b>월간 요약</b><small>총 시간·업무 성격·주차별 현황</small></span></div><div><i>2</i><span><b>일별 상세</b><small>날짜·시간대·업무 내용·달성률</small></span></div><div><i>3</i><span><b>업무지시 현황</b><small>첫 진행률·현재 진행률·투입시간</small></span></div></div>
-        </section>
-        <div class="info-box">현재 화면에만 적고 아직 임시 저장하지 않은 내용은 포함하지 않습니다.</div>
-        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" data-dl-export-submit>Excel 파일 만들기</button></div>
-      </form>`;
-    openModal();
-    refreshDailyLogExportPreview(document.getElementById("dailyLogExportForm"));
-  }
-
-  async function exportMonthlyDailyLogsFromForm(form) {
-    if (!form || !api.exportMonthlyDailyLogs) return;
-    const button = form.querySelector("[data-dl-export-submit]");
-    if (button) { button.disabled = true; button.textContent = "Excel 만드는 중…"; }
-    try {
-      const result = await api.exportMonthlyDailyLogs({
-        month: String(form.elements.month && form.elements.month.value || ""),
-        userId: String(form.elements.userId && form.elements.userId.value || ""),
-      });
-      if (!result || result.canceled) return;
-      closeModal();
-      showToast(`${result.fileName || "월간 일일업무보고서"} 파일을 저장했습니다.`, "success");
-    } catch (error) {
-      showToast(error && error.message || "월간 Excel 파일을 만들지 못했습니다.", "error");
-    } finally {
-      if (button && modal.classList.contains("open")) { button.disabled = false; button.textContent = "Excel 파일 만들기"; }
-    }
-  }
-
-  // 이 사람이 지금 물고 있는 지시. 줄마다 고르게 한다 — 지시를 안 고르면
-  // 그 시간은 "시킨 일 밖" 으로 잡히고, 그 합계가 대표가 봐야 할 숫자다.
-  function myOpenOrders() {
-    const W = workOrderCore();
-    if (!W) return [];
-    return W.forAssignee(workOrderState.orders || [], dailyLogState.uid)
-      .filter(item => W.OPEN.includes(item.status));
-  }
-
-  function renderDailyLog() {
-    const D = dailyLogCore();
-    if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>오늘</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-
-    const date = dailyLogDate();
-    const draft = dailyLogDraft(D);
-    const summary = D.summarize(draft);
-    const checked = D.validateDay(draft);
-    const status = dailyLogState.loading
-      ? `<div class="info-box">불러오는 중…</div>`
-      : (dailyLogState.error ? `<div class="info-box" style="color:#C6535F">${esc(dailyLogState.error)}</div>` : "");
-
-    const stateLabel = draft.confirmedBy ? "대표 확인함" : (draft.submittedAt ? "보냈습니다" : "아직 안 보냄");
-    const stateKind = draft.confirmedBy ? "complete" : (draft.submittedAt ? "warn" : "missing");
-    const weekday = ["일", "월", "화", "수", "목", "금", "토"][new Date(`${date}T00:00:00Z`).getUTCDay()] || "";
-
-    main.innerHTML = `<section class="operations-hero">
-        <div><span>일일 업무일지</span><h2>${esc(date)} (${esc(weekday)})</h2><p>무엇에 몇 시간을 썼는지 그 자리에서 적습니다. 적어 둔 달성률은 [보냄] 을 누를 때 업무지시로 올라갑니다.</p></div>
-        <div class="operations-actions">
-          <div class="dl-datenav">
-            <button type="button" class="mini-button" data-dl-shift="-1">◀ 어제</button>
-            <input type="date" value="${esc(date)}" data-dl-date>
-            <button type="button" class="mini-button" data-dl-shift="1">내일 ▶</button>
-          </div>
-          ${dailyLogState.admin ? `<div class="sp-tabs">
-            <button type="button" class="sp-tab${dailyLogState.tab === "mine" ? " is-active" : ""}" data-dl-tab="mine">내 일지</button>
-            <button type="button" class="sp-tab${dailyLogState.tab === "team" ? " is-active" : ""}" data-dl-tab="team">받은 보고</button>
-          </div>` : ""}
-          <button type="button" class="secondary-button" data-dl-export-open>Excel 내보내기</button>
-          ${refreshButton(dailyLogState, "dailyLog")}
-        </div>
-      </section>
-      ${status}
-      ${dailyLogState.admin && dailyLogState.tab === "team" ? dailyLogTeamBoard(D) : dailyLogMine(D, draft, summary, checked, stateLabel, stateKind)}`;
-  }
-
-  function dailyLogMine(D, draft, summary, checked, stateLabel, stateKind) {
-    const orders = myOpenOrders();
-    const orderOptions = (selected) => [`<option value=""${selected ? "" : " selected"}>지시 없음</option>`]
-      .concat(orders.map(item => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.title)}</option>`))
-      // 이미 지워졌거나 남에게 넘어간 지시를 가리키는 줄도 자리를 지킨다.
-      // 목록에서 빠지면 저장할 때 그 줄만 조용히 지시를 잃는다.
-      .concat(selected && !orders.some(item => item.id === selected)
-        ? [`<option value="${esc(selected)}" selected>${esc(selected)} (목록에 없음)</option>`] : [])
-      .join("");
-    const natureOptions = value => D.NATURES
-      .map(item => `<option value="${esc(item.key)}"${item.key === value ? " selected" : ""}>${esc(item.label)}</option>`).join("");
-
-    const rowsHtml = draft.entries.map((item, index) => `<tr>
-      <td><time class="dl-fixed-time" datetime="${attr(item.start)}" aria-label="시작 시간 ${attr(dailyLogTimeLabel(item.start))}">${esc(dailyLogTimeLabel(item.start))}</time></td>
-      <td><time class="dl-fixed-time" datetime="${attr(item.end)}" aria-label="종료 시간 ${attr(dailyLogTimeLabel(item.end))}">${esc(dailyLogTimeLabel(item.end))}</time></td>
-      <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="무엇을 했나" data-dl-field="title" data-dl-index="${index}"></td>
-      <td><select data-dl-field="nature" data-dl-index="${index}">${natureOptions(item.nature)}</select></td>
-      <td><select data-dl-field="orderId" data-dl-index="${index}">${orderOptions(item.orderId)}</select></td>
-      <td><div class="dl-progress"><input type="number" min="0" max="100" step="5" value="${item.progress}" aria-label="달성률" data-dl-field="progress" data-dl-index="${index}"><b aria-hidden="true">%</b></div></td>
-      <td><span class="office-muted">${D.toHours(D.entryMinutes(item))}h</span></td>
-      <td><button type="button" class="mini-button return" data-dl-remove="${index}">지우기</button></td>
-    </tr>`).join("");
-
-    const planRows = draft.plans.map((item, index) => `<tr>
-      <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="내일 할 일" data-dl-plan="title" data-dl-plan-index="${index}"></td>
-      <td><select data-dl-plan="nature" data-dl-plan-index="${index}">${natureOptions(item.nature)}</select></td>
-      <td><input type="number" min="0" max="40" step="0.5" value="${item.hours || ""}" placeholder="예상" data-dl-plan="hours" data-dl-plan-index="${index}"><b>h</b></td>
-      <td><input type="date" value="${esc(item.dueDate)}" data-dl-plan="dueDate" data-dl-plan-index="${index}"></td>
-      <td><button type="button" class="mini-button return" data-dl-plan-remove="${index}">지우기</button></td>
-    </tr>`).join("");
-
-    const natureBar = summary.byNature.map(item => `<span class="dl-nature is-${esc(item.key)}"><b>${esc(item.label)}</b> ${item.hours}h · ${item.percent}%</span>`).join("");
-    const notes = (checked.notes || []).map(note => `<li>${esc(note)}</li>`).join("");
-    const frozen = Boolean(draft.confirmedBy);
-
-    return `<div class="operations-kpis">
-        <div class="operations-kpi"><span>채운 시간</span><b>${summary.hours}시간</b><small>${summary.entries}줄${summary.overlapMinutes ? ` · 겹친 ${summary.overlapMinutes}분은 한 번만` : ""}</small></div>
-        <div class="operations-kpi" style="--wash:#EDF9F5"><span>달성률(시간 가중)</span><b>${summary.weightedProgress}%</b><small>단순 평균 ${summary.plainProgress}%</small></div>
-        <div class="operations-kpi" style="--wash:#FFF8E6"><span>지시 밖</span><b>${D.toHours(summary.looseMinutes)}시간</b><small>시킨 일 밖에서 쓴 시간</small></div>
-        <div class="operations-kpi" style="--wash:#EDF5FF"><span>상태</span><b><span class="office-status ${esc(stateKind)}"><i></i>${esc(stateLabel)}</span></b><small>${draft.confirmedBy ? "고칠 수 없습니다" : "보내기 전까지 고칠 수 있습니다"}</small></div>
-      </div>
-      <section class="office-panel dl-panel">
-        <header><div><span>TODAY</span><h3>시간대별로 적기</h3></div><small>왼쪽 시간은 변경할 수 없습니다</small></header>
-        <div class="panel-body">
-          ${natureBar ? `<div class="dl-natures">${natureBar}</div>` : ""}
-          <div class="office-table-wrap"><table class="office-table dl-table">
-            <thead><tr><th>시작</th><th>끝</th><th>무엇을</th><th>성격</th><th>어느 지시</th><th>달성률</th><th>시간</th><th></th></tr></thead>
-            <tbody>${rowsHtml || `<tr><td colspan="8" class="office-empty">아직 한 줄도 없습니다.</td></tr>`}</tbody>
-          </table></div>
-          ${frozen ? "" : `<div class="wo-editor-actions"><button type="button" class="mini-button" data-dl-add>줄 넣기</button></div>`}
-          ${notes ? `<ul class="dl-notes">${notes}</ul>` : ""}
-        </div>
-      </section>
-      <section class="office-panel dl-panel">
-        <header><div><span>TOMORROW</span><h3>내일 할 일</h3></div><small>여기 적은 것이 내일 아침의 시작입니다</small></header>
-        <div class="panel-body">
-          <div class="office-table-wrap"><table class="office-table">
-            <thead><tr><th>무엇을</th><th>성격</th><th>예상</th><th>언제까지</th><th></th></tr></thead>
-            <tbody>${planRows || `<tr><td colspan="5" class="office-empty">비어 있습니다.</td></tr>`}</tbody>
-          </table></div>
-          ${frozen ? "" : `<div class="wo-editor-actions"><button type="button" class="mini-button" data-dl-plan-add>줄 넣기</button></div>`}
-        </div>
-      </section>
-      <section class="office-panel dl-panel">
-        <header><div><span>WORDS</span><h3>숫자로 안 남는 것</h3></div><small>여기가 비면 대표는 무엇이 막혔는지 모릅니다</small></header>
-        <div class="panel-body dl-words">
-          <label class="wide"><span>못 한 일 · 특이사항</span><textarea rows="3" maxlength="2000" data-dl-word="blockers" placeholder="예: 당근 비즈프로필 권한이 아직 안 넘어왔습니다.">${esc(draft.blockers)}</textarea></label>
-          <label class="wide"><span>아이디어 · 알아 둘 것</span><textarea rows="3" maxlength="2000" data-dl-word="ideas">${esc(draft.ideas)}</textarea></label>
-          <label class="wide"><span>오늘 나에게 한 줄</span><textarea rows="3" maxlength="2000" data-dl-word="feedback" placeholder="잘한 것과 다음에 다르게 할 것">${esc(draft.feedback)}</textarea></label>
-          <label class="wide"><span>일정 조정 · 건의</span><textarea rows="3" maxlength="2000" data-dl-word="requests">${esc(draft.requests)}</textarea></label>
-        </div>
-      </section>
-      <section class="office-panel dl-panel">
-        <header>
-          <div><span>AI</span><h3>보고서 초안</h3></div>
-          <small>화면에 이미 뜬 숫자만 넘깁니다. AI 가 숫자를 새로 만들지 않습니다.</small>
-        </header>
-        <div class="panel-body">
-          ${draft.aiSummary
-            ? `<div class="dl-ai-draft">${esc(draft.aiSummary).replace(/\r?\n/gu, "<br>")}</div>
-               <p class="office-muted">${esc(String(draft.aiSummaryAt || "").slice(0, 16).replace("T", " "))} 에 만든 초안입니다. 사실이 틀렸으면 위의 줄을 고치고 다시 만들어 주세요.</p>`
-            : `<p class="office-muted">오늘 적은 것으로 보고서 문장을 만들어 봅니다. 만든 글은 저장을 눌러야 남습니다.</p>`}
-          ${frozen ? "" : `<div class="wo-editor-actions">
-            <button type="button" class="mini-button" data-dl-ai${dailyLogState.busy ? " disabled" : ""}>${draft.aiSummary ? "다시 만들기" : "초안 만들기"}</button>
-            <span class="office-muted">AI 가 쓴 글은 대표가 확인하기 전까지 평가에 쓰지 않습니다.</span>
-          </div>`}
-        </div>
-      </section>
-      ${frozen ? `<div class="info-box">대표가 확인한 일지입니다. 고치려면 대표에게 말해 주세요.</div>` : `<div class="wo-editor-actions dl-actions">
-        <button type="button" class="mini-button" data-dl-save${dailyLogState.busy ? " disabled" : ""}>임시 저장</button>
-        <button type="button" class="primary-button" data-dl-submit${dailyLogState.busy ? " disabled" : ""}>${draft.submittedAt ? "다시 보내기" : "보내기"}</button>
-        <span class="office-muted">보내면 CRM에 제출한 뒤 회사 봇이 Excel 업무보고서를 브링엔지니어링 업무방에 올립니다.</span>
-      </div>`}`;
-  }
-
-  // 대표가 보는 판. 오늘 누가 냈고 누가 안 냈는지가 첫 줄이다.
-  function dailyLogTeamBoard(D) {
-    const date = dailyLogDate();
-    const today = dailyLogState.logs.filter(item => item.date === date);
-    const people = (workOrderState.members || []).filter(item => item && item.uid);
-    const rowsHtml = people.map(person => {
-      const log = today.find(item => item.uid === person.uid);
-      const name = person.displayName || person.email || person.uid;
-      if (!log) {
-        return `<tr><td><b>${esc(name)}</b></td><td colspan="5"><span class="office-status missing"><i></i>아직 안 썼습니다</span></td></tr>`;
-      }
-      const summary = D.summarize(log);
-      const nature = summary.byNature.map(item => `${esc(item.label)} ${item.percent}%`).join(" · ");
-      return `<tr>
-        <td><b>${esc(name)}</b><small>${esc(nature)}</small></td>
-        <td><b>${summary.hours}시간</b><small>${summary.entries}줄</small></td>
-        <td><b>${summary.weightedProgress}%</b><small>단순 ${summary.plainProgress}%</small></td>
-        <td>${summary.looseMinutes ? `<span class="office-status warn"><i></i>${D.toHours(summary.looseMinutes)}h</span>` : `<span class="office-muted">—</span>`}</td>
-        <td>${log.submittedAt ? `<span class="office-status complete"><i></i>보냄</span>` : `<span class="office-status warn"><i></i>쓰는 중</span>`}</td>
-        <td>${log.confirmedBy
-          ? `<span class="office-muted">확인함</span>`
-          : (log.submittedAt ? `<button type="button" class="mini-button" data-dl-confirm="${esc(log.uid)}" data-dl-confirm-date="${esc(log.date)}"${dailyLogState.busy ? " disabled" : ""}>확인</button>` : `<span class="office-muted">—</span>`)}</td>
-      </tr>`;
-    }).join("");
-
-    const drafts = today.filter(item => item.aiSummary).map(item => {
-      const person = people.find(row => row.uid === item.uid);
-      const name = person ? (person.displayName || person.email || person.uid) : item.uid;
-      return `<div class="dl-word-card">
-        <b>${esc(name)}</b>
-        <div class="dl-ai-draft">${esc(item.aiSummary).replace(/\r?\n/gu, "<br>")}</div>
-        <p class="office-muted">AI 가 쓴 초안입니다. ${item.confirmedBy ? "확인하셨습니다." : "확인 전까지는 평가 근거로 쓰지 않습니다."}</p>
-      </div>`;
-    }).join("");
-
-    const words = today.filter(item => item.blockers || item.requests).map(item => {
-      const person = people.find(row => row.uid === item.uid);
-      const name = person ? (person.displayName || person.email || person.uid) : item.uid;
-      return `<div class="dl-word-card">
-        <b>${esc(name)}</b>
-        ${item.blockers ? `<p><em>막힌 것</em> ${esc(item.blockers)}</p>` : ""}
-        ${item.requests ? `<p><em>건의</em> ${esc(item.requests)}</p>` : ""}
-      </div>`;
-    }).join("");
-
-    return `<section class="office-panel">
-        <header><div><span>REPORTS</span><h3>${esc(date)} 받은 보고</h3></div><small>안 쓴 사람을 먼저 보여 줍니다</small></header>
-        <div class="office-table-wrap"><table class="office-table">
-          <thead><tr><th>사람</th><th>채운 시간</th><th>달성률</th><th>지시 밖</th><th>상태</th><th></th></tr></thead>
-          <tbody>${rowsHtml || `<tr><td colspan="6" class="office-empty">사내 계정이 없습니다.</td></tr>`}</tbody>
-        </table></div>
-      </section>
-      ${words ? `<section class="office-panel">
-        <header><div><span>WORDS</span><h3>숫자로 안 남는 것</h3></div><small>여기가 대개 더 중요합니다</small></header>
-        <div class="panel-body dl-word-list">${words}</div>
-      </section>` : ""}
-      ${drafts ? `<section class="office-panel">
-        <header><div><span>AI</span><h3>보고서 초안</h3></div><small>사람이 적은 것으로 만든 글입니다</small></header>
-        <div class="panel-body dl-word-list">${drafts}</div>
-      </section>` : ""}`;
-  }
-
-  // 화면에 적힌 것을 한 번에 읽는다. 글자마다 상태로 옮기면 커서가 튄다.
-  function readDailyLogDraft(D) {
-    const base = dailyLogDraft(D);
-    const panel = document.getElementById("main");
-    if (!panel || !panel.querySelector("[data-dl-add], [data-dl-save]")) return base;
-    const collect = (selector, indexKey, fieldKey, seed) =>
-      [...panel.querySelectorAll(selector)].reduce((acc, node) => {
-        const index = Number(node.dataset[indexKey]);
-        const field = node.dataset[fieldKey];
-        if (!Number.isFinite(index) || !field) return acc;
-        const row = acc[index] || Object.assign({}, seed[index] || {});
-        row.id = row.id || `dl_${index}_${Date.now().toString(36)}`;
-        row[field] = String(node.value || "");
-        acc[index] = row;
-        return acc;
-      }, []).filter(Boolean);
-
-    const words = {};
-    [...panel.querySelectorAll("[data-dl-word]")].forEach(node => {
-      words[node.dataset.dlWord] = String(node.value || "");
-    });
-
-    return D.normalizeDay(Object.assign({}, base, words, {
-      entries: collect("[data-dl-index]", "dlIndex", "dlField", base.entries),
-      plans: collect("[data-dl-plan-index]", "dlPlanIndex", "dlPlan", base.plans),
-    }));
-  }
-
-  // 화면을 다시 그리기 전에 친 것을 챙긴다. 안 챙기면 날짜를 옮겼다가
-  // 돌아왔을 때 적은 것이 사라지고, 그런 일이 한 번 있으면 다음부터 안 쓴다.
-  function stashDailyLogDraft(D) {
-    const draft = readDailyLogDraft(D);
-    // 아무것도 안 적은 하루는 챙기지 않는다. 빈 초안을 붙들고 있으면 다른
-    // 날로 옮겨도 그 빈 하루가 따라다닌다.
-    dailyLogState.draft = (draft.entries.length || draft.plans.length
-      || draft.blockers || draft.ideas || draft.feedback || draft.requests) ? draft : null;
-  }
-
-  async function confirmDailyLog(uid, date) {
-    if (dailyLogState.busy) return;
-    dailyLogState.busy = true;
-    renderDailyLog();
-    try {
-      await api.confirmDailyLog({ uid, date });
-      dailyLogState.loaded = false;
-      showToast("확인했습니다.", "success");
-      await loadDailyLogs(true);
-    } catch (error) {
-      showToast(error && error.message || "확인하지 못했습니다.", "error");
-    } finally {
-      dailyLogState.busy = false;
-      renderDailyLog();
-    }
-  }
-
-  // AI 보고서 초안. 넘기는 것은 **화면에 이미 뜬 숫자뿐**이다. AI 가 다시
-  // 세기 시작하면 보고서와 화면이 다른 말을 하고, 그러면 둘 다 못 믿는다.
-  //
-  // 만든 글을 바로 서버에 쓰지 않는다. 사람이 읽고 [저장] 이나 [보냄] 을
-  // 눌러야 남는다 — 안 그러면 아무도 안 읽은 글이 대표에게 올라간다.
-  async function draftDailyReport() {
-    const D = dailyLogCore();
-    const W = workOrderCore();
-    if (!D || dailyLogState.busy) return;
-    const draft = readDailyLogDraft(D);
-    const checked = D.validateDay(draft);
-    if (!checked.ok) { showToast(checked.error, "error"); dailyLogState.draft = draft; renderDailyLog(); return; }
-    // 지시 번호 대신 지시 이름을 넘긴다. 번호만 주면 AI 가 어느 일인지 모르고
-    // 지어낸다.
-    const orderTitles = {};
-    (workOrderState.orders || []).forEach(item => {
-      if (item && item.id) orderTitles[item.id] = W ? W.normalizeOrder(item).title : String(item.title || "");
-    });
-    const content = D.factsText(D.reportFacts(checked.day, { orderTitles }));
-    dailyLogState.busy = true;
-    dailyLogState.draft = draft;
-    renderDailyLog();
-    try {
-      const answer = await api.assist({ task: "daily_report", content });
-      const text = answer && answer.result && typeof answer.result.text === "string" ? answer.result.text.trim() : "";
-      if (!text) throw new Error("초안을 받지 못했습니다.");
-      dailyLogState.draft = D.normalizeDay(Object.assign({}, draft, {
-        aiSummary: text,
-        aiSummaryAt: new Date().toISOString(),
-      }));
-      showToast("초안을 만들었습니다. 읽어 보고 저장해 주세요.", "success");
-    } catch (error) {
-      const said = String(error && error.message || "");
-      // 이 갈래는 AI 서버에도 올라가 있어야 한다. 앱만 새로 받고 서버를 안
-      // 올렸으면 "지원하지 않는 작업" 이라고만 나오는데, 그 말로는 무엇을
-      // 해야 하는지 알 수 없다.
-      showToast(
-        /지원하지 않는 AI 작업/u.test(said)
-          ? "AI 서버에 일일보고서 갈래가 아직 안 올라갔습니다. crm-ai-worker 를 배포한 뒤 다시 눌러 주세요."
-          : (said || "초안을 만들지 못했습니다."),
-        "error",
-      );
-    } finally {
-      dailyLogState.busy = false;
-      renderDailyLog();
-    }
-  }
-
-  function applyDailyLogWorkOrderRollups(rollups) {
-    const W = workOrderCore();
-    if (!W || !Array.isArray(rollups) || !rollups.length) return;
-    const changed = new Map(rollups
-      .filter(item => item && item.orderId)
-      .map(item => [String(item.orderId), item]));
-    if (!changed.size) return;
-    workOrderState.orders = (workOrderState.orders || []).map(value => {
-      const order = W.normalizeOrder(value);
-      const update = changed.get(order.id);
-      if (!update) return value;
-      return W.normalizeOrder(Object.assign({}, order, {
-        progress: update.progress,
-        status: update.status || order.status,
-        updatedAt: update.updatedAt || order.updatedAt,
-        updatedBy: update.updatedBy || order.updatedBy,
-      }));
-    });
-  }
-
-  async function saveDailyLogDraft(submit) {
-    const D = dailyLogCore();
-    if (!D || dailyLogState.busy) return;
-    const draft = readDailyLogDraft(D);
-    const checked = D.validateDay(draft);
-    if (!checked.ok) { showToast(checked.error, "error"); dailyLogState.draft = draft; renderDailyLog(); return; }
-    if (submit) {
-      const confirmed = await requestConfirmation({
-        title: "회사 텔레그램 업무방으로 보냅니다",
-        description: "CRM에 제출한 뒤 회사 봇이 Excel 업무보고서를 브링엔지니어링 업무방에 올립니다. 방에 있는 사람 모두가 보게 됩니다.",
-        target: `${checked.day.name || dailyLogState.name || "작성자"} · ${checked.day.date}`,
-        message: checked.day.aiSummary || `오늘 한 일 ${checked.day.entries.length}줄 · AI 보고서 초안 없이 제출`,
-        warning: "텔레그램에 올라간 메시지는 CRM에서 회수할 수 없습니다.",
-        confirmLabel: draft.submittedAt ? "다시 보내기" : "보내기",
-      });
-      if (!confirmed) return;
-    }
-    dailyLogState.busy = true;
-    renderDailyLog();
-    try {
-      const saved = await api.saveDailyLog(Object.assign({}, checked.day, { submit: submit === true }));
-      let telegram = null;
-      let telegramError = null;
-      if (submit) {
-        try {
-          const me = (workOrderState.members || []).find(item => item && item.uid === dailyLogState.uid) || {};
-          telegram = await api.sendTelegramDailyLog({
-            report: saved && saved.log,
-            profile: { department: me.department || "", title: me.title || "" },
-          });
-        } catch (error) {
-          telegramError = error;
-        }
-      }
-      dailyLogState.draft = null;
-      dailyLogState.loaded = false;
-      const rolled = Array.isArray(saved && saved.rolled) ? saved.rolled : [];
-      const failed = Array.isArray(saved && saved.failed) ? saved.failed : [];
-      // 업무지시 목록과 프로젝트 로드맵은 같은 workOrderState 를 그린다.
-      // 보고서에서 올라온 값을 여기에 바로 합쳐야 다음 화면을 여는 순간부터
-      // 목록·로드맵 막대·상세 진행률이 모두 같은 숫자를 보여 준다.
-      applyDailyLogWorkOrderRollups(rolled);
-      if (submit) {
-        // 무엇이 올라갔는지 말한다. "보냈습니다" 만 띄우면 지시가 안 움직여도
-        // 아무도 모른다.
-        const moved = rolled.length ? ` 지시 ${rolled.length}건의 진행률을 올렸습니다.` : "";
-        if (telegramError) {
-          showToast(`CRM에는 제출했지만 텔레그램 업무방 Excel 전송에 실패했습니다. ${telegramError.message || "잠시 후 다시 보내 주세요."}${moved}${failed.length ? ` 못 올린 지시 ${failed.length}건이 있습니다.` : ""}`, "error");
-        } else if (failed.length) {
-          showToast(`CRM 제출과 텔레그램 Excel 전송을 마쳤습니다.${moved} 못 올린 지시 ${failed.length}건이 있습니다.`, "error");
-        } else if (telegram && telegram.duplicate) {
-          showToast(`같은 내용이 이미 업무방에 있어 중복 전송하지 않았습니다.${moved}`, "success");
-        } else {
-          showToast(`CRM 제출과 텔레그램 업무방 Excel 전송을 마쳤습니다.${moved}`, "success");
-        }
-      } else {
-        showToast("저장했습니다. 아직 대표에게 가지 않았습니다.", "success");
-      }
-      await loadDailyLogs(true);
-      workOrderState.loaded = false;
-    } catch (error) {
-      // 실패해도 친 것을 날리지 않는다. 다시 치게 하면 다음부터 안 쓴다.
-      dailyLogState.draft = draft;
-      showToast(error && error.message || "저장하지 못했습니다.", "error");
-    } finally {
-      dailyLogState.busy = false;
-      renderDailyLog();
-    }
-  }
-
-  // 앱을 켤 때 한 번만 읽으면, 대표가 지시를 보내도 켜 둔 앱에는 영영 안 뜬다.
-  // 화면에 들어올 때마다 다시 읽되, 오갈 때마다 서버를 때리지는 않는다.
+  // 켜 둔 앱에도 새 프로젝트와 지시가 보이도록 화면 진입 때만 새로 읽는다.
+  // 입력 중에는 다시 그리지 않아 아직 저장하지 않은 내용을 보존한다.
   const LIVE_STALE_MS = 60 * 1000;
   function isStale(state) {
     if (state.loading) return false;
@@ -4958,36 +4337,14 @@
     const minutes = Math.round(seconds / 60);
     return minutes < 60 ? `${minutes}분 전` : `${Math.round(minutes / 60)}시간 전`;
   }
-  // 사람이 무언가 치는 중이면 다시 읽지 않는다.
-  //
-  // 다시 읽으면 그 화면을 다시 그리는데, 다시 그리면 아직 상태로 안 옮긴
-  // 것 — 붙여 넣은 뭉치, 고치던 지시 — 이 화면에서 사라진다. 사라진 사람은
-  // 다시 붙여 넣지 않고 그냥 이 화면을 안 쓰게 된다.
   function workOrderTyping() {
     return Boolean(workOrderState.editing || workOrderState.projectEditing
       || workOrderState.importOpen || workOrderState.importPlan || workOrderState.importSplit);
   }
-
-  // 다시 읽는 것은 **화면에 들어올 때 한 번**이다.
-  //
-  // 그리는 함수 안에서 부르면 길이 스스로를 문다 — 다시 읽고, 다 읽으면
-  // 다시 그리고, 그리면서 또 읽을지 따진다. 어느 순서로 끝나는지는 그날
-  // 기계가 얼마나 바쁜지에 달리고, 그 사이에 사람이 친 것이 남는지도 같이
-  // 달린다. 실제로 CI 에서 「오늘」 화면에 사람이 안 친 줄이 아홉 개 떴다.
-  //
-  // 들어올 때 한 번이면 그런 것이 없다. 화면에 머무는 동안 새로 온 것은
-  // [새로고침] 이 있다.
   function refreshOnEnter(view) {
-    if (view === "projectRoadmap") {
-      if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
-    }
-    if (view === "workOrders" || view === "dailyLog") {
-      if (isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
-    }
-    // 치던 것이 있으면 건드리지 않는다.
-    if (view === "dailyLog" && isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
+    if (["projectRoadmap", "workOrders"].includes(view)
+      && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
   }
-
   function refreshButton(state, action) {
     const when = freshLabel(state);
     return `<button type="button" class="mini-button" data-live-refresh="${action}"${state.loading ? " disabled" : ""}>새로고침${when ? ` <small>· ${esc(when)}</small>` : ""}</button>`;
@@ -5042,9 +4399,6 @@
       updateWorkOrderBadge();
       if (currentView === "workOrders") renderWorkOrders();
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
-      // 「오늘」 은 줄마다 지시를 고른다. 지시가 새로 왔는데 그 화면을 다시
-      // 그리지 않으면, 방금 받은 지시가 고를 목록에 없다.
-      else if (currentView === "dailyLog" && !dailyLogState.loading) renderDailyLog();
     }
   }
 
@@ -5740,7 +5094,7 @@
     return `<div class="wd-detail">
       ${head ? `<dl class="di-head">${head}</dl>` : `<p class="office-muted">왜 하는지가 아직 안 적혀 있습니다.</p>`}
       <div class="wd-tasks">${list || `<p class="office-empty">이 주에 걸친 지시가 없습니다.</p>`}</div>
-      <p class="office-muted">진행은 「일일업무보고서」에서 적습니다. 여기 진행률은 거기서 올라온 값입니다.</p>
+      <p class="office-muted">진행률은 업무지시 상세에서 기록하며 이 화면에도 함께 반영됩니다.</p>
     </div>`;
   }
 
@@ -9121,25 +8475,6 @@
       }).join("")}</div>` : empty("조건에 맞는 업체 상담 기록이 없습니다", "업종을 선택하거나 업체와 나눈 상담 내용을 입력해 보세요.", `<button class="primary-button" data-action="new-partner-quote">＋ 첫 업체 상담 기록</button>`)}`;
   }
 
-  function renderTasks() {
-    const today = todayKey();
-    const tasks = [...store.tasks].filter(task => {
-      if (taskStatusFilter === "내 할 일") return isMyTask(task) && task.status !== "완료" && task.status !== "취소";
-      if (taskStatusFilter === "전체") return true;
-      if (taskStatusFilter === "완료") return task.status === "완료";
-      return task.status !== "완료" && task.status !== "취소";
-    })
-      .sort((a, b) => (a.status === "완료") - (b.status === "완료") || String(a.dueAt).localeCompare(String(b.dueAt)));
-    main.innerHTML = `<section class="task-workspace"><div class="toolbar task-toolbar"><div class="filter-group">${["내 할 일", "전체", "열린 업무", "완료"].map(filter => `<button class="filter-chip ${taskStatusFilter === filter ? "active" : ""}" data-task-filter="${filter}">${filter}</button>`).join("")}</div><button class="secondary-button" data-action="new-task">＋ 할 일 추가</button></div>
-      ${tasks.length ? `<div class="task-list">${tasks.map(task => {
-        const customer = customerById(task.customerId);
-        const due = dueKey(task.dueAt);
-        const overdue = task.status !== "완료" && !!due && due < today;
-        const dueState = !due ? "일정 미정" : overdue ? "기한 지남" : task.status === "완료" ? "완료됨" : due === today ? "오늘까지" : "예정";
-        return `<div class="task-row ${task.status === "완료" ? "done" : ""} ${overdue ? "overdue" : ""}"><button class="task-check" data-task-toggle="${attr(task.id)}" title="${task.status === "완료" ? "완료 취소" : "완료 처리"}" aria-label="${task.status === "완료" ? "완료 취소" : "완료 처리"}">${task.status === "완료" ? "✓" : ""}</button><div class="task-title"><strong>${esc(task.title)}</strong><span>${esc(task.category || "업무")} · ${esc(task.note || "메모 없음")}</span></div><div class="task-meta task-customer"><span class="task-meta-label">연결 고객</span><button type="button" class="task-customer-button" data-customer-open="${attr(task.customerId)}">${esc(customer && customer.name || "공통 업무")}</button></div><div class="task-meta task-due"><span class="task-meta-label">기한</span><time datetime="${attr(due)}"><b>${esc(due ? shortDate(task.dueAt) : "미정")}</b><small>${esc(dueState)}</small></time></div><div class="task-meta task-owner"><span class="task-meta-label">담당자</span><strong>${esc(task.owner || "미입력")}</strong></div><div class="task-meta task-priority"><span class="task-meta-label">우선순위</span>${priorityClass(task.priority)}</div><button type="button" class="record-delete-button task-delete-button" data-task-delete="${attr(task.id)}">삭제</button></div>`;
-      }).join("")}</div>` : empty("할 일이 없습니다", "고객별 후속조치를 등록하면 오늘 할 일에서 관리할 수 있습니다.", `<button class="primary-button" data-action="new-task">＋ 할 일 추가</button>`)}</section>`;
-  }
-
   // 건물 문서함. 회사 Drive 에 있는 서류를 건물에 붙여 두고, 무엇이 비었는지 본다.
   //
   // 파일을 올리지는 않는다. 회사 Drive 권한이 읽기 전용이라 CRM 이 Drive 에
@@ -9621,7 +8956,7 @@
           <p>레벨은 등급이 아니라 <b>다음에 무엇을 배울지의 이름</b>입니다. 점수를 매기지 않습니다.</p>
         </div>
       </section>
-      ${growthState.error ? `<div class="okr-error" role="alert">${esc(growthState.error)}</div>` : ""}
+      ${growthState.error ? `<div class="info-box" role="alert">${esc(growthState.error)}</div>` : ""}
       <div class="sp-tabs">${tabs.map(([key, label]) => `<button type="button" class="sp-tab${key === tab ? " is-active" : ""}" data-growth-tab="${esc(key)}"><b>${esc(label)}</b></button>`).join("")}</div>
       ${tab === "me" ? growthMine(G) : tab === "team" ? growthTeam(G) : growthLadder(G)}
     `;
@@ -9698,11 +9033,10 @@
     const draft = G.normalizeReview(growthState.reviewDraft);
     const members = workOrderState.members || [];
     const who = members.find(member => member.uid === draft.uid);
-    const O = okrCore();
     return `<form class="wo-editor gr-editor" data-growth-review-form>
       <h3>${esc(who ? who.displayName : "")} · 분기 평가</h3>
-      <p class="wo-editor-note">OKR 점수를 그대로 사람 점수로 바꾸지 않습니다. 그러면 다음 분기에 쉬운 목표만 세우게 됩니다.</p>
-      <label><span>분기</span><input type="text" name="quarter" value="${esc(draft.quarter || (O ? O.quarterOf(todayKey()) : ""))}" pattern="\\d{4}-Q[1-4]" required></label>
+      <p class="wo-editor-note">목표 점수를 그대로 사람 점수로 바꾸지 않습니다. 그러면 다음 분기에 쉬운 목표만 세우게 됩니다.</p>
+      <label><span>분기</span><input type="text" name="quarter" value="${esc(draft.quarter || quarterOfDate(todayKey()))}" pattern="\\d{4}-Q[1-4]" required></label>
       <label><span>레벨</span><select name="level">${G.LEVELS.map(level => `<option value="${esc(level.key)}"${level.key === draft.level ? " selected" : ""}>${esc(level.key)} ${esc(level.label)}</option>`).join("")}</select></label>
       <div class="wide gr-skill-grid">${G.SKILLS.map(skill => `<label class="field"><span>${esc(skill.label)} <small>${esc(skill.detail)}</small></span><select name="skill_${esc(skill.key)}"><option value="">—</option>${G.LEVELS.map(level => `<option value="${esc(level.key)}"${level.key === draft.skills[skill.key] ? " selected" : ""}>${esc(level.key)}</option>`).join("")}</select></label>`).join("")}</div>
       <label class="wide"><span>이번 분기에 한 일</span><textarea name="did" rows="3" maxlength="3000">${esc(draft.did)}</textarea></label>
@@ -9792,289 +9126,6 @@
     } finally {
       growthState.busy = false;
       renderGrowth();
-    }
-  }
-
-  // --- 분기 목표 (OKR · RACI) ---
-  //
-  // 대표가 바란 것은 도구가 아니라 경험이다. "팀원들에게 대기업 인사구조
-  // 업무 체계 프로젝트 체계를 경험해주고 싶은거야."
-  //
-  // 그래서 이 화면이 답하는 질문은 두 개다.
-  //
-  //   1. 이번 분기에 무엇을 이루려 하고, 지금 어디까지 왔나
-  //   2. 지금 우리가 하는 일 중에 무엇이 그 목표와 상관없나
-  //
-  // 두 번째가 더 중요하다. 첫 번째만 보여 주는 도구는 많고, 그런 도구는
-  // 목표판을 예쁘게 채워 두고 실제 일은 따로 하는 회사를 만든다.
-  let okrState = {
-    objectives: [], admin: false, canWork: false, uid: "",
-    loaded: false, loading: false, error: "",
-    quarter: "", editing: null, busyId: "",
-  };
-
-  const okrCore = () => window.BringOkrCore;
-
-  async function loadObjectives() {
-    if (okrState.loading) return;
-    okrState.loading = true;
-    okrState.error = "";
-    if (currentView === "objectives") renderObjectives();
-    try {
-      const data = await api.loadObjectives();
-      okrState.objectives = Array.isArray(data && data.objectives) ? data.objectives : [];
-      okrState.admin = data && data.admin === true;
-      okrState.canWork = data && data.canWork === true;
-      okrState.uid = String((data && data.uid) || "");
-      okrState.loaded = true;
-    } catch (error) {
-      okrState.error = error && error.message || "분기 목표를 불러오지 못했습니다.";
-    } finally {
-      okrState.loading = false;
-      updateObjectiveBadge();
-      if (currentView === "objectives") renderObjectives();
-    }
-  }
-
-  // 사이드바 숫자는 "손봐야 할 목표" 다. 목표 수를 세면 늘 같은 숫자라
-  // 아무도 안 본다.
-  function updateObjectiveBadge() {
-    const badge = document.getElementById("navObjectiveCount");
-    if (!badge) return;
-    const O = okrCore();
-    if (!O) { badge.hidden = true; return; }
-    const view = O.quarterView({
-      quarter: okrState.quarter || O.quarterOf(todayKey()),
-      objectives: okrState.objectives, projects: [], orders: [],
-    });
-    const count = view.cards.filter(card => card.objective.status === "active" && card.grade.tone === "poor").length;
-    badge.textContent = String(count);
-    badge.hidden = count === 0;
-  }
-
-  function okrQuarterChoices(O) {
-    const now = O.quarterOf(todayKey());
-    const seen = new Set(okrState.objectives.map(item => item.quarter).filter(Boolean));
-    seen.add(now);
-    return [...seen].sort().reverse();
-  }
-
-  function renderObjectives() {
-    const O = okrCore();
-    if (!O) { main.innerHTML = `<section class="operations-hero"><div><h2>분기 목표</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (!okrState.loaded && !okrState.loading && !okrState.error) void loadObjectives();
-    if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
-
-    const quarter = okrState.quarter || O.quarterOf(todayKey());
-    const view = O.quarterView({
-      quarter,
-      objectives: okrState.objectives,
-      projects: workOrderState.projects || [],
-      orders: workOrderState.orders || [],
-    });
-    const choices = okrQuarterChoices(O);
-
-    main.innerHTML = `
-      <section class="operations-hero">
-        <div>
-          <span>${esc(quarter)} · ${esc(view.range.from)} ~ ${esc(view.range.to)}</span>
-          <h2>이번 분기에 무엇을 이루려 하는가</h2>
-          <p>목표(Objective)는 말로 적고, 핵심결과(KR)는 숫자로 잽니다. 진척도는 사람이 적지 않고 지금 값에서 셉니다.</p>
-        </div>
-        <div class="okr-hero-actions">
-          <select data-okr-quarter>${choices.map(item => `<option value="${esc(item)}"${item === quarter ? " selected" : ""}>${esc(item)}</option>`).join("")}</select>
-          ${okrState.admin ? `<button type="button" class="primary-button" data-okr-new>새 목표</button>` : ""}
-        </div>
-      </section>
-      ${okrState.error ? `<div class="okr-error" role="alert">${esc(okrState.error)}</div>` : ""}
-      <div class="operations-kpis">
-        <div class="operations-kpi"><span>진행 중인 목표</span><b>${view.activeCount}개</b><small>전체 ${view.objectiveCount}개</small></div>
-        <div class="operations-kpi" style="--wash:#eef5ff"><span>분기 진척도</span><b>${Math.round(view.average * 100)}%</b><small>${esc(view.grade.label)}</small></div>
-        <div class="operations-kpi${view.looseProjects.length ? " " : ""}" style="--wash:#fff9eb"><span>목표에 안 붙은 프로젝트</span><b>${view.looseProjects.length}개</b><small>${view.looseProjects.length ? "왜 하는지 적어야 합니다" : "다 이어져 있습니다"}</small></div>
-        <div class="operations-kpi" style="--wash:#fff2f3"><span>프로젝트에 안 붙은 업무</span><b>${view.looseOrders.length}건</b><small>${view.looseOrders.length ? "어디에 닿는지 모릅니다" : "다 이어져 있습니다"}</small></div>
-      </div>
-      ${okrState.editing ? objectiveEditor(O) : ""}
-      ${view.cards.length ? view.cards.map(card => objectiveCard(O, card)).join("") : `<div class="office-empty">${esc(quarter)} 에 세운 목표가 없습니다.${okrState.admin ? " 새 목표를 눌러 시작하세요." : ""}</div>`}
-      ${okrLooseBoard(view)}
-      ${okrRaciBoard(O)}
-    `;
-  }
-
-  function objectiveCard(O, card) {
-    const objective = card.objective;
-    const bars = card.keyResults.map(entry => {
-      const kr = entry.keyResult;
-      const percent = Math.min(120, Math.round(entry.score * 100));
-      return `<li class="okr-kr">
-        <div class="okr-kr-head">
-          <b>${esc(kr.title)}</b>
-          <span>${esc(O.formatValue(kr.current, kr.unit))} / ${esc(O.formatValue(kr.target, kr.unit))}</span>
-        </div>
-        <div class="okr-bar"><i style="width:${percent}%" class="${entry.score >= 1 ? "is-over" : entry.score >= 0.7 ? "is-good" : entry.score >= 0.4 ? "is-fair" : "is-poor"}"></i></div>
-        <div class="okr-kr-foot">
-          <small>${esc(kr.ownerName || "담당 없음")}</small>
-          ${okrState.canWork ? `<button type="button" class="text-button" data-okr-kr-edit="${esc(kr.id)}" data-okr-objective="${esc(objective.id)}">값 올리기</button>` : ""}
-        </div>
-      </li>`;
-    }).join("");
-    return `<section class="office-panel okr-card">
-      <header>
-        <span class="eyebrow">${esc(O.RACI_ROLES ? "" : "")}${esc(objective.status === "active" ? "진행" : objective.status === "draft" ? "초안" : "마감")} · ${esc(objective.ownerName || "담당 없음")}</span>
-        <h3>${esc(objective.title)}</h3>
-        <div class="okr-score okr-tone-${esc(card.grade.tone)}"><b>${Math.round(card.score * 100)}%</b><small>${esc(card.grade.label)}</small></div>
-      </header>
-      <div class="panel-body">
-        ${objective.why ? `<p class="okr-why">${esc(objective.why)}</p>` : ""}
-        <ul class="okr-krs">${bars}</ul>
-        <div class="okr-links">
-          <span>프로젝트 ${card.projects.length}개</span>
-          <span>업무 ${card.orderCount}건${card.openCount ? ` · 진행 ${card.openCount}건` : ""}</span>
-          ${card.projects.map(project => `<em>${esc(project.name)}</em>`).join("")}
-        </div>
-        ${okrState.admin ? `<div class="okr-card-actions"><button type="button" class="mini-button" data-okr-edit="${esc(objective.id)}">고치기</button></div>` : ""}
-      </div>
-    </section>`;
-  }
-
-  // 목표에 안 붙은 것들. 이 판이 이 화면의 요지다.
-  function okrLooseBoard(view) {
-    if (!view.looseProjects.length && !view.looseOrders.length) return "";
-    return `<section class="office-panel okr-loose">
-      <header>
-        <span class="eyebrow">이어지지 않은 일</span>
-        <h3>이 일들은 어느 목표에 닿는지 적혀 있지 않습니다</h3>
-      </header>
-      <div class="panel-body">
-        <p class="office-muted">목표판만 예쁘게 채워 두고 실제 일은 따로 하는 회사가 되지 않으려면, 이 칸이 비어 있어야 합니다.</p>
-        ${view.looseProjects.length ? `<div class="okr-loose-group"><b>목표에 안 붙은 프로젝트</b><ul>${view.looseProjects.map(item => `<li>${esc(item.name || item.id)}</li>`).join("")}</ul></div>` : ""}
-        ${view.looseOrders.length ? `<div class="okr-loose-group"><b>프로젝트에 안 붙은 업무</b><ul>${view.looseOrders.slice(0, 12).map(item => `<li>${esc(item.title || item.id)}</li>`).join("")}${view.looseOrders.length > 12 ? `<li class="office-muted">… ${view.looseOrders.length - 12}건 더</li>` : ""}</ul></div>` : ""}
-      </div>
-    </section>`;
-  }
-
-  // 누가 무엇을 쥐고 있는가. 책임이 한 사람에게 몰려 있으면 그 사람이
-  // 병목이고, 그건 팀원에게 책임을 나눠 주지 못했다는 뜻이다.
-  function okrRaciBoard(O) {
-    const orders = workOrderState.orders || [];
-    const members = workOrderState.members || [];
-    if (!members.length) return "";
-    const load = O.raciLoad(orders, members);
-    const anyRaci = load.some(row => row.R || row.A || row.C || row.I);
-    return `<section class="office-panel okr-raci">
-      <header>
-        <span class="eyebrow">RACI · 역할 배정</span>
-        <h3>누가 하고, 누가 책임지는가</h3>
-      </header>
-      <div class="panel-body">
-        <ul class="okr-raci-legend">${O.RACI_ROLES.map(role => `<li><b>${esc(role.key)}</b> ${esc(role.label)} — ${esc(role.meaning)}</li>`).join("")}</ul>
-        ${anyRaci ? `<div class="office-table-wrap"><table class="office-table">
-          <thead><tr><th>사람</th><th>실무 R</th><th>책임 A</th><th>자문 C</th><th>공유 I</th></tr></thead>
-          <tbody>${load.map(row => `<tr><td class="office-user-cell">${esc(row.name)}</td><td>${row.R}</td><td class="${row.A >= 5 ? "okr-heavy" : ""}">${row.A}</td><td>${row.C}</td><td>${row.I}</td></tr>`).join("")}</tbody>
-        </table></div>` : `<p class="office-empty">아직 역할을 배정한 업무가 없습니다. 업무지시에서 실무자(R)와 책임자(A)를 정해 주세요.</p>`}
-      </div>
-    </section>`;
-  }
-
-  function objectiveEditor(O) {
-    const draft = O.normalizeObjective(okrState.editing);
-    const members = workOrderState.members || [];
-    const projects = workOrderState.projects || [];
-    const krRows = draft.keyResults.map((kr, index) => `<div class="okr-kr-row" data-okr-kr-row="${index}">
-      <input type="text" name="krTitle_${index}" maxlength="200" value="${esc(kr.title)}" placeholder="무엇을 얼마나 (예: 계단청소 계약 건수)" required>
-      <select name="krUnit_${index}">${O.UNITS.map(unit => `<option value="${esc(unit.key)}"${unit.key === kr.unit ? " selected" : ""}>${esc(unit.label)}</option>`).join("")}</select>
-      <input type="number" name="krBaseline_${index}" step="any" value="${kr.baseline}" placeholder="지금" title="지금 값">
-      <input type="number" name="krTarget_${index}" step="any" value="${kr.target}" placeholder="목표" title="목표 값" required>
-      <select name="krOwner_${index}"><option value="">담당 없음</option>${members.map(member => `<option value="${esc(member.uid)}"${member.uid === kr.ownerUid ? " selected" : ""}>${esc(member.displayName)}</option>`).join("")}</select>
-      <button type="button" class="text-button" data-okr-kr-drop="${index}">빼기</button>
-    </div>`).join("");
-    return `<form class="wo-editor okr-editor" data-okr-form>
-      <h3>${esc(draft.createdAt ? "목표 고치기" : "새 목표")}</h3>
-      <label class="wide"><span>목표 (말로 적습니다)</span><input type="text" name="title" maxlength="200" value="${esc(draft.title)}" required placeholder="예: 원주에서 계단청소를 자리잡힌 일로 만든다"></label>
-      <label><span>분기</span><input type="text" name="quarter" value="${esc(draft.quarter || O.quarterOf(todayKey()))}" pattern="\\d{4}-Q[1-4]" required></label>
-      <label><span>책임자</span><select name="ownerUid" required><option value="">고르세요</option>${members.map(member => `<option value="${esc(member.uid)}"${member.uid === draft.ownerUid ? " selected" : ""}>${esc(member.displayName)}</option>`).join("")}</select></label>
-      <label><span>트랙</span><select name="track">${(window.BringProjectCore ? window.BringProjectCore.TRACKS : []).map(track => `<option value="${esc(track.key)}"${track.key === draft.track ? " selected" : ""}>${esc(track.label)}</option>`).join("")}</select></label>
-      <label><span>상태</span><select name="status">${O.OBJECTIVE_STATUSES.map(item => `<option value="${esc(item.key)}"${item.key === draft.status ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-      <label class="wide"><span>왜 이것을 하는가</span><textarea name="why" rows="2" maxlength="1000">${esc(draft.why)}</textarea></label>
-      <div class="wide okr-kr-editor">
-        <div class="okr-kr-editor-head"><b>핵심결과 (숫자로 잽니다)</b><button type="button" class="mini-button" data-okr-kr-add>+ 핵심결과</button></div>
-        ${krRows || `<p class="office-muted">핵심결과가 없으면 분기 끝에 다 했는지 아무도 모릅니다. 하나 이상 적어 주세요.</p>`}
-      </div>
-      <label class="wide"><span>이 목표에 붙는 프로젝트</span><select name="projectIds" multiple size="4">${projects.map(project => `<option value="${esc(project.id)}"${draft.projectIds.includes(project.id) ? " selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label>
-      <div class="wo-editor-actions">
-        <button class="primary-button" type="submit"${okrState.busyId ? " disabled" : ""}>저장</button>
-        <button class="secondary-button" type="button" data-okr-cancel>취소</button>
-      </div>
-    </form>`;
-  }
-
-  function readObjectiveForm(form) {
-    const O = okrCore();
-    const raw = Object.fromEntries(new FormData(form).entries());
-    const previous = O.normalizeObjective(okrState.editing);
-    const members = workOrderState.members || [];
-    const nameOf = uid => (members.find(member => member.uid === uid) || {}).displayName || "";
-    const keyResults = previous.keyResults.map((kr, index) => Object.assign({}, kr, {
-      title: String(raw[`krTitle_${index}`] || ""),
-      unit: String(raw[`krUnit_${index}`] || kr.unit),
-      baseline: Number(raw[`krBaseline_${index}`] || 0),
-      target: Number(raw[`krTarget_${index}`] || 0),
-      ownerUid: String(raw[`krOwner_${index}`] || ""),
-      ownerName: nameOf(String(raw[`krOwner_${index}`] || "")),
-    }));
-    const selected = [...form.querySelectorAll('[name="projectIds"] option:checked')].map(option => option.value);
-    return O.normalizeObjective(Object.assign({}, previous, {
-      id: previous.id || `ob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-      title: String(raw.title || ""),
-      quarter: String(raw.quarter || ""),
-      ownerUid: String(raw.ownerUid || ""),
-      ownerName: nameOf(String(raw.ownerUid || "")),
-      track: String(raw.track || ""),
-      status: String(raw.status || "draft"),
-      why: String(raw.why || ""),
-      keyResults,
-      projectIds: selected,
-    }));
-  }
-
-  async function saveObjectiveFromForm(form) {
-    const O = okrCore();
-    if (!O || okrState.busyId) return;
-    const draft = readObjectiveForm(form);
-    const checked = O.validateObjective(draft);
-    if (!checked.ok) { showToast(checked.error, "error"); return; }
-    okrState.busyId = draft.id;
-    renderObjectives();
-    try {
-      await api.saveObjective(checked.objective);
-      okrState.editing = null;
-      okrState.loaded = false;
-      showToast("목표를 저장했습니다.", "success");
-      await loadObjectives();
-    } catch (error) {
-      showToast(error && error.message || "저장하지 못했습니다.", "error");
-    } finally {
-      okrState.busyId = "";
-      renderObjectives();
-    }
-  }
-
-  async function bumpKeyResult(objectiveId, keyResultId) {
-    const O = okrCore();
-    if (!O) return;
-    const objective = okrState.objectives.find(item => item.id === objectiveId);
-    const kr = objective && O.normalizeObjective(objective).keyResults.find(item => item.id === keyResultId);
-    if (!kr) return;
-    const typed = window.prompt(`${kr.title}\n지금 값을 적어 주세요. (목표 ${O.formatValue(kr.target, kr.unit)})`, String(kr.current));
-    if (typed === null) return;
-    const current = Number(typed);
-    if (!Number.isFinite(current)) { showToast("숫자로 적어 주세요.", "error"); return; }
-    try {
-      await api.updateKeyResult({ objectiveId, keyResultId, current });
-      okrState.loaded = false;
-      showToast("값을 올렸습니다.", "success");
-      await loadObjectives();
-    } catch (error) {
-      showToast(error && error.message || "올리지 못했습니다.", "error");
     }
   }
 
@@ -10337,7 +9388,7 @@
   function aiConsultationIntakeEditor(reset = true) {
     if (reset) aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
     const state = aiConsultationIntakeState;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 상담 등록</h2><p>녹음 파일이나 대화문을 넣으면 고객·상담·할 일을 초안으로 정리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationIntakeForm" class="modal-body ai-consultation-input"><section class="ai-consultation-source"><div><b>상담 녹음</b><span>MP3·M4A·WAV, 최대 25MB</span></div><button type="button" class="secondary-button" data-action="ai-consultation-audio-pick" data-ai-consultation-audio-pick>${state.file ? "다른 파일 선택" : "녹음 파일 선택"}</button></section>${state.file ? `<div class="ai-consultation-file"><b>${esc(state.file.name)}</b><span>${esc(Math.max(1, Math.ceil(state.file.size / 1024)).toLocaleString("ko-KR"))}KB · 분석 시 음성 변환</span></div>` : ""}<label class="field wide"><span>대화문</span><textarea name="transcript" maxlength="20000" placeholder="녹취된 대화문을 붙여넣거나 위에서 녹음 파일을 선택하세요.">${esc(state.transcript)}</textarea></label><div class="info-box">AI 결과는 바로 저장되지 않습니다. 내용을 검토하고 확인한 항목만 CRM 서버에 저장합니다.</div>${state.error ? `<div class="ai-consultation-error" role="alert">${esc(state.error)}</div>` : ""}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" ${state.loading ? "disabled" : ""}>${state.loading ? "AI가 정리 중…" : "AI 상담 정리"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 상담 등록</h2><p>녹음 파일이나 대화문을 넣으면 고객·상담·후속 행동을 초안으로 정리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationIntakeForm" class="modal-body ai-consultation-input"><section class="ai-consultation-source"><div><b>상담 녹음</b><span>MP3·M4A·WAV, 최대 25MB</span></div><button type="button" class="secondary-button" data-action="ai-consultation-audio-pick" data-ai-consultation-audio-pick>${state.file ? "다른 파일 선택" : "녹음 파일 선택"}</button></section>${state.file ? `<div class="ai-consultation-file"><b>${esc(state.file.name)}</b><span>${esc(Math.max(1, Math.ceil(state.file.size / 1024)).toLocaleString("ko-KR"))}KB · 분석 시 음성 변환</span></div>` : ""}<label class="field wide"><span>대화문</span><textarea name="transcript" maxlength="20000" placeholder="녹취된 대화문을 붙여넣거나 위에서 녹음 파일을 선택하세요.">${esc(state.transcript)}</textarea></label><div class="info-box">AI 결과는 바로 저장되지 않습니다. 내용을 검토하고 확인한 항목만 CRM 서버에 저장합니다.</div>${state.error ? `<div class="ai-consultation-error" role="alert">${esc(state.error)}</div>` : ""}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" ${state.loading ? "disabled" : ""}>${state.loading ? "AI가 정리 중…" : "AI 상담 정리"}</button></div></form>`;
     openModal();
   }
 
@@ -10425,7 +9476,6 @@
       customer.buildingIdLinks = Object.assign({}, customer.buildingIdLinks || {}, { [building.id]: true });
     }
     if (draft.consultation.summary || draft.consultation.result) store.activities.push(Core.createActivity({ customerId: customer.id, type: draft.consultation.type || "전화", summary: draft.consultation.summary, result: draft.consultation.result, nextAction: draft.followUp.nextAction, nextContactAt: draft.followUp.nextContactAt, owner }));
-    if (draft.followUp.nextAction) store.tasks.push(Core.createTask({ customerId: customer.id, title: draft.followUp.nextAction, dueAt: String(draft.followUp.nextContactAt || "").slice(0, 10) || todayKey(), priority: "보통", owner, note: draft.contractSuggestion.type ? `추천 계약: ${draft.contractSuggestion.type}` : "" }));
     logAudit({ category: "등록", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "AI 상담 검토 등록", reason: "직원 검토 후 고객·상담·후속조치 등록" });
     await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
       aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
@@ -10737,7 +9787,7 @@
     const checklist = readinessForContract(item.id), sources = approvedContractSources();
     const source = sources.find(entry => entry.driveFileId === checklist?.sourceDriveFileId);
     const items = checklist?.items?.length ? checklist.items : (source?.approvedVersion?.items?.length ? source.approvedVersion.items.map(entry => ({ ...entry, status: "pending", note: "" })) : DEFAULT_CONTRACT_READINESS_ITEMS);
-    return `<section class="contract-type-fields contract-readiness-form"><header><b>계약 준비 도우미</b><span>회사 운영 참고용이며 법률 판단이 필요한 사항은 최종 확인이 필요합니다.</span></header><div class="form-grid"><label class="field wide"><span>승인된 기준 문서</span><select name="readinessSourceId"><option value="">기준 문서 선택</option>${sources.map(entry => `<option value="${attr(entry.id)}" ${entry.driveFileId === checklist?.sourceDriveFileId ? "selected" : ""}>${esc(`${entry.contractType} · ${entry.title || entry.driveFileId} · ${entry.approvedVersion.revisionId}`)}</option>`).join("")}</select></label>${field("준비 담당자", "readinessOwner", checklist?.owner || item.owner || store.settings.owner || "김현진")}${field("준비 기한", "readinessDueDate", checklist?.dueDate || item.startDate || todayKey(), "date")}</div><div class="contract-readiness-items">${items.map(entry => `<label><span><b>${esc(entry.party || "확인")}</b>${esc(entry.label)}<small>${esc(entry.evidence || "근거 위치 확인 필요")}</small></span><select name="readiness__${attr(entry.id)}"><option value="pending" ${entry.status === "pending" ? "selected" : ""}>미완료</option><option value="complete" ${entry.status === "complete" ? "selected" : ""}>완료</option><option value="not_applicable" ${entry.status === "not_applicable" ? "selected" : ""}>해당 없음</option></select><input name="readinessNote__${attr(entry.id)}" value="${attr(entry.note || "")}" placeholder="메모·증빙 링크"></label>`).join("")}</div><label class="contract-readiness-task-option"><input type="checkbox" name="createReadinessTasks" value="yes"><span>미완료 항목을 할 일로 추가</span></label></section>`;
+    return `<section class="contract-type-fields contract-readiness-form"><header><b>계약 준비 도우미</b><span>회사 운영 참고용이며 법률 판단이 필요한 사항은 최종 확인이 필요합니다.</span></header><div class="form-grid"><label class="field wide"><span>승인된 기준 문서</span><select name="readinessSourceId"><option value="">기준 문서 선택</option>${sources.map(entry => `<option value="${attr(entry.id)}" ${entry.driveFileId === checklist?.sourceDriveFileId ? "selected" : ""}>${esc(`${entry.contractType} · ${entry.title || entry.driveFileId} · ${entry.approvedVersion.revisionId}`)}</option>`).join("")}</select></label>${field("준비 담당자", "readinessOwner", checklist?.owner || item.owner || store.settings.owner || "김현진")}${field("준비 기한", "readinessDueDate", checklist?.dueDate || item.startDate || todayKey(), "date")}</div><div class="contract-readiness-items">${items.map(entry => `<label><span><b>${esc(entry.party || "확인")}</b>${esc(entry.label)}<small>${esc(entry.evidence || "근거 위치 확인 필요")}</small></span><select name="readiness__${attr(entry.id)}"><option value="pending" ${entry.status === "pending" ? "selected" : ""}>미완료</option><option value="complete" ${entry.status === "complete" ? "selected" : ""}>완료</option><option value="not_applicable" ${entry.status === "not_applicable" ? "selected" : ""}>해당 없음</option></select><input name="readinessNote__${attr(entry.id)}" value="${attr(entry.note || "")}" placeholder="메모·증빙 링크"></label>`).join("")}</div></section>`;
   }
 
   function contractEditor(contractId, oneOff = false) {
@@ -11023,11 +10073,6 @@
     }, 30);
   }
 
-  function taskEditor(customerId) {
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>할 일 추가</h2><p>후속 연락과 제출 업무를 기한별로 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="taskForm" class="modal-body" data-return-customer="${attr(customerId || "")}"><div class="form-grid">${selectField("연결 고객", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "공통 업무")}${field("할 일 *", "title", "")}${field("기한", "dueAt", todayKey(), "date")}${selectField("우선순위", "priority", ["높음", "보통", "낮음"], "보통")}${selectField("구분", "category", ["후속 연락", "견적", "현장방문", "제안서", "계약", "보고", "기타"], "후속 연락")}${taskAssigneeField("", "")}${areaField("메모", "note", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button" type="submit">추가</button></div></form>`;
-    openModal();
-  }
-
   function consultationEditor(customerId, returnView) {
     const customer = customerById(customerId);
     const relationshipMode = returnView === "relationships";
@@ -11133,43 +10178,6 @@
   };
   const salesActorName = () => salesActor().name;
 
-  // --- 할 일 담당자 ---
-  // 이름만 자유 입력으로 두면 오타 하나에 "내 할 일" 이 비어 버린다. 그래서
-  // 고른 사람은 uid 로 붙이고, 이름은 보여주기용으로 같이 둔다. 예전에 만든
-  // 할 일에는 uid 가 없으므로 그때는 이름으로 견준다.
-  const teamMembers = () => {
-    try { return window.BringOffice?.members?.() || []; } catch (_) { return []; }
-  };
-  // 팀원 목록을 못 가져오는 상황(오피스 자료 미로드)에서도 할 일은 만들 수
-  // 있어야 한다. 그때는 예전처럼 이름을 직접 적는다.
-  function taskAssigneeField(selectedUid, selectedName) {
-    const members = teamMembers();
-    const fallbackName = selectedName || store.settings.owner || salesActorName() || "";
-    if (!members.length) return field("담당자", "owner", fallbackName);
-    const options = ["", ...members.map(member => member.uid)];
-    const current = selectedUid || members.find(member => member.displayName === fallbackName)?.uid || "";
-    const label = uid => {
-      if (!uid) return "지정 안 함";
-      const member = members.find(item => item.uid === uid);
-      if (!member) return uid;
-      const role = [member.department, member.title].filter(Boolean).join(" · ");
-      return role ? `${member.displayName} (${role})` : member.displayName;
-    };
-    return selectField("담당자", "assigneeUid", options, current, label);
-  }
-
-  // 함수 선언으로 둔다. 사이드바 배지를 그리는 코드가 이 줄보다 위에 있어서,
-  // const 로 두면 실행 순서에 따라 아직 정의되지 않은 값을 부르게 된다.
-  function openTasks() {
-    return (store.tasks || []).filter(task => task && task.status !== "완료" && task.status !== "취소");
-  }
-  function isMyTask(task) {
-    if (!task) return false;
-    const uid = currentAuthUid();
-    if (task.assigneeUid) return Boolean(uid) && task.assigneeUid === uid;
-    const mine = salesActorName().trim();
-    return Boolean(mine) && String(task.owner || "").trim() === mine;
-  }
   const salesProspectById = id => (store.salesProspects || []).find(item => item && item.id === id) || null;
   const salesContactById = id => (store.salesContacts || []).find(item => item && item.id === id) || null;
   const salesUnitById = id => (store.salesUnits || []).find(item => item && item.id === id) || null;
@@ -11557,18 +10565,16 @@
     drawer.classList.add("customer-centered");
     const buildings = customerBuildings(customer);
     const activities = customerActivities(customerId);
-    const tasks = customerTasks(customerId).filter(task => task.status !== "취소");
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>고객 상세</h2><p>${esc(customer.customerNo || customer.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body">
       <section class="customer-summary">${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone)].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
-      <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-message-customer-open="${attr(customer.id)}">메시지 보내기</button><button class="secondary-button" data-action="new-selected-task">＋ 할 일</button></div>
+      <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-message-customer-open="${attr(customer.id)}">메시지 보내기</button></div>
       ${MessageUI.renderConsentCard(customer, canWriteCRM())}
       <section class="detail-section"><div class="detail-section-head"><h4>고객 요청·후속조치</h4>${managementStatusBadge(managementStatusForCustomer(customer))}</div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>현재 문제</b><span>${esc(customer.currentIssue || "미입력")}</span></div><div class="kv"><b>다음 행동</b><span>${esc(customer.nextAction || "미입력")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div class="kv"><b>담당자·우선순위</b><span>${esc(customer.owner || "-")} · ${esc(customer.priority || "보통")}</span></div></div></div></section>
       <section class="detail-section"><div class="detail-section-head"><h4>연결 건물</h4><span class="text-muted" style="font-size:9px">${buildings.length}곳</span></div><div class="detail-section-body">${buildings.length ? `<div class="building-record-list">${buildings.map(building => {
         return `<div class="building-record customer-building-sales-record"><div><b>${esc(building.name || "건물명 미입력")}</b><span>${esc([building.type, building.address].filter(Boolean).join(" · ") || "정보 미입력")}</span></div><div class="customer-building-sales-actions">${managementStatusBadge(managementStatusForBuilding(building))}<div class="row-actions"><button type="button" class="mini-button" data-building-jump="${attr(building.id)}">건물 보기</button><button type="button" class="record-delete-button" data-building-delete="${attr(building.id)}">삭제</button></div></div></div>`;
       }).join("")}</div>` : `<span class="text-muted" style="font-size:10px">연결된 건물이 없습니다.</span>`}</div></section>
       <section class="detail-section"><div class="detail-section-head"><h4>상담 기록</h4><span class="text-muted" style="font-size:9px">${activities.length}건</span></div><div class="detail-section-body"><form id="activityForm" data-customer-id="${attr(customer.id)}"><div class="form-grid">${selectField("방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${areaField("상담 내용 *", "summary", "", "wide")}${field("결과", "result", "")}${field("다음 행동", "nextAction", customer.nextAction || "")}${field("다음 연락", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}</div><div class="form-actions"><button type="submit" class="secondary-button">상담 기록 추가</button></div></form><div class="timeline" style="margin-top:12px">${activityTimelineHtml(activities, "아직 상담 기록이 없습니다.")}</div></div></section>
-      <section class="detail-section"><div class="detail-section-head"><h4>할 일</h4><button class="filter-chip" data-action="new-selected-task">＋ 추가</button></div><div class="detail-section-body">${tasks.length ? `<div class="task-list">${tasks.slice(0, 6).map(task => `<div class="customer-task-record"><button class="task-check" data-task-toggle="${attr(task.id)}">${task.status === "완료" ? "✓" : ""}</button><span class="${task.status === "완료" ? "done" : ""}">${esc(task.title)}</span><time>${esc(shortDate(task.dueAt))}</time><button type="button" class="record-delete-button" data-task-delete="${attr(task.id)}">삭제</button></div>`).join("")}</div>` : `<span class="text-muted" style="font-size:10px">등록된 할 일이 없습니다.</span>`}</div></section>
-      <section class="record-danger-zone"><div><b>고객 정보 삭제</b><span>연결된 건물·상담·할 일이 없을 때만 삭제할 수 있습니다.</span></div><button type="button" class="danger-outline-button" data-customer-delete="${attr(customer.id)}">고객 삭제</button></section>
+      <section class="record-danger-zone"><div><b>고객 정보 삭제</b><span>연결된 건물·상담 기록이 없을 때만 삭제할 수 있습니다.</span></div><button type="button" class="danger-outline-button" data-customer-delete="${attr(customer.id)}">고객 삭제</button></section>
     </div>`;
     openDrawer();
   }
@@ -11677,22 +10683,6 @@
     showToast("기록을 삭제했습니다.", "success");
   }
 
-  async function deleteTaskRecord(taskId) {
-    if (!canWriteCRM()) return showToast("조회 전용 계정은 할 일을 삭제할 수 없습니다.", "error");
-    let task = store.tasks.find(item => item.id === taskId);
-    if (!task) return showToast("삭제할 할 일을 찾지 못했습니다.", "error");
-    if (!await requestConfirmation({ title: "이 할 일을 삭제할까요?", description: "잘못 입력했거나 더 이상 필요하지 않은 할 일인지 확인해 주세요.", target: task.title || "할 일", warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다.", confirmLabel: "할 일 삭제", tone: "danger" })) return;
-    const index = store.tasks.findIndex(item => item.id === taskId);
-    if (index < 0) return showToast("이미 삭제되었거나 변경된 할 일입니다.", "error");
-    task = store.tasks[index];
-    store.tasks.splice(index, 1);
-    logAudit({ category: "삭제", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: "영업 할 일 삭제", reason: "잘못 입력한 기록 정리" });
-    scheduleSave();
-    render();
-    if (selectedCustomerId && customerById(selectedCustomerId)) renderCustomerDrawer(selectedCustomerId);
-    showToast("할 일을 삭제했습니다.", "success");
-  }
-
   async function deleteContractRecord(contractId) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 삭제할 수 없습니다.", "error");
     const returnView = document.getElementById("contractForm")?.dataset.returnView === "buildingCalendar" ? "buildingCalendar" : "contracts";
@@ -11765,11 +10755,10 @@
     if (!customer) return showToast("삭제할 고객을 찾지 못했습니다.", "error");
     const buildings = customerBuildings(customer);
     const activities = customerActivities(customer.id);
-    const tasks = customerTasks(customer.id);
     const contracts = store.contracts.filter(item => item.customerId === customer.id);
     const linkedCases = (operations.cases || []).filter(item => item && (String(item.crmCustomerId || "") === String(customer.id) || (!item.crmCustomerId && Core.matchWorkflowCustomer(item, store.customers)?.id === customer.id)));
-    if (buildings.length || activities.length || tasks.length || contracts.length || linkedCases.length) {
-      await showCRMNotice({ title: "이 고객은 삭제할 수 없습니다", description: "연결된 업무 기록을 먼저 정리해 주세요.", target: customer.name || "고객", message: `건물 ${buildings.length}곳 · 민원 ${linkedCases.length}건 · 상담 ${activities.length}건 · 할 일 ${tasks.length}건 · 계약 ${contracts.length}건`, warning: "연결 기록을 삭제하거나 다른 고객으로 옮긴 뒤 다시 시도해 주세요.", tone: "warning" });
+    if (buildings.length || activities.length || contracts.length || linkedCases.length) {
+      await showCRMNotice({ title: "이 고객은 삭제할 수 없습니다", description: "연결된 업무 기록을 먼저 정리해 주세요.", target: customer.name || "고객", message: `건물 ${buildings.length}곳 · 민원 ${linkedCases.length}건 · 상담 ${activities.length}건 · 계약 ${contracts.length}건`, warning: "연결 기록을 삭제하거나 다른 고객으로 옮긴 뒤 다시 시도해 주세요.", tone: "warning" });
       return;
     }
     if (!await requestConfirmation({ title: "이 고객 정보를 삭제할까요?", description: "삭제할 고객이 맞는지 확인해 주세요.", target: customer.name || "고객", warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다.", confirmLabel: "고객 삭제", tone: "danger" })) return;
@@ -11874,62 +10863,15 @@
     const growthReview = event.target.closest("[data-growth-review]");
     if (growthReview) {
       const G = growthCore();
-      const O = okrCore();
       const uid = growthReview.dataset.growthReview;
       const found = growthState.reviews.filter(item => item.uid === uid).sort((left, right) => right.quarter.localeCompare(left.quarter))[0];
       if (G) {
-        growthState.reviewDraft = G.normalizeReview(found || { uid, quarter: O ? O.quarterOf(todayKey()) : "" });
+        growthState.reviewDraft = G.normalizeReview(found || { uid, quarter: quarterOfDate(todayKey()) });
         renderGrowth();
       }
       return;
     }
     if (event.target.closest("[data-growth-review-cancel]")) { growthState.reviewDraft = null; renderGrowth(); return; }
-    if (event.target.closest("[data-okr-new]")) {
-      const O = okrCore();
-      // 빈 폼을 주면 사람은 핵심결과 칸을 안 채우고 저장부터 누른다.
-      // 한 줄을 깔아 두면 무엇을 적어야 하는지 보인다.
-      if (O) {
-        okrState.editing = O.normalizeObjective({
-          quarter: okrState.quarter || O.quarterOf(todayKey()),
-          keyResults: [{ id: `kr_${Date.now().toString(36)}`, unit: "count" }],
-        });
-        renderObjectives();
-      }
-      return;
-    }
-    const okrEdit = event.target.closest("[data-okr-edit]");
-    if (okrEdit) {
-      const O = okrCore();
-      const found = okrState.objectives.find(item => item.id === okrEdit.dataset.okrEdit);
-      if (O && found) { okrState.editing = O.normalizeObjective(found); renderObjectives(); }
-      return;
-    }
-    if (event.target.closest("[data-okr-cancel]")) { okrState.editing = null; renderObjectives(); return; }
-    if (event.target.closest("[data-okr-kr-add]")) {
-      const O = okrCore();
-      const addForm = event.target.closest("[data-okr-form]");
-      // 지금 화면에 적어 둔 것을 잃지 않고 한 줄만 늘린다.
-      if (O && addForm) {
-        const draft = readObjectiveForm(addForm);
-        draft.keyResults.push(O.normalizeKeyResult({ id: `kr_${Date.now().toString(36)}_${draft.keyResults.length}`, unit: "count" }));
-        okrState.editing = draft;
-        renderObjectives();
-      }
-      return;
-    }
-    const krDrop = event.target.closest("[data-okr-kr-drop]");
-    if (krDrop) {
-      const dropForm = event.target.closest("[data-okr-form]");
-      if (dropForm) {
-        const draft = readObjectiveForm(dropForm);
-        draft.keyResults.splice(Number(krDrop.dataset.okrKrDrop), 1);
-        okrState.editing = draft;
-        renderObjectives();
-      }
-      return;
-    }
-    const krEdit = event.target.closest("[data-okr-kr-edit]");
-    if (krEdit) { void bumpKeyResult(krEdit.dataset.okrObjective, krEdit.dataset.okrKrEdit); return; }
     if (event.target.closest("[data-telegram-find]")) { void findTelegramChats(); return; }
     const telegramPick = event.target.closest("[data-telegram-pick]");
     if (telegramPick) {
@@ -12101,85 +11043,6 @@
     if (event.target.closest("[data-di-draft]")) { await draftDirectiveWithAi(); return; }
     if (event.target.closest("[data-di-read]")) { readDirectivePaste(); return; }
     if (event.target.closest("[data-di-make]")) { await buildFromDirectivePaste(); return; }
-    const dlShift = event.target.closest("[data-dl-shift]");
-    if (dlShift) {
-      const D = dailyLogCore();
-      if (!D) return;
-      // 날짜를 옮기기 전에 친 것을 챙긴다. 안 그러면 어제를 눌렀다가
-      // 돌아왔을 때 오늘 적은 것이 사라진다.
-      stashDailyLogDraft(D);
-      const step = Number(dlShift.dataset.dlShift) || 0;
-      const moved = new Date(Date.parse(`${dailyLogDate()}T00:00:00Z`) + step * 86400000);
-      dailyLogState.date = moved.toISOString().slice(0, 10);
-      dailyLogState.draft = null;
-      renderDailyLog();
-      return;
-    }
-    if (event.target.closest("[data-dl-export-open]")) { openDailyLogExport(); return; }
-    const dlTab = event.target.closest("[data-dl-tab]");
-    if (dlTab) {
-      const D = dailyLogCore();
-      if (D) stashDailyLogDraft(D);
-      dailyLogState.tab = dlTab.dataset.dlTab;
-      renderDailyLog();
-      return;
-    }
-    if (event.target.closest("[data-dl-add]")) {
-      const D = dailyLogCore();
-      if (!D) return;
-      const draft = readDailyLogDraft(D);
-      // 새 줄은 저장 가능한 값으로 시작한다. 빈 줄은 정규화가 조용히 버려서
-      // [줄 넣기] 를 눌러도 아무 일도 안 일어난 것처럼 보인다.
-      const last = draft.entries[draft.entries.length - 1];
-      const start = last ? last.end : "09:00";
-      const end = D.isTime(start) ? `${String(Math.min(23, Number(start.slice(0, 2)) + 1)).padStart(2, "0")}:${start.slice(3)}` : "10:00";
-      draft.entries = [...draft.entries, {
-        id: `dl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-        start, end: end > start ? end : "23:00", title: "", nature: "routine", orderId: "", progress: 0,
-      }];
-      dailyLogState.draft = draft;
-      renderDailyLog();
-      return;
-    }
-    const dlRemove = event.target.closest("[data-dl-remove]");
-    if (dlRemove) {
-      const D = dailyLogCore();
-      if (!D) return;
-      const draft = readDailyLogDraft(D);
-      const index = Number(dlRemove.dataset.dlRemove);
-      draft.entries = draft.entries.filter((item, at) => at !== index);
-      dailyLogState.draft = draft;
-      renderDailyLog();
-      return;
-    }
-    if (event.target.closest("[data-dl-plan-add]")) {
-      const D = dailyLogCore();
-      if (!D) return;
-      const draft = readDailyLogDraft(D);
-      draft.plans = [...draft.plans, {
-        id: `dp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-        title: "", nature: "routine", hours: 0, dueDate: "",
-      }];
-      dailyLogState.draft = draft;
-      renderDailyLog();
-      return;
-    }
-    const dlPlanRemove = event.target.closest("[data-dl-plan-remove]");
-    if (dlPlanRemove) {
-      const D = dailyLogCore();
-      if (!D) return;
-      const draft = readDailyLogDraft(D);
-      const index = Number(dlPlanRemove.dataset.dlPlanRemove);
-      draft.plans = draft.plans.filter((item, at) => at !== index);
-      dailyLogState.draft = draft;
-      renderDailyLog();
-      return;
-    }
-    if (event.target.closest("[data-dl-ai]")) { await draftDailyReport(); return; }
-    if (event.target.closest("[data-dl-save]")) { await saveDailyLogDraft(false); return; }
-    if (event.target.closest("[data-dl-submit]")) { await saveDailyLogDraft(true); return; }
-    const dlConfirm = event.target.closest("[data-dl-confirm]");
-    if (dlConfirm) { await confirmDailyLog(dlConfirm.dataset.dlConfirm, dlConfirm.dataset.dlConfirmDate); return; }
     const capEdit = event.target.closest("[data-cap-edit]");
     if (capEdit) {
       const C = capacityCore();
@@ -12259,15 +11122,7 @@
     if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
-      if (liveRefresh.dataset.liveRefresh === "dailyLog") {
-        // 치던 것은 그대로 둔다. 새로고침이 손으로 친 것을 지우면 안 된다.
-        const typing = Boolean(dailyLogState.draft);
-        void loadDailyLogs().then(() => {
-          showToast(typing ? "다시 불러왔습니다. 치던 것은 그대로 뒀습니다." : "다시 불러왔습니다.", "success");
-        });
-      } else {
-        void loadWorkOrders().then(() => showToast("다시 불러왔습니다.", "success"));
-      }
+      void loadWorkOrders().then(() => showToast("다시 불러왔습니다.", "success"));
       return;
     }
     if (projectRoadmapState.extensionProjectId && event.target.closest("[data-roadmap-mode], [data-roadmap-shift], [data-roadmap-today], [data-roadmap-project-new], [data-roadmap-project-progress], [data-roadmap-select], [data-roadmap-new]")) {
@@ -13291,8 +12146,6 @@
     }
     const activityDelete = event.target.closest("[data-activity-delete]");
     if (activityDelete) { await deleteActivityRecord(activityDelete.dataset.activityDelete); return; }
-    const taskDelete = event.target.closest("[data-task-delete]");
-    if (taskDelete) { await deleteTaskRecord(taskDelete.dataset.taskDelete); return; }
     const contractDelete = event.target.closest("[data-contract-delete]");
     if (contractDelete) { await deleteContractRecord(contractDelete.dataset.contractDelete); return; }
     const partnerQuoteDelete = event.target.closest("[data-partner-quote-delete]");
@@ -14017,18 +12870,6 @@
       pageMeta();
       return;
     }
-    const taskToggle = event.target.closest("[data-task-toggle]");
-    if (taskToggle) {
-      const task = store.tasks.find(item => item.id === taskToggle.dataset.taskToggle);
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 할 일을 변경할 수 없습니다.", "error");
-      if (task) {
-        task.status = task.status === "완료" ? "할 일" : "완료";
-        task.updatedAt = new Date().toISOString();
-        logAudit({ category: "변경", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: `상태를 ${task.status}(으)로 변경`, reason: "영업 할 일 관리" });
-        scheduleSave(); render(); if (selectedCustomerId) renderCustomerDrawer(selectedCustomerId);
-      }
-      return;
-    }
     const contractPaymentMode = event.target.closest("[data-contract-payment-mode-filter]");
     const sourceCheck = event.target.closest("[data-contract-source-check]");
     if (sourceCheck) {
@@ -14055,8 +12896,6 @@
     }
     const contractType = event.target.closest("[data-contract-type-filter]");
     if (contractType) { contractTypeFilter = contractType.dataset.contractTypeFilter; renderContracts(); return; }
-    const taskFilter = event.target.closest("[data-task-filter]");
-    if (taskFilter) { taskStatusFilter = taskFilter.dataset.taskFilter; renderTasks(); return; }
     const partnerQuoteFilter = event.target.closest("[data-partner-quote-filter]");
     if (partnerQuoteFilter) { partnerQuoteStatusFilter = partnerQuoteFilter.dataset.partnerQuoteFilter; renderPartnerQuotes(); return; }
     const actionControl = event.target.closest("[data-action]");
@@ -14164,8 +13003,6 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 업체 상담을 등록할 수 없습니다.", "error");
       partnerQuoteEditor("", actionControl.dataset.partnerVendorId || "", currentView);
     }
-    else if (action === "new-task") taskEditor("");
-    else if (action === "new-selected-task") taskEditor(actionControl.dataset.customerId || selectedCustomerId);
     else if (action === "new-security-asset") { if (requireSecurityPermission(false)) securityAssetEditor(""); }
     else if (action === "new-access-role") { if (requireSecurityPermission(true)) accessRoleEditor(""); }
     else if (action === "new-audit") { if (requireSecurityPermission(false)) auditEditor(); }
@@ -14210,30 +13047,6 @@
       else if (field.matches("[data-operations-building]")) operationsCheckFilters.buildingId = field.value;
       else operationsCheckFilters.owner = field.value;
       refreshOperationsCheck();
-      return;
-    }
-    if (event.target.matches("#dailyLogExportForm [name='month'], #dailyLogExportForm [name='userId']")) {
-      refreshDailyLogExportPreview(event.target.form);
-      return;
-    }
-    if (event.target.matches("[data-dl-date]")) {
-      const D = dailyLogCore();
-      if (!D) return;
-      // 날짜를 바꾸기 전에 친 것을 챙긴다.
-      stashDailyLogDraft(D);
-      dailyLogState.date = String(event.target.value || "");
-      dailyLogState.draft = null;
-      renderDailyLog();
-      return;
-    }
-    // 줄의 지시·성격·달성률을 바꾸면 그 자리에서 합계가 다시 나와야 한다.
-    // 시작·끝 시각은 읽기 전용 고정 표시라 이 변경 통로에 들어오지 않는다.
-    // 글자 칸은 여기 안 걸린다 — change 는 칸을 떠날 때 오므로 커서가 안 튄다.
-    if (event.target.matches("[data-dl-field='nature'], [data-dl-field='orderId'], [data-dl-field='progress']")) {
-      const D = dailyLogCore();
-      if (!D) return;
-      dailyLogState.draft = readDailyLogDraft(D);
-      renderDailyLog();
       return;
     }
     if (event.target.matches("[data-report-kind]")) {
@@ -14632,7 +13445,6 @@
     event.preventDefault();
     if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
-    if (form.id === "dailyLogExportForm") { await exportMonthlyDailyLogsFromForm(form); return; }
     if (form.matches("[data-wo-progress-form]")) { await saveWorkOrderProgressFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-roadmap-extension-form]")) { await saveProjectExtensionFromForm(form); return; }
@@ -15480,13 +14292,6 @@
         const sourceVersion = chosenSource?.approvedVersion || {};
         const nextChecklist = { id: checklist?.id || `ready_${item.id}`, customerId: item.customerId, contractId: item.id, contractType: chosenSource?.contractType || types.join("·"), owner: String(raw.readinessOwner || item.owner).trim(), dueDate: String(raw.readinessDueDate || item.startDate).slice(0, 10), sourceDriveFileId: chosenSource?.driveFileId || checklist?.sourceDriveFileId || "", sourceRevisionId: sourceVersion.revisionId || checklist?.sourceRevisionId || "", items: nextItems, createdAt: checklist?.createdAt || now, updatedAt: now };
         if (checklist) Object.assign(checklist, nextChecklist); else { store.contractReadiness ||= []; store.contractReadiness.push(nextChecklist); checklist = nextChecklist; }
-        if (raw.createReadinessTasks === "yes") {
-          const existingTaskTitles = new Set(store.tasks.filter(task => task.customerId === item.customerId && task.status !== "완료").map(task => task.title));
-          nextItems.filter(entry => entry.required && entry.status === "pending").forEach(entry => {
-            const title = `[계약 준비] ${entry.label}`;
-            if (!existingTaskTitles.has(title)) store.tasks.push(Core.createTask({ customerId: item.customerId, title, dueAt: nextChecklist.dueDate, owner: nextChecklist.owner, category: "계약 준비", note: `${item.name} · 기준 ${nextChecklist.sourceRevisionId || "직원 확인"}` }));
-          });
-        }
       }
       contractPaymentModeFilter = item.billingCycle === "건별" ? "single" : "recurring";
       const returnToContractCalendar = oneOffContract && form.dataset.returnView === "buildingCalendar";
@@ -15609,19 +14414,6 @@
       if (!existing) store.partnerQuotes.push(item);
       logAudit({ category: existing ? "변경" : "등록", targetType: "협력업체 상담", targetId: item.id, targetLabel: item.vendor, action: `${item.industry} · ${item.scenario} · ${item.status} · ${moneyRange(item.totalMin, item.totalMax, "가격 미확인")}`, reason: "업체 상담 관리" });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); if (returnView === "partnerVendors") showPartnerVendorDetailAfterQuoteMutation(selectedVendor.id); else { currentView = "partnerQuotes"; render(); } showToast(`${item.vendor} 상담 기록을 서버에 저장했습니다.`, "success"); } });
-    } else if (form.id === "taskForm") {
-      const beforeStore = cloneStore(store);
-      const raw = Object.fromEntries(new FormData(form).entries());
-      if (!raw.title.trim()) return showToast("할 일을 입력해 주세요.", "error");
-      const returnCustomerId = String(form.dataset.returnCustomer || "");
-      // 화면은 uid 를 보내지만 목록·보고서는 이름으로 읽는다. 둘 다 남긴다.
-      const picked = teamMembers().find(member => member.uid === String(raw.assigneeUid || ""));
-      if (picked) raw.owner = picked.displayName;
-      else if (raw.assigneeUid !== undefined && !raw.owner) raw.owner = "";
-      const task = Core.createTask(raw);
-      store.tasks.push(task);
-      logAudit({ category: "등록", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: "영업 할 일 등록", reason: "후속 업무 관리" });
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); if (returnCustomerId && customerById(returnCustomerId)) renderCustomerDrawer(returnCustomerId); showToast("할 일을 서버에 추가했습니다.", "success"); } });
     } else if (form.id === "relationshipActivityForm") {
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -15834,9 +14626,6 @@
     } else if (form.matches("[data-growth-review-form]")) {
       await saveGrowthReviewFromForm(form);
       return;
-    } else if (form.matches("[data-okr-form]")) {
-      await saveObjectiveFromForm(form);
-      return;
     } else if (form.matches("[data-telegram-form]")) {
       await saveTelegramFromForm(form);
       return;
@@ -15928,11 +14717,6 @@
       const value = workOrderCore()?.progressOf(event.target.value) || 0;
       const preview = event.target.form?.querySelector("[data-wo-progress-modal-preview]");
       if (preview) preview.style.width = `${value}%`;
-      return;
-    }
-    if (event.target.matches("[data-okr-quarter]")) {
-      okrState.quarter = String(event.target.value || "");
-      renderObjectives();
       return;
     }
     if (event.target.matches("[data-report-drive-search]")) {
@@ -16365,7 +15149,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "dailyLog", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
@@ -16423,7 +15207,6 @@ document.addEventListener("keydown", event => {
       contractCalendarBuildingId,
       paymentMonth,
       paymentBuildingFilter,
-      tasks: store.tasks.length,
       title: document.getElementById("pageTitle").textContent,
       bodyText: main.textContent.slice(0, 300),
       modalOpen: modal.classList.contains("open"),

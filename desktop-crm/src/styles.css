@@ -58,7 +58,6 @@ button,input,select,textarea{font:inherit}button{color:inherit}
 .stage-badge,.priority-badge,.status-badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:8px;font-size:9px;font-weight:850;white-space:nowrap}.stage-badge{background:#FAFBFC;color:#1B64DA}.stage-badge[data-stage="계약 확정"]{background:#E6F8F0;color:#04A66B}.stage-badge[data-stage="계약 중"]{background:#FFF6E5;color:#C77A00}.priority-badge.high{background:#FFEFF0;color:#F04452}.priority-badge.normal{background:#FFF6E5;color:#C77A00}.priority-badge.low{background:#E6F8F0;color:#04A66B}.status-badge.online{background:#E6F8F0;color:#04A66B}.status-badge.offline{background:#FFEFF0;color:#F04452}
 .empty-state{display:grid;place-items:center;min-height:300px;border:1px dashed #DFE3E8;border-radius:15px;background:rgba(255,255,255,.62);color:#8B95A1;text-align:center}.empty-state strong{display:block;margin-bottom:7px;color:#4E5968}.empty-state p{margin:0 0 14px;font-size:11px}
 .sales-board-head{align-items:center}.sales-kanban{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;height:calc(100vh - 245px);min-height:430px;overflow:hidden}.sales-kanban-column{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;border:1px solid #E5E8EB;border-radius:14px;background:#FAFBFC}.sales-kanban-column.dragover{border-color:#3182F6;background:#FAFBFC;box-shadow:inset 0 0 0 2px rgba(75,169,220,.22)}.sales-kanban-head{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;min-height:48px;padding:0 12px;border-bottom:1px solid #E5E8EB;background:#FFFFFF}.sales-kanban-head strong{font-size:11px}.sales-kanban-head span{display:grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:9px;background:#E8F3FF;color:#4E5968;font-size:9px;font-weight:850}.sales-kanban-body{display:flex;flex:1;min-height:0;flex-direction:column;gap:8px;overflow-y:auto;padding:9px}.sales-kanban-body::-webkit-scrollbar{width:5px}.sales-kanban-body::-webkit-scrollbar-thumb{border-radius:6px;background:#DFE3E8}.sales-kanban-card{padding:11px;border:1px solid #E5E8EB;border-radius:11px;background:#fff;box-shadow:0 6px 16px rgba(62,112,141,.06);cursor:grab}.sales-kanban-card:hover{border-color:#B0B8C1;transform:translateY(-1px)}.sales-kanban-card:active{cursor:grabbing}.sales-kanban-card .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}.sales-kanban-card strong{font-size:11px}.sales-kanban-card .priority-badge{padding:3px 6px;font-size:8px}.sales-kanban-card p{display:-webkit-box;min-height:34px;margin:8px 0;overflow:hidden;color:#4E5968;font-size:9px;line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:2}.sales-kanban-card footer{display:flex;align-items:center;justify-content:space-between;gap:5px;color:#8B95A1;font-size:8px}.sales-kanban-card footer b{color:#4E5968;font-size:9px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.task-workspace{width:min(1240px,100%);margin:0 auto}.task-toolbar{margin-bottom:14px}.task-list{display:grid;gap:10px}.task-row{display:grid;grid-template-columns:32px minmax(230px,1.7fr) minmax(145px,.8fr) minmax(105px,.55fr) minmax(95px,.5fr) minmax(88px,.45fr) 58px;align-items:center;gap:12px;padding:14px 15px;border:1px solid #E5E8EB;border-radius:13px;background:#fff;box-shadow:0 5px 15px rgba(54,101,129,.04)}.task-row.overdue{border-color:#F7A6AD;box-shadow:inset 3px 0 #F04452,0 5px 15px rgba(54,101,129,.04)}.task-row.done{border-color:#E5E8EB;background:#FFFFFF}.task-check{display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid #B0B8C1;border-radius:8px;background:#FFFFFF;color:#fff;font-family:inherit;font-weight:950;cursor:pointer}.task-row.done .task-check{border-color:var(--green);background:var(--green)}.task-title{min-width:0}.task-title strong,.task-title span{display:block}.task-title strong{overflow:hidden;color:#191F28;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.task-title span{margin-top:5px;overflow:hidden;color:#8B95A1;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.task-row.done .task-title strong{color:#8B95A1;text-decoration:line-through}.task-meta{min-width:0}.task-meta-label{display:block;margin-bottom:5px;color:#8B95A1;font-size:9px;font-weight:850}.task-meta strong,.task-meta time,.task-meta time b,.task-meta time small{display:block}.task-meta strong,.task-meta time b{overflow:hidden;color:#4E5968;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task-meta time small{margin-top:3px;color:#8B95A1;font-size:9px;font-weight:700}.task-customer-button{display:block;max-width:100%;overflow:hidden;padding:6px 9px;border:1px solid #E5E8EB;border-radius:8px;background:#FAFBFC;color:#1B64DA;font-family:inherit;font-size:11px;font-weight:850;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.task-customer-button:hover{border-color:#3182F6;background:#FAFBFC}.task-priority .priority-badge{font-size:10px}.task-row.overdue .task-due time b,.task-row.overdue .task-due time small{color:var(--red);font-weight:900}.task-row.done .task-meta strong,.task-row.done .task-meta time b,.task-row.done .task-meta time small{color:#8B95A1}.task-delete-button{justify-self:end}
 .workflow-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:11px}.workflow-card{padding:15px;border:1px solid #E8F3FF;border-radius:14px;background:#fff;box-shadow:0 7px 22px rgba(62,112,141,.05)}.workflow-card header{display:flex;justify-content:space-between;gap:12px}.workflow-card header strong{display:block;font-size:12px}.workflow-card header span{display:block;margin-top:3px;color:#8B95A1;font-size:9px}.progress-ring{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:conic-gradient(var(--green) calc(var(--p)*1%),#E8F3FF 0);font-size:9px;font-weight:900}.progress-ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}.progress-ring b{position:relative}.workflow-progress{height:8px;margin:13px 0 8px;overflow:hidden;border-radius:7px;background:#E8F3FF}.workflow-progress i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,#3182F6,#3182F6)}.workflow-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.workflow-meta div{padding:8px;border:1px solid #E8F3FF;border-radius:9px;background:#FFFFFF}.workflow-meta b,.workflow-meta span{display:block}.workflow-meta b{color:#8B95A1;font-size:8px}.workflow-meta span{margin-top:4px;font-size:10px}.workflow-actions{display:flex;gap:7px;margin-top:11px}
 .settings-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:14px}.setting-card{padding:18px;border:1px solid var(--line);border-radius:14px;background:#fff}.setting-card h3{margin:0 0 5px;font-size:13px}.setting-card>p{margin:0 0 16px;color:#8B95A1;font-size:10px;line-height:1.5}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid .wide{grid-column:1/-1}.field{display:flex;flex-direction:column;gap:6px}.field>span{color:#4E5968;font-size:9px;font-weight:850}.field input,.field select,.field textarea{width:100%;padding:10px 11px;border:1px solid #E5E8EB;border-radius:10px;outline:0;background:#FFFFFF;color:var(--text);font-size:11px}.field textarea{min-height:76px;resize:vertical;line-height:1.5}.field input:focus,.field select:focus,.field textarea:focus{border-color:#3182F6;box-shadow:0 0 0 3px rgba(82,172,227,.12);background:#fff}.field .hint{color:#8B95A1;font-size:8px}.form-section{margin-top:17px;padding-top:15px;border-top:1px solid #E8F3FF}.form-section h4{margin:0 0 10px;color:#4E5968;font-size:11px}.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.inline-actions{display:flex;gap:7px;flex-wrap:wrap}
 .essential-label{display:flex;align-items:center;gap:9px;margin-bottom:11px}.essential-label b{font-size:11px}.essential-label span{color:#8B95A1;font-size:9px}.optional-form{margin-top:12px;overflow:hidden;border:1px solid #E8F3FF;border-radius:11px;background:#FFFFFF}.optional-form summary{position:relative;display:flex;align-items:center;gap:9px;padding:12px 14px;list-style:none;cursor:pointer}.optional-form summary::-webkit-details-marker{display:none}.optional-form summary::after{content:"＋";margin-left:auto;color:#3182F6;font-size:14px;font-weight:900}.optional-form[open] summary::after{content:"－"}.optional-form summary b{font-size:10px}.optional-form summary span{color:#8B95A1;font-size:9px}.optional-form-body{padding:14px;border-top:1px solid #E8F3FF;background:#fff}
@@ -89,13 +88,10 @@ button,input,select,textarea{font:inherit}button{color:inherit}
 @media(max-width:900px){.customer-sales-toolbar{align-items:stretch}.customer-sales-filter-wrap{align-items:stretch;flex:1;flex-direction:column;gap:5px}.customer-sales-filter{min-width:0}.customer-sales-filter-wrap>p{margin:0}.customer-building-sales-record{align-items:flex-start;flex-direction:column}.customer-building-sales-actions{width:100%;align-items:flex-start}.customer-building-sales-actions .row-actions{justify-content:flex-start}}
 
 /* Shared record deletion controls */
-.danger-outline-button{min-height:35px;padding:8px 11px;border:1px solid #F7A6AD;border-radius:9px;background:#FFEFF0;color:#F04452;font-family:inherit;font-size:11px;font-weight:850;cursor:pointer}.danger-outline-button:hover{border-color:#F04452;background:#FFEFF0}.danger-outline-button:disabled{opacity:.55;cursor:wait}.form-delete-left{margin-right:auto}.building-record-list{display:grid;gap:8px}.building-record{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #E8F3FF;border-radius:10px;background:#FFFFFF}.building-record>div{min-width:0}.building-record b,.building-record span{display:block}.building-record b{color:#191F28;font-size:12px}.building-record span{margin-top:4px;overflow:hidden;color:#8B95A1;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.customer-task-record{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #E8F3FF}.customer-task-record:last-child{border-bottom:0}.customer-task-record>span{font-size:12px}.customer-task-record>span.done{text-decoration:line-through;color:#8B95A1}.customer-task-record time{color:#8B95A1;font-size:10px}.record-danger-zone{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:18px;padding:14px;border:1px solid #F7A6AD;border-radius:12px;background:#FFEFF0}.record-danger-zone b,.record-danger-zone span{display:block}.record-danger-zone b{color:#E0303F;font-size:12px}.record-danger-zone span{margin-top:4px;color:#F04452;font-size:10px;line-height:1.45}
-@media(max-width:1250px){.task-row{grid-template-columns:32px minmax(180px,1.35fr) minmax(125px,.75fr) minmax(90px,.55fr) minmax(85px,.5fr) minmax(78px,.45fr) 58px;gap:9px;padding:12px}.task-meta-label{font-size:8px}.task-customer-button{padding-inline:7px}}
-@media(max-width:900px){.task-row{grid-template-columns:32px repeat(4,minmax(0,1fr)) auto;align-items:start}.task-check{grid-column:1;grid-row:1/3;margin-top:2px}.task-title{grid-column:2/6;grid-row:1}.task-delete-button{grid-column:6;grid-row:1}.task-customer{grid-column:2}.task-due{grid-column:3}.task-owner{grid-column:4}.task-priority{grid-column:5}.task-meta{padding-top:8px;border-top:1px solid #FAFBFC}}
-@media(max-width:700px){.task-row{grid-template-columns:32px repeat(2,minmax(0,1fr)) auto}.task-title{grid-column:2/4}.task-delete-button{grid-column:4}.task-customer,.task-owner{grid-column:2}.task-due,.task-priority{grid-column:3}}
+.danger-outline-button{min-height:35px;padding:8px 11px;border:1px solid #F7A6AD;border-radius:9px;background:#FFEFF0;color:#F04452;font-family:inherit;font-size:11px;font-weight:850;cursor:pointer}.danger-outline-button:hover{border-color:#F04452;background:#FFEFF0}.danger-outline-button:disabled{opacity:.55;cursor:wait}.form-delete-left{margin-right:auto}.building-record-list{display:grid;gap:8px}.building-record{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #E8F3FF;border-radius:10px;background:#FFFFFF}.building-record>div{min-width:0}.building-record b,.building-record span{display:block}.building-record b{color:#191F28;font-size:12px}.building-record span{margin-top:4px;overflow:hidden;color:#8B95A1;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.record-danger-zone{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:18px;padding:14px;border:1px solid #F7A6AD;border-radius:12px;background:#FFEFF0}.record-danger-zone b,.record-danger-zone span{display:block}.record-danger-zone b{color:#E0303F;font-size:12px}.record-danger-zone span{margin-top:4px;color:#F04452;font-size:10px;line-height:1.45}
 
 /* Server-enforced viewer role */
-.crm-read-only [data-action="new-customer"],.crm-read-only [data-action="new-contract"],.crm-read-only [data-action="new-one-off-contract"],.crm-read-only [data-action="new-workflow-case"],.crm-read-only [data-action="new-payment-schedule"],.crm-read-only [data-action="new-consultation"],.crm-read-only [data-action="new-partner-quote"],.crm-read-only [data-action="new-task"],.crm-read-only [data-action="new-selected-task"],.crm-read-only [data-action="edit-selected-customer"],.crm-read-only [data-customer-hub-edit],.crm-read-only [data-contract-edit],.crm-read-only [data-partner-quote-edit],.crm-read-only [data-relationship-followup],.crm-read-only [data-relationship-plan],.crm-read-only [data-task-toggle],.crm-read-only [data-case-trash],.crm-read-only [data-case-restore],.crm-read-only [data-workflow-action],.crm-read-only [data-case-upload],.crm-read-only [data-case-quote-confirm],.crm-read-only [data-payment-action],.crm-read-only [data-payment-bank-selected],.crm-read-only [data-payment-schedule-edit],.crm-read-only [data-payment-bank-edit],.crm-read-only [data-payment-bank-unlink],.crm-read-only [data-payment-schedule-delete],.crm-read-only .record-delete-button,.crm-read-only .timeline-delete,.crm-read-only .danger-outline-button{display:none!important}.crm-read-only #main form input,.crm-read-only #main form select,.crm-read-only #main form textarea{pointer-events:none;background:#FAFBFC;color:#4E5968}.crm-read-only #main form button[type="submit"],.crm-read-only #main form button:not([type]){display:none!important}.crm-read-only [draggable="true"]{cursor:default}
+.crm-read-only [data-action="new-customer"],.crm-read-only [data-action="new-contract"],.crm-read-only [data-action="new-one-off-contract"],.crm-read-only [data-action="new-workflow-case"],.crm-read-only [data-action="new-payment-schedule"],.crm-read-only [data-action="new-consultation"],.crm-read-only [data-action="new-partner-quote"],.crm-read-only [data-action="edit-selected-customer"],.crm-read-only [data-customer-hub-edit],.crm-read-only [data-contract-edit],.crm-read-only [data-partner-quote-edit],.crm-read-only [data-relationship-followup],.crm-read-only [data-relationship-plan],.crm-read-only [data-case-trash],.crm-read-only [data-case-restore],.crm-read-only [data-workflow-action],.crm-read-only [data-case-upload],.crm-read-only [data-case-quote-confirm],.crm-read-only [data-payment-action],.crm-read-only [data-payment-bank-selected],.crm-read-only [data-payment-schedule-edit],.crm-read-only [data-payment-bank-edit],.crm-read-only [data-payment-bank-unlink],.crm-read-only [data-payment-schedule-delete],.crm-read-only .record-delete-button,.crm-read-only .timeline-delete,.crm-read-only .danger-outline-button{display:none!important}.crm-read-only #main form input,.crm-read-only #main form select,.crm-read-only #main form textarea{pointer-events:none;background:#FAFBFC;color:#4E5968}.crm-read-only #main form button[type="submit"],.crm-read-only #main form button:not([type]){display:none!important}.crm-read-only [draggable="true"]{cursor:default}
 .crm-read-only [data-action="new-building"],.crm-read-only [data-building-edit]{display:none!important}
 .crm-read-only #drawer form input,.crm-read-only #drawer form select,.crm-read-only #drawer form textarea{pointer-events:none;background:#FAFBFC;color:#4E5968}.crm-read-only #drawer form button[type="submit"],.crm-read-only #drawer form button:not([type]){display:none!important}
 
@@ -1038,67 +1034,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   word-break: break-word;
 }
 
-/* 분기 목표 (OKR · RACI) */
-.okr-hero-actions { display: flex; gap: 8px; align-items: center; }
-.okr-hero-actions select {
-  min-height: 40px; padding: 0 12px;
-  border: 1px solid #E5E8EB; border-radius: 10px;
-  background: #fff; color: #4E5968; font-size: 13px; font-weight: 700;
-}
-.okr-error { margin: 0 0 14px; padding: 11px 13px; border-radius: 10px; background: #FEF2F3; color: #C6535F; font-size: 13px; }
-.okr-card header { position: relative; }
-.okr-score { position: absolute; top: 0; right: 0; text-align: right; }
-.okr-score b { display: block; font-size: 21px; letter-spacing: -.03em; }
-.okr-score small { display: block; margin-top: 2px; font-size: 11px; }
-.okr-tone-good b { color: #00875A; } .okr-tone-good small { color: #00875A; }
-.okr-tone-over b { color: #C77A00; } .okr-tone-over small { color: #C77A00; }
-.okr-tone-fair b { color: #3182F6; } .okr-tone-fair small { color: #4E5968; }
-.okr-tone-poor b { color: #C6535F; } .okr-tone-poor small { color: #C6535F; }
-.okr-why { margin: 0 0 12px; color: #4E5968; font-size: 13px; line-height: 1.65; }
-.okr-krs { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.okr-kr-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-.okr-kr-head b { font-size: 13px; color: #191F28; }
-.okr-kr-head span { color: #4E5968; font-size: 12px; white-space: nowrap; }
-.okr-bar { height: 8px; margin: 6px 0 4px; border-radius: 999px; background: #F1F3F5; overflow: hidden; }
-.okr-bar i { display: block; height: 100%; border-radius: 999px; }
-.okr-bar i.is-good { background: #00875A; }
-.okr-bar i.is-over { background: #C77A00; }
-.okr-bar i.is-fair { background: #3182F6; }
-.okr-bar i.is-poor { background: #C6535F; }
-.okr-kr-foot { display: flex; justify-content: space-between; align-items: center; }
-.okr-kr-foot small { color: #8B95A1; font-size: 11px; }
-.okr-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; align-items: center; }
-.okr-links span { color: #4E5968; font-size: 12px; }
-.okr-links em {
-  padding: 3px 9px; border-radius: 999px; background: #EAF2FE;
-  color: #3182F6; font-size: 11px; font-style: normal;
-}
-.okr-card-actions { margin-top: 12px; }
-.okr-loose .panel-body > p { margin: 0 0 12px; }
-.okr-loose-group { margin-bottom: 12px; }
-.okr-loose-group b { display: block; margin-bottom: 5px; color: #191F28; font-size: 12px; }
-.okr-loose-group ul { margin: 0; padding-left: 18px; color: #4E5968; font-size: 12px; line-height: 1.8; }
-.okr-raci-legend { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 4px; }
-.okr-raci-legend li { color: #4E5968; font-size: 12px; }
-.okr-raci-legend b {
-  display: inline-block; width: 18px; margin-right: 5px;
-  color: #3182F6; font-size: 12px; text-align: center;
-}
-.okr-heavy { color: #C6535F; font-weight: 800; }
-.okr-kr-editor { border: 1px solid #E5E8EB; border-radius: 10px; padding: 11px 13px; background: #FBFCFD; }
-.okr-kr-editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
-.okr-kr-editor-head b { font-size: 12px; color: #191F28; }
-.okr-kr-row {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) 72px 84px 84px minmax(0, 1fr) auto;
-  gap: 6px; align-items: center; margin-bottom: 7px;
-}
-.okr-kr-row input, .okr-kr-row select {
-  min-width: 0; height: 36px; padding: 0 9px;
-  border: 1px solid #E5E8EB; border-radius: 8px; font-size: 12px;
-}
-@media (max-width: 900px) { .okr-kr-row { grid-template-columns: 1fr 1fr; } }
-.okr-editor .okr-kr-editor { margin-top: 4px; }
 
 /* 성장·1on1 */
 .gr-next .panel-body > p { margin: 0 0 10px; }
@@ -1191,33 +1126,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* 오늘 — 일일 업무일지. 표가 넓어서 칸 폭을 정해 둔다. 안 정하면 "무엇을"
    칸이 눌려 제목이 두 글자만 보인다. */
-.dl-datenav{display:flex;align-items:center;gap:6px}
-.dl-datenav input[type=date]{width:auto}
-.dl-panel .panel-body{display:grid;gap:12px}
-.dl-table th:nth-child(1),.dl-table th:nth-child(2),.dl-table td:nth-child(1),.dl-table td:nth-child(2){width:96px}
-.dl-fixed-time{display:flex;align-items:center;min-width:82px;min-height:36px;padding:0 9px;border:1px solid #E5E8EB;border-radius:9px;background:#F2F4F6;color:#4E5968;font-size:11px;font-variant-numeric:tabular-nums;font-style:normal;font-weight:850;white-space:nowrap;cursor:default}
-.dl-table th:nth-child(4),.dl-table td:nth-child(4){width:96px}
-.dl-table th:nth-child(6),.dl-table td:nth-child(6){width:110px;white-space:nowrap}
-.dl-table th:nth-child(7),.dl-table td:nth-child(7){width:64px}
-.dl-progress{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
-.dl-progress input[type=number]{flex:0 0 62px;width:62px;min-width:0}
-.dl-progress b{flex:0 0 auto;color:#4E5968;font-size:12px;line-height:1}
-.dl-natures{display:flex;flex-wrap:wrap;gap:8px}
-.dl-nature{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F2F4F6;color:#4E5968;font-size:12px}
-.dl-nature b{color:#191F28}
-.dl-nature.is-urgent{background:#FFF1F1}
-.dl-nature.is-innovation{background:#EDF5FF}
-.dl-nature.is-routine{background:#F2F4F6}
-.dl-notes{margin:0;padding-left:18px;color:#8B95A1;font-size:12px;display:grid;gap:4px}
-.dl-words{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
-.dl-words label{display:grid;gap:4px;font-size:13px;color:#4E5968}
-.dl-actions{align-items:center;gap:10px}
-.dl-word-list{display:grid;gap:10px}
-.dl-word-card{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px}
-.dl-word-card p{margin:4px 0 0;color:#4E5968;font-size:13px}
-.dl-word-card em{font-style:normal;color:#8B95A1;margin-right:6px}
-.dl-ai-draft{border:1px solid #E5E8EB;border-radius:10px;padding:12px 14px;background:#FBFCFD;color:#191F28;font-size:13px;line-height:1.7;white-space:normal}
-.dl-export-form{display:grid;gap:16px}.dl-export-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.dl-export-preview{overflow:hidden;border:1px solid #D5E4EC;border-radius:14px;background:#FBFDFE}.dl-export-preview>header{display:flex;align-items:end;justify-content:space-between;gap:18px;padding:15px 17px;border-bottom:1px solid #DCE8EE;background:#EFF8FC}.dl-export-preview>header span{color:#3182F6;font-size:9px;font-weight:900;letter-spacing:.08em}.dl-export-preview>header h3{margin:3px 0 0;font-size:15px}.dl-export-preview>header small{color:#6B7C8C;font-size:10px;text-align:right}.dl-export-stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #E5EDF2}.dl-export-stats>div{display:grid;gap:5px;padding:14px 16px;border-right:1px solid #E5EDF2}.dl-export-stats>div:last-child{border-right:0}.dl-export-stats span{color:#8B95A1;font-size:10px}.dl-export-stats b{color:#17324D;font-size:17px}.dl-export-sheets{display:grid;gap:8px;padding:14px 16px}.dl-export-sheets>div{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:10px;background:#fff}.dl-export-sheets i{display:grid;width:27px;height:27px;place-items:center;border-radius:8px;background:#E8F5EF;color:#177A55;font-size:11px;font-style:normal;font-weight:900}.dl-export-sheets span{display:grid;gap:2px}.dl-export-sheets b{font-size:12px}.dl-export-sheets small{color:#8B95A1;font-size:10px}@media(max-width:700px){.dl-export-fields{grid-template-columns:1fr}.dl-export-preview>header{align-items:start;flex-direction:column}.dl-export-preview>header small{text-align:left}.dl-export-stats{grid-template-columns:1fr 1fr}.dl-export-stats>div:nth-child(2){border-right:0}.dl-export-stats>div:nth-child(-n+2){border-bottom:1px solid #E5EDF2}}
 
 /* 지시서 붙여넣기. 읽은 결과를 보여 주는 자리라 표가 넓다. */
 .di-panel > header,.di-panel > .panel-body{grid-column:1 / -1;min-width:0}

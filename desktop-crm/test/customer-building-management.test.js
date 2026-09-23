@@ -124,7 +124,7 @@ test("customer detail keeps essentials visible and moves consultation history in
   assert.doesNotMatch(secondaryMarkup, /activities|최근 상담|상담 기록/);
   assert.match(detail, /customerAvatar\(customer\)/);
   assert.match(detail, /customer-essential-summary/);
-  assert.match(detail, /data-customer-open|data-customer-hub-edit|new-consultation|new-selected-task/);
+  assert.match(detail, /data-customer-open|data-customer-hub-edit|new-consultation/);
   assert.match(detail, /data-contract-edit|data-building-case-open/);
   assert.doesNotMatch(detail, /data-customer-building-select|작업 건물|customer-building-context/);
   assert.doesNotMatch(detail, /data-action="new-building"|data-customer-id=.*건물/);
@@ -202,9 +202,9 @@ test("partner vendor cards keep their actions while the remaining card opens a c
 test("partner consultation history is vendor-scoped, collapsible, and returns to the same detail after changes", () => {
   const partnerDetail = sourceBetween("function renderPartnerVendorDetail", "function renderPartnerVendors");
   const partnerList = sourceBetween("function renderPartnerVendors", "function renderPartnerQuotes");
-  const editor = sourceBetween("function partnerQuoteEditor", "function taskEditor");
+  const editor = sourceBetween("function partnerQuoteEditor", "function consultationEditor");
   const removeRecord = sourceBetween("async function deletePartnerQuoteRecord", "async function excludePartnerVendorRecord");
-  const submit = sourceBetween('form.id === "partnerQuoteForm"', 'form.id === "taskForm"');
+  const submit = sourceBetween('form.id === "partnerQuoteForm"', 'form.id === "relationshipActivityForm"');
 
   assert.match(partnerDetail, /const quoteRecords = quotes\.map\(quoteRecord\)\.join\(""\)/);
   assert.doesNotMatch(partnerDetail, /quotes\.slice\(/);
@@ -240,7 +240,6 @@ test("customer header keeps legacy building actions without a work-building sele
     "data-customer-open",
     "data-customer-hub-edit",
     'data-action="new-consultation"',
-    'data-action="new-selected-task"',
     "${buildingActions}",
   ];
   customerActionTokens.reduce((previousIndex, token) => {

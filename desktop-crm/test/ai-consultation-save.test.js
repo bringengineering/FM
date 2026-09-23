@@ -18,7 +18,6 @@ test("review save creates linked customer building consultation and follow-up re
   assert.match(source, /Core\.createCustomer/);
   assert.match(source, /Core\.createBuilding/);
   assert.match(source, /Core\.createActivity/);
-  assert.match(source, /Core\.createTask/);
   assert.match(source, /buildingIdLinks/);
   assert.match(source, /privateMemo/);
 });

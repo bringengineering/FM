@@ -60,14 +60,7 @@ test("sidebar removes the standalone contract and work management tabs", () => {
   assert.doesNotMatch(appSource, /getElementById\("navContractCount"\)/);
   // 운영 분석은 화면·코어가 모두 살아 있는데 열 방법만 없었다. 지우는 대신
   // BI 폴더 안으로 올려서 다시 열리게 뒀다.
-  //
-  // 할 일도 같은 이유로 되살렸다. 다만 사정이 조금 다르다 — 고아는 아니었다.
-  // 고객 상세에서 만들고 볼 수 있었다. 문제는 고객에 안 붙인 "공통 업무" 다.
-  // customerTasks 는 customerId 로만 거르기 때문에, 공통 업무는 목록 화면
-  // 말고는 나오는 곳이 아예 없었다. 만들 수는 있는데 다시 찾을 수가 없었다.
-  // 담당자별로 모아 보는 길도 여기밖에 없다.
-  assert.equal((navSource.match(/data-view="tasks"/g) || []).length, 1);
-  assert.match(navSource, /data-nav-folder="project"[\s\S]*?data-view="tasks"/u);
+  assert.doesNotMatch(navSource, /data-view="tasks"/u);
   assert.equal((navSource.match(/data-view="operationsIntelligence"/g) || []).length, 1);
   assert.match(navSource, /data-nav-folder="bi"[\s\S]*?data-view="operationsIntelligence"/u);
 });
@@ -82,16 +75,16 @@ test("case and sales routes remain available behind the simplified navigation", 
   );
 });
 
-test("relocated and removed tabs keep their internal workflows and data routes", () => {
+test("relocated tabs keep their internal workflows and retired tasks route stays removed", () => {
   assert.match(appSource, /else if \(currentView === "operationsIntelligence"\) renderOperationsIntelligence\(\)/);
-  assert.match(appSource, /else if \(currentView === "tasks"\) renderTasks\(\)/);
+  assert.doesNotMatch(appSource, /currentView === "tasks"|renderTasks\(\)/u);
   assert.match(appSource, /else if \(currentView === "contracts"\) renderContracts\(\)/);
   assert.match(appSource, /else if \(currentView === "workManagement"\) renderWorkManagement\(\)/);
   // 계약일정은 캘린더 한 줄 안의 탭이 됐다. 폴더에는 캘린더가 있어야 한다.
   assert.match(indexSource, /data-nav-folder="calendar"[\s\S]*?data-view="buildingCalendar"/u);
   assert.match(
     appSource,
-    /\[[^\]]*"operationsIntelligence"[^\]]*"contracts"[^\]]*"tasks"[^\]]*\]\.includes\(query\.get\("view"\)\)/,
+    /\[[^\]]*"operationsIntelligence"[^\]]*"contracts"[^\]]*\]\.includes\(query\.get\("view"\)\)/,
   );
 });
 

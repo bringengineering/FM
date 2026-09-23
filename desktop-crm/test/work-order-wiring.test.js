@@ -204,8 +204,7 @@ test("사이드바 숫자를 실제로 갱신한다", () => {
 test("업무지시가 프로젝트 관리 폴더에서 열린다", () => {
   const nav = indexSource.slice(indexSource.indexOf("<nav"), indexSource.indexOf("</nav>"));
   assert.equal((nav.match(/data-view="workOrders"/g) || []).length, 1);
-  // 지시가 먼저고 할 일이 그 다음이다.
-  assert.match(nav, /data-view="workOrders"[\s\S]*?data-view="tasks"/u);
+  assert.match(nav, /data-view="projectRoadmap"[\s\S]*?data-view="workOrders"[\s\S]*?data-view="cases"/u);
   const coreAt = indexSource.indexOf('src="./work-order-core.js"');
   const appAt = indexSource.indexOf('src="./app.js"');
   assert.ok(coreAt > 0 && coreAt < appAt);

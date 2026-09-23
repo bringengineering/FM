@@ -36,7 +36,7 @@ test("every shared-data form waits for confirmed server persistence", () => {
   const sharedForms = [
     "messageConsentForm", "salesProspectForm", "salesContactForm", "salesActivityForm",
     "salesEventForm", "salesEventArchiveForm", "salesResumeForm", "salesOpportunityForm",
-    "contractForm", "partnerVendorForm", "partnerQuoteForm", "taskForm",
+    "contractForm", "partnerVendorForm", "partnerQuoteForm",
     "relationshipActivityForm", "activityForm", "consultationForm", "relationshipPlanForm",
     "securityReturnForm", "securityDispositionForm", "securityAssetForm", "accessRoleForm",
     "auditForm", "incidentForm", "settingsForm",

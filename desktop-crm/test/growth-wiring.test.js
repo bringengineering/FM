@@ -125,7 +125,7 @@ test("매주 같은 것을 묻는 것이 화면에도 그대로다", () => {
 test("새 화면이 없는 클래스에 기대지 않는다", () => {
   const css = read("styles.css");
   const start = appSource.indexOf("function renderGrowth(");
-  const end = appSource.indexOf("  // --- 분기 목표 (OKR · RACI) ---");
+  const end = appSource.indexOf("  // --- 텔레그램 알림 ---");
   const used = [...appSource.slice(start, end).matchAll(/class="([^"$]*)"/gu)]
     .flatMap(match => match[1].split(/\s+/u))
     .filter(name => name.startsWith("gr-"));

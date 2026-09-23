@@ -679,14 +679,6 @@
     }, values || {});
   }
 
-  function createTask(values) {
-    const now = iso();
-    return Object.assign({
-      id: random("tsk"), customerId: "", title: "", dueAt: dayKey(now), priority: "보통", status: "할 일",
-      owner: "김현진", assigneeUid: "", category: "후속 연락", note: "", createdAt: now, updatedAt: now
-    }, values || {});
-  }
-
   function normalizeContractTypes(value) {
     const source = value && typeof value === "object" && !Array.isArray(value)
       ? (Array.isArray(value.types) && value.types.length ? value.types : [value.type])
@@ -820,14 +812,11 @@
     const data = sanitizeStore(store);
     const today = dayKey(nowValue);
     const activeStages = new Set(PIPELINE_STAGES);
-    const isOpenTask = task => task.status !== "완료" && task.status !== "취소";
     const dueKey = value => value ? dayKey(value) : "";
     return {
       totalCustomers: data.customers.length,
       todayContacts: data.customers.filter(customer => dueKey(customer.nextContactAt) === today).length,
       overdueContacts: data.customers.filter(customer => customer.nextContactAt && dueKey(customer.nextContactAt) < today && customer.stage !== "보류·거절").length,
-      openTasks: data.tasks.filter(isOpenTask).length,
-      overdueTasks: data.tasks.filter(task => isOpenTask(task) && dueKey(task.dueAt) < today).length,
       pendingPartnerQuotes: data.partnerQuotes.filter(quote => quote.status === "연락 예정" || quote.status === "상담 중").length,
       receivedPartnerQuotes: data.partnerQuotes.filter(quote => money(quote.totalMax) > 0 || money(quote.constructionMax) > 0 || money(quote.quotedAmount) > 0).length,
       pipelineValue: data.customers.filter(customer => activeStages.has(customer.stage)).reduce((sum, customer) => sum + money(customer.expectedValue), 0),
@@ -949,7 +938,7 @@
 
   return {
     PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
-    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
+    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeMarketingAttributionRecord, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,

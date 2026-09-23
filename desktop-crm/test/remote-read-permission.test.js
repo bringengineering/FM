@@ -48,7 +48,7 @@ test("통째로 읽는 자리를 규칙이 아무에게도 안 열어 두는 일
 test("사람마다 다른 것을 읽어야 하는 자리는 경로부터 갈라 놓는다", () => {
   // 다 읽어 와서 화면에서 걸러 주면, 화면을 안 거치는 길로 남의 것을 그대로
   // 가져갈 수 있다. 남의 눈에 보이면 안 되는 자리는 대표만 목록을 연다.
-  for (const node of ["growthCheckins", "growthReviews", "dailyLogs"]) {
+  for (const node of ["growthCheckins", "growthReviews"]) {
     const read = rules[node][".read"];
     assert.match(read, /'admin'/u, node);
     assert.ok(!read.includes("'member'"), `${node}: 팀원이 목록을 훑으면 다 보인다`);
@@ -65,7 +65,7 @@ test("사람마다 다른 것을 읽어야 하는 자리는 경로부터 갈라 
 test("못 읽은 것을 빈 목록으로 바꾸지 않는다", () => {
   // 권한이 막혀 못 읽는 것을 조용히 빈 목록으로 만들면 화면이 거짓말을 하고,
   // 아무도 이상한 줄 모른 채 몇 주가 간다. 실제로 그랬다.
-  for (const node of ["growthCheckins", "growthReviews", "dailyLogs"]) {
+  for (const node of ["growthCheckins", "growthReviews"]) {
     const swallow = new RegExp(`dbRequest\\([^\\n]*${node}[^\\n]*\\.catch\\(\\(\\) => null\\)`, "u");
     assert.ok(!swallow.test(remoteSource), `${node}: 못 읽은 것을 삼키면 안 된다`);
   }

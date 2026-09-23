@@ -23,8 +23,6 @@ const WorkReportCore = require("./work-report-core");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
 const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
-const { createDailyLogWorkbook, dailyLogWorkbookFileName } = require("./daily-log-xlsx");
-const { createMonthlyDailyLogWorkbook, monthlyDailyLogWorkbookFileName } = require("./daily-log-monthly-xlsx");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
@@ -59,7 +57,6 @@ const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
 const { classifyPhotosWithGateway, MAX_PHOTOS: MAX_AI_CLASSIFICATION_PHOTOS, MAX_JPEG_BYTES: MAX_AI_CLASSIFICATION_JPEG_BYTES } = require("./ai-photo-classifier-client");
 const WindowsKoreanInput = require("./windows-korean-input");
-const { sendDailyLogToTelegram } = require("./daily-log-telegram-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
 const { requestDocumentDelivery } = require("./document-delivery-client");
@@ -156,9 +153,7 @@ const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 // 실제 데이터와 분리된 화면을 프로그램 창으로 확인할 때만 쓰는 닫힌 경로다.
 // 제품 실행에서는 환경 변수가 없으므로 기존 로그인·저장 경로에 영향이 없다.
-const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "dailyLog"
-  ? "dailyLog"
-  : (process.env.BRING_CRM_PREVIEW_VIEW === "projectRoadmap" ? "projectRoadmap" : "");
+const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "projectRoadmap" ? "projectRoadmap" : "";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
@@ -166,7 +161,6 @@ const CRM_AI_PHOTO_CLASSIFY_URL = new URL("/v1/photo-classify", CRM_AI_GATEWAY_U
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
-const CRM_DAILY_LOG_TELEGRAM_URL = new URL("/v1/telegram/daily-report", CRM_AI_GATEWAY_URL).href;
 // OAuth client IDs are public identifiers, not secrets. A Desktop-app client is
 // still supplied outside source so each installation can use the company Google
 // Cloud project without ever bundling a client secret.
@@ -2742,49 +2736,6 @@ async function exportOfficeAttendance(input) {
   return { ok: true, path: result.filePath };
 }
 
-async function exportMonthlyDailyLogs(input) {
-  const actor = remoteClient && remoteClient.authState().user;
-  if (!actor) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("월간 업무보고서 요청을 확인해 주세요.");
-  const userId = String(input.userId || "").trim();
-  const month = String(input.month || "").trim();
-  if (!/^[A-Za-z0-9._-]{1,128}$/u.test(userId) || !/^\d{4}-(0[1-9]|1[0-2])$/u.test(month)) {
-    throw new Error("월간 업무보고서 대상과 월을 확인해 주세요.");
-  }
-  const [dailyPayload, workPayload] = await Promise.all([
-    remoteClient.loadDailyLogs(),
-    remoteClient.loadWorkOrders(),
-  ]);
-  if (dailyPayload.admin !== true && userId !== dailyPayload.uid) {
-    throw Object.assign(new Error("본인의 월간 업무보고서만 내보낼 수 있습니다."), { code: "DAILY_LOG_EXPORT_FORBIDDEN" });
-  }
-  const member = (workPayload.members || []).find(item => item && item.uid === userId);
-  if (!member && userId !== dailyPayload.uid) throw new Error("선택한 구성원을 찾지 못했습니다.");
-  const user = Object.assign({
-    uid: userId,
-    displayName: userId === dailyPayload.uid ? dailyPayload.name : userId,
-    department: "",
-    title: "",
-  }, member || {});
-  const request = {
-    month,
-    user: Object.assign({}, user, { name: user.displayName || user.name || user.email || user.uid }),
-    logs: dailyPayload.logs || [],
-    orders: workPayload.orders || [],
-    now: new Date(),
-  };
-  const workbook = createMonthlyDailyLogWorkbook(request);
-  const fileName = monthlyDailyLogWorkbookFileName(request);
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: "월간 일일업무보고서 Excel 저장",
-    defaultPath: fileName,
-    filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
-  });
-  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-  await fs.writeFile(result.filePath, workbook, { mode: 0o600 });
-  return { ok: true, fileName: path.basename(result.filePath) };
-}
-
 async function exportAiQuote(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 저장 요청이 올바르지 않습니다.");
@@ -5288,7 +5239,7 @@ async function createWindow() {
     const snapshot = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     console.log(JSON.stringify(snapshot));
     const workflowReads = await mainWindow.webContents.executeJavaScript(`Promise.all(
-      ["loadForms", "loadWorkOrders", "loadDailyLogs", "loadSupplies", "loadDeliveryFlows", "loadWorkReports"].map(async method => {
+      ["loadForms", "loadWorkOrders", "loadSupplies", "loadDeliveryFlows", "loadWorkReports"].map(async method => {
         const result = await window.bringCRM[method]();
         if (!result.localOnly || result.canWork !== false) throw new Error(method + " local read failed");
         return method;
@@ -6008,19 +5959,6 @@ async function createWindow() {
         const readable = Number.parseFloat(getComputedStyle(document.querySelector('.customer-summary h3')).fontSize) >= 20
           && Number.parseFloat(getComputedStyle(document.querySelector('.kv span')).fontSize) >= 13
           && Number.parseFloat(getComputedStyle(document.querySelector('.field input')).fontSize) >= 14;
-        const taskTitle = '중앙 상세 할 일 ' + Date.now().toString(36);
-        document.querySelector('[data-action="new-selected-task"]')?.click();
-        await wait(40);
-        const taskForm = document.getElementById('taskForm');
-        const taskCustomerId = taskForm?.elements.customerId.value || '';
-        if (taskForm) {
-          taskForm.elements.title.value = taskTitle;
-          taskForm.requestSubmit();
-          await wait(160);
-        }
-        const taskSaved = window.__crmTest.getStore().tasks.some(item => item.title === taskTitle && item.customerId === taskCustomerId);
-        const taskReturn = layer?.classList.contains('open') && layer?.classList.contains('customer-centered')
-          && !document.getElementById('modal')?.classList.contains('open');
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         await wait(25);
         const escapeClosed = !layer?.classList.contains('open');
@@ -6042,10 +5980,10 @@ async function createWindow() {
         const finalOpen = layer?.classList.contains('open') && layer?.classList.contains('customer-centered');
         const pass = !!opener && layer?.classList.contains('customer-centered') && centeredBeforeEdit
           && firstRect.width >= 900 && firstRect.height <= firstViewport.height * .91 && internalScroll && draftPreserved && remoteChangePreserved
-          && editTransition && centeredAfterSave && readable && taskSaved && taskReturn
+          && editTransition && centeredAfterSave && readable
           && escapeClosed && escapeReopened && backgroundClosed && backgroundReopened && closeButtonClosed && finalOpen;
         return {
-          pass, centeredBeforeEdit, centeredAfterSave, editTransition, internalScroll, draftPreserved, remoteChangePreserved, readable, taskSaved, taskReturn,
+          pass, centeredBeforeEdit, centeredAfterSave, editTransition, internalScroll, draftPreserved, remoteChangePreserved, readable,
           escapeClosed, escapeReopened, backgroundClosed, backgroundReopened, closeButtonClosed, finalOpen,
           firstViewport,
           firstRect: firstRect && { left: firstRect.left, top: firstRect.top, width: firstRect.width, height: firstRect.height },
@@ -6081,14 +6019,6 @@ async function createWindow() {
         row?.scrollIntoView({ block: 'center' });
         return { pass, storedLineCount: saved?.summary.split(String.fromCharCode(10)).length || 0, textLines, whiteSpace: style?.whiteSpace, overflowWrap: style?.overflowWrap, lineHeight, height, noHorizontalOverflow, timeVisible: !!time?.textContent.trim(), deleteVisible: !!row?.querySelector('[data-activity-delete]'), state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "task-first-customer") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
-        const opener = document.querySelector("[data-customer-open]");
-        opener?.click();
-        const button = document.querySelector('[data-action="new-selected-task"]');
-        button?.click();
-        return { openerFound: !!opener, buttonFound: !!button, state: window.__crmTest?.snapshot() };
-      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-partner-quote") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         window.__crmSmokeNavigate('partnerQuotes');
@@ -6104,55 +6034,6 @@ async function createWindow() {
         const button = document.querySelector('[data-action="new-consultation"]');
         button?.click();
         return { buttonFound: !!button, state: window.__crmTest?.snapshot() };
-      })()`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "confirmation-dialog") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="tasks"]')?.click();
-        document.querySelector('[data-action="new-task"]')?.click();
-        const form = document.getElementById('taskForm');
-        if (!form) return { pass: false, reason: 'task form missing' };
-        form.elements.title.value = '업체와 같이 방문';
-        form.elements.note.value = '삭제 확인창 UI 점검';
-        form.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const task = [...window.__crmTest.getStore().tasks].reverse().find(item => item.title === '업체와 같이 방문');
-        const button = task && document.querySelector('[data-task-delete="' + task.id + '"]');
-        button?.click();
-        await new Promise(resolve => setTimeout(resolve, 80));
-        const layer = document.getElementById('confirmationLayer');
-        const confirmButton = layer?.querySelector('[data-confirm-choice="confirm"]');
-        const cancelButton = layer?.querySelector('.confirmation-actions [data-confirm-choice="cancel"]');
-        return { pass: !!task && !!button && layer?.classList.contains('open') && confirmButton?.textContent.trim() === '할 일 삭제' && confirmButton?.classList.contains('confirmation-danger-button') && cancelButton?.textContent.trim() === '취소', taskId: task?.id, title: document.getElementById('confirmationTitle')?.textContent, confirmLabel: confirmButton?.textContent, state: window.__crmTest.snapshot() };
-      })()`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "confirmation-behavior") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="tasks"]')?.click();
-        document.querySelector('[data-action="new-task"]')?.click();
-        const form = document.getElementById('taskForm');
-        if (!form) return { pass: false, reason: 'task form missing' };
-        const title = '확인창 동작 점검 ' + Date.now();
-        form.elements.title.value = title;
-        form.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const task = window.__crmTest.getStore().tasks.find(item => item.title === title);
-        const openDelete = () => document.querySelector('[data-task-delete="' + task.id + '"]')?.click();
-        openDelete();
-        await new Promise(resolve => setTimeout(resolve, 30));
-        const opened = window.__crmTest.snapshot().confirmationOpen;
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 50));
-        const afterEscape = window.__crmTest.getStore().tasks.some(item => item.id === task.id) && !window.__crmTest.snapshot().confirmationOpen;
-        openDelete();
-        await new Promise(resolve => setTimeout(resolve, 30));
-        document.querySelector('#confirmationLayer [data-confirm-choice="cancel"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 50));
-        const afterCancel = window.__crmTest.getStore().tasks.some(item => item.id === task.id) && !window.__crmTest.snapshot().confirmationOpen;
-        openDelete();
-        await new Promise(resolve => setTimeout(resolve, 30));
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 120));
-        const removed = !window.__crmTest.getStore().tasks.some(item => item.id === task.id);
-        return { pass: opened && afterEscape && afterCancel && removed && !window.__crmTest.snapshot().confirmationOpen, opened, afterEscape, afterCancel, removed, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "confirmation-modal-cancel") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -6171,28 +6052,6 @@ async function createWindow() {
         const sameForm = document.getElementById('contractForm');
         const preserved = window.__crmTest.snapshot().modalOpen && !window.__crmTest.snapshot().confirmationOpen && sameForm?.elements.memo.value === original;
         return { pass: !!card && confirmationOpened && preserved, confirmationOpened, preserved, memo: sameForm?.elements.memo.value, state: window.__crmTest.snapshot() };
-      })()`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "confirmation-remote-conflict") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="tasks"]')?.click();
-        const before = window.__crmTest.getStore();
-        const task = before.tasks[0];
-        const button = task && document.querySelector('[data-task-delete="' + task.id + '"]');
-        button?.click();
-        await new Promise(resolve => setTimeout(resolve, 30));
-        const remoteId = 'task_remote_' + Date.now();
-        const remote = window.__crmTest.getStore();
-        remote.tasks.push(Object.assign({}, task, { id: remoteId, title: '다른 사용자가 추가한 할 일', updatedAt: new Date().toISOString() }));
-        remote.updatedAt = new Date(Date.now() + 1000).toISOString();
-        window.__crmTest.applyRemoteForTest(remote);
-        window.__crmTest.confirmPending();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const after = window.__crmTest.getStore();
-        const targetKept = after.tasks.some(item => item.id === task.id);
-        const remoteKept = after.tasks.some(item => item.id === remoteId);
-        const conflictMessage = document.getElementById('toast')?.textContent.includes('최신 변경을 먼저 반영');
-        const visibleFocus = !document.activeElement?.closest?.('#modal, #drawer, #confirmationLayer');
-        return { pass: !!button && targetKept && remoteKept && conflictMessage && visibleFocus && !window.__crmTest.snapshot().confirmationOpen, targetKept, remoteKept, conflictMessage, visibleFocus, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "contract-form") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
@@ -7459,16 +7318,12 @@ async function createWindow() {
         results.editCustomer = state();
         document.querySelector('#modal [data-action="close-modal"]')?.click();
         document.querySelector("[data-customer-open]")?.click();
-        document.querySelector('[data-action="new-selected-task"]')?.click();
-        results.customerTask = state();
-        document.querySelector('#modal [data-action="close-modal"]')?.click();
-        document.querySelector("[data-customer-open]")?.click();
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
         results.escape = state();
         const expected = {
           newCustomer: { modal: true, drawer: false }, closeCustomer: { modal: false, drawer: false },
           customerDetail: { modal: false, drawer: true }, editCustomer: { modal: true, drawer: false },
-          customerTask: { modal: true, drawer: false }, escape: { modal: false, drawer: false }
+          escape: { modal: false, drawer: false }
         };
         const pass = Object.entries(expected).every(([key, value]) => results[key]?.modal === value.modal && results[key]?.drawer === value.drawer);
         return { pass, results };
@@ -7540,30 +7395,6 @@ async function createWindow() {
         const state = window.__crmTest.snapshot();
         const pass = typeFilters.join('|') === '전체|청소|건물관리|부동산관리' && conditionalTypes === '건물관리|부동산관리' && optionalEndDateLabel === '계약 종료일 (선택)' && optionalEndDateDisplayed && saved?.endDate === '' && saved?.types?.join('|') === '건물관리|부동산관리' && saved?.buildingId === autoSelectedBuilding && saved?.status === '종료 예정' && saved?.unitCount === 12 && saved?.managementTarget === '임대 현황 관리' && saved?.memo === '갱신 여부 확인 필요' && !!deleteButton && removed && cards.length >= 1 && filteredCorrectly && state.view === 'contracts' && !state.modalOpen;
         return { pass, typeFilters, conditionalTypes, optionalEndDateLabel, optionalEndDateDisplayed, autoSelectedBuilding, saved, deleteButtonFound: !!deleteButton, removed, cardCount: cards.length, filteredCorrectly, state };
-      })()`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "task-menu-readability") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="tasks"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 120));
-        const expectedMenu = ['dashboard','customers','buildings','consultations','tasks','contracts','relationships','cases','payments','partnerVendors','partnerQuotes','security','settings'];
-        const menu = [...document.querySelectorAll('#nav .nav-item')].map(item => item.dataset.view);
-        const taskFilters = [...document.querySelectorAll('[data-task-filter]')].map(item => item.textContent.trim());
-        const rows = [...document.querySelectorAll('.task-row')];
-        const first = rows[0];
-        const labels = first ? [...first.querySelectorAll('.task-meta-label')].map(item => item.textContent.trim()) : [];
-        const allRowsReadable = rows.length > 0 && rows.every(row => {
-          const rowLabels = [...row.querySelectorAll('.task-meta-label')].map(item => item.textContent.trim());
-          return rowLabels.join('|') === '연결 고객|기한|담당자|우선순위' && row.scrollWidth <= row.clientWidth + 1;
-        });
-        const owner = first?.querySelector('.task-owner');
-        const workspace = document.querySelector('.task-workspace');
-        const workspaceRect = workspace?.getBoundingClientRect();
-        const taskTitle = first?.querySelector('.task-title strong');
-        const titleSize = taskTitle ? Number.parseFloat(getComputedStyle(taskTitle).fontSize || '0') : 0;
-        const pass = menu.join('|') === expectedMenu.join('|') && taskFilters.join('|') === '전체|열린 업무|완료' && labels.join('|') === '연결 고객|기한|담당자|우선순위'
-          && allRowsReadable && !!owner && getComputedStyle(owner).display !== 'none' && titleSize >= 13
-          && !!workspaceRect && workspaceRect.width <= 1241 && document.documentElement.scrollWidth <= innerWidth;
-        return { pass, menu, taskFilters, labels, rowCount: rows.length, allRowsReadable, ownerVisible: !!owner && getComputedStyle(owner).display !== 'none', titleSize, workspaceWidth: workspaceRect?.width, viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "relationship-management") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -7880,17 +7711,6 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "delete-controls") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="tasks"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 80));
-        document.querySelector('[data-action="new-task"]')?.click();
-        const taskForm = document.getElementById('taskForm');
-        if (taskForm) {
-          taskForm.elements.title.value = '삭제 버튼 확인용 할 일';
-          taskForm.requestSubmit();
-          await new Promise(resolve => setTimeout(resolve, 120));
-        }
-        const taskRows = document.querySelectorAll('.task-row').length;
-        const taskDeletes = document.querySelectorAll('[data-task-delete]').length;
         document.querySelector('[data-view="customers"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 80));
         document.querySelector('[data-customer-open]')?.click();
@@ -7903,8 +7723,8 @@ async function createWindow() {
         await new Promise(resolve => setTimeout(resolve, 80));
         const quoteDelete = Boolean(document.querySelector('[data-partner-quote-delete]'));
         const state = window.__crmTest.snapshot();
-        const pass = taskRows >= 1 && taskDeletes === taskRows && customerDelete && buildingDeletes >= 1 && quoteDelete && state.view === 'partnerQuotes' && state.modalOpen === true;
-        return { pass, taskRows, taskDeletes, customerDelete, buildingDeletes, quoteDelete, state };
+        const pass = customerDelete && buildingDeletes >= 1 && quoteDelete && state.view === 'partnerQuotes' && state.modalOpen === true;
+        return { pass, customerDelete, buildingDeletes, quoteDelete, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-schedule-form") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -8377,30 +8197,6 @@ async function createWindow() {
         })().catch(error => ({ pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() })),
         new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, state: window.__crmTest?.snapshot() }), 15000))
       ])`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "daily-log-fixed-times") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-        document.querySelector('[data-workspace-enter="operations"]')?.click();
-        await wait(180);
-        window.__crmSmokeNavigate('dailyLog');
-        await wait(220);
-        [...document.querySelectorAll('.info-box')]
-          .filter(node => node.textContent.includes("crm:daily-logs-load"))
-          .forEach(node => node.remove());
-        const fixedTimes = [...document.querySelectorAll('.dl-fixed-time')];
-        const editableTimes = [...document.querySelectorAll('.dl-table input[type="time"]')];
-        const labels = fixedTimes.map(node => node.textContent.replace(/\s+/g, ' ').trim());
-        return {
-          pass: fixedTimes.length === 18 && editableTimes.length === 0
-            && labels[0] === '오전 09:00' && labels[17] === '오후 06:00',
-          fixedTimeCount: fixedTimes.length,
-          editableTimeCount: editableTimes.length,
-          renderedWithoutAddingRows: true,
-          first: labels[0] || '',
-          last: labels[17] || '',
-          state: window.__crmTest?.snapshot(),
-        };
-      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "form-matrix") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8441,21 +8237,9 @@ async function createWindow() {
           await wait(80);
         }
         results.consultationSave = state();
-        document.querySelector('[data-view="tasks"]')?.click();
-        await wait(80);
-        document.querySelector('[data-action="new-task"]')?.click();
-        await wait(40);
-        const taskForm = document.getElementById("taskForm");
-        if (taskForm) {
-          taskForm.elements.title.value = "UI 자동 점검 할 일";
-          taskForm.requestSubmit();
-          await wait(80);
-        }
-        results.taskSave = state();
         const expected = {
           customerSave: { modal: false, drawer: true, view: "customers" },
-          consultationSave: { modal: false, drawer: false, view: "consultations" },
-          taskSave: { modal: false, drawer: false, view: "tasks" }
+          consultationSave: { modal: false, drawer: false, view: "consultations" }
         };
         const pass = results.consultationPicker?.selected && results.consultationPicker?.optionFound && Object.entries(expected).every(([key, value]) => Object.entries(value).every(([field, expectedValue]) => results[key]?.[field] === expectedValue));
         return { pass, results };
@@ -8465,7 +8249,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "daily-log-fixed-times", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -8533,28 +8317,6 @@ secureCanonicalHandle("crm:ai-assist", async input => {
   });
 });
 secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
-secureCanonicalHandle("crm:daily-log-telegram-send", async input => {
-  const request = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const report = request.report && typeof request.report === "object" && !Array.isArray(request.report)
-    ? request.report : request;
-  const profile = request.profile && typeof request.profile === "object" && !Array.isArray(request.profile)
-    ? request.profile : {};
-  const user = remoteClient && remoteClient.authState().user;
-  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
-  if (!["admin", "member"].includes(String(user.role || user.accessRole || ""))) {
-    throw Object.assign(new Error("업무보고서를 텔레그램으로 보낼 권한이 없습니다."), { code: "FORBIDDEN" });
-  }
-  const idToken = await remoteClient.ensureIdToken(false);
-  const xlsxBytes = createDailyLogWorkbook(report, { profile });
-  return sendDailyLogToTelegram({
-    endpoint: CRM_DAILY_LOG_TELEGRAM_URL,
-    idToken,
-    input: report,
-    xlsxBytes,
-    fileName: dailyLogWorkbookFileName(report),
-    fetchImpl: (url, options) => net.fetch(url, options),
-  });
-});
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "상담 녹음 파일 선택",
@@ -8625,8 +8387,6 @@ secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberReco
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
-secureCanonicalHandle("crm:daily-log-save", input => remoteClient.saveDailyLog(input));
-secureCanonicalHandle("crm:daily-log-confirm", input => remoteClient.confirmDailyLog(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
@@ -8663,12 +8423,9 @@ secureCanonicalHandle("crm:work-report-drive-browse", input => browseWorkReportD
 secureCanonicalHandle("crm:work-report-drive-thumbnail", input => loadWorkReportDriveThumbnail(input));
 secureCanonicalHandle("crm:work-report-drive-plan", input => planSelectedWorkReportPhotos(input));
 secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));
-secureHandle("crm:objectives-load", () => remoteClient.loadObjectives());
 secureHandle("crm:growth-load", () => remoteClient.loadGrowth());
 secureCanonicalHandle("crm:growth-checkin-save", input => remoteClient.saveGrowthCheckin(input));
 secureCanonicalHandle("crm:growth-review-save", input => remoteClient.saveGrowthReview(input));
-secureCanonicalHandle("crm:objective-save", input => remoteClient.saveObjective(input));
-secureCanonicalHandle("crm:key-result-update", input => remoteClient.updateKeyResult(input));
 secureHandle("crm:telegram-settings-load", () => loadTelegramSettings());
 secureCanonicalHandle("crm:telegram-chats-find", input => findTelegramChats(input));
 secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSettings(input));
@@ -8913,7 +8670,6 @@ secureCanonicalHandle("crm:office-attachment-open", input => openOfficeAttachmen
 secureCanonicalHandle("crm:office-message-send", input => sendOfficeMessage(input));
 secureCanonicalHandle("crm:office-messages-read", input => markOfficeMessagesRead(input));
 secureCanonicalHandle("crm:office-attendance-export", input => exportOfficeAttendance(input));
-secureCanonicalHandle("crm:daily-logs-monthly-export", input => exportMonthlyDailyLogs(input));
 secureCanonicalHandle("crm:office-messenger-presence", input => {
   const user = assertOfficeSession();
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -9067,7 +8823,6 @@ function readWorkflowCollection(method) {
   const collections = {
     loadForms: ["templates", "entries"],
     loadWorkOrders: ["orders", "projects", "capacity", "directives", "members"],
-    loadDailyLogs: ["logs"],
     loadSupplies: ["items", "moves", "costs"],
     loadDeliveryFlows: ["flows"],
     loadWorkReports: ["reports"],
@@ -9089,7 +8844,6 @@ function readWorkflowCollection(method) {
 }
 secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
 secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
-secureHandle("crm:daily-logs-load", () => readWorkflowCollection("loadDailyLogs"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
 secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));
