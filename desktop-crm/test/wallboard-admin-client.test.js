@@ -38,6 +38,7 @@ test('administrator UI labels web auto updates and limits EXE controls to electr
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/wallboard-admin-ui.js'),'utf8');
  assert.match(source,/웹 자동반영/);assert.match(source,/clientType==='electron'/);assert.match(source,/\/tv/);
  assert.match(source,/수신 게시 버전/);assert.match(source,/연결됨/);
+ assert.match(source,/data-live-sync/);assert.match(source,/실시간 반영 중/);assert.doesNotMatch(source,/data-auto-start|data-auto-stop/);
 });
 test('background CRM updates do not remount the company wallboard while an approval code is being entered',()=>{
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
