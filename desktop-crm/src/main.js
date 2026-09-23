@@ -42,6 +42,7 @@ const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
+const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -8521,12 +8522,12 @@ secureCanonicalHandle("crm:leave-request-save", input => remoteClient.saveLeaveR
 secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveRequest(input));
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
-secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:work-order-save", input => saveAndSignalWallboard(() => remoteClient.saveWorkOrder(input), () => wallboardLiveSync?.notify()));
 secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
-secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
-secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
+secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), () => wallboardLiveSync?.notify()));
+secureCanonicalHandle("crm:work-order-progress", input => saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), () => wallboardLiveSync?.notify()));
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
 secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
 secureCanonicalHandle("crm:project-weekly-report-export", input => exportProjectWeeklyReport(input));
