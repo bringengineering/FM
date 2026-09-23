@@ -11,6 +11,7 @@ const {
 } = require("./release-lib");
 const {
   assertRemoteRefs,
+  refreshRelease,
   selectReleaseForTag,
   verifyPublishedReleaseAssets,
 } = require("./publish-release");
@@ -61,6 +62,7 @@ async function advanceUpdateChannel({
   cwd = process.cwd(),
   fetchImpl = globalThis.fetch,
   listReleases = listGithubReleases,
+  loadRelease = refreshRelease,
   listRefs = listRemoteRefs,
   inspectCommit = inspectDeterministicReleaseCommit,
 } = {}) {
@@ -78,7 +80,9 @@ async function advanceUpdateChannel({
   }
   assertRemoteRefs({ version, sourceSha, releaseSha, remoteRefs: listRefs({ cwd, remote }) });
   const releases = await listReleases({ owner, repo, token, fetchImpl });
-  const release = selectExactStableRelease({ releases, version, releaseSha });
+  const listedRelease = selectExactStableRelease({ releases, version, releaseSha });
+  const release = await loadRelease({ owner, repo, token, releaseId: listedRelease.id, fetchImpl });
+  selectExactStableRelease({ releases: [release], version, releaseSha });
   const bodies = await verifyPublishedReleaseAssets(release, version, { token, owner, repo, tag, fetchImpl });
   const pointer = buildUpdateChannel({ version, release, bodies });
 
@@ -86,7 +90,9 @@ async function advanceUpdateChannel({
   // bytes: the public release and all asset identities must still be identical.
   assertRemoteRefs({ version, sourceSha, releaseSha, remoteRefs: listRefs({ cwd, remote }) });
   const freshReleases = await listReleases({ owner, repo, token, fetchImpl });
-  const freshRelease = selectExactStableRelease({ releases: freshReleases, version, releaseSha });
+  const listedFreshRelease = selectExactStableRelease({ releases: freshReleases, version, releaseSha });
+  const freshRelease = await loadRelease({ owner, repo, token, releaseId: listedFreshRelease.id, fetchImpl });
+  selectExactStableRelease({ releases: [freshRelease], version, releaseSha });
   if (releaseIdentity(freshRelease) !== releaseIdentity(release)) {
     throw releaseError("CRM_UPDATE_CHANNEL_RELEASE_CHANGED", "The stable CRM release changed while its update-channel pointer was being prepared.");
   }

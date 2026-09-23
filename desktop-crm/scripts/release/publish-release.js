@@ -278,6 +278,7 @@ module.exports = {
   assertAssetInventory,
   verifyRemoteAssets,
   verifyPublishedReleaseAssets,
+  refreshRelease,
   stageRelease,
   publishDraft,
 };

@@ -316,7 +316,8 @@ test("the release orchestrator binds tag, reservation, exact remote bytes, and t
     token: "token",
     fetchImpl,
     listRefs: () => stable.remoteRefs,
-    listReleases: async () => [stable.release],
+    listReleases: async () => [{ ...stable.release, assets: [] }],
+    loadRelease: async () => stable.release,
     inspectCommit: () => inspectedRelease("1.8.8", sourceSha),
   });
   assert.equal(result.channel_advanced, "true");
@@ -350,6 +351,8 @@ test("a release identity change after byte verification aborts before any channe
   const api = fakeChannelApi();
   const byUrl = new Map(stable.release.assets.map(asset => [asset.url, stable.built.bodies.get(asset.name)]));
   let listCount = 0;
+  let loadCount = 0;
+  const changedRelease = { ...stable.release, assets: stable.release.assets.map((asset, index) => index ? asset : { ...asset, id: 999, url: "https://api.github.com/repos/bringengineering/FM/releases/assets/999" }) };
   await assert.rejects(
     advanceUpdateChannel({
       version: "1.8.8",
@@ -365,13 +368,16 @@ test("a release identity change after byte verification aborts before any channe
       inspectCommit: () => inspectedRelease("1.8.8", sourceSha),
       listReleases: async () => {
         listCount += 1;
-        return listCount === 1
-          ? [stable.release]
-          : [{ ...stable.release, assets: stable.release.assets.map((asset, index) => index ? asset : { ...asset, id: 999, url: "https://api.github.com/repos/bringengineering/FM/releases/assets/999" }) }];
+        return [stable.release];
+      },
+      loadRelease: async () => {
+        loadCount += 1;
+        return loadCount === 1 ? stable.release : changedRelease;
       },
     }),
     error => error.code === "CRM_UPDATE_CHANNEL_RELEASE_CHANGED"
   );
   assert.equal(listCount, 2);
+  assert.equal(loadCount, 2);
   assert.equal(api.calls.some(call => /\/git\/(blobs|trees|commits|refs)/.test(call.path) && call.method !== "GET"), false);
 });
