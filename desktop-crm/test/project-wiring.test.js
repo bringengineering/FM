@@ -14,6 +14,15 @@ const appSource = read("app.js");
 const indexSource = read("index.html");
 const rules = JSON.parse(fs.readFileSync(path.join(__dirname, "../../database.rules.json"), "utf8")).rules.crmCompany;
 
+test("authenticated shared CRM sync drives live wallboard reconciliation", () => {
+  assert.match(mainSource, /createWallboardLiveSync/u);
+  assert.match(mainSource, /wallboardLiveSync\.start\(\)/u);
+  assert.match(mainSource, /state\?\.status === "connected"/u);
+  assert.match(mainSource, /wallboardLiveSync\?\.notify\(\)/u);
+  assert.match(mainSource, /input\?\.action === "live-sync"/u);
+  assert.match(mainSource, /input\?\.action === "live-status"/u);
+});
+
 function methodBody(source, name) {
   const start = source.indexOf(`async ${name}(`);
   if (start < 0) return "";

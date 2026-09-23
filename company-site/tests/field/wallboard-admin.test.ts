@@ -20,15 +20,13 @@ test('device list distinguishes last server access from actual screen verificati
  expect(host.textContent).toContain('실제 TV 화면 표시는 별도로 확인');
  stop();dom.window.close();
 });
-test('automatic publication requires consent, freezes approved layout, and exposes stop',async()=>{
+test('live publication status is visible and supports immediate recovery',async()=>{
  const dom=new JSDOM('<main></main>',{runScripts:'outside-only'});const w=dom.window as any;w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/wallboard-admin-ui.js'),'utf8'));
- const calls:any[]=[];const host=w.document.querySelector('main');let allow=false;
- const snapshot={notice:'공지',playlist:[{key:'people',enabled:true,seconds:30}]};
- const dispose=w.BringWallboardAdmin.mount(host,{confirm:()=>allow,getPublication:()=>snapshot,request:async(i:any)=>{calls.push(i);return i.action==='list'?{version:2,devices:[]}:{active:i.action==='auto-start',version:3,publishedAt:123};}});
- await new Promise(r=>setTimeout(r,0));expect(host.querySelector('[data-auto-start]')).not.toBeNull();
- host.querySelector('[data-auto-start]').click();expect(calls.some(i=>i.action==='auto-start')).toBe(false);
- allow=true;host.querySelector('[data-auto-start]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'auto-start',...snapshot,expectedVersion:2});
- host.querySelector('[data-auto-stop]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'auto-stop'});
+ const calls:any[]=[];const host=w.document.querySelector('main');
+ const dispose=w.BringWallboardAdmin.mount(host,{request:async(i:any)=>{calls.push(i);if(i.action==='list')return {version:2,devices:[]};if(i.action==='live-sync')return {active:true,busy:false,version:3,publishedAt:2000,error:''};return {active:true,busy:false,version:2,publishedAt:1000,error:''};}});
+ await new Promise(r=>setTimeout(r,0));expect(host.textContent).toContain('실시간 반영 중');
+ expect(host.querySelector('[data-live-sync]')).not.toBeNull();expect(host.querySelector('[data-auto-start]')).toBeNull();expect(host.querySelector('[data-auto-stop]')).toBeNull();
+ host.querySelector('[data-live-sync]').click();await new Promise(r=>setTimeout(r,0));expect(calls).toContainEqual({action:'live-sync'});expect(host.textContent).toContain('게시 버전 3');
  dispose();dom.window.close();
 });
 test('publication requires confirmation and uses loaded server revision',async()=>{

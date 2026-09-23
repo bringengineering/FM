@@ -84,7 +84,7 @@ test('legacy and explicit desktop devices are normalized as electron clients',as
 });
 test('device list reports the latest publication version actually received',async()=>{
  const f=fixture();const pending=await f.service.begin('web');await f.service.approve(pending.code,'웹 TV',admin);const device=await f.service.poll(pending.pendingToken);
- const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[]}},playlist:[{key:'status',enabled:true,seconds:15}],notice:'',dataDate:'2026-09-20'};
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{from:'2026-08-31',to:'2026-10-25',todayOffset:36,weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]}},playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'',dataDate:'2026-09-20'};
  await f.service.publish(snapshot,0,admin);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,null);
  await f.service.readBoard(device.deviceToken);assert.equal((await f.service.list(admin)).devices[0].receivedVersion,1);
 });
