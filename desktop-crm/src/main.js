@@ -37,6 +37,7 @@ const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
+const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -136,6 +137,7 @@ let crmAuthenticationRequestCount = 0;
 let remoteClient = null;
 let wallboardPublisher = null;
 let wallboardPublisherUid = "";
+let wallboardLiveSync = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
@@ -4525,6 +4527,11 @@ async function initializeRemote() {
       const wallboardUid = state?.user?.mustChangePassword ? "" : String(state?.user?.uid || "");
       if (wallboardUid !== wallboardPublisherUid) wallboardPublisher?.stop();
       wallboardPublisherUid = wallboardUid;
+      if (wallboardUid) {
+        wallboardLiveSync = ensureWallboardLiveSync();
+        wallboardLiveSync.start();
+      }
+      else wallboardLiveSync?.stop("AUTH_REQUIRED");
       if (FIELD_OPERATIONS_ENABLED) syncFieldSession(state);
       officeNotificationSessionEpoch += 1;
       closeOfficeNotifications();
@@ -4539,9 +4546,41 @@ async function initializeRemote() {
       valuescopeAuthUserId = nextValueScopeUserId;
       sendToRenderer("crm:auth-state", state);
     },
-    onSyncState: state => sendToRenderer("crm:sync-state", state)
+    onSyncState: state => {
+      sendToRenderer("crm:sync-state", state);
+      if (state?.status === "connected") wallboardLiveSync?.notify();
+    }
   });
   await remoteClient.init();
+}
+
+function ensureWallboardLiveSync() {
+  if (wallboardLiveSync) return wallboardLiveSync;
+  const { loadWallboardSource } = require("./wallboard-publisher");
+  const { requestWallboardAdmin } = require("./wallboard-admin-client");
+  const request = async (input, owner) => {
+    const client = remoteClient;
+    if (!client || client.authState().user?.uid !== owner) {
+      throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+    }
+    const idToken = await client.ensureIdToken(false);
+    if (client !== remoteClient || client.authState().user?.uid !== owner) {
+      throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+    }
+    return requestWallboardAdmin({
+      baseUrl: CRM_AI_GATEWAY_URL,
+      idToken,
+      input,
+      fetchImpl: (url, options) => net.fetch(url, options)
+    });
+  };
+  wallboardLiveSync = createWallboardLiveSync({
+    getIdentity: () => remoteClient?.authState().user?.mustChangePassword ? "" : String(remoteClient?.authState().user?.uid || ""),
+    load: () => loadWallboardSource(remoteClient),
+    list: owner => request({ action: "list" }, owner),
+    publish: (publication, owner) => request(publication, owner)
+  });
+  return wallboardLiveSync;
 }
 
 function trustedIpc(event) {
@@ -7923,6 +7962,8 @@ async function createWindow() {
 secureHandle("crm:auth-state", () => authState());
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
+  if (input?.action === "live-status") return ensureWallboardLiveSync().status();
+  if (input?.action === "live-sync") return ensureWallboardLiveSync().reconcile();
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
   const { resolveTvChannel } = require("./tv-update-policy");
   if (["auto-start", "auto-stop", "auto-status"].includes(input?.action)) {
