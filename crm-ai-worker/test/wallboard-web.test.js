@@ -64,6 +64,17 @@ test('web TV stylesheet compacts content for common TV heights',async()=>{
  assert.match(source,/\.roadmap-performance/);assert.match(source,/\.progress-ring/);assert.match(source,/conic-gradient/);
 });
 
+test('web TV roadmap separates input progress and reviewed work without new publication fields',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/model\.counts\.done\/model\.total/);
+ assert.match(source,/업무 검수 완료율/);
+ assert.match(source,/입력 진도 평균/);
+ assert.match(source,/집계 대기/);
+ assert.match(source,/건수 기준/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.review-metric/);
+});
+
 test('unknown TV asset paths fail closed',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/private.json'),env);
  assert.equal(response.status,404);assert.equal(response.headers.get('cache-control'),'no-store');

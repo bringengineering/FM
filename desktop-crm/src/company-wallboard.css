@@ -11,3 +11,7 @@
 .wb-review-metric b{color:#202b36;font-size:14px}
 .wb-review-metric strong{color:#1764c0;font-size:21px}
 .wb-review-metric small{color:#52616f;font-size:12px}
+.wb-overall-card{grid-template-columns:72px minmax(0,1fr);column-gap:12px}
+.wb-overall-card>.wb-progress-ring{grid-column:1}
+.wb-overall-card>.wb-progress-ring+div{grid-column:2;min-width:0;display:grid;gap:3px}
+@media(max-height:800px){.wb-roadmap-board>.wb-empty{padding:35px 20px}}
