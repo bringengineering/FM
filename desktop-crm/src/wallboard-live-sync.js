@@ -32,6 +32,7 @@ function createWallboardLiveSync({
   let busy = false;
   let intervalHandle = null;
   let debounceHandle = null;
+  let dirty = false;
   let fingerprint = '';
   let version = null;
   let publishedAt = null;
@@ -50,6 +51,7 @@ function createWallboardLiveSync({
     if (debounceHandle !== null) clearTimeoutFn(debounceHandle);
     intervalHandle = null;
     debounceHandle = null;
+    dirty = false;
     error = code;
     return emit();
   }
@@ -74,6 +76,7 @@ function createWallboardLiveSync({
     if (!active || busy) return status();
     const owner = getIdentity();
     if (!owner) return stop('AUTH_REQUIRED');
+    dirty = false;
     busy = true;
     emit();
     try {
@@ -107,13 +110,21 @@ function createWallboardLiveSync({
       if (['AUTH_REQUIRED', 'FORBIDDEN'].includes(error)) stop(error);
     } finally {
       busy = false;
+      const rerun = active && dirty;
       emit();
+      if (rerun) {
+        dirty = false;
+        if (debounceHandle !== null) clearTimeoutFn(debounceHandle);
+        debounceHandle = null;
+        void reconcile();
+      }
     }
     return status();
   }
 
   function notify() {
     if (!active) return status();
+    dirty = true;
     if (debounceHandle !== null) clearTimeoutFn(debounceHandle);
     debounceHandle = setTimeoutFn(() => {
       debounceHandle = null;

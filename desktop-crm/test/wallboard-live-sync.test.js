@@ -49,6 +49,7 @@ function fixture(options = {}) {
     list: async () => ({ version: serverVersion, presentation: null }),
     publish: async input => {
       published.push(input);
+      if (options.holdFirst && published.length === 1) await options.holdFirst;
       if (conflict) {
         conflict = false;
         serverVersion += 1;
@@ -139,4 +140,22 @@ test('authentication loss stops live publication', async () => {
   await item.flushDebounce();
   assert.equal(item.sync.status().active, false);
   assert.equal(item.sync.status().error, 'AUTH_REQUIRED');
+});
+
+test('a change received during a slow publication is reconciled immediately afterward', async () => {
+  let release;
+  const holdFirst = new Promise(resolve => { release = resolve; });
+  const item = fixture({ holdFirst });
+  item.sync.start();
+  await item.settle();
+  assert.equal(item.published.length, 1);
+  item.setSource(source({ orders: [workOrder({ progress: 85, updatedAt: '2026-09-23T02:30:00.000Z' })] }));
+  item.sync.notify();
+  await item.flushDebounce();
+  assert.equal(item.published.length, 1);
+  release();
+  await item.settle();
+  await item.settle();
+  assert.equal(item.published.length, 2);
+  assert.equal(item.published[1].snapshot.model.portfolio.overallProgress, 85);
 });
