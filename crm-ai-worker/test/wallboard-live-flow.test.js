@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createWorker,WallboardDevices} from '../src/index.js';
+
+test('member refresh request republishes confirmed server progress to the paired TV',async()=>{
+ let state;
+ const storage={transaction:async fn=>{
+  let value=structuredClone(state)||{};
+  const result=await fn({get:async()=>value,put:async(_key,next)=>{value=structuredClone(next);}});
+  state=value;
+  return result;
+ }};
+ const sources={
+  workOrders:{o1:{projectId:'p1',status:'doing',assigneeUid:'member-1',progress:30,dueDate:'2026-09-30',updatedAt:'2026-09-24T00:00:00Z'}},
+  projects:{p1:{name:'디지털 트윈 실증',owner:'김현진',status:'active',startDate:'2026-09-22',endDate:'2026-09-30'}},
+  'data/serviceRecords':{},
+  access:{'admin-1':{enabled:true,email:'admin@example.com',role:'admin'},'member-1':{enabled:true,email:'member@example.com',role:'member'}},
+  teamProfiles:{'member-1':{displayName:'김현진'}}
+ };
+ let denyProjects=false;
+ const fetchImpl=async (url,options={})=>{
+  const parsed=new URL(url);
+  if(parsed.hostname==='identitytoolkit.googleapis.com'){
+   const token=JSON.parse(options.body).idToken;
+   const admin=token==='admin-token';
+   return Response.json({users:[{localId:admin?'admin-1':'member-1',email:admin?'admin@example.com':'member@example.com',emailVerified:true}]});
+  }
+  assert.equal(parsed.hostname,'bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app');
+  assert.equal(parsed.searchParams.get('auth'),'member-token');
+  const key=parsed.pathname.slice('/crmCompany/'.length,-'.json'.length);
+  assert.ok(Object.hasOwn(sources,key));
+  if(denyProjects&&key==='projects')return new Response('permission denied',{status:403});
+  return Response.json(sources[key]);
+ };
+ const worker=createWorker({fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const env={WALLBOARD_ENABLED:'true',WALLBOARD_FIREBASE_DATABASE_URL:'https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app',FIREBASE_WEB_API_KEY:'test',CRM_ALLOWED_EMAILS:'admin@example.com,member@example.com',CRM_ADMIN_EMAILS:'admin@example.com',WALLBOARD_RATE_LIMITER:{limit:async()=>({success:true})},WALLBOARD_DEVICES:{idFromName:name=>name,get:()=>new WallboardDevices({storage})}};
+ const call=(action,body={},token='admin-token')=>worker.fetch(new Request('https://gateway.test/v1/wallboard/'+action,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)}),env);
+ const pairing=await (await call('start')).json();
+ assert.equal((await call('approve',{code:pairing.code,name:'실증 TV'})).status,200);
+ const device=await (await call('poll',{},pairing.pendingToken)).json();
+ assert.match(device.deviceToken,/^[a-f0-9]{64}$/);
+ const first=await (await call('refresh',{},'member-token')).json();
+ assert.equal(first.version,1);
+ let display=await (await call('display',{},device.deviceToken)).json();
+ assert.equal(display.board.model.portfolio.projects[0].progress,30);
+ assert.equal(display.board.model.roadmap.lanes[0].assignments[0].progress,30);
+ sources.workOrders.o1.progress=60;
+ const second=await (await call('refresh',{},'member-token')).json();
+ assert.equal(second.version,2);
+ display=await (await call('display',{},device.deviceToken)).json();
+ assert.equal(display.board.version,2);
+ assert.equal(display.board.model.portfolio.projects[0].progress,60);
+ assert.equal(display.board.model.roadmap.lanes[0].assignments[0].progress,60);
+ assert.equal((await call('refresh',{progress:100},'member-token')).status,400);
+ display=await (await call('display',{},device.deviceToken)).json();
+ assert.equal(display.board.version,2);
+ denyProjects=true;
+ assert.equal((await call('refresh',{},'member-token')).status,403);
+ display=await (await call('display',{},device.deviceToken)).json();
+ assert.equal(display.board.version,2);
+});
