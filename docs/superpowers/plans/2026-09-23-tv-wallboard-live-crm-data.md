@@ -506,3 +506,17 @@ Use PR `https://github.com/bringengineering/FM/pull/122`. Do not deploy the Work
 - [ ] **Step 4: Report acceptance steps**
 
 The handoff must state: open CRM, save a project/work order/schedule, keep one approved TV page open, and confirm the corresponding value changes within ten seconds after the live publisher succeeds.
+
+## Verification record — 2026-09-23
+
+Implementation tasks 1–6 are complete. Task 7 is complete through review preparation; production deployment remains intentionally excluded from this task.
+
+- Desktop focused wallboard/wiring tests: **81 passed, 0 failed**
+- Worker focused wallboard tests: **16 passed, 0 failed**
+- Company-site wallboard admin compatibility tests: **5 passed, 0 failed**
+- Full desktop suite: **2,215 passed, 0 failed, 2 existing intentional skips**
+- Full Worker suite: **72 passed, 0 failed, 0 skipped**
+- `git diff --check`: **passed**
+- Existing unrelated untracked verification/release artifacts were left untouched.
+
+Release ordering requirement: deploy the updated Worker first so the safe presentation projection is available, then release the desktop CRM. Deploying the desktop CRM first could replace an existing custom TV playlist with defaults because the old Worker does not return presentation settings. No Worker, desktop release, tag move, merge, or production deployment was performed during implementation.
