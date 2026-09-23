@@ -8,6 +8,19 @@ test('publication accepts only safe consistent display fields',()=>{
  const wrong=snapshot();wrong.model.total=3;assert.throws(()=>validatePublication(wrong),/INVALID_INPUT/);
  const time=snapshot();time.playlist[0].seconds=1;assert.throws(()=>validatePublication(time),/INVALID_INPUT/);
 });
+test('new project review counts are optional for old TV snapshots and bounded for new ones',()=>{
+ const legacy=snapshot();
+ assert.deepEqual(validatePublication(legacy),legacy);
+ const next=snapshot();
+ Object.assign(next.model.portfolio.projects[0],{reviewedDone:0,reviewedTotal:1});
+ assert.deepEqual(validatePublication(next),next);
+ const impossible=structuredClone(next);
+ impossible.model.portfolio.projects[0].reviewedDone=2;
+ assert.throws(()=>validatePublication(impossible),/INVALID_INPUT/);
+ const partial=structuredClone(next);
+ delete partial.model.portfolio.projects[0].reviewedTotal;
+ assert.throws(()=>validatePublication(partial),/INVALID_INPUT/);
+});
 test('published board uses optimistic revision and requires unrevoked device on every read',async()=>{
  let state={};let queue=Promise.resolve();const repository={transaction:fn=>{const p=queue.then(()=>fn(state));queue=p.catch(()=>{});return p;}};
  const service=createPairingService({repository,now:()=>1000}),admin={uid:'a',isAdmin:true};

@@ -74,6 +74,17 @@ test('web TV roadmap separates input progress and reviewed work without new publ
  const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(css,/\.review-metric/);
 });
+test('web TV portfolio labels each project input progress and reviewed completion with a legacy fallback',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/item\.reviewedDone/);
+ assert.match(source,/item\.reviewedTotal/);
+ assert.match(source,/업무 검수/);
+ assert.match(source,/집계 대기/);
+ assert.match(source,/입력 진도/);
+ assert.match(source,/reviewed-progress/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.portfolio-row \.reviewed-progress/);
+});
 
 test('unknown TV asset paths fail closed',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/private.json'),env);

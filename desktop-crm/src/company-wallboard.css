@@ -15,3 +15,7 @@
 .wb-overall-card>.wb-progress-ring{grid-column:1}
 .wb-overall-card>.wb-progress-ring+div{grid-column:2;min-width:0;display:grid;gap:3px}
 @media(max-height:800px){.wb-roadmap-board>.wb-empty{padding:35px 20px}}
+.wb-portfolio-bars>div{grid-template-columns:minmax(190px,1.1fr) minmax(180px,2fr) 80px 150px;gap:16px}
+.wb-portfolio-bars>div>strong,.wb-portfolio-review{display:grid;gap:3px;justify-items:end}
+.wb-portfolio-bars>div>strong small,.wb-portfolio-review small{font-size:12px;font-weight:600;color:#52616f}
+.wb-portfolio-review strong{color:#1764c0;font-size:26px}

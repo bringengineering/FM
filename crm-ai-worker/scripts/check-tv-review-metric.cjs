@@ -18,7 +18,7 @@ async function main() {
     ],
     calendar: { serviceRecords: [] },
   }, dataDate);
-  const board = { model, playlist: [{ key: 'roadmap', enabled: true, seconds: 40 }], notice: '', dataDate, version: 1, publishedAt: Date.now() };
+  const board = { model, playlist: [{ key: 'roadmap', enabled: true, seconds: 40 }, { key: 'portfolio', enabled: true, seconds: 25 }], notice: '', dataDate, version: 1, publishedAt: Date.now() };
   const server = http.createServer(async (request, response) => {
     if (request.url === '/tv/api/display') {
       response.setHeader('Content-Type', 'application/json');
@@ -51,6 +51,16 @@ async function main() {
       const descriptionWidth = await page.locator('.overall-progress .progress-ring + div').evaluate(element => element.getBoundingClientRect().width);
       assert.ok(descriptionWidth >= 150, `Progress explanation is too narrow at ${width}x${height}: ${descriptionWidth}px`);
       console.log(`PASS ${width}x${height}: review metric visible; ${screenshot}`);
+      await page.locator('#next').click();
+      await page.locator('.portfolio-row').waitFor({ state: 'visible' });
+      assert.match(await page.locator('.portfolio-row .reviewed-progress').innerText(), /50%[\s\S]*업무 검수 1\/2건/);
+      const portfolioScreenshot = path.join(os.tmpdir(), `bring-tv-portfolio-${width}x${height}.png`);
+      await page.screenshot({ path: portfolioScreenshot, fullPage: true });
+      const portfolioOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+      assert.equal(portfolioOverflow, false, `TV portfolio horizontally overflows at ${width}x${height}`);
+      console.log(`PASS ${width}x${height}: per-project review visible; ${portfolioScreenshot}`);
+      await page.locator('#previous').click();
+      await page.locator('#content .review-metric').waitFor({ state: 'visible' });
     }
     assert.deepEqual(errors, []);
   } finally {

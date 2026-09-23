@@ -140,3 +140,24 @@ test('roadmap separates entered progress from manager-reviewed completion',()=>{
  const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
  assert.match(css,/\.wb-review-metric/u);
 });
+
+test('each project keeps entered progress distinct from deduplicated reviewed work',()=>{
+ const m=C.project({projects:[
+  {id:'p1',name:'햇빛빌라 실증',status:'active',progress:80},
+  {id:'p2',name:'예초집 실증',status:'active',progress:25}
+ ],orders:[
+  {id:'a',projectId:'p1',status:'submitted',progress:80,updatedAt:'2026-09-20T01:00:00Z'},
+  {id:'a',projectId:'p1',status:'done',progress:80,updatedAt:'2026-09-21T01:00:00Z'},
+  {id:'b',projectId:'p1',status:'returned',progress:80}
+ ]},'2026-09-24');
+ const byName=new Map(m.portfolio.projects.map(item=>[item.name,item]));
+ assert.equal(byName.get('햇빛빌라 실증').progress,80);
+ assert.equal(byName.get('햇빛빌라 실증').reviewedDone,1);
+ assert.equal(byName.get('햇빛빌라 실증').reviewedTotal,2);
+ assert.equal(byName.get('예초집 실증').reviewedTotal,0);
+ const html=C.scene(m,'portfolio');
+ assert.match(html,/업무 검수 1\/2건/);
+ assert.match(html,/업무 검수 집계 대기/);
+ assert.match(html,/입력 진도/);
+ assert.match(html,/wb-portfolio-review/);
+});
