@@ -5037,7 +5037,8 @@ async function initializeRemote() {
     onSyncState: state => {
       sendToRenderer("crm:sync-state", state);
       if (state?.status === "connected") wallboardLiveSync?.notify();
-    }
+    },
+    onWallboardSourceChange: () => wallboardLiveSync?.notify()
   });
   await remoteClient.init();
 }
