@@ -4,6 +4,13 @@ test('administrator receives validated device version with unknown fallback',asy
  const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:0,devices:[{id:'a',name:'TV',clientVersion:'0.1.2'},{id:'b',clientVersion:'<script>'}]})});
  assert.equal(data.devices[0].clientVersion,'0.1.2');assert.equal(data.devices[1].clientVersion,null);
 });
+test('administrator receives only a validated current presentation',async()=>{
+ const presentation={playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'이번 주 업무 확인'};
+ const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:2,presentation,devices:[]})});
+ assert.deepEqual(data.presentation,presentation);
+ await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:2,presentation:{...presentation,model:{phone:'secret'}},devices:[]})}),/준비되지/);
+ await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:2,presentation:{playlist:[{key:'private',enabled:true,seconds:40}],notice:''},devices:[]})}),/준비되지/);
+});
 test('publication carries revision and exposes a conflict instead of pretending success',async()=>{
  const args={baseUrl:'https://gateway.example',idToken:'secret',input:{action:'publish',snapshot:{notice:'test'},expectedVersion:2}};
  const result=await requestWallboardAdmin({...args,fetchImpl:async()=>Response.json({ok:true,version:3,publishedAt:1000})});assert.equal(result.version,3);

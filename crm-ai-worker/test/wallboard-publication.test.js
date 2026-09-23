@@ -20,3 +20,12 @@ test('published board uses optimistic revision and requires unrevoked device on 
  assert.ok(!JSON.stringify(read).includes(d.deviceToken));
  await service.revoke(d.deviceId,admin);await assert.rejects(service.readBoard(d.deviceToken),/INVALID_TOKEN/);
 });
+test('administrator list returns presentation settings without the CRM model',async()=>{
+ let state={};let queue=Promise.resolve();const repository={transaction:fn=>{const p=queue.then(()=>fn(state));queue=p.catch(()=>{});return p;}};
+ const service=createPairingService({repository,now:()=>1000}),admin={uid:'a',isAdmin:true};
+ const publication=snapshot();await service.publish(publication,0,admin);
+ const result=await service.list(admin);
+ assert.deepEqual(result.presentation,{playlist:publication.playlist,notice:publication.notice});
+ assert.equal('model' in result,false);
+ assert.equal(JSON.stringify(result).includes('직원'),false);
+});
