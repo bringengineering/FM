@@ -44,6 +44,7 @@ const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
 const { requestWallboardRefresh } = require("./wallboard-refresh-client");
+const { createWallboardRefreshQueue } = require("./wallboard-refresh-queue");
 const { createWallboardRefreshStatus } = require("./wallboard-refresh-status");
 const {
   FirebaseRemoteClient,
@@ -5098,26 +5099,26 @@ function ensureWallboardLiveSync() {
   return wallboardLiveSync;
 }
 
-function signalWallboardAfterSave() {
-  wallboardLiveSync?.notify();
-  const client = remoteClient;
-  const uid = client?.authState().user?.uid;
-  if (!uid) return;
-  void (async () => {
+const wallboardRefreshQueue = createWallboardRefreshQueue({
+  getIdentity: () => remoteClient?.authState().user?.uid || "",
+  refresh: async uid => {
+    const client = remoteClient;
+    if (!client || client.authState().user?.uid !== uid) throw new Error("SESSION_CHANGED");
     const idToken = await client.ensureIdToken(false);
-    if (client !== remoteClient || client.authState().user?.uid !== uid) return;
-    const result = await requestWallboardRefresh({
+    if (client !== remoteClient || client.authState().user?.uid !== uid) throw new Error("SESSION_CHANGED");
+    return requestWallboardRefresh({
       baseUrl: CRM_AI_GATEWAY_URL,
       idToken,
       fetchImpl: (url, options) => net.fetch(url, options)
     });
-    if (client !== remoteClient || client.authState().user?.uid !== uid) return;
-    wallboardRefreshStatus.succeeded(result);
-  })().catch(error => {
-    if (client === remoteClient && client.authState().user?.uid === uid) wallboardRefreshStatus.failed(error);
-    // The write is already confirmed. A TV refresh failure must not undo it.
-    // Existing admin-side reconciliation will retry while the app is open.
-  });
+  },
+  onSuccess: result => wallboardRefreshStatus.succeeded(result),
+  onFailure: error => wallboardRefreshStatus.failed(error)
+});
+
+function signalWallboardAfterSave() {
+  wallboardLiveSync?.notify();
+  void wallboardRefreshQueue.notify();
 }
 
 function trustedIpc(event) {

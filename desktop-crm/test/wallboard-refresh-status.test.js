@@ -29,7 +29,8 @@ test('admin live status includes remote refresh outcome and labels it separately
  assert.match(main,/if \(input\?\.action === "live-status"\) return \{\.\.\.ensureWallboardLiveSync\(\)\.status\(\), \.\.\.wallboardRefreshStatus\.status\(\)\}/);
  assert.match(main,/wallboardRefreshStatus\.succeeded\(result\)/);
  assert.match(main,/wallboardRefreshStatus\.failed\(error\)/);
- assert.match(main,/if \(client !== remoteClient \|\| client\.authState\(\)\.user\?\.uid !== uid\) return;\s*wallboardRefreshStatus\.succeeded\(result\)/);
+ assert.match(main,/if \(client !== remoteClient \|\| client\.authState\(\)\.user\?\.uid !== uid\) throw new Error\("SESSION_CHANGED"\)/);
+ assert.match(main,/onSuccess: result => wallboardRefreshStatus\.succeeded\(result\)/);
  assert.match(main,/if \(wallboardUid !== wallboardPublisherUid\) \{ wallboardPublisher\?\.stop\(\); wallboardRefreshStatus\.reset\(\); \}/);
  assert.match(ui,/remoteRefreshError/);
  assert.match(ui,/TV 서버 게시 요청/);
