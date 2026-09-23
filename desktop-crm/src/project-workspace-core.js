@@ -43,7 +43,8 @@
     const source = input && typeof input === 'object' ? input : {};
     const today = date(source.today);
     if (!today) return [];
-    const weekEnd = addDays(today, 7);
+    const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+    const weekEnd = addDays(today, (7 - weekday) % 7);
     const uid = text(source.uid);
     const admin = source.admin === true;
     const priority = { overdue: 0, returned: 1, today: 2, review: 3, week: 4, undated: 5 };

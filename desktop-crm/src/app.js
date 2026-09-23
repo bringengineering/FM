@@ -4804,6 +4804,9 @@
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
+    const workspaceCore = window.BringProjectWorkspaceCore;
+    const workspace = workspaceCore && workspaceCore.partitionProjects
+      ? workspaceCore.partitionProjects({ projects, orders: workOrderState.orders }) : null;
     const selected = workOrderState.projectId && (["__all", "__none"].includes(workOrderState.projectId) || projects.some(item => item.id === workOrderState.projectId))
       ? workOrderState.projectId
       : "__all";
@@ -4848,6 +4851,20 @@
         <b>${esc(item.label)}</b>${item.status && item.status !== "active" ? `<small>${esc(P.statusLabel(item.status))}</small>` : ""}
       </button>`).join("");
 
+    const todayActions = workspace && workspaceCore.todayQueue
+      ? workspaceCore.todayQueue({ orders: workOrderState.orders, uid: workOrderState.uid, admin: workOrderState.admin, today }) : [];
+    const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
+      <section class="project-workspace-today" aria-labelledby="project-workspace-today-title">
+        <header><div><span>내 업무의 다음 행동</span><h3 id="project-workspace-today-title">오늘 처리할 일</h3></div><small>${todayActions.length}건</small></header>
+        ${workOrderState.loading || !workOrderState.loaded ? `<p class="project-workspace-empty">업무를 불러오고 있습니다…</p>` : workOrderState.error ? `<p class="project-workspace-empty">조회 오류가 있습니다. 새로고침 후 확인해 주세요.</p>` : todayActions.length ? `<div class="project-workspace-action-list">${todayActions.slice(0, 8).map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}${workOrderState.admin && item.order.assigneeName ? ` · ${esc(item.order.assigneeName)}` : ""}</small></button>`).join("")}</div>` : `<p class="project-workspace-empty">지금 바로 처리할 업무가 없습니다. 아래 프로젝트에서 전체 지시를 확인할 수 있습니다.</p>`}
+      </section>
+      <section class="project-workspace-projects" aria-labelledby="project-workspace-projects-title">
+        <header><div><span>사업영역 안의 실제 실행 단위</span><h3 id="project-workspace-projects-title">실제 프로젝트</h3></div><small>${workspace.projects.length}개</small></header>
+        ${workspace.projects.length ? `<div class="project-workspace-project-list">${workspace.projects.map(item => { const checked = workspaceCore.completion(workOrderState.orders, item.id); return `<button type="button" data-wo-project="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.owner || "책임자 미정")}${item.endDate ? ` · 마감 ${esc(item.endDate)}` : " · 마감 미정"}</span><em>업무 검수 완료율 ${checked ? `${checked.percent}% (${checked.done}/${checked.total}건)` : "집계 대기"}</em></button>`; }).join("")}</div>` : `<p class="project-workspace-empty">실제 프로젝트가 아직 없습니다. 아래 기존 사업영역은 그대로 보존되어 있습니다.</p>`}
+      </section>
+      <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${workspace.classificationNeeded.length}건</summary><p>기존 업무 연결은 바꾸지 않았습니다. 사업영역이나 연결 없는 업무도 아래 목록과 기존 화면에서 계속 확인할 수 있습니다.</p><div class="wo-project-tabs">${tabs}</div></details>
+    </div>` : "";
+
     main.innerHTML = `<section class="operations-hero work-orders-hero">
         <div><span>프로젝트 관리</span><h2>${esc(project ? project.name : "프로젝트")}</h2><p>${esc(project && project.goal ? project.goal : "지금 돌고 있는 일을 한 장에서 봅니다. 표의 한 줄이 곧 업무지시입니다.")}</p></div>
         <div class="operations-actions">
@@ -4863,7 +4880,9 @@
         </div>
       </section>
       ${status}
-      ${tabs ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
+      ${!workspace && selected === "__all" ? `<div class="info-box">프로젝트 화면 구성을 불러오지 못했습니다. 기존 업무 목록은 아래에서 계속 사용할 수 있습니다.</div>` : ""}
+      ${projectHome}
+      ${tabs && !projectHome ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
       ${weeklyExecutionPanel()}
       ${periodControls}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
@@ -11594,12 +11613,23 @@
     const woOpenCard = event.target.closest("[data-wo-open-card]");
     if (woOpenCard) {
       // 간트에서 막대를 누르면 아래 카드로 데려간다. 자세한 것은 카드에 있다.
-      const card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
+      const fromTodayActions = Boolean(woOpenCard.closest(".project-workspace-action-list"));
+      let card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
+      if (!card && fromTodayActions) {
+        if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) {
+          showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 업무를 열어 주세요.");
+          return;
+        }
+        workOrderState.scope = "all";
+        workOrderState.performancePeriod = "all";
+        renderWorkOrders();
+        card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
+      }
       if (card) {
         card.scrollIntoView({ behavior: "smooth", block: "center" });
         card.classList.add("is-flash");
         setTimeout(() => card.classList.remove("is-flash"), 1200);
-      }
+      } else if (fromTodayActions) showToast("원본 업무를 찾지 못했습니다. 새로고침 후 확인해 주세요.");
       return;
     }
     const dfGo = event.target.closest("[data-df-go]");

@@ -37,6 +37,14 @@ test('관리자는 검수 대기를 보고 중복 ID는 최신 기록 한 번만
   assert.equal(rows[0].action, '검수 대기');
 });
 
+test('이번 주 마감은 달력상 일요일까지만 포함한다', () => {
+  const rows = Workspace.todayQueue({ uid: 'u1', admin: false, today: '2026-09-21', orders: [
+    { id: 'sunday', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-27' },
+    { id: 'next-monday', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-28' },
+  ] });
+  assert.deepEqual(rows.map(item => item.id), ['sunday']);
+});
+
 test('프로젝트 완료율은 고유 업무의 검수 완료 건수로 세고 비어 있으면 산정하지 않는다', () => {
   const orders = [
     { id: 'a', projectId: 'p1', status: 'doing', updatedAt: '2026-09-23T10:00:00Z' },
