@@ -10,6 +10,7 @@ const test = require("node:test");
 const {
   assertAssetInventory,
   assertRemoteRefs,
+  publishDraft,
   selectReleaseForTag,
   verifyPublishedReleaseAssets,
 } = require("../scripts/release/publish-release");
@@ -96,6 +97,69 @@ test("same-source stable no-op downloads and verifies all published bytes", asyn
     fetchImpl: fetchFrom(value.bodies),
   });
   assert.deepEqual(bodies.get(`BRING.CRM.Company.Setup.${value.version}.exe`), value.installer);
+});
+
+test("publishing refreshes a draft whose release-list snapshot omits uploaded assets", async () => {
+  const value = publishedFixture();
+  const releaseId = 123;
+  const listedDraft = {
+    id: releaseId,
+    tag_name: value.tag,
+    target_commitish: RELEASE,
+    draft: true,
+    prerelease: false,
+    assets: [],
+  };
+  const detailedDraft = { ...listedDraft, assets: value.release.assets };
+  const stableRelease = { ...detailedDraft, draft: false };
+  const buffers = [
+    value.bodies.get("api://installer"),
+    value.bodies.get("api://blockmap"),
+    value.bodies.get("api://manifest"),
+  ];
+  const verifiedAssets = value.release.assets.map((asset, index) => ({
+    name: asset.name,
+    size: buffers[index].length,
+    sha512: crypto.createHash("sha512").update(buffers[index]).digest("base64"),
+  }));
+  const verified = {
+    version: value.version,
+    installer: verifiedAssets[0],
+    blockmap: verifiedAssets[1],
+    manifest: verifiedAssets[2],
+  };
+  let refreshed = 0;
+  let published = 0;
+  let sourceChecks = 0;
+  const fetchImpl = async (url, options = {}) => {
+    if (value.bodies.has(url)) return fetchFrom(value.bodies)(url);
+    if (url.endsWith(`/releases/${releaseId}`) && (options.method || "GET") === "GET") {
+      refreshed += 1;
+      return { ok: true, status: 200, json: async () => detailedDraft };
+    }
+    if (url.endsWith(`/releases/${releaseId}`) && options.method === "PATCH") {
+      published += 1;
+      return { ok: true, status: 200, json: async () => stableRelease };
+    }
+    return { ok: false, status: 404, json: async () => ({ message: "missing" }) };
+  };
+
+  const result = await publishDraft({
+    owner: "bringengineering",
+    repo: "FM",
+    token: "token",
+    tag: value.tag,
+    releaseSha: RELEASE,
+    releases: [listedDraft],
+    verified,
+    fetchImpl,
+    beforePublish: () => { sourceChecks += 1; },
+  });
+
+  assert.equal(refreshed, 1);
+  assert.equal(sourceChecks, 1);
+  assert.equal(published, 1);
+  assert.equal(result.release.draft, false);
 });
 
 test("a resumed complete draft restores the canonical bytes instead of rebuilding nondeterministic assets", async t => {

@@ -209,6 +209,8 @@ async function stageRelease({ owner, repo, token, tag, version, releaseSha, rele
 async function publishDraft({ owner, repo, token, tag, releaseSha, releases, verified, fetchImpl, beforePublish = () => {} }) {
   let release = selectReleaseForTag(releases, tag, releaseSha);
   if (!release) throw releaseError("CRM_RELEASE_DRAFT_NOT_FOUND", "Verified CRM draft release was not found.");
+  release = await refreshRelease({ owner, repo, token, releaseId: release.id, fetchImpl });
+  selectReleaseForTag([release], tag, releaseSha);
   await verifyRemoteAssets(release, verified, { token, fetchImpl });
   if (release.draft !== true) return { release, alreadyPublished: true };
   await beforePublish();
