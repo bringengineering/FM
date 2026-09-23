@@ -106,7 +106,8 @@ test("사이드바 숫자는 이번 주에 아직 못 만난 사람을 센다", 
   // 1on1 은 바쁘면 제일 먼저 빠진다. 빠진 것이 보여야 안 빠진다.
   const start = appSource.indexOf("function updateGrowthBadge(");
   const body = appSource.slice(start, appSource.indexOf("\n  function ", start));
-  assert.match(body, /G\.missingCheckins\(workOrderState\.members \|\| \[\], growthState\.checkins, todayKey\(\)\)/u);
+  assert.match(body, /G\.missingCheckins\(workOrderState\.members \|\| \[\], growthOneOnOneCheckins\(\), todayKey\(\)\)/u);
+  assert.match(appSource, /growthOneOnOneCheckins = \(\) => \(growthState\.checkins \|\| \[\]\)\.filter\(item => !isWeeklyReportCheckin\(item\)\)/u);
   assert.ok(indexSource.includes('id="navGrowthCount"'));
 });
 

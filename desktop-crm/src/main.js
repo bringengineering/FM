@@ -5277,7 +5277,41 @@ async function createWindow() {
       route.remove();
       return true;
     }; true`, true);
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "weekly-report-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="project"]')?.click();
+        await wait(180);
+        window.__crmSmokeNavigate('weeklyReports');
+        await wait(500);
+        for (const value of ['레이브클라우드 유선미팅', '아톡비즈 제안서 제작', 'Gemini API 사용 도입 제안서 제작']) {
+          const form = document.querySelector('[data-weekly-manual-form]');
+          if (!form) break;
+          form.elements.title.value = value;
+          form.requestSubmit();
+          await wait(40);
+        }
+        const plan = document.querySelector('[data-weekly-plan-form]');
+        if (plan) {
+          plan.elements.title.value = '레이브클라우드 후속 협의 및 적용 범위 확정';
+          plan.elements.priority.value = '높음';
+          plan.requestSubmit();
+          await wait(80);
+        }
+        const layout = document.querySelector('.weekly-report-layout');
+        const bodyOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
+        return {
+          pass: window.__crmTest?.snapshot().view === 'weeklyReports'
+            && Boolean(layout && document.querySelector('[data-weekly-submit]'))
+            && document.querySelectorAll('.weekly-report-item.is-manual').length === 3
+            && !bodyOverflow,
+          manualItems: document.querySelectorAll('.weekly-report-item.is-manual').length,
+          planItems: document.querySelectorAll('.weekly-plan-row').length,
+          bodyOverflow,
+          state: window.__crmTest?.snapshot(),
+        };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="project"]')?.click();
@@ -8249,7 +8283,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -8423,7 +8457,9 @@ secureCanonicalHandle("crm:work-report-drive-browse", input => browseWorkReportD
 secureCanonicalHandle("crm:work-report-drive-thumbnail", input => loadWorkReportDriveThumbnail(input));
 secureCanonicalHandle("crm:work-report-drive-plan", input => planSelectedWorkReportPhotos(input));
 secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));
-secureHandle("crm:growth-load", () => remoteClient.loadGrowth());
+secureHandle("crm:growth-load", () => localTestMode
+  ? { checkins: [], reviews: [], admin: localTestRole === "admin", canWork: ["admin", "member"].includes(localTestRole), uid: `local-${localTestRole}`, localOnly: true, loadedAt: new Date().toISOString() }
+  : remoteClient.loadGrowth());
 secureCanonicalHandle("crm:growth-checkin-save", input => remoteClient.saveGrowthCheckin(input));
 secureCanonicalHandle("crm:growth-review-save", input => remoteClient.saveGrowthReview(input));
 secureHandle("crm:telegram-settings-load", () => loadTelegramSettings());

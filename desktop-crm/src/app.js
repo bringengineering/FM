@@ -205,6 +205,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
+    weeklyReports: ["CRM 활동을 모아 한 주 업무를 정리합니다", "주간업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
     companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
@@ -1488,6 +1489,13 @@
       officeFolder?.classList.add("open");
       officeFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
     }
+    const projectView = ["weeklyReports", "projectRoadmap", "workOrders", "cases"].includes(currentView);
+    const projectFolder = document.querySelector('[data-nav-folder="project"]');
+    projectFolder?.classList.toggle("active", projectView);
+    if (projectView) {
+      projectFolder?.classList.add("open");
+      projectFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
+    }
     const calendarView = ["buildingCalendar", "payments"].includes(currentView);
     const calendarFolder = document.querySelector('[data-nav-folder="calendar"]');
     calendarFolder?.classList.toggle("active", calendarView);
@@ -1538,6 +1546,7 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
     else if (currentView === "growth") renderGrowth();
+    else if (currentView === "weeklyReports") renderWeeklyReports();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
     else if (currentView === "companyWallboard") {
       if (disposeCompanyWallboard) disposeCompanyWallboard();
@@ -4342,7 +4351,7 @@
       || workOrderState.importOpen || workOrderState.importPlan || workOrderState.importSplit);
   }
   function refreshOnEnter(view) {
-    if (["projectRoadmap", "workOrders"].includes(view)
+    if (["weeklyReports", "projectRoadmap", "workOrders"].includes(view)
       && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
   }
   function refreshButton(state, action) {
@@ -4372,6 +4381,7 @@
     workOrderState.error = "";
     if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
+    else if (currentView === "weeklyReports") renderWeeklyReports();
     try {
       let data = await api.loadWorkOrders();
       if (data && data.localOnly === true && currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
@@ -4399,6 +4409,7 @@
       updateWorkOrderBadge();
       if (currentView === "workOrders") renderWorkOrders();
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
+      else if (currentView === "weeklyReports") renderWeeklyReports();
     }
   }
 
@@ -8884,6 +8895,281 @@
     </section>`;
   }
 
+  // --- 주간업무보고서 ---
+  //
+  // 사용자가 이미 CRM에 남긴 업무 기록을 다시 타이핑하지 않도록 모은다.
+  // 자동 수집은 초안일 뿐이고, 빠진 일은 한 줄로 보태며 다음 주 계획은
+  // 반드시 사람이 직접 적는다. 보고서 저장은 기존 주간 1on1 기록과 같은
+  // 본인 전용 경로를 사용해 별도 공개 권한을 만들지 않는다.
+  let weeklyReportState = {
+    week: "", loadedKey: "", sourceSignature: "", automatic: [], candidates: 0, omitted: 0,
+    manual: [], plans: [], summary: "", summaryCustomized: false, existing: null,
+    busy: false, aiLoading: false, error: "", warning: "",
+  };
+
+  const weeklyReportCore = () => window.BringWeeklyReportCore;
+  const isWeeklyReportCheckin = item => String(item && item.id || "").startsWith("weekly_report_");
+  const growthOneOnOneCheckins = () => (growthState.checkins || []).filter(item => !isWeeklyReportCheckin(item));
+
+  function weeklyReportActor() {
+    const user = currentAuth.user || {};
+    return {
+      uid: workOrderState.uid || growthState.uid || user.uid || "",
+      name: user.displayName || user.name || store.settings.owner || "",
+      email: user.email || "",
+    };
+  }
+
+  function hydrateWeeklyReport() {
+    const W = weeklyReportCore();
+    if (!W) return null;
+    const currentWeek = W.weekStart(todayKey());
+    if (!weeklyReportState.week) weeklyReportState.week = currentWeek;
+    const week = weeklyReportState.week;
+    const actor = weeklyReportActor();
+    const existing = (growthState.checkins || []).find(item => isWeeklyReportCheckin(item) && item.uid === (growthState.uid || actor.uid) && item.week === week) || null;
+    const loadedKey = `${week}:${existing && existing.id || ""}:${existing && existing.updatedAt || ""}`;
+    if (weeklyReportState.loadedKey !== loadedKey) {
+      const parsed = W.parseDone(existing && existing.answers && existing.answers.done);
+      weeklyReportState.loadedKey = loadedKey;
+      weeklyReportState.manual = parsed.manual;
+      weeklyReportState.plans = W.parsePlans(existing && existing.answers && existing.answers.next);
+      weeklyReportState.summary = parsed.summary;
+      weeklyReportState.summaryCustomized = Boolean(parsed.summary);
+      weeklyReportState.existing = existing;
+      weeklyReportState.error = "";
+      weeklyReportState.warning = parsed.legacy ? "기존 주간 기록을 직접 추가 항목으로 가져왔습니다. 제출 전에 내용을 확인해 주세요." : "";
+    }
+    const collected = W.collect({
+      week,
+      actor,
+      store,
+      orders: workOrderState.orders,
+      projects: workOrderState.projects,
+      cases: activeCases(),
+    });
+    const signature = JSON.stringify(collected.items.map(item => [item.id, item.status, item.date, item.title]));
+    if (signature !== weeklyReportState.sourceSignature) {
+      weeklyReportState.sourceSignature = signature;
+      weeklyReportState.automatic = collected.items;
+      weeklyReportState.candidates = collected.candidates.length;
+      weeklyReportState.omitted = collected.omitted;
+      if (!weeklyReportState.summaryCustomized) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
+    }
+    if (!weeklyReportState.summary) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
+    return { W, currentWeek, week, actor, existing };
+  }
+
+  function weeklyStatusChip(W, status) {
+    return `<span class="weekly-status is-${esc(status)}">${esc(W.STATUS_LABELS[status] || "진행 중")}</span>`;
+  }
+
+  function weeklyReportItemRows(W) {
+    const automatic = weeklyReportState.automatic.map(item => `
+      <article class="weekly-report-item">
+        <span class="weekly-source">${esc(item.source)}</span>
+        <div><b>${esc(item.title)}</b>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div>
+        ${weeklyStatusChip(W, item.status)}
+      </article>`).join("");
+    const manual = weeklyReportState.manual.map(item => `
+      <article class="weekly-report-item is-manual">
+        <span class="weekly-source">직접 추가</span>
+        <div><b>${esc(item.title)}</b><small>자동 수집에서 빠진 업무</small></div>
+        ${weeklyStatusChip(W, item.status)}
+        <button type="button" class="weekly-remove" data-weekly-manual-remove="${esc(item.id)}" aria-label="${esc(item.title)} 삭제">×</button>
+      </article>`).join("");
+    return automatic + manual;
+  }
+
+  function weeklyPlanRows() {
+    if (!weeklyReportState.plans.length) return `<div class="weekly-plan-empty"><b>아직 입력한 다음 주 계획이 없습니다.</b><span>계획은 AI가 만들지 않습니다. 확정한 내용만 직접 추가해 주세요.</span></div>`;
+    return weeklyReportState.plans.map(plan => `
+      <article class="weekly-plan-row">
+        <div><b>${esc(plan.title)}</b><small>${esc([plan.date || "날짜 미정", `우선순위 ${plan.priority}`].join(" · "))}</small></div>
+        <button type="button" class="weekly-remove" data-weekly-plan-remove="${esc(plan.id)}" aria-label="${esc(plan.title)} 삭제">×</button>
+      </article>`).join("");
+  }
+
+  function renderWeeklyReports() {
+    const W = weeklyReportCore();
+    if (!W) {
+      main.innerHTML = `<section class="operations-hero"><div><h2>주간업무보고서</h2><p>보고서 모듈을 불러오지 못했습니다.</p></div></section>`;
+      return;
+    }
+    if (!growthState.loaded && !growthState.loading && !growthState.error) void loadGrowth();
+    if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
+    const context = hydrateWeeklyReport();
+    const loading = growthState.loading || workOrderState.loading;
+    const allItems = [...weeklyReportState.automatic, ...weeklyReportState.manual];
+    const completed = allItems.filter(item => item.status === "completed").length;
+    const canSave = growthState.loaded && growthState.canWork;
+    const loadError = weeklyReportState.error || growthState.error || workOrderState.error;
+    const nextWeekStart = W.addDays(W.weekRange(context.week).end, 1);
+    const nextWeekEnd = W.addDays(nextWeekStart, 6);
+    const savedAt = context.existing && context.existing.updatedAt;
+    const summaryMarkup = esc(weeklyReportState.summary).replace(/\n/g, "<br>");
+
+    main.innerHTML = `
+      <section class="operations-hero weekly-report-hero">
+        <div>
+          <span>CRM에 남은 업무 기록을 한 주 단위로 정리합니다</span>
+          <h2>${esc(context.actor.name || "내")} 주간업무보고서</h2>
+          <p>자동 수집 결과를 확인하고 빠진 업무만 직접 추가하세요. 다음 주 계획은 직접 작성합니다.</p>
+        </div>
+        <div class="weekly-week-switch" aria-label="보고 주간 선택">
+          <button type="button" data-weekly-shift="-1" aria-label="이전 주">‹</button>
+          <div><b>${esc(W.rangeLabel(context.week))}</b><span>${context.week === context.currentWeek ? "이번 주" : "지난 주"}</span></div>
+          <button type="button" data-weekly-shift="1" aria-label="다음 주"${context.week >= context.currentWeek ? " disabled" : ""}>›</button>
+          ${context.week !== context.currentWeek ? `<button type="button" class="weekly-today" data-weekly-current>이번 주</button>` : ""}
+        </div>
+      </section>
+      ${loadError ? `<div class="info-box" role="alert">${esc(loadError)}</div>` : ""}
+      ${weeklyReportState.warning ? `<div class="info-box">${esc(weeklyReportState.warning)}</div>` : ""}
+      <div class="weekly-report-kpis">
+        <div><span>자동 수집</span><b>${weeklyReportState.candidates}건</b><small>업무 결과가 있는 CRM 기록</small></div>
+        <div><span>보고서 반영</span><b>${allItems.length}건</b><small>${weeklyReportState.omitted ? `중요도 순 · ${weeklyReportState.omitted}건 제외` : "중복 제거 후 반영"}</small></div>
+        <div><span>완료 업무</span><b>${completed}건</b><small>완료 상태 기준</small></div>
+        <div><span>직접 추가</span><b>${weeklyReportState.manual.length}건</b><small>자동 수집에서 빠진 업무</small></div>
+      </div>
+      <section class="weekly-report-layout">
+        <div class="weekly-report-main">
+          <article class="weekly-ai-card">
+            <header>
+              <div><span>AI WEEKLY DRAFT</span><h3>이번 주 업무 보고</h3><p>${loading ? "CRM 업무 기록을 불러오는 중입니다." : `${weeklyReportState.candidates}건을 확인해 주요 업무 ${allItems.length}건으로 정리했습니다.`}</p></div>
+              <button type="button" class="secondary-button" data-weekly-ai-rewrite${weeklyReportState.aiLoading || !allItems.length ? " disabled" : ""}>${weeklyReportState.aiLoading ? "AI가 정리 중…" : "✦ AI 문장 다시 작성"}</button>
+            </header>
+            <div class="weekly-ai-summary"><span>주간 요약</span><p>${summaryMarkup}</p></div>
+            <div class="weekly-report-items">${weeklyReportItemRows(W) || `<div class="weekly-report-empty"><b>자동으로 확인된 업무가 없습니다.</b><span>담당자와 날짜가 정확히 기록된 업무만 가져옵니다. 빠진 업무는 아래에서 직접 추가해 주세요.</span></div>`}</div>
+            <footer>AI 문장 다시 작성은 선택 사항입니다. 자동 호출하지 않아 사용량을 낭비하지 않으며, 결과는 제출 전에 반드시 확인합니다.</footer>
+          </article>
+
+          <section class="weekly-section-card">
+            <header><div><span>빠진 업무 보완</span><h3>이번 주 업무 직접 추가</h3></div><small>한 줄이면 충분합니다</small></header>
+            <form class="weekly-inline-form" data-weekly-manual-form>
+              <input name="title" maxlength="240" placeholder="예: 레이브클라우드 유선미팅" required>
+              <select name="status" aria-label="업무 상태"><option value="completed">완료</option><option value="in_progress">진행 중</option><option value="review">검토 중</option></select>
+              <button type="submit" class="primary-button"${canSave ? "" : " disabled"}>＋ 업무 추가</button>
+            </form>
+          </section>
+
+          <section class="weekly-section-card weekly-next-card">
+            <header><div><span>NEXT WEEK · MANUAL ONLY</span><h3>다음 주 계획</h3><p>AI가 자동으로 만들거나 수정하지 않습니다.</p></div><em>직접 작성</em></header>
+            <div class="weekly-plan-list">${weeklyPlanRows()}</div>
+            <form class="weekly-plan-form" data-weekly-plan-form>
+              <input name="title" maxlength="240" placeholder="다음 주에 할 일을 입력하세요" required>
+              <input type="date" name="date" min="${esc(nextWeekStart)}" max="${esc(nextWeekEnd)}" aria-label="계획 날짜">
+              <select name="priority" aria-label="우선순위"><option>보통</option><option>높음</option><option>낮음</option></select>
+              <button type="submit" class="secondary-button"${canSave ? "" : " disabled"}>＋ 계획 추가</button>
+            </form>
+          </section>
+        </div>
+        <aside class="weekly-report-side">
+          <section class="weekly-submit-card">
+            <span>REPORT STATUS</span>
+            <h3>${savedAt ? "제출된 보고서" : "작성 중인 초안"}</h3>
+            <p>${savedAt ? `${dateText(savedAt)}에 저장했습니다. 수정 후 다시 제출할 수 있습니다.` : "내용을 확인한 뒤 제출하면 회사 공용 서버에 저장됩니다."}</p>
+            <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
+          </section>
+          <details class="weekly-manager-card">
+            <summary><span>관리자 의견</span><em>${context.existing && context.existing.leadNote ? "1" : "0"}</em></summary>
+            <div>${context.existing && context.existing.leadNote ? esc(context.existing.leadNote) : "등록된 관리자 의견이 없습니다."}</div>
+          </details>
+          <section class="weekly-source-card"><b>자동 수집 기준</b><p>내 담당 업무지시·프로젝트 진척·완료 일정·상담·민원·계약·문서·업체 상담만 포함합니다.</p><small>로그인, 검색, 단순 조회, 메신저 대화와 다른 사람의 활동은 제외됩니다.</small></section>
+        </aside>
+      </section>`;
+  }
+
+  function updateWeeklyDefaultSummary() {
+    const W = weeklyReportCore();
+    if (!W || weeklyReportState.summaryCustomized) return;
+    weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
+  }
+
+  async function rewriteWeeklyReportWithAi() {
+    const W = weeklyReportCore();
+    if (!W || weeklyReportState.aiLoading) return;
+    const content = W.sourceText(weeklyReportState.automatic, weeklyReportState.manual);
+    if (!content) return showToast("먼저 보고서에 반영할 업무를 추가해 주세요.", "error");
+    weeklyReportState.aiLoading = true;
+    weeklyReportState.error = "";
+    renderWeeklyReports();
+    try {
+      const response = await api.assist({
+        task: "assistant_summary",
+        content: `주간업무보고서에 사용할 업무 목록입니다. 사실을 추가하지 말고, 완료·진행 상태를 구분해 간결한 한국어 보고 문장으로 정리해 주세요.\n${content}`,
+        context: { workType: "주간업무보고서", owner: weeklyReportActor().name || "담당자" },
+      });
+      const result = String(response && response.result && response.result.text || "").trim().slice(0, 900);
+      if (!result) throw new Error("AI 초안이 비어 있습니다.");
+      weeklyReportState.summary = result;
+      weeklyReportState.summaryCustomized = true;
+      weeklyReportState.warning = (response.warnings || []).join(" ").slice(0, 500);
+      showToast("AI가 주간 요약 문장을 다시 작성했습니다.", "success");
+    } catch (error) {
+      weeklyReportState.error = error && error.message || "AI 문장을 만들지 못했습니다. 자동 초안은 그대로 유지됩니다.";
+    } finally {
+      weeklyReportState.aiLoading = false;
+      if (currentView === "weeklyReports") renderWeeklyReports();
+    }
+  }
+
+  async function saveWeeklyReport() {
+    const context = hydrateWeeklyReport();
+    const G = growthCore();
+    if (!context || !G || weeklyReportState.busy) return;
+    const existing = context.existing || {};
+    const answers = Object.assign({}, existing.answers || {}, {
+      done: context.W.serializeDone({ summary: weeklyReportState.summary, automatic: weeklyReportState.automatic, manual: weeklyReportState.manual }),
+      next: context.W.serializePlans(weeklyReportState.plans),
+    });
+    const checked = G.validateCheckin(Object.assign({}, existing, {
+      id: existing.id || `weekly_report_${context.week}_${context.actor.uid || "user"}`.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80),
+      uid: growthState.uid || context.actor.uid,
+      week: context.week,
+      answers,
+    }));
+    if (!checked.ok) return showToast(checked.error, "error");
+    weeklyReportState.busy = true;
+    renderWeeklyReports();
+    try {
+      await api.saveGrowthCheckin(checked.checkin);
+      weeklyReportState.loadedKey = "";
+      growthState.loaded = false;
+      showToast("주간업무보고서를 제출했습니다.", "success");
+      await loadGrowth();
+    } catch (error) {
+      weeklyReportState.error = error && error.message || "주간업무보고서를 저장하지 못했습니다.";
+    } finally {
+      weeklyReportState.busy = false;
+      if (currentView === "weeklyReports") renderWeeklyReports();
+    }
+  }
+
+  function addWeeklyManualFromForm(form) {
+    const W = weeklyReportCore();
+    if (!W) return;
+    if (!growthState.loaded || !growthState.canWork) return showToast("주간보고서 저장 권한을 확인한 뒤 다시 시도해 주세요.", "error");
+    if (weeklyReportState.manual.length >= 8) return showToast("직접 추가 업무는 한 주에 8건까지 적을 수 있습니다.", "error");
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const item = W.normalizeManual({ id: `manual_${Date.now().toString(36)}`, title: raw.title, status: raw.status }, weeklyReportState.manual.length);
+    if (!item.title) return showToast("추가할 업무를 입력해 주세요.", "error");
+    weeklyReportState.manual.push(item);
+    updateWeeklyDefaultSummary();
+    renderWeeklyReports();
+  }
+
+  function addWeeklyPlanFromForm(form) {
+    const W = weeklyReportCore();
+    if (!W) return;
+    if (!growthState.loaded || !growthState.canWork) return showToast("주간보고서 저장 권한을 확인한 뒤 다시 시도해 주세요.", "error");
+    if (weeklyReportState.plans.length >= 10) return showToast("다음 주 계획은 10건까지 적을 수 있습니다.", "error");
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const plan = W.normalizePlan({ id: `plan_${Date.now().toString(36)}`, title: raw.title, date: raw.date, priority: raw.priority }, weeklyReportState.plans.length);
+    if (!plan.title) return showToast("다음 주 계획을 입력해 주세요.", "error");
+    weeklyReportState.plans.push(plan);
+    renderWeeklyReports();
+  }
+
   // --- 성장·1on1 ---
   //
   // 작은 회사에서 성장이 막히는 까닭은 대개 기회가 없어서가 아니라,
@@ -8908,6 +9194,7 @@
     growthState.loading = true;
     growthState.error = "";
     if (currentView === "growth") renderGrowth();
+    else if (currentView === "weeklyReports") renderWeeklyReports();
     try {
       const data = await api.loadGrowth();
       growthState.checkins = Array.isArray(data && data.checkins) ? data.checkins : [];
@@ -8922,6 +9209,7 @@
       growthState.loading = false;
       updateGrowthBadge();
       if (currentView === "growth") renderGrowth();
+      else if (currentView === "weeklyReports") renderWeeklyReports();
     }
   }
 
@@ -8932,7 +9220,7 @@
     if (!badge) return;
     const G = growthCore();
     if (!G || !growthState.admin) { badge.hidden = true; return; }
-    const count = G.missingCheckins(workOrderState.members || [], growthState.checkins, todayKey()).length;
+    const count = G.missingCheckins(workOrderState.members || [], growthOneOnOneCheckins(), todayKey()).length;
     badge.textContent = String(count);
     badge.hidden = count === 0;
   }
@@ -8963,7 +9251,7 @@
   }
 
   function growthMine(G) {
-    const trail = G.personTrail(growthState.uid, growthState);
+    const trail = G.personTrail(growthState.uid, { ...growthState, checkins: growthOneOnOneCheckins() });
     const level = G.levelOf(trail.level);
     const next = trail.nextLevel;
     const thisWeek = G.weekStart(todayKey());
@@ -9006,9 +9294,10 @@
 
   function growthTeam(G) {
     const members = workOrderState.members || [];
-    const missing = G.missingCheckins(members, growthState.checkins, todayKey());
+    const oneOnOneCheckins = growthOneOnOneCheckins();
+    const missing = G.missingCheckins(members, oneOnOneCheckins, todayKey());
     const rows = members.map(member => {
-      const trail = G.personTrail(member.uid, growthState);
+      const trail = G.personTrail(member.uid, { ...growthState, checkins: oneOnOneCheckins });
       const level = G.levelOf(trail.level);
       return `<tr>
         <td class="office-user-cell">${esc(member.displayName)}</td>
@@ -9071,7 +9360,7 @@
     const answers = {};
     G.QUESTION_KEYS.forEach(key => { answers[key] = String(raw[key] || ""); });
     const week = String(raw.week || G.weekStart(todayKey()));
-    const existing = growthState.checkins.find(item => item.uid === growthState.uid && item.week === week);
+    const existing = growthOneOnOneCheckins().find(item => item.uid === growthState.uid && item.week === week);
     const checked = G.validateCheckin({
       id: (existing && existing.id) || `gc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       uid: growthState.uid, week, answers,
@@ -10858,6 +11147,47 @@
       }
       return;
     }
+    const weeklyShift = event.target.closest("[data-weekly-shift]");
+    if (weeklyShift) {
+      const W = weeklyReportCore();
+      const shift = Number(weeklyShift.dataset.weeklyShift) || 0;
+      if (W && shift) {
+        const next = W.addDays(weeklyReportState.week || W.weekStart(todayKey()), shift * 7);
+        const current = W.weekStart(todayKey());
+        weeklyReportState.week = next > current ? current : next;
+        weeklyReportState.loadedKey = "";
+        weeklyReportState.sourceSignature = "";
+        weeklyReportState.summaryCustomized = false;
+        renderWeeklyReports();
+      }
+      return;
+    }
+    if (event.target.closest("[data-weekly-current]")) {
+      const W = weeklyReportCore();
+      if (W) {
+        weeklyReportState.week = W.weekStart(todayKey());
+        weeklyReportState.loadedKey = "";
+        weeklyReportState.sourceSignature = "";
+        weeklyReportState.summaryCustomized = false;
+        renderWeeklyReports();
+      }
+      return;
+    }
+    const weeklyManualRemove = event.target.closest("[data-weekly-manual-remove]");
+    if (weeklyManualRemove) {
+      weeklyReportState.manual = weeklyReportState.manual.filter(item => item.id !== weeklyManualRemove.dataset.weeklyManualRemove);
+      updateWeeklyDefaultSummary();
+      renderWeeklyReports();
+      return;
+    }
+    const weeklyPlanRemove = event.target.closest("[data-weekly-plan-remove]");
+    if (weeklyPlanRemove) {
+      weeklyReportState.plans = weeklyReportState.plans.filter(item => item.id !== weeklyPlanRemove.dataset.weeklyPlanRemove);
+      renderWeeklyReports();
+      return;
+    }
+    if (event.target.closest("[data-weekly-ai-rewrite]")) { await rewriteWeeklyReportWithAi(); return; }
+    if (event.target.closest("[data-weekly-submit]")) { await saveWeeklyReport(); return; }
     const growthTab = event.target.closest("[data-growth-tab]");
     if (growthTab) { growthState.tab = growthTab.dataset.growthTab; renderGrowth(); return; }
     const growthReview = event.target.closest("[data-growth-review]");
@@ -13445,6 +13775,8 @@
     event.preventDefault();
     if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
+    if (form.matches("[data-weekly-manual-form]")) { addWeeklyManualFromForm(form); return; }
+    if (form.matches("[data-weekly-plan-form]")) { addWeeklyPlanFromForm(form); return; }
     if (form.matches("[data-wo-progress-form]")) { await saveWorkOrderProgressFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-roadmap-extension-form]")) { await saveProjectExtensionFromForm(form); return; }
@@ -15149,7 +15481,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
