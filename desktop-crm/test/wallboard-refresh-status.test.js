@@ -34,3 +34,9 @@ test('admin live status includes remote refresh outcome and labels it separately
  assert.match(ui,/remoteRefreshError/);
  assert.match(ui,/TV 서버 게시 요청/);
 });
+
+test('manual TV sync requests a server refresh even when local publisher is inactive',()=>{
+ const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+ assert.match(main,/if \(input\?\.action === "live-sync"\) \{\s*await wallboardRefreshQueue\.notify\(\)/);
+ assert.match(main,/return \{\.\.\.ensureWallboardLiveSync\(\)\.status\(\), \.\.\.wallboardRefreshStatus\.status\(\)\}/);
+});

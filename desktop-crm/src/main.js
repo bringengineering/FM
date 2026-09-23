@@ -8424,7 +8424,11 @@ secureCanonicalHandle("crm:input-language-korean", () => WindowsKoreanInput.requ
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
   if (input?.action === "live-status") return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};
-  if (input?.action === "live-sync") return ensureWallboardLiveSync().reconcile();
+  if (input?.action === "live-sync") {
+    await wallboardRefreshQueue.notify();
+    await ensureWallboardLiveSync().reconcile();
+    return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};
+  }
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
   const { resolveTvChannel } = require("./tv-update-policy");
   if (["auto-start", "auto-stop", "auto-status"].includes(input?.action)) {
