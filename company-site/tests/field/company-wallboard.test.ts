@@ -28,7 +28,7 @@ test('local playlist persists only controls and supports an empty playlist',asyn
  const notice=host.querySelector('[data-wb-notice]');notice.value='PRIVATE_NOTICE';notice.dispatchEvent(new w.Event('change',{bubbles:true}));
  expect(w.localStorage.getItem('bring.wallboard.playlist.v1')).not.toContain('PRIVATE_NOTICE');
  stop();stop=w.BringCompanyWallboard.mount(host,options);await new Promise(r=>setTimeout(r,0));
- expect(host.querySelector('h1').textContent).toBe('프로젝트 로드맵');
+ expect(host.querySelector('h1').textContent).toBe('프로젝트 로드맵 · 8주 요약');
  expect(host.querySelector('[data-wb-duration="people"]').value).toBe('15');
  for(const box of host.querySelectorAll('[data-wb-enabled]')){box.checked=false;box.dispatchEvent(new w.Event('change',{bubbles:true}));}
  expect(host.querySelector('.wb-content').textContent).toContain('표시할 화면을 선택');

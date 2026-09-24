@@ -86,5 +86,27 @@ test('roadmap stacks multiple project bars instead of overlapping them',()=>{
   {id:'o2',projectId:'p2',status:'doing',assigneeUid:'u1',assigneeName:'김현진',progress:50}
  ],calendar:{serviceRecords:[]}},'2026-09-20');
  const html=C.scene(m,'roadmap',0);
- assert.match(html,/top:10px/);assert.match(html,/top:48px/);
+ assert.equal((html.match(/class="wb-roadmap-assignment"/g)||[]).length,2);
+ assert.doesNotMatch(html,/top:10px|top:48px/);
+});
+test('TV 8-day roadmap uses the CRM date range without changing the 8-week model',()=>{
+ const m=C.project({projects:[{id:'p1',name:'현장 A',startDate:'2026-09-20',endDate:'2026-10-02'}],orders:[],calendar:{serviceRecords:[]}},'2026-09-24');
+ const weekly=m.roadmap.range.from;
+ const daily=C.roadmapView(m,'day','2026-09-24');
+ assert.equal(daily.range.from,'2026-09-23');
+ assert.equal(daily.range.to,'2026-09-30');
+ assert.equal(daily.range.weeks.length,8);
+ assert.equal(daily.range.weeks[0].label,'9/23');
+ assert.equal(daily.lanes[0].assignments[0].layout.left,0);
+ assert.equal(daily.lanes[0].assignments[0].layout.width,100);
+ assert.equal(m.roadmap.range.from,weekly);
+ assert.match(C.scene(m,'roadmap',0,'','09:00','day','2026-09-24'),/9\/23/);
+});
+test('roadmap gives every assignment its own row when one person owns four projects',()=>{
+ const projects=Array.from({length:4},(_,index)=>({id:`p${index}`,name:`프로젝트 ${index}`,startDate:'2026-09-23',endDate:'2026-09-30'}));
+ const orders=projects.map((item,index)=>({id:`o${index}`,projectId:item.id,status:'doing',assigneeUid:'u1',assigneeName:'김현진'}));
+ const m=C.project({projects,orders,calendar:{serviceRecords:[]}},'2026-09-24');
+ const html=C.scene(m,'roadmap',0,'','09:00','day','2026-09-24');
+ assert.equal((html.match(/class="wb-roadmap-assignment"/g)||[]).length,4);
+ assert.doesNotMatch(html,/top:10px|top:48px/);
 });

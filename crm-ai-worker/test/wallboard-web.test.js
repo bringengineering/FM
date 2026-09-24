@@ -38,6 +38,25 @@ test('web TV client rotates roadmap performance and schedule scenes safely',asyn
  assert.match(source,/cache:\s*['"]no-store['"]/);
  assert.doesNotMatch(source,/\b(phone|consultation|password|detailedAddress)\b/i);
 });
+test('web TV rotates 8-week and 8-day roadmap views from the same publication',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/roadmapMode='week'/);
+ assert.match(source,/function roadmapView\(model,mode\)/);
+ assert.match(source,/roadmapMode==='day'\?'8일 상세':'8주 요약'/);
+ assert.match(source,/roadmapMode='day'/);
+ assert.match(source,/board\.dataDate/);
+ const helpers=source.match(/function addDays\(value,amount\)[\s\S]*?(?=function emptyRoadmap\()/)?.[0];
+ assert.ok(helpers,'served TV client must contain the roadmap projection');
+ const {roadmapView}=vm.runInNewContext(`${helpers};({roadmapView})`,{board:{dataDate:'2026-09-24'}});
+ const model={roadmap:{range:{from:'2026-08-31'},lanes:[{assignments:[{startDate:'2026-09-20',endDate:'2026-10-02',progress:42}]}]}};
+ const daily=roadmapView(model,'day');
+ assert.equal(daily.range.from,'2026-09-23');
+ assert.equal(daily.range.to,'2026-09-30');
+ assert.equal(daily.lanes[0].assignments[0].layout.width,100);
+ assert.equal(model.roadmap.range.from,'2026-08-31','8-week source is not mutated');
+ assert.match(source,/assignment-row/);
+ assert.doesNotMatch(source,/position%3/);
+});
 test('web TV stylesheet compacts content for common TV heights',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(source,/@media\(max-height:1100px\)/);assert.match(source,/\.timeline \.row/);
