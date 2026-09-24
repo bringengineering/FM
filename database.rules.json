@@ -487,7 +487,7 @@
             },
             "sources": {
               "$sourceIndex": {
-                ".validate": "newData.hasChildren(['id','status'])",
+                ".validate": "newData.hasChildren(['id','status']) && root.child('crmCompany/workOrders').child(newData.child('id').val()).exists() && root.child('crmCompany/workOrders').child(newData.child('id').val()).child('projectId').val() === newData.parent().parent().parent().child('projectId').val() && root.child('crmCompany/workOrders').child(newData.child('id').val()).child('status').val() === newData.child('status').val() && root.child('crmCompany/workOrders').child(newData.child('id').val()).child('assigneeUid').val() === newData.child('assigneeUid').val() && root.child('crmCompany/workOrders').child(newData.child('id').val()).child('updatedAt').val() === newData.child('updatedAt').val()",
                 "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
                 "status": { ".validate": "newData.isString() && (newData.val() === 'assigned' || newData.val() === 'doing' || newData.val() === 'submitted' || newData.val() === 'returned' || newData.val() === 'done')" },
                 "assigneeUid": { ".validate": "newData.isString() && newData.val().length <= 80" },

@@ -41,10 +41,25 @@ beforeEach(async () => {
       admin: { enabled: true, email: "admin@bring.test", role: "admin", mustChangePassword: false },
       viewer: { enabled: true, email: "viewer@bring.test", role: "viewer", mustChangePassword: false },
     });
+    await set(ref(context.database(), "crmCompany/workOrders/w1"), {
+      id: "w1", projectId: "p1", status: "done", assigneeUid: "u1", updatedAt: stamp,
+    });
   });
 });
 
 describe.skipIf(!available)("project weekly report rules", () => {
+  it("rejects source IDs and statuses that do not match saved work orders", async () => {
+    const member = environment.authenticatedContext("u1", { email: "u1@bring.test", email_verified: true }).database();
+    const path = "crmCompany/projectWeeklyReports/forged";
+    const fakeId = record("forged", "u1", "submitted");
+    fakeId.snapshot.sources[0].id = "missing";
+    await assertFails(set(ref(member, path), fakeId));
+    const fakeStatus = record("forged", "u1", "submitted");
+    fakeStatus.snapshot.sources[0].status = "doing";
+    fakeStatus.snapshot.counts = { total: 1, done: 0, submitted: 0, returned: 0, open: 1 };
+    await assertFails(set(ref(member, path), fakeStatus));
+  });
+
   it("freezes submitted evidence and stores an immutable manager review separately", async () => {
     const member = environment.authenticatedContext("u1", { email: "u1@bring.test", email_verified: true }).database();
     const other = environment.authenticatedContext("u2", { email: "u2@bring.test", email_verified: true }).database();
