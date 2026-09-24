@@ -1,12 +1,13 @@
 'use strict';
 const Strategy=require('./company-strategy-core');
 
-const privateText=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?)/iu;
+const privateText=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?|[가-힣]+(?:동|읍|면|리)\s*\d{1,4}(?:-\d{1,4})?|\d{1,4}\s*(?:번지|호))/iu;
 const unsafe=value=>typeof value!=='string'||/[\u0000-\u001f]/u.test(value)||privateText.test(value);
 const invalid=()=>{throw new Error('INVALID_APPROVED_STRATEGY');};
 
 function projectApprovedStrategy(publication,members,year){
- if(publication===null||publication===undefined||publication.year!==year)return null;
+ if(publication===null||publication===undefined)return null;
+ if(publication.year!==year)invalid();
  if(!/^20\d{2}$/u.test(year)||typeof publication.content!=='string'||!Array.isArray(members))invalid();
  let raw;
  try{raw=JSON.parse(publication.content);}catch{invalid();}

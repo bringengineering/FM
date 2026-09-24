@@ -223,6 +223,10 @@ test('local strategy scene renders approved goal progress and unknown progress d
  assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/집계 대기/);
  assert.doesNotMatch(html,/uid|undefined/);
 });
+test('local strategy scene shows the approved reporting relationship',()=>{
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'서창환',role:'대표',reportsToIndex:null},{displayName:'김현진',role:'운영',reportsToIndex:0}],goals:[]}},'2026-09-24');
+ assert.match(C.scene(model,'strategy'),/보고 · 서창환/);
+});
 test('local preview returns to a valid scene when a new year has no approved strategy',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
  assert.match(source,/index=Math\.min\(index,Math\.max\(0,playlist\(\)\.length-1\)\)/u);

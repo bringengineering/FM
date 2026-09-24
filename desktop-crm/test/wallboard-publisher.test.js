@@ -22,6 +22,14 @@ test('automatic publication reads current source and advances revision without a
  await f.tick();assert.equal(f.sent.length,2);assert.equal(f.sent[1].expectedVersion,1);
  f.publisher.stop();await f.tick();assert.equal(f.sent.length,2);assert.equal(f.publisher.status().active,false);
 });
+test('manual publisher uses Korea date and one instant for the source at New Year',async()=>{
+ const loaded=[],sent=[];
+ const instant=new Date('2026-12-31T15:30:00.000Z');
+ const p=createWallboardPublisher({getIdentity:()=> 'admin',load:async date=>{loaded.push(date);return {orders:[],calendar:{serviceRecords:[]}};},publish:async input=>{sent.push(input);return {version:1,publishedAt:1};},now:()=>instant,setTimer:()=>1,clearTimer:()=>{}});
+ await p.start(config);
+ assert.equal(sent[0].snapshot.dataDate,'2027-01-01');
+ assert.deepEqual(loaded,[instant]);
+});
 test('identity change stops before publishing another snapshot',async()=>{
  const f=setup();await f.publisher.start(config);f.changeUser();await f.tick();assert.equal(f.sent.length,1);assert.equal(f.publisher.status().active,false);
 });

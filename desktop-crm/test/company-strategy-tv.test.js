@@ -21,7 +21,7 @@ test('projects only the approved fields and removes source UIDs and metadata',()
 
 test('no current-year approval hides the strategy scene',()=>{
  assert.equal(projectApprovedStrategy(null,[],'2026'),null);
- assert.equal(projectApprovedStrategy(approved(),[],'2027'),null);
+ assert.throws(()=>projectApprovedStrategy(approved(),[],'2027'),/INVALID_APPROVED_STRATEGY/);
 });
 
 test('missing measurement stays unmeasured rather than becoming zero',()=>{
@@ -41,6 +41,10 @@ test('malformed and private approved text fails closed',()=>{
  assert.throws(()=>projectApprovedStrategy({...approved(),content:'{'},[],'2026'),/INVALID_APPROVED_STRATEGY/);
  const input=approved();const content=JSON.parse(input.content);content.vision='문의 010-1234-5678';input.content=JSON.stringify(content);
  assert.throws(()=>projectApprovedStrategy(input,[],'2026'),/INVALID_APPROVED_STRATEGY/);
+ for(const value of ['우산동 83','305호']){
+  const address=approved();const fields=JSON.parse(address.content);fields.vision=value;address.content=JSON.stringify(fields);
+  assert.throws(()=>projectApprovedStrategy(address,[],'2026'),/INVALID_APPROVED_STRATEGY/);
+ }
 });
 test('existing ten-scene settings gain the strategy scene once at the end',()=>{
  const old=[{key:'roadmap',enabled:true,seconds:40},{key:'notice',enabled:false,seconds:30}];

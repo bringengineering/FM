@@ -2,11 +2,12 @@
 const {project}=require('./company-wallboard');
 const {validatePublication}=require('./wallboard-publication-schema');
 const {projectApprovedStrategy,withStrategyScene}=require('./company-strategy-tv');
+const {koreaDate}=require('./korea-date');
 async function loadWallboardSource(client,asOf=new Date()){
  // Never call loadStore: it can resume pending mutations and merge local edits.
  const [work,records]=await Promise.all([client.loadWorkOrders(),client.dbRequest('crmShared/data/serviceRecords',{method:'GET'})]);
  if(records!==null&&(typeof records!=='object'||Array.isArray(records)))throw new Error('서버 일정 형식을 확인할 수 없습니다.');
- const year=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric'}).format(asOf);
+ const year=koreaDate(asOf).slice(0,4);
  const approved=await client.dbRequest(`companyStrategyPublications/${year}`,{method:'GET'});
  return {...work,calendar:{serviceRecords:Object.values(records||{})},strategy:projectApprovedStrategy(approved,work.members||[],year)};
 }
@@ -19,10 +20,11 @@ function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),s
   if(!owner||getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
   busy=true;const generationAtStart=generation;
   try{
-   const data=await load(now());
+   const instant=now();
+   const data=await load(instant);
    if(!active||generationAtStart!==generation)return status();
    if(getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
-   const date=now(),dataDate=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+   const dataDate=koreaDate(instant);
    const snapshot=validatePublication({model:project(data,dataDate),...config,dataDate});
    const result=await publish({action:'publish',snapshot,expectedVersion:version},owner);
    if(generationAtStart===generation){version=result.version;publishedAt=result.publishedAt;error='';}

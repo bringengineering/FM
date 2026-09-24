@@ -99,6 +99,15 @@ test('authenticated start publishes current shared CRM data', async () => {
   assert.equal(item.published[0].snapshot.model.people[0].name, '김현진');
   assert.equal(item.sync.status().active, true);
 });
+test('live sync uses Korea date at New Year', async () => {
+ const published=[];
+ const sync=createWallboardLiveSync({getIdentity:()=> 'admin',load:async()=>({orders:[],calendar:{serviceRecords:[]}}),list:async()=>({version:0,presentation:null}),publish:async input=>{published.push(input);return {version:1,publishedAt:1};},now:()=>new Date('2026-12-31T15:30:00.000Z'),setIntervalFn:()=>({unref(){}}),clearIntervalFn:()=>{}});
+ sync.start();
+ await new Promise(resolve=>setImmediate(resolve));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(published[0].snapshot.dataDate,'2027-01-01');
+ sync.stop();
+});
 
 test('multiple remote success notifications coalesce into one publication', async () => {
   const item = fixture();

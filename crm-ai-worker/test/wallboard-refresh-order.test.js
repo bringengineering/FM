@@ -27,7 +27,7 @@ test('an older Firebase read cannot replace a newer TV publication',async()=>{
    if(workOrderReads===1){oldReadStarted();await oldRead;return Response.json(oldOrders);}
    return Response.json(newOrders);
   }
-  return Response.json(sources[path]||{});
+  return Response.json(path.startsWith('companyStrategyPublications/')?null:sources[path]||{});
  };
  const input={idToken:'test-token',identity:{uid:'u1',email:'user@example.com',emailVerified:true},env,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')};
  const first=refreshWallboardFromFirebase(input);

@@ -101,6 +101,11 @@ test('approved current-year company direction is projected without source IDs',a
  assert.equal(JSON.stringify(strategy).includes('staff-1'),false);
  assert.equal(JSON.stringify(strategy).includes('private-admin'),false);
 });
+test('malformed approved year preserves the last published TV board',async()=>{
+ const f=fixture({approvedStrategy:{year:'2025',content:'{}'}});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}));
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
 test('unapproved project reports do not count and orphan reviews preserve old TV board',async()=>{
  const pending=fixture({reviewMap:{}});
  await refreshWallboardFromFirebase({idToken:token,identity,env:pending.env,fetchImpl:pending.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
