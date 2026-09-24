@@ -29,7 +29,7 @@ test('incomplete approval metadata fails closed',()=>{
   const input=approved();delete input[key];
   assert.throws(()=>projectApprovedStrategy(input,[],'2026'),/INVALID_APPROVED_STRATEGY/,key);
  }
- for(const change of [{revision:0},{sourceRevision:-1},{publishedAt:'invalid'},{updatedBy:'another-user'}]){
+ for(const change of [{revision:0},{sourceRevision:-1},{publishedAt:'invalid'},{updatedAt:'2026-02-30T00:00:00.000Z',publishedAt:'2026-02-30T00:00:00.000Z'},{updatedBy:'another-user'}]){
   assert.throws(()=>projectApprovedStrategy({...approved(),...change},[],'2026'),/INVALID_APPROVED_STRATEGY/);
  }
 });
