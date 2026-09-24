@@ -47,6 +47,17 @@ test('분류 필요 업무는 건수만 아니라 원본 업무를 열 수 있�
   assert.match(handler, /project-workspace-classification-list/u);
 });
 
+test('업무의 프로젝트 연결 변경은 비교 미리보기와 관리자 확인 뒤에만 저장한다', () => {
+  const source = read('app.js');
+  const start = source.indexOf('async function saveWorkOrderFromForm(form)');
+  const end = source.indexOf('function readCapacityDraft(', start);
+  const save = source.slice(start, end);
+  assert.match(save, /workspaceCore\.mappingPreview/u);
+  assert.match(save, /data-wo-mapping-confirm/u);
+  assert.match(save, /관리자 확인/u);
+  assert.ok(save.indexOf('data-wo-mapping-confirm') < save.indexOf('await api.saveWorkOrder'));
+});
+
 test('오늘 처리할 일은 기간·내 것 필터 밖에 있어도 원본 업무로 이동한다', () => {
   const source = read('app.js');
   const start = source.indexOf('const woOpenCard = event.target.closest("[data-wo-open-card]")');

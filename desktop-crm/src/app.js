@@ -5425,6 +5425,7 @@
       <label class="wide"><span>왜 해야 하나</span><textarea name="why" rows="3" maxlength="2000" required placeholder="이유를 모르면 받는 사람이 짐작으로 합니다.">${esc(draft.why)}</textarea></label>
       <label class="wide"><span>무엇을 어떻게</span><textarea name="what" rows="3" maxlength="2000" required>${esc(draft.what)}</textarea></label>
       <label class="wide"><span>어디까지 하면 끝인가</span><textarea name="doneWhen" rows="2" maxlength="1000" required placeholder="예: 사진 3장과 원인 한 줄이 올라오면 끝">${esc(draft.doneWhen)}</textarea></label>
+      <div class="wide" data-wo-mapping-preview aria-live="polite"></div>
       <div class="wo-editor-actions">
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "지시하기")}</button>
         <button type="button" class="mini-button return" data-wo-cancel>그만두기</button>
@@ -5460,6 +5461,27 @@
     }));
     // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
     if (!checked.ok) { showToast(checked.error, "error"); return; }
+    const sourceOrder = workOrderState.orders.find(item => item && item.id === previous.id);
+    if (sourceOrder && String(sourceOrder.projectId || "").trim() !== checked.order.projectId) {
+      if (!workOrderState.admin) { showToast("프로젝트 연결은 관리자만 변경할 수 있습니다.", "error"); return; }
+      const workspaceCore = window.BringProjectWorkspaceCore;
+      const preview = workspaceCore && workspaceCore.mappingPreview({
+        orderId: previous.id,
+        targetProjectId: checked.order.projectId,
+        projects: workOrderState.projects,
+        orders: workOrderState.orders,
+      });
+      if (!preview || !preview.changed) { showToast("원본 업무나 연결 프로젝트를 확인할 수 없습니다. 다시 불러와 주세요.", "error"); return; }
+      const panel = form.querySelector("[data-wo-mapping-preview]");
+      const confirmed = panel && panel.dataset.target === preview.after.id && panel.querySelector("[data-wo-mapping-confirm]")?.checked;
+      if (!confirmed) {
+        if (!panel) return;
+        panel.dataset.target = preview.after.id;
+        panel.innerHTML = `<div class="info-box"><strong>프로젝트 연결 변경 미리보기</strong><p>이 업무 1건의 연결만 바뀝니다. 원본 업무·증빙은 유지됩니다.</p><p>이전: ${esc(preview.before.name)} · ${preview.before.count}건 → ${preview.before.afterCount}건</p><p>변경: ${esc(preview.after.name)} · ${preview.after.count}건 → ${preview.after.afterCount}건</p><label><input type="checkbox" data-wo-mapping-confirm> 관리자 확인: 위 연결 변경을 승인합니다.</label></div>`;
+        panel.querySelector("[data-wo-mapping-confirm]")?.focus();
+        return;
+      }
+    }
     try {
       await api.saveWorkOrder(checked.order);
       workOrderState.editing = null;

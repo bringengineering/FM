@@ -51,6 +51,27 @@
     return rows(projects).some(item => text(item.id) === projectId) ? '실제 프로젝트 연결' : '연결 프로젝트 확인 필요';
   }
 
+  function mappingPreview(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    const orderId = text(source.orderId);
+    const targetProjectId = text(source.targetProjectId);
+    const projects = rows(source.projects);
+    if (targetProjectId && !projects.some(item => text(item.id) === targetProjectId)) return null;
+    const orders = uniqueOrders(source.orders, false);
+    const order = orders.find(item => text(item.id) === orderId);
+    if (!order) return null;
+    const beforeId = text(order.projectId);
+    const changed = beforeId !== targetProjectId;
+    const name = id => !id ? '프로젝트 없음' : (projects.find(item => text(item.id) === id) || {}).name || `연결 확인 필요 (${id})`;
+    const count = id => orders.filter(item => text(item.projectId) === id).length;
+    return {
+      orderId,
+      changed,
+      before: { id: beforeId, name: name(beforeId), count: count(beforeId), afterCount: count(beforeId) - (changed ? 1 : 0) },
+      after: { id: targetProjectId, name: name(targetProjectId), count: count(targetProjectId), afterCount: count(targetProjectId) + (changed ? 1 : 0) },
+    };
+  }
+
   function todayQueue(input) {
     const source = input && typeof input === 'object' ? input : {};
     const today = date(source.today);
@@ -105,5 +126,5 @@
     };
   }
 
-  return Object.freeze({ partitionProjects, classificationLabel, todayQueue, completion, health });
+  return Object.freeze({ partitionProjects, classificationLabel, mappingPreview, todayQueue, completion, health });
 });

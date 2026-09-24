@@ -19,6 +19,31 @@ test('분류 필요 업무는 미연결·기존 사업영역·없는 프로젝�
   assert.equal(Workspace.classificationLabel({ projectId: 'deleted' }, projects), '연결 프로젝트 확인 필요');
 });
 
+test('프로젝트 연결 변경 미리보기는 원본과 대상의 업무 건수를 중복 없이 비교한다', () => {
+  const projects = [{ id: 'pj-crm', name: '브링 CRM·OFFICE' }, { id: 'real-1', name: '햇빛빌라 디지털 트윈' }];
+  const orders = [
+    { id: 'w1', projectId: 'pj-crm', updatedAt: '2026-09-24T08:00:00Z' },
+    { id: 'w1', projectId: 'pj-crm', updatedAt: '2026-09-24T08:00:00Z' },
+    { id: 'w2', projectId: 'pj-crm' },
+    { id: 'w3', projectId: 'real-1' },
+  ];
+  const preview = Workspace.mappingPreview({ orderId: 'w1', targetProjectId: 'real-1', projects, orders });
+  assert.deepEqual(preview, {
+    orderId: 'w1', changed: true,
+    before: { id: 'pj-crm', name: '브링 CRM·OFFICE', count: 2, afterCount: 1 },
+    after: { id: 'real-1', name: '햇빛빌라 디지털 트윈', count: 1, afterCount: 2 },
+  });
+  assert.equal(orders[0].projectId, 'pj-crm');
+});
+
+test('프로젝트 연결 변경 미리보기는 없는 원본·없는 대상·변경 없음에 안전하다', () => {
+  const projects = [{ id: 'real-1', name: '실제 프로젝트' }];
+  const orders = [{ id: 'w1', projectId: '' }];
+  assert.equal(Workspace.mappingPreview({ orderId: 'missing', targetProjectId: 'real-1', projects, orders }), null);
+  assert.equal(Workspace.mappingPreview({ orderId: 'w1', targetProjectId: 'missing', projects, orders }), null);
+  assert.equal(Workspace.mappingPreview({ orderId: 'w1', targetProjectId: '', projects, orders }).changed, false);
+});
+
 test('직원 오늘 목록은 내 업무만 보이고 지연·오늘·반려·이번 주·날짜 미정 순으로 정렬한다', () => {
   const rows = Workspace.todayQueue({ uid: 'u1', admin: false, today: '2026-09-24', orders: [
     { id: 'later', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-27' },
