@@ -36,6 +36,17 @@ test('관리자 행동 목록은 팀 전체 업무임을 제목에 밝힌다', (
   assert.match(render, /workOrderState\.admin \? "팀 전체의 다음 행동" : "내 업무의 다음 행동"/u);
 });
 
+test('분류 필요 업무는 건수만 아니라 원본 업무를 열 수 있는 목록으로 나온다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(render, /project-workspace-classification-list/u);
+  assert.match(render, /workspace\.classificationNeeded\.map\(/u);
+  assert.match(render, /workspaceCore\.classificationLabel/u);
+  assert.match(render, /data-wo-open-card/u);
+  const handler = source.slice(source.indexOf('const woOpenCard = event.target.closest("[data-wo-open-card]")'), source.indexOf('const dfGo ='));
+  assert.match(handler, /project-workspace-classification-list/u);
+});
+
 test('오늘 처리할 일은 기간·내 것 필터 밖에 있어도 원본 업무로 이동한다', () => {
   const source = read('app.js');
   const start = source.indexOf('const woOpenCard = event.target.closest("[data-wo-open-card]")');

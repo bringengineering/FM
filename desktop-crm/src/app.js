@@ -4856,6 +4856,7 @@
     const workspaceHealth = workspace && workspaceCore.health && workOrderState.performanceAvailable
       ? workspaceCore.health({ orders: workOrderState.performanceOrders, today }) : null;
     const healthReady = Boolean(workOrderState.performanceAvailable && workspaceHealth && workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
+    const classificationReady = Boolean(workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
     const healthValue = value => !healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${value}건` : "집계 대기";
     const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
       <section class="project-workspace-health" aria-label="전체 업무지시 현황 · 건수 기준">
@@ -4871,7 +4872,7 @@
         <header><div><span>사업영역 안의 실제 실행 단위</span><h3 id="project-workspace-projects-title">실제 프로젝트</h3></div><small>${workspace.projects.length}개</small></header>
         ${workspace.projects.length ? `<div class="project-workspace-project-list">${workspace.projects.map(item => { const checked = healthReady ? workspaceCore.completion(workOrderState.performanceOrders, item.id) : null; return `<button type="button" data-wo-project="${esc(item.id)}"><strong>${esc(item.name)}</strong><span>${esc(item.owner || "책임자 미정")}${item.endDate ? ` · 마감 ${esc(item.endDate)}` : " · 마감 미정"}</span><em>업무 검수 완료율 ${checked ? `${checked.percent}% (${checked.done}/${checked.total}건)` : "집계 대기"}</em></button>`; }).join("")}</div>` : `<p class="project-workspace-empty">실제 프로젝트가 아직 없습니다. 아래 기존 사업영역은 그대로 보존되어 있습니다.</p>`}
       </section>
-      <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${workOrderState.loaded && !workOrderState.loading && !workOrderState.error ? `${workspace.classificationNeeded.length}건` : "조회 확인 필요"}</summary><p>기존 업무 연결은 바꾸지 않았습니다. 사업영역이나 연결 없는 업무도 아래 목록과 기존 화면에서 계속 확인할 수 있습니다.</p>${orphans ? `<button type="button" class="mini-button" data-wo-project="__none">연결 없는 업무 ${orphans}건 보기</button>` : ""}<div class="wo-project-tabs">${tabs}</div></details>
+      <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${classificationReady ? `${workspace.classificationNeeded.length}건` : "조회 확인 필요"}</summary><p>기존 업무 연결은 자동으로 바꾸지 않습니다. 원본을 열어 확인한 뒤, 미완료 업무는 관리자가 기존 수정 화면에서 프로젝트 연결을 변경할 수 있습니다.</p>${classificationReady ? workspace.classificationNeeded.length ? `<div class="project-workspace-action-list project-workspace-classification-list">${workspace.classificationNeeded.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><strong>${esc(item.title || "제목 없는 업무")}</strong><small>${esc(workspaceCore.classificationLabel(item, projects))}${item.projectId ? ` · ${esc(item.projectId)}` : ""} · 원본 업무 보기</small></button>`).join("")}</div>` : `<p>분류가 필요한 업무가 없습니다.</p>` : `<p>분류 목록을 확인하려면 업무를 다시 불러와 주세요.</p>`}${orphans ? `<button type="button" class="mini-button" data-wo-project="__none">연결 없는 업무 ${orphans}건 보기</button>` : ""}<div class="wo-project-tabs">${tabs}</div></details>
     </div>` : "";
 
     main.innerHTML = `<section class="operations-hero work-orders-hero">
@@ -11622,7 +11623,7 @@
     const woOpenCard = event.target.closest("[data-wo-open-card]");
     if (woOpenCard) {
       // 간트에서 막대를 누르면 아래 카드로 데려간다. 자세한 것은 카드에 있다.
-      const fromTodayActions = Boolean(woOpenCard.closest(".project-workspace-action-list"));
+      const fromTodayActions = Boolean(woOpenCard.closest(".project-workspace-action-list, .project-workspace-classification-list"));
       let card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
       if (!card && fromTodayActions) {
         if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) {

@@ -12,6 +12,13 @@ test('기존 여섯 묶음은 이름을 바꿔도 레거시 사업영역으로 �
   assert.deepEqual(result.classificationNeeded.map(item => item.id), ['w1', 'w2']);
 });
 
+test('분류 필요 업무는 미연결·기존 사업영역·없는 프로젝트 이유를 구분한다', () => {
+  const projects = [{ id: 'pj-crm' }, { id: 'project-1' }];
+  assert.equal(Workspace.classificationLabel({ projectId: '' }, projects), '프로젝트 미연결');
+  assert.equal(Workspace.classificationLabel({ projectId: 'pj-crm' }, projects), '기존 사업영역 연결');
+  assert.equal(Workspace.classificationLabel({ projectId: 'deleted' }, projects), '연결 프로젝트 확인 필요');
+});
+
 test('직원 오늘 목록은 내 업무만 보이고 지연·오늘·반려·이번 주·날짜 미정 순으로 정렬한다', () => {
   const rows = Workspace.todayQueue({ uid: 'u1', admin: false, today: '2026-09-24', orders: [
     { id: 'later', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-27' },

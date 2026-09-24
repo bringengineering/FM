@@ -44,6 +44,13 @@
     };
   }
 
+  function classificationLabel(order, projects) {
+    const projectId = text(order && order.projectId);
+    if (!projectId) return '프로젝트 미연결';
+    if (LEGACY_IDS.has(projectId)) return '기존 사업영역 연결';
+    return rows(projects).some(item => text(item.id) === projectId) ? '실제 프로젝트 연결' : '연결 프로젝트 확인 필요';
+  }
+
   function todayQueue(input) {
     const source = input && typeof input === 'object' ? input : {};
     const today = date(source.today);
@@ -98,5 +105,5 @@
     };
   }
 
-  return Object.freeze({ partitionProjects, todayQueue, completion, health });
+  return Object.freeze({ partitionProjects, classificationLabel, todayQueue, completion, health });
 });
