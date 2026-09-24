@@ -93,7 +93,7 @@ test('failed service-source read preserves the prior board',async()=>{
 });
 test('approved current-year company direction is projected without source IDs',async()=>{
  const content={year:'2026',vision:'안전한 공간 운영',organization:{m1:{uid:'staff-1',role:'운영',reportsToUid:''}},goals:{g1:{id:'g1',period:'annual',title:'관리 건물',unit:'count',baseline:0,target:10,current:4,source:'CRM 건물'}}};
- const f=fixture({approvedStrategy:{year:'2026',content:JSON.stringify(content),publishedBy:'private-admin'}});
+ const f=fixture({approvedStrategy:{year:'2026',content:JSON.stringify(content),revision:2,sourceRevision:1,updatedAt:'2026-09-24T00:00:00.000Z',publishedAt:'2026-09-24T00:00:00.000Z',updatedBy:'private-admin',publishedBy:'private-admin'}});
  await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  const strategy=f.commands.find(command=>command.action==='publish-if-changed').input.snapshot.model.strategy;
  assert.equal(strategy.organization[0].displayName,'김현진');

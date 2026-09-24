@@ -6,7 +6,7 @@ test('automatic source is server-only and does not trigger local pending CRM sav
 });
 test('manual source projects the same approved strategy as server refresh',async()=>{
  const fields={year:'2026',vision:'안전한 공간 운영',organization:{m1:{uid:'person1',role:'운영',reportsToUid:''}},goals:{g1:{id:'g1',period:'annual',title:'관리 건물',unit:'count',baseline:0,target:10,current:4,source:'CRM 건물'}}};
- const client={loadWorkOrders:async()=>({orders:[],members:[{uid:'person1',displayName:'김현진'}]}),dbRequest:async location=>location==='companyStrategyPublications/2026'?{year:'2026',content:JSON.stringify(fields),publishedBy:'private-admin'}:null};
+ const client={loadWorkOrders:async()=>({orders:[],members:[{uid:'person1',displayName:'김현진'}]}),dbRequest:async location=>location==='companyStrategyPublications/2026'?{year:'2026',content:JSON.stringify(fields),revision:2,sourceRevision:1,updatedAt:'2026-09-24T00:00:00.000Z',publishedAt:'2026-09-24T00:00:00.000Z',updatedBy:'private-admin',publishedBy:'private-admin'}:null};
  const data=await loadWallboardSource(client,new Date('2026-09-24T00:00:00+09:00'));
  assert.equal(data.strategy.goals[0].percent,40);
  assert.equal(JSON.stringify(data.strategy).includes('person1'),false);

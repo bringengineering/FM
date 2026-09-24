@@ -9,6 +9,8 @@ function projectApprovedStrategy(publication,members,year){
  if(publication===null||publication===undefined)return null;
  if(publication.year!==year)invalid();
  if(!/^20\d{2}$/u.test(year)||typeof publication.content!=='string'||!Array.isArray(members))invalid();
+ const timestamp=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/u.test(value)&&Number.isFinite(Date.parse(value));
+ if(!Number.isSafeInteger(publication.revision)||publication.revision<1||!Number.isSafeInteger(publication.sourceRevision)||publication.sourceRevision<0||!timestamp(publication.updatedAt)||!timestamp(publication.publishedAt)||publication.updatedAt!==publication.publishedAt||typeof publication.updatedBy!=='string'||!publication.updatedBy||publication.updatedBy!==publication.publishedBy)invalid();
  let raw;
  try{raw=JSON.parse(publication.content);}catch{invalid();}
  if(!raw||typeof raw!=='object'||Array.isArray(raw))invalid();

@@ -26,7 +26,7 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-25-2'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-25-3'});
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -45,6 +45,16 @@ test('web TV rotates an approved strategy scene and skips it when unavailable',a
  assert.match(source,/validStrategy\(m\.strategy/);
  const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(css,/\.strategy-layout/);
+});
+test('web TV cached direction expires at the Korea new year',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ const helper=source.match(/function currentStrategy\(strategy,instant=new Date\(\)\)\{.*?\}(?=\s*function active\()/s)?.[0];
+ assert.ok(helper,'client must expose an explicit current-year strategy guard');
+ const currentStrategy=vm.runInNewContext(`${helper};currentStrategy`);
+ assert.equal(currentStrategy({year:'2026'},new Date('2026-12-31T14:59:59Z')),true);
+ assert.equal(currentStrategy({year:'2026'},new Date('2026-12-31T15:00:00Z')),false);
+ assert.match(source,/currentStrategy\(board\?\.model\?\.strategy\)/);
+ assert.match(source,/displayedKey==='strategy'&&!currentStrategy\(board\.model\.strategy\)/);
 });
 test('web TV pages the organization instead of rendering all 30 people at once',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();

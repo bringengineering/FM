@@ -1,6 +1,14 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
 const C=require('../src/company-wallboard');
+test('cached company direction expires at the Korea new year',()=>{
+ const old={year:'2026',vision:'2026년 방향'};
+ assert.equal(C.strategyCurrent(old,new Date('2026-12-31T14:59:59Z')),true);
+ assert.equal(C.strategyCurrent(old,new Date('2026-12-31T15:00:00Z')),false);
+ assert.equal(C.strategyCurrent(null,new Date('2026-12-31T14:59:59Z')),false);
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ assert.match(source,/displayedKey==='strategy'&&!strategyCurrent\(model\?\.strategy\)/);
+});
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
  const html=C.scene(null,'notice',0,'<회사 공지>');
  assert.match(html,/&lt;회사 공지&gt;/);

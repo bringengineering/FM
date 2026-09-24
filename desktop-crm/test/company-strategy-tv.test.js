@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {projectApprovedStrategy,withStrategyScene}=require('../src/company-strategy-tv');
 
 const approved=()=>({
- year:'2026',revision:2,publishedBy:'private-admin-uid',
+ year:'2026',revision:2,sourceRevision:1,updatedAt:'2026-09-24T00:00:00.000Z',publishedAt:'2026-09-24T00:00:00.000Z',updatedBy:'private-admin-uid',publishedBy:'private-admin-uid',
  content:JSON.stringify({year:'2026',vision:'현장을 더 안전하게',organization:[{uid:'u1',role:'대표',reportsToUid:''}],goals:[{id:'g1',period:'annual',title:'점검',unit:'count',baseline:0,target:10,current:4,source:'승인된 CRM'}]}),
 });
 
@@ -22,6 +22,16 @@ test('projects only the approved fields and removes source UIDs and metadata',()
 test('no current-year approval hides the strategy scene',()=>{
  assert.equal(projectApprovedStrategy(null,[],'2026'),null);
  assert.throws(()=>projectApprovedStrategy(approved(),[],'2027'),/INVALID_APPROVED_STRATEGY/);
+});
+
+test('incomplete approval metadata fails closed',()=>{
+ for(const key of ['revision','sourceRevision','updatedAt','publishedAt','updatedBy','publishedBy']){
+  const input=approved();delete input[key];
+  assert.throws(()=>projectApprovedStrategy(input,[],'2026'),/INVALID_APPROVED_STRATEGY/,key);
+ }
+ for(const change of [{revision:0},{sourceRevision:-1},{publishedAt:'invalid'},{updatedBy:'another-user'}]){
+  assert.throws(()=>projectApprovedStrategy({...approved(),...change},[],'2026'),/INVALID_APPROVED_STRATEGY/);
+ }
 });
 
 test('missing measurement stays unmeasured rather than becoming zero',()=>{
