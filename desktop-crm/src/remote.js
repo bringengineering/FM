@@ -11,6 +11,42 @@ const WorkOrderCore = require("./work-order-core");
 const WorkOutcomeCore = require("./work-outcome-core");
 const WorkOutcomeExport = require("./work-outcome-export-core");
 const ProjectCore = require("./project-core");
+const CompanyStrategyCore = require("./company-strategy-core");
+function companyStrategyWireFields(draft) {
+  const record = { year:draft.year, vision:draft.vision };
+  if (draft.organization.length) record.organization = Object.fromEntries(draft.organization.map(person => [`m_${Buffer.from(person.uid, 'utf8').toString('base64url')}`, person]));
+  if (draft.goals.length) record.goals = Object.fromEntries(draft.goals.map(goal => [goal.id, Object.fromEntries(Object.entries(goal).filter(([,value]) => value !== null))]));
+  return record;
+}
+function expandCompanyStrategyPublication(record) {
+  if (!record) return null;
+  if (typeof record.content !== 'string' || record.content.length > 30000) throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA');
+  let fields;
+  try { fields = JSON.parse(record.content); } catch { throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA'); }
+  if (!fields || fields.year !== record.year) throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA');
+  const checked = CompanyStrategyCore.validatePublication({
+    year:fields.year, vision:fields.vision,
+    organization:Object.values(fields.organization || {}),
+    goals:Object.values(fields.goals || {}),
+  });
+  if (!checked.ok) throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA');
+  return {...record,...companyStrategyWireFields(checked.draft)};
+}
+function expandCompanyStrategyDraft(record) {
+  if (!record) return null;
+  const expanded = expandCompanyStrategyPublication(record);
+  if (record.vision !== undefined || record.organization !== undefined || record.goals !== undefined) {
+    const legacy = CompanyStrategyCore.validatePublication({
+      year:record.year, vision:record.vision,
+      organization:Object.values(record.organization || {}),
+      goals:Object.values(record.goals || {}),
+    });
+    if (!legacy.ok || JSON.stringify(companyStrategyWireFields(legacy.draft)) !== record.content) {
+      throw createError('초안 저장 내용이 일치하지 않습니다. 다시 저장해 주세요.', 'CONFLICT');
+    }
+  }
+  return expanded;
+}
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const WeeklyDirectiveCore = require("./weekly-directive-core");
@@ -2356,6 +2392,75 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadCompanyStrategy(input) {
+    const session = this.requireOfficeSession();
+    const year = String(input?.year || '');
+    if (!/^20[0-9]{2}$/.test(year)) throw createError('연도를 확인해 주세요.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const published = await this.dbRequest(`companyStrategyPublications/${year}`, { method:'GET' });
+    const draft = session.role === 'admin'
+      ? await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' }) : null;
+    this.assertSessionGuardActive(guard);
+    return { published:expandCompanyStrategyPublication(published), draft:expandCompanyStrategyDraft(draft) };
+  }
+
+  async saveCompanyStrategyDraft(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 회사 방향을 저장할 수 있습니다.', 'ACCESS_DENIED');
+    const checked = CompanyStrategyCore.validateDraft(input);
+    if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const location = `companyStrategyDrafts/${checked.draft.year}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+    const revision = Number(snapshot.value?.revision || 0);
+    if (input.expectedRevision !== revision) throw createError('다른 관리자가 먼저 수정했습니다. 다시 불러와 주세요.', 'CONFLICT');
+    const fields=companyStrategyWireFields(checked.draft);
+    const record = {
+      year:checked.draft.year, content:JSON.stringify(fields),
+      revision:revision + 1,
+      updatedAt:new Date().toISOString(),
+      updatedBy:session.uid,
+    };
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    this.assertSessionGuardActive(guard);
+    return expandCompanyStrategyDraft(record);
+  }
+
+  async publishCompanyStrategy(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 회사 방향을 게시할 수 있습니다.', 'ACCESS_DENIED');
+    const year = String(input?.year || '');
+    if (!/^20[0-9]{2}$/.test(year)) throw createError('연도를 확인해 주세요.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const stored = await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' });
+    this.assertSessionGuardActive(guard);
+    if (!stored || stored.revision !== input.expectedDraftRevision) throw createError('초안이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
+    const expanded = expandCompanyStrategyDraft(stored);
+    const checked = CompanyStrategyCore.validatePublication({
+      year, vision:expanded.vision,
+      organization:Object.values(expanded.organization || {}),
+      goals:Object.values(expanded.goals || {}),
+    });
+    if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
+    const content=JSON.stringify(companyStrategyWireFields(checked.draft));
+    if (stored.content !== content) throw createError('초안 저장 내용이 일치하지 않습니다. 다시 저장해 주세요.', 'CONFLICT');
+    const location = `companyStrategyPublications/${year}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+    const revision = Number(snapshot.value?.revision || 0);
+    if (revision !== input.expectedPublicationRevision) throw createError('게시본이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
+    const now = new Date().toISOString();
+    const record = {
+      year, content,
+      revision:revision + 1, sourceRevision:stored.revision,
+      updatedAt:now, updatedBy:session.uid, publishedAt:now, publishedBy:session.uid,
+    };
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    this.assertSessionGuardActive(guard);
+    return expandCompanyStrategyPublication(record);
   }
 
   async loadBuildingAtlas(input) {

@@ -21,6 +21,7 @@ let cutoverEnvironment: RulesTestEnvironment;
 const databaseEmulatorAvailable = Boolean(
   process.env.FIREBASE_DATABASE_EMULATOR_HOST,
 );
+const databaseEmulatorPort = Number(process.env.FIREBASE_DATABASE_EMULATOR_HOST?.split(":").at(-1) || 9000);
 
 function claims(role: "staff" | "reviewer" | "admin") {
   return { fieldPlatform: true, fieldRole: role, email_verified: true };
@@ -1370,7 +1371,7 @@ beforeAll(async () => {
     projectId: PROJECT_ID,
     database: {
       host: "127.0.0.1",
-      port: 9000,
+      port: databaseEmulatorPort,
       rules: await readFile(resolve("../database.rules.json"), "utf8"),
     },
   });
@@ -1378,7 +1379,7 @@ beforeAll(async () => {
     projectId: CUTOVER_PROJECT_ID,
     database: {
       host: "127.0.0.1",
-      port: 9000,
+      port: databaseEmulatorPort,
       rules: await readFile(
         resolve("tests/field/fixtures/database-cutover.rules.json"),
         "utf8",
@@ -2287,6 +2288,47 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       previousEndDate: "2026년 8월 28일",
     })));
     await assertFails(remove(ref(admin, at("p1"))));
+  });
+
+  it("company strategy drafts stay admin-only while published plans are staff-readable and revisions cannot be replayed", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const reader = environment.authenticatedContext("wallboard-reader", crmClaims("wallboard-reader@bring.test")).database();
+    const draftPath = "crmCompany/companyStrategyDrafts/2026";
+    const publishedPath = "crmCompany/companyStrategyPublications/2026";
+    const adminKey = `m_${Buffer.from('crm-admin').toString('base64url')}`;
+    const dottedKey = `m_${Buffer.from('member.with.dot').toString('base64url')}`;
+    const draft = (revision: number) => { const fields={year:"2026",vision:"공간 운영을 투명하게",organization:{[adminKey]:{uid:"crm-admin",role:"대표",reportsToUid:""}},goals:{g1:{id:"g1",period:"annual",title:"건물 데이터 3동",unit:"count",baseline:0,target:3,current:1,source:"CRM 건물 ID"}}}; return {year:fields.year,content:JSON.stringify(fields),revision,updatedAt:NOW,updatedBy:"crm-admin"}; };
+    await assertSucceeds(set(ref(admin,draftPath),draft(1)));
+    await assertSucceeds(get(ref(admin,draftPath)));
+    await assertFails(get(ref(member,draftPath)));
+    await assertFails(get(ref(reader,draftPath)));
+    await assertFails(set(ref(member,draftPath),{...draft(2),updatedBy:"crm-legacy-member"}));
+    await assertFails(set(ref(admin,draftPath),draft(1)));
+    await assertFails(set(ref(admin,draftPath),{...draft(2),vision:"게시 내용과 다른 비전"}));
+    await assertFails(set(ref(admin,draftPath),{...draft(2),privateCustomerNote:"비공개"}));
+    await assertFails(set(ref(admin,draftPath),{...draft(2),vision:"가".repeat(501)}));
+    await assertSucceeds(set(ref(admin,draftPath),draft(2)));
+    const dottedFields=JSON.parse(draft(3).content);
+    dottedFields.organization={[dottedKey]:{uid:"member.with.dot",role:"현장 담당",reportsToUid:""}};
+    const dottedDraft={...draft(3),content:JSON.stringify(dottedFields)};
+    await assertSucceeds(set(ref(admin,draftPath),dottedDraft));
+    const publication={year:"2026",content:dottedDraft.content,revision:1,updatedAt:NOW,updatedBy:"crm-admin",publishedAt:NOW,publishedBy:"crm-admin",sourceRevision:3};
+    await assertSucceeds(set(ref(admin,publishedPath),publication));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,content:JSON.stringify({...JSON.parse(publication.content),goals:{}})}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,vision:"초안과 다른 문구"}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,organization:{[adminKey]:{uid:"crm-admin",role:"다른 역할",reportsToUid:""}}}));
+    await assertSucceeds(get(ref(member,publishedPath)));
+    await assertSucceeds(get(ref(viewer,publishedPath)));
+    await assertFails(get(ref(reader,publishedPath)));
+    await assertFails(set(ref(member,publishedPath),{...publication,revision:2,updatedBy:"crm-legacy-member",publishedBy:"crm-legacy-member"}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,sourceRevision:1}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,content:JSON.stringify({...JSON.parse(publication.content),goals:{g1:{...dottedFields.goals.g1,source:""}}})}));
+    await assertFails(set(ref(admin,publishedPath),publication));
+    await assertFails(remove(ref(admin,draftPath)));
+    await assertFails(remove(ref(admin,publishedPath)));
+    await assertFails(set(ref(admin,"crmCompany/companyStrategyPublications/2025"),{...publication,year:"2025"}));
   });
 
   it("keeps a daily log readable by its writer and the boss, and lists only for the boss", async () => {

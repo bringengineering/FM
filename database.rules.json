@@ -951,6 +951,39 @@
         }
       }
     },
+    "companyStrategyDrafts": {
+      ".read": false,
+      ".write": false,
+      "$year": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','content','updatedAt','updatedBy']) && newData.child('year').val() === $year && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+        "year": { ".validate": "newData.isString() && newData.val() === $year" },
+        "revision": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0" },
+        "content": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30000" },
+        "updatedAt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) && newData.val().length <= 40" },
+        "updatedBy": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+        "$other": { ".validate": false }
+      }
+    },
+    "companyStrategyPublications": {
+      ".read": false,
+      ".write": false,
+      "$year": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','content','updatedAt','updatedBy','publishedAt','publishedBy','sourceRevision']) && newData.child('year').val() === $year && newData.child('sourceRevision').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('revision').val() && newData.child('content').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('content').val() && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+        "year": { ".validate": "newData.isString() && newData.val() === $year" },
+        "revision": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0" },
+        "content": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30000" },
+        "updatedAt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) && newData.val().length <= 40" },
+        "updatedBy": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+        "publishedAt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) && newData.val().length <= 40" },
+        "publishedBy": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+        "sourceRevision": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0" },
+        "$other": { ".validate": false }
+      }
+    },
     "projects": {
         ".read": "(auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')) || (auth != null && auth.token.email_verified === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('email').val() === auth.token.email)",
         ".write": false,

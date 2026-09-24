@@ -5497,6 +5497,31 @@ async function createWindow() {
           state: window.__crmTest?.snapshot(),
         };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "company-strategy-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="project"]')?.click();
+        await wait(180);
+        window.__crmSmokeNavigate('workOrders');
+        await wait(600);
+        window.__crmTest.previewCompanyStrategy();
+        await wait(100);
+        const card=document.querySelector('.company-strategy');
+        const goalsPreview=${JSON.stringify(process.env.BRING_CRM_SCREENSHOT_STRATEGY_SECTION === 'goals')};
+        (goalsPreview ? document.querySelector('.company-strategy-goal-row') : card)?.scrollIntoView({block:'start'});
+        await wait(100);
+        const form=document.querySelector('[data-company-strategy-form]');
+        const bodyOverflow=document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
+        return {
+          pass: Boolean(card && form && document.querySelector('[data-strategy-publish]')) && !bodyOverflow,
+          strategyVisible:Boolean(card),
+          formVisible:Boolean(form),
+          bodyOverflow:bodyOverflow,
+          cardWidth:card?.getBoundingClientRect().width || 0,
+          viewportWidth:document.documentElement.clientWidth,
+          state:window.__crmTest?.snapshot(),
+        };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8411,7 +8436,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -9019,6 +9044,11 @@ function readWorkflowCollection(method) {
 }
 secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
 secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
+secureCanonicalHandle("crm:company-strategy-load", input => localTestMode
+  ? { published:null, draft:null, localOnly:true }
+  : remoteClient.loadCompanyStrategy(input));
+secureCanonicalHandle("crm:company-strategy-draft-save", input => remoteClient.saveCompanyStrategyDraft(input));
+secureCanonicalHandle("crm:company-strategy-publish", input => remoteClient.publishCompanyStrategy(input));
 secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
