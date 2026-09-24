@@ -95,4 +95,4 @@ const playlist=withRevenueScene(strategyTv.withStrategyScene(current.presentatio
 
 - [x] Run `npm test` in `crm-ai-worker`, `desktop-crm`, and `functions`; run `npm run build` in `functions`; run `node --check crm-ai-worker/src/wallboard-server-refresh.js`; run `git diff --check`. Inspect failures rather than treating green unit tests as proof of live TV operation.
 - [x] Verify `release/firebase-targets.json` still forbids Functions deployment, `crm-ai-worker/wrangler.toml` still says `WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"`, and no worker publish/deploy command has run.
-- [ ] Commit and push the branch to draft PR #134. Record that live company data audit, TV reader access, scheduled activation, two-device propagation, and operational deployment remain unverified; do not merge or deploy.
+- [x] Commit and push the branch to draft PR #134. Record that live company data audit, TV reader access, scheduled activation, two-device propagation, and operational deployment remain unverified; do not merge or deploy.
