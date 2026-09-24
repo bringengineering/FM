@@ -12,7 +12,7 @@ test('기존 여섯 묶음은 이름을 바꿔도 레거시 사업영역으로 �
   assert.deepEqual(result.classificationNeeded.map(item => item.id), ['w1', 'w2']);
 });
 
-test('직원 오늘 목록은 내 업무만 보이고 지연·반려·오늘·이번 주·날짜 미정 순으로 정렬한다', () => {
+test('직원 오늘 목록은 내 업무만 보이고 지연·오늘·반려·이번 주·날짜 미정 순으로 정렬한다', () => {
   const rows = Workspace.todayQueue({ uid: 'u1', admin: false, today: '2026-09-24', orders: [
     { id: 'later', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-27' },
     { id: 'other', assigneeUid: 'u2', status: 'doing', dueDate: '2026-09-20' },
@@ -23,8 +23,19 @@ test('직원 오늘 목록은 내 업무만 보이고 지연·반려·오늘·�
     { id: 'submitted', assigneeUid: 'u1', status: 'submitted', dueDate: '2026-09-23' },
     { id: 'done', assigneeUid: 'u1', status: 'done', dueDate: '2026-09-20' },
   ] });
-  assert.deepEqual(rows.map(item => item.id), ['late', 'returned', 'today', 'later', 'undated']);
-  assert.deepEqual(rows.map(item => item.action), ['지연 업무', '보완 요청', '오늘 마감', '이번 주 마감', '일정 미정']);
+  assert.deepEqual(rows.map(item => item.id), ['late', 'today', 'returned', 'later', 'undated']);
+  assert.deepEqual(rows.map(item => item.action), ['지연 업무', '오늘 마감', '보완 요청', '이번 주 마감', '일정 미정']);
+});
+
+test('관리자 오늘 목록은 팀 전체의 지연·오늘 마감·보완·검수를 보여준다', () => {
+  const rows = Workspace.todayQueue({ uid: 'admin', admin: true, today: '2026-09-24', orders: [
+    { id: 'review', assigneeUid: 'u1', status: 'submitted', dueDate: '2026-09-30' },
+    { id: 'returned', assigneeUid: 'u2', status: 'returned', dueDate: '2026-09-26' },
+    { id: 'today', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-24' },
+    { id: 'late', assigneeUid: 'u2', status: 'doing', dueDate: '2026-09-20' },
+    { id: 'done', assigneeUid: 'u2', status: 'done', dueDate: '2026-09-20' },
+  ] });
+  assert.deepEqual(rows.map(item => item.id), ['late', 'today', 'returned', 'review']);
 });
 
 test('관리자는 검수 대기를 보고 중복 ID는 최신 기록 한 번만 센다', () => {

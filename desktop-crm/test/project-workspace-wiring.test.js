@@ -30,6 +30,12 @@ test('프로젝트 기본 화면은 오늘 처리할 일과 실제 프로젝트�
   assert.match(render, /프로젝트 화면 구성을 불러오지 못했습니다/u);
 });
 
+test('관리자 행동 목록은 팀 전체 업무임을 제목에 밝힌다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(render, /workOrderState\.admin \? "팀 전체의 다음 행동" : "내 업무의 다음 행동"/u);
+});
+
 test('오늘 처리할 일은 기간·내 것 필터 밖에 있어도 원본 업무로 이동한다', () => {
   const source = read('app.js');
   const start = source.indexOf('const woOpenCard = event.target.closest("[data-wo-open-card]")');

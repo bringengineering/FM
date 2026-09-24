@@ -52,11 +52,11 @@
     const weekEnd = addDays(today, (7 - weekday) % 7);
     const uid = text(source.uid);
     const admin = source.admin === true;
-    const priority = { overdue: 0, returned: 1, today: 2, review: 3, week: 4, undated: 5 };
+    const priority = { overdue: 0, today: 1, returned: 2, review: 3, week: 4, undated: 5 };
     return uniqueOrders(source.orders).flatMap(order => {
       const mine = uid && text(order.assigneeUid) === uid;
       const review = admin && order.status === 'submitted';
-      if (!mine && !review) return [];
+      if (!admin && !mine) return [];
       if (order.status === 'done' || (order.status === 'submitted' && !review)) return [];
       const due = date(order.dueDate);
       let kind = '';

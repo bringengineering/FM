@@ -4864,7 +4864,7 @@
         <div><span>검수 대기</span><strong>${healthValue(workspaceHealth && workspaceHealth.review)}</strong><small>제출됨 · 승인 전</small></div>
       </section>
       <section class="project-workspace-today" aria-labelledby="project-workspace-today-title">
-        <header><div><span>내 업무의 다음 행동</span><h3 id="project-workspace-today-title">오늘 처리할 일</h3></div><small>${todayActions.length}건</small></header>
+        <header><div><span>${workOrderState.admin ? "팀 전체의 다음 행동" : "내 업무의 다음 행동"}</span><h3 id="project-workspace-today-title">오늘 처리할 일</h3></div><small>${todayActions.length}건</small></header>
         ${workOrderState.loading || !workOrderState.loaded ? `<p class="project-workspace-empty">업무를 불러오고 있습니다…</p>` : workOrderState.error ? `<p class="project-workspace-empty">조회 오류가 있습니다. 새로고침 후 확인해 주세요.</p>` : todayActions.length ? `<div class="project-workspace-action-list">${todayActions.slice(0, 8).map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}${workOrderState.admin && item.order.assigneeName ? ` · ${esc(item.order.assigneeName)}` : ""}</small></button>`).join("")}</div>` : `<p class="project-workspace-empty">지금 바로 처리할 업무가 없습니다. 아래 프로젝트에서 전체 지시를 확인할 수 있습니다.</p>`}
       </section>
       <section class="project-workspace-projects" aria-labelledby="project-workspace-projects-title">
