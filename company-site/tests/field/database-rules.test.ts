@@ -5231,6 +5231,15 @@ describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
     await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'void', revision: 3, amount: 1, updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
     await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/orphan'), { id: 'orphan', invoiceId: 'missing', receivedAt: '2026-09-25', amount: 1, transactionRef: 'tx', evidenceRef: 'proof', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
   });
+  it('preserves one-off occurrence identity across direct writes', async () => {
+    const member = environment.authenticatedContext('crm-member', crmClaims('member@bring.test')).database();
+    const path = 'crmCompany/billingLedger/invoices/contract_visit_1';
+    const oneOff = { ...draft, id: 'contract_visit_1', contractType: 'one_off', occurrenceId: 'visit_1' };
+    await assertSucceeds(set(ref(member, path), oneOff));
+    await assertFails(set(ref(member, path), { ...oneOff, occurrenceId: 'visit_2', revision: 2 }));
+    const { occurrenceId: _omitted, ...withoutOccurrence } = oneOff;
+    await assertFails(set(ref(member, path), { ...withoutOccurrence, revision: 2 }));
+  });
 });
 
 describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", () => {

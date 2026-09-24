@@ -1351,7 +1351,7 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   const invalid = () => { throw createError('청구 장부 형식이 올바르지 않습니다.', stored ? 'PROTECTED_DATA_INVALID' : 'VALIDATION_ERROR'); };
   if (!record || typeof record !== 'object' || Array.isArray(record)) invalid();
   const common = ['id', 'amount', 'status'];
-  const specific = kind === 'invoices' ? ['contractId', 'contractType', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
+  const specific = kind === 'invoices' ? ['contractId', 'contractType', 'occurrenceId', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
   const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason'];
   if (Object.keys(record).some(key => ![...common, ...specific, ...metadata].includes(key))) invalid();
   const idPattern = /^[A-Za-z0-9_-]{1,150}$/;
@@ -1359,6 +1359,7 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   if (!Number.isSafeInteger(record.amount) || record.amount <= 0 || !['draft', 'approved', 'void'].includes(record.status)) invalid();
   if (kind === 'invoices') {
     if (record.contractType !== undefined && !['regular', 'one_off'].includes(record.contractType)) invalid();
+    if (record.occurrenceId !== undefined && (!idPattern.test(record.occurrenceId) || record.contractType !== 'one_off')) invalid();
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(record.billingMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(record.dueDate)) invalid();
   } else if (!/^\d{4}-\d{2}-\d{2}$/.test(record.receivedAt) || typeof record.transactionRef !== 'string' || record.transactionRef.length > 160 || typeof record.evidenceRef !== 'string' || record.evidenceRef.length > 500) invalid();
   if (stored && (!Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.updatedAt !== 'string' || !idPattern.test(record.updatedBy))) invalid();
@@ -2446,7 +2447,7 @@ class FirebaseRemoteClient {
     const snapshot = await this.dbReadWithEtag(location, false, guard);
     const previous = snapshot.value === null ? null : validateBillingRecord(kind, snapshot.value, source.id, true);
     if ((previous?.revision || 0) !== expectedRevision) throw createError('다른 사용자가 장부를 변경했습니다.', 'BILLING_LEDGER_CONFLICT');
-    if (previous && (previous.status !== 'draft' || source.id !== previous.id || (kind === 'invoices' && source.contractId !== previous.contractId) || (kind === 'receipts' && source.invoiceId !== previous.invoiceId))) {
+    if (previous && (previous.status !== 'draft' || source.id !== previous.id || (kind === 'invoices' && (source.contractId !== previous.contractId || source.occurrenceId !== previous.occurrenceId)) || (kind === 'receipts' && source.invoiceId !== previous.invoiceId))) {
       if (!(session.role === 'admin' && previous.status === 'approved' && source.status === 'void' && source.amount === previous.amount)) throw createError('확정된 장부는 수정할 수 없습니다.', 'VALIDATION_ERROR');
     }
     if (source.status === 'approved' && kind === 'receipts') {

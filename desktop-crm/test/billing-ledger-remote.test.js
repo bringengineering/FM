@@ -42,3 +42,15 @@ test('admin approval of receipt requires approved invoice', async () => {
   remote.dbReadWithEtag = async location => ({ value: location.startsWith('billingLedger/invoices/') ? { ...invoice, status: 'draft', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin' } : null, etag: 'etag' });
   await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
 });
+
+test('one-off invoice persists occurrence key and cannot change it', async () => {
+  const remote = client();
+  const oneOff = { ...invoice, id: 'contract-1_visit-1', contractType: 'one_off', occurrenceId: 'visit-1' };
+  let saved;
+  remote.dbReadWithEtag = async () => ({ value: null, etag: 'etag' });
+  remote.dbConditionalPut = async (_location, value) => { saved = value; };
+  await remote.saveBillingInvoice({ record: oneOff, expectedRevision: 0 });
+  assert.equal(saved.occurrenceId, 'visit-1');
+  remote.dbReadWithEtag = async () => ({ value: saved, etag: 'etag' });
+  await assert.rejects(remote.saveBillingInvoice({ record: { ...oneOff, occurrenceId: 'visit-2' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
+});
