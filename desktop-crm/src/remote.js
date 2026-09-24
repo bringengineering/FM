@@ -1347,6 +1347,26 @@ function vendorDirectoryFromCsv(text) {
   return result.filter(item => item.name && item.category);
 }
 
+function validateBillingRecord(kind, record, expectedId, stored = false) {
+  const invalid = () => { throw createError('청구 장부 형식이 올바르지 않습니다.', stored ? 'PROTECTED_DATA_INVALID' : 'VALIDATION_ERROR'); };
+  if (!record || typeof record !== 'object' || Array.isArray(record)) invalid();
+  const common = ['id', 'amount', 'status'];
+  const specific = kind === 'invoices' ? ['contractId', 'contractType', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
+  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason'];
+  if (Object.keys(record).some(key => ![...common, ...specific, ...metadata].includes(key))) invalid();
+  const idPattern = /^[A-Za-z0-9_-]{1,150}$/;
+  if (!idPattern.test(record.id) || (expectedId && record.id !== expectedId) || !idPattern.test(kind === 'invoices' ? record.contractId : record.invoiceId)) invalid();
+  if (!Number.isSafeInteger(record.amount) || record.amount <= 0 || !['draft', 'approved', 'void'].includes(record.status)) invalid();
+  if (kind === 'invoices') {
+    if (record.contractType !== undefined && !['regular', 'one_off'].includes(record.contractType)) invalid();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(record.billingMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(record.dueDate)) invalid();
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(record.receivedAt) || typeof record.transactionRef !== 'string' || record.transactionRef.length > 160 || typeof record.evidenceRef !== 'string' || record.evidenceRef.length > 500) invalid();
+  if (stored && (!Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.updatedAt !== 'string' || !idPattern.test(record.updatedBy))) invalid();
+  if (stored && record.status === 'approved' && (typeof record.approvedAt !== 'string' || !idPattern.test(record.approvedBy))) invalid();
+  if (stored && record.status === 'void' && (typeof record.voidedAt !== 'string' || !idPattern.test(record.voidedBy) || typeof record.voidReason !== 'string' || !record.voidReason.trim())) invalid();
+  return Object.fromEntries(Object.entries(record).filter(([key]) => common.includes(key) || specific.includes(key) || (stored && metadata.includes(key)) || (key === 'voidReason' && record.status === 'void')));
+}
+
 class FirebaseRemoteClient {
   constructor(options) {
     this.firebase = options.firebaseConfig || FIREBASE;
@@ -2392,6 +2412,53 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadBillingLedger() {
+    this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const raw = await this.dbRequest('billingLedger', { method: 'GET' });
+    this.assertSessionGuardActive(guard);
+    if (raw !== null && (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['invoices', 'receipts'].includes(key)))) {
+      throw createError('청구 장부 형식이 올바르지 않습니다.', 'PROTECTED_DATA_INVALID');
+    }
+    const result = {};
+    for (const kind of ['invoices', 'receipts']) {
+      const entries = raw?.[kind];
+      if (entries !== undefined && (!entries || typeof entries !== 'object' || Array.isArray(entries))) throw createError('청구 장부 형식이 올바르지 않습니다.', 'PROTECTED_DATA_INVALID');
+      result[kind] = Object.entries(entries || {}).map(([id, value]) => validateBillingRecord(kind, value, id, true));
+    }
+    return result;
+  }
+
+  async saveBillingInvoice(input) { return this.saveBillingRecord('invoices', input); }
+  async saveBillingReceipt(input) { return this.saveBillingRecord('receipts', input); }
+
+  async saveBillingRecord(kind, input) {
+    const session = this.requireOfficeSession();
+    if (session.role === 'viewer' || (session.role === 'member' && session.marketingRole === 'marketing')) throw createError('장부를 변경할 권한이 없습니다.', 'ACCESS_DENIED');
+    const source = validateBillingRecord(kind, input?.record);
+    if (source.status !== 'draft' && session.role !== 'admin') throw createError('관리자만 확정 또는 취소할 수 있습니다.', 'ACCESS_DENIED');
+    const expectedRevision = input?.expectedRevision;
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw createError('장부 버전이 올바르지 않습니다.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const location = `billingLedger/${kind}/${source.id}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    const previous = snapshot.value === null ? null : validateBillingRecord(kind, snapshot.value, source.id, true);
+    if ((previous?.revision || 0) !== expectedRevision) throw createError('다른 사용자가 장부를 변경했습니다.', 'BILLING_LEDGER_CONFLICT');
+    if (previous && (previous.status !== 'draft' || source.id !== previous.id || (kind === 'invoices' && source.contractId !== previous.contractId) || (kind === 'receipts' && source.invoiceId !== previous.invoiceId))) {
+      if (!(session.role === 'admin' && previous.status === 'approved' && source.status === 'void' && source.amount === previous.amount)) throw createError('확정된 장부는 수정할 수 없습니다.', 'VALIDATION_ERROR');
+    }
+    if (source.status === 'approved' && kind === 'receipts') {
+      const linked = await this.dbReadWithEtag(`billingLedger/invoices/${source.invoiceId}`, false, guard);
+      if (!linked.value || validateBillingRecord('invoices', linked.value, source.invoiceId, true).status !== 'approved') throw createError('확정된 청구서에만 입금을 확정할 수 있습니다.', 'VALIDATION_ERROR');
+    }
+    const now = new Date().toISOString();
+    const record = { ...source, revision: expectedRevision + 1, updatedAt: now, updatedBy: session.uid };
+    if (source.status === 'approved') { record.approvedAt = now; record.approvedBy = session.uid; }
+    if (source.status === 'void') { record.approvedAt = previous.approvedAt; record.approvedBy = previous.approvedBy; record.voidedAt = now; record.voidedBy = session.uid; }
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    return record;
   }
 
   async loadCompanyStrategy(input) {

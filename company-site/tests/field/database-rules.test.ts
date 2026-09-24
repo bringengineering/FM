@@ -5216,6 +5216,23 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
   });
 });
 
+describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
+  const draft = { id: 'contract_2026-09', contractId: 'contract', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-member' };
+  it('allows member draft but rejects direct approval and deletion', async () => {
+    const member = environment.authenticatedContext('crm-member', crmClaims('member@bring.test')).database();
+    await assertSucceeds(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), draft));
+    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, approvedAt: NOW, approvedBy: 'crm-member' }));
+    await assertFails(remove(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`)));
+  });
+  it('allows admin approval but rejects amount rewrite and orphan receipt', async () => {
+    const admin = environment.authenticatedContext('crm-admin', crmClaims('admin@bring.test')).database();
+    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' }));
+    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'void', revision: 3, amount: 1, updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
+    await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/orphan'), { id: 'orphan', invoiceId: 'missing', receivedAt: '2026-09-25', amount: 1, transactionRef: 'tx', evidenceRef: 'proof', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+  });
+});
+
 describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", () => {
   it("keeps the fixture customer backlink contract identical in the emulator", async () => {
     await exerciseCustomerBuildingLinkRules(cutoverEnvironment);
