@@ -83,6 +83,15 @@ test('failed service-source read preserves the prior board',async()=>{
  await assert.rejects(refreshWallboardFromService({env,fetchImpl}),error=>error.code==='FORBIDDEN');
  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
 });
+test('Firebase source reads forbid redirects before sending an ID token',async()=>{
+ const f=fixture();
+ const fetchImpl=async (_url,options)=>{
+  assert.equal(options.redirect,'manual');
+  return new Response(null,{status:302,headers:{location:'https://unexpected.example/collect'}});
+ };
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl}),error=>error.code==='WALLBOARD_UNAVAILABLE');
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
 test('free-text project contact details are never included in the public board',async()=>{
  const f=fixture({projectName:'홍길동 010-1234-5678 hong@example.com'});
  await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});

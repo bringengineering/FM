@@ -20,7 +20,7 @@ async function readSource(path,{env,idToken,fetchImpl,readTimeoutMs}){
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),readTimeoutMs);
  try{
- const response=await fetchImpl(url.toString(),{method:'GET',cache:'no-store',headers:{accept:'application/json'},signal:controller.signal});
+ const response=await fetchImpl(url.toString(),{method:'GET',cache:'no-store',redirect:'manual',headers:{accept:'application/json'},signal:controller.signal});
  if(response.status===401||response.status===403)fail('FORBIDDEN');
  if(!response.ok)fail('WALLBOARD_UNAVAILABLE');
  const contentLength=Number(response.headers.get('content-length'));
