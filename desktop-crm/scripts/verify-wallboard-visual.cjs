@@ -11,7 +11,7 @@ app.whenReady().then(async()=>{
  const out=path.resolve(process.argv[2]||'visual-wallboard');fs.mkdirSync(out,{recursive:true});
  const source=name=>fs.readFileSync(path.join(__dirname,'../src',name),'utf8');
  const css=['styles.css','company-wallboard.css','company-wallboard-theme.css','toss.css'].map(source).join('\n').replaceAll(':fullscreen','.test-fullscreen');
- for(const [width,height] of [[1920,1080],[1280,720]]){
+ for(const [width,height] of [[1920,1080],[1366,768],[1280,720]]){
   const win=new BrowserWindow({width,height,useContentSize:true,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
   await win.loadURL('about:blank');
   await win.webContents.executeJavaScript(`document.head.innerHTML='<style>'+${JSON.stringify(css)}+'</style>';document.body.innerHTML='<main></main>';document.body.style.margin='0';`);
