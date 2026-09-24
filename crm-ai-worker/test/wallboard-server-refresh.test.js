@@ -12,6 +12,9 @@ const sources={
  access:{'staff-1':{enabled:true,mustChangePassword:false,email:'staff@example.com'}},
  teamProfiles:{'staff-1':{displayName:'김현진'}}
 };
+const weeklyReport={projectId:'p1',authorUid:'staff-1',status:'submitted',summary:'비공개 고객 상담 내용',snapshot:{available:true,projectId:'p1',period:'current-week',range:{start:'2026-09-21',end:'2026-09-27'},capturedAt:'2026-09-24T00:00:00Z',counts:{total:1,done:1,submitted:0,returned:0,open:0},sources:[{id:'o1',status:'done',assigneeUid:'staff-1',updatedAt:'2026-09-24T00:00:00Z'}]}};
+sources.projectWeeklyReports={r1:weeklyReport};
+sources.projectWeeklyReportReviews={r1:{status:'approved',projectId:'p1',authorUid:'staff-1',reviewerUid:'admin-1',reviewedAt:'2026-09-24T01:00:00Z'}};
 
 function fixture(overrides={}){
  const reads=[],commands=[];
@@ -23,7 +26,7 @@ function fixture(overrides={}){
   if(overrides.denied===resource)return new Response('permission denied',{status:403});
   if(overrides.oversize===resource)return new Response('x'.repeat(2*1024*1024+1));
   if(overrides.malformed===resource)return new Response('[]');
-  const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:sources[resource];
+  const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:resource==='projectWeeklyReports'&&overrides.reportMap?overrides.reportMap:resource==='projectWeeklyReportReviews'&&overrides.reviewMap?overrides.reviewMap:sources[resource];
   return new Response(JSON.stringify(value??null),{headers:{'content-type':'application/json'}});
  };
  const stub={fetch:async request=>{
@@ -46,15 +49,17 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  const f=fixture();
  const result=await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.deepEqual(result,{version:1,publishedAt:1001});
- assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','data/serviceRecords','projects','teamProfiles','workOrders']);
+ assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','data/serviceRecords','projectWeeklyReportReviews','projectWeeklyReports','projects','teamProfiles','workOrders']);
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
  assert.equal(f.commands[2].action,'publish-if-changed');
  const snapshot=f.commands[2].input.snapshot;
  assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
+ assert.deepEqual(snapshot.model.weeklyReports,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:1,approvedTotal:1,approvedDone:1});
  assert.deepEqual(snapshot.model.schedule.today[0].title,'점검');
  assert.equal(snapshot.model.schedule.today[0].owner,'김현진');
  assert.ok(!JSON.stringify(f.commands).includes('홍길동'));
+ assert.ok(!JSON.stringify(f.commands).includes('비공개 고객 상담 내용'));
  assert.ok(!JSON.stringify(f.commands).includes('010-1234-5678'));
  assert.ok(!JSON.stringify(result).includes(token));
 });
@@ -72,7 +77,7 @@ test('scheduled service reader rebuilds the board without an employee CRM sessio
  const result=await refreshWallboardFromService({env,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.equal(exchanges,1);
  assert.equal(result.version,1);
- assert.equal(f.reads.length,5);
+ assert.equal(f.reads.length,7);
  assert.ok(f.reads.every(item=>item.auth==='service-id-token'));
  assert.equal(f.commands.at(-1).action,'publish-if-changed');
 });
@@ -84,6 +89,19 @@ test('failed service-source read preserves the prior board',async()=>{
   :f.fetchImpl(url,options);
  await assert.rejects(refreshWallboardFromService({env,fetchImpl}),error=>error.code==='FORBIDDEN');
  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
+test('unapproved project reports do not count and orphan reviews preserve old TV board',async()=>{
+ const pending=fixture({reviewMap:{}});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:pending.env,fetchImpl:pending.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ assert.equal(pending.commands.find(item=>item.action==='publish-if-changed').input.snapshot.model.weeklyReports.approvedReports,0);
+ const orphan=fixture({reviewMap:{missing:sources.projectWeeklyReportReviews.r1}});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:orphan.env,fetchImpl:orphan.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}),error=>error.code==='WALLBOARD_UNAVAILABLE');
+ assert.equal(orphan.commands.some(item=>item.action==='publish-if-changed'),false);
+});
+test('a forged approved status without a matching review cannot reach TV',async()=>{
+ const forged=fixture({reportMap:{r1:{...weeklyReport,status:'approved',approvedAt:'2026-09-24T01:00:00Z'}},reviewMap:{}});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:forged.env,fetchImpl:forged.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}),error=>error.code==='WALLBOARD_UNAVAILABLE');
+ assert.equal(forged.commands.some(item=>item.action==='publish-if-changed'),false);
 });
 test('Firebase source reads forbid redirects before sending an ID token',async()=>{
  const f=fixture();

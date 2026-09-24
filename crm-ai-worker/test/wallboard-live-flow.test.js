@@ -16,7 +16,9 @@ test('member refresh request republishes confirmed server progress to the paired
   projects:{p1:{name:'디지털 트윈 실증',owner:'김현진',status:'active',startDate:'2026-09-22',endDate:'2026-09-30'}},
   'data/serviceRecords':{},
   access:{'admin-1':{enabled:true,email:'admin@example.com',role:'admin'},'member-1':{enabled:true,email:'member@example.com',role:'member'}},
-  teamProfiles:{'member-1':{displayName:'김현진'}}
+  teamProfiles:{'member-1':{displayName:'김현진'}},
+  projectWeeklyReports:{},
+  projectWeeklyReportReviews:{}
  };
  let denyProjects=false;
  const fetchImpl=async (url,options={})=>{

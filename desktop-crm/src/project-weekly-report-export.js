@@ -1,5 +1,9 @@
+(function attachProjectWeeklyReportExport(root,factory){
+ const api=factory(typeof module==='object'&&module.exports?require('./project-weekly-report-core'):root.BringProjectWeeklyReportCore);
+ if(typeof module==='object'&&module.exports)module.exports=api;
+ else root.BringProjectWeeklyReportExport=api;
+})(typeof globalThis==='object'?globalThis:this,function(Core){
 'use strict';
-const Core = require('./project-weekly-report-core');
 
 function approved(report) {
   if (!report || report.status !== 'approved' || !Core.validateReport(report).ok || !report.approvedAt) throw new Error('승인된 주간 보고서만 내보낼 수 있습니다.');
@@ -61,4 +65,5 @@ function tvProjection(reports,today) {
   return {available:true,periodStart,periodEnd,approvedReports:latest.size,approvedTotal:sources.size,approvedDone:[...sources.values()].filter(source=>source.status==='done').length};
 }
 
-module.exports={bundle,tvProjection};
+return {bundle,tvProjection};
+});
