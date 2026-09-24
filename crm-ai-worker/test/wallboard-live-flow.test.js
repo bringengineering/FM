@@ -17,8 +17,8 @@ test('member refresh request republishes confirmed server progress to the paired
   'data/serviceRecords':{},
   access:{'admin-1':{enabled:true,email:'admin@example.com',role:'admin'},'member-1':{enabled:true,email:'member@example.com',role:'member'}},
   teamProfiles:{'member-1':{displayName:'김현진'}},
-  projectWeeklyReports:{},
-  projectWeeklyReportReviews:{}
+  projectWeeklyReports:{r1:{projectId:'p1',authorUid:'member-1',status:'submitted',summary:'개인 고객정보 비공개',snapshot:{available:true,projectId:'p1',period:'current-week',range:{start:'2026-09-21',end:'2026-09-27'},capturedAt:'2026-09-24T00:00:00Z',counts:{total:1,done:0,submitted:0,returned:0,open:1},sources:[{id:'o1',status:'doing',assigneeUid:'member-1',updatedAt:'2026-09-24T00:00:00Z'}]}}},
+  projectWeeklyReportReviews:{r1:{status:'approved',projectId:'p1',authorUid:'member-1',reviewerUid:'admin-1',reviewedAt:'2026-09-24T01:00:00Z'}}
  };
  let denyProjects=false;
  const fetchImpl=async (url,options={})=>{
@@ -48,6 +48,8 @@ test('member refresh request republishes confirmed server progress to the paired
  let display=await (await call('display',{},device.deviceToken)).json();
  assert.equal(display.board.model.portfolio.projects[0].progress,30);
  assert.equal(display.board.model.roadmap.lanes[0].assignments[0].progress,30);
+ assert.deepEqual(display.board.model.weeklyReports,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:1,approvedTotal:1,approvedDone:0});
+ assert.equal(JSON.stringify(display).includes('개인 고객정보 비공개'),false);
  sources.workOrders.o1.progress=60;
  const second=await (await call('refresh',{},'member-token')).json();
  assert.equal(second.version,2);
@@ -55,6 +57,7 @@ test('member refresh request republishes confirmed server progress to the paired
  assert.equal(display.board.version,2);
  assert.equal(display.board.model.portfolio.projects[0].progress,60);
  assert.equal(display.board.model.roadmap.lanes[0].assignments[0].progress,60);
+ assert.equal(display.board.model.weeklyReports.approvedDone,0,'approved historical snapshot does not change when live work progress changes');
  assert.equal((await call('refresh',{progress:100},'member-token')).status,400);
  display=await (await call('display',{},device.deviceToken)).json();
  assert.equal(display.board.version,2);
