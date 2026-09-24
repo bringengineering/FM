@@ -6,8 +6,11 @@
  function companyRevenue(ledger,today,sourceState){
   const month=today.slice(0,7),unavailable={available:false,month,billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
   if(sourceState==='unavailable')return {...unavailable,sourceStatus:'unavailable'};
-  if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts)||!ledger.invoices.some(item=>item?.status==='approved')&&!ledger.receipts.some(item=>item?.status==='approved'))return unavailable;
+  if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts))return unavailable;
   const {billed,received,receivable,pendingCount,undatedPendingCount}=billingCore.summarizeMonth(ledger,month);
+  if(!ledger.invoices.some(item=>item?.status==='approved')&&!ledger.receipts.some(item=>item?.status==='approved')){
+   return pendingCount+undatedPendingCount>0?{...unavailable,pendingCount,undatedPendingCount}:unavailable;
+  }
   return {available:true,month,billed,received,receivable,pendingCount,undatedPendingCount};
  }
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -98,7 +101,7 @@
   }
   if(key==='companyRevenue'){
    const revenue=m.companyRevenue;
-   if(!revenue?.available)return `<div class="wb-empty">${revenue?.sourceStatus==='unavailable'?'매출 연결 확인 중 · 마지막 게시 시각을 확인해 주세요.':'매출 집계 대기 · 확정된 장부 자료를 확인해 주세요.'}</div>`;
+   if(!revenue?.available)return `<div class="wb-empty">${revenue?.sourceStatus==='unavailable'?'매출 연결 확인 중 · 마지막 게시 시각을 확인해 주세요.':Number.isSafeInteger(revenue?.pendingCount)?`매출 집계 대기 · 확인 대기 ${revenue.pendingCount}건 · 입금일 확인 필요 ${revenue.undatedPendingCount}건`:'매출 집계 대기 · 확정된 장부 자료를 확인해 주세요.'}</div>`;
    const money=value=>value.toLocaleString('ko-KR')+'원';
    return `<div class="wb-grid wb-revenue-grid">${card('확정 청구액',money(revenue.billed),revenue.month+' 청구 대상')}${card('확정 입금액',money(revenue.received),revenue.month+' 실제 입금')}${card('미수 합계',money(revenue.receivable),'확정 장부 누계')}</div><p>확인 대기 ${revenue.pendingCount}건 · 입금일 확인 필요 ${revenue.undatedPendingCount}건 · 고객별 내역 제외</p>`;
   }

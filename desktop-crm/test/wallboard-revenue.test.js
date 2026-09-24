@@ -23,11 +23,12 @@ test('empty or missing ledger is unavailable, never presented as confirmed zero 
  assert.match(board.scene(board.project({orders:[]},'2026-09-25'),'companyRevenue'),/집계 대기/);
 });
 
-test('draft-only ledger stays pending instead of presenting unapproved values as confirmed zero',()=>{
+test('draft-only ledger publishes a pending count without presenting unapproved money as zero',()=>{
  const model=board.project({orders:[],billingLedger:{invoices:[{id:'draft1',billingMonth:'2026-09',amount:100000,status:'draft'}],receipts:[]}},'2026-09-25');
- assert.deepEqual(model.companyRevenue,{available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null});
- assert.match(board.scene(model,'companyRevenue'),/집계 대기/);
+ assert.deepEqual(model.companyRevenue,{available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:1,undatedPendingCount:0});
+ assert.match(board.scene(model,'companyRevenue'),/확인 대기 1건/);
  assert.doesNotMatch(board.scene(model,'companyRevenue'),/0원/);
+ assert.doesNotThrow(()=>validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'}));
 });
 
 test('approved revenue is validated as aggregate-only and rendered with separate billed and received values',()=>{
@@ -73,5 +74,6 @@ test('TV browser revenue validator rejects extra private fields',async()=>{
  const validRevenue=vm.runInNewContext(`${helper};validRevenue`);
  const revenue={available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
  assert.equal(validRevenue({...revenue,sourceStatus:'unavailable'},'2026-09'),true);
+ assert.equal(validRevenue({...revenue,pendingCount:1,undatedPendingCount:0},'2026-09'),true);
  assert.equal(validRevenue({...revenue,customerName:'private'},'2026-09'),false);
 });
