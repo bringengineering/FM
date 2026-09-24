@@ -35,6 +35,37 @@ test("현재 사용자의 의미 있는 CRM 업무만 모으고 다른 사람과
   assert.equal(result.candidates.some(item => item.title === "변경 없는 배정"), false);
 });
 
+test("업무지시는 예정으로 뭉개지 않고 실제 업무지시 상태를 표시한다", () => {
+  const actor = { uid: "uid-kim", name: "김현진", email: "kim@example.com" };
+  const order = (id, title, status) => ({
+    id, title, status, assigneeUid: actor.uid,
+    progressUpdates: [{ note: `${title} 상태 확인`, createdBy: actor.uid, createdAt: "2026-09-23T03:00:00.000Z" }],
+  });
+  const result = Weekly.collect({
+    week: "2026-09-23",
+    actor,
+    orders: [
+      order("assigned", "배정 업무", "assigned"),
+      order("doing", "진행 업무", "doing"),
+      order("submitted", "검수 업무", "submitted"),
+      order("returned", "보완 업무", "returned"),
+      order("done", "완료 업무", "done"),
+    ],
+  });
+  const statuses = Object.fromEntries(result.candidates.map(item => [item.title, item.status]));
+
+  assert.deepEqual(statuses, {
+    "배정 업무": "assigned",
+    "진행 업무": "in_progress",
+    "검수 업무": "submitted",
+    "보완 업무": "returned",
+    "완료 업무": "completed",
+  });
+  assert.equal(Weekly.STATUS_LABELS[statuses["배정 업무"]], "지시함");
+  assert.equal(Weekly.STATUS_LABELS[statuses["검수 업무"]], "검수 대기");
+  assert.equal(Weekly.STATUS_LABELS[statuses["보완 업무"]], "보완 요청");
+});
+
 test("보고서와 직접 작성한 다음 주 계획을 읽을 수 있는 문자열로 왕복 저장한다", () => {
   const done = Weekly.serializeDone({
     summary: "제안서와 API 도입 검토를 진행했습니다.",
@@ -52,6 +83,22 @@ test("보고서와 직접 작성한 다음 주 계획을 읽을 수 있는 문�
   assert.deepEqual(plans.map(plan => ({ title: plan.title, date: plan.date, priority: plan.priority })), [{ title: "레이브클라우드 후속 미팅", date: "2026-09-29", priority: "높음" }]);
   assert.ok(done.length <= 2000);
   assert.ok(next.length <= 2000);
+});
+
+test("업무지시 고유 상태는 주간보고서를 다시 열어도 유지한다", () => {
+  const done = Weekly.serializeDone({
+    automatic: [
+      { id: "a", title: "배정 업무", source: "업무지시", status: "assigned", date: "2026-09-22" },
+      { id: "b", title: "검수 업무", source: "업무지시", status: "submitted", date: "2026-09-23" },
+      { id: "c", title: "보완 업무", source: "업무지시", status: "returned", date: "2026-09-24" },
+    ],
+  });
+  const parsed = Weekly.parseDone(done);
+
+  assert.match(done, /\(지시함\) 배정 업무/u);
+  assert.match(done, /\(검수 대기\) 검수 업무/u);
+  assert.match(done, /\(보완 요청\) 보완 업무/u);
+  assert.deepEqual(parsed.automatic.map(item => item.status), ["assigned", "submitted", "returned"]);
 });
 
 test("실제 CRM 화면에 주간업무보고서 탐색·렌더·저장 연결이 있다", () => {

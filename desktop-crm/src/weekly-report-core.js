@@ -14,7 +14,22 @@
   const REPORT_HEADER = "주간업무보고서 v1";
   const SECTIONS = Object.freeze({ summary: "[보고 요약]", automatic: "[자동 수집]", manual: "[직접 추가]" });
   const NEXT_HEADER = "[다음 주 계획 · 직접 작성]";
-  const STATUS_LABELS = Object.freeze({ completed: "완료", in_progress: "진행 중", planned: "예정", review: "검토 중" });
+  const STATUS_LABELS = Object.freeze({
+    completed: "완료",
+    in_progress: "진행 중",
+    planned: "예정",
+    review: "검토 중",
+    assigned: "지시함",
+    submitted: "검수 대기",
+    returned: "보완 요청",
+  });
+  const WORK_ORDER_STATUS_MAP = Object.freeze({
+    assigned: "assigned",
+    doing: "in_progress",
+    submitted: "submitted",
+    returned: "returned",
+    done: "completed",
+  });
   const text = (value, limit = 500) => String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, limit);
   const lines = value => String(value == null ? "" : value).replace(/\r/g, "").split("\n");
   const list = value => Array.isArray(value) ? value.filter(Boolean) : [];
@@ -95,6 +110,11 @@
     return "in_progress";
   }
 
+  function workOrderStatusOf(value) {
+    const status = text(value, 30).toLocaleLowerCase("ko-KR");
+    return WORK_ORDER_STATUS_MAP[status] || statusOf(status);
+  }
+
   function item(value) {
     const source = value && typeof value === "object" ? value : {};
     return {
@@ -136,7 +156,7 @@
         source: "업무지시",
         title: order.title,
         detail: progress && (progress.note || progress.nextAction) || order.outcomeReport || order.reviewNote || order.what,
-        status: statusOf(order.status),
+        status: workOrderStatusOf(order.status),
         date: changedAt,
       });
     });
@@ -292,7 +312,7 @@
   }
 
   function parseStatusLine(value) {
-    const match = /^-\s*\((완료|진행 중|예정|검토 중)\)\s*(.+?)(?:\s*·\s*([^·]+))?$/.exec(String(value || "").trim());
+    const match = /^-\s*\((완료|진행 중|예정|검토 중|지시함|검수 대기|보완 요청)\)\s*(.+?)(?:\s*·\s*([^·]+))?$/.exec(String(value || "").trim());
     if (!match) return null;
     const status = Object.keys(STATUS_LABELS).find(key => STATUS_LABELS[key] === match[1]) || "in_progress";
     return { title: text(match[2], 240), source: text(match[3], 40), status };
