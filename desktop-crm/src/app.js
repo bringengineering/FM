@@ -4365,7 +4365,7 @@
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
-    projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
+    projectId: "", projectDetailTab: "overview", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
@@ -4858,6 +4858,18 @@
     const healthReady = Boolean(workOrderState.performanceAvailable && workspaceHealth && workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
     const classificationReady = Boolean(workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
     const healthValue = value => !healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${value}건` : "집계 대기";
+    const actualProject = Boolean(project && workspace && workspace.projects.some(item => item.id === project.id));
+    const detailTabs = [["overview", "개요"], ["roadmap", "로드맵"], ["orders", "업무지시"], ["reports", "보고·검수"], ["risks", "위험·결정"]];
+    const projectDetailTab = detailTabs.some(([key]) => key === workOrderState.projectDetailTab) ? workOrderState.projectDetailTab : "overview";
+    const projectCompletion = actualProject && healthReady ? workspaceCore.completion(performanceProjectOrders, project.id) : null;
+    const projectRiskQueue = actualProject && workspaceCore.todayQueue
+      ? workspaceCore.todayQueue({ orders, uid: workOrderState.uid, admin: workOrderState.admin, today }).filter(item => ["overdue", "returned", "review"].includes(item.kind)) : [];
+    const projectDetail = actualProject ? `<section class="project-workspace-detail" aria-label="${esc(project.name)} 프로젝트 상세">
+      <button type="button" class="mini-button project-workspace-back" data-wo-project="__all">전체 프로젝트로</button>
+      <nav class="project-workspace-detail-tabs" aria-label="프로젝트 상세 보기">${detailTabs.map(([key, label]) => `<button type="button" data-wo-project-section="${key}" aria-current="${projectDetailTab === key ? "page" : "false"}">${label}</button>`).join("")}</nav>
+      ${projectDetailTab === "overview" ? `<div class="project-workspace-overview"><div class="project-workspace-overview-head"><span>프로젝트 개요</span><h3>${esc(project.name)}</h3><p>${esc(project.goal || "프로젝트 목적이 아직 입력되지 않았습니다. 관리자가 프로젝트 수정에서 목적을 기록해 주세요.")}</p></div><dl><div><dt>책임자</dt><dd>${esc(project.owner || "미정")}</dd></div><div><dt>일정</dt><dd>${esc(project.startDate || "시작 미정")} ~ ${esc(project.endDate || "마감 미정")}</dd></div><div><dt>상태</dt><dd>${esc(P.statusLabel(project.status))}</dd></div><div><dt>담당자 보고 진도</dt><dd>${Number.isFinite(project.progress) ? `${project.progress}%` : "입력 없음"}</dd></div><div><dt>업무 검수 완료율 · 건수 기준</dt><dd>${projectCompletion ? `${projectCompletion.percent}% (${projectCompletion.done}/${projectCompletion.total}건)` : "집계 대기"}</dd></div></dl><p class="project-workspace-definition">보고 진도는 담당자가 입력한 값이고, 검수 완료율은 실제 업무의 완료 처리 건수입니다. 두 수치를 합산하지 않습니다.</p><button type="button" class="primary-button" data-wo-project-section="orders">연결된 업무지시 보기</button></div>` : ""}
+      ${projectDetailTab === "risks" ? `<div class="project-workspace-risk"><h3>확인할 일 ${projectRiskQueue.length}건</h3><p>기한 초과·보완 요청·검수 대기 업무를 원본에서 확인합니다. 별도 결정 요청 기록이 없는 경우 임의로 만들지 않습니다.</p>${projectRiskQueue.length ? `<div class="project-workspace-action-list">${projectRiskQueue.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}</small></button>`).join("")}</div>` : `<p>현재 조회 범위에 확인할 업무가 없습니다.</p>`}</div>` : ""}
+    </section>` : "";
     const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
       <section class="project-workspace-health" aria-label="전체 업무지시 현황 · 건수 기준">
         <div><span>업무 검수 완료</span><strong>${!healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${workspaceHealth.done}/${workspaceHealth.total}건` : "집계 대기"}</strong><small>전체 업무지시 · 건수 기준</small></div>
@@ -4874,6 +4886,13 @@
       </section>
       <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${classificationReady ? `${workspace.classificationNeeded.length}건` : "조회 확인 필요"}</summary><p>기존 업무 연결은 자동으로 바꾸지 않습니다. 원본을 열어 확인한 뒤, 미완료 업무는 관리자가 기존 수정 화면에서 프로젝트 연결을 변경할 수 있습니다.</p>${classificationReady ? workspace.classificationNeeded.length ? `<div class="project-workspace-action-list project-workspace-classification-list">${workspace.classificationNeeded.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><strong>${esc(item.title || "제목 없는 업무")}</strong><small>${esc(workspaceCore.classificationLabel(item, projects))}${item.projectId ? ` · ${esc(item.projectId)}` : ""} · 원본 업무 보기</small></button>`).join("")}</div>` : `<p>분류가 필요한 업무가 없습니다.</p>` : `<p>분류 목록을 확인하려면 업무를 다시 불러와 주세요.</p>`}${orphans ? `<button type="button" class="mini-button" data-wo-project="__none">연결 없는 업무 ${orphans}건 보기</button>` : ""}<div class="wo-project-tabs">${tabs}</div></details>
     </div>` : "";
+    const reportPanel = () => weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today);
+    const planningPanel = () => `<p class="wo-progress-definition">입력된 진행률 평균: ${workOrderState.loading || workOrderState.error || !workOrderState.loaded ? "조회 확인 필요" : summary.total ? `${summary.progress}%` : "대상 없음"} · 업무에 입력한 진행률의 평균이며, 완료 건수 비율과 다릅니다.</p>
+      ${dueSoonBoard(P, scoped, today)}
+      ${directiveBoard(P, today)}
+      ${capacityBoard(P, today)}
+      ${assigneeBoard(P, scoped, today)}
+      ${ganttBoard(W, P, scoped, today, summary)}`;
 
     main.innerHTML = `<section class="operations-hero work-orders-hero">
         <div><span>프로젝트 관리</span><h2>${esc(project ? project.name : "프로젝트")}</h2><p>${esc(project && project.goal ? project.goal : "지금 돌고 있는 일을 한 장에서 봅니다. 표의 한 줄이 곧 업무지시입니다.")}</p></div>
@@ -4892,26 +4911,18 @@
       ${status}
       ${!workspace && selected === "__all" ? `<div class="info-box">프로젝트 화면 구성을 불러오지 못했습니다. 기존 업무 목록은 아래에서 계속 사용할 수 있습니다.</div>` : ""}
       ${projectHome}
-      ${tabs && !projectHome ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
-      ${weeklyExecutionPanel()}
-      ${periodControls}
+      ${tabs && !projectHome && !actualProject ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
+      ${projectDetail}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
       ${workOrderState.importOpen ? directiveImporter() : ""}
       ${workOrderState.capacityEditing ? capacityEditor() : ""}
+      ${!actualProject || projectDetailTab === "orders" ? `${weeklyExecutionPanel()}${periodControls}` : ""}
+      ${!actualProject || projectDetailTab === "orders" ? `
       <header class="wo-action-heading"><h3>${workOrderState.scope === "mine" ? "내 업무 · 결과 제출" : "업무 목록 · 제출 결과 검수"}</h3><p>${workOrderState.loading ? "업무를 불러오는 중입니다." : workOrderState.error ? "조회 오류를 확인한 뒤 다시 불러와 주세요." : "업무별 완료 기준을 확인하고 결과물과 증빙을 제출하세요. 제출 후 대표 검수를 거칩니다."}</p></header>
-      <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>
-      <details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>
-      ${weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today)}
-      </details>
-      <details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>
-      <p class="wo-progress-definition">입력된 진행률 평균: ${workOrderState.loading || workOrderState.error || !workOrderState.loaded ? "조회 확인 필요" : summary.total ? `${summary.progress}%` : "대상 없음"} · 업무에 입력한 진행률의 평균이며, 완료 건수 비율과 다릅니다.</p>
-      ${dueSoonBoard(P, scoped, today)}
-      ${directiveBoard(P, today)}
-      ${capacityBoard(P, today)}
-      ${assigneeBoard(P, scoped, today)}
-      ${ganttBoard(W, P, scoped, today, summary)}
-      </details>`;
+      <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>` : ""}
+      ${!actualProject ? `<details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>${reportPanel()}</details>` : projectDetailTab === "reports" ? `<section class="project-workspace-tab-content" aria-label="보고·검수">${periodControls}${reportPanel()}</section>` : ""}
+      ${!actualProject ? `<details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>${planningPanel()}</details>` : projectDetailTab === "roadmap" ? `<section class="project-workspace-tab-content" aria-label="로드맵">${planningPanel()}</section>` : ""}`;
   }
 
   // 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
@@ -11555,7 +11566,17 @@
     const woProject = event.target.closest("[data-wo-project]");
     if (woProject) {
       if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 프로젝트를 변경해 주세요."); return; }
-      workOrderState.projectId = woProject.dataset.woProject; renderWorkOrders(); return;
+      workOrderState.projectId = woProject.dataset.woProject;
+      workOrderState.projectDetailTab = "overview";
+      renderWorkOrders(); return;
+    }
+    const projectSection = event.target.closest("[data-wo-project-section]");
+    if (projectSection) {
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 탭을 변경해 주세요."); return; }
+      workOrderState.projectDetailTab = projectSection.dataset.woProjectSection;
+      renderWorkOrders();
+      document.querySelector(`[data-wo-project-section="${workOrderState.projectDetailTab}"]`)?.focus({ preventScroll: true });
+      return;
     }
     if (event.target.closest("[data-wo-project-new]")) {
       const P = projectCore();
@@ -11645,7 +11666,8 @@
     const woOpenCard = event.target.closest("[data-wo-open-card]");
     if (woOpenCard) {
       // 간트에서 막대를 누르면 아래 카드로 데려간다. 자세한 것은 카드에 있다.
-      const fromTodayActions = Boolean(woOpenCard.closest(".project-workspace-action-list, .project-workspace-classification-list"));
+      const fromTodayActions = Boolean(woOpenCard.closest(".project-workspace-action-list, .project-workspace-classification-list")) ||
+        Boolean(workOrderState.projectId && !["__all", "__none"].includes(workOrderState.projectId) && workOrderState.projectDetailTab !== "orders");
       let card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
       if (!card && fromTodayActions) {
         if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) {
@@ -11654,6 +11676,7 @@
         }
         workOrderState.scope = "all";
         workOrderState.performancePeriod = "all";
+        workOrderState.projectDetailTab = "orders";
         renderWorkOrders();
         card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === woOpenCard.dataset.woOpenCard);
       }

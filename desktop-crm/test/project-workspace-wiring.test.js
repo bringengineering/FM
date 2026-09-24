@@ -58,6 +58,40 @@ test('업무의 프로젝트 연결 변경은 비교 미리보기와 관리자 �
   assert.ok(save.indexOf('data-wo-mapping-confirm') < save.indexOf('await api.saveWorkOrder'));
 });
 
+test('실제 프로젝트 상세는 개요·로드맵·업무지시·보고·위험을 한 프로젝트 안에서 전환한다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  for (const section of ['overview', 'roadmap', 'orders', 'reports', 'risks']) {
+    assert.match(render, new RegExp(`data-wo-project-section="\\$\\{section\\}"|\\["${section}"`));
+  }
+  assert.match(render, /project-workspace-detail/u);
+  assert.match(render, /projectDetailTab/u);
+  assert.match(render, /data-wo-project="__all"[^>]*>전체 프로젝트로/u);
+  assert.match(render, /업무 검수 완료율/u);
+  assert.match(render, /담당자 보고 진도/u);
+  assert.match(render, /weeklyPerformancePanel/u);
+  assert.match(render, /ganttBoard/u);
+  assert.match(render, /project-workspace-tab-content[^`]*보고·검수/u);
+  assert.match(render, /project-workspace-tab-content[^`]*로드맵/u);
+});
+
+test('프로젝트 상세 탭은 편집 중 전환을 막고 업무 링크는 숨겨진 업무 탭을 연다', () => {
+  const source = read('app.js');
+  const handler = source.slice(source.indexOf('const woProject = event.target.closest("[data-wo-project]")'), source.indexOf('const dfGo ='));
+  assert.match(handler, /data-wo-project-section/u);
+  assert.match(handler, /workOrderState\.editing/u);
+  assert.match(handler, /projectDetailTab = "orders"/u);
+});
+
+test('프로젝트 상세는 좁은 화면에서도 읽을 수 있는 탭·개요 스타일을 쓴다', () => {
+  const css = read('toss.css');
+  assert.match(css, /\.project-workspace-detail-tabs/u);
+  assert.match(css, /\.project-workspace-overview/u);
+  assert.match(css, /\.project-workspace-tab-content/u);
+  assert.match(css, /\.project-workspace-detail-tabs button:focus-visible/u);
+  assert.match(css, /@media\(max-width:640px\)[^\n]*project-workspace-detail-tabs/u);
+});
+
 test('오늘 처리할 일은 기간·내 것 필터 밖에 있어도 원본 업무로 이동한다', () => {
   const source = read('app.js');
   const start = source.indexOf('const woOpenCard = event.target.closest("[data-wo-open-card]")');

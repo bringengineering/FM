@@ -40,7 +40,7 @@ test('read-only UI distinguishes unavailable, labels scope and escapes raw notes
  assert.ok(!html.includes('javascript:')); assert.ok(!html.includes('<script>'));
  for(const state of [{loading:true},{error:'failure',loaded:true},{loaded:true,performanceAvailable:false},{}]){const html=panel(state,[]);assert.ok(html.includes('집계 불가'));assert.ok(!html.includes('0%'));}
  assert.ok(panel({loaded:true},[]).includes('산정 불가'));
- const app=source('app.js');assert.ok(app.includes('${weeklyPerformancePanel(performanceScoped,')); assert.ok(source('index.html').includes('./weekly-performance-core.js'));
+ const app=source('app.js');assert.ok(app.includes('weeklyPerformancePanel(performanceScoped,'));assert.ok(app.includes('${reportPanel()}')); assert.ok(source('index.html').includes('./weekly-performance-core.js'));
 });
 test('malformed successful responses are unavailable and card lookup never interpolates selector IDs',()=>{
  const app=source('app.js');

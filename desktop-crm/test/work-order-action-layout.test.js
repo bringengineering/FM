@@ -8,7 +8,9 @@ const render=app.slice(start,app.indexOf('  function dueSoonBoard',start));
 test('action cards precede performance and planning details',()=>{
  const cards=render.indexOf('class="wo-list"');
  assert.ok(cards>0);
- for(const section of ['${weeklyPerformancePanel(', '${directiveBoard(', '${capacityBoard(', '${ganttBoard('])assert.ok(cards<render.indexOf(section),section);
+ for(const section of ['wo-performance-disclosure','wo-planning-disclosure','class="project-workspace-tab-content"'])assert.ok(cards<render.indexOf(section),section);
+ assert.ok(render.includes('${reportPanel()}'));
+ assert.ok(render.includes('${planningPanel()}'));
  assert.ok(render.indexOf('${workOrderState.editing ?')<cards,'editor before work cards');
 });
 test('single state KPI source and disclosed planning preserve existing functions',()=>{
