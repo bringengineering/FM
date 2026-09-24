@@ -11,6 +11,7 @@ const WorkOrderCore = require("./work-order-core");
 const WorkOutcomeCore = require("./work-outcome-core");
 const WorkOutcomeExport = require("./work-outcome-export-core");
 const ProjectCore = require("./project-core");
+const CompanyStrategyCore = require("./company-strategy-core");
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const WeeklyDirectiveCore = require("./weekly-directive-core");
@@ -2356,6 +2357,75 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadCompanyStrategy(input) {
+    const session = this.requireOfficeSession();
+    const year = String(input?.year || '');
+    if (!/^20[0-9]{2}$/.test(year)) throw createError('연도를 확인해 주세요.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const published = await this.dbRequest(`companyStrategyPublications/${year}`, { method:'GET' });
+    const draft = session.role === 'admin'
+      ? await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' }) : null;
+    this.assertSessionGuardActive(guard);
+    return { published:published || null, draft:draft || null };
+  }
+
+  async saveCompanyStrategyDraft(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 회사 방향을 저장할 수 있습니다.', 'ACCESS_DENIED');
+    const checked = CompanyStrategyCore.validateDraft(input);
+    if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const location = `companyStrategyDrafts/${checked.draft.year}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+    const revision = Number(snapshot.value?.revision || 0);
+    if (input.expectedRevision !== revision) throw createError('다른 관리자가 먼저 수정했습니다. 다시 불러와 주세요.', 'CONFLICT');
+    const record = {
+      ...checked.draft,
+      organization:Object.fromEntries(checked.draft.organization.map(person => [person.uid, person])),
+      goals:Object.fromEntries(checked.draft.goals.map(goal => [goal.id, goal])),
+      revision:revision + 1,
+      updatedAt:new Date().toISOString(),
+      updatedBy:session.uid,
+    };
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  async publishCompanyStrategy(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 회사 방향을 게시할 수 있습니다.', 'ACCESS_DENIED');
+    const year = String(input?.year || '');
+    if (!/^20[0-9]{2}$/.test(year)) throw createError('연도를 확인해 주세요.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const stored = await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' });
+    this.assertSessionGuardActive(guard);
+    if (!stored || stored.revision !== input.expectedDraftRevision) throw createError('초안이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
+    const checked = CompanyStrategyCore.validatePublication({
+      year, vision:stored.vision,
+      organization:Object.values(stored.organization || {}),
+      goals:Object.values(stored.goals || {}),
+    });
+    if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
+    const location = `companyStrategyPublications/${year}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+    const revision = Number(snapshot.value?.revision || 0);
+    if (revision !== input.expectedPublicationRevision) throw createError('게시본이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
+    const now = new Date().toISOString();
+    const record = {
+      ...checked.draft,
+      organization:Object.fromEntries(checked.draft.organization.map(person => [person.uid, person])),
+      goals:Object.fromEntries(checked.draft.goals.map(goal => [goal.id, goal])),
+      revision:revision + 1, sourceRevision:stored.revision,
+      updatedAt:now, updatedBy:session.uid, publishedAt:now, publishedBy:session.uid,
+    };
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   async loadBuildingAtlas(input) {
