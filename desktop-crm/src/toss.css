@@ -1002,6 +1002,21 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-health span{color:#52616F;font-size:14px;font-weight:700}
 .project-workspace-health strong{color:#202B36;font-size:25px;line-height:1.2;overflow-wrap:anywhere}
 .project-workspace-health small{color:#52616F;font-size:12px;line-height:1.4}
+.project-workspace-goals{grid-column:1/-1;display:grid;gap:10px;min-width:0;padding:18px;border:1px solid #E5E8EB;border-radius:15px;background:#fff}
+.project-workspace-goals>header{display:flex;justify-content:space-between;align-items:end;gap:10px}
+.project-workspace-goals>header span,.project-workspace-goals>header small,.project-workspace-goals article small{color:#52616F;font-size:12px}
+.project-workspace-goals h3{margin:4px 0 0;color:#202B36;font-size:20px}
+.project-workspace-goals>p{margin:0;color:#52616F;font-size:13px;line-height:1.5}
+.project-workspace-goals article{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;min-width:0;padding:12px;border-radius:11px;background:#F4F6F8}
+.project-workspace-goals article>div:first-child{display:grid;gap:4px;flex:1 1 200px;min-width:0}
+.project-workspace-goals article strong{color:#202B36;font-size:14px;overflow-wrap:anywhere}
+.project-workspace-goal-results{display:flex;flex-wrap:wrap;gap:5px;flex:2 1 240px;min-width:0}
+.project-workspace-goal-results span{padding:5px 8px;border-radius:7px;background:#EDF4FF;color:#1B64DA;font-size:11px}
+.project-workspace-goals article button{min-height:36px}
+.project-workspace-goal-links{margin:0 0 14px;padding:12px;border-radius:10px;background:#F4F6F8}
+.project-workspace-goal-links h4{margin:0 0 8px;font-size:14px}
+.project-workspace-goal-links article{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px}
+.project-workspace-goal-links article small{color:#52616F;font-size:12px}
 .project-workspace-today,.project-workspace-projects{min-width:0;padding:18px;border:1px solid #E5E8EB;border-radius:15px;background:#fff}
 .project-workspace-today>header,.project-workspace-projects>header{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:14px}
 .project-workspace-today>header span,.project-workspace-projects>header span{color:#52616F;font-size:12px}
