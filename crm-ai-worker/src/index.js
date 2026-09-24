@@ -2,10 +2,11 @@ import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js"
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
-import { refreshWallboardFromFirebase, refreshWallboardFromService } from "./wallboard-server-refresh.js";
+import { refreshWallboardFromFirebase } from "./wallboard-server-refresh.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
 export { WallboardDevices } from "./wallboard-devices.js";
+export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-09-21-v8";
@@ -262,8 +263,11 @@ export function createWorker(options = {}) {
   return {
     async scheduled(_controller, env) {
       if (env.WALLBOARD_ENABLED !== 'true' || env.WALLBOARD_SCHEDULED_REFRESH_ENABLED !== 'true') return;
-      const refresh = options.scheduledWallboardRefresh || (input => refreshWallboardFromService({...input,fetchImpl,now}));
-      await refresh({env});
+      if(options.scheduledWallboardRefresh){await options.scheduledWallboardRefresh({env});return;}
+      if(!env.WALLBOARD_REFRESH_JOBS)throw new Error('WALLBOARD_UNAVAILABLE');
+      const stub=env.WALLBOARD_REFRESH_JOBS.get(env.WALLBOARD_REFRESH_JOBS.idFromName('bring-company-wallboard-refresh'));
+      const response=await stub.fetch(new Request('https://wallboard-refresh-internal/refresh',{method:'POST'}));
+      if(!response.ok)throw new Error('WALLBOARD_UNAVAILABLE');
     },
     async fetch(request, env) {
       const url = new URL(request.url);

@@ -41,9 +41,17 @@ id = "e45a57c874534b76b90107d43ad4a759"
 name = "WALLBOARD_DEVICES"
 class_name = "WallboardDevices"
 
+[[durable_objects.bindings]]
+name = "WALLBOARD_REFRESH_JOBS"
+class_name = "WallboardRefreshJobs"
+
 [[migrations]]
 tag = "wallboard-sqlite-v1"
 new_sqlite_classes = ["WallboardDevices"]
+
+[[migrations]]
+tag = "wallboard-refresh-sqlite-v1"
+new_sqlite_classes = ["WallboardRefreshJobs"]
 
 [[ratelimits]]
 name = "WALLBOARD_RATE_LIMITER"
