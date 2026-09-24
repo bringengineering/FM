@@ -5,7 +5,7 @@
  const billingCore=typeof require==='function'?require('./billing-ledger-core'):globalThis.BringBillingLedgerCore;
  function companyRevenue(ledger,today){
   const month=today.slice(0,7),unavailable={available:false,month,billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
-  if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts)||!ledger.invoices.length&&!ledger.receipts.length)return unavailable;
+  if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts)||!ledger.invoices.some(item=>item?.status==='approved')&&!ledger.receipts.some(item=>item?.status==='approved'))return unavailable;
   const {billed,received,receivable,pendingCount,undatedPendingCount}=billingCore.summarizeMonth(ledger,month);
   return {available:true,month,billed,received,receivable,pendingCount,undatedPendingCount};
  }

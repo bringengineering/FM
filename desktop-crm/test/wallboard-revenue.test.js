@@ -21,6 +21,13 @@ test('empty or missing ledger is unavailable, never presented as confirmed zero 
  assert.match(board.scene(board.project({orders:[]},'2026-09-25'),'companyRevenue'),/집계 대기/);
 });
 
+test('draft-only ledger stays pending instead of presenting unapproved values as confirmed zero',()=>{
+ const model=board.project({orders:[],billingLedger:{invoices:[{id:'draft1',billingMonth:'2026-09',amount:100000,status:'draft'}],receipts:[]}},'2026-09-25');
+ assert.deepEqual(model.companyRevenue,{available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null});
+ assert.match(board.scene(model,'companyRevenue'),/집계 대기/);
+ assert.doesNotMatch(board.scene(model,'companyRevenue'),/0원/);
+});
+
 test('approved revenue is validated as aggregate-only and rendered with separate billed and received values',()=>{
  const model=board.project({orders:[],billingLedger:{invoices:[{id:'i1',billingMonth:'2026-09',amount:100000,status:'approved'}],receipts:[]}},'2026-09-25');
  const publication=validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'});
