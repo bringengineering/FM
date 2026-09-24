@@ -211,6 +211,12 @@ test('legacy completed work without a valid approval timestamp is reported outsi
  assert.equal(m.portfolio.weeklyDone.reduce((sum,item)=>sum+item.count,0),0);
  assert.match(C.scene(m,'weeklyTrend'),/완료 시각 확인 필요 1건/);
 });
+test('shared projection carries only an already-sanitized optional strategy',()=>{
+ const strategy={year:'2026',vision:'안전한 공간 운영',organization:[],goals:[]};
+ const model=C.project({orders:[],strategy},'2026-09-24');
+ assert.deepEqual(model.strategy,strategy);
+ assert.equal(Object.hasOwn(C.project({orders:[]},'2026-09-24'),'strategy'),false);
+});
 test('approved project weekly reports stay separate from work-order completion trend',()=>{
  const weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};
  const model=C.project({orders:[],weeklyReports},'2026-09-24');

@@ -1,11 +1,14 @@
 'use strict';
 const {project}=require('./company-wallboard');
 const {validatePublication}=require('./wallboard-publication-schema');
-async function loadWallboardSource(client){
+const {projectApprovedStrategy}=require('./company-strategy-tv');
+async function loadWallboardSource(client,asOf=new Date()){
  // Never call loadStore: it can resume pending mutations and merge local edits.
  const [work,records]=await Promise.all([client.loadWorkOrders(),client.dbRequest('crmShared/data/serviceRecords',{method:'GET'})]);
  if(records!==null&&(typeof records!=='object'||Array.isArray(records)))throw new Error('서버 일정 형식을 확인할 수 없습니다.');
- return {...work,calendar:{serviceRecords:Object.values(records||{})}};
+ const year=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric'}).format(asOf);
+ const approved=await client.dbRequest(`companyStrategyPublications/${year}`,{method:'GET'});
+ return {...work,calendar:{serviceRecords:Object.values(records||{})},strategy:projectApprovedStrategy(approved,work.members||[],year)};
 }
 function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),setTimer=fn=>setInterval(fn,60000),clearTimer=clearInterval}){
  let active=false,busy=false,timer=null,generation=0,owner='',config=null,version=null,publishedAt=null,error='';
@@ -16,7 +19,7 @@ function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),s
   if(!owner||getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
   busy=true;const generationAtStart=generation;
   try{
-   const data=await load();
+   const data=await load(now());
    if(!active||generationAtStart!==generation)return status();
    if(getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
    const date=now(),dataDate=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
