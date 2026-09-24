@@ -57,6 +57,57 @@
     return '초과입금 확인';
   }
 
+  function proposalId(key) {
+    // Two independent 32-bit streams keep Firebase keys short and safe even for legacy IDs.
+    let a = 2166136261;
+    let b = 2246822519;
+    for (let index = 0; index < key.length; index++) {
+      const code = key.charCodeAt(index);
+      a = Math.imul(a ^ code, 16777619);
+      b = Math.imul(b ^ code, 3266489917);
+    }
+    return `inv_${(a >>> 0).toString(36)}${(b >>> 0).toString(36)}`;
+  }
+
+  function proposeInvoice(contract, month, existingInvoices) {
+    if (!validMonth(month)) return { status: 'invalid_month' };
+    if (!contract || typeof contract !== 'object' || typeof contract.id !== 'string' || !contract.id.trim()) return { status: 'invalid_contract' };
+    if (!Array.isArray(existingInvoices)) return { status: 'invoices_unavailable' };
+    const cycle = contract.billingCycle;
+    if (cycle !== '월 정기' && cycle !== '건별') return { status: 'review_required' };
+    if (!Number.isSafeInteger(contract.amount) || contract.amount <= 0) return { status: 'invalid_amount' };
+    if (['취소', '계약 취소', 'canceled', 'cancelled'].includes(contract.status)) return { status: 'canceled' };
+
+    let occurrenceId;
+    let dueDate;
+    if (cycle === '월 정기') {
+      if (['종료', '계약 종료', 'ended'].includes(contract.status)) return { status: 'ended' };
+      if (!validDate(contract.startDate)) return { status: 'invalid_start_date' };
+      if (contract.startDate.slice(0, 7) > month) return { status: 'not_started' };
+      if (contract.endDate && !validDate(contract.endDate)) return { status: 'invalid_end_date' };
+      if (contract.endDate && contract.endDate.slice(0, 7) < month) return { status: 'ended' };
+      dueDate = `${month}-01`;
+    } else {
+      const firstDate = [contract.workDate, contract.paymentDueDate, contract.startDate].find(validDate);
+      if (!firstDate) return { status: 'missing_occurrence_date' };
+      if (firstDate.slice(0, 7) !== month) return { status: 'outside_month' };
+      occurrenceId = typeof contract.occurrenceId === 'string' && contract.occurrenceId.trim() ? contract.occurrenceId.trim() : firstDate.slice(0, 10);
+      dueDate = validDate(contract.paymentDueDate) ? contract.paymentDueDate.slice(0, 10) : firstDate.slice(0, 10);
+    }
+
+    const duplicate = existingInvoices.some(invoice => invoice && invoice.status !== 'void' && invoice.contractId === contract.id && (
+      cycle === '월 정기' ? (!invoice.contractType || invoice.contractType === 'regular') && invoice.billingMonth === month
+        : (!invoice.contractType || invoice.contractType === 'one_off') && invoice.occurrenceId === occurrenceId
+    ));
+    if (duplicate) return { status: 'duplicate' };
+    const key = `${cycle === '월 정기' ? 'regular' : 'one_off'}\u0000${contract.id}\u0000${cycle === '월 정기' ? month : occurrenceId}`;
+    return { status: 'draft', invoice: {
+      id: proposalId(key), contractId: contract.id, contractType: cycle === '월 정기' ? 'regular' : 'one_off',
+      ...(occurrenceId ? { occurrenceId } : {}), billingMonth: month, dueDate, amount: contract.amount,
+      status: 'draft', revision: 1
+    } };
+  }
+
   function summarizeMonth(store, month) {
     if (!validMonth(month)) throw new RangeError('month must be YYYY-MM');
     if (!store || !Array.isArray(store.invoices) || !Array.isArray(store.receipts)) throw new TypeError('ledger store must contain invoices and receipts arrays');
@@ -104,5 +155,5 @@
     return Object.freeze({ month, billed, received, receivable, overpayment, pendingCount, undatedPendingCount });
   }
 
-  return Object.freeze({ summarizeMonth, invoicePaymentState });
+  return Object.freeze({ summarizeMonth, invoicePaymentState, proposeInvoice });
 });
