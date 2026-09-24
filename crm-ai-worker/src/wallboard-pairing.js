@@ -90,10 +90,18 @@ export function createPairingService({repository,now=Date.now}){
    if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
    return run(s=>{if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};s.board={...snapshot,version:expectedVersion+1,publishedAt:now()};return {version:s.board.version,publishedAt:s.board.publishedAt};});
   },
-  async publishIfChanged(input,expectedVersion,identity){
+  async beginRefresh(identity){
+   admin(identity);
+   if(identity.uid!=='server-refresh')fail('FORBIDDEN');
+   const refreshToken=crypto.randomUUID();
+   return run(s=>{s.refreshToken=refreshToken;return {refreshToken};});
+  },
+  async publishIfChanged(input,expectedVersion,identity,refreshToken){
    admin(identity);const snapshot=validatePublication(input);
    if(!Number.isSafeInteger(expectedVersion)||expectedVersion<0)fail('INVALID_INPUT');
+   if(refreshToken!==undefined&&(identity.uid!=='server-refresh'||typeof refreshToken!=='string'||!refreshToken))fail('FORBIDDEN');
    return run(s=>{
+    if(refreshToken!==undefined&&s.refreshToken!==refreshToken)return {error:'STALE_REFRESH'};
     if((s.board?.version||0)!==expectedVersion)return {error:'VERSION_CONFLICT'};
     const prior=s.board;
     if(prior&&JSON.stringify({model:prior.model,playlist:prior.playlist,notice:prior.notice,dataDate:prior.dataDate})===JSON.stringify(snapshot))return {version:prior.version,publishedAt:prior.publishedAt};

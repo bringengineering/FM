@@ -28,9 +28,11 @@ function fixture(overrides={}){
  };
  const stub={fetch:async request=>{
   const command=await request.json();commands.push(command);
+  if(command.action==='begin-refresh')return Response.json({ok:true,refreshToken:'refresh-test-token'});
   if(command.action==='list')return Response.json({ok:true,version,presentation,devices:[]});
   if(command.action==='publish-if-changed'){
    assert.equal(command.input.expectedVersion,version);
+   assert.equal(command.input.refreshToken,'refresh-test-token');
    version+=1;
    return Response.json({ok:true,version,publishedAt:1000+version});
   }
@@ -46,8 +48,8 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.deepEqual(result,{version:1,publishedAt:1001});
  assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','data/serviceRecords','projects','teamProfiles','workOrders']);
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
- assert.equal(f.commands[1].action,'publish-if-changed');
- const snapshot=f.commands[1].input.snapshot;
+ assert.equal(f.commands[2].action,'publish-if-changed');
+ const snapshot=f.commands[2].input.snapshot;
  assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
  assert.deepEqual(snapshot.model.schedule.today[0].title,'점검');
