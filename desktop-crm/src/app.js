@@ -4827,11 +4827,16 @@
       : orders;
     // The separate server projection keeps raw validation inputs and notes.
     // Do not fall back to normalized card records when it is unavailable.
-    const performanceProjectOrders = (workOrderState.performanceOrders || []).filter(item => item &&
-      (selected === "__all" || (selected === "__none" ? !item.projectId : String(item.projectId || "").trim() === selected)));
+    const projectReportCore = window.BringProjectWeeklyReportCore;
+    const performanceProjectOrders = selected === "__all" ? (workOrderState.performanceOrders || []) : selected === "__none"
+      ? (workOrderState.performanceOrders || []).filter(item => item && !item.projectId)
+      : projectReportCore && projectReportCore.selectProjectOrders
+        ? projectReportCore.selectProjectOrders({ orders: workOrderState.performanceOrders, projectId: selected })
+        : (workOrderState.performanceOrders || []).filter(item => item && String(item.projectId || "").trim() === selected);
     const performanceScoped = workOrderState.scope === "mine"
       ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
       : performanceProjectOrders;
+    const reportSourceOrders = performanceScoped;
     const period = workOrderState.performancePeriod || "all";
     const periodCore = window.BringWeeklyPerformanceCore;
     const periodSummary = periodCore && periodCore.selectPeriod
@@ -4893,7 +4898,13 @@
       </section>
       <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${classificationReady ? `${workspace.classificationNeeded.length}건` : "조회 확인 필요"}</summary><p>기존 업무 연결은 자동으로 바꾸지 않습니다. 원본을 열어 확인한 뒤, 미완료 업무는 관리자가 기존 수정 화면에서 프로젝트 연결을 변경할 수 있습니다.</p>${classificationReady ? workspace.classificationNeeded.length ? `<div class="project-workspace-action-list project-workspace-classification-list">${workspace.classificationNeeded.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><strong>${esc(item.title || "제목 없는 업무")}</strong><small>${esc(workspaceCore.classificationLabel(item, projects))}${item.projectId ? ` · ${esc(item.projectId)}` : ""} · 원본 업무 보기</small></button>`).join("")}</div>` : `<p>분류가 필요한 업무가 없습니다.</p>` : `<p>분류 목록을 확인하려면 업무를 다시 불러와 주세요.</p>`}${orphans ? `<button type="button" class="mini-button" data-wo-project="__none">연결 없는 업무 ${orphans}건 보기</button>` : ""}<div class="wo-project-tabs">${tabs}</div></details>
     </div>` : "";
-    const reportPanel = () => weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today);
+    const reportPanel = () => {
+      const reportCore = window.BringProjectWeeklyReportCore;
+      const projectWeeklyReport = actualProject && reportCore && workOrderState.performanceAvailable && workOrderState.loaded && !workOrderState.loading && !workOrderState.error
+        ? reportCore.summarize({ orders: reportSourceOrders, projectId: project.id, asOf: today, period }) : null;
+      const projectReportHtml = !actualProject ? "" : `<section class="project-weekly-report" aria-label="프로젝트 주간 근거"><header><div><span>서버 원본 업무 · 중복 ID 제외</span><h3>프로젝트 보고 근거</h3></div><small>${period === "all" ? "전체 기간" : projectWeeklyReport && projectWeeklyReport.available ? `${esc(projectWeeklyReport.range.start)} ~ ${esc(projectWeeklyReport.range.end)}` : "기간 확인 필요"}</small></header>${projectWeeklyReport && projectWeeklyReport.available ? `<p>현재 조회 권한 범위 · 대상 ${projectWeeklyReport.counts.total}건 · 검수 완료 ${projectWeeklyReport.counts.done}건 · 제출/검수 대기 ${projectWeeklyReport.counts.submitted}건 · 보완 요청 ${projectWeeklyReport.counts.returned}건 · 진행/배정 ${projectWeeklyReport.counts.open}건</p>${projectWeeklyReport.people.length ? `<div class="project-weekly-report-people">${projectWeeklyReport.people.map(person => { const member = workOrderState.members.find(item => item && item.uid === person.uid); return `<details><summary><strong>${esc(member ? member.displayName || member.email || person.uid : person.uid || "담당 미정")}</strong><span>전체 ${person.counts.total}건 · 검수 완료 ${person.counts.done}건 · 제출 ${person.counts.submitted}건 · 보완 ${person.counts.returned}건</span></summary><div class="project-weekly-report-sources">${person.sourceOrderIds.map(id => `<button type="button" data-wo-open-card="${esc(id)}">원본 업무 ${esc(id)}</button>`).join("")}</div></details>`; }).join("")}</div>` : `<p>이 기간에 연결된 업무가 없습니다.</p>`}` : `<p>서버 원본을 확인하지 못했습니다. 새로고침 후 다시 확인해 주세요. 확인되지 않은 성과를 0건으로 표시하지 않습니다.</p>`}</section>`;
+      return projectReportHtml + weeklyPerformancePanel(performanceScoped, `${selected === "__all" ? "전체 프로젝트" : project ? project.name : "프로젝트 없음"} · ${workOrderState.scope === "mine" ? "내 것만" : "전체 (현재 조회 권한 범위)"}`, today);
+    };
     const planningPanel = () => `<p class="wo-progress-definition">입력된 진행률 평균: ${workOrderState.loading || workOrderState.error || !workOrderState.loaded ? "조회 확인 필요" : summary.total ? `${summary.progress}%` : "대상 없음"} · 업무에 입력한 진행률의 평균이며, 완료 건수 비율과 다릅니다.</p>
       ${dueSoonBoard(P, scoped, today)}
       ${directiveBoard(P, today)}
