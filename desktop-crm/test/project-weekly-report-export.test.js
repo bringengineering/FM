@@ -23,10 +23,21 @@ test('submitted report cannot be exported as approved', () => {
 });
 
 test('TV projection counts only approved reports and drops private narratives', () => {
-  const tv = Export.tvProjection([report,{...report,id:'submitted-2',status:'submitted',summary:'private secret'}]);
+  const tv = Export.tvProjection([report,{...report,id:'submitted-2',status:'submitted',summary:'private secret'}],'2026-09-24');
   assert.equal(tv.approvedReports,1);
   assert.equal(tv.approvedDone,1);
   assert.equal(tv.approvedTotal,2);
   assert.equal(JSON.stringify(tv).includes('private secret'),false);
   assert.equal(JSON.stringify(tv).includes('완료 요약'),false);
+});
+
+test('TV projection scopes current week, latest revision, and unique work orders', () => {
+  const older={...report,id:'older',approvedAt:'2026-09-22T00:00:00Z',summary:'private older'};
+  const revised={...report,id:'revised',approvedAt:'2026-09-24T01:00:00Z',summary:'private revised'};
+  const otherAuthor={...report,id:'other-author',authorUid:'member-2',summary:'private other',snapshot:{...report.snapshot,sources:[report.snapshot.sources[0]],counts:{total:1,done:1,submitted:0,returned:0,open:0}}};
+  const lastWeek={...report,id:'last-week',snapshot:{...report.snapshot,range:{start:'2026-09-14',end:'2026-09-20'}}};
+  const tv=Export.tvProjection([older,revised,otherAuthor,lastWeek,{...report,id:'submitted',status:'submitted'}],'2026-09-24');
+  assert.deepEqual(tv,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:2,approvedDone:1});
+  assert.equal(JSON.stringify(tv).includes('private'),false);
+  assert.equal(Export.tvProjection([report],'bad-date').available,false);
 });

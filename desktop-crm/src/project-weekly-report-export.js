@@ -35,10 +35,30 @@ function bundle(input) {
   };
 }
 
-function tvProjection(reports) {
-  if (!Array.isArray(reports)) return {available:false,approvedReports:null,approvedDone:null,approvedTotal:null};
-  const approvedReports=reports.filter(report=>report && report.status==='approved' && report.approvedAt && Core.validateReport(report).ok);
-  return {available:true,approvedReports:approvedReports.length,approvedDone:approvedReports.reduce((sum,report)=>sum+report.snapshot.counts.done,0),approvedTotal:approvedReports.reduce((sum,report)=>sum+report.snapshot.counts.total,0)};
+function tvProjection(reports,today) {
+  const unavailable={available:false,periodStart:null,periodEnd:null,approvedReports:null,approvedTotal:null,approvedDone:null};
+  if (!Array.isArray(reports) || typeof today!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return unavailable;
+  const date=new Date(`${today}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==today) return unavailable;
+  const start=new Date(date);
+  start.setUTCDate(start.getUTCDate()-(start.getUTCDay()+6)%7);
+  const end=new Date(start);
+  end.setUTCDate(end.getUTCDate()+6);
+  const periodStart=start.toISOString().slice(0,10);
+  const periodEnd=end.toISOString().slice(0,10);
+  const latest=new Map();
+  for (const report of reports) {
+    if (!report || report.status!=='approved' || !report.approvedAt || !Core.validateReport(report).ok || report.snapshot.range.start!==periodStart || report.snapshot.range.end!==periodEnd) continue;
+    const key=`${report.projectId}\u0000${report.authorUid}\u0000${periodStart}`;
+    const prior=latest.get(key);
+    if (!prior || report.approvedAt>prior.approvedAt || (report.approvedAt===prior.approvedAt && report.id>prior.id)) latest.set(key,report);
+  }
+  const sources=new Map();
+  for (const report of latest.values()) for (const source of report.snapshot.sources) {
+    const prior=sources.get(source.id);
+    if (!prior || report.approvedAt>prior.approvedAt) sources.set(source.id,{status:source.status,approvedAt:report.approvedAt});
+  }
+  return {available:true,periodStart,periodEnd,approvedReports:latest.size,approvedTotal:sources.size,approvedDone:[...sources.values()].filter(source=>source.status==='done').length};
 }
 
 module.exports={bundle,tvProjection};
