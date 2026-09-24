@@ -2296,7 +2296,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const reader = environment.authenticatedContext("wallboard-reader", crmClaims("wallboard-reader@bring.test")).database();
     const draftPath = "crmCompany/companyStrategyDrafts/2026";
     const publishedPath = "crmCompany/companyStrategyPublications/2026";
-    const draft = (revision: number) => ({year:"2026",revision,vision:"공간 운영을 투명하게",organization:{"crm-admin":{uid:"crm-admin",role:"대표",reportsToUid:""}},goals:{g1:{id:"g1",period:"annual",title:"건물 데이터 3동",unit:"count",baseline:0,target:3,current:1,source:"CRM 건물 ID"}},updatedAt:NOW,updatedBy:"crm-admin"});
+    const adminKey = `m_${Buffer.from('crm-admin').toString('base64url')}`;
+    const dottedKey = `m_${Buffer.from('member.with.dot').toString('base64url')}`;
+    const draft = (revision: number) => ({year:"2026",revision,vision:"공간 운영을 투명하게",organization:{[adminKey]:{uid:"crm-admin",role:"대표",reportsToUid:""}},goals:{g1:{id:"g1",period:"annual",title:"건물 데이터 3동",unit:"count",baseline:0,target:3,current:1,source:"CRM 건물 ID"}},updatedAt:NOW,updatedBy:"crm-admin"});
     await assertSucceeds(set(ref(admin,draftPath),draft(1)));
     await assertSucceeds(get(ref(admin,draftPath)));
     await assertFails(get(ref(member,draftPath)));
@@ -2306,8 +2308,13 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(admin,draftPath),{...draft(2),privateCustomerNote:"비공개"}));
     await assertFails(set(ref(admin,draftPath),{...draft(2),vision:"가".repeat(501)}));
     await assertSucceeds(set(ref(admin,draftPath),draft(2)));
-    const publication={...draft(1),revision:1,publishedAt:NOW,publishedBy:"crm-admin",sourceRevision:2};
+    await assertSucceeds(set(ref(admin,draftPath),{...draft(3),organization:{[dottedKey]:{uid:"member.with.dot",role:"현장 담당",reportsToUid:""}}}));
+    const publication={...draft(3),organization:{[dottedKey]:{uid:"member.with.dot",role:"현장 담당",reportsToUid:""}},revision:1,publishedAt:NOW,publishedBy:"crm-admin",sourceRevision:3};
     await assertSucceeds(set(ref(admin,publishedPath),publication));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,vision:"초안과 다른 문구"}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,organization:{[adminKey]:{uid:"crm-admin",role:"다른 역할",reportsToUid:""}}}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,goals:{g1:{...publication.goals.g1,title:"다른 목표"}}}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,goals:{g1:{...publication.goals.g1,period:"H1"}}}));
     await assertSucceeds(get(ref(member,publishedPath)));
     await assertSucceeds(get(ref(viewer,publishedPath)));
     await assertFails(get(ref(reader,publishedPath)));

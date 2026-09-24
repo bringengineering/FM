@@ -47,3 +47,12 @@ test('publication copies the current validated draft and rejects stale approval'
   assert.equal(result.publishedBy,'user-admin');
   await assert.rejects(client('member').publishCompanyStrategy({year:'2026',expectedDraftRevision:2}),{code:'ACCESS_DENIED'});
 });
+
+test('organization members with dotted Firebase auth UIDs use safe child keys',async()=>{
+ const remote=client();let written;
+ remote.dbReadWithEtag=async()=>({value:null,etag:'"empty"'});
+ remote.dbConditionalPut=async(_location,value)=>{written=value;return true;};
+ await remote.saveCompanyStrategyDraft({...draft,organization:[{uid:'member.with.dot',role:'현장 담당',reportsToUid:''}],expectedRevision:0});
+ assert.deepEqual(Object.keys(written.organization),[`m_${Buffer.from('member.with.dot').toString('base64url')}`]);
+ assert.equal(Object.values(written.organization)[0].uid,'member.with.dot');
+});

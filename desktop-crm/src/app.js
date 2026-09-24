@@ -4376,10 +4376,10 @@
     scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
     projectReports: [], projectReportsLoaded: false, projectReportsLoading: false, projectReportsError: "", projectReportEditingId: "",
   };
-  let companyStrategyState = { year:String(new Date().getFullYear()), loaded:false, loading:false, error:'', draft:null, published:null, formDraft:null, editing:false, dirty:false, busy:false };
+  let companyStrategyState = { year:String(new Date().getFullYear()), loaded:false, loading:false, refreshedAt:0, error:'', draft:null, published:null, formDraft:null, editing:false, dirty:false, busy:false };
 
   function resetCompanyStrategyState() {
-    companyStrategyState={year:String(new Date().getFullYear()),loaded:false,loading:false,error:'',draft:null,published:null,formDraft:null,editing:false,dirty:false,busy:false};
+    companyStrategyState={year:String(new Date().getFullYear()),loaded:false,loading:false,refreshedAt:0,error:'',draft:null,published:null,formDraft:null,editing:false,dirty:false,busy:false};
   }
 
   const strategyRecordForm = record => ({
@@ -4401,6 +4401,7 @@
       state.draft=result && result.draft || null;
       state.published=result && result.published || null;
       state.loaded=true;
+      state.refreshedAt=Date.now();
     } catch(error) {
       if (generation!==authGeneration || state!==companyStrategyState) return;
       state.error=error && error.message || '회사 방향을 불러오지 못했습니다.';
@@ -4436,41 +4437,50 @@
   async function saveCompanyStrategyFromForm(form) {
     if (!workOrderState.admin) return showToast('관리자만 회사 방향을 저장할 수 있습니다.', 'error');
     if (companyStrategyState.busy) return;
+    const state=companyStrategyState, generation=authGeneration;
     const draft=readCompanyStrategyForm(form);
     const checked=window.BringCompanyStrategyCore?.validateDraft(draft);
-    if (!checked?.ok) { companyStrategyState.error=checked?.error || '입력 내용을 확인해 주세요.'; renderWorkOrders(); return; }
-    companyStrategyState.busy=true;
+    if (!checked?.ok) { state.error=checked?.error || '입력 내용을 확인해 주세요.'; renderWorkOrders(); return; }
+    state.busy=true;
+    for (const control of form.querySelectorAll?.('input, select, textarea, button') || []) control.disabled=true;
     try {
-      const saved=await api.saveCompanyStrategyDraft({...checked.draft,expectedRevision:companyStrategyState.draft?.revision || 0});
-      companyStrategyState.draft=saved;
-      companyStrategyState.formDraft=strategyRecordForm(saved);
-      companyStrategyState.dirty=false;
-      companyStrategyState.error='';
+      const saved=await api.saveCompanyStrategyDraft({...checked.draft,expectedRevision:state.draft?.revision || 0});
+      if (generation!==authGeneration || state!==companyStrategyState) return;
+      state.draft=saved;
+      state.formDraft=strategyRecordForm(saved);
+      state.dirty=false;
+      state.error='';
       showToast('회사 방향 초안을 저장했습니다. 아직 직원에게 게시되지 않았습니다.', 'success');
-      renderWorkOrders();
     } catch(error) {
-      companyStrategyState.error=error && error.message || '초안을 저장하지 못했습니다.';
-      companyStrategyState.formDraft=draft;
-      renderWorkOrders();
-    } finally { companyStrategyState.busy=false; }
+      if (generation!==authGeneration || state!==companyStrategyState) return;
+      state.error=error && error.message || '초안을 저장하지 못했습니다.';
+      state.formDraft=draft;
+    } finally {
+      state.busy=false;
+      if (generation===authGeneration && state===companyStrategyState) renderWorkOrders();
+    }
   }
 
   async function publishCompanyStrategy() {
     if (!workOrderState.admin) return showToast('관리자만 회사 방향을 게시할 수 있습니다.', 'error');
     if (companyStrategyState.busy || companyStrategyState.dirty || !companyStrategyState.draft) return showToast('초안을 먼저 저장해 주세요.', 'error');
+    const state=companyStrategyState, generation=authGeneration;
     const confirmed=window.confirm('저장된 회사 방향을 직원에게 게시할까요? TV에는 아직 표시되지 않습니다.');
     if (!confirmed) return;
-    companyStrategyState.busy=true;
+    state.busy=true;
     try {
-      const published=await api.publishCompanyStrategy({year:companyStrategyState.year,expectedDraftRevision:companyStrategyState.draft.revision,expectedPublicationRevision:companyStrategyState.published?.revision || 0});
-      companyStrategyState.published=published;
-      companyStrategyState.error='';
+      const published=await api.publishCompanyStrategy({year:state.year,expectedDraftRevision:state.draft.revision,expectedPublicationRevision:state.published?.revision || 0});
+      if (generation!==authGeneration || state!==companyStrategyState) return;
+      state.published=published;
+      state.error='';
       showToast('직원용 회사 방향을 게시했습니다.', 'success');
-      renderWorkOrders();
     } catch(error) {
-      companyStrategyState.error=error && error.message || '게시하지 못했습니다.';
-      renderWorkOrders();
-    } finally { companyStrategyState.busy=false; }
+      if (generation!==authGeneration || state!==companyStrategyState) return;
+      state.error=error && error.message || '게시하지 못했습니다.';
+    } finally {
+      state.busy=false;
+      if (generation===authGeneration && state===companyStrategyState) renderWorkOrders();
+    }
   }
 
   function renderCompanyStrategy() {
@@ -4479,11 +4489,12 @@
     const approved=published && C?.projectStrategy(strategyRecordForm(published));
     const draft=state.formDraft || (state.draft ? strategyRecordForm(state.draft) : {year:state.year,vision:'',organization:[],goals:[]});
     const memberOptions=workOrderState.members.filter(item=>item && item.uid).map(item=>({uid:String(item.uid),name:String(item.displayName || item.name || item.email || item.uid)}));
+    const memberName=uid=>memberOptions.find(item=>item.uid===uid)?.name || uid;
     const orgRow=person=>`<div class="company-strategy-row" data-strategy-person><label>팀원<select name="uid" required><option value="">팀원 선택</option>${memberOptions.map(member=>`<option value="${esc(member.uid)}"${person.uid===member.uid?' selected':''}>${esc(member.name)}</option>`).join('')}</select></label><label>역할<input name="role" maxlength="60" value="${esc(person.role)}" placeholder="예: 현장 데이터 담당" required></label><label>보고 대상<select name="reportsToUid"><option value="">최상위</option>${memberOptions.map(member=>`<option value="${esc(member.uid)}"${person.reportsToUid===member.uid?' selected':''}>${esc(member.name)}</option>`).join('')}</select></label><button type="button" class="mini-button" data-strategy-remove-person>제거</button></div>`;
     const goalRow=goal=>`<div class="company-strategy-row company-strategy-goal-row" data-strategy-goal="${esc(goal.id)}"><label>기간<select name="period"><option value="annual"${goal.period==='annual'?' selected':''}>연간</option><option value="H1"${goal.period==='H1'?' selected':''}>상반기</option><option value="H2"${goal.period==='H2'?' selected':''}>하반기</option></select></label><label>목표<input name="title" maxlength="200" value="${esc(goal.title)}" required></label><label>단위<select name="unit">${[['count','건'],['percent','%'],['krw','원'],['day','일'],['milestone','마일스톤']].map(([unit,label])=>`<option value="${unit}"${goal.unit===unit?' selected':''}>${label}</option>`).join('')}</select></label><label>기준값<input name="baseline" type="number" step="any" value="${goal.baseline ?? ''}"></label><label>목표값<input name="target" type="number" step="any" value="${goal.target ?? ''}"></label><label>확인값<input name="current" type="number" step="any" value="${goal.current ?? ''}"></label><label>수치 출처<input name="source" maxlength="200" value="${esc(goal.source)}" placeholder="CRM 기록·보고서 링크"></label><button type="button" class="mini-button" data-strategy-remove-goal>제거</button></div>`;
-    return `<section class="company-strategy office-panel" aria-label="회사 방향"><header><div><span>승인된 원본만 직원에게 표시</span><h3>회사 방향 · ${esc(state.year)}</h3></div>${workOrderState.admin?`<button type="button" class="mini-button" data-strategy-refresh${state.editing?' disabled':''}>다시 불러오기</button>`:''}</header>
+    return `<section class="company-strategy office-panel" aria-label="회사 방향"><header><div><span>승인된 원본만 직원에게 표시</span><h3>회사 방향 · ${esc(state.year)}</h3></div><button type="button" class="mini-button" data-strategy-refresh${state.editing?' disabled':''}>다시 불러오기</button></header>
       ${state.loading?'<p role="status">회사 방향을 불러오는 중입니다.</p>':state.error?`<p role="alert" class="company-strategy-error">${esc(state.error)}</p>`:''}
-      ${approved?.available?`<div class="company-strategy-approved"><span>게시됨 · ${esc(published.publishedAt || '')}</span><p>${esc(approved.vision)}</p><div class="company-strategy-goals">${approved.goals.map(goal=>`<article><small>${goal.period==='annual'?'연간':goal.period==='H1'?'상반기':'하반기'}</small><strong>${esc(goal.title)}</strong><span>${goal.percent===null?'실적 확인 필요':`${goal.percent}%`}</span></article>`).join('')}</div></div>`:state.loaded?'<p>게시된 회사 방향이 없습니다. 관리자가 초안을 작성한 뒤 게시하면 직원에게 표시됩니다.</p>':'<p>회사 방향 조회 확인 필요 · 비어 있는 목표로 표시하지 않습니다.</p>'}
+      ${approved?.available?`<div class="company-strategy-approved"><span>게시됨 · ${esc(published.publishedAt || '')}</span><p>${esc(approved.vision)}</p>${approved.organization.length?`<div class="company-strategy-organization" aria-label="조직 역할과 보고 관계"><strong>조직·담당</strong><div>${approved.organization.map(person=>`<article><b>${esc(memberName(person.uid))}</b><span>${esc(person.role)}</span><small>${person.reportsToUid?`보고 대상 · ${esc(memberName(person.reportsToUid))}`:'최상위 책임'}</small></article>`).join('')}</div></div>`:''}<div class="company-strategy-goals">${approved.goals.map(goal=>`<article><small>${goal.period==='annual'?'연간':goal.period==='H1'?'상반기':'하반기'}</small><strong>${esc(goal.title)}</strong><span>${goal.percent===null?'실적 확인 필요':`${goal.percent}%`}</span></article>`).join('')}</div></div>`:state.loaded?'<p>게시된 회사 방향이 없습니다. 관리자가 초안을 작성한 뒤 게시하면 직원에게 표시됩니다.</p>':'<p>회사 방향 조회 확인 필요 · 비어 있는 목표로 표시하지 않습니다.</p>'}
       ${workOrderState.admin?`<div class="company-strategy-admin"><p>관리자 초안 ${state.draft?`· ${state.draft.revision}차 저장본`:'· 아직 없음'} · 저장만으로 게시되지 않습니다. TV 표시는 별도 검증 후 연결합니다.</p>${!state.editing?`<button type="button" class="mini-button" data-strategy-edit>초안 ${state.draft?'수정':'작성'}</button>`:`<form data-company-strategy-form><label class="company-strategy-vision">비전<textarea name="vision" maxlength="500" rows="3" placeholder="회사가 이루려는 방향을 입력하세요">${esc(draft.vision)}</textarea></label><h4>조직·담당 역할</h4><div class="company-strategy-rows">${draft.organization.map(orgRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-person>+ 팀원 추가</button><h4>연간·반기 목표</h4><div class="company-strategy-rows">${draft.goals.map(goalRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-goal>+ 목표 추가</button><div class="company-strategy-actions"><button type="submit" class="primary-button"${state.busy?' disabled':''}>초안 저장</button><button type="button" class="mini-button" data-strategy-publish${state.busy||state.dirty||!state.draft?' disabled':''}>직원에게 게시</button><button type="button" class="mini-button" data-strategy-cancel>닫기</button></div><p>마일스톤은 숫자 진행률로 계산하지 않습니다. 미확인 실적은 빈칸으로 두고 수치 출처를 명시해 주세요.</p></form>`}</div>`:''}
     </section>`;
   }
@@ -16155,6 +16166,13 @@ document.addEventListener("keydown", event => {
 
   setInterval(() => {
     if (["cases", "payments", "buildings", "pipeline"].includes(currentView) && !document.hidden) refreshOperations({ silent: true });
+  }, 30000);
+
+  setInterval(() => {
+    if (currentView==='workOrders' && !document.hidden && !workOrderTyping()
+      && !workOrderState.capacityEditing && !workOrderState.projectReportEditingId
+      && companyStrategyState.loaded && !companyStrategyState.loading
+      && Date.now()-companyStrategyState.refreshedAt>=30*1000) void loadCompanyStrategy();
   }, 30000);
 
   init();

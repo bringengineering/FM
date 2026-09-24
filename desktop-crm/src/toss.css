@@ -1006,6 +1006,10 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .company-strategy-approved{display:grid;gap:10px;padding:15px;border-radius:12px;background:#F4F8FF}
 .company-strategy-approved>span{color:#1B64DA;font-size:12px;font-weight:700}
 .company-strategy-approved>p{margin:0;font-size:17px;font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+.company-strategy-organization{display:grid;gap:8px;padding-top:5px}
+.company-strategy-organization>strong{font-size:13px}.company-strategy-organization>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.company-strategy-organization article{display:grid;gap:4px;padding:11px;border:1px solid #E5E8EB;border-radius:10px;background:#fff}
+.company-strategy-organization article b{font-size:14px}.company-strategy-organization article span{font-size:12px}.company-strategy-organization article small{color:#52616F}
 .company-strategy-goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
 .company-strategy-goals article{display:grid;gap:5px;padding:12px;border-radius:10px;background:#fff}
 .company-strategy-goals article small{color:#52616F}.company-strategy-goals article strong{overflow-wrap:anywhere}.company-strategy-goals article span{color:#1B64DA;font-weight:700}

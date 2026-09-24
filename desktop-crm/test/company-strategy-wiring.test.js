@@ -2,6 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
 const read=name=>fs.readFileSync(path.join(__dirname,'../src',name),'utf8');
 
 test('strategy actions are narrow IPC methods and the browser loads the validator before app',()=>{
@@ -37,6 +38,7 @@ test('strategy editor follows the existing light card system and stacks on narro
  const css=read('toss.css');
  assert.match(css,/\.company-strategy\{/u);
  assert.match(css,/\.company-strategy-row\{/u);
+ assert.match(css,/\.company-strategy-organization\{/u);
  assert.match(css,/@media\(max-width:760px\).*?company-strategy-row/su);
  assert.match(css,/:focus-visible/u);
 });
@@ -48,4 +50,76 @@ test('authentication change invalidates strategy cache and late reads cannot res
  assert.match(auth,/resetCompanyStrategyState\(\)/u);
  assert.match(load,/const generation=authGeneration/u);
  assert.match(load,/generation!==authGeneration/u);
+});
+
+test('member can retry a failed published-strategy read without draft privileges',()=>{
+ const app=read('app.js');
+ const fn=app.match(/  function renderCompanyStrategy\(\) \{[\s\S]*?\n  \}/u)?.[0];
+ assert.ok(fn);
+ const context={companyStrategyState:{year:'2026',loaded:false,loading:false,error:'연결 오류',draft:null,published:null,editing:false},workOrderState:{admin:false,members:[]},window:{BringCompanyStrategyCore:require('../src/company-strategy-core')},esc:String,strategyRecordForm:()=>({year:'2026',vision:'',organization:[],goals:[]})};
+ vm.createContext(context);vm.runInContext(fn,context);
+ const html=context.renderCompanyStrategy();
+ assert.match(html,/data-strategy-refresh/u);
+ assert.doesNotMatch(html,/data-strategy-edit|data-strategy-publish|data-company-strategy-form/u);
+});
+
+test('successful draft save re-renders after busy clears so publish is enabled',async()=>{
+ const app=read('app.js');
+ const fn=app.slice(app.indexOf('async function saveCompanyStrategyFromForm('),app.indexOf('async function publishCompanyStrategy('));
+ const state={year:'2026',draft:null,formDraft:null,dirty:true,busy:false,error:''};
+ const rendered=[];
+ const draft={year:'2026',vision:'비전',organization:[],goals:[]};
+ const context={companyStrategyState:state,authGeneration:1,workOrderState:{admin:true},readCompanyStrategyForm:()=>draft,window:{BringCompanyStrategyCore:{validateDraft:()=>({ok:true,draft})}},api:{saveCompanyStrategyDraft:async()=>({...draft,revision:1})},strategyRecordForm:()=>draft,showToast:()=>{},renderWorkOrders:()=>rendered.push(state.busy)};
+ vm.createContext(context);vm.runInContext(fn,context);
+ await context.saveCompanyStrategyFromForm({});
+ assert.equal(state.busy,false);
+ assert.equal(rendered.at(-1),false,'last render must expose enabled publish action');
+});
+
+test('late save failure after account switch cannot restore the old admin form',async()=>{
+ const app=read('app.js');
+ const fn=app.slice(app.indexOf('async function saveCompanyStrategyFromForm('),app.indexOf('async function publishCompanyStrategy('));
+ const old={year:'2026',draft:null,formDraft:null,dirty:true,busy:false,error:''};
+ const newer={year:'2026',draft:null,formDraft:null,dirty:false,busy:false,error:''};
+ const raw={year:'2026',vision:'old-admin-secret',organization:[],goals:[]};
+ let rejectSave; const delayed=new Promise((_,reject)=>{rejectSave=reject;});
+ const context={companyStrategyState:old,authGeneration:1,workOrderState:{admin:true},readCompanyStrategyForm:()=>raw,window:{BringCompanyStrategyCore:{validateDraft:()=>({ok:true,draft:raw})}},api:{saveCompanyStrategyDraft:()=>delayed},showToast:()=>{},renderWorkOrders:()=>{}};
+ vm.createContext(context);vm.runInContext(fn,context);
+ const pending=context.saveCompanyStrategyFromForm({});
+ context.companyStrategyState=newer;context.authGeneration=2;rejectSave(new Error('old-session failure'));
+ await pending;
+ assert.equal(newer.formDraft,null);
+ assert.equal(newer.error,'');
+});
+
+test('employee sees the published reporting relationship without draft controls',()=>{
+ const app=read('app.js');
+ const fn=app.match(/  function renderCompanyStrategy\(\) \{[\s\S]*?\n  \}/u)?.[0];
+ const record={year:'2026',vision:'방향',organization:{ceo:{uid:'ceo',role:'대표',reportsToUid:''},field:{uid:'field',role:'현장 총괄',reportsToUid:'ceo'}},goals:{g1:{id:'g1',period:'annual',title:'현장 기록',unit:'count',baseline:0,target:10,current:null,source:'CRM'}}};
+ const context={companyStrategyState:{year:'2026',loaded:true,loading:false,error:'',draft:null,published:record,editing:false},workOrderState:{admin:false,members:[{uid:'ceo',displayName:'대표님'},{uid:'field',displayName:'우중님'}]},window:{BringCompanyStrategyCore:require('../src/company-strategy-core')},esc:String,strategyRecordForm:value=>({...value,organization:Object.values(value.organization),goals:Object.values(value.goals)})};
+ vm.createContext(context);vm.runInContext(fn,context);
+ const html=context.renderCompanyStrategy();
+ assert.match(html,/우중님/u);assert.match(html,/현장 총괄/u);assert.match(html,/대표님/u);
+ assert.doesNotMatch(html,/data-strategy-edit|data-strategy-publish/u);
+});
+
+test('draft controls lock immediately while an asynchronous save is pending',async()=>{
+ const app=read('app.js');
+ const fn=app.slice(app.indexOf('async function saveCompanyStrategyFromForm('),app.indexOf('async function publishCompanyStrategy('));
+ const controls=[{disabled:false},{disabled:false}];
+ const form={querySelectorAll:()=>controls};
+ const draft={year:'2026',vision:'비전',organization:[],goals:[]};
+ let complete;const delayed=new Promise(resolve=>{complete=resolve;});
+ const context={companyStrategyState:{year:'2026',draft:null,busy:false,dirty:true},authGeneration:1,workOrderState:{admin:true},readCompanyStrategyForm:()=>draft,window:{BringCompanyStrategyCore:{validateDraft:()=>({ok:true,draft})}},api:{saveCompanyStrategyDraft:()=>delayed},strategyRecordForm:()=>draft,showToast:()=>{},renderWorkOrders:()=>{}};
+ vm.createContext(context);vm.runInContext(fn,context);
+ const pending=context.saveCompanyStrategyFromForm(form);
+ assert.ok(controls.every(control=>control.disabled));
+ complete({...draft,revision:1});await pending;
+});
+
+test('open project workspace polls published strategy without interrupting editors',()=>{
+ const app=read('app.js');
+ assert.match(app,/companyStrategyState\.refreshedAt/u);
+ assert.match(app,/currentView==='workOrders' && !document\.hidden && !workOrderTyping\(\)/u);
+ assert.match(app,/Date\.now\(\)-companyStrategyState\.refreshedAt>=30\*1000/u);
 });

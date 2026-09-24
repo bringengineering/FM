@@ -14,7 +14,7 @@ const ProjectCore = require("./project-core");
 const CompanyStrategyCore = require("./company-strategy-core");
 function companyStrategyWireFields(draft) {
   const record = { year:draft.year, vision:draft.vision };
-  if (draft.organization.length) record.organization = Object.fromEntries(draft.organization.map(person => [person.uid, person]));
+  if (draft.organization.length) record.organization = Object.fromEntries(draft.organization.map(person => [`m_${Buffer.from(person.uid, 'utf8').toString('base64url')}`, person]));
   if (draft.goals.length) record.goals = Object.fromEntries(draft.goals.map(goal => [goal.id, Object.fromEntries(Object.entries(goal).filter(([,value]) => value !== null))]));
   return record;
 }
