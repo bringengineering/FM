@@ -3858,6 +3858,28 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.transactionPaths).not.toContain("");
   });
 
+  it("forwards a billing return command to the atomic ledger transaction", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "billing_admin", email: "admin@bringcare.kr", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/billing_admin", {
+      enabled: true, role: "admin", email: "admin@bringcare.kr",
+    });
+    registrations.pathValues.set("crmCompany/billingLedger", { invoices: { "invoice-1": {
+      id: "invoice-1", contractId: "contract-1", contractType: "regular",
+      billingMonth: "2026-09", dueDate: "2026-09-30", amount: 100000,
+      status: "draft", revision: 1, updatedAt: "2026-09-25T00:00:00.000Z", updatedBy: "billing_member",
+    } }, receipts: {} });
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(canonicalHttpRequest({
+      action: "return", kind: "invoice", record: { id: "invoice-1" },
+      reason: "청구 증빙을 다시 확인해 주세요", requestId: "return-1", expectedRevision: 1,
+    }), output.response);
+    expect(output.state).toMatchObject({ status: 200, body: { ok: true, result: { record: {
+      status: "draft", returnPending: true,
+    } } } });
+  });
+
   it.each([
     ["non-JSON", canonicalHttpRequest({}, { headers: { "content-type": "text/plain", authorization: "Bearer current-project-id-token" } }), "billing_json_required"],
     ["missing body", { ...canonicalHttpRequest({}), rawBody: undefined }, "billing_body_invalid"],

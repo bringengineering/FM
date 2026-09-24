@@ -3785,8 +3785,10 @@ export const commitBillingLedgerMutation = onRequest(
       }, access);
       const input = isRecord(body) ? body : {};
       const command: BillingMutationCommand = {
+        action: input.action as BillingMutationCommand["action"],
         kind: input.kind as BillingMutationCommand["kind"],
         record: isRecord(input.record) ? input.record : {},
+        reason: input.reason as string,
         expectedRevision: input.expectedRevision as number,
         requestId: input.requestId as string,
         actor,

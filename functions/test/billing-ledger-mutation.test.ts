@@ -14,6 +14,105 @@ const invoice = {
 };
 
 describe("atomic billing ledger mutation", () => {
+  it("returns a draft without changing its business fields and records a server-owned reason", () => {
+    const created = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "create-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const returned = reduceBillingLedgerMutation(created.ledger, {
+      action: "return", kind: "invoice", record: { id: invoice.id }, expectedRevision: 1,
+      requestId: "return-1", reason: "금액 증빙을 다시 확인해 주세요",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    expect(returned.record).toMatchObject({
+      amount: 100000, status: "draft", revision: 2, returnPending: true,
+      returnHistory: { "return-1": { reason: "금액 증빙을 다시 확인해 주세요", returnedBy: "admin-1", returnedAt: NOW, revision: 2 } },
+    });
+  });
+
+  it("requires an admin and a meaningful reason to return a draft", () => {
+    const created = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "create-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const command = { action: "return" as const, kind: "invoice" as const,
+      record: { id: invoice.id }, expectedRevision: 1, requestId: "return-1",
+      reason: "증빙 다시 확인", actor: { uid: "admin-1", role: "admin" as const }, now: NOW };
+    expect(() => reduceBillingLedgerMutation(created.ledger, {
+      ...command, actor: { uid: "member-1", role: "member" },
+    })).toThrowError("billing_access_forbidden");
+    expect(() => reduceBillingLedgerMutation(created.ledger, { ...command, reason: "짧음" }))
+      .toThrowError("billing_invalid_return");
+    expect(() => reduceBillingLedgerMutation(created.ledger, {
+      ...command, record: { ...invoice, amount: 1 },
+    })).toThrowError("billing_invalid_return");
+  });
+
+  it("replays the same return once and rejects reused request ids with different reasons", () => {
+    const created = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "create-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const command = { action: "return" as const, kind: "invoice" as const,
+      record: { id: invoice.id }, expectedRevision: 1, requestId: "return-1",
+      reason: "증빙을 다시 확인해 주세요", actor: { uid: "admin-1", role: "admin" as const }, now: NOW };
+    const returned = reduceBillingLedgerMutation(created.ledger, command);
+    expect(reduceBillingLedgerMutation(returned.ledger, command)).toMatchObject({ repeated: true, record: returned.record });
+    const corrected = reduceBillingLedgerMutation(returned.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 120000 }, expectedRevision: 2,
+      requestId: "corrected-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const lateReplay = reduceBillingLedgerMutation(corrected.ledger, command);
+    expect(lateReplay.repeated).toBe(true);
+    expect(lateReplay.ledger).toEqual(corrected.ledger);
+    expect(lateReplay.record.revision).toBe(3);
+    expect(() => reduceBillingLedgerMutation(returned.ledger, { ...command, reason: "금액도 확인해 주세요" }))
+      .toThrowError("billing_request_id_conflict");
+  });
+
+  it("keeps a returned draft pending on a no-op edit and blocks approval", () => {
+    const created = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "create-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const returned = reduceBillingLedgerMutation(created.ledger, {
+      action: "return", kind: "invoice", record: { id: invoice.id }, expectedRevision: 1,
+      requestId: "return-1", reason: "증빙을 다시 확인해 주세요",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    const noOp = reduceBillingLedgerMutation(returned.ledger, {
+      kind: "invoice", record: invoice, expectedRevision: 2, requestId: "save-2",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(noOp.record.returnPending).toBe(true);
+    expect(() => reduceBillingLedgerMutation(noOp.ledger, {
+      kind: "invoice", record: { ...invoice, status: "approved" }, expectedRevision: 3,
+      requestId: "approve-3", actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_return_pending");
+  });
+
+  it("preserves return history after a substantive correction and then permits approval", () => {
+    const created = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "create-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const returned = reduceBillingLedgerMutation(created.ledger, {
+      action: "return", kind: "invoice", record: { id: invoice.id }, expectedRevision: 1,
+      requestId: "return-1", reason: "증빙을 다시 확인해 주세요",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    const corrected = reduceBillingLedgerMutation(returned.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 120000 }, expectedRevision: 2,
+      requestId: "save-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(corrected.record.returnPending).toBe(false);
+    expect(corrected.record.returnHistory).toEqual(returned.record.returnHistory);
+    const approved = reduceBillingLedgerMutation(corrected.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 120000, status: "approved" }, expectedRevision: 3,
+      requestId: "approve-3", actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    expect(approved.record).toMatchObject({ status: "approved", returnPending: false, returnHistory: returned.record.returnHistory });
+  });
   it("creates one draft and replays the same request without increasing revision", () => {
     const command = {
       kind: "invoice" as const,

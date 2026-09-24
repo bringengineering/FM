@@ -19,7 +19,7 @@ const READ_OR_CONTROL = [
 const MUTATIONS = [
   'crm:project-weekly-report-save',
   'crm:company-strategy-draft-save','crm:company-strategy-publish',
-  'crm:billing-invoice-save','crm:billing-receipt-save',
+  'crm:billing-invoice-save','crm:billing-receipt-save','crm:billing-draft-return',
   'crm:wallboard-admin',
   'crm:work-outcome-draft-save','crm:work-outcome-draft-clear',
   'crm:building-atlas-save',

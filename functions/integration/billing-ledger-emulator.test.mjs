@@ -92,6 +92,28 @@ test('concurrent manager approvals of one invoice commit exactly one approval', 
   assert.ok(['admin-1', 'admin-2'].includes(saved.invoices['invoice-1'].approvedBy));
 });
 
+test('concurrent return and approval of one draft cannot both commit', async () => {
+  const ref = testRoot.child('return-versus-approval');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  const attempts = await Promise.allSettled([
+    transactBillingLedger(ref, {
+      action: 'return', kind: 'invoice', record: { id: 'invoice-1' },
+      expectedRevision: 1, requestId: 'request-return', reason: '청구 금액 증빙을 다시 확인해 주세요',
+      actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+    transactBillingLedger(ref, {
+      kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+      expectedRevision: 1, requestId: 'request-approve', actor: { uid: 'admin-2', role: 'admin' }, now,
+    }),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_revision_conflict').length, 1);
+  const record = (await ref.get()).val().invoices['invoice-1'];
+  assert.equal(record.revision, 2);
+  assert.equal(record.status === 'approved' && record.returnPending === true, false);
+});
+
 test('concurrent approval of the same bank transaction commits one receipt', async () => {
   const ref = testRoot.child('same-transaction');
   await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));

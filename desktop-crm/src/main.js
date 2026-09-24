@@ -9054,6 +9054,7 @@ secureCanonicalHandle("crm:billing-ledger-load", input => localTestMode
   : remoteClient.loadBillingLedger(input));
 secureCanonicalHandle("crm:billing-invoice-save", input => saveAndSignalWallboard(() => remoteClient.saveBillingInvoice(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:billing-receipt-save", input => saveAndSignalWallboard(() => remoteClient.saveBillingReceipt(input), signalWallboardAfterSave));
+secureCanonicalHandle("crm:billing-draft-return", input => remoteClient.returnBillingDraft(input));
 secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));

@@ -31,6 +31,19 @@ test('draft-only ledger publishes a pending count without presenting unapproved 
  assert.doesNotThrow(()=>validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'}));
 });
 
+test('returned draft reasons and administrator IDs never enter the TV projection',()=>{
+ const model=board.project({orders:[],billingLedger:{invoices:[{
+  id:'draft-returned',billingMonth:'2026-09',amount:100000,status:'draft',returnPending:true,
+  returnHistory:{request1:{reason:'비공개 계좌 확인 요청',returnedBy:'private-admin',returnedAt:'2026-09-25T00:00:00.000Z',revision:2}},
+ }],receipts:[]}},'2026-09-25');
+ assert.equal(model.companyRevenue.pendingCount,1);
+ const serialized=JSON.stringify(model);
+ assert.equal(serialized.includes('비공개 계좌'),false);
+ assert.equal(serialized.includes('private-admin'),false);
+ assert.equal(serialized.includes('draft-returned'),false);
+ assert.doesNotThrow(()=>validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'}));
+});
+
 test('approved revenue is validated as aggregate-only and rendered with separate billed and received values',()=>{
  const model=board.project({orders:[],billingLedger:{invoices:[{id:'i1',billingMonth:'2026-09',amount:100000,status:'approved'}],receipts:[]}},'2026-09-25');
  const publication=validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'});

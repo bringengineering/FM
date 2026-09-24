@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadBillingLedger: input => ipcRenderer.invoke("crm:billing-ledger-load", input),
   saveBillingInvoice: input => ipcRenderer.invoke("crm:billing-invoice-save", input),
   saveBillingReceipt: input => ipcRenderer.invoke("crm:billing-receipt-save", input),
+  returnBillingDraft: input => ipcRenderer.invoke("crm:billing-draft-return", input),
   saveCompanyStrategyDraft: input => ipcRenderer.invoke("crm:company-strategy-draft-save", input),
   publishCompanyStrategy: input => ipcRenderer.invoke("crm:company-strategy-publish", input),
   loadProjectWeeklyReports: () => ipcRenderer.invoke("crm:project-weekly-reports-load"),

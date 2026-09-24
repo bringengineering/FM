@@ -86,3 +86,56 @@ test('stored records accept server request metadata but reject malformed request
   } } });
   await assert.rejects(remote.loadBillingLedger(), { code: 'PROTECTED_DATA_INVALID' });
 });
+
+test('admin returns a draft through the authenticated mutation endpoint without direct database writes', async () => {
+  const remote = client('admin');
+  remote.ensureIdToken = async () => 'id-token';
+  remote.dbConditionalPut = async () => { throw new Error('direct billing write must not happen'); };
+  let sent;
+  remote.fetch = async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { record: {
+      ...invoice, revision: 2, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin',
+      lastRequestId: sent.requestId, returnPending: true,
+      returnHistory: { [sent.requestId]: { reason: sent.reason, returnedBy: 'billing-admin', returnedAt: '2026-09-25T00:00:00.000Z', revision: 2 } },
+    } } }) };
+  };
+  const saved = await remote.returnBillingDraft({ kind: 'invoice', id: invoice.id, expectedRevision: 1, reason: '증빙을 다시 확인해 주세요' });
+  assert.deepEqual({ action: sent.action, kind: sent.kind, record: sent.record, expectedRevision: sent.expectedRevision },
+    { action: 'return', kind: 'invoice', record: { id: invoice.id }, expectedRevision: 1 });
+  assert.equal(saved.returnPending, true);
+});
+
+test('late return retry accepts the already applied event even after a colleague edits the draft', async () => {
+  const remote = client('admin');
+  remote.ensureIdToken = async () => 'id-token';
+  let attempts = 0;
+  let requestId;
+  remote.fetch = async (_url, options) => {
+    attempts += 1;
+    const sent = JSON.parse(options.body);
+    requestId ||= sent.requestId;
+    assert.equal(sent.requestId, requestId);
+    if (attempts === 1) throw new Error('response lost');
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { repeated: true, record: {
+      ...invoice, amount: 120000, revision: 3, updatedAt: '2026-09-25T00:01:00.000Z', updatedBy: 'billing-member',
+      lastRequestId: 'correction-1', returnPending: false,
+      returnHistory: { [requestId]: { reason: sent.reason, returnedBy: 'billing-admin', returnedAt: '2026-09-25T00:00:00.000Z', revision: 2 } },
+    } } }) };
+  };
+  const saved = await remote.returnBillingDraft({ kind: 'invoice', id: invoice.id, expectedRevision: 1, reason: '증빙을 다시 확인해 주세요' });
+  assert.equal(attempts, 2);
+  assert.equal(saved.revision, 3);
+  assert.equal(saved.returnPending, false);
+});
+
+test('member cannot return a draft and malformed stored return history is rejected', async () => {
+  const member = client();
+  await assert.rejects(member.returnBillingDraft({ kind: 'invoice', id: invoice.id, expectedRevision: 1, reason: '증빙을 다시 확인해 주세요' }), { code: 'ACCESS_DENIED' });
+  const viewer = client('viewer');
+  viewer.dbRequest = async () => ({ invoices: { [invoice.id]: {
+    ...invoice, revision: 2, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin',
+    returnPending: true, returnHistory: { bad: { reason: '', returnedBy: 'billing-admin', returnedAt: '2026-09-25T00:00:00.000Z', revision: 2 } },
+  } } });
+  await assert.rejects(viewer.loadBillingLedger(), { code: 'PROTECTED_DATA_INVALID' });
+});

@@ -12,6 +12,7 @@ test('billing ledger uses narrow CRM IPC methods and loads its core before the a
     ['loadBillingLedger', 'crm:billing-ledger-load'],
     ['saveBillingInvoice', 'crm:billing-invoice-save'],
     ['saveBillingReceipt', 'crm:billing-receipt-save'],
+    ['returnBillingDraft', 'crm:billing-draft-return'],
   ]) {
     assert.match(preload, new RegExp(`${method}: input => ipcRenderer.invoke\\("${channel}"`));
     assert.match(main, new RegExp(`secureCanonicalHandle\\("${channel}"`));
@@ -47,6 +48,17 @@ test('admins can void confirmed billing with a reason while draft receipts may t
   assert.match(app, /data-billing-void-receipt/u);
   assert.match(app, /voidReason/u);
   assert.match(app, /receiptInvoiceChoices = invoices\.filter\(item => item\.status === "approved" \|\| item\.status === "draft"\)/u);
+});
+
+test('returned billing drafts show reason history and cannot be approved before correction', () => {
+  const app = read('app.js');
+  assert.match(app, /data-billing-return-invoice/u);
+  assert.match(app, /data-billing-return-receipt/u);
+  assert.match(app, /returnPending === true/u);
+  assert.match(app, /returnHistory/u);
+  assert.match(app, /최근 반려/u);
+  assert.match(app, /billingReturnForm/u);
+  assert.match(app, /api\.returnBillingDraft\(/u);
 });
 
 test('monthly management report compares legacy finance with confirmed ledger and fails closed', () => {

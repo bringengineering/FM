@@ -15,8 +15,10 @@ export function authorizeBillingActor(
 }
 
 export type BillingMutationCommand = {
+  action?: "save" | "return";
   kind: "invoice" | "receipt";
   record: Record<string, unknown>;
+  reason?: string;
   expectedRevision: number;
   requestId: string;
   actor: BillingActor;
@@ -65,7 +67,7 @@ function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolea
   const allowed = kind === "invoice"
     ? ["id", "contractId", "contractType", "occurrenceId", "billingMonth", "dueDate", "amount", "status", "voidReason"]
     : ["id", "invoiceId", "receivedAt", "amount", "transactionRef", "evidenceRef", "status", "voidReason"];
-  const metadata = ["revision", "updatedAt", "updatedBy", "approvedAt", "approvedBy", "voidedAt", "voidedBy", "lastRequestId"];
+  const metadata = ["revision", "updatedAt", "updatedBy", "approvedAt", "approvedBy", "voidedAt", "voidedBy", "lastRequestId", "returnPending", "returnHistory"];
   if (Object.keys(value).some(key => !allowed.includes(key) && !metadata.includes(key))) return false;
   if (kind === "invoice") {
     if (!validId(value.contractId) || !validMonth(value.billingMonth) || !validDate(value.dueDate)) return false;
@@ -86,6 +88,18 @@ function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolea
   if (stored && value.status === "void"
     && (!validId(value.voidedBy) || typeof value.voidedAt !== "string" || !ISO_TIME.test(value.voidedAt))) return false;
   if (stored && value.lastRequestId !== undefined && !validId(value.lastRequestId)) return false;
+  if (stored && value.returnPending !== undefined && typeof value.returnPending !== "boolean") return false;
+  if (stored && value.returnHistory !== undefined) {
+    if (!isRecord(value.returnHistory)) return false;
+    for (const [requestId, entry] of Object.entries(value.returnHistory)) {
+      if (!validId(requestId) || !isRecord(entry)
+        || Object.keys(entry).some(key => !["reason", "returnedBy", "returnedAt", "revision"].includes(key))
+        || typeof entry.reason !== "string" || entry.reason.trim() !== entry.reason
+        || entry.reason.length < 5 || entry.reason.length > 500
+        || !validId(entry.returnedBy) || typeof entry.returnedAt !== "string" || !ISO_TIME.test(entry.returnedAt)
+        || !Number.isSafeInteger(entry.revision) || (entry.revision as number) < 2) return false;
+    }
+  }
   return true;
 }
 
@@ -166,10 +180,44 @@ export function reduceBillingLedgerMutation(
   if (!validId(command.requestId) || !validId(command.actor.uid)
     || !ISO_TIME.test(command.now) || !Number.isSafeInteger(command.expectedRevision)
     || command.expectedRevision < 0 || !["invoice", "receipt"].includes(command.kind)
-    || !validRecord(command.kind, command.record, false)) throw new Error("billing_invalid_record");
+    || ![undefined, "save", "return"].includes(command.action)) throw new Error("billing_invalid_record");
   const id = command.record.id as string;
   const collection = command.kind === "invoice" ? ledger.invoices : ledger.receipts;
   const previous = collection[id];
+  if (command.action === "return") {
+    if (!validId(id) || Object.keys(command.record).some(key => key !== "id")
+      || typeof command.reason !== "string" || command.reason.trim().length < 5
+      || command.reason.trim().length > 500) throw new Error("billing_invalid_return");
+    if (command.actor.role !== "admin") throw new Error("billing_access_forbidden");
+    const reason = command.reason.trim();
+    const priorReturn = isRecord(previous?.returnHistory)
+      ? previous.returnHistory[command.requestId] : undefined;
+    if (priorReturn) {
+      if (!isRecord(priorReturn) || priorReturn.reason !== reason
+        || priorReturn.returnedBy !== command.actor.uid
+        || priorReturn.revision !== command.expectedRevision + 1
+        || !Number.isSafeInteger(previous?.revision)
+        || (previous.revision as number) < (priorReturn.revision as number)) throw new Error("billing_request_id_conflict");
+      return { ledger, record: previous, repeated: true };
+    }
+    if (!previous || previous.revision !== command.expectedRevision) throw new Error("billing_revision_conflict");
+    if (previous.status !== "draft") throw new Error("billing_invalid_transition");
+    const revision = command.expectedRevision + 1;
+    const record = {
+      ...previous, revision, updatedAt: command.now, updatedBy: command.actor.uid,
+      lastRequestId: command.requestId, returnPending: true,
+      returnHistory: {
+        ...(isRecord(previous.returnHistory) ? previous.returnHistory : {}),
+        [command.requestId]: { reason, returnedBy: command.actor.uid, returnedAt: command.now, revision },
+      },
+    };
+    collection[id] = record;
+    if (Buffer.byteLength(JSON.stringify(ledger), "utf8") > MAX_LEDGER_BYTES) throw new Error("billing_ledger_too_large");
+    const issues = auditBillingLedger(ledger);
+    if (issues.length > 0) throw new Error(issues[0]);
+    return { ledger, record, repeated: false };
+  }
+  if (!validRecord(command.kind, command.record, false)) throw new Error("billing_invalid_record");
   if (previous?.lastRequestId === command.requestId) {
     if (command.actor.role === "viewer" || (command.record.status !== "draft" && command.actor.role !== "admin")
       || previous.updatedBy !== command.actor.uid) throw new Error("billing_access_forbidden");
@@ -193,6 +241,9 @@ export function reduceBillingLedgerMutation(
   }
   if (command.actor.role === "viewer" || (command.record.status !== "draft" && command.actor.role !== "admin")) {
     throw new Error("billing_access_forbidden");
+  }
+  if (previous?.returnPending === true && command.record.status === "approved") {
+    throw new Error("billing_return_pending");
   }
   if (previous) {
     const fixed = command.kind === "invoice"
@@ -236,8 +287,13 @@ export function reduceBillingLedgerMutation(
     ? ["id", "contractId", "contractType", "occurrenceId", "billingMonth", "dueDate", "amount", "status", "voidReason"]
     : ["id", "invoiceId", "receivedAt", "amount", "transactionRef", "evidenceRef", "status", "voidReason"];
   const clientFields = Object.fromEntries(fields.filter(key => command.record[key] !== undefined).map(key => [key, command.record[key]]));
+  const substantiveCorrection = previous?.status === "draft" && command.record.status === "draft"
+    && fields.some(key => key !== "status" && key !== "voidReason"
+      && (previous[key] ?? undefined) !== (command.record[key] ?? undefined));
   const record = {
     ...clientFields,
+    ...(previous?.returnHistory !== undefined ? { returnHistory: previous.returnHistory } : {}),
+    ...(previous?.returnPending !== undefined ? { returnPending: substantiveCorrection ? false : previous.returnPending } : {}),
     revision: command.expectedRevision + 1,
     updatedAt: command.now,
     updatedBy: command.actor.uid,

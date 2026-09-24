@@ -1353,7 +1353,7 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) invalid();
   const common = ['id', 'amount', 'status'];
   const specific = kind === 'invoices' ? ['contractId', 'contractType', 'occurrenceId', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
-  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason', 'lastRequestId'];
+  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason', 'lastRequestId', 'returnPending', 'returnHistory'];
   if (Object.keys(record).some(key => ![...common, ...specific, ...metadata].includes(key))) invalid();
   const idPattern = /^[A-Za-z0-9_-]{1,150}$/;
   if (!idPattern.test(record.id) || (expectedId && record.id !== expectedId) || !idPattern.test(kind === 'invoices' ? record.contractId : record.invoiceId)) invalid();
@@ -1367,6 +1367,18 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   if (stored && record.status === 'approved' && (typeof record.approvedAt !== 'string' || !idPattern.test(record.approvedBy))) invalid();
   if (stored && record.status === 'void' && (typeof record.voidedAt !== 'string' || !idPattern.test(record.voidedBy) || typeof record.voidReason !== 'string' || !record.voidReason.trim())) invalid();
   if (stored && record.lastRequestId !== undefined && !idPattern.test(record.lastRequestId)) invalid();
+  if (stored && record.returnPending !== undefined && typeof record.returnPending !== 'boolean') invalid();
+  if (stored && record.returnHistory !== undefined) {
+    if (!record.returnHistory || typeof record.returnHistory !== 'object' || Array.isArray(record.returnHistory)) invalid();
+    for (const [requestId, entry] of Object.entries(record.returnHistory)) {
+      if (!idPattern.test(requestId) || !entry || typeof entry !== 'object' || Array.isArray(entry)
+        || Object.keys(entry).some(key => !['reason', 'returnedBy', 'returnedAt', 'revision'].includes(key))
+        || typeof entry.reason !== 'string' || entry.reason.trim() !== entry.reason
+        || entry.reason.length < 5 || entry.reason.length > 500 || !idPattern.test(entry.returnedBy)
+        || typeof entry.returnedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.returnedAt)
+        || !Number.isSafeInteger(entry.revision) || entry.revision < 2) invalid();
+    }
+  }
   return Object.fromEntries(Object.entries(record).filter(([key]) => common.includes(key) || specific.includes(key) || (stored && metadata.includes(key)) || (key === 'voidReason' && record.status === 'void')));
 }
 
@@ -2438,16 +2450,33 @@ class FirebaseRemoteClient {
   async saveBillingInvoice(input) { return this.saveBillingRecord('invoices', input); }
   async saveBillingReceipt(input) { return this.saveBillingRecord('receipts', input); }
 
+  async returnBillingDraft(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 청구·입금 초안을 반려할 수 있습니다.', 'ACCESS_DENIED');
+    const kind = input?.kind === 'invoice' ? 'invoices' : input?.kind === 'receipt' ? 'receipts' : null;
+    const id = input?.id;
+    const reason = typeof input?.reason === 'string' ? input.reason.trim() : '';
+    if (!kind || typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,150}$/.test(id)
+      || ['__proto__', 'prototype', 'constructor'].includes(id)
+      || reason.length < 5 || reason.length > 500) throw createError('반려 대상과 사유를 확인해 주세요.', 'VALIDATION_ERROR');
+    return this.commitBillingRecord(kind, id, input?.expectedRevision,
+      { action: 'return', kind: input.kind, record: { id }, reason });
+  }
+
   async saveBillingRecord(kind, input) {
     const session = this.requireOfficeSession();
     if (session.role === 'viewer' || (session.role === 'member' && session.marketingRole === 'marketing')) throw createError('장부를 변경할 권한이 없습니다.', 'ACCESS_DENIED');
     const source = validateBillingRecord(kind, input?.record);
     if (source.status !== 'draft' && session.role !== 'admin') throw createError('관리자만 확정 또는 취소할 수 있습니다.', 'ACCESS_DENIED');
-    const expectedRevision = input?.expectedRevision;
+    return this.commitBillingRecord(kind, source.id, input?.expectedRevision,
+      { kind: kind === 'invoices' ? 'invoice' : 'receipt', record: source });
+  }
+
+  async commitBillingRecord(kind, id, expectedRevision, command) {
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw createError('장부 버전이 올바르지 않습니다.', 'VALIDATION_ERROR');
     const guard = this.captureSessionGuard();
     const requestId = crypto.randomUUID();
-    const body = JSON.stringify({ kind: kind === 'invoices' ? 'invoice' : 'receipt', record: source, expectedRevision, requestId });
+    const body = JSON.stringify({ ...command, expectedRevision, requestId });
     const token = await this.ensureIdToken(false);
     this.assertSessionGuardActive(guard);
     let response;
@@ -2477,8 +2506,13 @@ class FirebaseRemoteClient {
       if (response.status >= 500) throw createError('장부 서버에 연결할 수 없습니다.', 'NETWORK');
       throw createError(`장부 저장 요청이 거부되었습니다 (${code}).`, 'VALIDATION_ERROR');
     }
-    const saved = validateBillingRecord(kind, payload?.result?.record, source.id, true);
-    if (saved.revision !== expectedRevision + 1 || saved.lastRequestId !== requestId) {
+    const saved = validateBillingRecord(kind, payload?.result?.record, id, true);
+    const recentResult = saved.revision === expectedRevision + 1 && saved.lastRequestId === requestId;
+    const appliedReturn = command.action === 'return' && payload?.result?.repeated === true
+      && saved.revision > expectedRevision + 1
+      && saved.returnHistory?.[requestId]?.revision === expectedRevision + 1
+      && saved.returnHistory[requestId].reason === command.reason;
+    if (!recentResult && !appliedReturn) {
       throw createError('장부 저장 결과가 요청과 일치하지 않습니다.', 'PROTECTED_DATA_INVALID');
     }
     return saved;
