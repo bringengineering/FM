@@ -29,6 +29,12 @@
 - 목표·매출·조직도는 회사의 승인된 원천과 공개 범위가 정해지기 전까지 실제값처럼 채우지 않는다. 빈 값은 '연결 대기'로 표시한다.
 - Gemini 요약은 원자료·승인자·생성시각을 남기고 초안으로 취급한다. AI가 업무 완료율이나 매출 수치를 확정하지 않는다.
 
+## 두 기기 지연 측정
+
+`desktop-crm/scripts/wallboard-field-acceptance.js`는 현장 관측값 30건 이상의 저장 성공→서버 게시→TV 수신 지연을 집계한다. 입력 JSON은 배열이며 각 행에는 업무 내용 대신 익명 시험 ID(`id`)와 Unix 밀리초 시각 `savedAt`, `publishedAt`, `receivedAt`만 넣는다. 사용 예: `node desktop-crm/scripts/wallboard-field-acceptance.js observations.json`.
+
+측정 전에 PC·TV 시계를 동기화하고 오차를 기록한다. 서버 게시 버전과 TV 화면의 동일 버전을 짝지어야 하며, 중복 ID·누락 시각·순서가 뒤바뀐 기록은 거부한다. 출력의 `latencyTargetMet`는 **기록된 값의 10초 목표만** 판정한다. `evidenceStatus: TIMING_ONLY`는 관리자 PC 종료, 실제 직원 계정, 승인 TV, 시계 동기화, 개인정보 비노출, 장애 복구가 검증됐다는 뜻이 아니다. 이 조건과 원본 증거를 사람이 별도로 확인하기 전에는 출시 관문 7을 완료로 표시하지 않는다.
+
 ## 장애와 되돌리기
 
 - Firebase 규칙 오류는 `crm-rules-deploy.yml`의 `rules_ref`에 검증된 이전 SHA를 지정하는 절차를 사용한다. 현재 데이터 자체를 삭제하거나 초기화하지 않는다.
