@@ -1,0 +1,176 @@
+import { describe, expect, it } from "vitest";
+
+import { reduceBillingLedgerMutation } from "../src/billing-ledger-mutation.js";
+
+const NOW = "2026-09-25T00:00:00.000Z";
+const invoice = {
+  id: "invoice-1",
+  contractId: "contract-1",
+  contractType: "regular" as const,
+  billingMonth: "2026-09",
+  dueDate: "2026-09-30",
+  amount: 100000,
+  status: "draft" as const,
+};
+
+describe("atomic billing ledger mutation", () => {
+  it("creates one draft and replays the same request without increasing revision", () => {
+    const command = {
+      kind: "invoice" as const,
+      record: invoice,
+      expectedRevision: 0,
+      requestId: "request-1",
+      actor: { uid: "member-1", role: "member" as const },
+      now: NOW,
+    };
+    const created = reduceBillingLedgerMutation(null, command);
+    expect(created.record).toMatchObject({ ...invoice, revision: 1, updatedBy: "member-1", lastRequestId: "request-1" });
+    const replay = reduceBillingLedgerMutation(created.ledger, command);
+    expect(replay.repeated).toBe(true);
+    expect(replay.record).toEqual(created.record);
+    expect(replay.ledger).toEqual(created.ledger);
+  });
+
+  it("rejects an invoice with the same regular-contract month under a different id", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, id: "invoice-2" }, expectedRevision: 0,
+      requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_duplicate_invoice");
+  });
+
+  it("rejects a stale revision and a member approval", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-2",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_revision_conflict");
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, status: "approved" }, expectedRevision: 1,
+      requestId: "request-3", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_access_forbidden");
+  });
+
+  it("approves an invoice with server-owned approval metadata", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const approved = reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, status: "approved", approvedBy: "attacker" },
+      expectedRevision: 1, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    expect(approved.record).toMatchObject({ status: "approved", approvedBy: "admin-1", approvedAt: NOW, revision: 2 });
+  });
+
+  it("rejects an approved receipt without an approved invoice", () => {
+    expect(() => reduceBillingLedgerMutation(null, {
+      kind: "receipt", record: {
+        id: "receipt-1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 30000,
+        transactionRef: "bank-1", evidenceRef: "proof-1", status: "approved",
+      }, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_invoice_not_approved");
+  });
+
+  it("rejects voiding an invoice linked to an approved receipt", () => {
+    const approvedInvoice = { ...invoice, status: "approved", revision: 1, approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1" };
+    const approvedReceipt = {
+      id: "receipt-1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 30000,
+      transactionRef: "bank-1", evidenceRef: "proof-1", status: "approved", revision: 1,
+      approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1",
+    };
+    expect(() => reduceBillingLedgerMutation({ invoices: { [invoice.id]: approvedInvoice }, receipts: { "receipt-1": approvedReceipt } }, {
+      kind: "invoice", record: { ...invoice, status: "void", voidReason: "mistake" },
+      expectedRevision: 1, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_invoice_has_receipts");
+  });
+
+  it("rejects a duplicate approved receipt transaction reference", () => {
+    const approvedInvoice = { ...invoice, status: "approved", revision: 1, approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1" };
+    const existingReceipt = {
+      id: "receipt-1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 30000,
+      transactionRef: "bank-1", evidenceRef: "proof-1", status: "approved", revision: 1,
+      approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1",
+    };
+    expect(() => reduceBillingLedgerMutation({ invoices: { [invoice.id]: approvedInvoice }, receipts: { "receipt-1": existingReceipt } }, {
+      kind: "receipt", record: { ...existingReceipt, id: "receipt-2", revision: undefined },
+      expectedRevision: 0, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_duplicate_transaction");
+  });
+
+  it("does not allow a draft to move directly to void", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, status: "void", voidReason: "cancel" },
+      expectedRevision: 1, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_invalid_transition");
+  });
+
+  it("does not let an approved invoice amount change during void", () => {
+    const approved = { ...invoice, status: "approved", revision: 1, approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1" };
+    expect(() => reduceBillingLedgerMutation({ invoices: { [invoice.id]: approved }, receipts: {} }, {
+      kind: "invoice", record: { ...invoice, amount: 1, status: "void", voidReason: "cancel" },
+      expectedRevision: 1, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_approved_immutable");
+  });
+
+  it("rejects malformed money and impossible dates", () => {
+    expect(() => reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: { ...invoice, amount: Number.MAX_SAFE_INTEGER + 1 },
+      expectedRevision: 0, requestId: "request-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_invalid_record");
+    expect(() => reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: { ...invoice, dueDate: "2026-02-30" },
+      expectedRevision: 0, requestId: "request-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_invalid_record");
+  });
+
+  it("fails closed on malformed stored ledger entries", () => {
+    expect(() => reduceBillingLedgerMutation({ invoices: { broken: { amount: -10 } }, receipts: {} }, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_stored_ledger_invalid");
+  });
+
+  it("rejects reuse of a request id with changed business fields", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 1 }, expectedRevision: 0,
+      requestId: "request-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_request_id_conflict");
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: invoice, expectedRevision: 0,
+      requestId: "request-1", actor: { uid: "viewer-1", role: "viewer" }, now: NOW,
+    })).toThrowError("billing_access_forbidden");
+  });
+
+  it("rejects duplicate one-off occurrence even when its billing month changed", () => {
+    const oneOff = { ...invoice, contractType: "one_off" as const, occurrenceId: "visit-1" };
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: oneOff, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...oneOff, id: "invoice-2", billingMonth: "2026-10" },
+      expectedRevision: 0, requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_duplicate_invoice");
+  });
+});
