@@ -66,6 +66,7 @@ jobs:
       - run: pnpm --dir company-site install --frozen-lockfile
       - run: pnpm --dir functions test
       - run: pnpm --dir functions build
+      - run: node --test functions/integration/billing-ledger-audit-cli.test.mjs
       - run: pnpm --dir company-site test:field:run
       - run: pnpm --dir company-site typecheck:field
       - run: pnpm --dir company-site build
