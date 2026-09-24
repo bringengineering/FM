@@ -5,6 +5,8 @@ const {loadWallboardSource}=require('../src/wallboard-publisher');
 const board=require('../src/company-wallboard');
 const {validatePublication}=require('../src/wallboard-publication-schema');
 const {defaultPlaylist}=require('../src/wallboard-live-sync');
+const fs=require('node:fs');
+const path=require('node:path');
 
 test('wallboard source reads the common ledger without copying contract details into publication',async()=>{
  const ledger={invoices:[{id:'i1',contractId:'private-contract',billingMonth:'2026-09',amount:100000,status:'approved'}],receipts:[{id:'r1',invoiceId:'i1',amount:40000,receivedAt:'2026-09-24',transactionRef:'secret-bank-ref',status:'approved'}]};
@@ -44,4 +46,32 @@ test('automatic TV playlist includes monthly revenue and web client offers its s
  assert.match(js,/companyRevenue/);
  assert.match(js,/확정 청구액/);
  assert.match(js,/확정 입금액/);
+});
+
+test('billing read failure leaves other TV scenes publishable and labels revenue connection pending',async()=>{
+ const source=await loadWallboardSource({loadWorkOrders:async()=>({orders:[{id:'task1',status:'doing',assigneeName:'김현진'}]}),loadBillingLedger:async()=>{throw Error('network');},dbRequest:async()=>null},new Date('2026-09-25T00:00:00Z'));
+ const model=board.project(source,'2026-09-25');
+ assert.equal(model.counts.doing,1);
+ assert.equal(model.companyRevenue.available,false);
+ assert.equal(model.companyRevenue.sourceStatus,'unavailable');
+ assert.match(board.scene(model,'companyRevenue'),/연결 확인 중/);
+ assert.doesNotThrow(()=>validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'}));
+});
+
+test('successful invoice and receipt saves signal wallboard refresh after persistence',()=>{
+ const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+ assert.match(main,/secureCanonicalHandle\("crm:billing-invoice-save", input => saveAndSignalWallboard\(\(\) => remoteClient\.saveBillingInvoice\(input\), signalWallboardAfterSave\)\)/);
+ assert.match(main,/secureCanonicalHandle\("crm:billing-receipt-save", input => saveAndSignalWallboard\(\(\) => remoteClient\.saveBillingReceipt\(input\), signalWallboardAfterSave\)\)/);
+});
+
+test('TV browser revenue validator rejects extra private fields',async()=>{
+ const vm=require('node:vm');
+ const {wallboardWebAssetResponse}=await import('../../crm-ai-worker/src/wallboard-web-assets.js');
+ const js=await (await wallboardWebAssetResponse('/tv/app.js')).text();
+ const helper=js.match(/function validRevenue\(r,month\)\{.*?\}(?=\s*function store\()/s)?.[0];
+ assert.ok(helper);
+ const validRevenue=vm.runInNewContext(`${helper};validRevenue`);
+ const revenue={available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
+ assert.equal(validRevenue({...revenue,sourceStatus:'unavailable'},'2026-09'),true);
+ assert.equal(validRevenue({...revenue,customerName:'private'},'2026-09'),false);
 });

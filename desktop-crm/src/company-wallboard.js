@@ -3,8 +3,9 @@
  const labels={assigned:'시작 전',doing:'진행 중',submitted:'검수 대기',returned:'보완 요청',done:'검수 완료'};
  const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향'],['companyRevenue','매출 현황']];
  const billingCore=typeof require==='function'?require('./billing-ledger-core'):globalThis.BringBillingLedgerCore;
- function companyRevenue(ledger,today){
+ function companyRevenue(ledger,today,sourceState){
   const month=today.slice(0,7),unavailable={available:false,month,billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
+  if(sourceState==='unavailable')return {...unavailable,sourceStatus:'unavailable'};
   if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts)||!ledger.invoices.some(item=>item?.status==='approved')&&!ledger.receipts.some(item=>item?.status==='approved'))return unavailable;
   const {billed,received,receivable,pendingCount,undatedPendingCount}=billingCore.summarizeMonth(ledger,month);
   return {available:true,month,billed,received,receivable,pendingCount,undatedPendingCount};
@@ -84,7 +85,7 @@
   const weekly=data.weeklyReports;
   const safeWeekly=weekly&&weekly.available===true&&day(weekly.periodStart)&&day(weekly.periodEnd)&&[weekly.approvedReports,weekly.approvedTotal,weekly.approvedDone].every(value=>Number.isSafeInteger(value)&&value>=0)&&weekly.approvedDone<=weekly.approvedTotal
    ?{available:true,periodStart:weekly.periodStart,periodEnd:weekly.periodEnd,approvedReports:weekly.approvedReports,approvedTotal:weekly.approvedTotal,approvedDone:weekly.approvedDone}:unavailable;
-  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,companyRevenue:companyRevenue(data.billingLedger,today),...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
+  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,companyRevenue:companyRevenue(data.billingLedger,today,data.billingLedgerState),...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){
@@ -97,7 +98,7 @@
   }
   if(key==='companyRevenue'){
    const revenue=m.companyRevenue;
-   if(!revenue?.available)return '<div class="wb-empty">매출 집계 대기 · 확정된 장부 자료를 확인해 주세요.</div>';
+   if(!revenue?.available)return `<div class="wb-empty">${revenue?.sourceStatus==='unavailable'?'매출 연결 확인 중 · 마지막 게시 시각을 확인해 주세요.':'매출 집계 대기 · 확정된 장부 자료를 확인해 주세요.'}</div>`;
    const money=value=>value.toLocaleString('ko-KR')+'원';
    return `<div class="wb-grid wb-revenue-grid">${card('확정 청구액',money(revenue.billed),revenue.month+' 청구 대상')}${card('확정 입금액',money(revenue.received),revenue.month+' 실제 입금')}${card('미수 합계',money(revenue.receivable),'확정 장부 누계')}</div><p>확인 대기 ${revenue.pendingCount}건 · 입금일 확인 필요 ${revenue.undatedPendingCount}건 · 고객별 내역 제외</p>`;
   }
