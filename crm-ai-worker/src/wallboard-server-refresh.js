@@ -7,10 +7,15 @@ const paths=['workOrders','projects','data/serviceRecords','access','teamProfile
 const defaultPlaylist=[['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30]].map(([key,seconds])=>({key,enabled:true,seconds}));
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
+const addressPattern=/(?:[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?|[가-힣]+(?:동|읍|면|리)\s*\d{1,4}(?:-\d{1,4})?|\d{1,4}\s*(?:번지|호))/u;
+const privateText=value=>contactPattern.test(String(value||''))||addressPattern.test(String(value||''));
 function rows(value){
  if(value===null)return [];
  if(!value||typeof value!=='object'||Array.isArray(value))fail('WALLBOARD_UNAVAILABLE');
- return Object.entries(value).filter(([,item])=>item&&typeof item==='object'&&!Array.isArray(item)).map(([id,item])=>({id,...item}));
+ return Object.entries(value).map(([id,item])=>{
+  if(!item||typeof item!=='object'||Array.isArray(item))fail('WALLBOARD_UNAVAILABLE');
+  return {...item,id};
+ });
 }
 async function readSource(path,{env,idToken,fetchImpl,readTimeoutMs}){
  const root=String(env.WALLBOARD_FIREBASE_DATABASE_URL||'').replace(/\/$/,'');
@@ -62,14 +67,14 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  const safeNames=new Set(members.map(member=>member.displayName).filter(name=>/^[\p{L} .·-]{2,40}$/u.test(name)));
  const safeName=(name)=>safeNames.has(String(name||''))?String(name):'담당자 미정';
  const namedOrders=orders.map(order=>({...order,assigneeName:safeName(memberNames.get(order.assigneeUid)||order.assigneeName)}));
- const namedProjects=rows(source.projects).map(item=>({...item,name:contactPattern.test(String(item.name||''))?'프로젝트명 확인 필요':item.name,owner:safeName(item.owner)}));
+ const namedProjects=rows(source.projects).map(item=>({...item,name:privateText(item.name)?'프로젝트명 확인 필요':item.name,owner:safeName(item.owner)}));
  const dateParts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(now())).map(part=>[part.type,part.value]));
  const dataDate=`${dateParts.year}-${dateParts.month}-${dateParts.day}`;
  const model=wallboard.project({orders:namedOrders,projects:namedProjects,members,calendar:{serviceRecords:rows(source['data/serviceRecords'])}},dataDate);
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';
-  const snapshot=validatePublication({model,playlist:current.presentation?.playlist||defaultPlaylist,notice:contactPattern.test(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
+  const snapshot=validatePublication({model,playlist:current.presentation?.playlist||defaultPlaylist,notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
   if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>65536)fail('WALLBOARD_UNAVAILABLE');
   try{const result=await command(stub,'publish-if-changed',{snapshot,expectedVersion:current.version,refreshToken});return {version:result.version,publishedAt:result.publishedAt};}
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}

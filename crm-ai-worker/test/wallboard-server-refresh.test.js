@@ -23,7 +23,7 @@ function fixture(overrides={}){
   if(overrides.denied===resource)return new Response('permission denied',{status:403});
   if(overrides.oversize===resource)return new Response('x'.repeat(2*1024*1024+1));
   if(overrides.malformed===resource)return new Response('[]');
-  const value=resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:sources[resource];
+  const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:sources[resource];
   return new Response(JSON.stringify(value??null),{headers:{'content-type':'application/json'}});
  };
  const stub={fetch:async request=>{
@@ -102,6 +102,25 @@ test('free-text project contact details are never included in the public board',
  assert.ok(!published.includes('hong@example.com'));
  assert.ok(!published.includes('홍길동'));
  assert.match(published,/프로젝트명 확인 필요/);
+});
+test('project street addresses are not copied to the shared TV',async()=>{
+ const f=fixture({projectName:'강원 원주시 이화3길 28-5 입주청소'});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const published=JSON.stringify(f.commands.find(item=>item.action==='publish-if-changed'));
+ assert.ok(!published.includes('이화3길 28-5'));
+ assert.match(published,/프로젝트명 확인 필요/);
+});
+test('malformed source rows cannot publish a falsely incomplete TV board',async()=>{
+ const f=fixture({orderMap:{o1:sources.workOrders.o1,broken:'not-an-order'}});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl}),error=>error.code==='WALLBOARD_UNAVAILABLE');
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
+test('Firebase path IDs override stale IDs stored inside project and order rows',async()=>{
+ const f=fixture({projectMap:{p1:{...sources.projects.p1,id:'stale-project'}},orderMap:{o1:{...sources.workOrders.o1,id:'stale-order'}}});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const model=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.model;
+ assert.equal(model.portfolio.projects.length,1);
+ assert.equal(model.portfolio.projects[0].reviewedDone,1);
 });
 test('a prior presentation notice with a phone number is not republished',async()=>{
  const f=fixture({notice:'고객 홍길동 010-1234-5678'});
