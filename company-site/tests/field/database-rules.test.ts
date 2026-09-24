@@ -1931,23 +1931,28 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
 
   it("rejects an unmarked, disabled, mismatched-email, or unverified reader", async () => {
     const reader = environment.authenticatedContext(readerUid, crmClaims(readerEmail)).database();
-    await assertFails(get(ref(reader, "crmCompany/workOrders")));
+    const denyAllSources = async (database: ReturnType<ReturnType<typeof environment.authenticatedContext>["database"]>) => {
+      for (const path of sourcePaths) {
+        await assertFails(get(ref(database, `crmCompany/${path}`)));
+      }
+    };
+    await denyAllSources(reader);
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: false,
         email: readerEmail,
       });
     });
-    await assertFails(get(ref(reader, "crmCompany/workOrders")));
+    await denyAllSources(reader);
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: true,
         email: readerEmail,
       });
     });
-    await assertFails(get(ref(environment.authenticatedContext("other-reader", crmClaims(readerEmail)).database(), "crmCompany/workOrders")));
-    await assertFails(get(ref(environment.authenticatedContext(readerUid, crmClaims("other@bring.test")).database(), "crmCompany/workOrders")));
-    await assertFails(get(ref(environment.authenticatedContext(readerUid, crmPasswordClaims(readerEmail, false)).database(), "crmCompany/workOrders")));
+    await denyAllSources(environment.authenticatedContext("other-reader", crmClaims(readerEmail)).database());
+    await denyAllSources(environment.authenticatedContext(readerUid, crmClaims("other@bring.test")).database());
+    await denyAllSources(environment.authenticatedContext(readerUid, crmPasswordClaims(readerEmail, false)).database());
   });
 });
 
