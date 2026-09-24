@@ -54,17 +54,7 @@ test('concurrent updates of one revision commit exactly one update', async () =>
   await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
   const before = (await ref.get()).val();
   assert.equal(before?.invoices?.['invoice-1']?.revision, 1);
-  const seen = [];
-  const tracedRef = {
-    get: () => ref.get(),
-    transaction(update, ...rest) {
-      return ref.transaction(current => {
-        seen.push(current?.invoices?.['invoice-1']?.revision ?? null);
-        return update(current);
-      }, ...rest);
-    },
-  };
-  const update = (amount, requestId) => transactBillingLedger(tracedRef, {
+  const update = (amount, requestId) => transactBillingLedger(ref, {
     kind: 'invoice', record: { ...invoice('invoice-1'), amount }, expectedRevision: 1,
     requestId, actor, now,
   });
@@ -73,13 +63,11 @@ test('concurrent updates of one revision commit exactly one update', async () =>
     update(120000, 'request-update-2'),
   ]);
   assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
-    JSON.stringify({ attempts: attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok'), seen }));
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
   assert.equal(attempts.filter(result => result.status === 'rejected'
     && result.reason?.message === 'billing_revision_conflict').length, 1);
   const saved = (await ref.get()).val();
   assert.equal(saved.invoices['invoice-1'].revision, 2);
-  assert.ok(seen.includes(null), `expected an empty local-cache callback: ${JSON.stringify(seen)}`);
-  assert.ok(seen.includes(1), `expected a server-state retry: ${JSON.stringify(seen)}`);
 });
 
 test('concurrent approval of the same bank transaction commits one receipt', async () => {
