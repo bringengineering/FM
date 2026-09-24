@@ -54,3 +54,29 @@ test('one-off invoice persists occurrence key and cannot change it', async () =>
   remote.dbReadWithEtag = async () => ({ value: saved, etag: 'etag' });
   await assert.rejects(remote.saveBillingInvoice({ record: { ...oneOff, occurrenceId: 'visit-2' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
 });
+
+test('approved receipt requires evidence and rejects duplicate transaction reference', async () => {
+  const remote = client('admin');
+  remote.dbReadWithEtag = async location => ({ value: location.includes('/invoices/') ? { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } : null, etag: 'etag' });
+  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved', transactionRef: ' ' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
+  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved', evidenceRef: '' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
+  remote.dbRequest = async () => ({ receipts: { existing: { ...receipt, id: 'existing', status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } } });
+  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
+});
+
+test('void requires prior approval and unchanged financial/date fields', async () => {
+  const remote = client('admin');
+  remote.dbReadWithEtag = async () => ({ value: null, etag: 'etag' });
+  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', voidReason: 'cancel' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
+  const previous = { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' };
+  remote.dbReadWithEtag = async () => ({ value: previous, etag: 'etag' });
+  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', dueDate: '2026-10-01', voidReason: 'cancel' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
+});
+
+test('invoice with approved receipts cannot be voided', async () => {
+  const remote = client('admin');
+  const previous = { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' };
+  remote.dbReadWithEtag = async () => ({ value: previous, etag: 'etag' });
+  remote.dbRequest = async () => ({ receipts: { 'receipt-1': { ...receipt, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } } });
+  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', voidReason: 'cancel' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
+});

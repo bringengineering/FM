@@ -5240,6 +5240,12 @@ describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
     const { occurrenceId: _omitted, ...withoutOccurrence } = oneOff;
     await assertFails(set(ref(member, path), { ...withoutOccurrence, revision: 2 }));
   });
+  it('rejects direct void creation and approved receipt without evidence', async () => {
+    const admin = environment.authenticatedContext('crm-admin', crmClaims('admin@bring.test')).database();
+    await assertFails(set(ref(admin, 'crmCompany/billingLedger/invoices/new_void'), { ...draft, id: 'new_void', status: 'void', updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
+    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin', status: 'approved', approvedAt: NOW, approvedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/missing_evidence'), { id: 'missing_evidence', invoiceId: draft.id, receivedAt: '2026-09-25', amount: 1, transactionRef: 'bank', evidenceRef: ' ', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+  });
 });
 
 describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", () => {

@@ -1361,7 +1361,7 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
     if (record.contractType !== undefined && !['regular', 'one_off'].includes(record.contractType)) invalid();
     if (record.occurrenceId !== undefined && (!idPattern.test(record.occurrenceId) || record.contractType !== 'one_off')) invalid();
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(record.billingMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(record.dueDate)) invalid();
-  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(record.receivedAt) || typeof record.transactionRef !== 'string' || record.transactionRef.length > 160 || typeof record.evidenceRef !== 'string' || record.evidenceRef.length > 500) invalid();
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(record.receivedAt) || !Number.isFinite(Date.parse(`${record.receivedAt}T00:00:00Z`)) || new Date(`${record.receivedAt}T00:00:00Z`).toISOString().slice(0, 10) !== record.receivedAt || typeof record.transactionRef !== 'string' || record.transactionRef.length > 160 || typeof record.evidenceRef !== 'string' || record.evidenceRef.length > 500 || (record.status === 'approved' && (!record.transactionRef.trim() || !record.evidenceRef.trim()))) invalid();
   if (stored && (!Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.updatedAt !== 'string' || !idPattern.test(record.updatedBy))) invalid();
   if (stored && record.status === 'approved' && (typeof record.approvedAt !== 'string' || !idPattern.test(record.approvedBy))) invalid();
   if (stored && record.status === 'void' && (typeof record.voidedAt !== 'string' || !idPattern.test(record.voidedBy) || typeof record.voidReason !== 'string' || !record.voidReason.trim())) invalid();
@@ -2447,12 +2447,20 @@ class FirebaseRemoteClient {
     const snapshot = await this.dbReadWithEtag(location, false, guard);
     const previous = snapshot.value === null ? null : validateBillingRecord(kind, snapshot.value, source.id, true);
     if ((previous?.revision || 0) !== expectedRevision) throw createError('다른 사용자가 장부를 변경했습니다.', 'BILLING_LEDGER_CONFLICT');
+    if (source.status === 'void' && (!previous || previous.status !== 'approved' || !source.voidReason?.trim())) throw createError('확정된 장부만 사유를 남겨 취소할 수 있습니다.', 'VALIDATION_ERROR');
+    if (previous && previous.status === 'approved' && source.status === 'void' && (source.amount !== previous.amount || (kind === 'invoices' ? source.billingMonth !== previous.billingMonth || source.dueDate !== previous.dueDate || source.contractType !== previous.contractType : source.receivedAt !== previous.receivedAt || source.transactionRef !== previous.transactionRef || source.evidenceRef !== previous.evidenceRef))) throw createError('확정된 금액과 날짜를 변경할 수 없습니다.', 'VALIDATION_ERROR');
     if (previous && (previous.status !== 'draft' || source.id !== previous.id || (kind === 'invoices' && (source.contractId !== previous.contractId || source.occurrenceId !== previous.occurrenceId)) || (kind === 'receipts' && source.invoiceId !== previous.invoiceId))) {
       if (!(session.role === 'admin' && previous.status === 'approved' && source.status === 'void' && source.amount === previous.amount)) throw createError('확정된 장부는 수정할 수 없습니다.', 'VALIDATION_ERROR');
     }
     if (source.status === 'approved' && kind === 'receipts') {
       const linked = await this.dbReadWithEtag(`billingLedger/invoices/${source.invoiceId}`, false, guard);
       if (!linked.value || validateBillingRecord('invoices', linked.value, source.invoiceId, true).status !== 'approved') throw createError('확정된 청구서에만 입금을 확정할 수 있습니다.', 'VALIDATION_ERROR');
+      const ledger = await this.loadBillingLedger();
+      if (ledger.receipts.some(item => item.id !== source.id && item.status === 'approved' && item.invoiceId === source.invoiceId && item.transactionRef === source.transactionRef)) throw createError('같은 거래 참조가 이미 확정되었습니다.', 'VALIDATION_ERROR');
+    }
+    if (source.status === 'void' && kind === 'invoices') {
+      const ledger = await this.loadBillingLedger();
+      if (ledger.receipts.some(item => item.status === 'approved' && item.invoiceId === source.id)) throw createError('확정 입금이 있는 청구서는 취소할 수 없습니다.', 'VALIDATION_ERROR');
     }
     const now = new Date().toISOString();
     const record = { ...source, revision: expectedRevision + 1, updatedAt: now, updatedBy: session.uid };
