@@ -4867,7 +4867,7 @@
     const projectDetail = actualProject ? `<section class="project-workspace-detail" aria-label="${esc(project.name)} 프로젝트 상세">
       <button type="button" class="mini-button project-workspace-back" data-wo-project="__all">전체 프로젝트로</button>
       <nav class="project-workspace-detail-tabs" aria-label="프로젝트 상세 보기">${detailTabs.map(([key, label]) => `<button type="button" data-wo-project-section="${key}" aria-current="${projectDetailTab === key ? "page" : "false"}">${label}</button>`).join("")}</nav>
-      ${projectDetailTab === "overview" ? `<div class="project-workspace-overview"><div class="project-workspace-overview-head"><span>프로젝트 개요</span><h3>${esc(project.name)}</h3><p>${esc(project.goal || "프로젝트 목적이 아직 입력되지 않았습니다. 관리자가 프로젝트 수정에서 목적을 기록해 주세요.")}</p></div><dl><div><dt>책임자</dt><dd>${esc(project.owner || "미정")}</dd></div><div><dt>일정</dt><dd>${esc(project.startDate || "시작 미정")} ~ ${esc(project.endDate || "마감 미정")}</dd></div><div><dt>상태</dt><dd>${esc(P.statusLabel(project.status))}</dd></div><div><dt>담당자 보고 진도</dt><dd>${Number.isFinite(project.progress) ? `${project.progress}%` : "입력 없음"}</dd></div><div><dt>업무 검수 완료율 · 건수 기준</dt><dd>${projectCompletion ? `${projectCompletion.percent}% (${projectCompletion.done}/${projectCompletion.total}건)` : "집계 대기"}</dd></div></dl><p class="project-workspace-definition">보고 진도는 담당자가 입력한 값이고, 검수 완료율은 실제 업무의 완료 처리 건수입니다. 두 수치를 합산하지 않습니다.</p><button type="button" class="primary-button" data-wo-project-section="orders">연결된 업무지시 보기</button></div>` : ""}
+      ${projectDetailTab === "overview" ? `<div class="project-workspace-overview"><div class="project-workspace-overview-head"><span>프로젝트 개요</span><h3>${esc(project.name)}</h3><p>${esc(project.goal || "프로젝트 목적이 아직 입력되지 않았습니다. 관리자가 프로젝트 수정에서 목적을 기록해 주세요.")}</p></div><dl><div><dt>책임자</dt><dd>${esc(project.owner || "미정")}</dd></div><div><dt>일정</dt><dd>${esc(project.startDate || "시작 미정")} ~ ${esc(project.endDate || "마감 미정")}</dd></div><div><dt>상태</dt><dd>${esc(P.statusLabel(project.status))}</dd></div><div><dt>담당자 보고 진도</dt><dd>${Number.isFinite(project.progress) ? `${project.progress}%` : "입력 없음"}</dd></div><div><dt>업무 검수 완료율 · 건수 기준</dt><dd>${projectCompletion ? `${projectCompletion.percent}% (${projectCompletion.done}/${projectCompletion.total}건)` : "집계 대기"}</dd></div></dl><p class="project-workspace-definition">보고 진도는 담당자가 입력한 값이고, 검수 완료율은 실제 업무의 완료 처리 건수입니다. 두 수치를 합산하지 않습니다.</p><button type="button" class="primary-button" data-wo-project-section="orders">연결된 업무지시 보기</button>${workOrderState.admin ? `<button type="button" class="mini-button project-workspace-edit" data-wo-project-edit="${esc(project.id)}">프로젝트 수정</button>` : ""}</div>` : ""}
       ${projectDetailTab === "risks" ? `<div class="project-workspace-risk"><h3>확인할 일 ${projectRiskQueue.length}건</h3><p>기한 초과·보완 요청·검수 대기 업무를 원본에서 확인합니다. 별도 결정 요청 기록이 없는 경우 임의로 만들지 않습니다.</p>${projectRiskQueue.length ? `<div class="project-workspace-action-list">${projectRiskQueue.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}</small></button>`).join("")}</div>` : `<p>현재 조회 범위에 확인할 업무가 없습니다.</p>`}</div>` : ""}
     </section>` : "";
     const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
@@ -11576,6 +11576,18 @@
       workOrderState.projectDetailTab = projectSection.dataset.woProjectSection;
       renderWorkOrders();
       document.querySelector(`[data-wo-project-section="${workOrderState.projectDetailTab}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    const projectEdit = event.target.closest("[data-wo-project-edit]");
+    if (projectEdit) {
+      if (!workOrderState.admin) return showToast("프로젝트 수정은 관리자만 할 수 있습니다.", "error");
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) return showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 수정해 주세요.");
+      const P = projectCore();
+      const project = P && P.sortProjects(workOrderState.projects).find(item => item.id === projectEdit.dataset.woProjectEdit);
+      if (!project) return showToast("프로젝트 정보를 찾지 못했습니다. 다시 불러와 주세요.", "error");
+      workOrderState.projectEditing = P.normalizeProject(project);
+      renderWorkOrders();
+      document.querySelector("[data-wo-project-form]")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     if (event.target.closest("[data-wo-project-new]")) {

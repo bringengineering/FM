@@ -83,6 +83,15 @@ test('프로젝트 상세 탭은 편집 중 전환을 막고 업무 링크는 �
   assert.match(handler, /projectDetailTab = "orders"/u);
 });
 
+test('관리자는 프로젝트 개요에서 기존 편집기를 열 수 있다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(render, /workOrderState\.admin \? `<button[^`]*data-wo-project-edit/u);
+  const handler = source.slice(source.indexOf('const woProject = event.target.closest("[data-wo-project]")'), source.indexOf('const dfGo ='));
+  assert.match(handler, /data-wo-project-edit/u);
+  assert.match(handler, /workOrderState\.projectEditing = P\.normalizeProject\(project\)/u);
+});
+
 test('프로젝트 상세는 좁은 화면에서도 읽을 수 있는 탭·개요 스타일을 쓴다', () => {
   const css = read('toss.css');
   assert.match(css, /\.project-workspace-detail-tabs/u);
