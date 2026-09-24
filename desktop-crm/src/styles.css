@@ -856,17 +856,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-summary article.is-progress b { color: #00875A; }
 .roadmap-board { margin-bottom: 14px; overflow: hidden; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; }
 .roadmap-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-bottom: 1px solid #EEF1F4; background: #FBFCFD; }
+.roadmap-navigation { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.roadmap-scale { display: inline-flex; gap: 3px; padding: 3px; border-radius: 11px; background: #F2F4F6; }
+.roadmap-scale button { min-width: 48px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #4E5968; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.roadmap-scale button[aria-pressed="true"] { background: #fff; color: #1B64DA; box-shadow: 0 1px 4px rgba(23, 42, 61, .1); }
+.roadmap-scale button:focus-visible,.roadmap-period button:focus-visible,.roadmap-modes button:focus-visible { outline: 3px solid #3182F6; outline-offset: 2px; }
+.roadmap-scale button:disabled,.roadmap-period button:disabled,.roadmap-modes button:disabled { opacity: .48; cursor: not-allowed; }
 .roadmap-modes { display: inline-flex; gap: 3px; padding: 3px; border-radius: 11px; background: #F2F4F6; }
-.roadmap-modes button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #6B7684; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.roadmap-modes button { min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #6B7684; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
 .roadmap-modes button.is-active { background: #fff; color: #1B64DA; box-shadow: 0 1px 4px rgba(23, 42, 61, .1); }
 .roadmap-period { display: flex; align-items: center; gap: 7px; }
 .roadmap-period b { min-width: 210px; color: #333D4B; font-size: 11px; text-align: center; }
-.roadmap-period button { min-height: 32px; padding: 0 10px; border: 1px solid #DDE3EA; border-radius: 9px; background: #fff; color: #4E5968; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.roadmap-period button { min-height: 40px; padding: 0 10px; border: 1px solid #DDE3EA; border-radius: 9px; background: #fff; color: #4E5968; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
 .roadmap-period button:hover { border-color: #9CC4FA; color: #1B64DA; }
 .roadmap-axis { display: grid; grid-template-columns: 184px minmax(760px, 1fr); border-bottom: 1px solid #DCE3EA; background: #F7F9FA; }
 .roadmap-axis > div:first-child { display: flex; align-items: center; padding: 0 14px; border-right: 1px solid #DCE3EA; color: #4E5968; font-size: 10px; font-weight: 800; }
 .roadmap-axis > div:last-child { position: relative; display: grid; grid-template-columns: repeat(8, minmax(95px, 1fr)); }
-.roadmap-axis span { padding: 17px 4px 8px; border-left: 1px solid #E5E8EB; color: #6B7684; font-size: 9px; font-weight: 700; text-align: center; }
+.roadmap-axis span { padding: 17px 4px 8px; border-left: 1px solid #E5E8EB; color: #52616F; font-size: 11px; font-weight: 700; text-align: center; }
 .roadmap-axis span:first-child { border-left: 0; }
 .roadmap-today-label { position: absolute; z-index: 4; top: 3px; padding: 1px 7px; border: 1px solid rgba(229,87,99,.28); border-radius: 999px; background: #fff; color: #D94B58; font-size: 8px; font-weight: 900; line-height: 13px; pointer-events: none; transform: translateX(-50%); white-space: nowrap; writing-mode: horizontal-tb; }
 .roadmap-lanes { min-width: 944px; }

@@ -45,6 +45,22 @@ test("담당자·프로젝트·내 일정 보기와 기간 이동이 연결돼 �
   assert.doesNotMatch(css, /\.roadmap-today-line::before/u, "각 행의 오늘 기준선에 글자를 반복하면 안 된다");
 });
 
+test("로드맵은 8주와 8일을 전환하고 편집 중에는 날짜 축을 바꾸지 않는다", () => {
+  const start = app.indexOf("function renderProjectRoadmap(");
+  const end = app.indexOf("\n  function renderWorkOrders(", start);
+  const render = app.slice(start, end);
+  assert.match(app, /scale: "weeks"/u);
+  assert.match(render, /P\.roadmapRange\(today, projectRoadmapState\.rangeShift, projectRoadmapState\.scale\)/u);
+  assert.match(render, /range\.columns\.map/u);
+  assert.match(render, /data-roadmap-scale="weeks"[^>]*aria-pressed/u);
+  assert.match(render, /data-roadmap-scale="days"[^>]*aria-pressed/u);
+  assert.match(render, /8주/u);
+  assert.match(render, /8일/u);
+  assert.match(app, /projectRoadmapState\.scale = scale/u);
+  assert.match(app, /if \(roadmapEditing\)/u);
+  assert.match(css, /\.roadmap-scale button:focus-visible/u);
+});
+
 test("로드맵 일정 추가와 진행률 변경은 업무지시 저장 경로를 재사용한다", () => {
   assert.match(app, /data-roadmap-new/u);
   assert.match(app, /workOrderState\.editing = W\.normalizeOrder/u);
@@ -151,5 +167,11 @@ test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미�
   assert.match(main, /progressModalOpen/u);
   assert.match(main, /scrollTop: document\.querySelector\('\.main-content'\)\?\.scrollTop/u);
   assert.match(main, /todayLabels: labels\.length/u);
+});
+
+test("로드맵 미리보기는 실데이터 없이 8일 축을 선택해 날짜 라벨을 검수할 수 있다", () => {
+  assert.match(main, /BRING_CRM_SCREENSHOT_ROADMAP_SCALE/u);
+  assert.match(main, /data-roadmap-scale="days"/u);
+  assert.match(main, /\.roadmap-axis span/u);
 });
 

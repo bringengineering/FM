@@ -4435,6 +4435,7 @@
 
   let projectRoadmapState = {
     mode: "people",
+    scale: "weeks",
     rangeShift: 0,
     selectedKey: "",
     extensionProjectId: "",
@@ -4649,7 +4650,7 @@
       return;
     }
     const today = todayKey();
-    const range = P.roadmapRange(today, projectRoadmapState.rangeShift);
+    const range = P.roadmapRange(today, projectRoadmapState.rangeShift, projectRoadmapState.scale);
     const mine = projectRoadmapState.mode === "mine" ? workOrderState.uid : "";
     const mode = projectRoadmapState.mode === "projects" ? "projects" : "people";
     const lanes = P.roadmapRows({
@@ -4671,7 +4672,10 @@
       progress: assignments.length ? Math.round(assignments.reduce((sum, item) => sum + item.progress, 0) / assignments.length) : 0,
     };
     const todayLine = P.todayOffset(range, today);
-    const rangeLabel = range ? `${range.from.slice(0, 7).replace("-", "년 ")}월 ~ ${range.to.slice(0, 7).replace("-", "년 ")}월` : "";
+    const rangeLabel = range ? range.scale === "days"
+      ? `${range.from.replaceAll("-", ".")} ~ ${range.to.replaceAll("-", ".")}`
+      : `${range.from.slice(0, 7).replace("-", "년 ")}월 ~ ${range.to.slice(0, 7).replace("-", "년 ")}월` : "";
+    const roadmapEditing = Boolean(workOrderState.projectEditing || workOrderState.editing);
     const status = workOrderState.loading
       ? `<div class="info-box">프로젝트와 일정을 불러오는 중…</div>`
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
@@ -4705,7 +4709,7 @@
         : `<b>${esc(lane.label)}</b>`;
       return `<article class="roadmap-lane" style="--lane-height:${height}px">
         <div class="roadmap-lane-person"><span class="roadmap-avatar tone-${laneIndex % 5}">${esc(roadmapInitials(lane.label))}</span><div>${laneName}<small>${esc(laneSummary)}</small><span><i style="width:${laneProgress}%"></i></span></div></div>
-        <div class="roadmap-lane-track">${range.weeks.map(() => "<i></i>").join("")}${todayLine === null ? "" : `<span class="roadmap-today-line" style="left:${todayLine.toFixed(3)}%"></span>`}${bars}${workOrderState.admin ? `<button type="button" class="roadmap-lane-add" data-roadmap-new data-project-id="${esc(addProject === "__none" ? "" : addProject)}" data-assignee-uid="${esc(addUid === "__none" ? "" : addUid)}">＋ 일정</button>` : ""}</div>
+        <div class="roadmap-lane-track">${range.columns.map(() => "<i></i>").join("")}${todayLine === null ? "" : `<span class="roadmap-today-line" style="left:${todayLine.toFixed(3)}%"></span>`}${bars}${workOrderState.admin ? `<button type="button" class="roadmap-lane-add" data-roadmap-new data-project-id="${esc(addProject === "__none" ? "" : addProject)}" data-assignee-uid="${esc(addUid === "__none" ? "" : addUid)}">＋ 일정</button>` : ""}</div>
       </article>`;
     }).join("");
 
@@ -4725,13 +4729,13 @@
       <section class="roadmap-board">
         <header class="roadmap-toolbar">
           <div class="roadmap-modes" role="tablist" aria-label="로드맵 보기 기준">
-            <button type="button" class="${projectRoadmapState.mode === "people" ? "is-active" : ""}" data-roadmap-mode="people">담당자 기준</button>
-            <button type="button" class="${projectRoadmapState.mode === "projects" ? "is-active" : ""}" data-roadmap-mode="projects">프로젝트 기준</button>
-            <button type="button" class="${projectRoadmapState.mode === "mine" ? "is-active" : ""}" data-roadmap-mode="mine">내 일정만</button>
+            <button type="button" class="${projectRoadmapState.mode === "people" ? "is-active" : ""}" data-roadmap-mode="people" ${roadmapEditing ? "disabled" : ""}>담당자 기준</button>
+            <button type="button" class="${projectRoadmapState.mode === "projects" ? "is-active" : ""}" data-roadmap-mode="projects" ${roadmapEditing ? "disabled" : ""}>프로젝트 기준</button>
+            <button type="button" class="${projectRoadmapState.mode === "mine" ? "is-active" : ""}" data-roadmap-mode="mine" ${roadmapEditing ? "disabled" : ""}>내 일정만</button>
           </div>
-          <div class="roadmap-period"><button type="button" data-roadmap-shift="-1" aria-label="이전 기간">‹</button><b>${esc(rangeLabel)}</b><button type="button" data-roadmap-shift="1" aria-label="다음 기간">›</button><button type="button" data-roadmap-today>오늘로 이동</button></div>
+          <div class="roadmap-navigation"><div class="roadmap-scale" role="group" aria-label="로드맵 날짜 축"><button type="button" data-roadmap-scale="weeks" aria-pressed="${projectRoadmapState.scale === "weeks"}" ${roadmapEditing ? "disabled" : ""}>8주</button><button type="button" data-roadmap-scale="days" aria-pressed="${projectRoadmapState.scale === "days"}" ${roadmapEditing ? "disabled" : ""}>8일</button></div><div class="roadmap-period"><button type="button" data-roadmap-shift="-1" aria-label="이전 기간" ${roadmapEditing ? "disabled" : ""}>‹</button><b>${esc(rangeLabel)}</b><button type="button" data-roadmap-shift="1" aria-label="다음 기간" ${roadmapEditing ? "disabled" : ""}>›</button><button type="button" data-roadmap-today ${roadmapEditing ? "disabled" : ""}>오늘로 이동</button></div></div>
         </header>
-        <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.weeks.map(week => `<span>${esc(week.label)}</span>`).join("")}${todayLine === null ? "" : `<b class="roadmap-today-label" style="left:${todayLine.toFixed(3)}%">오늘</b>`}</div></div>
+        <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.columns.map(column => `<span>${esc(column.label)}</span>`).join("")}${todayLine === null ? "" : `<b class="roadmap-today-label" style="left:${todayLine.toFixed(3)}%">오늘</b>`}</div></div>
         <div class="roadmap-lanes">${laneHtml || `<div class="roadmap-no-lanes"><b>이 기간에 표시할 일정이 없습니다.</b><span>일정을 추가하거나 앞뒤 기간으로 이동해 주세요.</span></div>`}</div>
       </section>
       ${roadmapDetail(W, P, selected, today)}`;
@@ -11728,8 +11732,20 @@
       showToast("기간 연장을 저장하거나 취소한 뒤 이동해 주세요.");
       return;
     }
+    const roadmapEditing = Boolean(workOrderState.projectEditing || workOrderState.editing);
+    const roadmapScale = event.target.closest("[data-roadmap-scale]");
+    if (roadmapScale) {
+      if (roadmapEditing) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 날짜 축을 바꿔 주세요."); return; }
+      const scale = roadmapScale.dataset.roadmapScale;
+      if (scale !== "weeks" && scale !== "days") return;
+      projectRoadmapState.scale = scale;
+      projectRoadmapState.rangeShift = 0;
+      renderProjectRoadmap();
+      return;
+    }
     const roadmapMode = event.target.closest("[data-roadmap-mode]");
     if (roadmapMode) {
+      if (roadmapEditing) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 보기를 바꿔 주세요."); return; }
       const mode = roadmapMode.dataset.roadmapMode;
       projectRoadmapState.mode = ["people", "projects", "mine"].includes(mode) ? mode : "people";
       projectRoadmapState.selectedKey = "";
@@ -11738,12 +11754,14 @@
     }
     const roadmapShift = event.target.closest("[data-roadmap-shift]");
     if (roadmapShift) {
+      if (roadmapEditing) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 기간을 이동해 주세요."); return; }
       projectRoadmapState.rangeShift += Number(roadmapShift.dataset.roadmapShift) || 0;
       projectRoadmapState.selectedKey = "";
       renderProjectRoadmap();
       return;
     }
     if (event.target.closest("[data-roadmap-today]")) {
+      if (roadmapEditing) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 이동해 주세요."); return; }
       projectRoadmapState.rangeShift = 0;
       projectRoadmapState.selectedKey = "";
       renderProjectRoadmap();

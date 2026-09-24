@@ -100,6 +100,22 @@ test("로드맵은 오늘 주간을 화면 가운데에 둔 8주 범위를 만�
   assert.equal(next.from, "2026-09-14");
 });
 
+test("로드맵을 확대하면 오늘 주변 8일을 날짜별로 보여 주고 8일씩 이동한다", () => {
+  const range = P.roadmapRange("2026-09-24", 0, "days");
+  assert.equal(range.from, "2026-09-21");
+  assert.equal(range.to, "2026-09-28");
+  assert.equal(range.days, 8);
+  assert.equal(range.scale, "days");
+  assert.equal(range.columns.length, 8);
+  assert.equal(range.columns[0].start, "2026-09-21");
+  assert.equal(range.columns[7].start, "2026-09-28");
+  assert.equal(P.roadmapRange("2026-09-24", 1, "days").from, "2026-09-29");
+  assert.ok(P.todayOffset(range, "2026-09-24") > 0);
+  const box = P.roadmapLayout({ startDate: "2026-09-01", endDate: "2026-10-01" }, range);
+  assert.equal(box.left, 0);
+  assert.equal(box.width, 100);
+});
+
 test("로드맵은 같은 담당자의 같은 프로젝트 업무를 막대 하나로 묶는다", () => {
   const range = P.roadmapRange("2026-09-07", 0);
   const lanes = P.roadmapRows({
