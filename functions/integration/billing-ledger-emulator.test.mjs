@@ -70,6 +70,28 @@ test('concurrent updates of one revision commit exactly one update', async () =>
   assert.equal(saved.invoices['invoice-1'].revision, 2);
 });
 
+test('concurrent manager approvals of one invoice commit exactly one approval', async () => {
+  const ref = testRoot.child('same-approval');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  const approve = uid => transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+    expectedRevision: 1, requestId: `request-approve-${uid}`,
+    actor: { uid, role: 'admin' }, now,
+  });
+  const attempts = await Promise.allSettled([
+    approve('admin-1'),
+    approve('admin-2'),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_revision_conflict').length, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].status, 'approved');
+  assert.equal(saved.invoices['invoice-1'].revision, 2);
+  assert.ok(['admin-1', 'admin-2'].includes(saved.invoices['invoice-1'].approvedBy));
+});
+
 test('concurrent approval of the same bank transaction commits one receipt', async () => {
   const ref = testRoot.child('same-transaction');
   await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));

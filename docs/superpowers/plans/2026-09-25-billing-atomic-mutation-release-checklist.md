@@ -2,7 +2,7 @@
 
 상태: 로컬 구현 완료 여부를 검증하는 작업 문서. 운영 배포 승인이나 실행 기록이 아니다.
 
-로컬 Firebase 에뮬레이터에서는 `node --test functions/integration/billing-ledger-emulator.test.mjs`로 동일 계약·월 동시 청구, 같은 버전 동시 수정, 같은 거래 참조 동시 입금, 청구 취소·입금 확정 경쟁과 재시도를 검사한다. 이 테스트는 `demo-bring-fm` 에뮬레이터에서만 실행되며 실제 회사 DB를 수정하지 않는다. 실제 운영 데이터와 두 기기 TV 검증을 대신하지 않는다.
+로컬 Firebase 에뮬레이터에서는 `node --test functions/integration/billing-ledger-emulator.test.mjs`로 동일 계약·월 동시 청구, 같은 버전 동시 수정·관리자 확정, 같은 거래 참조 동시 입금, 청구 취소·입금 확정 경쟁과 재시도를 검사한다. 이 테스트는 `demo-bring-fm` 에뮬레이터에서만 실행되며 실제 회사 DB를 수정하지 않는다. 실제 운영 데이터와 두 기기 TV 검증을 대신하지 않는다.
 
 ## 운영 데이터 보존
 
