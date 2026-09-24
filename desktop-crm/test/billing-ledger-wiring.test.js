@@ -40,3 +40,19 @@ test('billing drafts can be corrected with optimistic revision and viewers only 
   assert.match(app, /canWriteCRM\(\) \? `<form id="billingInvoiceForm"/u);
   assert.match(app, /summarizeMonth\(/u);
 });
+
+test('admins can void confirmed billing with a reason while draft receipts may target draft invoices', () => {
+  const app = read('app.js');
+  assert.match(app, /data-billing-void-invoice/u);
+  assert.match(app, /data-billing-void-receipt/u);
+  assert.match(app, /voidReason/u);
+  assert.match(app, /receiptInvoiceChoices = invoices\.filter\(item => item\.status === "approved" \|\| item\.status === "draft"\)/u);
+});
+
+test('monthly management report compares legacy finance with confirmed ledger and fails closed', () => {
+  const app = read('app.js');
+  assert.match(app, /loadManagementBillingLedger/u);
+  assert.match(app, /청구 장부를 불러올 수 없습니다/u);
+  assert.match(app, /기존 계약 표시 기준/u);
+  assert.match(app, /확정 장부 기준/u);
+});
