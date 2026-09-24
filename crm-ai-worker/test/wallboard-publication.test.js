@@ -38,6 +38,15 @@ test('legacy undated completed-work count is optional for old snapshots and boun
  next.model.portfolio.unattributedDone=-1;
  assert.throws(()=>validatePublication(next),/INVALID_INPUT/);
 });
+test('approved weekly report projection is optional, bounded, and contains no narrative',()=>{
+ const old=snapshot();assert.deepEqual(validatePublication(old),old);
+ const next=snapshot();next.model.weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};
+ assert.deepEqual(validatePublication(next),next);
+ const impossible=structuredClone(next);impossible.model.weeklyReports.approvedDone=4;
+ assert.throws(()=>validatePublication(impossible),/INVALID_INPUT/);
+ const privateText=structuredClone(next);privateText.model.weeklyReports.summary='고객 상담 내용';
+ assert.throws(()=>validatePublication(privateText),/INVALID_INPUT/);
+});
 test('published board uses optimistic revision and requires unrevoked device on every read',async()=>{
  let state={};let queue=Promise.resolve();const repository={transaction:fn=>{const p=queue.then(()=>fn(state));queue=p.catch(()=>{});return p;}};
  const service=createPairingService({repository,now:()=>1000}),admin={uid:'a',isAdmin:true};
