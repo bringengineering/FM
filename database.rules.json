@@ -957,10 +957,11 @@
       "$year": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
-        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','vision','updatedAt','updatedBy']) && newData.child('year').val() === $year && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','vision','content','updatedAt','updatedBy']) && newData.child('year').val() === $year && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
         "year": { ".validate": "newData.isString() && newData.val() === $year" },
         "revision": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0" },
         "vision": { ".validate": "newData.isString() && newData.val().length <= 500" },
+        "content": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30000" },
         "organization": {
           "$memberKey": {
             ".validate": "$memberKey.matches(/^m_[A-Za-z0-9_-]{2,171}$/) && newData.hasChildren(['uid','role','reportsToUid']) && newData.child('uid').val().matches(/^[A-Za-z0-9._-]{1,128}$/)",
@@ -995,33 +996,10 @@
       "$year": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
-        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','vision','updatedAt','updatedBy','publishedAt','publishedBy','sourceRevision']) && newData.child('year').val() === $year && newData.child('vision').val().length > 0 && newData.child('sourceRevision').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('revision').val() && newData.child('vision').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('vision').val() && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+        ".validate": "$year.matches(/^20[0-9]{2}$/) && newData.hasChildren(['year','revision','content','updatedAt','updatedBy','publishedAt','publishedBy','sourceRevision']) && newData.child('year').val() === $year && newData.child('sourceRevision').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('revision').val() && newData.child('content').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('content').val() && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
         "year": { ".validate": "newData.isString() && newData.val() === $year" },
         "revision": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0" },
-        "vision": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
-        "organization": {
-          "$memberKey": {
-            ".validate": "$memberKey.matches(/^m_[A-Za-z0-9_-]{2,171}$/) && newData.hasChildren(['uid','role','reportsToUid']) && newData.child('uid').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('uid').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('organization').child($memberKey).child('uid').val() && newData.child('role').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('organization').child($memberKey).child('role').val() && newData.child('reportsToUid').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('organization').child($memberKey).child('reportsToUid').val()",
-            "uid": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,128}$/)" },
-            "role": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
-            "reportsToUid": { ".validate": "newData.isString() && newData.val().length <= 128" },
-            "$other": { ".validate": false }
-          }
-        },
-        "goals": {
-          "$goalId": {
-            ".validate": "$goalId.matches(/^[A-Za-z0-9_-]{1,80}$/) && newData.hasChildren(['id','period','title','unit','source']) && newData.child('id').val() === $goalId && newData.child('source').val().length > 0 && (newData.child('unit').val() === 'milestone' || newData.child('target').isNumber()) && newData.child('id').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('id').val() && newData.child('period').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('period').val() && newData.child('title').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('title').val() && newData.child('unit').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('unit').val() && newData.child('source').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('source').val() && newData.child('baseline').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('baseline').val() && newData.child('target').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('target').val() && newData.child('current').val() === root.child('crmCompany/companyStrategyDrafts').child($year).child('goals').child($goalId).child('current').val()",
-            "id": { ".validate": "newData.isString() && newData.val() === $goalId" },
-            "period": { ".validate": "newData.isString() && (newData.val() === 'annual' || newData.val() === 'H1' || newData.val() === 'H2')" },
-            "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
-            "unit": { ".validate": "newData.isString() && (newData.val() === 'count' || newData.val() === 'percent' || newData.val() === 'krw' || newData.val() === 'day' || newData.val() === 'milestone')" },
-            "baseline": { ".validate": "newData.isNumber()" },
-            "target": { ".validate": "newData.isNumber()" },
-            "current": { ".validate": "newData.isNumber()" },
-            "source": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
-            "$other": { ".validate": false }
-          }
-        },
+        "content": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30000" },
         "updatedAt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) && newData.val().length <= 40" },
         "updatedBy": { ".validate": "newData.isString() && newData.val() === auth.uid" },
         "publishedAt": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) && newData.val().length <= 40" },

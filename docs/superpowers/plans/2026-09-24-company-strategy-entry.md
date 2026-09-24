@@ -4,7 +4,7 @@
 
 **Goal:** 관리자가 CRM에서 비전·보고 관계·연간/반기 목표를 초안으로 저장하고 명시적으로 게시하면 직원이 프로젝트 관리에서 승인본을 읽는다. 기존 분기 Objective/KR은 그대로 보존한다.
 
-**Architecture:** `companyStrategyDrafts/<year>`와 `companyStrategyPublications/<year>`를 별도 Firebase RTDB 경로로 둔다. 초안은 관리자만 읽고 쓰며, 게시본은 인증된 직원이 읽되 관리자만 새 revision으로 교체한다. TV 서비스 조회 권한은 이번 단계에서 주지 않는다. 기존 `objectives`는 읽기 전용 연결로 유지하고 ID를 이동하지 않는다. 로컬 검증과 RTDB 규칙이 같은 필드 집합을 검사한다.
+**Architecture:** `companyStrategyDrafts/<year>`와 `companyStrategyPublications/<year>`를 별도 Firebase RTDB 경로로 둔다. 초안은 관리자만 읽고 쓰며, 게시본은 인증된 직원이 읽되 관리자만 새 revision으로 교체한다. TV 서비스 조회 권한은 이번 단계에서 주지 않는다. 기존 `objectives`는 읽기 전용 연결로 유지하고 ID를 이동하지 않는다. 초안의 구조화된 필드와 함께 승인 대상 전체를 직렬화한 `content`를 저장하고, 게시본은 이 `content`와 메타데이터만 갖는다. RTDB 규칙은 게시 `content`와 현재 초안 `content`의 완전 일치를 검사한다. 게시를 읽는 CRM은 파싱 후 로컬 검증을 다시 수행한다. 이는 RTDB 규칙이 동적 자식 맵의 누락을 검사할 수 없다는 에뮬레이터 검증 결과를 반영한 변경이다.
 
 **Tech Stack:** Electron/Node CommonJS, 브라우저 UMD 코어, Firebase Realtime Database REST와 Emulator Rules, 기존 CRM `app.js`/`remote.js`/`main.js`.
 
@@ -21,7 +21,7 @@
 
 ## 저장 계약
 
-경로별 레코드는 같은 `year`, `revision`, `vision`, `organization`, `goals`, `updatedAt`, `updatedBy`를 갖는다. `organization`은 UID 키 아래 `{uid,role,reportsToUid}`를, `goals`는 고정 ID 키 아래 `{id,period,title,unit,baseline,target,current,source}`를 둔다. `period`는 `annual`, `H1`, `H2`만 허용한다. `unit`은 `count`, `percent`, `krw`, `day`, `milestone` 중 하나다. `milestone`은 숫자 진행률을 계산하지 않는다. 숫자 목표도 `source`가 비어 있거나 `current`가 미확인인 경우 달성률 대신 `확인 필요`를 표시한다. 게시본에는 `publishedAt`, `publishedBy`, `sourceRevision`이 추가된다. 고객·계약·출입정보·급여·평가 내용은 이 저장소에 넣지 않는다.
+초안 레코드는 `year`, `revision`, `vision`, `organization`, `goals`, `content`, `updatedAt`, `updatedBy`를 갖는다. 게시 레코드는 `year`, `revision`, `content`, `updatedAt`, `updatedBy`, `publishedAt`, `publishedBy`, `sourceRevision`만 갖는다. `content`는 초안의 승인 대상 전체(`year`, `vision`, `organization`, `goals`)를 직렬화한 30,000자 이하 문자열이다. `organization`은 Firebase 안전 키 아래 `{uid,role,reportsToUid}`를, `goals`는 고정 ID 키 아래 `{id,period,title,unit,baseline,target,current,source}`를 둔다. `period`는 `annual`, `H1`, `H2`만 허용한다. `unit`은 `count`, `percent`, `krw`, `day`, `milestone` 중 하나다. `milestone`은 숫자 진행률을 계산하지 않는다. 숫자 목표도 `source`가 비어 있거나 `current`가 미확인인 경우 달성률 대신 `확인 필요`를 표시한다. 고객·계약·출입정보·급여·평가 내용은 이 저장소에 넣지 않는다.
 
 ## Task 1: 입력 계약과 실패 우선 테스트
 
