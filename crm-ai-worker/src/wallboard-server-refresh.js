@@ -1,9 +1,11 @@
 import wallboard from '../../desktop-crm/src/company-wallboard.js';
+import weeklyCore from '../../desktop-crm/src/project-weekly-report-core.js';
+import weeklyExport from '../../desktop-crm/src/project-weekly-report-export.js';
 import {validatePublication} from './wallboard-publication.js';
 import {exchangeWallboardReaderToken} from './wallboard-service-auth.js';
 
 const MAX_SOURCE_BYTES=2*1024*1024;
-const paths=['workOrders','projects','data/serviceRecords','access','teamProfiles'];
+const paths=['workOrders','projects','data/serviceRecords','access','teamProfiles','projectWeeklyReports','projectWeeklyReportReviews'];
 const defaultPlaylist=[['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30]].map(([key,seconds])=>({key,enabled:true,seconds}));
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
@@ -70,7 +72,17 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  const namedProjects=rows(source.projects).map(item=>({...item,name:privateText(item.name)?'프로젝트명 확인 필요':item.name,owner:safeName(item.owner)}));
  const dateParts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(now())).map(part=>[part.type,part.value]));
  const dataDate=`${dateParts.year}-${dateParts.month}-${dateParts.day}`;
- const model=wallboard.project({orders:namedOrders,projects:namedProjects,members,calendar:{serviceRecords:rows(source['data/serviceRecords'])}},dataDate);
+ const reports=rows(source.projectWeeklyReports);
+ if(reports.some(report=>!weeklyCore.validateReport(report).ok||report.status==='approved'))fail('WALLBOARD_UNAVAILABLE');
+ const byReport=new Map(reports.map(report=>[report.id,report]));
+ for(const review of rows(source.projectWeeklyReportReviews)){
+  const report=byReport.get(review.id);
+  if(!report||report.status!=='submitted'||!['approved','returned'].includes(review.status)||review.projectId!==report.projectId||review.authorUid!==report.authorUid||typeof review.reviewerUid!=='string'||!review.reviewerUid||typeof review.reviewedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(review.reviewedAt)||!Number.isFinite(Date.parse(review.reviewedAt)))fail('WALLBOARD_UNAVAILABLE');
+  report.status=review.status;
+  if(review.status==='approved')report.approvedAt=review.reviewedAt;
+ }
+ const weeklyReports=weeklyExport.tvProjection(reports,dataDate);
+ const model=wallboard.project({orders:namedOrders,projects:namedProjects,members,calendar:{serviceRecords:rows(source['data/serviceRecords'])},weeklyReports},dataDate);
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';

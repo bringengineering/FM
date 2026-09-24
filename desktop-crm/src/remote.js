@@ -4567,7 +4567,9 @@ class FirebaseRemoteClient {
     for (const [id, review] of Object.entries(reviews)) {
       const report = reports.find(item => item.id === id);
       if (!report || report.status !== "submitted" || !review || !["approved", "returned"].includes(review.status)
-        || review.projectId !== report.projectId || review.authorUid !== report.authorUid || !review.reviewerUid || !review.reviewedAt) {
+        || review.projectId !== report.projectId || review.authorUid !== report.authorUid || !review.reviewerUid
+        || typeof review.reviewedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(review.reviewedAt)
+        || !Number.isFinite(Date.parse(review.reviewedAt))) {
         throw createError("저장된 주간 검수 기록을 확인할 수 없습니다. 관리자에게 알려 주세요.", "REPORT_REVIEW_INVALID");
       }
       report.status = review.status;

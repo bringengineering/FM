@@ -26,7 +26,13 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-24-4'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-24-5'});
+});
+test('web TV separately labels approved project weekly reports',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/승인된 프로젝트 주간 보고/);
+ assert.match(source,/weeklyReports\.approvedDone/);
+ assert.match(source,/집계 대기/);
 });
 
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{

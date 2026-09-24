@@ -62,6 +62,12 @@ test('조회는 불변 제출본과 별도 검수 결정을 결합한다', async
   assert.equal(result.reports[0].status, 'approved');
   assert.deepEqual(result.reports[0].snapshot, submitted.snapshot);
 });
+test('잘못된 검수 시각은 승인으로 표시하지 않는다',async()=>{
+  const submitted=await client().saveProjectWeeklyReport({id:'r1',projectId:'p1',asOf:'2026-09-24',action:'submit',summary:'완료',nextActions:'재점검'});
+  const remote=client();
+  remote.dbRequest=async location=>location==='projectWeeklyReports'?{r1:submitted}:location==='projectWeeklyReportReviews'?{r1:{status:'approved',projectId:'p1',authorUid:'u1',reviewerUid:'admin',reviewedAt:'zzz'}}:null;
+  await assert.rejects(remote.loadProjectWeeklyReports(),error=>error.code==='REPORT_REVIEW_INVALID');
+});
 
 test('검수 요청에는 실제 결과와 다음 행동을 직접 확인해 적어야 한다', async () => {
   const remote = client();

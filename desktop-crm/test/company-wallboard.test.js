@@ -211,3 +211,14 @@ test('legacy completed work without a valid approval timestamp is reported outsi
  assert.equal(m.portfolio.weeklyDone.reduce((sum,item)=>sum+item.count,0),0);
  assert.match(C.scene(m,'weeklyTrend'),/완료 시각 확인 필요 1건/);
 });
+test('approved project weekly reports stay separate from work-order completion trend',()=>{
+ const weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};
+ const model=C.project({orders:[],weeklyReports},'2026-09-24');
+ assert.deepEqual(model.weeklyReports,weeklyReports);
+ assert.equal(model.portfolio.weeklyDone.at(-1).count,0);
+ assert.match(C.scene(model,'weeklyTrend'),/승인된 프로젝트 주간 보고/);
+ assert.match(C.scene(model,'weeklyTrend'),/1\/3/);
+ const unavailable=C.project({orders:[]},'2026-09-24');
+ assert.equal(unavailable.weeklyReports.available,false);
+ assert.match(C.scene(unavailable,'weeklyTrend'),/집계 대기/);
+});
