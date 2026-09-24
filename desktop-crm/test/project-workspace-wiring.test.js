@@ -115,11 +115,30 @@ test('관리자는 프로젝트 개요에서 기존 편집기를 열 수 있다'
   assert.match(handler, /workOrderState\.projectEditing = P\.normalizeProject\(project\)/u);
 });
 
+test('프로젝트 보고 탭은 주간 담당자·원본 ID 집계 모듈을 사용한다', () => {
+  const html = read('index.html');
+  assert.ok(html.indexOf('./weekly-performance-core.js') < html.indexOf('./project-weekly-report-core.js'));
+  assert.ok(html.indexOf('./project-weekly-report-core.js') < html.indexOf('./app.js'));
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(render, /BringProjectWeeklyReportCore/u);
+  assert.match(render, /selectProjectOrders\(\{ orders: workOrderState\.performanceOrders, projectId: selected \}\)/u);
+  assert.match(render, /const reportSourceOrders = performanceScoped;/u);
+  assert.match(render, /orders: reportSourceOrders/u);
+  const reportPanel = render.slice(render.indexOf('const reportPanel = () =>'), render.indexOf('const planningPanel ='));
+  assert.match(reportPanel, /workOrderState\.loaded && !workOrderState\.loading && !workOrderState\.error/u);
+  assert.match(render, /project-weekly-report/u);
+  assert.match(render, /sourceOrderIds/u);
+  assert.match(render, /data-wo-open-card/u);
+});
+
 test('프로젝트 상세는 좁은 화면에서도 읽을 수 있는 탭·개요 스타일을 쓴다', () => {
   const css = read('toss.css');
   assert.match(css, /\.project-workspace-detail-tabs/u);
   assert.match(css, /\.project-workspace-overview/u);
   assert.match(css, /\.project-workspace-tab-content/u);
+  assert.match(css, /\.project-weekly-report/u);
+  assert.match(css, /\.project-weekly-report-sources button:focus-visible/u);
   assert.match(css, /\.project-workspace-detail-tabs button:focus-visible/u);
   assert.match(css, /@media\(max-width:640px\)[^\n]*project-workspace-detail-tabs/u);
 });

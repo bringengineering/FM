@@ -7,7 +7,7 @@ const W=require('../src/work-order-core');
 const source=fs.readFileSync(path.join(__dirname,'../src/remote.js'),'utf8');
 function client(role='member',race=false,status='doing'){
  const start=source.indexOf('  async updateWorkOrderProgress(input) {');
- const end=source.indexOf('\n  // 작업 결과보고서.',start);
+ const end=source.indexOf('\n  async loadProjectWeeklyReports()',start);
  let record=W.normalizeOrder({id:'work1',title:'업무',why:'이유',what:'내용',doneWhen:'기준',assigneeUid:'u',status});
  let puts=0,reads=0;
  const context={WorkOrderCore:W,WorkOutcomeCore:require('../src/work-outcome-core'),createError:(message,code)=>Object.assign(new Error(message),{code})};

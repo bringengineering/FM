@@ -2,8 +2,10 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
+  'crm:project-weekly-reports-load',
   'crm:work-outcome-draft-load',
   'crm:work-outcome-export',
+  'crm:project-weekly-report-export',
   'crm:building-atlas-load','crm:input-language-korean',
   'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:weekly-report-export','crm:service-report-export','crm:building-monthly-report-export','crm:quote-supplier-load','crm:quote-seal-load','crm:owner-os-settings-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout','crm:drive-status','crm:building-document-pick',
   'crm:load','crm:office-load','crm:office-attendance-export','crm:office-attachment-open','crm:office-messenger-presence','crm:operations-intelligence-load','crm:canonical-building-units-load',
@@ -13,6 +15,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
+  'crm:project-weekly-report-save',
   'crm:wallboard-admin',
   'crm:work-outcome-draft-save','crm:work-outcome-draft-clear',
   'crm:building-atlas-save',

@@ -23,6 +23,7 @@ const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
+const ProjectWeeklyReportExport = require("./project-weekly-report-export");
 const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
@@ -5040,6 +5041,29 @@ async function initializeRemote() {
   await remoteClient.init();
 }
 
+async function exportProjectWeeklyReport(input) {
+  const format = input && input.format;
+  if (!["docx", "pptx"].includes(format)) throw new Error("지원하지 않는 보고서 파일 형식입니다.");
+  if (!remoteClient || !authState().user || isMarketingOnlySession()) throw new Error("주간 보고서 조회 권한이 없습니다.");
+  const guard = remoteClient.captureSessionGuard();
+  const loaded = await remoteClient.loadProjectWeeklyReports();
+  remoteClient.assertSessionGuardActive(guard);
+  const report = loaded.reports.find(item => item.id === input.id);
+  const bundle = ProjectWeeklyReportExport.bundle(report);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: `승인된 프로젝트 주간 보고서 ${format === "docx" ? "Word" : "PowerPoint"} 저장`,
+    defaultPath: `BRING_프로젝트주간보고_${bundle.from}_${bundle.to}.${format}`,
+    filters: [{ name: format === "docx" ? "Word 문서" : "PowerPoint 발표자료", extensions: [format] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  remoteClient.assertSessionGuardActive(guard);
+  if (path.extname(result.filePath).toLowerCase() !== `.${format}`) throw new Error(`파일 확장자 .${format}로 저장해 주세요.`);
+  const bytes = (format === "docx" ? WorkOutcomeDocx : WorkOutcomePptx).create(bundle);
+  remoteClient.assertSessionGuardActive(guard);
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, filePath: result.filePath, format };
+}
+
 function ensureWallboardLiveSync() {
   if (wallboardLiveSync) return wallboardLiveSync;
   const { loadWallboardSource } = require("./wallboard-publisher");
@@ -8498,12 +8522,14 @@ secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveReque
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
 secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
+secureCanonicalHandle("crm:project-weekly-report-export", input => exportProjectWeeklyReport(input));
 secureCanonicalHandle("crm:work-outcome-draft-save", input => handleWorkOutcomeDraft('save', input));
 secureCanonicalHandle("crm:work-outcome-draft-clear", input => handleWorkOutcomeDraft('clear', input));
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
@@ -8938,6 +8964,7 @@ function readWorkflowCollection(method) {
   const collections = {
     loadForms: ["templates", "entries"],
     loadWorkOrders: ["orders", "projects", "capacity", "directives", "members"],
+    loadProjectWeeklyReports: ["reports"],
     loadSupplies: ["items", "moves", "costs"],
     loadDeliveryFlows: ["flows"],
     loadWorkReports: ["reports"],
@@ -8959,6 +8986,7 @@ function readWorkflowCollection(method) {
 }
 secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
 secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
+secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
 secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));
