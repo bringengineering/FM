@@ -8,7 +8,8 @@ import {validateWallboardBillingLedger} from './wallboard-billing-source.js';
 
 const MAX_SOURCE_BYTES=2*1024*1024;
 const paths=['workOrders','projects','data/serviceRecords','access','teamProfiles','projectWeeklyReports','projectWeeklyReportReviews','billingLedger'];
-const defaultPlaylist=[['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30]].map(([key,seconds])=>({key,enabled:true,seconds}));
+const defaultPlaylist=[['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30],['companyRevenue',30]].map(([key,seconds])=>({key,enabled:true,seconds}));
+const withRevenueScene=playlist=>playlist.some(item=>item?.key==='companyRevenue')?playlist:[...playlist,{key:'companyRevenue',enabled:true,seconds:30}];
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
 const addressPattern=/(?:[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?|[가-힣]+(?:동|읍|면|리)\s*\d{1,4}(?:-\d{1,4})?|\d{1,4}\s*(?:번지|호))/u;
@@ -91,7 +92,7 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';
-  const snapshot=validatePublication({model,playlist:strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
+  const snapshot=validatePublication({model,playlist:withRevenueScene(strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist)),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
   if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>65536)fail('WALLBOARD_UNAVAILABLE');
   try{const result=await command(stub,'publish-if-changed',{snapshot,expectedVersion:current.version,refreshToken});return {version:result.version,publishedAt:result.publishedAt};}
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}

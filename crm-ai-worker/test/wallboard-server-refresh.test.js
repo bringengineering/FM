@@ -20,7 +20,7 @@ sources.projectWeeklyReportReviews={r1:{status:'approved',projectId:'p1',authorU
 function fixture(overrides={}){
  const reads=[],commands=[];
  let version=0;
- const presentation={playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:overrides.notice||'이번 주 결과 확인'};
+ const presentation={playlist:overrides.playlist||[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:overrides.notice||'이번 주 결과 확인'};
  const fetchImpl=async (url,options={})=>{
   const parsed=new URL(url),resource=parsed.pathname.slice('/crmCompany/'.length,-'.json'.length);
   reads.push({resource,auth:parsed.searchParams.get('auth'),method:options.method||'GET',cache:options.cache});
@@ -55,7 +55,7 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
  assert.equal(f.commands[2].action,'publish-if-changed');
  const snapshot=f.commands[2].input.snapshot;
- assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},{key:'strategy',enabled:true,seconds:30}]);
+ assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},{key:'strategy',enabled:true,seconds:30},{key:'companyRevenue',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
  assert.deepEqual(snapshot.model.weeklyReports,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:1,approvedTotal:1,approvedDone:1});
  assert.deepEqual(snapshot.model.schedule.today[0].title,'점검');
@@ -87,6 +87,21 @@ test('a missing billing ledger never publishes an invented zero revenue',async()
  const revenue=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.model.companyRevenue;
  assert.equal(revenue.available,false);
  assert.equal(revenue.billed,null);
+});
+test('server refresh appends revenue without replacing an existing TV playlist',async()=>{
+ const f=fixture();
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const playlist=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.playlist;
+ assert.deepEqual(playlist,[
+  {key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},
+  {key:'strategy',enabled:true,seconds:30},{key:'companyRevenue',enabled:true,seconds:30},
+ ]);
+});
+test('a saved revenue scene keeps its duration and is not duplicated',async()=>{
+ const f=fixture({playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'companyRevenue',enabled:true,seconds:55}]});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const playlist=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.playlist;
+ assert.deepEqual(playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'companyRevenue',enabled:true,seconds:55},{key:'strategy',enabled:true,seconds:30}]);
 });
 test('scheduled service reader rebuilds the board without an employee CRM session',async()=>{
  const f=fixture();
