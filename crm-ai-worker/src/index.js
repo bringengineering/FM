@@ -2,7 +2,6 @@ import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js"
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
-import { refreshWallboardFromFirebase } from "./wallboard-server-refresh.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
 export { WallboardDevices } from "./wallboard-devices.js";
@@ -274,7 +273,14 @@ export function createWorker(options = {}) {
       const cors = corsHeaders(request, env);
       if (url.pathname.startsWith('/v1/wallboard/')) return wallboardRequest(request, env, {
         cors, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl),
-        refreshWallboard: options.refreshWallboard || (input => refreshWallboardFromFirebase({...input,fetchImpl,now})),
+        refreshWallboard: options.refreshWallboard || (async ({idToken,identity,env:refreshEnv}) => {
+          if(!refreshEnv.WALLBOARD_REFRESH_JOBS)throw Object.assign(new Error('WALLBOARD_UNAVAILABLE'),{code:'WALLBOARD_UNAVAILABLE'});
+          const stub=refreshEnv.WALLBOARD_REFRESH_JOBS.get(refreshEnv.WALLBOARD_REFRESH_JOBS.idFromName('bring-company-wallboard-refresh'));
+          const response=await stub.fetch(new Request('https://wallboard-refresh-internal/refresh-user',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken,identity})}));
+          const result=await response.json();
+          if(!response.ok||result.ok!==true)throw Object.assign(new Error('WALLBOARD_UNAVAILABLE'),{code:result.code==='FORBIDDEN'?'FORBIDDEN':'WALLBOARD_UNAVAILABLE'});
+          return result;
+        }),
       });
       if (url.pathname.startsWith('/tv/api/')) return wallboardWebRequest(request, env);
       if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);

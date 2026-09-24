@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWorker,WallboardDevices} from '../src/index.js';
+import {createWorker,WallboardDevices,WallboardRefreshJobs} from '../src/index.js';
+import {refreshWallboardFromFirebase} from '../src/wallboard-server-refresh.js';
 
 test('member refresh request republishes confirmed server progress to the paired TV',async()=>{
  let state;
@@ -33,7 +34,8 @@ test('member refresh request republishes confirmed server progress to the paired
   return Response.json(sources[key]);
  };
  const worker=createWorker({fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
- const env={WALLBOARD_ENABLED:'true',WALLBOARD_FIREBASE_DATABASE_URL:'https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app',FIREBASE_WEB_API_KEY:'test',CRM_ALLOWED_EMAILS:'admin@example.com,member@example.com',CRM_ADMIN_EMAILS:'admin@example.com',WALLBOARD_RATE_LIMITER:{limit:async()=>({success:true})},WALLBOARD_DEVICES:{idFromName:name=>name,get:()=>new WallboardDevices({storage})}};
+ const env={WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true',WALLBOARD_FIREBASE_DATABASE_URL:'https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app',FIREBASE_WEB_API_KEY:'test',CRM_ALLOWED_EMAILS:'admin@example.com,member@example.com',CRM_ADMIN_EMAILS:'admin@example.com',WALLBOARD_RATE_LIMITER:{limit:async()=>({success:true})},WALLBOARD_DEVICES:{idFromName:name=>name,get:()=>new WallboardDevices({storage})}};
+ env.WALLBOARD_REFRESH_JOBS={idFromName:name=>name,get:()=>new WallboardRefreshJobs({},env,undefined,options=>refreshWallboardFromFirebase({...options,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}))};
  const call=(action,body={},token='admin-token')=>worker.fetch(new Request('https://gateway.test/v1/wallboard/'+action,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)}),env);
  const pairing=await (await call('start')).json();
  assert.equal((await call('approve',{code:pairing.code,name:'실증 TV'})).status,200);

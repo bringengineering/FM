@@ -26,3 +26,17 @@ test('refresh job fails closed without exposing credential text',async()=>{
  assert.equal(response.status,503);
  assert.ok(!(await response.text()).includes('private-secret'));
 });
+
+test('verified user refresh runs inside the private job and returns only publication metadata',async()=>{
+ const identity={uid:'member-1',email:'member@example.com',emailVerified:true};
+ const job=new WallboardRefreshJobs({},env,async()=>{},async options=>{
+  assert.equal(options.idToken,'firebase-id-token');
+  assert.deepEqual(options.identity,identity);
+  assert.equal(options.env,env);
+  return {version:7,publishedAt:1234,sourceReadAt:1200,reconciledAt:1230,privateSource:'hidden'};
+ });
+ const response=await job.fetch(new Request('https://internal/refresh-user',{method:'POST',body:JSON.stringify({idToken:'firebase-id-token',identity})}));
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true,version:7,publishedAt:1234,sourceReadAt:1200,reconciledAt:1230});
+ assert.equal((await job.fetch(new Request('https://internal/refresh-user',{method:'POST',body:'{}'}))).status,403);
+});

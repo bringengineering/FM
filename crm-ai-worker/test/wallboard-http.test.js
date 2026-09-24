@@ -100,6 +100,21 @@ test('verified staff may request server refresh without sending raw CRM data',as
  const unverified=setup('staff@example.com',false);
  assert.equal((await unverified.worker.fetch(req('refresh'),unverified.env)).status,403);
 });
+test('default staff refresh delegates heavy rebuilding to the private job',async()=>{
+ const f=setup('staff@example.com');
+ const forwarded=[];
+ f.env.WALLBOARD_SCHEDULED_REFRESH_ENABLED='true';
+ f.env.WALLBOARD_REFRESH_JOBS={idFromName:name=>name,get:()=>({fetch:async request=>{
+  forwarded.push({path:new URL(request.url).pathname,input:await request.json()});
+  return Response.json({ok:true,version:9,publishedAt:1500,sourceReadAt:1400,reconciledAt:1450});
+ }})};
+ const response=await f.worker.fetch(req('refresh'),f.env);
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true,version:9,publishedAt:1500});
+ assert.equal(forwarded[0].path,'/refresh-user');
+ assert.equal(forwarded[0].input.idToken,'staff-token');
+ assert.equal(forwarded[0].input.identity.email,'staff@example.com');
+});
 test('web TV pairs through same-origin endpoints and keeps its device token in a protected cookie',async()=>{
  let state;const storage={transaction:async fn=>{let value=structuredClone(state);const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
  const f=setup();f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});
