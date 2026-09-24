@@ -31,6 +31,16 @@ function environment(overrides = {}) {
   };
 }
 
+test('scheduled TV reconciliation is off until both wallboard flags are enabled',async()=>{
+  let calls=0;
+  const worker=createWorker({scheduledWallboardRefresh:async()=>{calls++;}});
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'false'}),{});
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'false',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true'}),{});
+  assert.equal(calls,0);
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true'}),{});
+  assert.equal(calls,1);
+});
+
 function successfulFetch(calls) {
   return async (url, options = {}) => {
     calls.push({ url: String(url), options });

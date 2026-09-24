@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {refreshWallboardFromFirebase} from '../src/wallboard-server-refresh.js';
+import {refreshWallboardFromFirebase,refreshWallboardFromService} from '../src/wallboard-server-refresh.js';
 
 const databaseUrl='https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app';
 const token='firebase-id-token';
@@ -56,6 +56,33 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.ok(!JSON.stringify(f.commands).includes('010-1234-5678'));
  assert.ok(!JSON.stringify(result).includes(token));
 });
+test('scheduled service reader rebuilds the board without an employee CRM session',async()=>{
+ const f=fixture();
+ const env={...f.env,FIREBASE_WEB_API_KEY:'firebase-key',WALLBOARD_READER_UID:'wallboard-reader',WALLBOARD_READER_REFRESH_TOKEN:'secret-refresh-token'};
+ let exchanges=0;
+ const fetchImpl=(url,options)=>{
+  if(new URL(url).hostname==='securetoken.googleapis.com'){
+   exchanges++;
+   return Promise.resolve(Response.json({user_id:'wallboard-reader',id_token:'service-id-token'}));
+  }
+  return f.fetchImpl(url,options);
+ };
+ const result=await refreshWallboardFromService({env,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ assert.equal(exchanges,1);
+ assert.equal(result.version,1);
+ assert.equal(f.reads.length,5);
+ assert.ok(f.reads.every(item=>item.auth==='service-id-token'));
+ assert.equal(f.commands.at(-1).action,'publish-if-changed');
+});
+test('failed service-source read preserves the prior board',async()=>{
+ const f=fixture({denied:'projects'});
+ const env={...f.env,FIREBASE_WEB_API_KEY:'firebase-key',WALLBOARD_READER_UID:'wallboard-reader',WALLBOARD_READER_REFRESH_TOKEN:'secret-refresh-token'};
+ const fetchImpl=(url,options)=>new URL(url).hostname==='securetoken.googleapis.com'
+  ?Promise.resolve(Response.json({user_id:'wallboard-reader',id_token:'service-id-token'}))
+  :f.fetchImpl(url,options);
+ await assert.rejects(refreshWallboardFromService({env,fetchImpl}),error=>error.code==='FORBIDDEN');
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
 test('free-text project contact details are never included in the public board',async()=>{
  const f=fixture({projectName:'홍길동 010-1234-5678 hong@example.com'});
  await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
@@ -98,6 +125,6 @@ test('a stalled Firebase read times out without publishing a partial TV board',a
  const bounded=Promise.race([refresh,new Promise((_,reject)=>setTimeout(()=>reject(new Error('READ_TIMEOUT_MISSING')),100))]);
  await assert.rejects(bounded,error=>error.code==='WALLBOARD_UNAVAILABLE');
  await new Promise(resolve=>setTimeout(resolve,20));
- assert.equal(aborted,5);
+ assert.equal(aborted,1);
  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
 });

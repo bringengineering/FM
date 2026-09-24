@@ -2,7 +2,7 @@ import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js"
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
-import { refreshWallboardFromFirebase } from "./wallboard-server-refresh.js";
+import { refreshWallboardFromFirebase, refreshWallboardFromService } from "./wallboard-server-refresh.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
 export { WallboardDevices } from "./wallboard-devices.js";
@@ -260,6 +260,11 @@ export function createWorker(options = {}) {
   const signGoogleJwt = options.signGoogleJwt || defaultSignGoogleJwt;
   const documentDeliveryHandler = options.documentDeliveryHandler || createDocumentDeliveryHandler({ fetchImpl, now });
   return {
+    async scheduled(_controller, env) {
+      if (env.WALLBOARD_ENABLED !== 'true' || env.WALLBOARD_SCHEDULED_REFRESH_ENABLED !== 'true') return;
+      const refresh = options.scheduledWallboardRefresh || (input => refreshWallboardFromService({...input,fetchImpl,now}));
+      await refresh({env});
+    },
     async fetch(request, env) {
       const url = new URL(request.url);
       const cors = corsHeaders(request, env);

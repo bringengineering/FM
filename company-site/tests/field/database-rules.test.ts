@@ -1896,6 +1896,61 @@ afterAll(async () => {
   await cutoverEnvironment?.cleanup();
 });
 
+describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () => {
+  const readerUid = "wallboard-reader";
+  const readerEmail = "wallboard-reader@bring.test";
+  const sourcePaths = [
+    "access",
+    "workOrders",
+    "projects",
+    "data/serviceRecords",
+    "teamProfiles",
+    "projectWeeklyReports",
+    "projectWeeklyReportReviews",
+  ];
+
+  it("allows only the enabled verified reader to read the seven TV source paths, never write them", async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: true,
+        email: readerEmail,
+      });
+    });
+    const reader = environment.authenticatedContext(
+      readerUid,
+      crmClaims(readerEmail),
+    ).database();
+    for (const path of sourcePaths) {
+      await assertSucceeds(get(ref(reader, `crmCompany/${path}`)));
+      await assertFails(set(ref(reader, `crmCompany/${path}`), { probe: true }));
+    }
+    await assertFails(get(ref(reader, "crmCompany")));
+    await assertFails(get(ref(reader, "crmCompany/data/customers")));
+    await assertFails(get(ref(reader, "crmCompany/marketing")));
+  });
+
+  it("rejects an unmarked, disabled, mismatched-email, or unverified reader", async () => {
+    const reader = environment.authenticatedContext(readerUid, crmClaims(readerEmail)).database();
+    await assertFails(get(ref(reader, "crmCompany/workOrders")));
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: false,
+        email: readerEmail,
+      });
+    });
+    await assertFails(get(ref(reader, "crmCompany/workOrders")));
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: true,
+        email: readerEmail,
+      });
+    });
+    await assertFails(get(ref(environment.authenticatedContext("other-reader", crmClaims(readerEmail)).database(), "crmCompany/workOrders")));
+    await assertFails(get(ref(environment.authenticatedContext(readerUid, crmClaims("other@bring.test")).database(), "crmCompany/workOrders")));
+    await assertFails(get(ref(environment.authenticatedContext(readerUid, crmPasswordClaims(readerEmail, false)).database(), "crmCompany/workOrders")));
+  });
+});
+
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
   it("keeps the company quote supplier fixed, readable by clean staff, and writable only by admins", async () => {
     const path = "crmCompany/quoteSupplier";

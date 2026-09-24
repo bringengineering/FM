@@ -1,5 +1,6 @@
 import wallboard from '../../desktop-crm/src/company-wallboard.js';
 import {validatePublication} from './wallboard-publication.js';
+import {exchangeWallboardReaderToken} from './wallboard-service-auth.js';
 
 const MAX_SOURCE_BYTES=2*1024*1024;
 const paths=['workOrders','projects','data/serviceRecords','access','teamProfiles'];
@@ -42,11 +43,17 @@ async function command(stub,action,input={}){
  if(!response.ok||!result.ok)fail(result.code==='VERSION_CONFLICT'?'VERSION_CONFLICT':'WALLBOARD_UNAVAILABLE');
  return result;
 }
-export async function refreshWallboardFromFirebase({idToken,identity,env,fetchImpl=fetch,now=Date.now,readTimeoutMs=8000}){
- if(!identity?.uid||!identity.emailVerified||!idToken||!env?.WALLBOARD_DEVICES)fail('FORBIDDEN');
+async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchImpl=fetch,now=Date.now,readTimeoutMs=8000}){
+ if(!idToken||!env?.WALLBOARD_DEVICES)fail('FORBIDDEN');
  const timeout=Number.isInteger(readTimeoutMs)&&readTimeoutMs>=1&&readTimeoutMs<=15000?readTimeoutMs:8000;
- const values=await Promise.all(paths.map(path=>readSource(path,{env,idToken,fetchImpl,readTimeoutMs:timeout})));
- const source=Object.fromEntries(paths.map((path,index)=>[path,values[index]]));
+ const access=await readSource('access',{env,idToken,fetchImpl,readTimeoutMs:timeout});
+ if(!serviceReader){
+  const requester=access?.[identity.uid];
+  if(requester?.enabled!==true||requester.mustChangePassword===true||String(requester.email||'').trim().toLowerCase()!==String(identity.email||'').trim().toLowerCase())fail('FORBIDDEN');
+ }
+ const remainingPaths=paths.filter(path=>path!=='access');
+ const values=await Promise.all(remainingPaths.map(path=>readSource(path,{env,idToken,fetchImpl,readTimeoutMs:timeout})));
+ const source={access,...Object.fromEntries(remainingPaths.map((path,index)=>[path,values[index]]))};
  const members=rows(source.access).filter(user=>user.enabled===true&&user.mustChangePassword!==true).map(user=>({uid:user.id,displayName:String(source.teamProfiles?.[user.id]?.displayName||user.displayName||'')}));
  const orders=rows(source.workOrders);
  const memberNames=new Map(members.map(member=>[member.uid,member.displayName]));
@@ -67,4 +74,15 @@ export async function refreshWallboardFromFirebase({idToken,identity,env,fetchIm
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}
  }
  fail('WALLBOARD_UNAVAILABLE');
+}
+
+export async function refreshWallboardFromFirebase(options){
+ if(!options?.identity?.uid||!options.identity.emailVerified)fail('FORBIDDEN');
+ return rebuildWallboard(options);
+}
+
+export async function refreshWallboardFromService({env,fetchImpl=fetch,now=Date.now,readTimeoutMs=8000}){
+ if(!env?.WALLBOARD_DEVICES)fail('WALLBOARD_UNAVAILABLE');
+ const idToken=await exchangeWallboardReaderToken({env,fetchImpl});
+ return rebuildWallboard({idToken,serviceReader:true,env,fetchImpl,now,readTimeoutMs});
 }
