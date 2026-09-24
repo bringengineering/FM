@@ -12,6 +12,18 @@ test('기존 여섯 묶음은 이름을 바꿔도 레거시 사업영역으로 �
   assert.deepEqual(result.classificationNeeded.map(item => item.id), ['w1', 'w2']);
 });
 
+test('실제 프로젝트 필터는 사업영역과 미분류를 구분하며 레거시 ID를 제외한다', () => {
+  const projects = [
+    { id: 'pj-care', portfolioId: '' },
+    { id: 'real-1', portfolioId: 'pf-care' },
+    { id: 'real-2', portfolioId: '' },
+  ];
+  assert.deepEqual(Workspace.filterRealProjects(projects, '__all').map(item => item.id), ['real-1', 'real-2']);
+  assert.deepEqual(Workspace.filterRealProjects(projects, 'pf-care').map(item => item.id), ['real-1']);
+  assert.deepEqual(Workspace.filterRealProjects(projects, '__unclassified').map(item => item.id), ['real-2']);
+  assert.deepEqual(projects.map(item => item.id), ['pj-care', 'real-1', 'real-2']);
+});
+
 test('분류 필요 업무는 미연결·기존 사업영역·없는 프로젝트 이유를 구분한다', () => {
   const projects = [{ id: 'pj-crm' }, { id: 'project-1' }];
   assert.equal(Workspace.classificationLabel({ projectId: '' }, projects), '프로젝트 미연결');

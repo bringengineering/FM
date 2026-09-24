@@ -45,6 +45,20 @@ test('실제 프로젝트에는 사업영역 또는 분류 필요를 표시하�
   assert.match(render, /workspace\.legacyAreas/u);
 });
 
+test('프로젝트 목록은 사업영역별·미분류 필터를 쓰되 전체 현황과 원래 링크는 유지한다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(source, /portfolioFilter: "__all"/u);
+  assert.match(render, /workspaceCore\.filterRealProjects\(workspace\.projects, workOrderState\.portfolioFilter\)/u);
+  assert.match(render, /data-wo-portfolio-filter/u);
+  assert.match(render, /P\.PORTFOLIOS\.map/u);
+  assert.match(render, /__unclassified/u);
+  assert.match(render, /data-wo-project="\$\{esc\(item\.id\)\}"/u);
+  assert.match(render, /workspaceCore\.health\(\{ orders: workOrderState\.performanceOrders, today \}\)/u);
+  assert.match(source, /event\.target\.matches\("\[data-wo-portfolio-filter\]"\)/u);
+  assert.match(source, /workOrderState\.portfolioFilter =/u);
+});
+
 test('분류 필요 업무는 건수만 아니라 원본 업무를 열 수 있는 목록으로 나온다', () => {
   const source = read('app.js');
   const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));

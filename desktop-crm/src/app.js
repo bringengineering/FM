@@ -4365,7 +4365,7 @@
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
-    projectId: "", projectDetailTab: "overview", projectEditing: null, capacityEditing: null, seeding: false,
+    projectId: "", projectDetailTab: "overview", portfolioFilter: "__all", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
@@ -4807,6 +4807,8 @@
     const workspaceCore = window.BringProjectWorkspaceCore;
     const workspace = workspaceCore && workspaceCore.partitionProjects
       ? workspaceCore.partitionProjects({ projects, orders: workOrderState.orders }) : null;
+    const visibleProjects = workspace && workspaceCore.filterRealProjects
+      ? workspaceCore.filterRealProjects(workspace.projects, workOrderState.portfolioFilter) : workspace ? workspace.projects : [];
     const selected = workOrderState.projectId && (["__all", "__none"].includes(workOrderState.projectId) || projects.some(item => item.id === workOrderState.projectId))
       ? workOrderState.projectId
       : "__all";
@@ -4881,8 +4883,9 @@
         ${workOrderState.loading || !workOrderState.loaded ? `<p class="project-workspace-empty">업무를 불러오고 있습니다…</p>` : workOrderState.error ? `<p class="project-workspace-empty">조회 오류가 있습니다. 새로고침 후 확인해 주세요.</p>` : todayActions.length ? `<div class="project-workspace-action-list">${todayActions.slice(0, 8).map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}${workOrderState.admin && item.order.assigneeName ? ` · ${esc(item.order.assigneeName)}` : ""}</small></button>`).join("")}</div>` : `<p class="project-workspace-empty">지금 바로 처리할 업무가 없습니다. 아래 프로젝트에서 전체 지시를 확인할 수 있습니다.</p>`}
       </section>
       <section class="project-workspace-projects" aria-labelledby="project-workspace-projects-title">
-        <header><div><span>사업영역 안의 실제 실행 단위</span><h3 id="project-workspace-projects-title">실제 프로젝트</h3></div><small>${workspace.projects.length}개</small></header>
-        ${workspace.projects.length ? `<div class="project-workspace-project-list">${workspace.projects.map(item => { const checked = healthReady ? workspaceCore.completion(workOrderState.performanceOrders, item.id) : null; return `<button type="button" data-wo-project="${esc(item.id)}"><small class="project-workspace-portfolio">${esc(P.portfolioLabel(item.portfolioId))}</small><strong>${esc(item.name)}</strong><span>${esc(item.owner || "책임자 미정")}${item.endDate ? ` · 마감 ${esc(item.endDate)}` : " · 마감 미정"}</span><em>업무 검수 완료율 ${checked ? `${checked.percent}% (${checked.done}/${checked.total}건)` : "집계 대기"}</em></button>`; }).join("")}</div>` : `<p class="project-workspace-empty">실제 프로젝트가 아직 없습니다. 아래 기존 사업영역은 그대로 보존되어 있습니다.</p>`}
+        <header><div><span>사업영역 안의 실제 실행 단위</span><h3 id="project-workspace-projects-title">실제 프로젝트</h3></div><small>${visibleProjects.length}/${workspace.projects.length}개</small></header>
+        <label class="project-workspace-portfolio-filter"><span>사업영역별 보기</span><select data-wo-portfolio-filter ${periodEditing ? "disabled" : ""}><option value="__all"${workOrderState.portfolioFilter === "__all" ? " selected" : ""}>모든 사업영역</option>${P.PORTFOLIOS.map(item => `<option value="${esc(item.id)}"${workOrderState.portfolioFilter === item.id ? " selected" : ""}>${esc(item.label)}</option>`).join("")}<option value="__unclassified"${workOrderState.portfolioFilter === "__unclassified" ? " selected" : ""}>분류 필요</option></select></label>
+        ${visibleProjects.length ? `<div class="project-workspace-project-list">${visibleProjects.map(item => { const checked = healthReady ? workspaceCore.completion(workOrderState.performanceOrders, item.id) : null; return `<button type="button" data-wo-project="${esc(item.id)}"><small class="project-workspace-portfolio">${esc(P.portfolioLabel(item.portfolioId))}</small><strong>${esc(item.name)}</strong><span>${esc(item.owner || "책임자 미정")}${item.endDate ? ` · 마감 ${esc(item.endDate)}` : " · 마감 미정"}</span><em>업무 검수 완료율 ${checked ? `${checked.percent}% (${checked.done}/${checked.total}건)` : "집계 대기"}</em></button>`; }).join("")}</div>` : `<p class="project-workspace-empty">${workspace.projects.length ? "선택한 사업영역에 해당하는 실제 프로젝트가 없습니다." : "실제 프로젝트가 아직 없습니다. 아래 기존 사업영역은 그대로 보존되어 있습니다."}</p>`}
       </section>
       <details class="project-workspace-legacy"><summary>기존 사업영역 ${workspace.legacyAreas.length}개 · 분류 필요 ${classificationReady ? `${workspace.classificationNeeded.length}건` : "조회 확인 필요"}</summary><p>기존 업무 연결은 자동으로 바꾸지 않습니다. 원본을 열어 확인한 뒤, 미완료 업무는 관리자가 기존 수정 화면에서 프로젝트 연결을 변경할 수 있습니다.</p>${classificationReady ? workspace.classificationNeeded.length ? `<div class="project-workspace-action-list project-workspace-classification-list">${workspace.classificationNeeded.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><strong>${esc(item.title || "제목 없는 업무")}</strong><small>${esc(workspaceCore.classificationLabel(item, projects))}${item.projectId ? ` · ${esc(item.projectId)}` : ""} · 원본 업무 보기</small></button>`).join("")}</div>` : `<p>분류가 필요한 업무가 없습니다.</p>` : `<p>분류 목록을 확인하려면 업무를 다시 불러와 주세요.</p>`}${orphans ? `<button type="button" class="mini-button" data-wo-project="__none">연결 없는 업무 ${orphans}건 보기</button>` : ""}<div class="wo-project-tabs">${tabs}</div></details>
     </div>` : "";
@@ -13641,6 +13644,18 @@
       return;
     }
     if (event.target.matches("[data-weekly-file]")) { await loadPrivateWeeklyPack(event.target); return; }
+    if (event.target.matches("[data-wo-portfolio-filter]")) {
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) {
+        showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 필터를 변경해 주세요.");
+        renderWorkOrders();
+        return;
+      }
+      const next = String(event.target.value || "__all");
+      const P = projectCore();
+      workOrderState.portfolioFilter = next === "__all" || next === "__unclassified" || P && P.PORTFOLIOS.some(item => item.id === next) ? next : "__all";
+      renderWorkOrders();
+      return;
+    }
     if (event.target.matches("[data-operations-query], [data-operations-building], [data-operations-owner]")) {
       const field = event.target;
       if (field.matches("[data-operations-query]")) operationsCheckFilters.query = field.value;

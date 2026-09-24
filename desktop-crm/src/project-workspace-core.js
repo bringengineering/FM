@@ -44,6 +44,13 @@
     };
   }
 
+  function filterRealProjects(input, filter) {
+    const projects = partitionProjects({ projects: input }).projects;
+    if (filter === '__unclassified') return projects.filter(item => !text(item.portfolioId));
+    if (!filter || filter === '__all') return projects;
+    return projects.filter(item => text(item.portfolioId) === filter);
+  }
+
   function classificationLabel(order, projects) {
     const projectId = text(order && order.projectId);
     if (!projectId) return '프로젝트 미연결';
@@ -126,5 +133,5 @@
     };
   }
 
-  return Object.freeze({ partitionProjects, classificationLabel, mappingPreview, todayQueue, completion, health });
+  return Object.freeze({ partitionProjects, filterRealProjects, classificationLabel, mappingPreview, todayQueue, completion, health });
 });

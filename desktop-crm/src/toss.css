@@ -1007,6 +1007,9 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-today>header span,.project-workspace-projects>header span{color:#52616F;font-size:12px}
 .project-workspace-today h3,.project-workspace-projects h3{margin:4px 0 0;color:#202B36;font-size:20px;letter-spacing:-.03em}
 .project-workspace-today>header small,.project-workspace-projects>header small{color:#52616F;font-size:13px;white-space:nowrap}
+.project-workspace-portfolio-filter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;color:#52616F;font-size:12px;font-weight:700}
+.project-workspace-portfolio-filter select{min-width:0;max-width:100%;min-height:40px;padding:8px 32px 8px 10px;border:1px solid #DDE3E8;border-radius:9px;background:#fff;color:#202B36;font:inherit}
+.project-workspace-portfolio-filter select:focus-visible{outline:3px solid #3182F6;outline-offset:2px}
 .project-workspace-action-list,.project-workspace-project-list{display:grid;gap:8px}
 .project-workspace-action-list button,.project-workspace-project-list button{display:grid;min-width:0;width:100%;min-height:58px;align-items:center;gap:4px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:11px;background:#fff;color:#202B36;text-align:left;cursor:pointer}
 .project-workspace-action-list button{grid-template-columns:minmax(80px,auto) minmax(0,1fr) auto;gap:10px}
@@ -1044,3 +1047,4 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-tab-content>.office-panel{margin:0}
 @media(max-width:1050px){.project-workspace-home{grid-template-columns:1fr}.project-workspace-legacy{grid-column:1}}
 @media(max-width:640px){.project-workspace-health{grid-template-columns:1fr}.project-workspace-action-list button{grid-template-columns:1fr}.project-workspace-project-list button{grid-template-columns:1fr}.project-workspace-project-list em{grid-column:1;grid-row:auto;text-align:left}.project-workspace-detail-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.project-workspace-detail-tabs button{padding:10px 8px;font-size:13px}}
+@media(max-width:640px){.project-workspace-portfolio-filter{align-items:stretch;flex-direction:column}.project-workspace-portfolio-filter select{width:100%}}
