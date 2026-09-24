@@ -54,13 +54,19 @@ function validMonth(value: unknown): value is string {
 }
 
 function validId(value: unknown): value is string {
-  return typeof value === "string" && ID.test(value);
+  return typeof value === "string" && ID.test(value)
+    && value !== "__proto__" && value !== "prototype" && value !== "constructor";
 }
 
 function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolean): value is Record<string, unknown> {
   if (!isRecord(value) || !validId(value.id)
     || !Number.isSafeInteger(value.amount) || (value.amount as number) <= 0
     || !["draft", "approved", "void"].includes(String(value.status))) return false;
+  const allowed = kind === "invoice"
+    ? ["id", "contractId", "contractType", "occurrenceId", "billingMonth", "dueDate", "amount", "status", "voidReason"]
+    : ["id", "invoiceId", "receivedAt", "amount", "transactionRef", "evidenceRef", "status", "voidReason"];
+  const metadata = ["revision", "updatedAt", "updatedBy", "approvedAt", "approvedBy", "voidedAt", "voidedBy", "lastRequestId"];
+  if (Object.keys(value).some(key => !allowed.includes(key) && !metadata.includes(key))) return false;
   if (kind === "invoice") {
     if (!validId(value.contractId) || !validMonth(value.billingMonth) || !validDate(value.dueDate)) return false;
     if (value.contractType !== undefined && value.contractType !== "regular" && value.contractType !== "one_off") return false;
@@ -85,22 +91,67 @@ function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolea
 
 function validateStoredLedger(current: unknown): BillingLedger {
   if (current === null || current === undefined) return { invoices: {}, receipts: {} };
-  if (!isRecord(current) || Object.keys(current).some(key => key !== "invoices" && key !== "receipts")) {
-    throw new Error("billing_stored_ledger_invalid");
-  }
+  if (auditBillingLedger(current).length > 0 || !isRecord(current)) throw new Error("billing_stored_ledger_invalid");
   const invoices = current.invoices ?? {};
   const receipts = current.receipts ?? {};
-  if (!isRecord(invoices) || !isRecord(receipts)) throw new Error("billing_stored_ledger_invalid");
-  for (const [id, value] of Object.entries(invoices)) {
-    if (!validRecord("invoice", value, true) || value.id !== id) throw new Error("billing_stored_ledger_invalid");
-  }
-  for (const [id, value] of Object.entries(receipts)) {
-    if (!validRecord("receipt", value, true) || value.id !== id) throw new Error("billing_stored_ledger_invalid");
-  }
   return {
     invoices: invoices as Record<string, Record<string, unknown>>,
     receipts: receipts as Record<string, Record<string, unknown>>,
   };
+}
+
+export function auditBillingLedger(current: unknown): string[] {
+  if (current === null || current === undefined) return [];
+  if (!isRecord(current) || Object.keys(current).some(key => key !== "invoices" && key !== "receipts")) {
+    return ["billing_stored_ledger_invalid"];
+  }
+  const invoices = current.invoices ?? {};
+  const receipts = current.receipts ?? {};
+  if (!isRecord(invoices) || !isRecord(receipts)) return ["billing_stored_ledger_invalid"];
+  const issues = new Set<string>();
+  try {
+    if (Buffer.byteLength(JSON.stringify(current), "utf8") > MAX_LEDGER_BYTES) issues.add("billing_ledger_too_large");
+  } catch {
+    return ["billing_stored_ledger_invalid"];
+  }
+  const invoiceKeys = new Set<string>();
+  for (const [id, value] of Object.entries(invoices)) {
+    if (!validRecord("invoice", value, true) || value.id !== id) {
+      issues.add("billing_stored_ledger_invalid");
+      continue;
+    }
+    if (value.status === "void") continue;
+    const key = value.contractType === "one_off"
+      ? `one_off:${value.contractId}:${value.occurrenceId}`
+      : `regular:${value.contractId}:${value.billingMonth}`;
+    if (invoiceKeys.has(key)) issues.add("billing_duplicate_invoice");
+    invoiceKeys.add(key);
+  }
+  const receiptKeys = new Set<string>();
+  let invoiceTotal = 0;
+  let receiptTotal = 0;
+  for (const value of Object.values(invoices)) {
+    if (isRecord(value) && value.status === "approved" && Number.isSafeInteger(value.amount)) {
+      invoiceTotal += value.amount as number;
+    }
+  }
+  for (const [id, value] of Object.entries(receipts)) {
+    if (!validRecord("receipt", value, true) || value.id !== id) {
+      issues.add("billing_stored_ledger_invalid");
+      continue;
+    }
+    const linked = invoices[value.invoiceId as string];
+    if (!isRecord(linked) || (value.status === "approved" && linked.status !== "approved")) issues.add("billing_orphan_receipt");
+    if (value.status !== "approved") continue;
+    receiptTotal += value.amount as number;
+    const key = `${value.invoiceId}:${value.transactionRef}`;
+    if (receiptKeys.has(key)) issues.add("billing_duplicate_transaction");
+    receiptKeys.add(key);
+  }
+  if (!Number.isSafeInteger(invoiceTotal) || !Number.isSafeInteger(receiptTotal)) {
+    issues.add("billing_unsafe_total");
+  }
+  return [...issues].sort();
 }
 
 export function reduceBillingLedgerMutation(

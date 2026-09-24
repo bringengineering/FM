@@ -3835,6 +3835,29 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
+  it("commits a billing draft through the scoped ledger transaction after company access verification", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "billing_member", email: "billing@bringcare.kr", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/billing_member", {
+      enabled: true, role: "member", email: "billing@bringcare.kr",
+    });
+    const body = {
+      kind: "invoice", requestId: "billing-request-1", expectedRevision: 0,
+      record: {
+        id: "invoice-1", contractId: "contract-1", contractType: "regular",
+        billingMonth: "2026-09", dueDate: "2026-09-30", amount: 100000, status: "draft",
+      },
+    };
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(canonicalHttpRequest(body), output.response);
+    expect(output.state).toMatchObject({ status: 200, body: { ok: true, result: {
+      record: { id: "invoice-1", amount: 100000, revision: 1, updatedBy: "billing_member" },
+    } } });
+    expect(registrations.transactionPaths).toContain("crmCompany/billingLedger");
+    expect(registrations.transactionPaths).not.toContain("");
+  });
+
   it("configures 100 building units atomically through one canonical root transaction", async () => {
     seedCanonicalCrmAccess();
     registrations.adminVerifyIdToken.mockResolvedValueOnce({

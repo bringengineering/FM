@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { authorizeBillingActor, reduceBillingLedgerMutation, transactBillingLedger } from "../src/billing-ledger-mutation.js";
+import { auditBillingLedger, authorizeBillingActor, reduceBillingLedgerMutation, transactBillingLedger } from "../src/billing-ledger-mutation.js";
 
 const NOW = "2026-09-25T00:00:00.000Z";
 const invoice = {
@@ -210,5 +210,34 @@ describe("atomic billing ledger mutation", () => {
     expect(() => authorizeBillingActor(token, { ...access, mustChangePassword: true })).toThrowError("billing_access_forbidden");
     expect(() => authorizeBillingActor(token, { ...access, email: "other@bringcare.kr" })).toThrowError("billing_access_forbidden");
     expect(() => authorizeBillingActor({ ...token, emailVerified: false }, access)).toThrowError("billing_auth_required");
+  });
+
+  it("audits historical duplicate invoices without changing stored records", () => {
+    const i1 = { ...invoice, id: "invoice-1", revision: 1, updatedAt: NOW, updatedBy: "member-1" };
+    const i2 = { ...i1, id: "invoice-2" };
+    const ledger = { invoices: { "invoice-1": i1, "invoice-2": i2 }, receipts: {} };
+    const before = JSON.stringify(ledger);
+    expect(auditBillingLedger(ledger)).toContain("billing_duplicate_invoice");
+    expect(JSON.stringify(ledger)).toBe(before);
+    expect(() => reduceBillingLedgerMutation(ledger, {
+      kind: "invoice", record: { ...invoice, id: "invoice-3", contractId: "contract-2" },
+      expectedRevision: 0, requestId: "request-3", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_stored_ledger_invalid");
+  });
+
+  it("audits orphan receipts and duplicate transaction references", () => {
+    const approved = { ...invoice, status: "approved", revision: 1, updatedAt: NOW, updatedBy: "admin-1", approvedAt: NOW, approvedBy: "admin-1" };
+    const receipt = { id: "r1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 10, transactionRef: "bank-1", evidenceRef: "proof", status: "approved", revision: 1, updatedAt: NOW, updatedBy: "admin-1", approvedAt: NOW, approvedBy: "admin-1" };
+    expect(auditBillingLedger({ invoices: { [invoice.id]: approved }, receipts: { r1: receipt, r2: { ...receipt, id: "r2" }, r3: { ...receipt, id: "r3", invoiceId: "missing" } } }))
+      .toEqual(expect.arrayContaining(["billing_duplicate_transaction", "billing_orphan_receipt"]));
+  });
+
+  it("rejects object prototype keys as billing record ids", () => {
+    for (const id of ["__proto__", "prototype", "constructor"]) {
+      expect(() => reduceBillingLedgerMutation(null, {
+        kind: "invoice", record: { ...invoice, id }, expectedRevision: 0,
+        requestId: "request-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+      })).toThrowError("billing_invalid_record");
+    }
   });
 });
