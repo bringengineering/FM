@@ -2408,8 +2408,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       hours: 6.5,
       weight: 40,
       deliverable: "20260911_건물지도.pdf",
+      deliverableKind: "doc",
+      deliverableCount: 1,
       progress: 10,
-      status: "doing",
+      status: "assigned",
       reviewNote: "",
       createdBy: "대표",
       createdAt: "2026-09-06T00:00:00.000Z",
@@ -2455,14 +2457,24 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(update(ref(member, at("h1")), { weight: 5, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
     await assertFails(update(ref(member, at("h1")), { deliverable: "아무거나", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
 
+    // 직접 DB에 쓰더라도 새 지시는 발행 기준을 우회하지 못한다.
+    await assertFails(set(ref(admin, at("missing-deadline")), order("missing-deadline", { dueDate: "" })));
+    await assertFails(set(ref(admin, at("missing-kind")), order("missing-kind", { deliverableKind: "" })));
+    await assertFails(set(ref(admin, at("missing-count")), order("missing-count", { deliverableCount: 0 })));
+    await assertFails(set(ref(admin, at("missing-hours")), order("missing-hours", { hours: 0 })));
+    await assertFails(set(ref(admin, at("already-done")), order("already-done", { status: "done" })));
+
     // 30분 단위가 아닌 시간은 막는다. 0.37시간은 정확해 보이지만 그 정확도가 없다.
     await assertFails(set(ref(admin, at("h2")), order("h2", { hours: 2.4 })));
     // 40시간 넘는 것은 지시가 아니라 프로젝트다.
     await assertFails(set(ref(admin, at("h3")), order("h3", { hours: 80 })));
     // 가중치는 100 을 넘지 않는다.
     await assertFails(set(ref(admin, at("h4")), order("h4", { weight: 140 })));
-    // 옛 지시에는 시간이 없다. 규칙이 그것까지 막으면 옛 기록을 못 만진다.
-    await assertSucceeds(set(ref(admin, at("h5")), order("h5", { hours: 0, weight: 0, deliverable: "" })));
+    // 옛 지시는 기준이 비어 있어도 수정할 수 있다. 신규 발행과 구분한다.
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), at("h5")), order("h5", { hours: 0, weight: 0, deliverable: "", deliverableKind: "", deliverableCount: 0 }));
+    });
+    await assertSucceeds(update(ref(admin, at("h5")), { title: "건물지도 보완", updatedAt: NOW, updatedBy: "crm-admin" }));
   });
 
   it("keeps a work order's schedule and progress in a shape the chart can draw", async () => {
@@ -2480,8 +2492,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       track: "tech",
       startDate: "2026-06-29",
       dueDate: "2026-07-03",
+      hours: 2,
+      deliverable: "건물지도.pdf",
+      deliverableKind: "doc",
+      deliverableCount: 1,
       progress: 98,
-      status: "doing",
+      status: "assigned",
       reviewNote: "",
       createdBy: "대표",
       createdAt: "2026-09-06T00:00:00.000Z",
@@ -2499,8 +2515,11 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(admin, at("g5")), order("g5", { progress: "80" })));
     // 모르는 구분은 막는다. 칸이 늘어나면 표가 흩어진다.
     await assertFails(set(ref(admin, at("g6")), order("g6", { track: "sales" })));
-    // 날짜가 없어도 지시는 남는다. 날짜를 안 정한 일이야말로 먼저 손봐야 한다.
-    await assertSucceeds(set(ref(admin, at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 })));
+    // 기존 날짜 미정 지시는 삭제하지 않고 수정 가능하게 둔다.
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 }));
+    });
+    await assertSucceeds(update(ref(admin, at("g7")), { title: "일정 확인 중", updatedAt: NOW, updatedBy: "crm-admin" }));
   });
 
   it("keeps a work report's items and photos in the shape the document can print", async () => {
