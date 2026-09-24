@@ -70,4 +70,6 @@ jobs:
       - run: pnpm --dir company-site typecheck:field
       - run: pnpm --dir company-site build
       - name: Test Firebase rules in local emulators
-        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules && node --test ../functions/integration/billing-ledger-emulator.test.mjs"
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
+      - name: Test billing transactions in local database emulator
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database "node --test ../functions/integration/billing-ledger-emulator.test.mjs"

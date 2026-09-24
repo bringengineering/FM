@@ -265,6 +265,27 @@ describe("atomic billing ledger mutation", () => {
     })).rejects.toThrowError("billing_revision_conflict");
   });
 
+  it("does not trust an idempotent replay from the pre-read when the server changed", async () => {
+    const command = {
+      kind: "invoice" as const, record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" as const }, now: NOW,
+    };
+    const first = reduceBillingLedgerMutation(null, command);
+    const newer = reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 110000 }, expectedRevision: 1,
+      requestId: "request-other", actor: { uid: "member-2", role: "member" }, now: NOW,
+    });
+    const ref = {
+      async get() { return { val: () => first.ledger }; },
+      async transaction(update: (value: unknown) => unknown) {
+        expect(update(null)).not.toBeUndefined();
+        expect(update(newer.ledger)).toBeUndefined();
+        return { committed: false };
+      },
+    };
+    await expect(transactBillingLedger(ref, command)).rejects.toThrowError("billing_revision_conflict");
+  });
+
   it("does not report success if the database transaction aborts", async () => {
     const ref = {
       async get() { return { val: () => null }; },

@@ -54,7 +54,6 @@ test('concurrent updates of one revision commit exactly one update', async () =>
   await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
   const before = (await ref.get()).val();
   assert.equal(before?.invoices?.['invoice-1']?.revision, 1);
-  await ref.once('value');
   const seen = [];
   const tracedRef = {
     get: () => ref.get(),
@@ -79,6 +78,8 @@ test('concurrent updates of one revision commit exactly one update', async () =>
     && result.reason?.message === 'billing_revision_conflict').length, 1);
   const saved = (await ref.get()).val();
   assert.equal(saved.invoices['invoice-1'].revision, 2);
+  assert.ok(seen.includes(null), `expected an empty local-cache callback: ${JSON.stringify(seen)}`);
+  assert.ok(seen.includes(1), `expected a server-state retry: ${JSON.stringify(seen)}`);
 });
 
 test('concurrent approval of the same bank transaction commits one receipt', async () => {
@@ -104,4 +105,38 @@ test('concurrent approval of the same bank transaction commits one receipt', asy
     && result.reason?.message === 'billing_duplicate_transaction').length, 1);
   const saved = (await ref.get()).val();
   assert.equal(Object.keys(saved.receipts).length, 1);
+});
+
+test('a replay cannot report a pre-read result after another writer changed the invoice', async () => {
+  const ref = testRoot.child('stale-replay');
+  const original = command(invoice('invoice-1'), 'request-create');
+  await transactBillingLedger(ref, original);
+  const raceRef = {
+    async get() {
+      const snapshot = await ref.get();
+      await transactBillingLedger(ref, {
+        kind: 'invoice', record: { ...invoice('invoice-1'), amount: 120000 },
+        expectedRevision: 1, requestId: 'request-other', actor, now,
+      });
+      return snapshot;
+    },
+    transaction: (...args) => ref.transaction(...args),
+  };
+  await assert.rejects(transactBillingLedger(raceRef, original),
+    error => error?.message === 'billing_revision_conflict');
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].amount, 120000);
+  assert.equal(saved.invoices['invoice-1'].revision, 2);
+});
+
+test('an unchanged replay returns the existing invoice without increasing revision', async () => {
+  const ref = testRoot.child('safe-replay');
+  const original = command(invoice('invoice-1'), 'request-create');
+  await transactBillingLedger(ref, original);
+  const replay = await transactBillingLedger(ref, original);
+  assert.equal(replay.repeated, true);
+  assert.equal(replay.record.revision, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].revision, 1);
+  assert.equal(Object.keys(saved.invoices).length, 1);
 });

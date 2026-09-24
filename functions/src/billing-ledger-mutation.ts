@@ -284,7 +284,9 @@ export async function transactBillingLedger(
         firstCallback = false;
         decision = reduceBillingLedgerMutation(candidate as BillingLedger | null, command);
         rejection = null;
-        return decision.repeated ? undefined : decision.ledger;
+        // Even a replay must be compared with the server to rule out a change
+        // between the pre-read and this transaction's first local callback.
+        return decision.ledger;
       } catch (error) {
         decision = null;
         rejection = error;
@@ -296,7 +298,7 @@ export async function transactBillingLedger(
   }
   if (rejection) throw rejection;
   const result = decision as BillingMutationResult | null;
-  if (!result || (!result.repeated && !transaction.committed)) {
+  if (!result || !transaction.committed) {
     throw new Error("billing_transaction_unavailable");
   }
   return result;
