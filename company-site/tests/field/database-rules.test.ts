@@ -5218,33 +5218,29 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
 
 describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
   const draft = { id: 'contract_2026-09', contractId: 'contract', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-member' };
-  it('allows member draft but rejects direct approval and deletion', async () => {
+  it('rejects every direct member invoice write but permits reading server records', async () => {
     const member = environment.authenticatedContext('crm-legacy-member', crmClaims('legacy@bring.test')).database();
-    await assertSucceeds(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member' }));
+    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member' }));
     await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member', status: 'approved', revision: 2, approvedAt: NOW, approvedBy: 'crm-legacy-member' }));
     await assertFails(remove(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`)));
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' });
+    });
+    await assertSucceeds(get(ref(member, 'crmCompany/billingLedger')));
   });
-  it('allows admin approval but rejects amount rewrite and orphan receipt', async () => {
+  it('rejects every direct admin invoice and receipt write', async () => {
     const admin = environment.authenticatedContext('crm-admin', crmClaims('admin@bring.test')).database();
-    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' }));
-    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
     await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'void', revision: 3, amount: 1, updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
     await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/orphan'), { id: 'orphan', invoiceId: 'missing', receivedAt: '2026-09-25', amount: 1, transactionRef: 'tx', evidenceRef: 'proof', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
   });
-  it('preserves one-off occurrence identity across direct writes', async () => {
+  it('rejects direct one-off and receipt writes', async () => {
     const member = environment.authenticatedContext('crm-legacy-member', crmClaims('legacy@bring.test')).database();
     const path = 'crmCompany/billingLedger/invoices/contract_visit_1';
     const oneOff = { ...draft, id: 'contract_visit_1', contractType: 'one_off', occurrenceId: 'visit_1', updatedBy: 'crm-legacy-member' };
-    await assertSucceeds(set(ref(member, path), oneOff));
-    await assertFails(set(ref(member, path), { ...oneOff, occurrenceId: 'visit_2', revision: 2 }));
-    const { occurrenceId: _omitted, ...withoutOccurrence } = oneOff;
-    await assertFails(set(ref(member, path), { ...withoutOccurrence, revision: 2 }));
-  });
-  it('rejects direct void creation and approved receipt without evidence', async () => {
-    const admin = environment.authenticatedContext('crm-admin', crmClaims('admin@bring.test')).database();
-    await assertFails(set(ref(admin, 'crmCompany/billingLedger/invoices/new_void'), { ...draft, id: 'new_void', status: 'void', updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
-    await assertSucceeds(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin', status: 'approved', approvedAt: NOW, approvedBy: 'crm-admin' }));
-    await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/missing_evidence'), { id: 'missing_evidence', invoiceId: draft.id, receivedAt: '2026-09-25', amount: 1, transactionRef: 'bank', evidenceRef: ' ', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+    await assertFails(set(ref(member, path), oneOff));
+    await assertFails(set(ref(member, 'crmCompany/billingLedger/receipts/receipt_1'), { id: 'receipt_1', invoiceId: draft.id, receivedAt: '2026-09-25', amount: 1, transactionRef: 'bank', evidenceRef: 'proof', status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-legacy-member' }));
   });
 });
 

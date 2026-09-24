@@ -180,6 +180,7 @@ const FIREBASE = Object.freeze({
   databaseUrl: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
+const DEFAULT_BILLING_MUTATION_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitBillingLedgerMutation";
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -1352,7 +1353,7 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) invalid();
   const common = ['id', 'amount', 'status'];
   const specific = kind === 'invoices' ? ['contractId', 'contractType', 'occurrenceId', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
-  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason'];
+  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason', 'lastRequestId'];
   if (Object.keys(record).some(key => ![...common, ...specific, ...metadata].includes(key))) invalid();
   const idPattern = /^[A-Za-z0-9_-]{1,150}$/;
   if (!idPattern.test(record.id) || (expectedId && record.id !== expectedId) || !idPattern.test(kind === 'invoices' ? record.contractId : record.invoiceId)) invalid();
@@ -1365,12 +1366,14 @@ function validateBillingRecord(kind, record, expectedId, stored = false) {
   if (stored && (!Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.updatedAt !== 'string' || !idPattern.test(record.updatedBy))) invalid();
   if (stored && record.status === 'approved' && (typeof record.approvedAt !== 'string' || !idPattern.test(record.approvedBy))) invalid();
   if (stored && record.status === 'void' && (typeof record.voidedAt !== 'string' || !idPattern.test(record.voidedBy) || typeof record.voidReason !== 'string' || !record.voidReason.trim())) invalid();
+  if (stored && record.lastRequestId !== undefined && !idPattern.test(record.lastRequestId)) invalid();
   return Object.fromEntries(Object.entries(record).filter(([key]) => common.includes(key) || specific.includes(key) || (stored && metadata.includes(key)) || (key === 'voidReason' && record.status === 'void')));
 }
 
 class FirebaseRemoteClient {
   constructor(options) {
     this.firebase = options.firebaseConfig || FIREBASE;
+    this.billingMutationEndpoint = options.billingMutationEndpoint || DEFAULT_BILLING_MUTATION_ENDPOINT;
     this.databaseRoot = options.databaseRoot ?? "crmCompany";
     this.Core = options.Core;
     this.fs = options.fs;
@@ -2443,31 +2446,42 @@ class FirebaseRemoteClient {
     const expectedRevision = input?.expectedRevision;
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw createError('장부 버전이 올바르지 않습니다.', 'VALIDATION_ERROR');
     const guard = this.captureSessionGuard();
-    const location = `billingLedger/${kind}/${source.id}`;
-    const snapshot = await this.dbReadWithEtag(location, false, guard);
-    const previous = snapshot.value === null ? null : validateBillingRecord(kind, snapshot.value, source.id, true);
-    if ((previous?.revision || 0) !== expectedRevision) throw createError('다른 사용자가 장부를 변경했습니다.', 'BILLING_LEDGER_CONFLICT');
-    if (source.status === 'void' && (!previous || previous.status !== 'approved' || !source.voidReason?.trim())) throw createError('확정된 장부만 사유를 남겨 취소할 수 있습니다.', 'VALIDATION_ERROR');
-    if (previous && previous.status === 'approved' && source.status === 'void' && (source.amount !== previous.amount || (kind === 'invoices' ? source.billingMonth !== previous.billingMonth || source.dueDate !== previous.dueDate || source.contractType !== previous.contractType : source.receivedAt !== previous.receivedAt || source.transactionRef !== previous.transactionRef || source.evidenceRef !== previous.evidenceRef))) throw createError('확정된 금액과 날짜를 변경할 수 없습니다.', 'VALIDATION_ERROR');
-    if (previous && (previous.status !== 'draft' || source.id !== previous.id || (kind === 'invoices' && (source.contractId !== previous.contractId || source.occurrenceId !== previous.occurrenceId)) || (kind === 'receipts' && source.invoiceId !== previous.invoiceId))) {
-      if (!(session.role === 'admin' && previous.status === 'approved' && source.status === 'void' && source.amount === previous.amount)) throw createError('확정된 장부는 수정할 수 없습니다.', 'VALIDATION_ERROR');
+    const requestId = crypto.randomUUID();
+    const body = JSON.stringify({ kind: kind === 'invoices' ? 'invoice' : 'receipt', record: source, expectedRevision, requestId });
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    let response;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await this.fetch(this.billingMutationEndpoint, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body,
+        });
+        break;
+      } catch (cause) {
+        this.assertSessionGuardActive(guard);
+        if (attempt === 1) throw createError('장부 저장 결과를 확인할 수 없습니다. 최신 장부를 다시 확인해 주세요.', 'BILLING_LEDGER_OUTCOME_UNKNOWN', cause);
+      }
     }
-    if (source.status === 'approved' && kind === 'receipts') {
-      const linked = await this.dbReadWithEtag(`billingLedger/invoices/${source.invoiceId}`, false, guard);
-      if (!linked.value || validateBillingRecord('invoices', linked.value, source.invoiceId, true).status !== 'approved') throw createError('확정된 청구서에만 입금을 확정할 수 있습니다.', 'VALIDATION_ERROR');
-      const ledger = await this.loadBillingLedger();
-      if (ledger.receipts.some(item => item.id !== source.id && item.status === 'approved' && item.invoiceId === source.invoiceId && item.transactionRef === source.transactionRef)) throw createError('같은 거래 참조가 이미 확정되었습니다.', 'VALIDATION_ERROR');
+    this.assertSessionGuardActive(guard);
+    let payload;
+    try { payload = JSON.parse(await response.text()); } catch (cause) { throw createError('장부 저장 결과를 확인할 수 없습니다.', 'BILLING_LEDGER_OUTCOME_UNKNOWN', cause); }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok || payload?.ok !== true) {
+      const code = String(payload?.error?.code || 'billing_transaction_unavailable');
+      if (response.status === 401) throw createError('다시 로그인한 뒤 장부를 확인해 주세요.', 'AUTH_REQUIRED');
+      if (response.status === 403) throw createError('장부를 변경할 권한이 없습니다.', 'ACCESS_DENIED');
+      if (response.status === 409) throw createError('장부가 변경되었습니다. 최신 내용을 다시 확인해 주세요.', 'BILLING_LEDGER_CONFLICT');
+      if (response.status === 412) throw createError('기존 장부를 점검해야 저장할 수 있습니다.', 'PROTECTED_DATA_INVALID');
+      if (response.status >= 500) throw createError('장부 서버에 연결할 수 없습니다.', 'NETWORK');
+      throw createError(`장부 저장 요청이 거부되었습니다 (${code}).`, 'VALIDATION_ERROR');
     }
-    if (source.status === 'void' && kind === 'invoices') {
-      const ledger = await this.loadBillingLedger();
-      if (ledger.receipts.some(item => item.status === 'approved' && item.invoiceId === source.id)) throw createError('확정 입금이 있는 청구서는 취소할 수 없습니다.', 'VALIDATION_ERROR');
+    const saved = validateBillingRecord(kind, payload?.result?.record, source.id, true);
+    if (saved.revision !== expectedRevision + 1 || saved.lastRequestId !== requestId) {
+      throw createError('장부 저장 결과가 요청과 일치하지 않습니다.', 'PROTECTED_DATA_INVALID');
     }
-    const now = new Date().toISOString();
-    const record = { ...source, revision: expectedRevision + 1, updatedAt: now, updatedBy: session.uid };
-    if (source.status === 'approved') { record.approvedAt = now; record.approvedBy = session.uid; }
-    if (source.status === 'void') { record.approvedAt = previous.approvedAt; record.approvedBy = previous.approvedBy; record.voidedAt = now; record.voidedBy = session.uid; }
-    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
-    return record;
+    return saved;
   }
 
   async loadCompanyStrategy(input) {

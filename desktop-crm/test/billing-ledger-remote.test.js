@@ -11,6 +11,27 @@ function client(role = 'member') {
 const invoice = { id: 'contract-1_2026-09', contractId: 'contract-1', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft' };
 const receipt = { id: 'receipt-1', invoiceId: invoice.id, receivedAt: '2026-09-25', amount: 30000, transactionRef: 'bank-1', evidenceRef: 'drive-1', status: 'draft' };
 
+test('saves billing through authenticated server mutation rather than direct RTDB write', async () => {
+  const remote = client();
+  remote.billingMutationEndpoint = 'https://example.test/commitBillingLedgerMutation';
+  remote.ensureIdToken = async () => 'id-token';
+  remote.dbReadWithEtag = async () => { throw new Error('direct billing read must not happen'); };
+  remote.dbConditionalPut = async () => { throw new Error('direct billing write must not happen'); };
+  let request;
+  remote.fetch = async (url, options) => {
+    request = { url, options };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: {
+      record: { ...invoice, revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-member', lastRequestId: JSON.parse(options.body).requestId }, repeated: false,
+    } }) };
+  };
+  const saved = await remote.saveBillingInvoice({ record: invoice, expectedRevision: 0 });
+  assert.equal(request.url, remote.billingMutationEndpoint);
+  assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.headers.Authorization, 'Bearer id-token');
+  assert.equal(JSON.parse(request.options.body).kind, 'invoice');
+  assert.equal(saved.revision, 1);
+});
+
 test('loads empty ledger and rejects malformed stored records', async () => {
   const remote = client('viewer');
   remote.dbRequest = async () => null;
@@ -19,64 +40,49 @@ test('loads empty ledger and rejects malformed stored records', async () => {
   await assert.rejects(remote.loadBillingLedger(), { code: 'PROTECTED_DATA_INVALID' });
 });
 
-test('member saves a draft invoice with ETag and revision', async () => {
-  const remote = client();
-  remote.dbReadWithEtag = async () => ({ value: null, etag: 'null_etag' });
-  let saved;
-  remote.dbConditionalPut = async (location, value, etag) => { saved = { location, value, etag }; };
-  await remote.saveBillingInvoice({ record: invoice, expectedRevision: 0 });
-  assert.equal(saved.location, `billingLedger/invoices/${invoice.id}`);
-  assert.equal(saved.value.revision, 1);
-  assert.equal(saved.value.updatedBy, 'billing-member');
+test('member approval is denied locally while an admin can submit a receipt', async () => {
+  const member = client();
+  await assert.rejects(member.saveBillingInvoice({ record: { ...invoice, status: 'approved' }, expectedRevision: 1 }), { code: 'ACCESS_DENIED' });
+  const admin = client('admin');
+  admin.ensureIdToken = async () => 'id-token';
+  let sent;
+  admin.fetch = async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { record: {
+      ...receipt, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin', lastRequestId: sent.requestId,
+    } } }) };
+  };
+  const saved = await admin.saveBillingReceipt({ record: { ...receipt, status: 'approved' }, expectedRevision: 0 });
+  assert.equal(sent.kind, 'receipt');
+  assert.equal(saved.status, 'approved');
 });
 
-test('stale revision and member approval are rejected before write', async () => {
+test('server conflicts are reported without a direct-write fallback', async () => {
   const remote = client();
-  remote.dbReadWithEtag = async () => ({ value: { ...invoice, revision: 2, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-member' }, etag: 'etag' });
+  remote.ensureIdToken = async () => 'id-token';
+  remote.dbConditionalPut = async () => { throw new Error('must not write directly'); };
+  remote.fetch = async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ ok: false, error: { code: 'billing_revision_conflict' } }) });
   await assert.rejects(remote.saveBillingInvoice({ record: invoice, expectedRevision: 1 }), { code: 'BILLING_LEDGER_CONFLICT' });
-  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'approved' }, expectedRevision: 2 }), { code: 'ACCESS_DENIED' });
 });
 
-test('admin approval of receipt requires approved invoice', async () => {
-  const remote = client('admin');
-  remote.dbReadWithEtag = async location => ({ value: location.startsWith('billingLedger/invoices/') ? { ...invoice, status: 'draft', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin' } : null, etag: 'etag' });
-  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
-});
-
-test('one-off invoice persists occurrence key and cannot change it', async () => {
+test('ambiguous network failure retries the same request id and never claims success', async () => {
   const remote = client();
-  const oneOff = { ...invoice, id: 'contract-1_visit-1', contractType: 'one_off', occurrenceId: 'visit-1' };
-  let saved;
-  remote.dbReadWithEtag = async () => ({ value: null, etag: 'etag' });
-  remote.dbConditionalPut = async (_location, value) => { saved = value; };
-  await remote.saveBillingInvoice({ record: oneOff, expectedRevision: 0 });
-  assert.equal(saved.occurrenceId, 'visit-1');
-  remote.dbReadWithEtag = async () => ({ value: saved, etag: 'etag' });
-  await assert.rejects(remote.saveBillingInvoice({ record: { ...oneOff, occurrenceId: 'visit-2' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
+  remote.ensureIdToken = async () => 'id-token';
+  const requestIds = [];
+  remote.fetch = async (_url, options) => { requestIds.push(JSON.parse(options.body).requestId); throw new Error('network dropped'); };
+  await assert.rejects(remote.saveBillingInvoice({ record: invoice, expectedRevision: 0 }), { code: 'BILLING_LEDGER_OUTCOME_UNKNOWN' });
+  assert.equal(requestIds.length, 2);
+  assert.equal(requestIds[0], requestIds[1]);
 });
 
-test('approved receipt requires evidence and rejects duplicate transaction reference', async () => {
-  const remote = client('admin');
-  remote.dbReadWithEtag = async location => ({ value: location.includes('/invoices/') ? { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } : null, etag: 'etag' });
-  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved', transactionRef: ' ' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
-  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved', evidenceRef: '' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
-  remote.dbRequest = async () => ({ receipts: { existing: { ...receipt, id: 'existing', status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } } });
-  await assert.rejects(remote.saveBillingReceipt({ record: { ...receipt, status: 'approved' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
-});
-
-test('void requires prior approval and unchanged financial/date fields', async () => {
-  const remote = client('admin');
-  remote.dbReadWithEtag = async () => ({ value: null, etag: 'etag' });
-  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', voidReason: 'cancel' }, expectedRevision: 0 }), { code: 'VALIDATION_ERROR' });
-  const previous = { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' };
-  remote.dbReadWithEtag = async () => ({ value: previous, etag: 'etag' });
-  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', dueDate: '2026-10-01', voidReason: 'cancel' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
-});
-
-test('invoice with approved receipts cannot be voided', async () => {
-  const remote = client('admin');
-  const previous = { ...invoice, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' };
-  remote.dbReadWithEtag = async () => ({ value: previous, etag: 'etag' });
-  remote.dbRequest = async () => ({ receipts: { 'receipt-1': { ...receipt, status: 'approved', revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-admin', approvedAt: '2026-09-25T00:00:00.000Z', approvedBy: 'billing-admin' } } });
-  await assert.rejects(remote.saveBillingInvoice({ record: { ...invoice, status: 'void', voidReason: 'cancel' }, expectedRevision: 1 }), { code: 'VALIDATION_ERROR' });
+test('stored records accept server request metadata but reject malformed request ids', async () => {
+  const remote = client('viewer');
+  remote.dbRequest = async () => ({ invoices: { [invoice.id]: {
+    ...invoice, revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-member', lastRequestId: 'request-1',
+  } } });
+  assert.equal((await remote.loadBillingLedger()).invoices[0].lastRequestId, 'request-1');
+  remote.dbRequest = async () => ({ invoices: { [invoice.id]: {
+    ...invoice, revision: 1, updatedAt: '2026-09-25T00:00:00.000Z', updatedBy: 'billing-member', lastRequestId: 'bad/request',
+  } } });
+  await assert.rejects(remote.loadBillingLedger(), { code: 'PROTECTED_DATA_INVALID' });
 });
