@@ -4965,6 +4965,7 @@
   function directiveImporter() {
     const I = window.BringDirectiveImportCore;
     const WD = window.BringWeeklyDirectiveCore;
+    const W = workOrderCore();
     if (!I || !WD) return "";
     const plan = workOrderState.importPlan;
     const people = workOrderState.members.filter(item => item && item.uid);
@@ -4980,17 +4981,19 @@
       ${plan.notes.length ? `<ul class="dl-notes">${plan.notes.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
       ${plan.warnings.length ? `<ul class="di-blockers">${plan.warnings.map(note => `<li>${esc(note)}</li>`).join("")}</ul>` : ""}
       <div class="office-table-wrap"><table class="office-table">
-        <thead><tr><th>업무</th><th>왜</th><th>진행방법</th><th>완료 기준</th><th>산출물</th><th>시간</th><th>가중치</th><th>마감</th></tr></thead>
+        <thead><tr><th>업무</th><th>왜</th><th>진행방법</th><th>완료 기준</th><th>산출물</th><th>종류</th><th>수량</th><th>시간</th><th>가중치</th><th>마감</th></tr></thead>
         <tbody>${plan.tasks.length ? plan.tasks.map(task => `<tr class="${task.ready ? "" : "di-notready"}">
           <td><b>${esc(task.title)}</b>${task.duplicate ? `<small>같은 제목이 이미 있습니다</small>` : ""}${task.problems.length ? `<small>${esc(task.problems[0])}</small>` : ""}</td>
           <td>${task.why ? esc(task.why) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
           <td>${esc(task.what || task.why)}${!task.what ? `<small>진행방법 미입력 · 목적 내용 사용</small>` : ""}</td>
           <td>${task.doneWhen ? esc(task.doneWhen) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
           <td>${task.deliverable ? esc(task.deliverable) : `<span class="office-muted">—</span>`}</td>
+          <td>${task.deliverableKind ? esc(W && W.deliverableLabel ? W.deliverableLabel(task.deliverableKind) : task.deliverableKind) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
+          <td>${task.deliverableKind === "none" ? "해당 없음" : task.deliverableCount ? esc(task.deliverableCount) : `<span class="office-status missing"><i></i>비었음</span>`}</td>
           <td>${task.hours ? `${task.hours}h` : `<span class="office-muted">—</span>`}</td>
           <td>${task.weight ? `${task.weight}%` : `<span class="office-muted">—</span>`}</td>
           <td>${task.dueDate ? esc(task.dueDate) : `<span class="office-muted">—</span>`}</td>
-        </tr>`).join("") : `<tr><td colspan="8" class="office-empty">업무 줄을 하나도 못 읽었습니다.</td></tr>`}</tbody>
+        </tr>`).join("") : `<tr><td colspan="10" class="office-empty">업무 줄을 하나도 못 읽었습니다.</td></tr>`}</tbody>
       </table></div>
       ${plan.unread.length ? `<div class="di-unread">
         <b>못 읽은 줄</b>
@@ -5018,7 +5021,7 @@
           <label><span>어느 주 (월요일)</span><input type="date" value="${esc(plan && plan.weekStart ? plan.weekStart : "")}" data-di-week></label>
         </div>
         ${splitStrip()}
-        <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="업무명&#9;목적&#9;진행방법&#9;완료기준&#9;산출물&#9;예상시간&#9;가중치&#9;마감">${esc(plan ? plan.sourcePaste || "" : "")}</textarea></label>
+        <label class="wide"><span>붙여넣기 · 또는 대충 적고 [AI로 짜기]</span><textarea rows="8" data-di-paste placeholder="업무명&#9;목적&#9;진행방법&#9;완료기준&#9;산출물&#9;산출물 종류&#9;산출물 수량&#9;예상시간&#9;가중치&#9;마감">${esc(plan ? plan.sourcePaste || "" : "")}</textarea></label>
         ${review}
         <div class="wo-editor-actions">
           <button type="button" class="mini-button" data-di-draft${workOrderState.importing ? " disabled" : ""}>✨ AI로 짜기</button>
@@ -5449,7 +5452,7 @@
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "지시하기")}</button>
         <button type="button" class="mini-button return" data-wo-cancel>그만두기</button>
       </div>
-      <p class="wo-editor-note">세 칸은 비워 둘 수 없습니다. 비어 있으면 시킨 사람 머릿속에만 남습니다. 예상 시간이 없으면 누가 얼마나 물고 있는지 셀 수 없어 새 지시에는 함께 받습니다.</p>
+      <p class="wo-editor-note">새 지시를 발행할 때 목적·담당·마감일·산출물·완료 기준이 필요합니다. 빠진 항목은 한 번에 안내합니다.</p>
     </form>`;
   }
 
@@ -5460,7 +5463,7 @@
     const previous = W.normalizeOrder(workOrderState.editing);
     const people = workOrderState.members;
     const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
-    const checked = W.validateOrder(Object.assign({}, previous, {
+    const checked = (previous.createdAt ? W.validateOrder : W.validatePublication)(Object.assign({}, previous, {
       id: previous.id || `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       title: String(raw.title || ""),
       assigneeUid: String(raw.assigneeUid || ""),
@@ -5729,6 +5732,7 @@
     // 눌러야 하는데, 그 한 번을 안 누르고 [만들기] 로 가는 사람이 생긴다.
     workOrderState.importPlan = I.planImport({
       paste: drafted,
+      publication: true,
       uid,
       name,
       weekStart: week,
@@ -5751,6 +5755,7 @@
     const week = String((document.querySelector(".di-panel [data-di-week]") || {}).value || "");
     workOrderState.importPlan = I.planImport({
       paste: person.text,
+      publication: true,
       uid: person.uid,
       name: person.name,
       weekStart: week,
@@ -5776,6 +5781,7 @@
     workOrderState.importUid = uid;
     workOrderState.importPlan = I.planImport({
       paste,
+      publication: true,
       uid,
       projectId: String((panel.querySelector("[data-di-project]") || {}).value || ""),
       name: person ? (person.displayName || person.email || person.uid) : "",
@@ -5814,36 +5820,36 @@
     }
     const person = workOrderState.members.find(item => item && item.uid === plan.uid);
     const name = person ? (person.displayName || person.email || person.uid) : plan.name;
+    const failed = [];
+    const ready = [];
+    for (const task of plan.tasks) {
+      if (task.importSaved) continue;
+      if (task.importNeedsReview) {
+        failed.push(`${task.title}: 저장 여부를 업무 목록에서 먼저 확인해 주세요 (${task.importId}). 확인 전에는 다시 저장하지 않습니다.`);
+        continue;
+      }
+      if (!task.importId) task.importId = `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const checked = W.validatePublication({
+        id: task.importId, title: task.title, why: task.why, what: task.what || task.why,
+        doneWhen: task.doneWhen, deliverable: task.deliverable,
+        deliverableKind: task.deliverableKind, deliverableCount: task.deliverableCount,
+        projectId: plan.projectId || "", assigneeUid: plan.uid, assigneeName: name,
+        startDate: monday, dueDate: task.dueDate, hours: task.hours, weight: task.weight,
+      });
+      if (!checked.ok) failed.push(`${task.title}: ${checked.error}`);
+      else ready.push({ task, order: checked.order });
+    }
+    if (failed.length) {
+      showToast(`발행 전 확인이 필요합니다. 서버에는 저장하지 않았습니다. ${failed.join(" / ")}`, "error");
+      return;
+    }
     workOrderState.importing = true;
     renderWorkOrders();
-    const failed = [];
     let made = 0;
     try {
-      for (const task of plan.tasks) {
-        if (task.importSaved) continue;
-        if (task.importNeedsReview) {
-          failed.push(`${task.title}: 저장 여부를 업무 목록에서 먼저 확인해 주세요 (${task.importId}). 확인 전에는 다시 저장하지 않습니다.`);
-          continue;
-        }
-        if (!task.importId) task.importId = `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-        const checked = W.validateOrder({
-          id: task.importId,
-          title: task.title,
-          why: task.why,
-          what: task.what || task.why,
-          doneWhen: task.doneWhen,
-          deliverable: task.deliverable,
-          projectId: plan.projectId || "",
-          assigneeUid: plan.uid,
-          assigneeName: name,
-          startDate: monday,
-          dueDate: task.dueDate,
-          hours: task.hours,
-          weight: task.weight,
-        });
-        if (!checked.ok) { failed.push(`${task.title}: ${checked.error}`); continue; }
+      for (const { task, order } of ready) {
         try {
-          await api.saveWorkOrder(checked.order);
+          await api.saveWorkOrder(order);
           task.importSaved = true;
           made += 1;
         } catch (error) {

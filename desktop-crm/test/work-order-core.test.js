@@ -30,6 +30,17 @@ test("제목과 담당자도 있어야 한다", () => {
   assert.equal(W.validateOrder({ ...full, assigneeUid: "" }).code, "ASSIGNEE_REQUIRED");
 });
 
+test("새 업무지시 발행 전에 빠진 기한과 산출물 기준을 한 번에 알려준다", () => {
+  const missing = W.validatePublication(full);
+  assert.equal(missing.ok, false);
+  assert.deepEqual(missing.missing, ["마감일", "산출물 종류", "산출물 이름"]);
+  assert.match(missing.error, /마감일.*산출물 종류.*산출물 이름/u);
+  assert.equal(W.validatePublication({ ...full, dueDate: "2026-09-30", deliverableKind: "none", deliverable: "현장 확인" }).ok, true);
+  assert.deepEqual(W.validatePublication({ ...full, dueDate: "2026-09-30", deliverableKind: "photo", deliverable: "현장 사진" }).missing, ["산출물 수량"]);
+  assert.deepEqual(W.validatePublication({ ...full, why: "", doneWhen: "", assigneeUid: "" }).missing,
+    ["담당자", "목적", "완료 기준", "마감일", "산출물 종류", "산출물 이름"]);
+});
+
 test("완료는 시킨 사람만 정한다", () => {
   // 담당자가 스스로 완료로 두면 검수가 없는 것과 같다.
   const asAssignee = W.moveStatus({ order: withResult(), next: "done", actorUid: "u1" });

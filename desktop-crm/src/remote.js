@@ -4333,12 +4333,14 @@ class FirebaseRemoteClient {
     }
     const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const checked = WorkOrderCore.validateOrder(source);
-    if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `workOrders/${checked.order.id}`;
+    const orderId = WorkOrderCore.normalizeOrder(source).id;
+    if (!orderId) throw createError("지시 번호가 없습니다.", "ID_REQUIRED");
+    const location = `workOrders/${orderId}`;
     const snapshot = await this.dbReadWithEtag(location, false, guard);
     const existing = snapshot.value;
     this.assertSessionGuardActive(guard);
+    const checked = existing ? WorkOrderCore.validateOrder(source) : WorkOrderCore.validatePublication(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
     if (existing && WorkOrderCore.normalizeOrder(existing).status === "done") {
       // 끝난 일이 나중에 바뀌면 기록이 아니다.
       throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");

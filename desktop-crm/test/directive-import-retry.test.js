@@ -5,7 +5,7 @@ test('unconfirmed or conflicting writes require review instead of repeating the 
  for(const code of ['WORK_ORDER_WRITE_UNCONFIRMED','WORK_ORDER_CONFLICT']){
   let writes=0;const messages=[];
   const plan={ok:true,uid:'u',weekStart:'2026-09-14',tasks:[{title:'확인할 업무',dueDate:'2026-09-18'}]};
-  const ctx={window:{BringWeeklyDirectiveCore:{weekStart:s=>s}},workOrderCore:()=>({validateOrder:o=>({ok:true,order:o})}),workOrderState:{importPlan:plan,members:[],importOpen:true},api:{saveWorkOrder:async()=>{writes++;throw Object.assign(Error('서버 확인 필요'),{code});},saveWeeklyDirective:async()=>{throw Error('must not finalize');}},renderWorkOrders(){},loadWorkOrders:async()=>{},showToast:m=>messages.push(m)};
+  const ctx={window:{BringWeeklyDirectiveCore:{weekStart:s=>s}},workOrderCore:()=>({validatePublication:o=>({ok:true,order:o})}),workOrderState:{importPlan:plan,members:[],importOpen:true},api:{saveWorkOrder:async()=>{writes++;throw Object.assign(Error('서버 확인 필요'),{code});},saveWeeklyDirective:async()=>{throw Error('must not finalize');}},renderWorkOrders(){},loadWorkOrders:async()=>{},showToast:m=>messages.push(m)};
   vm.createContext(ctx);vm.runInContext(fn,ctx);await ctx.buildFromDirectivePaste();await ctx.buildFromDirectivePaste();
   assert.equal(writes,1);assert.equal(ctx.workOrderState.importPlan,plan);assert.match(messages.join(' '),/저장 여부/);
  }
@@ -13,7 +13,7 @@ test('unconfirmed or conflicting writes require review instead of repeating the 
 test('partial failure keeps the plan and retries only unsaved tasks',async()=>{
  const plan={ok:true,uid:'u',weekStart:'2026-09-14',tasks:[{title:'첫 업무',dueDate:'2026-09-18'},{title:'둘째 업무',dueDate:'2026-09-18'}]};
  const calls=[];let fail=true,weekly=0;
- const ctx={window:{BringWeeklyDirectiveCore:{weekStart:s=>s}},workOrderCore:()=>({validateOrder:o=>({ok:true,order:o})}),workOrderState:{importPlan:plan,members:[],importOpen:true},api:{saveWorkOrder:async o=>{calls.push(o);if(o.title==='둘째 업무'&&fail)throw Error('검증 실패');},saveWeeklyDirective:async()=>weekly++},renderWorkOrders(){},loadWorkOrders:async()=>{},showToast(){}};
+ const ctx={window:{BringWeeklyDirectiveCore:{weekStart:s=>s}},workOrderCore:()=>({validatePublication:o=>({ok:true,order:o})}),workOrderState:{importPlan:plan,members:[],importOpen:true},api:{saveWorkOrder:async o=>{calls.push(o);if(o.title==='둘째 업무'&&fail)throw Error('검증 실패');},saveWeeklyDirective:async()=>weekly++},renderWorkOrders(){},loadWorkOrders:async()=>{},showToast(){}};
  vm.createContext(ctx);vm.runInContext(fn,ctx);await ctx.buildFromDirectivePaste();
  assert.equal(ctx.workOrderState.importPlan,plan);assert.equal(ctx.workOrderState.importOpen,true);assert.equal(weekly,0);
  fail=false;await ctx.buildFromDirectivePaste();

@@ -122,7 +122,9 @@ test("directive draft writes a pasteable sheet and never invents facts", () => {
   // 이 갈래가 내놓는 글은 그대로 붙여넣기 칸에 들어가 파서를 지난다. 그래서
   // 모양이 어긋나면 화면이 "못 읽은 줄" 로 다 뱉는다.
   const messages = buildTaskMessages("directive_draft", "당근이랑 숨고 좀 살려야 함", {});
-  assert.match(messages[0].content, /업무명\\t목적\\t완료기준\\t산출물\\t예상시간\\t가중치\\t마감/u);
+  assert.match(messages[0].content, /업무명\\t목적\\t완료기준\\t산출물\\t산출물 종류\\t산출물 수량\\t예상시간\\t가중치\\t마감/u);
+  assert.match(messages[0].content, /산출물 종류\\t산출물 수량/u);
+  assert.match(messages[0].content, /종류나 수량을 알 수 없으면 비워/u);
   // 없는 마감일과 건물명을 지어내면 그게 지시가 되어 애들에게 나간다.
   assert.match(messages[0].content, /적히지 않은 사실을 만들지 마세요/u);
   // 가중치 합이 100이 아니면 내보내기에서 막힌다. 애초에 맞춰서 내놓게 한다.
@@ -146,6 +148,7 @@ test("directive split never guesses whose work an unclear line is", () => {
   // 사람마다 가용시간이 다르다. 한 사람 기준으로 다 짜면 누군가는 넘친다.
   assert.match(messages[0].content, /사람마다 주어진 가용시간/u);
   assert.match(messages[0].content, /사람마다 합이 정확히 100/u);
+  assert.match(messages[0].content, /산출물 종류\\t산출물 수량/u);
 
   const result = normalizeTaskResult("directive_split", { text: "== 김현진 ==\n배경\t가" });
   assert.match(result.text, /== 김현진 ==/u);

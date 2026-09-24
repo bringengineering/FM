@@ -284,6 +284,24 @@
     return { ok: true, order };
   }
 
+  // 발행은 저장보다 엄격하다. 기존 지시의 단순 수정에는 이 검사를 적용하지 않는다.
+  function validatePublication(input) {
+    const order = normalizeOrder(input);
+    const missing = [];
+    if (!order.title) missing.push("업무명");
+    if (!order.assigneeUid) missing.push("담당자");
+    if (!order.why) missing.push("목적");
+    if (!order.what) missing.push("작업 내용");
+    if (!order.doneWhen) missing.push("완료 기준");
+    if (!order.dueDate) missing.push("마감일");
+    if (!order.deliverableKind) missing.push("산출물 종류");
+    if (!order.deliverable) missing.push("산출물 이름");
+    if (deliverableCounted(order.deliverableKind) && !order.deliverableCount) missing.push("산출물 수량");
+    if (missing.length) return { ok: false, code: "PUBLICATION_INCOMPLETE", missing, error: `발행 전에 ${missing.join("·")}을(를) 입력해 주세요.` };
+    const checked = validateOrder(order);
+    return checked.ok ? { ok: true, missing, order: checked.order } : checked;
+  }
+
   // 상태를 옮길 수 있는지 본다. 완료는 시킨 사람만 정한다.
   function moveStatus(input) {
     const settings = input && typeof input === "object" ? input : {};
@@ -427,6 +445,7 @@
     progressUpdatesMap,
     normalizeOrder,
     validateOrder,
+    validatePublication,
     moveStatus,
     sameInstruction,
     overdue,
