@@ -4092,10 +4092,11 @@ class FirebaseRemoteClient {
         title: String(user.title || user.position || "").trim().slice(0, 60),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
-    const [projectPayload, capacityPayload, directivePayload] = await Promise.all([
+    const [projectPayload, capacityPayload, directivePayload, objectiveRead] = await Promise.all([
       this.dbRequest("projects", { method: "GET" }).catch(() => null),
       this.dbRequest("capacity", { method: "GET" }).catch(() => null),
       this.dbRequest("weeklyDirectives", { method: "GET" }).catch(() => null),
+      this.dbRequest("objectives", { method: "GET" }).then(payload => ({ ok: true, payload }), () => ({ ok: false, payload: null })),
     ]);
     this.assertSessionGuardActive(guard);
     const projects = Object.entries(projectPayload && typeof projectPayload === "object" ? projectPayload : {})
@@ -4111,12 +4112,33 @@ class FirebaseRemoteClient {
     const directives = Object.entries(directivePayload && typeof directivePayload === "object" ? directivePayload : {})
       .map(([id, value]) => WeeklyDirectiveCore.normalizeDirective(Object.assign({ id }, value || {})))
       .filter(item => item.uid && item.weekStart);
+    const objectivesAvailable = objectiveRead.ok && (objectiveRead.payload === null
+      || (typeof objectiveRead.payload === "object" && !Array.isArray(objectiveRead.payload)));
+    const objectiveRows = value => Array.isArray(value) ? value.filter(Boolean)
+      : value && typeof value === "object" && !Array.isArray(value) ? Object.values(value).filter(Boolean) : [];
+    const objectives = objectivesAvailable ? Object.entries(objectiveRead.payload || {}).map(([id, value]) => ({
+      id,
+      quarter: value && value.quarter,
+      title: value && value.title,
+      status: value && value.status,
+      projectIds: objectiveRows(value && value.projectIds).filter(item => typeof item === "string").slice(0, 100),
+      keyResults: objectiveRows(value && value.keyResults).slice(0, 20).map(result => ({
+        id: result && result.id,
+        title: result && result.title,
+        unit: result && result.unit,
+        baseline: result && result.baseline,
+        target: result && result.target,
+        current: result && result.current,
+      })),
+    })) : [];
     return {
       orders,
       performanceOrders,
       projects,
       capacity,
       directives,
+      objectives,
+      objectivesAvailable,
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",

@@ -4366,7 +4366,7 @@
   // 카드에서 그 셋을 접지 않는다. 접어 두면 받는 사람은 제목만 보고 시작하고,
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
-    orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
+    orders: [], projects: [], members: [], capacity: [], objectives: [], objectivesAvailable: false, admin: false, canWork: false, uid: "",
     projectId: "", projectDetailTab: "overview", portfolioFilter: "__all", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
@@ -4443,6 +4443,8 @@
       workOrderState.projects = Array.isArray(data && data.projects) ? data.projects : [];
       workOrderState.capacity = Array.isArray(data && data.capacity) ? data.capacity : [];
       workOrderState.directives = Array.isArray(data && data.directives) ? data.directives : [];
+      workOrderState.objectives = Array.isArray(data && data.objectives) ? data.objectives : [];
+      workOrderState.objectivesAvailable = data && data.objectivesAvailable === true;
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
       const nextWorkOrderUid = String((data && data.uid) || "");
@@ -4946,12 +4948,17 @@
     const detailTabs = [["overview", "개요"], ["roadmap", "로드맵"], ["orders", "업무지시"], ["reports", "보고·검수"], ["risks", "위험·결정"]];
     const projectDetailTab = detailTabs.some(([key]) => key === workOrderState.projectDetailTab) ? workOrderState.projectDetailTab : "overview";
     const projectCompletion = actualProject && healthReady ? workspaceCore.completion(performanceProjectOrders, project.id) : null;
+    const strategyCore = window.BringProjectStrategyCore;
+    const strategy = workOrderState.objectivesAvailable && strategyCore && workOrderState.loaded && !workOrderState.loading && !workOrderState.error
+      ? strategyCore.summarize({ objectives: workOrderState.objectives, projects: workspace ? workspace.projects : [], today }) : null;
+    const linkedGoals = actualProject && strategy && strategyCore.forProject ? strategyCore.forProject(strategy, project.id) : [];
+    const strategyMetric = result => result.progress === null ? "수치 확인 필요" : `${result.progress}% · ${result.current}/${result.target} ${result.unit}`;
     const projectRiskQueue = actualProject && workspaceCore.todayQueue
       ? workspaceCore.todayQueue({ orders, uid: workOrderState.uid, admin: workOrderState.admin, today }).filter(item => ["overdue", "returned", "review"].includes(item.kind)) : [];
     const projectDetail = actualProject ? `<section class="project-workspace-detail" aria-label="${esc(project.name)} 프로젝트 상세">
       <button type="button" class="mini-button project-workspace-back" data-wo-project="__all">전체 프로젝트로</button>
       <nav class="project-workspace-detail-tabs" aria-label="프로젝트 상세 보기">${detailTabs.map(([key, label]) => `<button type="button" data-wo-project-section="${key}" aria-current="${projectDetailTab === key ? "page" : "false"}">${label}</button>`).join("")}</nav>
-      ${projectDetailTab === "overview" ? `<div class="project-workspace-overview"><div class="project-workspace-overview-head"><span>프로젝트 개요</span><h3>${esc(project.name)}</h3><p>${esc(project.goal || "프로젝트 목적이 아직 입력되지 않았습니다. 관리자가 프로젝트 수정에서 목적을 기록해 주세요.")}</p></div><dl><div><dt>사업영역</dt><dd>${esc(P.portfolioLabel(project.portfolioId))}</dd></div><div><dt>책임자</dt><dd>${esc(project.owner || "미정")}</dd></div><div><dt>일정</dt><dd>${esc(project.startDate || "시작 미정")} ~ ${esc(project.endDate || "마감 미정")}</dd></div><div><dt>상태</dt><dd>${esc(P.statusLabel(project.status))}</dd></div><div><dt>담당자 보고 진도</dt><dd>${Number.isFinite(project.progress) ? `${project.progress}%` : "입력 없음"}</dd></div><div><dt>업무 검수 완료율 · 건수 기준</dt><dd>${projectCompletion ? `${projectCompletion.percent}% (${projectCompletion.done}/${projectCompletion.total}건)` : "집계 대기"}</dd></div></dl><p class="project-workspace-definition">보고 진도는 담당자가 입력한 값이고, 검수 완료율은 실제 업무의 완료 처리 건수입니다. 두 수치를 합산하지 않습니다.</p><button type="button" class="primary-button" data-wo-project-section="orders">연결된 업무지시 보기</button>${workOrderState.admin ? `<button type="button" class="mini-button project-workspace-edit" data-wo-project-edit="${esc(project.id)}">프로젝트 수정</button>` : ""}</div>` : ""}
+      ${projectDetailTab === "overview" ? `<div class="project-workspace-overview"><div class="project-workspace-overview-head"><span>프로젝트 개요</span><h3>${esc(project.name)}</h3><p>${esc(project.goal || "프로젝트 목적이 아직 입력되지 않았습니다. 관리자가 프로젝트 수정에서 목적을 기록해 주세요.")}</p></div><dl><div><dt>사업영역</dt><dd>${esc(P.portfolioLabel(project.portfolioId))}</dd></div><div><dt>책임자</dt><dd>${esc(project.owner || "미정")}</dd></div><div><dt>일정</dt><dd>${esc(project.startDate || "시작 미정")} ~ ${esc(project.endDate || "마감 미정")}</dd></div><div><dt>상태</dt><dd>${esc(P.statusLabel(project.status))}</dd></div><div><dt>담당자 보고 진도</dt><dd>${Number.isFinite(project.progress) ? `${project.progress}%` : "입력 없음"}</dd></div><div><dt>업무 검수 완료율 · 건수 기준</dt><dd>${projectCompletion ? `${projectCompletion.percent}% (${projectCompletion.done}/${projectCompletion.total}건)` : "집계 대기"}</dd></div></dl><p class="project-workspace-definition">보고 진도는 담당자가 입력한 값이고, 검수 완료율은 실제 업무의 완료 처리 건수입니다. 두 수치를 합산하지 않습니다.</p><section class="project-workspace-goal-links"><h4>연결 분기 목표</h4>${strategy ? linkedGoals.length ? linkedGoals.map(goal => `<article><strong>${esc(goal.title)}</strong><small>${esc(goal.quarter)} · 핵심결과 ${goal.keyResults.length}개</small></article>`).join("") : `<p>이 프로젝트에 연결된 현재 분기 목표가 없습니다.</p>` : `<p>목표 조회 확인 필요 · 기존 프로젝트 데이터는 유지됩니다.</p>`}</section><button type="button" class="primary-button" data-wo-project-section="orders">연결된 업무지시 보기</button>${workOrderState.admin ? `<button type="button" class="mini-button project-workspace-edit" data-wo-project-edit="${esc(project.id)}">프로젝트 수정</button>` : ""}</div>` : ""}
       ${projectDetailTab === "risks" ? `<div class="project-workspace-risk"><h3>확인할 일 ${projectRiskQueue.length}건</h3><p>기한 초과·보완 요청·검수 대기 업무를 원본에서 확인합니다. 별도 결정 요청 기록이 없는 경우 임의로 만들지 않습니다.</p>${projectRiskQueue.length ? `<div class="project-workspace-action-list">${projectRiskQueue.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}</small></button>`).join("")}</div>` : `<p>현재 조회 범위에 확인할 업무가 없습니다.</p>`}</div>` : ""}
     </section>` : "";
     const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
@@ -4959,6 +4966,10 @@
         <div><span>업무 검수 완료</span><strong>${!healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${workspaceHealth.done}/${workspaceHealth.total}건` : "집계 대기"}</strong><small>전체 업무지시 · 건수 기준</small></div>
         <div><span>기한 초과</span><strong>${healthValue(workspaceHealth && workspaceHealth.overdue)}</strong><small>검수 미완료 · 마감일 경과</small></div>
         <div><span>검수 대기</span><strong>${healthValue(workspaceHealth && workspaceHealth.review)}</strong><small>제출됨 · 승인 전</small></div>
+      </section>
+      <section class="project-workspace-goals" aria-label="이번 분기 목표">
+        <header><div><span>기존 목표 원본 · 읽기 전용</span><h3>이번 분기 목표</h3></div><small>${strategy ? esc(strategy.quarter) : "조회 확인 필요"}</small></header>
+        ${strategy ? strategy.goals.length ? strategy.goals.map(goal => `<article><div><strong>${esc(goal.title)}</strong><small>${goal.projectIds.length ? `연결 프로젝트 ${goal.projectIds.length}개` : "연결 프로젝트 확인 필요"}</small></div><div class="project-workspace-goal-results">${goal.keyResults.length ? goal.keyResults.map(result => `<span>${esc(result.title)} · ${esc(strategyMetric(result))}</span>`).join("") : "핵심결과 수치 확인 필요"}</div>${goal.projectIds.map(id => { const linked = workspace.projects.find(item => item.id === id); return `<button type="button" class="mini-button" data-wo-project="${esc(id)}">${esc(linked ? linked.name : id)} 열기</button>`; }).join("")}</article>`).join("") : `<p>진행 중인 현재 분기 목표가 없습니다. 연간·반기 목표는 승인된 원본을 연결한 뒤 표시합니다.</p>` : `<p>목표 조회 확인 필요 · 실패한 조회를 0건으로 표시하지 않습니다.</p>`}
       </section>
       <section class="project-workspace-today" aria-labelledby="project-workspace-today-title">
         <header><div><span>${workOrderState.admin ? "팀 전체의 다음 행동" : "내 업무의 다음 행동"}</span><h3 id="project-workspace-today-title">오늘 처리할 일</h3></div><small>${todayActions.length}건</small></header>

@@ -13,6 +13,18 @@ test('프로젝트 작업공간 모듈은 project-core 뒤, app 앞에 읽힌다
   assert.ok(project > 0 && workspace > project && app > workspace);
 });
 
+test('기존 분기 목표를 읽기 전용으로 연결하고 조회 실패를 빈 목표로 표시하지 않는다', () => {
+  const html=read('index.html'),remote=read('remote.js'),app=read('app.js');
+  assert.ok(html.indexOf('src="./project-strategy-core.js"') > html.indexOf('src="./project-workspace-core.js"'));
+  assert.ok(html.indexOf('src="./project-strategy-core.js"') < html.indexOf('src="./app.js"'));
+  assert.match(remote,/dbRequest\("objectives", \{ method: "GET" \}\)/u);
+  assert.match(remote,/objectivesAvailable/u);
+  assert.match(app,/BringProjectStrategyCore/u);
+  assert.match(app,/이번 분기 목표/u);
+  assert.match(app,/목표 조회 확인 필요/u);
+  assert.match(app,/연결 분기 목표/u);
+});
+
 test('프로젝트 기본 화면은 오늘 처리할 일과 실제 프로젝트를 보여 주고 기존 자료를 접어서 보존한다', () => {
   const source = read('app.js');
   const start = source.indexOf('function renderWorkOrders()');
