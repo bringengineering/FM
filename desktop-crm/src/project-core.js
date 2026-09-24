@@ -331,7 +331,7 @@
     if (!today) return null;
     const page = Number.isFinite(Number(shift)) ? Math.round(Number(shift)) : 0;
     if (scale === "days") {
-      // TV의 기존 8일 축(어제부터 8일)과 동일한 날짜 칸을 쓴다.
+      // 어제부터 8일을 보여 오늘과 다가오는 일정을 한 화면에서 비교한다.
       const from = addDays(today, -1 + page * 8);
       const days = 8;
       const columns = Array.from({ length: days }, (_, index) => {

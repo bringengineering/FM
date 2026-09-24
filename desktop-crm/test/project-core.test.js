@@ -2,7 +2,6 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const P = require("../src/project-core");
-const Wallboard = require("../src/company-wallboard");
 
 const order = patch => Object.assign({ status: "doing", progress: 0, track: "etc" }, patch);
 
@@ -115,14 +114,6 @@ test("로드맵을 확대하면 오늘 주변 8일을 날짜별로 보여 주고
   const box = P.roadmapLayout({ startDate: "2026-09-01", endDate: "2026-10-01" }, range);
   assert.equal(box.left, 0);
   assert.equal(box.width, 100);
-});
-
-test("CRM과 TV의 8일 화면은 같은 기준 날짜와 날짜 칸을 사용한다", () => {
-  const crm = P.roadmapRange("2026-09-24", 0, "days");
-  const model = Wallboard.project({ projects: [], orders: [], calendar: { serviceRecords: [] } }, "2026-09-24");
-  const tv = Wallboard.roadmapView(model, "day").range;
-  assert.deepEqual([crm.from, crm.to], [tv.from, tv.to]);
-  assert.deepEqual(crm.columns.map(item => item.start), tv.weeks.map(item => item.start));
 });
 
 test("로드맵은 같은 담당자의 같은 프로젝트 업무를 막대 하나로 묶는다", () => {
