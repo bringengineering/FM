@@ -10,4 +10,14 @@ async function saveAndSignalWallboard(save, signal) {
   return result;
 }
 
-module.exports = { saveAndSignalWallboard };
+async function saveWeeklyReportAndSignalWallboard(input, save, signal) {
+  const result = await save();
+  if (input?.action === 'approve' && result?.status === 'approved') {
+    try { signal(); } catch (_) {
+      // A confirmed approval remains saved even when TV refresh is unavailable.
+    }
+  }
+  return result;
+}
+
+module.exports = { saveAndSignalWallboard, saveWeeklyReportAndSignalWallboard };

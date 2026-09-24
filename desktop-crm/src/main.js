@@ -42,7 +42,7 @@ const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
-const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
+const { saveAndSignalWallboard, saveWeeklyReportAndSignalWallboard } = require("./wallboard-mutation-signal");
 const { requestWallboardRefresh } = require("./wallboard-refresh-client");
 const { createWallboardRefreshQueue } = require("./wallboard-refresh-queue");
 const { createWallboardRefreshStatus } = require("./wallboard-refresh-status");
@@ -8554,7 +8554,7 @@ secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveReque
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => saveAndSignalWallboard(() => remoteClient.saveWorkOrder(input), signalWallboardAfterSave));
-secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
+secureCanonicalHandle("crm:project-weekly-report-save", input => saveWeeklyReportAndSignalWallboard(input, () => remoteClient.saveProjectWeeklyReport(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
 secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), signalWallboardAfterSave));
