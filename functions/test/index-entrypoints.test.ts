@@ -3821,6 +3821,10 @@ describe("Firebase entrypoint metadata", () => {
   });
 
   it("registers the canonical CRM endpoint as a regional POST-only surface without CORS", () => {
+    expect(registration(entrypoints.commitBillingLedgerMutation)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
     expect(registration(entrypoints.commitCanonicalCrmEntity)).toMatchObject({
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
@@ -4202,7 +4206,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(21);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(2);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(3);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);

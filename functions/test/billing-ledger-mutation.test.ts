@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reduceBillingLedgerMutation } from "../src/billing-ledger-mutation.js";
+import { authorizeBillingActor, reduceBillingLedgerMutation, transactBillingLedger } from "../src/billing-ledger-mutation.js";
 
 const NOW = "2026-09-25T00:00:00.000Z";
 const invoice = {
@@ -172,5 +172,43 @@ describe("atomic billing ledger mutation", () => {
       kind: "invoice", record: { ...oneOff, id: "invoice-2", billingMonth: "2026-10" },
       expectedRevision: 0, requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
     })).toThrowError("billing_duplicate_invoice");
+  });
+
+  it("runs mutation against the transaction's current ledger and returns only committed state", async () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    let transactionSawCurrent = false;
+    const ref = {
+      async transaction(update: (value: unknown) => unknown) {
+        const next = update(first.ledger);
+        transactionSawCurrent = true;
+        return { committed: next !== undefined };
+      },
+    };
+    await expect(transactBillingLedger(ref, {
+      kind: "invoice", record: { ...invoice, amount: 120000 }, expectedRevision: 1,
+      requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).resolves.toMatchObject({ record: { amount: 120000, revision: 2 } });
+    expect(transactionSawCurrent).toBe(true);
+  });
+
+  it("does not report success if the database transaction aborts", async () => {
+    const ref = { async transaction(_update: (value: unknown) => unknown) { return { committed: false }; } };
+    await expect(transactBillingLedger(ref, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).rejects.toThrowError("billing_transaction_unavailable");
+  });
+
+  it("accepts only an enabled verified company staff account", () => {
+    const token = { uid: "member-1", email: "member@bringcare.kr", emailVerified: true };
+    const access = { enabled: true, email: "member@bringcare.kr", role: "member" };
+    expect(authorizeBillingActor(token, access)).toEqual({ uid: "member-1", role: "member" });
+    expect(() => authorizeBillingActor(token, { ...access, marketingRole: "marketing" })).toThrowError("billing_access_forbidden");
+    expect(() => authorizeBillingActor(token, { ...access, mustChangePassword: true })).toThrowError("billing_access_forbidden");
+    expect(() => authorizeBillingActor(token, { ...access, email: "other@bringcare.kr" })).toThrowError("billing_access_forbidden");
+    expect(() => authorizeBillingActor({ ...token, emailVerified: false }, access)).toThrowError("billing_auth_required");
   });
 });

@@ -10,6 +10,7 @@
       "changeFieldVisit",
       "claimFieldJob",
       "cleanupDesktopFieldHandoffs",
+      "commitBillingLedgerMutation",
       "commitCanonicalCrmEntity",
       "configureBuildingUnits",
       "createAdPackage",

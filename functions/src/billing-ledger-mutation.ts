@@ -1,5 +1,19 @@
 export type BillingActor = { uid: string; role: "admin" | "member" | "viewer" };
 
+export function authorizeBillingActor(
+  token: { uid: unknown; email: unknown; emailVerified: unknown },
+  access: unknown,
+): BillingActor {
+  if (!validId(token.uid) || typeof token.email !== "string" || !token.email.trim()
+    || token.emailVerified !== true) throw new Error("billing_auth_required");
+  if (!isRecord(access) || access.enabled !== true || access.mustChangePassword === true
+    || access.email !== token.email || (access.role !== "admin" && access.role !== "member")
+    || (access.role === "member" && access.marketingRole === "marketing")) {
+    throw new Error("billing_access_forbidden");
+  }
+  return { uid: token.uid, role: access.role };
+}
+
 export type BillingMutationCommand = {
   kind: "invoice" | "receipt";
   record: Record<string, unknown>;
@@ -189,4 +203,40 @@ export function reduceBillingLedgerMutation(
     throw new Error("billing_ledger_too_large");
   }
   return { ledger, record, repeated: false };
+}
+
+export async function transactBillingLedger(
+  ref: {
+    transaction: (
+      update: (value: unknown) => unknown,
+      onComplete?: undefined,
+      applyLocally?: boolean,
+    ) => Promise<{ committed: boolean }>;
+  },
+  command: BillingMutationCommand,
+): Promise<BillingMutationResult> {
+  let decision: BillingMutationResult | null = null;
+  let rejection: unknown = null;
+  let transaction: { committed: boolean };
+  try {
+    transaction = await ref.transaction((current) => {
+      try {
+        decision = reduceBillingLedgerMutation(current as BillingLedger | null, command);
+        rejection = null;
+        return decision.repeated ? undefined : decision.ledger;
+      } catch (error) {
+        decision = null;
+        rejection = error;
+        return undefined;
+      }
+    }, undefined, false);
+  } catch {
+    throw new Error("billing_transaction_unavailable");
+  }
+  if (rejection) throw rejection;
+  const result = decision as BillingMutationResult | null;
+  if (!result || (!result.repeated && !transaction.committed)) {
+    throw new Error("billing_transaction_unavailable");
+  }
+  return result;
 }
