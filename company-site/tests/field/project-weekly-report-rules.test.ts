@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import { get, ref, remove, set } from "firebase/database";
-import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const projectId = "demo-bring-weekly-report";
 let environment: RulesTestEnvironment;
@@ -45,7 +45,7 @@ beforeEach(async () => {
 });
 
 describe.skipIf(!available)("project weekly report rules", () => {
-  it("allows own draft and manager approval, but blocks other-author writes and approved rewrites", async () => {
+  it("freezes submitted evidence and stores an immutable manager review separately", async () => {
     const member = environment.authenticatedContext("u1", { email: "u1@bring.test", email_verified: true }).database();
     const other = environment.authenticatedContext("u2", { email: "u2@bring.test", email_verified: true }).database();
     const admin = environment.authenticatedContext("admin", { email: "admin@bring.test", email_verified: true }).database();
@@ -55,12 +55,19 @@ describe.skipIf(!available)("project weekly report rules", () => {
     await assertFails(set(ref(other, path), record("r1", "u1")));
     await assertFails(set(ref(viewer, "crmCompany/projectWeeklyReports/r2"), record("r2", "viewer")));
     await assertSucceeds(set(ref(member, path), { ...record("r1", "u1", "submitted"), submittedAt: stamp }));
-    await assertFails(set(ref(member, path), { ...record("r1", "u1", "approved"), approvedAt: stamp }));
-    await assertFails(set(ref(admin, path), { ...record("r1", "u1", "approved"), updatedBy: "admin", approvedAt: stamp,
-      snapshot: { ...record("r1", "u1").snapshot, counts: { total: 0, done: 0, submitted: 0, returned: 0, open: 0 }, sources: [] } }));
-    await assertSucceeds(set(ref(admin, path), { ...record("r1", "u1", "approved"), updatedBy: "admin", approvedAt: stamp }));
-    await assertFails(set(ref(admin, path), { ...record("r1", "u1", "approved"), updatedBy: "admin", approvedAt: stamp, summary: "overwritten" }));
+    await assertFails(set(ref(member, path), { ...record("r1", "u1", "submitted"), summary: "overwritten" }));
+    await assertFails(set(ref(admin, path), { ...record("r1", "u1", "submitted"), updatedBy: "admin",
+      snapshot: { ...record("r1", "u1").snapshot, sources: [{ id: "w2", status: "done", assigneeUid: "u2", updatedAt: stamp }] } }));
+    const reviewPath = "crmCompany/projectWeeklyReportReviews/r1";
+    const review = { status: "approved", projectId: "p1", authorUid: "u1", reviewerUid: "admin", reviewedAt: stamp };
+    await assertFails(set(ref(member, reviewPath), { ...review, reviewerUid: "u1" }));
+    await assertFails(set(ref(admin, reviewPath), { ...review, status: "returned" }));
+    await assertSucceeds(set(ref(admin, reviewPath), review));
+    await assertFails(set(ref(admin, reviewPath), { ...review, status: "returned", reviewNote: "changed" }));
+    await assertFails(remove(ref(admin, reviewPath)));
     await assertFails(remove(ref(admin, path)));
-    await assertSucceeds(get(ref(member, path)));
+    const stored = (await get(ref(member, path))).val();
+    expect(stored.snapshot.sources[0].id).toBe("w1");
+    expect(stored.status).toBe("submitted");
   });
 });
