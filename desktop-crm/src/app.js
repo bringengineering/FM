@@ -10549,25 +10549,30 @@
     const invoiceIds = new Set(invoices.map(item => item.id));
     const receipts = ledger ? ledger.receipts.filter(item => invoiceIds.has(item.invoiceId)) : [];
     const approvedInvoices = invoices.filter(item => item.status === "approved");
-    const approvedReceipts = receipts.filter(item => item.status === "approved");
-    const billed = approvedInvoices.reduce((sum, item) => sum + item.amount, 0);
-    const received = approvedReceipts.reduce((sum, item) => sum + item.amount, 0);
+    let summary = null;
+    if (ledger && !state.error) {
+      try { summary = BringBillingLedgerCore.summarizeMonth({ invoices, receipts }, state.month); }
+      catch (error) { state.error = `청구 장부를 검증할 수 없습니다: ${billingError(error)}`; state.ledger = null; }
+    }
+    const editInvoice = invoices.find(item => item.id === state.editInvoiceId && item.status === "draft");
+    const editReceipt = receipts.find(item => item.id === state.editReceiptId && item.status === "draft");
     const statusLabel = item => item.status === "draft" ? "확정 대기" : item.status === "approved" ? "확정" : "무효";
     modalContent.innerHTML = `<div class="modal-head"><div><h2>청구·입금</h2><p>${esc(contract.name || "계약")} · 실제 입금은 증빙을 갖춘 확정 영수 기록만 반영합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body billing-ledger-panel" data-billing-panel="${attr(state.contractId)}">
       <div class="info-box">기존 입금 완료 표시만으로는 실제 입금액에 반영하지 않습니다.</div>
       ${state.loading ? `<p role="status">청구 장부를 불러오는 중입니다…</p>` : state.error ? `<div class="billing-ledger-error" role="alert">${esc(state.error)} <button type="button" class="secondary-button" data-billing-retry>다시 불러오기</button></div>` : ""}
-      ${ledger && !state.loading && !state.error ? `<div class="billing-ledger-totals"><div><span>확정 청구액</span><strong>${esc(krw(billed))}</strong></div><div><span>확정 입금액</span><strong>${esc(krw(received))}</strong></div><div><span>미수금</span><strong>${esc(krw(Math.max(0, billed - received)))}</strong></div></div>
-      <section><h3>청구 내역</h3>${invoices.length ? invoices.map(item => `<div class="billing-ledger-row"><div><b>${esc(item.billingMonth)} · ${esc(krw(item.amount))}</b><small>${esc(statusLabel(item))} · ${esc(BringBillingLedgerCore.invoicePaymentState(item, receipts))}</small></div>${item.status === "draft" && canAdministerSecurity() ? `<button type="button" class="secondary-button" data-billing-approve-invoice="${attr(item.id)}">청구 확정</button>` : ""}</div>`).join("") : `<p class="billing-ledger-empty">청구 기록이 없습니다.</p>`}</section>
-      <section><h3>입금 내역</h3>${receipts.length ? receipts.map(item => `<div class="billing-ledger-row"><div><b>${esc(item.receivedAt)} · ${esc(krw(item.amount))}</b><small>${esc(statusLabel(item))} · 거래번호 ${esc(item.transactionRef)}</small></div>${item.status === "draft" && canAdministerSecurity() ? `<button type="button" class="secondary-button" data-billing-approve-receipt="${attr(item.id)}">입금 확정</button>` : ""}</div>`).join("") : `<p class="billing-ledger-empty">입금 기록이 없습니다.</p>`}</section>
-      <form id="billingInvoiceForm" class="billing-ledger-entry"><h3>청구 초안 만들기</h3><label class="field"><span>청구 월</span><input name="month" type="month" value="${attr(state.month)}" required></label><button class="secondary-button" type="submit">청구 초안 저장</button></form>
-      <form id="billingReceiptForm" class="billing-ledger-entry"><h3>입금 초안 기록</h3><div class="form-grid"><label class="field"><span>확정 청구</span><select name="invoiceId" required><option value="">선택</option>${approvedInvoices.map(item => `<option value="${attr(item.id)}">${esc(item.billingMonth)} · ${esc(krw(item.amount))}</option>`).join("")}</select></label>${field("입금일 *", "receivedAt", todayKey(), "date")}${field("입금액 *", "amount", "", "number", "원 단위")}${field("거래번호 *", "transactionRef", "", "text", "은행 거래 식별번호")}${field("증빙 위치 *", "evidenceRef", "", "text", "거래내역 파일·링크", "wide")}</div><button class="secondary-button" type="submit" ${approvedInvoices.length ? "" : "disabled"}>입금 초안 저장</button><p>관리자만 확정할 수 있습니다. 초안은 실제 입금액에 포함되지 않습니다.</p></form>` : ""}
+      ${state.notice ? `<div class="billing-ledger-error" role="alert">${esc(state.notice)}</div>` : ""}
+      ${summary && !state.loading && !state.error ? `<div class="billing-ledger-totals"><div><span>${esc(state.month)} 확정 청구액</span><strong>${esc(krw(summary.billed))}</strong></div><div><span>월 확정 입금액</span><strong>${esc(krw(summary.received))}</strong></div><div><span>누적 미수금</span><strong>${esc(krw(summary.receivable))}</strong></div>${summary.overpayment ? `<div><span>초과입금 확인</span><strong>${esc(krw(summary.overpayment))}</strong></div>` : ""}</div>
+      <section><h3>청구 내역</h3>${invoices.length ? invoices.map(item => `<div class="billing-ledger-row"><div><b>${esc(item.billingMonth)} · ${esc(krw(item.amount))}</b><small>${esc(statusLabel(item))} · ${esc(BringBillingLedgerCore.invoicePaymentState(item, receipts))}</small></div>${item.status === "draft" && canWriteCRM() ? `<button type="button" class="secondary-button" data-billing-edit-invoice="${attr(item.id)}">초안 수정</button>` : ""}${item.status === "draft" && canAdministerSecurity() ? `<button type="button" class="secondary-button" data-billing-approve-invoice="${attr(item.id)}">청구 확정</button>` : ""}</div>`).join("") : `<p class="billing-ledger-empty">청구 기록이 없습니다.</p>`}</section>
+      <section><h3>입금 내역</h3>${receipts.length ? receipts.map(item => `<div class="billing-ledger-row"><div><b>${esc(item.receivedAt)} · ${esc(krw(item.amount))}</b><small>${esc(statusLabel(item))} · 거래번호 ${esc(item.transactionRef)}</small></div>${item.status === "draft" && canWriteCRM() ? `<button type="button" class="secondary-button" data-billing-edit-receipt="${attr(item.id)}">초안 수정</button>` : ""}${item.status === "draft" && canAdministerSecurity() ? `<button type="button" class="secondary-button" data-billing-approve-receipt="${attr(item.id)}">입금 확정</button>` : ""}</div>`).join("") : `<p class="billing-ledger-empty">입금 기록이 없습니다.</p>`}</section>
+      ${canWriteCRM() ? `<form id="billingInvoiceForm" class="billing-ledger-entry"><h3>${editInvoice ? "청구 초안 수정" : "청구 초안 만들기"}</h3><label class="field"><span>청구 월</span><input name="month" type="month" value="${attr(state.invoiceValues?.month || editInvoice?.billingMonth || state.month)}" ${editInvoice ? "readonly" : "required"}></label>${editInvoice ? field("청구액 *", "amount", state.invoiceValues?.amount ?? editInvoice.amount, "number") : ""}<button class="secondary-button" type="submit">${editInvoice ? "수정 저장" : "청구 초안 저장"}</button></form>
+      <form id="billingReceiptForm" class="billing-ledger-entry"><h3>${editReceipt ? "입금 초안 수정" : "입금 초안 기록"}</h3><div class="form-grid"><label class="field"><span>확정 청구</span><select name="invoiceId" required><option value="">선택</option>${approvedInvoices.map(item => `<option value="${attr(item.id)}" ${item.id === (state.receiptValues?.invoiceId || editReceipt?.invoiceId) ? "selected" : ""}>${esc(item.billingMonth)} · ${esc(krw(item.amount))}</option>`).join("")}</select></label>${field("입금일 *", "receivedAt", state.receiptValues?.receivedAt || editReceipt?.receivedAt || todayKey(), "date")}${field("입금액 *", "amount", state.receiptValues?.amount ?? editReceipt?.amount ?? "", "number", "원 단위")}${field("거래번호 *", "transactionRef", state.receiptValues?.transactionRef || editReceipt?.transactionRef || "", "text", "은행 거래 식별번호")}${field("증빙 위치 *", "evidenceRef", state.receiptValues?.evidenceRef || editReceipt?.evidenceRef || "", "text", "거래내역 파일·링크", "wide")}</div><button class="secondary-button" type="submit" ${approvedInvoices.length ? "" : "disabled"}>${editReceipt ? "수정 저장" : "입금 초안 저장"}</button><p>관리자만 확정할 수 있습니다. 초안은 실제 입금액에 포함되지 않습니다.</p></form>` : `<p class="billing-ledger-empty">조회 전용 계정은 장부를 변경할 수 없습니다.</p>`}` : ""}
       <div class="form-actions"><button type="button" class="secondary-button" data-billing-back="${attr(state.contractId)}">계약으로 돌아가기</button></div></div>`;
   }
   async function openBillingLedger(contractId) {
     const form = document.getElementById("contractForm");
     if (form && form.dataset.contractId === contractId && form.dataset.initialFields !== JSON.stringify([...new FormData(form)])) return showToast("저장하지 않은 계약 변경이 있습니다. 먼저 저장하거나 취소해 주세요.", "error");
     if (!store.contracts.some(item => item.id === contractId)) return;
-    const state = { contractId, generation: authGeneration, uid: currentAuthUid(), month: todayKey().slice(0, 7), ledger: null, loading: true, error: "" };
+    const state = { contractId, generation: authGeneration, uid: currentAuthUid(), month: todayKey().slice(0, 7), ledger: null, loading: true, error: "", notice: "" };
     billingPanel = state;
     renderBillingLedger(state);
     openModal();
@@ -10577,6 +10582,11 @@
       if (!ledger || !Array.isArray(ledger.invoices) || !Array.isArray(ledger.receipts)) throw new Error("청구 장부 형식이 올바르지 않습니다.");
       state.ledger = ledger;
       state.error = "";
+      state.notice = "";
+      state.invoiceValues = null;
+      state.receiptValues = null;
+      state.editInvoiceId = "";
+      state.editReceiptId = "";
     } catch (error) {
       if (!billingSessionActive(state)) return;
       state.ledger = null;
@@ -10599,11 +10609,15 @@
       if (!ledger || !Array.isArray(ledger.invoices) || !Array.isArray(ledger.receipts)) throw new Error("청구 장부 형식이 올바르지 않습니다.");
       state.ledger = ledger;
       state.error = "";
+      state.notice = "";
+      state.invoiceValues = null;
+      state.receiptValues = null;
+      state.editInvoiceId = "";
+      state.editReceiptId = "";
       showToast("청구 장부에 저장했습니다.", "success");
     } catch (error) {
       if (!billingSessionActive(state)) return;
-      state.error = `${billingError(error)} 장부를 다시 불러와 확인해 주세요.`;
-      state.ledger = null;
+      state.notice = `${billingError(error)} 저장되지 않았습니다. 내용을 확인하고 다시 시도해 주세요.`;
     } finally {
       if (billingSessionActive(state)) { state.loading = false; renderBillingLedger(state); }
     }
@@ -13459,6 +13473,18 @@
     if (billingRetry && billingPanel) { void openBillingLedger(billingPanel.contractId); return; }
     const billingBack = event.target.closest("[data-billing-back]");
     if (billingBack) { billingPanel = null; contractEditor(billingBack.dataset.billingBack); return; }
+    const editInvoiceButton = event.target.closest("[data-billing-edit-invoice]");
+    const editReceiptButton = event.target.closest("[data-billing-edit-receipt]");
+    if (editInvoiceButton || editReceiptButton) {
+      if (!canWriteCRM() || !billingPanel?.ledger || billingPanel.loading) return;
+      billingPanel.editInvoiceId = editInvoiceButton?.dataset.billingEditInvoice || "";
+      billingPanel.editReceiptId = editReceiptButton?.dataset.billingEditReceipt || "";
+      billingPanel.invoiceValues = null;
+      billingPanel.receiptValues = null;
+      billingPanel.notice = "";
+      renderBillingLedger(billingPanel);
+      return;
+    }
     const approveInvoice = event.target.closest("[data-billing-approve-invoice]");
     const approveReceipt = event.target.closest("[data-billing-approve-receipt]");
     if (approveInvoice || approveReceipt) {
@@ -14452,9 +14478,17 @@
     const form = event.target;
     if (form.id === "billingInvoiceForm") {
       const state = billingPanel;
-      if (!state || !billingSessionActive(state) || !state.ledger) return;
+      if (!state || !billingSessionActive(state) || !state.ledger || !canWriteCRM()) return;
       const contract = store.contracts.find(item => item.id === state.contractId);
       const month = form.elements.month.value;
+      state.invoiceValues = { month, amount: form.elements.amount?.value || "" };
+      if (state.editInvoiceId) {
+        const existing = state.ledger.invoices.find(item => item.id === state.editInvoiceId && item.contractId === state.contractId && item.status === "draft");
+        const amount = Number(state.invoiceValues.amount);
+        if (!existing || !Number.isSafeInteger(amount) || amount <= 0) return showToast("청구액을 확인해 주세요.", "error");
+        await saveBillingRecord("invoice", { ...existing, amount }, existing.revision);
+        return;
+      }
       const proposal = BringBillingLedgerCore.proposeInvoice(contract, month, state.ledger.invoices);
       if (proposal.status !== "draft") return showToast(({ duplicate: "이미 이 청구 건의 초안 또는 확정 기록이 있습니다.", review_required: "이 계약의 청구 주기는 수동 검토가 필요합니다." })[proposal.status] || `청구 초안을 만들 수 없습니다: ${proposal.status}`, "error");
       state.month = month;
@@ -14463,16 +14497,19 @@
     }
     if (form.id === "billingReceiptForm") {
       const state = billingPanel;
-      if (!state || !billingSessionActive(state) || !state.ledger) return;
+      if (!state || !billingSessionActive(state) || !state.ledger || !canWriteCRM()) return;
       const invoiceId = form.elements.invoiceId.value;
       const invoice = state.ledger.invoices.find(item => item.id === invoiceId && item.contractId === state.contractId && item.status === "approved");
       const amount = Number(form.elements.amount.value);
       const receivedAt = form.elements.receivedAt.value;
       const transactionRef = form.elements.transactionRef.value.trim();
       const evidenceRef = form.elements.evidenceRef.value.trim();
+      state.receiptValues = { invoiceId, amount: form.elements.amount.value, receivedAt, transactionRef, evidenceRef };
       if (!invoice || !Number.isSafeInteger(amount) || amount <= 0 || !receivedAt || !transactionRef || !evidenceRef) return showToast("확정 청구·입금일·입금액·거래번호·증빙 위치를 모두 확인해 주세요.", "error");
-      const record = { id: `rcpt_${crypto.randomUUID().replace(/-/g, "")}`, invoiceId, amount, receivedAt, transactionRef, evidenceRef, status: "draft" };
-      await saveBillingRecord("receipt", record, 0);
+      const existing = state.editReceiptId && state.ledger.receipts.find(item => item.id === state.editReceiptId && item.status === "draft" && state.ledger.invoices.some(entry => entry.id === item.invoiceId && entry.contractId === state.contractId));
+      if (state.editReceiptId && !existing) return showToast("수정할 입금 초안을 찾을 수 없습니다. 장부를 다시 확인해 주세요.", "error");
+      const record = { ...(existing || { id: `rcpt_${crypto.randomUUID().replace(/-/g, "")}` }), invoiceId, amount, receivedAt, transactionRef, evidenceRef, status: "draft" };
+      await saveBillingRecord("receipt", record, existing?.revision || 0);
       return;
     }
     if (form.matches('[data-company-strategy-form]')) { await saveCompanyStrategyFromForm(form); return; }
