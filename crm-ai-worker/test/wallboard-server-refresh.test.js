@@ -75,7 +75,7 @@ test('server refresh reads billing once and publishes approved aggregate revenue
  for(const secret of ['private-contract','private-invoice','private-receipt','secret-bank-ref','private-drive-link','admin-1','비공개 반려 사유'])assert.equal(published.includes(secret),false,secret);
 });
 test('billing read or ledger validation failure preserves the prior TV publication',async()=>{
- for(const overrides of [{denied:'billingLedger'},{oversize:'billingLedger'},{billingMap:{invoices:{i1:{amount:1}}}}]){
+ for(const overrides of [{denied:'billingLedger'},{oversize:'billingLedger'},{billingMap:{invoices:{i1:{amount:1}}}},{billingMap:{invoices:sources.billingLedger.invoices,receipts:null}}]){
   const f=fixture(overrides);
   await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}));
   assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);

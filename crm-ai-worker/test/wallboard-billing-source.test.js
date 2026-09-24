@@ -18,6 +18,11 @@ test('missing ledger is an unconfirmed empty source, not an approved zero',()=>{
  assert.deepEqual(validateWallboardBillingLedger(null),{invoices:[],receipts:[]});
 });
 
+test('explicitly null invoice or receipt maps are malformed, not empty',()=>{
+ assert.throws(()=>validateWallboardBillingLedger({invoices:null}),/WALLBOARD_UNAVAILABLE/);
+ assert.throws(()=>validateWallboardBillingLedger({invoices:{i1:invoice},receipts:null}),/WALLBOARD_UNAVAILABLE/);
+});
+
 test('accepts a returned draft while keeping its audit metadata local',()=>{
  const draft={...invoice,status:'draft',revision:2,returnPending:true,
   returnHistory:{request1:{reason:'금액 증빙을 다시 확인해 주세요',returnedBy:'admin1',returnedAt:now,revision:2}}};
@@ -34,6 +39,11 @@ test('rejects malformed records and unknown fields without echoing source data',
   {i1:{...invoice,customerName:'private'}},
   {i1:{...invoice,returnHistory:{r1:{reason:'x',returnedBy:'admin1',returnedAt:now,revision:2}}}},
  ])assert.throws(()=>validateWallboardBillingLedger({invoices}),error=>error.message==='WALLBOARD_UNAVAILABLE');
+});
+
+test('rejects impossible approval and update timestamps',()=>{
+ assert.throws(()=>validateWallboardBillingLedger({invoices:{i1:{...invoice,approvedAt:'2026-02-30T00:00:00.000Z'}}}),/WALLBOARD_UNAVAILABLE/);
+ assert.throws(()=>validateWallboardBillingLedger({invoices:{i1:{...invoice,updatedAt:'2026-02-30T00:00:00.000Z'}}}),/WALLBOARD_UNAVAILABLE/);
 });
 
 test('rejects duplicate active invoice natural keys',()=>{

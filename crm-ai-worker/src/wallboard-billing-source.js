@@ -14,7 +14,8 @@ const date=value=>{
  const parsed=new Date(`${value}T00:00:00.000Z`);
  return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===value;
 };
-const timestamp=value=>typeof value==='string'&&TIME.test(value)&&Number.isFinite(Date.parse(value));
+const timestamp=value=>typeof value==='string'&&TIME.test(value)&&Number.isFinite(Date.parse(value))
+ &&new Date(value).toISOString()===value;
 function returnMetadata(item){
  if(item.returnPending!==undefined&&typeof item.returnPending!=='boolean')fail();
  if(item.returnHistory===undefined)return;
@@ -49,7 +50,8 @@ function record(key,item,kind){
 export function validateWallboardBillingLedger(raw) {
  if(raw===null)return {invoices:[],receipts:[]};
  if(!map(raw)||Object.keys(raw).some(key=>!['invoices','receipts'].includes(key)))fail();
- const invoiceMap=raw.invoices??{},receiptMap=raw.receipts??{};
+ const invoiceMap=raw.invoices===undefined?{}:raw.invoices;
+ const receiptMap=raw.receipts===undefined?{}:raw.receipts;
  if(!map(invoiceMap)||!map(receiptMap))fail();
  if(new TextEncoder().encode(JSON.stringify(raw)).byteLength>1024*1024)fail();
  const invoices=Object.entries(invoiceMap).map(([key,item])=>record(key,item,'invoice'));
