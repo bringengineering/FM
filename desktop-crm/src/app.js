@@ -16182,7 +16182,7 @@ document.addEventListener("keydown", event => {
   setInterval(() => {
     if (currentView==='workOrders' && !document.hidden && !workOrderTyping()
       && !workOrderState.capacityEditing && !workOrderState.projectReportEditingId
-      && companyStrategyState.loaded && !companyStrategyState.loading
+      && !companyStrategyState.loading
       && Date.now()-companyStrategyState.refreshedAt>=30*1000) void loadCompanyStrategy();
   }, 30000);
 

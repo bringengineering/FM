@@ -32,6 +32,21 @@ function expandCompanyStrategyPublication(record) {
   if (!checked.ok) throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA');
   return {...record,...companyStrategyWireFields(checked.draft)};
 }
+function expandCompanyStrategyDraft(record) {
+  if (!record) return null;
+  const expanded = expandCompanyStrategyPublication(record);
+  if (record.vision !== undefined || record.organization !== undefined || record.goals !== undefined) {
+    const legacy = CompanyStrategyCore.validatePublication({
+      year:record.year, vision:record.vision,
+      organization:Object.values(record.organization || {}),
+      goals:Object.values(record.goals || {}),
+    });
+    if (!legacy.ok || JSON.stringify(companyStrategyWireFields(legacy.draft)) !== record.content) {
+      throw createError('초안 저장 내용이 일치하지 않습니다. 다시 저장해 주세요.', 'CONFLICT');
+    }
+  }
+  return expanded;
+}
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const WeeklyDirectiveCore = require("./weekly-directive-core");
@@ -2388,7 +2403,7 @@ class FirebaseRemoteClient {
     const draft = session.role === 'admin'
       ? await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' }) : null;
     this.assertSessionGuardActive(guard);
-    return { published:expandCompanyStrategyPublication(published), draft:draft || null };
+    return { published:expandCompanyStrategyPublication(published), draft:expandCompanyStrategyDraft(draft) };
   }
 
   async saveCompanyStrategyDraft(input) {
@@ -2404,14 +2419,14 @@ class FirebaseRemoteClient {
     if (input.expectedRevision !== revision) throw createError('다른 관리자가 먼저 수정했습니다. 다시 불러와 주세요.', 'CONFLICT');
     const fields=companyStrategyWireFields(checked.draft);
     const record = {
-      ...fields, content:JSON.stringify(fields),
+      year:checked.draft.year, content:JSON.stringify(fields),
       revision:revision + 1,
       updatedAt:new Date().toISOString(),
       updatedBy:session.uid,
     };
     await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
     this.assertSessionGuardActive(guard);
-    return record;
+    return expandCompanyStrategyDraft(record);
   }
 
   async publishCompanyStrategy(input) {
@@ -2423,10 +2438,11 @@ class FirebaseRemoteClient {
     const stored = await this.dbRequest(`companyStrategyDrafts/${year}`, { method:'GET' });
     this.assertSessionGuardActive(guard);
     if (!stored || stored.revision !== input.expectedDraftRevision) throw createError('초안이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
+    const expanded = expandCompanyStrategyDraft(stored);
     const checked = CompanyStrategyCore.validatePublication({
-      year, vision:stored.vision,
-      organization:Object.values(stored.organization || {}),
-      goals:Object.values(stored.goals || {}),
+      year, vision:expanded.vision,
+      organization:Object.values(expanded.organization || {}),
+      goals:Object.values(expanded.goals || {}),
     });
     if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
     const content=JSON.stringify(companyStrategyWireFields(checked.draft));

@@ -141,3 +141,18 @@ test('open project workspace polls published strategy without interrupting edito
  assert.match(app,/currentView==='workOrders' && !document\.hidden && !workOrderTyping\(\)/u);
  assert.match(app,/Date\.now\(\)-companyStrategyState\.refreshedAt>=30\*1000/u);
 });
+test('open project workspace retries the first failed company-direction load',()=>{
+ const app=read('app.js');
+ const start=app.search(/setInterval\(\(\) => \{\s*if \(currentView==='workOrders'/u);
+ assert.ok(start>0);
+ const snippet=app.slice(start,app.indexOf('  }, 30000);',start))+'  }, 30000);';
+ let tick,loads=0;
+ const state={loaded:false,loading:false,error:'일시적인 연결 오류',editing:false,refreshedAt:0};
+ const context={setInterval:fn=>{tick=fn;},currentView:'workOrders',document:{hidden:false},workOrderTyping:()=>state.editing,workOrderState:{capacityEditing:false,projectReportEditingId:''},companyStrategyState:state,Date:{now:()=>40000},loadCompanyStrategy:()=>{loads++;}};
+ vm.runInNewContext(snippet,context);
+ tick();
+ assert.equal(loads,1,'an initial error must not disable automatic recovery');
+ state.editing=true;
+ tick();
+ assert.equal(loads,1,'editing must still prevent automatic refresh');
+});
