@@ -5219,9 +5219,9 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
 describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
   const draft = { id: 'contract_2026-09', contractId: 'contract', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-member' };
   it('allows member draft but rejects direct approval and deletion', async () => {
-    const member = environment.authenticatedContext('crm-member', crmClaims('member@bring.test')).database();
-    await assertSucceeds(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), draft));
-    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, approvedAt: NOW, approvedBy: 'crm-member' }));
+    const member = environment.authenticatedContext('crm-legacy-member', crmClaims('legacy@bring.test')).database();
+    await assertSucceeds(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member' }));
+    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member', status: 'approved', revision: 2, approvedAt: NOW, approvedBy: 'crm-legacy-member' }));
     await assertFails(remove(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`)));
   });
   it('allows admin approval but rejects amount rewrite and orphan receipt', async () => {
