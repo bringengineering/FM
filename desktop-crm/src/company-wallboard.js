@@ -10,6 +10,19 @@
  const between=(from,to)=>Math.round((Date.parse(to+'T00:00:00Z')-Date.parse(from+'T00:00:00Z'))/86400000);
  const weekStart=value=>{const date=new Date(value+'T00:00:00Z'),weekday=date.getUTCDay();return addDays(value,-(weekday===0?6:weekday-1));};
  function roadmapRange(today){const from=addDays(weekStart(today),-21),to=addDays(from,55);return {from,to,todayOffset:((between(from,today)+.5)/56)*100,weeks:Array.from({length:8},(_,i)=>{const start=addDays(from,i*7);return {start,end:addDays(start,6),label:`${Number(start.slice(5,7))}월 ${Math.ceil(Number(start.slice(8,10))/7)}주`};})};}
+ function roadmapView(model,mode,today){
+  if(mode!=='day'||!day(today))return model.roadmap;
+  const from=addDays(today,-1),to=addDays(from,7);
+  const range={from,to,todayOffset:((between(from,today)+.5)/8)*100,weeks:Array.from({length:8},(_,index)=>{const date=addDays(from,index);return {start:date,end:date,label:`${Number(date.slice(5,7))}/${Number(date.slice(8,10))}`};})};
+  const lanes=model.roadmap.lanes.map(lane=>({...lane,assignments:lane.assignments.map(item=>{
+   const start=day(item.startDate)||day(item.endDate),end=day(item.endDate)||start;
+   if(!start||end<start)return {...item,layout:null,scheduleLabel:start?'일정 오류':'일정 미정'};
+   if(end<from||start>to)return {...item,layout:null,scheduleLabel:'표시 범위 밖'};
+   const visibleStart=start<from?from:start,visibleEnd=end>to?to:end;
+   return {...item,layout:{left:between(from,visibleStart)/8*100,width:(between(visibleStart,visibleEnd)+1)/8*100,clippedStart:start<from,clippedEnd:end>to}};
+  })}));
+  return {range,lanes};
+ }
  function roadLayout(start,end,range){if(!day(start)&&!day(end))return null;const a=day(start)||end,b=day(end)||a;if(b<range.from||a>range.to)return null;const visibleStart=a<range.from?range.from:a,visibleEnd=b>range.to?range.to:b;return {left:between(range.from,visibleStart)/56*100,width:Math.max(1,between(visibleStart,visibleEnd)+1)/56*100,clippedStart:a<range.from,clippedEnd:b>range.to};}
  function health(project,orders,today){if(project.status==='done'||(orders.length&&orders.every(item=>item.status==='done')))return 'done';if(day(project.endDate)&&project.endDate<today||orders.some(item=>item.status!=='done'&&day(item.dueDate)&&item.dueDate<today))return 'risk';if(orders.some(item=>item.status!=='done'&&(!day(item.dueDate)||item.dueDate<=addDays(today,7))))return 'check';return 'normal';}
  function schedule(store,today){
@@ -54,12 +67,12 @@
   return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today),...extra};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
- function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5)){
+ function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){
   if(key==='notice')return `<div class="wb-announcement"><span>TEAM NOTICE</span><h2>${esc(notice||'등록된 공지가 없습니다')}</h2><p>회사 운영 공지</p></div>`;
   if(!m)return '<div class="wb-empty">아직 확인된 자료가 없습니다.</div>';
   if(key==='roadmap'){
-   const lanes=m.roadmap.lanes.slice(page*3,page*3+3),weeks=m.roadmap.range.weeks;
-   const laneHtml=lanes.map(lane=>`<article class="wb-roadmap-lane"><div class="wb-roadmap-person"><b>${esc(lane.assigneeName)}</b><small>${lane.projectCount}개 프로젝트</small><progress max="100" value="${lane.progress}"></progress></div><div class="wb-roadmap-track">${weeks.map(()=>'<i></i>').join('')}<span class="wb-roadmap-today" style="left:${m.roadmap.range.todayOffset}%"></span>${lane.assignments.map((item,index)=>item.layout?`<div class="wb-roadmap-project health-${item.health}" style="left:${item.layout.left}%;width:${Math.max(4,item.layout.width)}%;top:${10+(index%3)*38}px"><i style="width:${item.progress}%"></i><span>${esc(item.projectName)} <b>${item.progress}%</b></span></div>`:`<div class="wb-roadmap-undated">${esc(item.projectName)} · 날짜 미정 · ${item.progress}%</div>`).join('')}</div></article>`).join('');
+   const roadmap=roadmapView(m,zoom,dataDate),lanes=roadmap.lanes.slice(page*3,page*3+3),weeks=roadmap.range.weeks;
+   const laneHtml=lanes.map(lane=>`<article class="wb-roadmap-lane"><div class="wb-roadmap-person"><b>${esc(lane.assigneeName)}</b><small>${lane.projectCount}개 프로젝트</small><progress max="100" value="${lane.progress}"></progress></div><div class="wb-roadmap-track">${weeks.map(()=>'<i></i>').join('')}<span class="wb-roadmap-today" style="left:${roadmap.range.todayOffset}%"></span>${lane.assignments.map(item=>`<div class="wb-roadmap-assignment">${item.layout?`<div class="wb-roadmap-project health-${item.health}" style="left:${item.layout.left}%;width:${Math.max(4,item.layout.width)}%"><i style="width:${item.progress}%"></i><span>${esc(item.projectName)} <b>${item.progress}%</b></span></div>`:`<div class="wb-roadmap-undated">${esc(item.projectName)} · ${esc(item.scheduleLabel||"일정 미정")} · ${item.progress}%</div>`}</div>`).join('')}</div></article>`).join('');
    const h=m.portfolio.healthCounts;
    return `<div class="wb-roadmap-layout"><section class="wb-roadmap-board"><header><b>담당자 · 프로젝트</b>${weeks.map(week=>`<span>${esc(week.label)}</span>`).join('')}</header>${laneHtml||'<p class="wb-empty">등록된 프로젝트가 없습니다.</p>'}</section><div class="wb-roadmap-legend"><span><i class="normal"></i> 정상 진행</span><span><i class="check"></i> 확인 필요</span><span><i class="risk"></i> 기한 위험</span><span><i class="done"></i> 완료</span></div><section class="wb-roadmap-performance"><article class="wb-performance-card wb-overall-card"><span>전체 프로젝트 진행률</span><div class="wb-progress-ring" style="--value:${m.portfolio.overallProgress}%"><strong>${m.portfolio.overallProgress}%</strong></div><div><b>${m.portfolio.projects.length}개 프로젝트</b><small>현재 진행률 기준</small></div></article><article class="wb-performance-card"><span>프로젝트 상태</span><div class="wb-health-mini"><span>정상 <b>${h.normal}</b></span><span>확인 <b>${h.check}</b></span><span>위험 <b>${h.risk}</b></span><span>완료 <b>${h.done}</b></span></div></article><article class="wb-performance-card"><span>다가오는 마감</span><div class="wb-deadline-list">${m.portfolio.milestones.slice(0,3).map(item=>`<p><b>${item.daysLeft<0?'D+'+Math.abs(item.daysLeft):item.daysLeft===0?'D-DAY':'D-'+item.daysLeft}</b><span>${esc(item.projectName)} · ${esc(item.owner)}</span></p>`).join('')||'<p>7일 안에 마감할 업무가 없습니다.</p>'}</div></article></section></div>`;
   }
@@ -88,7 +101,7 @@
   return `<div class="wb-bars">${Object.entries(labels).map(([k,label])=>`<div><span>${label}</span><progress value="${m.counts[k]}" max="${m.total||1}" aria-label="${label} ${m.counts[k]}건"></progress><strong>${m.counts[k]}건</strong></div>`).join('')}</div><p>조회 권한 내 전체 기간 ${m.total}건 · 검수 완료율 ${m.total?Math.round(m.counts.done/m.total*100)+'%':'산정 불가'} · 상태 확인 필요 ${m.unknown}건</p>`;
  }
  function mount(host,{load,manage,isActive=()=>true}){
-  let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='';
+  let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='',zoom='week';
   let dataDate='',dataLoadedAt=0;
   const storageKey='bring.wallboard.playlist.v1';
   const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30};
@@ -106,6 +119,7 @@
   const current=()=>playlist()[index];
   function save(){try{host.ownerDocument.defaultView.localStorage.setItem(storageKey,JSON.stringify(settings));storageError='';}catch(_){storageError='설정을 저장하지 못했습니다. 현재 화면에서만 적용됩니다.';}}
   host.innerHTML=`<section class="wb-manager"><header><h2>회사 운영보드</h2><p>로컬 TV 미리보기 · 원격 TV 미연결 · 업무 원문과 고객정보는 표시하지 않습니다.</p></header><div class="wb-controls"><button type="button" data-wb="prev">이전</button><button type="button" data-wb="pause">화면 고정</button><button type="button" data-wb="next">다음</button><label>화면당 초 <input data-wb-seconds type="number" min="10" max="120" value="30"></label><button type="button" data-wb="full">전체화면</button><button type="button" data-wb="refresh">새로고침</button></div><label class="wb-notice-input">공지 미리보기 · 개인정보 입력 금지<input data-wb-notice maxlength="160" placeholder="공지 문구를 입력하세요"></label><section class="wb-stage"><header><div><small>BRING · COMPANY BOARD</small><h1></h1></div><time></time></header><div class="wb-content"></div><footer></footer></section></section>`;
+  const zoomControls=host.ownerDocument.createElement('div');zoomControls.className='wb-zoom-controls';zoomControls.setAttribute('role','group');zoomControls.setAttribute('aria-label','로드맵 시간 단위');zoomControls.innerHTML='<button type="button" data-wb-zoom="week" aria-pressed="true">8주</button><button type="button" data-wb-zoom="day" aria-pressed="false">8일</button>';host.querySelector('.wb-controls').append(zoomControls);
   const stage=host.querySelector('.wb-stage'),content=host.querySelector('.wb-content');
   let disposeAdmin=()=>{};
   if(typeof manage==='function'&&globalThis.BringWallboardAdmin){const adminHost=host.ownerDocument.createElement('section');stage.before(adminHost);disposeAdmin=globalThis.BringWallboardAdmin.mount(adminHost,{request:manage,getPublication:()=>{if(!model||error||busy||Date.now()-dataLoadedAt>120000)throw new Error('운영보드 자료를 새로고침한 뒤 게시해 주세요.');return JSON.parse(JSON.stringify({model,playlist:settings,notice,dataDate}));}});}
@@ -113,12 +127,12 @@
   const editor=host.ownerDocument.createElement('details');editor.className='wb-playlist';editor.open=true;stage.before(editor);
   function edit(){editor.innerHTML=`<summary>화면 편성 · 이 컴퓨터에만 저장</summary><div class="wb-playlist-rows">${settings.map((s,i)=>`<div class="wb-playlist-row"><label><input type="checkbox" data-wb-enabled="${s.key}" ${s.enabled?'checked':''}>${scenes.find(x=>x[0]===s.key)[1]}</label><label>노출 시간 <input type="number" min="10" max="120" value="${s.seconds}" data-wb-duration="${s.key}"> 초</label><button type="button" class="secondary-button" data-wb-up="${s.key}" ${i===0?'disabled':''} aria-label="${scenes.find(x=>x[0]===s.key)[1]} 앞으로 이동">위로</button></div>`).join('')}</div><p>10~120초 · 공지 문구는 저장하지 않습니다.</p>`;}
   edit();
-  function draw(){if(closed)return;const item=current();stage.querySelector('h1').textContent=item?scenes.find(x=>x[0]===item.key)[1]:'화면 편성';stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');content.innerHTML=item?scene(model,item.key,page,notice):'<div class="wb-empty">표시할 화면을 선택해 주세요.</div>';stage.querySelector('footer').textContent=`${storageError?storageError+' · ':''}${error?'연결 확인 필요 · ':''}${last?'마지막 성공 갱신 '+last:busy?'불러오는 중':'갱신 기록 없음'} · ${paused?'화면 고정':'자동 순환'} · 로컬 미리보기`;}
+  function draw(){if(closed)return;const item=current();zoomControls.hidden=item?.key!=='roadmap';zoomControls.querySelectorAll('[data-wb-zoom]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.wbZoom===zoom)));stage.querySelector('h1').textContent=item?scenes.find(x=>x[0]===item.key)[1]+(item.key==='roadmap'?` · ${zoom==='day'?'8일 상세':'8주 요약'}`:''):'화면 편성';stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');content.innerHTML=item?scene(model,item.key,page,notice,new Date().toTimeString().slice(0,5),zoom,dataDate):'<div class="wb-empty">표시할 화면을 선택해 주세요.</div>';stage.querySelector('footer').textContent=`${storageError?storageError+' · ':''}${error?'연결 확인 필요 · ':''}${last?'마지막 성공 갱신 '+last:busy?'불러오는 중':'갱신 기록 없음'} · ${paused?'화면 고정':'자동 순환'} · 로컬 미리보기`;}
   function pageCount(){const key=current()?.key;const count=key==='roadmap'?(model?.roadmap?.lanes.length||0)*2:key==='people'?model?.people.length:key==='portfolio'?model?.portfolio?.projects.length:key==='scheduleToday'?model?.schedule?.today.length:key==='scheduleWeek'?model?.schedule?.week.length:0;return Math.max(1,Math.ceil((count||0)/6));}
   async function refresh(){if(closed||busy||!isActive())return;busy=true;draw();try{const data=await load();if(closed||!isActive())return;const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');model=project(data,today);dataDate=today;dataLoadedAt=Date.now();last=now.toLocaleTimeString('ko-KR');error='';page=Math.min(page,pageCount()-1);}catch(_){if(!closed)error='조회 실패';}finally{busy=false;if(!closed)draw();}}
   function next(delta){const list=playlist();if(!list.length){draw();return;}if(delta>0&&page+1<pageCount())page++;else if(delta<0&&page>0)page--;else{index=(index+delta+list.length)%list.length;page=delta<0?pageCount()-1:0;}tick=0;draw();}
   function configure(e){const up=e.target.closest('[data-wb-up]');if(!up)return;const i=settings.findIndex(s=>s.key===up.dataset.wbUp);if(i>0){[settings[i-1],settings[i]]=[settings[i],settings[i-1]];index=0;page=0;tick=0;save();edit();draw();}}
-  function click(e){const action=e.target.closest('[data-wb]')?.dataset.wb;if(action==='next')next(1);if(action==='prev')next(-1);if(action==='pause'){paused=!paused;e.target.textContent=paused?'자동 순환':'화면 고정';draw();}if(action==='refresh')void refresh();if(action==='full'){try{const p=stage.requestFullscreen?.();if(p&&p.catch)p.catch(()=>{error='전체화면 사용 불가';draw();});}catch(_){error='전체화면 사용 불가';draw();}}}
+  function click(e){const selected=e.target.closest('[data-wb-zoom]')?.dataset.wbZoom;if(selected){zoom=selected==='day'?'day':'week';draw();return;}const action=e.target.closest('[data-wb]')?.dataset.wb;if(action==='next')next(1);if(action==='prev')next(-1);if(action==='pause'){paused=!paused;e.target.textContent=paused?'자동 순환':'화면 고정';draw();}if(action==='refresh')void refresh();if(action==='full'){try{const p=stage.requestFullscreen?.();if(p&&p.catch)p.catch(()=>{error='전체화면 사용 불가';draw();});}catch(_){error='전체화면 사용 불가';draw();}}}
   function change(e){if(e.target.matches('[data-wb-enabled],[data-wb-duration]')){const s=settings.find(s=>s.key===(e.target.dataset.wbEnabled||e.target.dataset.wbDuration));if(s){if(e.target.hasAttribute('data-wb-enabled'))s.enabled=e.target.checked;else{ s.seconds=duration(e.target.value);e.target.value=s.seconds;}index=0;page=0;tick=0;save();draw();}}if(e.target.matches('[data-wb-notice]')){notice=e.target.value.slice(0,160);draw();}}
   host.addEventListener('click',click);host.addEventListener('change',change);
   host.addEventListener('click',configure);
@@ -127,5 +141,5 @@
   function dispose(){closed=true;disposeAdmin();clearInterval(timer);clearInterval(poll);host.removeEventListener('click',click);host.removeEventListener('click',configure);host.removeEventListener('change',change);stage.replaceChildren();}
   void refresh();return dispose;
  }
- return {project,schedule,scene,mount};
+ return {project,schedule,scene,mount,roadmapView};
 });
