@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
+import { readBoundedRegularFile } from '../scripts/read-billing-backup.mjs';
 
 const directory = mkdtempSync(join(tmpdir(), 'bring-billing-audit-'));
 const cli = fileURLToPath(new URL('../scripts/audit-billing-ledger.mjs', import.meta.url));
@@ -23,6 +24,7 @@ test('reports an empty ledger as clean without modifying its backup', () => {
   assert.deepEqual(JSON.parse(result.stdout), {
     ok: true, invoiceCount: 0, receiptCount: 0, issues: [],
   });
+  assert.equal(readFileSync(join(directory, 'empty.json'), 'utf8'), JSON.stringify(input));
 });
 
 test('reports issue codes without printing private record contents', () => {
@@ -60,4 +62,21 @@ test('reports an unreadable or invalid backup without echoing its path or conten
   assert.equal(result.stderr.includes('private-backup'), false);
   assert.equal(result.stderr.includes('010-1111'), false);
   assert.equal(result.stdout, '');
+});
+
+test('reads only a regular backup file and enforces the input byte limit', () => {
+  const small = join(directory, 'bounded.json');
+  writeFileSync(small, '{"invoices":{},"receipts":{}}', 'utf8');
+  assert.equal(readBoundedRegularFile(small, 100).toString('utf8'), '{"invoices":{},"receipts":{}}');
+  assert.throws(() => readBoundedRegularFile(small, 5), /billing_audit_file_too_large/u);
+  assert.throws(() => readBoundedRegularFile(directory, 100), /billing_audit_file_not_regular/u);
+});
+
+test('rejects an oversized backup before printing any ledger data', () => {
+  const path = join(directory, 'oversized.json');
+  writeFileSync(path, Buffer.alloc(8 * 1024 * 1024 + 1, 65));
+  const result = spawnSync(process.execPath, [cli, path], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /billing_audit_file_too_large/u);
 });
