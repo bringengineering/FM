@@ -9,7 +9,8 @@ async function loadWallboardSource(client,asOf=new Date()){
  if(records!==null&&(typeof records!=='object'||Array.isArray(records)))throw new Error('서버 일정 형식을 확인할 수 없습니다.');
  const year=koreaDate(asOf).slice(0,4);
  const approved=await client.dbRequest(`companyStrategyPublications/${year}`,{method:'GET'});
- return {...work,calendar:{serviceRecords:Object.values(records||{})},strategy:projectApprovedStrategy(approved,work.members||[],year)};
+ const billingLedger=typeof client.loadBillingLedger==='function'?await client.loadBillingLedger():null;
+ return {...work,calendar:{serviceRecords:Object.values(records||{})},strategy:projectApprovedStrategy(approved,work.members||[],year),billingLedger};
 }
 function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),setTimer=fn=>setInterval(fn,60000),clearTimer=clearInterval}){
  let active=false,busy=false,timer=null,generation=0,owner='',config=null,version=null,publishedAt=null,error='';
