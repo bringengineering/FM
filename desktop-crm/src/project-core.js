@@ -66,6 +66,19 @@
     { key: "etc", label: "기타" },
   ]);
 
+  // 기존 pj-* 레코드는 삭제하거나 ID를 바꾸지 않는다. 별도의 pf-* ID가
+  // 사업영역을 나타내며, 실제 프로젝트만 선택적으로 이 ID를 참조한다.
+  const PORTFOLIOS = Object.freeze([
+    { id: "pf-care", label: "브링 케어", legacyProjectId: "pj-care" },
+    { id: "pf-crm", label: "브링 CRM·OFFICE", legacyProjectId: "pj-crm" },
+    { id: "pf-marketing", label: "마케팅 채널", legacyProjectId: "pj-marketing" },
+    { id: "pf-rnd", label: "R&D·정부과제", legacyProjectId: "pj-rnd" },
+    { id: "pf-base", label: "회사 기반", legacyProjectId: "pj-base" },
+    { id: "pf-study", label: "학업·자기계발", legacyProjectId: "pj-study" },
+  ].map(item => Object.freeze(item)));
+  const portfolioForLegacy = id => PORTFOLIOS.find(item => item.legacyProjectId === text(id, 80)) || null;
+  const portfolioLabel = id => (PORTFOLIOS.find(item => item.id === text(id, 40)) || {}).label || "분류 필요";
+
   const STATUSES = Object.freeze([
     { key: "active", label: "진행" },
     { key: "paused", label: "보류" },
@@ -102,6 +115,7 @@
     return {
       id: text(source.id, 80),
       name: text(source.name, 120),
+      portfolioId: text(source.portfolioId, 40),
       owner: text(source.owner, 80),
       assignees: normalizeAssignees(source.assignees),
       goal: text(source.goal, 2000),
@@ -130,6 +144,12 @@
     const project = normalizeProject(input);
     if (!project.id) return { ok: false, code: "ID_REQUIRED", error: "프로젝트 번호가 없습니다." };
     if (!project.name) return { ok: false, code: "NAME_REQUIRED", error: "프로젝트 이름을 적어 주세요." };
+    if (project.portfolioId && !PORTFOLIOS.some(item => item.id === project.portfolioId)) {
+      return { ok: false, code: "PORTFOLIO_INVALID", error: "등록된 사업영역을 선택해 주세요." };
+    }
+    if (project.portfolioId && portfolioForLegacy(project.id)) {
+      return { ok: false, code: "LEGACY_PORTFOLIO_LINK", error: "기존 사업영역형 프로젝트에는 새 사업영역을 연결하지 않습니다." };
+    }
     if (project.startDate && project.endDate && project.startDate > project.endDate) {
       return { ok: false, code: "DATE_REVERSED", error: "시작일이 마감일보다 늦습니다." };
     }
@@ -564,6 +584,9 @@
   return Object.freeze({
     TRACKS,
     STATUSES,
+    PORTFOLIOS,
+    portfolioForLegacy,
+    portfolioLabel,
     SEED_PROJECTS,
     missingSeeds,
     offCapacityIds,

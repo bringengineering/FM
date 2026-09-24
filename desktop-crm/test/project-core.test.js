@@ -5,6 +5,16 @@ const P = require("../src/project-core");
 
 const order = patch => Object.assign({ status: "doing", progress: 0, track: "etc" }, patch);
 
+test("사업영역 ID는 기존 프로젝트 ID와 분리되고 실제 프로젝트는 선택적으로 연결한다", () => {
+  assert.equal(P.PORTFOLIOS.length, 6);
+  assert.equal(P.portfolioForLegacy("pj-care").id, "pf-care");
+  assert.equal(P.portfolioLabel("pf-care"), "브링 케어");
+  assert.equal(P.normalizeProject({ id: "p-real", name: "햇빛빌라 실증", portfolioId: "pf-care" }).portfolioId, "pf-care");
+  assert.equal(P.normalizeProject({ id: "p-old", name: "이전 프로젝트" }).portfolioId, "");
+  assert.equal(P.validateProject({ id: "p-real", name: "현장", portfolioId: "pf-invented" }).ok, false);
+  assert.equal(P.validateProject({ id: "pj-care", name: "기존 브링 케어", portfolioId: "pf-care" }).ok, false);
+});
+
 test("이름 없는 프로젝트는 만들 수 없다", () => {
   assert.equal(P.validateProject({ id: "p1" }).code, "NAME_REQUIRED");
   assert.equal(P.validateProject({ id: "p1", name: "브링 케어" }).ok, true);

@@ -887,6 +887,9 @@
           "name": {
             ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
           },
+          "portfolioId": {
+            ".validate": "newData.isString() && (newData.val() === '' || (($projectId !== 'pj-care' && $projectId !== 'pj-crm' && $projectId !== 'pj-marketing' && $projectId !== 'pj-rnd' && $projectId !== 'pj-base' && $projectId !== 'pj-study') && (newData.val() === 'pf-care' || newData.val() === 'pf-crm' || newData.val() === 'pf-marketing' || newData.val() === 'pf-rnd' || newData.val() === 'pf-base' || newData.val() === 'pf-study')))"
+          },
           "owner": {
             ".validate": "newData.isString() && newData.val().length <= 80"
           },

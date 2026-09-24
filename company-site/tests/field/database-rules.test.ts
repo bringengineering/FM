@@ -2181,6 +2181,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     });
 
     await assertSucceeds(set(ref(admin, at("p1")), project("p1")));
+    await assertSucceeds(set(ref(admin, at("p-portfolio")), project("p-portfolio", { portfolioId: "pf-care" })));
+    await assertSucceeds(set(ref(admin, at("p-empty-area")), project("p-empty-area", { portfolioId: "" })));
+    await assertFails(set(ref(admin, at("p-invalid-area")), project("p-invalid-area", { portfolioId: "pf-invented" })));
+    await assertFails(set(ref(admin, at("pj-care")), project("pj-care", { portfolioId: "pf-care" })));
     // 팀원은 읽지만 만들지는 못한다.
     await assertSucceeds(get(ref(member, at("p1"))));
     await assertFails(set(ref(member, at("p2")), { ...project("p2"), updatedBy: "crm-legacy-member" }));

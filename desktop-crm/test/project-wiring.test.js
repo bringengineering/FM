@@ -70,6 +70,17 @@ test("프로젝트는 관리자만 만들고 지우지 못한다", () => {
   assert.match(rules.projects.$projectId.extensionNote[".validate"], /length <= 300/u);
 });
 
+test("관리자 프로젝트 편집에서 사업영역을 명시적으로 선택하고 저장한다", () => {
+  const editor = appSource.slice(appSource.indexOf("function projectEditor("), appSource.indexOf("function updateProjectAssigneeSummary("));
+  const save = appSource.slice(appSource.indexOf("async function saveProjectFromForm("), appSource.indexOf("async function setWorkOrderProgress("));
+  assert.match(editor, /name="portfolioId"/u);
+  assert.match(editor, /P\.PORTFOLIOS/u);
+  assert.match(editor, /draft\.portfolioId/u);
+  assert.match(save, /portfolioId: raw\.portfolioId/u);
+  assert.match(rules.projects.$projectId.portfolioId[".validate"], /pf-care/u);
+  assert.match(rules.projects.$projectId.portfolioId[".validate"], /pf-study/u);
+});
+
 test("프로젝트는 활성 팀원을 여러 담당자로 선택해 저장한다", () => {
   const editor = appSource.slice(appSource.indexOf("function projectAssigneeField("), appSource.indexOf("function workOrderCard("));
   const roadmapEditor = appSource.slice(appSource.indexOf("function roadmapProjectEditor("), appSource.indexOf("function roadmapDetail("));

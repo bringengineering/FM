@@ -36,6 +36,15 @@ test('관리자 행동 목록은 팀 전체 업무임을 제목에 밝힌다', (
   assert.match(render, /workOrderState\.admin \? "팀 전체의 다음 행동" : "내 업무의 다음 행동"/u);
 });
 
+test('실제 프로젝트에는 사업영역 또는 분류 필요를 표시하고 원래 프로젝트 링크를 유지한다', () => {
+  const source = read('app.js');
+  const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
+  assert.match(render, /P\.portfolioLabel\(item\.portfolioId\)/u);
+  assert.match(render, /P\.portfolioLabel\(project\.portfolioId\)/u);
+  assert.match(render, /data-wo-project="\$\{esc\(item\.id\)\}"/u);
+  assert.match(render, /workspace\.legacyAreas/u);
+});
+
 test('분류 필요 업무는 건수만 아니라 원본 업무를 열 수 있는 목록으로 나온다', () => {
   const source = read('app.js');
   const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
