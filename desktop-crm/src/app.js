@@ -5449,7 +5449,7 @@
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "지시하기")}</button>
         <button type="button" class="mini-button return" data-wo-cancel>그만두기</button>
       </div>
-      <p class="wo-editor-note">세 칸은 비워 둘 수 없습니다. 비어 있으면 시킨 사람 머릿속에만 남습니다. 예상 시간이 없으면 누가 얼마나 물고 있는지 셀 수 없어 새 지시에는 함께 받습니다.</p>
+      <p class="wo-editor-note">새 지시를 발행할 때 목적·담당·마감일·산출물·완료 기준이 필요합니다. 빠진 항목은 한 번에 안내합니다.</p>
     </form>`;
   }
 
@@ -5460,7 +5460,7 @@
     const previous = W.normalizeOrder(workOrderState.editing);
     const people = workOrderState.members;
     const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
-    const checked = W.validateOrder(Object.assign({}, previous, {
+    const checked = (previous.createdAt ? W.validateOrder : W.validatePublication)(Object.assign({}, previous, {
       id: previous.id || `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       title: String(raw.title || ""),
       assigneeUid: String(raw.assigneeUid || ""),
