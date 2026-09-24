@@ -224,7 +224,8 @@ export function reduceBillingLedgerMutation(
   if (command.kind === "invoice" && command.record.status !== "void") {
     for (const item of Object.values(ledger.invoices)) {
       if (item.id === id || item.status === "void") continue;
-      if (item.contractId === command.record.contractId && item.contractType === command.record.contractType && (
+      if (item.contractId === command.record.contractId
+        && (item.contractType ?? "regular") === (command.record.contractType ?? "regular") && (
         command.record.contractType === "one_off"
           ? item.occurrenceId === command.record.occurrenceId
           : item.billingMonth === command.record.billingMonth
@@ -253,6 +254,8 @@ export function reduceBillingLedgerMutation(
   if (Buffer.byteLength(JSON.stringify(ledger), "utf8") > MAX_LEDGER_BYTES) {
     throw new Error("billing_ledger_too_large");
   }
+  const candidateIssues = auditBillingLedger(ledger);
+  if (candidateIssues.length > 0) throw new Error(candidateIssues[0]);
   return { ledger, record, repeated: false };
 }
 

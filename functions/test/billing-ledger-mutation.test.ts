@@ -42,6 +42,34 @@ describe("atomic billing ledger mutation", () => {
     })).toThrowError("billing_duplicate_invoice");
   });
 
+  it("treats an older invoice without contractType as regular for duplicate detection", () => {
+    const legacy = { ...invoice, revision: 1, updatedAt: NOW, updatedBy: "member-1" };
+    const { contractType: _omitted, ...withoutType } = legacy;
+    expect(() => reduceBillingLedgerMutation({ invoices: { [invoice.id]: withoutType }, receipts: {} }, {
+      kind: "invoice", record: { ...invoice, id: "invoice-2" }, expectedRevision: 0,
+      requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).toThrowError("billing_duplicate_invoice");
+  });
+
+  it("rejects a mutation that would make approved totals unsafe", () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: { ...invoice, amount: Number.MAX_SAFE_INTEGER - 1 }, expectedRevision: 0,
+      requestId: "request-1", actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const approved = reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, amount: Number.MAX_SAFE_INTEGER - 1, status: "approved" }, expectedRevision: 1,
+      requestId: "request-2", actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    });
+    const second = reduceBillingLedgerMutation(approved.ledger, {
+      kind: "invoice", record: { ...invoice, id: "invoice-2", billingMonth: "2026-10", amount: 2 },
+      expectedRevision: 0, requestId: "request-3", actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    expect(() => reduceBillingLedgerMutation(second.ledger, {
+      kind: "invoice", record: { ...invoice, id: "invoice-2", billingMonth: "2026-10", amount: 2, status: "approved" },
+      expectedRevision: 1, requestId: "request-4", actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_unsafe_total");
+  });
+
   it("rejects a stale revision and a member approval", () => {
     const first = reduceBillingLedgerMutation(null, {
       kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
