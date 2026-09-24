@@ -1,5 +1,6 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
+const vm=require('node:vm');
 const C=require('../src/company-wallboard');
 test('cached company direction expires at the Korea new year',()=>{
  const old={year:'2026',vision:'2026년 방향'};
@@ -8,6 +9,41 @@ test('cached company direction expires at the Korea new year',()=>{
  assert.equal(C.strategyCurrent(null,new Date('2026-12-31T14:59:59Z')),false);
  const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
  assert.match(source,/displayedKey==='strategy'&&!strategyCurrent\(model\?\.strategy\)/);
+});
+test('paused local preview leaves a cached old-year direction on the next tick after refresh fails',async()=>{
+ let instant='2026-12-31T14:59:59.000Z',reads=0;
+ const RealDate=Date;
+ class ClockDate extends RealDate{constructor(...args){super(...(args.length?args:[instant]));}}
+ const intervals=[];
+ const moduleObject={exports:{}};
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ vm.runInNewContext(source,{module:moduleObject,Date:ClockDate,setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},clearInterval:()=>{}});
+ const elements={h1:{textContent:''},time:{textContent:''},footer:{textContent:''}};
+ const stage={querySelector:key=>elements[key],before(){},replaceChildren(){}};
+ const content={innerHTML:''};
+ const handlers={};
+ const host={
+  ownerDocument:{defaultView:{localStorage:{getItem:()=>JSON.stringify([{key:'strategy',enabled:true,seconds:30}]),setItem(){}}},createElement:()=>({className:'',innerHTML:'',setAttribute(){},querySelectorAll:()=>[]})},
+  innerHTML:'',querySelector:key=>key==='.wb-stage'?stage:key==='.wb-content'?content:key==='[data-wb-seconds]'?{closest:()=>({remove(){}})}:{append(){}},
+  addEventListener:(event,fn)=>{(handlers[event]??=[]).push(fn);},removeEventListener(){},
+ };
+ const board=moduleObject.exports;
+ const dispose=board.mount(host,{load:async()=>{if(++reads>1)throw Error('offline');return {orders:[],strategy:{year:'2026',vision:'올해 방향',organization:[],goals:[]}};}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(elements.h1.textContent,/회사 방향/);
+ assert.match(content.innerHTML,/올해 방향/);
+ const pauseButton={dataset:{wb:'pause'},textContent:''};
+ handlers.click[0]({target:{closest:selector=>selector==='[data-wb]'?pauseButton:null}});
+ const refreshButton={dataset:{wb:'refresh'},textContent:''};
+ handlers.click[0]({target:{closest:selector=>selector==='[data-wb]'?refreshButton:null}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(elements.h1.textContent,/회사 방향/);
+ instant='2026-12-31T15:00:00.000Z';
+ intervals.find(item=>item.ms===1000).fn();
+ assert.doesNotMatch(elements.h1.textContent,/회사 방향/);
+ assert.doesNotMatch(content.innerHTML,/올해 방향/);
+ assert.match(elements.h1.textContent,/프로젝트 로드맵/);
+ dispose();
 });
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
  const html=C.scene(null,'notice',0,'<회사 공지>');

@@ -56,6 +56,29 @@ test('web TV cached direction expires at the Korea new year',async()=>{
  assert.match(source,/currentStrategy\(board\?\.model\?\.strategy\)/);
  assert.match(source,/displayedKey==='strategy'&&!currentStrategy\(board\.model\.strategy\)/);
 });
+test('web TV leaves a cached old-year direction after a failed refresh without losing other scenes',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ let instant='2026-12-31T14:59:59.000Z';
+ class ClockDate extends Date{constructor(...args){super(...(args.length?args:[instant]));}}
+ class Element{
+  constructor(){this.children=[];this.textContent='';this.style={};this.hidden=false;}
+  append(...items){this.children.push(...items);}
+  replaceChildren(...items){this.children=[...items];}
+  addEventListener(){}
+ }
+ const elements=new Map(),getElement=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
+ const snapshot={version:1,publishedAt:Date.parse('2026-12-31T14:50:00Z'),dataDate:'2026-12-31',notice:'회사 공지',playlist:[{key:'strategy',enabled:true,seconds:30},{key:'notice',enabled:true,seconds:30}],model:{total:0,overdue:0,unknown:0,counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]},strategy:{year:'2026',vision:'지난해 승인 비전',organization:[],goals:[]}}};
+ const intervals=[];
+ const context={Date:ClockDate,document:{visibilityState:'visible',getElementById:getElement,createElement:()=>new Element()},localStorage:{getItem:key=>key==='bring-public-wallboard'?JSON.stringify(snapshot):null,setItem(){},removeItem(){}},fetch:async()=>{throw Error('offline');},setInterval:(fn,ms)=>{intervals.push({fn,ms});},setTimeout:()=>{},location:{href:'https://gateway.test/tv',replace(){}},URL};
+ vm.runInNewContext(source,context);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(getElement('scene-title').textContent,'회사 방향');
+ assert.equal(getElement('connection').textContent,'연결 확인 중 · 최근 게시자료 유지');
+ instant='2026-12-31T15:00:00.000Z';
+ intervals.find(item=>item.ms===1000).fn();
+ assert.equal(getElement('scene-title').textContent,'회사 공지');
+ assert.equal(getElement('content').children[0].children[0].textContent,'회사 공지');
+});
 test('web TV pages the organization instead of rendering all 30 people at once',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.match(source,/strategy\.organization\.slice\(page\*6,page\*6\+6\)/);
