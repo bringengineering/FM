@@ -40,3 +40,18 @@ test('verified user refresh runs inside the private job and returns only publica
  assert.deepEqual(await response.json(),{ok:true,version:7,publishedAt:1234,sourceReadAt:1200,reconciledAt:1230});
  assert.equal((await job.fetch(new Request('https://internal/refresh-user',{method:'POST',body:'{}'}))).status,403);
 });
+
+test('disabling scheduled recovery does not disable a verified member save refresh',async()=>{
+ const disabled={WALLBOARD_SCHEDULED_REFRESH_ENABLED:'false'};
+ let scheduledCalls=0,userCalls=0;
+ const job=new WallboardRefreshJobs({},disabled,async()=>{scheduledCalls++;},async()=>{
+  userCalls++;
+  return {version:8,publishedAt:2000,sourceReadAt:1800,reconciledAt:1900};
+ });
+ const identity={uid:'member-1',email:'member@example.com',emailVerified:true};
+ const request=new Request('https://internal/refresh-user',{method:'POST',body:JSON.stringify({idToken:'firebase-id-token',identity})});
+ assert.equal((await job.fetch(request)).status,200);
+ assert.equal((await job.fetch(new Request('https://internal/refresh',{method:'POST'}))).status,503);
+ assert.equal(userCalls,1);
+ assert.equal(scheduledCalls,0);
+});

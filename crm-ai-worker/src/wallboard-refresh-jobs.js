@@ -8,7 +8,7 @@ export class WallboardRefreshJobs {
  async fetch(request){
   const path=new URL(request.url).pathname;
   if(request.method!=='POST'||!['/refresh','/refresh-user'].includes(path))return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
-  if(this.env?.WALLBOARD_SCHEDULED_REFRESH_ENABLED!=='true')return Response.json({ok:false,code:'WALLBOARD_UNAVAILABLE'},{status:503,headers});
+  if(path==='/refresh'&&this.env?.WALLBOARD_SCHEDULED_REFRESH_ENABLED!=='true')return Response.json({ok:false,code:'WALLBOARD_UNAVAILABLE'},{status:503,headers});
   try{
    if(path==='/refresh'){
     await this.refresh({env:this.env,trace:stage=>console.info('wallboard-cron-stage',stage)});
