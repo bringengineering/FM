@@ -26,7 +26,8 @@ function fixture(overrides={}){
   if(overrides.denied===resource)return new Response('permission denied',{status:403});
   if(overrides.oversize===resource)return new Response('x'.repeat(2*1024*1024+1));
   if(overrides.malformed===resource)return new Response('[]');
-  const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:resource==='projectWeeklyReports'&&overrides.reportMap?overrides.reportMap:resource==='projectWeeklyReportReviews'&&overrides.reviewMap?overrides.reviewMap:sources[resource];
+ const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:resource==='projectWeeklyReports'&&overrides.reportMap?overrides.reportMap:resource==='projectWeeklyReportReviews'&&overrides.reviewMap?overrides.reviewMap:sources[resource];
+  if(resource==='companyStrategyPublications/2026')return new Response(JSON.stringify(overrides.approvedStrategy??null),{headers:{'content-type':'application/json'}});
   return new Response(JSON.stringify(value??null),{headers:{'content-type':'application/json'}});
  };
  const stub={fetch:async request=>{
@@ -49,7 +50,7 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  const f=fixture();
  const result=await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.deepEqual(result,{version:1,publishedAt:1001});
- assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','data/serviceRecords','projectWeeklyReportReviews','projectWeeklyReports','projects','teamProfiles','workOrders']);
+ assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','companyStrategyPublications/2026','data/serviceRecords','projectWeeklyReportReviews','projectWeeklyReports','projects','teamProfiles','workOrders']);
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
  assert.equal(f.commands[2].action,'publish-if-changed');
  const snapshot=f.commands[2].input.snapshot;
@@ -77,7 +78,7 @@ test('scheduled service reader rebuilds the board without an employee CRM sessio
  const result=await refreshWallboardFromService({env,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.equal(exchanges,1);
  assert.equal(result.version,1);
- assert.equal(f.reads.length,7);
+ assert.equal(f.reads.length,8);
  assert.ok(f.reads.every(item=>item.auth==='service-id-token'));
  assert.equal(f.commands.at(-1).action,'publish-if-changed');
 });
@@ -89,6 +90,16 @@ test('failed service-source read preserves the prior board',async()=>{
   :f.fetchImpl(url,options);
  await assert.rejects(refreshWallboardFromService({env,fetchImpl}),error=>error.code==='FORBIDDEN');
  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
+test('approved current-year company direction is projected without source IDs',async()=>{
+ const content={year:'2026',vision:'안전한 공간 운영',organization:{m1:{uid:'staff-1',role:'운영',reportsToUid:''}},goals:{g1:{id:'g1',period:'annual',title:'관리 건물',unit:'count',baseline:0,target:10,current:4,source:'CRM 건물'}}};
+ const f=fixture({approvedStrategy:{year:'2026',content:JSON.stringify(content),publishedBy:'private-admin'}});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const strategy=f.commands.find(command=>command.action==='publish-if-changed').input.snapshot.model.strategy;
+ assert.equal(strategy.organization[0].displayName,'김현진');
+ assert.equal(strategy.goals[0].percent,40);
+ assert.equal(JSON.stringify(strategy).includes('staff-1'),false);
+ assert.equal(JSON.stringify(strategy).includes('private-admin'),false);
 });
 test('unapproved project reports do not count and orphan reviews preserve old TV board',async()=>{
  const pending=fixture({reviewMap:{}});
