@@ -58,5 +58,86 @@
     for (const person of people) person.sourceOrderIds.sort();
     return { available: true, range: selected.range, counts, sourceOrderIds: sourceOrderIds.sort(), people };
   }
-  return Object.freeze({ selectProjectOrders, summarize });
+
+  function snapshot({ orders, projectId, asOf, period = 'current-week', capturedAt } = {}) {
+    const summary = summarize({ orders, projectId, asOf, period });
+    if (!summary.available) return { available: false };
+    const selected = new Map(selectProjectOrders({ orders, projectId }).map(order => [text(order.id), order]));
+    const sources = summary.sourceOrderIds.map(id => {
+      const order = selected.get(id);
+      return {
+        id,
+        status: text(order && order.status),
+        assigneeUid: text(order && order.assigneeUid),
+        updatedAt: text(order && order.updatedAt),
+      };
+    });
+    return {
+      available: true,
+      projectId: text(projectId),
+      period,
+      range: { ...summary.range },
+      capturedAt: timestamp(capturedAt) > -Infinity ? capturedAt : new Date().toISOString(),
+      counts: { ...summary.counts },
+      sources,
+    };
+  }
+
+  const copy = value => JSON.parse(JSON.stringify(value));
+
+  function validateReport(input) {
+    const report = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    if (!text(report.id) || !text(report.projectId) || !text(report.authorUid)) return { ok: false, code: 'IDENTITY_REQUIRED' };
+    if (!['draft', 'submitted', 'returned', 'approved'].includes(report.status)) return { ok: false, code: 'BAD_STATUS' };
+    const evidence = report.snapshot;
+    if (!evidence || evidence.available !== true || text(evidence.projectId) !== text(report.projectId)) return { ok: false, code: 'PROJECT_MISMATCH' };
+    if (!evidence.range || !/^\d{4}-\d{2}-\d{2}$/.test(text(evidence.range.start)) || !/^\d{4}-\d{2}-\d{2}$/.test(text(evidence.range.end)) || !Number.isFinite(Date.parse(evidence.capturedAt))) return { ok: false, code: 'SNAPSHOT_INVALID' };
+    const sources = evidence.sources;
+    const counts = evidence.counts;
+    if (!Array.isArray(sources) || !counts || typeof counts !== 'object') return { ok: false, code: 'SNAPSHOT_INVALID' };
+    const ids = sources.map(item => text(item && item.id));
+    if (ids.some(id => !id) || new Set(ids).size !== ids.length) return { ok: false, code: 'SOURCE_DUPLICATE' };
+    const actual = countShape();
+    for (const source of sources) {
+      const category = source.status === 'done' ? 'done' : source.status === 'submitted' ? 'submitted' : source.status === 'returned' ? 'returned' : 'open';
+      actual.total++; actual[category]++;
+    }
+    if (Object.keys(actual).some(key => counts[key] !== actual[key])) return { ok: false, code: 'COUNT_MISMATCH' };
+    return { ok: true, report: copy(report) };
+  }
+
+  function transitionReport({ report, next, actorUid, admin = false, note, at } = {}) {
+    const current = report && typeof report === 'object' ? report : {};
+    if (current.status === 'approved') return { ok: false, code: 'APPROVED_LOCKED' };
+    const action = text(next);
+    const allowed = (current.status === 'draft' || current.status === 'returned') && action === 'submitted'
+      || current.status === 'submitted' && (action === 'approved' || action === 'returned');
+    if (!allowed) return { ok: false, code: 'INVALID_TRANSITION' };
+    if (action === 'submitted' && !admin && text(actorUid) !== text(current.authorUid)) return { ok: false, code: 'NOT_AUTHOR' };
+    if (action !== 'submitted' && !admin) return { ok: false, code: 'ADMIN_REQUIRED' };
+    if (action === 'returned' && !text(note)) return { ok: false, code: 'REVIEW_REASON_REQUIRED' };
+    const changed = copy(current);
+    const when = timestamp(at) > -Infinity ? at : new Date().toISOString();
+    changed.status = action;
+    if (action === 'submitted') { changed.submittedAt = when; changed.reviewNote = ''; }
+    if (action === 'returned') changed.reviewNote = text(note).slice(0, 1000);
+    if (action === 'approved') { changed.approvedAt = when; changed.reviewNote = ''; }
+    return { ok: true, report: changed };
+  }
+
+  function reviseReport({ report, newId, actorUid, admin = false } = {}) {
+    const current = report && typeof report === 'object' ? report : {};
+    if (current.status !== 'approved') return { ok: false, code: 'NOT_APPROVED' };
+    if (!text(newId) || text(newId) === text(current.id)) return { ok: false, code: 'NEW_ID_REQUIRED' };
+    if (!admin && text(actorUid) !== text(current.authorUid)) return { ok: false, code: 'NOT_AUTHOR' };
+    const revised = copy(current);
+    revised.id = text(newId);
+    revised.supersedesId = text(current.id);
+    revised.status = 'draft';
+    revised.submittedAt = '';
+    revised.approvedAt = '';
+    revised.reviewNote = '';
+    return { ok: true, report: revised };
+  }
+  return Object.freeze({ selectProjectOrders, summarize, snapshot, validateReport, transitionReport, reviseReport });
 });
