@@ -39,6 +39,14 @@ test('project home distinguishes unpublished and approved strategy; editing stat
  assert.match(app,/if \(!workOrderState\.admin\) return showToast\("관리자만/u);
 });
 
+test('strategy publication copy describes TV refresh without promising immediate live display',()=>{
+ const app=read('app.js');
+ assert.match(app,/직원에게 게시하면 TV 자동 갱신 대상에 포함됩니다/u);
+ assert.match(app,/실제 TV 반영은 운영 버전과 서버 갱신 상태에 따라 달라집니다/u);
+ assert.doesNotMatch(app,/TV에는 아직 표시되지 않습니다/u);
+ assert.doesNotMatch(app,/TV 표시는 별도 검증 후 연결합니다/u);
+});
+
 test('unsaved form input is isolated from the server-approved draft',()=>{
  const app=read('app.js');
  assert.match(app,/formDraft:/u);
