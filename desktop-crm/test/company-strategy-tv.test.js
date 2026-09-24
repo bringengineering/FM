@@ -29,6 +29,14 @@ test('missing measurement stays unmeasured rather than becoming zero',()=>{
  assert.equal(projectApprovedStrategy(input,[],'2026').goals[0].percent,null);
 });
 
+test('accepts the keyed organization and goal maps written by CRM',()=>{
+ const input=approved();const content=JSON.parse(input.content);
+ content.organization={m_dTE:content.organization[0]};content.goals={g1:content.goals[0]};input.content=JSON.stringify(content);
+ const result=projectApprovedStrategy(input,[{uid:'u1',displayName:'서창환'}],'2026');
+ assert.equal(result.organization[0].displayName,'서창환');
+ assert.equal(result.goals[0].percent,40);
+});
+
 test('malformed and private approved text fails closed',()=>{
  assert.throws(()=>projectApprovedStrategy({...approved(),content:'{'},[],'2026'),/INVALID_APPROVED_STRATEGY/);
  const input=approved();const content=JSON.parse(input.content);content.vision='문의 010-1234-5678';input.content=JSON.stringify(content);

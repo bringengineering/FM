@@ -10,7 +10,9 @@ function projectApprovedStrategy(publication,members,year){
  if(!/^20\d{2}$/u.test(year)||typeof publication.content!=='string'||!Array.isArray(members))invalid();
  let raw;
  try{raw=JSON.parse(publication.content);}catch{invalid();}
- const checked=Strategy.validatePublication(raw);
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))invalid();
+ const list=value=>Array.isArray(value)?value:value&&typeof value==='object'?Object.values(value):value;
+ const checked=Strategy.validatePublication({...raw,organization:list(raw.organization),goals:list(raw.goals)});
  if(!checked.ok||checked.draft.year!==year)invalid();
  const projected=Strategy.projectStrategy(checked.draft);
  if(unsafe(projected.vision)||projected.organization.some(person=>unsafe(person.role))||projected.goals.some(goal=>[goal.title,goal.source].some(unsafe)))invalid();
