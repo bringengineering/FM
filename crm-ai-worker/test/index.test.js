@@ -31,6 +31,23 @@ function environment(overrides = {}) {
   };
 }
 
+test('scheduled TV reconciliation is off until both wallboard flags are enabled',async()=>{
+  let calls=0;
+  const worker=createWorker({scheduledWallboardRefresh:async()=>{calls++;}});
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'false'}),{});
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'false',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true'}),{});
+  assert.equal(calls,0);
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true'}),{});
+  assert.equal(calls,1);
+});
+test('scheduled TV reconciliation delegates heavy work to its private refresh object',async()=>{
+  const calls=[];
+  const stub={fetch:async request=>{calls.push({url:request.url,method:request.method});return Response.json({ok:true});}};
+  const worker=createWorker();
+  await worker.scheduled({},environment({WALLBOARD_ENABLED:'true',WALLBOARD_SCHEDULED_REFRESH_ENABLED:'true',WALLBOARD_REFRESH_JOBS:{idFromName:name=>name,get:name=>{assert.equal(name,'bring-company-wallboard-refresh');return stub;}}}),{});
+  assert.deepEqual(calls,[{url:'https://wallboard-refresh-internal/refresh',method:'POST'}]);
+});
+
 function successfulFetch(calls) {
   return async (url, options = {}) => {
     calls.push({ url: String(url), options });

@@ -42,6 +42,10 @@ const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
+const { saveAndSignalWallboard } = require("./wallboard-mutation-signal");
+const { requestWallboardRefresh } = require("./wallboard-refresh-client");
+const { createWallboardRefreshQueue } = require("./wallboard-refresh-queue");
+const { createWallboardRefreshStatus } = require("./wallboard-refresh-status");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -143,6 +147,7 @@ let remoteClient = null;
 let wallboardPublisher = null;
 let wallboardPublisherUid = "";
 let wallboardLiveSync = null;
+const wallboardRefreshStatus = createWallboardRefreshStatus();
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
@@ -5012,7 +5017,7 @@ async function initializeRemote() {
     onAuthState: state => {
       const wallboardUid = state?.user?.mustChangePassword ? "" : String(state?.user?.uid || "");
       clearDriveSessionForChangedUser(wallboardUid);
-      if (wallboardUid !== wallboardPublisherUid) wallboardPublisher?.stop();
+      if (wallboardUid !== wallboardPublisherUid) { wallboardPublisher?.stop(); wallboardRefreshStatus.reset(); }
       wallboardPublisherUid = wallboardUid;
       if (wallboardUid) {
         wallboardLiveSync = ensureWallboardLiveSync();
@@ -5036,7 +5041,8 @@ async function initializeRemote() {
     onSyncState: state => {
       sendToRenderer("crm:sync-state", state);
       if (state?.status === "connected") wallboardLiveSync?.notify();
-    }
+    },
+    onWallboardSourceChange: () => wallboardLiveSync?.notify()
   });
   await remoteClient.init();
 }
@@ -5091,6 +5097,28 @@ function ensureWallboardLiveSync() {
     publish: (publication, owner) => request(publication, owner)
   });
   return wallboardLiveSync;
+}
+
+const wallboardRefreshQueue = createWallboardRefreshQueue({
+  getIdentity: () => remoteClient?.authState().user?.uid || "",
+  refresh: async uid => {
+    const client = remoteClient;
+    if (!client || client.authState().user?.uid !== uid) throw new Error("SESSION_CHANGED");
+    const idToken = await client.ensureIdToken(false);
+    if (client !== remoteClient || client.authState().user?.uid !== uid) throw new Error("SESSION_CHANGED");
+    return requestWallboardRefresh({
+      baseUrl: CRM_AI_GATEWAY_URL,
+      idToken,
+      fetchImpl: (url, options) => net.fetch(url, options)
+    });
+  },
+  onSuccess: result => wallboardRefreshStatus.succeeded(result),
+  onFailure: error => wallboardRefreshStatus.failed(error)
+});
+
+function signalWallboardAfterSave() {
+  wallboardLiveSync?.notify();
+  void wallboardRefreshQueue.notify();
 }
 
 function trustedIpc(event) {
@@ -8396,8 +8424,12 @@ secureHandle("crm:auth-state", () => authState());
 secureCanonicalHandle("crm:input-language-korean", () => WindowsKoreanInput.requestKoreanInput(mainWindow));
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
-  if (input?.action === "live-status") return ensureWallboardLiveSync().status();
-  if (input?.action === "live-sync") return ensureWallboardLiveSync().reconcile();
+  if (input?.action === "live-status") return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};
+  if (input?.action === "live-sync") {
+    await wallboardRefreshQueue.notify();
+    await ensureWallboardLiveSync().reconcile();
+    return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};
+  }
   const { requestWallboardAdmin } = require("./wallboard-admin-client");
   const { resolveTvChannel } = require("./tv-update-policy");
   if (["auto-start", "auto-stop", "auto-status"].includes(input?.action)) {
@@ -8521,12 +8553,12 @@ secureCanonicalHandle("crm:leave-request-save", input => remoteClient.saveLeaveR
 secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveRequest(input));
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
-secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:work-order-save", input => saveAndSignalWallboard(() => remoteClient.saveWorkOrder(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
-secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
-secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
+secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), signalWallboardAfterSave));
+secureCanonicalHandle("crm:work-order-progress", input => saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
 secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
 secureCanonicalHandle("crm:project-weekly-report-export", input => exportProjectWeeklyReport(input));
@@ -8891,6 +8923,7 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
     if (!result || !result.record) {
       return buildingScheduleErrorEnvelope(Object.assign(new Error("SESSION_CHANGED"), { code: "SESSION_CHANGED" }));
     }
+    if (!result.repeated && !localTestMode) signalWallboardAfterSave();
     const operationsSync = result.record.status === "completed"
       ? await trySyncCompletedWorkRecord(result.record)
       : { status: "not-required", sourceWorkRecordId: String(result.record.id || "") };

@@ -1896,6 +1896,66 @@ afterAll(async () => {
   await cutoverEnvironment?.cleanup();
 });
 
+describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () => {
+  const readerUid = "wallboard-reader";
+  const readerEmail = "wallboard-reader@bring.test";
+  const sourcePaths = [
+    "access",
+    "workOrders",
+    "projects",
+    "data/serviceRecords",
+    "teamProfiles",
+    "projectWeeklyReports",
+    "projectWeeklyReportReviews",
+  ];
+
+  it("allows only the enabled verified reader to read the seven TV source paths, never write them", async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: true,
+        email: readerEmail,
+      });
+    });
+    const reader = environment.authenticatedContext(
+      readerUid,
+      crmClaims(readerEmail),
+    ).database();
+    for (const path of sourcePaths) {
+      await assertSucceeds(get(ref(reader, `crmCompany/${path}`)));
+      await assertFails(set(ref(reader, `crmCompany/${path}`), { probe: true }));
+    }
+    await assertFails(get(ref(reader, "crmCompany")));
+    await assertFails(get(ref(reader, "crmCompany/data/customers")));
+    await assertFails(get(ref(reader, "crmCompany/marketing")));
+  });
+
+  it("rejects an unmarked, disabled, mismatched-email, or unverified reader", async () => {
+    const reader = environment.authenticatedContext(readerUid, crmClaims(readerEmail)).database();
+    const denyAllSources = async (database: ReturnType<ReturnType<typeof environment.authenticatedContext>["database"]>) => {
+      for (const path of sourcePaths) {
+        await assertFails(get(ref(database, `crmCompany/${path}`)));
+      }
+    };
+    await denyAllSources(reader);
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: false,
+        email: readerEmail,
+      });
+    });
+    await denyAllSources(reader);
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
+        enabled: true,
+        email: readerEmail,
+      });
+    });
+    await denyAllSources(environment.authenticatedContext("other-reader", crmClaims(readerEmail)).database());
+    await denyAllSources(environment.authenticatedContext(readerUid, crmClaims("other@bring.test")).database());
+    await denyAllSources(environment.authenticatedContext(readerUid, crmPasswordClaims(readerEmail, false)).database());
+  });
+});
+
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
   it("keeps the company quote supplier fixed, readable by clean staff, and writable only by admins", async () => {
     const path = "crmCompany/quoteSupplier";

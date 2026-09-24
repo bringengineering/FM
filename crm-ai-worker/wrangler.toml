@@ -5,6 +5,9 @@ compatibility_date = "2026-08-30"
 workers_dev = true
 preview_urls = false
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 AI_ENABLED = "true"
 GROQ_MODEL = "qwen/qwen3.8-27b"
@@ -15,6 +18,8 @@ ALLOWED_ORIGINS = "app://bring-crm,https://bring-fm.web.app"
 DOCUMENT_DELIVERY_ENABLED = "false"
 KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
 WALLBOARD_ENABLED = "true"
+WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"
+WALLBOARD_FIREBASE_DATABASE_URL = "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 [[ratelimits]]
 name = "AI_RATE_LIMITER"
@@ -36,9 +41,17 @@ id = "e45a57c874534b76b90107d43ad4a759"
 name = "WALLBOARD_DEVICES"
 class_name = "WallboardDevices"
 
+[[durable_objects.bindings]]
+name = "WALLBOARD_REFRESH_JOBS"
+class_name = "WallboardRefreshJobs"
+
 [[migrations]]
 tag = "wallboard-sqlite-v1"
 new_sqlite_classes = ["WallboardDevices"]
+
+[[migrations]]
+tag = "wallboard-refresh-sqlite-v1"
+new_sqlite_classes = ["WallboardRefreshJobs"]
 
 [[ratelimits]]
 name = "WALLBOARD_RATE_LIMITER"

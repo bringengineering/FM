@@ -1333,6 +1333,7 @@ class FirebaseRemoteClient {
     this.onOfficeData = options.onOfficeData || (() => {});
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
+    this.onWallboardSourceChange = options.onWallboardSourceChange || (() => {});
     this.fieldSummariesEnabled = options.fieldSummariesEnabled !== false;
     this.session = null;
     this.remotePayload = null;
@@ -1343,6 +1344,10 @@ class FirebaseRemoteClient {
     this.summaryStreamTask = null;
     this.customerPhotoStreamController = null;
     this.customerPhotoStreamTask = null;
+    this.workOrderStreamController = null;
+    this.workOrderStreamTask = null;
+    this.projectStreamController = null;
+    this.projectStreamTask = null;
     this.officePollTimer = null;
     this.officePollTask = null;
     this.officeLoadSequence = 0;
@@ -5742,6 +5747,20 @@ class FirebaseRemoteClient {
       });
       this.customerPhotoStreamTask = trackedPhotos;
     }
+    if (this.session.role === "admin" && !this.workOrderStreamTask) {
+      let trackedOrders;
+      trackedOrders = this.streamLoop("workOrders", "workOrders", generation).finally(() => {
+        if (this.workOrderStreamTask === trackedOrders) this.workOrderStreamTask = null;
+      });
+      this.workOrderStreamTask = trackedOrders;
+    }
+    if (this.session.role === "admin" && !this.projectStreamTask) {
+      let trackedProjects;
+      trackedProjects = this.streamLoop("projects", "projects", generation).finally(() => {
+        if (this.projectStreamTask === trackedProjects) this.projectStreamTask = null;
+      });
+      this.projectStreamTask = trackedProjects;
+    }
     this.startOfficePolling(generation);
   }
 
@@ -5752,12 +5771,18 @@ class FirebaseRemoteClient {
     if (this.streamController) this.streamController.abort();
     if (this.summaryStreamController) this.summaryStreamController.abort();
     if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
+    if (this.workOrderStreamController) this.workOrderStreamController.abort();
+    if (this.projectStreamController) this.projectStreamController.abort();
     this.streamController = null;
     this.summaryStreamController = null;
     this.customerPhotoStreamController = null;
+    this.workOrderStreamController = null;
+    this.projectStreamController = null;
     this.streamTask = null;
     this.summaryStreamTask = null;
     this.customerPhotoStreamTask = null;
+    this.workOrderStreamTask = null;
+    this.projectStreamTask = null;
     this.officeLoadSequence += 1;
     this.officePollTask = null;
     clearTimeout(this.reloadTimer);
@@ -5773,6 +5798,8 @@ class FirebaseRemoteClient {
     if (this.streamController) this.streamController.abort();
     if (this.summaryStreamController) this.summaryStreamController.abort();
     if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
+    if (this.workOrderStreamController) this.workOrderStreamController.abort();
+    if (this.projectStreamController) this.projectStreamController.abort();
   }
 
   recoverStreamAuthorization() {
@@ -5784,6 +5811,7 @@ class FirebaseRemoteClient {
   handleStreamEvent(kind, eventName) {
     if (kind === "fieldSummaries" && !this.fieldSummariesEnabled) return undefined;
     if (eventName === "put" || eventName === "patch") {
+      if (kind === "workOrders" || kind === "projects") return this.onWallboardSourceChange(kind);
       if (kind === "fieldSummaries") return this.scheduleOverlayReload();
       if (kind === "customerPhotos") return this.scheduleCustomerPhotoReload();
       return this.scheduleRemoteReload();
@@ -5832,7 +5860,9 @@ class FirebaseRemoteClient {
     if (kind === "fieldSummaries" && !this.fieldSummariesEnabled) return;
     const controllerKey = kind === "fieldSummaries"
       ? "summaryStreamController"
-      : kind === "customerPhotos" ? "customerPhotoStreamController" : "streamController";
+      : kind === "customerPhotos" ? "customerPhotoStreamController"
+      : kind === "workOrders" ? "workOrderStreamController"
+      : kind === "projects" ? "projectStreamController" : "streamController";
     const sessionGuard = this.captureSessionGuard();
     let reconnectDelayMs = 2500;
     while (

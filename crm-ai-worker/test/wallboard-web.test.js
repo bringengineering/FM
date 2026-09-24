@@ -24,12 +24,16 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
  assert.match(response.headers.get('content-type'),/application\/json/);
  const value=await response.json();assert.deepEqual(Object.keys(value),['version']);assert.match(value.version,/^tv-web-\d{4}-\d{2}-\d{2}-\d+$/);
 });
+test('changed TV presentation assets advance the client application version',async()=>{
+ const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-24-4'});
+});
 
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.doesNotThrow(()=>new vm.Script(source), 'served TV client must be valid JavaScript');
  for(const key of ['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice'])assert.match(source,new RegExp(`['"]${key}['"]`));
- assert.match(source,/setInterval\(\(\)=>\{if\(!pendingToken\)void refresh\(\);\},10000\)/);assert.doesNotMatch(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
+ assert.match(source,/setInterval\(\(\)=>\{if\(!pendingToken\)void refresh\(\);\},2000\)/);assert.doesNotMatch(source,/15000/);assert.match(source,/textContent/);assert.doesNotMatch(source,/\.innerHTML\s*=/);
  assert.match(source,/localStorage/);assert.match(source,/visibilityState/);assert.match(source,/AUTH_REQUIRED/);
  assert.match(source,/bring-public-wallboard-pairing/);assert.match(source,/restorePairing/);assert.match(source,/clearPairing/);
  assert.match(source,/INVALID_TOKEN/);assert.match(source,/begin\(\)/);assert.match(source,/Array\.isArray\(value\.model\.people\)/);
@@ -62,6 +66,33 @@ test('web TV stylesheet compacts content for common TV heights',async()=>{
  assert.match(source,/@media\(max-height:1100px\)/);assert.match(source,/\.timeline \.row/);
  assert.match(source,/\.roadmap-layout/);assert.match(source,/\.overall-progress/);
  assert.match(source,/\.roadmap-performance/);assert.match(source,/\.progress-ring/);assert.match(source,/conic-gradient/);
+});
+
+test('web TV roadmap separates input progress and reviewed work without new publication fields',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/model\.counts\.done\/model\.total/);
+ assert.match(source,/업무 검수 완료율/);
+ assert.match(source,/입력 진도 평균/);
+ assert.match(source,/집계 대기/);
+ assert.match(source,/건수 기준/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.review-metric/);
+});
+test('web TV distinguishes no projects from measured zero progress',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/대상 프로젝트 없음/);
+ assert.match(source,/model\.portfolio\.projects\.length\?model\.portfolio\.overallProgress\+'%'\:'—'/);
+});
+test('web TV portfolio labels each project input progress and reviewed completion with a legacy fallback',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/item\.reviewedDone/);
+ assert.match(source,/item\.reviewedTotal/);
+ assert.match(source,/업무 검수/);
+ assert.match(source,/집계 대기/);
+ assert.match(source,/입력 진도/);
+ assert.match(source,/reviewed-progress/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.portfolio-row \.reviewed-progress/);
 });
 
 test('unknown TV asset paths fail closed',async()=>{

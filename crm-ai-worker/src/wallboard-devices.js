@@ -25,13 +25,15 @@ export class WallboardDevices {
     case 'schedule-update':result=await this.service.scheduleUpdate(input.deviceId,input.targetVersion,identity);break;
     case 'cancel-update':result=await this.service.cancelUpdate(input.deviceId,identity);break;
     case 'list':result=await this.service.list(identity);break;
+    case 'begin-refresh':result=await this.service.beginRefresh(identity);break;
     case 'publish':result=await this.service.publish(input.snapshot,input.expectedVersion,identity);break;
+    case 'publish-if-changed':result=await this.service.publishIfChanged(input.snapshot,input.expectedVersion,identity,input.refreshToken);break;
     case 'display':result=await this.service.readBoard(token,input.clientVersion,{updateStatus:input.updateStatus,updateError:input.updateError});break;
     default:return Response.json({ok:false,code:'NOT_FOUND'},{status:404,headers});
    }
    return Response.json({ok:true,...result},{headers});
   }catch(error){
-   const statuses={INVALID_INPUT:400,INVALID_CODE:400,INVALID_TOKEN:401,FORBIDDEN:403,NOT_FOUND:404,RATE_LIMITED:429,DEVICE_LIMIT:409,VERSION_CONFLICT:409};
+   const statuses={INVALID_INPUT:400,INVALID_CODE:400,INVALID_TOKEN:401,FORBIDDEN:403,NOT_FOUND:404,RATE_LIMITED:429,DEVICE_LIMIT:409,VERSION_CONFLICT:409,STALE_REFRESH:409};
    const code=Object.hasOwn(statuses,error?.code)?error.code:'WALLBOARD_UNAVAILABLE';
    return Response.json({ok:false,code},{status:statuses[code]||503,headers});
   }

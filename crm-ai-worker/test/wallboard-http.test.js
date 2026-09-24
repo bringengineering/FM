@@ -86,6 +86,35 @@ test('publication requires administrator while display uses only device token',a
  const a=setup();assert.equal((await a.worker.fetch(req('display',{},'a'.repeat(64)),a.env)).status,200);assert.equal(a.forwarded[0].token,'a'.repeat(64));assert.equal(a.forwarded[0].identity,null);
  assert.equal((await a.worker.fetch(req('display',{},'staff-token'),a.env)).status,401);
 });
+test('verified staff may request server refresh without sending raw CRM data',async()=>{
+ const f=setup('staff@example.com');
+ const calls=[];
+ const worker=createWorker({fetchImpl:async()=>Response.json({users:[{localId:'staff-uid',email:'staff@example.com',emailVerified:true}]}),refreshWallboard:async input=>{calls.push(input);return {version:3,publishedAt:1234};}});
+ const response=await worker.fetch(req('refresh'),f.env);
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true,version:3,publishedAt:1234});
+ assert.equal(calls[0].identity.uid,'staff-uid');
+ assert.equal(calls[0].idToken,'staff-token');
+ assert.equal((await worker.fetch(req('refresh',{orders:[]}),f.env)).status,400);
+ assert.equal(calls.length,1);
+ const unverified=setup('staff@example.com',false);
+ assert.equal((await unverified.worker.fetch(req('refresh'),unverified.env)).status,403);
+});
+test('default staff refresh delegates heavy rebuilding to the private job',async()=>{
+ const f=setup('staff@example.com');
+ const forwarded=[];
+ f.env.WALLBOARD_SCHEDULED_REFRESH_ENABLED='true';
+ f.env.WALLBOARD_REFRESH_JOBS={idFromName:name=>name,get:()=>({fetch:async request=>{
+  forwarded.push({path:new URL(request.url).pathname,input:await request.json()});
+  return Response.json({ok:true,version:9,publishedAt:1500,sourceReadAt:1400,reconciledAt:1450});
+ }})};
+ const response=await f.worker.fetch(req('refresh'),f.env);
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true,version:9,publishedAt:1500});
+ assert.equal(forwarded[0].path,'/refresh-user');
+ assert.equal(forwarded[0].input.idToken,'staff-token');
+ assert.equal(forwarded[0].input.identity.email,'staff@example.com');
+});
 test('web TV pairs through same-origin endpoints and keeps its device token in a protected cookie',async()=>{
  let state;const storage={transaction:async fn=>{let value=structuredClone(state);const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
  const f=setup();f.env.WALLBOARD_DEVICES.get=()=>new WallboardDevices({storage});
@@ -125,4 +154,13 @@ test('durable adapter does not rewrite unchanged state for an invalid device tok
  const object=new WallboardDevices({storage});
  const response=await object.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'display',input:{},identity:null,token:'a'.repeat(64)})}));
  assert.equal(response.status,401);assert.equal(puts,0);
+});
+test('private durable command accepts the idempotent server publish action',async()=>{
+ let state;
+ const storage={transaction:async fn=>{let value=structuredClone(state)||{};const result=await fn({get:async()=>value,put:async(_key,data)=>{value=structuredClone(data);}});state=value;return result;}};
+ const object=new WallboardDevices({storage});
+ const snapshot={model:{counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},total:0,overdue:0,unknown:0,people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{from:'2026-08-31',to:'2026-10-25',todayOffset:36,weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]}},playlist:[{key:'roadmap',enabled:true,seconds:40}],notice:'',dataDate:'2026-09-20'};
+ const call=async (expectedVersion=0)=>object.fetch(new Request('https://wallboard-internal/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'publish-if-changed',input:{snapshot,expectedVersion},identity:{uid:'server-refresh',isAdmin:true}})}));
+ const first=await (await call()).json();assert.equal(first.version,1);
+ const second=await (await call(1)).json();assert.equal(second.version,1);
 });

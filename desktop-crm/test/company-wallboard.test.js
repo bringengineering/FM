@@ -1,4 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
+const fs=require('node:fs');const path=require('node:path');
 const C=require('../src/company-wallboard');
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
  const html=C.scene(null,'notice',0,'<회사 공지>');
@@ -26,7 +27,7 @@ test('schedule shows only valid today entries without private fields',()=>{
   {id:'d',scheduledDate:'2026-09-20',status:'cancelled'}
  ]},'2026-09-20');
  assert.equal(m.entries.length,2);assert.equal(m.entries[0].time,'09:30');
- assert.equal(m.entries[1].time,'시간 미정');assert.equal(m.today[0].title,'secret');
+ assert.equal(m.entries[1].time,'시간 미정');assert.equal(m.today[0].title,'회사 일정');
  assert.equal(C.schedule(null,'2026-09-20').available,false);
  assert.equal(C.schedule({serviceRecords:[]},'2026-09-20').available,true);
 });
@@ -34,6 +35,23 @@ test('projection excludes private text and deduplicates identifiers',()=>{
  const input={orders:[{id:'a',title:'secret-phone',memo:'private',assigneeName:'직원',status:'doing',dueDate:'2026-09-18'},{id:'a',status:'done',updatedAt:'2026-09-19T00:00:00Z',assigneeName:'직원'}]};
  const before=JSON.stringify(input),m=C.project(input,'2026-09-19');
  assert.equal(m.total,1);assert.equal(m.counts.done,1);assert.ok(!JSON.stringify(m).includes('secret-phone'));assert.equal(JSON.stringify(input),before);
+});
+test('project names containing customer contact details are masked in the shared TV model',()=>{
+ const model=C.project({orders:[],projects:[{id:'p1',name:'홍길동 010-1234-5678',status:'active',progress:30}]},'2026-09-24');
+ assert.equal(model.portfolio.projects[0].name,'프로젝트명 확인 필요');
+ assert.equal(model.roadmap.lanes[0].assignments[0].projectName,'프로젝트명 확인 필요');
+ assert.ok(!JSON.stringify(model).includes('홍길동'));
+});
+test('a task assignee field containing a phone number is not shown as an employee',()=>{
+ const model=C.project({orders:[{id:'o1',status:'doing',assigneeName:'고객 010-1234-5678'}],projects:[]},'2026-09-24');
+ assert.equal(model.people[0].name,'담당자 미정');
+ assert.ok(!JSON.stringify(model).includes('010-1234-5678'));
+});
+test('project owner contact details are masked in roadmap and portfolio',()=>{
+ const model=C.project({orders:[],projects:[{id:'p1',name:'실증',owner:'고객 010-1234-5678',status:'active',progress:30}]},'2026-09-24');
+ assert.equal(model.portfolio.projects[0].owner,'담당자 미정');
+ assert.equal(model.roadmap.lanes[0].assigneeName,'담당자 미정');
+ assert.ok(!JSON.stringify(model).includes('010-1234-5678'));
 });
 test('invalid source is unavailable, unknown status never becomes completed',()=>{
  assert.throws(()=>C.project({},'2026-09-19'));
@@ -60,21 +78,31 @@ test('roadmap projects entered progress and excludes private source fields',()=>
  assert.ok(!JSON.stringify(m).includes('private goal'));
 });
 test('schedule exposes safe titles and owners for today and current week',()=>{
- const m=C.project({orders:[],projects:[],members:[],calendar:{serviceRecords:[
-  {scheduledDate:'2026-09-20',startTime:'09:30',endTime:'10:30',status:'planned',title:'소방 점검',owner:'김현진',phone:'010-1111-2222',address:'강원 원주시'},
+ const m=C.project({orders:[],projects:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[
+  {scheduledDate:'2026-09-20',startTime:'09:30',endTime:'10:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진',phone:'010-1111-2222',address:'강원 원주시'},
   {scheduledDate:'2026-09-19',status:'completed',title:'공용부 청소',owner:'황우중'},
   {scheduledDate:'2026-09-20',status:'cancelled',title:'취소 일정'}
  ]}},'2026-09-20');
- assert.deepEqual(m.schedule.today[0],{date:'2026-09-20',time:'09:30',endTime:'10:30',title:'소방 점검',owner:'김현진',status:'예정'});
+ assert.deepEqual(m.schedule.today[0],{date:'2026-09-20',time:'09:30',endTime:'10:30',title:'점검',owner:'김현진',status:'예정'});
  assert.equal(m.schedule.week.length,2);
  assert.ok(!JSON.stringify(m.schedule).includes('010-'));
  assert.ok(!JSON.stringify(m.schedule).includes('강원 원주시'));
 });
+test('TV schedule uses fixed service labels and verified team names instead of free-text customer details',()=>{
+ const m=C.project({orders:[],projects:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[
+  {scheduledDate:'2026-09-24',startTime:'09:30',status:'planned',serviceType:'cleaning',title:'홍길동 010-9169-0000 원주시 청소',owner:'고객 홍길동'},
+  {scheduledDate:'2026-09-24',startTime:'13:00',status:'planned',serviceType:'inspection',title:'101호 소방점검',owner:'김현진'}
+ ]}},'2026-09-24');
+ assert.deepEqual(m.schedule.today.map(item=>[item.title,item.owner]),[['청소','담당자 미정'],['점검','김현진']]);
+ assert.ok(!JSON.stringify(m.schedule).includes('홍길동'));
+ assert.ok(!JSON.stringify(m.schedule).includes('010-'));
+ assert.ok(!JSON.stringify(m.schedule).includes('101호'));
+});
 test('roadmap and schedule scenes render TV visual contracts',()=>{
- const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
- const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/전체 프로젝트 진행률/);assert.match(roadmap,/42%/);
+ const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
+ const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/입력 진도 평균/);assert.match(roadmap,/42%/);
  assert.match(roadmap,/wb-roadmap-performance/);assert.match(roadmap,/wb-progress-ring/);
- const today=C.scene(m,'scheduleToday',0);assert.match(today,/소방 점검/);assert.match(today,/김현진/);
+ const today=C.scene(m,'scheduleToday',0);assert.match(today,/점검/);assert.match(today,/김현진/);assert.doesNotMatch(today,/소방 점검/);
  const week=C.scene(m,'scheduleWeek',0);assert.match(week,/wb-schedule-week/);
 });
 test('roadmap stacks multiple project bars instead of overlapping them',()=>{
@@ -109,4 +137,77 @@ test('roadmap gives every assignment its own row when one person owns four proje
  const html=C.scene(m,'roadmap',0,'','09:00','day','2026-09-24');
  assert.equal((html.match(/class="wb-roadmap-assignment"/g)||[]).length,4);
  assert.doesNotMatch(html,/top:10px|top:48px/);
+});
+
+test('roadmap separates entered progress from manager-reviewed completion',()=>{
+ const m=C.project({projects:[{id:'p1',name:'실증',status:'active',progress:70}],orders:[
+  {id:'a',projectId:'p1',status:'done',progress:70},
+  {id:'b',projectId:'p1',status:'submitted',progress:70}
+ ]},'2026-09-24');
+ assert.equal(m.portfolio.overallProgress,70);
+ const html=C.scene(m,'roadmap',0);
+ assert.match(html,/입력 진도 평균/);
+ assert.match(html,/업무 검수 완료율/);
+ assert.match(html,/50%/);
+ assert.match(html,/1\/2건/);
+ assert.match(html,/건수 기준/);
+ const empty=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap',0);
+ assert.match(empty,/업무 검수 완료율/);
+ assert.match(empty,/집계 대기/);
+ const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
+ assert.match(css,/\.wb-review-metric/u);
+});
+
+test('company progress keeps completed projects in the displayed denominator',()=>{
+ const model=C.project({orders:[],projects:[
+  {id:'finished',name:'완료 사업',status:'done',progress:100},
+  {id:'working',name:'진행 사업',status:'active',progress:20}
+ ]},'2026-09-24');
+ assert.equal(model.portfolio.projects.length,2);
+ assert.equal(model.portfolio.overallProgress,60);
+});
+test('empty portfolio displays no denominator rather than a false zero percent',()=>{
+ const html=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap');
+ assert.match(html,/입력 진도 평균/);
+ assert.match(html,/대상 프로젝트 없음/);
+ assert.doesNotMatch(html,/wb-progress-ring[^>]*><strong>0%<\/strong>/);
+});
+
+test('each project keeps entered progress distinct from deduplicated reviewed work',()=>{
+ const m=C.project({projects:[
+  {id:'p1',name:'햇빛빌라 실증',status:'active',progress:80},
+  {id:'p2',name:'예초집 실증',status:'active',progress:25}
+ ],orders:[
+  {id:'a',projectId:'p1',status:'submitted',progress:80,updatedAt:'2026-09-20T01:00:00Z'},
+  {id:'a',projectId:'p1',status:'done',progress:80,updatedAt:'2026-09-21T01:00:00Z'},
+  {id:'b',projectId:'p1',status:'returned',progress:80}
+ ]},'2026-09-24');
+ const byName=new Map(m.portfolio.projects.map(item=>[item.name,item]));
+ assert.equal(byName.get('햇빛빌라 실증').progress,80);
+ assert.equal(byName.get('햇빛빌라 실증').reviewedDone,1);
+ assert.equal(byName.get('햇빛빌라 실증').reviewedTotal,2);
+ assert.equal(byName.get('예초집 실증').reviewedTotal,0);
+ const html=C.scene(m,'portfolio');
+ assert.match(html,/업무 검수 1\/2건/);
+ assert.match(html,/업무 검수 집계 대기/);
+ assert.match(html,/입력 진도/);
+ assert.match(html,/wb-portfolio-review/);
+});
+
+test('weekly approvals are grouped by Korea date across the UTC Sunday boundary',()=>{
+ const monday=C.project({projects:[],orders:[
+  {id:'approved-monday',status:'done',updatedAt:'2026-09-20T16:00:00Z'}
+ ]},'2026-09-24');
+ assert.equal(monday.portfolio.weeklyDone.at(-1).count,1);
+ assert.equal(monday.portfolio.weeklyDone.at(-2).count,0);
+ const next=C.project({projects:[],orders:[
+  {id:'approved-next-monday',status:'done',updatedAt:'2026-09-27T16:00:00Z'}
+ ]},'2026-09-24');
+ assert.equal(next.portfolio.weeklyDone.at(-1).count,0);
+});
+test('legacy completed work without a valid approval timestamp is reported outside weekly bars',()=>{
+ const m=C.project({projects:[],orders:[{id:'old',status:'done',updatedAt:''}]},'2026-09-24');
+ assert.equal(m.portfolio.unattributedDone,1);
+ assert.equal(m.portfolio.weeklyDone.reduce((sum,item)=>sum+item.count,0),0);
+ assert.match(C.scene(m,'weeklyTrend'),/완료 시각 확인 필요 1건/);
 });

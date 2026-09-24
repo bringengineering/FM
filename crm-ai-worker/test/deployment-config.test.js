@@ -30,3 +30,10 @@ test("document delivery has dedicated storage and stays closed before Kakao appr
   assert.match(config, /binding\s*=\s*"DOCUMENT_DELIVERY"/);
   assert.match(config, /id\s*=\s*"e45a57c874534b76b90107d43ad4a759"/);
 });
+test("TV scheduled refresh has isolated durable-object binding and remains disabled before rollout", () => {
+  const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
+  assert.match(config, /^WALLBOARD_SCHEDULED_REFRESH_ENABLED\s*=\s*"false"$/m);
+  assert.match(config, /name\s*=\s*"WALLBOARD_REFRESH_JOBS"\s*\r?\nclass_name\s*=\s*"WallboardRefreshJobs"/);
+  assert.match(config, /tag\s*=\s*"wallboard-refresh-sqlite-v1"\s*\r?\nnew_sqlite_classes\s*=\s*\["WallboardRefreshJobs"\]/);
+  assert.doesNotMatch(config, /^WALLBOARD_READER_REFRESH_TOKEN\s*=/m);
+});
