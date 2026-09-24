@@ -24,6 +24,9 @@ test('Word and PPT consume the same approved snapshot totals and IDs', () => {
 test('submitted report cannot be exported as approved', () => {
   assert.throws(() => Export.bundle({...report,status:'submitted'}),/승인/u);
 });
+test('an invalid approval timestamp cannot be exported as a reviewed Word or PPT snapshot',()=>{
+  assert.throws(()=>Export.bundle({...report,approvedAt:'zzz'}),/승인/u);
+});
 
 test('TV projection counts only approved reports and drops private narratives', () => {
   const tv = Export.tvProjection([report,{...report,id:'submitted-2',status:'submitted',summary:'private secret'}],'2026-09-24');

@@ -6,7 +6,7 @@
 'use strict';
 
 function approved(report) {
-  if (!report || report.status !== 'approved' || !Core.validateReport(report).ok || !report.approvedAt) throw new Error('승인된 주간 보고서만 내보낼 수 있습니다.');
+  if (!report || report.status !== 'approved' || !Core.validateReport(report).ok || validApprovalTime(report.approvedAt)===null) throw new Error('승인된 주간 보고서만 내보낼 수 있습니다.');
   return report;
 }
 
