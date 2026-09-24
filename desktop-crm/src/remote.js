@@ -12,6 +12,12 @@ const WorkOutcomeCore = require("./work-outcome-core");
 const WorkOutcomeExport = require("./work-outcome-export-core");
 const ProjectCore = require("./project-core");
 const CompanyStrategyCore = require("./company-strategy-core");
+function companyStrategyWireFields(draft) {
+  const record = { year:draft.year, vision:draft.vision };
+  if (draft.organization.length) record.organization = Object.fromEntries(draft.organization.map(person => [person.uid, person]));
+  if (draft.goals.length) record.goals = Object.fromEntries(draft.goals.map(goal => [goal.id, Object.fromEntries(Object.entries(goal).filter(([,value]) => value !== null))]));
+  return record;
+}
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const WeeklyDirectiveCore = require("./weekly-directive-core");
@@ -2383,9 +2389,7 @@ class FirebaseRemoteClient {
     const revision = Number(snapshot.value?.revision || 0);
     if (input.expectedRevision !== revision) throw createError('다른 관리자가 먼저 수정했습니다. 다시 불러와 주세요.', 'CONFLICT');
     const record = {
-      ...checked.draft,
-      organization:Object.fromEntries(checked.draft.organization.map(person => [person.uid, person])),
-      goals:Object.fromEntries(checked.draft.goals.map(goal => [goal.id, goal])),
+      ...companyStrategyWireFields(checked.draft),
       revision:revision + 1,
       updatedAt:new Date().toISOString(),
       updatedBy:session.uid,
@@ -2417,9 +2421,7 @@ class FirebaseRemoteClient {
     if (revision !== input.expectedPublicationRevision) throw createError('게시본이 변경되었습니다. 다시 확인해 주세요.', 'CONFLICT');
     const now = new Date().toISOString();
     const record = {
-      ...checked.draft,
-      organization:Object.fromEntries(checked.draft.organization.map(person => [person.uid, person])),
-      goals:Object.fromEntries(checked.draft.goals.map(goal => [goal.id, goal])),
+      ...companyStrategyWireFields(checked.draft),
       revision:revision + 1, sourceRevision:stored.revision,
       updatedAt:now, updatedBy:session.uid, publishedAt:now, publishedBy:session.uid,
     };

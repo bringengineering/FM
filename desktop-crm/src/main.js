@@ -9019,6 +9019,9 @@ function readWorkflowCollection(method) {
 }
 secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
 secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
+secureCanonicalHandle("crm:company-strategy-load", input => remoteClient.loadCompanyStrategy(input));
+secureCanonicalHandle("crm:company-strategy-draft-save", input => remoteClient.saveCompanyStrategyDraft(input));
+secureCanonicalHandle("crm:company-strategy-publish", input => remoteClient.publishCompanyStrategy(input));
 secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));

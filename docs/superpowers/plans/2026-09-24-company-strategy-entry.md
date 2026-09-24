@@ -41,25 +41,25 @@
 - [x] **Step 2:** 로컬 기본 database 포트 9000이 사용 중이어서 검증 전용 임시 설정의 9010으로 동일 규칙을 로드했다. 집중 테스트에서 새 경로 쓰기가 권한 거부로 실패함을 확인했다.
 - [x] **Step 3:** `crmCompany/companyStrategyDrafts/$year`와 `companyStrategyPublications/$year`에 각각 좁은 `.read`, `.write`, `.validate`를 추가한다. 관리자 조건은 기존 `projects` 규칙과 같은 활성·이메일 검증·역할 검사다. `revision`은 첫 저장 1, 이후 이전 값+1이다. `$other`는 false로 닫는다. 게시의 `sourceRevision`은 같은 연도 초안 revision과 같아야 한다.
 - [x] **Step 4:** 전체 Rules 135개를 다른 로컬 포트의 에뮬레이터에서 통과했다. 기존 인접 경로의 거부 테스트도 함께 실행됐다. 임시 설정 파일은 제거했다.
-- [ ] **Step 5:** 규칙과 테스트만 별도 커밋한다. 운영 규칙 배포는 하지 않는다.
+- [x] **Step 5:** 규칙과 테스트를 별도 커밋했다. 운영 규칙 배포는 하지 않았다.
 
 ## Task 3: 서버 읽기·쓰기와 IPC
 
 **Files:** modify `desktop-crm/src/remote.js`, `main.js`, `preload.js`; create `desktop-crm/test/company-strategy-remote.test.js`.
 
-- [ ] **Step 1:** 실패 테스트에서 `loadCompanyStrategy`의 관리자만 draft 접근, 직원의 published 접근, `saveCompanyStrategyDraft`의 이전 revision 재조회, `publishCompanyStrategy`의 초안 검증 및 명시적 관리자 실행을 확인한다.
-- [ ] **Step 2:** 집중 테스트를 실행해 메서드/IPC 부재로 실패함을 확인한다.
-- [ ] **Step 3:** `remote.js`에서 기존 `requireOfficeSession`, `captureSessionGuard`, `dbRequest`를 사용해 경로를 연도 하나로 고정한다. 게시 전 같은 해 초안을 다시 읽고 코어 검증 후 새 게시 revision을 작성한다. 요청·오류에 비밀이나 원문을 출력하지 않는다.
-- [ ] **Step 4:** `crm:company-strategy-load`, `crm:company-strategy-draft-save`, `crm:company-strategy-publish`를 narrow IPC로 연결하고, 세션 변경/권한 하락/서버 거부가 저장 성공으로 보이지 않음을 테스트한다.
-- [ ] **Step 5:** 집중 테스트와 전체 `npm test`를 통과한다.
+- [x] **Step 1:** 실패 테스트에서 `loadCompanyStrategy`의 관리자만 draft 접근, 직원의 published 접근, `saveCompanyStrategyDraft`의 이전 revision 재조회, `publishCompanyStrategy`의 초안 검증 및 명시적 관리자 실행을 확인했다.
+- [x] **Step 2:** 집중 테스트를 실행해 메서드/IPC 부재로 실패함을 확인했다.
+- [x] **Step 3:** `remote.js`에서 기존 세션·ETag 경계를 사용해 저장·게시 경로를 연도 하나로 고정했다. 게시 전 같은 해 초안을 다시 읽고 검증한다.
+- [x] **Step 4:** 세 IPC와 mutation-policy 분류를 연결했다. 세션 변경·관리자 권한·revision 충돌 테스트를 통과했다.
+- [x] **Step 5:** 집중 테스트와 전체 `npm test` 2,325 통과·2 skip·0 fail.
 
 ## Task 4: 프로젝트 홈에서 입력·승인본 확인
 
 **Files:** modify `desktop-crm/src/app.js`, `index.html`, `toss.css`; create `desktop-crm/test/company-strategy-wiring.test.js`.
 
-- [ ] **Step 1:** 목표 편집 중 자동 갱신이 폼을 교체하지 않는 것, 직원이 draft/게시 버튼을 보지 못하는 것, 게시 전에는 TV 표시 문구가 없는 것, 실패 시 입력이 남는 것, 초안과 게시본 상태가 분명히 다른 것을 검증하는 실패 테스트를 작성한다.
-- [ ] **Step 2:** 집중 테스트의 예상 실패를 확인한다.
-- [ ] **Step 3:** 프로젝트 홈에 `회사 방향` 카드와 관리자 전용 편집기를 넣는다. 비전, 인원별 역할·보고 대상 선택, 연간/상·하반기 목표·단위·기준값·목표값·확인값·출처를 입력받는다. `초안 저장`과 `직원에게 게시`를 분리한다. 구 Objective/KR은 새 입력과 합치거나 삭제하지 않는다.
+- [x] **Step 1:** 신규 IPC·화면·편집 상태·좁은 화면·인증 변경 캐시 무효화 실패 테스트를 작성했다.
+- [x] **Step 2:** 집중 테스트의 예상 실패를 확인했다.
+- [x] **Step 3:** 프로젝트 홈에 `회사 방향` 카드와 관리자 전용 편집기를 넣었다. 비전, 인원별 역할·보고 대상 선택, 연간/상·하반기 목표·단위·기준값·목표값·확인값·출처를 입력받는다. `초안 저장`과 `직원에게 게시`를 분리한다. 구 Objective/KR은 변경하지 않았다.
 - [ ] **Step 4:** 1366×768 및 좁은 창에서 카드·입력/오류 상태를 확인하고, 전체 `npm test`·`git diff --check`를 통과한다.
 - [ ] **Step 5:** 코드와 테스트를 검토 요청에 올린다. 실제 회사 문구·목표값은 입력하지 않고 운영 배포도 하지 않는다.
 

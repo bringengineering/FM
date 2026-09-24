@@ -26,6 +26,8 @@ test('admin saves only a validated next draft revision with conditional write', 
   assert.equal(written.location,'companyStrategyDrafts/2026');
   assert.equal(written.value.revision,1);
   assert.equal(written.value.goals.g1.title,'건물 데이터');
+  assert.equal(Object.hasOwn(written.value,'organization'),false,'empty maps are omitted from Firebase writes');
+  assert.equal(Object.hasOwn(written.value.goals.g1,'current'),false,'unknown numeric values are omitted from Firebase writes');
   assert.equal(result.revision,1);
   await assert.rejects(remote.saveCompanyStrategyDraft({ ...draft, expectedRevision:1 }),{code:'CONFLICT'});
   await assert.rejects(client('member').saveCompanyStrategyDraft({ ...draft, expectedRevision:0 }),{code:'ACCESS_DENIED'});

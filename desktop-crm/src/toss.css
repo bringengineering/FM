@@ -996,6 +996,27 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 }
 
 /* Project workspace R1: quiet shell, solid reading surfaces. */
+.company-strategy{display:grid;gap:12px;margin:0 0 18px;padding:18px;border:1px solid #E5E8EB;border-radius:16px;background:rgba(255,255,255,.88);color:#202B36}
+.company-strategy>header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.company-strategy>header span,.company-strategy-admin>p,.company-strategy form>p{color:#52616F;font-size:12px;line-height:1.5}
+.company-strategy h3{margin:4px 0 0;font-size:20px}
+.company-strategy h4{margin:14px 0 4px;font-size:14px}
+.company-strategy>p{margin:0;color:#52616F;line-height:1.5}
+.company-strategy-error{padding:10px 12px;border-radius:9px;background:#FFF1F2;color:#B42335!important}
+.company-strategy-approved{display:grid;gap:10px;padding:15px;border-radius:12px;background:#F4F8FF}
+.company-strategy-approved>span{color:#1B64DA;font-size:12px;font-weight:700}
+.company-strategy-approved>p{margin:0;font-size:17px;font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+.company-strategy-goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.company-strategy-goals article{display:grid;gap:5px;padding:12px;border-radius:10px;background:#fff}
+.company-strategy-goals article small{color:#52616F}.company-strategy-goals article strong{overflow-wrap:anywhere}.company-strategy-goals article span{color:#1B64DA;font-weight:700}
+.company-strategy-admin{display:grid;gap:10px}.company-strategy-admin>p{margin:0}
+.company-strategy form{display:grid;gap:9px}.company-strategy form label{display:grid;gap:5px;color:#52616F;font-size:12px;font-weight:700}
+.company-strategy form input,.company-strategy form select,.company-strategy form textarea{width:100%;min-width:0;min-height:40px;padding:8px 10px;border:1px solid #DDE3E8;border-radius:9px;background:#fff;color:#202B36;font:inherit}
+.company-strategy form textarea{resize:vertical}.company-strategy form :is(input,select,textarea,button):focus-visible{outline:3px solid #3182F6;outline-offset:2px}
+.company-strategy-rows{display:grid;gap:8px}.company-strategy-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:8px;padding:12px;border:1px solid #E5E8EB;border-radius:11px;background:#F8FAFC}
+.company-strategy-goal-row{grid-template-columns:repeat(3,minmax(0,1fr))}.company-strategy-row>button{min-height:40px}.company-strategy-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+@media(max-width:760px){.company-strategy-row{grid-template-columns:repeat(2,minmax(0,1fr))}.company-strategy>header{align-items:flex-start;flex-direction:column}}
+@media(max-width:480px){.company-strategy-row{grid-template-columns:1fr}.company-strategy-goals{grid-template-columns:1fr}}
 .project-workspace-home{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr);gap:14px;margin:0 0 18px;padding:14px;border:1px solid #DDE3E8;border-radius:18px;background:rgba(255,255,255,.66)}
 .project-workspace-health{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .project-workspace-health>div{display:grid;gap:5px;min-width:0;padding:16px 18px;border:1px solid #E5E8EB;border-radius:13px;background:#fff}
