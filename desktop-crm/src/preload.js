@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   updateWorkOrderProgress: input => ipcRenderer.invoke("crm:work-order-progress", input),
   loadWorkOutcomeDraft: input => ipcRenderer.invoke("crm:work-outcome-draft-load", input),
   exportWorkOutcomeDocument: input => ipcRenderer.invoke("crm:work-outcome-export", input),
+  exportProjectWeeklyReport: input => ipcRenderer.invoke("crm:project-weekly-report-export", input),
   saveWorkOutcomeDraft: input => ipcRenderer.invoke("crm:work-outcome-draft-save", input),
   clearWorkOutcomeDraft: input => ipcRenderer.invoke("crm:work-outcome-draft-clear", input),
   uploadWorkOrderResult: input => ipcRenderer.invoke("crm:work-order-result-upload", input),
