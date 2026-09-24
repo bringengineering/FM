@@ -68,8 +68,8 @@ test("붙여 넣은 것을 바로 만들지 않는다", () => {
   const readOnly = build.slice(0, build.indexOf("async function buildFromDirectivePaste"));
   assert.ok(!/api\.saveWorkOrder|api\.saveWeeklyDirective/u.test(readOnly), "읽기만으로 저장하면 안 된다");
   // 만들 때는 기존 통로로 한 건씩 낸다. 여기서 따로 쓰면 지시를 내는 길이 둘이 된다.
-  assert.match(build, /W\.validateOrder\(\{/u);
-  assert.match(build, /api\.saveWorkOrder\(checked\.order\)/u);
+  assert.match(build, /W\.validatePublication\(\{/u);
+  assert.match(build, /api\.saveWorkOrder\(order\)/u);
   // 몇 건이 안 됐는지 말한다.
   assert.match(build, /못 만든 것/u);
 });

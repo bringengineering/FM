@@ -29,3 +29,12 @@
 - [x] Run focused tests, the database rules emulator suite, the complete `desktop-crm` test suite, and `git diff --check`; commit only these scoped files.
 
 **Release boundary:** Local code and tests only. Production rules deployment is a separate reviewed release decision.
+
+### Task 3: Paste-import compatibility
+
+**Files:** `desktop-crm/src/directive-import-core.js`, `desktop-crm/src/app.js`, `crm-ai-worker/src/tasks.js`, focused directive-import and AI task tests.
+
+- [x] Add failing tests: pasted `산출물 종류` and `산출물 수량` columns are parsed, and an import without publication fields is blocked before any server save.
+- [x] Run focused tests and confirm the missing-field and parsed-field assertions fail.
+- [x] Pass explicit parsed kind/count into `validatePublication` and server save; update the AI draft format to include these columns but require human review rather than inventing values.
+- [x] Run focused and full desktop tests. Confirm existing imported records remain untouched and incomplete imports cannot be partially issued.

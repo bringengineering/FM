@@ -725,9 +725,9 @@ describe("desktop CRM screens actually render", () => {
       "목표\t채널 네 곳이 살아 있고 문의가 주 3건 들어옵니다.",
       "안 하면\t겨울 성수기 전에 못 살립니다.",
       "",
-      "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치\t마감",
-      "당근 비즈프로필 정비\t권한을 받아 최신으로 만든다\t사진 5장이 올라가면 끝\t20260909_당근.png\t4\t60\t2026-09-09",
-      "숨고 등록\t새 유입 통로를 만든다\t프로필 승인 화면\t20260911_숨고.png\t3\t40\t2026-09-11",
+      "업무명\t목적\t완료기준\t산출물\t산출물 종류\t산출물 수량\t예상시간\t가중치\t마감",
+      "당근 비즈프로필 정비\t권한을 받아 최신으로 만든다\t사진 5장이 올라가면 끝\t20260909_당근.png\t사진\t5\t4\t60\t2026-09-09",
+      "숨고 등록\t새 유입 통로를 만든다\t프로필 승인 화면\t20260911_숨고.png\t사진\t1\t3\t40\t2026-09-11",
     ].join("\n");
     (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = sheet;
     (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-hwang";
@@ -755,11 +755,13 @@ describe("desktop CRM screens actually render", () => {
     await sleep(700);
     const orders = booted.calls.slice(before).filter(call => call.name === "saveWorkOrder");
     expect(orders.length, "업무지시 두 건이 나가야 한다").toBe(2);
-    const first = orders[0].input as { title: string; why: string; doneWhen: string; deliverable: string; hours: number; weight: number; assigneeUid: string; dueDate: string };
+    const first = orders[0].input as { title: string; why: string; doneWhen: string; deliverable: string; deliverableKind: string; deliverableCount: number; hours: number; weight: number; assigneeUid: string; dueDate: string };
     expect(first.title).toBe("당근 비즈프로필 정비");
     expect(first.why).toBe("권한을 받아 최신으로 만든다");
     expect(first.doneWhen).toBe("사진 5장이 올라가면 끝");
     expect(first.deliverable).toBe("20260909_당근.png");
+    expect(first.deliverableKind).toBe("photo");
+    expect(first.deliverableCount).toBe(5);
     expect(first.hours).toBe(4);
     expect(first.weight).toBe(60);
     expect(first.assigneeUid).toBe("u-hwang");

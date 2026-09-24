@@ -2,6 +2,19 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const I = require("../src/directive-import-core");
+test('붙여넣기에서 산출물 종류와 수량을 명시적으로 읽는다', () => {
+  const parsed = I.parseDirective('업무명\t목적\t완료기준\t산출물\t산출물 종류\t산출물 수량\t예상시간\t마감\n현장 점검\t안전 확인\t사진 제출\t현장 사진\t사진\t3\t2\t2026-09-25');
+  assert.equal(parsed.tasks[0].deliverableKind, 'photo');
+  assert.equal(parsed.tasks[0].deliverableCount, 3);
+  const plan = I.planImport({ parsed, uid: 'u', publication: true });
+  assert.equal(plan.ok, true);
+});
+test('발행용 붙여넣기는 산출물 규격이 없으면 등록 전에 막는다', () => {
+  const parsed = I.parseDirective('업무명\t목적\t완료기준\t산출물\t예상시간\t마감\n현장 점검\t안전 확인\t사진 제출\t현장 사진\t2\t2026-09-25');
+  const plan = I.planImport({ parsed, uid: 'u', publication: true });
+  assert.equal(plan.ok, false);
+  assert.match(plan.blockers.join(' '), /산출물 종류/);
+});
 test('schedule descriptions must not replace the column header or disappear',()=>{
   const parsed=I.parseDirective('업무명\t목적\t진행방법\t완료기준\t산출물\n회의 준비\t시간 미확정 상태로 놓치지 않기 위해\t주최 측에 확인한다\t확인 기록을 남긴다\t일정 확인 기록');
   assert.equal(parsed.tasks.length,1);
@@ -61,6 +74,8 @@ test("시트에서 긁어 붙인 것을 머리말과 업무 줄로 가른다", (
     why: "권한을 받아 정보가 최신이 되게 한다",
     doneWhen: "사진 5장과 소개글이 올라가 있으면 끝",
     deliverable: "20260909_당근_비즈프로필.png",
+    deliverableKind: "",
+    deliverableCount: 0,
     hours: 4,
     weight: 40,
     dueDate: "2026-09-09",

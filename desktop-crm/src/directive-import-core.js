@@ -65,6 +65,8 @@
     { key: "what", words: ["진행방법", "수행내용", "작업내용", "무엇을어떻게", "what"] },
     { key: "doneWhen", words: ["완료기준", "완료", "기준", "done"] },
     { key: "deliverable", words: ["산출물", "결과물", "파일", "제출물"] },
+    { key: "deliverableKind", words: ["산출물종류", "결과물종류", "제출물종류"] },
+    { key: "deliverableCount", words: ["산출물수량", "결과물수량", "제출물수량", "산출물개수"] },
     { key: "hours", words: ["시간", "예상시간", "소요시간", "예상"] },
     { key: "weight", words: ["가중치", "비중", "비율", "중요도"] },
     { key: "dueDate", words: ["마감", "완료일", "완료계획일", "기한", "마감일"] },
@@ -142,12 +144,15 @@
     const at = key => (key in columns ? text(cells[columns[key]], 1000) : "");
     const title = at("title");
     if (!title) return null;
+    const kind = ({ 사진: "photo", photo: "photo", 문서: "doc", doc: "doc", 표: "sheet", 시트: "sheet", sheet: "sheet", 링크: "link", link: "link", 없음: "none", none: "none" })[bare(at("deliverableKind"))] || "";
     return {
       title: title.slice(0, 120),
       why: at("why"),
       ...("what" in columns ? { what: String(cells[columns.what] || "").trim() } : {}),
       doneWhen: at("doneWhen").slice(0, 1000),
       deliverable: at("deliverable").slice(0, 200),
+      deliverableKind: kind,
+      deliverableCount: numberOf(at("deliverableCount")),
       hours: numberOf(at("hours")),
       weight: Math.round(numberOf(at("weight"))),
       dueDate: pickDate(at("dueDate")),
@@ -327,6 +332,7 @@
     const parsed = settings.parsed && typeof settings.parsed === "object" ? settings.parsed : parseDirective(settings.paste);
     const header = parsed.header || {};
     const uid = text(settings.uid, 128);
+    const publication = settings.publication === true;
     const existing = rows(settings.existingOrders).map(order => bare(order && order.title));
 
     const tasks = rows(parsed.tasks).map((task, index) => {
@@ -335,6 +341,9 @@
       if (!task.doneWhen) problems.push("완료 기준이 비어 있습니다.");
       if (!task.hours) problems.push("예상 시간이 없습니다.");
       if (!task.deliverable) problems.push("산출물이 비어 있습니다.");
+      if (publication && !task.dueDate) problems.push("마감일이 비어 있습니다.");
+      if (publication && !task.deliverableKind) problems.push("산출물 종류가 비어 있거나 알 수 없습니다.");
+      if (publication && task.deliverableKind && task.deliverableKind !== "none" && !(task.deliverableCount > 0 && Number.isInteger(task.deliverableCount) && task.deliverableCount <= 20)) problems.push("산출물 수량은 1~20개로 적어 주세요.");
       if ((task.what || "").length > 2000) problems.push("진행방법은 2,000자 이내로 정리해 주세요. 원문은 붙여넣기 칸에 유지됩니다.");
       return Object.assign({}, task, {
         index,
@@ -343,7 +352,7 @@
         // 제목이 같은 게 정상이다.
         duplicate: existing.includes(bare(task.title)),
         // 그대로 지시로 낼 수 있는가. 왜·무엇을·완료 기준이 있어야 한다.
-        ready: Boolean(task.title && task.why && task.doneWhen && (task.what || "").length <= 2000),
+        ready: Boolean(task.title && task.why && task.doneWhen && (task.what || "").length <= 2000 && (!publication || (task.dueDate && task.deliverable && task.hours && task.deliverableKind && (task.deliverableKind === "none" || (task.deliverableCount > 0 && Number.isInteger(task.deliverableCount) && task.deliverableCount <= 20))))),
       });
     });
 
@@ -353,7 +362,7 @@
     if (!tasks.length) blockers.push("업무 줄을 하나도 못 읽었습니다.");
     const notReady = tasks.filter(task => !task.ready);
     if (tasks.length && notReady.length) {
-      blockers.push(`지시로 낼 수 없는 줄이 ${notReady.length}건 있습니다. 목적·완료 기준 또는 진행방법 2,000자 제한을 확인해 주세요: ${notReady.map(task => task.title).join(", ")}`);
+      blockers.push(`지시로 낼 수 없는 줄이 ${notReady.length}건 있습니다: ${notReady.map(task => `${task.title} (${task.problems.join(" ")})`).join(", ")}`);
     }
 
     const notes = [];
