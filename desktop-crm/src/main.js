@@ -5337,13 +5337,20 @@ async function createWindow() {
           plan.requestSubmit();
           await wait(80);
         }
+        document.querySelector('[data-weekly-submit]')?.click();
+        await wait(80);
         const layout = document.querySelector('.weekly-report-layout');
+        const preview = document.querySelector('[data-weekly-preview-dialog]');
         const bodyOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
         return {
           pass: window.__crmTest?.snapshot().view === 'weeklyReports'
             && Boolean(layout && document.querySelector('[data-weekly-submit]'))
+            && Boolean(preview && preview.getAttribute('aria-modal') === 'true')
+            && Boolean(document.querySelector('[data-weekly-preview-close]'))
+            && Boolean(document.querySelector('[data-weekly-preview-confirm]'))
             && document.querySelectorAll('.weekly-report-item.is-manual').length === 3
             && !bodyOverflow,
+          previewOpen: Boolean(preview),
           manualItems: document.querySelectorAll('.weekly-report-item.is-manual').length,
           planItems: document.querySelectorAll('.weekly-plan-row').length,
           bodyOverflow,
