@@ -95,6 +95,36 @@ test('concurrent approval of the same bank transaction commits one receipt', asy
   assert.equal(Object.keys(saved.receipts).length, 1);
 });
 
+test('invoice void and linked receipt approval cannot both commit', async () => {
+  const ref = testRoot.child('void-versus-receipt');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  await transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+    expectedRevision: 1, requestId: 'request-approve',
+    actor: { uid: 'admin-1', role: 'admin' }, now,
+  });
+  const attempts = await Promise.allSettled([
+    transactBillingLedger(ref, {
+      kind: 'invoice', record: { ...invoice('invoice-1'), status: 'void', voidReason: 'cancelled' },
+      expectedRevision: 2, requestId: 'request-void', actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+    transactBillingLedger(ref, {
+      kind: 'receipt', record: {
+        id: 'receipt-1', invoiceId: 'invoice-1', receivedAt: '2026-09-25', amount: 50000,
+        transactionRef: 'bank-transaction-1', evidenceRef: 'proof-1', status: 'approved',
+      },
+      expectedRevision: 0, requestId: 'request-receipt', actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  const rejected = attempts.find(result => result.status === 'rejected');
+  assert.ok(['billing_invoice_has_receipts', 'billing_invoice_not_approved'].includes(rejected.reason?.message));
+  const saved = (await ref.get()).val();
+  const approvedReceipts = Object.values(saved.receipts ?? {}).filter(item => item.status === 'approved');
+  assert.equal(saved.invoices['invoice-1'].status === 'void' && approvedReceipts.length > 0, false);
+});
+
 test('a replay cannot report a pre-read result after another writer changed the invoice', async () => {
   const ref = testRoot.child('stale-replay');
   const original = command(invoice('invoice-1'), 'request-create');
