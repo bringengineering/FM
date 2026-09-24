@@ -28,12 +28,28 @@
       && Number.isFinite(Date.parse(value));
   }
 
+  function approvedReceipt(receipt, ids, refs) {
+    const amount = validAmount(receipt.amount);
+    if (!validDate(receipt.receivedAt)) throw new RangeError('receivedAt must be a valid date');
+    const reference = typeof receipt.transactionRef === 'string' ? receipt.transactionRef.trim() : '';
+    if (!reference || reference.length > 200) throw new RangeError('transactionRef must be nonempty and at most 200 characters');
+    if (ids.has(receipt.id)) throw new Error('duplicate receipt id');
+    ids.add(receipt.id);
+    const key = `${receipt.invoiceId}\u0000${reference}`;
+    if (refs.has(key)) throw new Error('duplicate receipt transaction reference');
+    refs.add(key);
+    return amount;
+  }
+
   function invoicePaymentState(invoice, receipts) {
     if (!invoice || invoice.status !== 'approved') return '미확정';
     const amount = validAmount(invoice.amount);
+    if (!Array.isArray(receipts)) throw new TypeError('receipts array required');
     let paid = 0;
-    for (const receipt of Array.isArray(receipts) ? receipts : []) {
-      if (receipt && receipt.status === 'approved' && receipt.invoiceId === invoice.id) paid = add(paid, validAmount(receipt.amount));
+    const ids = new Set();
+    const refs = new Set();
+    for (const receipt of receipts) {
+      if (receipt && receipt.status === 'approved' && receipt.invoiceId === invoice.id) paid = add(paid, approvedReceipt(receipt, ids, refs));
     }
     if (!paid) return '미입금';
     if (paid < amount) return '부분입금';
@@ -63,21 +79,16 @@
     const paidByInvoice = new Map();
     const transactionRefs = new Set();
     const receiptIds = new Set();
+    let undatedPendingCount = 0;
     for (const entry of receipts) {
-      if (entry && entry.status === 'draft' && validDate(entry.receivedAt) && entry.receivedAt.slice(0, 7) === month) pendingCount++;
-      if (!entry || entry.status !== 'approved') continue;
-      const amount = validAmount(entry.amount);
-      if (receiptIds.has(entry.id)) throw new Error('duplicate receipt id');
-      receiptIds.add(entry.id);
-      const linked = approved.get(entry.invoiceId);
-      if (!linked) continue;
-      if (!validDate(entry.receivedAt)) throw new RangeError('receivedAt must be a valid date');
-      const reference = String(entry.transactionRef || '').trim();
-      if (reference) {
-        const key = `${entry.invoiceId}\u0000${reference}`;
-        if (transactionRefs.has(key)) throw new Error('duplicate receipt transaction reference');
-        transactionRefs.add(key);
+      if (entry && entry.status === 'draft') {
+        if (validDate(entry.receivedAt) && entry.receivedAt.slice(0, 7) === month) pendingCount++;
+        else if (!validDate(entry.receivedAt)) undatedPendingCount++;
       }
+      if (!entry || entry.status !== 'approved') continue;
+      const amount = approvedReceipt(entry, receiptIds, transactionRefs);
+      const linked = approved.get(entry.invoiceId);
+      if (!linked) throw new Error('approved receipt requires approved invoice');
       if (entry.receivedAt.slice(0, 7) <= month) paidByInvoice.set(entry.invoiceId, add(paidByInvoice.get(entry.invoiceId) || 0, amount));
       if (entry.receivedAt.slice(0, 7) === month) received = add(received, amount);
     }
@@ -90,7 +101,7 @@
       if (balance > 0) receivable = add(receivable, balance);
       else overpayment = add(overpayment, -balance);
     }
-    return Object.freeze({ month, billed, received, receivable, overpayment, pendingCount });
+    return Object.freeze({ month, billed, received, receivable, overpayment, pendingCount, undatedPendingCount });
   }
 
   return Object.freeze({ summarizeMonth, invoicePaymentState });

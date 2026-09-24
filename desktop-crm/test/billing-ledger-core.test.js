@@ -7,19 +7,37 @@ const receipt = (id, invoiceId, amount, receivedAt, transactionRef = id, status 
 
 test('counts approved billing and cash by their respective months', () => {
   const data = { invoices: [invoice('i1', 100000)], receipts: [receipt('r1', 'i1', 30000, '2026-09-10'), receipt('r2', 'i1', 20000, '2026-10-01')] };
-  assert.deepEqual(Ledger.summarizeMonth(data, '2026-09'), { month: '2026-09', billed: 100000, received: 30000, receivable: 70000, overpayment: 0, pendingCount: 0 });
-  assert.deepEqual(Ledger.summarizeMonth(data, '2026-10'), { month: '2026-10', billed: 0, received: 20000, receivable: 50000, overpayment: 0, pendingCount: 0 });
+  assert.deepEqual(Ledger.summarizeMonth(data, '2026-09'), { month: '2026-09', billed: 100000, received: 30000, receivable: 70000, overpayment: 0, pendingCount: 0, undatedPendingCount: 0 });
+  assert.deepEqual(Ledger.summarizeMonth(data, '2026-10'), { month: '2026-10', billed: 0, received: 20000, receivable: 50000, overpayment: 0, pendingCount: 0, undatedPendingCount: 0 });
 });
 
 test('ignores draft and void entries and legacy collection status', () => {
-  const data = { invoices: [{ ...invoice('i1', 100), collectionStatus: '입금 완료' }, invoice('i2', 900, '2026-09', 'void')], receipts: [receipt('r1', 'i1', 25, '2026-09-01', 'tx1', 'draft'), receipt('r2', 'i2', 900, '2026-09-01')] };
+  const data = { invoices: [{ ...invoice('i1', 100), collectionStatus: '입금 완료' }, invoice('i2', 900, '2026-09', 'void')], receipts: [receipt('r1', 'i1', 25, '2026-09-01', 'tx1', 'draft'), receipt('r2', 'i2', 900, '2026-09-01', 'tx2', 'void')] };
   assert.equal(Ledger.summarizeMonth(data, '2026-09').received, 0);
   assert.equal(Ledger.summarizeMonth(data, '2026-09').billed, 100);
 });
 
 test('multiple partial receipts and overpayment stay visible', () => {
   const data = { invoices: [invoice('i1', 100)], receipts: [receipt('r1', 'i1', 60, '2026-09-01'), receipt('r2', 'i1', 60, '2026-09-02')] };
-  assert.deepEqual(Ledger.summarizeMonth(data, '2026-09'), { month: '2026-09', billed: 100, received: 120, receivable: 0, overpayment: 20, pendingCount: 0 });
+  assert.deepEqual(Ledger.summarizeMonth(data, '2026-09'), { month: '2026-09', billed: 100, received: 120, receivable: 0, overpayment: 20, pendingCount: 0, undatedPendingCount: 0 });
+});
+
+test('fails closed for approved orphan receipts and blank transaction references', () => {
+  assert.throws(() => Ledger.summarizeMonth({ invoices: [], receipts: [receipt('r', 'missing', 10, '2026-09-01')] }, '2026-09'), /invoice/i);
+  assert.throws(() => Ledger.summarizeMonth({ invoices: [invoice('i', 100, '2026-09', 'draft')], receipts: [receipt('r', 'i', 10, '2026-09-01')] }, '2026-09'), /invoice/i);
+  assert.throws(() => Ledger.summarizeMonth({ invoices: [invoice('i', 100)], receipts: [receipt('r', 'i', 10, '2026-09-01', ' ')] }, '2026-09'), /transactionRef/);
+});
+
+test('does not attribute undated draft receipts to a month', () => {
+  const data = { invoices: [invoice('i', 100)], receipts: [receipt('draft', 'i', 10, '', 'tx', 'draft')] };
+  assert.equal(Ledger.summarizeMonth(data, '2026-09').pendingCount, 0);
+  assert.equal(Ledger.summarizeMonth(data, '2026-09').undatedPendingCount, 1);
+});
+
+test('payment state requires a verified receipt collection', () => {
+  assert.throws(() => Ledger.invoicePaymentState(invoice('i', 100), undefined), /receipt/i);
+  assert.throws(() => Ledger.invoicePaymentState(invoice('i', 100), [receipt('same', 'i', 10, '2026-09-01', 'one'), receipt('same', 'i', 10, '2026-09-02', 'two')]), /duplicate/i);
+  assert.throws(() => Ledger.invoicePaymentState(invoice('i', 100), [receipt('r1', 'i', 10, '2026-09-01', 'same'), receipt('r2', 'i', 10, '2026-09-02', 'same')]), /duplicate/i);
 });
 
 test('fails closed for absent ledger but allows verified empty arrays', () => {
