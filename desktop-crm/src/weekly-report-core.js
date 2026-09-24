@@ -171,7 +171,7 @@
       if (!changedAt) return;
       addCandidate(candidates, {
         id: `project:${project.id || project.name}`,
-        source: "프로젝트",
+        source: "로드맵",
         title: project.name,
         detail: project.progressNote || project.goal,
         status: statusOf(project.status),

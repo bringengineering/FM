@@ -16,6 +16,7 @@ const OfficeAttachment = require("./office-attachment");
 const { createOfficeAttachmentStageGate } = require("./office-attachment-stage-gate");
 const { createOfficeNotificationTracker } = require("./office-notification");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
+const { createWeeklyReportHwpx, weeklyReportFileName } = require("./weekly-report-hwpx");
 const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
@@ -2738,6 +2739,25 @@ async function exportOfficeAttendance(input) {
   return { ok: true, path: result.filePath };
 }
 
+async function exportWeeklyReport(input) {
+  const openedBy = authState().user;
+  if (!openedBy) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const sameSession = () => {
+    const current = authState().user;
+    return Boolean(current && !current.mustChangePassword && String(current.uid || current.email || "") === String(openedBy.uid || openedBy.email || ""));
+  };
+  const generated = createWeeklyReportHwpx(input);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "주간업무보고서 한글 파일 저장",
+    defaultPath: weeklyReportFileName(generated.report),
+    filters: [{ name: "한글 문서", extensions: ["hwpx"] }],
+  });
+  if (!sameSession()) throw Object.assign(new Error("로그인 계정이 변경되어 파일을 저장하지 않았습니다."), { code: "SESSION_CHANGED" });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  await fs.writeFile(result.filePath, generated.bytes, { mode: 0o600 });
+  return { ok: true, format: "hwpx", itemCount: generated.report.items.length, planCount: generated.report.plans.length };
+}
+
 async function exportAiQuote(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 저장 요청이 올바르지 않습니다.");
@@ -5316,7 +5336,7 @@ async function createWindow() {
       route.remove();
       return true;
     }; true`, true);
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "weekly-report-preview") {
+    if (["weekly-report-preview", "weekly-report-document-preview"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="project"]')?.click();
@@ -5337,7 +5357,8 @@ async function createWindow() {
           plan.requestSubmit();
           await wait(80);
         }
-        document.querySelector('[data-weekly-submit]')?.click();
+        const documentPreview = ${JSON.stringify(process.env.BRING_CRM_SCREENSHOT_ACTION === "weekly-report-document-preview")};
+        document.querySelector(documentPreview ? '[data-weekly-draft-preview]' : '[data-weekly-submit]')?.click();
         await wait(80);
         const layout = document.querySelector('.weekly-report-layout');
         const preview = document.querySelector('[data-weekly-preview-dialog]');
@@ -5346,8 +5367,8 @@ async function createWindow() {
           pass: window.__crmTest?.snapshot().view === 'weeklyReports'
             && Boolean(layout && document.querySelector('[data-weekly-submit]'))
             && Boolean(preview && preview.getAttribute('aria-modal') === 'true')
-            && Boolean(document.querySelector('[data-weekly-preview-close]'))
-            && Boolean(document.querySelector('[data-weekly-preview-confirm]'))
+            && Boolean(document.querySelector(documentPreview ? '[data-weekly-document-close]' : '[data-weekly-preview-close]'))
+            && Boolean(document.querySelector(documentPreview ? '[data-weekly-document-export]' : '[data-weekly-preview-confirm]'))
             && document.querySelectorAll('.weekly-report-item.is-manual').length === 3
             && !bodyOverflow,
           previewOpen: Boolean(preview),
@@ -8329,7 +8350,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -8449,6 +8470,7 @@ secureCanonicalHandle("crm:contract-source-check", async input => {
 });
 secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
+secureCanonicalHandle("crm:weekly-report-export", input => exportWeeklyReport(input));
 secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(input));
 secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());

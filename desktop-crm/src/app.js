@@ -8904,7 +8904,8 @@
   let weeklyReportState = {
     week: "", loadedKey: "", sourceSignature: "", automatic: [], candidates: 0, omitted: 0,
     manual: [], plans: [], summary: "", summaryCustomized: false, existing: null,
-    busy: false, aiLoading: false, previewOpen: false, error: "", warning: "",
+    busy: false, aiLoading: false, previewOpen: false, documentPreviewOpen: false,
+    exportingDocument: false, error: "", warning: "",
   };
 
   const weeklyReportCore = () => window.BringWeeklyReportCore;
@@ -8948,7 +8949,7 @@
       projects: workOrderState.projects,
       cases: activeCases(),
     });
-    const signature = JSON.stringify(collected.items.map(item => [item.id, item.status, item.date, item.title]));
+    const signature = JSON.stringify(collected.items.map(item => [item.id, item.source, item.status, item.date, item.title, item.detail]));
     if (signature !== weeklyReportState.sourceSignature) {
       weeklyReportState.sourceSignature = signature;
       weeklyReportState.automatic = collected.items;
@@ -9036,6 +9037,73 @@
     </div>`;
   }
 
+  function weeklyReportDocumentPayload(context) {
+    const range = context.W.weekRange(context.week);
+    const actor = context.actor;
+    const member = (workOrderState.members || []).find(item => item && (
+      item.uid === actor.uid || item.name === actor.name || String(item.email || "").toLowerCase() === actor.email
+    ));
+    return {
+      weekStart: range.start,
+      weekEnd: range.end,
+      reporter: actor.name || "이름 미입력",
+      department: member && member.department || "브링엔지니어링",
+      createdAt: todayKey(),
+      summary: weeklyReportState.summary,
+      automaticCount: weeklyReportState.automatic.length,
+      manualCount: weeklyReportState.manual.length,
+      items: [...weeklyReportState.automatic, ...weeklyReportState.manual].map(item => ({
+        source: item.source || "직접 추가",
+        title: item.title,
+        detail: item.detail || (item.source ? `${item.source}에 기록된 진행사항입니다.` : "자동 수집에서 빠진 업무를 직접 추가했습니다."),
+        status: item.status,
+        result: context.W.STATUS_LABELS[item.status] || "진행 중",
+      })),
+      plans: weeklyReportState.plans.map(plan => ({
+        priority: plan.priority,
+        title: plan.title,
+        detail: plan.detail || "다음 주 계획으로 직접 작성했습니다.",
+        date: plan.date,
+      })),
+    };
+  }
+
+  function weeklyReportDocumentPreviewMarkup(context) {
+    const payload = weeklyReportDocumentPayload(context);
+    const itemRows = payload.items.map(item => `<tr><td><b>${esc(item.source)}</b></td><td><strong>${esc(item.title)}</strong></td><td>${esc(item.detail)}</td><td><span>${esc(item.result)}</span></td></tr>`).join("")
+      || `<tr><td>CRM</td><td><strong>등록된 업무 없음</strong></td><td>이번 주에 보고할 업무가 없습니다.</td><td>—</td></tr>`;
+    const planRows = payload.plans.map(plan => `<tr><td><b>${esc(plan.priority)}</b></td><td><strong>${esc(plan.title)}</strong></td><td>${esc(plan.detail)}</td><td>${esc(plan.date || "미정")}</td></tr>`).join("")
+      || `<tr><td>—</td><td><strong>등록된 계획 없음</strong></td><td>다음 주 계획을 직접 작성해 주세요.</td><td>미정</td></tr>`;
+    return `<div class="weekly-preview-layer weekly-document-layer" data-weekly-preview-dialog data-weekly-document-dialog role="dialog" aria-modal="true" aria-labelledby="weekly-document-title">
+      <section class="weekly-document-card">
+        <div class="weekly-document-scroll">
+          <article class="weekly-document-paper">
+            <header class="weekly-document-brand">
+              <div><img src="./assets/bring-logo.png" alt=""><span><b>BRING</b><strong>ENGINEERING</strong></span></div>
+              <em>주간 업무보고</em>
+            </header>
+            <h2 id="weekly-document-title">주간업무보고서</h2>
+            <dl class="weekly-document-meta">
+              <div><dt>보고 기간</dt><dd>${esc(payload.weekStart)} - ${esc(payload.weekEnd)}</dd></div>
+              <div><dt>보고자</dt><dd>${esc(payload.reporter)}</dd></div>
+              <div><dt>부서</dt><dd>${esc(payload.department)}</dd></div>
+              <div><dt>작성일</dt><dd>${esc(payload.createdAt)}</dd></div>
+            </dl>
+            <section class="weekly-document-section"><h3><span>1</span> 주간 업무 요약</h3><p>${esc(payload.summary || "작성된 주간 요약이 없습니다.")}</p></section>
+            <section class="weekly-document-section"><h3><span>2</span> 이번 주 주요 업무</h3><small>프로젝트 로드맵 최근 진행사항 ${payload.automaticCount}건 · 직접 추가 ${payload.manualCount}건</small><div class="weekly-document-table-wrap"><table><thead><tr><th>출처</th><th>프로젝트 및 업무</th><th>세부 진행사항</th><th>결과</th></tr></thead><tbody>${itemRows}</tbody></table></div></section>
+            <section class="weekly-document-section"><h3><span>3</span> 다음 주 계획</h3><div class="weekly-document-table-wrap"><table><thead><tr><th>우선순위</th><th>계획</th><th>세부 내용</th><th>예정일</th></tr></thead><tbody>${planRows}</tbody></table></div></section>
+            <footer>BRING ENGINEERING · 내부 업무 문서</footer>
+          </article>
+        </div>
+        <footer class="weekly-preview-actions">
+          <span>이 화면과 같은 구성으로 편집 가능한 HWPX 파일을 만듭니다.</span>
+          <button type="button" class="secondary-button" data-weekly-document-close>돌아가서 수정</button>
+          <button type="button" class="primary-button" data-weekly-document-export${weeklyReportState.exportingDocument ? " disabled" : ""}>${weeklyReportState.exportingDocument ? "한글 파일 만드는 중…" : "한글(HWPX) 파일 만들기"}</button>
+        </footer>
+      </section>
+    </div>`;
+  }
+
   function renderWeeklyReports() {
     const W = weeklyReportCore();
     if (!W) {
@@ -9114,7 +9182,10 @@
             <span>REPORT STATUS</span>
             <h3>${savedAt ? "제출된 보고서" : "작성 중인 초안"}</h3>
             <p>${savedAt ? `${dateText(savedAt)}에 저장했습니다. 수정 후 다시 제출할 수 있습니다.` : "내용을 확인한 뒤 제출하면 회사 공용 서버에 저장됩니다."}</p>
-            <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
+            <div class="weekly-submit-actions">
+              <button type="button" class="secondary-button" data-weekly-draft-preview${loading || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>초안 보기</button>
+              <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
+            </div>
           </section>
           <details class="weekly-manager-card">
             <summary><span>관리자 의견</span><em>${context.existing && context.existing.leadNote ? "1" : "0"}</em></summary>
@@ -9123,7 +9194,7 @@
           <section class="weekly-source-card"><b>자동 수집 기준</b><p>내 담당 업무지시·프로젝트 진척·완료 일정·상담·민원·계약·문서·업체 상담만 포함합니다.</p><small>로그인, 검색, 단순 조회, 메신저 대화와 다른 사람의 활동은 제외됩니다.</small></section>
         </aside>
       </section>
-      ${weeklyReportState.previewOpen ? weeklyReportPreviewMarkup(context, allItems, completed, savedAt) : ""}`;
+      ${weeklyReportState.documentPreviewOpen ? weeklyReportDocumentPreviewMarkup(context) : weeklyReportState.previewOpen ? weeklyReportPreviewMarkup(context, allItems, completed, savedAt) : ""}`;
   }
 
   function updateWeeklyDefaultSummary() {
@@ -9188,6 +9259,24 @@
       weeklyReportState.error = error && error.message || "주간업무보고서를 저장하지 못했습니다.";
     } finally {
       weeklyReportState.busy = false;
+      if (currentView === "weeklyReports") renderWeeklyReports();
+    }
+  }
+
+  async function exportWeeklyReportDocument() {
+    const context = hydrateWeeklyReport();
+    if (!context || weeklyReportState.exportingDocument) return;
+    weeklyReportState.exportingDocument = true;
+    weeklyReportState.error = "";
+    renderWeeklyReports();
+    try {
+      const result = await api.exportWeeklyReport(weeklyReportDocumentPayload(context));
+      if (result && result.ok) showToast("주간업무보고서 한글 파일을 저장했습니다.", "success");
+    } catch (error) {
+      weeklyReportState.error = error && error.message || "주간업무보고서 한글 파일을 만들지 못했습니다.";
+      showToast(weeklyReportState.error, "error");
+    } finally {
+      weeklyReportState.exportingDocument = false;
       if (currentView === "weeklyReports") renderWeeklyReports();
     }
   }
@@ -11234,12 +11323,27 @@
       return;
     }
     if (event.target.closest("[data-weekly-ai-rewrite]")) { await rewriteWeeklyReportWithAi(); return; }
+    if (event.target.closest("[data-weekly-draft-preview]")) {
+      weeklyReportState.documentPreviewOpen = true;
+      weeklyReportState.previewOpen = false;
+      renderWeeklyReports();
+      requestAnimationFrame(() => main.querySelector("[data-weekly-document-close]")?.focus());
+      return;
+    }
     if (event.target.closest("[data-weekly-submit]")) {
       weeklyReportState.previewOpen = true;
+      weeklyReportState.documentPreviewOpen = false;
       renderWeeklyReports();
       requestAnimationFrame(() => main.querySelector("[data-weekly-preview-close]")?.focus());
       return;
     }
+    if (event.target.closest("[data-weekly-document-close]")) {
+      weeklyReportState.documentPreviewOpen = false;
+      renderWeeklyReports();
+      requestAnimationFrame(() => main.querySelector("[data-weekly-draft-preview]")?.focus());
+      return;
+    }
+    if (event.target.closest("[data-weekly-document-export]")) { await exportWeeklyReportDocument(); return; }
     if (event.target.closest("[data-weekly-preview-close]")) {
       weeklyReportState.previewOpen = false;
       renderWeeklyReports();
@@ -12196,7 +12300,10 @@
         folder.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
       }
       if (currentView === "valueScope" && nextView !== "valueScope") await deactivateValueScope();
-      if (nextView !== "weeklyReports") weeklyReportState.previewOpen = false;
+      if (nextView !== "weeklyReports") {
+        weeklyReportState.previewOpen = false;
+        weeklyReportState.documentPreviewOpen = false;
+      }
       currentView = nextView;
       if (currentView === "customers") selectedCustomerHubId = "";
       if (currentView === "partnerVendors") selectedPartnerVendorDetailId = "";
@@ -15299,11 +15406,32 @@ document.addEventListener("keydown", event => {
     main.querySelector(`[data-marketing-nav="${CSS.escape(pendingMarketingTabFocus)}"]`)?.click();
     return;
   }
-    if (confirmationLayer.classList.contains("open")) {
+  if (confirmationLayer.classList.contains("open")) {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finishConfirmation(false); }
     else if (event.key === "Enter" && !event.target.closest?.("[data-confirm-choice]")) { event.preventDefault(); event.stopPropagation(); finishConfirmation(true); }
     else if (event.key === "Tab") {
       const controls = [...confirmationCard.querySelectorAll("button:not([disabled])")];
+      if (controls.length) {
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    }
+    return;
+  }
+  const weeklyPreviewDialog = currentView === "weeklyReports" && main.querySelector("[data-weekly-preview-dialog]");
+  if (weeklyPreviewDialog) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      const documentOpen = weeklyReportState.documentPreviewOpen;
+      weeklyReportState.previewOpen = false;
+      weeklyReportState.documentPreviewOpen = false;
+      renderWeeklyReports();
+      requestAnimationFrame(() => main.querySelector(documentOpen ? "[data-weekly-draft-preview]" : "[data-weekly-submit]")?.focus());
+    } else if (event.key === "Tab") {
+      const controls = [...weeklyPreviewDialog.querySelectorAll("button:not([disabled])")];
       if (controls.length) {
         const first = controls[0];
         const last = controls[controls.length - 1];
@@ -15398,25 +15526,6 @@ document.addEventListener("keydown", event => {
         if (!await openOfficeMessengerShortcut(action)) throw new Error("INVALID_OFFICE_PEER");
       } catch (_) {
         showToast("메신저 화면을 열지 못했습니다. 왼쪽 메뉴에서 메신저를 선택해 주세요.", "error");
-      }
-      return;
-    }
-    const weeklyPreviewDialog = currentView === "weeklyReports" && main.querySelector("[data-weekly-preview-dialog]");
-    if (weeklyPreviewDialog) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        weeklyReportState.previewOpen = false;
-        renderWeeklyReports();
-        requestAnimationFrame(() => main.querySelector("[data-weekly-submit]")?.focus());
-      } else if (event.key === "Tab") {
-        const controls = [...weeklyPreviewDialog.querySelectorAll("button:not([disabled])")];
-        if (controls.length) {
-          const first = controls[0];
-          const last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-        }
       }
       return;
     }

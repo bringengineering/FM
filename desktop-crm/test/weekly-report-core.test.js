@@ -33,6 +33,9 @@ test("현재 사용자의 의미 있는 CRM 업무만 모으고 다른 사람과
   assert.deepEqual(result.items.map(item => item.title), ["현장 점검", "누수 민원 조치", "레이브클라우드 유선미팅", "CRM 고도화", "제안서 제작"]);
   assert.equal(result.candidates.some(item => item.title === "다른 사람 업무"), false);
   assert.equal(result.candidates.some(item => item.title === "변경 없는 배정"), false);
+  const roadmap = result.candidates.find(item => item.title === "CRM 고도화");
+  assert.equal(roadmap.source, "로드맵");
+  assert.equal(roadmap.detail, "화면 정리");
 });
 
 test("업무지시는 예정으로 뭉개지 않고 실제 업무지시 상태를 표시한다", () => {
@@ -117,6 +120,10 @@ test("실제 CRM 화면에 주간업무보고서 탐색·렌더·저장 연결�
   assert.match(app, /data-weekly-preview-dialog role="dialog" aria-modal="true"/u);
   assert.match(app, /data-weekly-preview-close/u);
   assert.match(app, /data-weekly-preview-confirm/u);
+  assert.match(app, /data-weekly-draft-preview/u);
+  assert.match(app, /data-weekly-document-dialog/u);
+  assert.match(app, /data-weekly-document-export/u);
+  assert.match(app, /api\.exportWeeklyReport\(weeklyReportDocumentPayload\(context\)\)/u);
   assert.match(app, /weeklyReportState\.previewOpen = true;[\s\S]{0,220}renderWeeklyReports\(\)/u);
   assert.match(app, /data-weekly-preview-confirm[\s\S]{0,240}await saveWeeklyReport\(\)/u);
   assert.match(app, /startsWith\("weekly_report_"\)/u);
@@ -125,5 +132,10 @@ test("실제 CRM 화면에 주간업무보고서 탐색·렌더·저장 연결�
   assert.match(styles, /\.weekly-report-layout/u);
   assert.match(styles, /\.weekly-preview-layer/u);
   assert.match(styles, /\.weekly-preview-card/u);
-  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "weekly-report-preview"/u);
+  assert.match(styles, /\.weekly-document-paper/u);
+  assert.match(main, /crm:weekly-report-export/u);
+  assert.match(
+    main,
+    /\["weekly-report-preview", "weekly-report-document-preview"\]\.includes\(process\.env\.BRING_CRM_SCREENSHOT_ACTION\)/u
+  );
 });

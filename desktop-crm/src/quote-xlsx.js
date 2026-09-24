@@ -60,9 +60,12 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function zipStore(entries) {
+function zipStore(entries, options = {}) {
   const localParts = [];
   const centralParts = [];
+  const modifiedAt = options.modifiedAt instanceof Date && Number.isFinite(options.modifiedAt.getTime()) ? options.modifiedAt : null;
+  const dosTime = modifiedAt ? ((modifiedAt.getHours() & 0x1f) << 11) | ((modifiedAt.getMinutes() & 0x3f) << 5) | Math.floor(modifiedAt.getSeconds() / 2) : 0;
+  const dosDate = modifiedAt ? (((Math.max(1980, modifiedAt.getFullYear()) - 1980) & 0x7f) << 9) | (((modifiedAt.getMonth() + 1) & 0x0f) << 5) | (modifiedAt.getDate() & 0x1f) : 33;
   let offset = 0;
   Object.entries(entries).forEach(([name, raw]) => {
     const fileName = Buffer.from(name, "utf8");
@@ -70,12 +73,12 @@ function zipStore(entries) {
     const checksum = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6); local.writeUInt16LE(0, 8);
-    local.writeUInt16LE(0, 10); local.writeUInt16LE(33, 12); local.writeUInt32LE(checksum, 14); local.writeUInt32LE(data.length, 18);
+    local.writeUInt16LE(dosTime, 10); local.writeUInt16LE(dosDate, 12); local.writeUInt32LE(checksum, 14); local.writeUInt32LE(data.length, 18);
     local.writeUInt32LE(data.length, 22); local.writeUInt16LE(fileName.length, 26); local.writeUInt16LE(0, 28);
     localParts.push(local, fileName, data);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0, 8);
-    central.writeUInt16LE(0, 10); central.writeUInt16LE(0, 12); central.writeUInt16LE(33, 14); central.writeUInt32LE(checksum, 16);
+    central.writeUInt16LE(0, 10); central.writeUInt16LE(dosTime, 12); central.writeUInt16LE(dosDate, 14); central.writeUInt32LE(checksum, 16);
     central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(fileName.length, 28);
     central.writeUInt16LE(0, 30); central.writeUInt16LE(0, 32); central.writeUInt16LE(0, 34); central.writeUInt16LE(0, 36);
     central.writeUInt32LE(0, 38); central.writeUInt32LE(offset, 42);

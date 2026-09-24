@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   sendOfficeMessage: input => ipcRenderer.invoke("crm:office-message-send", input),
   markOfficeMessagesRead: input => ipcRenderer.invoke("crm:office-messages-read", input),
   exportOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-export", input),
+  exportWeeklyReport: input => ipcRenderer.invoke("crm:weekly-report-export", input),
   setOfficeMessengerPresence: input => ipcRenderer.invoke("crm:office-messenger-presence", input),
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   wallboardAdmin: input => ipcRenderer.invoke("crm:wallboard-admin", input),
