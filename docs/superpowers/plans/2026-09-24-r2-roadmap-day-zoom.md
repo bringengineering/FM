@@ -14,9 +14,9 @@
 
 **Files:** `desktop-crm/src/project-core.js`, `desktop-crm/test/project-core.test.js`.
 
-- [ ] Add a failing test: `roadmapRange('2026-09-24',0,'days')` must give `from=2026-09-21`, `to=2026-09-28`, `days=8`, and eight dated columns. `shift=1` must start `2026-09-29`. Assert `roadmapLayout` clips a long assignment within 0–100% and `todayOffset` is visible.
+- [ ] Add a failing test: `roadmapRange('2026-09-24',0,'days')` must give `from=2026-09-23`, `to=2026-09-30`, `days=8`, and eight dated columns, matching the pre-existing TV day view. `shift=1` must start `2026-10-01`. Assert `roadmapLayout` clips a long assignment within 0–100% and `todayOffset` is visible.
 - [ ] Run `node --test test/project-core.test.js`; observe failure because the days scale is absent.
-- [ ] Extend `roadmapRange` with optional `scale='weeks'`. Preserve the existing week return and `weeks` array; add `columns` in both modes. For days use 8 consecutive calendar dates starting three days before today plus `shift*8`, each with a Korean month/day label. Return `scale:'days'` or `'weeks'`.
+- [ ] Extend `roadmapRange` with optional `scale='weeks'`. Preserve the existing week return and `weeks` array; add `columns` in both modes. For days use 8 consecutive calendar dates starting yesterday plus `shift*8`, each with a Korean month/day label. Return `scale:'days'` or `'weeks'`.
 - [ ] Run the focused test; expect green. Commit core and test only.
 
 ### Task 2: Renderer and controls
@@ -31,4 +31,4 @@
 
 **Exit check:** 8-week default behavior is unchanged; 8-day navigation and today reset are deterministic; no server writes or migrations are introduced.
 
-**Execution note (2026-09-24):** Both focused tests failed before their corresponding implementation and passed afterward. A local-only Electron screenshot at 1366×768 selected 8-day mode and returned eight dated axis labels with a single today marker; no production account or company records were used. This verifies the standalone CRM roadmap only; the TV roadmap remains a separate connection and release gate.
+**Execution note (2026-09-24):** Both focused tests failed before their corresponding implementation and passed afterward. The first CRM day view used a different start offset from the existing TV; a cross-consumer regression test reproduced that mismatch and the CRM calculation was aligned to TV's yesterday-first 8-day range. A local-only Electron screenshot at 1366×768 selected 8-day mode and returned eight dated axis labels with a single today marker; no production account or company records were used. TV distribution and live server sync remain separate release gates.
