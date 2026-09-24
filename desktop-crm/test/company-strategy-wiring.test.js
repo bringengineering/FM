@@ -15,6 +15,12 @@ test('strategy actions are narrow IPC methods and the browser loads the validato
  assert.ok(html.indexOf('src="./company-strategy-core.js"')<html.indexOf('src="./app.js"'));
 });
 
+test('isolated local preview reads an empty strategy without dereferencing a missing remote client',()=>{
+ const main=read('main.js');
+ assert.match(main,/crm:company-strategy-load", input => localTestMode/u);
+ assert.match(main,/\{ published:null, draft:null, localOnly:true \}/u);
+});
+
 test('project home distinguishes unpublished and approved strategy; editing state guards refresh',()=>{
  const app=read('app.js');
  assert.match(app,/function renderCompanyStrategy\(/u);
@@ -41,6 +47,18 @@ test('strategy editor follows the existing light card system and stacks on narro
  assert.match(css,/\.company-strategy-organization\{/u);
  assert.match(css,/@media\(max-width:760px\).*?company-strategy-row/su);
  assert.match(css,/:focus-visible/u);
+});
+
+test('isolated screenshot action opens the strategy editor and measures horizontal overflow',()=>{
+ const main=read('main.js');
+ const app=read('app.js');
+ assert.match(main,/BRING_CRM_SCREENSHOT_ACTION === "company-strategy-preview"/u);
+ assert.match(main,/__crmTest\.previewCompanyStrategy\(\)/u);
+ assert.match(main,/strategyVisible:/u);
+ assert.match(main,/bodyOverflow:/u);
+ assert.match(main,/BRING_CRM_SCREENSHOT_STRATEGY_SECTION/u);
+ assert.match(app,/previewCompanyStrategy: \(\) => \{/u);
+ assert.match(app,/new URLSearchParams\(location\.search\)\.get\("demo"\) !== "1"/u);
 });
 
 test('authentication change invalidates strategy cache and late reads cannot restore it',()=>{

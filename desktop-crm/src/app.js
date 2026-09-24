@@ -16121,6 +16121,17 @@ document.addEventListener("keydown", event => {
   }
 
   window.__crmTest = {
+    previewCompanyStrategy: () => {
+      if (new URLSearchParams(location.search).get("demo") !== "1") return false;
+      const year=String(new Date().getFullYear());
+      const organization=[{uid:'preview-ceo',role:'대표',reportsToUid:''},{uid:'preview-field',role:'현장 데이터 담당',reportsToUid:'preview-ceo'}];
+      const goals=[{id:'preview-annual',period:'annual',title:'현장 데이터 연결',unit:'count',baseline:0,target:10,current:4,source:'화면 검수용 샘플'}];
+      workOrderState.admin=true;
+      workOrderState.members=[{uid:'preview-ceo',displayName:'대표 · 샘플'},{uid:'preview-field',displayName:'현장 담당 · 샘플'}];
+      companyStrategyState={year,loaded:true,loading:false,refreshedAt:Date.now(),error:'',draft:{year,revision:1,vision:'화면 검수용 샘플 · 실제 회사 자료가 아닙니다.',organization,goals},published:null,formDraft:{year,vision:'화면 검수용 샘플 · 실제 회사 자료가 아닙니다.',organization,goals},editing:true,dirty:false,busy:false};
+      renderWorkOrders();
+      return true;
+    },
     snapshot: () => ({
       ready: !!store,
       initialized: appInitialized,
