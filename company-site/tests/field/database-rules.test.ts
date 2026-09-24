@@ -2289,6 +2289,37 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(admin, at("p1"))));
   });
 
+  it("company strategy drafts stay admin-only while published plans are staff-readable and revisions cannot be replayed", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const reader = environment.authenticatedContext("wallboard-reader", crmClaims("wallboard-reader@bring.test")).database();
+    const draftPath = "crmCompany/companyStrategyDrafts/2026";
+    const publishedPath = "crmCompany/companyStrategyPublications/2026";
+    const draft = (revision: number) => ({year:"2026",revision,vision:"공간 운영을 투명하게",organization:{"crm-admin":{uid:"crm-admin",role:"대표",reportsToUid:""}},goals:{g1:{id:"g1",period:"annual",title:"건물 데이터 3동",unit:"count",baseline:0,target:3,current:1,source:"CRM 건물 ID"}},updatedAt:NOW,updatedBy:"crm-admin"});
+    await assertSucceeds(set(ref(admin,draftPath),draft(1)));
+    await assertSucceeds(get(ref(admin,draftPath)));
+    await assertFails(get(ref(member,draftPath)));
+    await assertFails(get(ref(reader,draftPath)));
+    await assertFails(set(ref(member,draftPath),{...draft(2),updatedBy:"crm-legacy-member"}));
+    await assertFails(set(ref(admin,draftPath),draft(1)));
+    await assertFails(set(ref(admin,draftPath),{...draft(2),privateCustomerNote:"비공개"}));
+    await assertFails(set(ref(admin,draftPath),{...draft(2),vision:"가".repeat(501)}));
+    await assertSucceeds(set(ref(admin,draftPath),draft(2)));
+    const publication={...draft(1),revision:1,publishedAt:NOW,publishedBy:"crm-admin",sourceRevision:2};
+    await assertSucceeds(set(ref(admin,publishedPath),publication));
+    await assertSucceeds(get(ref(member,publishedPath)));
+    await assertSucceeds(get(ref(viewer,publishedPath)));
+    await assertFails(get(ref(reader,publishedPath)));
+    await assertFails(set(ref(member,publishedPath),{...publication,revision:2,updatedBy:"crm-legacy-member",publishedBy:"crm-legacy-member"}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,sourceRevision:1}));
+    await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,goals:{g1:{...publication.goals.g1,source:""}}}));
+    await assertFails(set(ref(admin,publishedPath),publication));
+    await assertFails(remove(ref(admin,draftPath)));
+    await assertFails(remove(ref(admin,publishedPath)));
+    await assertFails(set(ref(admin,"crmCompany/companyStrategyPublications/2025"),{...publication,year:"2025"}));
+  });
+
   it("keeps a daily log readable by its writer and the boss, and lists only for the boss", async () => {
     // 일지에는 셀프 피드백과 건의사항이 들어간다. 옆자리에 다 보이면 아무도
     // 솔직하게 안 적는다. 그렇다고 아무도 못 읽게 하면 보고가 안 된다.
