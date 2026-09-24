@@ -2,6 +2,7 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
+  'crm:project-weekly-reports-load',
   'crm:work-outcome-draft-load',
   'crm:work-outcome-export',
   'crm:building-atlas-load','crm:input-language-korean',
@@ -13,6 +14,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
+  'crm:project-weekly-report-save',
   'crm:wallboard-admin',
   'crm:work-outcome-draft-save','crm:work-outcome-draft-clear',
   'crm:building-atlas-save',

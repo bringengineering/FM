@@ -88,15 +88,18 @@
   function validateReport(input) {
     const report = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
     if (!text(report.id) || !text(report.projectId) || !text(report.authorUid)) return { ok: false, code: 'IDENTITY_REQUIRED' };
+    const safeKey = value => text(value).length <= 80 && !/[.#$\[\]/\x00-\x1f\x7f]/u.test(text(value));
+    if (!safeKey(report.id) || !safeKey(report.projectId) || !safeKey(report.authorUid)) return { ok: false, code: 'IDENTITY_INVALID' };
     if (!['draft', 'submitted', 'returned', 'approved'].includes(report.status)) return { ok: false, code: 'BAD_STATUS' };
     const evidence = report.snapshot;
     if (!evidence || evidence.available !== true || text(evidence.projectId) !== text(report.projectId)) return { ok: false, code: 'PROJECT_MISMATCH' };
     if (!evidence.range || !/^\d{4}-\d{2}-\d{2}$/.test(text(evidence.range.start)) || !/^\d{4}-\d{2}-\d{2}$/.test(text(evidence.range.end)) || !Number.isFinite(Date.parse(evidence.capturedAt))) return { ok: false, code: 'SNAPSHOT_INVALID' };
-    const sources = evidence.sources;
+    const sources = Array.isArray(evidence.sources) ? evidence.sources : evidence.sources == null && evidence.counts && evidence.counts.total === 0 ? [] : null;
     const counts = evidence.counts;
     if (!Array.isArray(sources) || !counts || typeof counts !== 'object') return { ok: false, code: 'SNAPSHOT_INVALID' };
     const ids = sources.map(item => text(item && item.id));
     if (ids.some(id => !id) || new Set(ids).size !== ids.length) return { ok: false, code: 'SOURCE_DUPLICATE' };
+    if (sources.some(item => !['assigned', 'doing', 'submitted', 'returned', 'done'].includes(item.status))) return { ok: false, code: 'SOURCE_STATUS_INVALID' };
     const actual = countShape();
     for (const source of sources) {
       const category = source.status === 'done' ? 'done' : source.status === 'submitted' ? 'submitted' : source.status === 'returned' ? 'returned' : 'open';

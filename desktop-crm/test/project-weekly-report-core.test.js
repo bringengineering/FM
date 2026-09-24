@@ -106,4 +106,7 @@ test('보고서 저장 검사는 원본 수치 위조와 중복 ID를 거부한�
   assert.equal(Report.validateReport({ ...base, snapshot: { ...base.snapshot, counts: { ...base.snapshot.counts, total: 3 } } }).code, 'COUNT_MISMATCH');
   assert.equal(Report.validateReport({ ...base, snapshot: { ...base.snapshot, sources: [{ id: 'w1', status: 'done' }, { id: 'w1', status: 'submitted' }] } }).code, 'SOURCE_DUPLICATE');
   assert.equal(Report.validateReport({ ...base, projectId: 'p2' }).code, 'PROJECT_MISMATCH');
+  assert.equal(Report.validateReport({ ...base, id: '../r1' }).code, 'IDENTITY_INVALID');
+  assert.equal(Report.validateReport({ ...base, snapshot: { ...base.snapshot, sources: [{ id: 'w1', status: 'fake' }, { id: 'w2', status: 'submitted' }] } }).code, 'SOURCE_STATUS_INVALID');
+  assert.equal(Report.validateReport({ ...base, snapshot: { ...base.snapshot, counts: { total: 0, done: 0, submitted: 0, returned: 0, open: 0 }, sources: undefined } }).ok, true);
 });

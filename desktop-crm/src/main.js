@@ -8498,6 +8498,7 @@ secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveReque
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:project-weekly-report-save", input => remoteClient.saveProjectWeeklyReport(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
@@ -8938,6 +8939,7 @@ function readWorkflowCollection(method) {
   const collections = {
     loadForms: ["templates", "entries"],
     loadWorkOrders: ["orders", "projects", "capacity", "directives", "members"],
+    loadProjectWeeklyReports: ["reports"],
     loadSupplies: ["items", "moves", "costs"],
     loadDeliveryFlows: ["flows"],
     loadWorkReports: ["reports"],
@@ -8959,6 +8961,7 @@ function readWorkflowCollection(method) {
 }
 secureHandle("crm:forms-load", () => readWorkflowCollection("loadForms"));
 secureHandle("crm:work-orders-load", () => readWorkflowCollection("loadWorkOrders"));
+secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
 secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));

@@ -14,6 +14,7 @@ const ProjectCore = require("./project-core");
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
 const WeeklyDirectiveCore = require("./weekly-directive-core");
+const ProjectWeeklyReportCore = require("./project-weekly-report-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4543,6 +4544,92 @@ class FirebaseRemoteClient {
     }
     this.assertSessionGuardActive(guard);
     return saved;
+  }
+
+  async loadProjectWeeklyReports() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("projectWeeklyReports", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const reports = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => Object.assign({}, value || {}, { id }));
+    if (reports.some(value => !ProjectWeeklyReportCore.validateReport(value).ok)) {
+      throw createError("저장된 주간 보고서 형식을 확인할 수 없습니다. 관리자에게 알려 주세요.", "REPORT_DATA_INVALID");
+    }
+    return { reports, uid: session.uid, admin: session.role === "admin", loadedAt: new Date().toISOString() };
+  }
+
+  async saveProjectWeeklyReport(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") throw createError("보고서를 저장할 권한이 없습니다.", "REPORT_FORBIDDEN");
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const id = String(source.id || "").trim();
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw createError("보고서 ID가 올바르지 않습니다.", "REPORT_ID_INVALID");
+    const location = `projectWeeklyReports/${id}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+    const existing = snapshot.value;
+    if (existing && existing.status === "approved") throw createError("승인된 보고서는 새 정정본으로 작성해야 합니다.", "REPORT_APPROVED_LOCKED");
+    if (existing && existing.authorUid !== session.uid && session.role !== "admin") throw createError("다른 사람의 보고서는 수정할 수 없습니다.", "REPORT_NOT_AUTHOR");
+    if (existing && existing.projectId !== String(source.projectId || "").trim()) throw createError("보고서의 프로젝트는 변경할 수 없습니다.", "REPORT_PROJECT_LOCKED");
+    let superseded = null;
+    if (!existing && source.supersedesId) {
+      const previousId = String(source.supersedesId).trim();
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(previousId) || previousId === id) throw createError("정정할 승인본을 확인할 수 없습니다.", "REPORT_REVISION_INVALID");
+      superseded = await this.dbRequest(`projectWeeklyReports/${previousId}`, { method: "GET" });
+      this.assertSessionGuardActive(guard);
+      if (!superseded || superseded.status !== "approved" || superseded.projectId !== String(source.projectId || "").trim() || superseded.authorUid !== session.uid) {
+        throw createError("정정할 승인본을 확인할 수 없습니다.", "REPORT_REVISION_INVALID");
+      }
+    }
+    const action = String(source.action || "");
+    const admin = session.role === "admin";
+    if (!["saveDraft", "submit", "approve", "return"].includes(action)) throw createError("보고서 작업이 올바르지 않습니다.", "REPORT_ACTION_INVALID");
+    if ((action === "approve" || action === "return") && (!admin || !existing)) throw createError("검수는 관리자만 할 수 있습니다.", "REPORT_REVIEW_FORBIDDEN");
+    if ((action === "saveDraft" || action === "submit") && existing && existing.status === "submitted") throw createError("제출된 보고서는 검수 결과를 기다려 주세요.", "REPORT_SUBMITTED_LOCKED");
+    const now = new Date().toISOString();
+    let record;
+    if (action === "approve" || action === "return") {
+      const moved = ProjectWeeklyReportCore.transitionReport({ report: existing, next: action === "approve" ? "approved" : "returned", actorUid: session.uid, admin, note: source.reviewNote, at: now });
+      if (!moved.ok) throw createError("보고서 상태를 바꿀 수 없습니다.", moved.code);
+      record = moved.report;
+    } else {
+      const asOf = String(source.asOf || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw createError("보고 주간 날짜가 올바르지 않습니다.", "REPORT_DATE_INVALID");
+      const payload = await this.dbRequest("workOrders", { method: "GET" });
+      this.assertSessionGuardActive(guard);
+      if (payload !== null && (typeof payload !== "object" || Array.isArray(payload))) throw createError("업무 원본을 확인하지 못했습니다.", "REPORT_SOURCE_UNAVAILABLE");
+      const orders = Object.entries(payload || {}).map(([orderId, value]) => Object.assign({}, value || {}, { id: orderId }));
+      const evidence = ProjectWeeklyReportCore.snapshot({ orders, projectId: String(source.projectId || ""), asOf, capturedAt: now });
+      if (!evidence.available) throw createError("업무 원본을 확인하지 못했습니다.", "REPORT_SOURCE_UNAVAILABLE");
+      record = Object.assign({}, existing || {}, {
+        id,
+        projectId: String(source.projectId || "").trim(),
+        authorUid: existing ? existing.authorUid : session.uid,
+        status: existing && existing.status === "returned" ? "returned" : "draft",
+        snapshot: evidence,
+        summary: String(source.summary || "").trim().slice(0, 2000),
+        incompleteReason: String(source.incompleteReason || "").trim().slice(0, 2000),
+        nextActions: String(source.nextActions || "").trim().slice(0, 2000),
+        decisionRequests: String(source.decisionRequests || "").trim().slice(0, 2000),
+        createdAt: existing && existing.createdAt || now,
+        ...(superseded ? { supersedesId: superseded.id } : {}),
+      });
+      if (action === "submit") {
+        if (!record.summary || !record.nextActions) throw createError("실제 결과와 다음 행동을 적어야 검수를 요청할 수 있습니다.", "REPORT_NARRATIVE_REQUIRED");
+        const moved = ProjectWeeklyReportCore.transitionReport({ report: record, next: "submitted", actorUid: session.uid, admin, at: now });
+        if (!moved.ok) throw createError("보고서를 제출할 수 없습니다.", moved.code);
+        record = moved.report;
+      }
+    }
+    record.updatedAt = now;
+    record.updatedBy = session.uid;
+    const checked = ProjectWeeklyReportCore.validateReport(record);
+    if (!checked.ok) throw createError("보고서 근거를 확인해 주세요.", checked.code);
+    await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   // 작업 결과보고서. 입주청소·계단청소는 매번 하는 일이 같아서, 항목은

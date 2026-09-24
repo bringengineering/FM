@@ -4370,10 +4370,57 @@
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
     scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
+    projectReports: [], projectReportsLoaded: false, projectReportsLoading: false, projectReportsError: "", projectReportEditingId: "",
   };
 
   const workOrderCore = () => window.BringWorkOrderCore;
   const capacityCore = () => window.BringCapacityCore;
+
+  async function loadProjectWeeklyReports() {
+    if (workOrderState.projectReportsLoading) return;
+    workOrderState.projectReportsLoading = true;
+    workOrderState.projectReportsError = "";
+    if (currentView === "workOrders") renderWorkOrders();
+    try {
+      const data = await api.loadProjectWeeklyReports();
+      workOrderState.projectReports = Array.isArray(data && data.reports) ? data.reports : [];
+      workOrderState.projectReportsLoaded = true;
+    } catch (error) {
+      workOrderState.projectReportsError = error && error.message || "주간 보고서를 불러오지 못했습니다.";
+    } finally {
+      workOrderState.projectReportsLoading = false;
+      if (currentView === "workOrders") renderWorkOrders();
+    }
+  }
+
+  async function saveProjectWeeklyReportFromForm(form, action) {
+    if (!workOrderState.canWork) return showToast("보고서를 작성할 권한이 없습니다.", "error");
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const id = form.dataset.reportId || `pwr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await api.saveProjectWeeklyReport({
+        id, projectId: workOrderState.projectId, asOf: String(raw.asOf || ""),
+        supersedesId: String(raw.supersedesId || ""),
+        action: action === "submit" ? "submit" : "saveDraft",
+        summary: String(raw.summary || ""), incompleteReason: String(raw.incompleteReason || ""),
+        nextActions: String(raw.nextActions || ""), decisionRequests: String(raw.decisionRequests || ""),
+      });
+      workOrderState.projectReportEditingId = "";
+      showToast(action === "submit" ? "주간 보고서를 검수 요청했습니다." : "주간 보고서 초안을 서버에 저장했습니다.", "success");
+      await loadProjectWeeklyReports();
+    } catch (error) { showToast(error && error.message || "주간 보고서를 저장하지 못했습니다.", "error"); }
+  }
+
+  async function reviewProjectWeeklyReport(id, action, note) {
+    if (!workOrderState.admin) return showToast("관리자만 검수할 수 있습니다.", "error");
+    const report = workOrderState.projectReports.find(item => item && item.id === id);
+    if (!report || report.status !== "submitted") return showToast("검수할 보고서를 다시 확인해 주세요.", "error");
+    try {
+      await api.saveProjectWeeklyReport({ id, projectId: report.projectId, action, reviewNote: note });
+      showToast(action === "approve" ? "보고서를 승인했습니다." : "보완 요청을 저장했습니다.", "success");
+      await loadProjectWeeklyReports();
+    } catch (error) { showToast(error && error.message || "검수 결과를 저장하지 못했습니다.", "error"); }
+  }
 
   async function loadWorkOrders() {
     if (workOrderState.loading) return;
@@ -4801,6 +4848,30 @@
     </section>`;
   }
 
+  function projectWeeklyReportWorkspace(project, today) {
+    if (!project) return "";
+    const statusLabel = { draft: "초안", submitted: "검수 대기", returned: "보완 요청", approved: "승인" };
+    const reports = workOrderState.projectReports.filter(item => item && item.projectId === project.id)
+      .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+    const editing = reports.find(item => item.id === workOrderState.projectReportEditingId && (item.status === "draft" || item.status === "returned") && (workOrderState.admin || item.authorUid === workOrderState.uid));
+    const approvedOwn = reports.filter(item => item.status === "approved" && item.authorUid === workOrderState.uid);
+    const form = workOrderState.canWork && workOrderState.projectReportsLoaded ? `<form class="wo-editor" data-project-weekly-report-form data-report-id="${esc(editing && editing.id || "")}">
+      <h3>${editing ? "주간 보고 초안 수정" : "새 주간 보고"}</h3>
+      ${!editing && approvedOwn.length ? `<label><span>승인본 정정(선택)</span><select name="supersedesId"><option value="">새 보고서</option>${approvedOwn.map(item => `<option value="${esc(item.id)}">${esc(item.snapshot && item.snapshot.range && item.snapshot.range.start || item.id)} 승인본 정정</option>`).join("")}</select></label>` : ""}
+      <label><span>보고 기준일</span><input type="date" name="asOf" value="${esc(editing && editing.snapshot && editing.snapshot.range && editing.snapshot.range.start || today)}" required></label>
+      <label class="wide"><span>목표 대비 실제·완료 증빙</span><textarea name="summary" rows="3" maxlength="2000">${esc(editing && editing.summary || "")}</textarea></label>
+      <label class="wide"><span>미완료 사항·원인</span><textarea name="incompleteReason" rows="2" maxlength="2000">${esc(editing && editing.incompleteReason || "")}</textarea></label>
+      <label class="wide"><span>다음 행동·담당·기한</span><textarea name="nextActions" rows="2" maxlength="2000">${esc(editing && editing.nextActions || "")}</textarea></label>
+      <label class="wide"><span>대표 결정·지원 요청</span><textarea name="decisionRequests" rows="2" maxlength="2000">${esc(editing && editing.decisionRequests || "")}</textarea></label>
+      <div class="wo-editor-actions"><button type="submit" class="mini-button" value="saveDraft">초안 저장</button><button type="submit" class="primary-button" value="submit">검수 요청</button>${editing ? `<button type="button" class="mini-button" data-project-weekly-reset>새 보고서로</button>` : ""}</div>
+      <p class="wo-editor-note">수치는 서버의 원본 업무로 다시 계산합니다. 제출 뒤에는 검수 전까지 수정할 수 없습니다.</p>
+    </form>` : "";
+    return `<section class="office-panel project-weekly-report" aria-label="주간 보고 제출과 검수"><header><div><span>프로젝트별 주간 보고</span><h3>제출·검수 이력</h3></div><button type="button" class="mini-button" data-project-weekly-refresh>다시 불러오기</button></header>
+      ${workOrderState.projectReportsLoading ? `<p role="status">보고서를 불러오고 있습니다.</p>` : workOrderState.projectReportsError ? `<p role="alert">${esc(workOrderState.projectReportsError)}</p>` : !workOrderState.projectReportsLoaded ? `<p role="status">보고서를 불러오고 있습니다.</p>` : reports.length ? reports.map(report => `<article class="project-weekly-report-entry"><header><strong>${esc(report.snapshot && report.snapshot.range ? `${report.snapshot.range.start} ~ ${report.snapshot.range.end}` : "기간 확인 필요")}</strong><span>${esc(statusLabel[report.status] || report.status)}</span></header><p>${esc(report.summary || "수행 내용 미입력")}</p><small>원본 업무 ${Array.isArray(report.snapshot && report.snapshot.sources) ? report.snapshot.sources.length : 0}건 · 검수 완료 ${Number(report.snapshot && report.snapshot.counts && report.snapshot.counts.done || 0)}건 · 보고 ID ${esc(report.id)}</small>${report.reviewNote ? `<p>검수 의견: ${esc(report.reviewNote)}</p>` : ""}${(report.status === "draft" || report.status === "returned") && (workOrderState.admin || report.authorUid === workOrderState.uid) ? `<button type="button" class="mini-button" data-project-weekly-edit="${esc(report.id)}">초안 열기</button>` : ""}${report.status === "submitted" && workOrderState.admin ? `<div data-project-weekly-review-row="${esc(report.id)}"><label>보완 의견<input type="text" maxlength="1000" data-project-weekly-review-note></label><button type="button" class="mini-button" data-project-weekly-review="approve" data-report-id="${esc(report.id)}">승인</button><button type="button" class="mini-button" data-project-weekly-review="return" data-report-id="${esc(report.id)}">보완 요청</button></div>` : ""}<details><summary>근거 업무 보기</summary>${(report.snapshot && Array.isArray(report.snapshot.sources) ? report.snapshot.sources : []).map(source => `<button type="button" class="mini-button" data-wo-open-card="${esc(source.id)}">${esc(source.id)} · ${esc(source.status)}</button>`).join("") || "근거 업무 없음"}</details></article>`).join("") : `<p>아직 저장된 주간 보고서가 없습니다.</p>`}
+      ${form}
+    </section>`;
+  }
+
   function renderWorkOrders() {
     const W = workOrderCore();
     const P = projectCore();
@@ -4939,7 +5010,7 @@
       ${!actualProject || projectDetailTab === "orders" ? `
       <header class="wo-action-heading"><h3>${workOrderState.scope === "mine" ? "내 업무 · 결과 제출" : "업무 목록 · 제출 결과 검수"}</h3><p>${workOrderState.loading ? "업무를 불러오는 중입니다." : workOrderState.error ? "조회 오류를 확인한 뒤 다시 불러와 주세요." : "업무별 완료 기준을 확인하고 결과물과 증빙을 제출하세요. 제출 후 대표 검수를 거칩니다."}</p></header>
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>` : ""}
-      ${!actualProject ? `<details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>${reportPanel()}</details>` : projectDetailTab === "reports" ? `<section class="project-workspace-tab-content" aria-label="보고·검수">${periodControls}${reportPanel()}</section>` : ""}
+      ${!actualProject ? `<details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>${reportPanel()}</details>` : projectDetailTab === "reports" ? `<section class="project-workspace-tab-content" aria-label="보고·검수">${periodControls}${reportPanel()}${projectWeeklyReportWorkspace(project, today)}</section>` : ""}
       ${!actualProject ? `<details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>${planningPanel()}</details>` : projectDetailTab === "roadmap" ? `<section class="project-workspace-tab-content" aria-label="로드맵">${planningPanel()}</section>` : ""}`;
   }
 
@@ -11601,7 +11672,18 @@
       if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 탭을 변경해 주세요."); return; }
       workOrderState.projectDetailTab = projectSection.dataset.woProjectSection;
       renderWorkOrders();
+      if (workOrderState.projectDetailTab === "reports" && !workOrderState.projectReportsLoaded) void loadProjectWeeklyReports();
       document.querySelector(`[data-wo-project-section="${workOrderState.projectDetailTab}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.target.closest("[data-project-weekly-refresh]")) { void loadProjectWeeklyReports(); return; }
+    const weeklyReportEdit = event.target.closest("[data-project-weekly-edit]");
+    if (weeklyReportEdit) { workOrderState.projectReportEditingId = weeklyReportEdit.dataset.projectWeeklyEdit; renderWorkOrders(); return; }
+    if (event.target.closest("[data-project-weekly-reset]")) { workOrderState.projectReportEditingId = ""; renderWorkOrders(); return; }
+    const reportReview = event.target.closest("[data-project-weekly-review]");
+    if (reportReview) {
+      const note = reportReview.closest("[data-project-weekly-review-row]")?.querySelector("[data-project-weekly-review-note]")?.value || "";
+      void reviewProjectWeeklyReport(reportReview.dataset.reportId, reportReview.dataset.projectWeeklyReview, note);
       return;
     }
     const projectEdit = event.target.closest("[data-wo-project-edit]");
@@ -14100,6 +14182,7 @@
     if (form.matches("[data-wo-progress-form]")) { await saveWorkOrderProgressFromForm(form); return; }
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-roadmap-extension-form]")) { await saveProjectExtensionFromForm(form); return; }
+    if (form.matches("[data-project-weekly-report-form]")) { await saveProjectWeeklyReportFromForm(form, event.submitter && event.submitter.value); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
     if (form.matches("[data-report-form]")) { await saveWorkReportFromForm(); return; }
     if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
