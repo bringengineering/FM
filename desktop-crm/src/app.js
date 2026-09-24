@@ -3645,7 +3645,9 @@
     let summary;
     try { summary = BringBillingLedgerCore.summarizeMonth(state.ledger, report.month); }
     catch (error) { return `<section class="ai-ops-panel billing-report-comparison"><h3>확정 장부 비교</h3><p role="alert">청구 장부를 검증할 수 없습니다: ${esc(billingError(error))}</p></section>`; }
-    return `<section class="ai-ops-panel billing-report-comparison"><header><div><h3>계약 표시와 확정 장부 비교</h3><p>기존 계약 표시 기준은 업무 참고용입니다. 실제 입금은 증빙을 확인해 확정한 장부 기준입니다.</p></div></header><div class="billing-ledger-totals"><div><span>기존 계약 표시 기준 · 매출</span><strong>${esc(krw(report.finance.revenue))}</strong></div><div><span>기존 계약 표시 기준 · 입금 완료</span><strong>${esc(krw(report.finance.received))}</strong></div><div><span>확정 장부 기준 · 청구액</span><strong>${esc(krw(summary.billed))}</strong></div><div><span>확정 장부 기준 · 실제 입금액</span><strong>${esc(krw(summary.received))}</strong></div><div><span>확정 장부 기준 · 누적 미수금</span><strong>${esc(krw(summary.receivable))}</strong></div>${summary.overpayment ? `<div><span>초과입금 확인</span><strong>${esc(krw(summary.overpayment))}</strong></div>` : ""}</div><p>승인 대기 초안 ${summary.pendingCount}건은 확정 금액에 포함되지 않습니다.</p></section>`;
+    const hasConfirmed = state.ledger.invoices.some(item => item.status === "approved") || state.ledger.receipts.some(item => item.status === "approved");
+    const confirmedMoney = amount => hasConfirmed ? esc(krw(amount)) : "집계 대기";
+    return `<section class="ai-ops-panel billing-report-comparison"><header><div><h3>계약 표시와 확정 장부 비교</h3><p>기존 계약 표시 기준은 업무 참고용입니다. 실제 입금은 증빙을 확인해 확정한 장부 기준입니다.</p></div></header><div class="billing-ledger-totals"><div><span>기존 계약 표시 기준 · 매출</span><strong>${esc(krw(report.finance.revenue))}</strong></div><div><span>기존 계약 표시 기준 · 입금 완료</span><strong>${esc(krw(report.finance.received))}</strong></div><div><span>확정 장부 기준 · 청구액</span><strong>${confirmedMoney(summary.billed)}</strong></div><div><span>확정 장부 기준 · 실제 입금액</span><strong>${confirmedMoney(summary.received)}</strong></div><div><span>확정 장부 기준 · 누적 미수금</span><strong>${confirmedMoney(summary.receivable)}</strong></div>${summary.overpayment ? `<div><span>초과입금 확인</span><strong>${esc(krw(summary.overpayment))}</strong></div>` : ""}</div><p>승인 대기 초안 ${summary.pendingCount}건은 확정 금액에 포함되지 않습니다.</p></section>`;
   }
 
   async function requestSalesAutomationDraft(prospectId) {
@@ -10640,6 +10642,8 @@
       if (kind === "invoice") await api.saveBillingInvoice({ record, expectedRevision });
       else await api.saveBillingReceipt({ record, expectedRevision });
       if (!billingSessionActive(state)) return;
+      managementBillingState = { month: "", ledger: null, loading: false, error: "", generation: -1, uid: "" };
+      if (currentView === "operationsIntelligence") void loadManagementBillingLedger(managementReportState.month);
       const ledger = await api.loadBillingLedger();
       if (!billingSessionActive(state)) return;
       if (!ledger || !Array.isArray(ledger.invoices) || !Array.isArray(ledger.receipts)) throw new Error("청구 장부 형식이 올바르지 않습니다.");

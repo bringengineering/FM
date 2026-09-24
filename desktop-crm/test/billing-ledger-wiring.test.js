@@ -56,3 +56,18 @@ test('monthly management report compares legacy finance with confirmed ledger an
   assert.match(app, /기존 계약 표시 기준/u);
   assert.match(app, /확정 장부 기준/u);
 });
+
+test('successful billing mutations invalidate the monthly report ledger cache', () => {
+  const app = read('app.js');
+  const save = app.slice(app.indexOf('async function saveBillingRecord('), app.indexOf('function industryChecklistFields('));
+  assert.match(save, /managementBillingState = \{ month: ""/u);
+  assert.match(save, /currentView === "operationsIntelligence"/u);
+  assert.match(save, /loadManagementBillingLedger\(managementReportState\.month\)/u);
+});
+
+test('monthly report labels an unconfirmed ledger as pending, not zero revenue', () => {
+  const app = read('app.js');
+  const comparison = app.slice(app.indexOf('function managementBillingComparison('), app.indexOf('async function requestSalesAutomationDraft('));
+  assert.match(comparison, /집계 대기/u);
+  assert.match(comparison, /approved.*invoices|invoices.*approved/u);
+});
