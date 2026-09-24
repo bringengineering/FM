@@ -2,6 +2,8 @@
 
 const { project } = require('./company-wallboard');
 const { validatePublication } = require('./wallboard-publication-schema');
+const { withStrategyScene } = require('./company-strategy-tv');
+const { koreaDate } = require('./korea-date');
 
 const defaultPlaylist = [
   ['roadmap', 40],
@@ -57,16 +59,12 @@ function createWallboardLiveSync({
   }
 
   async function buildSnapshot(presentation) {
-    const data = await load();
-    const date = now();
-    const dataDate = [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, '0'),
-      String(date.getDate()).padStart(2, '0')
-    ].join('-');
+    const instant = now();
+    const data = await load(instant);
+    const dataDate = koreaDate(instant);
     return validatePublication({
       model: project(data, dataDate),
-      playlist: presentation?.playlist || defaultPlaylist,
+      playlist: withStrategyScene(presentation?.playlist || defaultPlaylist),
       notice: presentation?.notice || '',
       dataDate
     });

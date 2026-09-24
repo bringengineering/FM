@@ -4,14 +4,24 @@ const count=n=>{if(!Number.isSafeInteger(n)||n<0||n>1000000)invalid();};
 const pct=n=>{if(!Number.isInteger(n)||n<0||n>100)invalid();};
 const finite=(n,min,max)=>{if(typeof n!=='number'||!Number.isFinite(n)||n<min||n>max)invalid();};
 const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
+const addressPattern=/(?:[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?|[가-힣]+(?:동|읍|면|리)\s*\d{1,4}(?:-\d{1,4})?|\d{1,4}\s*(?:번지|호))/u;
 const text=(s,max)=>{if(typeof s!=='string'||s.length>max||/[\u0000-\u0008\u000b-\u001f]/.test(s)||contactPattern.test(s))invalid();};
 const date=value=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value)invalid();};
 const optionalDate=value=>{if(value!=='')date(value);};
 const health=value=>{if(!['normal','check','risk','done'].includes(value))invalid();};
 function scheduleEntry(entry){shape(entry,['date','time','endTime','title','owner','status']);date(entry.date);if(!(entry.time==='시간 미정'||/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.time)))invalid();if(!(entry.endTime===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.endTime)))invalid();text(entry.title,80);text(entry.owner,40);if(!['예정','진행 중','완료','상태 확인 필요'].includes(entry.status))invalid();}
+function validateStrategy(strategy,year){
+ if(strategy===null)return;
+ shape(strategy,['year','vision','organization','goals']);if(strategy.year!==year)invalid();text(strategy.vision,500);if(!strategy.vision.trim()||addressPattern.test(strategy.vision))invalid();
+ if(!Array.isArray(strategy.organization)||strategy.organization.length>30||!Array.isArray(strategy.goals)||strategy.goals.length>30)invalid();
+ strategy.organization.forEach((person,index)=>{shape(person,['displayName','role','reportsToIndex']);text(person.displayName,40);text(person.role,60);if(addressPattern.test(person.role)||!(person.reportsToIndex===null||Number.isInteger(person.reportsToIndex)&&person.reportsToIndex>=0&&person.reportsToIndex<strategy.organization.length&&person.reportsToIndex!==index))invalid();});
+ if(!strategy.goals.some(goal=>goal.period==='annual'))invalid();
+ strategy.goals.forEach(goal=>{shape(goal,['period','title','unit','target','current','percent','source']);if(!['annual','H1','H2'].includes(goal.period)||!['count','percent','krw','day','milestone'].includes(goal.unit))invalid();text(goal.title,200);text(goal.source,200);if(!goal.title.trim()||!goal.source.trim()||addressPattern.test(goal.title)||addressPattern.test(goal.source))invalid();for(const key of ['target','current'])if(goal[key]!==null)finite(goal[key],-1000000000000,1000000000000);if(goal.percent!==null)pct(goal.percent);if(goal.unit==='milestone'&&(goal.target!==null||goal.current!==null||goal.percent!==null))invalid();});
+}
 function validatePublication(input){
  shape(input,['model','playlist','notice','dataDate']);text(input.notice,160);date(input.dataDate);
- const m=input.model;shape(m,Object.hasOwn(m||{},'weeklyReports')?['counts','total','overdue','unknown','people','schedule','roadmap','portfolio','weeklyReports']:['counts','total','overdue','unknown','people','schedule','roadmap','portfolio']);
+ const m=input.model;shape(m,['counts','total','overdue','unknown','people','schedule','roadmap','portfolio',...(Object.hasOwn(m||{},'weeklyReports')?['weeklyReports']:[]),...(Object.hasOwn(m||{},'strategy')?['strategy']:[])]);
+ if(Object.hasOwn(m,'strategy'))validateStrategy(m.strategy,input.dataDate.slice(0,4));
  if(Object.hasOwn(m,'weeklyReports')){const w=m.weeklyReports;shape(w,['available','periodStart','periodEnd','approvedReports','approvedTotal','approvedDone']);if(typeof w.available!=='boolean')invalid();if(w.available){date(w.periodStart);date(w.periodEnd);const current=new Date(input.dataDate+'T00:00:00Z');current.setUTCDate(current.getUTCDate()-(current.getUTCDay()+6)%7);const monday=current.toISOString().slice(0,10);current.setUTCDate(current.getUTCDate()+6);if(w.periodStart!==monday||w.periodEnd!==current.toISOString().slice(0,10))invalid();['approvedReports','approvedTotal','approvedDone'].forEach(key=>count(w[key]));if(w.approvedDone>w.approvedTotal)invalid();}else if(w.periodStart!==null||w.periodEnd!==null||w.approvedReports!==null||w.approvedTotal!==null||w.approvedDone!==null)invalid();}
  const states=['assigned','doing','submitted','returned','done'];shape(m.counts,states);states.forEach(s=>count(m.counts[s]));['total','overdue','unknown'].forEach(k=>count(m[k]));
  if(states.reduce((sum,k)=>sum+m.counts[k],0)!==m.total||m.overdue>m.total-m.counts.done)invalid();
@@ -25,7 +35,7 @@ function validatePublication(input){
  if(!Array.isArray(m.portfolio.projects)||m.portfolio.projects.length>100)invalid();for(const p of m.portfolio.projects){const reviewFields=Object.hasOwn(p||{},'reviewedDone')||Object.hasOwn(p||{},'reviewedTotal');shape(p,reviewFields?['name','owner','progress','health','open','reviewedDone','reviewedTotal']:['name','owner','progress','health','open']);text(p.name,120);text(p.owner,80);pct(p.progress);health(p.health);count(p.open);if(reviewFields){count(p.reviewedDone);count(p.reviewedTotal);if(p.reviewedDone>p.reviewedTotal)invalid();}}
  if(!Array.isArray(m.portfolio.weeklyDone)||m.portfolio.weeklyDone.length>8)invalid();for(const row of m.portfolio.weeklyDone){shape(row,['label','count']);text(row.label,20);count(row.count);}
  if(!Array.isArray(m.portfolio.milestones)||m.portfolio.milestones.length>6)invalid();for(const row of m.portfolio.milestones){shape(row,['title','projectName','owner','dueDate','daysLeft']);text(row.title,80);text(row.projectName,120);text(row.owner,40);date(row.dueDate);if(!Number.isInteger(row.daysLeft)||row.daysLeft<-3650||row.daysLeft>3650)invalid();}
- if(!Array.isArray(input.playlist)||input.playlist.length>10)invalid();const seen=new Set(),keys=new Set(['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice']);for(const p of input.playlist){shape(p,['key','enabled','seconds']);if(!keys.has(p.key)||seen.has(p.key)||typeof p.enabled!=='boolean'||!Number.isInteger(p.seconds)||p.seconds<10||p.seconds>120)invalid();seen.add(p.key);}
+ if(!Array.isArray(input.playlist)||input.playlist.length>11)invalid();const seen=new Set(),keys=new Set(['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice','strategy']);for(const p of input.playlist){shape(p,['key','enabled','seconds']);if(!keys.has(p.key)||seen.has(p.key)||typeof p.enabled!=='boolean'||!Number.isInteger(p.seconds)||p.seconds<10||p.seconds>120)invalid();seen.add(p.key);}
  return structuredClone(input);
 }
 module.exports={validatePublication};

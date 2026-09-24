@@ -26,13 +26,68 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-24-5'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-25-3'});
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.match(source,/승인된 프로젝트 주간 보고/);
  assert.match(source,/weeklyReports\.approvedDone/);
  assert.match(source,/집계 대기/);
+});
+test('web TV rotates an approved strategy scene and skips it when unavailable',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/strategy:'회사 방향'/);
+ assert.match(source,/function renderStrategy\(/);
+ assert.match(source,/strategy\.goals/);
+ assert.match(source,/집계 대기/);
+ assert.match(source,/model\.strategy/);
+ assert.match(source,/function validStrategy\(/);
+ assert.match(source,/validStrategy\(m\.strategy/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.strategy-layout/);
+});
+test('web TV cached direction expires at the Korea new year',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ const helper=source.match(/function currentStrategy\(strategy,instant=new Date\(\)\)\{.*?\}(?=\s*function active\()/s)?.[0];
+ assert.ok(helper,'client must expose an explicit current-year strategy guard');
+ const currentStrategy=vm.runInNewContext(`${helper};currentStrategy`);
+ assert.equal(currentStrategy({year:'2026'},new Date('2026-12-31T14:59:59Z')),true);
+ assert.equal(currentStrategy({year:'2026'},new Date('2026-12-31T15:00:00Z')),false);
+ assert.match(source,/currentStrategy\(board\?\.model\?\.strategy\)/);
+ assert.match(source,/displayedKey==='strategy'&&!currentStrategy\(board\.model\.strategy\)/);
+});
+test('web TV leaves a cached old-year direction after a failed refresh without losing other scenes',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ let instant='2026-12-31T14:59:59.000Z';
+ class ClockDate extends Date{constructor(...args){super(...(args.length?args:[instant]));}}
+ class Element{
+  constructor(){this.children=[];this.textContent='';this.style={};this.hidden=false;}
+  append(...items){this.children.push(...items);}
+  replaceChildren(...items){this.children=[...items];}
+  addEventListener(){}
+ }
+ const elements=new Map(),getElement=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
+ const snapshot={version:1,publishedAt:Date.parse('2026-12-31T14:50:00Z'),dataDate:'2026-12-31',notice:'회사 공지',playlist:[{key:'strategy',enabled:true,seconds:30},{key:'notice',enabled:true,seconds:30}],model:{total:0,overdue:0,unknown:0,counts:{assigned:0,doing:0,submitted:0,returned:0,done:0},people:[],schedule:{available:true,entries:[],today:[],week:[]},roadmap:{range:{weeks:[]},lanes:[]},portfolio:{overallProgress:0,healthCounts:{normal:0,check:0,risk:0,done:0},projects:[],weeklyDone:[],milestones:[]},strategy:{year:'2026',vision:'지난해 승인 비전',organization:[],goals:[]}}};
+ const intervals=[];
+ const context={Date:ClockDate,document:{visibilityState:'visible',getElementById:getElement,createElement:()=>new Element()},localStorage:{getItem:key=>key==='bring-public-wallboard'?JSON.stringify(snapshot):null,setItem(){},removeItem(){}},fetch:async()=>{throw Error('offline');},setInterval:(fn,ms)=>{intervals.push({fn,ms});},setTimeout:()=>{},location:{href:'https://gateway.test/tv',replace(){}},URL};
+ vm.runInNewContext(source,context);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(getElement('scene-title').textContent,'회사 방향');
+ assert.equal(getElement('connection').textContent,'연결 확인 중 · 최근 게시자료 유지');
+ instant='2026-12-31T15:00:00.000Z';
+ intervals.find(item=>item.ms===1000).fn();
+ assert.equal(getElement('scene-title').textContent,'회사 공지');
+ assert.equal(getElement('content').children[0].children[0].textContent,'회사 공지');
+});
+test('web TV pages the organization instead of rendering all 30 people at once',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/strategy\.organization\.slice\(page\*6,page\*6\+6\)/);
+ assert.match(source,/Math\.ceil\(\(model\.strategy\?\.organization\.length\|\|0\)\/6\)/);
+});
+test('web TV shows at most three strategy goals per screen at 720p',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/strategy\.goals\.slice\(page\*3,page\*3\+3\)/);
+ assert.match(source,/Math\.ceil\(\(model\.strategy\?\.goals\.length\|\|0\)\/3\)/);
 });
 
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{

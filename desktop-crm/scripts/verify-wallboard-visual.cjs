@@ -11,7 +11,7 @@ app.whenReady().then(async()=>{
  const out=path.resolve(process.argv[2]||'visual-wallboard');fs.mkdirSync(out,{recursive:true});
  const source=name=>fs.readFileSync(path.join(__dirname,'../src',name),'utf8');
  const css=['styles.css','company-wallboard.css','company-wallboard-theme.css','toss.css'].map(source).join('\n').replaceAll(':fullscreen','.test-fullscreen');
- for(const [width,height] of [[1920,1080],[1280,720]]){
+ for(const [width,height] of [[1920,1080],[1366,768],[1280,720]]){
   const win=new BrowserWindow({width,height,useContentSize:true,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
   await win.loadURL('about:blank');
   await win.webContents.executeJavaScript(`document.head.innerHTML='<style>'+${JSON.stringify(css)}+'</style>';document.body.innerHTML='<main></main>';document.body.style.margin='0';`);
@@ -26,8 +26,8 @@ app.whenReady().then(async()=>{
    document.querySelector('main').replaceChildren(stage);document.querySelector('main').classList.add('wb-manager');
    return true;
   })()`);
-  for(const key of ['roadmap','portfolio','people','status','issues','notice','schedule']){
-   const overflow=await win.webContents.executeJavaScript(`(()=>{const data={orders:Array.from({length:12},(_,i)=>({id:String(i),status:i%2?'doing':'done',assigneeName:'가상 직원 '+(i%6+1),projectId:${JSON.stringify(key)}==='portfolio'?'p1':''})),projects:${JSON.stringify(key)}==='portfolio'?[{id:'p1',name:'가상 디지털 트윈 실증',owner:'가상 직원',status:'active',progress:70}]:[],calendar:{serviceRecords:Array.from({length:6},(_,i)=>({scheduledDate:'2026-09-20',startTime:String(9+i).padStart(2,'0')+':30',status:'planned'}))}};const m=BringCompanyWallboard.project(data,'2026-09-20');const s=document.querySelector('.wb-stage');s.querySelector('h1').textContent=${JSON.stringify(key)};s.querySelector('.wb-content').innerHTML=BringCompanyWallboard.scene(m,${JSON.stringify(key)},0,'이번 주 현장 사진과 업무 결과를 확인해 주세요.','10:15');return {vertical:s.scrollHeight>s.clientHeight,horizontal:s.scrollWidth>s.clientWidth};})()`);
+  for(const key of ['roadmap','portfolio','people','status','issues','notice','schedule','strategy']){
+   const overflow=await win.webContents.executeJavaScript(`(()=>{const data={orders:Array.from({length:12},(_,i)=>({id:String(i),status:i%2?'doing':'done',assigneeName:'가상 직원 '+(i%6+1),projectId:${JSON.stringify(key)}==='portfolio'?'p1':''})),projects:${JSON.stringify(key)}==='portfolio'?[{id:'p1',name:'가상 디지털 트윈 실증',owner:'가상 직원',status:'active',progress:70}]:[],calendar:{serviceRecords:Array.from({length:6},(_,i)=>({scheduledDate:'2026-09-20',startTime:String(9+i).padStart(2,'0')+':30',status:'planned'}))},strategy:{year:'2026',vision:'현장을 더 안전하고 투명하게 운영합니다',organization:Array.from({length:8},(_,i)=>({displayName:'가상 팀원 '+(i+1),role:'운영 담당',reportsToIndex:i?0:null})),goals:Array.from({length:8},(_,i)=>({period:i%2?'H2':'annual',title:'운영 목표 '+(i+1),unit:'count',target:10,current:i+1,percent:(i+1)*10,source:'CRM 승인 기록'}))}};const m=BringCompanyWallboard.project(data,'2026-09-20');const s=document.querySelector('.wb-stage');s.querySelector('h1').textContent=${JSON.stringify(key)};s.querySelector('.wb-content').innerHTML=BringCompanyWallboard.scene(m,${JSON.stringify(key)},0,'이번 주 현장 사진과 업무 결과를 확인해 주세요.','10:15');return {vertical:s.scrollHeight>s.clientHeight,horizontal:s.scrollWidth>s.clientWidth};})()`);
    await new Promise(r=>setTimeout(r,100));
    fs.writeFileSync(path.join(out,`${key}-${width}x${height}.png`),(await win.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true})).toPNG());
    console.log(JSON.stringify({key,width,height,...overflow}));

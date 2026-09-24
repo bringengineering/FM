@@ -1,6 +1,50 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
+const vm=require('node:vm');
 const C=require('../src/company-wallboard');
+test('cached company direction expires at the Korea new year',()=>{
+ const old={year:'2026',vision:'2026년 방향'};
+ assert.equal(C.strategyCurrent(old,new Date('2026-12-31T14:59:59Z')),true);
+ assert.equal(C.strategyCurrent(old,new Date('2026-12-31T15:00:00Z')),false);
+ assert.equal(C.strategyCurrent(null,new Date('2026-12-31T14:59:59Z')),false);
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ assert.match(source,/displayedKey==='strategy'&&!strategyCurrent\(model\?\.strategy\)/);
+});
+test('paused local preview leaves a cached old-year direction on the next tick after refresh fails',async()=>{
+ let instant='2026-12-31T14:59:59.000Z',reads=0;
+ const RealDate=Date;
+ class ClockDate extends RealDate{constructor(...args){super(...(args.length?args:[instant]));}}
+ const intervals=[];
+ const moduleObject={exports:{}};
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ vm.runInNewContext(source,{module:moduleObject,Date:ClockDate,setInterval:(fn,ms)=>{intervals.push({fn,ms});return intervals.length;},clearInterval:()=>{}});
+ const elements={h1:{textContent:''},time:{textContent:''},footer:{textContent:''}};
+ const stage={querySelector:key=>elements[key],before(){},replaceChildren(){}};
+ const content={innerHTML:''};
+ const handlers={};
+ const host={
+  ownerDocument:{defaultView:{localStorage:{getItem:()=>JSON.stringify([{key:'strategy',enabled:true,seconds:30}]),setItem(){}}},createElement:()=>({className:'',innerHTML:'',setAttribute(){},querySelectorAll:()=>[]})},
+  innerHTML:'',querySelector:key=>key==='.wb-stage'?stage:key==='.wb-content'?content:key==='[data-wb-seconds]'?{closest:()=>({remove(){}})}:{append(){}},
+  addEventListener:(event,fn)=>{(handlers[event]??=[]).push(fn);},removeEventListener(){},
+ };
+ const board=moduleObject.exports;
+ const dispose=board.mount(host,{load:async()=>{if(++reads>1)throw Error('offline');return {orders:[],strategy:{year:'2026',vision:'올해 방향',organization:[],goals:[]}};}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(elements.h1.textContent,/회사 방향/);
+ assert.match(content.innerHTML,/올해 방향/);
+ const pauseButton={dataset:{wb:'pause'},textContent:''};
+ handlers.click[0]({target:{closest:selector=>selector==='[data-wb]'?pauseButton:null}});
+ const refreshButton={dataset:{wb:'refresh'},textContent:''};
+ handlers.click[0]({target:{closest:selector=>selector==='[data-wb]'?refreshButton:null}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(elements.h1.textContent,/회사 방향/);
+ instant='2026-12-31T15:00:00.000Z';
+ intervals.find(item=>item.ms===1000).fn();
+ assert.doesNotMatch(elements.h1.textContent,/회사 방향/);
+ assert.doesNotMatch(content.innerHTML,/올해 방향/);
+ assert.match(elements.h1.textContent,/프로젝트 로드맵/);
+ dispose();
+});
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
  const html=C.scene(null,'notice',0,'<회사 공지>');
  assert.match(html,/&lt;회사 공지&gt;/);
@@ -210,6 +254,40 @@ test('legacy completed work without a valid approval timestamp is reported outsi
  assert.equal(m.portfolio.unattributedDone,1);
  assert.equal(m.portfolio.weeklyDone.reduce((sum,item)=>sum+item.count,0),0);
  assert.match(C.scene(m,'weeklyTrend'),/완료 시각 확인 필요 1건/);
+});
+test('shared projection carries only an already-sanitized optional strategy',()=>{
+ const strategy={year:'2026',vision:'안전한 공간 운영',organization:[],goals:[]};
+ const model=C.project({orders:[],strategy},'2026-09-24');
+ assert.deepEqual(model.strategy,strategy);
+ assert.equal(Object.hasOwn(C.project({orders:[]},'2026-09-24'),'strategy'),false);
+});
+test('local strategy scene renders approved goal progress and unknown progress distinctly',()=>{
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'김현진',role:'운영',reportsToIndex:null}],goals:[{period:'annual',title:'관리 건물',unit:'count',target:10,current:4,percent:40,source:'CRM 건물'},{period:'H2',title:'표준 촬영',unit:'milestone',target:null,current:null,percent:null,source:'현장 보고'}]}},'2026-09-24');
+ const html=C.scene(model,'strategy');
+ assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/집계 대기/);
+ assert.doesNotMatch(html,/uid|undefined/);
+});
+test('local strategy scene shows the approved reporting relationship',()=>{
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'서창환',role:'대표',reportsToIndex:null},{displayName:'김현진',role:'운영',reportsToIndex:0}],goals:[]}},'2026-09-24');
+ assert.match(C.scene(model,'strategy'),/보고 · 서창환/);
+});
+test('local strategy scene paginates organization members as well as goals',()=>{
+ const organization=Array.from({length:8},(_,index)=>({displayName:`팀원${index+1}`,role:'운영',reportsToIndex:null}));
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization,goals:[]}},'2026-09-24');
+ const first=C.scene(model,'strategy',0),second=C.scene(model,'strategy',1);
+ assert.match(first,/팀원6/);assert.doesNotMatch(first,/팀원7/);
+ assert.match(second,/팀원7/);assert.match(second,/팀원8/);assert.doesNotMatch(second,/팀원1</);
+});
+test('local strategy scene limits goals to one row on compact TV heights',()=>{
+ const goals=Array.from({length:4},(_,index)=>({period:'annual',title:`운영 목표 ${index+1}`,unit:'count',target:10,current:index+1,percent:(index+1)*10,source:'CRM 승인 기록'}));
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[],goals}},'2026-09-24');
+ const first=C.scene(model,'strategy',0),second=C.scene(model,'strategy',1);
+ assert.match(first,/운영 목표 3/);assert.doesNotMatch(first,/운영 목표 4/);
+ assert.match(second,/운영 목표 4/);assert.doesNotMatch(second,/운영 목표 1/);
+});
+test('local preview returns to a valid scene when a new year has no approved strategy',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ assert.match(source,/index=Math\.min\(index,Math\.max\(0,playlist\(\)\.length-1\)\)/u);
 });
 test('approved project weekly reports stay separate from work-order completion trend',()=>{
  const weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};

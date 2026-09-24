@@ -23,7 +23,9 @@ test('local playlist persists only controls and supports an empty playlist',asyn
  const host=w.document.querySelector('main');const options={load:async()=>({orders:[]})};
  let stop=w.BringCompanyWallboard.mount(host,options);
  await new Promise(r=>setTimeout(r,0));
- expect(host.querySelectorAll('[data-wb-enabled]').length).toBe(10);
+ expect(host.querySelectorAll('[data-wb-enabled]').length).toBe(11);
+ expect(host.querySelector('[data-wb-enabled="strategy"]')).not.toBeNull();
+ expect(host.querySelector('.wb-content').textContent).not.toContain('게시된 회사 방향이 없습니다.');
  const seconds=host.querySelector('[data-wb-duration="people"]');seconds.value='15';seconds.dispatchEvent(new w.Event('change',{bubbles:true}));
  const notice=host.querySelector('[data-wb-notice]');notice.value='PRIVATE_NOTICE';notice.dispatchEvent(new w.Event('change',{bubbles:true}));
  expect(w.localStorage.getItem('bring.wallboard.playlist.v1')).not.toContain('PRIVATE_NOTICE');
@@ -53,7 +55,7 @@ test('playlist skips disabled screens at their configured duration and clamps in
  w.localStorage.setItem('bring.wallboard.playlist.v1',JSON.stringify([{key:'unknown'},{key:'people',seconds:1},{key:'people',seconds:100},{key:'status',enabled:false},{key:'issues',seconds:999}]));
  w.eval(fs.readFileSync(path.resolve('../desktop-crm/src/company-wallboard.js'),'utf8'));
  const host=w.document.querySelector('main');const stop=w.BringCompanyWallboard.mount(host,{load:async()=>({orders:[]})});await new Promise(r=>setTimeout(r,0));
- expect(host.querySelectorAll('[data-wb-enabled]').length).toBe(10);
+ expect(host.querySelectorAll('[data-wb-enabled]').length).toBe(11);
  expect(host.querySelector('[data-wb-duration="people"]').value).toBe('10');
  expect(host.querySelector('[data-wb-duration="issues"]').value).toBe('120');
  for(let i=0;i<9;i++)timers.get(1)!();expect(host.querySelector('h1').textContent).toBe('사람별 업무');

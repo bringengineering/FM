@@ -1,6 +1,7 @@
 import wallboard from '../../desktop-crm/src/company-wallboard.js';
 import weeklyCore from '../../desktop-crm/src/project-weekly-report-core.js';
 import weeklyExport from '../../desktop-crm/src/project-weekly-report-export.js';
+import strategyTv from '../../desktop-crm/src/company-strategy-tv.js';
 import {validatePublication} from './wallboard-publication.js';
 import {exchangeWallboardReaderToken} from './wallboard-service-auth.js';
 
@@ -72,6 +73,7 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  const namedProjects=rows(source.projects).map(item=>({...item,name:privateText(item.name)?'프로젝트명 확인 필요':item.name,owner:safeName(item.owner)}));
  const dateParts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(now())).map(part=>[part.type,part.value]));
  const dataDate=`${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+ const approvedStrategy=await readSource(`companyStrategyPublications/${dateParts.year}`,{env,idToken,fetchImpl,readTimeoutMs:timeout});
  const reports=rows(source.projectWeeklyReports);
  if(reports.some(report=>!weeklyCore.validateReport(report).ok||report.status==='approved'))fail('WALLBOARD_UNAVAILABLE');
  const byReport=new Map(reports.map(report=>[report.id,report]));
@@ -83,10 +85,11 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  }
  const weeklyReports=weeklyExport.tvProjection(reports,dataDate);
  const model=wallboard.project({orders:namedOrders,projects:namedProjects,members,calendar:{serviceRecords:rows(source['data/serviceRecords'])},weeklyReports},dataDate);
+ try{model.strategy=strategyTv.projectApprovedStrategy(approvedStrategy,members,dateParts.year);}catch{fail('WALLBOARD_UNAVAILABLE');}
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';
-  const snapshot=validatePublication({model,playlist:current.presentation?.playlist||defaultPlaylist,notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
+  const snapshot=validatePublication({model,playlist:strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
   if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>65536)fail('WALLBOARD_UNAVAILABLE');
   try{const result=await command(stub,'publish-if-changed',{snapshot,expectedVersion:current.version,refreshToken});return {version:result.version,publishedAt:result.publishedAt};}
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}

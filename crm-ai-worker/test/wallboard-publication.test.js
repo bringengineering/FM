@@ -54,6 +54,21 @@ test('approved weekly-report period must be the publication week',()=>{
  board.model.weeklyReports.periodStart='2026-09-21';board.model.weeklyReports.periodEnd='2026-09-27';
  assert.deepEqual(validatePublication(board),board);
 });
+test('approved strategy is optional but accepts only the TV-safe model',()=>{
+ const old=snapshot();assert.deepEqual(validatePublication(old),old);
+ const empty=snapshot();empty.model.strategy=null;assert.deepEqual(validatePublication(empty),empty);
+ const next=snapshot();next.dataDate='2026-09-24';next.model.strategy={year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'김현진',role:'운영',reportsToIndex:null}],goals:[{period:'annual',title:'관리 건물',unit:'count',target:10,current:4,percent:40,source:'CRM 건물'}]};
+ next.playlist.push({key:'strategy',enabled:true,seconds:30});
+ assert.deepEqual(validatePublication(next),next);
+ const privateModel=structuredClone(next);privateModel.model.strategy.organization[0].uid='staff-1';
+ assert.throws(()=>validatePublication(privateModel),/INVALID_INPUT/);
+ const wrongYear=structuredClone(next);wrongYear.model.strategy.year='2025';
+ assert.throws(()=>validatePublication(wrongYear),/INVALID_INPUT/);
+ const wrongPercent=structuredClone(next);wrongPercent.model.strategy.goals[0].percent=140;
+ assert.throws(()=>validatePublication(wrongPercent),/INVALID_INPUT/);
+ const childFirst=structuredClone(next);childFirst.model.strategy.organization=[{displayName:'운영팀',role:'현장',reportsToIndex:1},{displayName:'대표',role:'대표',reportsToIndex:null}];
+ assert.deepEqual(validatePublication(childFirst),childFirst);
+});
 test('published board uses optimistic revision and requires unrevoked device on every read',async()=>{
  let state={};let queue=Promise.resolve();const repository={transaction:fn=>{const p=queue.then(()=>fn(state));queue=p.catch(()=>{});return p;}};
  const service=createPairingService({repository,now:()=>1000}),admin={uid:'a',isAdmin:true};

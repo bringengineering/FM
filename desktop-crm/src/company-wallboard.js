@@ -1,7 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BringCompanyWallboard=api;})(typeof globalThis==='object'?globalThis:this,function(){
  'use strict';
  const labels={assigned:'시작 전',doing:'진행 중',submitted:'검수 대기',returned:'보완 요청',done:'검수 완료'};
- const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지']];
+ const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향']];
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function day(v){return typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v?v:null;}
  const text=(value,max=120)=>String(value==null?'':value).trim().slice(0,max);
@@ -77,12 +77,17 @@
   const weekly=data.weeklyReports;
   const safeWeekly=weekly&&weekly.available===true&&day(weekly.periodStart)&&day(weekly.periodEnd)&&[weekly.approvedReports,weekly.approvedTotal,weekly.approvedDone].every(value=>Number.isSafeInteger(value)&&value>=0)&&weekly.approvedDone<=weekly.approvedTotal
    ?{available:true,periodStart:weekly.periodStart,periodEnd:weekly.periodEnd,approvedReports:weekly.approvedReports,approvedTotal:weekly.approvedTotal,approvedDone:weekly.approvedDone}:unavailable;
-  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,...extra};
+  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){
   if(key==='notice')return `<div class="wb-announcement"><span>TEAM NOTICE</span><h2>${esc(notice||'등록된 공지가 없습니다')}</h2><p>회사 운영 공지</p></div>`;
   if(!m)return '<div class="wb-empty">아직 확인된 자료가 없습니다.</div>';
+  if(key==='strategy'){
+   const strategy=m.strategy;if(!strategy)return '<div class="wb-empty">게시된 회사 방향이 없습니다.</div>';
+   const unit={count:'건',percent:'%',krw:'원',day:'일',milestone:''};
+   return `<div class="wb-strategy-layout"><section class="wb-strategy-vision"><small>${esc(strategy.year)} 회사 비전</small><h2>${esc(strategy.vision)}</h2></section><section class="wb-strategy-people">${strategy.organization.slice(page*6,page*6+6).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role)}${person.reportsToIndex===null?'':` · 보고 · ${esc(strategy.organization[person.reportsToIndex].displayName)}`}</small></span>`).join('')}</section><section class="wb-strategy-goals">${strategy.goals.slice(page*3,page*3+3).map(goal=>`<article><small>${esc({annual:'연간',H1:'상반기',H2:'하반기'}[goal.period]||goal.period)}</small><h3>${esc(goal.title)}</h3><p>${goal.current===null?'실적 미입력':esc(goal.current+' '+(unit[goal.unit]||''))} / ${goal.target===null?'목표 미입력':esc(goal.target+' '+(unit[goal.unit]||''))}</p><strong>${goal.percent===null?'집계 대기':goal.percent+'%'}</strong>${goal.percent===null?'':`<progress max="100" value="${goal.percent}"></progress>`}<small>근거 · ${esc(goal.source)}</small></article>`).join('')}</section></div>`;
+  }
   if(key==='roadmap'){
    const roadmap=roadmapView(m,zoom,dataDate),lanes=roadmap.lanes.slice(page*3,page*3+3),weeks=roadmap.range.weeks;
    const laneHtml=lanes.map(lane=>`<article class="wb-roadmap-lane"><div class="wb-roadmap-person"><b>${esc(lane.assigneeName)}</b><small>${lane.projectCount}개 프로젝트</small><progress max="100" value="${lane.progress}"></progress></div><div class="wb-roadmap-track">${weeks.map(()=>'<i></i>').join('')}<span class="wb-roadmap-today" style="left:${roadmap.range.todayOffset}%"></span>${lane.assignments.map(item=>`<div class="wb-roadmap-assignment">${item.layout?`<div class="wb-roadmap-project health-${item.health}" style="left:${item.layout.left}%;width:${Math.max(4,item.layout.width)}%"><i style="width:${item.progress}%"></i><span>${esc(item.projectName)} <b>${item.progress}%</b></span></div>`:`<div class="wb-roadmap-undated">${esc(item.projectName)} · ${esc(item.scheduleLabel||"일정 미정")} · ${item.progress}%</div>`}</div>`).join('')}</div></article>`).join('');
@@ -116,10 +121,10 @@
   return `<div class="wb-bars">${Object.entries(labels).map(([k,label])=>`<div><span>${label}</span><progress value="${m.counts[k]}" max="${m.total||1}" aria-label="${label} ${m.counts[k]}건"></progress><strong>${m.counts[k]}건</strong></div>`).join('')}</div><p>조회 권한 내 전체 기간 ${m.total}건 · 검수 완료율 ${m.total?Math.round(m.counts.done/m.total*100)+'%':'산정 불가'} · 상태 확인 필요 ${m.unknown}건</p>`;
  }
  function mount(host,{load,manage,isActive=()=>true}){
-  let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='',zoom='week';
+  let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='',zoom='week',displayedKey='';
   let dataDate='',dataLoadedAt=0;
   const storageKey='bring.wallboard.playlist.v1';
-  const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30};
+  const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30,strategy:30};
   let settings=scenes.map(([key])=>({key,enabled:true,seconds:defaultDurations[key]})),storageError='';
   const duration=v=>Math.min(120,Math.max(10,Math.round(Number(v)||30)));
   try{
@@ -130,7 +135,7 @@
     settings=[...valid,...settings.filter(s=>!seen.has(s.key))];
    }
   }catch(_){storageError='설정 저장소를 읽을 수 없어 기본 편성을 사용합니다.';}
-  const playlist=()=>settings.filter(s=>s.enabled);
+  const playlist=()=>settings.filter(s=>s.enabled&&(s.key!=='strategy'||strategyCurrent(model?.strategy)));
   const current=()=>playlist()[index];
   function save(){try{host.ownerDocument.defaultView.localStorage.setItem(storageKey,JSON.stringify(settings));storageError='';}catch(_){storageError='설정을 저장하지 못했습니다. 현재 화면에서만 적용됩니다.';}}
   host.innerHTML=`<section class="wb-manager"><header><h2>회사 운영보드</h2><p>로컬 TV 미리보기 · 원격 TV 미연결 · 업무 원문과 고객정보는 표시하지 않습니다.</p></header><div class="wb-controls"><button type="button" data-wb="prev">이전</button><button type="button" data-wb="pause">화면 고정</button><button type="button" data-wb="next">다음</button><label>화면당 초 <input data-wb-seconds type="number" min="10" max="120" value="30"></label><button type="button" data-wb="full">전체화면</button><button type="button" data-wb="refresh">새로고침</button></div><label class="wb-notice-input">공지 미리보기 · 개인정보 입력 금지<input data-wb-notice maxlength="160" placeholder="공지 문구를 입력하세요"></label><section class="wb-stage"><header><div><small>BRING · COMPANY BOARD</small><h1></h1></div><time></time></header><div class="wb-content"></div><footer></footer></section></section>`;
@@ -142,19 +147,20 @@
   const editor=host.ownerDocument.createElement('details');editor.className='wb-playlist';editor.open=true;stage.before(editor);
   function edit(){editor.innerHTML=`<summary>화면 편성 · 이 컴퓨터에만 저장</summary><div class="wb-playlist-rows">${settings.map((s,i)=>`<div class="wb-playlist-row"><label><input type="checkbox" data-wb-enabled="${s.key}" ${s.enabled?'checked':''}>${scenes.find(x=>x[0]===s.key)[1]}</label><label>노출 시간 <input type="number" min="10" max="120" value="${s.seconds}" data-wb-duration="${s.key}"> 초</label><button type="button" class="secondary-button" data-wb-up="${s.key}" ${i===0?'disabled':''} aria-label="${scenes.find(x=>x[0]===s.key)[1]} 앞으로 이동">위로</button></div>`).join('')}</div><p>10~120초 · 공지 문구는 저장하지 않습니다.</p>`;}
   edit();
-  function draw(){if(closed)return;const item=current();zoomControls.hidden=item?.key!=='roadmap';zoomControls.querySelectorAll('[data-wb-zoom]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.wbZoom===zoom)));stage.querySelector('h1').textContent=item?scenes.find(x=>x[0]===item.key)[1]+(item.key==='roadmap'?` · ${zoom==='day'?'8일 상세':'8주 요약'}`:''):'화면 편성';stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');content.innerHTML=item?scene(model,item.key,page,notice,new Date().toTimeString().slice(0,5),zoom,dataDate):'<div class="wb-empty">표시할 화면을 선택해 주세요.</div>';stage.querySelector('footer').textContent=`${storageError?storageError+' · ':''}${error?'연결 확인 필요 · ':''}${last?'마지막 성공 갱신 '+last:busy?'불러오는 중':'갱신 기록 없음'} · ${paused?'화면 고정':'자동 순환'} · 로컬 미리보기`;}
-  function pageCount(){const key=current()?.key;const count=key==='roadmap'?(model?.roadmap?.lanes.length||0)*2:key==='people'?model?.people.length:key==='portfolio'?model?.portfolio?.projects.length:key==='scheduleToday'?model?.schedule?.today.length:key==='scheduleWeek'?model?.schedule?.week.length:0;return Math.max(1,Math.ceil((count||0)/6));}
-  async function refresh(){if(closed||busy||!isActive())return;busy=true;draw();try{const data=await load();if(closed||!isActive())return;const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');model=project(data,today);dataDate=today;dataLoadedAt=Date.now();last=now.toLocaleTimeString('ko-KR');error='';page=Math.min(page,pageCount()-1);}catch(_){if(!closed)error='조회 실패';}finally{busy=false;if(!closed)draw();}}
+  function draw(){if(closed)return;const item=current();displayedKey=item?.key||'';zoomControls.hidden=item?.key!=='roadmap';zoomControls.querySelectorAll('[data-wb-zoom]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.wbZoom===zoom)));stage.querySelector('h1').textContent=item?scenes.find(x=>x[0]===item.key)[1]+(item.key==='roadmap'?` · ${zoom==='day'?'8일 상세':'8주 요약'}`:''):'화면 편성';stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');content.innerHTML=item?scene(model,item.key,page,notice,new Date().toTimeString().slice(0,5),zoom,dataDate):'<div class="wb-empty">표시할 화면을 선택해 주세요.</div>';stage.querySelector('footer').textContent=`${storageError?storageError+' · ':''}${error?'연결 확인 필요 · ':''}${last?'마지막 성공 갱신 '+last:busy?'불러오는 중':'갱신 기록 없음'} · ${paused?'화면 고정':'자동 순환'} · 로컬 미리보기`;}
+  function pageCount(){const key=current()?.key;if(key==='strategy')return Math.max(1,Math.ceil((model?.strategy?.organization.length||0)/6),Math.ceil((model?.strategy?.goals.length||0)/3));const count=key==='roadmap'?(model?.roadmap?.lanes.length||0)*2:key==='people'?model?.people.length:key==='portfolio'?model?.portfolio?.projects.length:key==='scheduleToday'?model?.schedule?.today.length:key==='scheduleWeek'?model?.schedule?.week.length:0;return Math.max(1,Math.ceil((count||0)/6));}
+  async function refresh(){if(closed||busy||!isActive())return;busy=true;draw();try{const data=await load();if(closed||!isActive())return;const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');model=project(data,today);dataDate=today;dataLoadedAt=Date.now();last=now.toLocaleTimeString('ko-KR');error='';index=Math.min(index,Math.max(0,playlist().length-1));page=Math.min(page,pageCount()-1);}catch(_){if(!closed)error='조회 실패';}finally{busy=false;if(!closed)draw();}}
   function next(delta){const list=playlist();if(!list.length){draw();return;}if(delta>0&&page+1<pageCount())page++;else if(delta<0&&page>0)page--;else{index=(index+delta+list.length)%list.length;page=delta<0?pageCount()-1:0;}tick=0;draw();}
   function configure(e){const up=e.target.closest('[data-wb-up]');if(!up)return;const i=settings.findIndex(s=>s.key===up.dataset.wbUp);if(i>0){[settings[i-1],settings[i]]=[settings[i],settings[i-1]];index=0;page=0;tick=0;save();edit();draw();}}
   function click(e){const selected=e.target.closest('[data-wb-zoom]')?.dataset.wbZoom;if(selected){zoom=selected==='day'?'day':'week';draw();return;}const action=e.target.closest('[data-wb]')?.dataset.wb;if(action==='next')next(1);if(action==='prev')next(-1);if(action==='pause'){paused=!paused;e.target.textContent=paused?'자동 순환':'화면 고정';draw();}if(action==='refresh')void refresh();if(action==='full'){try{const p=stage.requestFullscreen?.();if(p&&p.catch)p.catch(()=>{error='전체화면 사용 불가';draw();});}catch(_){error='전체화면 사용 불가';draw();}}}
   function change(e){if(e.target.matches('[data-wb-enabled],[data-wb-duration]')){const s=settings.find(s=>s.key===(e.target.dataset.wbEnabled||e.target.dataset.wbDuration));if(s){if(e.target.hasAttribute('data-wb-enabled'))s.enabled=e.target.checked;else{ s.seconds=duration(e.target.value);e.target.value=s.seconds;}index=0;page=0;tick=0;save();draw();}}if(e.target.matches('[data-wb-notice]')){notice=e.target.value.slice(0,160);draw();}}
   host.addEventListener('click',click);host.addEventListener('change',change);
   host.addEventListener('click',configure);
-  const timer=setInterval(()=>{if(!isActive()){dispose();return;}if(!paused&&current()&&++tick>=current().seconds)next(1);else if(current()?.key==='schedule')draw();else stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');},1000);
+  const timer=setInterval(()=>{if(!isActive()){dispose();return;}if(displayedKey==='strategy'&&!strategyCurrent(model?.strategy)){index=Math.min(index,Math.max(0,playlist().length-1));page=0;tick=0;draw();return;}if(!paused&&current()&&++tick>=current().seconds)next(1);else if(current()?.key==='schedule')draw();else stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');},1000);
   const poll=setInterval(()=>void refresh(),60000);
   function dispose(){closed=true;disposeAdmin();clearInterval(timer);clearInterval(poll);host.removeEventListener('click',click);host.removeEventListener('click',configure);host.removeEventListener('change',change);stage.replaceChildren();}
   void refresh();return dispose;
  }
- return {project,schedule,scene,mount,roadmapView};
+ function strategyCurrent(strategy,instant=new Date()){return !!strategy&&strategy.year===new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric'}).format(instant);}
+ return {project,schedule,scene,mount,roadmapView,strategyCurrent};
 });

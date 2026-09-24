@@ -99,6 +99,27 @@ test('authenticated start publishes current shared CRM data', async () => {
   assert.equal(item.published[0].snapshot.model.people[0].name, '김현진');
   assert.equal(item.sync.status().active, true);
 });
+test('live sync uses Korea date at New Year', async () => {
+ const published=[];
+ const sync=createWallboardLiveSync({getIdentity:()=> 'admin',load:async()=>({orders:[],calendar:{serviceRecords:[]}}),list:async()=>({version:0,presentation:null}),publish:async input=>{published.push(input);return {version:1,publishedAt:1};},now:()=>new Date('2026-12-31T15:30:00.000Z'),setIntervalFn:()=>({unref(){}}),clearIntervalFn:()=>{}});
+ sync.start();
+ await new Promise(resolve=>setImmediate(resolve));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(published[0].snapshot.dataDate,'2027-01-01');
+ sync.stop();
+});
+test('live sync uses the source-read instant if midnight passes during loading', async () => {
+ const before=new Date('2026-12-31T14:59:59.000Z');
+ let clockReads=0,sourceInstant,published;
+ const sync=createWallboardLiveSync({getIdentity:()=> 'admin',load:async instant=>{sourceInstant=instant;return {orders:[],calendar:{serviceRecords:[]},strategy:{year:'2026',vision:'안전한 공간',organization:[],goals:[{period:'annual',title:'점검',unit:'count',target:10,current:4,percent:40,source:'CRM'}]}};},list:async()=>({version:0,presentation:null}),publish:async input=>{published=input;return {version:1,publishedAt:1};},now:()=>++clockReads===1?before:new Date('2026-12-31T15:00:01.000Z'),setIntervalFn:()=>({unref(){}}),clearIntervalFn:()=>{}});
+ sync.start();
+ await new Promise(resolve=>setImmediate(resolve));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sourceInstant,before);
+ assert.equal(published.snapshot.dataDate,'2026-12-31');
+ assert.equal(clockReads,1);
+ sync.stop();
+});
 
 test('multiple remote success notifications coalesce into one publication', async () => {
   const item = fixture();

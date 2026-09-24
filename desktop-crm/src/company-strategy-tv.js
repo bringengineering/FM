@@ -1,0 +1,41 @@
+'use strict';
+const Strategy=require('./company-strategy-core');
+
+const privateText=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|[가-힣A-Za-z0-9]+(?:대로|로|길)\s*\d{1,4}(?:-\d{1,4})?|[가-힣]+(?:동|읍|면|리)\s*\d{1,4}(?:-\d{1,4})?|\d{1,4}\s*(?:번지|호))/iu;
+const unsafe=value=>typeof value!=='string'||/[\u0000-\u001f]/u.test(value)||privateText.test(value);
+const invalid=()=>{throw new Error('INVALID_APPROVED_STRATEGY');};
+
+function projectApprovedStrategy(publication,members,year){
+ if(publication===null||publication===undefined)return null;
+ if(publication.year!==year)invalid();
+ if(!/^20\d{2}$/u.test(year)||typeof publication.content!=='string'||!Array.isArray(members))invalid();
+ const timestamp=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
+ if(!Number.isSafeInteger(publication.revision)||publication.revision<1||!Number.isSafeInteger(publication.sourceRevision)||publication.sourceRevision<0||!timestamp(publication.updatedAt)||!timestamp(publication.publishedAt)||publication.updatedAt!==publication.publishedAt||typeof publication.updatedBy!=='string'||!publication.updatedBy||publication.updatedBy!==publication.publishedBy)invalid();
+ let raw;
+ try{raw=JSON.parse(publication.content);}catch{invalid();}
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))invalid();
+ const list=value=>Array.isArray(value)?value:value&&typeof value==='object'?Object.values(value):value;
+ const checked=Strategy.validatePublication({...raw,organization:list(raw.organization),goals:list(raw.goals)});
+ if(!checked.ok||checked.draft.year!==year)invalid();
+ const projected=Strategy.projectStrategy(checked.draft);
+ if(unsafe(projected.vision)||projected.organization.some(person=>unsafe(person.role))||projected.goals.some(goal=>[goal.title,goal.source].some(unsafe)))invalid();
+ const names=new Map(members.filter(person=>typeof person?.uid==='string').map(person=>[person.uid,person.displayName]));
+ const positions=new Map(projected.organization.map((person,index)=>[person.uid,index]));
+ return {
+  year,
+  vision:projected.vision,
+  organization:projected.organization.map(person=>({
+   displayName:/^[\p{L} .·-]{2,40}$/u.test(names.get(person.uid)||'')?names.get(person.uid):'담당자',
+   role:person.role,
+   reportsToIndex:person.reportsToUid?positions.get(person.reportsToUid):null,
+  })),
+  goals:projected.goals.map(goal=>({period:goal.period,title:goal.title,unit:goal.unit,target:goal.target,current:goal.current,percent:goal.percent,source:goal.source})),
+ };
+}
+
+function withStrategyScene(playlist){
+ if(!Array.isArray(playlist))return playlist;
+ return playlist.some(item=>item?.key==='strategy')?playlist:[...playlist,{key:'strategy',enabled:true,seconds:30}];
+}
+
+module.exports={projectApprovedStrategy,withStrategyScene};

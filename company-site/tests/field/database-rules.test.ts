@@ -2295,6 +2295,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
     const reader = environment.authenticatedContext("wallboard-reader", crmClaims("wallboard-reader@bring.test")).database();
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), "crmCompany/wallboardReaders/wallboard-reader"), { enabled:true, email:"wallboard-reader@bring.test" });
+    });
     const draftPath = "crmCompany/companyStrategyDrafts/2026";
     const publishedPath = "crmCompany/companyStrategyPublications/2026";
     const adminKey = `m_${Buffer.from('crm-admin').toString('base64url')}`;
@@ -2321,7 +2324,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,organization:{[adminKey]:{uid:"crm-admin",role:"다른 역할",reportsToUid:""}}}));
     await assertSucceeds(get(ref(member,publishedPath)));
     await assertSucceeds(get(ref(viewer,publishedPath)));
-    await assertFails(get(ref(reader,publishedPath)));
+    await assertSucceeds(get(ref(reader,publishedPath)));
+    await assertFails(set(ref(reader,publishedPath),publication));
+    await assertFails(get(ref(reader,"crmCompany/companyStrategyPublications")));
     await assertFails(set(ref(member,publishedPath),{...publication,revision:2,updatedBy:"crm-legacy-member",publishedBy:"crm-legacy-member"}));
     await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,sourceRevision:1}));
     await assertFails(set(ref(admin,publishedPath),{...publication,revision:2,content:JSON.stringify({...JSON.parse(publication.content),goals:{g1:{...dottedFields.goals.g1,source:""}}})}));

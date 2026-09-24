@@ -1,11 +1,15 @@
 'use strict';
 const {project}=require('./company-wallboard');
 const {validatePublication}=require('./wallboard-publication-schema');
-async function loadWallboardSource(client){
+const {projectApprovedStrategy,withStrategyScene}=require('./company-strategy-tv');
+const {koreaDate}=require('./korea-date');
+async function loadWallboardSource(client,asOf=new Date()){
  // Never call loadStore: it can resume pending mutations and merge local edits.
  const [work,records]=await Promise.all([client.loadWorkOrders(),client.dbRequest('crmShared/data/serviceRecords',{method:'GET'})]);
  if(records!==null&&(typeof records!=='object'||Array.isArray(records)))throw new Error('서버 일정 형식을 확인할 수 없습니다.');
- return {...work,calendar:{serviceRecords:Object.values(records||{})}};
+ const year=koreaDate(asOf).slice(0,4);
+ const approved=await client.dbRequest(`companyStrategyPublications/${year}`,{method:'GET'});
+ return {...work,calendar:{serviceRecords:Object.values(records||{})},strategy:projectApprovedStrategy(approved,work.members||[],year)};
 }
 function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),setTimer=fn=>setInterval(fn,60000),clearTimer=clearInterval}){
  let active=false,busy=false,timer=null,generation=0,owner='',config=null,version=null,publishedAt=null,error='';
@@ -16,10 +20,11 @@ function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),s
   if(!owner||getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
   busy=true;const generationAtStart=generation;
   try{
-   const data=await load();
+   const instant=now();
+   const data=await load(instant);
    if(!active||generationAtStart!==generation)return status();
    if(getIdentity()!==owner){stop();error='AUTH_REQUIRED';return status();}
-   const date=now(),dataDate=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+   const dataDate=koreaDate(instant);
    const snapshot=validatePublication({model:project(data,dataDate),...config,dataDate});
    const result=await publish({action:'publish',snapshot,expectedVersion:version},owner);
    if(generationAtStart===generation){version=result.version;publishedAt=result.publishedAt;error='';}
@@ -32,7 +37,7 @@ function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),s
   if(busy)throw new Error('게시 처리 중입니다. 잠시 후 다시 시도해 주세요.');
   const identity=getIdentity();if(!identity)throw new Error('로그인이 필요합니다.');
   if(!Number.isSafeInteger(input?.expectedVersion)||input.expectedVersion<0)throw new Error('서버 버전을 먼저 확인해 주세요.');
-  const checked=validatePublication({model:project({orders:[],calendar:{serviceRecords:[]}},'2026-01-01'),playlist:input.playlist,notice:input.notice,dataDate:'2026-01-01'});
+  const checked=validatePublication({model:project({orders:[],calendar:{serviceRecords:[]}},'2026-01-01'),playlist:withStrategyScene(input.playlist),notice:input.notice,dataDate:'2026-01-01'});
   stop();owner=identity;config={playlist:checked.playlist,notice:checked.notice};version=input.expectedVersion;error='';active=true;timer=setTimer(()=>refresh());timer?.unref?.();
   await refresh();return status();
  }
