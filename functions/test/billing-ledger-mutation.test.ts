@@ -209,6 +209,7 @@ describe("atomic billing ledger mutation", () => {
     });
     let transactionSawCurrent = false;
     const ref = {
+      async get() { return { val: () => null }; },
       async transaction(update: (value: unknown) => unknown) {
         const next = update(first.ledger);
         transactionSawCurrent = true;
@@ -222,8 +223,53 @@ describe("atomic billing ledger mutation", () => {
     expect(transactionSawCurrent).toBe(true);
   });
 
+  it("uses the server pre-read when the Admin SDK starts a transaction from an empty local cache", async () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const ref = {
+      async get() { return { val: () => first.ledger }; },
+      async transaction(update: (value: unknown) => unknown) {
+        const next = update(null);
+        expect(next).toMatchObject({ invoices: { [invoice.id]: { amount: 120000, revision: 2 } } });
+        return { committed: next !== undefined };
+      },
+    };
+    await expect(transactBillingLedger(ref, {
+      kind: "invoice", record: { ...invoice, amount: 120000 }, expectedRevision: 1,
+      requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).resolves.toMatchObject({ record: { amount: 120000, revision: 2 } });
+  });
+
+  it("does not reuse the pre-read after a concurrent server change forces a retry", async () => {
+    const first = reduceBillingLedgerMutation(null, {
+      kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
+      actor: { uid: "member-1", role: "member" }, now: NOW,
+    });
+    const newer = reduceBillingLedgerMutation(first.ledger, {
+      kind: "invoice", record: { ...invoice, amount: 110000 }, expectedRevision: 1,
+      requestId: "request-other", actor: { uid: "member-2", role: "member" }, now: NOW,
+    });
+    const ref = {
+      async get() { return { val: () => first.ledger }; },
+      async transaction(update: (value: unknown) => unknown) {
+        expect(update(null)).not.toBeUndefined();
+        expect(update(newer.ledger)).toBeUndefined();
+        return { committed: false };
+      },
+    };
+    await expect(transactBillingLedger(ref, {
+      kind: "invoice", record: { ...invoice, amount: 120000 }, expectedRevision: 1,
+      requestId: "request-2", actor: { uid: "member-1", role: "member" }, now: NOW,
+    })).rejects.toThrowError("billing_revision_conflict");
+  });
+
   it("does not report success if the database transaction aborts", async () => {
-    const ref = { async transaction(_update: (value: unknown) => unknown) { return { committed: false }; } };
+    const ref = {
+      async get() { return { val: () => null }; },
+      async transaction(_update: (value: unknown) => unknown) { return { committed: false }; },
+    };
     await expect(transactBillingLedger(ref, {
       kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
       actor: { uid: "member-1", role: "member" }, now: NOW,

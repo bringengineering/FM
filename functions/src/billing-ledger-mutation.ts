@@ -261,6 +261,7 @@ export function reduceBillingLedgerMutation(
 
 export async function transactBillingLedger(
   ref: {
+    get: () => Promise<{ val: () => unknown }>;
     transaction: (
       update: (value: unknown) => unknown,
       onComplete?: undefined,
@@ -273,9 +274,15 @@ export async function transactBillingLedger(
   let rejection: unknown = null;
   let transaction: { committed: boolean };
   try {
+    const initial = (await ref.get()).val();
+    let firstCallback = true;
     transaction = await ref.transaction((current) => {
       try {
-        decision = reduceBillingLedgerMutation(current as BillingLedger | null, command);
+        // Admin RTDB transactions may first invoke the updater with an empty local cache.
+        // The server compares the tentative value and retries with its actual state on conflict.
+        const candidate = firstCallback && current == null && initial != null ? initial : current;
+        firstCallback = false;
+        decision = reduceBillingLedgerMutation(candidate as BillingLedger | null, command);
         rejection = null;
         return decision.repeated ? undefined : decision.ledger;
       } catch (error) {
