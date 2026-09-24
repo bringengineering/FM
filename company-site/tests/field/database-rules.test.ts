@@ -2295,6 +2295,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
     const reader = environment.authenticatedContext("wallboard-reader", crmClaims("wallboard-reader@bring.test")).database();
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), "crmCompany/wallboardReaders/wallboard-reader"), { enabled:true, email:"wallboard-reader@bring.test" });
+    });
     const draftPath = "crmCompany/companyStrategyDrafts/2026";
     const publishedPath = "crmCompany/companyStrategyPublications/2026";
     const adminKey = `m_${Buffer.from('crm-admin').toString('base64url')}`;

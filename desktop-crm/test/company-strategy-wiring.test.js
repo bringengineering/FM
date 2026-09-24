@@ -15,6 +15,12 @@ test('strategy actions are narrow IPC methods and the browser loads the validato
  assert.ok(html.indexOf('src="./company-strategy-core.js"')<html.indexOf('src="./app.js"'));
 });
 
+test('publishing an approved direction signals the existing TV refresh queue, saving a draft does not',()=>{
+ const main=read('main.js');
+ assert.match(main,/secureCanonicalHandle\("crm:company-strategy-publish", input => saveAndSignalWallboard\(\(\) => remoteClient\.publishCompanyStrategy\(input\), signalWallboardAfterSave\)\)/u);
+ assert.match(main,/secureCanonicalHandle\("crm:company-strategy-draft-save", input => remoteClient\.saveCompanyStrategyDraft\(input\)\)/u);
+});
+
 test('isolated local preview reads an empty strategy without dereferencing a missing remote client',()=>{
  const main=read('main.js');
  assert.match(main,/crm:company-strategy-load", input => localTestMode/u);

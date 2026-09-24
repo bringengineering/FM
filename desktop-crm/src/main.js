@@ -9048,7 +9048,7 @@ secureCanonicalHandle("crm:company-strategy-load", input => localTestMode
   ? { published:null, draft:null, localOnly:true }
   : remoteClient.loadCompanyStrategy(input));
 secureCanonicalHandle("crm:company-strategy-draft-save", input => remoteClient.saveCompanyStrategyDraft(input));
-secureCanonicalHandle("crm:company-strategy-publish", input => remoteClient.publishCompanyStrategy(input));
+secureCanonicalHandle("crm:company-strategy-publish", input => saveAndSignalWallboard(() => remoteClient.publishCompanyStrategy(input), signalWallboardAfterSave));
 secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("loadProjectWeeklyReports"));
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));

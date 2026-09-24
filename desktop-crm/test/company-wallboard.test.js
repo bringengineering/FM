@@ -223,6 +223,10 @@ test('local strategy scene renders approved goal progress and unknown progress d
  assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/집계 대기/);
  assert.doesNotMatch(html,/uid|undefined/);
 });
+test('local preview returns to a valid scene when a new year has no approved strategy',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ assert.match(source,/index=Math\.min\(index,Math\.max\(0,playlist\(\)\.length-1\)\)/u);
+});
 test('approved project weekly reports stay separate from work-order completion trend',()=>{
  const weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};
  const model=C.project({orders:[],weeklyReports},'2026-09-24');
