@@ -326,10 +326,21 @@
     return addDays(value, -(day === 0 ? 6 : day - 1));
   }
 
-  function roadmapRange(asOf, shift) {
+  function roadmapRange(asOf, shift, scale = "weeks") {
     const today = isDate(asOf) ? text(asOf, 10) : "";
     if (!today) return null;
     const page = Number.isFinite(Number(shift)) ? Math.round(Number(shift)) : 0;
+    if (scale === "days") {
+      // 어제부터 8일을 보여 오늘과 다가오는 일정을 한 화면에서 비교한다.
+      const from = addDays(today, -1 + page * 8);
+      const days = 8;
+      const columns = Array.from({ length: days }, (_, index) => {
+        const start = addDays(from, index);
+        const weekday = "일월화수목금토"[new Date(`${start}T00:00:00Z`).getUTCDay()];
+        return { start, end: start, label: `${Number(start.slice(5, 7))}/${Number(start.slice(8, 10))} ${weekday}` };
+      });
+      return { from, to: addDays(from, days - 1), days, scale: "days", columns };
+    }
     // 이번 주 앞에 세 주를 두어 오늘 선이 대략 중앙에 오게 한다.
     const from = addDays(weekStart(today), -21 + page * 28);
     const days = 56;
@@ -338,7 +349,7 @@
       const start = addDays(from, index * 7);
       return { start, end: addDays(start, 6), label: `${Number(start.slice(5, 7))}월 ${Math.ceil(Number(start.slice(8, 10)) / 7)}주` };
     });
-    return { from, to, days, weeks };
+    return { from, to, days, weeks, scale: "weeks", columns: weeks };
   }
 
   function overlapsRange(order, range) {

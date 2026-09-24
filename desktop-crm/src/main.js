@@ -5387,23 +5387,32 @@ async function createWindow() {
         await wait(180);
         document.querySelector('[data-live-refresh="projectRoadmap"]')?.click();
         await wait(420);
+        const daysPreview = ${JSON.stringify(process.env.BRING_CRM_SCREENSHOT_ROADMAP_SCALE === "days")};
+        if (daysPreview) {
+          document.querySelector('[data-roadmap-scale="days"]')?.click();
+          await wait(120);
+        }
         const project = document.querySelector('.roadmap-bar[data-roadmap-select]');
         project?.click();
         await wait(700);
         const detail = document.querySelector('.roadmap-detail');
         const progressModalOpen = document.querySelector('.modal-layer')?.classList.contains('open') === true;
         const labels = [...document.querySelectorAll('.roadmap-today-label')];
+        const axisLabels = [...document.querySelectorAll('.roadmap-axis span')].map(item => item.textContent.trim());
         const repeated = [...document.querySelectorAll('.roadmap-lane-track')]
           .some(track => track.textContent.includes('오늘'));
         return {
           pass: window.__crmTest?.snapshot().view === 'projectRoadmap'
             && Boolean(project && detail) && !progressModalOpen
-            && labels.length === 1 && !repeated,
+            && labels.length === 1 && !repeated
+            && (!daysPreview || (axisLabels.length === 8 && axisLabels.every(label => /^\\d{1,2}\\/\\d{1,2} [일월화수목금토]$/.test(label))
+              && document.querySelector('[data-roadmap-scale="days"]')?.getAttribute('aria-pressed') === 'true')),
           projectSelected: Boolean(project),
           detailVisible: Boolean(detail),
           progressModalOpen,
           scrollTop: document.querySelector('.main-content')?.scrollTop || 0,
           todayLabels: labels.length,
+          axisLabels,
           repeated,
           state: window.__crmTest?.snapshot(),
         };
