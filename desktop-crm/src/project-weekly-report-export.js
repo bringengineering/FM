@@ -39,6 +39,19 @@ function bundle(input) {
   };
 }
 
+function validApprovalTime(value){
+ if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value))return null;
+ const stamp=Date.parse(value);
+ return Number.isFinite(stamp)?stamp:null;
+}
+
+function koreaDate(value){
+ const date=value instanceof Date?value:new Date(value);
+ if(!Number.isFinite(date.getTime()))return null;
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date).map(part=>[part.type,part.value]));
+ return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function tvProjection(reports,today) {
   const unavailable={available:false,periodStart:null,periodEnd:null,approvedReports:null,approvedTotal:null,approvedDone:null};
   if (!Array.isArray(reports) || typeof today!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return unavailable;
@@ -52,18 +65,18 @@ function tvProjection(reports,today) {
   const periodEnd=end.toISOString().slice(0,10);
   const latest=new Map();
   for (const report of reports) {
-    if (!report || report.status!=='approved' || !report.approvedAt || !Core.validateReport(report).ok || report.snapshot.range.start!==periodStart || report.snapshot.range.end!==periodEnd) continue;
+    if (!report || report.status!=='approved' || validApprovalTime(report.approvedAt)===null || !Core.validateReport(report).ok || report.snapshot.range.start!==periodStart || report.snapshot.range.end!==periodEnd) continue;
     const key=`${report.projectId}\u0000${report.authorUid}\u0000${periodStart}`;
     const prior=latest.get(key);
-    if (!prior || report.approvedAt>prior.approvedAt || (report.approvedAt===prior.approvedAt && report.id>prior.id)) latest.set(key,report);
+    if (!prior || validApprovalTime(report.approvedAt)>validApprovalTime(prior.approvedAt) || (validApprovalTime(report.approvedAt)===validApprovalTime(prior.approvedAt) && report.id>prior.id)) latest.set(key,report);
   }
   const sources=new Map();
   for (const report of latest.values()) for (const source of report.snapshot.sources) {
     const prior=sources.get(source.id);
-    if (!prior || report.approvedAt>prior.approvedAt) sources.set(source.id,{status:source.status,approvedAt:report.approvedAt});
+    if (!prior || validApprovalTime(report.approvedAt)>validApprovalTime(prior.approvedAt)) sources.set(source.id,{status:source.status,approvedAt:report.approvedAt});
   }
   return {available:true,periodStart,periodEnd,approvedReports:latest.size,approvedTotal:sources.size,approvedDone:[...sources.values()].filter(source=>source.status==='done').length};
 }
 
-return {bundle,tvProjection};
+return {bundle,tvProjection,koreaDate};
 });

@@ -55,3 +55,15 @@ test('CRM operating-board preview loads the same approved report projection',()=
  assert.match(app,/api\.loadProjectWeeklyReports\(\)/);
  assert.match(app,/BringProjectWeeklyReportExport\.tvProjection/);
 });
+test('invalid approval timestamps cannot supersede a valid reviewed revision',()=>{
+ const forged={...report,id:'forged',approvedAt:'zzz',snapshot:{...report.snapshot,sources:[],counts:{total:0,done:0,submitted:0,returned:0,open:0}}};
+ const tv=Export.tvProjection([report,forged],'2026-09-24');
+ assert.equal(tv.approvedReports,1);
+ assert.equal(tv.approvedTotal,2);
+});
+test('CRM reporting day uses Korea time at the Monday boundary',()=>{
+ assert.equal(Export.koreaDate('2026-09-20T15:30:00Z'),'2026-09-21');
+ assert.equal(Export.koreaDate('2026-09-20T14:30:00Z'),'2026-09-20');
+ const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+ assert.match(app,/BringProjectWeeklyReportExport\.koreaDate\(/);
+});

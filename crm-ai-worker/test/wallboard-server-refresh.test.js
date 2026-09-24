@@ -103,6 +103,12 @@ test('a forged approved status without a matching review cannot reach TV',async(
  await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:forged.env,fetchImpl:forged.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}),error=>error.code==='WALLBOARD_UNAVAILABLE');
  assert.equal(forged.commands.some(item=>item.action==='publish-if-changed'),false);
 });
+test('non-ISO review timestamp cannot approve a report for TV',async()=>{
+ const reviewMap={r1:{...sources.projectWeeklyReportReviews.r1,reviewedAt:'Sep 24 2026'}};
+ const f=fixture({reviewMap});
+ await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}),error=>error.code==='WALLBOARD_UNAVAILABLE');
+ assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
 test('Firebase source reads forbid redirects before sending an ID token',async()=>{
  const f=fixture();
  const fetchImpl=async (_url,options)=>{

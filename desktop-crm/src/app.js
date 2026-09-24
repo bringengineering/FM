@@ -1554,8 +1554,7 @@
         manage: typeof api.wallboardAdmin === "function" ? input => api.wallboardAdmin(input) : undefined,
         load: async () => {
           const [work, calendar, weekly] = await Promise.all([api.loadWorkOrders(), api.load().catch(() => null),api.loadProjectWeeklyReports().catch(() => null)]);
-          const now=new Date();
-          const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+          const today=window.BringProjectWeeklyReportExport.koreaDate(new Date());
           const weeklyReports=weekly&&Array.isArray(weekly.reports)?window.BringProjectWeeklyReportExport.tvProjection(weekly.reports,today):null;
           return { ...work, calendar, weeklyReports };
         },

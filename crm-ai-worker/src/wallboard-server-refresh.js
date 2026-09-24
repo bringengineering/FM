@@ -77,7 +77,7 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  const byReport=new Map(reports.map(report=>[report.id,report]));
  for(const review of rows(source.projectWeeklyReportReviews)){
   const report=byReport.get(review.id);
-  if(!report||report.status!=='submitted'||!['approved','returned'].includes(review.status)||review.projectId!==report.projectId||review.authorUid!==report.authorUid||typeof review.reviewerUid!=='string'||!review.reviewerUid||typeof review.reviewedAt!=='string'||!Number.isFinite(Date.parse(review.reviewedAt)))fail('WALLBOARD_UNAVAILABLE');
+  if(!report||report.status!=='submitted'||!['approved','returned'].includes(review.status)||review.projectId!==report.projectId||review.authorUid!==report.authorUid||typeof review.reviewerUid!=='string'||!review.reviewerUid||typeof review.reviewedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(review.reviewedAt)||!Number.isFinite(Date.parse(review.reviewedAt)))fail('WALLBOARD_UNAVAILABLE');
   report.status=review.status;
   if(review.status==='approved')report.approvedAt=review.reviewedAt;
  }
