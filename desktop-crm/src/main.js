@@ -5092,7 +5092,7 @@ function ensureWallboardLiveSync() {
   };
   wallboardLiveSync = createWallboardLiveSync({
     getIdentity: () => remoteClient?.authState().user?.mustChangePassword ? "" : String(remoteClient?.authState().user?.uid || ""),
-    load: () => loadWallboardSource(remoteClient),
+    load: instant => loadWallboardSource(remoteClient, instant),
     list: owner => request({ action: "list" }, owner),
     publish: (publication, owner) => request(publication, owner)
   });
@@ -8463,7 +8463,7 @@ secureCanonicalHandle("crm:wallboard-admin", async input => {
       const { createWallboardPublisher, loadWallboardSource } = require("./wallboard-publisher");
       wallboardPublisher = createWallboardPublisher({
         getIdentity: () => remoteClient?.authState().user?.mustChangePassword ? "" : String(remoteClient?.authState().user?.uid || ""),
-        load: () => loadWallboardSource(remoteClient),
+        load: instant => loadWallboardSource(remoteClient, instant),
         publish: async (publication, owner) => {
           const client = remoteClient;
           const idToken = await client.ensureIdToken(false);

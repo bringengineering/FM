@@ -59,8 +59,9 @@ function createWallboardLiveSync({
   }
 
   async function buildSnapshot(presentation) {
-    const data = await load();
-    const dataDate = koreaDate(now());
+    const instant = now();
+    const data = await load(instant);
+    const dataDate = koreaDate(instant);
     return validatePublication({
       model: project(data, dataDate),
       playlist: withStrategyScene(presentation?.playlist || defaultPlaylist),
