@@ -54,7 +54,7 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
  assert.equal(f.commands[2].action,'publish-if-changed');
  const snapshot=f.commands[2].input.snapshot;
- assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}]);
+ assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},{key:'strategy',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
  assert.deepEqual(snapshot.model.weeklyReports,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:1,approvedTotal:1,approvedDone:1});
  assert.deepEqual(snapshot.model.schedule.today[0].title,'점검');

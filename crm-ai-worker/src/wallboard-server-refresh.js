@@ -89,7 +89,7 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';
-  const snapshot=validatePublication({model,playlist:current.presentation?.playlist||defaultPlaylist,notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
+  const snapshot=validatePublication({model,playlist:strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
   if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>65536)fail('WALLBOARD_UNAVAILABLE');
   try{const result=await command(stub,'publish-if-changed',{snapshot,expectedVersion:current.version,refreshToken});return {version:result.version,publishedAt:result.publishedAt};}
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}

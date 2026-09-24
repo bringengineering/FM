@@ -30,4 +30,9 @@ function projectApprovedStrategy(publication,members,year){
  };
 }
 
-module.exports={projectApprovedStrategy};
+function withStrategyScene(playlist){
+ if(!Array.isArray(playlist))return playlist;
+ return playlist.some(item=>item?.key==='strategy')?playlist:[...playlist,{key:'strategy',enabled:true,seconds:30}];
+}
+
+module.exports={projectApprovedStrategy,withStrategyScene};

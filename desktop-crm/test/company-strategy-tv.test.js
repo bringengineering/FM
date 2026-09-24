@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {projectApprovedStrategy}=require('../src/company-strategy-tv');
+const {projectApprovedStrategy,withStrategyScene}=require('../src/company-strategy-tv');
 
 const approved=()=>({
  year:'2026',revision:2,publishedBy:'private-admin-uid',
@@ -41,4 +41,11 @@ test('malformed and private approved text fails closed',()=>{
  assert.throws(()=>projectApprovedStrategy({...approved(),content:'{'},[],'2026'),/INVALID_APPROVED_STRATEGY/);
  const input=approved();const content=JSON.parse(input.content);content.vision='문의 010-1234-5678';input.content=JSON.stringify(content);
  assert.throws(()=>projectApprovedStrategy(input,[],'2026'),/INVALID_APPROVED_STRATEGY/);
+});
+test('existing ten-scene settings gain the strategy scene once at the end',()=>{
+ const old=[{key:'roadmap',enabled:true,seconds:40},{key:'notice',enabled:false,seconds:30}];
+ const added=withStrategyScene(old);
+ assert.deepEqual(added,[...old,{key:'strategy',enabled:true,seconds:30}]);
+ assert.deepEqual(withStrategyScene(added),added);
+ assert.deepEqual(old,[{key:'roadmap',enabled:true,seconds:40},{key:'notice',enabled:false,seconds:30}]);
 });

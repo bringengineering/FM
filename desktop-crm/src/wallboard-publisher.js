@@ -1,7 +1,7 @@
 'use strict';
 const {project}=require('./company-wallboard');
 const {validatePublication}=require('./wallboard-publication-schema');
-const {projectApprovedStrategy}=require('./company-strategy-tv');
+const {projectApprovedStrategy,withStrategyScene}=require('./company-strategy-tv');
 async function loadWallboardSource(client,asOf=new Date()){
  // Never call loadStore: it can resume pending mutations and merge local edits.
  const [work,records]=await Promise.all([client.loadWorkOrders(),client.dbRequest('crmShared/data/serviceRecords',{method:'GET'})]);
@@ -35,7 +35,7 @@ function createWallboardPublisher({getIdentity,load,publish,now=()=>new Date(),s
   if(busy)throw new Error('게시 처리 중입니다. 잠시 후 다시 시도해 주세요.');
   const identity=getIdentity();if(!identity)throw new Error('로그인이 필요합니다.');
   if(!Number.isSafeInteger(input?.expectedVersion)||input.expectedVersion<0)throw new Error('서버 버전을 먼저 확인해 주세요.');
-  const checked=validatePublication({model:project({orders:[],calendar:{serviceRecords:[]}},'2026-01-01'),playlist:input.playlist,notice:input.notice,dataDate:'2026-01-01'});
+  const checked=validatePublication({model:project({orders:[],calendar:{serviceRecords:[]}},'2026-01-01'),playlist:withStrategyScene(input.playlist),notice:input.notice,dataDate:'2026-01-01'});
   stop();owner=identity;config={playlist:checked.playlist,notice:checked.notice};version=input.expectedVersion;error='';active=true;timer=setTimer(()=>refresh());timer?.unref?.();
   await refresh();return status();
  }

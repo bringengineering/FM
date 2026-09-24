@@ -217,6 +217,12 @@ test('shared projection carries only an already-sanitized optional strategy',()=
  assert.deepEqual(model.strategy,strategy);
  assert.equal(Object.hasOwn(C.project({orders:[]},'2026-09-24'),'strategy'),false);
 });
+test('local strategy scene renders approved goal progress and unknown progress distinctly',()=>{
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'김현진',role:'운영',reportsToIndex:null}],goals:[{period:'annual',title:'관리 건물',unit:'count',target:10,current:4,percent:40,source:'CRM 건물'},{period:'H2',title:'표준 촬영',unit:'milestone',target:null,current:null,percent:null,source:'현장 보고'}]}},'2026-09-24');
+ const html=C.scene(model,'strategy');
+ assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/집계 대기/);
+ assert.doesNotMatch(html,/uid|undefined/);
+});
 test('approved project weekly reports stay separate from work-order completion trend',()=>{
  const weeklyReports={available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:2,approvedTotal:3,approvedDone:1};
  const model=C.project({orders:[],weeklyReports},'2026-09-24');

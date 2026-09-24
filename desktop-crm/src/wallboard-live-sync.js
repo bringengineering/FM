@@ -2,6 +2,7 @@
 
 const { project } = require('./company-wallboard');
 const { validatePublication } = require('./wallboard-publication-schema');
+const { withStrategyScene } = require('./company-strategy-tv');
 
 const defaultPlaylist = [
   ['roadmap', 40],
@@ -66,7 +67,7 @@ function createWallboardLiveSync({
     ].join('-');
     return validatePublication({
       model: project(data, dataDate),
-      playlist: presentation?.playlist || defaultPlaylist,
+      playlist: withStrategyScene(presentation?.playlist || defaultPlaylist),
       notice: presentation?.notice || '',
       dataDate
     });
