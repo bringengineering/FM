@@ -234,6 +234,13 @@ test('local strategy scene paginates organization members as well as goals',()=>
  assert.match(first,/팀원6/);assert.doesNotMatch(first,/팀원7/);
  assert.match(second,/팀원7/);assert.match(second,/팀원8/);assert.doesNotMatch(second,/팀원1</);
 });
+test('local strategy scene limits goals to one row on compact TV heights',()=>{
+ const goals=Array.from({length:4},(_,index)=>({period:'annual',title:`운영 목표 ${index+1}`,unit:'count',target:10,current:index+1,percent:(index+1)*10,source:'CRM 승인 기록'}));
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[],goals}},'2026-09-24');
+ const first=C.scene(model,'strategy',0),second=C.scene(model,'strategy',1);
+ assert.match(first,/운영 목표 3/);assert.doesNotMatch(first,/운영 목표 4/);
+ assert.match(second,/운영 목표 4/);assert.doesNotMatch(second,/운영 목표 1/);
+});
 test('local preview returns to a valid scene when a new year has no approved strategy',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
  assert.match(source,/index=Math\.min\(index,Math\.max\(0,playlist\(\)\.length-1\)\)/u);
