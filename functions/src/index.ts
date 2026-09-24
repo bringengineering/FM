@@ -3800,6 +3800,8 @@ export const commitBillingLedgerMutation = onRequest(
       const rawCode = error instanceof Error ? error.message : "";
       const code = rawCode === "field_rate_limit_exceeded" ? "billing_rate_limited"
         : rawCode === "crm_body_too_large" ? "billing_body_too_large"
+          : rawCode === "crm_body_invalid" ? "billing_body_invalid"
+            : rawCode === "crm_json_required" ? "billing_json_required"
           : rawCode.startsWith("billing_") ? rawCode : "billing_transaction_unavailable";
       response.status(billingMutationHttpStatus(code)).json({ ok: false, error: { code } });
     }

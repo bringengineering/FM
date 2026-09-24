@@ -3858,6 +3858,16 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.transactionPaths).not.toContain("");
   });
 
+  it.each([
+    ["non-JSON", canonicalHttpRequest({}, { headers: { "content-type": "text/plain", authorization: "Bearer current-project-id-token" } }), "billing_json_required"],
+    ["missing body", { ...canonicalHttpRequest({}), rawBody: undefined }, "billing_body_invalid"],
+  ])("rejects a billing %s request as client input, not a server outage", async (_label, request, code) => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(request, output.response);
+    expect(output.state).toMatchObject({ status: 400, body: { ok: false, error: { code } } });
+    expect(registrations.transactionPaths).not.toContain("crmCompany/billingLedger");
+  });
+
   it("configures 100 building units atomically through one canonical root transaction", async () => {
     seedCanonicalCrmAccess();
     registrations.adminVerifyIdToken.mockResolvedValueOnce({
