@@ -96,3 +96,10 @@ const playlist=withRevenueScene(strategyTv.withStrategyScene(current.presentatio
 - [x] Run `npm test` in `crm-ai-worker`, `desktop-crm`, and `functions`; run `npm run build` in `functions`; run `node --check crm-ai-worker/src/wallboard-server-refresh.js`; run `git diff --check`. Inspect failures rather than treating green unit tests as proof of live TV operation.
 - [x] Verify `release/firebase-targets.json` still forbids Functions deployment, `crm-ai-worker/wrangler.toml` still says `WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"`, and no worker publish/deploy command has run.
 - [x] Commit and push the branch to draft PR #134. Record that live company data audit, TV reader access, scheduled activation, two-device propagation, and operational deployment remain unverified; do not merge or deploy.
+
+### Task 5: TV 전용 계정의 장부 읽기 규칙 연결
+
+- [x] 규칙 에뮬레이터 테스트에 `billingLedger`를 추가하고, 승인된 TV 계정 읽기가 거부되는 실패를 먼저 확인한다.
+- [x] `crmCompany/billingLedger` 읽기에 인증된 활성 TV 계정만 추가한다. 쓰기 규칙은 유지한다.
+- [x] TV 계정의 읽기·쓰기 거부 및 미등록·비활성·이메일 불일치·미인증 차단 테스트를 다시 통과시킨다.
+- [x] 규칙 에뮬레이터 전체 129건과 Worker 135건을 통과시킨다. PR에 결과와 남은 운영 출시 게이트를 기록한다.

@@ -1902,6 +1902,7 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
   const readerEmail = "wallboard-reader@bring.test";
   const sourcePaths = [
     "access",
+    "billingLedger",
     "workOrders",
     "projects",
     "data/serviceRecords",
@@ -1910,7 +1911,7 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
     "projectWeeklyReportReviews",
   ];
 
-  it("allows only the enabled verified reader to read the seven TV source paths, never write them", async () => {
+  it("allows only the enabled verified reader to read the eight TV source paths, never write them", async () => {
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: true,
