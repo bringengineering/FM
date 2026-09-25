@@ -180,6 +180,7 @@ const FIREBASE = Object.freeze({
   databaseUrl: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
+const DEFAULT_BILLING_MUTATION_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitBillingLedgerMutation";
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -1347,9 +1348,44 @@ function vendorDirectoryFromCsv(text) {
   return result.filter(item => item.name && item.category);
 }
 
+function validateBillingRecord(kind, record, expectedId, stored = false) {
+  const invalid = () => { throw createError('청구 장부 형식이 올바르지 않습니다.', stored ? 'PROTECTED_DATA_INVALID' : 'VALIDATION_ERROR'); };
+  if (!record || typeof record !== 'object' || Array.isArray(record)) invalid();
+  const common = ['id', 'amount', 'status'];
+  const specific = kind === 'invoices' ? ['contractId', 'contractType', 'occurrenceId', 'billingMonth', 'dueDate'] : ['invoiceId', 'receivedAt', 'transactionRef', 'evidenceRef'];
+  const metadata = ['revision', 'updatedAt', 'updatedBy', 'approvedAt', 'approvedBy', 'voidedAt', 'voidedBy', 'voidReason', 'lastRequestId', 'returnPending', 'returnHistory'];
+  if (Object.keys(record).some(key => ![...common, ...specific, ...metadata].includes(key))) invalid();
+  const idPattern = /^[A-Za-z0-9_-]{1,150}$/;
+  if (!idPattern.test(record.id) || (expectedId && record.id !== expectedId) || !idPattern.test(kind === 'invoices' ? record.contractId : record.invoiceId)) invalid();
+  if (!Number.isSafeInteger(record.amount) || record.amount <= 0 || !['draft', 'approved', 'void'].includes(record.status)) invalid();
+  if (kind === 'invoices') {
+    if (record.contractType !== undefined && !['regular', 'one_off'].includes(record.contractType)) invalid();
+    if (record.occurrenceId !== undefined && (!idPattern.test(record.occurrenceId) || record.contractType !== 'one_off')) invalid();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(record.billingMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(record.dueDate)) invalid();
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(record.receivedAt) || !Number.isFinite(Date.parse(`${record.receivedAt}T00:00:00Z`)) || new Date(`${record.receivedAt}T00:00:00Z`).toISOString().slice(0, 10) !== record.receivedAt || typeof record.transactionRef !== 'string' || record.transactionRef.length > 160 || typeof record.evidenceRef !== 'string' || record.evidenceRef.length > 500 || (record.status === 'approved' && (!record.transactionRef.trim() || !record.evidenceRef.trim()))) invalid();
+  if (stored && (!Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.updatedAt !== 'string' || !idPattern.test(record.updatedBy))) invalid();
+  if (stored && record.status === 'approved' && (typeof record.approvedAt !== 'string' || !idPattern.test(record.approvedBy))) invalid();
+  if (stored && record.status === 'void' && (typeof record.voidedAt !== 'string' || !idPattern.test(record.voidedBy) || typeof record.voidReason !== 'string' || !record.voidReason.trim())) invalid();
+  if (stored && record.lastRequestId !== undefined && !idPattern.test(record.lastRequestId)) invalid();
+  if (stored && record.returnPending !== undefined && typeof record.returnPending !== 'boolean') invalid();
+  if (stored && record.returnHistory !== undefined) {
+    if (!record.returnHistory || typeof record.returnHistory !== 'object' || Array.isArray(record.returnHistory)) invalid();
+    for (const [requestId, entry] of Object.entries(record.returnHistory)) {
+      if (!idPattern.test(requestId) || !entry || typeof entry !== 'object' || Array.isArray(entry)
+        || Object.keys(entry).some(key => !['reason', 'returnedBy', 'returnedAt', 'revision'].includes(key))
+        || typeof entry.reason !== 'string' || entry.reason.trim() !== entry.reason
+        || entry.reason.length < 5 || entry.reason.length > 500 || !idPattern.test(entry.returnedBy)
+        || typeof entry.returnedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.returnedAt)
+        || !Number.isSafeInteger(entry.revision) || entry.revision < 2) invalid();
+    }
+  }
+  return Object.fromEntries(Object.entries(record).filter(([key]) => common.includes(key) || specific.includes(key) || (stored && metadata.includes(key)) || (key === 'voidReason' && record.status === 'void')));
+}
+
 class FirebaseRemoteClient {
   constructor(options) {
     this.firebase = options.firebaseConfig || FIREBASE;
+    this.billingMutationEndpoint = options.billingMutationEndpoint || DEFAULT_BILLING_MUTATION_ENDPOINT;
     this.databaseRoot = options.databaseRoot ?? "crmCompany";
     this.Core = options.Core;
     this.fs = options.fs;
@@ -2392,6 +2428,94 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadBillingLedger() {
+    this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const raw = await this.dbRequest('billingLedger', { method: 'GET' });
+    this.assertSessionGuardActive(guard);
+    if (raw !== null && (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['invoices', 'receipts'].includes(key)))) {
+      throw createError('청구 장부 형식이 올바르지 않습니다.', 'PROTECTED_DATA_INVALID');
+    }
+    const result = {};
+    for (const kind of ['invoices', 'receipts']) {
+      const entries = raw?.[kind];
+      if (entries !== undefined && (!entries || typeof entries !== 'object' || Array.isArray(entries))) throw createError('청구 장부 형식이 올바르지 않습니다.', 'PROTECTED_DATA_INVALID');
+      result[kind] = Object.entries(entries || {}).map(([id, value]) => validateBillingRecord(kind, value, id, true));
+    }
+    return result;
+  }
+
+  async saveBillingInvoice(input) { return this.saveBillingRecord('invoices', input); }
+  async saveBillingReceipt(input) { return this.saveBillingRecord('receipts', input); }
+
+  async returnBillingDraft(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== 'admin') throw createError('관리자만 청구·입금 초안을 반려할 수 있습니다.', 'ACCESS_DENIED');
+    const kind = input?.kind === 'invoice' ? 'invoices' : input?.kind === 'receipt' ? 'receipts' : null;
+    const id = input?.id;
+    const reason = typeof input?.reason === 'string' ? input.reason.trim() : '';
+    if (!kind || typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,150}$/.test(id)
+      || ['__proto__', 'prototype', 'constructor'].includes(id)
+      || reason.length < 5 || reason.length > 500) throw createError('반려 대상과 사유를 확인해 주세요.', 'VALIDATION_ERROR');
+    return this.commitBillingRecord(kind, id, input?.expectedRevision,
+      { action: 'return', kind: input.kind, record: { id }, reason });
+  }
+
+  async saveBillingRecord(kind, input) {
+    const session = this.requireOfficeSession();
+    if (session.role === 'viewer' || (session.role === 'member' && session.marketingRole === 'marketing')) throw createError('장부를 변경할 권한이 없습니다.', 'ACCESS_DENIED');
+    const source = validateBillingRecord(kind, input?.record);
+    if (source.status !== 'draft' && session.role !== 'admin') throw createError('관리자만 확정 또는 취소할 수 있습니다.', 'ACCESS_DENIED');
+    return this.commitBillingRecord(kind, source.id, input?.expectedRevision,
+      { kind: kind === 'invoices' ? 'invoice' : 'receipt', record: source });
+  }
+
+  async commitBillingRecord(kind, id, expectedRevision, command) {
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw createError('장부 버전이 올바르지 않습니다.', 'VALIDATION_ERROR');
+    const guard = this.captureSessionGuard();
+    const requestId = crypto.randomUUID();
+    const body = JSON.stringify({ ...command, expectedRevision, requestId });
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    let response;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await this.fetch(this.billingMutationEndpoint, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body,
+        });
+        break;
+      } catch (cause) {
+        this.assertSessionGuardActive(guard);
+        if (attempt === 1) throw createError('장부 저장 결과를 확인할 수 없습니다. 최신 장부를 다시 확인해 주세요.', 'BILLING_LEDGER_OUTCOME_UNKNOWN', cause);
+      }
+    }
+    this.assertSessionGuardActive(guard);
+    let payload;
+    try { payload = JSON.parse(await response.text()); } catch (cause) { throw createError('장부 저장 결과를 확인할 수 없습니다.', 'BILLING_LEDGER_OUTCOME_UNKNOWN', cause); }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok || payload?.ok !== true) {
+      const code = String(payload?.error?.code || 'billing_transaction_unavailable');
+      if (response.status === 401) throw createError('다시 로그인한 뒤 장부를 확인해 주세요.', 'AUTH_REQUIRED');
+      if (response.status === 403) throw createError('장부를 변경할 권한이 없습니다.', 'ACCESS_DENIED');
+      if (response.status === 409) throw createError('장부가 변경되었습니다. 최신 내용을 다시 확인해 주세요.', 'BILLING_LEDGER_CONFLICT');
+      if (response.status === 412) throw createError('기존 장부를 점검해야 저장할 수 있습니다.', 'PROTECTED_DATA_INVALID');
+      if (response.status >= 500) throw createError('장부 서버에 연결할 수 없습니다.', 'NETWORK');
+      throw createError(`장부 저장 요청이 거부되었습니다 (${code}).`, 'VALIDATION_ERROR');
+    }
+    const saved = validateBillingRecord(kind, payload?.result?.record, id, true);
+    const recentResult = saved.revision === expectedRevision + 1 && saved.lastRequestId === requestId;
+    const appliedReturn = command.action === 'return' && payload?.result?.repeated === true
+      && saved.revision > expectedRevision + 1
+      && saved.returnHistory?.[requestId]?.revision === expectedRevision + 1
+      && saved.returnHistory[requestId].reason === command.reason;
+    if (!recentResult && !appliedReturn) {
+      throw createError('장부 저장 결과가 요청과 일치하지 않습니다.', 'PROTECTED_DATA_INVALID');
+    }
+    return saved;
   }
 
   async loadCompanyStrategy(input) {

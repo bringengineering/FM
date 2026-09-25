@@ -1,7 +1,18 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BringCompanyWallboard=api;})(typeof globalThis==='object'?globalThis:this,function(){
  'use strict';
  const labels={assigned:'시작 전',doing:'진행 중',submitted:'검수 대기',returned:'보완 요청',done:'검수 완료'};
- const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향']];
+ const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향'],['companyRevenue','매출 현황']];
+ const billingCore=typeof require==='function'?require('./billing-ledger-core'):globalThis.BringBillingLedgerCore;
+ function companyRevenue(ledger,today,sourceState){
+  const month=today.slice(0,7),unavailable={available:false,month,billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
+  if(sourceState==='unavailable')return {...unavailable,sourceStatus:'unavailable'};
+  if(!ledger||!Array.isArray(ledger.invoices)||!Array.isArray(ledger.receipts))return unavailable;
+  const {billed,received,receivable,pendingCount,undatedPendingCount}=billingCore.summarizeMonth(ledger,month);
+  if(!ledger.invoices.some(item=>item?.status==='approved')&&!ledger.receipts.some(item=>item?.status==='approved')){
+   return pendingCount+undatedPendingCount>0?{...unavailable,pendingCount,undatedPendingCount}:unavailable;
+  }
+  return {available:true,month,billed,received,receivable,pendingCount,undatedPendingCount};
+ }
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function day(v){return typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v?v:null;}
  const text=(value,max=120)=>String(value==null?'':value).trim().slice(0,max);
@@ -77,7 +88,7 @@
   const weekly=data.weeklyReports;
   const safeWeekly=weekly&&weekly.available===true&&day(weekly.periodStart)&&day(weekly.periodEnd)&&[weekly.approvedReports,weekly.approvedTotal,weekly.approvedDone].every(value=>Number.isSafeInteger(value)&&value>=0)&&weekly.approvedDone<=weekly.approvedTotal
    ?{available:true,periodStart:weekly.periodStart,periodEnd:weekly.periodEnd,approvedReports:weekly.approvedReports,approvedTotal:weekly.approvedTotal,approvedDone:weekly.approvedDone}:unavailable;
-  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
+  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,companyRevenue:companyRevenue(data.billingLedger,today,data.billingLedgerState),...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){
@@ -87,6 +98,12 @@
    const strategy=m.strategy;if(!strategy)return '<div class="wb-empty">게시된 회사 방향이 없습니다.</div>';
    const unit={count:'건',percent:'%',krw:'원',day:'일',milestone:''};
    return `<div class="wb-strategy-layout"><section class="wb-strategy-vision"><small>${esc(strategy.year)} 회사 비전</small><h2>${esc(strategy.vision)}</h2></section><section class="wb-strategy-people">${strategy.organization.slice(page*6,page*6+6).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role)}${person.reportsToIndex===null?'':` · 보고 · ${esc(strategy.organization[person.reportsToIndex].displayName)}`}</small></span>`).join('')}</section><section class="wb-strategy-goals">${strategy.goals.slice(page*3,page*3+3).map(goal=>`<article><small>${esc({annual:'연간',H1:'상반기',H2:'하반기'}[goal.period]||goal.period)}</small><h3>${esc(goal.title)}</h3><p>${goal.current===null?'실적 미입력':esc(goal.current+' '+(unit[goal.unit]||''))} / ${goal.target===null?'목표 미입력':esc(goal.target+' '+(unit[goal.unit]||''))}</p><strong>${goal.percent===null?'집계 대기':goal.percent+'%'}</strong>${goal.percent===null?'':`<progress max="100" value="${goal.percent}"></progress>`}<small>근거 · ${esc(goal.source)}</small></article>`).join('')}</section></div>`;
+  }
+  if(key==='companyRevenue'){
+   const revenue=m.companyRevenue;
+   if(!revenue?.available)return `<div class="wb-empty">${revenue?.sourceStatus==='unavailable'?'매출 연결 확인 중 · 마지막 게시 시각을 확인해 주세요.':Number.isSafeInteger(revenue?.pendingCount)?`매출 집계 대기 · 확인 대기 ${revenue.pendingCount}건 · 입금일 확인 필요 ${revenue.undatedPendingCount}건`:'매출 집계 대기 · 확정된 장부 자료를 확인해 주세요.'}</div>`;
+   const money=value=>value.toLocaleString('ko-KR')+'원';
+   return `<div class="wb-grid wb-revenue-grid">${card('확정 청구액',money(revenue.billed),revenue.month+' 청구 대상')}${card('확정 입금액',money(revenue.received),revenue.month+' 실제 입금')}${card('미수 합계',money(revenue.receivable),'확정 장부 누계')}</div><p>확인 대기 ${revenue.pendingCount}건 · 입금일 확인 필요 ${revenue.undatedPendingCount}건 · 고객별 내역 제외</p>`;
   }
   if(key==='roadmap'){
    const roadmap=roadmapView(m,zoom,dataDate),lanes=roadmap.lanes.slice(page*3,page*3+3),weeks=roadmap.range.weeks;
@@ -124,7 +141,7 @@
   let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='',zoom='week',displayedKey='';
   let dataDate='',dataLoadedAt=0;
   const storageKey='bring.wallboard.playlist.v1';
-  const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30,strategy:30};
+  const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30,strategy:30,companyRevenue:30};
   let settings=scenes.map(([key])=>({key,enabled:true,seconds:defaultDurations[key]})),storageError='';
   const duration=v=>Math.min(120,Math.max(10,Math.round(Number(v)||30)));
   try{

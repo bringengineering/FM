@@ -10,7 +10,8 @@ const sources={
  projects:{p1:{id:'p1',name:'디지털 트윈 실증',owner:'김현진',status:'active',progress:70,startDate:'2026-09-22',endDate:'2026-09-30'}},
  'data/serviceRecords':{s1:{scheduledDate:'2026-09-24',startTime:'09:30',status:'planned',serviceType:'inspection',title:'홍길동 010-1234-5678',owner:'김현진'}},
  access:{'staff-1':{enabled:true,mustChangePassword:false,email:'staff@example.com'}},
- teamProfiles:{'staff-1':{displayName:'김현진'}}
+ teamProfiles:{'staff-1':{displayName:'김현진'}},
+ billingLedger:{invoices:{'private-invoice':{id:'private-invoice',contractId:'private-contract',contractType:'regular',billingMonth:'2026-09',dueDate:'2026-09-30',amount:100000,status:'approved',revision:3,updatedAt:'2026-09-24T00:00:00.000Z',updatedBy:'admin-1',approvedAt:'2026-09-24T00:00:00.000Z',approvedBy:'admin-1',returnPending:false,returnHistory:{request1:{reason:'비공개 반려 사유 확인',returnedBy:'admin-1',returnedAt:'2026-09-23T00:00:00.000Z',revision:2}}}},receipts:{'private-receipt':{id:'private-receipt',invoiceId:'private-invoice',receivedAt:'2026-09-24',amount:40000,transactionRef:'secret-bank-ref',evidenceRef:'private-drive-link',status:'approved',revision:2,updatedAt:'2026-09-24T00:00:00.000Z',updatedBy:'admin-1',approvedAt:'2026-09-24T00:00:00.000Z',approvedBy:'admin-1'}}}
 };
 const weeklyReport={projectId:'p1',authorUid:'staff-1',status:'submitted',summary:'비공개 고객 상담 내용',snapshot:{available:true,projectId:'p1',period:'current-week',range:{start:'2026-09-21',end:'2026-09-27'},capturedAt:'2026-09-24T00:00:00Z',counts:{total:1,done:1,submitted:0,returned:0,open:0},sources:[{id:'o1',status:'done',assigneeUid:'staff-1',updatedAt:'2026-09-24T00:00:00Z'}]}};
 sources.projectWeeklyReports={r1:weeklyReport};
@@ -19,14 +20,14 @@ sources.projectWeeklyReportReviews={r1:{status:'approved',projectId:'p1',authorU
 function fixture(overrides={}){
  const reads=[],commands=[];
  let version=0;
- const presentation={playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:overrides.notice||'이번 주 결과 확인'};
+ const presentation={playlist:overrides.playlist||[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30}],notice:overrides.notice||'이번 주 결과 확인'};
  const fetchImpl=async (url,options={})=>{
   const parsed=new URL(url),resource=parsed.pathname.slice('/crmCompany/'.length,-'.json'.length);
   reads.push({resource,auth:parsed.searchParams.get('auth'),method:options.method||'GET',cache:options.cache});
   if(overrides.denied===resource)return new Response('permission denied',{status:403});
   if(overrides.oversize===resource)return new Response('x'.repeat(2*1024*1024+1));
   if(overrides.malformed===resource)return new Response('[]');
- const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:resource==='projectWeeklyReports'&&overrides.reportMap?overrides.reportMap:resource==='projectWeeklyReportReviews'&&overrides.reviewMap?overrides.reviewMap:sources[resource];
+ const value=resource==='workOrders'&&overrides.orderMap?overrides.orderMap:resource==='projects'&&overrides.projectMap?overrides.projectMap:resource==='projects'&&overrides.projectName?{...sources.projects,p1:{...sources.projects.p1,name:overrides.projectName}}:resource==='projectWeeklyReports'&&overrides.reportMap?overrides.reportMap:resource==='projectWeeklyReportReviews'&&overrides.reviewMap?overrides.reviewMap:resource==='billingLedger'&&Object.hasOwn(overrides,'billingMap')?overrides.billingMap:sources[resource];
   if(resource==='companyStrategyPublications/2026')return new Response(JSON.stringify(overrides.approvedStrategy??null),{headers:{'content-type':'application/json'}});
   return new Response(JSON.stringify(value??null),{headers:{'content-type':'application/json'}});
  };
@@ -50,11 +51,11 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  const f=fixture();
  const result=await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.deepEqual(result,{version:1,publishedAt:1001});
- assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','companyStrategyPublications/2026','data/serviceRecords','projectWeeklyReportReviews','projectWeeklyReports','projects','teamProfiles','workOrders']);
+ assert.deepEqual(f.reads.map(item=>item.resource).sort(),['access','billingLedger','companyStrategyPublications/2026','data/serviceRecords','projectWeeklyReportReviews','projectWeeklyReports','projects','teamProfiles','workOrders']);
  assert.ok(f.reads.every(item=>item.auth===token&&item.method==='GET'&&item.cache==='no-store'));
  assert.equal(f.commands[2].action,'publish-if-changed');
  const snapshot=f.commands[2].input.snapshot;
- assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},{key:'strategy',enabled:true,seconds:30}]);
+ assert.deepEqual(snapshot.playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},{key:'strategy',enabled:true,seconds:30},{key:'companyRevenue',enabled:true,seconds:30}]);
  assert.equal(snapshot.model.portfolio.projects[0].reviewedDone,1);
  assert.deepEqual(snapshot.model.weeklyReports,{available:true,periodStart:'2026-09-21',periodEnd:'2026-09-27',approvedReports:1,approvedTotal:1,approvedDone:1});
  assert.deepEqual(snapshot.model.schedule.today[0].title,'점검');
@@ -63,6 +64,44 @@ test('server refresh reads only authorized source paths and publishes a privacy-
  assert.ok(!JSON.stringify(f.commands).includes('비공개 고객 상담 내용'));
  assert.ok(!JSON.stringify(f.commands).includes('010-1234-5678'));
  assert.ok(!JSON.stringify(result).includes(token));
+});
+test('server refresh reads billing once and publishes approved aggregate revenue only',async()=>{
+ const f=fixture();
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ assert.equal(f.reads.filter(item=>item.resource==='billingLedger').length,1);
+ const snapshot=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot;
+ assert.deepEqual(snapshot.model.companyRevenue,{available:true,month:'2026-09',billed:100000,received:40000,receivable:60000,pendingCount:0,undatedPendingCount:0});
+ const published=JSON.stringify(snapshot);
+ for(const secret of ['private-contract','private-invoice','private-receipt','secret-bank-ref','private-drive-link','admin-1','비공개 반려 사유'])assert.equal(published.includes(secret),false,secret);
+});
+test('billing read or ledger validation failure preserves the prior TV publication',async()=>{
+ for(const overrides of [{denied:'billingLedger'},{oversize:'billingLedger'},{billingMap:{invoices:{i1:{amount:1}}}},{billingMap:{invoices:sources.billingLedger.invoices,receipts:null}}]){
+  const f=fixture(overrides);
+  await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')}));
+  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+ }
+});
+test('a missing billing ledger never publishes an invented zero revenue',async()=>{
+ const f=fixture({billingMap:null});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const revenue=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.model.companyRevenue;
+ assert.equal(revenue.available,false);
+ assert.equal(revenue.billed,null);
+});
+test('server refresh appends revenue without replacing an existing TV playlist',async()=>{
+ const f=fixture();
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const playlist=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.playlist;
+ assert.deepEqual(playlist,[
+  {key:'roadmap',enabled:true,seconds:40},{key:'scheduleToday',enabled:true,seconds:30},
+  {key:'strategy',enabled:true,seconds:30},{key:'companyRevenue',enabled:true,seconds:30},
+ ]);
+});
+test('a saved revenue scene keeps its duration and is not duplicated',async()=>{
+ const f=fixture({playlist:[{key:'roadmap',enabled:true,seconds:40},{key:'companyRevenue',enabled:true,seconds:55}]});
+ await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ const playlist=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.playlist;
+ assert.deepEqual(playlist,[{key:'roadmap',enabled:true,seconds:40},{key:'companyRevenue',enabled:true,seconds:55},{key:'strategy',enabled:true,seconds:30}]);
 });
 test('scheduled service reader rebuilds the board without an employee CRM session',async()=>{
  const f=fixture();
@@ -78,7 +117,7 @@ test('scheduled service reader rebuilds the board without an employee CRM sessio
  const result=await refreshWallboardFromService({env,fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.equal(exchanges,1);
  assert.equal(result.version,1);
- assert.equal(f.reads.length,8);
+ assert.equal(f.reads.length,9);
  assert.ok(f.reads.every(item=>item.auth==='service-id-token'));
  assert.equal(f.commands.at(-1).action,'publish-if-changed');
 });

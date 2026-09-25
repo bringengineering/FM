@@ -3821,6 +3821,10 @@ describe("Firebase entrypoint metadata", () => {
   });
 
   it("registers the canonical CRM endpoint as a regional POST-only surface without CORS", () => {
+    expect(registration(entrypoints.commitBillingLedgerMutation)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
     expect(registration(entrypoints.commitCanonicalCrmEntity)).toMatchObject({
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
@@ -3829,6 +3833,61 @@ describe("Firebase entrypoint metadata", () => {
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
     });
+  });
+
+  it("commits a billing draft through the scoped ledger transaction after company access verification", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "billing_member", email: "billing@bringcare.kr", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/billing_member", {
+      enabled: true, role: "member", email: "billing@bringcare.kr",
+    });
+    const body = {
+      kind: "invoice", requestId: "billing-request-1", expectedRevision: 0,
+      record: {
+        id: "invoice-1", contractId: "contract-1", contractType: "regular",
+        billingMonth: "2026-09", dueDate: "2026-09-30", amount: 100000, status: "draft",
+      },
+    };
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(canonicalHttpRequest(body), output.response);
+    expect(output.state).toMatchObject({ status: 200, body: { ok: true, result: {
+      record: { id: "invoice-1", amount: 100000, revision: 1, updatedBy: "billing_member" },
+    } } });
+    expect(registrations.transactionPaths).toContain("crmCompany/billingLedger");
+    expect(registrations.transactionPaths).not.toContain("");
+  });
+
+  it("forwards a billing return command to the atomic ledger transaction", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "billing_admin", email: "admin@bringcare.kr", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/billing_admin", {
+      enabled: true, role: "admin", email: "admin@bringcare.kr",
+    });
+    registrations.pathValues.set("crmCompany/billingLedger", { invoices: { "invoice-1": {
+      id: "invoice-1", contractId: "contract-1", contractType: "regular",
+      billingMonth: "2026-09", dueDate: "2026-09-30", amount: 100000,
+      status: "draft", revision: 1, updatedAt: "2026-09-25T00:00:00.000Z", updatedBy: "billing_member",
+    } }, receipts: {} });
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(canonicalHttpRequest({
+      action: "return", kind: "invoice", record: { id: "invoice-1" },
+      reason: "청구 증빙을 다시 확인해 주세요", requestId: "return-1", expectedRevision: 1,
+    }), output.response);
+    expect(output.state).toMatchObject({ status: 200, body: { ok: true, result: { record: {
+      status: "draft", returnPending: true,
+    } } } });
+  });
+
+  it.each([
+    ["non-JSON", canonicalHttpRequest({}, { headers: { "content-type": "text/plain", authorization: "Bearer current-project-id-token" } }), "billing_json_required"],
+    ["missing body", { ...canonicalHttpRequest({}), rawBody: undefined }, "billing_body_invalid"],
+  ])("rejects a billing %s request as client input, not a server outage", async (_label, request, code) => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitBillingLedgerMutation)(request, output.response);
+    expect(output.state).toMatchObject({ status: 400, body: { ok: false, error: { code } } });
+    expect(registrations.transactionPaths).not.toContain("crmCompany/billingLedger");
   });
 
   it("configures 100 building units atomically through one canonical root transaction", async () => {
@@ -4202,7 +4261,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(21);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(2);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(3);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);

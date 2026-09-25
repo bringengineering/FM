@@ -15,7 +15,8 @@ const defaultPlaylist = [
   ['scheduleWeek', 30],
   ['people', 25],
   ['issues', 20],
-  ['notice', 30]
+  ['notice', 30],
+  ['companyRevenue', 30]
 ].map(([key, seconds]) => ({ key, enabled: true, seconds }));
 
 function createWallboardLiveSync({

@@ -1902,6 +1902,7 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
   const readerEmail = "wallboard-reader@bring.test";
   const sourcePaths = [
     "access",
+    "billingLedger",
     "workOrders",
     "projects",
     "data/serviceRecords",
@@ -1910,7 +1911,7 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
     "projectWeeklyReportReviews",
   ];
 
-  it("allows only the enabled verified reader to read the seven TV source paths, never write them", async () => {
+  it("allows only the enabled verified reader to read the eight TV source paths, never write them", async () => {
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: true,
@@ -5213,6 +5214,34 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
       await assertFails(update(ref(marketing, `crmCompany/marketing/${path}`), { requestHash: "c".repeat(64) }));
       await assertFails(remove(ref(marketing, `crmCompany/marketing/${path}`)));
     }
+  });
+});
+
+describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
+  const draft = { id: 'contract_2026-09', contractId: 'contract', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-member' };
+  it('rejects every direct member invoice write but permits reading server records', async () => {
+    const member = environment.authenticatedContext('crm-legacy-member', crmClaims('legacy@bring.test')).database();
+    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member' }));
+    await assertFails(set(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-legacy-member', status: 'approved', revision: 2, approvedAt: NOW, approvedBy: 'crm-legacy-member' }));
+    await assertFails(remove(ref(member, `crmCompany/billingLedger/invoices/${draft.id}`)));
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' });
+    });
+    await assertSucceeds(get(ref(member, 'crmCompany/billingLedger')));
+  });
+  it('rejects every direct admin invoice and receipt write', async () => {
+    const admin = environment.authenticatedContext('crm-admin', crmClaims('admin@bring.test')).database();
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, updatedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'approved', revision: 2, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+    await assertFails(set(ref(admin, `crmCompany/billingLedger/invoices/${draft.id}`), { ...draft, status: 'void', revision: 3, amount: 1, updatedBy: 'crm-admin', voidedAt: NOW, voidedBy: 'crm-admin', voidReason: 'test' }));
+    await assertFails(set(ref(admin, 'crmCompany/billingLedger/receipts/orphan'), { id: 'orphan', invoiceId: 'missing', receivedAt: '2026-09-25', amount: 1, transactionRef: 'tx', evidenceRef: 'proof', status: 'approved', revision: 1, updatedAt: NOW, updatedBy: 'crm-admin', approvedAt: NOW, approvedBy: 'crm-admin' }));
+  });
+  it('rejects direct one-off and receipt writes', async () => {
+    const member = environment.authenticatedContext('crm-legacy-member', crmClaims('legacy@bring.test')).database();
+    const path = 'crmCompany/billingLedger/invoices/contract_visit_1';
+    const oneOff = { ...draft, id: 'contract_visit_1', contractType: 'one_off', occurrenceId: 'visit_1', updatedBy: 'crm-legacy-member' };
+    await assertFails(set(ref(member, path), oneOff));
+    await assertFails(set(ref(member, 'crmCompany/billingLedger/receipts/receipt_1'), { id: 'receipt_1', invoiceId: draft.id, receivedAt: '2026-09-25', amount: 1, transactionRef: 'bank', evidenceRef: 'proof', status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-legacy-member' }));
   });
 });
 

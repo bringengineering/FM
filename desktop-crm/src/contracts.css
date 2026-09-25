@@ -139,3 +139,19 @@
   .contract-specific-fields { grid-template-columns: 1fr; }
   .contract-specific-fields .wide { grid-column: auto; }
 }
+.billing-ledger-panel { display: grid; gap: 18px; }
+.billing-ledger-panel .info-box { margin: 0; }
+.billing-ledger-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.billing-ledger-totals > div { background: #f6f9fc; border: 1px solid #e6ecf2; border-radius: 12px; padding: 14px; display: grid; gap: 7px; }
+.billing-ledger-totals span, .billing-ledger-row small { color: #718096; font-size: 12px; }
+.billing-ledger-totals strong { font-size: 18px; color: #243447; }
+.billing-ledger-panel section, .billing-ledger-entry { border: 1px solid #e6ecf2; border-radius: 12px; padding: 16px; background: #fff; }
+.billing-ledger-panel h3 { margin: 0 0 12px; font-size: 15px; color: #243447; }
+.billing-ledger-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #edf1f5; }
+.billing-ledger-row > div { display: grid; gap: 4px; }
+.billing-ledger-empty { margin: 0; color: #718096; }
+.billing-ledger-entry { display: grid; gap: 10px; }
+.billing-ledger-entry > button { justify-self: start; }
+.billing-ledger-entry p { margin: 0; color: #718096; font-size: 12px; }
+.billing-ledger-error { padding: 15px; border-radius: 10px; background: #fff4f1; color: #a73527; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+@media (max-width: 640px) { .billing-ledger-totals { grid-template-columns: 1fr; } .billing-ledger-row { align-items: flex-start; flex-direction: column; } }

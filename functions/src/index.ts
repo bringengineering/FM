@@ -19,6 +19,12 @@ import { defineSecret } from "firebase-functions/params";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {
+  authorizeBillingActor,
+  transactBillingLedger,
+  type BillingMutationCommand,
+} from "./billing-ledger-mutation.js";
+
+import {
   provisionFieldUserCore,
   type FieldRole,
 } from "./auth/provision-field-user.js";
@@ -3720,6 +3726,86 @@ export const commitCanonicalCrmEntity = onRequest(
         ok: false,
         error: { code },
       });
+    }
+  },
+);
+
+function billingMutationHttpStatus(code: string): number {
+  if (code === "billing_method_not_allowed") return 405;
+  if (code === "billing_body_too_large") return 413;
+  if (code === "billing_auth_required") return 401;
+  if (code === "billing_access_forbidden") return 403;
+  if (code === "billing_rate_limited") return 429;
+  if (code === "billing_revision_conflict" || code === "billing_request_id_conflict"
+    || code === "billing_duplicate_invoice" || code === "billing_duplicate_transaction"
+    || code === "billing_invoice_has_receipts") return 409;
+  if (code === "billing_transaction_unavailable") return 503;
+  if (code === "billing_ledger_too_large" || code === "billing_stored_ledger_invalid") return 412;
+  if (code.startsWith("billing_")) return 400;
+  return 503;
+}
+
+export const commitBillingLedgerMutation = onRequest(
+  { region: "asia-northeast3", cors: false },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      if (request.method !== "POST") {
+        response.set("Allow", "POST");
+        throw new Error("billing_method_not_allowed");
+      }
+      const body = canonicalCrmRawBody(request);
+      const authorization = request.get("authorization") ?? "";
+      const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/u.exec(authorization);
+      if (!bearer) throw new Error("billing_auth_required");
+
+      const requestIp = typeof request.ip === "string" && request.ip.length > 0
+        ? request.ip.slice(0, 128) : "unknown";
+      await consumeRateLimit(
+        adminDatabase.ref(`fieldPlatform/v2/rateLimits/commitBillingLedgerMutation/ip/${desktopRateKey(requestIp)}`),
+        { limit: CANONICAL_CRM_IP_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+      );
+      let decoded;
+      try {
+        decoded = await adminAuth.verifyIdToken(bearer[1], true);
+      } catch {
+        throw new Error("billing_auth_required");
+      }
+      if (!isPathSafeId(decoded.uid)) throw new Error("billing_auth_required");
+      await consumeRateLimit(
+        adminDatabase.ref(`fieldPlatform/v2/rateLimits/commitBillingLedgerMutation/uid/${desktopRateKey(decoded.uid)}`),
+        { limit: CANONICAL_CRM_UID_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+      );
+      const access = (await adminDatabase.ref(`crmCompany/access/${decoded.uid}`).get()).val();
+      const actor = authorizeBillingActor({
+        uid: decoded.uid,
+        email: decoded.email,
+        emailVerified: decoded.email_verified,
+      }, access);
+      const input = isRecord(body) ? body : {};
+      const command: BillingMutationCommand = {
+        action: input.action as BillingMutationCommand["action"],
+        kind: input.kind as BillingMutationCommand["kind"],
+        record: isRecord(input.record) ? input.record : {},
+        reason: input.reason as string,
+        expectedRevision: input.expectedRevision as number,
+        requestId: input.requestId as string,
+        actor,
+        now: new Date().toISOString(),
+      };
+      const result = await transactBillingLedger(
+        adminDatabase.ref("crmCompany/billingLedger"), command,
+      );
+      response.status(200).json({ ok: true, result: { record: result.record, repeated: result.repeated } });
+    } catch (error) {
+      const rawCode = error instanceof Error ? error.message : "";
+      const code = rawCode === "field_rate_limit_exceeded" ? "billing_rate_limited"
+        : rawCode === "crm_body_too_large" ? "billing_body_too_large"
+          : rawCode === "crm_body_invalid" ? "billing_body_invalid"
+            : rawCode === "crm_json_required" ? "billing_json_required"
+          : rawCode.startsWith("billing_") ? rawCode : "billing_transaction_unavailable";
+      response.status(billingMutationHttpStatus(code)).json({ ok: false, error: { code } });
     }
   },
 );

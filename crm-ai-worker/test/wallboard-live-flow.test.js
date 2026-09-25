@@ -19,6 +19,7 @@ test('member refresh request republishes confirmed server progress to the paired
   teamProfiles:{'member-1':{displayName:'김현진'}},
   projectWeeklyReports:{r1:{projectId:'p1',authorUid:'member-1',status:'submitted',summary:'개인 고객정보 비공개',snapshot:{available:true,projectId:'p1',period:'current-week',range:{start:'2026-09-21',end:'2026-09-27'},capturedAt:'2026-09-24T00:00:00Z',counts:{total:1,done:0,submitted:0,returned:0,open:1},sources:[{id:'o1',status:'doing',assigneeUid:'member-1',updatedAt:'2026-09-24T00:00:00Z'}]}}},
   projectWeeklyReportReviews:{r1:{status:'approved',projectId:'p1',authorUid:'member-1',reviewerUid:'admin-1',reviewedAt:'2026-09-24T01:00:00Z'}},
+  billingLedger:null,
   'companyStrategyPublications/2026':null
  };
  let denyProjects=false;
