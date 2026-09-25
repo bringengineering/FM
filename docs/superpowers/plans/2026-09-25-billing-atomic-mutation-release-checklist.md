@@ -6,9 +6,9 @@
 
 ## 운영 데이터 보존
 
-- [ ] 회사 Firebase 프로젝트와 DB 인스턴스를 화면에서 다시 확인한다. 다른 계정·프로젝트를 사용하지 않는다.
-- [ ] `crmCompany/billingLedger`를 읽기 전용으로 내려받고 백업 파일의 저장 위치·생성 시각·접근 권한을 기록한다.
-- [ ] 백업 JSON에 `node functions/scripts/audit-billing-ledger.mjs <백업파일.json>`을 실행해 중복 청구, 중복 거래 참조, 고아 입금, 형식 오류, 안전하지 않은 합계, 장부 크기 초과를 확인한다. 먼저 `npm --prefix functions run build`를 실행한다. 종료 코드 `0`은 문제 없음, `2`는 점검 항목 발견, `1`은 파일·형식 오류다. 출력은 건수와 문제 코드만 포함하며, 원본 파일은 수정하지 않는다. 오류 건은 자동 삭제·자동 확정하지 않는다.
+- [x] 회사 Firebase 프로젝트 `bring-fm`과 DB 인스턴스 `bring-fm-default-rtdb`를 명시해 읽기 전용 확인했다(2026-09-25).
+- [x] `crmCompany/billingLedger`를 `%LOCALAPPDATA%\BRING CRM\release-backups\billing-ledger`에 읽기 전용으로 내려받고 생성 시각·크기·SHA-256을 기록했다(2026-09-25). 저장소에는 백업 원문을 넣지 않았다.
+- [x] Functions TypeScript 빌드 후 백업 JSON에 `node functions/scripts/audit-billing-ledger.mjs <백업파일.json>`을 실행했다. 운영 장부는 현재 비어 있으며 청구 0건·입금 0건·점검 항목 0건, 종료 코드 0이었다(2026-09-25). 원본은 수정하지 않았다.
 - [ ] 대표/관리자가 원본 계약·입금 근거와 점검 결과를 대조한다. 단건 `입금 완료` 체크만으로 입금액을 소급 생성하지 않는다.
 
 ## 배포 순서와 호환성
@@ -22,7 +22,7 @@
 
 ## 회사 TV와 최종 판정
 
-- [ ] `WALLBOARD_SCHEDULED_REFRESH_ENABLED`를 켜기 전에 PC와 무관한 서버 갱신 경로가 확정 장부 합계를 실제로 읽어 TV 스냅샷에 넣는지 확인한다. 현재 서버 갱신은 `billingLedger`를 읽지 않으므로, 그대로 켜면 CRM 게시 매출이 `집계 대기`로 덮일 수 있다. 장부 원본 읽기 권한을 TV 기기에 부여하지 않는다.
+- [ ] `WALLBOARD_SCHEDULED_REFRESH_ENABLED`를 켜기 전에 PC와 무관한 서버 갱신 경로가 확정 장부 합계를 실제로 읽어 TV 스냅샷에 넣는지 확인한다. 이 브랜치의 서버 갱신은 검증된 TV 읽기 계정으로 `billingLedger`를 읽어 합계만 투영하지만 운영 Worker는 아직 이전 버전이다. 장부 원문은 TV 공개 스냅샷에 넣지 않는다.
 - [ ] 담당자 PC에서 청구 초안 입력, 관리자 PC에서 확정, 회사 TV에서 청구액·실입금액 분리 표시를 두 기기 이상으로 검증한다.
 - [ ] 승인 전 초안과 근거 없는 과거 입금 체크가 TV 매출로 집계되지 않는지 확인한다.
 - [ ] 저장부터 TV 표시까지의 시간, 실패 시 마지막 게시 시각, 개인정보 제외 여부를 기록한다.
