@@ -79,6 +79,25 @@ jobs:
       - name: Test the rules being deployed
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
 
+      # billingLedger 는 클라이언트 직접 쓰기를 모두 닫고 HTTPS Function 만
+      # 쓰게 한다. 따라서 이 규칙이 포함된 커밋은 Function 이 실제 운영에
+      # 먼저 올라간 경우에만 배포한다. 이전 규칙으로 되돌릴 때는 이 확인을
+      # 건너뛰므로 Function 장애와 무관하게 롤백할 수 있다.
+      - name: Verify billing mutation Function before protected ledger rules
+        run: |
+          set -euo pipefail
+          if grep -q '"billingLedger"' database.rules.json; then
+            body="$RUNNER_TEMP/billing-function-probe.json"
+            status="$(curl --max-time 15 --silent --show-error \
+              --output "$body" --write-out '%{http_code}' \
+              --request POST --header 'Content-Type: application/json' --data '{}' \
+              https://asia-northeast3-bring-fm.cloudfunctions.net/commitBillingLedgerMutation)"
+            if [ "$status" != "401" ] || ! grep -q 'billing_auth_required' "$body"; then
+              echo "::error::청구 장부 Function이 운영에 확인되지 않아 직접 쓰기 차단 규칙을 배포하지 않습니다. Function을 먼저 배포·검증한 뒤 다시 실행하세요."
+              exit 1
+            fi
+          fi
+
       # 무엇이 올라갔는지 나중에 볼 수 있게 남긴다. 되돌릴 때 필요한 것은
       # 파일이 아니라 커밋이지만, 사고가 났을 때 원본이 손에 있는 편이 낫다.
       - name: Record what is about to go up

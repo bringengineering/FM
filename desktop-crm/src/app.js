@@ -10668,6 +10668,16 @@
     } catch (error) {
       if (!billingSessionActive(state)) return;
       state.notice = `${billingError(error)} 저장되지 않았습니다. 내용을 확인하고 다시 시도해 주세요.`;
+      if (error?.code === "BILLING_LEDGER_CONFLICT" || error?.code === "BILLING_LEDGER_OUTCOME_UNKNOWN") {
+        try {
+          const latest = await api.loadBillingLedger();
+          if (!billingSessionActive(state)) return;
+          if (latest && Array.isArray(latest.invoices) && Array.isArray(latest.receipts)) {
+            state.ledger = latest;
+            state.notice = `${billingError(error)} 최신 장부를 다시 불러왔습니다. 변경 내용을 비교한 뒤 다시 저장해 주세요.`;
+          }
+        } catch (_) { /* Keep the entered form and original snapshot for manual recovery. */ }
+      }
     } finally {
       if (billingSessionActive(state)) { state.loading = false; renderBillingLedger(state); }
     }

@@ -51,6 +51,12 @@ function validDate(value: unknown): value is string {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function validIsoTime(value: unknown): value is string {
+  if (typeof value !== "string" || !ISO_TIME.test(value)) return false;
+  const timestamp = new Date(value);
+  return Number.isFinite(timestamp.getTime()) && timestamp.toISOString() === value;
+}
+
 function validMonth(value: unknown): value is string {
   return typeof value === "string" && MONTH.test(value);
 }
@@ -77,16 +83,18 @@ function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolea
   } else {
     if (!validId(value.invoiceId) || !validDate(value.receivedAt)
       || typeof value.transactionRef !== "string" || value.transactionRef.length > 160
-      || typeof value.evidenceRef !== "string" || value.evidenceRef.length > 500) return false;
+      || value.transactionRef !== value.transactionRef.trim()
+      || typeof value.evidenceRef !== "string" || value.evidenceRef.length > 500
+      || value.evidenceRef !== value.evidenceRef.trim()) return false;
     if (value.status === "approved" && (!value.transactionRef.trim() || !value.evidenceRef.trim())) return false;
   }
   if (value.status === "void" && (typeof value.voidReason !== "string" || !value.voidReason.trim() || value.voidReason.length > 500)) return false;
   if (stored && (!Number.isSafeInteger(value.revision) || (value.revision as number) < 1
-    || !validId(value.updatedBy) || typeof value.updatedAt !== "string" || !ISO_TIME.test(value.updatedAt))) return false;
+    || !validId(value.updatedBy) || !validIsoTime(value.updatedAt))) return false;
   if (stored && (value.status === "approved" || value.status === "void")
-    && (!validId(value.approvedBy) || typeof value.approvedAt !== "string" || !ISO_TIME.test(value.approvedAt))) return false;
+    && (!validId(value.approvedBy) || !validIsoTime(value.approvedAt))) return false;
   if (stored && value.status === "void"
-    && (!validId(value.voidedBy) || typeof value.voidedAt !== "string" || !ISO_TIME.test(value.voidedAt))) return false;
+    && (!validId(value.voidedBy) || !validIsoTime(value.voidedAt))) return false;
   if (stored && value.lastRequestId !== undefined && !validId(value.lastRequestId)) return false;
   if (stored && value.returnPending !== undefined && typeof value.returnPending !== "boolean") return false;
   if (stored && value.returnHistory !== undefined) {
@@ -96,7 +104,7 @@ function validRecord(kind: "invoice" | "receipt", value: unknown, stored: boolea
         || Object.keys(entry).some(key => !["reason", "returnedBy", "returnedAt", "revision"].includes(key))
         || typeof entry.reason !== "string" || entry.reason.trim() !== entry.reason
         || entry.reason.length < 5 || entry.reason.length > 500
-        || !validId(entry.returnedBy) || typeof entry.returnedAt !== "string" || !ISO_TIME.test(entry.returnedAt)
+        || !validId(entry.returnedBy) || !validIsoTime(entry.returnedAt)
         || !Number.isSafeInteger(entry.revision) || (entry.revision as number) < 2) return false;
     }
   }
@@ -178,7 +186,7 @@ export function reduceBillingLedgerMutation(
     receipts: { ...stored.receipts },
   };
   if (!validId(command.requestId) || !validId(command.actor.uid)
-    || !ISO_TIME.test(command.now) || !Number.isSafeInteger(command.expectedRevision)
+    || !validIsoTime(command.now) || !Number.isSafeInteger(command.expectedRevision)
     || command.expectedRevision < 0 || !["invoice", "receipt"].includes(command.kind)
     || ![undefined, "save", "return"].includes(command.action)) throw new Error("billing_invalid_record");
   const id = command.record.id as string;

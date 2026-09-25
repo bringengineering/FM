@@ -235,6 +235,18 @@ describe("atomic billing ledger mutation", () => {
     })).toThrowError("billing_duplicate_transaction");
   });
 
+  it("rejects non-canonical receipt references before they can bypass duplicate detection", () => {
+    const approvedInvoice = { ...invoice, status: "approved", revision: 1, approvedAt: NOW, approvedBy: "admin-1", updatedAt: NOW, updatedBy: "admin-1" };
+    expect(() => reduceBillingLedgerMutation({ invoices: { [invoice.id]: approvedInvoice }, receipts: {} }, {
+      kind: "receipt", record: {
+        id: "receipt-2", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 30000,
+        transactionRef: " bank-1 ", evidenceRef: " proof-1 ", status: "approved",
+      },
+      expectedRevision: 0, requestId: "request-2",
+      actor: { uid: "admin-1", role: "admin" }, now: NOW,
+    })).toThrowError("billing_invalid_record");
+  });
+
   it("does not allow a draft to move directly to void", () => {
     const first = reduceBillingLedgerMutation(null, {
       kind: "invoice", record: invoice, expectedRevision: 0, requestId: "request-1",
@@ -424,6 +436,24 @@ describe("atomic billing ledger mutation", () => {
     const receipt = { id: "r1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 10, transactionRef: "bank-1", evidenceRef: "proof", status: "approved", revision: 1, updatedAt: NOW, updatedBy: "admin-1", approvedAt: NOW, approvedBy: "admin-1" };
     expect(auditBillingLedger({ invoices: { [invoice.id]: approved }, receipts: { r1: receipt, r2: { ...receipt, id: "r2" }, r3: { ...receipt, id: "r3", invoiceId: "missing" } } }))
       .toEqual(expect.arrayContaining(["billing_duplicate_transaction", "billing_orphan_receipt"]));
+  });
+
+  it("audits stored receipt references that are not canonical", () => {
+    const approved = { ...invoice, status: "approved", revision: 1, updatedAt: NOW, updatedBy: "admin-1", approvedAt: NOW, approvedBy: "admin-1" };
+    const receipt = { id: "r1", invoiceId: invoice.id, receivedAt: "2026-09-25", amount: 10, transactionRef: " bank-1 ", evidenceRef: "proof", status: "approved", revision: 1, updatedAt: NOW, updatedBy: "admin-1", approvedAt: NOW, approvedBy: "admin-1" };
+    expect(auditBillingLedger({ invoices: { [invoice.id]: approved }, receipts: { r1: receipt } }))
+      .toContain("billing_stored_ledger_invalid");
+  });
+
+  it("audits impossible stored ISO timestamps before the Worker rejects the ledger", () => {
+    const malformed = {
+      ...invoice,
+      revision: 1,
+      updatedAt: "2026-99-99T99:99:99.999Z",
+      updatedBy: "member-1",
+    };
+    expect(auditBillingLedger({ invoices: { [invoice.id]: malformed }, receipts: {} }))
+      .toContain("billing_stored_ledger_invalid");
   });
 
   it("rejects object prototype keys as billing record ids", () => {

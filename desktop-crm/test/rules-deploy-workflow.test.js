@@ -40,6 +40,17 @@ test("검사를 통과한 규칙만 올라간다", () => {
   assert.ok(ci.includes(command), "CI 쪽 명령이 바뀌면 여기도 같이 바뀌어야 한다");
 });
 
+test("장부 직접 쓰기를 닫는 규칙은 장부 Function이 먼저 존재해야 올라간다", () => {
+  const probeStep = executable.indexOf("Verify billing mutation Function before protected ledger rules");
+  const deployStep = executable.indexOf("Deploy database rules");
+  assert.ok(probeStep > 0, "장부 Function 운영 배포 확인 단계가 있어야 한다");
+  assert.ok(probeStep < deployStep, "Function 확인이 규칙 배포보다 먼저여야 한다");
+  assert.match(executable, /grep -q '"billingLedger"' database\.rules\.json/u);
+  assert.match(executable, /https:\/\/asia-northeast3-bring-fm\.cloudfunctions\.net\/commitBillingLedgerMutation/u);
+  assert.match(executable, /billing_auth_required/u);
+  assert.match(executable, /--max-time 15/u);
+});
+
 test("두 배포가 겹치지 않는다", () => {
   // 규칙은 한 벌뿐이다. 겹치면 나중 것이 먼저 것을 덮는데, 어느 것이
   // 나중인지는 순서가 아니라 끝난 시각이 정한다.

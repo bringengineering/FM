@@ -77,6 +77,15 @@ test('successful billing mutations invalidate the monthly report ledger cache', 
   assert.match(save, /loadManagementBillingLedger\(managementReportState\.month\)/u);
 });
 
+test('billing save conflicts and unknown outcomes reload the latest ledger before retry', () => {
+  const app = read('app.js');
+  const save = app.slice(app.indexOf('async function saveBillingRecord('), app.indexOf('async function returnBillingDraft('));
+  assert.match(save, /BILLING_LEDGER_CONFLICT/u);
+  assert.match(save, /BILLING_LEDGER_OUTCOME_UNKNOWN/u);
+  assert.match(save, /const latest = await api\.loadBillingLedger\(\)/u);
+  assert.match(save, /state\.ledger = latest/u);
+});
+
 test('monthly report labels an unconfirmed ledger as pending, not zero revenue', () => {
   const app = read('app.js');
   const comparison = app.slice(app.indexOf('function managementBillingComparison('), app.indexOf('async function requestSalesAutomationDraft('));
