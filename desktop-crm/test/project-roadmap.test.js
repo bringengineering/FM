@@ -1,0 +1,177 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const read = name => fs.readFileSync(path.join(__dirname, "../src", name), "utf8");
+const app = read("app.js");
+const html = read("index.html");
+const css = read("styles.css");
+const main = read("main.js");
+
+test("프로젝트 관리 폴더에 로드맵 하위 탭이 있다", () => {
+  const start = html.indexOf('data-nav-folder="project"');
+  const end = html.indexOf('data-nav-folder="calendar"', start);
+  const folder = html.slice(start, end);
+  assert.ok(folder.includes('data-view="projectRoadmap"'));
+  assert.match(folder, /프로젝트 로드맵/u);
+  assert.match(app, /projectRoadmap:\s*\["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"\]/u);
+  assert.match(app, /currentView === "projectRoadmap"\) renderProjectRoadmap\(\)/u);
+});
+
+test("로드맵은 기존 프로젝트와 업무지시 자료만 사용한다", () => {
+  const start = app.indexOf("function renderProjectRoadmap(");
+  const end = app.indexOf("\n  function renderWorkOrders(", start);
+  const body = app.slice(start, end);
+  assert.ok(body.length > 0);
+  assert.match(body, /workOrderState\.orders/u);
+  assert.match(body, /workOrderState\.projects/u);
+  assert.match(body, /workOrderState\.members/u);
+  assert.match(body, /P\.roadmapRows/u);
+  assert.match(body, /P\.roadmapRange/u);
+  assert.doesNotMatch(body, /api\.(?:save|load).*Roadmap/u, "로드맵 전용 복제 저장소를 만들면 안 된다");
+});
+
+test("담당자·프로젝트·내 일정 보기와 기간 이동이 연결돼 있다", () => {
+  for (const mode of ["people", "projects", "mine"]) {
+    assert.ok(app.includes(`data-roadmap-mode="${mode}"`), `${mode} 보기 단추가 없다`);
+  }
+  assert.match(app, /data-roadmap-shift=/u);
+  assert.match(app, /data-roadmap-today/u);
+  assert.match(app, /projectRoadmapState\.rangeShift = 0/u);
+  assert.match(css, /\.roadmap-today-line/u);
+  assert.match(app, /class="roadmap-today-label"[^>]*>오늘<\/b>/u);
+  assert.match(css, /\.roadmap-today-label[^}]*white-space:\s*nowrap[^}]*writing-mode:\s*horizontal-tb/u);
+  assert.doesNotMatch(css, /\.roadmap-today-line::before/u, "각 행의 오늘 기준선에 글자를 반복하면 안 된다");
+});
+
+test("로드맵은 8주와 8일을 전환하고 편집 중에는 날짜 축을 바꾸지 않는다", () => {
+  const start = app.indexOf("function renderProjectRoadmap(");
+  const end = app.indexOf("\n  function renderWorkOrders(", start);
+  const render = app.slice(start, end);
+  assert.match(app, /scale: "weeks"/u);
+  assert.match(render, /P\.roadmapRange\(today, projectRoadmapState\.rangeShift, projectRoadmapState\.scale\)/u);
+  assert.match(render, /range\.columns\.map/u);
+  assert.match(render, /data-roadmap-scale="weeks"[^>]*aria-pressed/u);
+  assert.match(render, /data-roadmap-scale="days"[^>]*aria-pressed/u);
+  assert.match(render, /8주/u);
+  assert.match(render, /8일/u);
+  assert.match(app, /projectRoadmapState\.scale = scale/u);
+  assert.match(app, /if \(roadmapEditing\)/u);
+  assert.match(css, /\.roadmap-scale button:focus-visible/u);
+});
+
+test("로드맵 일정 추가와 진행률 변경은 업무지시 저장 경로를 재사용한다", () => {
+  assert.match(app, /data-roadmap-new/u);
+  assert.match(app, /workOrderState\.editing = W\.normalizeOrder/u);
+  assert.match(app, /workOrderEditor\(W, P, P\.sortProjects/u);
+  assert.match(app, /data-wo-progress=/u);
+  assert.match(app, /setWorkOrderProgress/u);
+  assert.match(app, /api\.saveWorkOrder\(checked\.order\)/u);
+  assert.match(app, /api\.updateWorkOrderProgress/u);
+});
+
+test("선택한 프로젝트 아래에 일정과 최근 진행사항이 함께 보인다", () => {
+  const start = app.indexOf("function roadmapDetail(");
+  const end = app.indexOf("\n  function renderProjectRoadmap(", start);
+  const detail = app.slice(start, end);
+  assert.match(detail, /일정과 현재 진행/u);
+  assert.match(detail, /최근 진행사항/u);
+  assert.match(detail, /P\.recentProgress/u);
+  assert.match(detail, /업무지시에서 변경된 최신 순서/u);
+});
+
+test("최근 진행사항은 제목·날짜·내용·작성자를 읽기 쉬운 크기로 표시한다", () => {
+  assert.match(app, /<section class="roadmap-recent-section">/u);
+  assert.match(app, /class="roadmap-section-head roadmap-recent-head"/u);
+  assert.match(css, /\.roadmap-recent-head b\s*\{[^}]*font-size:\s*15px/u);
+  assert.match(css, /\.roadmap-recent-head span\s*\{[^}]*font-size:\s*11px/u);
+  assert.match(css, /\.roadmap-updates time\s*\{[^}]*font-size:\s*10px[^}]*font-weight:\s*700/u);
+  assert.match(css, /\.roadmap-updates div b\s*\{[^}]*font-size:\s*12px[^}]*font-weight:\s*900/u);
+  assert.match(css, /\.roadmap-updates div span\s*\{[^}]*font-size:\s*10px/u);
+  assert.match(css, /\.roadmap-updates div small\s*\{[^}]*font-size:\s*10px/u);
+});
+
+test("로드맵 프로젝트를 누르면 편집기 대신 상세 화면으로 이동한다", () => {
+  const laneStart = app.indexOf("const laneHtml = lanes.map");
+  const laneEnd = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">', laneStart);
+  const lanes = app.slice(laneStart, laneEnd);
+  assert.match(lanes, /data-roadmap-select/u);
+  assert.doesNotMatch(lanes, /data-roadmap-project-progress/u);
+
+  const selectAt = app.indexOf('const roadmapSelect = event.target.closest("[data-roadmap-select]")');
+  const progressAt = app.indexOf('const roadmapProjectProgress = event.target.closest("[data-roadmap-project-progress]")');
+  assert.ok(selectAt >= 0 && progressAt > selectAt, "상세 선택을 진행사항 편집보다 먼저 처리해야 한다");
+  assert.match(app, /requestAnimationFrame\(\(\) => document\.querySelector\("\.roadmap-detail"\)\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)\)/u);
+
+  const detailStart = app.indexOf("function roadmapDetail(");
+  const detailEnd = app.indexOf("\n  function renderProjectRoadmap(", detailStart);
+  const detail = app.slice(detailStart, detailEnd);
+  assert.match(detail, /class="roadmap-project-title" data-roadmap-select=/u);
+  assert.match(detail, /data-roadmap-project-progress=.*＋ 진행사항 추가/u);
+});
+
+test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가하고 이름을 눌러 진행사항을 남긴다", () => {
+  const heroStart = app.indexOf('main.innerHTML = `<section class="operations-hero roadmap-hero">');
+  const heroEnd = app.indexOf("${status}", heroStart);
+  const hero = app.slice(heroStart, heroEnd);
+  assert.match(hero, /class="primary-button" data-roadmap-project-new/u);
+  assert.doesNotMatch(hero, /data-roadmap-new/u, "로드맵 상단에는 일정 추가 버튼을 두지 않는다");
+  assert.match(app, /data-roadmap-project-new/u);
+  assert.match(app, /function roadmapProjectEditor\(/u);
+  assert.match(app, /name="name"[^>]*required/u);
+  assert.match(app, /name="progress"[^>]*min="0"[^>]*max="100"/u);
+  assert.match(app, /<span>시작일<\/span><input type="date" name="startDate"[^>]*required/u);
+  assert.match(app, /<span>마감일<\/span><input type="date" name="endDate"[^>]*required/u);
+  assert.match(app, /name="progressNote"[^>]*required/u);
+  assert.match(app, /data-roadmap-project-progress/u);
+  assert.match(app, /api\.saveProject\(checked\.project\)/u);
+  assert.match(app, /raw\.startDate === undefined \? previous\.startDate/u);
+  assert.match(app, /raw\.goal === undefined \? previous\.goal/u);
+  assert.match(app, /프로젝트에 연결되지 않은 업무/u);
+});
+
+test("기존 상세 디자인 안에서 프로젝트 기간을 연장하고 연장 막대를 구분한다", () => {
+  assert.match(app, /data-roadmap-project-extend/u);
+  assert.match(app, /data-roadmap-project-base-end/u);
+  assert.match(app, /function roadmapProjectExtensionEditor\(/u);
+  assert.match(app, /project\.endDate \|\| fallbackEndDate/u);
+  assert.match(app, /data-roadmap-extension-form/u);
+  assert.match(app, /name="newEndDate"[^>]*type="date"[^>]*required/u);
+  assert.match(app, /name="extensionNote"[^>]*maxlength="300"/u);
+  for (const days of [7, 14, 30]) assert.match(app, new RegExp(`data-roadmap-extension-days="${days}"`, "u"));
+  assert.match(app, /프로젝트 기간만 변경되며 연결된 업무지시 일정은 유지됩니다\./u);
+  assert.match(app, /saveProjectExtensionFromForm/u);
+  assert.match(app, /새 마감일은 현재 마감일보다 늦어야 합니다\./u);
+  assert.doesNotMatch(app, /프로젝트 마감일을 먼저 설정해 주세요\./u);
+  assert.match(app, /기간 연장을 저장하거나 취소한 뒤 이동해 주세요\./u);
+  assert.match(app, /roadmapExtensionLayout\(assignment, range\)/u);
+  assert.match(app, /class="roadmap-extension-segment"/u);
+  assert.match(app, /assignment\.extended \? " has-extension"/u);
+  assert.match(css, /\.roadmap-extension-segment\s*\{[^}]*background:/u);
+  assert.doesNotMatch(css, /\.roadmap-bar\.is-extended\s*\{/u);
+  assert.match(css, /\.roadmap-extension-editor/u);
+});
+
+test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미리보기를 허용한다", () => {
+  assert.match(main, /BRING_CRM_PREVIEW_VIEW === "projectRoadmap" \? "projectRoadmap" : ""/u);
+  assert.match(main, /Boolean\(interactivePreviewView\)/u);
+  assert.match(main, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
+  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview"/u);
+  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-progress-preview"/u);
+  assert.match(main, /trigger\.dataset\.woProgress = 'preview-1'/u);
+  assert.match(main, /noteRequired: note\?\.required === true/u);
+  assert.match(main, /data-workspace-enter-folder="project"/u);
+  assert.match(main, /data-live-refresh="projectRoadmap"/u);
+  assert.match(main, /const project = document\.querySelector\('\.roadmap-bar\[data-roadmap-select\]'\)/u);
+  assert.match(main, /progressModalOpen/u);
+  assert.match(main, /scrollTop: document\.querySelector\('\.main-content'\)\?\.scrollTop/u);
+  assert.match(main, /todayLabels: labels\.length/u);
+});
+
+test("로드맵 미리보기는 실데이터 없이 8일 축을 선택해 날짜 라벨을 검수할 수 있다", () => {
+  assert.match(main, /BRING_CRM_SCREENSHOT_ROADMAP_SCALE/u);
+  assert.match(main, /data-roadmap-scale="days"/u);
+  assert.match(main, /\.roadmap-axis span/u);
+});
+

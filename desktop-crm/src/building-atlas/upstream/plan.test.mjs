@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {toWorld,toPlan} from './plan-coordinates.mjs';import {demo,validate} from './model.mjs';
+test('plan coordinates roundtrip and orientation',()=>{const b={width:16,depth:12};assert.deepEqual(toWorld(0,0,b,2),{floor:2,x:-8,z:-6});assert.deepEqual(toWorld(1,1,b,0),{floor:0,x:8,z:6});const p=toWorld(.25,.75,b,1);assert.deepEqual(toPlan(p,b),{u:.25,v:.75});});
+test('invalid plan floors and image formats rejected',()=>{const d=demo();d.building.floorPlans={'0':{name:'도면',image:'data:image/jpeg;base64,AA=='}};validate(d);d.building.floorPlans['5']=d.building.floorPlans['0'];assert.throws(()=>validate(d));delete d.building.floorPlans['5'];d.building.floorPlans['0'].image='https://example.com/photo';assert.throws(()=>validate(d));});

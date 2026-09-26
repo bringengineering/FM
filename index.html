@@ -172,22 +172,53 @@
   .vendor-table a{ color:#315fce; text-decoration:none; word-break:break-all; }
   .vendor-table a:hover{ text-decoration:underline; }
   .vendor-empty{ color:#9aa6b5; }
-  .cv-vendors{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#f8fafd; padding:12px; }
-  .cv-vendors-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
-  .cv-vendors-title{ color:#162033; font-size:13.5px; font-weight:900; }
-  .cv-vendors-sub{ color:#6b7686; font-size:12px; }
-  .cv-vendors .vendor-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:0; }
-  .cv-vendors .vendor-card{ box-shadow:none; }
-  .cv-vendors .vendor-card-name{ font-size:14px; }
-  .cv-vendors .vendor-card-type,.cv-vendors .vendor-field-value{ font-size:12.5px; }
-  .cv-vendors .vendor-card-head{ padding:11px 12px 9px; }
-  .cv-vendors .vendor-card-body{ padding:10px 12px 12px; gap:8px; }
-  .case-vendor-card.selected{ border-color:#4b7bec; box-shadow:0 0 0 2px rgba(75,123,236,.12); }
-  .cv-vendor-pick{ display:inline-flex; align-items:center; gap:5px; border:1px dashed #9db2d8; background:#fff; color:#315fce; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
-  .cv-vendor-pick input{ margin:0; width:14px; height:14px; accent-color:#4b7bec; }
-  .cv-vendor-count{ display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#315fce; border:1px solid #c5d4ff; font-size:11.5px; font-weight:800; white-space:nowrap; }
-  @media (max-width:1180px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
-  @media (max-width:720px){ .cv-vendors .vendor-grid{ grid-template-columns:1fr; } }
+  .cv-vendors{ margin:10px 0 0; border:1px solid #cfd9e8; border-radius:8px; background:#f5f7fb; padding:16px; }
+  .cv-vendors-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
+  .cv-vendors-title{ color:#162033; font-size:16px; font-weight:900; line-height:1.35; }
+  .cv-vendors-sub{ margin-top:3px; color:#667085; font-size:12.5px; line-height:1.45; }
+  .cv-vendors-actions{ display:flex; align-items:center; gap:7px; }
+  .cv-vendor-source{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #d8e0ec; border-radius:6px; background:#fff; color:#52606d; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .cv-vendors .vendor-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:0; }
+  .cv-vendors .vendor-card{ display:flex; min-width:0; flex-direction:column; border-color:#cfd9e8; box-shadow:0 2px 8px rgba(31,39,51,.05); transition:border-color .15s ease,box-shadow .15s ease,background .15s ease; }
+  .cv-vendors .vendor-card-head{ min-height:86px; padding:14px 14px 12px; border-bottom:1px solid #e4eaf2; background:#fff; }
+  .cv-vendors .vendor-card-name{ color:#101828; font-size:16px; font-weight:900; line-height:1.35; }
+  .cv-vendors .vendor-card-type{ display:-webkit-box; overflow:hidden; margin-top:5px; color:#52606d; font-size:13px; line-height:1.45; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+  .cv-vendors .vendor-card-body{ display:flex; flex:1; flex-direction:column; gap:12px; padding:13px 14px 14px; }
+  .case-vendor-card.selected{ border-color:#3972e6; background:#f8fbff; box-shadow:0 0 0 2px rgba(57,114,230,.13); }
+  .case-vendor-card.selected .vendor-card-head{ background:#eef4ff; }
+  .cv-vendor-pick{ display:inline-flex; align-items:center; gap:6px; min-height:32px; border:1px solid #8aa8e8; background:#fff; color:#2458c4; border-radius:6px; padding:5px 9px; font-size:12px; font-weight:900; cursor:pointer; white-space:nowrap; }
+  .case-vendor-card.selected .cv-vendor-pick{ border-color:#3972e6; background:#3972e6; color:#fff; }
+  .cv-vendor-pick input{ margin:0; width:15px; height:15px; accent-color:#3972e6; }
+  .case-vendor-card.selected .cv-vendor-pick input{ accent-color:#fff; }
+  .cv-vendor-pick.disabled{ border-color:#d8e0ec; background:#eef1f5; color:#8b95a5; cursor:not-allowed; }
+  .cv-vendor-tags{ display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .cv-vendor-category,.cv-vendor-near,.cv-vendor-rating{ display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:5px; font-size:11px; font-weight:800; }
+  .cv-vendor-category{ border:1px solid #c8d7f5; background:#f1f5fd; color:#315f92; }
+  .cv-vendor-near{ border:1px solid #b7e4c7; background:#edf9f1; color:#157347; }
+  .cv-vendor-rating{ border:1px solid #f2d38a; background:#fff9e8; color:#8a5a00; }
+  .cv-vendor-core{ display:grid; gap:10px; }
+  .cv-vendor-core-row{ display:grid; grid-template-columns:58px minmax(0,1fr); align-items:start; gap:8px; }
+  .cv-vendor-core-label{ color:#667085; font-size:12px; font-weight:800; line-height:1.5; }
+  .cv-vendor-core-value{ min-width:0; color:#182230; font-size:13.5px; line-height:1.5; word-break:break-word; }
+  .cv-vendor-core-value.phone{ color:#153f8f; font-size:14px; font-weight:900; }
+  .cv-vendor-actions-row{ display:flex; flex-wrap:wrap; gap:7px; margin-top:auto; padding-top:1px; }
+  .cv-vendor-actions-row .vendor-links{ display:contents; }
+  .cv-vendor-actions-row a{ display:inline-flex; align-items:center; justify-content:center; min-height:32px; padding:5px 10px; border:1px solid #b9caf0; border-radius:6px; background:#fff; color:#2458c4; font-size:12px; font-weight:800; text-decoration:none; }
+  .cv-vendor-actions-row a:hover{ border-color:#7c9ee5; background:#eef4ff; text-decoration:none; }
+  .cv-vendor-details{ border-top:1px solid #e4eaf2; padding-top:10px; }
+  .cv-vendor-details summary{ color:#52606d; font-size:12px; font-weight:800; cursor:pointer; user-select:none; }
+  .cv-vendor-details-grid{ display:grid; gap:9px; padding-top:10px; }
+  .cv-vendor-details .vendor-field{ grid-template-columns:58px minmax(0,1fr); gap:8px; }
+  .cv-vendor-details .vendor-field-label{ line-height:1.45; }
+  .cv-vendor-details .vendor-field-value{ font-size:12.5px; line-height:1.5; }
+  .cv-vendor-count{ display:inline-flex; align-items:center; min-height:28px; padding:3px 9px; border-radius:6px; background:#e9f0ff; color:#2458c4; border:1px solid #b9caf0; font-size:12px; font-weight:900; white-space:nowrap; }
+  @media (max-width:1240px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:720px){
+    .cv-vendors{ padding:12px; }
+    .cv-vendors-head{ align-items:flex-start; flex-direction:column; }
+    .cv-vendors-actions{ width:100%; justify-content:space-between; }
+    .cv-vendors .vendor-grid{ grid-template-columns:1fr; }
+  }
   .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
   .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
   /* 자유 캔버스(PPT식) */
@@ -408,6 +439,28 @@
   .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
   .quote-card-links a:hover{ text-decoration:underline; }
   .quote-remove{ justify-self:start; border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .work-photo-panel{ margin-top:8px; display:grid; gap:10px; overflow-anchor:none; }
+  .work-photo-upload-grid,.work-photo-compare{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .work-photo-box{ border:1px solid #d8e0ec; background:#fbfcff; border-radius:8px; padding:12px; min-width:0; }
+  .work-photo-box.before{ border-top:3px solid #6b7686; }
+  .work-photo-box.after{ border-top:3px solid #20b26b; }
+  .work-photo-title{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:3px; color:#162033; font-size:14px; font-weight:900; }
+  .work-photo-count{ color:#52606d; background:#eef1f6; border-radius:999px; padding:2px 7px; font-size:11px; white-space:nowrap; }
+  .work-photo-box.after .work-photo-count{ color:#116329; background:#eaf7ee; }
+  .work-photo-sub{ margin-bottom:9px; color:#6b7686; font-size:12px; line-height:1.45; }
+  .work-photo-actions{ display:flex; justify-content:flex-end; }
+  .work-photo-gallery{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+  .work-photo-card{ border:1px solid #e3e8f1; background:#fff; border-radius:8px; overflow:hidden; min-width:0; }
+  .work-photo-thumb{ display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#eef1f6; }
+  .work-photo-card-body{ display:grid; gap:5px; padding:8px; }
+  .work-photo-name{ color:#243244; font-size:12px; font-weight:800; line-height:1.35; overflow-wrap:anywhere; }
+  .work-photo-meta{ color:#6b7686; font-size:11px; }
+  .work-photo-links{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .work-photo-open{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; color:#315fce; text-decoration:none; font-size:12px; font-weight:800; }
+  .work-photo-remove{ border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 7px; font-size:11px; cursor:pointer; }
+  .work-photo-empty{ min-height:130px; display:grid; place-items:center; border:1px dashed #d8e0ec; border-radius:8px; color:#8a96a6; background:#fafbfd; padding:14px; text-align:center; font-size:12px; line-height:1.5; }
+  .work-photo-reference{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:8px; padding:12px; overflow-anchor:none; }
+  .work-photo-reference-head{ margin-bottom:9px; color:#162033; font-size:14px; font-weight:900; }
   .recommend-card{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:10px; padding:12px; display:grid; gap:10px; }
   .recommend-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .recommend-title{ font-size:15px; font-weight:900; color:#162033; }
@@ -439,12 +492,26 @@
   .owner-decision-info span{ display:block; font-size:12.5px; font-weight:800; color:#162033; overflow-wrap:anywhere; }
   .owner-decision-link{ justify-self:start; color:#315fce; font-size:12.5px; font-weight:800; text-decoration:none; }
   .owner-decision-link:hover{ text-decoration:underline; }
+  .payment-confirm-panel{ margin-top:8px; border:1px solid #c9d7ea; background:#f8fbff; border-radius:8px; padding:12px; display:grid; gap:10px; }
+  .payment-confirm-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .payment-confirm-title{ font-size:14px; font-weight:900; color:#173a70; }
+  .payment-confirm-sub{ margin-top:3px; font-size:12px; color:#667085; line-height:1.5; }
+  .payment-confirm-badge{ border:1px solid #f1c879; background:#fff7e8; color:#8a5300; border-radius:999px; padding:4px 9px; font-size:11.5px; font-weight:900; white-space:nowrap; }
+  .payment-confirm-badge.done{ border-color:#9cd9b0; background:#eaf8ef; color:#116329; }
+  .payment-confirm-info{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+  .payment-confirm-info div{ border:1px solid #e0e7f1; background:#fff; border-radius:7px; padding:8px; min-width:0; }
+  .payment-confirm-info b{ display:block; font-size:11px; color:#667085; margin-bottom:3px; }
+  .payment-confirm-info span{ display:block; font-size:12.5px; font-weight:800; color:#162033; overflow-wrap:anywhere; }
+  .payment-confirm-action{ justify-self:start; border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:8px 13px; font-size:12.5px; font-weight:900; cursor:pointer; font-family:inherit; }
+  .payment-confirm-action:hover{ background:#26477e; }
+  .payment-confirm-action:disabled{ opacity:.5; cursor:not-allowed; }
   @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
-  @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .quote-form,.quote-cards,.work-photo-upload-grid,.work-photo-compare{ grid-template-columns:1fr; } .work-photo-gallery{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .owner-decision-info{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .payment-confirm-info{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
@@ -488,9 +555,22 @@
   .pv-building-meta{ display:flex !important; gap:5px; flex-wrap:wrap; }
   .pv-mini{ display:inline-flex !important; align-items:center; width:auto; border-radius:999px; padding:2px 6px; background:#eef1f6; color:#52606d !important; font-size:10.5px !important; font-weight:800; }
   .pv-mini.bad{ background:#fff1f0; color:#b42318 !important; }
+  .pv-mini.good{ background:#eaf7ee; color:#116329 !important; }
   .pv-bank-card{ margin-top:13px; border:1px solid #d8e0ec; border-radius:10px; background:#fafbfd; padding:11px; }
   .pv-bank-card b{ display:block; color:#162033; font-size:12.5px; margin-bottom:5px; }
   .pv-bank-card p{ margin:0; color:#6b7686; font-size:11.5px; line-height:1.55; }
+  .pv-bank-link{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:0 0 12px; border:1px solid #d8e0ec; border-radius:10px; background:#fff; padding:10px 12px; }
+  .pv-bank-link b{ display:block; color:#162033; font-size:12.5px; }
+  .pv-bank-link span{ display:block; margin-top:2px; color:#6b7686; font-size:11.5px; }
+  .pv-bank-link button{ border:1px solid #c5d4ff; background:#eef3ff; color:#315fce; border-radius:8px; padding:7px 10px; font-size:11.5px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-bank-options{ display:grid; gap:8px; margin-top:10px; }
+  .pv-bank-option{ display:flex; align-items:flex-start; gap:9px; border:1px solid #d8e0ec; border-radius:10px; padding:10px 11px; cursor:pointer; }
+  .pv-bank-option:has(input:checked){ border-color:#6d93ef; background:#f2f6ff; }
+  .pv-bank-option input{ margin-top:3px; }
+  .pv-bank-option b{ display:block; color:#162033; font-size:13px; }
+  .pv-bank-option span{ display:block; margin-top:2px; color:#6b7686; font-size:11.5px; }
+  .pv-bank-owner{ display:flex; align-items:flex-start; gap:8px; margin-top:12px; border:1px solid #edf1f6; background:#fafbfd; border-radius:9px; padding:9px 10px; color:#52606d; font-size:11.5px; line-height:1.45; }
+  .pv-bank-owner input{ margin-top:2px; }
   .pv-main{ flex:1; min-width:0; overflow:auto; padding:18px 22px 28px; box-sizing:border-box; }
   .pv-empty{ margin-top:90px; text-align:center; color:#8a94a6; font-size:13.5px; line-height:1.7; }
   .pv-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
@@ -772,21 +852,40 @@
     </div>
   </div>
 
+  <div class="pv-modal" id="paymentBankModal">
+    <div class="pv-modal-box">
+      <div class="pv-modal-head">🏦 <span>건물 입금계좌 연결</span><button id="paymentBankClose">✕</button></div>
+      <div id="paymentBankBuilding" class="pv-modal-note"></div>
+      <div id="paymentBankOptions" class="pv-bank-options"></div>
+      <label class="pv-bank-owner" id="paymentBankOwnerRow">
+        <input id="paymentBankApplyOwner" type="checkbox">
+        <span id="paymentBankOwnerText">같은 건물주의 다른 건물에도 동일 계좌 적용</span>
+      </label>
+      <div class="pv-modal-note">계좌번호 전체와 조회 비밀번호는 저장하지 않습니다. 서버가 만든 익명 계좌 ID, 은행명, 끝 4자리만 현재 관리자 전용 경로에 저장합니다.</div>
+      <div class="pv-modal-actions">
+        <button id="paymentBankUnlink">연결 해제</button>
+        <button id="paymentBankCancel">취소</button>
+        <button class="primary" id="paymentBankSave">연결 저장</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Firebase (실시간 동기화용) — 키 입력 전에는 '로컬 모드'로 동작 -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260728-case-vendors"></script>
 
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
-  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
-  authDomain: "bring-fm-hj.firebaseapp.com",
-  databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "bring-fm-hj",
-  storageBucket: "bring-fm-hj.firebasestorage.app",
-  messagingSenderId: "975975605634",
-  appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b"
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
@@ -898,9 +997,116 @@ const VENDOR_DATA = {
     { no:23, type:"미장/타일/방수공사", name:"이누스 현대타일 원주대리점", address:"강원 원주시 단계동 800-23", phone:"033-764-9936", map:"https://naver.me/FbqzefkI", promo:"https://blog.naver.com/inus1110", rating:"", price:"", note:"원주, 횡성, 문막, 제천, 춘천 출장 가능" }
   ]
 };
+const BUILDING_MAP_VENDOR_SOURCE = window.BRING_BUILDING_MAINTENANCE_DATA || null;
+
+function normalizeVendorIdentityName(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/주식회사|\(주\)|㈜/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+function vendorPhoneKeys(value){
+  return [...new Set((String(value || "").match(/(?:\+?82[-.\s]?)?0?\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}/g) || [])
+    .map(smsDigits)
+    .filter(v => v.length >= 9 && v.length <= 11))];
+}
+function vendorRecordsMatch(a,b){
+  if(!a || !b) return false;
+  if(a.mapCompanyId && b.mapCompanyId && a.mapCompanyId === b.mapCompanyId) return true;
+  const nameA=normalizeVendorIdentityName(a.name);
+  const nameB=normalizeVendorIdentityName(b.name);
+  if(nameA && nameB && nameA === nameB) return true;
+  const phonesA=new Set(vendorPhoneKeys(a.phone));
+  return vendorPhoneKeys(b.phone).some(phone=>phonesA.has(phone));
+}
+function buildingMapCompanyToVendor(company, mapOrder){
+  const promo=[company.url, company.extraUrl].map(v=>String(v||"").trim()).filter(v=>v&&v!=="-").join("\n");
+  const locations=Array.isArray(company.locations) ? company.locations : [];
+  return {
+    no:company.no || mapOrder + 1,
+    type:company.service || company.category || "",
+    name:company.name || "",
+    address:company.address || company.region || "",
+    phone:company.phone || "",
+    map:company.naverUrl || "",
+    promo,
+    rating:company.rating || "",
+    price:"",
+    note:company.feature || "",
+    extra:{},
+    category:company.category || "",
+    mapCompanyId:company.id || "",
+    mapLocations:locations.map(item=>item.label).filter(Boolean),
+    mapCoordinates:locations.map(item=>({ lat:item.lat, lng:item.lng, label:item.label||"" })),
+    mapOrder,
+    source:"building-map",
+    sourceLabel:company.sourceLabel || "건물지도 원주업체"
+  };
+}
+function vendorDataFromBuildingMap(source){
+  const companies=source && Array.isArray(source.companies) ? source.companies : [];
+  const byCat={};
+  const seenIds=new Set();
+  const seenIdentity=new Set();
+  companies.filter(company=>company && company.source==="google-sheet").forEach((company,mapOrder)=>{
+    const vendor=buildingMapCompanyToVendor(company,mapOrder);
+    if(!vendor.name || !vendor.category) return;
+    const idKey=vendor.mapCompanyId || "";
+    const phoneKey=vendorPhoneKeys(vendor.phone)[0] || "";
+    const identityKey=normalizeVendorIdentityName(vendor.name)+"|"+phoneKey;
+    if((idKey && seenIds.has(idKey)) || (identityKey!=="|" && seenIdentity.has(identityKey))) return;
+    if(idKey) seenIds.add(idKey);
+    if(identityKey!=="|") seenIdentity.add(identityKey);
+    (byCat[vendor.category] ||= []).push(vendor);
+  });
+  return byCat;
+}
+function flattenVendorData(data){
+  return Object.entries(data||{}).flatMap(([category,items])=>
+    (items||[]).map(item=>Object.assign({ category },item))
+  );
+}
+function mergeBuildingMapVendorData(mapData,sheetData){
+  const sheetVendors=flattenVendorData(sheetData);
+  const byName=new Map();
+  sheetVendors.forEach(v=>{
+    const key=normalizeVendorIdentityName(v.name);
+    if(key) (byName.get(key) || byName.set(key,[]).get(key)).push(v);
+  });
+  const merged={};
+  Object.entries(mapData||{}).forEach(([category,items])=>{
+    merged[category]=(items||[]).map(mapVendor=>{
+      const nameMatches=byName.get(normalizeVendorIdentityName(mapVendor.name)) || [];
+      const mapPhones=new Set(vendorPhoneKeys(mapVendor.phone));
+      let latest=nameMatches.find(v=>vendorPhoneKeys(v.phone).some(phone=>mapPhones.has(phone)));
+      if(!latest && nameMatches.length===1) latest=nameMatches[0];
+      if(!latest && mapPhones.size){
+        const phoneMatches=sheetVendors.filter(v=>vendorPhoneKeys(v.phone).some(phone=>mapPhones.has(phone)));
+        if(phoneMatches.length===1) latest=phoneMatches[0];
+      }
+      if(!latest) return Object.assign({},mapVendor);
+      return Object.assign({},mapVendor,{
+        phone:latest.phone || mapVendor.phone,
+        address:latest.address || mapVendor.address,
+        note:latest.note || mapVendor.note,
+        map:latest.map || mapVendor.map,
+        promo:latest.promo || mapVendor.promo,
+        rating:latest.rating || mapVendor.rating,
+        price:latest.price || mapVendor.price,
+        extra:Object.assign({},mapVendor.extra||{},latest.extra||{}),
+        sourceLabel:"건물지도 + Google Sheets 최신정보"
+      });
+    });
+  });
+  return merged;
+}
+
 let vendorData = VENDOR_DATA;
 let vendorDataSource = VENDOR_DATA_SOURCE;
 let vendorDataVersion = VENDOR_DATA_VERSION;
+const BUILDING_MAP_VENDOR_DATA = vendorDataFromBuildingMap(BUILDING_MAP_VENDOR_SOURCE);
+let caseVendorData = Object.keys(BUILDING_MAP_VENDOR_DATA).length ? BUILDING_MAP_VENDOR_DATA : VENDOR_DATA;
+let caseVendorDataSource = Object.keys(BUILDING_MAP_VENDOR_DATA).length ? "건물지도 원주업체" : VENDOR_DATA_SOURCE;
 let vendorLoading = false;
 let vendorRefreshTimer = null;
 
@@ -913,11 +1119,19 @@ const CASE_VENDOR_CATEGORY_MAP = {
   [vendorKey("누수·배관")]: ["누수·배관"],
   [vendorKey("누수·방수")]: ["누수·배관", "방수·코킹"],
   [vendorKey("배관")]: ["누수·배관"],
+  [vendorKey("누수")]: ["누수·배관"],
+  [vendorKey("보일러")]: ["냉난방·보일러"],
+  [vendorKey("난방")]: ["냉난방·보일러"],
   [vendorKey("보일러·난방")]: ["냉난방·보일러"],
+  [vendorKey("에어컨")]: ["냉난방·에어컨"],
   [vendorKey("에어컨·냉난방")]: ["냉난방·에어컨"],
+  [vendorKey("도어락")]: ["문·창호·도어락"],
   [vendorKey("도어락·출입")]: ["문·창호·도어락"],
+  [vendorKey("창문·문")]: ["문·창호·도어락"],
   [vendorKey("창호·문")]: ["문·창호·도어락"],
   [vendorKey("창호·출입")]: ["문·창호·도어락"],
+  [vendorKey("청소")]: ["청소·위생"],
+  [vendorKey("방역")]: ["청소·위생"],
   [vendorKey("청소·방역")]: ["청소·위생"]
 };
 function vendorItemsFor(label){
@@ -1119,6 +1333,13 @@ async function loadVendorDataFromSheet(){
     vendorData = next;
     vendorDataSource = "Google Sheets";
     vendorDataVersion = new Date().toLocaleString("ko-KR");
+    if(Object.keys(BUILDING_MAP_VENDOR_DATA).length){
+      caseVendorData=mergeBuildingMapVendorData(BUILDING_MAP_VENDOR_DATA,next);
+      caseVendorDataSource="건물지도 + Google Sheets 최신정보";
+    }else{
+      caseVendorData=next;
+      caseVendorDataSource="Google Sheets";
+    }
     const changed = applyVendorDetailsToNodes();
     if(changed){
       persistDebounced();
@@ -1127,6 +1348,7 @@ async function loadVendorDataFromSheet(){
         wsbody.innerHTML = nodes[detailFor].detail || "";
       }
     }
+    if(curCase && cases[curCase]) renderCaseDetailKeepScroll();
     return true;
   }catch(e){
     console.warn("Google Sheets 업체자료를 불러오지 못했습니다.", e);
@@ -2103,8 +2325,27 @@ const CASE_STEPS = [
  {k:"c16",t:"⑯ 월간 리포트",doc:"monthly"},
  {k:"c17",t:"⑰ 유지관리·사후관리"},
 ];
+const OWNER_PAYMENT_ACCOUNT = { accountNumber:"123-456-789012", accountHolder:"브링케어" };
 const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", approval:"승인 링크", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
 function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
+function workPhotoFilesList(c, phase){
+  return Object.values((c&&c.workPhotoFiles)||{}).filter(photo=>photo && (!phase || photo.phase===phase))
+    .sort((a,b)=>String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")));
+}
+function workPhotoThumbnailUrl(photo, size){
+  const id=String((photo&&(photo.driveFileId||photo.fileId))||"").trim();
+  return id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${size||900}` : "";
+}
+function workPhotoReportCell(c, phase){
+  const photos=workPhotoFilesList(c,phase).slice(0,4);
+  if(!photos.length) return `<div class="photo-empty">등록된 사진 없음</div>`;
+  return `<div class="photo-grid">${photos.map(photo=>{
+    const thumb=workPhotoThumbnailUrl(photo,700);
+    const url=photo.fileUrl||photo.driveUrl||"";
+    const image=thumb?`<img src="${escAttr(thumb)}" alt="${escAttr(photo.fileName||"작업 사진")}">`:"";
+    return `<div class="photo-item">${url?`<a href="${escAttr(url)}">${image||esc(photo.fileName||"원본 사진 열기")}</a>`:image}<div>${esc(photo.fileName||"")}</div></div>`;
+  }).join("")}</div>`;
+}
 function caseDocHTML(id,k){
   const c=cases[id]; if(!c) return null;
   const s=CASE_STEPS.find(x=>x.k===k); if(!s||!s.doc) return null;
@@ -2140,7 +2381,7 @@ function caseDocHTML(id,k){
   } else if(s.doc==="ba"){
     body=`<h1>작업 Before / After 보고서</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>작업일</th><td>${today}</td></tr>`)+
       `<h2>작업 내용</h2><p>${memo||"______________________"}</p>`+
-      `<h2>사진</h2>`+tbl(`<tr><th>작업 전</th><th>작업 후</th></tr><tr><td style="height:120px">&nbsp;</td><td>&nbsp;</td></tr>`)+
+      `<h2>사진</h2>`+tbl(`<tr><th>작업 전</th><th>작업 후</th></tr><tr><td style="height:120px">${workPhotoReportCell(c,"before")}</td><td>${workPhotoReportCell(c,"after")}</td></tr>`)+
       `<h2>비용</h2><p>견적/실제: ______ (건물주 → 업체 직접 지급)</p>`;
   } else if(s.doc==="monthly"){
     body=`<h1>월간 운영 리포트</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>고객</th><td>${nm}</td></tr><tr><th>대상월</th><td>${today.slice(0,7)}</td><th>등급</th><td>${gr}</td></tr>`)+
@@ -2149,7 +2390,7 @@ function caseDocHTML(id,k){
       `<h2>비용 정리</h2><p>수리비/청소비/기타: ______ (증빙 첨부)</p>`;
   }
   const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${title}</title>`+
-    `<style>body{font-family:'Malgun Gothic',sans-serif;font-size:11pt;line-height:1.6;color:#222;} h1{font-size:18pt;text-align:center;margin-bottom:16px;} h2{font-size:12.5pt;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:18px;} p{margin:6px 0;} table{border-collapse:collapse;width:100%;margin:6px 0;} td,th{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;} th{background:#eef1f6;} .muted{color:#888;font-size:9.5pt;font-style:italic;}</style></head><body>${body}</body></html>`;
+    `<style>body{font-family:'Malgun Gothic',sans-serif;font-size:11pt;line-height:1.6;color:#222;} h1{font-size:18pt;text-align:center;margin-bottom:16px;} h2{font-size:12.5pt;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:18px;} p{margin:6px 0;} table{border-collapse:collapse;width:100%;margin:6px 0;} td,th{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;vertical-align:top;} th{background:#eef1f6;} .muted{color:#888;font-size:9.5pt;font-style:italic;}.photo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}.photo-item{font-size:8.5pt;color:#666;word-break:break-all;}.photo-item img{display:block;width:100%;height:120px;object-fit:cover;margin-bottom:3px;}.photo-empty{height:120px;display:flex;align-items:center;justify-content:center;color:#999;}</style></head><body>${body}</body></html>`;
   return { filename:`${title}_${(c.name||"고객")}.doc`, html, title };
 }
 function downloadCaseDoc(id,k){
@@ -2169,6 +2410,7 @@ let showArchivedCases = loadCaseArchiveMode();
 let settings = {}, caseSettingsRef = null, caseSettingsHandler = null;
 let quotePendingFiles = [], quotePendingCaseId = null;
 let businessRegPendingFiles = [], businessRegPendingCaseId = null;
+let workPhotoPendingFiles = { before:[], after:[] }, workPhotoPendingCaseId = null;
 let notice = null, noticeRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCaseTestMode(){ try{ return localStorage.getItem("fm_case_test_mode") === "1"; }catch(e){ return false; } }
@@ -2202,7 +2444,7 @@ function caseSavePayload(id, options){
     delete payload.restoredBy;
   }
   // Apps Script가 관리하는 결과는 늦게 도착한 화면 저장이 덮어쓰지 않게 한다.
-  ["ownerRecommendationMms","ownerDecision","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
+  ["ownerRecommendationMms","ownerDecision","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","workPhotoFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
 
   // Firebase update에서 status/note 객체 전체가 교체되지 않도록 개별 경로로 저장한다.
   const status=Object.assign({}, payload.status||{});
@@ -2382,6 +2624,8 @@ function renderComplaintOverview(c){
   const ucls=caseUrgencyClass(c.urgency);
   const received=formatCaseDate(c.receivedAt||c.createdAt);
   const room=caseDisplayRoom(c);
+  const sourceLabel=c.source==="kakao_chatbot" ? "카카오톡 접수" : "구글폼 접수";
+  const photos=Array.isArray(c.photos) ? c.photos.filter(p=>p&&p.driveUrl) : [];
   const fields=[
     ["접수번호", c.ticketNo || c.id],
     ["건물/호실", [c.building, room].filter(Boolean).join(" / ")],
@@ -2393,9 +2637,10 @@ function renderComplaintOverview(c){
   ].filter(x=>x[1]);
   return `<div class="cv-complaint"><div class="cv-complaint-head">`+
     `<div class="cv-complaint-title">${esc(c.summary || c.ticketNo || "구글폼 민원")}</div>`+
-    `<div><span class="cv-badge source">구글폼 접수</span> ${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}</div></div>`+
+    `<div><span class="cv-badge source">${esc(sourceLabel)}</span> ${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}</div></div>`+
     `<div class="cv-complaint-meta">${fields.map(([k,v])=>`<div class="cv-kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join("")}</div>`+
     (c.analysisReason ? `<div class="cv-summary"><b>판단 근거</b><br>${esc(c.analysisReason)}</div>` : "")+
+    (photos.length ? `<div class="cv-summary"><b>현장 사진 ${photos.length}장</b><br>${photos.map((p,i)=>`<a href="${escAttr(p.driveUrl)}" target="_blank" rel="noopener">${esc(p.name||`현장 사진 ${i+1}`)}</a>`).join(" · ")}</div>` : "")+
     (c.sheetUrl ? `<div class="cv-summary"><b>상세 원장</b><br><a href="${escAttr(c.sheetUrl)}" target="_blank" rel="noopener">응답 시트에서 개인정보/사진 확인</a></div>` : "")+
     `</div>`;
 }
@@ -2579,28 +2824,65 @@ function shouldFillClassificationNote(c){
   if(note.includes("[민원·요청 분류]")) return false;
   return /^긴급도:\s*[\s\S]*업체 분류:\s*[\s\S]*판단 근거:/m.test(note);
 }
+function caseVendorItemsFor(label){
+  const key=vendorKey(label);
+  return Object.keys(caseVendorData||{}).find(category=>vendorKey(category)===key);
+}
+function koreanAddressLocalities(value){
+  const result=[];
+  const re=/(?:^|\s)([가-힣0-9]+(?:동|읍|면))(?=\s|$|[(),])/g;
+  let match;
+  const text=String(value||"").replace(/[,\n]+/g," ");
+  while((match=re.exec(text))){
+    if(match[1] && !result.includes(match[1])) result.push(match[1]);
+  }
+  return result;
+}
+function caseVendorSharedLocality(c,v){
+  const caseAddress=(c&&c.contractMatch&&c.contractMatch.matchedAddress) || (c&&c.address) || "";
+  const caseLocalities=koreanAddressLocalities(caseAddress);
+  if(!caseLocalities.length) return "";
+  const vendorText=[v&&v.address].concat((v&&v.mapLocations)||[]).join(" ");
+  const vendorLocalities=koreanAddressLocalities(vendorText);
+  return caseLocalities.find(locality=>vendorLocalities.includes(locality)) || "";
+}
+function vendorHasSelectablePhone(v){
+  const raw=[v&&v.phone,v&&v.mobile,v&&v.tel].filter(Boolean).join("\n");
+  const matches=raw.match(/(?:\+?82[-.\s]?)?0?\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}/g)||[];
+  return matches.map(smsDigits).some(phone=>phone.length>=9 && phone.length<=12);
+}
+function caseVendorsForCategory(c,category){
+  return [...((caseVendorData&&caseVendorData[category])||[])].sort((a,b)=>{
+    const localityDiff=Number(!!caseVendorSharedLocality(c,b))-Number(!!caseVendorSharedLocality(c,a));
+    if(localityDiff) return localityDiff;
+    const phoneDiff=Number(vendorHasSelectablePhone(b))-Number(vendorHasSelectablePhone(a));
+    if(phoneDiff) return phoneDiff;
+    return Number(a.mapOrder??Number.MAX_SAFE_INTEGER)-Number(b.mapOrder??Number.MAX_SAFE_INTEGER);
+  });
+}
 function caseVendorCategories(c){
   const labels=[(c&&c.vendorType) || (c&&c.issueType)].filter(Boolean);
   const cats=[];
   labels.forEach(label=>{
     const mapped=CASE_VENDOR_CATEGORY_MAP[vendorKey(label)] || [];
     mapped.forEach(cat=>cats.push(cat));
-    const direct=vendorItemsFor(label);
+    const direct=caseVendorItemsFor(label);
     if(direct) cats.push(direct);
   });
-  return [...new Set(cats.map(cat=>vendorItemsFor(cat)||cat).filter(cat=>vendorData[cat]))];
+  return [...new Set(cats.map(cat=>caseVendorItemsFor(cat)||cat).filter(cat=>caseVendorData&&caseVendorData[cat]))];
 }
 function renderCaseVendorCandidates(c, stepStatus){
   if(stepStatus!=="doing" && stepStatus!=="done") return "";
   const cats=caseVendorCategories(c);
   const title = c.vendorType || c.issueType || "업체 분류";
   if(!cats.length){
-    return `<div class="cv-vendors"><div class="cv-vendors-head"><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">업체리스트_현진</div></div><div class="vendor-empty">업체리스트_현진에서 수동 확인 필요 · 현재 분류: ${escH(title)}</div></div>`;
+    return `<div class="cv-vendors"><div class="cv-vendors-head"><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(caseVendorDataSource)}</div></div><div class="vendor-empty">건물지도 원주업체에서 수동 확인 필요 · 현재 분류: ${escH(title)}</div></div>`;
   }
-  const cards=cats.flatMap(cat => (vendorData[cat]||[]).map(v => caseVendorCardHtml(c, cat, v))).join("");
-  const count=cats.reduce((sum,cat)=>sum+(vendorData[cat]||[]).length,0);
+  const vendorsByCategory=cats.map(cat=>({ cat, vendors:caseVendorsForCategory(c,cat) }));
+  const cards=vendorsByCategory.flatMap(group=>group.vendors.map(v=>caseVendorCardHtml(c,group.cat,v))).join("");
+  const count=vendorsByCategory.reduce((sum,group)=>sum+group.vendors.length,0);
   const picked=selectedCaseVendors(c).length;
-  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · 업체리스트_현진</div></div><span class="cv-vendor-count">선택 ${picked}곳</span></div><div class="vendor-grid">${cards}</div></div>`;
+  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">${escH(cats.join(" + "))} 업체 ${count}곳</div><div class="cv-vendors-sub">민원 지역과 연락처 보유 여부를 기준으로 정렬했습니다.</div></div><div class="cv-vendors-actions"><span class="cv-vendor-source">${escH(caseVendorDataSource)}</span><span class="cv-vendor-count">선택 ${picked}곳</span></div></div><div class="vendor-grid">${cards}</div></div>`;
 }
 function safeVendorIdPart(value){
   return vendorKey(value).replace(/[.#$/\[\]]/g, ch => ({
@@ -2608,6 +2890,7 @@ function safeVendorIdPart(value){
   }[ch] || ""));
 }
 function caseVendorId(cat,v){
+  if(v&&v.mapCompanyId) return "map|"+safeVendorIdPart(v.mapCompanyId);
   return [safeVendorIdPart(cat), safeVendorIdPart(v.no||""), safeVendorIdPart(v.name||""), safeVendorIdPart(v.phone||"")].join("|");
 }
 function vendorPayload(cat,v){
@@ -2615,7 +2898,10 @@ function vendorPayload(cat,v){
   return {
     id, category:cat, no:v.no||"", type:v.type||"", name:v.name||"",
     address:v.address||"", phone:v.phone||"", map:v.map||"", promo:v.promo||"",
-    rating:v.rating||"", price:v.price||"", note:v.note||""
+    rating:v.rating||"", price:v.price||"", note:v.note||"",
+    mapCompanyId:v.mapCompanyId||"", mapLocations:v.mapLocations||[],
+    mapCoordinates:v.mapCoordinates||[], source:v.source||"",
+    sourceLabel:v.sourceLabel||"", mapOrder:v.mapOrder
   };
 }
 function encodeVendorPayload(payload){
@@ -2649,19 +2935,34 @@ function selectedCaseVendors(c){
   return Object.values(caseVendorSelections(c)).filter(v=>v && (v.name || v.phone));
 }
 function findVendorPayloadById(id){
-  for(const cat of Object.keys(vendorData||{})){
-    for(const v of vendorData[cat]||[]){
+  for(const cat of Object.keys(caseVendorData||{})){
+    for(const v of caseVendorData[cat]||[]){
       if(caseVendorId(cat,v)===id) return vendorPayload(cat,v);
     }
   }
   return null;
 }
-function deleteCaseVendorSelection(c, vendorId){
+function vendorSelectionMatchesPayload(item,payload){
+  if(!item || !payload) return false;
+  if(item.mapCompanyId && payload.mapCompanyId && item.mapCompanyId===payload.mapCompanyId) return true;
+  const nameA=normalizeVendorIdentityName(item.name);
+  const nameB=normalizeVendorIdentityName(payload.name);
+  if(!nameA || !nameB || nameA!==nameB) return false;
+  const phonesA=vendorPhoneKeys(item.phone);
+  const phonesB=vendorPhoneKeys(payload.phone);
+  return !phonesA.length || !phonesB.length || phonesA.some(phone=>phonesB.includes(phone));
+}
+function selectedVendorKeyForPayload(c,payload){
+  const selections=caseVendorSelections(c);
+  if(selections[payload.id]) return payload.id;
+  return Object.keys(selections).find(key=>vendorSelectionMatchesPayload(selections[key],payload)) || "";
+}
+function deleteCaseVendorSelection(c, vendorId, payload){
   const selections=caseVendorSelections(c);
   const target=String(vendorId||"");
   Object.keys(selections).forEach(key=>{
     const item=selections[key]||{};
-    if(key===target || String(item.id||"")===target) delete selections[key];
+    if(key===target || String(item.id||"")===target || vendorSelectionMatchesPayload(item,payload)) delete selections[key];
   });
 }
 function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
@@ -2670,10 +2971,11 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   const selections=caseVendorSelections(c);
   const payload=findVendorPayloadById(vendorId) || fallbackPayload;
   if(selected && payload){
+    deleteCaseVendorSelection(c,vendorId,payload);
     payload.id = payload.id || vendorId;
     selections[vendorId]=payload;
   }else{
-    deleteCaseVendorSelection(c, vendorId);
+    deleteCaseVendorSelection(c,vendorId,payload);
   }
   holdCaseLocalField(caseId, "vendorSelections", c.vendorSelections, 4000);
   saveCase(caseId, true);
@@ -2683,27 +2985,69 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   }
   renderCaseDetailKeepScroll();
 }
+function caseVendorText(value){
+  const text=String(value||"").trim();
+  return text && text!=="-" ? text : "";
+}
+function caseVendorActionLinksHtml(v){
+  const links=[];
+  if(v&&v.mapCompanyId){
+    links.push({ url:"./wonju-map.html?company="+encodeURIComponent(v.mapCompanyId), label:"건물지도" });
+  }
+  const seen=new Set(links.map(item=>item.url));
+  const counts={};
+  vendorUrlItems(v&&v.map).concat(vendorUrlItems(v&&v.promo)).forEach(item=>{
+    if(!item.url || seen.has(item.url)) return;
+    seen.add(item.url);
+    const base=item.type==="지도" ? "네이버지도" : item.type;
+    counts[base]=(counts[base]||0)+1;
+    links.push({ url:item.url, label:counts[base]>1 ? `${base} ${counts[base]}` : base });
+  });
+  if(!links.length) return '<span class="vendor-empty">등록된 링크 없음</span>';
+  return links.map(item=>`<a href="${escAttr(item.url)}" target="_blank" rel="noopener">${escH(item.label)}</a>`).join("");
+}
+function caseVendorDetailsHtml(v){
+  const fields=[
+    ["단가",v&&v.price],
+    ["비고",v&&v.note]
+  ].concat(Object.entries((v&&v.extra)||{}));
+  const rows=fields.map(([label,value])=>[label,caseVendorText(value)]).filter(([,value])=>value);
+  if(!rows.length) return "";
+  return `<details class="cv-vendor-details"><summary>상세 정보 ${rows.length}개</summary><div class="cv-vendor-details-grid">${rows.map(([label,value])=>
+    `<div class="vendor-field"><span class="vendor-field-label">${escH(label)}</span><p class="vendor-field-value">${htmlLines(value)}</p></div>`
+  ).join("")}</div></details>`;
+}
 function caseVendorCardHtml(c,cat,v){
   const payload=vendorPayload(cat,v);
   const id=payload.id;
-  const checked=!!caseVendorSelections(c)[id];
-  const extraFields = vendorExtraFieldsHtml(v.extra);
+  const checked=!!selectedVendorKeyForPayload(c,payload);
+  const selectable=vendorHasSelectablePhone(v);
+  const locality=caseVendorSharedLocality(c,v);
+  const phone=caseVendorText(v.phone);
+  const address=caseVendorText(v.address);
+  const rating=caseVendorText(v.rating);
   return `<article class="vendor-card case-vendor-card ${checked?'selected':''}" data-vendor-payload="${escAttr(encodeVendorPayload(payload))}">
     <div class="vendor-card-head">
       <div>
         <div class="vendor-card-name">${escH(v.name)}</div>
         <div class="vendor-card-type">${htmlLines(v.type)}</div>
+        <div class="cv-vendor-tags">
+          <span class="cv-vendor-category">${escH(cat)}</span>
+          ${locality?`<span class="cv-vendor-near">가까운 지역 · ${escH(locality)}</span>`:""}
+          ${rating?`<span class="cv-vendor-rating">${escH(rating)}</span>`:""}
+        </div>
       </div>
-      <label class="cv-vendor-pick"><input type="checkbox" data-vendor-select="${escAttr(id)}" ${checked?'checked':''}>선택</label>
+      ${selectable
+        ? `<label class="cv-vendor-pick"><input type="checkbox" data-vendor-select="${escAttr(id)}" ${checked?'checked':''}>선택</label>`
+        : `<span class="cv-vendor-pick disabled">연락처 없음</span>`}
     </div>
     <div class="vendor-card-body">
-      <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}</div></div>
-      <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
-      ${extraFields}
+      <div class="cv-vendor-core">
+        <div class="cv-vendor-core-row"><span class="cv-vendor-core-label">전화</span><div class="cv-vendor-core-value phone">${phone?htmlLines(phone):'<span class="vendor-empty">연락처 없음</span>'}</div></div>
+        <div class="cv-vendor-core-row"><span class="cv-vendor-core-label">주소</span><div class="cv-vendor-core-value">${address?htmlLines(address):'<span class="vendor-empty">주소 미등록</span>'}</div></div>
+      </div>
+      <div class="cv-vendor-actions-row">${caseVendorActionLinksHtml(v)}</div>
+      ${caseVendorDetailsHtml(v)}
     </div>
   </article>`;
 }
@@ -2719,7 +3063,7 @@ function quoteUploadVendors(c){
     });
   }).filter(v=>v.name);
   const candidateCats=caseVendorCategories(c);
-  const candidates=candidateCats.flatMap(cat => (vendorData[cat]||[]).map(v => vendorPayload(cat, v)));
+  const candidates=candidateCats.flatMap(cat => caseVendorsForCategory(c,cat).map(v => vendorPayload(cat,v)));
   const src=sent.length ? sent : (selected.length ? selected : candidates);
   const seen=new Set();
   return src.filter(v=>{
@@ -2775,8 +3119,10 @@ function quoteAmountInputValue(q){
   return amount ? String(amount) : "";
 }
 function quoteAmountSourceLabel(q){
-  if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return "원본 금액 확정 · 브링 +10%";
-  if(quoteAmountNumber(q&&q.bringQuoteTotalAmount) || String(q&&q.amountSource||"")==="bring_sheet") return "원본 금액 · 브링 +10%";
+  const storedRate=Number(q&&q.bringQuoteMarkupRate);
+  const markupPercent=Number.isFinite(storedRate)&&storedRate>=0 ? Math.round(storedRate*100) : 5;
+  if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return `원본 금액 확정 · 브링 +${markupPercent}%`;
+  if(quoteAmountNumber(q&&q.bringQuoteTotalAmount) || String(q&&q.amountSource||"")==="bring_sheet") return `원본 금액 · 브링 +${markupPercent}%`;
   if(quoteAmountNumber(q&&q.totalAmount)) return "자동 추출";
   return "금액 확인 필요";
 }
@@ -3237,6 +3583,108 @@ function renderQuoteUploadPanel(c, stepStatus){
     </div>
   </div>`;
   return `<div class="quote-upload-split">${quoteUploadBox}${renderBusinessRegistrationUploadBox()}</div><div class="quote-upload-action"><button class="quote-send" data-case-doc-upload="1">선택 파일 모두 업로드</button></div><div class="quote-result-section">${cards}</div>`;
+}
+function ensureWorkPhotoPendingCase(){
+  const id=curCase||"";
+  if(workPhotoPendingCaseId!==id){
+    workPhotoPendingCaseId=id;
+    workPhotoPendingFiles={before:[],after:[]};
+  }
+}
+function workPhotoPhaseText(phase){ return phase==="after"?"작업 후":"작업 전"; }
+function workPhotoPendingList(phase){ ensureWorkPhotoPendingCase(); return workPhotoPendingFiles[phase]||[]; }
+function workPhotoSelectedFileListHtml(phase){
+  const files=workPhotoPendingList(phase);
+  if(!files.length) return `<div class="quote-file-empty">선택된 사진 없음</div>`;
+  return files.map(file=>`<div class="quote-file-item" title="${escAttr(file.name)}">
+    <span class="quote-file-name">${esc(file.name)}</span>
+    <button class="quote-file-remove" type="button" data-work-photo-file-remove="${escAttr(phase)}" data-file-key="${escAttr(quoteFileKey(file))}" title="선택 목록에서 제거" aria-label="${escAttr(file.name)} 선택 목록에서 제거">🗑</button>
+  </div>`).join("");
+}
+function refreshWorkPhotoFileList(phase){
+  const list=document.getElementById(phase==="after"?"workPhotoAfterList":"workPhotoBeforeList");
+  if(list) list.innerHTML=workPhotoSelectedFileListHtml(phase);
+}
+function addWorkPhotoPendingFiles(phase, files){
+  ensureWorkPhotoPendingCase();
+  if(phase!=="before" && phase!=="after") return;
+  const pending=workPhotoPendingFiles[phase]||[];
+  const seen=new Set(pending.map(quoteFileKey));
+  Array.from(files||[]).filter(Boolean).forEach(file=>{
+    const key=quoteFileKey(file);
+    if(!seen.has(key)){ pending.push(file); seen.add(key); }
+  });
+  workPhotoPendingFiles[phase]=pending;
+  const input=document.getElementById(phase==="after"?"workPhotoAfterFile":"workPhotoBeforeFile");
+  if(input) input.value="";
+  refreshWorkPhotoFileList(phase);
+}
+function removeWorkPhotoPendingFile(phase, key){
+  ensureWorkPhotoPendingCase();
+  if(!workPhotoPendingFiles[phase]) return;
+  workPhotoPendingFiles[phase]=workPhotoPendingFiles[phase].filter(file=>quoteFileKey(file)!==String(key||""));
+  refreshWorkPhotoFileList(phase);
+}
+function clearWorkPhotoPendingFiles(){
+  ensureWorkPhotoPendingCase();
+  workPhotoPendingFiles={before:[],after:[]};
+  ["before","after"].forEach(refreshWorkPhotoFileList);
+}
+function workPhotoUploadAllowed(file){
+  if(!file) return "업로드할 사진을 선택하세요.";
+  const ext=(file.name.split(".").pop()||"").toLowerCase();
+  if(file.size > 5*1024*1024) return "사진 용량이 5MB를 초과했습니다.";
+  if(!["jpg","jpeg","png","webp"].includes(ext)) return "JPG, PNG, WEBP 사진만 업로드할 수 있습니다.";
+  return "";
+}
+function workPhotoUploadErrors(entries){
+  if(!entries.length) return ["업로드할 작업 전·후 사진을 선택하세요."];
+  return entries.map(entry=>{
+    const error=workPhotoUploadAllowed(entry.file);
+    return error?`${entry.file.name}: ${error}`:"";
+  }).filter(Boolean);
+}
+function workPhotoCardHtml(photo, removable){
+  const thumb=workPhotoThumbnailUrl(photo,800);
+  const url=photo.fileUrl||photo.driveUrl||"";
+  return `<article class="work-photo-card">
+    ${thumb?`<a href="${escAttr(url||thumb)}" target="_blank" rel="noopener"><img class="work-photo-thumb" src="${escAttr(thumb)}" alt="${escAttr(photo.fileName||"작업 사진")}" loading="lazy"></a>`:`<div class="work-photo-empty">미리보기 없음</div>`}
+    <div class="work-photo-card-body">
+      <div class="work-photo-name">${esc(photo.fileName||"작업 사진")}</div>
+      <div class="work-photo-meta">${esc(formatQuoteDate(photo.uploadedAt)||"")}</div>
+      <div class="work-photo-links">${url?`<a class="work-photo-open" href="${escAttr(url)}" target="_blank" rel="noopener">원본 열기</a>`:"<span></span>"}${removable?`<button class="work-photo-remove" data-work-photo-remove="${escAttr(photo.id||"")}">목록에서 제거</button>`:""}</div>
+    </div>
+  </article>`;
+}
+function workPhotoGalleryHtml(c, phase, removable){
+  const photos=workPhotoFilesList(c,phase);
+  if(!photos.length) return `<div class="work-photo-empty">${workPhotoPhaseText(phase)} 사진이 아직 없습니다.</div>`;
+  return `<div class="work-photo-gallery">${photos.map(photo=>workPhotoCardHtml(photo,removable)).join("")}</div>`;
+}
+function renderWorkPhotoUploadBox(c, phase){
+  const isAfter=phase==="after";
+  const inputId=isAfter?"workPhotoAfterFile":"workPhotoBeforeFile";
+  const listId=isAfter?"workPhotoAfterList":"workPhotoBeforeList";
+  const count=workPhotoFilesList(c,phase).length;
+  return `<section class="work-photo-box ${phase}">
+    <div class="work-photo-title"><span>${workPhotoPhaseText(phase)} 사진</span><span class="work-photo-count">업로드 ${count}장</span></div>
+    <div class="work-photo-sub">JPG, PNG, WEBP · 장당 최대 5MB · 여러 장 선택/드래그 가능</div>
+    <div class="quote-file-wrap" data-work-photo-drop="${phase}">
+      <label class="quote-file-picker">사진 선택<input class="quote-file" id="${inputId}" data-work-photo-input="${phase}" type="file" multiple accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"></label>
+      <div class="quote-drop-hint">${workPhotoPhaseText(phase)} 사진을 여기에 드래그해도 됩니다.</div>
+      <div class="quote-file-list" id="${listId}">${workPhotoSelectedFileListHtml(phase)}</div>
+    </div>
+    ${workPhotoGalleryHtml(c,phase,true)}
+  </section>`;
+}
+function renderWorkPhotoPanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  ensureWorkPhotoPendingCase();
+  return `<div class="work-photo-panel"><div class="work-photo-upload-grid">${renderWorkPhotoUploadBox(c,"before")}${renderWorkPhotoUploadBox(c,"after")}</div><div class="work-photo-actions"><button class="quote-send" data-work-photo-upload="1">선택 사진 모두 업로드</button></div></div>`;
+}
+function renderWorkPhotoReferencePanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  return `<section class="work-photo-reference"><div class="work-photo-reference-head">⑬ 작업 전·후 사진 참고</div><div class="work-photo-compare"><section class="work-photo-box before"><div class="work-photo-title"><span>작업 전</span><span class="work-photo-count">${workPhotoFilesList(c,"before").length}장</span></div>${workPhotoGalleryHtml(c,"before",false)}</section><section class="work-photo-box after"><div class="work-photo-title"><span>작업 후</span><span class="work-photo-count">${workPhotoFilesList(c,"after").length}장</span></div>${workPhotoGalleryHtml(c,"after",false)}</section></div></section>`;
 }
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const CASE_AUTOMATION_ENDPOINT_VERSION = "sens-main-20260710";
@@ -3825,6 +4273,81 @@ async function uploadSelectedCaseDocuments(){
   finishQuoteUploadJob(uploadJob);
   quoteUploadHideTimer=setTimeout(()=>{ quoteUploadHideTimer=null; hideQuoteUploadProgress(); }, 1400);
 }
+async function uploadWorkPhotos(){
+  const c=cases[curCase];
+  if(!c || quoteUploadInProgress) return;
+  const lock=stepLockMessage(c,"c13");
+  if(lock){ alert(lock); return; }
+  ensureWorkPhotoPendingCase();
+  const entries=[
+    ...workPhotoPendingList("before").map(file=>({phase:"before",file})),
+    ...workPhotoPendingList("after").map(file=>({phase:"after",file}))
+  ];
+  const errors=workPhotoUploadErrors(entries);
+  if(errors.length){ alert(errors.slice(0,8).join("\n")); return; }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+    if(!caseAutomationEndpoint()) return;
+  }
+  const uploadJob=createQuoteUploadJob();
+  try{
+    for(let i=0;i<entries.length;i++){
+      throwIfQuoteUploadCanceled(uploadJob);
+      const entry=entries[i], file=entry.file, phaseText=workPhotoPhaseText(entry.phase);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"사진을 읽는 중입니다.",
+        percent:(i/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+      const body=await readFileAsBase64(file,uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"Drive 저장 요청을 보내는 중입니다.",
+        percent:((i+0.55)/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+      await sendCaseAutomationRequest(caseAutomationEndpoint(),{
+        action:"uploadWorkPhoto",
+        caseId:c.ticketNo||c.id||curCase,
+        phase:entry.phase,
+        file:{fileName:file.name,mimeType:file.type||"",size:file.size,fileBody:body}
+      },uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
+      caseLog(c,`📷 ${phaseText} 사진 업로드 요청: ${file.name}`);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"업로드 요청을 보냈습니다.",
+        percent:((i+1)/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+    }
+  }catch(err){
+    if(isQuoteUploadCanceledError(err)){ finishQuoteUploadJob(uploadJob); return; }
+    updateQuoteUploadProgress({title:"업로드 실패",fileName:"작업 사진 업로드를 중단했습니다.",detail:err&&err.message?err.message:"다시 시도해 주세요.",percent:0,count:""},uploadJob);
+    finishQuoteUploadJob(uploadJob);
+    alert("작업 사진 업로드 중 문제가 생겼어요.\n"+(err&&err.message?err.message:"다시 시도해 주세요."));
+    return;
+  }
+  if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
+  const scrollSnapshot=captureCaseDetailScroll();
+  clearWorkPhotoPendingFiles();
+  c.status=c.status||{};
+  c.note=c.note||{};
+  if(c.status.c13!=="done") c.status.c13="doing";
+  c.note.c13=`작업 사진 ${entries.length}장 업로드 요청 완료 · Drive 반영 대기 중`;
+  saveCase(curCase);
+  renderCaseList();
+  renderCaseDetail();
+  restoreCaseDetailScroll(scrollSnapshot);
+  updateQuoteUploadProgress({title:"업로드 요청 완료",fileName:`작업 사진 ${entries.length}장 요청 완료`,detail:"Drive 저장 후 ⑬ 전·후 사진 목록과 ⑭ 보고서 참고 영역에 자동 반영됩니다.",percent:100,count:`${entries.length}/${entries.length}`},uploadJob);
+  finishQuoteUploadJob(uploadJob);
+  quoteUploadHideTimer=setTimeout(()=>{quoteUploadHideTimer=null;hideQuoteUploadProgress();},1400);
+}
 async function confirmQuoteAmount(quoteId){
   const c=cases[curCase];
   if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
@@ -3944,6 +4467,18 @@ function removeBusinessRegistrationFromCase(docId){
   caseLog(c, "사업자등록증 목록 제거: "+(doc.vendorName||doc.fileName||"증빙"));
   saveCaseWithRemovedChild(curCase, "businessRegistrationFiles/"+docId);
   renderCaseDetail();
+}
+function removeWorkPhotoFromCase(photoId){
+  const c=cases[curCase];
+  if(!c || !photoId || !c.workPhotoFiles) return;
+  photoId=resolveCaseMapKey(c.workPhotoFiles,photoId);
+  if(!c.workPhotoFiles[photoId]) return;
+  const photo=c.workPhotoFiles[photoId];
+  delete c.workPhotoFiles[photoId];
+  holdCaseLocalField(curCase,"workPhotoFiles",c.workPhotoFiles,5000);
+  caseLog(c,`${workPhotoPhaseText(photo.phase)} 사진 목록 제거: ${photo.fileName||"사진"}`);
+  saveCaseWithRemovedChild(curCase,"workPhotoFiles/"+photoId);
+  renderCaseDetailKeepScroll();
 }
 function applyNextStepProgress(c, messages){
   if(!c || !c.status) return false;
@@ -4223,7 +4758,7 @@ function onboardingDocButtonHTML(c,s,locked){
     return `<button class="cv-doc disabled" disabled title="${escAttr(stepLockMessage(c,s.k))}">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
   }
   if(s.doc==="approval"){
-    const url=String(c&&c.ownerDecision&&c.ownerDecision.decisionUrl||"").trim();
+    const url=String(c&&c.ownerDecision&&(c.ownerDecision.shortDecisionUrl||c.ownerDecision.decisionUrl)||"").trim();
     const validated=c&&c.ownerDecision&&c.ownerDecision.linkValidated===true;
     if(url && validated){
       return `<button class="cv-doc" data-drive-doc="${s.k}" data-url="${escAttr(url)}" title="건물주 모바일 승인 페이지 열기">🔗 승인 링크</button>`;
@@ -4334,7 +4869,7 @@ function openCaseView(){
 }
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[], createdAt:new Date().toISOString() }; curCase=id; saveCase(id, true); renderCaseList(); renderCaseDetail(); return id; }
-function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; businessRegPendingCaseId=id; businessRegPendingFiles=[]; renderCaseList(); renderCaseDetail(); }
+function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; businessRegPendingCaseId=id; businessRegPendingFiles=[]; workPhotoPendingCaseId=id; workPhotoPendingFiles={before:[],after:[]}; renderCaseList(); renderCaseDetail(); }
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 휴지통으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 휴지통 이동"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 복원"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 async function permanentlyDeleteCase(id){
@@ -4777,8 +5312,58 @@ function ownerDecisionPanel(c, st){
   return `<div class="owner-decision-panel">
     <div class="owner-decision-head"><div><div class="owner-decision-title">건물주 승인·입금 응답</div><div class="owner-decision-sub">${esc(sub)}</div></div><span class="owner-decision-badge ${badgeClass}">${esc(label)}</span></div>
     <div class="owner-decision-info"><div><b>추천 업체</b><span>${esc(supplier.name||state.vendorName||"")}</span></div><div><b>브링 최종금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div><div><b>응답 시각</b><span>${esc(state.decidedAt?formatCaseDate(state.decidedAt):"대기 중")}</span></div></div>
-    ${state.decisionUrl?`<a class="owner-decision-link" href="${escAttr(state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
+    ${(state.shortDecisionUrl||state.decisionUrl)?`<a class="owner-decision-link" href="${escAttr(state.shortDecisionUrl||state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
   </div>`;
+}
+const paymentConfirmationRequests=new Set();
+function paymentConfirmationPanel(c, st){
+  if(st!=="doing" && st!=="done") return "";
+  const confirmed=st==="done" || String(c&&c.paymentStatus||"")==="confirmed";
+  const account=Object.assign({}, OWNER_PAYMENT_ACCOUNT, c&&c.paymentAccount||{});
+  const q=recommendedQuoteForCase(c);
+  const amounts=q?recommendedQuoteAmounts(q):{total:Number(c&&c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
+  const confirmedAt=c&&c.paymentConfirmation&&c.paymentConfirmation.confirmedAt||c&&c.paymentConfirmedAt||"";
+  const pending=paymentConfirmationRequests.has(c.ticketNo||c.id);
+  const sub=confirmed
+    ? "관리자가 실제 사업자계좌 입금 내역을 확인했습니다."
+    : "실제 사업자계좌의 입금 내역을 확인한 뒤 아래 버튼을 눌러주세요.";
+  return `<div class="payment-confirm-panel">
+    <div class="payment-confirm-head"><div><div class="payment-confirm-title">관리자 입금 확인</div><div class="payment-confirm-sub">${esc(sub)}</div></div><span class="payment-confirm-badge ${confirmed?'done':''}">${confirmed?"입금 확인 완료":"관리자 확인 대기"}</span></div>
+    <div class="payment-confirm-info"><div><b>입금 계좌</b><span>${esc(account.accountNumber||"")}</span></div><div><b>예금주</b><span>${esc(account.accountHolder||"")}</span></div><div><b>확인 금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div></div>
+    ${confirmed?`<div class="payment-confirm-sub">확인 시각: ${esc(confirmedAt?formatCaseDate(confirmedAt):"확인 완료")}</div>`:`<button type="button" class="payment-confirm-action" data-payment-confirm="1" ${pending?'disabled':''}>${pending?"확인 처리 중":"입금 확인"}</button>`}
+  </div>`;
+}
+function confirmCasePayment(id){
+  const c=cases[id];
+  if(!c) return;
+  if((c.status||{}).c9!=="done"){
+    alert("먼저 건물주의 승인 응답이 완료되어야 합니다.");
+    return;
+  }
+  const caseId=c.ticketNo||c.id||id;
+  if(paymentConfirmationRequests.has(caseId)) return;
+  const q=recommendedQuoteForCase(c);
+  const amounts=q?recommendedQuoteAmounts(q):{total:Number(c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
+  const amountText=recommendedQuoteMoney(amounts.total)||"금액 미입력";
+  if(!confirm(`실제 사업자계좌 입금 내역을 확인했나요?\n\n예금주: ${OWNER_PAYMENT_ACCOUNT.accountHolder}\n확인 금액: ${amountText}\n\n확인하면 ⑩이 완료되고 ⑪ 업체 연결·일정이 시작됩니다.`)) return;
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+  }
+  paymentConfirmationRequests.add(caseId);
+  c.note=c.note||{};
+  c.note.c10="관리자 입금 확인 처리 중입니다. Apps Script 결과를 기다리는 중입니다.";
+  renderCaseDetailKeepScroll();
+  sendVendorSmsRequest(caseAutomationEndpoint(),{
+    action:"confirmCasePayment",
+    caseId,
+    adminEmail:typeof authedUser!=="undefined"&&authedUser&&authedUser.email||"",
+    adminUid:typeof authedUser!=="undefined"&&authedUser&&authedUser.uid||""
+  }).finally(()=>{
+    setTimeout(()=>{
+      paymentConfirmationRequests.delete(caseId);
+      if(cases[id] && (cases[id].status||{}).c10!=="done") renderCaseDetailKeepScroll();
+    },8000);
+  });
 }
 let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
 function ensureOwnerRecommendationModal(){
@@ -4984,13 +5569,15 @@ function renderCaseDetail(){
       const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
       const isOwnerMms=s.k==="c8";
+      const isPaymentConfirm=s.k==="c10";
       const hideConfiguredServerAction=(isReceiptSms||isOwnerMms) && isConfigured && !caseTestMode;
+      const hideCompletedPaymentConfirm=isPaymentConfirm && st==="done";
       const ownerMmsPending=isOwnerMms && isOwnerRecommendationMmsAccepted(c) && !isOwnerRecommendationMmsSuccess(c);
       const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms && !isOwnerMms;
-      const actIcon=isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
-      const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
+      const actIcon=isPaymentConfirm?'✓':isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
+      const actTag=isPaymentConfirm?'관리자 확인':isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
       const actLabel=ownerMmsPending?"발송 완료 확인":s.auto;
-      const act=s.auto && !hideConfiguredServerAction?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
+      const act=s.auto && !hideConfiguredServerAction && !hideCompletedPaymentConfirm?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -5000,10 +5587,13 @@ function renderCaseDetail(){
       const vendorMmsPreview=open && s.k==='c5' && !/업체 MMS 견적 요청|업체 MMS 발송 요청 중|업체 MMS 발송 실패/.test(note) ? renderVendorMmsPreview(c) : "";
       const vendors=open && s.k==='c5' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
+      const workPhotos=s.k==='c13' ? renderWorkPhotoPanel(c, st) : "";
+      const reportPhotos=s.k==='c14' ? renderWorkPhotoReferencePanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
       const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
       const ownerDecision=open && s.k==='c9' ? ownerDecisionPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}${ownerDecision}</div>`;
+      const paymentConfirmation=s.k==='c10' ? paymentConfirmationPanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${workPhotos}${reportPhotos}${recommendation}${ownerRecommendation}${ownerDecision}${paymentConfirmation}</div>`;
     }).join("")+
     (c.archived?`<div class="cv-trash-detail-actions"><button class="cv-del restore" id="cvRestore">복원</button><button class="cv-delete" id="cvPermanentDelete">삭제</button></div>`:`<button class="cv-del" id="cvDel">휴지통으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -5020,26 +5610,29 @@ caseDetailEl.addEventListener("click", e=>{
   const cu=e.target.closest("[data-case-doc-upload]"); if(cu){ uploadSelectedCaseDocuments(); return; }
   const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; }
   const bu=e.target.closest("[data-bizreg-upload]"); if(bu){ uploadBusinessRegistrationFiles(); return; }
+  const wu=e.target.closest("[data-work-photo-upload]"); if(wu){ uploadWorkPhotos(); return; }
   const qc=e.target.closest("[data-quote-confirm]"); if(qc){ confirmQuoteAmount(qc.dataset.quoteConfirm); return; }
   const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; }
   const br=e.target.closest("[data-bizreg-remove]"); if(br){ removeBusinessRegistrationFromCase(br.dataset.bizregRemove); return; }
+  const wr=e.target.closest("[data-work-photo-remove]"); if(wr){ removeWorkPhotoFromCase(wr.dataset.workPhotoRemove); return; }
   const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; }
   const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; }
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
   const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetailKeepScroll(); return; }
   const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; }
-  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(ak==="c10") confirmCasePayment(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const pc=e.target.closest("[data-payment-confirm]"); if(pc){ confirmCasePayment(curCase); return; }
   const oc=e.target.closest("[data-owner-confirm]"); if(oc){ confirmOwnerRecommendationMms(curCase); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
   if(e.target.closest("#cvPermanentDelete")){ permanentlyDeleteCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
-caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); } });
+caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); return; } const wpr=e.target.closest("[data-work-photo-file-remove]"); if(wpr){ removeWorkPhotoPendingFile(wpr.dataset.workPhotoFileRemove,wpr.dataset.fileKey); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
-caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ const card=vf.closest("[data-vendor-payload]"); setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked, decodeVendorPayload(card&&card.dataset.vendorPayload)); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
-caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
-caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
-caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(!files.length) return; if(dz.matches("[data-bizreg-drop]")) addBusinessRegPendingFiles(files); else addQuotePendingFiles(files); });
+caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const wf=e.target.closest("[data-work-photo-input]"); if(wf){ addWorkPhotoPendingFiles(wf.dataset.workPhotoInput,wf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ const card=vf.closest("[data-vendor-payload]"); setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked, decodeVendorPayload(card&&card.dataset.vendorPayload)); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
+caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
+caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(!files.length) return; if(dz.matches("[data-bizreg-drop]")) addBusinessRegPendingFiles(files); else if(dz.matches("[data-work-photo-drop]")) addWorkPhotoPendingFiles(dz.dataset.workPhotoDrop,files); else addQuotePendingFiles(files); });
 cases = loadCasesLocal();
 const localAutoFixed = applyAllStepAutomation(cases, false);
 const localStepFixed = normalizeAllCaseSteps(cases);
@@ -5054,11 +5647,15 @@ const paymentMainEl=document.getElementById("paymentMain");
 const paymentAlertBadgeEl=document.getElementById("paymentAlertBadge");
 const paymentScheduleModal=document.getElementById("paymentScheduleModal");
 const paymentTransactionModal=document.getElementById("paymentTransactionModal");
-let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},audit:{}};
+const paymentBankModal=document.getElementById("paymentBankModal");
+let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}};
 let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
+let editingPaymentBankBuildingId="";
 let paymentScheduleSyncInFlight=false, paymentScheduleSyncPending=false, paymentScheduleAutoTimer=null;
 let paymentScheduleLastRequestAt=0, paymentScheduleLastSignal="";
+let paymentBankSyncInFlight=false, paymentBankSyncPending=false, paymentBankSyncTimer=null, paymentBankLastRequestAt=0;
 let paymentSmsSendingId="";
+let paymentDeliveryCheckingId="";
 const DEFAULT_PAYMENT_SHEET_URL="https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit";
 
 function paymentTodayKey(){
@@ -5083,7 +5680,9 @@ function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
     const amount=Number(schedule.amount)||0;
     const candidates=transactions.filter(tx=>{
       if(tx.direction&&tx.direction!=="deposit") return false;
-      if(String(tx.buildingId||"")!==String(schedule.buildingId||"")) return false;
+      if(tx.matchStatus==="review"){
+        if(!Array.isArray(tx.reviewScheduleIds)||!tx.reviewScheduleIds.includes(schedule.id)) return false;
+      }else if(String(tx.buildingId||"")!==String(schedule.buildingId||"")) return false;
       return Number(tx.amount)===amount && paymentNormalizeName(tx.payerName)===payerKey && String(tx.date||"")>=paymentAddDays(dueDate,-3) && String(tx.date||"")<=paymentAddDays(dueDate,7);
     });
     return {schedule,dueDate,candidates,status:"scheduled",matchedTransaction:null,override:null};
@@ -5099,6 +5698,7 @@ function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
       row.matchedTransaction=override.transactionId?transactions.find(tx=>tx.id===override.transactionId)||null:null;
       return;
     }
+    if(row.candidates.some(tx=>tx.matchStatus==="review")){ row.status="review"; return; }
     if(row.candidates.length===1&&candidateUsage[row.candidates[0].id]===1){ row.status="paid"; row.matchedTransaction=row.candidates[0]; return; }
     if(row.candidates.length){ row.status="review"; return; }
     row.status=String(todayKey||"")>row.dueDate?"overdue":"scheduled";
@@ -5111,7 +5711,7 @@ function paymentId(prefix){ return prefix+Date.now().toString(36)+Math.random().
 function paymentHash(value){ let h=2166136261; const text=String(value||""); for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(36); }
 function paymentEnsureData(){
   if(!paymentData||typeof paymentData!=="object") paymentData={};
-  ["profile","schedules","transactions","overrides","rentSms","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
+  ["profile","schedules","transactions","overrides","rentSms","bankSync","bankBindings","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
 }
 function paymentLocalKey(){ return "fm_payment_calendar_"+(authedUser&&authedUser.uid||"local"); }
 function loadPaymentLocal(){ try{ return JSON.parse(localStorage.getItem(paymentLocalKey()))||{}; }catch(e){ return {}; } }
@@ -5132,12 +5732,12 @@ function recordPaymentAudit(action,details){
   paymentData.audit[id]=row; savePaymentLocal();
   if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
 }
-function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},audit:{}}; }
+function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}}; }
 function attachPaymentCalendarRef(user){
   detachPaymentCalendarRef();
   if(!user){ updatePaymentAlertBadge(); return; }
   if(!db){ paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar(); return; }
-  paymentRef=db.ref("paymentCalendars/"+user.uid);
+  paymentRef=db.ref("crmCompany/paymentCalendars/"+user.uid);
   paymentValueHandler=s=>{
     paymentData=s.val()||{}; paymentEnsureData();
     if(!paymentData.profile.adminEmail){
@@ -5176,6 +5776,50 @@ function paymentBuildingRecords(){
   });
   return out.sort((a,b)=>a.name.localeCompare(b.name,"ko"));
 }
+function paymentBankName(bankCode){
+  const names={
+    "0003":"기업은행","0004":"국민은행","0011":"농협은행","0020":"우리은행",
+    "0023":"SC제일은행","0027":"한국씨티은행","0031":"대구은행","0032":"부산은행",
+    "0034":"광주은행","0035":"제주은행","0037":"전북은행","0039":"경남은행",
+    "0045":"새마을금고","0048":"신협","0050":"저축은행","0071":"우체국",
+    "0081":"하나은행","0088":"신한은행","0089":"케이뱅크","0090":"카카오뱅크",
+    "0092":"토스뱅크"
+  };
+  const code=String(bankCode||"");
+  return names[code]||("은행 "+code);
+}
+function paymentBankAccounts(){
+  const accounts=paymentData&&paymentData.bankSync&&paymentData.bankSync.accounts;
+  return (Array.isArray(accounts)?accounts:[]).filter(account=>
+    /^pb_[A-Za-z0-9_-]{12,40}$/.test(String(account&&account.accountRef||"")) &&
+    /^\d{4}$/.test(String(account&&account.accountLast4||""))
+  );
+}
+function paymentBankBinding(buildingId){
+  return paymentData&&paymentData.bankBindings&&paymentData.bankBindings[buildingId]||null;
+}
+function paymentBankLabel(value){
+  const item=value||{};
+  return `${paymentBankName(item.bankCode)} ····${String(item.accountLast4||"").slice(-4)}`;
+}
+function paymentOwnerBuildings(building){
+  const ownerKey=paymentNormalizeName(building&&building.ownerName);
+  if(!ownerKey) return building?[building]:[];
+  return paymentBuildingRecords().filter(item=>paymentNormalizeName(item.ownerName)===ownerKey);
+}
+function paymentBankBindingRecord(building,account,at){
+  return {
+    buildingId:String(building&&building.id||""),
+    buildingName:String(building&&building.name||""),
+    ownerName:String(building&&building.ownerName||""),
+    accountRef:String(account&&account.accountRef||""),
+    bankCode:String(account&&account.bankCode||""),
+    bankName:paymentBankName(account&&account.bankCode),
+    accountLast4:String(account&&account.accountLast4||"").slice(-4),
+    linkedAt:at,
+    linkedBy:authedUser&&authedUser.email||"local"
+  };
+}
 function paymentRowsFor(buildingId,monthKey){ return calculatePaymentMonthRows(paymentData,buildingId,monthKey||paymentMonth,paymentTodayKey()); }
 function paymentMonthShift(offset){ const p=paymentMonthParts(paymentMonth); const d=new Date(Date.UTC(p.year,p.month-1+offset,1)); paymentMonth=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`; selectedPaymentScheduleId=""; renderPaymentCalendar(); }
 function paymentMonthLabel(monthKey){ const p=paymentMonthParts(monthKey); return p?`${p.year}년 ${p.month}월`:monthKey; }
@@ -5189,12 +5833,21 @@ function updatePaymentAlertBadge(){
   buildings.forEach(b=>{ const c=paymentBuildingCounts(b.id); count+=c.overdue+c.review; });
   paymentAlertBadgeEl.textContent=count>99?"99+":String(count||""); paymentAlertBadgeEl.classList.toggle("on",count>0);
 }
+function paymentBankSyncMessage(sync){
+  if(paymentBankSyncInFlight) return "팝빌 입금내역 확인 중…";
+  if(!sync||!sync.updatedAt) return "팝빌 계좌 연결 후 입금내역을 자동 확인합니다";
+  const time=new Date(sync.updatedAt).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  if(sync.ok===false) return `조회 실패 · ${sync.errors&&sync.errors[0]&&sync.errors[0].message||"계좌 설정을 확인해 주세요"}`;
+  if(sync.status==="pending") return `거래내역 수집 중 · ${time}`;
+  return `최근 조회 ${Number(sync.transactionCount)||0}건 · 자동매칭 ${Number(sync.matchedCount)||0}건 · ${time}`;
+}
 function renderPaymentBuildingList(buildings){
   if(!paymentBuildingListEl) return;
-  const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="test").sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,5);
+  const bankSync=paymentData&&paymentData.bankSync||{};
+  const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="popbill"||t.source==="test").sort((a,b)=>String(b.transactionAt||b.createdAt||"").localeCompare(String(a.transactionAt||a.createdAt||""))).slice(0,5);
   paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
-    (buildings.length?buildings.map(b=>`<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span></button>`).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
-    `<div class="pv-bank-card"><b>🏦 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">핀테크이용번호와 Access Token은 나중에 보안 서버에 연결합니다. 화면과 Firebase에는 토큰을 저장하지 않습니다.</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 테스트 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName)} · ${esc(paymentFormatMoney(t.amount))} <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button></p>`).join("")}`:""}</div>`;
+    (buildings.length?buildings.map(b=>{ const binding=paymentBankBinding(b.id); return `<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span><span class="pv-building-meta"><span class="pv-mini ${binding?'good':'bad'}">${binding?esc(paymentBankLabel(binding)):"계좌 미연결"}</span></span></button>`; }).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
+    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 연결건물 ${Number(bankSync.linkedBuildingCount)||Object.keys(paymentData.bankBindings||{}).length}곳 · 30분 간격</p><p style="margin-top:4px">자동 알림 · 납부일 09시 이후 / 입금확인 시 건물주 / 다음 날 13시까지 미입금 시</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
 }
 function paymentFormatPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
@@ -5204,26 +5857,35 @@ function paymentFormatPhone(value){
 }
 function paymentReminderSmsRecord(scheduleId){ return paymentData&&paymentData.rentSms&&paymentData.rentSms[paymentMonth]&&paymentData.rentSms[paymentMonth][scheduleId]||null; }
 function paymentReminderTimingEligible(row,todayKey){ return !!row&&(row.dueDate===String(todayKey||paymentTodayKey())||row.status==="overdue"||row.status==="manual_unpaid"); }
+function paymentReminderDeliveryText(record){
+  if(!record||!record.deliveryStatus) return "";
+  if(record.deliveryStatus==="delivered") return "정상 도착";
+  if(record.deliveryStatus==="processing") return "전달 처리 중";
+  return `전달 실패${record.deliveryCode?` (${record.deliveryCode})`:""}${record.deliveryMessage?` · ${record.deliveryMessage}`:""}`;
+}
 function paymentReminderSmsPreview(row){
   const s=row.schedule,date=row.dueDate.split("-");
-  return ["[BRING Care]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"안녕하세요.",row.dueDate===paymentTodayKey()?"오늘은 월세 납부일입니다.":"월세 입금이 아직 확인되지 않아 안내드립니다.",s.buildingName?`건물: ${s.buildingName}`:"",s.unit?`호실: ${s.unit}`:"",s.amount?`납부금액: ${paymentFormatMoney(s.amount)}`:"",`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`,`이미 납부하셨다면 확인에 시간이 걸릴 수 있으니 이 문자는 무시해 주세요.`].filter(Boolean).join("\n");
+  const overdue=row.dueDate!==paymentTodayKey();
+  return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",overdue?"월세 입금이 아직 확인되지 않아 안내드립니다.":"오늘은 월세 납부일입니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`,...(overdue?["","월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요.","문의: 033-748-8919"]:[])].join("\n");
 }
 function renderPaymentDetail(row){
   if(!row) return `<div class="pv-detail"><div class="pv-detail-title">캘린더의 납부 일정을 선택하면 상세 정보와 수동 보정 버튼이 표시됩니다.</div></div>`;
-  const s=row.schedule,tx=row.matchedTransaction,sms=paymentReminderSmsRecord(s.id),smsEligible=paymentReminderTimingEligible(row),smsSending=paymentSmsSendingId===s.id;
+  const s=row.schedule,tx=row.matchedTransaction,sms=paymentReminderSmsRecord(s.id),smsEligible=paymentReminderTimingEligible(row),smsSending=paymentSmsSendingId===s.id,deliveryChecking=paymentDeliveryCheckingId===s.id;
   const smsTime=sms&&sms.sentAt?new Date(sms.sentAt).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"발송 기록 없음";
   return `<div class="pv-detail"><div class="pv-detail-head"><div><div class="pv-detail-title">${esc(s.unit||"호실 미입력")} · ${esc(s.tenantName||"세입자 미입력")}</div><div class="pv-sub">${esc(paymentStatusLabel(row.status))}${row.override&&row.override.reason?` · ${esc(row.override.reason)}`:""}</div></div><b>${esc(paymentFormatMoney(s.amount))}</b></div>`+
-    `<div class="pv-detail-grid"><div class="pv-detail-kv"><b>납부 예정일</b><span>${esc(row.dueDate)}</span></div><div class="pv-detail-kv"><b>세입자 연락처</b><span>${esc(paymentFormatPhone(s.tenantPhone))}</span></div><div class="pv-detail-kv"><b>예상 입금자</b><span>${esc(s.payerName)}</span></div><div class="pv-detail-kv"><b>자동 확인 기간</b><span>${esc(paymentAddDays(row.dueDate,-3))} ~ ${esc(paymentAddDays(row.dueDate,7))}</span></div><div class="pv-detail-kv"><b>연결 거래</b><span>${tx?esc(tx.date+" / "+tx.payerName):"없음"}</span></div><div class="pv-detail-kv"><b>판정</b><span>${esc(paymentStatusLabel(row.status))}</span></div>${sms?`<div class="pv-detail-kv"><b>최근 안내 문자</b><span>${esc(sms.status||sms.message||"")} · ${esc(smsTime)}</span></div>`:""}</div>`+
-    `<div class="pv-detail-actions">${smsEligible?`<button class="sms" data-payment-sms="${escAttr(s.id)}" ${!s.tenantPhone||smsSending?"disabled":""}>${smsSending?"문자 요청 중…":sms&&sms.ok?"납부 안내 문자 재발송":"납부 안내 문자 보내기"}</button>`:""}<button data-payment-edit="${escAttr(s.id)}">일정 수정</button><button class="good" data-payment-override="paid">입금완료</button><button class="bad" data-payment-override="manual_unpaid">미입금</button><button class="warn" data-payment-override="review">확인필요</button><button data-payment-override="auto">자동판정으로 복원</button><button class="bad" data-payment-disable="${escAttr(s.id)}">일정 종료</button>${tx&&tx.source==="test"?`<button class="bad" data-payment-tx-remove="${escAttr(tx.id)}">테스트 거래 삭제</button>`:""}</div></div>`;
+    `<div class="pv-detail-grid"><div class="pv-detail-kv"><b>납부 예정일</b><span>${esc(row.dueDate)}</span></div><div class="pv-detail-kv"><b>세입자 연락처</b><span>${esc(paymentFormatPhone(s.tenantPhone))}</span></div><div class="pv-detail-kv"><b>예상 입금자</b><span>${esc(s.payerName)}</span></div><div class="pv-detail-kv"><b>자동 확인 기간</b><span>${esc(paymentAddDays(row.dueDate,-3))} ~ ${esc(paymentAddDays(row.dueDate,7))}</span></div><div class="pv-detail-kv"><b>연결 거래</b><span>${tx?esc(tx.date+" / "+tx.payerName):"없음"}</span></div><div class="pv-detail-kv"><b>판정</b><span>${esc(paymentStatusLabel(row.status))}</span></div>${sms?`<div class="pv-detail-kv"><b>최근 카카오 안내</b><span>${esc(sms.status||sms.message||"")} · ${esc(smsTime)}</span></div>`:""}${sms&&sms.deliveryStatus?`<div class="pv-detail-kv"><b>카카오 전달 결과</b><span>${esc(paymentReminderDeliveryText(sms))}</span></div>`:""}</div>`+
+    `<div class="pv-detail-actions">${smsEligible?`<button class="sms" data-payment-sms="${escAttr(s.id)}" ${!s.tenantPhone||smsSending?"disabled":""}>${smsSending?"알림톡 요청 중…":sms&&sms.ok?"납부 알림톡 재발송":"납부 알림톡 보내기"}</button>`:""}${sms&&sms.provider==="kakao_alimtalk"&&sms.messageId?`<button data-payment-delivery="${escAttr(s.id)}" ${deliveryChecking?"disabled":""}>${deliveryChecking?"전달결과 확인 중…":"알림톡 전달결과 확인"}</button>`:""}<button data-payment-edit="${escAttr(s.id)}">일정 수정</button><button class="good" data-payment-override="paid">입금완료</button><button class="bad" data-payment-override="manual_unpaid">미입금</button><button class="warn" data-payment-override="review">확인필요</button><button data-payment-override="auto">자동판정으로 복원</button><button class="bad" data-payment-disable="${escAttr(s.id)}">일정 종료</button>${tx&&tx.source==="test"?`<button class="bad" data-payment-tx-remove="${escAttr(tx.id)}">테스트 거래 삭제</button>`:""}</div></div>`;
 }
 function renderPaymentMain(building){
   if(!paymentMainEl) return;
   if(!building){ paymentMainEl.innerHTML=`<div class="pv-empty">온보딩 건물을 선택하면 건물별 입금확인 캘린더가 표시됩니다.</div>`; return; }
   const rows=paymentRowsFor(building.id),paid=rows.filter(r=>r.status==="paid").length,overdue=rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review=rows.filter(r=>r.status==="review").length;
+  const bankBinding=paymentBankBinding(building.id);
   if(selectedPaymentScheduleId&&!rows.some(r=>r.schedule.id===selectedPaymentScheduleId)) selectedPaymentScheduleId="";
   const days=paymentCalendarDays(paymentMonth),today=paymentTodayKey();
   const selected=rows.find(r=>r.schedule.id===selectedPaymentScheduleId)||null;
   paymentMainEl.innerHTML=`<div class="pv-top"><div><div class="pv-title">${esc(building.name)}</div><div class="pv-sub">${esc(building.address||"주소 미입력")} · 건물별 월 납부 현황</div></div><div class="pv-actions"><button class="pv-btn test" data-payment-test="1">＋ 테스트 입금</button><button class="pv-btn primary" data-payment-add="1">＋ 월 납부 일정</button></div></div>`+
+    `<div class="pv-bank-link"><div><b>${bankBinding?`입금계좌 · ${esc(paymentBankLabel(bankBinding))}`:"입금계좌가 연결되지 않았습니다"}</b><span>${bankBinding?"이 계좌의 입금만 이 건물 세입자 일정과 비교합니다.":"팝빌 등록계좌를 연결해야 실제 입금이 자동 매칭됩니다."}</span></div><button data-payment-bank-link="${escAttr(building.id)}">${bankBinding?"계좌 변경":"팝빌 계좌 연결"}</button></div>`+
     `<div class="pv-monthbar"><button data-payment-month="-1">‹</button><b>${esc(paymentMonthLabel(paymentMonth))}</b><button data-payment-month="1">›</button></div>`+
     `<div class="pv-summary"><div class="pv-stat"><span>전체 예정</span><b>${rows.length}건</b></div><div class="pv-stat paid"><span>입금완료</span><b>${paid}건</b></div><div class="pv-stat overdue"><span>미입금</span><b>${overdue}건</b></div><div class="pv-stat review"><span>확인필요</span><b>${review}건</b></div></div>`+
     `<div class="pv-calendar"><div class="pv-weekdays">${["일","월","화","수","목","금","토"].map(x=>`<div>${x}</div>`).join("")}</div><div class="pv-days">${days.map(date=>{ const inMonth=date.slice(0,7)===paymentMonth,dayRows=rows.filter(r=>r.dueDate===date); return `<div class="pv-day ${inMonth?'':'out'} ${date===today?'today':''}"><div class="pv-daynum">${Number(date.slice(-2))}</div>${dayRows.map(r=>`<button class="pv-payitem ${escAttr(r.status)} ${selectedPaymentScheduleId===r.schedule.id?'selected':''}" data-payment-item="${escAttr(r.schedule.id)}"><b>${esc(r.schedule.unit||r.schedule.tenantName||"납부")}</b>${esc(paymentFormatMoney(r.schedule.amount))}</button>`).join("")}</div>`; }).join("")}</div></div>`+renderPaymentDetail(selected);
@@ -5272,6 +5934,69 @@ function savePaymentTransactionFromModal(){
   writePaymentValue("transactions/"+id,tx); recordPaymentAudit("테스트 입금 등록",{transactionId:id,date,payerName,amount}); closePaymentTransactionEditor(); renderPaymentCalendar();
 }
 function removePaymentTransaction(id){ if(!id||!paymentData.transactions[id]) return; writePaymentValue("transactions/"+id,null); recordPaymentAudit("테스트 입금 삭제",{transactionId:id}); renderPaymentCalendar(); }
+function renderPaymentBankBindingEditor(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  if(!building) return;
+  const accounts=paymentBankAccounts(),binding=paymentBankBinding(building.id);
+  const ownerBuildings=paymentOwnerBuildings(building);
+  const buildingEl=document.getElementById("paymentBankBuilding");
+  const optionsEl=document.getElementById("paymentBankOptions");
+  const ownerRow=document.getElementById("paymentBankOwnerRow");
+  const ownerText=document.getElementById("paymentBankOwnerText");
+  const saveButton=document.getElementById("paymentBankSave");
+  const unlinkButton=document.getElementById("paymentBankUnlink");
+  if(buildingEl) buildingEl.textContent=`${building.name} · 건물주 ${building.ownerName||"미입력"}`;
+  if(optionsEl){
+    optionsEl.innerHTML=accounts.length?accounts.map(account=>`<label class="pv-bank-option"><input type="radio" name="paymentBankAccount" value="${escAttr(account.accountRef)}" ${binding&&binding.accountRef===account.accountRef?"checked":""}><span><b>${esc(paymentBankLabel(account))}</b><span>팝빌 등록계좌 · 계좌번호는 끝 4자리만 표시</span></span></label>`).join(""):`<div class="pv-empty" style="margin:18px 0">등록계좌의 안전한 식별정보를 확인 중입니다.<br>잠시 후 다시 열어 주세요.</div>`;
+  }
+  const canApplyOwner=!!building.ownerName&&ownerBuildings.length>1;
+  if(ownerRow) ownerRow.style.display=canApplyOwner?"flex":"none";
+  if(ownerText) ownerText.textContent=canApplyOwner?`${building.ownerName} 건물주의 다른 ${ownerBuildings.length-1}개 건물에도 동일 계좌 적용`:"같은 건물주의 다른 건물에도 동일 계좌 적용";
+  if(saveButton) saveButton.disabled=!accounts.length;
+  if(unlinkButton) unlinkButton.style.display=binding?"inline-block":"none";
+}
+function openPaymentBankBindingEditor(buildingId){
+  const building=paymentBuildingRecords().find(item=>item.id===buildingId);
+  if(!building) return;
+  editingPaymentBankBuildingId=building.id;
+  document.getElementById("paymentBankApplyOwner").checked=false;
+  renderPaymentBankBindingEditor();
+  paymentBankModal.classList.add("open");
+  if(!paymentBankAccounts().length){
+    requestPaymentBankSync({source:"account-list",force:true});
+    setTimeout(()=>{ if(paymentBankModal.classList.contains("open")) renderPaymentBankBindingEditor(); },13000);
+  }
+}
+function closePaymentBankBindingEditor(){
+  paymentBankModal.classList.remove("open");
+  editingPaymentBankBuildingId="";
+}
+function paymentBankBindingTargets(building){
+  const applyOwner=document.getElementById("paymentBankApplyOwner").checked;
+  return applyOwner?paymentOwnerBuildings(building):[building];
+}
+function savePaymentBankBindingFromModal(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  const selected=document.querySelector('input[name="paymentBankAccount"]:checked');
+  const account=paymentBankAccounts().find(item=>item.accountRef===(selected&&selected.value));
+  if(!building||!account){ alert("연결할 팝빌 계좌를 선택해 주세요."); return; }
+  const targets=paymentBankBindingTargets(building),at=new Date().toISOString();
+  closePaymentBankBindingEditor();
+  targets.forEach(target=>writePaymentValue("bankBindings/"+target.id,paymentBankBindingRecord(target,account,at)));
+  recordPaymentAudit("건물 입금계좌 연결",{buildingIds:targets.map(item=>item.id),bankCode:String(account.bankCode||""),accountLast4:String(account.accountLast4||"").slice(-4)});
+  requestPaymentBankSync({source:"binding-change",force:true});
+}
+function unlinkPaymentBankBinding(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  if(!building) return;
+  const targets=paymentBankBindingTargets(building).filter(item=>paymentBankBinding(item.id));
+  if(!targets.length){ closePaymentBankBindingEditor(); return; }
+  if(!confirm(`${targets.length}개 건물의 팝빌 입금계좌 연결을 해제할까요?`)) return;
+  closePaymentBankBindingEditor();
+  targets.forEach(target=>writePaymentValue("bankBindings/"+target.id,null));
+  recordPaymentAudit("건물 입금계좌 연결 해제",{buildingIds:targets.map(item=>item.id)});
+  requestPaymentBankSync({source:"binding-remove",force:true});
+}
 function setPaymentOverride(status){
   if(!selectedPaymentScheduleId) return;
   const path=`overrides/${paymentMonth}/${selectedPaymentScheduleId}`;
@@ -5283,23 +6008,50 @@ function setPaymentOverride(status){
 function disablePaymentSchedule(id){ const s=paymentData.schedules[id]; if(!s||!confirm("이 월 납부 일정을 이번 달까지만 표시하고 종료할까요? 과거 기록은 유지됩니다.")) return; const updated=Object.assign({},s,{active:true,endMonth:paymentMonth,endedAt:new Date().toISOString(),updatedAt:new Date().toISOString()}); writePaymentValue("schedules/"+id,updated); recordPaymentAudit("납부 일정 종료",{scheduleId:id,building:s.buildingName,unit:s.unit,endMonth:paymentMonth}); selectedPaymentScheduleId=""; renderPaymentCalendar(); }
 async function requestPaymentReminderSms(scheduleId){
   const row=paymentRowsFor(paymentBuildingId).find(item=>item.schedule.id===scheduleId);
-  if(!row||!paymentReminderTimingEligible(row)){ alert("납부 당일 또는 미입금 일정에서 문자를 보낼 수 있습니다."); return; }
+  if(!row||!paymentReminderTimingEligible(row)){ alert("납부 당일 또는 미입금 일정에서 카카오 알림톡을 보낼 수 있습니다."); return; }
   const s=row.schedule,phone=paymentFormatPhone(s.tenantPhone),previous=paymentReminderSmsRecord(scheduleId);
   if(!s.tenantPhone){ alert("세입자 관리대장에 연락처를 먼저 입력해 주세요."); return; }
   const preview=paymentReminderSmsPreview(row);
-  const question=(previous&&previous.ok?"이미 발송된 기록이 있습니다. 다시 보낼까요?":"아래 문자를 보낼까요?")+`\n\n받는 사람: ${phone}\n\n${preview}`;
+  const question=(previous&&previous.ok?"이미 발송된 기록이 있습니다. 카카오 알림톡을 다시 보낼까요?":"아래 카카오 알림톡을 보낼까요?")+`\n\n받는 사람: ${phone}\n\n${preview}`;
   if(!confirm(question)) return;
   paymentSmsSendingId=scheduleId; renderPaymentCalendar();
   try{
     const idToken=await authedUser.getIdToken(false);
     await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"sendPaymentReminderSms",uid:authedUser.uid,idToken,adminEmail:authedUser.email||"",scheduleId,month:paymentMonth,status:row.status,force:!!(previous&&previous.ok)});
-    recordPaymentAudit("월세 안내 문자 요청",{scheduleId,building:s.buildingName,unit:s.unit,month:paymentMonth,status:row.status});
-    alert("문자 발송을 요청했습니다. 발송 결과는 일정 상세에 자동 표시됩니다.");
+    recordPaymentAudit("월세 안내 알림톡 요청",{scheduleId,building:s.buildingName,unit:s.unit,month:paymentMonth,status:row.status});
+    alert("카카오 알림톡 발송을 요청했습니다. 발송 결과는 일정 상세에 자동 표시됩니다.");
+    setTimeout(()=>requestPaymentReminderDeliveryStatus(scheduleId,{silent:true}),7000);
   }catch(err){
-    console.warn("월세 안내 문자 요청 실패",err);
-    alert("문자 발송을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    console.warn("월세 안내 알림톡 요청 실패",err);
+    alert("카카오 알림톡 발송을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.");
   }
   setTimeout(()=>{ paymentSmsSendingId=""; renderPaymentCalendar(); },5000);
+}
+async function requestPaymentReminderDeliveryStatus(scheduleId,options){
+  options=options||{};
+  const record=paymentReminderSmsRecord(scheduleId);
+  if(!record||record.provider!=="kakao_alimtalk"||!record.messageId){
+    if(!options.silent) alert("조회할 카카오 알림톡 발송 기록이 없습니다.");
+    return;
+  }
+  paymentDeliveryCheckingId=scheduleId;
+  renderPaymentCalendar();
+  try{
+    const idToken=await authedUser.getIdToken(false);
+    await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"getPaymentReminderDeliveryStatus",uid:authedUser.uid,idToken,scheduleId,month:paymentMonth});
+    setTimeout(()=>{
+      paymentDeliveryCheckingId="";
+      renderPaymentCalendar();
+      if(!options.silent){
+        const latest=paymentReminderSmsRecord(scheduleId);
+        alert(latest&&latest.deliveryStatus?paymentReminderDeliveryText(latest):"전달 결과 조회를 요청했습니다. 잠시 후 다시 확인해 주세요.");
+      }
+    },2500);
+  }catch(err){
+    paymentDeliveryCheckingId="";
+    renderPaymentCalendar();
+    if(!options.silent) alert("카카오 알림톡 전달 결과를 조회하지 못했습니다.");
+  }
 }
 function requestPaymentBuildingSync(){
   const button=document.getElementById("paymentBuildingSync"); if(button){ button.disabled=true; button.textContent="동기화 요청 중…"; }
@@ -5351,14 +6103,46 @@ async function requestPaymentScheduleSync(options){
 }
 function stopPaymentScheduleAutoSync(){
   if(paymentScheduleAutoTimer) clearInterval(paymentScheduleAutoTimer);
+  if(paymentBankSyncTimer) clearInterval(paymentBankSyncTimer);
   paymentScheduleAutoTimer=null;
+  paymentBankSyncTimer=null;
+}
+async function requestPaymentBankSync(options){
+  options=options||{};
+  if(!authedUser||!caseAutomationEndpoint()) return;
+  if(paymentBankSyncInFlight){ if(options.force) paymentBankSyncPending=true; return; }
+  const now=Date.now();
+  if(!options.force&&now-paymentBankLastRequestAt<25*60*1000) return;
+  paymentBankLastRequestAt=now;
+  paymentBankSyncInFlight=true;
+  renderPaymentCalendar();
+  try{
+    const idToken=await authedUser.getIdToken(false);
+    await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"syncPopbillBankTransactions",uid:authedUser.uid,idToken,adminEmail:authedUser.email||"",force:options.force===true});
+  }catch(err){
+    console.warn("팝빌 입금내역 자동 조회 실패",err);
+  }finally{
+    setTimeout(()=>{
+      paymentBankSyncInFlight=false;
+      renderPaymentCalendar();
+      if(paymentBankModal.classList.contains("open")) renderPaymentBankBindingEditor();
+      if(paymentBankSyncPending&&paymentView.classList.contains("open")){
+        paymentBankSyncPending=false;
+        requestPaymentBankSync({source:"queued",force:true});
+      }
+    },12000);
+  }
 }
 function startPaymentScheduleAutoSync(){
   stopPaymentScheduleAutoSync();
   requestPaymentScheduleSync({source:"open",force:true});
+  requestPaymentBankSync({source:"open"});
   paymentScheduleAutoTimer=setInterval(()=>{
     if(paymentView.classList.contains("open")&&!document.hidden) requestPaymentScheduleSync({source:"fallback",force:true});
   },300000);
+  paymentBankSyncTimer=setInterval(()=>{
+    if(paymentView.classList.contains("open")&&!document.hidden) requestPaymentBankSync({source:"interval"});
+  },1800000);
 }
 
 document.getElementById("paymentBtn").addEventListener("click",openPaymentView);
@@ -5366,15 +6150,20 @@ document.getElementById("paymentBack").addEventListener("click",closePaymentView
 document.getElementById("paymentBuildingSync").addEventListener("click",requestPaymentBuildingSync);
 document.getElementById("paymentSheetOpen").addEventListener("click",openPaymentScheduleSheet);
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden&&paymentView.classList.contains("open")) requestPaymentScheduleSync({source:"focus",force:true});
+  if(!document.hidden&&paymentView.classList.contains("open")){
+    requestPaymentScheduleSync({source:"focus",force:true});
+    requestPaymentBankSync({source:"focus"});
+  }
 });
 paymentBuildingListEl.addEventListener("click",e=>{ const tx=e.target.closest("[data-payment-tx-remove]"); if(tx){ removePaymentTransaction(tx.dataset.paymentTxRemove); return; } const b=e.target.closest("[data-payment-building]"); if(b){ paymentBuildingId=b.dataset.paymentBuilding; selectedPaymentScheduleId=""; renderPaymentCalendar(); } });
 paymentMainEl.addEventListener("click",e=>{
   const month=e.target.closest("[data-payment-month]"); if(month){ paymentMonthShift(Number(month.dataset.paymentMonth)); return; }
+  const bankLink=e.target.closest("[data-payment-bank-link]"); if(bankLink){ openPaymentBankBindingEditor(bankLink.dataset.paymentBankLink); return; }
   if(e.target.closest("[data-payment-add]")){ openPaymentScheduleEditor(""); return; }
   if(e.target.closest("[data-payment-test]")){ openPaymentTransactionEditor(); return; }
   const item=e.target.closest("[data-payment-item]"); if(item){ selectedPaymentScheduleId=item.dataset.paymentItem; renderPaymentCalendar(); return; }
   const sms=e.target.closest("[data-payment-sms]"); if(sms){ requestPaymentReminderSms(sms.dataset.paymentSms); return; }
+  const delivery=e.target.closest("[data-payment-delivery]"); if(delivery){ requestPaymentReminderDeliveryStatus(delivery.dataset.paymentDelivery); return; }
   const edit=e.target.closest("[data-payment-edit]"); if(edit){ openPaymentScheduleEditor(edit.dataset.paymentEdit); return; }
   const over=e.target.closest("[data-payment-override]"); if(over){ setPaymentOverride(over.dataset.paymentOverride); return; }
   const disable=e.target.closest("[data-payment-disable]"); if(disable){ disablePaymentSchedule(disable.dataset.paymentDisable); return; }
@@ -5386,8 +6175,13 @@ document.getElementById("paymentScheduleSave").addEventListener("click",savePaym
 document.getElementById("paymentTransactionClose").addEventListener("click",closePaymentTransactionEditor);
 document.getElementById("paymentTransactionCancel").addEventListener("click",closePaymentTransactionEditor);
 document.getElementById("paymentTransactionSave").addEventListener("click",savePaymentTransactionFromModal);
+document.getElementById("paymentBankClose").addEventListener("click",closePaymentBankBindingEditor);
+document.getElementById("paymentBankCancel").addEventListener("click",closePaymentBankBindingEditor);
+document.getElementById("paymentBankSave").addEventListener("click",savePaymentBankBindingFromModal);
+document.getElementById("paymentBankUnlink").addEventListener("click",unlinkPaymentBankBinding);
 paymentScheduleModal.addEventListener("click",e=>{ if(e.target===paymentScheduleModal) closePaymentScheduleEditor(); });
 paymentTransactionModal.addEventListener("click",e=>{ if(e.target===paymentTransactionModal) closePaymentTransactionEditor(); });
+paymentBankModal.addEventListener("click",e=>{ if(e.target===paymentBankModal) closePaymentBankBindingEditor(); });
 
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
@@ -5430,8 +6224,28 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.21";
+const APP_VERSION = "5.41";
 const CHANGELOG = [
+  { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
+  { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
+  { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },
+  { v:"5.38", d:"2026-07-30", items:["세입자 미입금 알림에 브링케어 문의 내선 033-748-8919 안내 추가"] },
+  { v:"5.37", d:"2026-07-30", items:["건물주 월세 입금 예정 알림의 ‘오늘’을 실제 납부 날짜로 표시"] },
+  { v:"5.36", d:"2026-07-30", items:["월세 납부·미입금·건물주 현황 알림에서 불필요한 입금확인 안내 문구 삭제"] },
+  { v:"5.35", d:"2026-07-30", items:["팝빌에서 월세 입금이 확정 매칭되면 건물주에게 건물별 입금완료 알림톡 자동 발송","기존 입금 건의 소급 발송을 막고 새로 확인된 거래만 한 번씩 안내"] },
+  { v:"5.34", d:"2026-07-30", items:["월세 알림톡의 ‘무시해 주세요’ 문구를 ‘입금 여부는 계좌 내역 확인 후 자동 반영됩니다.’로 개선"] },
+  { v:"5.33", d:"2026-07-30", items:["납부일 오전 9시 이후 세입자 개별·건물주 건물별 예정 요약 알림 자동화","납부일 다음 날 13시까지 입금 미확인 시 세입자·건물주 미입금 알림","팝빌 계좌의 확정 입금만 반영하고 중복 발송을 차단하는 시간 트리거 추가"] },
+  { v:"5.32", d:"2026-07-29", items:["카카오 알림톡 요청 접수와 실제 휴대폰 도착 상태를 구분","SENS 메시지 ID로 최종 전달 성공·처리중·실패 코드 조회","일정 상세에 알림톡 전달결과 확인 버튼과 실패 사유 표시"] },
+  { v:"5.31", d:"2026-07-29", items:["월세 알림은 카카오 알림톡 승인 템플릿으로만 발송","템플릿 미승인·불일치 시 일반 SMS 자동 대체 발송 차단","303호 실발송 전 수신 채널 안전 검증 강화"] },
+  { v:"5.30", d:"2026-07-29", items:["납부 당일·미입금 안내를 카카오 알림톡으로 우선 발송","알림톡 발송 결과와 공급자 기록 저장","월세 안내 전용 승인 템플릿 BRINGRENTREMINDERV1 연결"] },
+  { v:"5.29", d:"2026-07-29", items:["온보딩 건물별 팝빌 입금계좌 연결·변경 추가","같은 건물주 소유 건물에 동일 계좌 일괄 적용 지원","연결된 계좌의 입금만 해당 건물 월세 일정과 자동 매칭"] },
+  { v:"5.28", d:"2026-07-28", items:["카카오톡 민원 접수 현장 사진을 케이스에 연결","케이스 상세에서 현장 사진 Drive 링크 표시","카카오톡 접수 배지 구분"] },
+  { v:"5.27", d:"2026-07-28", items:["⑤ 업체 후보 카드를 전화·주소 중심의 비교형 화면으로 재구성","평점·단가·비고는 상세 정보로 접어 카드 높이 축소","선택 상태와 건물지도·네이버지도·홈페이지 버튼 시인성 개선"] },
+  { v:"5.26", d:"2026-07-28", items:["⑤ 업체 후보를 건물지도 원주업체 데이터로 통합","민원 주소와 같은 동·읍·면 및 문자 발송 가능한 연락처 보유 업체 우선 정렬","업체 카드에서 건물지도 해당 마커를 바로 열 수 있는 지도 링크 추가"] },
+  { v:"5.25", d:"2026-07-24", items:["건물주의 별도 입금 신고 없이 관리자가 실제 사업자계좌 입금을 확인하는 ⑩ 단계 추가","관리자 입금 확인 완료 시 ⑩ 완료·⑪ 업체 연결 및 일정 진행중 자동 전환"] },
+  { v:"5.24", d:"2026-07-23", items:["짧은 승인 링크에서 모바일 승인 화면을 직접 표시해 화면 축소 문제 해결","승인 응답을 Apps Script API로 연결하고 승인 후 계좌번호·예금주·입금금액 안내"] },
+  { v:"5.23", d:"2026-07-23", items:["승인 링크를 케이스 번호 기반 짧은 주소로 변경해 Firebase 권한 오류 제거"] },
+  { v:"5.22", d:"2026-07-23", items:["건물주 문자 승인 링크를 짧은 GitHub Pages 주소로 변경","건물주 승인 화면을 모바일 한 화면 중심으로 재구성","승인하고 입금 진행 선택 후 계좌번호와 예금주 브링케어 표시"] },
   { v:"5.21", d:"2026-07-23", items:["검증된 승인 링크가 포함된 동일 건물주 MMS의 성공 결과일 때만 ⑧ 완료·⑨ 진행중 전환","과거 MMS 성공 기록과 승인 링크 실패가 섞인 케이스를 ⑧ 진행중·⑨ 대기로 자동 복구","Apps Script 웹앱 래퍼 HTML 때문에 정상 승인 링크를 실패로 오인하던 검증 방식 수정"] },
   { v:"5.20", d:"2026-07-23", items:["⑧ 단계 진입 시 건물주 승인 링크를 먼저 생성하고 실제 승인 화면이 열리는지 확인","승인 링크 확인이 끝난 경우에만 건물주 추천 MMS 발송","기존 ⑨ 진행중 케이스의 승인 링크가 비어 있으면 문자 재발송 없이 자동 복구"] },
   { v:"5.19", d:"2026-07-23", items:["⑧ 건물주 추천 문자에 모바일 승인 링크와 승인·입금 진행 안내 추가","추천 견적으로 진행할 경우 링크에서 승인하고 입금 진행 버튼을 누르도록 발송 문구 개선"] },

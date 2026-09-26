@@ -1,0 +1,55 @@
+'use strict';
+const MarketingCore = require('./marketing-core');
+
+const READ_OR_CONTROL = [
+  'crm:project-weekly-reports-load',
+  'crm:company-strategy-load',
+  'crm:billing-ledger-load',
+  'crm:work-outcome-draft-load',
+  'crm:work-outcome-export',
+  'crm:project-weekly-report-export',
+  'crm:building-atlas-load','crm:input-language-korean',
+  'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:weekly-report-export','crm:service-report-export','crm:building-monthly-report-export','crm:quote-supplier-load','crm:quote-seal-load','crm:owner-os-settings-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout','crm:drive-status','crm:building-document-pick',
+  'crm:load','crm:office-load','crm:office-attendance-export','crm:office-attachment-open','crm:office-messenger-presence','crm:operations-intelligence-load','crm:canonical-building-units-load',
+  'crm:field-summaries-load','crm:customer-photos-load','crm:drive-import-candidates-load','crm:contract-sources-load','crm:marketing-read','crm:field-team-profiles',
+  'crm:operations-load','crm:forms-load','crm:work-orders-load','crm:supplies-load','crm:delivery-flows-load','crm:work-reports-load','crm:work-report-drive-browse','crm:work-report-drive-thumbnail','crm:work-report-drive-plan','crm:work-report-photo-classify','crm:work-report-photos-scan','crm:telegram-settings-load','crm:growth-load','crm:workflow-vendors','crm:workflow-files','crm:customer-photo-pick','crm:document-delivery-capabilities','crm:document-delivery-status','crm:data-path','crm:update-state','crm:update-check',
+  'crm:update-install','crm:field-bounds','crm:valuescope-bounds','crm:show-valuescope','crm:hide-valuescope','crm:field-cancel',
+  'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
+];
+const MUTATIONS = [
+  'crm:project-weekly-report-save',
+  'crm:company-strategy-draft-save','crm:company-strategy-publish',
+  'crm:billing-invoice-save','crm:billing-receipt-save','crm:billing-draft-return',
+  'crm:wallboard-admin',
+  'crm:work-outcome-draft-save','crm:work-outcome-draft-clear',
+  'crm:building-atlas-save',
+  'crm:save','crm:save-now','crm:quote-supplier-save','crm:owner-os-settings-save','crm:owner-os-report-send','crm:quote-seal-select','crm:office-attendance-save','crm:office-attendance-correct','crm:leave-request-save','crm:leave-decide','crm:leave-grant-save','crm:hr-record-save','crm:form-template-save','crm:form-entry-save','crm:payroll-save','crm:approval-save','crm:approval-decide','crm:office-display-name-save','crm:office-attachment-pick','crm:office-attachment-drop','crm:office-message-send','crm:office-messages-read','crm:operation-save','crm:customer-photo-save','crm:drive-connect','crm:drive-disconnect','crm:building-document-upload','crm:work-order-result-upload','crm:work-order-save','crm:project-save','crm:capacity-save','crm:weekly-directive-save','crm:work-order-progress','crm:supply-item-save','crm:supply-move-add','crm:supply-batch-save','crm:supply-move-delete','crm:delivery-flow-save','crm:delivery-stage-advance','crm:delivery-file-upload','crm:work-report-save','crm:work-report-photo-upload','crm:work-report-export','crm:growth-checkin-save','crm:growth-review-save','crm:telegram-chats-find','crm:telegram-settings-save','crm:telegram-settings-forget','crm:telegram-contact-alert','crm:telegram-directive-send','crm:customer-notice-send',
+  'crm:drive-import-decision','crm:contract-source-register','crm:contract-source-check','crm:contract-source-decision','crm:canonical-entity-commit','crm:building-schedule-commit','crm:marketing-commit','crm:marketing-archive',
+  'crm:marketing-attribution-update','crm:work-operations-sync-retry','crm:canonical-building-units-configure','crm:case-save','crm:payment-override',
+  'crm:payment-schedule-save','crm:payment-schedule-delete','crm:payment-bank-binding','crm:workflow-action','crm:document-delivery-create','crm:document-delivery-send','crm:document-delivery-revoke','crm:field-request','crm:backup','crm:restore'
+];
+const CHANNEL_POLICY = Object.freeze(Object.fromEntries([
+  ...READ_OR_CONTROL.map(channel => [channel, 'control']),
+  ...MUTATIONS.map(channel => [channel, 'mutation'])
+]));
+const MARKETING_MUTATIONS = new Set(['crm:marketing-commit','crm:marketing-archive','crm:marketing-attribution-update']);
+
+function classification(channel) { return CHANNEL_POLICY[channel] || '' }
+function assertRegistered(channel) {
+  if (!classification(channel)) { const error = new Error(`unclassified IPC channel: ${channel}`); error.code = 'UNCLASSIFIED_IPC'; throw error; }
+}
+function assertChannelAllowed(channel, user) {
+  assertRegistered(channel);
+  if (['crm:marketing-commit','crm:marketing-archive'].includes(channel) && !MarketingCore.canEditAdSpend(user)) {
+    const error = new Error('marketing ad spend forbidden'); error.code = 'MARKETING_AD_SPEND_FORBIDDEN'; throw error;
+  }
+  if (channel === 'crm:marketing-attribution-update' && !MarketingCore.canEditAttribution(user)) {
+    const error = new Error('marketing attribution forbidden'); error.code = 'MARKETING_ATTRIBUTION_FORBIDDEN'; throw error;
+  }
+  if (classification(channel) === 'mutation' && user && (user.accessRole || user.role) === 'member' && user.marketingRole === 'marketing' && !MARKETING_MUTATIONS.has(channel)) {
+    const error = new Error('marketing-only session cannot perform this mutation'); error.code = 'MARKETING_ONLY_FORBIDDEN'; throw error;
+  }
+  return true;
+}
+
+module.exports = Object.freeze({ CHANNEL_POLICY, classification, assertRegistered, assertChannelAllowed });

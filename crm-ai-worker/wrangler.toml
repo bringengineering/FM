@@ -1,0 +1,62 @@
+name = "bring-crm-ai-gateway"
+account_id = "3c3bcd08bb6ed3a7a8f98c292386c327"
+main = "src/index.js"
+compatibility_date = "2026-08-30"
+workers_dev = true
+preview_urls = false
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+AI_ENABLED = "true"
+GROQ_MODEL = "qwen/qwen3.8-27b"
+AI_COMPANY_DAILY_LIMIT = "1000"
+CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com,bringengineering1008@gmail.com"
+CRM_ADMIN_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
+ALLOWED_ORIGINS = "app://bring-crm,https://bring-fm.web.app"
+DOCUMENT_DELIVERY_ENABLED = "false"
+KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
+WALLBOARD_ENABLED = "true"
+WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"
+WALLBOARD_FIREBASE_DATABASE_URL = "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app"
+
+[[ratelimits]]
+name = "AI_RATE_LIMITER"
+namespace_id = "10081"
+
+[ratelimits.simple]
+limit = 20
+period = 60
+
+[[kv_namespaces]]
+binding = "AI_USAGE"
+id = "e2ff82add8014f11aebf8bd1f6d95f8e"
+
+[[kv_namespaces]]
+binding = "DOCUMENT_DELIVERY"
+id = "e45a57c874534b76b90107d43ad4a759"
+
+[[durable_objects.bindings]]
+name = "WALLBOARD_DEVICES"
+class_name = "WallboardDevices"
+
+[[durable_objects.bindings]]
+name = "WALLBOARD_REFRESH_JOBS"
+class_name = "WallboardRefreshJobs"
+
+[[migrations]]
+tag = "wallboard-sqlite-v1"
+new_sqlite_classes = ["WallboardDevices"]
+
+[[migrations]]
+tag = "wallboard-refresh-sqlite-v1"
+new_sqlite_classes = ["WallboardRefreshJobs"]
+
+[[ratelimits]]
+name = "WALLBOARD_RATE_LIMITER"
+namespace_id = "10082"
+
+[ratelimits.simple]
+limit = 240
+period = 60
