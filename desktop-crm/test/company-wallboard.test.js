@@ -42,7 +42,7 @@ test('paused local preview leaves a cached old-year direction on the next tick a
  intervals.find(item=>item.ms===1000).fn();
  assert.doesNotMatch(elements.h1.textContent,/회사 방향/);
  assert.doesNotMatch(content.innerHTML,/올해 방향/);
- assert.match(elements.h1.textContent,/프로젝트 로드맵/);
+ assert.match(elements.h1.textContent,/회사 운영 요약/);
  dispose();
 });
 test('shared notice scene does not mislabel the remote TV as local preview',()=>{
@@ -260,6 +260,24 @@ test('shared projection carries only an already-sanitized optional strategy',()=
  const model=C.project({orders:[],strategy},'2026-09-24');
  assert.deepEqual(model.strategy,strategy);
  assert.equal(Object.hasOwn(C.project({orders:[]},'2026-09-24'),'strategy'),false);
+});
+
+test('integrated overview combines roadmap, project summary, cleaning counts and today schedule',()=>{
+ const cleaningOperations={schemaVersion:1,total:7,open:5,completed:2,overdue:1,byStatus:{received:1,reviewing:0,quote_pending:0,approval_pending:0,scheduled:1,in_progress:2,review_pending:1,revision_requested:0,completed:2,cancelled:0},updatedAt:'2026-09-27T01:59:00.000Z'};
+ const model=C.project({projects:[{id:'p1',name:'현장 데이터 구축',status:'active',startDate:'2026-09-20',endDate:'2026-10-10',progress:60}],orders:[{id:'o1',projectId:'p1',status:'doing',progress:60,assigneeUid:'u1',assigneeName:'김현진',dueDate:'2026-09-28'}],members:[{uid:'u1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-27',startTime:'10:00',status:'planned',serviceType:'cleaning',owner:'김현진'}]},cleaningOperations},'2026-09-27');
+ const html=C.scene(model,'overview',0,'','09:00','week','2026-09-27');
+ for(const expected of ['wb-overview','프로젝트 로드맵','wb-roadmap-board','전체 진행률','다가오는 마감','청소 운영','신규 접수','진행 중','검토 대기','완료','오늘 일정','10:00'])assert.ok(html.includes(expected),`missing ${expected}`);
+ assert.doesNotMatch(html,/010-\d{3,4}-\d{4}/u);
+});
+test('server cleaning aggregate appears in TV health scene without exposing source details',()=>{
+ const cleaningOperations={schemaVersion:1,total:4,open:3,completed:1,overdue:2,byStatus:{received:0,reviewing:0,quote_pending:0,approval_pending:0,scheduled:1,in_progress:2,review_pending:0,revision_requested:0,completed:1,cancelled:0},updatedAt:'2026-09-24T01:59:00.000Z'};
+ const model=C.project({orders:[],cleaningOperations},'2026-09-24');
+ const html=C.scene(model,'health');
+ assert.match(html,/클리닝 주문 현황/u);
+ assert.match(html,/진행 중 <strong>3<\/strong>건/u);
+ assert.match(html,/기한 초과 <strong>2<\/strong>건/u);
+ assert.doesNotMatch(JSON.stringify(model.cleaningOperations),/customer|building|private|orderId/u);
+ assert.throws(()=>C.project({orders:[],cleaningOperations:{...cleaningOperations,extra:'private'}},'2026-09-24'),/WALLBOARD_CLEANING_DATA_INVALID/u);
 });
 test('local strategy scene renders approved goal progress and unknown progress distinctly',()=>{
  const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'김현진',role:'운영',reportsToIndex:null}],goals:[{period:'annual',title:'관리 건물',unit:'count',target:10,current:4,percent:40,source:'CRM 건물'},{period:'H2',title:'표준 촬영',unit:'milestone',target:null,current:null,percent:null,source:'현장 보고'}]}},'2026-09-24');

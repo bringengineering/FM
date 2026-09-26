@@ -1,7 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BringCompanyWallboard=api;})(typeof globalThis==='object'?globalThis:this,function(){
  'use strict';
  const labels={assigned:'시작 전',doing:'진행 중',submitted:'검수 대기',returned:'보완 요청',done:'검수 완료'};
- const scenes=[['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향'],['companyRevenue','매출 현황']];
+ const scenes=[['overview','회사 운영 요약'],['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향'],['companyRevenue','매출 현황']];
  const billingCore=typeof require==='function'?require('./billing-ledger-core'):globalThis.BringBillingLedgerCore;
  function companyRevenue(ledger,today,sourceState){
   const month=today.slice(0,7),unavailable={available:false,month,billed:null,received:null,receivable:null,pendingCount:null,undatedPendingCount:null};
@@ -12,6 +12,15 @@
    return pendingCount+undatedPendingCount>0?{...unavailable,pendingCount,undatedPendingCount}:unavailable;
   }
   return {available:true,month,billed,received,receivable,pendingCount,undatedPendingCount};
+ }
+ const cleaningStatuses=['received','reviewing','quote_pending','approval_pending','scheduled','in_progress','review_pending','revision_requested','completed','cancelled'];
+ function cleaningOperations(value){
+  if(value==null)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join('|')!=='byStatus|completed|open|overdue|schemaVersion|total|updatedAt')throw Error('WALLBOARD_CLEANING_DATA_INVALID');
+  if(value.schemaVersion!==1||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.updatedAt)||!Number.isFinite(Date.parse(value.updatedAt)))throw Error('WALLBOARD_CLEANING_DATA_INVALID');
+  const count=n=>Number.isSafeInteger(n)&&n>=0;
+  if(!count(value.total)||!count(value.open)||!count(value.completed)||!count(value.overdue)||value.open>value.total||value.completed>value.total||value.overdue>value.open||!value.byStatus||typeof value.byStatus!=='object'||Array.isArray(value.byStatus)||Object.keys(value.byStatus).sort().join('|')!==[...cleaningStatuses].sort().join('|')||cleaningStatuses.some(status=>!count(value.byStatus[status]))||cleaningStatuses.reduce((sum,status)=>sum+value.byStatus[status],0)!==value.total||value.byStatus.completed!==value.completed)throw Error('WALLBOARD_CLEANING_DATA_INVALID');
+  return {schemaVersion:1,total:value.total,open:value.open,completed:value.completed,overdue:value.overdue,byStatus:Object.fromEntries(cleaningStatuses.map(status=>[status,value.byStatus[status]])),updatedAt:value.updatedAt};
  }
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function day(v){return typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v?v:null;}
@@ -88,12 +97,19 @@
   const weekly=data.weeklyReports;
   const safeWeekly=weekly&&weekly.available===true&&day(weekly.periodStart)&&day(weekly.periodEnd)&&[weekly.approvedReports,weekly.approvedTotal,weekly.approvedDone].every(value=>Number.isSafeInteger(value)&&value>=0)&&weekly.approvedDone<=weekly.approvedTotal
    ?{available:true,periodStart:weekly.periodStart,periodEnd:weekly.periodEnd,approvedReports:weekly.approvedReports,approvedTotal:weekly.approvedTotal,approvedDone:weekly.approvedDone}:unavailable;
-  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,companyRevenue:companyRevenue(data.billingLedger,today,data.billingLedgerState),...extra,...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
+  return {counts,total:Object.values(counts).reduce((a,b)=>a+b,0),overdue,unknown,people:[...people.values()],schedule:schedule(data.calendar,today,data.members),weeklyReports:safeWeekly,companyRevenue:companyRevenue(data.billingLedger,today,data.billingLedgerState),...extra,...(Object.hasOwn(data,'cleaningOperations')?{cleaningOperations:cleaningOperations(data.cleaningOperations)}:{}),...(Object.hasOwn(data,'strategy')?{strategy:data.strategy}:{})};
  }
  const card=(label,value,sub='')=>`<article class="wb-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(sub)}</small></article>`;
  function scene(m,key,page=0,notice='',clock=new Date().toTimeString().slice(0,5),zoom='week',dataDate=''){
   if(key==='notice')return `<div class="wb-announcement"><span>TEAM NOTICE</span><h2>${esc(notice||'등록된 공지가 없습니다')}</h2><p>회사 운영 공지</p></div>`;
   if(!m)return '<div class="wb-empty">아직 확인된 자료가 없습니다.</div>';
+  if(key==='overview'){
+   const clean=m.cleaningOperations,status=clean?.byStatus,metric=(label,value)=>`<article><span>${label}</span><strong>${value===null?'—':value+'건'}</strong></article>`,today=m.schedule?.available?m.schedule.today.slice(0,3):[];
+   const cleaning=`<section class="wb-overview-cleaning"><header><h2>청소 운영</h2><small>${clean?'서버 집계 · '+esc(clean.updatedAt.slice(0,16).replace('T',' ')):'집계 대기'}</small></header><div class="wb-overview-cleaning-cards">${metric('신규 접수',status?status.received+status.reviewing+status.quote_pending+status.approval_pending:null)}${metric('진행 중',status?status.scheduled+status.in_progress:null)}${metric('검토 대기',status?status.review_pending+status.revision_requested:null)}${metric('완료',status?status.completed:null)}</div><div class="wb-overview-cleaning-total"><span>전체 주문</span><b>${clean?clean.total+'건':'집계 대기'}</b><span>기한 초과 ${clean?clean.overdue+'건':'—'}</span></div></section>`;
+   const agenda=`<section class="wb-overview-agenda"><header><h2>오늘 일정</h2><small>${m.schedule?.available?today.length+'건 표시':'연결 확인 필요'}</small></header>${m.schedule?.available?today.map(item=>`<article><time>${esc(item.time)}</time><b>${esc(item.title)}</b><span>${esc(item.owner)}</span></article>`).join('')||'<p>오늘 등록된 일정이 없습니다.</p>':'<p>일정 자료를 확인할 수 없습니다.</p>'}</section>`;
+   const trend=m.portfolio.weeklyDone,max=Math.max(1,...trend.map(item=>item.count)),chart=`<section class="wb-overview-trend"><h2>주간 검수 완료 업무</h2><div>${trend.map(item=>`<article><i style="height:${Math.max(5,item.count/max*100)}%"></i><small>${esc(item.label)}</small><b>${item.count}</b></article>`).join('')}</div></section>`;
+   return `<div class="wb-executive-overview"><section class="wb-overview-roadmap"><h2 class="wb-overview-title">프로젝트 로드맵</h2>${scene(m,'roadmap',page,notice,clock,zoom,dataDate).replace('입력 진도 평균','전체 진행률')}</section><div class="wb-overview-bottom">${cleaning}${agenda}${chart}</div></div>`;
+  }
   if(key==='strategy'){
    const strategy=m.strategy;if(!strategy)return '<div class="wb-empty">게시된 회사 방향이 없습니다.</div>';
    const unit={count:'건',percent:'%',krw:'원',day:'일',milestone:''};
@@ -115,7 +131,7 @@
   }
   if(key==='portfolio')return `<div class="wb-portfolio-bars">${m.portfolio.projects.slice(page*6,page*6+6).map(item=>`<div><span>${esc(item.name)}<small>${esc(item.owner||'담당자 미정')} · 남은 업무 ${item.open}건</small></span><progress max="100" value="${item.progress}" aria-label="${esc(item.name)} 입력 진도 ${item.progress}%"></progress><strong>${item.progress}%<small>입력 진도</small></strong><div class="wb-portfolio-review"><strong>${item.reviewedTotal?`${Math.round(item.reviewedDone/item.reviewedTotal*100)}%`:'집계 대기'}</strong><small>업무 검수 ${item.reviewedTotal?`${item.reviewedDone}/${item.reviewedTotal}건`:'집계 대기'}</small></div></div>`).join('')||'<p class="wb-empty">등록된 프로젝트가 없습니다.</p>'}</div>`;
   if(key==='weeklyTrend'){const max=Math.max(1,...m.portfolio.weeklyDone.map(item=>item.count));const weekly=m.weeklyReports;return `<div class="wb-weekly-chart">${m.portfolio.weeklyDone.map(item=>`<div><i style="height:${Math.max(5,item.count/max*100)}%"><b>${item.count}</b></i><span>${esc(item.label)}</span></div>`).join('')}</div><p>최근 5주간 검수 완료 업무 건수${m.portfolio.unattributedDone?` · 완료 시각 확인 필요 ${m.portfolio.unattributedDone}건`:''}</p><p>승인된 프로젝트 주간 보고 · ${weekly?.available?`${weekly.approvedReports}건 · 업무 ${weekly.approvedDone}/${weekly.approvedTotal}건`:'집계 대기'}</p>`;}
-  if(key==='health'){const h=m.portfolio.healthCounts;return `<div class="wb-health-grid">${[['정상 진행',h.normal,'normal'],['확인 필요',h.check,'check'],['기한 위험',h.risk,'risk'],['완료',h.done,'done']].map(item=>`<article class="health-${item[2]}"><span>${item[0]}</span><strong>${item[1]}</strong><small>프로젝트</small></article>`).join('')}</div>`;}
+  if(key==='health'){const h=m.portfolio.healthCounts,clean=m.cleaningOperations;return `<div class="wb-health-grid">${[['정상 진행',h.normal,'normal'],['확인 필요',h.check,'check'],['기한 위험',h.risk,'risk'],['완료',h.done,'done']].map(item=>`<article class="health-${item[2]}"><span>${item[0]}</span><strong>${item[1]}</strong><small>프로젝트</small></article>`).join('')}</div><section class="wb-cleaning-health"><b>클리닝 주문 현황</b>${clean?`<span>진행 중 <strong>${clean.open}</strong>건</span><span>완료 <strong>${clean.completed}</strong>건</span><span>기한 초과 <strong>${clean.overdue}</strong>건</span><small>서버 집계 · ${esc(clean.updatedAt.slice(0,16).replace('T',' '))}</small>`:'<span>서버 집계 준비 중</span>'}</section>`;}
   if(key==='milestones')return `<div class="wb-milestone-list">${m.portfolio.milestones.map(item=>`<article><strong>${item.daysLeft<0?'D+'+Math.abs(item.daysLeft):item.daysLeft===0?'D-DAY':'D-'+item.daysLeft}</strong><div><b>${esc(item.projectName)}</b><span>${esc(item.title)} · ${esc(item.owner)}</span></div><time>${esc(item.dueDate)}</time></article>`).join('')||'<p class="wb-empty">7일 안에 마감할 업무가 없습니다.</p>'}</div>`;
   if(key==='scheduleToday'||key==='scheduleWeek'){
    if(!m.schedule?.available)return '<div class="wb-empty">일정을 확인할 수 없습니다. 연결 상태를 확인해 주세요.</div>';
@@ -141,7 +157,7 @@
   let closed=false,busy=false,model=null,last='',error='',index=0,page=0,paused=false,tick=0,notice='',zoom='week',displayedKey='';
   let dataDate='',dataLoadedAt=0;
   const storageKey='bring.wallboard.playlist.v1';
-  const defaultDurations={roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30,strategy:30,companyRevenue:30};
+  const defaultDurations={overview:45,roadmap:40,portfolio:25,weeklyTrend:20,health:20,milestones:25,scheduleToday:30,scheduleWeek:30,people:25,issues:20,notice:30,strategy:30,companyRevenue:30};
   let settings=scenes.map(([key])=>({key,enabled:true,seconds:defaultDurations[key]})),storageError='';
   const duration=v=>Math.min(120,Math.max(10,Math.round(Number(v)||30)));
   try{
@@ -165,7 +181,7 @@
   function edit(){editor.innerHTML=`<summary>화면 편성 · 이 컴퓨터에만 저장</summary><div class="wb-playlist-rows">${settings.map((s,i)=>`<div class="wb-playlist-row"><label><input type="checkbox" data-wb-enabled="${s.key}" ${s.enabled?'checked':''}>${scenes.find(x=>x[0]===s.key)[1]}</label><label>노출 시간 <input type="number" min="10" max="120" value="${s.seconds}" data-wb-duration="${s.key}"> 초</label><button type="button" class="secondary-button" data-wb-up="${s.key}" ${i===0?'disabled':''} aria-label="${scenes.find(x=>x[0]===s.key)[1]} 앞으로 이동">위로</button></div>`).join('')}</div><p>10~120초 · 공지 문구는 저장하지 않습니다.</p>`;}
   edit();
   function draw(){if(closed)return;const item=current();displayedKey=item?.key||'';zoomControls.hidden=item?.key!=='roadmap';zoomControls.querySelectorAll('[data-wb-zoom]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.wbZoom===zoom)));stage.querySelector('h1').textContent=item?scenes.find(x=>x[0]===item.key)[1]+(item.key==='roadmap'?` · ${zoom==='day'?'8일 상세':'8주 요약'}`:''):'화면 편성';stage.querySelector('time').textContent=new Date().toLocaleString('ko-KR');content.innerHTML=item?scene(model,item.key,page,notice,new Date().toTimeString().slice(0,5),zoom,dataDate):'<div class="wb-empty">표시할 화면을 선택해 주세요.</div>';stage.querySelector('footer').textContent=`${storageError?storageError+' · ':''}${error?'연결 확인 필요 · ':''}${last?'마지막 성공 갱신 '+last:busy?'불러오는 중':'갱신 기록 없음'} · ${paused?'화면 고정':'자동 순환'} · 로컬 미리보기`;}
-  function pageCount(){const key=current()?.key;if(key==='strategy')return Math.max(1,Math.ceil((model?.strategy?.organization.length||0)/6),Math.ceil((model?.strategy?.goals.length||0)/3));const count=key==='roadmap'?(model?.roadmap?.lanes.length||0)*2:key==='people'?model?.people.length:key==='portfolio'?model?.portfolio?.projects.length:key==='scheduleToday'?model?.schedule?.today.length:key==='scheduleWeek'?model?.schedule?.week.length:0;return Math.max(1,Math.ceil((count||0)/6));}
+  function pageCount(){const key=current()?.key;if(key==='strategy')return Math.max(1,Math.ceil((model?.strategy?.organization.length||0)/6),Math.ceil((model?.strategy?.goals.length||0)/3));if(key==='overview')return Math.max(1,Math.ceil((model?.roadmap?.lanes.length||0)/3));const count=key==='roadmap'?(model?.roadmap?.lanes.length||0)*2:key==='people'?model?.people.length:key==='portfolio'?model?.portfolio?.projects.length:key==='scheduleToday'?model?.schedule?.today.length:key==='scheduleWeek'?model?.schedule?.week.length:0;return Math.max(1,Math.ceil((count||0)/6));}
   async function refresh(){if(closed||busy||!isActive())return;busy=true;draw();try{const data=await load();if(closed||!isActive())return;const now=new Date(),today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');model=project(data,today);dataDate=today;dataLoadedAt=Date.now();last=now.toLocaleTimeString('ko-KR');error='';index=Math.min(index,Math.max(0,playlist().length-1));page=Math.min(page,pageCount()-1);}catch(_){if(!closed)error='조회 실패';}finally{busy=false;if(!closed)draw();}}
   function next(delta){const list=playlist();if(!list.length){draw();return;}if(delta>0&&page+1<pageCount())page++;else if(delta<0&&page>0)page--;else{index=(index+delta+list.length)%list.length;page=delta<0?pageCount()-1:0;}tick=0;draw();}
   function configure(e){const up=e.target.closest('[data-wb-up]');if(!up)return;const i=settings.findIndex(s=>s.key===up.dataset.wbUp);if(i>0){[settings[i-1],settings[i]]=[settings[i],settings[i-1]];index=0;page=0;tick=0;save();edit();draw();}}
@@ -179,5 +195,5 @@
   void refresh();return dispose;
  }
  function strategyCurrent(strategy,instant=new Date()){return !!strategy&&strategy.year===new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric'}).format(instant);}
- return {project,schedule,scene,mount,roadmapView,strategyCurrent};
+ return {project,schedule,scene,mount,roadmapView,strategyCurrent,cleaningOperations};
 });
