@@ -30,9 +30,21 @@ for (const [name, variable, selector, next] of [
   }
   test(`${name} remains usable after editor closes`, () => {
     let renders=0;
-    const state={scope:'mine',projectId:'original'};
+    const state={scope:'mine',projectId:'original',admin:true};
     vm.runInNewContext(`(function(){${handler}})()`,{workOrderState:state,event:{target:{closest:()=>({dataset:{woScope:'all',woProject:'other'}})}},showToast:()=>{},renderWorkOrders:()=>renders++});
     assert.equal(renders,1);
     assert.equal(name==='person filter'?state.scope:state.projectId,name==='person filter'?'all':'other');
   });
 }
+
+test('staff cannot switch the work order person filter to all', () => {
+  const start = app.indexOf('    const woScope = event.target.closest');
+  const end = app.indexOf('    const woAssignee = event.target.closest', start);
+  const state = { scope: 'mine', admin: false };
+  vm.runInNewContext(`(function(){${app.slice(start, end)}})()`, {
+    workOrderState: state,
+    event: { target: { closest: () => ({ dataset: { woScope: 'all' } }) } },
+    showToast: () => {}, renderWorkOrders: () => {},
+  });
+  assert.equal(state.scope, 'mine');
+});

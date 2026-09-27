@@ -110,6 +110,19 @@ test('projection excludes private text and deduplicates identifiers',()=>{
  const before=JSON.stringify(input),m=C.project(input,'2026-09-19');
  assert.equal(m.total,1);assert.equal(m.counts.done,1);assert.ok(!JSON.stringify(m).includes('secret-phone'));assert.equal(JSON.stringify(input),before);
 });
+test('TV first screen and person screen show reviewed work as counts and percentage',()=>{
+ const m=C.project({orders:[
+  {id:'a',assigneeUid:'u1',assigneeName:'김현진',status:'done'},
+  {id:'b',assigneeUid:'u1',assigneeName:'김현진',status:'doing',dueDate:'2026-09-27'},
+ ]},'2026-09-28');
+ const overview=C.scene(m,'overview');
+ const people=C.scene(m,'people');
+ assert.match(overview,/업무 검수 완료/u);
+ assert.match(overview,/1\/2건/u);
+ assert.match(overview,/기한 초과 <b>1건/u);
+ assert.match(people,/검수 완료 50%/u);
+ assert.match(people,/남은 업무 1건/u);
+});
 test('project names containing customer contact details are masked in the shared TV model',()=>{
  const model=C.project({orders:[],projects:[{id:'p1',name:'홍길동 010-1234-5678',status:'active',progress:30}]},'2026-09-24');
  assert.equal(model.portfolio.projects[0].name,'프로젝트명 확인 필요');

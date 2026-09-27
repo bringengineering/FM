@@ -1,6 +1,6 @@
 {
   "name": "bring-crm-desktop",
-  "version": "1.8.0",
+  "version": "1.62.1",
   "description": "BRING Engineering 고객·상담·영업 공용 데스크톱 CRM",
   "main": "src/main.js",
   "author": "BRING Engineering",
@@ -9,6 +9,7 @@
   "driveOAuthClientId": "",
   "scripts": {
     "start": "electron .",
+    "mcp:crm": "node src/crm-mcp-server.js",
     "tv": "electron src/wallboard-tv-main.js",
     "build:tv": "set BRING_TV_NO_PUBLISH=1&& electron-builder --config electron-builder.tv.cjs --win nsis --x64 --publish never && node scripts/tv-release/write-update-manifest.js --dist dist-tv",
     "verify:tv-release": "node scripts/tv-release/verify-assets.js",

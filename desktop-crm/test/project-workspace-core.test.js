@@ -24,6 +24,20 @@ test('실제 프로젝트 필터는 사업영역과 미분류를 구분하며 �
   assert.deepEqual(projects.map(item => item.id), ['pj-care', 'real-1', 'real-2']);
 });
 
+test('담당자별 수치는 최신 업무만 세고 검수 완료와 지연을 구분한다', () => {
+  const people = Workspace.peopleSummary({ today: '2026-09-28', members: [
+    { uid: 'u1', displayName: '현진' }, { uid: 'u2', displayName: '정수' },
+  ], orders: [
+    { id: 'a', assigneeUid: 'u1', status: 'assigned', dueDate: '2026-09-29', hours: 2, updatedAt: '2026-09-28T01:00:00Z' },
+    { id: 'a', assigneeUid: 'u1', status: 'done', dueDate: '2026-09-29', hours: 2, updatedAt: '2026-09-28T02:00:00Z' },
+    { id: 'b', assigneeUid: 'u1', status: 'doing', dueDate: '2026-09-27', hours: 4 },
+    { id: 'c', assigneeUid: 'u2', status: 'submitted', dueDate: '2026-09-30', hours: 3 },
+  ] });
+  assert.deepEqual(people.map(item => [item.name, item.total, item.done, item.open, item.overdue, item.review, item.hours]), [
+    ['현진', 2, 1, 1, 1, 0, 6], ['정수', 1, 0, 1, 0, 1, 3],
+  ]);
+});
+
 test('분류 필요 업무는 미연결·기존 사업영역·없는 프로젝트 이유를 구분한다', () => {
   const projects = [{ id: 'pj-crm' }, { id: 'project-1' }];
   assert.equal(Workspace.classificationLabel({ projectId: '' }, projects), '프로젝트 미연결');

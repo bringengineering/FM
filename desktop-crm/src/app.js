@@ -2322,6 +2322,11 @@
       : stats.todayContacts
         ? `오늘 연락할 고객이 ${stats.todayContacts}명 있습니다.`
         : "오늘 예정된 연락은 없습니다. 여유 있게 다음 업무를 준비하세요.";
+    const workspaceCore = window.BringProjectWorkspaceCore;
+    const workReady = workOrderState.loaded && !workOrderState.loading && !workOrderState.error && workspaceCore?.health;
+    const dashboardOrders = workOrderState.admin ? workOrderState.orders : (workOrderState.orders || []).filter(item => item.assigneeUid === workOrderState.uid);
+    const workHealth = workReady ? workspaceCore.health({ orders: dashboardOrders, today }) : null;
+    const workSummary = workHealth ? `<div class="kpi-grid">${kpi("업무 검수 완료", `${workHealth.done}/${workHealth.total}건`, "검수 완료 건수 / 전체 업무", "#3182f6")}${kpi("진행 중 업무", workHealth.total - workHealth.done, "완료 전 업무", "#5cc9d8")}${kpi("기한 초과 업무", workHealth.overdue, "완료 전 · 마감일 경과", "#f47d86", workHealth.overdue ? "alert" : "")}${kpi("검수 대기", workHealth.review, "제출됨 · 승인 전", "#8b7de8")}</div>` : `<p class="project-workspace-empty">${workOrderState.error ? "업무 조회 오류 · 업무지시에서 다시 확인해 주세요." : "업무지시를 불러오는 중입니다…"}</p>`;
     main.innerHTML = `
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
@@ -2333,6 +2338,7 @@
         ${kpi("오늘 연락할 고객", stats.todayContacts, "오늘 연락 예정", "#5cc9d8", stats.todayContacts ? "good" : "")}
         ${kpi("늦어진 연락", stats.overdueContacts, "우선 확인 필요", "#f47d86", stats.overdueContacts ? "alert" : "")}
       </div>
+      <section class="project-workspace-dashboard-summary" aria-label="${workOrderState.admin ? "팀 전체" : "내"} 업무지시 현황"><div class="panel-head"><div><h3>${workOrderState.admin ? "팀 전체" : "내"} 업무지시 현황</h3><p>CRM 원본 업무 · 검수 완료와 입력 진도는 구분합니다.</p></div><button type="button" class="text-button" data-view="workOrders">업무지시 보기 →</button></div>${workSummary}</section>
       ${operationsCheckMarkup()}
       <div class="dashboard-grid">
         <section class="panel">
@@ -4695,7 +4701,7 @@
       || companyStrategyState.editing);
   }
   function refreshOnEnter(view) {
-    if (["weeklyReports", "projectRoadmap", "workOrders", "companyGoals"].includes(view)
+    if (["dashboard", "weeklyReports", "projectRoadmap", "workOrders", "companyGoals"].includes(view)
       && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
     if (view === "companyGoals" && (!companyStrategyState.loaded || Date.now()-companyStrategyState.refreshedAt>=30*1000)) void loadCompanyStrategy();
     if (view === "cleaningCenter") {
@@ -4715,7 +4721,7 @@
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
     orders: [], projects: [], members: [], capacity: [], objectives: [], objectivesAvailable: false, admin: false, canWork: false, uid: "",
-    projectId: "", projectDetailTab: "overview", portfolioFilter: "__all", projectEditing: null, capacityEditing: null, seeding: false,
+    projectId: "", projectDetailTab: "overview", portfolioFilter: "__all", assigneeFilter: "__all", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "", refreshedAt: 0,
@@ -4986,9 +4992,10 @@
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
       const nextWorkOrderUid = String((data && data.uid) || "");
-      if (workOrderState.uid !== nextWorkOrderUid) workOrderState.scope = workOrderState.admin ? "all" : "mine";
+      if (workOrderState.uid !== nextWorkOrderUid) { workOrderState.scope = workOrderState.admin ? "all" : "mine"; workOrderState.assigneeFilter = "__all"; }
       workOrderState.uid = String((data && data.uid) || "");
-      if (!workOrderState.admin) workOrderState.scope = "mine";
+      if (!workOrderState.admin) { workOrderState.scope = "mine"; workOrderState.assigneeFilter = "__all"; }
+      if (workOrderState.assigneeFilter !== "__all" && !workOrderState.members.some(item => item.uid === workOrderState.assigneeFilter)) workOrderState.assigneeFilter = "__all";
       workOrderState.loaded = true;
       workOrderState.refreshedAt = Date.now();
     } catch (error) {
@@ -4997,6 +5004,7 @@
       workOrderState.loading = false;
       updateWorkOrderBadge();
       if (currentView === "workOrders") renderWorkOrders();
+      else if (currentView === "dashboard") renderDashboard();
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
       else if (currentView === "weeklyReports") renderWeeklyReports();
       else if (currentView === "companyGoals") renderCompanyGoals();
@@ -5467,9 +5475,10 @@
     const orders = selected === "__all" ? workOrderState.orders : selected === "__none"
       ? workOrderState.orders.filter(item => !item.projectId)
       : P.ordersOf(workOrderState.orders, selected);
+    const selectedAssignee = workOrderState.admin && workOrderState.scope === "all" ? workOrderState.assigneeFilter : "__all";
     let scoped = workOrderState.scope === "mine"
       ? W.forAssignee(orders, workOrderState.uid)
-      : orders;
+      : selectedAssignee === "__all" ? orders : orders.filter(item => item.assigneeUid === selectedAssignee);
     // The separate server projection keeps raw validation inputs and notes.
     // Do not fall back to normalized card records when it is unavailable.
     const projectReportCore = window.BringProjectWeeklyReportCore;
@@ -5480,7 +5489,7 @@
         : (workOrderState.performanceOrders || []).filter(item => item && String(item.projectId || "").trim() === selected);
     const performanceScoped = workOrderState.scope === "mine"
       ? performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === String(workOrderState.uid || "").trim())
-      : performanceProjectOrders;
+      : selectedAssignee === "__all" ? performanceProjectOrders : performanceProjectOrders.filter(item => String(item.assigneeUid || "").trim() === selectedAssignee);
     const reportSourceOrders = performanceScoped;
     const period = workOrderState.performancePeriod || "all";
     const periodCore = window.BringWeeklyPerformanceCore;
@@ -5508,9 +5517,13 @@
       </button>`).join("");
 
     const todayActions = workspace && workspaceCore.todayQueue
-      ? workspaceCore.todayQueue({ orders: workOrderState.orders, uid: workOrderState.uid, admin: workOrderState.admin, today }) : [];
+      ? workspaceCore.todayQueue({ orders: workOrderState.orders, uid: workOrderState.uid, admin: workOrderState.admin, today }).filter(item => selectedAssignee === "__all" || item.order.assigneeUid === selectedAssignee) : [];
+    const workspaceHealthOrders = workOrderState.scope === "mine" ? workOrderState.performanceOrders.filter(item => item.assigneeUid === workOrderState.uid)
+      : selectedAssignee === "__all" ? workOrderState.performanceOrders : workOrderState.performanceOrders.filter(item => item.assigneeUid === selectedAssignee);
     const workspaceHealth = workspace && workspaceCore.health && workOrderState.performanceAvailable
-      ? workspaceCore.health({ orders: workOrderState.performanceOrders, today }) : null;
+      ? workspaceCore.health({ orders: workspaceHealthOrders, today }) : null;
+    const personMetrics = workspace && workspaceCore.peopleSummary && workOrderState.loaded && !workOrderState.error
+      ? workspaceCore.peopleSummary({ orders: workOrderState.orders, members: workOrderState.members, today }) : null;
     const healthReady = Boolean(workOrderState.performanceAvailable && workspaceHealth && workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
     const classificationReady = Boolean(workOrderState.loaded && !workOrderState.loading && !workOrderState.error);
     const healthValue = value => !healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${value}건` : "집계 대기";
@@ -5532,11 +5545,12 @@
       ${projectDetailTab === "risks" ? `<div class="project-workspace-risk"><h3>확인할 일 ${projectRiskQueue.length}건</h3><p>기한 초과·보완 요청·검수 대기 업무를 원본에서 확인합니다. 별도 결정 요청 기록이 없는 경우 임의로 만들지 않습니다.</p>${projectRiskQueue.length ? `<div class="project-workspace-action-list">${projectRiskQueue.map(item => `<button type="button" data-wo-open-card="${esc(item.id)}"><span class="project-workspace-action-kind">${esc(item.action)}</span><strong>${esc(item.order.title || "제목 없는 업무")}</strong><small>${esc(item.order.dueDate || "날짜 미정")}</small></button>`).join("")}</div>` : `<p>현재 조회 범위에 확인할 업무가 없습니다.</p>`}</div>` : ""}
     </section>` : "";
     const projectHome = workspace && selected === "__all" ? `<div class="project-workspace-home">
-      <section class="project-workspace-health" aria-label="전체 업무지시 현황 · 건수 기준">
-        <div><span>업무 검수 완료</span><strong>${!healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${workspaceHealth.done}/${workspaceHealth.total}건` : "집계 대기"}</strong><small>전체 업무지시 · 건수 기준</small></div>
+      <section class="project-workspace-health" aria-label="${workOrderState.scope === "mine" ? "내" : selectedAssignee === "__all" ? "전체" : "선택 담당자"} 업무지시 현황 · 건수 기준">
+        <div><span>업무 검수 완료</span><strong>${!healthReady ? "조회 확인 필요" : workspaceHealth.total ? `${workspaceHealth.done}/${workspaceHealth.total}건` : "집계 대기"}</strong><small>${workOrderState.scope === "mine" ? "내" : selectedAssignee === "__all" ? "전체" : "선택 담당자"} 업무지시 · 건수 기준</small></div>
         <div><span>기한 초과</span><strong>${healthValue(workspaceHealth && workspaceHealth.overdue)}</strong><small>검수 미완료 · 마감일 경과</small></div>
         <div><span>검수 대기</span><strong>${healthValue(workspaceHealth && workspaceHealth.review)}</strong><small>제출됨 · 승인 전</small></div>
       </section>
+      <section class="project-workspace-people" aria-label="담당자별 업무 수치"><header><div><span>CRM 원본 · 건수 기준</span><h3>${workOrderState.admin ? "담당자별 업무" : "내 업무"}</h3></div></header>${personMetrics ? `<div class="project-workspace-people-grid">${personMetrics.filter(person => person.total && (workOrderState.admin || person.uid === workOrderState.uid)).map(person => `<article><strong>${esc(person.name)}</strong><span>검수 완료 ${person.done}/${person.total}건</span><small>남은 업무 ${person.open}건 · 기한 초과 ${person.overdue}건 · 검수 대기 ${person.review}건</small><small>예상 소요 ${person.hours}시간 · 7일 내 마감 ${person.dueSoon}건</small>${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-assignee="${esc(person.uid)}">이 담당자 업무 보기</button>` : ""}</article>`).join("") || `<p>배정된 업무가 없습니다.</p>`}</div>` : `<p>업무 원본 조회 확인 필요</p>`}</section>
       <section class="project-workspace-goals" aria-label="이번 분기 목표">
         <header><div><span>기존 목표 원본 · 읽기 전용</span><h3>이번 분기 목표</h3></div><small>${strategy ? esc(strategy.quarter) : "조회 확인 필요"}</small></header>
         ${strategy ? strategy.goals.length ? strategy.goals.map(goal => `<article><div><strong>${esc(goal.title)}</strong><small>${goal.projectIds.length ? `연결 프로젝트 ${goal.projectIds.length}개` : "연결 프로젝트 확인 필요"}</small></div><div class="project-workspace-goal-results">${goal.keyResults.length ? goal.keyResults.map(result => `<span>${esc(result.title)} · ${esc(strategyMetric(result))}</span>`).join("") : "핵심결과 수치 확인 필요"}</div>${goal.projectIds.map(id => { const linked = workspace.projects.find(item => item.id === id); return `<button type="button" class="mini-button" data-wo-project="${esc(id)}">${esc(linked ? linked.name : id)} 열기</button>`; }).join("")}</article>`).join("") : `<p>진행 중인 현재 분기 목표가 없습니다. 연간·반기 목표는 승인된 원본을 연결한 뒤 표시합니다.</p>` : `<p>목표 조회 확인 필요 · 실패한 조회를 0건으로 표시하지 않습니다.</p>`}
@@ -5571,8 +5585,9 @@
         <div class="operations-actions">
           <div class="wo-scope">
             <button type="button" class="wo-scope-tab${workOrderState.scope === "mine" ? " is-active" : ""}" data-wo-scope="mine">내 것만</button>
-            <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
+            ${workOrderState.admin ? `<button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>` : ""}
           </div>
+          ${workOrderState.admin ? `<label class="wo-assignee-filter"><span>담당자별 보기</span><select data-wo-assignee-filter ${periodEditing ? "disabled" : ""}><option value="__all">전체 담당자</option>${workOrderState.members.map(member => `<option value="${esc(member.uid)}"${selectedAssignee === member.uid ? " selected" : ""}>${esc(member.displayName || member.uid)}</option>`).join("")}</select></label>` : ""}
           ${refreshButton(workOrderState, "workOrders")}
           ${(workOrderState.admin || workOrderState.canWork) && typeof api.exportWorkOutcomeDocument === "function" ? `<button type="button" class="mini-button" data-wo-report-download>성과보고서 Word·PPT</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-import>지시서 붙여넣기</button>` : ""}
@@ -13014,7 +13029,17 @@
     const woScope = event.target.closest("[data-wo-scope]");
     if (woScope) {
       if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { showToast("작성 중인 내용을 저장하거나 편집을 종료한 뒤 조회 범위를 변경해 주세요."); return; }
-      workOrderState.scope = woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return;
+      workOrderState.scope = workOrderState.admin && woScope.dataset.woScope === "all" ? "all" : "mine"; renderWorkOrders(); return;
+    }
+    const woAssignee = event.target.closest("[data-wo-assignee]");
+    if (woAssignee) {
+      if (!workOrderState.admin || workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) return;
+      const uid = String(woAssignee.dataset.woAssignee || "");
+      if (!workOrderState.members.some(item => item.uid === uid)) return;
+      workOrderState.scope = "all";
+      workOrderState.assigneeFilter = uid;
+      renderWorkOrders();
+      return;
     }
     const performancePeriod = event.target.closest("[data-performance-period]");
     if (performancePeriod) {
@@ -14896,6 +14921,14 @@
       const next = String(event.target.value || "__all");
       const P = projectCore();
       workOrderState.portfolioFilter = next === "__all" || next === "__unclassified" || P && P.PORTFOLIOS.some(item => item.id === next) ? next : "__all";
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.matches("[data-wo-assignee-filter]")) {
+      if (!workOrderState.admin || workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) { renderWorkOrders(); return; }
+      const uid = String(event.target.value || "__all");
+      workOrderState.scope = "all";
+      workOrderState.assigneeFilter = uid === "__all" || workOrderState.members.some(item => item.uid === uid) ? uid : "__all";
       renderWorkOrders();
       return;
     }

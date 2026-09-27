@@ -48,6 +48,17 @@ test('관리자 행동 목록은 팀 전체 업무임을 제목에 밝힌다', (
   assert.match(render, /workOrderState\.admin \? "팀 전체의 다음 행동" : "내 업무의 다음 행동"/u);
 });
 
+test('관리자는 담당자별 업무를 고르고 직원은 내 업무만 보며 상단 대시보드도 원본 업무를 읽는다', () => {
+  const source = read('app.js');
+  assert.match(source, /assigneeFilter: "__all"/u);
+  assert.match(source, /data-wo-assignee-filter/u);
+  assert.match(source, /workspaceCore\.peopleSummary/u);
+  assert.match(source, /workOrderState\.admin \? `<button type="button" class="wo-scope-tab/u);
+  assert.match(source, /if \(!workOrderState\.admin\) \{ workOrderState\.scope = "mine"/u);
+  assert.match(source, /if \(currentView === "dashboard"\) renderDashboard\(\)/u);
+  assert.match(source, /project-workspace-dashboard-summary/u);
+});
+
 test('실제 프로젝트에는 사업영역 또는 분류 필요를 표시하고 원래 프로젝트 링크를 유지한다', () => {
   const source = read('app.js');
   const render = source.slice(source.indexOf('function renderWorkOrders()'), source.indexOf('function dueSoonBoard('));
@@ -66,7 +77,7 @@ test('프로젝트 목록은 사업영역별·미분류 필터를 쓰되 전체 
   assert.match(render, /P\.PORTFOLIOS\.map/u);
   assert.match(render, /__unclassified/u);
   assert.match(render, /data-wo-project="\$\{esc\(item\.id\)\}"/u);
-  assert.match(render, /workspaceCore\.health\(\{ orders: workOrderState\.performanceOrders, today \}\)/u);
+  assert.match(render, /workspaceCore\.health\(\{ orders: workspaceHealthOrders, today \}\)/u);
   assert.match(source, /event\.target\.matches\("\[data-wo-portfolio-filter\]"\)/u);
   assert.match(source, /workOrderState\.portfolioFilter =/u);
 });
@@ -178,7 +189,7 @@ test('프로젝트 홈은 서버에서 읽은 업무의 검수·지연·대기�
   const end = source.indexOf('function dueSoonBoard(', start);
   const render = source.slice(start, end);
   assert.match(render, /workspaceCore\.health/u);
-  assert.match(render, /workspaceCore\.health\(\{ orders: workOrderState\.performanceOrders/u);
+  assert.match(render, /workspaceCore\.health\(\{ orders: workspaceHealthOrders/u);
   assert.match(render, /healthReady = Boolean\(workOrderState\.performanceAvailable/u);
   assert.match(render, /workspaceCore\.completion\(workOrderState\.performanceOrders, item\.id\)/u);
   assert.match(render, /업무 검수 완료/u);

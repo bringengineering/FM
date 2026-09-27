@@ -43,6 +43,7 @@ const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard, saveWeeklyReportAndSignalWallboard } = require("./wallboard-mutation-signal");
+const { createCrmCommandBridge } = require("./crm-command-bridge");
 const { createCleaningOrderIpcHandlers } = require("./cleaning-order-ipc");
 const { requestWallboardRefresh } = require("./wallboard-refresh-client");
 const { createWallboardRefreshQueue } = require("./wallboard-refresh-queue");
@@ -145,6 +146,7 @@ let fieldAuthenticationRequired = false;
 let crmAuthWindow = null;
 let crmAuthenticationRequestCount = 0;
 let remoteClient = null;
+let crmCommandBridge = null;
 let wallboardPublisher = null;
 let wallboardPublisherUid = "";
 let wallboardLiveSync = null;
@@ -9306,6 +9308,28 @@ app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("kr.co.bringengineering.crm");
   await cleanupStaleOfficeAttachmentCaches();
   await initializeRemote();
+  if (!localTestMode && !authPreview && !passwordPreview) {
+    crmCommandBridge = createCrmCommandBridge({
+      userDataPath: app.getPath("userData"),
+      getAuthState: () => remoteClient ? remoteClient.authState() : { user: null },
+      loadWorkOrders: () => remoteClient ? remoteClient.loadWorkOrders() : null,
+      refreshWallboard: async () => {
+        await wallboardRefreshQueue.notify();
+        await ensureWallboardLiveSync().reconcile();
+        return { ...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status() };
+      },
+      signalWallboard: signalWallboardAfterSave,
+      saveProject: input => saveAndSignalWallboard(() => {
+        if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
+        return remoteClient.saveProject(input);
+      }, signalWallboardAfterSave),
+      saveWorkOrder: input => saveAndSignalWallboard(() => {
+        if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
+        return remoteClient.saveWorkOrder(input);
+      }, signalWallboardAfterSave),
+    });
+    await crmCommandBridge.start();
+  }
   await restoreDriveSession();
   Menu.setApplicationMenu(buildMenu());
   await createWindow();
@@ -9323,6 +9347,7 @@ app.on("before-quit", event => {
   }
   if (!applicationResourcesClosed && remoteClient) {
     applicationResourcesClosed = true;
+    void crmCommandBridge?.close();
     remoteClient.close();
   }
   WindowsKoreanInput.stop();

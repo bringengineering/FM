@@ -49,6 +49,11 @@
 .wb-overview-agenda>article small{font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb-overview-trend small{font-size:11px}
 .wb-overview-trend b{font-size:12px}
+.wb-overview-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.wb-overview-heading .wb-overview-title{white-space:nowrap}
+.wb-overview-work-stats{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0 0 8px;font-size:14px}
+.wb-overview-work-stats span{display:inline-flex;gap:5px;padding:5px 9px;border-radius:8px;background:#eaf3ff;color:#24496b;white-space:nowrap}
+.wb-overview-work-stats b{font-variant-numeric:tabular-nums}
 @media(max-height:800px){.wb-stage:fullscreen{padding:12px 18px;gap:9px}.wb-stage:fullscreen>header{padding-bottom:7px}.wb-stage:fullscreen h1{font-size:27px;margin:3px 0}.wb-stage:fullscreen time{font-size:16px}.wb-stage:fullscreen>footer{font-size:11px;line-height:1.15;margin-top:0}.wb-overview-roadmap .wb-overall-card>.wb-progress-ring{width:48px;height:48px}.wb-overview-roadmap .wb-health-mini span{padding:4px;font-size:10px}.wb-overview-agenda>article{padding:6px 2px;font-size:13px}.wb-overview-agenda>article b{font-size:14px}.wb-overview-agenda>article small{font-size:11px}.wb-overview-bottom{grid-template-rows:minmax(86px,1.15fr) minmax(58px,.85fr);gap:7px}.wb-overview-cleaning,.wb-overview-agenda,.wb-overview-trend{padding:8px}.wb-overview-cleaning h2,.wb-overview-agenda h2,.wb-overview-trend h2{font-size:14px;margin-bottom:4px}.wb-overview-cleaning-cards article{padding:5px}.wb-overview-cleaning-cards span{font-size:9px}.wb-overview-cleaning-cards strong{font-size:16px}.wb-overview-cleaning-total{font-size:9px;margin-top:5px}.wb-overview-agenda>article{padding:4px 2px}.wb-overview-trend small{font-size:9px}.wb-overview-trend b{font-size:10px}}
 
 .wb-manager{--wb-font-title:clamp(30px,2.4vw,40px);--wb-font-section:clamp(22px,1.5vw,28px);--wb-font-body:clamp(18px,1.1vw,22px);--wb-font-small:clamp(14px,.92vw,18px);--wb-font-metric:clamp(34px,3.3vw,60px);font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif}

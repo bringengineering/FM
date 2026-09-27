@@ -1057,6 +1057,19 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-portfolio-filter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;color:#52616F;font-size:12px;font-weight:700}
 .project-workspace-portfolio-filter select{min-width:0;max-width:100%;min-height:40px;padding:8px 32px 8px 10px;border:1px solid #DDE3E8;border-radius:9px;background:#fff;color:#202B36;font:inherit}
 .project-workspace-portfolio-filter select:focus-visible{outline:3px solid #3182F6;outline-offset:2px}
+.project-workspace-dashboard-summary{margin:18px 0;padding:18px;border:1px solid #dce7f2;border-radius:16px;background:#f8fbff}
+.project-workspace-dashboard-summary .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.project-workspace-dashboard-summary .kpi-grid{margin:0}
+.project-workspace-people{padding:18px;border:1px solid #e1e8ef;border-radius:16px;background:#fff}
+.project-workspace-people header{margin-bottom:12px}
+.project-workspace-people header span{font-size:12px;color:#66788a}
+.project-workspace-people header h3{margin:3px 0 0}
+.project-workspace-people-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.project-workspace-people-grid article{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border:1px solid #e1e8ef;border-radius:12px;background:#f8fbff}
+.project-workspace-people-grid article span{font-weight:700}
+.project-workspace-people-grid article small{color:#52616f}
+.wo-assignee-filter{display:flex;align-items:center;gap:7px;color:#52616f;font-size:12px;font-weight:700}
+.wo-assignee-filter select{max-width:190px;min-height:38px;padding:7px;border:1px solid #dde3e8;border-radius:8px;background:#fff;color:#202b36}
 .project-workspace-action-list,.project-workspace-project-list{display:grid;gap:8px}
 .project-workspace-action-list button,.project-workspace-project-list button{display:grid;min-width:0;width:100%;min-height:58px;align-items:center;gap:4px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:11px;background:#fff;color:#202B36;text-align:left;cursor:pointer}
 .project-workspace-action-list button{grid-template-columns:minmax(80px,auto) minmax(0,1fr) auto;gap:10px}

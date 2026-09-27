@@ -118,6 +118,34 @@
     return { done, total: linked.length, percent: Math.round(done / linked.length * 100) };
   }
 
+  function peopleSummary(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    const today = date(source.today);
+    if (!today) return null;
+    const people = new Map(rows(source.members).filter(item => text(item.uid)).map(item => [text(item.uid), {
+      uid: text(item.uid), name: text(item.displayName || item.name || item.uid), total: 0, done: 0,
+      open: 0, overdue: 0, review: 0, dueSoon: 0, hours: 0,
+    }]));
+    const weekEnd = addDays(today, 7);
+    for (const order of uniqueOrders(source.orders)) {
+      const uid = text(order.assigneeUid);
+      if (!uid) continue;
+      if (!people.has(uid)) people.set(uid, { uid, name: text(order.assigneeName || uid), total: 0, done: 0, open: 0, overdue: 0, review: 0, dueSoon: 0, hours: 0 });
+      const person = people.get(uid);
+      person.total += 1;
+      person.hours += Number.isFinite(Number(order.hours)) && Number(order.hours) > 0 ? Number(order.hours) : 0;
+      if (order.status === 'done') person.done += 1;
+      else {
+        person.open += 1;
+        if (order.status === 'submitted') person.review += 1;
+        const due = date(order.dueDate);
+        if (due && due < today) person.overdue += 1;
+        else if (due && due <= weekEnd) person.dueSoon += 1;
+      }
+    }
+    return [...people.values()];
+  }
+
   function health(input) {
     const source = input && typeof input === 'object' ? input : {};
     const today = date(source.today);
@@ -133,5 +161,5 @@
     };
   }
 
-  return Object.freeze({ partitionProjects, filterRealProjects, classificationLabel, mappingPreview, todayQueue, completion, health });
+  return Object.freeze({ partitionProjects, filterRealProjects, classificationLabel, mappingPreview, todayQueue, completion, peopleSummary, health });
 });

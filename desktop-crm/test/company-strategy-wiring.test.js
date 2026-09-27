@@ -76,7 +76,7 @@ test('company goals have a dedicated project-folder screen with approved progres
  assert.match(app,/companyGoals: \[[^\]]*회사 목표·비전/u);
  assert.match(app,/else if \(currentView === "companyGoals"\) renderCompanyGoals\(\)/u);
  assert.match(app,/function renderCompanyGoals\(\)[\s\S]*?renderCompanyStrategy\(\)/u);
- assert.match(app,/\["weeklyReports", "projectRoadmap", "workOrders", "companyGoals"\]/u);
+ assert.match(app,/\["dashboard", "weeklyReports", "projectRoadmap", "workOrders", "companyGoals"\]/u);
  assert.match(app,/companyGoals.*loadCompanyStrategy|loadCompanyStrategy.*companyGoals/u);
 });
 
