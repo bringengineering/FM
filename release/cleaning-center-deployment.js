@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const EXPECTED_PROJECT = "bring-fm";
+const FUNCTION_CODEBASE = "field-platform";
 const EXPECTED_FUNCTIONS = ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"];
 const BASE_BRANCH = "codex/bring-field-platform";
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -42,7 +43,7 @@ function buildCleaningDeploymentPlan(manifest, expectedProjectId) {
     projectId: EXPECTED_PROJECT,
     functionNames: [...EXPECTED_FUNCTIONS],
     firebaseSelectors: [
-      ...EXPECTED_FUNCTIONS.map(name => `functions:${name}`),
+      ...EXPECTED_FUNCTIONS.map(name => `functions:${FUNCTION_CODEBASE}:${name}`),
       "database",
     ],
   };

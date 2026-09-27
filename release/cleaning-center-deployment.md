@@ -17,7 +17,7 @@ From the repository root, first inspect the dry-run plan:
 node release/cleaning-center-deployment.js --project bring-fm
 ```
 
-It must list only `cleaningOrdersApi`, `projectCleaningOrdersToWallboard`, and `database` for `bring-fm`. To apply after the PR is merged:
+It must list only `field-platform:cleaningOrdersApi`, `field-platform:projectCleaningOrdersToWallboard`, and `database` for `bring-fm`. The explicit codebase prefix is required by this repository's multi-codebase Firebase configuration. To apply after the PR is merged:
 
 ```powershell
 node release/cleaning-center-deployment.js --project bring-fm --apply --confirm-project bring-fm

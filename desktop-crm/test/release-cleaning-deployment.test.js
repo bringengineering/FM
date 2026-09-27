@@ -14,8 +14,8 @@ test("cleaning deployment plan allows only the two reviewed bring-fm Functions p
     projectId: "bring-fm",
     functionNames: ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"],
     firebaseSelectors: [
-      "functions:cleaningOrdersApi",
-      "functions:projectCleaningOrdersToWallboard",
+      "functions:field-platform:cleaningOrdersApi",
+      "functions:field-platform:projectCleaningOrdersToWallboard",
       "database",
     ],
   });
@@ -78,7 +78,7 @@ test("cleaning deployment applies only after project confirmation, merged-base, 
     ["firebase", [
       "deploy",
       "--only",
-      "functions:cleaningOrdersApi,functions:projectCleaningOrdersToWallboard,database",
+      "functions:field-platform:cleaningOrdersApi,functions:field-platform:projectCleaningOrdersToWallboard,database",
       "--project",
       "bring-fm",
       "--non-interactive",
