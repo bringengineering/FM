@@ -13,6 +13,11 @@ type FirebaseProjectTarget = {
 type FirebaseTargetManifest = {
   schemaVersion: number;
   primary: FirebaseProjectTarget;
+  cleaningCenterManualDeployment: {
+    projectId: string;
+    functionNames: string[];
+    databaseRules: boolean;
+  };
   retiredLegacy: {
     projectId: string;
     status: "retired";
@@ -81,8 +86,9 @@ function exportBlock(name: string): string {
 }
 
 describe("Firebase function archival manifest", () => {
-  it("archives every index export without exposing a deploy selector", () => {
+  it("archives every unapproved export and keeps the cleaning deployment allowlist exact", () => {
     expect(Object.keys(manifest).sort()).toEqual([
+      "cleaningCenterManualDeployment",
       "crmAutomaticRelease",
       "primary",
       "retiredLegacy",
@@ -102,6 +108,11 @@ describe("Firebase function archival manifest", () => {
     });
 
     expectCompleteFunctionArchive(manifest.primary.archivedFunctionNames);
+    expect(manifest.cleaningCenterManualDeployment).toEqual({
+      projectId: "bring-fm",
+      functionNames: ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"],
+      databaseRules: true,
+    });
     expect(manifest.retiredLegacy.archivedFunctionNames).toEqual(RETIRED_LEGACY_FUNCTION_NAMES);
     expectCompleteFunctionArchive(manifest.retiredLegacy.archivedFunctionNames);
     expect(manifestSource).not.toContain("functions:");
@@ -109,9 +120,11 @@ describe("Firebase function archival manifest", () => {
     expect("functionSelectors" in manifest.retiredLegacy).toBe(false);
 
     const primaryExports = new Set(manifest.primary.archivedFunctionNames);
+    const cleaningExports = new Set(manifest.cleaningCenterManualDeployment.functionNames);
     const retiredExports = new Set(manifest.retiredLegacy.archivedFunctionNames);
     expect([...primaryExports].filter((name) => retiredExports.has(name))).toEqual([]);
-    expect(sortedUnique([...primaryExports, ...retiredExports]))
+    expect([...primaryExports].filter((name) => cleaningExports.has(name))).toEqual([]);
+    expect(sortedUnique([...primaryExports, ...cleaningExports, ...retiredExports]))
       .toEqual(functionExports(indexSource));
   });
 

@@ -137,6 +137,18 @@ function Assert-LocalContract {
     if ($manifest.primary.projectId -ne $ProjectId -or $manifest.primary.databaseRules -ne $true) {
         throw "The primary target must remain '$ProjectId' and own Database Rules."
     }
+    $cleaningDeployment = $manifest.cleaningCenterManualDeployment
+    $expectedCleaningFunctions = @("cleaningOrdersApi", "projectCleaningOrdersToWallboard")
+    if ($null -eq $cleaningDeployment -or $cleaningDeployment.projectId -ne $ProjectId -or $cleaningDeployment.databaseRules -ne $true) {
+        throw "The Cleaning Center manual deployment target must remain on '$ProjectId' and include Database Rules."
+    }
+    $cleaningFunctionNames = @($cleaningDeployment.functionNames)
+    if (($cleaningFunctionNames -join ',') -ne ($expectedCleaningFunctions -join ',')) {
+        throw "The Cleaning Center manual deployment allowlist must contain exactly: $($expectedCleaningFunctions -join ', ')"
+    }
+    if (@($cleaningFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -gt 0) {
+        throw "A manually approved Cleaning Center Function must not also be archived."
+    }
     if ($null -eq $manifest.primary.PSObject.Properties["functionsDeploymentAllowed"] -or $manifest.primary.functionsDeploymentAllowed -ne $false) {
         throw "The primary target must explicitly forbid Functions deployment."
     }

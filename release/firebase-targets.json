@@ -9,7 +9,6 @@
       "assignFieldJob",
       "changeFieldVisit",
       "claimFieldJob",
-      "cleaningOrdersApi",
       "cleanupDesktopFieldHandoffs",
       "commitBillingLedgerMutation",
       "commitCanonicalCrmEntity",
@@ -24,7 +23,6 @@
       "listAdPackageReviewCandidates",
       "listFieldCaptureWorkspace",
       "listFieldOperationsWorkspace",
-      "projectCleaningOrdersToWallboard",
       "provisionFieldUser",
       "recordFieldOperatorSwitch",
       "saveFieldRegistration",
@@ -51,6 +49,14 @@
   },
   "crmAutomaticRelease": {
     "projectId": "bring-fm",
+    "databaseRules": true
+  },
+  "cleaningCenterManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "cleaningOrdersApi",
+      "projectCleaningOrdersToWallboard"
+    ],
     "databaseRules": true
   }
 }

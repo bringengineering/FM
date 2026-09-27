@@ -108,6 +108,10 @@ Assert-True ($manifest.primary.projectId -eq "bring-fm" -and $manifest.primary.d
 Assert-True ($manifest.primary.functionsDeploymentAllowed -eq $false) "Primary target still permits Functions deployment."
 Assert-True ($null -eq $manifest.primary.PSObject.Properties["functionSelectors"]) "Primary target still exposes deployable Functions selectors."
 Assert-True (@($manifest.primary.archivedFunctionNames).Count -gt 0) "Primary historical Function names were not retained as archival metadata."
+$cleaningFunctionNames = @($manifest.cleaningCenterManualDeployment.functionNames)
+Assert-True ($manifest.cleaningCenterManualDeployment.projectId -eq "bring-fm" -and $manifest.cleaningCenterManualDeployment.databaseRules -eq $true) "Cleaning Center manual deployment is not pinned to bring-fm plus Database Rules."
+Assert-True (($cleaningFunctionNames -join ',') -eq "cleaningOrdersApi,projectCleaningOrdersToWallboard") "Cleaning Center manual deployment allowlist is not exact."
+Assert-True (@($cleaningFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -eq 0) "Approved Cleaning Center Functions remain marked as archived."
 Assert-True ($manifest.retiredLegacy.projectId -eq "bring-fm-hj") "Retired legacy project marker is missing."
 Assert-True ($manifest.retiredLegacy.status -eq "retired" -and $manifest.retiredLegacy.deploymentAllowed -eq $false) "Legacy project is not explicitly retired and non-deployable."
 Assert-True ($null -eq $manifest.retiredLegacy.PSObject.Properties["functionSelectors"]) "Retired legacy metadata still exposes deployable Functions selectors."
