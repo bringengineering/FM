@@ -140,6 +140,47 @@
     </details>`;
   }
 
+  function reviewChecklistGaps(input) {
+    const order = input && typeof input === "object" ? input : {};
+    if (order.reportsLoadError) return ["결과보고서를 불러오지 못했습니다. 자료를 새로고침한 뒤 확인해 주세요."];
+    if (order.reportsLoadPending) return ["결과보고서를 불러오는 중입니다. 잠시 후 주문 상세를 다시 열어 주세요."];
+    const reports = Array.isArray(order.relatedReports) ? order.relatedReports : [];
+    if (!reports.length) return ["연결된 결과보고서가 없습니다."];
+    const template = order.reportTemplate;
+    if (!template || !template.kind || !Array.isArray(template.items)) return ["서비스 유형의 필수 체크리스트를 확인할 수 없습니다."];
+    const matching = reports.filter(report => report && report.kind === template.kind && report.buildingId === order.buildingId);
+    if (!matching.length) return ["같은 건물·서비스 유형의 결과보고서가 없습니다."];
+    const latestWorkStart = Array.isArray(order.history)
+      ? [...order.history].reverse().find(event => event && event.status === "in_progress")?.changedAt : "";
+    const required = template.items.filter(item => item && !item.optional);
+    const reportGaps = report => {
+      const gaps = [];
+      if (!latestWorkStart || !report.updatedAt || report.updatedAt < latestWorkStart) gaps.push("이번 작업 시작 이후 갱신된 결과보고서가 필요합니다.");
+      const entries = Array.isArray(report.reviewItems) ? report.reviewItems
+        : Array.isArray(report.checklistSummary?.items) ? report.checklistSummary.items : [];
+      const byKey = new Map(entries.filter(item => item && item.key).map(item => [item.key, item]));
+      for (const item of required) {
+        if (!byKey.has(item.key)) gaps.push(`${item.label} 항목이 누락됐습니다.`);
+      }
+      let performed = false;
+      for (const item of entries) {
+        const label = String(item.label || template.items.find(row => row.key === item.key)?.label || item.key || "체크리스트");
+        if (item.status === "skipped") {
+          if (!String(item.note || "").trim()) gaps.push(`${label}: 미수행 사유를 기록해 주세요.`);
+        } else if (item.status === "done" || item.status === "partial") {
+          performed = true;
+          if (item.status === "done") {
+            if (!(Number(item.beforeCount) > 0)) gaps.push(`${label}: 작업 전 사진을 등록해 주세요.`);
+            if (!(Number(item.afterCount) > 0)) gaps.push(`${label}: 작업 후 사진을 등록해 주세요.`);
+          }
+        } else gaps.push(`${label}: 수행 상태를 확인해 주세요.`);
+      }
+      if (!performed) gaps.push("적어도 한 항목의 수행 결과가 필요합니다.");
+      return gaps;
+    };
+    return matching.map(reportGaps).sort((left, right) => left.length - right.length)[0];
+  }
+
   function renderOrderDetails(input) {
     const order = input && typeof input === "object" ? input : {};
     const status = escapeHtml(order.statusLabel || statusLabel(order.status) || "상태 확인 필요");
@@ -148,6 +189,7 @@
     const quote = order.quoteSummary;
     const workOrders = Array.isArray(order.relatedWorkOrders) ? order.relatedWorkOrders : [];
     const reports = Array.isArray(order.relatedReports) ? order.relatedReports : [];
+    const reviewGaps = reviewChecklistGaps(order);
     const history = Array.isArray(order.history) ? order.history : [];
     const money = Number.isSafeInteger(Number(quote && quote.totalAmount)) ? `${Number(quote.totalAmount).toLocaleString("ko-KR")}원` : "금액 미확인";
     return `<div class="modal-head"><div><span class="cleaning-center-eyebrow">CLEANING ORDER · ${escapeHtml(order.id || "ID 미확인")}</span><h2>주문 상세</h2><p>${escapeHtml(order.title || "제목 미입력")} · ${status}</p></div><button type="button" class="close-button" data-action="close-modal" aria-label="닫기">×</button></div>
@@ -155,7 +197,7 @@
         <section><h3>접수 정보</h3><dl><div><dt>고객</dt><dd>${escapeHtml(order.customerName || "연결 확인 필요")}</dd></div><div><dt>건물</dt><dd>${escapeHtml(order.buildingName || "연결 확인 필요")}</dd></div><div><dt>서비스</dt><dd>${escapeHtml(serviceLabels[order.serviceType] || order.serviceType || "유형 확인 필요")}</dd></div><div><dt>접수 내용</dt><dd>${escapeHtml(order.description || "내용 미입력")}</dd></div><div><dt>희망 일정</dt><dd>${escapeHtml(order.desiredDate || "일정 미정")}</dd></div><div><dt>주문 버전</dt><dd>${escapeHtml(order.revision || "확인 필요")}</dd></div><div><dt>접수·최근 변경</dt><dd>${escapeHtml(order.createdAt || "기록 없음")} · ${escapeHtml(order.updatedAt || "기록 없음")}</dd></div></dl></section>
         <section><h3>견적·승인</h3>${quote ? `<p>${escapeHtml(quote.latestRevision || "—")}차 견적 · ${escapeHtml(quoteStatus[quote.status] || "상태 확인 필요")} · <b>${money}</b></p>` : `<p>연결된 견적이 없거나 아직 불러오지 못했습니다.</p>`}</section>
         <section><h3>일정·배정</h3>${workOrders.length ? `<ul>${workOrders.map(item => `<li><b>${escapeHtml(item.title || "업무 제목 미입력")}</b><span>담당 ${escapeHtml(item.assigneeName || "미배정")} · 기한 ${escapeHtml(item.dueDate || "미정")} · ${escapeHtml(item.statusLabel || item.status || "상태 확인 필요")} · ${escapeHtml(Number(item.progress || 0))}%</span><button type="button" class="text-button" data-action="open-cleaning-work-order" data-record-id="${escapeHtml(item.id)}">기존 CRM 업무 열기</button></li>`).join("")}</ul>` : `<p>연결된 작업지시가 없습니다.</p>`}</section>
-        <section><h3>현장 결과·증빙</h3>${reports.length ? `<ul>${reports.map(item => { const checklist = item.checklistSummary; const checklistItems = Array.isArray(checklist && checklist.items) ? checklist.items : []; return `<li><b>${escapeHtml(item.title || "작업 결과보고서")}</b><span>${escapeHtml(item.workDate || "날짜 미정")} · 증빙 사진 ${escapeHtml(item.photoCount || 0)}장${checklist ? ` · 체크리스트 진척 ${escapeHtml(checklist.progress)}% (${escapeHtml(checklist.done)} 완료 · ${escapeHtml(checklist.partial)} 일부 · ${escapeHtml(checklist.skipped)} 미수행)` : " · 체크리스트 확인 필요"}</span>${checklistItems.length ? `<div class="cleaning-order-checklist"><b>진행 체크리스트</b>${checklistItems.map(entry => `<div><span>${escapeHtml(entry.label)} · ${escapeHtml(entry.statusLabel)}</span><small>작업 전 ${escapeHtml(entry.beforeCount)}장 · 작업 후 ${escapeHtml(entry.afterCount)}장${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="open-cleaning-report" data-record-id="${escapeHtml(item.id)}">기존 CRM 결과보고 열기</button></li>`; }).join("")}</ul>` : `<p>연결된 결과보고서가 없습니다. 완료 전 결과와 증빙 검수가 필요합니다.</p>`}</section>
+        <section><h3>현장 결과·증빙</h3><div class="cleaning-review-check" role="status"><b>검수 준비 점검</b>${reviewGaps.length ? `<ul>${reviewGaps.map(gap => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>` : `<p>화면상 필수 항목이 등록됐습니다.</p>`}<small>최종 완료 여부는 서버가 같은 건물·서비스 유형, 이번 작업 회차, 사진 파일의 실제 연결을 다시 검증합니다.</small></div>${reports.length ? `<ul>${reports.map(item => { const checklist = item.checklistSummary; const checklistItems = Array.isArray(checklist && checklist.items) ? checklist.items : []; return `<li><b>${escapeHtml(item.title || "작업 결과보고서")}</b><span>${escapeHtml(item.workDate || "날짜 미정")} · 증빙 사진 ${escapeHtml(item.photoCount || 0)}장${checklist ? ` · 체크리스트 진척 ${escapeHtml(checklist.progress)}% (${escapeHtml(checklist.done)} 완료 · ${escapeHtml(checklist.partial)} 일부 · ${escapeHtml(checklist.skipped)} 미수행)` : " · 체크리스트 확인 필요"}</span>${checklistItems.length ? `<div class="cleaning-order-checklist"><b>진행 체크리스트</b>${checklistItems.map(entry => `<div><span>${escapeHtml(entry.label)} · ${escapeHtml(entry.statusLabel)}</span><small>작업 전 ${escapeHtml(entry.beforeCount)}장 · 작업 후 ${escapeHtml(entry.afterCount)}장${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div>`).join("")}</div>` : ""}<button type="button" class="text-button" data-action="open-cleaning-report" data-record-id="${escapeHtml(item.id)}">기존 CRM 결과보고 열기</button></li>`; }).join("")}</ul>` : `<p>연결된 결과보고서가 없습니다. 완료 전 결과와 증빙 검수가 필요합니다.</p>`}</section>
         <section><h3>상태 변경 이력</h3>${history.length ? `<ol>${history.map(entry => `<li><time>${escapeHtml(entry.changedAt || "시각 미상")}</time><b>${escapeHtml(statusLabel(entry.status) || "상태 확인 필요")}</b><span>${escapeHtml(entry.note || "사유 기록 없음")}</span></li>`).join("")}</ol>` : `<p>등록된 변경 이력이 없습니다.</p>`}</section>
         <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">닫기</button></div>
       </div>`;
@@ -275,5 +317,5 @@
     </section>`;
   }
 
-  return Object.freeze({ render, renderOrderDetails, renderTransitionConfirmation, renderCleaningQuoteReview, statusLabel, cleaningReportEditAccess, groups, matchesOrderFilter, summarizeOrderQueue });
+  return Object.freeze({ render, renderOrderDetails, renderTransitionConfirmation, renderCleaningQuoteReview, statusLabel, cleaningReportEditAccess, reviewChecklistGaps, groups, matchesOrderFilter, summarizeOrderQueue });
 });

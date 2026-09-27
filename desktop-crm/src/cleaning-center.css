@@ -116,6 +116,11 @@
 .cleaning-order-detail ul,.cleaning-order-detail ol{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .cleaning-order-detail li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:10px;border-radius:9px;background:#fff;font-size:11px}
 .cleaning-order-detail li>b,.cleaning-order-detail li>span{grid-column:1/-1}.cleaning-order-detail li>b{color:#344252}.cleaning-order-detail li>span{color:#77828E}.cleaning-order-detail li time{color:#84909D;font-variant-numeric:tabular-nums}
+.cleaning-review-check{display:grid;gap:7px;margin-bottom:12px;padding:11px 12px;border:1px solid #DCE8F7;border-radius:9px;background:#F5F9FF;color:#344252;font-size:11px}
+.cleaning-review-check>b{color:#1B64DA}
+.cleaning-review-check ul{display:grid;gap:5px;margin:0;padding-left:16px;list-style:disc}
+.cleaning-review-check li{display:list-item;padding:0;background:transparent;line-height:1.5}
+.cleaning-review-check small{color:#647383;line-height:1.5}
 .cleaning-order-checklist{grid-column:1/-1;display:grid;gap:6px;padding:9px;border-radius:8px;background:#F4F7FA}
 .cleaning-order-checklist>b{font-size:10px;color:#52616F}
 .cleaning-order-checklist>div{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid #E7ECF1;font-size:10px}

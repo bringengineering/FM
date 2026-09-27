@@ -587,6 +587,51 @@ test('cleaning order detail modal consolidates linked data without exposing acto
   assert.match(html, /&lt;확인&gt;/u);
 });
 
+test('cleaning order detail points out checklist gaps without claiming server approval', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const base = {
+    id: 'order-review-1', buildingId: 'building-1', status: 'review_pending',
+    history: [{ status: 'in_progress', changedAt: '2026-09-27T01:00:00.000Z' }],
+    reportTemplate: { kind: 'stairs', items: [{ key: 'stairFloor', label: '계단실 바닥', optional: false }, { key: 'handrail', label: '난간', optional: false }] },
+  };
+  const report = {
+    id: 'report-1', kind: 'stairs', buildingId: 'building-1', updatedAt: '2026-09-27T02:00:00.000Z',
+    checklistSummary: { items: [
+      { key: 'stairFloor', label: '계단실 바닥', status: 'done', beforeCount: 1, afterCount: 0 },
+      { key: 'handrail', label: '난간', status: 'skipped', note: '' },
+    ] },
+  };
+  const gaps = ui.reviewChecklistGaps({ ...base, relatedReports: [report] });
+  assert.ok(gaps.some(value => value.includes('계단실 바닥') && value.includes('작업 후 사진')));
+  assert.ok(gaps.some(value => value.includes('난간') && value.includes('미수행 사유')));
+  const html = ui.renderOrderDetails({ ...base, relatedReports: [report] });
+  assert.match(html, /검수 준비 점검/u);
+  assert.match(html, /최종 완료 여부는 서버가/u);
+  assert.match(html, /작업 후 사진/u);
+  assert.doesNotMatch(html, /완료 승인됨/u);
+  assert.ok(ui.reviewChecklistGaps({ ...base, relatedReports: [] }).some(value => value.includes('결과보고서')));
+  assert.ok(ui.reviewChecklistGaps({ ...base, reportsLoadError: true, relatedReports: [] }).some(value => value.includes('불러오지 못했습니다')));
+  assert.ok(ui.reviewChecklistGaps({ ...base, relatedReports: [{ ...report, kind: 'common' }] }).some(value => value.includes('서비스 유형')));
+  assert.ok(ui.reviewChecklistGaps({ ...base, relatedReports: [{ ...report, updatedAt: '2026-09-26T02:00:00.000Z' }] }).some(value => value.includes('이번 작업')));
+  assert.ok(ui.reviewChecklistGaps({ ...base, relatedReports: [{ ...report, checklistSummary: { items: [report.checklistSummary.items[0]] } }] }).some(value => value.includes('난간') && value.includes('누락')));
+  assert.ok(ui.reviewChecklistGaps({ ...base, relatedReports: [{ ...report, reviewItems: [report.checklistSummary.items[0]] }] }).some(value => value.includes('난간') && value.includes('누락')));
+  const complete = { ...report, checklistSummary: { items: [
+    { ...report.checklistSummary.items[0], afterCount: 1 },
+    { ...report.checklistSummary.items[1], note: '현장 접근 불가' },
+  ] } };
+  assert.deepEqual(ui.reviewChecklistGaps({ ...base, relatedReports: [complete] }), []);
+  assert.match(ui.renderOrderDetails({ ...base, relatedReports: [complete] }), /화면상 필수 항목이 등록됐습니다/u);
+});
+
+test('CRM order detail supplies report type, building, checklist keys and report-load state to the review guide', () => {
+  const app = read('desktop-crm/src/app.js');
+  const start = app.indexOf('const viewCleaningOrderDetails =');
+  const handler = app.slice(start, app.indexOf('const manageQuoteButton =', start));
+  for (const field of ['reportTemplate:', 'reportsLoadError:', 'reviewItems:', 'kind: rawReport.kind', 'buildingId: rawReport.buildingId', 'updatedAt: rawReport.updatedAt', 'key: entry.key', 'status: entry.status']) {
+    assert.ok(handler.includes(field), `${field} missing from order detail mapping`);
+  }
+});
+
 test('cleaning order row exposes a detail action wired to a read-only CRM modal', () => {
   const ui = require('../src/cleaning-center-ui');
   const html = ui.render({ orders: [{ id: 'order-modal-1', title: '계단 청소', status: 'received' }] });

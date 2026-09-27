@@ -12219,23 +12219,34 @@
       const quoteSet = cleaningOrderState.quoteSets?.[order.id];
       const latestQuote = quoteSet?.latestQuoteId && quoteSet?.revisions?.[quoteSet.latestQuoteId] || null;
       const labels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
+      const reportKind = reportCore()?.kindForCleaningServiceType(order.serviceType) || "";
       modalContent.innerHTML = window.BringCleaningCenterUI.renderOrderDetails({
         ...order,
         customerName: customer?.name || "",
         buildingName: building?.name || "",
+        reportTemplate: { kind: reportKind, items: reportCore()?.itemCatalogFor(reportKind) || [] },
+        reportsLoadError: Boolean(reportState.error),
+        reportsLoadPending: !reportState.loaded && !reportState.error,
         relatedWorkOrders: linkedWorkOrders.map(item => ({ id: item.id, title: item.title || "제목 없는 업무", progress: Number(item.progress || 0), status: item.status, statusLabel: workOrderCore()?.statusLabel(item.status) || item.status, assigneeName: item.assigneeName || "담당자 미배정", dueDate: item.dueDate || "" })),
         relatedReports: linkedReports.map(item => {
           const R = reportCore();
           const report = R?.normalizeReport(item) || item;
+          const rawReport = (reportState.reports || []).find(row => String(row?.id || "") === String(item.id || "")) || item;
           const checklistSummary = R?.summarizeItems(item) || null;
           return {
             id: item.id, title: item.title || item.summary?.slice(0, 80) || "작업 결과보고서",
             workDate: item.workDate || "날짜 미정", photoCount: R?.photoCount(item) || 0,
+            kind: rawReport.kind, buildingId: rawReport.buildingId, updatedAt: rawReport.updatedAt,
+            reviewItems: Array.isArray(rawReport.items) ? rawReport.items.map(entry => ({
+              key: entry.key, label: entry.label, status: entry.status, note: entry.note,
+              beforeCount: Array.isArray(entry.before) ? entry.before.length : 0,
+              afterCount: Array.isArray(entry.after) ? entry.after.length : 0,
+            })) : [],
             checklistSummary: checklistSummary ? {
               done: checklistSummary.done, partial: checklistSummary.partial, skipped: checklistSummary.skipped,
               progress: checklistSummary.progress,
               items: (report.items || []).map(entry => ({
-                label: entry.label,
+                key: entry.key, label: entry.label, status: entry.status,
                 statusLabel: ({ done: "완료", partial: "일부", skipped: "미수행" })[entry.status] || "상태 확인 필요",
                 beforeCount: entry.before?.length || 0, afterCount: entry.after?.length || 0, note: entry.note || "",
               })),
