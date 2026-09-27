@@ -2,11 +2,11 @@
 const messages={INVALID_INPUT:'입력한 TV 등록 정보를 확인해 주세요.',AUTH_REQUIRED:'다시 로그인해 주세요.',FORBIDDEN:'TV 승인 권한이 없습니다.',INVALID_CODE:'등록 코드가 만료되었거나 이미 사용되었습니다.',RATE_LIMITED:'요청이 많습니다. 잠시 후 다시 시도해 주세요.',WALLBOARD_UNAVAILABLE:'TV 원격 연결 서버가 아직 준비되지 않았습니다.',NOT_FOUND:'등록된 TV를 찾지 못했습니다.'};
 messages.VERSION_CONFLICT='다른 관리자가 먼저 게시했습니다. 목록을 새로고침하고 내용을 다시 확인해 주세요.';
 const fail=code=>{throw Object.assign(new Error(messages[code]||'TV 연결 요청에 실패했습니다. 다시 확인해 주세요.'),{code});};
-const presentationKeys=new Set(['roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice']);
+const presentationKeys=new Set(['overview','roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice','strategy','companyRevenue']);
 function validatedPresentation(value){
  if(value===null||value===undefined)return null;
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['playlist','notice'].includes(key)))fail('WALLBOARD_UNAVAILABLE');
- if(typeof value.notice!=='string'||value.notice.length>160||!Array.isArray(value.playlist)||value.playlist.length>10)fail('WALLBOARD_UNAVAILABLE');
+ if(typeof value.notice!=='string'||value.notice.length>160||!Array.isArray(value.playlist)||value.playlist.length>13)fail('WALLBOARD_UNAVAILABLE');
  const seen=new Set(),playlist=value.playlist.map(item=>{
   if(!item||typeof item!=='object'||Array.isArray(item)||Object.keys(item).some(key=>!['key','enabled','seconds'].includes(key))||!presentationKeys.has(item.key)||seen.has(item.key)||typeof item.enabled!=='boolean'||!Number.isInteger(item.seconds)||item.seconds<10||item.seconds>120)fail('WALLBOARD_UNAVAILABLE');
   seen.add(item.key);return {key:item.key,enabled:item.enabled,seconds:item.seconds};

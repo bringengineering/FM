@@ -6,16 +6,10 @@ const { withStrategyScene } = require('./company-strategy-tv');
 const { koreaDate } = require('./korea-date');
 
 const defaultPlaylist = [
-  ['roadmap', 40],
+  ['overview', 45],
   ['portfolio', 25],
-  ['weeklyTrend', 20],
-  ['health', 20],
-  ['milestones', 25],
-  ['scheduleToday', 30],
-  ['scheduleWeek', 30],
-  ['people', 25],
-  ['issues', 20],
   ['notice', 30],
+  ['strategy', 30],
   ['companyRevenue', 30]
 ].map(([key, seconds]) => ({ key, enabled: true, seconds }));
 
