@@ -1,5 +1,13 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.BringCompanyWallboard=api;})(typeof globalThis==='object'?globalThis:this,function(){
- 'use strict';
+'use strict';
+function strategyPeriods(dataDate){if(typeof dataDate!=='string'||!/^20\d{2}-\d{2}-\d{2}$/.test(dataDate))return null;const [year,month,day]=dataDate.split('-').map(Number);const date=new Date(`${dataDate}T00:00:00Z`);if(date.toISOString().slice(0,10)!==dataDate)return null;return {month:`M${String(month).padStart(2,'0')}`,quarter:`Q${Math.ceil(month/3)}`,half:month<=6?'H1':'H2',annual:'annual'};}
+const strategyPeriodLabel=period=>period==='annual'?'연간':period==='H1'?'상반기':period==='H2'?'하반기':/^Q[1-4]$/.test(period)?`${period.slice(1)}분기`:/^M(0[1-9]|1[0-2])$/.test(period)?`${Number(period.slice(1))}월`:'';
+function orderedStrategyGoals(goals,dataDate){
+ const current=strategyPeriods(dataDate);if(!current)return goals;
+ const priority=new Map([['annual',0],[current.half,1],[current.quarter,2],[current.month,3]]);
+ const order=period=>period==='annual'?0:period==='H1'?1:period==='H2'?2:period.startsWith('Q')?3+Number(period.slice(1)):period.startsWith('M')?7+Number(period.slice(1)):99;
+ return [...goals].sort((a,b)=>(priority.get(a.period)??10+order(a.period))-(priority.get(b.period)??10+order(b.period)));
+}
  const labels={assigned:'시작 전',doing:'진행 중',submitted:'검수 대기',returned:'보완 요청',done:'검수 완료'};
  const scenes=[['overview','회사 운영 요약'],['roadmap','프로젝트 로드맵'],['portfolio','프로젝트별 진행률'],['weeklyTrend','주간 완료 실적'],['health','프로젝트 건강도'],['milestones','이번 주 핵심 결과물'],['scheduleToday','오늘 시간표'],['scheduleWeek','이번 주 일정'],['people','사람별 업무'],['issues','확인할 이슈'],['notice','회사 공지'],['strategy','회사 방향'],['companyRevenue','매출 현황']];
  const billingCore=typeof require==='function'?require('./billing-ledger-core'):globalThis.BringBillingLedgerCore;
@@ -113,7 +121,8 @@
   if(key==='strategy'){
    const strategy=m.strategy;if(!strategy)return '<div class="wb-empty">게시된 회사 방향이 없습니다.</div>';
    const unit={count:'건',percent:'%',krw:'원',day:'일',milestone:''};
-   return `<div class="wb-strategy-layout"><section class="wb-strategy-vision"><small>${esc(strategy.year)} 회사 비전</small><h2>${esc(strategy.vision)}</h2></section><section class="wb-strategy-people">${strategy.organization.slice(page*6,page*6+6).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role)}${person.reportsToIndex===null?'':` · 보고 · ${esc(strategy.organization[person.reportsToIndex].displayName)}`}</small></span>`).join('')}</section><section class="wb-strategy-goals">${strategy.goals.slice(page*3,page*3+3).map(goal=>`<article><small>${esc({annual:'연간',H1:'상반기',H2:'하반기'}[goal.period]||goal.period)}</small><h3>${esc(goal.title)}</h3><p>${goal.current===null?'실적 미입력':esc(goal.current+' '+(unit[goal.unit]||''))} / ${goal.target===null?'목표 미입력':esc(goal.target+' '+(unit[goal.unit]||''))}</p><strong>${goal.percent===null?'집계 대기':goal.percent+'%'}</strong>${goal.percent===null?'':`<progress max="100" value="${goal.percent}"></progress>`}<small>근거 · ${esc(goal.source)}</small></article>`).join('')}</section></div>`;
+   const current=strategyPeriods(dataDate),ordered=orderedStrategyGoals(strategy.goals,dataDate);
+   return `<div class="wb-strategy-layout"><section class="wb-strategy-vision"><small>${esc(strategy.year)} 회사 비전</small><h2>${esc(strategy.vision)}</h2></section><section class="wb-strategy-people">${strategy.organization.slice(page*6,page*6+6).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role)}${person.reportsToIndex===null?'':` · 보고 · ${esc(strategy.organization[person.reportsToIndex].displayName)}`}</small></span>`).join('')}</section><section class="wb-strategy-goals">${ordered.slice(page*3,page*3+3).map(goal=>`<article><small>${esc(strategyPeriodLabel(goal.period)||goal.period)}${current&&[current.annual,current.half,current.quarter,current.month].includes(goal.period)?' · 현재':''}</small><h3>${esc(goal.title)}</h3><p>${goal.unit==='milestone'?esc(({not_started:'시작 전',in_progress:'진행 중',done:'완료'}[goal.milestoneStatus]||'상태 확인 필요')):`${goal.current===null?'실적 확인 필요':esc(goal.current+' '+(unit[goal.unit]||''))} / ${goal.target===null?'목표 미입력':esc(goal.target+' '+(unit[goal.unit]||''))}`}</p><strong>${goal.unit==='milestone'?'진척률 미산정':goal.percent===null?'집계 대기':goal.percent+'%'}</strong>${goal.percent===null?'':`<progress max="100" value="${goal.percent}"></progress>`}<small>근거 · ${esc(goal.source)}</small></article>`).join('')}</section></div>`;
   }
   if(key==='companyRevenue'){
    const revenue=m.companyRevenue;

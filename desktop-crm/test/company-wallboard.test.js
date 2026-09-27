@@ -288,8 +288,20 @@ test('server cleaning aggregate appears in TV health scene without exposing sour
 test('local strategy scene renders approved goal progress and unknown progress distinctly',()=>{
  const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'김현진',role:'운영',reportsToIndex:null}],goals:[{period:'annual',title:'관리 건물',unit:'count',target:10,current:4,percent:40,source:'CRM 건물'},{period:'H2',title:'표준 촬영',unit:'milestone',target:null,current:null,percent:null,source:'현장 보고'}]}},'2026-09-24');
  const html=C.scene(model,'strategy');
- assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/집계 대기/);
+ assert.match(html,/안전한 공간 운영/);assert.match(html,/김현진/);assert.match(html,/40%/);assert.match(html,/진척률 미산정/);
  assert.doesNotMatch(html,/uid|undefined/);
+});
+
+test('local strategy preview prioritizes the current month and shows monthly and quarterly goals',()=>{
+ const goals=[{period:'annual',title:'연간 운영',unit:'count',target:12,current:6,percent:50,source:'CRM'},
+  {period:'M01',title:'1월 과거 목표',unit:'count',target:2,current:2,percent:100,source:'CRM'},
+  {period:'Q3',title:'3분기 목표',unit:'count',target:6,current:3,percent:50,source:'CRM'},
+  {period:'M09',title:'9월 월간 목표',unit:'count',target:2,current:1,percent:50,source:'CRM'}];
+ const model=C.project({orders:[],strategy:{year:'2026',vision:'운영 비전',organization:[],goals}},'2026-09-24');
+ const html=C.scene(model,'strategy',0,'','09:00','week','2026-09-24'),next=C.scene(model,'strategy',1,'','09:00','week','2026-09-24'),all=html+next;
+ assert.ok(all.indexOf('연간')<all.indexOf('3분기'));
+ assert.ok(all.indexOf('3분기 목표')<all.indexOf('9월 월간 목표'));
+ assert.match(all,/3분기 · 현재/);assert.match(all,/9월 · 현재/);
 });
 test('local strategy scene shows the approved reporting relationship',()=>{
  const model=C.project({orders:[],strategy:{year:'2026',vision:'안전한 공간 운영',organization:[{displayName:'서창환',role:'대표',reportsToIndex:null},{displayName:'김현진',role:'운영',reportsToIndex:0}],goals:[]}},'2026-09-24');

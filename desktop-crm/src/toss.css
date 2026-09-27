@@ -996,6 +996,13 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 }
 
 /* Project workspace R1: quiet shell, solid reading surfaces. */
+.company-goals-hero{margin-bottom:14px}
+.company-goals-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 14px}
+.company-goals-summary article{display:grid;gap:7px;min-width:0;padding:16px 18px;border:1px solid #E5E8EB;border-radius:14px;background:rgba(255,255,255,.9);box-shadow:0 5px 16px rgba(31,45,61,.04)}
+.company-goals-summary article span,.company-goals-summary article small{color:#64748B;font-size:12px}
+.company-goals-summary article strong{color:#202B36;font-size:24px;line-height:1.2}
+@media(max-width:760px){.company-goals-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.company-goals-summary{grid-template-columns:1fr}}
 .company-strategy{display:grid;gap:12px;margin:0 0 18px;padding:18px;border:1px solid #E5E8EB;border-radius:16px;background:rgba(255,255,255,.88);color:#202B36}
 .company-strategy>header{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .company-strategy>header span,.company-strategy-admin>p,.company-strategy form>p{color:#52616F;font-size:12px;line-height:1.5}
@@ -1018,7 +1025,7 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .company-strategy form input,.company-strategy form select,.company-strategy form textarea{width:100%;min-width:0;min-height:40px;padding:8px 10px;border:1px solid #DDE3E8;border-radius:9px;background:#fff;color:#202B36;font:inherit}
 .company-strategy form textarea{resize:vertical}.company-strategy form :is(input,select,textarea,button):focus-visible{outline:3px solid #3182F6;outline-offset:2px}
 .company-strategy-rows{display:grid;gap:8px}.company-strategy-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:8px;padding:12px;border:1px solid #E5E8EB;border-radius:11px;background:#F8FAFC}
-.company-strategy-goal-row{grid-template-columns:repeat(3,minmax(0,1fr))}.company-strategy-row>button{min-height:40px}.company-strategy-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.company-strategy-goal-row{grid-template-columns:repeat(3,minmax(0,1fr))}.company-strategy-row label[hidden]{display:none}.company-strategy-row>button{min-height:40px}.company-strategy-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 @media(max-width:760px){.company-strategy-row{grid-template-columns:repeat(2,minmax(0,1fr))}.company-strategy>header{align-items:flex-start;flex-direction:column}}
 @media(max-width:480px){.company-strategy-row{grid-template-columns:1fr}.company-strategy-goals{grid-template-columns:1fr}}
 .project-workspace-home{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr);gap:14px;margin:0 0 18px;padding:14px;border:1px solid #DDE3E8;border-radius:18px;background:rgba(255,255,255,.66)}
@@ -1109,3 +1116,69 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 @media(max-width:1050px){.project-workspace-home{grid-template-columns:1fr}.project-workspace-legacy{grid-column:1}}
 @media(max-width:640px){.project-workspace-health{grid-template-columns:1fr}.project-workspace-action-list button{grid-template-columns:1fr}.project-workspace-project-list button{grid-template-columns:1fr}.project-workspace-project-list em{grid-column:1;grid-row:auto;text-align:left}.project-workspace-detail-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.project-workspace-detail-tabs button{padding:10px 8px;font-size:13px}.project-weekly-report header,.project-weekly-report-people summary{align-items:start;flex-direction:column}}
 @media(max-width:640px){.project-workspace-portfolio-filter{align-items:stretch;flex-direction:column}.project-workspace-portfolio-filter select{width:100%}}
+
+/* 회사 목표·비전 대시보드: 전역 타이포그래피·공통 입력 컴포넌트는 그대로 재사용 */
+.company-goals-tabs{display:flex;gap:6px;margin:0 0 16px;padding:5px;width:max-content;max-width:100%;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.company-goals-tabs [role="tab"]{min-height:42px;padding:9px 16px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--soft);font:inherit;font-weight:700;cursor:pointer}
+.company-goals-tabs [role="tab"][aria-selected="true"]{border-color:#C9DDFB;background:#fff;color:var(--blue-2);box-shadow:0 2px 6px rgba(31,45,61,.07)}
+.company-goals-tabs [role="tab"]:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.company-goals-period-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 14px}
+.company-goals-period-card,.company-goals-grid>.office-panel{min-width:0;margin:0;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow)}
+.company-goals-period-card>header,.company-goals-grid>.office-panel>header{display:flex;align-items:start;justify-content:space-between;gap:10px;margin:0 0 12px}
+.company-goals-period-card h3,.company-goals-grid>.office-panel h3{margin:0;color:var(--text);font-size:16px;letter-spacing:-.02em}
+.company-goals-period-card header span,.company-goals-grid>.office-panel header span{color:var(--muted);font-size:12px}
+.company-goals-badge{flex:0 0 auto;padding:5px 8px;border-radius:999px;background:var(--toss-blue-weak);color:var(--blue-2)!important;font-size:11px!important;font-weight:700}
+.company-goals-period-card ul,.company-goals-unit-list,.company-goals-milestones,.company-goals-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.company-goals-period-card li{display:grid;gap:5px;padding:10px;border-radius:10px;background:var(--panel-2);color:var(--soft);font-size:12px}
+.company-goals-period-card li strong{color:var(--text);font-size:13px}
+.company-goals-empty{margin:0;padding:16px;border-radius:10px;background:var(--panel-2);color:var(--muted);font-size:13px;line-height:1.5}
+.company-goals-empty small{display:block;margin-top:5px;color:var(--muted)}
+.company-goals-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
+.company-goals-grid-wide{grid-column:span 2}
+.company-goals-chart{display:flex;flex-direction:column;min-height:190px}
+.company-goals-chart>header{flex:0 0 auto}
+.company-goals-chart>header>div{display:grid;gap:4px}
+.company-goals-bars{display:grid;grid-template-columns:repeat(12,minmax(18px,1fr));gap:5px;align-items:end;min-height:118px;margin-top:auto;padding:10px 4px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.company-goals-cumulative{width:100%;height:auto;min-height:120px;margin:auto 0 0;overflow:visible}
+.company-goals-cumulative line{stroke:var(--line);stroke-width:1}
+.company-goals-cumulative text{fill:var(--muted);font-size:10px;text-anchor:middle}
+.company-goals-cumulative polyline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.company-goals-cumulative polyline.target{stroke:#AFCBF7}
+.company-goals-cumulative polyline.actual{stroke:var(--blue)}
+.company-goals-cumulative circle.target{fill:#AFCBF7}
+.company-goals-cumulative circle.actual{fill:var(--blue)}
+.company-goals-chart-note{margin-top:8px;color:var(--muted);font-size:10px;line-height:1.4}
+.company-goals-chart-note{margin-top:8px;color:var(--muted);font-size:10px;line-height:1.4}
+.company-goals-bar-column{display:grid;grid-template-rows:1fr auto;gap:7px;min-width:18px;height:118px;text-align:center}
+.company-goals-bar-pair{display:flex;align-items:end;justify-content:center;gap:3px;height:100%}
+.company-goals-bar{display:block;width:min(35%,14px);min-height:2px;height:var(--bar-height);border-radius:4px 4px 0 0;background:var(--blue);align-self:end}
+.company-goals-bar.target{background:#C9DDFB}
+.company-goals-bar.actual{background:var(--blue)}
+.company-goals-bar-column small{color:var(--muted);font-size:10px;white-space:nowrap}
+.company-goals-legend{display:flex;gap:14px;margin-top:9px;color:var(--muted);font-size:11px}
+.company-goals-legend span{display:flex;align-items:center;gap:5px}
+.company-goals-legend i{width:9px;height:9px;border-radius:3px;background:#C9DDFB}
+.company-goals-legend i.actual{background:var(--blue)}
+.company-goals-unit-list li,.company-goals-list li{display:flex;justify-content:space-between;gap:12px;padding:10px;border-radius:9px;background:var(--panel-2);color:var(--text);font-size:13px}
+.company-goals-unit-list li span,.company-goals-list li span{color:var(--muted)}
+.company-goals-theme-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.company-goals-theme-grid article{display:grid;gap:6px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+.company-goals-theme-grid article strong{color:var(--text);font-size:13px}
+.company-goals-theme-grid article span{color:var(--muted);font-size:12px;line-height:1.5}
+.company-goals-table-wrap{max-width:100%;overflow-x:auto}
+.company-goals-table-wrap table{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
+.company-goals-table-wrap th,.company-goals-table-wrap td{padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+.company-goals-table-wrap th{color:var(--muted);font-size:11px}
+.company-goals-table-wrap td{color:var(--text)}
+.company-goals-milestones li{display:grid;grid-template-columns:minmax(82px,auto) minmax(0,1fr);gap:4px 10px;padding:10px;border-radius:9px;background:var(--panel-2)}
+.company-goals-milestones time{grid-row:span 2;color:var(--blue-2);font-size:12px;font-weight:700}
+.company-goals-milestones span{color:var(--text);font-size:13px}
+.company-goals-milestones small{color:var(--muted);font-size:11px}
+.company-goals-data-state{margin:12px 0;color:var(--muted);font-size:12px}
+.company-goals-editor-period{margin:8px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.company-goals-editor-period summary{display:flex;justify-content:space-between;gap:10px;color:var(--text);font-size:14px;font-weight:700;cursor:pointer}
+.company-goals-editor-period summary span{color:var(--muted);font-size:12px}
+.company-goals-editor-period>.mini-button{margin-top:10px}
+@media(max-width:1050px){.company-goals-period-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.company-goals-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.company-goals-period-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.company-goals-grid{grid-template-columns:1fr}.company-goals-grid-wide{grid-column:auto}.company-goals-bars{grid-template-columns:repeat(12,minmax(24px,1fr))}}
+@media(max-width:480px){.company-goals-period-grid,.company-goals-theme-grid{grid-template-columns:1fr}.company-goals-tabs{width:100%}.company-goals-tabs [role="tab"]{flex:1;padding-inline:8px;font-size:13px}.company-goals-period-card,.company-goals-grid>.office-panel{padding:14px}}

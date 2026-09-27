@@ -210,6 +210,7 @@
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     weeklyReports: ["CRM 활동을 모아 한 주 업무를 정리합니다", "주간업무보고서"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
+    companyGoals: ["연간·반기·분기·월간 목표와 확인된 달성률", "회사 목표·비전"],
     companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
@@ -1493,7 +1494,7 @@
       officeFolder?.classList.add("open");
       officeFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
     }
-    const projectView = ["weeklyReports", "projectRoadmap", "workOrders", "cases"].includes(currentView);
+    const projectView = ["weeklyReports", "projectRoadmap", "companyGoals", "workOrders", "cases"].includes(currentView);
     const projectFolder = document.querySelector('[data-nav-folder="project"]');
     projectFolder?.classList.toggle("active", projectView);
     if (projectView) {
@@ -1553,6 +1554,7 @@
     else if (currentView === "growth") renderGrowth();
     else if (currentView === "weeklyReports") renderWeeklyReports();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
+    else if (currentView === "companyGoals") renderCompanyGoals();
     else if (currentView === "companyWallboard") {
       if (disposeCompanyWallboard) disposeCompanyWallboard();
       disposeCompanyWallboard = window.BringCompanyWallboard.mount(main, {
@@ -4693,8 +4695,9 @@
       || companyStrategyState.editing);
   }
   function refreshOnEnter(view) {
-    if (["weeklyReports", "projectRoadmap", "workOrders"].includes(view)
+    if (["weeklyReports", "projectRoadmap", "workOrders", "companyGoals"].includes(view)
       && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
+    if (view === "companyGoals" && (!companyStrategyState.loaded || Date.now()-companyStrategyState.refreshedAt>=30*1000)) void loadCompanyStrategy();
     if (view === "cleaningCenter") {
       if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
       if (!deliveryState.loaded && !deliveryState.loading) void loadDeliveryFlows();
@@ -4722,6 +4725,7 @@
   let cleaningOrderState = { orders: [], quoteSets: Object.create(null), loaded: false, attempted: false, loading: false, loadingMore: false, error: "", loadMoreError: "", lastLoadedAt: 0, busy: false, search: "", statusFilter: "all", hasMore: false, nextCursor: null };
   let cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "" };
   let companyStrategyState = { year:String(new Date().getFullYear()), loaded:false, loading:false, refreshedAt:0, error:'', draft:null, published:null, formDraft:null, editing:false, dirty:false, busy:false };
+  let companyGoalsUiState = { tab:'dashboard' };
 
   function resetCompanyStrategyState() {
     companyStrategyState={year:String(new Date().getFullYear()),loaded:false,loading:false,refreshedAt:0,error:'',draft:null,published:null,formDraft:null,editing:false,dirty:false,busy:false};
@@ -4731,7 +4735,9 @@
     year:companyStrategyState.year,
     vision:String(record && record.vision || ''),
     organization:Object.values(record && record.organization || {}).map(person => ({ uid:String(person.uid || ''), role:String(person.role || ''), reportsToUid:String(person.reportsToUid || '') })),
-    goals:Object.values(record && record.goals || {}).map(goal => ({ id:String(goal.id || ''), period:String(goal.period || 'annual'), title:String(goal.title || ''), unit:String(goal.unit || 'count'), baseline:goal.baseline ?? null, target:goal.target ?? null, current:goal.current ?? null, source:String(goal.source || '') })),
+    goals:Object.values(record && record.goals || {}).map(goal => ({ id:String(goal.id || ''), period:String(goal.period || 'annual'), title:String(goal.title || ''), unit:String(goal.unit || 'count'), baseline:goal.baseline ?? null, target:goal.target ?? null, current:goal.current ?? null, source:String(goal.source || ''), ...(goal.unit === 'milestone' && goal.milestoneStatus ? {milestoneStatus:goal.milestoneStatus} : {}), ownerUid:String(goal.ownerUid || ''), businessUnit:String(goal.businessUnit || ''), themeId:String(goal.themeId || ''), startDate:String(goal.startDate || ''), dueDate:String(goal.dueDate || '') })),
+    strategicThemes:Object.values(record && record.strategicThemes || {}).map(item=>({id:String(item.id||''),title:String(item.title||''),description:String(item.description||'')})),
+    coreValues:Object.values(record && record.coreValues || {}).map(item=>({id:String(item.id||''),title:String(item.title||''),description:String(item.description||'')})),
   });
 
   async function loadCompanyStrategy() {
@@ -4752,7 +4758,7 @@
       state.error=error && error.message || '회사 방향을 불러오지 못했습니다.';
     } finally {
       state.loading=false;
-      if (generation===authGeneration && state===companyStrategyState && currentView==='workOrders') renderWorkOrders();
+      if (generation===authGeneration && state===companyStrategyState && ['workOrders','companyGoals'].includes(currentView)) renderCompanyStrategySurface();
     }
   }
 
@@ -4766,6 +4772,8 @@
         role:row.querySelector('[name="role"]')?.value || '',
         reportsToUid:row.querySelector('[name="reportsToUid"]')?.value || '',
       })),
+      strategicThemes:[...form.querySelectorAll('[data-strategy-theme]')].map(row=>({id:row.dataset.strategyTheme,title:row.querySelector('[name="title"]')?.value||'',description:row.querySelector('[name="description"]')?.value||''})),
+      coreValues:[...form.querySelectorAll('[data-strategy-value]')].map(row=>({id:row.dataset.strategyValue,title:row.querySelector('[name="title"]')?.value||'',description:row.querySelector('[name="description"]')?.value||''})),
       goals:[...form.querySelectorAll('[data-strategy-goal]')].map(row=>({
         id:row.dataset.strategyGoal,
         period:row.querySelector('[name="period"]')?.value || 'annual',
@@ -4775,6 +4783,12 @@
         target:numeric(row.querySelector('[name="target"]')?.value || ''),
         current:numeric(row.querySelector('[name="current"]')?.value || ''),
         source:row.querySelector('[name="source"]')?.value || '',
+        ownerUid:row.querySelector('[name="ownerUid"]')?.value||'',
+        businessUnit:row.querySelector('[name="businessUnit"]')?.value||'',
+        themeId:row.querySelector('[name="themeId"]')?.value||'',
+        startDate:row.querySelector('[name="startDate"]')?.value||'',
+        dueDate:row.querySelector('[name="dueDate"]')?.value||'',
+        ...(row.querySelector('[name="milestoneStatus"]')?.value?{milestoneStatus:row.querySelector('[name="milestoneStatus"]')?.value}:{}),
       })),
     };
   }
@@ -4785,7 +4799,7 @@
     const state=companyStrategyState, generation=authGeneration;
     const draft=readCompanyStrategyForm(form);
     const checked=window.BringCompanyStrategyCore?.validateDraft(draft);
-    if (!checked?.ok) { state.error=checked?.error || '입력 내용을 확인해 주세요.'; renderWorkOrders(); return; }
+    if (!checked?.ok) { state.error=checked?.error || '입력 내용을 확인해 주세요.'; renderCompanyStrategySurface(); return; }
     state.busy=true;
     for (const control of form.querySelectorAll?.('input, select, textarea, button') || []) control.disabled=true;
     try {
@@ -4802,7 +4816,7 @@
       state.formDraft=draft;
     } finally {
       state.busy=false;
-      if (generation===authGeneration && state===companyStrategyState) renderWorkOrders();
+      if (generation===authGeneration && state===companyStrategyState) renderCompanyStrategySurface();
     }
   }
 
@@ -4824,23 +4838,77 @@
       state.error=error && error.message || '게시하지 못했습니다.';
     } finally {
       state.busy=false;
-      if (generation===authGeneration && state===companyStrategyState) renderWorkOrders();
+      if (generation===authGeneration && state===companyStrategyState) renderCompanyStrategySurface();
     }
+  }
+
+  function renderCompanyStrategySurface() {
+    if (currentView === 'companyGoals') renderCompanyGoals();
+    else renderWorkOrders();
+  }
+
+  function renderCompanyGoals() {
+    const active=companyGoalsUiState.tab==='management'?'management':'dashboard';
+    const tabs=`<div class="company-goals-tabs" role="tablist" aria-label="회사 목표 화면"><button type="button" role="tab" id="company-goals-dashboard-tab" aria-controls="company-goals-dashboard-panel" aria-selected="${active==='dashboard'}" tabindex="${active==='dashboard'?'0':'-1'}" data-company-goals-tab="dashboard">목표 대시보드</button><button type="button" role="tab" id="company-goals-management-tab" aria-controls="company-goals-management-panel" aria-selected="${active==='management'}" tabindex="${active==='management'?'0':'-1'}" data-company-goals-tab="management">목표 관리</button></div>`;
+    const panel=active==='dashboard'?`<div id="company-goals-dashboard-panel" role="tabpanel" aria-labelledby="company-goals-dashboard-tab">${renderCompanyGoalsDashboard()}</div>`:`<div id="company-goals-management-panel" role="tabpanel" aria-labelledby="company-goals-management-tab">${renderCompanyStrategy()}</div>`;
+    main.innerHTML=`<section class="operations-hero company-goals-hero"><div><span>COMPANY DIRECTION · ${esc(companyStrategyState.year)}</span><h2>회사 목표·비전</h2><p>연간 방향을 반기·분기·월간 실행 목표로 나누어 확인합니다. 미확인 실적은 임의로 계산하지 않습니다.</p></div><div class="operations-actions">${refreshButton(companyStrategyState,'companyGoals')}</div></section>${tabs}${panel}`;
+  }
+
+  function renderCompanyGoalsDashboard() {
+    const state=companyStrategyState,C=window.BringCompanyStrategyCore,published=state.published;
+    const projected=published&&C?.projectStrategy(strategyRecordForm(published));
+    const goals=projected?.available?projected.goals:[];
+    const now=new Date(),year=Number(state.year),month=now.getFullYear()===year?now.getMonth()+1:null;
+    const quarter=month?Math.ceil(month/3):null,half=month?(month<=6?'H1':'H2'):null;
+    const periods=[
+      {id:month?`M${String(month).padStart(2,'0')}`:'',title:'월간 목표',period:month?`${month}월`:null},
+      {id:quarter?`Q${quarter}`:'',title:'분기 목표',period:quarter?`${quarter}분기`:null},
+      {id:half||'',title:'반기 목표',period:half?(half==='H1'?'상반기':'하반기'):null},
+      {id:'annual',title:'연간 목표',period:`${state.year}년`},
+    ];
+    const money=value=>value===null||value===undefined?'실적 미입력':`${new Intl.NumberFormat('ko-KR').format(value)}원`;
+    const measure=(goal,value)=>value===null||value===undefined?'미입력':`${new Intl.NumberFormat('ko-KR').format(value)}${goal.unit==='krw'?'원':goal.unit==='percent'?'%':goal.unit==='day'?'일':'건'}`;
+    const cards=periods.map(item=>{
+      const entries=item.id?goals.filter(goal=>goal.period===item.id):[];
+      return `<article class="company-goals-period-card"><header><div><h3>${item.title}</h3><span>${item.period||'기간 기준 미입력'}</span></div><span class="company-goals-badge">${entries.length?`${entries.length}개 목표`:'목표 미입력'}</span></header>${entries.length?`<ul>${entries.map(goal=>`<li><strong>${esc(goal.title)}</strong><span>목표 ${esc(measure(goal,goal.target))}</span><span>실적 ${esc(measure(goal,goal.current))}</span>${goal.percent===null?'':`<span>달성률 ${goal.percent}%</span>`}</li>`).join('')}</ul>`:'<p class="company-goals-empty">목표 미입력 <small>관리 탭에서 등록하면 표시됩니다.</small></p>'}</article>`;
+    }).join('');
+    const chartPanel=(title,periodPrefix,labels)=>{
+      const rows=labels.map((label,index)=>{
+        const key=`${periodPrefix}${periodPrefix==='M'?String(index+1).padStart(2,'0'):index+1}`;
+        const entries=goals.filter(goal=>goal.period===key&&goal.unit==='krw');
+        const target=entries.length&&entries.every(goal=>goal.target!==null)?entries.reduce((sum,goal)=>sum+goal.target,0):null;
+        const actual=entries.length&&entries.every(goal=>goal.current!==null)?entries.reduce((sum,goal)=>sum+goal.current,0):null;
+        return {label,target,actual};
+      });
+      const max=Math.max(0,...rows.flatMap(row=>[row.target,row.actual].filter(value=>value!==null)));
+      return `<section class="office-panel company-goals-chart"><header><div><h3>${title}</h3><span>단위: 원 · 확인된 목표만 표시</span></div></header>${max?`<div class="company-goals-bars" role="img" aria-label="${title} 목표 및 실적 그래프">${rows.map(row=>`<div class="company-goals-bar-column"><div class="company-goals-bar-pair">${row.target===null?'':`<span class="company-goals-bar target" title="목표 ${money(row.target)}" style="--bar-height:${Math.max(2,row.target/max*100)}%"></span>`}${row.actual===null?'':`<span class="company-goals-bar actual" title="실적 ${money(row.actual)}" style="--bar-height:${Math.max(2,row.actual/max*100)}%"></span>`}</div><small>${row.label}</small></div>`).join('')}</div><div class="company-goals-legend"><span><i class="target"></i>목표</span><span><i class="actual"></i>실적</span></div>`:'<p class="company-goals-empty">데이터 등록 후 표시 <small>원화 단위의 목표·실적이 승인 게시되면 그래프를 구성합니다.</small></p>'}</section>`;
+    };
+    const annualMoney=goals.filter(goal=>goal.period==='annual'&&goal.unit==='krw');
+    const units=[...new Set(annualMoney.map(goal=>goal.businessUnit).filter(Boolean))];
+    const businessRows=annualMoney.length?annualMoney.map(goal=>`<tr><td>${esc(goal.businessUnit||'사업부 미지정')}</td><td>${esc(goal.title)}</td><td>${esc(measure(goal,goal.target))}</td><td>${esc(measure(goal,goal.current))}</td><td>${goal.percent===null?'실적 확인 필요':`${goal.percent}%`}</td></tr>`).join(''):'<tr><td colspan="5" class="company-goals-empty">사업부별 연간 목표 미입력</td></tr>';
+    const timeline=goals.filter(goal=>goal.dueDate&&goal.dueDate>=now.toISOString().slice(0,10)).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,5);
+    const cumulativeSeries=field=>{let begun=false,total=0;const points=[];for(let index=0;index<12;index++){const period=`M${String(index+1).padStart(2,'0')}`,entries=goals.filter(goal=>goal.period===period&&goal.unit==='krw');if(!entries.length||entries.some(goal=>goal[field]===null)){if(begun)break;continue;}begun=true;total+=entries.reduce((sum,goal)=>sum+goal[field],0);points.push({index,total});}return points;};
+    const targetSeries=cumulativeSeries('target'),actualSeries=cumulativeSeries('current'),seriesMax=Math.max(0,...targetSeries.map(item=>item.total),...actualSeries.map(item=>item.total));
+    const cumulative=seriesMax?`<svg class="company-goals-cumulative" viewBox="0 0 500 170" role="img" aria-label="등록된 구간의 월별 누적 매출 목표와 실적"><line x1="36" y1="132" x2="486" y2="132"/><line x1="36" y1="18" x2="36" y2="132"/>${[0,2,4,6,8,10].map(index=>`<text x="${44+index*37}" y="154">${index+1}월</text>`).join('')}${targetSeries.length>1?`<polyline class="target" points="${targetSeries.map(item=>`${44+item.index*37},${132-item.total/seriesMax*106}`).join(' ')}"/>`:''}${targetSeries.map(item=>`<circle class="target" cx="${44+item.index*37}" cy="${132-item.total/seriesMax*106}" r="3.5"/>`).join('')}${actualSeries.length>1?`<polyline class="actual" points="${actualSeries.map(item=>`${44+item.index*37},${132-item.total/seriesMax*106}`).join(' ')}"/>`:''}${actualSeries.map(item=>`<circle class="actual" cx="${44+item.index*37}" cy="${132-item.total/seriesMax*106}" r="3.5"/>`).join('')}</svg><div class="company-goals-legend"><span><i class="target"></i>누적 목표</span><span><i class="actual"></i>누적 실적</span></div><small class="company-goals-chart-note">연속해서 등록된 첫 달부터 표시 · 미입력 월은 추정하지 않음</small>`:'<p class="company-goals-empty">월별 목표·실적 미입력</p>';
+    const mission=projected?.available&&projected.vision?`<p>${esc(projected.vision)}</p>`:'<p class="company-goals-empty">비전 미입력</p>';
+    const values=projected?.available?projected.coreValues||[]:[],themes=projected?.available?projected.strategicThemes||[]:[];
+    return `<section class="company-goals-period-grid" aria-label="월간·분기·반기·연간 목표">${cards}</section><div class="company-goals-grid"><div class="company-goals-grid-wide">${chartPanel('월별 매출 목표·실적','M',Array.from({length:12},(_,i)=>`${i+1}월`))}</div><div class="company-goals-grid-wide">${chartPanel('분기별 매출 목표·실적','Q',['1분기','2분기','3분기','4분기'])}</div><section class="office-panel company-goals-chart"><header><div><h3>연간 목표 구성</h3><span>사업부별 목표 등록 기준</span></div></header>${units.length?`<ul class="company-goals-unit-list">${units.map(unit=>`<li>${esc(unit)}<span>${annualMoney.filter(goal=>goal.businessUnit===unit).length}개 목표</span></li>`).join('')}</ul>`:'<p class="company-goals-empty">사업부별 목표 미입력</p>'}</section><section class="office-panel company-goals-grid-wide"><header><div><h3>사업부 목표 및 실적</h3><span>${year}년 · 실제 승인본 기준</span></div></header><div class="company-goals-table-wrap"><table><thead><tr><th>사업부</th><th>목표 항목</th><th>연간 목표</th><th>현재 실적</th><th>달성률</th></tr></thead><tbody>${businessRows}</tbody></table></div></section><section class="office-panel company-goals-chart"><header><div><h3>연간 누적 추이</h3><span>월별 원화 목표·실적 입력분</span></div></header>${cumulative}</section><section class="office-panel company-goals-chart"><header><div><h3>다음 주요 목표</h3><span>게시된 기한 기준</span></div></header>${timeline.length?`<ul class="company-goals-milestones">${timeline.map(goal=>`<li><time>${esc(goal.dueDate)}</time><span>${esc(goal.title)}</span><small>${esc(goal.businessUnit||'사업부 미지정')}</small></li>`).join('')}</ul>`:'<p class="company-goals-empty">등록된 주요 기한이 없습니다.</p>'}</section><section class="office-panel company-goals-grid-wide"><header><div><h3>우리의 미션·비전</h3></div></header>${mission}</section><section class="office-panel company-goals-chart"><header><div><h3>핵심 가치</h3></div></header>${values.length?`<ul class="company-goals-list">${values.map(item=>`<li><strong>${esc(item.title)}</strong><span>${esc(item.description)}</span></li>`).join('')}</ul>`:'<p class="company-goals-empty">핵심 가치 미입력</p>'}</section><section class="office-panel company-goals-grid-wide"><header><div><h3>핵심 전략 과제</h3></div></header>${themes.length?`<div class="company-goals-theme-grid">${themes.map(item=>`<article><strong>${esc(item.title)}</strong><span>${esc(item.description)}</span></article>`).join('')}</div>`:'<p class="company-goals-empty">전략 과제 미입력</p>'}</section></div>${state.error?`<p role="alert" class="company-strategy-error">${esc(state.error)}</p>`:''}${!state.loaded&&!state.loading&&!state.error?'<p class="company-goals-data-state" role="status">승인된 목표 데이터 확인 중 · 게시본이 없으면 입력 안내만 표시됩니다.</p>':''}`;
   }
 
   function renderCompanyStrategy() {
     const state=companyStrategyState, published=state.published;
     const C=window.BringCompanyStrategyCore;
     const approved=published && C?.projectStrategy(strategyRecordForm(published));
-    const draft=state.formDraft || (state.draft ? strategyRecordForm(state.draft) : {year:state.year,vision:'',organization:[],goals:[]});
+    const draft=state.formDraft || (state.draft ? strategyRecordForm(state.draft) : {year:state.year,vision:'',organization:[],goals:[],strategicThemes:[],coreValues:[]});
     const memberOptions=workOrderState.members.filter(item=>item && item.uid).map(item=>({uid:String(item.uid),name:String(item.displayName || item.name || item.email || item.uid)}));
     const memberName=uid=>memberOptions.find(item=>item.uid===uid)?.name || uid;
     const orgRow=person=>`<div class="company-strategy-row" data-strategy-person><label>팀원<select name="uid" required><option value="">팀원 선택</option>${memberOptions.map(member=>`<option value="${esc(member.uid)}"${person.uid===member.uid?' selected':''}>${esc(member.name)}</option>`).join('')}</select></label><label>역할<input name="role" maxlength="60" value="${esc(person.role)}" placeholder="예: 현장 데이터 담당" required></label><label>보고 대상<select name="reportsToUid"><option value="">최상위</option>${memberOptions.map(member=>`<option value="${esc(member.uid)}"${person.reportsToUid===member.uid?' selected':''}>${esc(member.name)}</option>`).join('')}</select></label><button type="button" class="mini-button" data-strategy-remove-person>제거</button></div>`;
-    const goalRow=goal=>`<div class="company-strategy-row company-strategy-goal-row" data-strategy-goal="${esc(goal.id)}"><label>기간<select name="period"><option value="annual"${goal.period==='annual'?' selected':''}>연간</option><option value="H1"${goal.period==='H1'?' selected':''}>상반기</option><option value="H2"${goal.period==='H2'?' selected':''}>하반기</option></select></label><label>목표<input name="title" maxlength="200" value="${esc(goal.title)}" required></label><label>단위<select name="unit">${[['count','건'],['percent','%'],['krw','원'],['day','일'],['milestone','마일스톤']].map(([unit,label])=>`<option value="${unit}"${goal.unit===unit?' selected':''}>${label}</option>`).join('')}</select></label><label>기준값<input name="baseline" type="number" step="any" value="${goal.baseline ?? ''}"></label><label>목표값<input name="target" type="number" step="any" value="${goal.target ?? ''}"></label><label>확인값<input name="current" type="number" step="any" value="${goal.current ?? ''}"></label><label>수치 출처<input name="source" maxlength="200" value="${esc(goal.source)}" placeholder="CRM 기록·보고서 링크"></label><button type="button" class="mini-button" data-strategy-remove-goal>제거</button></div>`;
+    const directionRow=(item,kind)=>`<div class="company-strategy-row" data-strategy-${kind}="${esc(item.id)}"><label>이름<input name="title" maxlength="80" value="${esc(item.title)}" required></label><label>설명<input name="description" maxlength="240" value="${esc(item.description)}"></label><button type="button" class="mini-button" data-strategy-remove-${kind}>제거</button></div>`;
+    const goalRow=goal=>`<div class="company-strategy-row company-strategy-goal-row" data-strategy-goal="${esc(goal.id)}"><label>기간<select name="period">${[['annual','연간'],['H1','상반기'],['H2','하반기'],['Q1','1분기'],['Q2','2분기'],['Q3','3분기'],['Q4','4분기'],...Array.from({length:12},(_,i)=>[`M${String(i+1).padStart(2,'0')}`,`${i+1}월`])].map(([key,label])=>`<option value="${key}"${goal.period===key?' selected':''}>${label}</option>`).join('')}</select></label><label>목표<input name="title" maxlength="200" value="${esc(goal.title)}" required></label><label>사업부<input name="businessUnit" maxlength="80" value="${esc(goal.businessUnit||'')}" placeholder="사업부·팀"></label><label>담당자<select name="ownerUid"><option value="">담당자 미지정</option>${memberOptions.map(member=>`<option value="${esc(member.uid)}"${goal.ownerUid===member.uid?' selected':''}>${esc(member.name)}</option>`).join('')}</select></label><label>핵심 전략<select name="themeId"><option value="">연결 안 함</option>${draft.strategicThemes.map(item=>`<option value="${esc(item.id)}"${goal.themeId===item.id?' selected':''}>${esc(item.title)}</option>`).join('')}</select></label><label>시작일<input name="startDate" type="date" value="${esc(goal.startDate||'')}"></label><label>목표일<input name="dueDate" type="date" value="${esc(goal.dueDate||'')}"></label><label>단위<select name="unit">${[['count','건'],['percent','%'],['krw','원'],['day','일'],['milestone','마일스톤']].map(([unit,label])=>`<option value="${unit}"${goal.unit===unit?' selected':''}>${label}</option>`).join('')}</select></label><label>기준값<input name="baseline" type="number" step="any" value="${goal.baseline ?? ''}"${goal.unit==='milestone'?' disabled':''}></label><label>목표값<input name="target" type="number" step="any" value="${goal.target ?? ''}"${goal.unit==='milestone'?' disabled':''}></label><label>확인값<input name="current" type="number" step="any" value="${goal.current ?? ''}"${goal.unit==='milestone'?' disabled':''}></label><label${goal.unit==='milestone'?'':' hidden'}>마일스톤 상태<select name="milestoneStatus"><option value=""${goal.milestoneStatus?'':' selected'}>상태 선택</option><option value="not_started"${goal.milestoneStatus==='not_started'?' selected':''}>시작 전</option><option value="in_progress"${goal.milestoneStatus==='in_progress'?' selected':''}>진행 중</option><option value="done"${goal.milestoneStatus==='done'?' selected':''}>완료</option></select></label><label>수치 출처<input name="source" maxlength="200" value="${esc(goal.source)}" placeholder="CRM 기록·보고서 링크"></label><button type="button" class="mini-button" data-strategy-remove-goal>제거</button></div>`;
     return `<section class="company-strategy office-panel" aria-label="회사 방향"><header><div><span>승인된 원본만 직원에게 표시</span><h3>회사 방향 · ${esc(state.year)}</h3></div><button type="button" class="mini-button" data-strategy-refresh${state.editing?' disabled':''}>다시 불러오기</button></header>
       ${state.loading?'<p role="status">회사 방향을 불러오는 중입니다.</p>':state.error?`<p role="alert" class="company-strategy-error">${esc(state.error)}</p>`:''}
-      ${approved?.available?`<div class="company-strategy-approved"><span>게시됨 · ${esc(published.publishedAt || '')}</span><p>${esc(approved.vision)}</p>${approved.organization.length?`<div class="company-strategy-organization" aria-label="조직 역할과 보고 관계"><strong>조직·담당</strong><div>${approved.organization.map(person=>`<article><b>${esc(memberName(person.uid))}</b><span>${esc(person.role)}</span><small>${person.reportsToUid?`보고 대상 · ${esc(memberName(person.reportsToUid))}`:'최상위 책임'}</small></article>`).join('')}</div></div>`:''}<div class="company-strategy-goals">${approved.goals.map(goal=>`<article><small>${goal.period==='annual'?'연간':goal.period==='H1'?'상반기':'하반기'}</small><strong>${esc(goal.title)}</strong><span>${goal.percent===null?'실적 확인 필요':`${goal.percent}%`}</span></article>`).join('')}</div></div>`:state.loaded?'<p>게시된 회사 방향이 없습니다. 관리자가 초안을 작성한 뒤 게시하면 직원에게 표시됩니다.</p>':'<p>회사 방향 조회 확인 필요 · 비어 있는 목표로 표시하지 않습니다.</p>'}
-      ${workOrderState.admin?`<div class="company-strategy-admin"><p>관리자 초안 ${state.draft?`· ${state.draft.revision}차 저장본`:'· 아직 없음'} · 저장만으로 게시되지 않습니다. 게시된 승인본만 TV 자동 갱신 대상에 포함됩니다.</p>${!state.editing?`<button type="button" class="mini-button" data-strategy-edit>초안 ${state.draft?'수정':'작성'}</button>`:`<form data-company-strategy-form><label class="company-strategy-vision">비전<textarea name="vision" maxlength="500" rows="3" placeholder="회사가 이루려는 방향을 입력하세요">${esc(draft.vision)}</textarea></label><h4>조직·담당 역할</h4><div class="company-strategy-rows">${draft.organization.map(orgRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-person>+ 팀원 추가</button><h4>연간·반기 목표</h4><div class="company-strategy-rows">${draft.goals.map(goalRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-goal>+ 목표 추가</button><div class="company-strategy-actions"><button type="submit" class="primary-button"${state.busy?' disabled':''}>초안 저장</button><button type="button" class="mini-button" data-strategy-publish${state.busy||state.dirty||!state.draft?' disabled':''}>직원에게 게시</button><button type="button" class="mini-button" data-strategy-cancel>닫기</button></div><p>마일스톤은 숫자 진행률로 계산하지 않습니다. 미확인 실적은 빈칸으로 두고 수치 출처를 명시해 주세요.</p></form>`}</div>`:''}
+      ${approved?.available?`<div class="company-strategy-approved"><span>게시됨 · ${esc(published.publishedAt || '')}</span><p>${esc(approved.vision)}</p>${approved.organization.length?`<div class="company-strategy-organization" aria-label="조직 역할과 보고 관계"><strong>조직·담당</strong><div>${approved.organization.map(person=>`<article><b>${esc(memberName(person.uid))}</b><span>${esc(person.role)}</span><small>${person.reportsToUid?`보고 대상 · ${esc(memberName(person.reportsToUid))}`:'최상위 책임'}</small></article>`).join('')}</div></div>`:''}<div class="company-strategy-goals">${approved.goals.map(goal=>`<article><small>${esc(C?.periodLabel?.(goal.period)||goal.period)}</small><strong>${esc(goal.title)}</strong><span>${goal.unit==='milestone'?({not_started:'시작 전',in_progress:'진행 중',done:'완료'}[goal.milestoneStatus]||'상태 확인 필요'):goal.percent===null?'실적 확인 필요':`${goal.percent}%`}</span></article>`).join('')}</div></div>`:state.loaded?'<p>게시된 회사 방향이 없습니다. 관리자가 초안을 작성한 뒤 게시하면 직원에게 표시됩니다.</p>':'<p>회사 방향 조회 확인 필요 · 비어 있는 목표로 표시하지 않습니다.</p>'}
+      ${workOrderState.admin?`<div class="company-strategy-admin"><p>관리자 초안 ${state.draft?`· ${state.draft.revision}차 저장본`:'· 아직 없음'} · 저장만으로 게시되지 않습니다. 게시된 승인본만 TV 자동 갱신 대상에 포함됩니다.</p>${!state.editing?`<button type="button" class="mini-button" data-strategy-edit>초안 ${state.draft?'수정':'작성'}</button>`:`<form data-company-strategy-form><label class="company-strategy-vision">비전·미션<textarea name="vision" maxlength="500" rows="3" placeholder="회사가 이루려는 방향을 입력하세요">${esc(draft.vision)}</textarea></label><h4>전략 과제</h4><div class="company-strategy-rows">${draft.strategicThemes.map(item=>directionRow(item,'theme')).join('')}</div><button type="button" class="mini-button" data-strategy-add-theme>+ 전략 과제 추가</button><h4>핵심 가치</h4><div class="company-strategy-rows">${draft.coreValues.map(item=>directionRow(item,'value')).join('')}</div><button type="button" class="mini-button" data-strategy-add-value>+ 핵심 가치 추가</button><h4>조직·담당 역할</h4><div class="company-strategy-rows">${draft.organization.map(orgRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-person>+ 팀원 추가</button><h4>연간·반기·분기·월간 목표</h4><p>수치는 확인된 목표와 실적만 입력하고, 실제 달성률은 목표값·확인값·출처가 있을 때만 계산합니다.</p>${[['annual','연간'],['H1','상반기'],['H2','하반기'],['Q1','1분기'],['Q2','2분기'],['Q3','3분기'],['Q4','4분기'],...Array.from({length:12},(_,i)=>[`M${String(i+1).padStart(2,'0')}`,`${i+1}월`])].map(([period,label])=>`<details class="company-goals-editor-period"${draft.goals.some(goal=>goal.period===period)?' open':''}><summary>${label} <span>${draft.goals.filter(goal=>goal.period===period).length}개</span></summary><div class="company-strategy-rows">${draft.goals.filter(goal=>goal.period===period).map(goalRow).join('')}</div><button type="button" class="mini-button" data-strategy-add-goal="${period}">+ ${label} 목표 추가</button></details>`).join('')}<div class="company-strategy-actions"><button type="submit" class="primary-button"${state.busy?' disabled':''}>초안 저장</button><button type="button" class="mini-button" data-strategy-publish${state.busy||state.dirty||!state.draft?' disabled':''}>직원에게 게시</button><button type="button" class="mini-button" data-strategy-cancel>닫기</button></div><p>마일스톤은 숫자 진행률로 계산하지 않습니다. 미확인 실적은 빈칸으로 두고 수치 출처를 명시해 주세요.</p></form>`}</div>`:''}
     </section>`;
   }
 
@@ -4900,6 +4968,7 @@
     if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
     else if (currentView === "weeklyReports") renderWeeklyReports();
+    else if (currentView === "companyGoals") renderCompanyGoals();
     try {
       let data = await api.loadWorkOrders();
       if (data && data.localOnly === true && currentView === "projectRoadmap" && new URLSearchParams(location.search).get("demo") === "1") {
@@ -4930,6 +4999,7 @@
       if (currentView === "workOrders") renderWorkOrders();
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
       else if (currentView === "weeklyReports") renderWeeklyReports();
+      else if (currentView === "companyGoals") renderCompanyGoals();
       else if (currentView === "cleaningCenter") renderCleaningCenter();
     }
   }
@@ -12322,29 +12392,34 @@
       modalContent.querySelector('#cleaningOrderTransitionForm textarea[name="note"]')?.focus();
       return;
     }
+    const goalsTab=event.target.closest('[data-company-goals-tab]');
+    if(goalsTab){companyGoalsUiState.tab=goalsTab.dataset.companyGoalsTab==='management'?'management':'dashboard';renderCompanyGoals();return;}
     if (event.target.closest('[data-strategy-refresh]')) { void loadCompanyStrategy(); return; }
     if (event.target.closest('[data-strategy-edit]')) {
       if (!workOrderState.admin) return showToast("관리자만 회사 방향을 편집할 수 있습니다.", "error");
       companyStrategyState.formDraft=strategyRecordForm(companyStrategyState.draft);
       companyStrategyState.editing=true;
       companyStrategyState.dirty=false;
-      renderWorkOrders(); return;
+      renderCompanyStrategySurface(); return;
     }
     if (event.target.closest('[data-strategy-cancel]')) {
       if (companyStrategyState.dirty && !window.confirm('저장하지 않은 입력을 닫을까요?')) return;
       companyStrategyState.editing=false; companyStrategyState.formDraft=null; companyStrategyState.dirty=false;
-      renderWorkOrders(); return;
+      renderCompanyStrategySurface(); return;
     }
     if (event.target.closest('[data-strategy-publish]')) { await publishCompanyStrategy(); return; }
     const strategyForm=event.target.closest('[data-company-strategy-form]');
-    if (strategyForm && event.target.closest('[data-strategy-add-person], [data-strategy-add-goal], [data-strategy-remove-person], [data-strategy-remove-goal]')) {
-      const remove=event.target.closest('[data-strategy-remove-person], [data-strategy-remove-goal]');
-      if (remove) remove.closest('[data-strategy-person], [data-strategy-goal]')?.remove();
+    if (strategyForm && event.target.closest('[data-strategy-add-person], [data-strategy-add-goal], [data-strategy-add-theme], [data-strategy-add-value], [data-strategy-remove-person], [data-strategy-remove-goal], [data-strategy-remove-theme], [data-strategy-remove-value]')) {
+      const remove=event.target.closest('[data-strategy-remove-person], [data-strategy-remove-goal], [data-strategy-remove-theme], [data-strategy-remove-value]');
+      if (remove) remove.closest('[data-strategy-person], [data-strategy-goal], [data-strategy-theme], [data-strategy-value]')?.remove();
       companyStrategyState.formDraft=readCompanyStrategyForm(strategyForm);
       if (event.target.closest('[data-strategy-add-person]')) companyStrategyState.formDraft.organization.push({uid:'',role:'',reportsToUid:''});
-      if (event.target.closest('[data-strategy-add-goal]')) companyStrategyState.formDraft.goals.push({id:`g_${Date.now().toString(36)}`,period:'annual',title:'',unit:'count',baseline:null,target:null,current:null,source:''});
+      const addGoal=event.target.closest('[data-strategy-add-goal]');
+      if (addGoal) companyStrategyState.formDraft.goals.push({id:`g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`,period:addGoal.dataset.strategyAddGoal||'annual',title:'',unit:'count',baseline:null,target:null,current:null,source:''});
+      if (event.target.closest('[data-strategy-add-theme]')) companyStrategyState.formDraft.strategicThemes.push({id:`theme_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,5)}`,title:'',description:''});
+      if (event.target.closest('[data-strategy-add-value]')) companyStrategyState.formDraft.coreValues.push({id:`value_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,5)}`,title:'',description:''});
       companyStrategyState.dirty=true;
-      renderWorkOrders(); return;
+      renderCompanyStrategySurface(); return;
     }
     const operationsJump = event.target.closest("[data-operations-jump]");
     if (operationsJump) { openOperationsCheck(operationsJump.dataset.operationsJump); return; }
@@ -12800,7 +12875,9 @@
     if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
-      void loadWorkOrders().then(() => showToast("다시 불러왔습니다.", "success"));
+      const refreshes=[loadWorkOrders()];
+      if (currentView === "companyGoals") refreshes.push(loadCompanyStrategy());
+      void Promise.all(refreshes).then(() => showToast("다시 불러왔습니다.", "success"));
       return;
     }
     if (projectRoadmapState.extensionProjectId && event.target.closest("[data-roadmap-mode], [data-roadmap-shift], [data-roadmap-today], [data-roadmap-project-new], [data-roadmap-project-progress], [data-roadmap-select], [data-roadmap-new]")) {
@@ -15217,6 +15294,11 @@
   function rememberCompanyStrategyInput(event) {
     const form=event.target.closest?.('[data-company-strategy-form]');
     if (!form || !companyStrategyState.editing) return;
+    if(event.target.name==='unit'){
+      const row=event.target.closest('[data-strategy-goal]'),milestone=event.target.value==='milestone';
+      for(const name of ['baseline','target','current']){const input=row?.querySelector(`[name="${name}"]`);if(input){input.disabled=milestone;if(milestone)input.value='';}}
+      const statusLabel=row?.querySelector('[name="milestoneStatus"]')?.closest('label');if(statusLabel){statusLabel.hidden=!milestone;const select=statusLabel.querySelector('select');if(milestone){if(select&&!select.value)select.value='not_started';}else if(select)select.value='';}
+    }
     companyStrategyState.formDraft=readCompanyStrategyForm(form);
     companyStrategyState.dirty=true;
     const publish=form.querySelector('[data-strategy-publish]');
@@ -15224,6 +15306,12 @@
   }
   document.addEventListener('input', rememberCompanyStrategyInput);
   document.addEventListener('change', rememberCompanyStrategyInput);
+  document.addEventListener('keydown',event=>{
+    const current=event.target.closest?.('[data-company-goals-tab]');if(!current)return;
+    const tabs=[...document.querySelectorAll('[data-company-goals-tab]')],index=tabs.indexOf(current);
+    const next=event.key==='ArrowRight'||event.key==='ArrowDown'?(index+1)%tabs.length:event.key==='ArrowLeft'||event.key==='ArrowUp'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
+    if(next<0)return;event.preventDefault();companyGoalsUiState.tab=tabs[next].dataset.companyGoalsTab;renderCompanyGoals();document.querySelector(`[data-company-goals-tab="${companyGoalsUiState.tab}"]`)?.focus();
+  });
 
   document.addEventListener("submit", async event => {
     event.preventDefault();
@@ -17111,7 +17199,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
@@ -17204,7 +17292,7 @@ document.addEventListener("keydown", event => {
   }, 30000);
 
   setInterval(() => {
-    if (currentView==='workOrders' && !document.hidden && !workOrderTyping()
+    if (['workOrders','companyGoals'].includes(currentView) && !document.hidden && !workOrderTyping()
       && !workOrderState.capacityEditing && !workOrderState.projectReportEditingId
       && !companyStrategyState.loading
       && Date.now()-companyStrategyState.refreshedAt>=30*1000) void loadCompanyStrategy();

@@ -29,7 +29,7 @@ function projectApprovedStrategy(publication,members,year){
    role:person.role,
    reportsToIndex:person.reportsToUid?positions.get(person.reportsToUid):null,
   })),
-  goals:projected.goals.map(goal=>({period:goal.period,title:goal.title,unit:goal.unit,target:goal.target,current:goal.current,percent:goal.percent,source:goal.source})),
+  goals:projected.goals.map(goal=>({period:goal.period,title:goal.title,unit:goal.unit,target:goal.target,current:goal.current,percent:goal.percent,source:goal.source,...(goal.unit==='milestone'?{milestoneStatus:goal.milestoneStatus||null}:{})})),
  };
 }
 
