@@ -10,6 +10,7 @@ const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
+const { createLocalWorkAssessor } = require("./local-gemini-assessment");
 const Core = require("./core");
 const OfficeCore = require("./office-core");
 const OfficeAttachment = require("./office-attachment");
@@ -8587,6 +8588,21 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     input,
     fetchImpl: (url, options) => net.fetch(url, options)
   });
+});
+let localWorkAssessor = null;
+secureCanonicalHandle("crm:work-assessment", async input => {
+  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => key !== "assigneeUid") || typeof input.assigneeUid !== "string" || input.assigneeUid.length > 128) throw new Error("담당자 선택을 확인해 주세요.");
+  const client = remoteClient;
+  const user = client?.authState().user;
+  const role = user?.accessRole || user?.role;
+  if (!user?.uid || !["admin", "member"].includes(role)) throw new Error("CRM 로그인을 확인해 주세요.");
+  const guard = client.captureSessionGuard();
+  const data = await client.loadWorkOrders();
+  client.assertSessionGuardActive(guard);
+  if (!localWorkAssessor) localWorkAssessor = createLocalWorkAssessor({userDataPath: app.getPath("userData"), localAppData: process.env.LOCALAPPDATA || ""});
+  const result = await localWorkAssessor({data, selectedUid: input.assigneeUid, viewer: {uid: user.uid, role}});
+  client.assertSessionGuardActive(guard);
+  return result;
 });
 secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {

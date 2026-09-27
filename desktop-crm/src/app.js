@@ -2332,6 +2332,11 @@
     const workHealth = workReady ? workspaceCore.health({ orders: dashboardOrders, today }) : null;
     const workSummary = workHealth ? `<div class="kpi-grid">${kpi("업무 검수 완료", `${workHealth.done}/${workHealth.total}건`, "검수 완료 건수 / 전체 업무", "#3182f6")}${kpi("진행 중 업무", workHealth.total - workHealth.done, "완료 전 업무", "#5cc9d8")}${kpi("기한 초과 업무", workHealth.overdue, "완료 전 · 마감일 경과", "#f47d86", workHealth.overdue ? "alert" : "")}${kpi("검수 대기", workHealth.review, "제출됨 · 승인 전", "#8b7de8")}</div>` : `<p class="project-workspace-empty">${workOrderState.error ? "업무 조회 오류 · 업무지시에서 다시 확인해 주세요." : "업무지시를 불러오는 중입니다…"}</p>`;
     const dashboardTaskList = workReady ? `<div class="dashboard-person-tasks" aria-label="${esc(dashboardTitle)} 업무 목록">${dashboardOrders.length ? [...dashboardOrders].sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"))).slice(0, 8).map(item => `<div class="dashboard-person-task"><strong>${esc(item.title || "제목 없는 업무")}</strong><span>${esc(item.dueDate || "마감일 미정")}</span></div>`).join("") : "배정된 업무가 없습니다."}</div>` : "";
+    const assessmentKey = workReady ? JSON.stringify([selectedDashboardUid, ...dashboardOrders.map(item => [item.id, item.status, item.progress, item.dueDate, item.updatedAt])]) : "";
+    if (workReady && dashboardOrders.length && !workAssessmentState.loading && workAssessmentState.key !== assessmentKey) queueMicrotask(() => { if (currentView === "dashboard") void loadWorkAssessment(assessmentKey, selectedDashboardUid); });
+    const assessmentCurrent = workAssessmentState.key === assessmentKey;
+    const assessmentText = assessmentCurrent && workAssessmentState.result ? esc(workAssessmentState.result.text).replace(/\n/g, "<br>") : "";
+    const assessmentPanel = `<section class="dashboard-ai-assessment" aria-label="Gemini 업무 판단"><header><div><strong>Gemini 업무 판단</strong><small>수치는 CRM 원본에서 계산 · AI는 확인할 항목만 제안</small></div><button type="button" class="mini-button" data-dashboard-ai-retry${!workReady || !dashboardOrders.length || workAssessmentState.loading ? " disabled" : ""}>다시 분석</button></header>${!workReady ? "<p>업무 자료를 불러오는 중입니다.</p>" : !dashboardOrders.length ? "<p>분석할 업무가 없습니다.</p>" : assessmentCurrent && workAssessmentState.loading ? "<p>Gemini가 현재 업무를 검토 중입니다…</p>" : assessmentCurrent && workAssessmentState.error ? `<p role="alert">${esc(workAssessmentState.error)}</p>` : assessmentText ? `<p>${assessmentText}</p><small>분석 시각 ${esc(workAssessmentState.result.analyzedAt || "")} · ${esc(workAssessmentState.result.model || "Gemini")}</small>` : "<p>현재 업무를 분석하고 있습니다…</p>"}</section>`;
     main.innerHTML = `
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
@@ -2343,7 +2348,7 @@
         ${kpi("오늘 연락할 고객", stats.todayContacts, "오늘 연락 예정", "#5cc9d8", stats.todayContacts ? "good" : "")}
         ${kpi("늦어진 연락", stats.overdueContacts, "우선 확인 필요", "#f47d86", stats.overdueContacts ? "alert" : "")}
       </div>
-      <section class="project-workspace-dashboard-summary" aria-label="${esc(dashboardTitle)} 업무지시 현황"><div class="panel-head"><div><h3>${esc(dashboardTitle)} 업무지시 현황</h3><p>CRM 원본 업무 · 검수 완료와 입력 진도는 구분합니다.</p></div><div class="dashboard-person-actions">${dashboardPersonSelect}<button type="button" class="text-button" data-view="workOrders">업무지시 보기 →</button></div></div>${workSummary}${dashboardTaskList}</section>
+      <section class="project-workspace-dashboard-summary" aria-label="${esc(dashboardTitle)} 업무지시 현황"><div class="panel-head"><div><h3>${esc(dashboardTitle)} 업무지시 현황</h3><p>CRM 원본 업무 · 검수 완료와 입력 진도는 구분합니다.</p></div><div class="dashboard-person-actions">${dashboardPersonSelect}<button type="button" class="text-button" data-view="workOrders">업무지시 보기 →</button></div></div>${workSummary}${dashboardTaskList}${assessmentPanel}</section>
       ${operationsCheckMarkup()}
       <div class="dashboard-grid">
         <section class="panel">
@@ -4733,6 +4738,24 @@
     scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
     projectReports: [], projectReportsLoaded: false, projectReportsLoading: false, projectReportsError: "", projectReportEditingId: "",
   };
+  let workAssessmentState = {key: "", loading: false, result: null, error: ""};
+  async function loadWorkAssessment(key, assigneeUid) {
+    if (workAssessmentState.loading || workAssessmentState.key === key) return;
+    const generation = authGeneration, uid = currentAuthUid();
+    workAssessmentState = {key, loading: true, result: null, error: ""};
+    if (currentView === "dashboard") renderDashboard();
+    try {
+      const result = await window.bringCRM.assessWorkOrders({assigneeUid});
+      if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) workAssessmentState.result = result;
+    } catch (error) {
+      if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) workAssessmentState.error = String(error?.message || "Gemini 분석을 완료하지 못했습니다.").slice(0, 240);
+    } finally {
+      if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) {
+        workAssessmentState.loading = false;
+        if (currentView === "dashboard") renderDashboard();
+      }
+    }
+  }
   let cleaningOrderState = { orders: [], quoteSets: Object.create(null), loaded: false, attempted: false, loading: false, loadingMore: false, error: "", loadMoreError: "", lastLoadedAt: 0, busy: false, search: "", statusFilter: "all", hasMore: false, nextCursor: null };
   let cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "" };
   let companyStrategyState = { year:String(new Date().getFullYear()), loaded:false, loading:false, refreshedAt:0, error:'', draft:null, published:null, formDraft:null, editing:false, dirty:false, busy:false };
@@ -12182,6 +12205,14 @@
   }
 
   document.addEventListener("click", async event => {
+    if (event.target.closest("[data-dashboard-ai-retry]")) {
+      if (workAssessmentState.loading) return;
+      workAssessmentState.key = "";
+      workAssessmentState.result = null;
+      workAssessmentState.error = "";
+      if (currentView === "dashboard") renderDashboard();
+      return;
+    }
     const cleaningStatusPreset = event.target.closest("[data-cleaning-status-preset]");
     if (cleaningStatusPreset && currentView === "cleaningCenter") {
       cleaningOrderState.statusFilter = cleaningStatusPreset.dataset.cleaningStatusPreset || "all";
