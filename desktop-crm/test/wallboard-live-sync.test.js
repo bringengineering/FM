@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createWallboardLiveSync } = require('../src/wallboard-live-sync');
+const { createWallboardLiveSync, defaultPlaylist } = require('../src/wallboard-live-sync');
+
+test('live publication defaults to the five concise TV scenes',()=>{
+ assert.deepEqual(defaultPlaylist.map(item=>item.key),['overview','portfolio','notice','strategy','companyRevenue']);
+});
 
 function workOrder(overrides = {}) {
   return {

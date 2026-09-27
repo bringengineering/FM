@@ -26,7 +26,7 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-28-1'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-28-3'});
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -99,6 +99,32 @@ test('web TV accepts and displays approved monthly and quarterly strategy goals'
  assert.match(source,/진척률 미산정/);
 });
 
+test('web TV only rotates five concise scenes, including legacy publications',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ const helper=source.match(/active=(function\(\)\{[\s\S]*?\});/)?.[1];
+ assert.ok(helper,'TV client must define its automatic scene selection');
+ const rotationKeys=['overview','portfolio','notice','strategy','companyRevenue'];
+ assert.match(source,/const rotationKeys=\['overview','portfolio','notice','strategy','companyRevenue'\]/);
+ const sceneKeys=['overview','roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice','strategy','companyRevenue'];
+ const durations=Object.fromEntries(sceneKeys.map(key=>[key,30]));
+ const legacy={playlist:sceneKeys.map(key=>({key,enabled:true,seconds:30})),model:{strategy:{year:'2026'}}};
+ const active=vm.runInNewContext(`(${helper})`,{board:legacy,sceneKeys,rotationKeys,durations,currentStrategy:()=>true});
+ assert.deepEqual(active().map(item=>item.key),rotationKeys);
+ assert.deepEqual(active().map(item=>item.seconds),rotationKeys.map(()=>30));
+ assert.match(source,/if\(scene\.key==='overview'\)return 1/);
+});
+
+test('web TV exposes shared typography tokens for consistent TV readability',async()=>{
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/--tv-font-small/);
+ assert.match(css,/--tv-font-body/);
+ assert.match(css,/--tv-font-heading/);
+ assert.match(css,/font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif/);
+ assert.match(css,/\.content[^}]*font-size:var\(--tv-font-body\)/);
+ assert.match(css,/\.overview-roadmap,\.overview-agenda\{display:none!important\}/);
+ assert.match(css,/grid-template-areas:"clean trend"/);
+});
+
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.doesNotThrow(()=>new vm.Script(source), 'served TV client must be valid JavaScript');
@@ -113,16 +139,17 @@ test('web TV client rotates roadmap performance and schedule scenes safely',asyn
  assert.doesNotMatch(source,/\b(phone|consultation|password|detailedAddress)\b/i);
 });
 
-test('web TV includes one integrated overview scene for roadmap, cleaning operations and today schedule',async()=>{
+test('web TV overview keeps cleaning and weekly summary while hiding duplicate roadmap and schedule panels',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.match(source,/overview:'회사 운영 요약'/);
  assert.match(source,/function renderOverview\(/);
  assert.match(source,/renderRoadmap\(model\)/);
- for(const label of ['신규 접수','진행 중','검토 대기','완료','오늘 일정','주간 검수 완료 업무'])assert.ok(source.includes(label),`missing ${label}`);
- assert.match(source,/scene\.key==='overview'\)return Math\.max\(1,Math\.ceil\(model\.roadmap\.lanes\.length\/3\)\)/);
+ for(const label of ['신규 접수','진행 중','검토 대기','완료','주간 검수 완료 업무'])assert.ok(source.includes(label),`missing ${label}`);
+ assert.match(source,/scene\.key==='overview'\)return 1/);
  assert.match(source,/!board\.playlist\.some\(item=>item\.key==='overview'\)\)enabled\.push/);
  const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
  assert.match(css,/\.executive-overview/);
+ assert.match(css,/\.overview-roadmap,\.overview-agenda\{display:none!important\}/);
 });
 test('web TV rotates 8-week and 8-day roadmap views from the same publication',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();

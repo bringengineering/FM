@@ -11,6 +11,11 @@ test('administrator receives only a validated current presentation',async()=>{
  await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:2,presentation:{...presentation,model:{phone:'secret'}},devices:[]})}),/준비되지/);
  await assert.rejects(requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:2,presentation:{playlist:[{key:'private',enabled:true,seconds:40}],notice:''},devices:[]})}),/준비되지/);
 });
+test('administrator accepts the connected five-scene TV presentation',async()=>{
+ const presentation={playlist:['overview','portfolio','notice','strategy','companyRevenue'].map(key=>({key,enabled:true,seconds:30})),notice:''};
+ const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:3,presentation,devices:[]})});
+ assert.deepEqual(data.presentation,presentation);
+});
 test('publication carries revision and exposes a conflict instead of pretending success',async()=>{
  const args={baseUrl:'https://gateway.example',idToken:'secret',input:{action:'publish',snapshot:{notice:'test'},expectedVersion:2}};
  const result=await requestWallboardAdmin({...args,fetchImpl:async()=>Response.json({ok:true,version:3,publishedAt:1000})});assert.equal(result.version,3);

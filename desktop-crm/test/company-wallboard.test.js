@@ -13,6 +13,25 @@ test('wallboard preview is rendered before collapsed settings and device control
  assert.ok(preview>=0&&settings>preview&&controls>settings&&notice>controls&&deviceAdmin>notice&&playlist>deviceAdmin);
  assert.match(source,/editor\.open=false/);
 });
+test('CRM playlist keeps only five concise scenes and migrates older local preferences',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ assert.match(source,/const defaultSceneKeys=\['overview','portfolio','notice','strategy','companyRevenue'\]/);
+ assert.match(source,/defaultSceneKeys\.map\(key=>\(\{key,enabled:true,seconds:defaultDurations\[key\]\}\)\)/);
+ assert.match(source,/const valid=saved\.filter\(s=>s&&defaultSceneKeys\.includes\(s\.key\)/);
+ assert.match(source,/settings=\[\.\.\.valid,\.\.\.settings\.filter\(s=>!seen\.has\(s\.key\)\)\]/);
+ assert.match(source,/if\(key==='overview'\)return 1/);
+});
+test('CRM wallboard preview uses the same font family and semantic text scale as the TV',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
+ assert.match(css,/--wb-font-small/);
+ assert.match(css,/--wb-font-body/);
+ assert.match(css,/--wb-font-title/);
+ assert.match(css,/--wb-font-section/);
+ assert.match(css,/--wb-font-metric/);
+ assert.match(css,/font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif/);
+ assert.match(css,/\.wb-overview-roadmap,\.wb-overview-agenda\{display:none!important\}/);
+ assert.match(css,/grid-template-areas:"clean trend"/);
+});
 test('cached company direction expires at the Korea new year',()=>{
  const old={year:'2026',vision:'2026년 방향'};
  assert.equal(C.strategyCurrent(old,new Date('2026-12-31T14:59:59Z')),true);
@@ -279,12 +298,15 @@ test('shared projection carries only an already-sanitized optional strategy',()=
  assert.equal(Object.hasOwn(C.project({orders:[]},'2026-09-24'),'strategy'),false);
 });
 
-test('integrated overview combines roadmap, project summary, cleaning counts and today schedule',()=>{
+test('integrated overview keeps only cleaning and weekly summary visible instead of duplicate roadmap and schedule',()=>{
  const cleaningOperations={schemaVersion:1,total:7,open:5,completed:2,overdue:1,byStatus:{received:1,reviewing:0,quote_pending:0,approval_pending:0,scheduled:1,in_progress:2,review_pending:1,revision_requested:0,completed:2,cancelled:0},updatedAt:'2026-09-27T01:59:00.000Z'};
  const model=C.project({projects:[{id:'p1',name:'현장 데이터 구축',status:'active',startDate:'2026-09-20',endDate:'2026-10-10',progress:60}],orders:[{id:'o1',projectId:'p1',status:'doing',progress:60,assigneeUid:'u1',assigneeName:'김현진',dueDate:'2026-09-28'}],members:[{uid:'u1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-27',startTime:'10:00',status:'planned',serviceType:'cleaning',owner:'김현진'}]},cleaningOperations},'2026-09-27');
  const html=C.scene(model,'overview',0,'','09:00','week','2026-09-27');
  for(const expected of ['wb-overview','프로젝트 로드맵','wb-roadmap-board','전체 진행률','다가오는 마감','청소 운영','신규 접수','진행 중','검토 대기','완료','오늘 일정','10:00'])assert.ok(html.includes(expected),`missing ${expected}`);
  assert.doesNotMatch(html,/010-\d{3,4}-\d{4}/u);
+ const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
+ assert.match(css,/\.wb-overview-roadmap,\.wb-overview-agenda\{display:none!important\}/);
+ assert.match(css,/grid-template-areas:"clean trend"/);
 });
 test('server cleaning aggregate appears in TV health scene without exposing source details',()=>{
  const cleaningOperations={schemaVersion:1,total:4,open:3,completed:1,overdue:2,byStatus:{received:0,reviewing:0,quote_pending:0,approval_pending:0,scheduled:1,in_progress:2,review_pending:0,revision_requested:0,completed:1,cancelled:0},updatedAt:'2026-09-24T01:59:00.000Z'};
