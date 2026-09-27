@@ -50,5 +50,13 @@
   "crmAutomaticRelease": {
     "projectId": "bring-fm",
     "databaseRules": true
+  },
+  "cleaningCenterManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "cleaningOrdersApi",
+      "projectCleaningOrdersToWallboard"
+    ],
+    "databaseRules": true
   }
 }

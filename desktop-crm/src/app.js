@@ -184,6 +184,7 @@
 
   const viewMeta = {
     dashboard: ["오늘의 업무", "한눈에 보기"],
+    cleaningCenter: ["고객 응대부터 현장 완료까지", "클리닝센터"],
     cases: ["접수부터 사후관리까지", "민원 관리"],
     payments: ["업무·계약·건물주 입금 일정을 한눈에", "캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
@@ -1545,6 +1546,7 @@
     // 들어온 것과 다시 그린 것은 다르다. 여기서만 다시 읽는다.
     if (currentView !== lastRenderedView) refreshOnEnter(currentView);
     if (currentView === "dashboard") renderDashboard();
+    else if (currentView === "cleaningCenter") renderCleaningCenter();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
@@ -1602,6 +1604,294 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
+  }
+
+  function renderCleaningCenter() {
+    const W = workOrderCore();
+    const openWorkOrders = workOrderState.loaded && W
+      ? (workOrderState.orders || []).filter(order => W.OPEN.includes(order.status)).length
+      : null;
+    const activeRequestCount = operations.loadedAt
+      ? activeCases().filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length).length
+      : null;
+    const error = [
+      operationsError ? "고객 요청 자료 갱신에 실패했습니다." : "",
+      workOrderState.error ? "작업지시 자료 갱신에 실패했습니다." : "",
+      deliveryState.error ? "수주 진행 자료 갱신에 실패했습니다." : "",
+    ].filter(Boolean).join(" ");
+    const customerById = new Map((store.customers || []).map(customer => [String(customer.id || ""), customer]));
+    const buildingById = new Map((store.buildings || []).map(building => [String(building.id || ""), building]));
+    if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
+    if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
+    const statusLabels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
+    const nextStatuses = { received: "reviewing", reviewing: "quote_pending", quote_pending: "approval_pending", approval_pending: "scheduled", scheduled: "in_progress", in_progress: "review_pending", revision_requested: "in_progress" };
+    const orders = cleaningOrderState.orders.map(order => {
+      const linkedWorkOrders = workOrderCore()?.forCleaningOrder(workOrderState.orders, order.id) || [];
+      const linkedReports = reportCore()?.forCleaningOrder(reportState.reports, order.id) || [];
+      const quoteSet = cleaningOrderState.quoteSets?.[order.id];
+      const latestQuote = quoteSet?.latestQuoteId && quoteSet?.revisions?.[quoteSet.latestQuoteId] || null;
+      return {
+      ...order,
+      customerName: customerById.get(String(order.customerId || ""))?.name || "",
+      buildingName: buildingById.get(String(order.buildingId || ""))?.name || "",
+      relatedWorkOrders: linkedWorkOrders.map(item => ({ id: item.id, title: item.title || "제목 없는 업무", progress: Number(item.progress || 0), status: item.status, statusLabel: W?.statusLabel(item.status) || item.status, assigneeName: item.assigneeName || "담당자 미배정", dueDate: item.dueDate || "" })),
+      relatedReports: linkedReports.map(item => {
+        const R = reportCore();
+        const report = R?.normalizeReport(item) || item;
+        const checklistSummary = R?.summarizeItems(item) || null;
+        return {
+          id: item.id, title: item.title || item.summary?.slice(0, 80) || "작업 결과보고서",
+          workDate: item.workDate || "날짜 미정", photoCount: R?.photoCount(item) || 0,
+          checklistSummary: checklistSummary ? {
+            done: checklistSummary.done, partial: checklistSummary.partial, skipped: checklistSummary.skipped,
+            progress: checklistSummary.progress,
+            items: (report.items || []).map(entry => ({
+              label: entry.label,
+              statusLabel: ({ done: "완료", partial: "일부", skipped: "미수행" })[entry.status] || "상태 확인 필요",
+              beforeCount: entry.before?.length || 0, afterCount: entry.after?.length || 0, note: entry.note || "",
+            })),
+          } : null,
+        };
+      }),
+      quoteSummary: latestQuote ? { latestRevision: latestQuote.revision, status: latestQuote.status, totalAmount: latestQuote.totalAmount } : null,
+      statusLabel: statusLabels[order.status] || "상태 확인 필요",
+      nextStatus: order.status === "review_pending" ? (workOrderState.admin ? "completed" : "revision_requested") : nextStatuses[order.status] || "",
+      nextStatusLabel: order.status === "review_pending" && workOrderState.admin ? "검수 완료" : statusLabels[order.status === "review_pending" ? "revision_requested" : nextStatuses[order.status]] || "",
+      };
+    });
+    main.innerHTML = window.BringCleaningCenterUI.render({
+      loading: operationsLoading || workOrderState.loading || deliveryState.loading,
+      error,
+      customers: { ready: true, value: (store.customers || []).filter(item => item && !item.archivedAt).length },
+      buildings: { ready: true, value: (store.buildings || []).filter(item => item && !item.archivedAt).length },
+      cases: { ready: Boolean(operations.loadedAt), value: activeRequestCount, error: Boolean(operationsError) },
+      workOrders: { ready: workOrderState.loaded && Boolean(W), value: openWorkOrders, error: Boolean(workOrderState.error) },
+      deliveryFlows: { ready: deliveryState.loaded, value: deliveryState.loaded ? (deliveryCore()?.summarize(deliveryState.flows).running || 0) : null, error: Boolean(deliveryState.error) },
+      partners: { ready: true, value: allPartnerVendorRows().filter(item => !item.archivedAt).length },
+      orders, ordersLoaded: cleaningOrderState.loaded, ordersLoading: cleaningOrderState.loading, ordersError: cleaningOrderState.error,
+      ordersUpdatedAt: cleaningOrderState.lastLoadedAt, asOf: todayKey(),
+      orderSearch: cleaningOrderState.search, orderStatusFilter: cleaningOrderState.statusFilter,
+      ordersHasMore: cleaningOrderState.hasMore, ordersLoadingMore: cleaningOrderState.loadingMore,
+      ordersLoadMoreError: cleaningOrderState.loadMoreError,
+      canWrite: canWriteCRM(),
+      canCreateWorkOrders: workOrderState.admin === true,
+      canCreateWorkReports: reportState.canWork === true && canWriteCRM(),
+      canReviewQuotes: workOrderState.admin === true,
+    });
+    applyCleaningOrderFilters();
+    if (!cleaningOrderState.attempted && !cleaningOrderState.loading) void loadCleaningOrders();
+  }
+
+  function applyCleaningOrderFilters() {
+    if (currentView !== "cleaningCenter") return;
+    const rows = Array.from(main.querySelectorAll(".cleaning-order-row"));
+    const search = String(cleaningOrderState.search || "");
+    const status = String(cleaningOrderState.statusFilter || "all");
+    let visible = 0;
+    for (const row of rows) {
+      const order = cleaningOrderState.orders.find(item => String(item.id || "") === row.dataset.cleaningOrderId) || {};
+      const matches = window.BringCleaningCenterUI.matchesOrderFilter({
+        status: order.status || "",
+        desiredDate: order.desiredDate || "",
+        statusLabel: row.querySelector(".cleaning-order-status")?.textContent || "",
+        title: row.querySelector("strong")?.textContent || "",
+        customerName: row.querySelector(":scope > div > small")?.textContent || "",
+        description: row.querySelector(".cleaning-order-request p")?.textContent || "",
+      }, search, status, todayKey());
+      row.hidden = !matches;
+      if (matches) visible += 1;
+    }
+    const count = main.querySelector("[data-cleaning-filter-count]");
+    if (count) count.textContent = `${visible} / ${rows.length}건`;
+    const empty = main.querySelector("[data-cleaning-no-match]");
+    if (empty) empty.hidden = visible !== 0 || rows.length === 0;
+  }
+
+  async function loadCleaningOrders() {
+    if (cleaningOrderState.loading || cleaningOrderState.loadingMore || typeof api.loadCleaningOrders !== "function") return;
+    cleaningOrderState.attempted = true;
+    cleaningOrderState.loading = true;
+    cleaningOrderState.error = "";
+    cleaningOrderState.loadMoreError = "";
+    try {
+      const result = await api.loadCleaningOrders();
+      cleaningOrderState.orders = Array.isArray(result?.orders) ? result.orders : [];
+      cleaningOrderState.nextCursor = result?.nextCursor || null;
+      cleaningOrderState.hasMore = result?.hasMore === true && Boolean(cleaningOrderState.nextCursor);
+      cleaningOrderState.loaded = true;
+      cleaningOrderState.lastLoadedAt = Date.now();
+    } catch (error) {
+      cleaningOrderState.error = error?.message || "청소 주문을 불러오지 못했습니다.";
+    } finally {
+      cleaningOrderState.loading = false;
+      if (currentView === "cleaningCenter") renderCleaningCenter();
+      else if (currentView === "workOrders") renderWorkOrders();
+      else if (currentView === "workReports") renderWorkReports();
+      else if (currentView === "customers") renderCustomers();
+      else if (currentView === "buildings") renderBuildings();
+    }
+  }
+
+  async function loadMoreCleaningOrders() {
+    if (cleaningOrderState.loading || cleaningOrderState.loadingMore || !cleaningOrderState.hasMore
+      || !cleaningOrderState.nextCursor || typeof api.loadCleaningOrders !== "function") return;
+    cleaningOrderState.loadingMore = true;
+    cleaningOrderState.loadMoreError = "";
+    try {
+      const result = await api.loadCleaningOrders(cleaningOrderState.nextCursor);
+      const page = Array.isArray(result?.orders) ? result.orders : [];
+      const merged = new Map(cleaningOrderState.orders.map(order => [String(order.id || ""), order]));
+      for (const order of page) if (order?.id) merged.set(String(order.id), order);
+      cleaningOrderState.orders = Array.from(merged.values())
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id || "").localeCompare(String(a.id || "")));
+      cleaningOrderState.nextCursor = result?.nextCursor || null;
+      cleaningOrderState.hasMore = result?.hasMore === true && Boolean(cleaningOrderState.nextCursor);
+      cleaningOrderState.lastLoadedAt = Date.now();
+    } catch (error) {
+      cleaningOrderState.loadMoreError = error?.message || "이전 주문을 불러오지 못했습니다.";
+    } finally {
+      cleaningOrderState.loadingMore = false;
+      if (currentView === "cleaningCenter") renderCleaningCenter();
+    }
+  }
+
+  async function resolveCleaningOrderById(orderId) {
+    const id = String(orderId || "");
+    const cached = cleaningOrderState.orders.find(order => String(order && order.id || "") === id);
+    if (cached) return cached;
+    if (!id || typeof api.loadCleaningOrderById !== "function") return null;
+    try {
+      const result = await api.loadCleaningOrderById(id);
+      const order = result?.order || null;
+      if (!order || String(order.id || "") !== id) return null;
+      const merged = new Map(cleaningOrderState.orders.map(item => [String(item.id || ""), item]));
+      merged.set(id, order);
+      cleaningOrderState.orders = Array.from(merged.values());
+      return order;
+    } catch {
+      return null;
+    }
+  }
+
+  function openCleaningOrderForm() {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 청소 주문을 접수할 수 없습니다.", "error");
+    const customers = (store.customers || []).filter(item => item && item.id && !item.archivedAt);
+    const options = (items, label, value) => items.map(item => `<option value="${attr(item.id)}">${esc(label(item))}</option>`).join("");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>청소 요청 접수</h2><p>기존 CRM 고객·건물 자료에 연결해 접수합니다.</p></div><button type="button" class="close-button" data-action="close-modal">×</button></div>
+      <form id="cleaningOrderForm" class="modal-body"><div class="form-grid">
+        <label class="form-field"><span>고객 *</span><select name="customerId" required><option value="">고객 선택</option>${options(customers, item => item.name || item.company || "이름 미입력")}</select></label>
+        <label class="form-field"><span>건물 *</span><select name="buildingId" required disabled><option value="">고객을 먼저 선택하세요</option></select></label>
+        <label class="form-field"><span>서비스 유형 *</span><select name="serviceType" required><option value="">서비스 유형 선택</option><option value="move_in_cleaning">입주 청소</option><option value="move_out_cleaning">퇴실 청소</option><option value="common_cleaning">공용부 청소</option><option value="stair_cleaning">계단 청소</option><option value="other">기타</option></select></label>
+        <label class="form-field"><span>요청 제목 *</span><input name="title" maxlength="120" required placeholder="예: 201호 퇴실 청소"></label>
+        <label class="form-field"><span>희망 일정</span><input name="desiredDate" type="date"></label>
+        <label class="form-field form-field-wide"><span>요청 상세</span><textarea name="description" maxlength="2000" rows="4" placeholder="요청 범위, 현장 특이사항을 입력하세요"></textarea></label>
+      </div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button"${cleaningOrderState.busy ? " disabled" : ""}>주문 접수</button></div></form>`;
+    const form = modalContent.querySelector("#cleaningOrderForm");
+    const customerSelect = form?.elements.namedItem("customerId");
+    const buildingSelect = form?.elements.namedItem("buildingId");
+    customerSelect?.addEventListener("change", () => {
+      const linked = customerBuildings(customerById(customerSelect.value)).filter(item => item && item.id && !item.archivedAt && !item.deletedAt && item.deleted !== true);
+      buildingSelect.replaceChildren(new Option(linked.length ? "건물 선택" : "연결된 관리 건물이 없습니다", ""));
+      for (const building of linked) buildingSelect.add(new Option(building.name || building.address || "이름 미입력", building.id));
+      buildingSelect.disabled = linked.length === 0;
+    });
+    openModal();
+  }
+
+  async function startCleaningQuoteDraft(order, expectedRevision) {
+    if (!order || !canWriteCRM() || typeof api.createCleaningQuoteRevision !== "function") return showToast("견적 초안을 작성할 권한이 없습니다.", "error");
+    if (!aiAssistantState.supplierLoaded && typeof api.loadQuoteSupplier === "function") await loadAiQuoteSupplier();
+    const customer = (store.customers || []).find(item => String(item.id || "") === String(order.customerId || ""));
+    const building = (store.buildings || []).find(item => String(item.id || "") === String(order.buildingId || ""));
+    const services = { move_in_cleaning: "입주청소", move_out_cleaning: "퇴실청소", common_cleaning: "공용부청소", stair_cleaning: "계단청소", other: "청소" };
+    const service = services[order.serviceType] || "청소";
+    const base = QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
+    aiAssistantState.quote = QuoteCore.normalizeDraft(Object.assign({}, base, {
+      recipient: customer?.name || customer?.company || "고객",
+      projectName: String(order.title || `${service} 견적`).slice(0, 120),
+      siteAddress: String(building?.roadAddress || building?.address || building?.jibunAddress || "").slice(0, 180),
+      service,
+      summary: String(order.description || `${service} 요청 범위 확인 후 진행`).slice(0, 240),
+      items: [{ name: service, detail: String(order.description || "작업 범위를 확인해 입력하세요.").slice(0, 240), quantity: 1, unit: "식", unitPrice: 1000, note: "초안 예시 금액 · 실제 견적 확인 필요" }],
+    }));
+    aiAssistantState.quoteMode = "manual";
+    aiAssistantState.quoteContent = "";
+    aiAssistantState.quoteError = "";
+    aiAssistantState.quoteWarnings = [];
+    cleaningQuoteContext = { orderId: String(order.id), expectedRevision: Number(expectedRevision || 0), requestId: crypto.randomUUID() };
+    currentView = "quotes";
+    refreshQuotesView();
+    showToast("기존 CRM 견적 편집기에 주문·건물 정보만 연결했습니다. 예시 금액과 범위를 확인·수정한 뒤 서버 초안으로 저장해 주세요.");
+  }
+
+  async function manageCleaningQuote(order) {
+    if (!order || typeof api.loadCleaningQuoteSet !== "function") return showToast("견적 서버 연결을 사용할 수 없습니다.", "error");
+    try {
+      const result = await api.loadCleaningQuoteSet(order.id);
+      const quoteSet = result?.quoteSet && typeof result.quoteSet === "object" ? result.quoteSet : null;
+      cleaningOrderState.quoteSets[order.id] = quoteSet;
+      const latest = quoteSet?.latestQuoteId ? quoteSet.revisions?.[quoteSet.latestQuoteId] : null;
+      renderCleaningCenter();
+      if (latest) {
+        modalContent.innerHTML = window.BringCleaningCenterUI.renderCleaningQuoteReview({
+          order, quote: latest, canReview: workOrderState.admin === true,
+          canWrite: canWriteCRM(),
+          canCreateRevision: canWriteCRM() && ["quote_pending", "approval_pending"].includes(order.status),
+          requestId: crypto.randomUUID(),
+        });
+        openModal();
+      } else if (["quote_pending", "approval_pending"].includes(order.status)) {
+        await startCleaningQuoteDraft(order, quoteSet?.latestRevision || 0);
+      } else {
+        showToast("이 주문에 저장된 견적이 없습니다. 견적 대기 단계에서 견적을 작성할 수 있습니다.", "info");
+      }
+    } catch (error) {
+      showToast(error?.message || "연결된 견적 이력을 불러오지 못했습니다.", "error");
+    }
+  }
+
+  async function saveCleaningQuoteDraft() {
+    if (cleaningOrderState.busy || !cleaningQuoteContext.orderId || !aiAssistantState.quote) return;
+    if (!canWriteCRM() || typeof api.createCleaningQuoteRevision !== "function") return showToast("견적 초안을 저장할 권한이 없습니다.", "error");
+    let quote;
+    try { quote = QuoteCore.normalizeDraft(aiAssistantState.quote); }
+    catch (error) { return showToast(error?.message || "견적 내용을 확인해 주세요.", "error"); }
+    const supplier = QuoteCore.companyProfile(quote.company);
+    const snapshot = {
+      quoteDate: quote.quoteDate, validUntil: quote.validUntil, recipient: quote.recipient, recipientPhone: quote.recipientPhone,
+      siteAddress: quote.siteAddress, projectName: quote.projectName, service: quote.service, summary: quote.summary,
+      items: quote.items.map(item => ({ name: item.name, detail: item.detail, quantity: item.quantity, unit: item.unit, unitPrice: item.unitPrice, note: item.note || "" })),
+      taxIncluded: quote.taxIncluded, notes: quote.notes,
+      company: {
+        businessName: supplier.businessName, representative: supplier.representative, registrationNumber: supplier.registrationNumber,
+        address: supplier.address, phone: supplier.phone, fax: supplier.fax, businessType: supplier.businessType, businessCategory: supplier.businessCategory,
+      },
+    };
+    cleaningOrderState.busy = true;
+    try {
+      const result = await api.createCleaningQuoteRevision({
+        requestId: cleaningQuoteContext.requestId, orderId: cleaningQuoteContext.orderId,
+        expectedRevision: cleaningQuoteContext.expectedRevision, quote: snapshot,
+      });
+      cleaningOrderState.quoteSets[cleaningQuoteContext.orderId] = {
+        orderId: cleaningQuoteContext.orderId, buildingId: result.quote.buildingId,
+        latestRevision: result.quote.revision, latestQuoteId: result.quote.id,
+        revisions: { [result.quote.id]: result.quote },
+      };
+      cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "" };
+      aiAssistantState.quote = null;
+      aiAssistantState.quoteMode = "ai";
+      currentView = "cleaningCenter";
+      cleaningOrderState.loaded = false;
+      cleaningOrderState.attempted = false;
+      await loadCleaningOrders();
+      showToast("견적 초안을 저장했습니다. 관리자 승인 전이며 고객에게 발송되지 않았습니다.", "success");
+    } catch (error) {
+      showToast(error?.message || "견적 초안을 저장하지 못했습니다. 입력은 유지했습니다.", "error");
+    } finally {
+      cleaningOrderState.busy = false;
+      if (currentView === "quotes") refreshQuotesView();
+    }
   }
 
   function applyWorkspaceChrome(workspace) {
@@ -2151,7 +2441,7 @@
       operationsLoading = false;
     }
     pageMeta();
-    if (settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) render();
+    if ((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || currentView === "cleaningCenter") render();
   }
 
   const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
@@ -2924,6 +3214,7 @@
   }
 
   function renderCustomers() {
+    if (!cleaningOrderState.attempted && !cleaningOrderState.loading) void loadCleaningOrders();
     // Refresh host basics before resolving post-registration customer intent.
     return Promise.resolve(renderBuildingAtlas()).then(async () => {
       const intent = selectedCustomerHubId, view = buildingAtlasView, generation = buildingAtlasGeneration;
@@ -2931,6 +3222,13 @@
       const selected = await view.selectCustomer(intent);
       if (selected && view === buildingAtlasView && generation === buildingAtlasGeneration && selectedCustomerHubId === intent) selectedCustomerHubId = "";
     });
+  }
+
+  function cleaningOrderHistoryMarkup(orders) {
+    const statusLabels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
+    return orders.length
+      ? `<div class="building-detail-body">${orders.slice(0, 8).map(order => `<button type="button" class="building-detail-record clickable" data-action="open-cleaning-order" data-order-id="${attr(order.id)}"><div><b>${esc(order.title || "청소 요청")}</b><span>${esc([statusLabels[order.status] || order.status, order.desiredDate || "일정 미정"].join(" · "))}</span></div><em>주문 보기 →</em></button>`).join("")}${orders.length > 8 ? `<small>최근 8건 표시 · 전체 ${orders.length}건</small>` : ""}</div>`
+      : `<div class="building-detail-body"><div class="building-detail-empty">연결된 청소 요청이 없습니다.</div></div>`;
   }
 
   function renderCustomerLegacyList() {
@@ -3028,6 +3326,7 @@
     const activeContracts = contracts.filter(item => item.status !== "종료");
     const closedContracts = contracts.filter(item => item.status === "종료");
     const completedCases = cases.filter(item => Core.workflowProgress(item).done >= Core.WORKFLOW_STEPS.length);
+    const cleaningOrders = cleaningOrderState.orders.filter(order => order.customerId === customer.id || buildingIds.has(order.buildingId));
     const contractRecord = contract => `<div class="building-detail-record clickable" data-contract-edit="${attr(contract.id)}"><div><b>${esc(contract.name || `${contractTypes(contract).join("·")} 계약`)}</b><span>${esc(`${contract.status || "상태 미입력"} · ${contractDateText(contract.startDate)} ~ ${contractEndDateText(contract.endDate)}`)}</span></div><em>${esc(Core.money(contract.amount) ? krw(contract.amount) : contract.billingCycle || "금액 미입력")}</em></div>`;
     const caseRecord = item => { const progress = Core.workflowProgress(item); return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</b><span>${esc([item.building, item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em>${progress.percent}%</em></div>`; };
     const activeContractRecords = activeContracts.slice(0, 5).map(contractRecord).join("");
@@ -3038,7 +3337,7 @@
       const detailText = [activity.result && `결과 ${activity.result}`, activity.nextAction && `다음 ${activity.nextAction}`, activity.owner && `담당 ${activity.owner}`].filter(Boolean).join(" · ");
       return `<div class="building-detail-record customer-consultation-record"><div><b>${esc(activity.summary || "기록 내용 없음")}</b><span>${esc(detailText || "결과·다음 할 일 미입력")}</span></div><em>${esc([activity.type || "상담", dateText(activity.occurredAt)].filter(Boolean).join(" · "))}</em></div>`;
     }).join("");
-    const essentialSections = `<section class="building-detail-section wide"><header><b>고객 요청·후속조치</b></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section>${activeContracts.length ? `<section class="building-detail-section"><header><b>진행 계약</b><span>${activeContracts.length}건</span></header><div class="building-detail-body">${activeContractRecords}</div></section>` : ""}${openCases.length ? `<section class="building-detail-section"><header><b>진행 민원</b><span>${openCases.length}건</span></header><div class="building-detail-body">${openCaseRecords}</div></section>` : ""}`;
+    const essentialSections = `<section class="building-detail-section wide"><header><b>고객 요청·후속조치</b></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section>${activeContracts.length ? `<section class="building-detail-section"><header><b>진행 계약</b><span>${activeContracts.length}건</span></header><div class="building-detail-body">${activeContractRecords}</div></section>` : ""}${openCases.length ? `<section class="building-detail-section"><header><b>진행 민원</b><span>${openCases.length}건</span></header><div class="building-detail-body">${openCaseRecords}</div></section>` : ""}<section class="building-detail-section wide"><header><b>클리닝 주문 이력</b><span>${cleaningOrders.length}건${!cleaningOrderState.loaded ? " · 조회 중" : ""}</span></header>${cleaningOrderHistoryMarkup(cleaningOrders)}</section>`;
     const consultationDetails = `<details class="customer-secondary-details customer-consultation-details" data-customer-consultations="${attr(customer.id)}"><summary><span><b>상담 기록</b><small>고객과 나눈 내용과 다음 조치를 펼쳐서 확인합니다.</small></span><em>${activities.length}건</em></summary><div class="customer-secondary-body customer-consultation-body"><div class="building-detail-body">${activityRecords || `<div class="building-detail-empty">아직 등록된 상담 기록이 없습니다.</div>`}</div></div></details>`;
     const secondaryCount = closedContracts.length + completedCases.length;
     const secondarySections = `${closedContracts.length ? `<section class="building-detail-section"><header><b>종료 계약</b><span>${closedContracts.length}건</span></header><div class="building-detail-body">${closedContractRecords}</div></section>` : ""}${completedCases.length ? `<section class="building-detail-section"><header><b>완료 민원</b><span>${completedCases.length}건</span></header><div class="building-detail-body">${completedCaseRecords}</div></section>` : ""}`;
@@ -3293,7 +3592,10 @@
     contracts.lines=[...(contracts.lines||[]),...commonContracts.map(item=>line([item.name,item.status,item.startDate,item.endDate,item.amount,"고객 공통 · 위치 미지정"]))];
     const related=item=>item.buildingId?Boolean(buildingId&&item.buildingId===buildingId):Boolean(customerId&&item.customerId===customerId);
     const work=section("민원·작업","민원·작업 진행");
-    return [{title:"상담",lines:(store.activities||[]).filter(related).map(item=>line([dateText(item.occurredAt),item.type,item.summary,item.result,item.nextAction,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))},contracts,work,section("일정","일정·서비스 작업"),section("호실","등록된 층·호실"),section("사진","민원·작업 사진")];
+    const orderStatuses={received:"접수",reviewing:"검토 중",quote_pending:"견적 대기",approval_pending:"승인 대기",scheduled:"일정 확정",in_progress:"작업 중",review_pending:"검수 대기",revision_requested:"보완 요청",completed:"완료",cancelled:"취소"};
+    const cleaningOrders=(cleaningOrderState.orders||[]).filter(item=>buildingId?item.buildingId===buildingId:(customerId&&item.customerId===customerId));
+    const cleaningHistory={title:"클리닝 주문",lines:cleaningOrders.map(item=>line([item.title,orderStatuses[item.status]||item.status,item.desiredDate||"일정 미정"]))};
+    return [{title:"상담",lines:(store.activities||[]).filter(related).map(item=>line([dateText(item.occurredAt),item.type,item.summary,item.result,item.nextAction,!item.buildingId?"고객 공통 · 위치 미지정":"위치 미지정"]))},contracts,work,cleaningHistory,section("일정","일정·서비스 작업"),section("호실","등록된 층·호실"),section("사진","민원·작업 사진")];
   }
 
   function atlasBuildingContext(id) {
@@ -3313,6 +3615,7 @@
   }
 
   function renderBuildings() {
+    if (!cleaningOrderState.attempted && !cleaningOrderState.loading) void loadCleaningOrders();
     const query = Core.normalizeText(searchEl.value);
     const phoneQuery = customerPhoneSearchKey(searchEl.value);
     const buildings = [...store.buildings]
@@ -3370,6 +3673,7 @@
   function renderBuildingDetail(building) {
     const customers = buildingCustomers(building);
     const owner = customerById(building.ownerCustomerId) || customers[0] || null;
+    const cleaningOrders = cleaningOrderState.orders.filter(order => String(order.buildingId || "") === String(building.id || ""));
     const contracts = buildingContracts(building).sort((a, b) => String(a.endDate || "9999").localeCompare(String(b.endDate || "9999")));
     const cases = buildingCases(building).sort((a, b) => String(b.updatedAt || b.receivedAt || "").localeCompare(String(a.updatedAt || a.receivedAt || "")));
     const rows = buildingPaymentRows(building);
@@ -3395,7 +3699,7 @@
     return `<header class="building-hub-detail-head"><div class="building-hub-title">${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">건물주 입금</button><button class="primary-button" data-building-monthly-report="${attr(building.id)}">⇩ 월간 보고서</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
-      <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
+      <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>클리닝 주문</b><span>${cleaningOrders.length}건</span></header>${cleaningOrderHistoryMarkup(cleaningOrders)}</section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
     main.querySelector(".building-detail-grid")?.insertAdjacentHTML("afterbegin", ServiceOperationsUI.renderBuildingServices(building, store));
   }
 
@@ -3957,7 +4261,7 @@
     const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote));
     const disabled = canExport ? "" : " disabled";
     const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div></div>`;
-    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "공급받는자 성명과 전화번호를 입력하면 네 가지 파일을 저장할 수 있습니다."}</footer></section></section>`;
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "공급받는자 성명과 전화번호를 입력하면 네 가지 파일을 저장할 수 있습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {
@@ -4391,6 +4695,11 @@
   function refreshOnEnter(view) {
     if (["weeklyReports", "projectRoadmap", "workOrders"].includes(view)
       && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
+    if (view === "cleaningCenter") {
+      if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
+      if (!deliveryState.loaded && !deliveryState.loading) void loadDeliveryFlows();
+      if (!operations.loadedAt && !operationsLoading) void refreshOperations({ silent: true, render: false });
+    }
   }
   function refreshButton(state, action) {
     const when = freshLabel(state);
@@ -4410,6 +4719,8 @@
     scope: "mine", editing: null, busyId: "", performancePeriod: "current-week", performanceAvailable: false, performanceOrders: [],
     projectReports: [], projectReportsLoaded: false, projectReportsLoading: false, projectReportsError: "", projectReportEditingId: "",
   };
+  let cleaningOrderState = { orders: [], quoteSets: Object.create(null), loaded: false, attempted: false, loading: false, loadingMore: false, error: "", loadMoreError: "", lastLoadedAt: 0, busy: false, search: "", statusFilter: "all", hasMore: false, nextCursor: null };
+  let cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "" };
   let companyStrategyState = { year:String(new Date().getFullYear()), loaded:false, loading:false, refreshedAt:0, error:'', draft:null, published:null, formDraft:null, editing:false, dirty:false, busy:false };
 
   function resetCompanyStrategyState() {
@@ -4619,6 +4930,7 @@
       if (currentView === "workOrders") renderWorkOrders();
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
       else if (currentView === "weeklyReports") renderWeeklyReports();
+      else if (currentView === "cleaningCenter") renderCleaningCenter();
     }
   }
 
@@ -4873,13 +5185,6 @@
     const assignments = lanes.flatMap(lane => lane.assignments);
     let selected = assignments.find(item => item.key === projectRoadmapState.selectedKey) || assignments[0] || null;
     projectRoadmapState.selectedKey = selected ? selected.key : "";
-    const summary = {
-      total: assignments.length,
-      open: assignments.reduce((sum, item) => sum + (item.status === "done" ? 0 : 1), 0),
-      overdue: assignments.filter(item => item.status !== "done" && item.endDate && item.endDate < today).length,
-      done: assignments.filter(item => item.status === "done").length,
-      progress: assignments.length ? Math.round(assignments.reduce((sum, item) => sum + item.progress, 0) / assignments.length) : 0,
-    };
     const todayLine = P.todayOffset(range, today);
     const rangeLabel = range ? range.scale === "days"
       ? `${range.from.replaceAll("-", ".")} ~ ${range.to.replaceAll("-", ".")}`
@@ -4888,7 +5193,43 @@
     const status = workOrderState.loading
       ? `<div class="info-box">프로젝트와 일정을 불러오는 중…</div>`
       : (workOrderState.error ? `<div class="info-box" style="color:#C6535F">${esc(workOrderState.error)}</div>` : "");
-    const projectCount = new Set(assignments.map(item => item.projectId).filter(Boolean)).size;
+    const sourceProjects = Array.isArray(workOrderState.projects) ? workOrderState.projects : [];
+    const uniqueProjects = [...new Map(sourceProjects.filter(item => item && item.id).map(item => [item.id, item])).values()];
+    const activeProjects = uniqueProjects.filter(item => P.normalizeProject(item).status === "active");
+    const projectsWithProgress = activeProjects.filter(item => item.progress !== undefined && item.progress !== null && item.progress !== "" && Number.isFinite(Number(item.progress)));
+    const projectProgressKnown = !workOrderState.loading && !workOrderState.error && workOrderState.loaded && projectsWithProgress.length > 0;
+    const projectProgress = projectProgressKnown
+      ? Math.round(projectsWithProgress.reduce((sum, item) => sum + P.progressOf(item.progress), 0) / projectsWithProgress.length) : null;
+    const statusCounts = uniqueProjects.reduce((counts, item) => {
+      const key = P.normalizeProject(item).status;
+      if (Object.hasOwn(counts, key)) counts[key] += 1;
+      return counts;
+    }, { active: 0, paused: 0, done: 0 });
+    const ordersReady = !workOrderState.loading && !workOrderState.error && workOrderState.loaded;
+    const reviewTotal = ordersReady ? workOrderState.orders.length : 0;
+    const reviewDone = ordersReady ? workOrderState.orders.filter(item => W.normalizeOrder(item).status === "done").length : 0;
+    const reviewKnown = ordersReady && reviewTotal > 0;
+    const reviewRate = reviewKnown ? Math.round(reviewDone / reviewTotal * 100) : null;
+    const upcomingDeadlines = ordersReady ? workOrderState.orders
+      .map(item => W.normalizeOrder(item))
+      .filter(item => item.dueDate && item.status !== "done")
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "ko"))
+      .slice(0, 3) : [];
+    const deadlineRows = upcomingDeadlines.length ? upcomingDeadlines.map(item => {
+      const delta = Math.round((Date.parse(`${item.dueDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
+      const dueLabel = delta < 0 ? `D+${Math.abs(delta)}` : (delta === 0 ? "오늘" : `D-${delta}`);
+      const project = uniqueProjects.find(candidate => candidate.id === item.projectId);
+      return `<li><b class="roadmap-deadline-offset${delta < 0 ? " is-overdue" : ""}">${dueLabel}</b><span><strong>${esc(item.title || "업무지시")}</strong><small>${esc(project ? project.name : "프로젝트 미연결")} · ${esc(item.assigneeName || "담당자 미정")}</small></span></li>`;
+    }).join("") : "";
+    const progressPanelValue = projectProgressKnown
+      ? `<div class="roadmap-performance-ring" style="--progress:${projectProgress}%" role="img" aria-label="전체 프로젝트 진행률 ${projectProgress}%"><b>${projectProgress}%</b></div><p>${projectsWithProgress.length}개 진행 프로젝트 기준</p>`
+      : `<div class="roadmap-performance-empty">${workOrderState.loading ? "불러오는 중" : workOrderState.error ? "조회 실패" : "집계 자료 없음"}</div><p>진행률이 확인된 프로젝트가 없습니다</p>`;
+    const reviewPanelValue = reviewKnown
+      ? `<b class="roadmap-performance-metric">${reviewRate}%</b><p>검수 완료 ${reviewDone}건 · 전체 ${reviewTotal}건</p><div class="roadmap-performance-meter" role="img" aria-label="업무 검수 완료율 ${reviewRate}%"><i style="width:${reviewRate}%"></i></div>`
+      : `<b class="roadmap-performance-metric is-muted">${ordersReady ? "집계 자료 없음" : workOrderState.loading ? "불러오는 중" : "조회 실패"}</b><p>${ordersReady ? "검수 대상 업무지시가 없습니다" : "자료 연결 상태를 확인해 주세요"}</p>`;
+    const deadlinePanelValue = !ordersReady
+      ? `<li class="roadmap-performance-empty-row">${workOrderState.loading ? "불러오는 중" : "조회 실패"}</li>`
+      : deadlineRows || `<li class="roadmap-performance-empty-row">등록된 마감이 없습니다</li>`;
 
     const laneHtml = lanes.map((lane, laneIndex) => {
       const bars = lane.assignments.map((assignment, index) => {
@@ -4929,13 +5270,7 @@
       ${status}
       ${workOrderState.projectEditing && !projectRoadmapState.extensionProjectId ? roadmapProjectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, P.sortProjects(workOrderState.projects)) : ""}
-      <section class="roadmap-summary">
-        <article><span>진행 프로젝트</span><b>${projectCount}</b><small>현재 화면 기간</small></article>
-        <article><span>진행 일정</span><b>${summary.open}</b><small>전체 ${summary.total}건</small></article>
-        <article class="is-warning"><span>기한 지남</span><b>${summary.overdue}</b><small>먼저 확인</small></article>
-        <article class="is-progress"><span>평균 진행률</span><b>${summary.progress}%</b><small>완료 ${summary.done}건</small></article>
-      </section>
-      <section class="roadmap-board">
+      <div class="roadmap-board-layout"><section class="roadmap-board">
         <header class="roadmap-toolbar">
           <div class="roadmap-modes" role="tablist" aria-label="로드맵 보기 기준">
             <button type="button" class="${projectRoadmapState.mode === "people" ? "is-active" : ""}" data-roadmap-mode="people" ${roadmapEditing ? "disabled" : ""}>담당자 기준</button>
@@ -4946,7 +5281,12 @@
         </header>
         <div class="roadmap-axis"><div>${mode === "people" ? "담당자 · 맡은 프로젝트" : "프로젝트 · 담당자"}</div><div>${range.columns.map(column => `<span>${esc(column.label)}</span>`).join("")}${todayLine === null ? "" : `<b class="roadmap-today-label" style="left:${todayLine.toFixed(3)}%">오늘</b>`}</div></div>
         <div class="roadmap-lanes">${laneHtml || `<div class="roadmap-no-lanes"><b>이 기간에 표시할 일정이 없습니다.</b><span>일정을 추가하거나 앞뒤 기간으로 이동해 주세요.</span></div>`}</div>
-      </section>
+      </section><aside class="roadmap-performance" aria-label="프로젝트 성과 요약">
+        <section class="roadmap-performance-card roadmap-overall-card"><span>전체 프로젝트 진행률</span>${progressPanelValue}</section>
+        <section class="roadmap-performance-card roadmap-review-card"><span>업무 검수 완료율</span>${reviewPanelValue}</section>
+        <section class="roadmap-performance-card roadmap-status-card"><span>프로젝트 상태</span><dl><div><dt><i class="is-active"></i>진행</dt><dd>${statusCounts.active}</dd></div><div><dt><i class="is-paused"></i>보류</dt><dd>${statusCounts.paused}</dd></div><div><dt><i class="is-done"></i>완료</dt><dd>${statusCounts.done}</dd></div></dl></section>
+        <section class="roadmap-performance-card roadmap-deadline-card"><span>다가오는 마감</span><ul>${deadlinePanelValue}</ul></section>
+      </aside></div>
       ${roadmapDetail(W, P, selected, today)}`;
   }
 
@@ -5035,6 +5375,7 @@
   }
 
   function renderWorkOrders() {
+    if (typeof cleaningOrderState !== "undefined" && !cleaningOrderState.attempted && !cleaningOrderState.loading) void loadCleaningOrders();
     if (!companyStrategyState.loaded && !companyStrategyState.loading && !companyStrategyState.error && !companyStrategyState.editing) void loadCompanyStrategy();
     const W = workOrderCore();
     const P = projectCore();
@@ -5683,14 +6024,18 @@
   function workOrderEditor(W, P, projects) {
     const draft = W.normalizeOrder(workOrderState.editing);
     const people = workOrderState.members.filter(item => item && item.uid);
+    const cleaningStatusLabels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
     const options = people.map(item => `<option value="${esc(item.uid)}"${item.uid === draft.assigneeUid ? " selected" : ""}>${esc(item.displayName || item.email || item.uid)}</option>`).join("");
     const projectOptions = projects.map(item => `<option value="${esc(item.id)}"${item.id === draft.projectId ? " selected" : ""}>${esc(item.name)}</option>`).join("");
+    const eligibleCleaningOrders = cleaningOrderState.orders.filter(item => !draft.buildingId || String(item.buildingId || "") === draft.buildingId || item.id === draft.cleaningOrderId);
+    const cleaningOrderOptions = eligibleCleaningOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")}${item.desiredDate ? ` · ${item.desiredDate}` : ""} · ${esc(cleaningStatusLabels[item.status] || "상태 확인 필요")}</option>`).join("");
     const trackOptions = P.TRACKS.map(item => `<option value="${esc(item.key)}"${item.key === draft.track ? " selected" : ""}>${esc(item.label)}</option>`).join("");
     return `<form class="wo-editor" data-wo-form>
       <h3>${esc(draft.createdAt ? "지시 고치기" : "새 지시")}</h3>
       <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="120" value="${esc(draft.title)}" required placeholder="예: 3층 누수 확인"></label>
       <label><span>누가</span><select name="assigneeUid" required><option value="">고르기</option>${options}</select></label>
       <label><span>어느 프로젝트</span><select name="projectId"><option value="">프로젝트 없음</option>${projectOptions}</select></label>
+      <label><span>연결 청소 요청</span><select name="cleaningOrderId"><option value="">연결 안 함</option>${cleaningOrderOptions}</select></label>
       <label><span>구분</span><select name="track"><option value="">기타</option>${trackOptions}</select></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}"></label>
       <label><span>언제까지</span><input type="date" name="dueDate" value="${esc(draft.dueDate)}"></label>
@@ -5718,6 +6063,9 @@
     const previous = W.normalizeOrder(workOrderState.editing);
     const people = workOrderState.members;
     const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
+    const linkedOrder = cleaningOrderState.orders.find(item => item.id === String(raw.cleaningOrderId || "")) || null;
+    if (raw.cleaningOrderId && !linkedOrder) return showToast("연결할 청소 요청을 찾지 못했습니다. 주문을 새로고침해 주세요.", "error");
+    if (linkedOrder && previous.buildingId && String(previous.buildingId) !== String(linkedOrder.buildingId || "")) return showToast("다른 건물의 청소 요청은 이 업무에 연결할 수 없습니다.", "error");
     const checked = (previous.createdAt ? W.validateOrder : W.validatePublication)(Object.assign({}, previous, {
       id: previous.id || `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       title: String(raw.title || ""),
@@ -5726,6 +6074,8 @@
       dueDate: String(raw.dueDate || ""),
       startDate: String(raw.startDate || ""),
       projectId: String(raw.projectId || ""),
+      cleaningOrderId: String(raw.cleaningOrderId || ""),
+      buildingId: linkedOrder ? String(linkedOrder.buildingId || "") : previous.buildingId,
       track: String(raw.track || ""),
       why: String(raw.why || ""),
       what: String(raw.what || ""),
@@ -6497,7 +6847,7 @@
   let reportState = {
     reports: [], admin: false, canWork: false, uid: "",
     loaded: false, loading: false, error: "",
-    selectedId: "", draft: null, busyKey: "",
+    selectedId: "", draft: null, busyKey: "", readOnlyReason: "",
     driveScanning: false,
     drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
     driveClassificationLoading: false, driveClassifications: [],
@@ -6551,6 +6901,7 @@
     } finally {
       reportState.loading = false;
       if (currentView === "workReports") renderWorkReports();
+      else if (currentView === "cleaningCenter") renderCleaningCenter();
     }
   }
 
@@ -6713,6 +7064,7 @@
     const R = reportCore();
     if (!R) { main.innerHTML = `<section class="operations-hero"><div><h2>결과보고서</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
+    if (!cleaningOrderState.attempted && !cleaningOrderState.loading) void loadCleaningOrders();
 
     const reports = R.sortReports(reportState.reports);
     const draft = reportState.draft ? R.normalizeReport(reportState.draft) : null;
@@ -6725,13 +7077,15 @@
 
     const rowsHtml = reports.slice(0, 60).map(item => {
       const sum = R.summarizeItems(item);
+      const linkedOrder = cleaningOrderState.orders.find(order => order.id === item.cleaningOrderId);
+      const editAccess = window.BringCleaningCenterUI.cleaningReportEditAccess(item, linkedOrder);
       return `<tr class="${item.id === reportState.selectedId ? "is-selected" : ""}">
         <td><b>${esc(item.buildingName || "건물 미지정")}</b><small>${esc(R.kindLabel(item.kind))}</small></td>
         <td><b>${esc(item.workDate)}</b><small>${esc(item.workerName || "작업자 미기재")}</small></td>
         <td><b>${sum.done}/${sum.total}</b><small>사진 ${sum.photos}장</small></td>
         <td><span class="office-status ${sum.progress === 100 ? "working" : "warn"}"><i></i>${sum.progress}%</span></td>
         <td class="wr-row-actions">
-          ${reportState.canWork ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">고치기</button>` : ""}
+          ${reportState.canWork ? editAccess.editable || (item.cleaningOrderId && !linkedOrder) ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">${linkedOrder || !item.cleaningOrderId ? "고치기" : "상태 확인 후 편집"}</button>` : `<span class="wr-readonly-label" title="${esc(editAccess.reason)}">읽기 전용</span>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
           <button type="button" class="mini-button" data-df-notice="${esc(item.id)}">고객 알림</button>
@@ -6749,7 +7103,7 @@
       </div>
       ${docFlowStrip("report")}
       ${status}
-      ${draft ? reportEditor(R, draft) : `<div class="operations-kpis">
+      ${draft ? reportState.readOnlyReason ? renderReadOnlyWorkReport(R, draft, reportState.readOnlyReason) : reportEditor(R, draft) : `<div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
         <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사진</span><b>${monthly.reduce((sum, item) => sum + R.photoCount(item), 0)}</b><small>장</small></div>
         <div class="operations-kpi" style="--wash:#EDF5FF"><span>입주청소</span><b>${reports.filter(item => item.kind === "moveIn").length}</b><small>건</small></div>
@@ -7430,9 +7784,32 @@
     return { base: saved, detail: "" };
   }
 
+  function renderReadOnlyWorkReport(R, draft, reason) {
+    const statusLabel = status => R.ITEM_STATUSES.find(item => item.key === status)?.label || "상태 확인 필요";
+    const evidence = (photos, phase) => photos.length
+      ? `<ul>${photos.map(photo => `<li>${photo.webViewLink
+        ? `<a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || `${phase} 사진`)}</a>`
+        : `<span>${esc(photo.caption || `${phase} 사진`)} · 링크 없음</span>`}</li>`).join("")}</ul>`
+      : `<small>등록된 사진 없음</small>`;
+    const rows = draft.items.map(item => `<article class="wr-readonly-item">
+      <div class="wr-readonly-item-summary"><b>${esc(item.label)}</b><small>${esc(statusLabel(item.status))}${item.note ? ` · ${esc(item.note)}` : ""}</small></div>
+      <div class="wr-readonly-photos"><section><b>작업 전 · ${item.before.length}장</b>${evidence(item.before, "작업 전")}</section><section><b>작업 후 · ${item.after.length}장</b>${evidence(item.after, "작업 후")}</section></div>
+    </article>`).join("");
+    return `<section class="wr-readonly-panel" role="status" aria-label="결과보고서 읽기 전용">
+      <header><div><span>REPORT · READ ONLY</span><h3>${esc(draft.title || "결과보고서")}</h3><p>${esc(draft.buildingName || "건물 미지정")} · ${esc(R.kindLabel(draft.kind))} · ${esc(draft.workDate || "작업일 미기재")}</p></div><button type="button" class="secondary-button" data-report-cancel>닫기</button></header>
+      <div class="wr-readonly-notice"><b>수정 잠금</b><span>${esc(reason)}</span></div>
+      ${draft.summary ? `<section><h4>작업 결과</h4><p>${esc(draft.summary)}</p></section>` : ""}
+      ${draft.followUp ? `<section><h4>후속 확인</h4><p>${esc(draft.followUp)}</p></section>` : ""}
+      <section><h4>항목별 확인</h4><div class="wr-readonly-items">${rows}</div></section>
+      <p class="wr-readonly-footnote">보고서 PDF는 아래 작성 내역의 출력 버튼에서 확인할 수 있습니다.</p>
+    </section>`;
+  }
+
   function reportEditor(R, draft) {
     const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
     const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || null;
+    const linkedOrders = cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId);
+    const selectedOrderIsKnown = linkedOrders.some(item => item.id === draft.cleaningOrderId);
     const addressParts = workReportAddressParts(draft, selectedBuilding);
     const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
     const blockers = R.blockers(draft);
@@ -7446,7 +7823,9 @@
     const cards = draft.items.map(item => {
       const issue = R.itemIssue(item);
       const shots = phase => (item[phase].length
-        ? item[phase].map(photo => `<li><a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || "사진")}</a><button type="button" class="text-button" data-report-drop-photo="${esc(photo.id)}" data-report-item="${esc(item.key)}" data-report-phase="${esc(phase)}">빼기</button></li>`).join("")
+        ? item[phase].map(photo => `<li>${photo.webViewLink
+          ? `<a href="#" data-report-open-photo="${esc(photo.webViewLink)}">${esc(photo.caption || "사진")}</a>`
+          : `<span class="wr-photo-link-missing">${esc(photo.caption || "사진")} · Drive 링크 확인</span>`}<button type="button" class="text-button" data-report-drop-photo="${esc(photo.id)}" data-report-item="${esc(item.key)}" data-report-phase="${esc(phase)}">빼기</button></li>`).join("")
         : `<li class="wr-none">없음</li>`);
       return `<article class="wr-item${issue ? " has-issue" : ""}" id="wr-item-${attr(item.key)}">
         <header>
@@ -7482,6 +7861,7 @@
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
               <label><span>건물 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
+              <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
               <header><b>현장 위치</b><span>↗ 고객·건물 관리에서 자동입력</span></header>
@@ -7590,6 +7970,7 @@
       summary: String(raw.summary || ""),
       followUp: String(raw.followUp || ""),
       category: String(raw.category || previous.category),
+      cleaningOrderId: String(raw.cleaningOrderId || ""),
       ownerName: String(raw.ownerName || ""),
       ownerContact: String(raw.ownerContact || ""),
       contractFrom: String(raw.contractFrom || ""),
@@ -7744,6 +8125,7 @@
       deliveryState.loading = false;
       updateDeliveryBadge();
       if (currentView === "deliveryFlow") renderDeliveryFlows();
+      else if (currentView === "cleaningCenter") renderCleaningCenter();
     }
   }
 
@@ -11710,6 +12092,236 @@
   }
 
   document.addEventListener("click", async event => {
+    const cleaningStatusPreset = event.target.closest("[data-cleaning-status-preset]");
+    if (cleaningStatusPreset && currentView === "cleaningCenter") {
+      cleaningOrderState.statusFilter = cleaningStatusPreset.dataset.cleaningStatusPreset || "all";
+      const statusSelect = main.querySelector("[data-cleaning-order-status]");
+      if (statusSelect) statusSelect.value = cleaningOrderState.statusFilter;
+      applyCleaningOrderFilters();
+      main.querySelector(".cleaning-orders-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const cleaningRoute = event.target.closest("[data-cleaning-view]");
+    if (cleaningRoute) {
+      const nextView = cleaningRoute.dataset.cleaningView;
+      if (!Object.hasOwn(viewMeta, nextView)) return;
+      if (nextView !== currentView && buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
+      setActiveNavFolder("cleaning-center");
+      document.querySelector('[data-nav-folder="cleaning-center"]')?.classList.add("open");
+      document.querySelector('[data-nav-folder="cleaning-center"] [data-nav-folder-toggle]')?.setAttribute("aria-expanded", "true");
+      if (currentView === "valueScope" && nextView !== "valueScope") await deactivateValueScope();
+      currentView = nextView;
+      if (currentView === "customers") selectedCustomerHubId = "";
+      if (currentView === "cases") caseListMode = "active";
+      render();
+      if (["cases", "pipeline"].includes(currentView)) void refreshOperations({ silent: true });
+      if (currentView === "buildings") requestDriveImportCandidatesRefresh();
+      return;
+    }
+    if (event.target.closest('[data-action="refresh-cleaning-center"]')) {
+      cleaningOrderState.attempted = false;
+      await Promise.all([
+        refreshOperations({ silent: true, render: false }),
+        loadWorkOrders(),
+        loadWorkReports(),
+        loadDeliveryFlows(),
+        loadCleaningOrders(),
+      ]);
+      if (currentView === "cleaningCenter") renderCleaningCenter();
+      return;
+    }
+    if (event.target.closest('[data-action="load-more-cleaning-orders"]')) {
+      await loadMoreCleaningOrders();
+      return;
+    }
+    if (event.target.closest('[data-action="new-cleaning-order"]')) {
+      openCleaningOrderForm();
+      return;
+    }
+    const viewCleaningOrderDetails = event.target.closest('[data-action="view-cleaning-order-details"]');
+    if (viewCleaningOrderDetails) {
+      const order = cleaningOrderState.orders.find(item => String(item.id) === String(viewCleaningOrderDetails.dataset.orderId || ""));
+      if (!order) return showToast("청소 요청을 찾지 못했습니다. 주문 목록을 새로고침해 주세요.", "error");
+      const customer = (store.customers || []).find(item => String(item.id || "") === String(order.customerId || ""));
+      const building = (store.buildings || []).find(item => String(item.id || "") === String(order.buildingId || ""));
+      const linkedWorkOrders = workOrderCore()?.forCleaningOrder(workOrderState.orders, order.id) || [];
+      const linkedReports = reportCore()?.forCleaningOrder(reportState.reports, order.id) || [];
+      const quoteSet = cleaningOrderState.quoteSets?.[order.id];
+      const latestQuote = quoteSet?.latestQuoteId && quoteSet?.revisions?.[quoteSet.latestQuoteId] || null;
+      const labels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
+      modalContent.innerHTML = window.BringCleaningCenterUI.renderOrderDetails({
+        ...order,
+        customerName: customer?.name || "",
+        buildingName: building?.name || "",
+        relatedWorkOrders: linkedWorkOrders.map(item => ({ id: item.id, title: item.title || "제목 없는 업무", progress: Number(item.progress || 0), status: item.status, statusLabel: workOrderCore()?.statusLabel(item.status) || item.status, assigneeName: item.assigneeName || "담당자 미배정", dueDate: item.dueDate || "" })),
+        relatedReports: linkedReports.map(item => {
+          const R = reportCore();
+          const report = R?.normalizeReport(item) || item;
+          const checklistSummary = R?.summarizeItems(item) || null;
+          return {
+            id: item.id, title: item.title || item.summary?.slice(0, 80) || "작업 결과보고서",
+            workDate: item.workDate || "날짜 미정", photoCount: R?.photoCount(item) || 0,
+            checklistSummary: checklistSummary ? {
+              done: checklistSummary.done, partial: checklistSummary.partial, skipped: checklistSummary.skipped,
+              progress: checklistSummary.progress,
+              items: (report.items || []).map(entry => ({
+                label: entry.label,
+                statusLabel: ({ done: "완료", partial: "일부", skipped: "미수행" })[entry.status] || "상태 확인 필요",
+                beforeCount: entry.before?.length || 0, afterCount: entry.after?.length || 0, note: entry.note || "",
+              })),
+            } : null,
+          };
+        }),
+        quoteSummary: latestQuote ? { latestRevision: latestQuote.revision, status: latestQuote.status, totalAmount: latestQuote.totalAmount } : null,
+        statusLabel: labels[order.status] || "상태 확인 필요",
+      });
+      openModal();
+      return;
+    }
+    const manageQuoteButton = event.target.closest('[data-action="manage-cleaning-quote"]');
+    if (manageQuoteButton) {
+      const order = cleaningOrderState.orders.find(item => String(item.id) === String(manageQuoteButton.dataset.orderId || ""));
+      if (!order || !["quote_pending", "approval_pending"].includes(order.status)) return showToast("현재 단계에서는 청소 견적을 작성하거나 검수할 수 없습니다.", "error");
+      await manageCleaningQuote(order);
+      return;
+    }
+    const newQuoteRevisionButton = event.target.closest('[data-action="new-cleaning-quote-revision"]');
+    if (newQuoteRevisionButton) {
+      const panel = newQuoteRevisionButton.closest(".cleaning-quote-review");
+      const order = cleaningOrderState.orders.find(item => String(item.id) === String(panel?.dataset.orderId || ""));
+      const expectedRevision = Number(panel?.dataset.expectedRevision);
+      if (!order || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) return showToast("최신 견적 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      closeModal();
+      await startCleaningQuoteDraft(order, expectedRevision);
+      return;
+    }
+    if (event.target.closest('[data-action="save-cleaning-order-quote"]')) {
+      await saveCleaningQuoteDraft();
+      return;
+    }
+    const linkedOrderButton = event.target.closest('[data-action="open-cleaning-order"]');
+    if (linkedOrderButton) {
+      const id = linkedOrderButton.dataset.orderId;
+      currentView = "cleaningCenter";
+      renderCleaningCenter();
+      requestAnimationFrame(() => {
+        const row = Array.from(document.querySelectorAll("[data-cleaning-order-id]")).find(item => item.dataset.cleaningOrderId === id);
+        if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.add("is-flash"); }
+      });
+      return;
+    }
+    const linkedWorkButton = event.target.closest('[data-action="open-cleaning-work-order"]');
+    if (linkedWorkButton) {
+      const id = linkedWorkButton.dataset.recordId;
+      if (!workOrderState.orders.some(item => item.id === id)) return showToast("연결된 업무를 불러오지 못했습니다. 현황을 새로고침해 주세요.", "error");
+      currentView = "workOrders";
+      workOrderState.scope = "all";
+      workOrderState.performancePeriod = "all";
+      workOrderState.projectId = "__all";
+      workOrderState.projectDetailTab = "orders";
+      renderWorkOrders();
+      requestAnimationFrame(() => {
+        const card = Array.from(document.querySelectorAll(".wo-card[data-wo-card]")).find(item => item.dataset.woCard === id);
+        if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("is-flash"); }
+      });
+      return;
+    }
+    const linkedReportButton = event.target.closest('[data-action="open-cleaning-report"]');
+    if (linkedReportButton) {
+      const R = reportCore();
+      const found = R && R.findReport(reportState.reports, linkedReportButton.dataset.recordId);
+      if (!found) return showToast("연결된 결과보고서를 불러오지 못했습니다. 현황을 새로고침해 주세요.", "error");
+      const linkedOrder = await resolveCleaningOrderById(found.cleaningOrderId);
+      if (found.cleaningOrderId && !linkedOrder) return showToast("연결된 청소 요청 상태를 확인하지 못했습니다. 다시 시도해 주세요.", "error");
+      const reportAccess = window.BringCleaningCenterUI.cleaningReportEditAccess(found, linkedOrder);
+      reportState.draft = found;
+      reportState.readOnlyReason = reportAccess.editable ? "" : reportAccess.reason;
+      reportState.selectedId = found.id;
+      resetReportDriveSelection();
+      currentView = "workReports";
+      renderWorkReports();
+      if (!driveState.loaded) void refreshReportDriveStatus();
+      return;
+    }
+    const createCleaningWorkReport = event.target.closest('[data-action="create-cleaning-work-report"]');
+    if (createCleaningWorkReport) {
+      const R = reportCore();
+      const order = cleaningOrderState.orders.find(item => item.id === createCleaningWorkReport.dataset.orderId);
+      if (!R || !order || !reportState.canWork || !canWriteCRM()) return showToast("결과보고서를 작성할 권한이 없습니다.", "error");
+      if (!["in_progress", "revision_requested"].includes(order.status)) return showToast("작업 중이거나 보완 요청된 청소 건에서만 결과보고서를 시작할 수 있습니다.", "error");
+      const building = (store.buildings || []).find(item => String(item && item.id || "") === String(order.buildingId || ""));
+      if (!building) return showToast("연결 건물을 찾지 못했습니다. 고객·건물 연결을 확인해 주세요.", "error");
+      const currentDraft = reportState.draft && !reportState.draft.createdAt ? reportState.draft : null;
+      if (currentDraft && String(currentDraft.cleaningOrderId || "") !== String(order.id)) return showToast("다른 청소 요청의 미저장 결과보고 초안이 있습니다. 먼저 저장하거나 닫아 주세요.", "error");
+      if (currentDraft) {
+        reportState.draft = R.normalizeReport(currentDraft);
+      } else {
+        const draft = R.draftForCleaningOrder(order, building, {
+          id: `wr_${crypto.randomUUID()}`,
+          workDate: todayKey(),
+          siteAddress: workReportBuildingAddress(building),
+        });
+        if (!draft) return showToast("주문 서비스 유형이나 건물 ID가 확인되지 않아 보고서 초안을 만들 수 없습니다.", "error");
+        reportState.draft = draft;
+        resetReportDriveSelection();
+      }
+      reportState.readOnlyReason = "";
+      reportState.selectedId = reportState.draft.createdAt ? reportState.draft.id : "";
+      reportState.aiError = "";
+      reportState.aiDraftAt = "";
+      currentView = "workReports";
+      renderWorkReports();
+      if (!driveState.loaded) void refreshReportDriveStatus();
+      showToast("청소 주문과 유형별 체크리스트를 연결한 결과보고 초안을 열었습니다. 사진과 항목별 상태를 확인해 주세요.");
+      return;
+    }
+    const createCleaningWorkOrder = event.target.closest('[data-action="create-cleaning-work-order"]');
+    if (createCleaningWorkOrder) {
+      const W = workOrderCore();
+      const order = cleaningOrderState.orders.find(item => item.id === createCleaningWorkOrder.dataset.orderId);
+      if (!workOrderState.admin || !canWriteCRM()) return showToast("관리자만 청소 요청에서 작업지시를 만들 수 있습니다.", "error");
+      if (!W || !order || !["approval_pending", "scheduled", "in_progress", "revision_requested"].includes(order.status)) return showToast("승인 대기 또는 일정 확정된 청소 요청만 작업지시로 연결할 수 있습니다. 새로고침 후 다시 확인해 주세요.", "error");
+      if ((W.forCleaningOrder(workOrderState.orders, order.id) || []).some(item => item.status !== "done")) return showToast("이 청소 요청에는 이미 진행 중인 작업지시가 연결되어 있습니다.", "error");
+      if (workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen) return showToast("작성 중인 업무를 저장하거나 닫은 뒤 청소 요청의 작업지시를 시작해 주세요.", "error");
+      workOrderState.editing = W.normalizeOrder({
+        title: order.title,
+        why: `청소 요청 ${order.title}의 현장 작업을 진행합니다.`,
+        what: order.description || "접수된 청소 요청 범위를 현장에서 확인하고 작업 결과를 기록합니다.",
+        doneWhen: "현장 작업을 수행하고 작업 결과와 증빙을 기존 CRM 결과보고서에 남긴 뒤 검수를 요청합니다.",
+        buildingId: String(order.buildingId || ""),
+        cleaningOrderId: order.id,
+        dueDate: String(order.desiredDate || ""),
+        status: "assigned",
+      });
+      currentView = "workOrders";
+      workOrderState.scope = "all";
+      workOrderState.performancePeriod = "all";
+      workOrderState.projectId = "__all";
+      workOrderState.projectDetailTab = "orders";
+      renderWorkOrders();
+      requestAnimationFrame(() => document.querySelector("[data-wo-form]")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      showToast("청소 주문·건물을 연결해 작업지시 초안을 열었습니다. 담당자와 기한을 지정하고 저장한 뒤 청소 요청에서 일정을 확정해 주세요.");
+      return;
+    }
+    const advanceCleaningOrder = event.target.closest('[data-action="advance-cleaning-order"]');
+    if (advanceCleaningOrder) {
+      const order = cleaningOrderState.orders.find(item => item.id === advanceCleaningOrder.dataset.orderId);
+      if (!order || cleaningOrderState.busy || !canWriteCRM()) return;
+      modalContent.innerHTML = window.BringCleaningCenterUI.renderTransitionConfirmation({
+        orderId: order.id,
+        orderTitle: order.title,
+        currentStatus: order.statusLabel || order.status,
+        nextStatus: advanceCleaningOrder.dataset.nextStatus,
+        nextStatusLabel: order.status === "review_pending" && workOrderState.admin
+          ? "검수 완료"
+          : window.BringCleaningCenterUI.statusLabel(advanceCleaningOrder.dataset.nextStatus),
+        expectedRevision: order.revision,
+        requestId: crypto.randomUUID(),
+      });
+      openModal();
+      modalContent.querySelector('#cleaningOrderTransitionForm textarea[name="note"]')?.focus();
+      return;
+    }
     if (event.target.closest('[data-strategy-refresh]')) { void loadCompanyStrategy(); return; }
     if (event.target.closest('[data-strategy-edit]')) {
       if (!workOrderState.admin) return showToast("관리자만 회사 방향을 편집할 수 있습니다.", "error");
@@ -11769,6 +12381,7 @@
       const R = reportCore();
       if (R) {
         reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() });
+        reportState.readOnlyReason = "";
         resetReportDriveSelection();
         reportState.aiError = "";
         reportState.aiDraftAt = "";
@@ -11782,7 +12395,12 @@
       const R = reportCore();
       const found = R && R.findReport(reportState.reports, reportEdit.dataset.reportEdit);
       if (found) {
+        const linkedOrder = await resolveCleaningOrderById(found.cleaningOrderId);
+        if (found.cleaningOrderId && !linkedOrder) return showToast("연결된 청소 요청 상태를 확인하지 못했습니다. 다시 시도해 주세요.", "error");
+        const reportAccess = window.BringCleaningCenterUI.cleaningReportEditAccess(found, linkedOrder);
+        if (!reportAccess.editable) return showToast(reportAccess.reason, "error");
         reportState.draft = found;
+        reportState.readOnlyReason = "";
         reportState.selectedId = found.id;
         resetReportDriveSelection();
         reportState.aiError = "";
@@ -11925,6 +12543,7 @@
     }
     if (event.target.closest("[data-report-cancel]")) {
       reportState.draft = null;
+      reportState.readOnlyReason = "";
       resetReportDriveSelection();
       reportState.aiError = "";
       reportState.aiDraftAt = "";
@@ -14166,6 +14785,11 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-cleaning-order-status]")) {
+      cleaningOrderState.statusFilter = event.target.value || "all";
+      applyCleaningOrderFilters();
+      return;
+    }
     if (event.target.matches("[data-report-photo-category]")) {
       assignReportPhotoCategory(event.target.dataset.reportPhotoCategory, event.target.value);
       return;
@@ -14209,6 +14833,9 @@
       if (form && form.elements.siteAddress) form.elements.siteAddress.value = workReportBuildingAddress(building);
       // 같은 호수가 다른 건물로 넘어가는 실수를 막는다.
       if (form && form.elements.siteAddressDetail) form.elements.siteAddressDetail.value = "";
+      const orderSelect = form && form.elements.cleaningOrderId;
+      const linkedOrder = cleaningOrderState.orders.find(item => item.id === orderSelect?.value);
+      if (linkedOrder && String(linkedOrder.buildingId || "") !== String(event.target.value || "")) orderSelect.value = "";
       syncReportDraft();
       return;
     }
@@ -14602,6 +15229,95 @@
     event.preventDefault();
     if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
+    if (form.id === "cleaningOrderForm") {
+      if (!canWriteCRM() || cleaningOrderState.busy || typeof api.createCleaningOrder !== "function") return;
+      const values = new FormData(form);
+      const request = {
+        requestId: form.dataset.requestId || (form.dataset.requestId = crypto.randomUUID()),
+        customerId: String(values.get("customerId") || ""),
+        buildingId: String(values.get("buildingId") || ""),
+        serviceType: String(values.get("serviceType") || ""),
+        title: String(values.get("title") || "").trim(),
+        desiredDate: String(values.get("desiredDate") || ""),
+        description: String(values.get("description") || "").trim(),
+      };
+      if (!form.reportValidity()) return;
+      cleaningOrderState.busy = true;
+      try {
+        const result = await api.createCleaningOrder(request);
+        cleaningOrderState.loaded = false;
+        cleaningOrderState.attempted = false;
+        closeModal();
+        await loadCleaningOrders();
+        showToast(result?.wallboardProjectionUpdated === false
+          ? "청소 요청은 접수됐지만 TV 운영보드 요약 갱신은 지연 중입니다. 잠시 후 확인해 주세요."
+          : "청소 요청을 접수했습니다.", result?.wallboardProjectionUpdated === false ? "error" : "success");
+      } catch (error) {
+        showToast(error?.message || "청소 요청을 접수하지 못했습니다.", "error");
+      } finally {
+        cleaningOrderState.busy = false;
+      }
+      return;
+    }
+    if (form.id === "cleaningQuoteReviewForm") {
+      if (!workOrderState.admin || cleaningOrderState.busy || typeof api.reviewCleaningQuote !== "function") return showToast("관리자만 견적을 승인하거나 수정 요청할 수 있습니다.", "error");
+      const panel = form.closest(".cleaning-quote-review");
+      const decision = event.submitter?.value === "return" ? "return" : event.submitter?.value === "approve" ? "approve" : "";
+      const note = String(form.elements.namedItem("note")?.value || "").trim();
+      const orderId = String(panel?.dataset.orderId || "");
+      const quoteId = String(panel?.dataset.quoteId || "");
+      const expectedRevision = Number(panel?.dataset.expectedRevision);
+      const requestId = String(panel?.dataset.requestId || "");
+      if (!decision || !orderId || !quoteId || !requestId || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1
+        || note.length > 500 || (decision === "return" && !note)) return showToast("견적·버전을 확인하고, 수정 요청 시 사유를 입력해 주세요.", "error");
+      cleaningOrderState.busy = true;
+      form.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = true; });
+      try {
+        await api.reviewCleaningQuote({ requestId, orderId, quoteId, expectedRevision, action: decision, note });
+        const latestSet = await api.loadCleaningQuoteSet(orderId);
+        cleaningOrderState.quoteSets[orderId] = latestSet?.quoteSet || null;
+        closeModal();
+        renderCleaningCenter();
+        showToast(decision === "approve" ? "내부 견적 검수를 승인했습니다. 고객 발송·청구 처리는 별도입니다." : "수정 요청을 기록했습니다. 담당자가 새 견적 버전을 작성할 수 있습니다.", "success");
+      } catch (error) {
+        showToast(error?.message || "견적 검수 결과를 저장하지 못했습니다.", "error");
+      } finally {
+        cleaningOrderState.busy = false;
+        form.querySelectorAll('button[type="submit"]').forEach(button => { if (button.isConnected) button.disabled = false; });
+      }
+      return;
+    }
+    if (form.id === "cleaningOrderTransitionForm") {
+      if (!canWriteCRM() || cleaningOrderState.busy || typeof api.transitionCleaningOrder !== "function") return;
+      if (!form.reportValidity()) return;
+      const values = new FormData(form);
+      const note = String(values.get("note") || "").trim();
+      const orderId = String(form.dataset.orderId || "");
+      const expectedRevision = Number(form.dataset.expectedRevision);
+      const nextStatus = String(form.dataset.nextStatus || "");
+      const requestId = String(form.dataset.requestId || "");
+      if (!orderId || !requestId || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1 || !nextStatus
+        || !note || note.length > 500) return showToast("단계 변경 사유를 1~500자로 입력해 주세요.", "error");
+      cleaningOrderState.busy = true;
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const result = await api.transitionCleaningOrder({ requestId, orderId, expectedRevision, nextStatus, note });
+        cleaningOrderState.loaded = false;
+        cleaningOrderState.attempted = false;
+        closeModal();
+        await loadCleaningOrders();
+        showToast(result?.wallboardProjectionUpdated === false
+          ? "주문은 업데이트됐지만 TV 운영보드 요약 갱신은 지연 중입니다. 잠시 후 확인해 주세요."
+          : "주문 진행 상태를 업데이트했습니다.", result?.wallboardProjectionUpdated === false ? "error" : "success");
+      } catch (error) {
+        showToast(error?.message || "상태를 변경하지 못했습니다.", "error");
+      } finally {
+        cleaningOrderState.busy = false;
+        if (submitButton?.isConnected) submitButton.disabled = false;
+      }
+      return;
+    }
     if (form.id === "billingReturnForm") {
       const state = billingPanel;
       if (!state || !billingSessionActive(state) || !canAdministerSecurity() || !state.ledger || !state.returnTarget) return;
@@ -15933,6 +16649,11 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-cleaning-order-search]")) {
+      cleaningOrderState.search = String(event.target.value || "");
+      applyCleaningOrderFilters();
+      return;
+    }
     if (event.target.matches("[data-wo-progress-modal-input]")) {
       const value = workOrderCore()?.progressOf(event.target.value) || 0;
       const preview = event.target.form?.querySelector("[data-wo-progress-modal-preview]");
@@ -16390,7 +17111,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

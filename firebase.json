@@ -108,5 +108,8 @@
       "source": "functions",
       "codebase": "field-platform"
     }
-  ]
+  ],
+  "emulators": {
+    "auth": { "port": 9099 }
+  }
 }

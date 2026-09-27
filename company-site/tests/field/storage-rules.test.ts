@@ -18,7 +18,10 @@ import {
 } from "firebase/storage";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-const PROJECT_ID = "demo-bring-field-platform";
+// Keep Storage's emulator rules isolated from database-rules.test.ts, which
+// uses the same project ID and can otherwise replace the Storage rules while
+// these suites run together.
+const PROJECT_ID = "demo-bring-field-platform-storage";
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const PHOTO_ID = "22222222-2222-4222-8222-222222222222";
 const VIDEO_ID = "33333333-3333-4333-8333-333333333333";

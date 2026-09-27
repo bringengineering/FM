@@ -300,6 +300,7 @@ export interface GoogleDriveClientLike {
 
 export interface ValidatedDriveMediaAdapter
   extends DriveMediaAdapter, AdPackageDriveAdapter {
+  verifyImageFileIds(fileIds: string[]): Promise<string[]>;
   validateRootFolder(input: {
     rootFolderId: string;
     rootMode: DriveRootMode;
@@ -473,6 +474,27 @@ export function createGoogleDriveMediaAdapter(
   },
 ): ValidatedDriveMediaAdapter {
   return {
+    async verifyImageFileIds(fileIds) {
+      if (!Array.isArray(fileIds) || fileIds.length > 64
+        || fileIds.some(id => typeof id !== "string" || !/^[A-Za-z0-9_-]{6,200}$/u.test(id))) {
+        throw safeInternalError("drive_source_invalid");
+      }
+      const unique = [...new Set(fileIds)];
+      const checks = await Promise.all(unique.map(async fileId => {
+        try {
+          const value = await safeDriveRequest(async () => responseFile(
+            await client.files.get({ fileId, fields: "id,mimeType,trashed", supportsAllDrives: true }),
+          ));
+          return isRecord(value) && value.id === fileId && value.trashed === false
+            && typeof value.mimeType === "string" && value.mimeType.startsWith("image/")
+            ? fileId
+            : null;
+        } catch {
+          return null;
+        }
+      }));
+      return checks.filter((fileId): fileId is string => fileId !== null);
+    },
     async validateRootFolder({ rootFolderId, rootMode }) {
       if (
         !/^[A-Za-z0-9_-]{1,200}$/u.test(rootFolderId)

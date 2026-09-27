@@ -6,6 +6,7 @@ on:
       - "desktop-crm/**"
       - "functions/**"
       - "company-site/**"
+      - "crm-ai-worker/**"
       - "database.rules.json"
       - "firebase.json"
       - "release/firebase-targets.json"
@@ -17,6 +18,7 @@ on:
       - "desktop-crm/**"
       - "functions/**"
       - "company-site/**"
+      - "crm-ai-worker/**"
       - "database.rules.json"
       - "firebase.json"
       - "release/firebase-targets.json"
@@ -43,6 +45,20 @@ jobs:
         working-directory: desktop-crm
       - run: npm test
         working-directory: desktop-crm
+
+  wallboard-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crm-ai-worker/package-lock.json
+      - run: npm ci
+        working-directory: crm-ai-worker
+      - run: npm test
+        working-directory: crm-ai-worker
 
   backend-and-rules:
     runs-on: ubuntu-latest
@@ -72,5 +88,11 @@ jobs:
       - run: pnpm --dir company-site build
       - name: Test Firebase rules in local emulators
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
+      - name: Test authenticated cleaning orders and TV projection in local emulators
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
+          BRING_CLEANING_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-cleaning-functions emulators:exec --only auth,database,functions "pnpm exec vitest run tests/field/cleaning-orders-functions-emulator.test.ts"
       - name: Test billing transactions in local database emulator
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database "node --test ../functions/integration/billing-ledger-emulator.test.mjs"

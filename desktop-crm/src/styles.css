@@ -829,6 +829,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wo-progress-set input { width: 62px; border: 1px solid #E5E8EB; border-radius: 8px; padding: 5px 7px; font: inherit; font-size: 11px; }
 .wo-card.is-flash { box-shadow: 0 0 0 3px #C7E0FF; transition: box-shadow .2s; }
 @media (max-width: 860px) {
+  .roadmap-board-layout { grid-template-columns: minmax(0, 1fr); }
+  .roadmap-performance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .roadmap-overall-card, .roadmap-deadline-card { grid-column: 1 / -1; }
+  .roadmap-deadline-card ul { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .wo-gantt-axis, .wo-gantt-row { grid-template-columns: 1fr; }
   .wo-gantt-label { padding: 4px 18px 0; }
   .wo-gantt-track { margin: 0 18px; }
@@ -846,15 +850,40 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-project-progress-field { position: relative; }
 .roadmap-project-progress-field input { padding-right: 30px; }
 .roadmap-project-progress-field b { position: absolute; top: 50%; right: 12px; color: #6B7684; font-size: 11px; transform: translateY(-50%); }
-.roadmap-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
-.roadmap-summary article { padding: 14px 16px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; }
-.roadmap-summary span, .roadmap-summary small { display: block; color: #8B95A1; font-size: 10px; font-weight: 700; }
-.roadmap-summary b { display: block; margin: 4px 0 2px; color: #191F28; font-size: 24px; line-height: 1.1; }
-.roadmap-summary article.is-warning { border-color: #F6D8DB; background: #FFF9F9; }
-.roadmap-summary article.is-warning b { color: #C6535F; }
-.roadmap-summary article.is-progress { border-color: #CFE8DC; background: #FAFFFD; }
-.roadmap-summary article.is-progress b { color: #00875A; }
-.roadmap-board { margin-bottom: 14px; overflow: hidden; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; }
+.roadmap-board-layout { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(270px, .9fr); align-items: start; gap: 12px; margin-bottom: 14px; }
+.roadmap-board { min-width: 0; margin: 0; overflow: auto; border: 1px solid #DCE3EA; border-radius: 18px; background: #fff; overscroll-behavior: contain; }
+.roadmap-performance { display: grid; gap: 10px; }
+.roadmap-performance-card { min-width: 0; padding: 14px; border: 1px solid #E5E8EB; border-radius: 16px; background: rgba(255,255,255,.92); box-shadow: 0 4px 16px rgba(0,0,0,.035); }
+.roadmap-performance-card > span { display: block; color: #6B7684; font-size: 11px; font-weight: 850; }
+.roadmap-overall-card { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 6px 12px; }
+.roadmap-overall-card > span { grid-column: 1 / -1; }
+.roadmap-performance-ring { --progress: 0%; position: relative; display: grid; width: 72px; height: 72px; place-items: center; border-radius: 50%; background: conic-gradient(#3182F6 var(--progress), #E9EEF4 0); }
+.roadmap-performance-ring::before { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: #fff; content: ""; }
+.roadmap-performance-ring b { position: relative; z-index: 1; color: #191F28; font-size: 17px; }
+.roadmap-overall-card p, .roadmap-review-card p { margin: 0; color: #8B95A1; font-size: 9px; line-height: 1.45; }
+.roadmap-performance-empty { display: grid; min-height: 72px; place-items: center; border: 1px dashed #DDE3EA; border-radius: 50%; color: #8B95A1; font-size: 8px; text-align: center; }
+.roadmap-review-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5px 10px; }
+.roadmap-review-card > span { grid-column: 1 / -1; }
+.roadmap-performance-metric { color: #1B64DA; font-size: 25px; line-height: 1.15; }
+.roadmap-performance-metric.is-muted { color: #8B95A1; font-size: 12px; }
+.roadmap-performance-meter { grid-column: 1 / -1; height: 6px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
+.roadmap-performance-meter i { display: block; height: 100%; border-radius: inherit; background: #3182F6; }
+.roadmap-status-card dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 9px 0 0; }
+.roadmap-status-card dl > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 8px; border-radius: 10px; background: #F7F9FC; }
+.roadmap-status-card dt { display: flex; align-items: center; gap: 5px; color: #6B7684; font-size: 9px; }
+.roadmap-status-card dt i { width: 7px; height: 7px; border-radius: 50%; background: #3182F6; }
+.roadmap-status-card dt i.is-paused { background: #E7A63B; }
+.roadmap-status-card dt i.is-done { background: #26A879; }
+.roadmap-status-card dd { margin: 0; color: #191F28; font-size: 16px; font-weight: 900; }
+.roadmap-deadline-card ul { display: grid; gap: 6px; margin: 9px 0 0; padding: 0; list-style: none; }
+.roadmap-deadline-card li:not(.roadmap-performance-empty-row) { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 7px; padding: 7px; border-radius: 9px; background: #F7F9FC; }
+.roadmap-deadline-offset { color: #1B64DA; font-size: 9px; }
+.roadmap-deadline-offset.is-overdue { color: #C6535F; }
+.roadmap-deadline-card li > span { min-width: 0; }
+.roadmap-deadline-card li strong, .roadmap-deadline-card li small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roadmap-deadline-card li strong { color: #333D4B; font-size: 9px; }
+.roadmap-deadline-card li small { margin-top: 2px; color: #8B95A1; font-size: 8px; }
+.roadmap-performance-empty-row { padding: 12px 8px; border-radius: 9px; background: #F7F9FC; color: #8B95A1; font-size: 9px; }
 .roadmap-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-bottom: 1px solid #EEF1F4; background: #FBFCFD; }
 .roadmap-navigation { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .roadmap-scale { display: inline-flex; gap: 3px; padding: 3px; border-radius: 11px; background: #F2F4F6; }
@@ -1000,7 +1029,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .roadmap-detail.is-empty b { color: #4E5968; font-size: 12px; }
 .roadmap-detail.is-empty span, .roadmap-empty { color: #8B95A1; font-size: 10px; }
 @media (max-width: 1050px) {
-  .roadmap-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .roadmap-toolbar { align-items: stretch; flex-direction: column; }
   .roadmap-period { justify-content: space-between; }
   .roadmap-detail-grid { grid-template-columns: 1fr; }
@@ -1084,6 +1112,26 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 /* 작업 결과보고서. 항목 카드는 사진 두 칸이 주인공이라, 글보다 그 두 칸이
    먼저 눈에 들어와야 한다. */
 .wr-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.wr-readonly-panel { display: flex; flex-direction: column; gap: 16px; margin: 0 0 18px; padding: 20px; border: 1px solid #D9E2EC; border-radius: 18px; background: #F7F9FC; box-shadow: 0 10px 28px rgba(31,66,87,.06); }
+.wr-readonly-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid #E5E8EB; background: #fff; }
+.wr-readonly-panel > header span { color: #3182F6; font-size: 9px; font-weight: 950; letter-spacing: .09em; }
+.wr-readonly-panel > header h3 { margin: 4px 0 0; color: #191F28; font-size: 18px; }
+.wr-readonly-panel > header p,.wr-readonly-panel > section > p { margin: 5px 0 0; color: #6B7684; font-size: 11px; line-height: 1.6; }
+.wr-readonly-notice { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #DCE8F8; border-radius: 11px; background: #EEF5FF; color: #4E5968; font-size: 11px; }
+.wr-readonly-notice b { flex: 0 0 auto; color: #1B64DA; }
+.wr-readonly-panel h4 { margin: 0 0 9px; color: #4E5968; font-size: 11px; }
+.wr-readonly-items { display: grid; gap: 8px; }
+.wr-readonly-item { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #E5E8EB; border-radius: 12px; background: #fff; }
+.wr-readonly-item-summary b,.wr-readonly-photos section > b { color: #191F28; font-size: 11px; }
+.wr-readonly-item-summary small { display: block; margin-top: 4px; color: #6B7684; font-size: 10px; line-height: 1.5; }
+.wr-readonly-photos { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.wr-readonly-photos section { min-width: 0; padding: 9px; border: 1px solid #E9EDF2; border-radius: 9px; background: #FAFBFC; }
+.wr-readonly-photos ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0; padding: 0; list-style: none; }
+.wr-readonly-photos li,.wr-readonly-photos small { color: #8B95A1; font-size: 10px; }
+.wr-readonly-photos a { color: #3182F6; font-size: 10px; font-weight: 700; text-decoration: none; }
+.wr-readonly-photos a:hover { text-decoration: underline; }
+.wr-readonly-footnote { margin: 0; color: #8B95A1; font-size: 10px; }
+.wr-readonly-label { align-self: center; color: #8B95A1; font-size: 10px; font-weight: 700; }
 .wr-editor .wr-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 11px; margin-top: 4px; }
 .wr-item { display: flex; flex-direction: column; gap: 8px; padding: 13px 14px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; }
 .wr-item.has-issue { border-color: #F6D8DB; background: #FFFCFC; }
@@ -1098,6 +1146,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-shots li { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .wr-shots a { color: #3182F6; font-size: 10px; font-weight: 700; text-decoration: none; }
 .wr-shots a:hover { text-decoration: underline; }
+.wr-photo-link-missing { color: #B54708; font-size: 10px; font-weight: 700; }
 .wr-shots .wr-none { color: #8B95A1; font-size: 10px; }
 .wr-note { width: 100%; height: 30px; padding: 0 9px; border: 1px solid #E5E8EB; border-radius: 9px; background: #fff; color: #191F28; font: inherit; font-size: 11px; }
 .wr-issue { margin: 0; color: #C6535F; font-size: 10px; font-weight: 700; }

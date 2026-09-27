@@ -129,6 +129,15 @@ test("CI remains read-only and validates desktop, backend, frontend, and emulato
   assert.match(ci, /emulators:exec --only database,storage/);
 });
 
+test("authenticated cleaning-order emulator integration receives every emulator host", () => {
+  const start = ci.indexOf("name: Test authenticated cleaning orders and TV projection in local emulators");
+  assert.ok(start >= 0, "missing authenticated cleaning-order emulator suite");
+  const block = ci.slice(start, ci.indexOf("\n      - ", start + 1) < 0 ? undefined : ci.indexOf("\n      - ", start + 1));
+  assert.match(block, /FIREBASE_AUTH_EMULATOR_HOST:\s*127\.0\.0\.1:9099/u);
+  assert.match(block, /FIREBASE_DATABASE_EMULATOR_HOST:\s*127\.0\.0\.1:9000/u);
+  assert.match(block, /BRING_CLEANING_FUNCTIONS_EMULATOR_HOST:\s*127\.0\.0\.1:5001/u);
+});
+
 test("pins every third-party Action to an immutable commit and scopes production permissions per job", () => {
   for (const source of [ci, release]) {
     for (const match of source.matchAll(/uses:\s*[^\s@]+@([^\s#]+)/g)) assert.match(match[1], /^[a-f0-9]{40}$/);

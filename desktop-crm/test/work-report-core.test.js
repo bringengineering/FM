@@ -18,8 +18,8 @@ function full(kind = "moveIn", patch = {}) {
 
 test("작업 종류마다 표준 항목이 이미 있다", () => {
   // 사람이 항목을 적기 시작하면 사람마다 다른 보고서가 나온다.
-  assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "stairs", "special"]);
-  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "계단청소", "특수청소"]);
+  assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "moveOut", "common", "stairs", "general", "special"]);
+  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소"]);
   const moveIn = R.itemsFor("moveIn");
   assert.equal(moveIn.length, 7);
   assert.deepEqual(moveIn.map(item => item.label).slice(0, 3), ["바닥", "창호·새시", "주방"]);
@@ -130,7 +130,10 @@ test("결과평가 한 줄을 만들어 준다", () => {
 
 test("Drive 밖 사진 링크는 안 받는다", () => {
   assert.equal(R.normalizePhoto({ id: "p", webViewLink: "http://x.test/a" }).webViewLink, "");
-  assert.equal(R.normalizePhoto({ id: "p", webViewLink: "https://x.test/a" }).webViewLink, "https://x.test/a");
+  assert.equal(R.normalizePhoto({ id: "p", webViewLink: "https://drive.google.com/file/d/file-id/view" }).webViewLink, "https://drive.google.com/file/d/file-id/view");
+  assert.equal(R.normalizePhoto({ id: "p", webViewLink: "https://docs.google.com/document/d/file-id/edit" }).webViewLink, "https://docs.google.com/document/d/file-id/edit");
+  assert.equal(R.normalizePhoto({ id: "p", webViewLink: "https://x.test/a" }).webViewLink, "");
+  assert.equal(R.normalizePhoto({ id: "p", webViewLink: "https://drive.google.com.attacker.example/file/d/file-id/view" }).webViewLink, "");
 });
 
 test("표준이 바뀌어도 그때 낸 보고서는 그때 기준으로 읽힌다", () => {
@@ -154,6 +157,51 @@ test("최근에 한 것부터 보여 준다", () => {
   assert.deepEqual(list.map(item => item.id), ["new", "old"]);
   assert.equal(R.findReport(list, "new").workDate, "2026-09-06");
   assert.equal(R.findReport(list, ""), null);
+});
+
+test("청소 주문 서비스 유형이 혼동 없이 결과보고 체크리스트에 매핑된다", () => {
+  assert.equal(R.kindForCleaningServiceType("move_in_cleaning"), "moveIn");
+  assert.equal(R.kindForCleaningServiceType("move_out_cleaning"), "moveOut");
+  assert.equal(R.kindForCleaningServiceType("common_cleaning"), "common");
+  assert.equal(R.kindForCleaningServiceType("stair_cleaning"), "stairs");
+  assert.equal(R.kindForCleaningServiceType("other"), "general");
+  assert.equal(R.kindForCleaningServiceType("unknown"), "");
+  assert.match(R.kindLabel("moveOut"), /퇴실/u);
+  assert.match(R.kindLabel("common"), /공용부/u);
+  assert.ok(R.itemsFor("moveOut").some(item => item.key === "waste"));
+  assert.ok(R.itemsFor("common").some(item => item.key === "recycle"));
+  assert.ok(R.itemsFor("general").some(item => item.key === "scope"));
+});
+
+test("청소 주문에서 정식 건물 ID·유형·체크리스트를 가진 새 보고서 초안을 만든다", () => {
+  const order = { id: "order-1", buildingId: "building-1", serviceType: "common_cleaning", title: "공용부 정기 청소" };
+  const building = { id: "building-1", name: "햇빛빌라", address: "강원 원주시 테스트로 1" };
+  const draft = R.draftForCleaningOrder(order, building, { id: "report-1", workDate: "2026-09-26" });
+  assert.equal(draft.cleaningOrderId, "order-1");
+  assert.equal(draft.buildingId, "building-1");
+  assert.equal(draft.buildingName, "햇빛빌라");
+  assert.equal(draft.kind, "common");
+  assert.equal(draft.workDate, "2026-09-26");
+  assert.ok(draft.items.some(item => item.key === "corridor"));
+  assert.equal(draft.items.every(item => item.before.length === 0 && item.after.length === 0), true);
+  assert.equal(R.draftForCleaningOrder(order, { ...building, id: "other-building" }, { id: "report-2" }), null);
+  assert.equal(R.draftForCleaningOrder({ ...order, serviceType: "unknown" }, building, { id: "report-3" }), null);
+});
+
+test("결과보고서는 선택적 청소 주문 ID를 보존하고 기존 보고서에는 빈 값으로 둔다", () => {
+  assert.equal(R.normalizeReport({ id: "legacy" }).cleaningOrderId, "");
+  assert.equal(R.normalizeReport({ id: "linked", cleaningOrderId: "order-123" }).cleaningOrderId, "order-123");
+  assert.equal(R.normalizeReport({ id: "linked", cleaningOrderId: "x".repeat(100) }).cleaningOrderId.length, 80);
+});
+
+test("청소 주문 조회는 해당 주문 ID의 결과보고서와 근거만 묶는다", () => {
+  const reports = [
+    full("moveIn", { id: "report-1", cleaningOrderId: "clean-1" }),
+    full("stairs", { id: "report-2", cleaningOrderId: "clean-2" }),
+    full("special", { id: "legacy", cleaningOrderId: "" }),
+  ];
+  assert.deepEqual(R.forCleaningOrder(reports, "clean-1").map(item => item.id), ["report-1"]);
+  assert.deepEqual(R.forCleaningOrder(reports, ""), []);
 });
 
 test("모르는 종류·상태는 받지 않는다", () => {

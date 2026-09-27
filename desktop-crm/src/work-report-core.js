@@ -69,6 +69,35 @@
       ]),
     },
     {
+      key: "moveOut",
+      label: "퇴실청소",
+      items: Object.freeze([
+        { key: "floor", label: "바닥·오염 확인", detail: "전실 바닥 오염·잔여물 제거 및 퇴실 상태 확인" },
+        { key: "window", label: "창호·새시", detail: "창틀 홈·레일 먼지 제거, 유리 오염 확인" },
+        { key: "kitchen", label: "주방", detail: "싱크대·수납장 내부와 조리공간 오염 확인 및 청소" },
+        { key: "bath", label: "욕실", detail: "타일·변기·세면대·배수구 오염과 파손 여부 확인" },
+        { key: "veranda", label: "베란다·배수구", detail: "바닥·배수구·세탁기 자리 청소 및 상태 확인" },
+        { key: "storage", label: "붙박이장·수납", detail: "수납 내부 잔류물 확인 및 선반 청소" },
+        { key: "appliances", label: "옵션·가전 상태", detail: "계약 옵션 품목의 잔류물과 외관 상태 확인", optional: true },
+        { key: "waste", label: "잔류물·폐기물", detail: "잔류물과 폐기 대상 구분, 승인 범위 내 반출 기록" },
+        { key: "finish", label: "최종 인계 점검", detail: "열쇠·보안정보를 기록하지 않고 공간별 청소·파손 확인 후 인계" },
+      ]),
+    },
+    {
+      key: "common",
+      label: "공용부청소",
+      items: Object.freeze([
+        { key: "entrance", label: "출입구·현관", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
+        { key: "corridor", label: "복도·공용 바닥", detail: "층별 복도와 공용 바닥 쓸기·물걸레·얼룩 제거" },
+        { key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소" },
+        { key: "handrail", label: "난간·손잡이", detail: "난간 먼지 제거 및 손이 닿는 면의 오염 확인" },
+        { key: "windows", label: "공용 창호", detail: "접근 가능한 창틀·유리 상태 확인 및 청소" },
+        { key: "lighting", label: "조명·천장", detail: "조명 주변 먼지·거미줄 및 이상 여부 확인" },
+        { key: "recycle", label: "분리수거장", detail: "수거장 바닥·분리배출 상태·악취 확인 및 정리" },
+        { key: "final", label: "마감·안전 확인", detail: "공용 통로 적치물·미끄럼·잔여 작업 여부 확인" },
+      ]),
+    },
+    {
       key: "stairs",
       label: "계단청소",
       items: Object.freeze([
@@ -78,6 +107,17 @@
         { key: "light", label: "조명·천장", detail: "등커버 먼지 제거, 거미줄 제거" },
         { key: "entrance", label: "현관·공용출입구", detail: "출입구 바닥·유리문·매트 정리" },
         { key: "recycle", label: "분리수거장", detail: "수거장 바닥 청소 및 정리, 악취 처리" },
+      ]),
+    },
+    {
+      key: "general",
+      label: "기타·일반청소",
+      items: Object.freeze([
+        { key: "scope", label: "합의 범위 확인", detail: "현장에서 의뢰 범위와 제외 작업을 다시 확인" },
+        { key: "before", label: "작업 전 상태", detail: "작업 전 오염·파손·접근 제한 구역 확인" },
+        { key: "work", label: "청소 작업", detail: "합의한 범위의 청소 작업 수행" },
+        { key: "waste", label: "폐기물·잔여물", detail: "발생 잔여물의 처리 범위와 반출 여부 기록" },
+        { key: "after", label: "마감 점검", detail: "작업 후 상태 확인 및 인계" },
       ]),
     },
     {
@@ -172,12 +212,19 @@
 
   function normalizePhoto(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
-    const link = text(value.webViewLink, 500);
+    let link = "";
+    try {
+      const url = new URL(text(value.webViewLink, 500));
+      if (url.protocol === "https:" && !url.username && !url.password && !url.port
+        && (url.hostname === "drive.google.com" || url.hostname === "docs.google.com")) {
+        link = url.toString();
+      }
+    } catch { /* 링크가 불완전하거나 Drive 도메인이 아니면 열 수 없게 둔다. */ }
     return {
       id: text(value.id, 80),
       driveFileId: text(value.driveFileId, 120),
-      // https 가 아닌 링크는 다른 사람 화면에서 열리지 않는다.
-      webViewLink: link.indexOf("https://") === 0 ? link : "",
+      // 결과보고 사진은 Google Drive 뷰 링크만 사람에게 연다.
+      webViewLink: link,
       caption: text(value.caption, 120),
     };
   }
@@ -224,6 +271,7 @@
     return {
       id: text(value.id, 80),
       flowId: text(value.flowId, 80),
+      cleaningOrderId: text(value.cleaningOrderId, 80),
       buildingId: text(value.buildingId, 80),
       buildingName: text(value.buildingName, 200),
       kind: kindOf(kind) ? kind : "moveIn",
@@ -248,6 +296,29 @@
       updatedAt: text(value.updatedAt, 40),
       updatedBy: text(value.updatedBy, 80),
     };
+  }
+
+  function draftForCleaningOrder(orderSource, buildingSource, options) {
+    const order = orderSource && typeof orderSource === "object" ? orderSource : {};
+    const building = buildingSource && typeof buildingSource === "object" ? buildingSource : {};
+    const settings = options && typeof options === "object" ? options : {};
+    const orderId = text(order.id, 80);
+    const buildingId = text(order.buildingId, 80);
+    const kind = kindForCleaningServiceType(order.serviceType);
+    if (!orderId || !buildingId || text(building.id, 80) !== buildingId || !kind || !text(settings.id, 80)) return null;
+    const category = kind === "moveIn" || kind === "moveOut" ? "moveCheck" : "single";
+    return normalizeReport({
+      id: settings.id,
+      cleaningOrderId: orderId,
+      buildingId,
+      buildingName: text(building.name, 200),
+      title: text(order.title, 200),
+      siteAddress: text(settings.siteAddress || building.address, 300),
+      kind,
+      category,
+      workDate: isDate(settings.workDate) ? settings.workDate : "",
+      items: itemsFor(kind),
+    });
   }
 
   // 한 항목이 완료로 설 수 있는지. 전·후가 다 있어야 한다.
@@ -375,6 +446,22 @@
     });
   }
 
+  function kindForCleaningServiceType(serviceType) {
+    return ({
+      move_in_cleaning: "moveIn",
+      move_out_cleaning: "moveOut",
+      common_cleaning: "common",
+      stair_cleaning: "stairs",
+      other: "general",
+    })[text(serviceType, 40)] || "";
+  }
+
+  function forCleaningOrder(reports, cleaningOrderId) {
+    const id = text(cleaningOrderId, 80);
+    if (!id) return [];
+    return sortReports(reports).filter(item => item.cleaningOrderId === id);
+  }
+
   function findReport(reports, reportId) {
     const id = text(reportId, 80);
     if (!id) return null;
@@ -393,6 +480,8 @@
     ITEM_STATUSES,
     COPIES,
     kindOf,
+    kindForCleaningServiceType,
+    draftForCleaningOrder,
     kindLabel,
     statusOf,
     statusLabel,
@@ -412,6 +501,7 @@
     resultLine,
     findLeakedFields,
     sortReports,
+    forCleaningOrder,
     findReport,
     text,
     rows,

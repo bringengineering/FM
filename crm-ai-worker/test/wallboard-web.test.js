@@ -26,7 +26,7 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-25-5'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-27-1'});
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -102,6 +102,18 @@ test('web TV client rotates roadmap performance and schedule scenes safely',asyn
  assert.match(source,/\/tv\/version/);assert.match(source,/60000/);assert.match(source,/location\.replace/);
  assert.match(source,/cache:\s*['"]no-store['"]/);
  assert.doesNotMatch(source,/\b(phone|consultation|password|detailedAddress)\b/i);
+});
+
+test('web TV includes one integrated overview scene for roadmap, cleaning operations and today schedule',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/overview:'회사 운영 요약'/);
+ assert.match(source,/function renderOverview\(/);
+ assert.match(source,/renderRoadmap\(model\)/);
+ for(const label of ['신규 접수','진행 중','검토 대기','완료','오늘 일정','주간 검수 완료 업무'])assert.ok(source.includes(label),`missing ${label}`);
+ assert.match(source,/scene\.key==='overview'\)return Math\.max\(1,Math\.ceil\(model\.roadmap\.lanes\.length\/3\)\)/);
+ assert.match(source,/!board\.playlist\.some\(item=>item\.key==='overview'\)\)enabled\.push/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.executive-overview/);
 });
 test('web TV rotates 8-week and 8-day roadmap views from the same publication',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();

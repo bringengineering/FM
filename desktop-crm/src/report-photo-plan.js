@@ -66,6 +66,27 @@
       붙박이장: "storage", 신발장: "storage", 수납: "storage", 가구: "storage",
       마감: "finish", 마감점검: "finish", 현관: "finish",
     }),
+    moveOut: Object.freeze({
+      바닥: "floor", 거실: "floor", 방: "floor",
+      창호: "window", 창틀: "window", 샷시: "window", 새시: "window", 유리: "window",
+      주방: "kitchen", 싱크대: "kitchen", 씽크대: "kitchen",
+      욕실: "bath", 화장실: "bath", 욕조: "bath",
+      베란다: "veranda", 발코니: "veranda",
+      붙박이장: "storage", 신발장: "storage", 수납: "storage",
+      가전: "appliances", 옵션: "appliances",
+      잔류물: "waste", 폐기물: "waste", 반출: "waste", 폐기: "waste",
+      마감: "finish", 인계: "finish",
+    }),
+    common: Object.freeze({
+      출입구: "entrance", 현관: "entrance", 로비: "entrance",
+      복도: "corridor", 공용바닥: "corridor", 바닥: "corridor",
+      계단: "stairs", 계단실: "stairs", 계단참: "stairs",
+      난간: "handrail", 손잡이: "handrail",
+      창틀: "windows", 유리: "windows", 창호: "windows",
+      조명: "lighting", 천장: "lighting", 등: "lighting",
+      분리수거장: "recycle", 수거장: "recycle", 재활용: "recycle",
+      마감: "final", 안전: "final",
+    }),
     stairs: Object.freeze({
       계단: "stairFloor", 계단실: "stairFloor", 계단청소: "stairFloor",
       난간: "handrail", 손잡이: "handrail",
@@ -73,6 +94,12 @@
       조명: "light", 천장: "light", 등: "light",
       현관: "entrance", 출입구: "entrance", 공용출입구: "entrance", 로비: "entrance",
       분리수거장: "recycle", 수거장: "recycle", 재활용: "recycle",
+    }),
+    general: Object.freeze({
+      범위: "scope", 합의범위: "scope", 작업전: "before", 전: "before",
+      본작업: "work", 청소: "work", 작업: "work",
+      폐기물: "waste", 반출: "waste", 폐기: "waste",
+      마감: "after", 작업후: "after", 후: "after",
     }),
     special: Object.freeze({
       작업전: "before", 전: "before",
@@ -142,8 +169,11 @@
   function kindFromWords(value) {
     const word = normalizeFolderWord(value);
     if (!word) return "";
+    if (word.includes("퇴실") || word.includes("퇴거") || word.includes("공실")) return "moveOut";
     if (word.includes("입주") || word.includes("이사")) return "moveIn";
-    if (word.includes("계단") || word.includes("공용")) return "stairs";
+    if (word.includes("공용")) return "common";
+    if (word.includes("계단")) return "stairs";
+    if (word.includes("일반청소") || word.includes("기타청소")) return "general";
     if (word.includes("특수") || word.includes("폐기물") || word.includes("특수청소")) return "special";
     return "";
   }

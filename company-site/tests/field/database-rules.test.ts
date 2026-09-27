@@ -2666,6 +2666,11 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 사진을 찍은 사람이 그날 적는다.
     await assertSucceeds(set(ref(member, at("w1")), report("w1")));
     await assertSucceeds(get(ref(viewer, at("w1"))));
+    // Cleaning Center의 각 정식 서비스 유형은 공통 저장 규칙에서 허용한다.
+    for (const kind of ["moveIn", "moveOut", "common", "stairs", "general", "special"]) {
+      const id = `w-kind-${kind}`;
+      await assertSucceeds(set(ref(member, at(id)), report(id, { kind })));
+    }
     // 조회 전용 계정은 못 쓴다.
     await assertFails(set(ref(viewer, at("w2")), { ...report("w2"), updatedBy: "crm-viewer" }));
     // 건물과 작업일이 없으면 어느 현장 것인지 알 수 없다.

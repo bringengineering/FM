@@ -206,6 +206,23 @@ describe("Drive runtime checksum and Storage adapter", () => {
 });
 
 describe("Google Drive v3 adapter", () => {
+  it("verifies completion evidence against live, non-trashed Drive image metadata", async () => {
+    const get = vi.fn(async ({ fileId }: { fileId: string }) => {
+      if (fileId === "missing_01") throw new Error("not found");
+      return { data: {
+        id: fileId,
+        mimeType: fileId === "document_01" ? "application/pdf" : "image/jpeg",
+        trashed: fileId === "trashed_01",
+      } };
+    });
+    const adapter = createGoogleDriveMediaAdapter(driveClient({ get }));
+    await expect(adapter.verifyImageFileIds(["photo_01", "document_01", "trashed_01", "missing_01"]))
+      .resolves.toEqual(["photo_01"]);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({
+      fileId: "photo_01", fields: "id,mimeType,trashed", supportsAllDrives: true,
+    }));
+  });
+
   it.each(["appCreated", "existingRoot"] as const)(
     "validates a %s root by exact id, folder type, trash, and add-child capability",
     async (rootMode) => {

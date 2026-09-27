@@ -23,6 +23,19 @@ import {
   transactBillingLedger,
   type BillingMutationCommand,
 } from "./billing-ledger-mutation.js";
+import {
+  createCleaningOrderCore,
+  transitionCleaningOrderCore,
+} from "./cleaning-orders/runtime.js";
+import { createCleaningOrderFirebaseDependencies } from "./cleaning-orders/firebase-adapter.js";
+import { createCleaningQuoteRevisionCore, reviewCleaningQuoteCore } from "./cleaning-orders/quotes.js";
+import { validateStoredCleaningOrder } from "./cleaning-orders/core.js";
+import {
+  buildCleaningWallboardProjection,
+  shouldPublishCleaningWallboardProjection,
+  shouldRebuildCleaningWallboardProjection,
+} from "./cleaning-orders/wallboard-projection.js";
+import type { CleaningOrderRecord } from "./cleaning-orders/contracts.js";
 
 import {
   provisionFieldUserCore,
@@ -3806,6 +3819,230 @@ export const commitBillingLedgerMutation = onRequest(
             : rawCode === "crm_json_required" ? "billing_json_required"
           : rawCode.startsWith("billing_") ? rawCode : "billing_transaction_unavailable";
       response.status(billingMutationHttpStatus(code)).json({ ok: false, error: { code } });
+    }
+  },
+);
+
+function cleaningOrderHttpStatus(code: string): number {
+  if (code === "cleaning_order_method_not_allowed") return 405;
+  if (code === "cleaning_order_auth_required") return 401;
+  if (code === "cleaning_order_forbidden") return 403;
+  if (code === "cleaning_order_rate_limited") return 429;
+  if (code === "cleaning_order_revision_conflict" || code === "cleaning_order_request_conflict" || code === "cleaning_order_completion_evidence_required") return 409;
+  if (code === "cleaning_order_not_found" || code === "cleaning_order_customer_not_found" || code === "cleaning_order_building_not_found") return 404;
+  if (code === "cleaning_order_body_too_large") return 413;
+  if (code === "cleaning_order_stored_data_invalid" || code === "cleaning_order_transaction_unavailable") return 503;
+  if (code === "invalid_cleaning_order_input") return 400;
+  if (code.startsWith("cleaning_order_")) return 400;
+  if (code === "cleaning_quote_forbidden") return 403;
+  if (code === "cleaning_quote_not_found" || code === "cleaning_quote_order_not_found") return 404;
+  if (code === "cleaning_quote_revision_conflict" || code === "cleaning_quote_request_conflict") return 409;
+  if (code === "cleaning_quote_stored_data_invalid" || code === "cleaning_quote_write_failed" || code === "cleaning_quote_transaction_unavailable") return 503;
+  if (code.startsWith("cleaning_quote_") || code === "invalid_cleaning_quote_input") return 400;
+  return 503;
+}
+
+async function authorizeCleaningOrderRequest(request: {
+  get(name: string): string | undefined;
+  ip?: string;
+}): Promise<{ uid: string; role: "admin" | "member" | "viewer" }> {
+  const authorization = request.get("authorization") ?? "";
+  const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/u.exec(authorization);
+  if (!bearer) throw new Error("cleaning_order_auth_required");
+  const requestIp = typeof request.ip === "string" && request.ip.length > 0 ? request.ip.slice(0, 128) : "unknown";
+  await consumeRateLimit(
+    adminDatabase.ref(`fieldPlatform/v2/rateLimits/cleaningOrders/ip/${desktopRateKey(requestIp)}`),
+    { limit: CANONICAL_CRM_IP_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+  );
+  let decoded;
+  try { decoded = await adminAuth.verifyIdToken(bearer[1], true); }
+  catch { throw new Error("cleaning_order_auth_required"); }
+  if (!isPathSafeId(decoded.uid) || typeof decoded.email !== "string" || decoded.email_verified !== true) {
+    throw new Error("cleaning_order_auth_required");
+  }
+  await consumeRateLimit(
+    adminDatabase.ref(`fieldPlatform/v2/rateLimits/cleaningOrders/uid/${desktopRateKey(decoded.uid)}`),
+    { limit: CANONICAL_CRM_UID_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+  );
+  const access = (await adminDatabase.ref(`crmCompany/access/${decoded.uid}`).get()).val();
+  const email = decoded.email.trim().toLowerCase();
+  if (!isRecord(access) || access.enabled !== true || access.mustChangePassword === true
+    || typeof access.email !== "string" || access.email.trim().toLowerCase() !== email
+    || !["admin", "member", "viewer"].includes(String(access.role))) {
+    throw new Error("cleaning_order_forbidden");
+  }
+  const role = access.role;
+  if (role === "member" && access.marketingRole === "marketing") throw new Error("cleaning_order_forbidden");
+  return { uid: decoded.uid, role: role as "admin" | "member" | "viewer" };
+}
+
+async function refreshCleaningOrdersWallboardProjection(): Promise<void> {
+  // Use the timestamp from before the canonical source read as a freshness watermark.
+  // A concurrent write during/after the read must not be hidden by a later completion time.
+  const snapshotStartedAt = new Date().toISOString();
+  const source = (await adminDatabase.ref("crmCompany/cleaningOrders").get()).val();
+  const projection = buildCleaningWallboardProjection(source, snapshotStartedAt);
+  await adminDatabase.ref("crmCompany/wallboard/cleaningOperations").transaction(
+    current => shouldPublishCleaningWallboardProjection(current, projection) ? projection : undefined,
+    undefined,
+    false,
+  );
+}
+
+export const cleaningOrdersApi = onRequest(
+  { region: "asia-northeast3", cors: false, secrets: driveSecrets },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      const actor = await authorizeCleaningOrderRequest(request);
+      if (request.method === "GET") {
+        const rawQuoteOrderId = request.query.quoteOrderId;
+        if (rawQuoteOrderId !== undefined) {
+          if (typeof rawQuoteOrderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawQuoteOrderId)
+            || request.query.beforeCreatedAt !== undefined || request.query.beforeId !== undefined) {
+            throw new Error("invalid_cleaning_quote_input");
+          }
+          const quoteSet = await adminDatabase.ref(`crmCompany/cleaningOrderQuotes/${rawQuoteOrderId}`).get();
+          response.status(200).json({ ok: true, result: { quoteSet: quoteSet.val() } });
+          return;
+        }
+        const rawOrderId = request.query.orderId;
+        if (rawOrderId !== undefined) {
+          if (typeof rawOrderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawOrderId)
+            || request.query.beforeCreatedAt !== undefined || request.query.beforeId !== undefined) {
+            throw new Error("invalid_cleaning_order_input");
+          }
+          const snapshot = await adminDatabase.ref(`crmCompany/cleaningOrders/${rawOrderId}`).get();
+          const order = snapshot.val();
+          if (!validateStoredCleaningOrder(order, rawOrderId)) throw new Error("cleaning_order_not_found");
+          response.status(200).json({ ok: true, result: { order } });
+          return;
+        }
+        const rawBeforeCreatedAt = request.query.beforeCreatedAt;
+        const rawBeforeId = request.query.beforeId;
+        const hasCreatedAt = rawBeforeCreatedAt !== undefined;
+        const hasId = rawBeforeId !== undefined;
+        if (hasCreatedAt !== hasId
+          || (hasCreatedAt && (typeof rawBeforeCreatedAt !== "string" || typeof rawBeforeId !== "string"))) {
+          throw new Error("invalid_cleaning_order_input");
+        }
+        const beforeCreatedAt = hasCreatedAt ? rawBeforeCreatedAt as string : "";
+        const beforeId = hasId ? rawBeforeId as string : "";
+        if (hasCreatedAt && (!Number.isFinite(Date.parse(beforeCreatedAt))
+          || new Date(Date.parse(beforeCreatedAt)).toISOString() !== beforeCreatedAt
+          || !/^[A-Za-z0-9_-]{1,150}$/.test(beforeId)
+          || ["__proto__", "prototype", "constructor"].includes(beforeId))) {
+          throw new Error("invalid_cleaning_order_input");
+        }
+        const ordersQuery = adminDatabase.ref("crmCompany/cleaningOrders").orderByChild("createdAt");
+        const snapshot = beforeCreatedAt
+          ? await ordersQuery.endAt(beforeCreatedAt, beforeId).limitToLast(202).get()
+          : await ordersQuery.limitToLast(201).get();
+        const value = snapshot.val();
+        const entries = isRecord(value) ? Object.entries(value) : [];
+        const orders: CleaningOrderRecord[] = [];
+        for (const [id, order] of entries) {
+          if (id === beforeId && isRecord(order) && order.createdAt === beforeCreatedAt) continue;
+          if (!validateStoredCleaningOrder(order, id)) throw new Error("cleaning_order_stored_data_invalid");
+          orders.push(order);
+        }
+        orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+        const hasMore = orders.length > 200;
+        const page = orders.slice(0, 200);
+        const oldest = page[page.length - 1];
+        response.status(200).json({ ok: true, result: {
+          orders: page,
+          hasMore,
+          nextCursor: hasMore && oldest ? { createdAt: oldest.createdAt, id: oldest.id } : null,
+        } });
+        return;
+      }
+      if (request.method !== "POST") {
+        response.set("Allow", "GET, POST");
+        throw new Error("cleaning_order_method_not_allowed");
+      }
+      if (actor.role === "viewer") throw new Error("cleaning_order_forbidden");
+      const body = canonicalCrmRawBody(request);
+      if (!isRecord(body) || Object.keys(body).some(key => !["action", "input"].includes(key))
+        || typeof body.action !== "string") throw new Error("invalid_cleaning_order_input");
+      const deps = createCleaningOrderFirebaseDependencies(adminDatabase, undefined, async fileIds => {
+        // Emulator fixtures are synthetic and never point to production data. Production fails closed
+        // unless the company's configured Drive OAuth account confirms real, live image files.
+        if (process.env.FUNCTIONS_EMULATOR === "true") return fileIds;
+        const adapter = createGoogleDriveMediaAdapterFromOAuth(readDriveOAuthConfig({
+          DRIVE_CLIENT_ID: driveClientId.value(),
+          DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+          DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+          DRIVE_ROOT_FOLDER_ID: driveRootFolderId.value(),
+          DRIVE_ROOT_MODE: driveRootMode.value(),
+        }));
+        return adapter.verifyImageFileIds(fileIds);
+      });
+      const result = body.action === "create"
+        ? await createCleaningOrderCore(body.input, actor, deps)
+        : body.action === "transition"
+          ? await transitionCleaningOrderCore(body.input, actor, deps)
+          : body.action === "quote-create"
+            ? await createCleaningQuoteRevisionCore(body.input, actor, deps)
+            : body.action === "quote-review"
+              ? await reviewCleaningQuoteCore(body.input, actor, deps)
+              : (() => { throw new Error("invalid_cleaning_order_input"); })();
+      let wallboardProjectionUpdated = false;
+      if (body.action === "create" || body.action === "transition") {
+        try {
+          await refreshCleaningOrdersWallboardProjection();
+          wallboardProjectionUpdated = true;
+        } catch {
+          // The order mutation is already committed and must not be reported as failed.
+          // The database event trigger is the retry/recovery path for this projection.
+          console.error("cleaning_order_wallboard_projection_refresh_failed");
+        }
+      }
+      response.status(200).json({ ok: true, result, wallboardProjectionUpdated });
+    } catch (error) {
+      const rawCode = error instanceof Error ? error.message : "";
+      const code = rawCode === "field_rate_limit_exceeded" ? "cleaning_order_rate_limited"
+        : rawCode === "crm_body_too_large" ? "cleaning_order_body_too_large"
+          : rawCode === "crm_body_invalid" ? "invalid_cleaning_order_input"
+            : rawCode === "crm_json_required" ? "invalid_cleaning_order_input"
+              : rawCode.startsWith("cleaning_order_") || rawCode.startsWith("cleaning_quote_") || rawCode === "invalid_cleaning_order_input" || rawCode === "invalid_cleaning_quote_input" ? rawCode
+                : "cleaning_order_transaction_unavailable";
+      response.status(cleaningOrderHttpStatus(code)).json({ ok: false, error: { code } });
+    }
+  },
+);
+
+const cleaningOrdersDatabaseIsEmulated = process.env.FUNCTIONS_EMULATOR === "true";
+// Rules-unit-testing binds to the project-ID namespace; production uses the
+// explicitly verified company RTDB instance.
+const cleaningOrdersDatabaseInstance = cleaningOrdersDatabaseIsEmulated
+  ? process.env.GCLOUD_PROJECT || "bring-fm"
+  : "bring-fm-default-rtdb";
+export const projectCleaningOrdersToWallboard = onValueWritten(
+  {
+    ref: "/crmCompany/cleaningOrders/{orderId}",
+    instance: cleaningOrdersDatabaseInstance,
+    // Firebase CLI currently routes RTDB emulator triggers only from us-central1.
+    // Production remains pinned to the verified company RTDB region.
+    region: cleaningOrdersDatabaseIsEmulated ? "us-central1" : "asia-southeast1",
+    // This is a recovery path; API mutations publish synchronously. Keep one instance,
+    // but allow a small bounded concurrency so historical imports do not leave a long
+    // queue of projection freshness checks behind.
+    maxInstances: 1,
+    concurrency: 10,
+  },
+  async (event) => {
+    const orderAfter = event.data.after.val();
+    let currentProjection: unknown = null;
+    try {
+      currentProjection = (await adminDatabase.ref("crmCompany/wallboard/cleaningOperations").get()).val();
+    } catch {
+      // Continue with a full rebuild if the marker cannot be read; the source read/write
+      // below remains the authoritative recovery operation.
+    }
+    if (shouldRebuildCleaningWallboardProjection(orderAfter, currentProjection)) {
+      await refreshCleaningOrdersWallboardProjection();
     }
   },
 );

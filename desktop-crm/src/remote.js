@@ -181,6 +181,7 @@ const FIREBASE = Object.freeze({
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
 const DEFAULT_BILLING_MUTATION_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitBillingLedgerMutation";
+const DEFAULT_CLEANING_ORDERS_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningOrdersApi";
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -1386,6 +1387,7 @@ class FirebaseRemoteClient {
   constructor(options) {
     this.firebase = options.firebaseConfig || FIREBASE;
     this.billingMutationEndpoint = options.billingMutationEndpoint || DEFAULT_BILLING_MUTATION_ENDPOINT;
+    this.cleaningOrdersEndpoint = options.cleaningOrdersEndpoint || DEFAULT_CLEANING_ORDERS_ENDPOINT;
     this.databaseRoot = options.databaseRoot ?? "crmCompany";
     this.Core = options.Core;
     this.fs = options.fs;
@@ -2445,6 +2447,115 @@ class FirebaseRemoteClient {
       result[kind] = Object.entries(entries || {}).map(([id, value]) => validateBillingRecord(kind, value, id, true));
     }
     return result;
+  }
+
+  async loadCleaningOrders(cursor) {
+    this.requireOfficeSession();
+    if (cursor !== undefined && cursor !== null && (!cursor || typeof cursor !== "object" || Array.isArray(cursor)
+      || Object.keys(cursor).some(key => !["createdAt", "id"].includes(key))
+      || typeof cursor.createdAt !== "string" || !Number.isFinite(Date.parse(cursor.createdAt))
+      || new Date(Date.parse(cursor.createdAt)).toISOString() !== cursor.createdAt
+      || typeof cursor.id !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cursor.id))) {
+      throw createError("주문 목록 위치 정보가 올바르지 않습니다.", "VALIDATION_ERROR");
+    }
+    return this.callCleaningOrdersApi("GET", undefined, cursor || null);
+  }
+
+  async loadCleaningOrderById(orderId) {
+    this.requireOfficeSession();
+    if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      throw createError("청소 요청 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    return this.callCleaningOrdersApi("GET", undefined, null, undefined, orderId);
+  }
+
+  async createCleaningOrder(input) {
+    const session = this.requireOfficeSession();
+    if (session.role === "viewer" || (session.role === "member" && session.marketingRole === "marketing")) {
+      throw createError("주문을 등록할 권한이 없습니다.", "ACCESS_DENIED");
+    }
+    return this.callCleaningOrdersApi("POST", { action: "create", input });
+  }
+
+  async transitionCleaningOrder(input) {
+    const session = this.requireOfficeSession();
+    if (session.role === "viewer" || (session.role === "member" && session.marketingRole === "marketing")) {
+      throw createError("주문 상태를 변경할 권한이 없습니다.", "ACCESS_DENIED");
+    }
+    return this.callCleaningOrdersApi("POST", { action: "transition", input });
+  }
+
+  async loadCleaningQuoteSet(orderId) {
+    this.requireOfficeSession();
+    if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      throw createError("견적과 연결된 주문 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    return this.callCleaningOrdersApi("GET", undefined, null, orderId);
+  }
+
+  async createCleaningQuoteRevision(input) {
+    const session = this.requireOfficeSession();
+    if (session.role === "viewer" || (session.role === "member" && session.marketingRole === "marketing")) {
+      throw createError("견적을 저장할 권한이 없습니다.", "ACCESS_DENIED");
+    }
+    return this.callCleaningOrdersApi("POST", { action: "quote-create", input });
+  }
+
+  async reviewCleaningQuote(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 견적을 승인하거나 반려할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningOrdersApi("POST", { action: "quote-review", input });
+  }
+
+  async callCleaningOrdersApi(method, body, cursor, quoteOrderId, orderId) {
+    const guard = this.captureSessionGuard();
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    let response;
+    try {
+      const endpoint = new URL(this.cleaningOrdersEndpoint);
+      if (method === "GET" && cursor) {
+        endpoint.searchParams.set("beforeCreatedAt", cursor.createdAt);
+        endpoint.searchParams.set("beforeId", cursor.id);
+      }
+      if (method === "GET" && quoteOrderId) endpoint.searchParams.set("quoteOrderId", quoteOrderId);
+      if (method === "GET" && orderId) endpoint.searchParams.set("orderId", orderId);
+      response = await this.fetch(endpoint.toString(), {
+        method,
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (cause) {
+      this.assertSessionGuardActive(guard);
+      throw createError("클리닝 주문 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.", "NETWORK", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    let payload;
+    try { payload = JSON.parse(await response.text()); } catch (cause) {
+      throw createError("클리닝 주문 응답을 확인할 수 없습니다.", "PROTECTED_DATA_INVALID", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok || payload?.ok !== true || !payload.result) {
+      if (response.status === 401) throw createError("다시 로그인한 뒤 주문을 확인해 주세요.", "AUTH_REQUIRED");
+      if (response.status === 403) throw createError("클리닝 주문을 이용할 권한이 없습니다.", "ACCESS_DENIED");
+      if (response.status === 409) {
+        if (payload?.error?.code === "cleaning_order_completion_evidence_required") {
+          throw createError("완료할 수 없습니다. 같은 주문·건물·서비스 유형의 결과보고서에서 작업일과 필수 체크리스트를 확인하고, 완료 항목의 전·후 사진 및 미수행 사유를 등록해 주세요.", "CLEANING_ORDER_EVIDENCE_REQUIRED");
+        }
+        const isQuoteConflict = String(payload?.error?.code || "").startsWith("cleaning_quote_");
+        throw createError(isQuoteConflict ? "견적이 다른 사용자에 의해 변경되었습니다. 새로고침해 주세요." : "주문이 다른 사용자에 의해 변경되었습니다. 새로고침해 주세요.", isQuoteConflict ? "CLEANING_QUOTE_CONFLICT" : "CLEANING_ORDER_CONFLICT");
+      }
+      if (response.status >= 500) throw createError("클리닝 주문 서버에서 자료를 확인할 수 없습니다.", "NETWORK");
+      if (payload?.error?.code === "cleaning_order_customer_building_mismatch") {
+        throw createError("선택한 고객과 연결되지 않은 건물입니다. 고객의 CRM 건물 연결을 먼저 확인해 주세요.", "VALIDATION_ERROR");
+      }
+      throw createError(`클리닝 주문 요청이 거부되었습니다 (${String(payload?.error?.code || "invalid_request")}).`, "VALIDATION_ERROR");
+    }
+    if (method === "POST" && typeof payload.wallboardProjectionUpdated === "boolean"
+      && payload.result && typeof payload.result === "object" && !Array.isArray(payload.result)) {
+      return { ...payload.result, wallboardProjectionUpdated: payload.wallboardProjectionUpdated };
+    }
+    return payload.result;
   }
 
   async saveBillingInvoice(input) { return this.saveBillingRecord('invoices', input); }
@@ -4624,6 +4735,7 @@ class FirebaseRemoteClient {
     if (record.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(record.progressUpdates);
     else delete persisted.progressUpdates;
     if (!record.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
+    if (!record.cleaningOrderId) delete persisted.cleaningOrderId;
     try {
       await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
     } catch (error) {
