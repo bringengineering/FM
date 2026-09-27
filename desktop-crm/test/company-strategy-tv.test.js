@@ -56,6 +56,29 @@ test('malformed and private approved text fails closed',()=>{
   assert.throws(()=>projectApprovedStrategy(address,[],'2026'),/INVALID_APPROVED_STRATEGY/);
  }
 });
+
+test('approved TV projection carries monthly and quarterly goals but strips private identifiers',()=>{
+ const input=approved(),content=JSON.parse(input.content);
+ content.goals.push({id:'private-goal-id',period:'Q3',title:'분기 목표',unit:'count',baseline:0,target:4,current:2,source:'CRM'},
+  {id:'private-milestone-id',period:'M09',title:'월간 마일스톤',unit:'milestone',baseline:null,target:null,current:null,source:'운영 기록',milestoneStatus:'in_progress'});
+ input.content=JSON.stringify(content);
+ const result=projectApprovedStrategy(input,[{uid:'u1',displayName:'서창환',email:'secret@example.com'}],'2026');
+ assert.equal(result.goals[1].percent,50);
+ assert.equal(result.goals[2].milestoneStatus,'in_progress');
+ assert.equal(JSON.stringify(result).includes('private-goal-id'),false);
+ assert.equal(JSON.stringify(result).includes('secret@example.com'),false);
+});
+test('TV projection excludes CRM-only business unit, theme, value and assignment metadata',()=>{
+ const input=approved(),content=JSON.parse(input.content);
+ content.strategicThemes=[{id:'ops',title:'전략 설명',description:'비공개 메모'}];
+ content.coreValues=[{id:'execute',title:'핵심 가치',description:'세부 설명'}];
+ Object.assign(content.goals[0],{ownerUid:'u1',businessUnit:'Cleaning Center',themeId:'ops',startDate:'2026-01-01',dueDate:'2026-12-31'});
+ input.content=JSON.stringify(content);
+ const result=projectApprovedStrategy(input,[{uid:'u1',displayName:'서창환'}],'2026');
+ assert.equal(JSON.stringify(result).includes('Cleaning Center'),false);
+ assert.equal(JSON.stringify(result).includes('비공개 메모'),false);
+ assert.equal(JSON.stringify(result).includes('u1'),false);
+});
 test('existing ten-scene settings gain the strategy scene once at the end',()=>{
  const old=[{key:'roadmap',enabled:true,seconds:40},{key:'notice',enabled:false,seconds:30}];
  const added=withStrategyScene(old);

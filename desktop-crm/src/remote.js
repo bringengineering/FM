@@ -16,6 +16,8 @@ function companyStrategyWireFields(draft) {
   const record = { year:draft.year, vision:draft.vision };
   if (draft.organization.length) record.organization = Object.fromEntries(draft.organization.map(person => [`m_${Buffer.from(person.uid, 'utf8').toString('base64url')}`, person]));
   if (draft.goals.length) record.goals = Object.fromEntries(draft.goals.map(goal => [goal.id, Object.fromEntries(Object.entries(goal).filter(([,value]) => value !== null))]));
+  if (draft.strategicThemes?.length) record.strategicThemes = draft.strategicThemes;
+  if (draft.coreValues?.length) record.coreValues = draft.coreValues;
   return record;
 }
 function expandCompanyStrategyPublication(record) {
@@ -28,6 +30,7 @@ function expandCompanyStrategyPublication(record) {
     year:fields.year, vision:fields.vision,
     organization:Object.values(fields.organization || {}),
     goals:Object.values(fields.goals || {}),
+    strategicThemes:fields.strategicThemes || [], coreValues:fields.coreValues || [],
   });
   if (!checked.ok) throw createError('게시된 회사 방향을 확인할 수 없습니다.', 'INVALID_DATA');
   return {...record,...companyStrategyWireFields(checked.draft)};
@@ -2678,6 +2681,7 @@ class FirebaseRemoteClient {
       year, vision:expanded.vision,
       organization:Object.values(expanded.organization || {}),
       goals:Object.values(expanded.goals || {}),
+      strategicThemes:expanded.strategicThemes || [], coreValues:expanded.coreValues || [],
     });
     if (!checked.ok) throw createError(checked.error, 'VALIDATION_ERROR');
     const content=JSON.stringify(companyStrategyWireFields(checked.draft));
