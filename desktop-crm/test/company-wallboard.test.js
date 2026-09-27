@@ -2,6 +2,17 @@ const {test}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
 const vm=require('node:vm');
 const C=require('../src/company-wallboard');
+test('wallboard preview is rendered before collapsed settings and device controls',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.js'),'utf8');
+ const preview=source.indexOf('class="wb-stage"');
+ const settings=source.indexOf('class="wb-settings"');
+ const controls=source.indexOf('class="wb-controls"');
+ const notice=source.indexOf('class="wb-notice-input"');
+ const deviceAdmin=source.indexOf('class="wb-admin-host"');
+ const playlist=source.indexOf('class="wb-playlist"');
+ assert.ok(preview>=0&&settings>preview&&controls>settings&&notice>controls&&deviceAdmin>notice&&playlist>deviceAdmin);
+ assert.match(source,/editor\.open=false/);
+});
 test('cached company direction expires at the Korea new year',()=>{
  const old={year:'2026',vision:'2026년 방향'};
  assert.equal(C.strategyCurrent(old,new Date('2026-12-31T14:59:59Z')),true);
