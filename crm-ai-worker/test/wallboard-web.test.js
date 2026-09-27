@@ -26,7 +26,7 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-27-1'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-28-1'});
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -86,8 +86,17 @@ test('web TV pages the organization instead of rendering all 30 people at once',
 });
 test('web TV shows at most three strategy goals per screen at 720p',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
- assert.match(source,/strategy\.goals\.slice\(page\*3,page\*3\+3\)/);
+ assert.match(source,/ordered\.slice\(page\*3,page\*3\+3\)/);
  assert.match(source,/Math\.ceil\(\(model\.strategy\?\.goals\.length\|\|0\)\/3\)/);
+});
+
+test('web TV accepts and displays approved monthly and quarterly strategy goals',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/Q1','Q2','Q3','Q4'/);
+ assert.match(source,/length:12/);
+ assert.match(source,/goals\.length>40/);
+ assert.match(source,/· 현재/);
+ assert.match(source,/진척률 미산정/);
 });
 
 test('web TV client rotates roadmap performance and schedule scenes safely',async()=>{
