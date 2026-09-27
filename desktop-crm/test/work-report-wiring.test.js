@@ -115,7 +115,8 @@ test("규칙이 항목·상태·사진 모양을 코드와 같이 본다", () =>
   assert.equal((item.status[".validate"].match(/=== '/gu) || []).length, WorkReportCore.ITEM_STATUSES.length);
   // 사진은 Drive 것만. 사내 경로가 들어오면 다른 사람 화면에서 안 열린다.
   ["before", "after"].forEach(phase => {
-    assert.match(item[phase].$photoIndex.webViewLink[".validate"], /beginsWith\('https:\/\/'\)/u, phase);
+    assert.match(item[phase].$photoIndex.webViewLink[".validate"], /drive|docs/u, phase);
+    assert.match(item[phase].$photoIndex.webViewLink[".validate"], /=== ''/u, phase);
     assert.equal(item[phase].$photoIndex.$other[".validate"], false, phase);
   });
   assert.equal(item.$other[".validate"], false);

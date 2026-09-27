@@ -30,6 +30,11 @@ test("제목과 담당자도 있어야 한다", () => {
   assert.equal(W.validateOrder({ ...full, assigneeUid: "" }).code, "ASSIGNEE_REQUIRED");
 });
 
+test("업무지시는 선택적으로 기존 클리닝 주문 ID만 참조한다", () => {
+  assert.equal(W.normalizeOrder(full).cleaningOrderId, "");
+  assert.equal(W.normalizeOrder({ ...full, cleaningOrderId: "cleaning-123" }).cleaningOrderId, "cleaning-123");
+});
+
 test("새 업무지시 발행 전에 빠진 기한과 산출물 기준을 한 번에 알려준다", () => {
   const missing = W.validatePublication(full);
   assert.equal(missing.ok, false);
@@ -293,4 +298,14 @@ test("담당자는 산출물 규격을 고칠 수 없다", () => {
   const before = order({ deliverableKind: "photo", deliverableCount: 5 });
   assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverableKind: "none" })), false);
   assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverableCount: 1 })), false);
+});
+
+test("청소 주문 조회는 같은 정식 주문 ID의 업무지시만 연결한다", () => {
+  const matches = W.forCleaningOrder([
+    { ...full, id: "work-1", cleaningOrderId: "clean-1" },
+    { ...full, id: "work-2", cleaningOrderId: "clean-2" },
+    { ...full, id: "legacy", cleaningOrderId: "" },
+  ], "clean-1");
+  assert.deepEqual(matches.map(item => item.id), ["work-1"]);
+  assert.deepEqual(W.forCleaningOrder([{ ...full, id: "work-1" }], ""), []);
 });

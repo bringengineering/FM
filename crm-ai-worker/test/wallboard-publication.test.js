@@ -8,6 +8,12 @@ test('publication accepts only safe consistent display fields',()=>{
  const wrong=snapshot();wrong.model.total=3;assert.throws(()=>validatePublication(wrong),/INVALID_INPUT/);
  const time=snapshot();time.playlist[0].seconds=1;assert.throws(()=>validatePublication(time),/INVALID_INPUT/);
 });
+test('publication accepts every integrated dashboard scene and the 13-screen full playlist',()=>{
+ const board=snapshot();board.playlist=['overview','roadmap','portfolio','weeklyTrend','health','milestones','scheduleToday','scheduleWeek','people','issues','notice','strategy','companyRevenue'].map(key=>({key,enabled:true,seconds:30}));
+ assert.deepEqual(validatePublication(board),board);
+ board.playlist.push({key:'duplicate',enabled:true,seconds:30});
+ assert.throws(()=>validatePublication(board),/INVALID_INPUT/);
+});
 test('manual TV publication rejects phone and email contact details in public text',()=>{
  const notice=snapshot();notice.notice='고객 연락처 010-1234-5678';
  assert.throws(()=>validatePublication(notice),/INVALID_INPUT/);

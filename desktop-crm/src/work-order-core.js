@@ -215,6 +215,8 @@
       // 지시는 프로젝트의 한 줄이다. 목록과 간트가 따로 놀지 않으려면
       // 같은 기록을 봐야 한다.
       projectId: text(source.projectId, 80),
+      // Optional cross-domain link to a canonical cleaning request; never copy its fields.
+      cleaningOrderId: text(source.cleaningOrderId, 80),
       track: text(source.track, 40),
       startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
       // 얼마나 걸릴 것 같은가. 가용시간과 맞대 보는 유일한 숫자다.
@@ -364,7 +366,7 @@
   // 담당자가 못 고치는 칸. 소요시간과 가중치와 산출물도 여기 넣는다 —
   // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
   // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
-  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "hours", "weight", "deliverable", "deliverableKind", "deliverableCount", "createdAt", "createdBy"]);
+  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "cleaningOrderId", "track", "buildingId", "hours", "weight", "deliverable", "deliverableKind", "deliverableCount", "createdAt", "createdBy"]);
   function sameInstruction(before, after) {
     const a = normalizeOrder(before);
     const b = normalizeOrder(after);
@@ -411,6 +413,12 @@
         || String(b.createdAt).localeCompare(String(a.createdAt)));
   }
 
+  function forCleaningOrder(orders, cleaningOrderId) {
+    const id = text(cleaningOrderId, 80);
+    if (!id) return [];
+    return rows(orders).map(normalizeOrder).filter(item => item.id && item.cleaningOrderId === id);
+  }
+
   const forAssignee = (orders, uid) =>
     rows(orders).map(normalizeOrder).filter(item => item.id && item.assigneeUid === text(uid, 128));
 
@@ -451,6 +459,7 @@
     overdue,
     summarize,
     sortForBoard,
+    forCleaningOrder,
     forAssignee,
     nextChoices,
     text,

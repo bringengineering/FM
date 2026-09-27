@@ -64,6 +64,15 @@ const registrations = vi.hoisted(() => {
           transactionCurrent.value = state;
         } else {
           pathValues.set(path, state);
+          const cleaningOrderPrefix = "crmCompany/cleaningOrders/";
+          if (path.startsWith(cleaningOrderPrefix)) {
+            const orderId = path.slice(cleaningOrderPrefix.length);
+            const orders = pathValues.get("crmCompany/cleaningOrders");
+            pathValues.set("crmCompany/cleaningOrders", {
+              ...(orders && typeof orders === "object" ? orders as Record<string, unknown> : {}),
+              [orderId]: state,
+            });
+          }
         }
         if (JSON.stringify(state) !== JSON.stringify(effectiveCurrent)) {
           mutationPaths.push(path);
@@ -99,6 +108,10 @@ const registrations = vi.hoisted(() => {
   });
   const databaseUpdate = vi.fn(async (path: string, patch: Record<string, unknown>) => {
     pathValues.set(path, { ...(pathValues.get(path) as object || {}), ...patch });
+    mutationPaths.push(path);
+  });
+  const databaseSet = vi.fn(async (path: string, value: unknown) => {
+    pathValues.set(path, value);
     mutationPaths.push(path);
   });
   const firebaseIntegerKey = (value: string): number | null => {
@@ -274,6 +287,7 @@ const registrations = vi.hoisted(() => {
     databaseTransaction,
     databaseGet,
     databaseUpdate,
+    databaseSet,
     databaseRef: vi.fn((path = "") => ({
       ...queryFor(path),
       transaction: (
@@ -282,6 +296,7 @@ const registrations = vi.hoisted(() => {
         applyLocally?: unknown,
       ) => databaseTransaction(update, onComplete, applyLocally, path),
       update: (patch: Record<string, unknown>) => databaseUpdate(path, patch),
+      set: (value: unknown) => databaseSet(path, value),
     })),
     storageFile: vi.fn((path: string) => ({
       name: path,
@@ -759,6 +774,7 @@ function canonicalHttpRequest(
   return {
     method: "POST",
     ip: "127.0.0.1",
+    query: {},
     headers,
     rawBody: Buffer.from(JSON.stringify(body), "utf8"),
     get(name: string) {
@@ -3833,6 +3849,365 @@ describe("Firebase entrypoint metadata", () => {
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
     });
+    expect(registration(entrypoints.cleaningOrdersApi)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
+  });
+
+  it("places the cleaning wallboard trigger in the company Realtime Database region", () => {
+    expect(registration(entrypoints.projectCleaningOrdersToWallboard)).toMatchObject({
+      kind: "database",
+      options: {
+        ref: "/crmCompany/cleaningOrders/{orderId}",
+        instance: "bring-fm-default-rtdb",
+        region: "asia-southeast1",
+        maxInstances: 1,
+        concurrency: 10,
+      },
+    });
+  });
+
+  it("rebuilds and publishes the privacy-safe projection from canonical orders", async () => {
+    const orderId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc598";
+    const now = new Date().toISOString();
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    registrations.pathValues.set("crmCompany/cleaningOrders", {
+      [orderId]: {
+        id: orderId,
+        requestId: orderId,
+        customerId: "private_customer_id",
+        buildingId: "private_building_id",
+        serviceType: "common_cleaning",
+        title: "private order title",
+        desiredDate: yesterday,
+        description: "private customer note",
+        status: "received",
+        revision: 1,
+        createdAt: now,
+        createdByUid: "private_creator_uid",
+        updatedAt: now,
+        updatedByUid: "private_creator_uid",
+        history: [{ requestId: orderId, status: "received", changedAt: now, changedByUid: "private_creator_uid", note: "private history note" }],
+      },
+    });
+
+    await databaseHandler(entrypoints.projectCleaningOrdersToWallboard)({
+      id: "event-1",
+      time: "2026-09-26T12:00:00.000Z",
+      params: { orderId: "order-1" },
+      data: { before: { val: () => null }, after: { val: () => ({ status: "received" }) } },
+    });
+
+    expect(registrations.databaseGet).toHaveBeenCalledWith("crmCompany/cleaningOrders");
+    expect(registrations.transactionPaths).toContain("crmCompany/wallboard/cleaningOperations");
+    expect(registrations.pathValues.get("crmCompany/wallboard/cleaningOperations")).toMatchObject({
+        schemaVersion: 1,
+        total: 1,
+        open: 1,
+        completed: 0,
+        overdue: 1,
+        byStatus: expect.objectContaining({ received: 1 }),
+        updatedAt: expect.any(String),
+      });
+    const projection = registrations.pathValues.get("crmCompany/wallboard/cleaningOperations");
+    expect(JSON.stringify(projection)).not.toMatch(/private_|private /u);
+  });
+
+  it("skips a duplicate recovery rebuild when the immediate write-through projection is newer", async () => {
+    registrations.databaseGet.mockClear();
+    registrations.databaseSet.mockClear();
+    registrations.pathValues.set("crmCompany/wallboard/cleaningOperations", {
+      schemaVersion: 1,
+      updatedAt: "2026-09-26T12:00:01.000Z",
+    });
+    const currentOrder = {
+      id: "order-1",
+      updatedAt: "2026-09-26T12:00:00.000Z",
+    };
+
+    await databaseHandler(entrypoints.projectCleaningOrdersToWallboard)({
+      id: "event-2",
+      time: "2026-09-26T12:00:02.000Z",
+      params: { orderId: "order-1" },
+      data: { before: { val: () => null }, after: { val: () => currentOrder } },
+    });
+
+    expect(registrations.databaseGet).toHaveBeenCalledWith("crmCompany/wallboard/cleaningOperations");
+    expect(registrations.databaseGet).not.toHaveBeenCalledWith("crmCompany/cleaningOrders");
+    expect(registrations.databaseSet).not.toHaveBeenCalledWith("crmCompany/wallboard/cleaningOperations", expect.anything());
+  });
+
+  it("authenticates the cleaning-order API against the verified company account before serving data", async () => {
+    const missingToken = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(
+      canonicalHttpRequest({}, { method: "GET", headers: { authorization: "" } }),
+      missingToken.response,
+    );
+    expect(missingToken.state).toMatchObject({ status: 401, body: { ok: false, error: { code: "cleaning_order_auth_required" } } });
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    registrations.pathValues.set("crmCompany/cleaningOrders", {});
+    const allowed = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), allowed.response);
+    expect(allowed.state).toMatchObject({
+      status: 200,
+      body: { ok: true, result: { orders: [], hasMore: false, nextCursor: null } },
+      headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
+    });
+    expect(registrations.adminVerifyIdToken).toHaveBeenCalledWith("current-project-id-token", true);
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_disabled", email: "disabled@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_disabled", {
+      enabled: false, role: "member", email: "disabled@bring.test",
+    });
+    const denied = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), denied.response);
+    expect(denied.state).toMatchObject({ status: 403, body: { ok: false, error: { code: "cleaning_order_forbidden" } } });
+  });
+
+  it("keeps cleaning-order list access read-only for viewers and blocks marketing-only members", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_viewer", email: "viewer@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_viewer", {
+      enabled: true, role: "viewer", email: "viewer@bring.test",
+    });
+    registrations.pathValues.set("crmCompany/cleaningOrders", {});
+    const list = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), list.response);
+    expect(list.state).toMatchObject({ status: 200, body: { ok: true, result: { orders: [], hasMore: false, nextCursor: null } } });
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_viewer", email: "viewer@bring.test", email_verified: true,
+    });
+    const mutation = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({ action: "create", input: {} }), mutation.response);
+    expect(mutation.state).toMatchObject({ status: 403, body: { ok: false, error: { code: "cleaning_order_forbidden" } } });
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_marketing", email: "marketing@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_marketing", {
+      enabled: true, role: "member", marketingRole: "marketing", email: "marketing@bring.test",
+    });
+    const marketing = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), marketing.response);
+    expect(marketing.state).toMatchObject({ status: 403, body: { ok: false, error: { code: "cleaning_order_forbidden" } } });
+  });
+
+  it("rejects a cleaning-order cursor with an empty timestamp and a non-empty ID", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const response = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, {
+      method: "GET",
+      query: { beforeCreatedAt: "", beforeId: "order_000001" },
+    }), response.response);
+    expect(response.state).toMatchObject({
+      status: 400,
+      body: { ok: false, error: { code: "invalid_cleaning_order_input" } },
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith("crmCompany/cleaningOrders");
+  });
+
+  it("paginates more than 200 canonical orders without gaps or duplicate timestamp-boundary rows", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValue({
+      uid: "cleaning_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const sameTimestamp = "2026-09-25T00:00:00.000Z";
+    const olderTimestamp = "2026-09-24T00:00:00.000Z";
+    const order = (index: number, createdAt: string) => {
+      const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      return [id, {
+        id, requestId: id, customerId: "customer_cleaning_demo", buildingId: "building_cleaning_demo",
+        serviceType: "stair_cleaning", title: `페이지 검증 주문 ${index}`, desiredDate: "2026-09-25",
+        description: "합성 페이지네이션 검증", status: "received", revision: 1,
+        createdAt, createdByUid: "test-seed", updatedAt: createdAt, updatedByUid: "test-seed",
+        history: [{ requestId: id, status: "received", changedAt: createdAt, changedByUid: "test-seed", note: "테스트 접수" }],
+      }];
+    };
+    const seeded = Object.fromEntries([
+      ...Array.from({ length: 205 }, (_, index) => order(index, sameTimestamp)),
+      order(205, olderTimestamp),
+    ]);
+    registrations.pathValues.set("crmCompany/cleaningOrders", seeded);
+
+    const first = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), first.response);
+    const firstPage = first.state.body as { ok: boolean; result: {
+      orders: Array<{ id: string; createdAt: string }>;
+      hasMore: boolean;
+      nextCursor: { createdAt: string; id: string } | null;
+    } };
+    expect(firstPage.ok).toBe(true);
+    expect(firstPage.result.orders).toHaveLength(200);
+    expect(firstPage.result.orders[0]?.id).toBe(order(204, sameTimestamp)[0]);
+    expect(firstPage.result.nextCursor).toEqual({ createdAt: sameTimestamp, id: order(5, sameTimestamp)[0] });
+    expect(firstPage.result.hasMore).toBe(true);
+
+    const second = httpResponseHarness();
+    const cursor = firstPage.result.nextCursor!;
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, {
+      method: "GET", query: { beforeCreatedAt: cursor.createdAt, beforeId: cursor.id },
+    }), second.response);
+    const secondPage = second.state.body as { ok: boolean; result: {
+      orders: Array<{ id: string; createdAt: string }>;
+      hasMore: boolean;
+      nextCursor: unknown;
+    } };
+    expect(secondPage.result.orders.map(item => item.id)).toEqual([
+      ...Array.from({ length: 5 }, (_, index) => order(4 - index, sameTimestamp)[0]),
+      order(205, olderTimestamp)[0],
+    ]);
+    expect(secondPage.result.hasMore).toBe(false);
+    expect(secondPage.result.nextCursor).toBeNull();
+    expect(new Set([...firstPage.result.orders, ...secondPage.result.orders].map(item => item.id)).size).toBe(206);
+    expect(registrations.queryCalls.slice(-2)).toMatchObject([
+      { path: "crmCompany/cleaningOrders", orderByChild: "createdAt", limitToLast: 201 },
+      { path: "crmCompany/cleaningOrders", orderByChild: "createdAt", endAt: { value: sameTimestamp, key: order(5, sameTimestamp)[0] }, limitToLast: 202 },
+    ]);
+  });
+
+  it("rejects unknown cleaning-order API actions with a bounded client error", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({ action: "delete_all" }), output.response);
+    expect(output.state).toMatchObject({ status: 400, body: { ok: false, error: { code: "invalid_cleaning_order_input" } } });
+  });
+
+  it("creates one canonical order through the authenticated API and server transaction adapter", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_creator", email: "creator@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_creator", {
+      enabled: true, role: "member", email: "creator@bring.test",
+    });
+    registrations.pathValues.set("crmCompany/data/customers/customer_cleaning_demo", {
+      id: "customer_cleaning_demo", buildingIds: ["building_cleaning_demo"],
+    });
+    registrations.pathValues.set("crmCompany/data/buildings/building_cleaning_demo", {
+      id: "building_cleaning_demo",
+    });
+    const requestId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc599";
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({
+      action: "create",
+      input: {
+        requestId,
+        customerId: "customer_cleaning_demo",
+        buildingId: "building_cleaning_demo",
+        serviceType: "stair_cleaning",
+        title: "합성 계단 청소 주문",
+        desiredDate: "2026-09-26",
+        description: "통합 API 테스트 데이터",
+      },
+    }), output.response);
+
+    expect(output.state).toMatchObject({
+      status: 200,
+      body: { ok: true, result: { replayed: false, order: {
+        id: requestId,
+        customerId: "customer_cleaning_demo",
+        buildingId: "building_cleaning_demo",
+        status: "received",
+        revision: 1,
+        createdByUid: "cleaning_creator",
+      } } },
+    });
+    expect(registrations.transactionPaths).toContain("crmCompany/wallboard/cleaningOperations");
+    expect(registrations.pathValues.get("crmCompany/wallboard/cleaningOperations")).toMatchObject({
+        schemaVersion: 1,
+        total: 1,
+        open: 1,
+        byStatus: expect.objectContaining({ received: 1 }),
+      });
+    expect(JSON.stringify(registrations.pathValues.get("crmCompany/wallboard/cleaningOperations")))
+      .not.toMatch(/customer_cleaning_demo|building_cleaning_demo|cleaning_creator/u);
+    expect(registrations.transactionPaths).toContain(`crmCompany/cleaningOrders/${requestId}`);
+    expect(registrations.pathValues.get(`crmCompany/cleaningOrders/${requestId}`)).toMatchObject({
+      id: requestId, revision: 1, status: "received",
+    });
+  });
+
+  it("persists order-linked quote revisions through Functions and keeps approval separate from billing and TV", async () => {
+    registrations.databaseSet.mockClear();
+    const orderId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc501";
+    const quoteId = "8c2ac2d0-9a09-42f3-b8f8-7237562fc502";
+    const reviewId = "8c2ac2d0-9a09-42f3-b8f8-7237562fc503";
+    const storedOrder = {
+      id: orderId, requestId: orderId, customerId: "customer_test_01", buildingId: "building_test_01",
+      serviceType: "move_in_cleaning", title: "합성 입주청소", desiredDate: "2026-09-26", description: "test only",
+      status: "quote_pending", revision: 3, createdAt: "2026-09-25T00:00:00.000Z", createdByUid: "staff_test",
+      updatedAt: "2026-09-26T00:00:00.000Z", updatedByUid: "staff_test", history: [
+        { requestId: orderId, status: "received", changedAt: "2026-09-25T00:00:00.000Z", changedByUid: "staff_test", note: "접수" },
+        { requestId: "7c2ac2d0-9a09-42f3-b8f8-7237562fc510", status: "reviewing", changedAt: "2026-09-25T12:00:00.000Z", changedByUid: "staff_test", note: "검토" },
+        { requestId: "7c2ac2d0-9a09-42f3-b8f8-7237562fc511", status: "quote_pending", changedAt: "2026-09-26T00:00:00.000Z", changedByUid: "staff_test", note: "견적 요청" },
+      ],
+    };
+    registrations.pathValues.set("crmCompany/cleaningOrders", { [orderId]: storedOrder });
+    registrations.pathValues.set(`crmCompany/cleaningOrders/${orderId}`, storedOrder);
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({ uid: "quote_staff", email: "staff@bring.test", email_verified: true });
+    registrations.pathValues.set("crmCompany/access/quote_staff", { enabled: true, role: "member", email: "staff@bring.test" });
+    const created = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({
+      action: "quote-create",
+      input: {
+        requestId: quoteId, orderId, expectedRevision: 0,
+        quote: {
+          quoteDate: "2026-09-26", validUntil: "2026-10-03", recipient: "합성 고객", recipientPhone: "",
+          siteAddress: "합성 주소", projectName: "합성 입주청소", service: "입주청소", summary: "합성 테스트 견적",
+          items: [{ name: "기본 청소", detail: "기본 범위", quantity: 1, unit: "식", unitPrice: 120000, note: "" }],
+          taxIncluded: true, notes: [], company: { businessName: "브링엔지니어링", representative: "테스트", registrationNumber: "000-00-00000" },
+        },
+      },
+    }), created.response);
+    expect(created.state).toMatchObject({ status: 200, body: { ok: true, wallboardProjectionUpdated: false, result: {
+      replayed: false, quote: { id: quoteId, orderId, buildingId: "building_test_01", revision: 1, status: "pending_review", totalAmount: 120000 },
+    } } });
+    expect(registrations.transactionPaths).toContain(`crmCompany/cleaningOrderQuotes/${orderId}`);
+    expect(registrations.databaseSet).not.toHaveBeenCalledWith("crmCompany/wallboard/cleaningOperations", expect.anything());
+    expect(registrations.pathValues.get(`crmCompany/cleaningOrders/${orderId}`)).toEqual(storedOrder);
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({ uid: "quote_admin", email: "admin@bring.test", email_verified: true });
+    registrations.pathValues.set("crmCompany/access/quote_admin", { enabled: true, role: "admin", email: "admin@bring.test" });
+    const approved = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({
+      action: "quote-review",
+      input: { requestId: reviewId, orderId, quoteId, expectedRevision: 1, action: "approve", note: "금액·범위 확인" },
+    }), approved.response);
+    expect(approved.state).toMatchObject({ status: 200, body: { ok: true, wallboardProjectionUpdated: false, result: {
+      replayed: false, quote: { status: "admin_approved", totalAmount: 120000, reviewHistory: [{ requestId: reviewId, action: "approve" }] },
+    } } });
+    expect(JSON.stringify(registrations.pathValues.get(`crmCompany/cleaningOrderQuotes/${orderId}`)))
+      .not.toMatch(/invoiceId|receiptId|customerAcceptedAt/u);
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({ uid: "quote_staff", email: "staff@bring.test", email_verified: true });
+    const loaded = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET", query: { quoteOrderId: orderId } }), loaded.response);
+    expect(loaded.state).toMatchObject({ status: 200, body: { ok: true, result: { quoteSet: {
+      latestRevision: 1, latestQuoteId: quoteId,
+      revisions: { [quoteId]: { status: "admin_approved", totalAmount: 120000 } },
+    } } } });
   });
 
   it("commits a billing draft through the scoped ledger transaction after company access verification", async () => {
@@ -4261,8 +4636,8 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(21);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(3);
-    expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(4);
+    expect(registrations.onValueWritten).toHaveBeenCalledTimes(4);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
   });

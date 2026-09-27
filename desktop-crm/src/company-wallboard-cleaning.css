@@ -1,0 +1,6 @@
+.wb-cleaning-health{display:flex;align-items:center;gap:24px;margin-top:18px;padding:22px 26px;border:1px solid #dce8f8;border-radius:16px;background:linear-gradient(110deg,#f7fbff,#eef5ff);color:#334155}
+.wb-cleaning-health>b{margin-right:auto;color:#174f94;font-size:20px}
+.wb-cleaning-health>span{font-size:16px}
+.wb-cleaning-health>span strong{font-size:30px;color:#1b64da}
+.wb-cleaning-health>small{color:#8290a0;font-size:11px}
+@media(max-width:900px){.wb-cleaning-health{flex-wrap:wrap;gap:12px}.wb-cleaning-health>b{flex-basis:100%}}

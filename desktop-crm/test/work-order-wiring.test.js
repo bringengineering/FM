@@ -211,6 +211,13 @@ test("업무지시가 프로젝트 관리 폴더에서 열린다", () => {
   assert.match(appSource, /workOrders: \["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"\]/u);
 });
 
+test("업무지시는 선택한 정식 청소 주문 ID를 참조하고 담당자는 연결을 바꾸지 못한다", () => {
+  assert.equal(WorkOrderCore.normalizeOrder({ id: "work-1" }).cleaningOrderId, "");
+  assert.match(order.cleaningOrderId[".validate"], /root\.child\('crmCompany\/cleaningOrders'\)\.child\(newData\.val\(\)\)\.exists\(\)/u);
+  assert.match(order[".validate"], /newData\.child\('cleaningOrderId'\)\.val\(\) === data\.child\('cleaningOrderId'\)\.val\(\)/u);
+  assert.match(appSource, /name="cleaningOrderId"/u);
+});
+
 test("올리는 쪽이 정해진 이름과 담당자를 실어 보낸다", () => {
   const call = appSource.slice(appSource.indexOf("async function uploadWorkOrderResult"), appSource.indexOf("// --- 작업 결과보고서 ---"));
   assert.match(call, /assigneeName: order\.assigneeName \|\| order\.assigneeUid/u);

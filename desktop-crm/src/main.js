@@ -43,6 +43,7 @@ const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard, saveWeeklyReportAndSignalWallboard } = require("./wallboard-mutation-signal");
+const { createCleaningOrderIpcHandlers } = require("./cleaning-order-ipc");
 const { requestWallboardRefresh } = require("./wallboard-refresh-client");
 const { createWallboardRefreshQueue } = require("./wallboard-refresh-queue");
 const { createWallboardRefreshStatus } = require("./wallboard-refresh-status");
@@ -5356,7 +5357,50 @@ async function createWindow() {
         return method;
       })
     )`, true);
-    console.log(JSON.stringify({ workflowReads, localOnly: true }));
+    const cleaningOrders = await mainWindow.webContents.executeJavaScript(`(async () => {
+      const result = await window.bringCRM.loadCleaningOrders();
+      if (!result.localOnly || !Array.isArray(result.orders) || result.orders.length !== 0) {
+        throw new Error("cleaning orders local-only read failed");
+      }
+      return { localOnly: result.localOnly, count: result.orders.length };
+    })()`, true);
+    const cleaningCenterSmoke = await mainWindow.webContents.executeJavaScript(`(async () => {
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
+      await wait(320);
+      for (let attempt = 0; attempt < 30 && document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length !== 7; attempt += 1) await wait(100);
+      const screenVisible = Boolean(document.querySelector('.cleaning-center'));
+      const queueVisible = Boolean(document.querySelector('.cleaning-orders-panel'));
+      const emptyStateVisible = document.querySelector('.cleaning-orders-empty')?.textContent.includes('등록된 주문이 없습니다') === true;
+      const cleaningStageCardCount = document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length;
+      const emptyQueueScopeVisible = document.querySelector('.cleaning-stage-footnote')?.textContent.includes('확인된 전체 주문 0건') === true;
+      const seeded = window.__crmTest.getStore();
+      seeded.customers.push({ id: 'cleaning_smoke_customer', name: '스모크 테스트 고객', buildingIds: ['cleaning_smoke_building_linked'], buildingIdLinks: {} });
+      seeded.buildings.push(
+        { id: 'cleaning_smoke_building_linked', name: '연결된 테스트 건물', ownerCustomerId: 'cleaning_smoke_customer' },
+        { id: 'cleaning_smoke_building_unlinked', name: '미연결 테스트 건물', ownerCustomerId: 'cleaning_smoke_other_customer' }
+      );
+      window.__crmTest.applyRemoteForTest(seeded);
+      document.querySelector('[data-action="new-cleaning-order"]')?.click();
+      const form = document.querySelector('#cleaningOrderForm');
+      const formFieldsPresent = Boolean(form?.elements.namedItem('customerId')?.required
+        && form?.elements.namedItem('buildingId')?.required
+        && form?.elements.namedItem('serviceType')?.required
+        && form?.elements.namedItem('title')?.required);
+      const customerSelect = form?.elements.namedItem('customerId');
+      const buildingSelect = form?.elements.namedItem('buildingId');
+      customerSelect.value = 'cleaning_smoke_customer';
+      customerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      const linkedBuildingOnly = buildingSelect.options.length === 2
+        && buildingSelect.options[1].value === 'cleaning_smoke_building_linked'
+        && !Array.from(buildingSelect.options).some(option => option.value === 'cleaning_smoke_building_unlinked');
+      document.querySelector('#modal [data-action="close-modal"]')?.click();
+      const modalClosed = window.__crmTest.snapshot().modalOpen === false;
+      const pass = screenVisible && queueVisible && emptyStateVisible && cleaningStageCardCount === 7 && emptyQueueScopeVisible && formFieldsPresent && linkedBuildingOnly && modalClosed;
+      return { pass, screenVisible, queueVisible, emptyStateVisible, cleaningStageCardCount, emptyQueueScopeVisible, formFieldsPresent, linkedBuildingOnly, modalClosed, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
+    })()`, true);
+    if (!cleaningCenterSmoke?.pass) throw new Error(`cleaning center local UI smoke failed: ${JSON.stringify(cleaningCenterSmoke)}`);
+    console.log(JSON.stringify({ workflowReads, cleaningOrders, cleaningCenterSmoke, localOnly: true }));
     applicationExitAllowed = true;
     app.quit();
   }
@@ -5388,7 +5432,31 @@ async function createWindow() {
       route.remove();
       return true;
     }; true`, true);
-    if (["weekly-report-preview", "weekly-report-document-preview"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-center-summary-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          if (document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length === 7) break;
+          await wait(100);
+        }
+        const cards = [...document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi')];
+        const scope = document.querySelector('.cleaning-stage-footnote')?.textContent || '';
+        const emptyQueueScopeVisible = scope.includes('확인된 전체 주문 0건');
+        const updatedAtVisible = scope.includes('자료 갱신');
+        const labels = cards.map(card => ({
+          label: card.querySelector('span')?.textContent?.trim() || '',
+          value: card.querySelector('strong')?.textContent?.trim() || '',
+        }));
+        return {
+          pass: window.__crmTest?.snapshot().view === 'cleaningCenter'
+            && cards.length === 7 && emptyQueueScopeVisible && updatedAtVisible,
+          cleaningStageCardCount: cards.length, emptyQueueScopeVisible, updatedAtVisible,
+          labels, scope, fixtureOnly: true,
+        };
+      })()`, true);
+      if (!actionResult?.pass) throw new Error(`cleaning center screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (["weekly-report-preview", "weekly-report-document-preview"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="project"]')?.click();
@@ -5453,9 +5521,16 @@ async function createWindow() {
         const axisLabels = [...document.querySelectorAll('.roadmap-axis span')].map(item => item.textContent.trim());
         const repeated = [...document.querySelectorAll('.roadmap-lane-track')]
           .some(track => track.textContent.includes('오늘'));
+        const performancePanel = document.querySelector('.roadmap-performance');
+        const performanceCards = performancePanel?.querySelectorAll('.roadmap-performance-card').length || 0;
+        const performancePanelWidth = performancePanel?.getBoundingClientRect().width || 0;
         return {
           pass: window.__crmTest?.snapshot().view === 'projectRoadmap'
             && Boolean(project && detail) && !progressModalOpen
+            && performanceCards === 4 && performancePanelWidth > 0
+            && performancePanel?.textContent.includes('전체 프로젝트 진행률')
+            && performancePanel?.textContent.includes('업무 검수 완료율')
+            && performancePanel?.textContent.includes('다가오는 마감')
             && labels.length === 1 && !repeated
             && (!daysPreview || (axisLabels.length === 8 && axisLabels.every(label => /^\\d{1,2}\\/\\d{1,2} [일월화수목금토]$/.test(label))
               && document.querySelector('[data-roadmap-scale="days"]')?.getAttribute('aria-pressed') === 'true')),
@@ -5466,6 +5541,8 @@ async function createWindow() {
           todayLabels: labels.length,
           axisLabels,
           repeated,
+          performanceCards,
+          performancePanelWidth,
           state: window.__crmTest?.snapshot(),
         };
       })()`, true);
@@ -8436,7 +8513,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["cleaning-center-summary-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -9052,6 +9129,14 @@ secureCanonicalHandle("crm:company-strategy-publish", input => saveAndSignalWall
 secureCanonicalHandle("crm:billing-ledger-load", input => localTestMode
   ? { invoices:[], receipts:[], localOnly:true }
   : remoteClient.loadBillingLedger(input));
+const cleaningOrderIpc = createCleaningOrderIpcHandlers({ getRemoteClient: () => remoteClient, isLocalTestMode: () => localTestMode });
+secureHandle("crm:cleaning-orders-load", cleaningOrderIpc.load);
+secureHandle("crm:cleaning-order-load-by-id", cleaningOrderIpc.loadById);
+secureCanonicalHandle("crm:cleaning-order-create", cleaningOrderIpc.create);
+secureCanonicalHandle("crm:cleaning-order-transition", cleaningOrderIpc.transition);
+secureHandle("crm:cleaning-quotes-load", cleaningOrderIpc.loadQuotes);
+secureCanonicalHandle("crm:cleaning-quote-create", cleaningOrderIpc.createQuoteRevision);
+secureCanonicalHandle("crm:cleaning-quote-review", cleaningOrderIpc.reviewQuote);
 secureCanonicalHandle("crm:billing-invoice-save", input => saveAndSignalWallboard(() => remoteClient.saveBillingInvoice(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:billing-receipt-save", input => saveAndSignalWallboard(() => remoteClient.saveBillingReceipt(input), signalWallboardAfterSave));
 secureCanonicalHandle("crm:billing-draft-return", input => remoteClient.returnBillingDraft(input));

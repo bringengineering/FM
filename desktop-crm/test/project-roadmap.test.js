@@ -45,6 +45,26 @@ test("담당자·프로젝트·내 일정 보기와 기간 이동이 연결돼 �
   assert.doesNotMatch(css, /\.roadmap-today-line::before/u, "각 행의 오늘 기준선에 글자를 반복하면 안 된다");
 });
 
+test("로드맵 옆 성과 패널에 전체 진도·검수율·상태·다가오는 마감을 구분해 보여 준다", () => {
+  const start = app.indexOf("function renderProjectRoadmap()");
+  const end = app.indexOf("\n  async function loadPrivateWeeklyPack(", start);
+  const body = app.slice(start, end);
+  assert.match(body, /class="roadmap-performance"/u);
+  assert.match(body, /전체 프로젝트 진행률/u);
+  assert.match(body, /업무 검수 완료율/u);
+  assert.match(body, /집계 자료 없음/u);
+  assert.match(body, /다가오는 마감/u);
+  assert.match(body, /statusCounts\.active/u);
+  assert.match(body, /reviewDone.*reviewTotal/u);
+  assert.match(body, /projectsWithProgress/u);
+  assert.match(body, /projectProgressKnown/u);
+  assert.match(body, /ordersReady/u);
+  assert.match(body, /dueDate\.localeCompare/u);
+  assert.match(css, /\.roadmap-board-layout\s*\{[^}]*grid-template-columns/u);
+  assert.match(css, /\.roadmap-performance-ring\s*\{/u);
+  assert.match(css, /\.roadmap-board\s*\{[^}]*overflow:\s*auto/u);
+});
+
 test("로드맵은 8주와 8일을 전환하고 편집 중에는 날짜 축을 바꾸지 않는다", () => {
   const start = app.indexOf("function renderProjectRoadmap(");
   const end = app.indexOf("\n  function renderWorkOrders(", start);
@@ -158,6 +178,8 @@ test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미�
   assert.match(main, /Boolean\(interactivePreviewView\)/u);
   assert.match(main, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview"/u);
+  assert.match(main, /performanceCards === 4/u);
+  assert.match(main, /performancePanelWidth > 0/u);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-progress-preview"/u);
   assert.match(main, /trigger\.dataset\.woProgress = 'preview-1'/u);
   assert.match(main, /noteRequired: note\?\.required === true/u);

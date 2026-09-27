@@ -144,7 +144,7 @@ test('TV schedule uses fixed service labels and verified team names instead of f
 });
 test('roadmap and schedule scenes render TV visual contracts',()=>{
  const m=C.project({projects:[{id:'p1',name:'디지털 트윈',status:'active',progress:42,startDate:'2026-09-01',endDate:'2026-10-01'}],orders:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-20',startTime:'09:30',status:'planned',serviceType:'inspection',title:'소방 점검',owner:'김현진'}]}},'2026-09-20');
- const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/입력 진도 평균/);assert.match(roadmap,/42%/);
+ const roadmap=C.scene(m,'roadmap',0);assert.match(roadmap,/wb-roadmap-layout/);assert.match(roadmap,/전체 프로젝트 진도/);assert.match(roadmap,/42%/);
  assert.match(roadmap,/wb-roadmap-performance/);assert.match(roadmap,/wb-progress-ring/);
  const today=C.scene(m,'scheduleToday',0);assert.match(today,/점검/);assert.match(today,/김현진/);assert.doesNotMatch(today,/소방 점검/);
  const week=C.scene(m,'scheduleWeek',0);assert.match(week,/wb-schedule-week/);
@@ -183,6 +183,12 @@ test('roadmap gives every assignment its own row when one person owns four proje
  assert.doesNotMatch(html,/top:10px|top:48px/);
 });
 
+test('TV overview lane has room for every visible project assignment',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
+ assert.match(css,/\.wb-overview-roadmap \.wb-roadmap-lane\{height:auto;min-height:0;align-items:stretch\}/u);
+ assert.match(css,/\.wb-overview-roadmap \.wb-roadmap-track\{display:grid;grid-auto-rows:minmax\(27px,auto\)/u);
+});
+
 test('roadmap separates entered progress from manager-reviewed completion',()=>{
  const m=C.project({projects:[{id:'p1',name:'실증',status:'active',progress:70}],orders:[
   {id:'a',projectId:'p1',status:'done',progress:70},
@@ -190,7 +196,7 @@ test('roadmap separates entered progress from manager-reviewed completion',()=>{
  ]},'2026-09-24');
  assert.equal(m.portfolio.overallProgress,70);
  const html=C.scene(m,'roadmap',0);
- assert.match(html,/입력 진도 평균/);
+ assert.match(html,/전체 프로젝트 진도/);
  assert.match(html,/업무 검수 완료율/);
  assert.match(html,/50%/);
  assert.match(html,/1\/2건/);
@@ -212,7 +218,7 @@ test('company progress keeps completed projects in the displayed denominator',()
 });
 test('empty portfolio displays no denominator rather than a false zero percent',()=>{
  const html=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap');
- assert.match(html,/입력 진도 평균/);
+ assert.match(html,/전체 프로젝트 진도/);
  assert.match(html,/대상 프로젝트 없음/);
  assert.doesNotMatch(html,/wb-progress-ring[^>]*><strong>0%<\/strong>/);
 });

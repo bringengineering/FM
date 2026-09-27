@@ -31,7 +31,17 @@ test("모르는 작업은 짐작하지 않고 비워 둔다", () => {
   assert.equal(P.parseFolderName("지붕 공사(예초집)_블로그_260905").kind, "");
   assert.equal(P.kindFromWords("사이니지 유지관리"), "");
   assert.equal(P.kindFromWords("입주청소"), "moveIn");
+  assert.equal(P.kindFromWords("퇴실청소"), "moveOut");
+  assert.equal(P.kindFromWords("공용부 정기청소"), "common");
   assert.equal(P.kindFromWords("계단 청소"), "stairs");
+});
+
+test("퇴실·공용부 사진 폴더를 각각의 청소 체크리스트 항목에 연결한다", () => {
+  assert.equal(P.itemKeyForFolder("moveOut", "잔류물·폐기물"), "waste");
+  assert.equal(P.itemKeyForFolder("moveOut", "화장실"), "bath");
+  assert.equal(P.itemKeyForFolder("common", "복도·공용 바닥"), "corridor");
+  assert.equal(P.itemKeyForFolder("common", "분리수거장"), "recycle");
+  assert.equal(P.itemKeyForFolder("general", "합의 범위 확인"), "scope");
 });
 
 test("말이 안 되는 날짜는 안 받는다", () => {

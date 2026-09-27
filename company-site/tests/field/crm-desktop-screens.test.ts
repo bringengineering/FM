@@ -285,12 +285,12 @@ describe("desktop CRM screens actually render", () => {
     booted = await boot();
   }, 60000);
 
-  it("처음 화면이 운영보드를 포함한 아홉 폴더를 다 내준다", () => {
+  it("처음 화면이 운영보드를 포함한 열 폴더를 다 내준다", () => {
     const cards = [...booted.document.querySelectorAll("[data-workspace-enter]")];
-    expect(cards.length).toBe(9);
+    expect(cards.length).toBe(10);
     // 폴더를 고르는 자리는 여기뿐이다. 하나라도 빠지면 그 폴더는 갈 길이 없다.
     const folders = cards.map(card => (card as HTMLElement).dataset.workspaceEnterFolder || "");
-    for (const folder of ["company-wallboard", "customer-management", "project", "calendar", "office", "bi", "documents", "workflow"]) {
+    for (const folder of ["company-wallboard", "customer-management", "project", "calendar", "office", "bi", "documents", "workflow", "cleaning-center"]) {
       expect(folders, folder).toContain(folder);
     }
   });
