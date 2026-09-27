@@ -1060,6 +1060,12 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 .project-workspace-dashboard-summary{margin:18px 0;padding:18px;border:1px solid #dce7f2;border-radius:16px;background:#f8fbff}
 .project-workspace-dashboard-summary .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .project-workspace-dashboard-summary .kpi-grid{margin:0}
+.dashboard-person-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dashboard-person-filter{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#425b75}
+.dashboard-person-filter select{min-width:150px;padding:8px 12px;border:1px solid #cad9e8;border-radius:10px;background:#fff;color:#24384c;font:inherit}
+.dashboard-person-tasks{display:grid;gap:6px;margin-top:14px;font-size:13px;color:#617388}
+.dashboard-person-task{display:flex;justify-content:space-between;gap:16px;padding:9px 12px;border:1px solid #e1eaf2;border-radius:9px;background:#fff}
+.dashboard-person-task strong{color:#253b54;font-weight:700}
 .project-workspace-people{padding:18px;border:1px solid #e1e8ef;border-radius:16px;background:#fff}
 .project-workspace-people header{margin-bottom:12px}
 .project-workspace-people header span{font-size:12px;color:#66788a}

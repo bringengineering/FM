@@ -2324,9 +2324,14 @@
         : "오늘 예정된 연락은 없습니다. 여유 있게 다음 업무를 준비하세요.";
     const workspaceCore = window.BringProjectWorkspaceCore;
     const workReady = workOrderState.loaded && !workOrderState.loading && !workOrderState.error && workspaceCore?.health;
-    const dashboardOrders = workOrderState.admin ? workOrderState.orders : (workOrderState.orders || []).filter(item => item.assigneeUid === workOrderState.uid);
+    const selectedDashboardUid = workOrderState.admin ? workOrderState.assigneeFilter : workOrderState.uid;
+    const dashboardOrders = (workOrderState.orders || []).filter(item => selectedDashboardUid === "__all" || item.assigneeUid === selectedDashboardUid);
+    const selectedDashboardMember = workOrderState.members.find(item => item.uid === selectedDashboardUid);
+    const dashboardTitle = workOrderState.admin && selectedDashboardUid === "__all" ? "팀 전체" : selectedDashboardMember?.displayName || "내";
+    const dashboardPersonSelect = workOrderState.admin ? `<label class="dashboard-person-filter"><span>담당자</span><select data-dashboard-assignee-filter aria-label="대시보드 담당자 선택"><option value="__all">팀 전체</option>${workOrderState.members.map(member => `<option value="${esc(member.uid)}"${selectedDashboardUid === member.uid ? " selected" : ""}>${esc(member.displayName || member.uid)}</option>`).join("")}</select></label>` : "";
     const workHealth = workReady ? workspaceCore.health({ orders: dashboardOrders, today }) : null;
     const workSummary = workHealth ? `<div class="kpi-grid">${kpi("업무 검수 완료", `${workHealth.done}/${workHealth.total}건`, "검수 완료 건수 / 전체 업무", "#3182f6")}${kpi("진행 중 업무", workHealth.total - workHealth.done, "완료 전 업무", "#5cc9d8")}${kpi("기한 초과 업무", workHealth.overdue, "완료 전 · 마감일 경과", "#f47d86", workHealth.overdue ? "alert" : "")}${kpi("검수 대기", workHealth.review, "제출됨 · 승인 전", "#8b7de8")}</div>` : `<p class="project-workspace-empty">${workOrderState.error ? "업무 조회 오류 · 업무지시에서 다시 확인해 주세요." : "업무지시를 불러오는 중입니다…"}</p>`;
+    const dashboardTaskList = workReady ? `<div class="dashboard-person-tasks" aria-label="${esc(dashboardTitle)} 업무 목록">${dashboardOrders.length ? [...dashboardOrders].sort((a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"))).slice(0, 8).map(item => `<div class="dashboard-person-task"><strong>${esc(item.title || "제목 없는 업무")}</strong><span>${esc(item.dueDate || "마감일 미정")}</span></div>`).join("") : "배정된 업무가 없습니다."}</div>` : "";
     main.innerHTML = `
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
@@ -2338,7 +2343,7 @@
         ${kpi("오늘 연락할 고객", stats.todayContacts, "오늘 연락 예정", "#5cc9d8", stats.todayContacts ? "good" : "")}
         ${kpi("늦어진 연락", stats.overdueContacts, "우선 확인 필요", "#f47d86", stats.overdueContacts ? "alert" : "")}
       </div>
-      <section class="project-workspace-dashboard-summary" aria-label="${workOrderState.admin ? "팀 전체" : "내"} 업무지시 현황"><div class="panel-head"><div><h3>${workOrderState.admin ? "팀 전체" : "내"} 업무지시 현황</h3><p>CRM 원본 업무 · 검수 완료와 입력 진도는 구분합니다.</p></div><button type="button" class="text-button" data-view="workOrders">업무지시 보기 →</button></div>${workSummary}</section>
+      <section class="project-workspace-dashboard-summary" aria-label="${esc(dashboardTitle)} 업무지시 현황"><div class="panel-head"><div><h3>${esc(dashboardTitle)} 업무지시 현황</h3><p>CRM 원본 업무 · 검수 완료와 입력 진도는 구분합니다.</p></div><div class="dashboard-person-actions">${dashboardPersonSelect}<button type="button" class="text-button" data-view="workOrders">업무지시 보기 →</button></div></div>${workSummary}${dashboardTaskList}</section>
       ${operationsCheckMarkup()}
       <div class="dashboard-grid">
         <section class="panel">
@@ -14930,6 +14935,14 @@
       workOrderState.scope = "all";
       workOrderState.assigneeFilter = uid === "__all" || workOrderState.members.some(item => item.uid === uid) ? uid : "__all";
       renderWorkOrders();
+      return;
+    }
+    if (event.target.matches("[data-dashboard-assignee-filter]")) {
+      if (!workOrderState.admin) return;
+      const uid = String(event.target.value || "__all");
+      workOrderState.scope = "all";
+      workOrderState.assigneeFilter = uid === "__all" || workOrderState.members.some(item => item.uid === uid) ? uid : "__all";
+      renderDashboard();
       return;
     }
     if (event.target.matches("[data-operations-query], [data-operations-building], [data-operations-owner]")) {
