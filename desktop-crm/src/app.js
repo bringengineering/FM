@@ -1541,13 +1541,25 @@
   function renderOperationsWorkspace() {
     if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
-    if (!["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
+    if (currentView !== "dashboard" && !["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
     // 들어온 것과 다시 그린 것은 다르다. 여기서만 다시 읽는다.
     if (currentView !== lastRenderedView) refreshOnEnter(currentView);
-    if (currentView === "dashboard") renderDashboard();
+    if (currentView === "dashboard") {
+      renderDashboard();
+      const officeView = currentView;
+      window.BringOffice.render({
+        view: officeView,
+        container: main,
+        api,
+        currentAuth,
+        showToast,
+        isActive: () => currentWorkspace === "operations" && currentView === officeView,
+        setMessengerPresence: syncOfficeMessengerPresence,
+      });
+    }
     else if (currentView === "cleaningCenter") renderCleaningCenter();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
@@ -2340,6 +2352,7 @@
     const assessmentText = assessmentCurrent && workAssessmentState.result ? esc(workAssessmentState.result.text).replace(/\n/g, "<br>") : "";
     const assessmentPanel = `<section class="dashboard-ai-assessment" aria-label="Gemini 업무 판단"><header><div><strong>Gemini 업무 판단</strong><small>수치는 CRM 원본에서 계산 · AI는 확인할 항목만 제안</small></div><button type="button" class="mini-button" data-dashboard-ai-retry${!workReady || !dashboardOrders.length || workAssessmentState.loading ? " disabled" : ""}>다시 분석</button></header>${!workReady ? "<p>업무 자료를 불러오는 중입니다.</p>" : !dashboardOrders.length ? "<p>분석할 업무가 없습니다.</p>" : assessmentCurrent && workAssessmentState.loading ? "<p>Gemini가 현재 업무를 검토 중입니다…</p>" : assessmentCurrent && workAssessmentState.error ? `<p role="alert">${esc(workAssessmentState.error)}</p>` : assessmentText ? `<p>${assessmentText}</p><small>분석 시각 ${esc(workAssessmentState.result.analyzedAt || "")} · ${esc(workAssessmentState.result.model || "Gemini")}</small>` : "<p>현재 업무를 분석하고 있습니다…</p>"}</section>`;
     main.innerHTML = `
+      ${window.BringOffice.dashboardAttendance()}
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
         <div class="brief-actions"><span class="brief-value">예상 매출 <b>${esc(compactMoney(stats.pipelineValue))}원</b></span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>

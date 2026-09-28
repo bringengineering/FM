@@ -43,6 +43,13 @@ test('device list preserves web clients while defaulting legacy records to elect
  const data=await requestWallboardAdmin({baseUrl:'https://gateway.example',idToken:'secret',input:{action:'list'},fetchImpl:async()=>Response.json({ok:true,version:0,devices:[{id:'web',name:'웹 TV',clientType:'web'},{id:'legacy',name:'기존 TV'}]})});
  assert.equal(data.devices[0].clientType,'web');assert.equal(data.devices[1].clientType,'electron');
 });
+test('TV pairing code approval is immediately visible in the CRM admin panel',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/wallboard-admin-ui.js'),'utf8');
+ assert.match(source,/<details class="wb-playlist" open>/);
+ assert.match(source,/TV 화면에 나온 8자리 연결 코드를 아래에 입력/);
+ assert.match(source,/<input name="code" maxlength="8" required pattern="\[A-Fa-f0-9\]\{8\}"/);
+ assert.match(source,/기기 이름/);assert.match(source,/기기 승인/);
+});
 test('administrator UI labels web auto updates and limits EXE controls to electron clients',()=>{
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/wallboard-admin-ui.js'),'utf8');
  assert.match(source,/웹 자동반영/);assert.match(source,/clientType==='electron'/);assert.match(source,/\/tv/);
