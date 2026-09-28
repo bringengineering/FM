@@ -8,8 +8,9 @@ import {validateWallboardBillingLedger} from './wallboard-billing-source.js';
 
 const MAX_SOURCE_BYTES=2*1024*1024;
 const paths=['workOrders','projects','data/serviceRecords','access','teamProfiles','projectWeeklyReports','projectWeeklyReportReviews','billingLedger','wallboard/cleaningOperations'];
-const defaultPlaylist=[['overview',45],['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30],['companyRevenue',30]].map(([key,seconds])=>({key,enabled:true,seconds}));
+const defaultPlaylist=[['overview',45],['roadmap',40],['portfolio',25],['weeklyTrend',20],['health',20],['milestones',25],['scheduleToday',30],['scheduleWeek',30],['people',25],['issues',20],['notice',30],['companyRevenue',30]].map(([key,seconds])=>({key,enabled:key!=='issues',seconds}));
 const withOverviewScene=playlist=>playlist.some(item=>item?.key==='overview')?playlist:[...playlist,{key:'overview',enabled:true,seconds:45}];
+const withRoadmapScene=playlist=>playlist.some(item=>item?.key==='roadmap')?playlist:[...playlist.slice(0,1),{key:'roadmap',enabled:true,seconds:40},...playlist.slice(1)];
 const withRevenueScene=playlist=>playlist.some(item=>item?.key==='companyRevenue')?playlist:[...playlist,{key:'companyRevenue',enabled:true,seconds:30}];
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const contactPattern=/(?:0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i;
@@ -57,7 +58,7 @@ async function command(stub,action,input={}){
 async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchImpl=fetch,now=Date.now,readTimeoutMs=8000}){
  if(!idToken||!env?.WALLBOARD_DEVICES)fail('FORBIDDEN');
  const timeout=Number.isInteger(readTimeoutMs)&&readTimeoutMs>=1&&readTimeoutMs<=15000?readTimeoutMs:8000;
- const access=await readSource('access',{env,idToken,fetchImpl,readTimeoutMs:timeout});
+ const access=await readSource('access',{env,idToken,fetchImpl,readTimeoutMs:timeout}).catch(error=>{error.stage='access';throw error;});
  if(!serviceReader){
   const requester=access?.[identity.uid];
   if(requester?.enabled!==true||requester.mustChangePassword===true||String(requester.email||'').trim().toLowerCase()!==String(identity.email||'').trim().toLowerCase())fail('FORBIDDEN');
@@ -65,7 +66,10 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  const stub=env.WALLBOARD_DEVICES.get(env.WALLBOARD_DEVICES.idFromName('bring-company-wallboard'));
  const {refreshToken}=await command(stub,'begin-refresh');
  const remainingPaths=paths.filter(path=>path!=='access');
- const values=await Promise.all(remainingPaths.map(path=>readSource(path,{env,idToken,fetchImpl,readTimeoutMs:timeout})));
+ const values=await Promise.all(remainingPaths.map(path=>readSource(path,{env,idToken,fetchImpl,readTimeoutMs:timeout}).catch(error=>{
+  if(path==='wallboard/cleaningOperations'&&error?.code==='FORBIDDEN')return null;
+  error.stage=path;throw error;
+ })));
  const source={access,...Object.fromEntries(remainingPaths.map((path,index)=>[path,values[index]]))};
  const members=rows(source.access).filter(user=>user.enabled===true&&user.mustChangePassword!==true).map(user=>({uid:user.id,displayName:String(source.teamProfiles?.[user.id]?.displayName||user.displayName||'')}));
  const orders=rows(source.workOrders);
@@ -94,7 +98,7 @@ async function rebuildWallboard({idToken,identity,serviceReader=false,env,fetchI
  for(let attempt=0;attempt<2;attempt++){
   const current=await command(stub,'list');
   const priorNotice=current.presentation?.notice||'';
-  const snapshot=validatePublication({model,playlist:withRevenueScene(withOverviewScene(strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist))),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
+  const snapshot=validatePublication({model,playlist:withRevenueScene(withRoadmapScene(withOverviewScene(strategyTv.withStrategyScene(current.presentation?.playlist||defaultPlaylist)))),notice:privateText(priorNotice)?'공지 내용 확인 필요':priorNotice,dataDate});
   if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>65536)fail('WALLBOARD_UNAVAILABLE');
   try{const result=await command(stub,'publish-if-changed',{snapshot,expectedVersion:current.version,refreshToken});return {version:result.version,publishedAt:result.publishedAt};}
   catch(error){if(error.code!=='VERSION_CONFLICT'||attempt===1)throw error;}

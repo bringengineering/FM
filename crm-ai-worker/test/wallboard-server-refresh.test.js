@@ -73,7 +73,7 @@ test('server refresh reads billing once and publishes approved aggregate revenue
  await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
  assert.equal(f.reads.filter(item=>item.resource==='billingLedger').length,1);
  const snapshot=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot;
- assert.deepEqual(snapshot.model.companyRevenue,{available:true,month:'2026-09',billed:100000,received:40000,receivable:60000,pendingCount:0,undatedPendingCount:0});
+ assert.deepEqual(snapshot.model.companyRevenue,{available:true,month:'2026-09',billed:100000,received:40000,receivable:60000,pendingCount:0,undatedPendingCount:0,pendingAmount:0});
  const published=JSON.stringify(snapshot);
  for(const secret of ['private-contract','private-invoice','private-receipt','secret-bank-ref','private-drive-link','admin-1','비공개 반려 사유'])assert.equal(published.includes(secret),false,secret);
 });
@@ -89,6 +89,14 @@ test('malformed cleaning aggregate cannot replace the last published TV board',a
  const f=fixture({cleaningMap:{schemaVersion:1,total:99}});
  await assert.rejects(refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl}));
  assert.equal(f.commands.some(item=>item.action==='publish-if-changed'),false);
+});
+test('denied cleaning aggregate remains unknown while current work orders still refresh',async()=>{
+ const f=fixture({denied:'wallboard/cleaningOperations'});
+ const result=await refreshWallboardFromFirebase({idToken:token,identity,env:f.env,fetchImpl:f.fetchImpl,now:()=>Date.parse('2026-09-24T02:00:00Z')});
+ assert.equal(result.version,1);
+ const model=f.commands.find(item=>item.action==='publish-if-changed').input.snapshot.model;
+ assert.equal(model.total,1);
+ assert.equal(model.cleaningOperations,null);
 });
 test('billing read or ledger validation failure preserves the prior TV publication',async()=>{
  for(const overrides of [{denied:'billingLedger'},{oversize:'billingLedger'},{billingMap:{invoices:{i1:{amount:1}}}},{billingMap:{invoices:sources.billingLedger.invoices,receipts:null}}]){

@@ -26,7 +26,22 @@ test('web TV exposes an uncached application version for zero-touch refresh',asy
 });
 test('changed TV presentation assets advance the client application version',async()=>{
  const response=await worker.fetch(new Request('https://gateway.test/tv/version'),env);
- assert.deepEqual(await response.json(),{version:'tv-web-2026-09-28-3'});
+ assert.deepEqual(await response.json(),{version:'tv-web-2026-09-28-11'});
+});
+test('web TV uses the supplied Bring Care logo and hides the issues scene',async()=>{
+ const logo=await worker.fetch(new Request('https://gateway.test/tv/brand.png'),env);
+ assert.equal(logo.status,200);
+ assert.equal(logo.headers.get('content-type'),'image/png');
+ assert.deepEqual([...new Uint8Array(await logo.arrayBuffer()).slice(0,8)],[137,80,78,71,13,10,26,10]);
+ const html=await (await worker.fetch(new Request('https://gateway.test/tv'),env)).text();
+ assert.match(html,/Bring Care 로고/);
+ assert.match(html,/tv-rail/);
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ assert.match(source,/item\.key!=='issues'/);
+ assert.match(source,/roadmap-tasks/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.tv-rail/);
+ assert.match(css,/\.roadmap-task/);
 });
 test('web TV separately labels approved project weekly reports',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
@@ -143,32 +158,55 @@ test('web TV overview keeps cleaning and weekly summary while hiding duplicate r
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
  assert.match(source,/overview:'회사 운영 요약'/);
  assert.match(source,/function renderOverview\(/);
- assert.match(source,/renderRoadmap\(model\)/);
- for(const label of ['신규 접수','진행 중','검토 대기','완료','주간 검수 완료 업무'])assert.ok(source.includes(label),`missing ${label}`);
+ for(const label of ['전체 업무 완료율','전체 업무','완료','기한 초과','검수 대기'])assert.ok(source.includes(label),`missing ${label}`);
  assert.match(source,/scene\.key==='overview'\)return 1/);
  assert.match(source,/!board\.playlist\.some\(item=>item\.key==='overview'\)\)enabled\.push/);
  const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
- assert.match(css,/\.executive-overview/);
- assert.match(css,/\.overview-roadmap,\.overview-agenda\{display:none!important\}/);
+ assert.match(css,/\.summary-view/);
 });
-test('web TV rotates 8-week and 8-day roadmap views from the same publication',async()=>{
+test('web TV shows the current Monday-to-Sunday roadmap from the same publication',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
- assert.match(source,/roadmapMode='week'/);
- assert.match(source,/function roadmapView\(model,mode\)/);
- assert.match(source,/roadmapMode==='day'\?'8일 상세':'8주 요약'/);
- assert.match(source,/roadmapMode='day'/);
+ assert.doesNotMatch(source,/roadmapMode|8주 요약|8일 상세/);
+ assert.match(source,/function roadmapView\(model\)/);
+ assert.match(source,/이번 주/);
  assert.match(source,/board\.dataDate/);
  const helpers=source.match(/function addDays\(value,amount\)[\s\S]*?(?=function emptyRoadmap\()/)?.[0];
  assert.ok(helpers,'served TV client must contain the roadmap projection');
  const {roadmapView}=vm.runInNewContext(`${helpers};({roadmapView})`,{board:{dataDate:'2026-09-24'}});
  const model={roadmap:{range:{from:'2026-08-31'},lanes:[{assignments:[{startDate:'2026-09-20',endDate:'2026-10-02',progress:42}]}]}};
- const daily=roadmapView(model,'day');
- assert.equal(daily.range.from,'2026-09-23');
- assert.equal(daily.range.to,'2026-09-30');
+ const daily=roadmapView(model);
+ assert.equal(daily.range.from,'2026-09-21');
+ assert.equal(daily.range.to,'2026-09-27');
+ assert.equal(daily.range.weeks.length,7);
+ assert.equal(daily.range.weeks[0].label,'9/21 월');
+ assert.equal(daily.range.weeks[6].label,'9/27 일');
  assert.equal(daily.lanes[0].assignments[0].layout.width,100);
- assert.equal(model.roadmap.range.from,'2026-08-31','8-week source is not mutated');
+ assert.equal(model.roadmap.range.from,'2026-08-31','source is not mutated');
  assert.match(source,/assignment-row/);
  assert.doesNotMatch(source,/position%3/);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.week-grid\{[^}]*repeat\(7,1fr\)/);
+ assert.match(css,/\.content>\.roadmap-layout \.week-grid span\.is-today/);
+ assert.match(css,/\.content>\.roadmap-layout \.person b/);
+});
+test('TV roadmap groups every assignee under one project row',async()=>{
+ const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
+ const helper=source.match(/function projectRoadmapRows\(model,roadmap\)[\s\S]*?(?=function renderRoadmap\()/)?.[0];
+ assert.ok(helper);
+ const projectRoadmapRows=vm.runInNewContext(`${helper};projectRoadmapRows`,{betweenDays:(a,b)=>Math.round((Date.parse(b)-Date.parse(a))/86400000)});
+ const model={portfolio:{projects:[{name:'네이버 광고',progress:20,health:'check',open:2,owner:''}]},roadmap:{lanes:[
+  {assigneeName:'김현진',assignments:[{projectName:'네이버 광고',startDate:'2026-09-28',endDate:'2026-10-02',progress:20}]},
+  {assigneeName:'황우중',assignments:[{projectName:'네이버 광고',startDate:'2026-09-29',endDate:'2026-10-03',progress:0},{projectName:'미연결 업무',startDate:'2026-09-30',endDate:'2026-10-01',progress:0}]}
+ ]}};
+ const rows=projectRoadmapRows(model,{range:{from:'2026-09-28',to:'2026-10-04'}});
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].name,'네이버 광고');
+ assert.deepEqual(Array.from(rows[0].owners),['김현진','황우중']);
+ assert.equal(rows[0].open,2);
+ assert.equal(rows[1].name,'프로젝트 미지정 업무');
+ assert.equal(rows[1].open,1);
+ const css=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
+ assert.match(css,/\.project-roadmap/);
 });
 test('web TV stylesheet compacts content for common TV heights',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.css'),env)).text();
@@ -189,8 +227,8 @@ test('web TV roadmap separates input progress and reviewed work without new publ
 });
 test('web TV distinguishes no projects from measured zero progress',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();
- assert.match(source,/대상 프로젝트 없음/);
- assert.match(source,/model\.portfolio\.projects\.length\?model\.portfolio\.overallProgress\+'%'\:'—'/);
+ assert.match(source,/model\.total\+'건 업무지시'/);
+ assert.match(source,/model\.total\?completion\+'%'\:'—'/);
 });
 test('web TV portfolio labels each project input progress and reviewed completion with a legacy fallback',async()=>{
  const source=await (await worker.fetch(new Request('https://gateway.test/tv/app.js'),env)).text();

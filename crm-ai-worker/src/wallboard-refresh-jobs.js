@@ -20,6 +20,7 @@ export class WallboardRefreshJobs {
    const {version,publishedAt,sourceReadAt,reconciledAt}=result;
    return Response.json({ok:true,version,publishedAt,sourceReadAt,reconciledAt},{headers});
   }catch(error){
+   console.warn('wallboard-refresh-failed',error?.stage||'unknown',error?.code||'WALLBOARD_UNAVAILABLE');
    const forbidden=error?.code==='FORBIDDEN';
    return Response.json({ok:false,code:forbidden?'FORBIDDEN':'WALLBOARD_UNAVAILABLE'},{status:forbidden?403:503,headers});
   }
