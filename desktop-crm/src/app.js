@@ -1540,13 +1540,25 @@
   function renderOperationsWorkspace() {
     if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
-    if (!["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
+    if (currentView !== "dashboard" && !["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
     // 들어온 것과 다시 그린 것은 다르다. 여기서만 다시 읽는다.
     if (currentView !== lastRenderedView) refreshOnEnter(currentView);
-    if (currentView === "dashboard") renderDashboard();
+    if (currentView === "dashboard") {
+      renderDashboard();
+      const officeView = currentView;
+      window.BringOffice.render({
+        view: officeView,
+        container: main,
+        api,
+        currentAuth,
+        showToast,
+        isActive: () => currentWorkspace === "operations" && currentView === officeView,
+        setMessengerPresence: syncOfficeMessengerPresence,
+      });
+    }
     else if (currentView === "cleaningCenter") renderCleaningCenter();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
@@ -2323,6 +2335,7 @@
         ? `오늘 연락할 고객이 ${stats.todayContacts}명 있습니다.`
         : "오늘 예정된 연락은 없습니다. 여유 있게 다음 업무를 준비하세요.";
     main.innerHTML = `
+      ${window.BringOffice.dashboardAttendance()}
       <section class="today-brief">
         <div><span class="brief-kicker">TODAY</span><h2>${esc(owner)}님, ${esc(focusMessage)}</h2><p>고객 연락과 영업 후속 업무를 한 화면에서 확인할 수 있습니다.</p></div>
         <div class="brief-actions"><span class="brief-value">예상 매출 <b>${esc(compactMoney(stats.pipelineValue))}원</b></span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>
