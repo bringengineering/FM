@@ -2630,6 +2630,54 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(update(ref(admin, at("g7")), { title: "일정 확인 중", updatedAt: NOW, updatedBy: "crm-admin" }));
   });
 
+  it("lets members create only new, self-assigned work orders in the initial state", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "현장 확인",
+      why: "현장 결과를 공유합니다.",
+      what: "현장을 확인하고 결과를 기록합니다.",
+      doneWhen: "확인 결과와 산출물을 등록하면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "황우중",
+      projectId: "p1",
+      track: "ops",
+      buildingId: "",
+      startDate: "2026-09-28",
+      dueDate: "2026-10-02",
+      hours: 2,
+      weight: 0,
+      deliverable: "현장 확인 사진",
+      deliverableKind: "photo",
+      deliverableCount: 2,
+      progress: 0,
+      status: "assigned",
+      reviewNote: "",
+      createdBy: "황우중",
+      createdAt: NOW,
+      updatedAt: NOW,
+      updatedBy: "crm-legacy-member",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(member, at("self-create")), order("self-create")));
+    await assertFails(set(ref(member, at("other-assignee")), order("other-assignee", { assigneeUid: "crm-admin" })));
+    await assertFails(set(ref(member, at("wrong-status")), order("wrong-status", { status: "done" })));
+    await assertFails(set(ref(member, at("forged-progress")), order("forged-progress", { progress: 70 })));
+    await assertFails(set(ref(member, at("forged-review")), order("forged-review", { reviewNote: "승인 완료" })));
+    await assertFails(set(ref(member, at("forged-updater")), order("forged-updater", { updatedBy: "crm-admin" })));
+    await assertFails(set(ref(member, at("empty-project")), order("empty-project", { projectId: "" })));
+    await assertFails(set(ref(marketing, at("marketing-create")), order("marketing-create", { assigneeUid: "crm-marketing" })));
+    await assertFails(set(ref(viewer, at("viewer-create")), order("viewer-create", { assigneeUid: "crm-viewer" })));
+    await assertSucceeds(set(ref(admin, at("admin-create")), order("admin-create", { progress: 0, updatedBy: "crm-admin" })));
+    await assertSucceeds(get(ref(member, at("self-create"))));
+    await assertFails(update(ref(member, at("self-create")), { title: "내용 바꾸기", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+  });
+
   it("keeps a work report's items and photos in the shape the document can print", async () => {
     // 이 문서는 건물주와 청창사 양쪽으로 나간다. 항목·상태·사진 모양이
     // 규칙과 코드에서 갈리면, 화면이 통과시킨 보고서를 서버가 막는다.

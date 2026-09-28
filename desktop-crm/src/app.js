@@ -4754,7 +4754,7 @@
   // 카드에서 그 셋을 접지 않는다. 접어 두면 받는 사람은 제목만 보고 시작하고,
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
-    orders: [], projects: [], members: [], capacity: [], objectives: [], objectivesAvailable: false, admin: false, canWork: false, uid: "",
+    orders: [], projects: [], members: [], capacity: [], objectives: [], objectivesAvailable: false, admin: false, canWork: false, canCreateOwnWorkOrder: false, uid: "",
     projectId: "", projectDetailTab: "overview", portfolioFilter: "__all", assigneeFilter: "__all", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
@@ -5043,6 +5043,7 @@
       workOrderState.objectivesAvailable = data && data.objectivesAvailable === true;
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
+      workOrderState.canCreateOwnWorkOrder = data && data.canCreateOwnWorkOrder === true;
       const nextWorkOrderUid = String((data && data.uid) || "");
       if (workOrderState.uid !== nextWorkOrderUid) { workOrderState.scope = workOrderState.admin ? "all" : "mine"; workOrderState.assigneeFilter = "__all"; }
       workOrderState.uid = String((data && data.uid) || "");
@@ -5643,7 +5644,7 @@
           ${(workOrderState.admin || workOrderState.canWork) && typeof api.exportWorkOutcomeDocument === "function" ? `<button type="button" class="mini-button" data-wo-report-download>성과보고서 Word·PPT</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-import>지시서 붙여넣기</button>` : ""}
           ${workOrderState.admin && P.missingSeeds(projects).length ? `<button type="button" class="mini-button" data-wo-seed>기본 프로젝트 ${P.missingSeeds(projects).length}개 만들기</button>` : ""}
-          ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}
+          ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : workOrderState.canCreateOwnWorkOrder ? `<button type="button" class="primary-button" data-wo-self-new>내 업무 추가</button>` : ""}
         </div>
       </section>
       ${status}
@@ -6157,7 +6158,9 @@
 
   function workOrderEditor(W, P, projects) {
     const draft = W.normalizeOrder(workOrderState.editing);
+    const selfCreate = workOrderState.canCreateOwnWorkOrder && !draft.createdAt;
     const people = workOrderState.members.filter(item => item && item.uid);
+    const self = people.find(item => item.uid === workOrderState.uid);
     const cleaningStatusLabels = { received: "접수", reviewing: "검토 중", quote_pending: "견적 대기", approval_pending: "승인 대기", scheduled: "일정 확정", in_progress: "작업 중", review_pending: "검수 대기", revision_requested: "보완 요청", completed: "완료", cancelled: "취소" };
     const options = people.map(item => `<option value="${esc(item.uid)}"${item.uid === draft.assigneeUid ? " selected" : ""}>${esc(item.displayName || item.email || item.uid)}</option>`).join("");
     const projectOptions = projects.map(item => `<option value="${esc(item.id)}"${item.id === draft.projectId ? " selected" : ""}>${esc(item.name)}</option>`).join("");
@@ -6167,7 +6170,7 @@
     return `<form class="wo-editor" data-wo-form>
       <h3>${esc(draft.createdAt ? "지시 고치기" : "새 지시")}</h3>
       <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="120" value="${esc(draft.title)}" required placeholder="예: 3층 누수 확인"></label>
-      <label><span>누가</span><select name="assigneeUid" required><option value="">고르기</option>${options}</select></label>
+      ${selfCreate ? `<label class="wide"><span>내 업무</span><strong>${esc(self?.displayName || workOrderState.uid)}</strong><input name="assigneeUid" type="hidden" value="${esc(workOrderState.uid)}"></label>` : `<label><span>누가</span><select name="assigneeUid" required><option value="">고르기</option>${options}</select></label>`}
       <label><span>어느 프로젝트</span><select name="projectId" required><option value="">프로젝트 선택</option>${projectOptions}</select></label>
       <label><span>연결 청소 요청</span><select name="cleaningOrderId"><option value="">연결 안 함</option>${cleaningOrderOptions}</select></label>
       <label><span>구분</span><select name="track"><option value="">기타</option>${trackOptions}</select></label>
@@ -6195,19 +6198,25 @@
     if (!W) return;
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = W.normalizeOrder(workOrderState.editing);
+    const selfCreate = workOrderState.canCreateOwnWorkOrder && !workOrderState.admin && !previous.createdAt;
+    if (!workOrderState.admin && (!selfCreate || !workOrderState.canCreateOwnWorkOrder || String(raw.assigneeUid || "") !== workOrderState.uid || previous.createdAt)) {
+      showToast("팀원은 본인 업무만 새로 추가할 수 있습니다.", "error");
+      return;
+    }
     if (!(workOrderState.projects || []).some(item => item.id === String(raw.projectId || ""))) {
       showToast("프로젝트를 선택하거나 먼저 새 프로젝트를 만들어 주세요.", "error");
       return;
     }
     const people = workOrderState.members;
-    const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
+    const chosenUid = selfCreate ? workOrderState.uid : String(raw.assigneeUid || "");
+    const chosen = people.find(item => item && item.uid === chosenUid) || null;
     const linkedOrder = cleaningOrderState.orders.find(item => item.id === String(raw.cleaningOrderId || "")) || null;
     if (raw.cleaningOrderId && !linkedOrder) return showToast("연결할 청소 요청을 찾지 못했습니다. 주문을 새로고침해 주세요.", "error");
     if (linkedOrder && previous.buildingId && String(previous.buildingId) !== String(linkedOrder.buildingId || "")) return showToast("다른 건물의 청소 요청은 이 업무에 연결할 수 없습니다.", "error");
     const checked = (previous.createdAt ? W.validateOrder : W.validatePublication)(Object.assign({}, previous, {
       id: previous.id || `wo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       title: String(raw.title || ""),
-      assigneeUid: String(raw.assigneeUid || ""),
+      assigneeUid: chosenUid,
       assigneeName: chosen ? (chosen.displayName || chosen.email || chosen.uid) : previous.assigneeName,
       dueDate: String(raw.dueDate || ""),
       startDate: String(raw.startDate || ""),
@@ -13153,12 +13162,24 @@
       return;
     }
     if (event.target.closest("[data-wo-new]")) {
+      if (!workOrderState.admin) return showToast("새 업무지시는 관리자만 발행할 수 있습니다.", "error");
       const W = workOrderCore();
       if (W) { workOrderState.editing = W.normalizeOrder({}); renderWorkOrderSurface(); }
       return;
     }
+    if (event.target.closest("[data-wo-self-new]")) {
+      if (!workOrderState.canCreateOwnWorkOrder || workOrderState.admin) return showToast("본인 업무를 추가할 권한이 없습니다.", "error");
+      const W = workOrderCore();
+      if (W) {
+        const member = workOrderState.members.find(item => item && item.uid === workOrderState.uid);
+        workOrderState.editing = W.normalizeOrder({ assigneeUid: workOrderState.uid, assigneeName: member?.displayName || workOrderState.uid });
+        renderWorkOrderSurface();
+      }
+      return;
+    }
     const woEdit = event.target.closest("[data-wo-edit]");
     if (woEdit) {
+      if (!workOrderState.admin) return showToast("발행된 업무 내용은 관리자만 수정할 수 있습니다.", "error");
       const W = workOrderCore();
       const found = W && workOrderState.orders.find(item => item && item.id === woEdit.dataset.woEdit);
       if (found) { workOrderState.editing = W.normalizeOrder(found); renderWorkOrderSurface(); }

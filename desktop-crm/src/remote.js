@@ -4486,6 +4486,7 @@ class FirebaseRemoteClient {
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",
+      canCreateOwnWorkOrder: session.role === "member" && session.marketingRole !== "marketing",
       uid: session.uid,
       loadedAt: new Date().toISOString(),
     };
@@ -4716,17 +4717,31 @@ class FirebaseRemoteClient {
 
   async saveWorkOrder(input) {
     const session = this.requireOfficeSession();
-    if (session.role !== "admin") {
-      throw createError("업무지시는 관리자만 낼 수 있습니다.", "WORK_ORDER_FORBIDDEN");
+    const admin = session.role === "admin";
+    const member = session.role === "member";
+    if (!admin && !member) {
+      throw createError("업무지시를 추가할 권한이 없습니다.", "WORK_ORDER_FORBIDDEN");
+    }
+    if (member && session.marketingRole === "marketing") {
+      throw createError("마케팅 전용 계정은 업무지시를 추가할 수 없습니다.", "WORK_ORDER_FORBIDDEN");
+    }
+    if (member && !String(input && input.projectId || "").trim()) {
+      throw createError("업무를 추가할 프로젝트를 선택해 주세요.", "PROJECT_REQUIRED");
     }
     const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const orderId = WorkOrderCore.normalizeOrder(source).id;
     if (!orderId) throw createError("지시 번호가 없습니다.", "ID_REQUIRED");
+    if (member && String(source.assigneeUid || "") !== session.uid) {
+      throw createError("팀원은 본인 업무만 추가할 수 있습니다.", "WORK_ORDER_FORBIDDEN");
+    }
     const location = `workOrders/${orderId}`;
     const snapshot = await this.dbReadWithEtag(location, false, guard);
     const existing = snapshot.value;
     this.assertSessionGuardActive(guard);
+    if (member && existing) {
+      throw createError("팀원은 새 업무만 추가할 수 있습니다. 기존 지시는 수정할 수 없습니다.", "WORK_ORDER_FORBIDDEN");
+    }
     const checked = existing ? WorkOrderCore.validateOrder(source) : WorkOrderCore.validatePublication(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     if (existing && WorkOrderCore.normalizeOrder(existing).status === "done") {
@@ -4736,12 +4751,12 @@ class FirebaseRemoteClient {
     const now = new Date().toISOString();
     const record = Object.assign({}, checked.order, {
       results: existing ? WorkOrderCore.normalizeOrder(existing).results : checked.order.results,
-      status: existing ? WorkOrderCore.normalizeOrder(existing).status : checked.order.status,
-      progress: existing ? WorkOrderCore.normalizeOrder(existing).progress : checked.order.progress,
+      status: existing ? WorkOrderCore.normalizeOrder(existing).status : member ? "assigned" : checked.order.status,
+      progress: existing ? WorkOrderCore.normalizeOrder(existing).progress : member ? 0 : checked.order.progress,
       reviewNote: existing ? WorkOrderCore.normalizeOrder(existing).reviewNote : "",
       latestProgressUpdateId: existing ? WorkOrderCore.normalizeOrder(existing).latestProgressUpdateId : "",
       progressUpdates: existing ? WorkOrderCore.normalizeOrder(existing).progressUpdates : [],
-      createdBy: (existing && existing.createdBy) || String(session.displayName || session.email || "관리자"),
+      createdBy: (existing && existing.createdBy) || String(session.displayName || session.email || (admin ? "관리자" : "팀원")),
       createdAt: (existing && existing.createdAt) || now,
       updatedAt: now,
       updatedBy: session.uid,

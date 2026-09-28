@@ -43,11 +43,15 @@ test("마케팅 전용 계정은 업무지시를 만지지 못한다", () => {
   }
 });
 
-test("지시는 관리자만 내고, 담당자는 자기 것만 옮긴다", () => {
+test("팀원은 본인 업무를 추가하고 관리자는 팀 업무를 발행한다", () => {
   const save = methodBody(remoteSource, "saveWorkOrder");
-  assert.match(save, /session\.role !== "admin"/u);
+  assert.match(save, /const member = session\.role === "member"/u);
+  assert.match(save, /source\.assigneeUid \\|\\| ""\) !== session\.uid/u);
+  assert.match(save, /member && existing/u);
   assert.match(save, /WORK_ORDER_FORBIDDEN/u);
   assert.match(save, /WorkOrderCore\.validateOrder/u);
+  assert.match(save, /member \? "assigned"/u);
+  assert.match(save, /member \? 0/u);
   // 끝난 일이 나중에 바뀌면 기록이 아니다.
   assert.match(save, /WORK_ORDER_DONE/u);
 
@@ -62,6 +66,21 @@ test("지시는 관리자만 내고, 담당자는 자기 것만 옮긴다", () =
   // 담당자가 지시 내용을 고치는 길을 막는다.
   assert.match(progress, /WorkOrderCore\.sameInstruction/u);
   assert.match(progress, /INSTRUCTION_LOCKED/u);
+});
+
+test("member gets a locked self-create flow but cannot edit an issued order", () => {
+  const render = appSource.slice(appSource.indexOf("function renderWorkOrders()"), appSource.indexOf("// 곧 마감", appSource.indexOf("function renderWorkOrders()")));
+  const editor = appSource.slice(appSource.indexOf("function workOrderEditor("), appSource.indexOf("async function saveWorkOrderFromForm(", appSource.indexOf("function workOrderEditor(")));
+  const save = appSource.slice(appSource.indexOf("async function saveWorkOrderFromForm("), appSource.indexOf("// 시간표 편집기에", appSource.indexOf("async function saveWorkOrderFromForm(")));
+  const click = appSource.slice(appSource.indexOf('if (event.target.closest("[data-wo-self-new]"))'), appSource.indexOf('if (event.target.closest("[data-wo-move]"))'));
+  assert.match(render, /data-wo-self-new/u);
+  assert.match(editor, /name="assigneeUid" type="hidden"/u);
+  assert.match(editor, /workOrderState\.uid/u);
+  assert.match(save, /raw\.assigneeUid.*workOrderState\.uid/u);
+  assert.match(save, /previous\.createdAt/u);
+  assert.match(click, /workOrderState\.canCreateOwnWorkOrder/u);
+  assert.match(click, /assigneeUid: workOrderState\.uid/u);
+  assert.match(click, /if \(!workOrderState\.admin\)/u);
 });
 
 test("규칙이 세 칸을 비워 두지 못하게 한다", () => {
