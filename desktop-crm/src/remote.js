@@ -4698,6 +4698,22 @@ class FirebaseRemoteClient {
   }
 
   // 지시를 내거나 고친다. 관리자만.
+  async linkWorkOrderProject(orderId, projectId) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("프로젝트 연결은 관리자만 할 수 있습니다.", "WORK_ORDER_FORBIDDEN");
+    const guard = this.captureSessionGuard();
+    const location = `workOrders/${String(orderId || "")}`;
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    const existing = snapshot.value;
+    if (!existing || existing.status === "done") throw createError("연결할 수 없는 업무입니다.", "WORK_ORDER_INVALID");
+    if (existing.projectId && existing.projectId !== projectId) throw createError("이미 다른 프로젝트에 연결된 업무입니다.", "WORK_ORDER_CONFLICT");
+    if (existing.projectId === projectId) return existing;
+    const record = { ...existing, projectId, updatedAt: new Date().toISOString(), updatedBy: session.uid };
+    await this.dbRequest(location, { method: "PATCH", body: { projectId, updatedAt: record.updatedAt, updatedBy: record.updatedBy } });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
   async saveWorkOrder(input) {
     const session = this.requireOfficeSession();
     if (session.role !== "admin") {

@@ -12,7 +12,7 @@ test('wallboard source reads the common ledger without copying contract details 
  const ledger={invoices:[{id:'i1',contractId:'private-contract',billingMonth:'2026-09',amount:100000,status:'approved'}],receipts:[{id:'r1',invoiceId:'i1',amount:40000,receivedAt:'2026-09-24',transactionRef:'secret-bank-ref',status:'approved'}]};
  const source=await loadWallboardSource({loadWorkOrders:async()=>({orders:[]}),loadBillingLedger:async()=>ledger,dbRequest:async()=>null},new Date('2026-09-25T00:00:00Z'));
  const model=board.project(source,'2026-09-25');
- assert.deepEqual(model.companyRevenue,{available:true,month:'2026-09',billed:100000,received:40000,receivable:60000,pendingCount:0,undatedPendingCount:0});
+ assert.deepEqual(model.companyRevenue,{available:true,month:'2026-09',billed:100000,received:40000,receivable:60000,pendingCount:0,undatedPendingCount:0,pendingAmount:0});
  assert.equal(JSON.stringify(model).includes('private-contract'),false);
  assert.equal(JSON.stringify(model).includes('secret-bank-ref'),false);
 });
@@ -23,11 +23,11 @@ test('empty or missing ledger is unavailable, never presented as confirmed zero 
  assert.match(board.scene(board.project({orders:[]},'2026-09-25'),'companyRevenue'),/집계 대기/);
 });
 
-test('draft-only ledger publishes a pending count without presenting unapproved money as zero',()=>{
+test('draft-only ledger shows expected revenue separately from confirmed billing and receipts',()=>{
  const model=board.project({orders:[],billingLedger:{invoices:[{id:'draft1',billingMonth:'2026-09',amount:100000,status:'draft'}],receipts:[]}},'2026-09-25');
- assert.deepEqual(model.companyRevenue,{available:false,month:'2026-09',billed:null,received:null,receivable:null,pendingCount:1,undatedPendingCount:0});
+ assert.deepEqual(model.companyRevenue,{available:true,month:'2026-09',billed:0,received:0,receivable:0,pendingCount:1,undatedPendingCount:0,pendingAmount:100000});
  assert.match(board.scene(model,'companyRevenue'),/확인 대기 1건/);
- assert.doesNotMatch(board.scene(model,'companyRevenue'),/0원/);
+ assert.match(board.scene(model,'companyRevenue'),/입금 예정 매출/);
  assert.doesNotThrow(()=>validatePublication({model,playlist:[{key:'companyRevenue',enabled:true,seconds:30}],notice:'',dataDate:'2026-09-25'}));
 });
 
@@ -59,7 +59,7 @@ test('automatic TV playlist includes monthly revenue and web client offers its s
  const js=await (await wallboardWebAssetResponse('/tv/app.js')).text();
  assert.match(js,/companyRevenue/);
  assert.match(js,/확정 청구액/);
- assert.match(js,/확정 입금액/);
+ assert.match(js,/실제 입금액/);assert.match(js,/입금 예정 매출/);
 });
 
 test('billing read failure leaves other TV scenes publishable and labels revenue connection pending',async()=>{

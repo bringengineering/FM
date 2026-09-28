@@ -209,6 +209,7 @@
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     weeklyReports: ["CRM 활동을 모아 한 주 업무를 정리합니다", "주간업무보고서"],
+    teamTraining: ["영상·토론·브링 업무 적용까지 주 60분", "팀 교육 커리큘럼"],
     projectRoadmap: ["누가 어떤 프로젝트를 맡았고 다음 일정이 언제인지", "프로젝트 로드맵"],
     companyGoals: ["연간·반기·분기·월간 목표와 확인된 달성률", "회사 목표·비전"],
     companyWallboard: ["업무를 시각화합니다 · TV 원격 연결 전 미리보기", "회사 운영보드"],
@@ -1494,7 +1495,7 @@
       officeFolder?.classList.add("open");
       officeFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
     }
-    const projectView = ["weeklyReports", "projectRoadmap", "companyGoals", "workOrders", "cases"].includes(currentView);
+    const projectView = ["weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "cases"].includes(currentView);
     const projectFolder = document.querySelector('[data-nav-folder="project"]');
     projectFolder?.classList.toggle("active", projectView);
     if (projectView) {
@@ -1553,6 +1554,7 @@
     else if (currentView === "forms") renderForms();
     else if (currentView === "growth") renderGrowth();
     else if (currentView === "weeklyReports") renderWeeklyReports();
+    else if (currentView === "teamTraining") renderTeamTraining();
     else if (currentView === "projectRoadmap") renderProjectRoadmap();
     else if (currentView === "companyGoals") renderCompanyGoals();
     else if (currentView === "companyWallboard") {
@@ -3969,7 +3971,16 @@
     catch (error) { return `<section class="ai-ops-panel billing-report-comparison"><h3>확정 장부 비교</h3><p role="alert">청구 장부를 검증할 수 없습니다: ${esc(billingError(error))}</p></section>`; }
     const hasConfirmed = state.ledger.invoices.some(item => item.status === "approved") || state.ledger.receipts.some(item => item.status === "approved");
     const confirmedMoney = amount => hasConfirmed ? esc(krw(amount)) : "집계 대기";
-    return `<section class="ai-ops-panel billing-report-comparison"><header><div><h3>계약 표시와 확정 장부 비교</h3><p>기존 계약 표시 기준은 업무 참고용입니다. 실제 입금은 증빙을 확인해 확정한 장부 기준입니다.</p></div></header><div class="billing-ledger-totals"><div><span>기존 계약 표시 기준 · 매출</span><strong>${esc(krw(report.finance.revenue))}</strong></div><div><span>기존 계약 표시 기준 · 입금 완료</span><strong>${esc(krw(report.finance.received))}</strong></div><div><span>확정 장부 기준 · 청구액</span><strong>${confirmedMoney(summary.billed)}</strong></div><div><span>확정 장부 기준 · 실제 입금액</span><strong>${confirmedMoney(summary.received)}</strong></div><div><span>확정 장부 기준 · 누적 미수금</span><strong>${confirmedMoney(summary.receivable)}</strong></div>${summary.overpayment ? `<div><span>초과입금 확인</span><strong>${esc(krw(summary.overpayment))}</strong></div>` : ""}</div><p>승인 대기 초안 ${summary.pendingCount}건은 확정 금액에 포함되지 않습니다.</p></section>`;
+    const oneOffNames = new Map([
+      ["inv_202609_flower_shop", { name: "꽃 집", date: "2026-09-17", newSite: true }],
+      ["inv_202609_woomugae88", { name: "우무개로 88", date: "2026-09-23" }],
+      ["inv_202609_ihwa3gil1014", { name: "이화3길 10-14", date: "2026-09-22", newSite: true }],
+      ["inv_202609_sunlightvilla", { name: "햇빛빌라", date: "2026-09-29" }],
+    ]);
+    const oneOff = state.ledger.invoices.filter(item => item.billingMonth === report.month && oneOffNames.has(item.id) && item.status !== "void");
+    const oneOffTotal = oneOff.filter(item => item.status === "draft").reduce((sum, item) => sum + item.amount, 0);
+    const oneOffHtml = oneOff.length ? `<div class="one-off-revenue"><header><h4>9월 용역 · 입금 예정 ${esc(krw(oneOffTotal))}</h4><small>청구 초안 · 실제 입금과 별도</small></header><div class="one-off-revenue-list">${oneOff.map(item => { const info = oneOffNames.get(item.id); return `<article><b>${esc(info.name)}</b><span>${esc(info.date)}</span><strong>${esc(krw(item.amount))}</strong><small>${info.newSite ? "신규 · 고객/건물 미연결" : "입금 예정"}</small></article>`; }).join("")}</div></div>` : "";
+    return `<section class="ai-ops-panel billing-report-comparison"><header><div><h3>계약 표시와 확정 장부 비교</h3><p>기존 계약 표시 기준은 업무 참고용입니다. 실제 입금은 증빙을 확인해 확정한 장부 기준입니다.</p></div></header><div class="billing-ledger-totals"><div><span>기존 계약 표시 기준 · 매출</span><strong>${esc(krw(report.finance.revenue))}</strong></div><div><span>기존 계약 표시 기준 · 입금 완료</span><strong>${esc(krw(report.finance.received))}</strong></div><div><span>확정 장부 기준 · 청구액</span><strong>${confirmedMoney(summary.billed)}</strong></div><div><span>확정 장부 기준 · 실제 입금액</span><strong>${confirmedMoney(summary.received)}</strong></div><div><span>확정 장부 기준 · 누적 미수금</span><strong>${confirmedMoney(summary.receivable)}</strong></div>${summary.overpayment ? `<div><span>초과입금 확인</span><strong>${esc(krw(summary.overpayment))}</strong></div>` : ""}</div><p>승인 대기 초안 ${summary.pendingCount}건은 확정 금액에 포함되지 않습니다.</p>${oneOffHtml}</section>`;
   }
 
   async function requestSalesAutomationDraft(prospectId) {
@@ -5528,7 +5539,6 @@
       scoped = scoped.filter(item => visibleIds.has(item.id));
     }
     const periodEditing = workOrderState.editing || workOrderState.projectEditing || workOrderState.capacityEditing || workOrderState.importOpen;
-    const periodControls = `<div class="office-panel"><div role="group" aria-label="업무와 성과 조회 기간">${[["current-week", "이번 주"], ["previous-week", "지난주"], ["all", "전체 기간"]].map(([key, label]) => `<button type="button" class="mini-button" data-performance-period="${key}" aria-pressed="${period === key}" ${periodEditing ? "disabled" : ""}>${label}</button>`).join("")}</div><p>${period === "all" ? "전체 기간 업무" : periodSummary && periodSummary.available ? `${esc(periodSummary.range.start)} ~ ${esc(periodSummary.range.end)} · 일정이 겹치는 업무` : "기간 조회 확인 필요"} · 목록과 성과에 같은 기간을 적용합니다.</p>${periodSummary && periodSummary.diagnostics.undated ? `<p>일정 확인 필요 ${periodSummary.diagnostics.undated}건 · 전체 기간에서 확인하세요.</p>` : ""}${periodEditing ? "<p>작성 내용을 보존하기 위해 편집 종료 후 기간을 변경할 수 있습니다.</p>" : ""}</div>`;
     const summary = P.summarize(scoped, today);
     const orphans = workOrderState.orders.filter(item => !item.projectId).length;
 
@@ -5626,18 +5636,16 @@
       ${status}
       ${!workspace && selected === "__all" ? `<div class="info-box">프로젝트 화면 구성을 불러오지 못했습니다. 기존 업무 목록은 아래에서 계속 사용할 수 있습니다.</div>` : ""}
       ${projectHome}
-      ${selected === "__all" ? renderCompanyStrategy() : ""}
       ${tabs && !projectHome && !actualProject ? `<div class="wo-project-tabs">${tabs}</div>` : ""}
       ${projectDetail}
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
       ${workOrderState.importOpen ? directiveImporter() : ""}
       ${workOrderState.capacityEditing ? capacityEditor() : ""}
-      ${!actualProject || projectDetailTab === "orders" ? `${weeklyExecutionPanel()}${periodControls}` : ""}
       ${!actualProject || projectDetailTab === "orders" ? `
       <header class="wo-action-heading"><h3>${workOrderState.scope === "mine" ? "내 업무 · 결과 제출" : "업무 목록 · 제출 결과 검수"}</h3><p>${workOrderState.loading ? "업무를 불러오는 중입니다." : workOrderState.error ? "조회 오류를 확인한 뒤 다시 불러와 주세요." : "업무별 완료 기준을 확인하고 결과물과 증빙을 제출하세요. 제출 후 대표 검수를 거칩니다."}</p></header>
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">${workOrderState.loading ? "불러오는 중…" : workOrderState.error ? "조회에 실패했습니다. 새로고침으로 다시 확인하세요." : "이 조회 범위에 등록된 지시가 없습니다. 프로젝트와 내 것만/전체 선택을 확인하세요."}</div>`}</div>` : ""}
-      ${!actualProject ? `<details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>${reportPanel()}</details>` : projectDetailTab === "reports" ? `<section class="project-workspace-tab-content" aria-label="보고·검수">${periodControls}${reportPanel()}${projectWeeklyReportWorkspace(project, today)}</section>` : ""}
+      ${!actualProject ? `<details class="office-panel wo-performance-disclosure"><summary>성과 현황 · 제출 메모·검수 의견 보기</summary>${reportPanel()}</details>` : projectDetailTab === "reports" ? `<section class="project-workspace-tab-content" aria-label="보고·검수">${reportPanel()}${projectWeeklyReportWorkspace(project, today)}</section>` : ""}
       ${!actualProject ? `<details class="office-panel wo-planning-disclosure"><summary>계획 상세 · 주간 지시서·가용시간·진행표</summary>${planningPanel()}</details>` : projectDetailTab === "roadmap" ? `<section class="project-workspace-tab-content" aria-label="로드맵">${planningPanel()}</section>` : ""}`;
   }
 
@@ -6147,7 +6155,7 @@
       <h3>${esc(draft.createdAt ? "지시 고치기" : "새 지시")}</h3>
       <label class="wide"><span>무슨 일인가</span><input type="text" name="title" maxlength="120" value="${esc(draft.title)}" required placeholder="예: 3층 누수 확인"></label>
       <label><span>누가</span><select name="assigneeUid" required><option value="">고르기</option>${options}</select></label>
-      <label><span>어느 프로젝트</span><select name="projectId"><option value="">프로젝트 없음</option>${projectOptions}</select></label>
+      <label><span>어느 프로젝트</span><select name="projectId" required><option value="">프로젝트 선택</option>${projectOptions}</select></label>
       <label><span>연결 청소 요청</span><select name="cleaningOrderId"><option value="">연결 안 함</option>${cleaningOrderOptions}</select></label>
       <label><span>구분</span><select name="track"><option value="">기타</option>${trackOptions}</select></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}"></label>
@@ -6174,6 +6182,10 @@
     if (!W) return;
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = W.normalizeOrder(workOrderState.editing);
+    if (!(workOrderState.projects || []).some(item => item.id === String(raw.projectId || ""))) {
+      showToast("프로젝트를 선택하거나 먼저 새 프로젝트를 만들어 주세요.", "error");
+      return;
+    }
     const people = workOrderState.members;
     const chosen = people.find(item => item && item.uid === String(raw.assigneeUid || "")) || null;
     const linkedOrder = cleaningOrderState.orders.find(item => item.id === String(raw.cleaningOrderId || "")) || null;
@@ -9933,6 +9945,28 @@
     </div>`;
   }
 
+  function renderTeamTraining() {
+    const course = window.BringTeamTraining;
+    if (!course || !Array.isArray(course.weeks)) {
+      main.innerHTML = `<section class="operations-hero"><div><h2>팀 교육 커리큘럼</h2><p>교육 자료를 불러오지 못했습니다.</p></div></section>`;
+      return;
+    }
+    const cards = course.weeks.map(item => `<details class="team-training-week"${item.week === 1 ? " open" : ""}>
+      <summary><span class="team-training-week-number">${String(item.week).padStart(2, "0")}</span><span class="team-training-week-title"><strong>${esc(item.title)}</strong><small>${item.videos.length ? `영상 ${item.videoMinutes}분 · 토론·적용 포함 60분` : "영상 없이 발표·피드백 60분"}</small></span><span class="team-training-week-chevron" aria-hidden="true">⌄</span></summary>
+      <div class="team-training-week-body">
+        ${item.videos.length ? `<section><h4>시청 자료</h4><ul class="team-training-video-list">${item.videos.map(video => `<li><a href="${esc(video.url)}" target="_blank" rel="noopener noreferrer"><span>${esc(video.title)}</span><small>${esc(video.duration)} · 영상 열기 ↗</small></a></li>`).join("")}</ul>${item.videoMinutes > 35 ? `<p class="team-training-note">60분 수업에 맞춰 지정 구간만 시청하고 나머지는 참고자료로 활용합니다.</p>` : ""}</section>` : `<section><h4>최종발표</h4><p>발표·질문·대표 피드백으로 구성합니다. 발표 항목: 팀 목적, R&amp;R, 위임 업무와 지시서, 월간 목표·지표, 칸반보드, 반복업무 체크리스트, 주간회의, 원온원, 30일 실행계획.</p></section>`}
+        <div class="team-training-output-grid"><section><h4>이번 주 결과물</h4><p>${esc(item.deliverable)}</p></section><section><h4>브링 업무에 적용</h4><p>${esc(item.application)}</p></section></div>
+        <div class="team-training-record"><span>수업 뒤에는 적용 내용·담당자·기한·다음 주 확인 결과를 남깁니다.</span><button type="button" class="secondary-button" data-view="workOrders">내 교육 업무지시 열기 →</button></div>
+      </div>
+    </details>`).join("");
+    main.innerHTML = `<section class="team-training-page">
+      <header class="team-training-hero"><div><span class="team-training-eyebrow">BRING · PEOPLE DEVELOPMENT</span><h2>${esc(course.title)}</h2><p>매주 60분, 총 16주·16시간. 강의에서 배운 내용을 실제 브링 업무 결과물로 연결합니다.</p></div><div class="team-training-total"><strong>16</strong><span>주 과정</span><small>주 60분 · 총 16시간</small></div></header>
+      <section class="team-training-method"><div><strong>매주 진행 방식</strong><span>이전 실행 확인 → 영상 학습 → 토론 → 업무 적용</span></div><div class="team-training-timebar" aria-label="60분 수업 구성"><span style="flex:5">5분<br>확인</span><span style="flex:35">영상<br>최대 35분</span><span style="flex:10">토론<br>10분</span><span style="flex:10">적용·약속<br>10분</span></div></section>
+      <div class="team-training-heading"><div><h3>16주 학습 로드맵</h3><p>주차를 눌러 영상, 실무 결과물, 브링 업무 적용 내용을 확인하세요.</p></div><span>${course.weeks.length}개 주차</span></div>
+      <div class="team-training-weeks">${cards}</div>
+      <aside class="team-training-footer"><strong>공통 기록 원칙</strong><p>감상문 대신 실제 적용 결과 하나를 남깁니다: 이번 주 배운 것 → 브링에 적용할 것 → 담당자 → 실행기한 → 다음 주 확인 결과.</p><button type="button" class="secondary-button" data-view="workOrders">직원별 교육 업무 확인하기 →</button></aside>
+    </section>`;
+  }
   function renderWeeklyReports() {
     const W = weeklyReportCore();
     if (!W) {
@@ -17287,7 +17321,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

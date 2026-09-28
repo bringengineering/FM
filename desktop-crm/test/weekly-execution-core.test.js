@@ -38,7 +38,7 @@ test('UI renders guidance for members and draft selection only for admins', () =
   assert.ok(!member.includes('data-weekly-draft='));
   context.workOrderState.admin = true;
   assert.ok(vm.runInContext('weeklyExecutionPanel()', context).includes('data-weekly-draft='));
-  assert.ok(app.includes('${weeklyExecutionPanel()}'));
+  assert.ok(!app.includes('${weeklyExecutionPanel()}'));
   assert.ok(source('index.html').indexOf('./weekly-execution-core.js') < source('index.html').indexOf('./app.js'));
 });
 test('selection handler only opens existing editor and does not persist', () => {

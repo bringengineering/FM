@@ -11,7 +11,7 @@ const defaultPlaylist = [
   ['notice', 30],
   ['strategy', 30],
   ['companyRevenue', 30]
-].map(([key, seconds]) => ({ key, enabled: true, seconds }));
+].map(([key, seconds]) => ({ key, enabled: key !== 'issues', seconds }));
 
 function createWallboardLiveSync({
   getIdentity,

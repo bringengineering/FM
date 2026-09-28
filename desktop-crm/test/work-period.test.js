@@ -21,7 +21,7 @@ test('rendered cards and performance share raw date scope without server writes'
  assert.ok(!render.includes('saveWorkOrder'));
  ctx.workOrderState.performancePeriod='current-week';ctx.workOrderState.performanceAvailable=false;
  assert.doesNotThrow(()=>ctx.renderWorkOrders());
- assert.ok(ctx.main.innerHTML.includes('기간 조회 확인 필요'));
+ assert.ok(!ctx.main.innerHTML.includes('업무와 성과 조회 기간'));
 });
 test('period selector preserves input, excludes bad dates, includes overlapping work',()=>{
  const orders=[{id:'a',status:'doing',startDate:'2026-09-10',dueDate:'2026-09-18'}, {id:'b',status:'assigned',dueDate:'2026-09-13'}, {id:'c',status:'assigned',dueDate:'2026-02-30'}];

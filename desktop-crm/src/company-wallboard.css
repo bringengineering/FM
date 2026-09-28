@@ -15,6 +15,22 @@
 .wb-overall-card>.wb-progress-ring{grid-column:1}
 .wb-overall-card>.wb-progress-ring+div{grid-column:2;min-width:0;display:grid;gap:3px}
 @media(max-height:800px){.wb-roadmap-board>.wb-empty{padding:35px 20px}}
+
+/* The roadmap has two summary cards; let them fill the screen evenly. */
+.wb-roadmap-performance{grid-template-columns:repeat(2,minmax(0,1fr))}
+.wb-stage{font-size:clamp(18px,1.15vw,22px)}
+.wb-stage h1{font-size:clamp(27px,1.9vw,36px)}
+.wb-stage time{font-size:clamp(16px,1.1vw,21px)}
+.wb-roadmap-performance>.wb-performance-card{min-width:0}
+.wb-overall-card{grid-template-columns:82px minmax(0,1fr);align-content:start;column-gap:16px}
+.wb-overall-card>.wb-progress-ring+div{min-width:0;overflow-wrap:normal;word-break:keep-all}
+.wb-overall-card>.wb-progress-ring+div>b{font-size:clamp(16px,1.4vw,22px);line-height:1.3}
+.wb-overall-card>.wb-review-metric{min-width:0}
+.wb-overall-card>.wb-health-mini{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.wb-overall-card>.wb-health-mini span{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:6px;white-space:nowrap;font-size:clamp(12px,1vw,16px);word-break:keep-all}
+.wb-overall-card>.wb-health-mini b{font-size:clamp(14px,1.2vw,19px)}
+.wb-deadline-list p{grid-template-columns:58px minmax(0,1fr)}
+@media(max-width:900px){.wb-roadmap-performance{grid-template-columns:1fr}.wb-overall-card{grid-template-columns:72px minmax(0,1fr)}}
 .wb-portfolio-bars>div{grid-template-columns:minmax(190px,1.1fr) minmax(180px,2fr) 80px 150px;gap:16px}
 .wb-portfolio-bars>div>strong,.wb-portfolio-review{display:grid;gap:3px;justify-items:end}
 .wb-portfolio-bars>div>strong small,.wb-portfolio-review small{font-size:12px;font-weight:600;color:#52616f}
@@ -70,3 +86,6 @@
 .wb-stage .wb-executive-overview{grid-template-rows:minmax(0,1fr)}
 .wb-stage .wb-overview-bottom{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr);grid-template-areas:"clean trend"}
 .wb-stage .wb-overview-cleaning header small,.wb-stage .wb-overview-trend small,.wb-stage .wb-overview-trend b,.wb-stage .wb-portfolio-bars small,.wb-stage .wb-review-metric small{font-size:var(--wb-font-small)}
+.wb-summary{height:100%;min-height:480px;display:grid;grid-template-rows:1.1fr 1fr;gap:18px}.wb-summary-head,.wb-summary-grid .wb-card{background:#fff;border:1px solid #e5e8eb;border-radius:18px;padding:24px}.wb-summary-head{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px}.wb-summary-head>span{color:#64748b;font-weight:700}.wb-summary-head h2{font-size:30px;margin:0}.wb-summary-head strong{font-size:clamp(64px,8vw,140px);color:#1764c0;line-height:1}.wb-summary-head small{font-size:17px;color:#64748b}.wb-summary-meter{height:14px;width:100%;background:#e8eef6;border-radius:20px;overflow:hidden}.wb-summary-meter i{display:block;height:100%;background:#3182f6}.wb-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.wb-summary-grid .wb-card{display:flex;flex-direction:column;justify-content:center;gap:9px;min-width:0}.wb-summary-grid .wb-card span{font-size:18px}.wb-summary-grid .wb-card strong{font-size:clamp(30px,3.6vw,64px)}.wb-summary-grid .wb-card small{font-size:15px}@media(max-width:1050px){.wb-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wb-summary{grid-template-rows:1fr 1.1fr}}
+
+.wb-revenue-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.wb-revenue-grid .wb-card{min-width:0}.wb-revenue-grid .wb-card strong{font-size:clamp(25px,2.5vw,46px)}@media(max-width:1050px){.wb-revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

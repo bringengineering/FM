@@ -191,3 +191,83 @@ test("bridge rendezvous file is removed only when this bridge closes", async t =
   await fs.rm(context.userDataPath, { recursive: true, force: true });
   t.after(async () => { await fs.rm(context.userDataPath, { recursive: true, force: true }); });
 });
+
+test("preview links new work to a verified existing project", async t => {
+  const projectId = "existing-project";
+  const context = await setup({ loadWorkOrders: async () => ({ members: [], orders: [], projects: [{ id: projectId, name: "콘텐츠 마케팅" }] }) });
+  t.after(async () => { await context.bridge.close(); await fs.rm(context.userDataPath, { recursive: true, force: true }); });
+  const missing = await request(context.bridge, "/v1/preview", { projectId: "missing", workOrders: [order()] });
+  assert.equal(missing.body.valid, false);
+  assert.equal(missing.body.projectError.code, "PROJECT_NOT_FOUND");
+  const preview = await request(context.bridge, "/v1/preview", { projectId, workOrders: [order()] });
+  assert.equal(preview.body.valid, true);
+  assert.equal(preview.body.workOrders[0].projectId, projectId);
+  const published = await request(context.bridge, "/v1/publish", { previewId: preview.body.previewId, approvalPhrase: preview.body.approvalPhrase });
+  assert.equal(published.body.complete, true);
+  assert.equal(context.savedProjects.length, 0);
+  assert.equal(context.savedOrders[0].projectId, projectId);
+});
+
+test("approved project groups preview before linking the existing fifteen orders", async t => {
+  const orders=Array.from({length:15},(_,index)=>({id:`o${index}`,title:`업무 ${index}`,status:'assigned',projectId:'',dueDate:'2026-10-02'}));
+  const projects=[];
+  const context=await setup({loadWorkOrders:async()=>({orders,projects}),saveProject:async value=>{projects.push(value);return value;},linkWorkOrderProject:async(id,projectId)=>{const found=orders.find(item=>item.id===id);found.projectId=projectId;return found;}});
+  t.after(async()=>{await context.bridge.close();await fs.rm(context.userDataPath,{recursive:true,force:true});});
+  const groups=Array.from({length:5},(_,index)=>({name:`프로젝트 ${index}`,orderIds:orders.slice(index*3,index*3+3).map(item=>item.id)}));
+  const preview=await request(context.bridge,'/v1/link-project-groups',{groups,dryRun:true});
+  assert.equal(preview.status,200);assert.equal(preview.body.writesPerformed,false);assert.equal(projects.length,0);
+  const result=await request(context.bridge,'/v1/link-project-groups',{groups,dryRun:false});
+  assert.equal(result.status,200);assert.equal(result.body.complete,true);assert.equal(projects.length,5);
+  assert.equal(orders.filter(item=>item.projectId).length,15);
+  const repeated=await request(context.bridge,'/v1/link-project-groups',{groups,dryRun:false});
+  assert.equal(repeated.status,200);assert.equal(projects.length,5);
+});
+
+test("September service revenue stays in draft and retries do not duplicate invoices", async t => {
+  const invoices=[];
+  const context=await setup({loadBillingLedger:async()=>({invoices,receipts:[]}),saveBillingInvoice:async input=>{invoices.push({...input.record,revision:1});return input.record;}});
+  t.after(async()=>{await context.bridge.close();await fs.rm(context.userDataPath,{recursive:true,force:true});});
+  const preview=await request(context.bridge,'/v1/september-service-revenue',{dryRun:true});
+  assert.equal(preview.status,200);assert.equal(preview.body.total,690000);assert.equal(invoices.length,0);
+  const published=await request(context.bridge,'/v1/september-service-revenue',{dryRun:false});
+  assert.equal(published.status,200);assert.equal(invoices.length,4);assert.ok(invoices.every(item=>item.status==='draft'));
+  const repeated=await request(context.bridge,'/v1/september-service-revenue',{dryRun:false});
+  assert.equal(repeated.status,200);assert.equal(invoices.length,4);
+});
+test("TV pairing requires admin bridge token and an exact eight-character code", async t => {
+  const calls = [];
+  const context = await setup({ wallboardAdmin: async input => { calls.push(input); return input.action === "list" ? { version: 2, devices: [] } : { ok: true, status: "approved" }; } });
+  t.after(async () => { await context.bridge.close(); await fs.rm(context.userDataPath, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${context.bridge.port}`;
+  const denied = await fetch(`${base}/v1/wallboard-devices`);
+  assert.equal(denied.status, 401);
+  const listed = await fetch(`${base}/v1/wallboard-devices`, { headers: { authorization: `Bearer ${context.bridge.token}` } });
+  assert.equal(listed.status, 200);
+  assert.equal((await listed.json()).version, 2);
+  const invalid = await request(context.bridge, "/v1/wallboard-approve", { code: "1234567", name: "사무실 TV" });
+  assert.equal(invalid.status, 422);
+  const approved = await request(context.bridge, "/v1/wallboard-approve", { code: "48DC7842", name: "회사 운영 TV" });
+  assert.equal(approved.status, 200);
+  assert.deepEqual(calls, [{ action: "list" }, { action: "approve", code: "48DC7842", name: "회사 운영 TV" }]);
+});
+
+test("shorter TV rotation is available only through the authenticated admin bridge", async t => {
+  const calls=[];
+  const context=await setup({wallboardAdmin:async input=>{calls.push(input);return {ok:true,version:8,playlist:[]};}});
+  t.after(async()=>{await context.bridge.close();await fs.rm(context.userDataPath,{recursive:true,force:true});});
+  const denied=await request(context.bridge,'/v1/wallboard-shorten',null,'wrong-token');
+  assert.equal(denied.status,401);assert.equal(calls.length,0);
+  const result=await request(context.bridge,'/v1/wallboard-shorten');
+  assert.equal(result.status,200);assert.equal(result.body.version,8);
+  assert.deepEqual(calls,[{action:'shorten'}]);
+});
+test("issues can be removed from the TV playlist through the authenticated admin bridge", async t => {
+  const calls=[];
+  const context=await setup({wallboardAdmin:async input=>{calls.push(input);return {ok:true,version:9,playlist:[{key:'issues',enabled:false,seconds:15}]};}});
+  t.after(async()=>{await context.bridge.close();await fs.rm(context.userDataPath,{recursive:true,force:true});});
+  const denied=await request(context.bridge,'/v1/wallboard-hide-issues',null,'wrong-token');
+  assert.equal(denied.status,401);assert.equal(calls.length,0);
+  const result=await request(context.bridge,'/v1/wallboard-hide-issues');
+  assert.equal(result.status,200);assert.equal(result.body.playlist[0].enabled,false);
+  assert.deepEqual(calls,[{action:'hide-issues'}]);
+});

@@ -117,9 +117,9 @@ test('TV first screen and person screen show reviewed work as counts and percent
  ]},'2026-09-28');
  const overview=C.scene(m,'overview');
  const people=C.scene(m,'people');
- assert.match(overview,/업무 검수 완료/u);
- assert.match(overview,/1\/2건/u);
- assert.match(overview,/기한 초과 <b>1건/u);
+ assert.match(overview,/전체 업무 완료율/u);
+ assert.match(overview,/50%/u);
+ assert.match(overview,/기한 초과/u);assert.match(overview,/<strong>1건<\/strong>/u);
  assert.match(people,/검수 완료 50%/u);
  assert.match(people,/남은 업무 1건/u);
 });
@@ -163,6 +163,20 @@ test('roadmap projects entered progress and excludes private source fields',()=>
  assert.ok(!JSON.stringify(m).includes('private task'));
  assert.ok(!JSON.stringify(m).includes('private@example.com'));
  assert.ok(!JSON.stringify(m).includes('private goal'));
+});
+test('roadmap schedules unlinked CRM work by assignee without inventing projects or exposing contact details',()=>{
+ const syntheticContact=['010','1234','5678'].join('-');
+ const model=C.project({projects:[],orders:[
+  {id:'o1',title:'유튜브 기획하기',assigneeUid:'u1',assigneeName:'황우중',status:'assigned',startDate:'2026-09-28',dueDate:'2026-10-02',progress:0},
+  {id:'o2',title:'고객 ' + syntheticContact + ' 방문',assigneeUid:'u1',assigneeName:'황우중',status:'doing',dueDate:'2026-09-29',progress:20}
+ ],members:[{uid:'u1',displayName:'황우중'}],calendar:{serviceRecords:[]}},'2026-09-28');
+ assert.equal(model.portfolio.projects.length,0);
+ assert.equal(model.roadmap.lanes.length,1);
+ assert.deepEqual(model.roadmap.lanes[0].assignments.map(item=>item.projectName),['유튜브 기획하기','업무명 확인 필요']);
+ assert.equal(model.roadmap.lanes[0].assignments[0].endDate,'2026-10-02');
+ assert.match(C.scene(model,'roadmap',0),/유튜브 기획하기/u);
+ assert.match(C.scene(model,'roadmap',0),/2건 업무지시/u);
+ assert.doesNotMatch(JSON.stringify(model),new RegExp(syntheticContact));
 });
 test('schedule exposes safe titles and owners for today and current week',()=>{
  const m=C.project({orders:[],projects:[],members:[{uid:'staff-1',displayName:'김현진'}],calendar:{serviceRecords:[
@@ -245,8 +259,8 @@ test('roadmap separates entered progress from manager-reviewed completion',()=>{
  assert.match(html,/1\/2건/);
  assert.match(html,/건수 기준/);
  const empty=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap',0);
- assert.match(empty,/업무 검수 완료율/);
- assert.match(empty,/집계 대기/);
+ assert.match(empty,/업무지시 진행 현황/);
+ assert.match(empty,/0건 업무지시/);
  const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
  assert.match(css,/\.wb-review-metric/u);
 });
@@ -261,8 +275,8 @@ test('company progress keeps completed projects in the displayed denominator',()
 });
 test('empty portfolio displays no denominator rather than a false zero percent',()=>{
  const html=C.scene(C.project({orders:[],projects:[]},'2026-09-24'),'roadmap');
- assert.match(html,/전체 프로젝트 진도/);
- assert.match(html,/대상 프로젝트 없음/);
+ assert.match(html,/업무지시 진행 현황/);
+ assert.match(html,/0건 업무지시/);
  assert.doesNotMatch(html,/wb-progress-ring[^>]*><strong>0%<\/strong>/);
 });
 
@@ -315,7 +329,7 @@ test('integrated overview keeps only cleaning and weekly summary visible instead
  const cleaningOperations={schemaVersion:1,total:7,open:5,completed:2,overdue:1,byStatus:{received:1,reviewing:0,quote_pending:0,approval_pending:0,scheduled:1,in_progress:2,review_pending:1,revision_requested:0,completed:2,cancelled:0},updatedAt:'2026-09-27T01:59:00.000Z'};
  const model=C.project({projects:[{id:'p1',name:'현장 데이터 구축',status:'active',startDate:'2026-09-20',endDate:'2026-10-10',progress:60}],orders:[{id:'o1',projectId:'p1',status:'doing',progress:60,assigneeUid:'u1',assigneeName:'김현진',dueDate:'2026-09-28'}],members:[{uid:'u1',displayName:'김현진'}],calendar:{serviceRecords:[{scheduledDate:'2026-09-27',startTime:'10:00',status:'planned',serviceType:'cleaning',owner:'김현진'}]},cleaningOperations},'2026-09-27');
  const html=C.scene(model,'overview',0,'','09:00','week','2026-09-27');
- for(const expected of ['wb-overview','프로젝트 로드맵','wb-roadmap-board','전체 진행률','다가오는 마감','청소 운영','신규 접수','진행 중','검토 대기','완료','오늘 일정','10:00'])assert.ok(html.includes(expected),`missing ${expected}`);
+ for(const expected of ['wb-summary','전체 업무 완료율','전체 업무','완료','기한 초과','검수 대기'])assert.ok(html.includes(expected),`missing ${expected}`);
  assert.doesNotMatch(html,/010-\d{3,4}-\d{4}/u);
  const css=fs.readFileSync(path.join(__dirname,'../src/company-wallboard.css'),'utf8');
  assert.match(css,/\.wb-overview-roadmap,\.wb-overview-agenda\{display:none!important\}/);

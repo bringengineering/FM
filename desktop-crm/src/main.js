@@ -9329,10 +9329,39 @@ app.whenReady().then(async () => {
       userDataPath: app.getPath("userData"),
       getAuthState: () => remoteClient ? remoteClient.authState() : { user: null },
       loadWorkOrders: () => remoteClient ? remoteClient.loadWorkOrders() : null,
+      loadServiceRevenueContext: async () => remoteClient ? { shared: await remoteClient.fetchRemotePayload(), ledger: await remoteClient.loadBillingLedger() } : null,
+      loadBillingLedger: () => remoteClient ? remoteClient.loadBillingLedger() : null,
+      saveBillingInvoice: input => saveAndSignalWallboard(() => {
+        if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
+        return remoteClient.saveBillingInvoice(input);
+      }, signalWallboardAfterSave),
       refreshWallboard: async () => {
         await wallboardRefreshQueue.notify();
         await ensureWallboardLiveSync().reconcile();
         return { ...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status() };
+      },
+      wallboardAdmin: async input => {
+        if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
+        const idToken = await remoteClient.ensureIdToken(false);
+        const { requestWallboardAdmin } = require("./wallboard-admin-client");
+        if (["shorten", "hide-issues"].includes(input.action)) {
+          const { loadWallboardSource } = require("./wallboard-publisher");
+          const { project } = require("./company-wallboard");
+          const { validatePublication } = require("./wallboard-publication-schema");
+          const { koreaDate } = require("./korea-date");
+          const seconds = { people: 18, roadmap: 24, issues: 15, notice: 15, strategy: 18, overview: 22, companyRevenue: 18 };
+          const request = publication => requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken, input: publication, fetchImpl: (url, options) => net.fetch(url, options) });
+          const current = await request({ action: "list" });
+          const playlist = current.presentation.playlist.map(item => input.action === "hide-issues"
+            ? { ...item, enabled: item.key === "issues" ? false : item.enabled }
+            : { ...item, seconds: seconds[item.key] || item.seconds });
+          const instant = new Date();
+          const dataDate = koreaDate(instant);
+          const snapshot = validatePublication({ model: project(await loadWallboardSource(remoteClient, instant), dataDate), playlist, notice: current.presentation.notice, dataDate });
+          const result = await request({ action: "publish", snapshot, expectedVersion: current.version });
+          return { ok: true, version: result.version, playlist };
+        }
+        return requestWallboardAdmin({ baseUrl: CRM_AI_GATEWAY_URL, idToken, input, fetchImpl: (url, options) => net.fetch(url, options) });
       },
       signalWallboard: signalWallboardAfterSave,
       saveProject: input => saveAndSignalWallboard(() => {
@@ -9342,6 +9371,10 @@ app.whenReady().then(async () => {
       saveWorkOrder: input => saveAndSignalWallboard(() => {
         if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
         return remoteClient.saveWorkOrder(input);
+      }, signalWallboardAfterSave),
+      linkWorkOrderProject: (orderId, projectId) => saveAndSignalWallboard(() => {
+        if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
+        return remoteClient.linkWorkOrderProject(orderId, projectId);
       }, signalWallboardAfterSave),
     });
     await crmCommandBridge.start();
