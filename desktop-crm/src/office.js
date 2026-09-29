@@ -18,12 +18,13 @@
     pendingAttachment: null,
     openingAttachmentId: "",
     attendanceWeekOffset: 0,
-    selectedAttendanceDate: Core.workDate(),
+    selectedAttendanceDate: Core.attendanceWorkDate(),
+    attendanceShiftDate: Core.attendanceWorkDate(),
     selectedAdminUserId: "",
     selectedMemberId: "",
     payrollUserId: "",
     payrollMonth: "",
-    adminMonth: Core.workDate().slice(0, 7),
+    adminMonth: Core.attendanceWorkDate().slice(0, 7),
     adminTab: "list",
     adminAttendanceCorrection: null,
     selectedRfidUserId: "",
@@ -56,8 +57,11 @@
   const isAdmin = () => currentUser().officeAdmin === true;
   const userById = uid => state.data.users.find(user => user.uid === uid);
   const myAttendance = () => state.data.attendance.filter(row => row.userId === currentUserId()).sort((a, b) => `${b.workDate}${b.checkInAt}`.localeCompare(`${a.workDate}${a.checkInAt}`));
-  const todayRecord = () => myAttendance().find(row => row.workDate === Core.workDate()) || null;
-  const statusClass = record => record && record.checkOutAt ? "complete" : record && record.checkInAt ? "working" : "before";
+  const todayRecord = () => myAttendance().find(row => row.workDate === Core.attendanceWorkDate()) || null;
+  const statusClass = record => {
+    const status = Core.attendanceReviewStatus(record, Core.attendanceWorkDate());
+    return status === "퇴근 미기록" ? "missing" : status === "퇴근 완료" ? "complete" : status === "근무 중" ? "working" : "before";
+  };
   const formatTime = value => {
     if (!value) return "—";
     const date = new Date(value);
@@ -120,6 +124,18 @@
 
   function updateClock() {
     const now = new Date();
+    const attendanceDate = Core.attendanceWorkDate(now);
+    if (attendanceDate !== state.attendanceShiftDate) {
+      const previousAttendanceDate = state.attendanceShiftDate;
+      state.attendanceShiftDate = attendanceDate;
+      if (state.attendanceWeekOffset === 0 && state.selectedAttendanceDate === previousAttendanceDate) {
+        state.selectedAttendanceDate = attendanceDate;
+      }
+      if (state.adminMonth === previousAttendanceDate.slice(0, 7)) {
+        state.adminMonth = attendanceDate.slice(0, 7);
+      }
+      if (state.loaded && officeIsActive()) renderCurrent();
+    }
     document.querySelectorAll("[data-office-clock]").forEach(element => {
       element.textContent = new Intl.DateTimeFormat("ko-KR", { timeZone: Core.KOREA_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(now);
     });
@@ -158,9 +174,9 @@
       RFID_SERIAL_INVALID_DATA: "태그기에서 올바르지 않은 데이터가 들어왔습니다. 연결을 다시 확인합니다.",
       RFID_CARD_NOT_REGISTERED: "등록되지 않은 카드입니다. 직원 카드 등록 탭에서 먼저 등록해 주세요.",
       RFID_CARD_LOOKUP_FAILED: "등록된 카드 정보를 확인하지 못했습니다. 네트워크 연결을 확인해 주세요.",
-      RFID_ATTENDANCE_RESET_WINDOW: "03:00~07:59에는 출퇴근 기록을 저장하지 않습니다. 08:00부터 새 근무일로 기록됩니다.",
-      RFID_ATTENDANCE_NO_OPEN_SHIFT: "전날 출근 기록이 없어 퇴근 처리하지 않았습니다.",
-      RFID_ATTENDANCE_ALREADY_COMPLETE: "오늘 출근·퇴근 기록이 이미 완료되어 추가 기록하지 않았습니다.",
+      RFID_ATTENDANCE_RESET_WINDOW: "07:00부터 새 근무일로 출퇴근을 기록합니다.",
+      RFID_ATTENDANCE_NO_OPEN_SHIFT: "출근 기록이 없어 퇴근으로 처리하지 않았습니다. 다시 태그하면 출근으로 기록됩니다.",
+      RFID_ATTENDANCE_ALREADY_COMPLETE: "이 근무일의 출퇴근이 이미 완료되었습니다. 다음날 07:00부터 새 근무일이 시작됩니다.",
       RFID_ATTENDANCE_DUPLICATE_SCAN: "같은 태그가 연속으로 읽혀 중복 기록을 막았습니다.",
       RFID_ATTENDANCE_CONFLICT: "동시에 다른 태그가 기록되어 저장하지 못했습니다. 다시 태그해 주세요.",
       RFID_ATTENDANCE_WRITE_FAILED: "출퇴근 기록 저장에 실패했습니다. 연결 상태를 확인해 주세요.",
@@ -442,7 +458,7 @@
   }
 
   function statusPill(record) {
-    return `<span class="office-status ${statusClass(record)}"><i></i>${Core.attendanceStatus(record)}</span>`;
+    return `<span class="office-status ${statusClass(record)}"><i></i>${Core.attendanceReviewStatus(record, Core.attendanceWorkDate())}</span>`;
   }
 
   function attendanceLiveStatus() {
@@ -479,7 +495,7 @@
 
   function attendanceView() {
     const today = todayRecord();
-    const baseWeek = startOfWeek(Core.workDate());
+    const baseWeek = startOfWeek(Core.attendanceWorkDate());
     const weekStart = addDays(baseWeek, state.attendanceWeekOffset * 7);
     const weekDates = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
     const weekEnd = weekDates[6];
@@ -491,7 +507,7 @@
     const selected = records.find(row => row.workDate === selectedDate) || null;
     const selectedMinutes = workedMinutes(selected);
     const startMinute = selected ? minutesAt(selected.checkInAt) : 0;
-    const endMinute = selected ? (selected.checkOutAt ? minutesAt(selected.checkOutAt) : selected.workDate === Core.workDate() ? minutesAt(new Date().toISOString()) : startMinute) : startMinute;
+    const endMinute = selected ? (selected.checkOutAt ? minutesAt(selected.checkOutAt) : selected.workDate === Core.attendanceWorkDate() ? minutesAt(new Date().toISOString()) : startMinute) : startMinute;
     const barLeft = Math.max(0, Math.min(100, startMinute / 1440 * 100));
     const barWidth = Math.max(selected ? 1.8 : 0, Math.min(100 - barLeft, Math.max(0, endMinute - startMinute) / 1440 * 100));
     const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
@@ -502,9 +518,9 @@
       <section class="attendance-week-days">${weekDates.map((workDate, index) => {
         const row = weekRows[index];
         const weekend = index > 4;
-        return `<button class="attendance-day ${workDate === selectedDate ? "selected" : ""} ${weekend ? "weekend" : ""}" data-office-date-select="${esc(workDate)}"><span><b>${dayLabels[index]}</b> ${Number(workDate.slice(-2))}</span>${row ? `<strong>${formatTime(row.checkInAt)} 출근</strong><small>${row.checkOutAt ? `${formatTime(row.checkOutAt)} 퇴근` : Core.attendanceStatus(row)}</small>` : `<em>${weekend ? "휴일" : "기록 없음"}</em>`}</button>`;
+        return `<button class="attendance-day ${workDate === selectedDate ? "selected" : ""} ${weekend ? "weekend" : ""}" data-office-date-select="${esc(workDate)}"><span><b>${dayLabels[index]}</b> ${Number(workDate.slice(-2))}</span>${row ? `<strong>${formatTime(row.checkInAt)} 출근</strong><small>${row.checkOutAt ? `${formatTime(row.checkOutAt)} 퇴근` : Core.attendanceReviewStatus(row, Core.attendanceWorkDate())}</small>` : `<em>${weekend ? "휴일" : "기록 없음"}</em>`}</button>`;
       }).join("")}</section>
-      <section class="attendance-day-detail"><header><div><span>근무시작<b>${esc(formatTime(selected && selected.checkInAt))}</b></span><span>근무종료<b>${esc(formatTime(selected && selected.checkOutAt))}</b></span><span>총 근로시간<b>${esc(durationText(selectedMinutes))}</b></span><span>상세 근로시간<b>소정 ${esc(durationText(selectedMinutes))}</b></span></div>${statusPill(selected)}</header><div class="attendance-timeline-layout"><div class="attendance-timeline"><div class="attendance-hour-labels">${Array.from({ length: 24 }, (_, hour) => `<span>${String(hour).padStart(2, "0")}</span>`).join("")}</div><div class="attendance-hour-grid">${Array.from({ length: 24 }, () => "<i></i>").join("")}${selected ? `<b class="attendance-work-bar" style="left:${barLeft}%;width:${barWidth}%">업무시간</b>` : ""}</div><footer><span><i></i>정상</span><span><i></i>근태이상</span><span><i></i>수정</span></footer></div><aside><h4>근무상태 내역</h4><small>${esc(selectedDate)}</small>${selected ? `<dl><dt>출근</dt><dd>${esc(formatTime(selected.checkInAt))}</dd>${selected.checkOutAt ? `<dt>퇴근</dt><dd>${esc(formatTime(selected.checkOutAt))}</dd>` : ""}<dt>상태</dt><dd>${Core.attendanceStatus(selected)}</dd></dl>` : `<p>이 날짜의 근태 기록이 없습니다.</p>`}</aside></div></section>
+      <section class="attendance-day-detail"><header><div><span>근무시작<b>${esc(formatTime(selected && selected.checkInAt))}</b></span><span>근무종료<b>${esc(formatTime(selected && selected.checkOutAt))}</b></span><span>총 근로시간<b>${esc(durationText(selectedMinutes))}</b></span><span>상세 근로시간<b>소정 ${esc(durationText(selectedMinutes))}</b></span></div>${statusPill(selected)}</header><div class="attendance-timeline-layout"><div class="attendance-timeline"><div class="attendance-hour-labels">${Array.from({ length: 24 }, (_, hour) => `<span>${String(hour).padStart(2, "0")}</span>`).join("")}</div><div class="attendance-hour-grid">${Array.from({ length: 24 }, () => "<i></i>").join("")}${selected ? `<b class="attendance-work-bar" style="left:${barLeft}%;width:${barWidth}%">업무시간</b>` : ""}</div><footer><span><i></i>정상</span><span><i></i>근태이상</span><span><i></i>수정</span></footer></div><aside><h4>근무상태 내역</h4><small>${esc(selectedDate)}</small>${selected ? `<dl><dt>출근</dt><dd>${esc(formatTime(selected.checkInAt))}</dd>${selected.checkOutAt ? `<dt>퇴근</dt><dd>${esc(formatTime(selected.checkOutAt))}</dd>` : ""}<dt>상태</dt><dd>${Core.attendanceReviewStatus(selected, Core.attendanceWorkDate())}</dd></dl>` : `<p>이 날짜의 근태 기록이 없습니다.</p>`}</aside></div></section>
       <section class="office-panel attendance-recent-panel"><header><div><span>ATTENDANCE HISTORY</span><h3>최근 근태 기록</h3></div><small>최근 30개 기록</small></header>${attendanceRows(records.slice(0, 30), false)}</section>`;
   }
 
@@ -585,7 +601,7 @@
     const result = Anomaly.detect(state.data.attendance, {
       userId: userId || "",
       month: state.adminMonth,
-      today: Core.workDate()
+      today: Core.attendanceWorkDate()
     });
     const scope = userId ? "이 직원" : "전체 직원";
     if (!result.sampleSize) {
@@ -675,7 +691,7 @@
   function adminView() {
     if (!isAdmin()) return `<section class="office-loading office-error"><span>!</span><b>관리자 전용 메뉴입니다</b><p>전체 근태관리 화면과 데이터는 지정된 근태 관리자만 볼 수 있습니다.</p></section>`;
     const rows = state.data.attendance.slice().sort((a, b) => `${b.workDate}${b.checkInAt}`.localeCompare(`${a.workDate}${a.checkInAt}`));
-    const today = Core.workDate();
+    const today = Core.attendanceWorkDate();
     const users = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b), "ko"));
     const selectedUser = users.find(user => user.uid === state.selectedAdminUserId) || null;
     const editingUser = users.find(user => user.uid === state.editingDisplayNameUserId) || null;
@@ -1973,8 +1989,8 @@
     if (week) {
       if (week.dataset.officeWeek === "today") state.attendanceWeekOffset = 0;
       else state.attendanceWeekOffset += week.dataset.officeWeek === "previous" ? -1 : 1;
-      const nextStart = addDays(startOfWeek(Core.workDate()), state.attendanceWeekOffset * 7);
-      state.selectedAttendanceDate = state.attendanceWeekOffset === 0 ? Core.workDate() : nextStart;
+      const nextStart = addDays(startOfWeek(Core.attendanceWorkDate()), state.attendanceWeekOffset * 7);
+      state.selectedAttendanceDate = state.attendanceWeekOffset === 0 ? Core.attendanceWorkDate() : nextStart;
       renderCurrent();
       return;
     }

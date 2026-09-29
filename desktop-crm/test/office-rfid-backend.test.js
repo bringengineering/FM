@@ -155,6 +155,43 @@ test("automatic tag attendance requires the admin, hashes card identity, and alt
   }
 });
 
+test("a first tag before 07:00 creates check-in even when the prior workday has no record", async () => {
+  const cardCode = "3F00238493";
+  const registered = Rfid.replaceCard(null, {
+    userId: "member-1",
+    cardCode,
+    registeredAt: "2026-09-29T01:23:45.000Z",
+    registeredBy: "admin-1",
+  });
+  const records = new Map();
+  const writes = [];
+  const fake = backend({
+    officeRfidAttendanceQueue: Promise.resolve(),
+    async dbRequest(location) {
+      if (location === "officeRfidCards") return registered.map;
+      if (location === "crmAccess/member-1") return { enabled: true, role: "member", mustChangePassword: false };
+      if (location === "officeAttendance/member-1/2026-09-29") return null;
+      throw new Error("unexpected read path");
+    },
+    async dbReadWithEtag(location) { return { value: records.get(location) || null, etag: records.has(location) ? "saved" : "empty" }; },
+    async dbConditionalPut(location, value) { records.set(location, structuredClone(value)); writes.push({ location, value }); },
+  });
+  const originalNow = Date.now;
+  try {
+    Date.now = () => Date.parse("2026-09-29T18:00:00.000Z"); // 2026-09-30 03:00 KST
+    const result = await FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(fake, {
+      cardCode,
+      scannedAtMs: Date.now(),
+    });
+    assert.equal(result.status, "recorded");
+    assert.equal(result.action, "check-in");
+    assert.equal(result.workDate, "2026-09-29");
+    assert.equal(writes[0].location, "officeRfidAttendance/member-1/2026-09-29");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("automatic tag attendance rejects unregistered cards, malformed inputs, and non-admin sessions", async () => {
   const cardCode = "3F00238493";
   const nonAdmin = backend({ session: { uid: "member-1", officeAdmin: false } });

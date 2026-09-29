@@ -125,6 +125,26 @@
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
+  function attendanceWorkDate(value) {
+    const date = value instanceof Date ? value : new Date(value || Date.now());
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: KOREA_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date).reduce((result, part) => {
+      if (part.type !== "literal") result[part.type] = part.value;
+      return result;
+    }, {});
+    const currentDate = `${parts.year}-${parts.month}-${parts.day}`;
+    if (Number(parts.hour) >= 7) return currentDate;
+    const [year, month, day] = currentDate.split("-").map(Number);
+    const previous = new Date(Date.UTC(year, month - 1, day - 1));
+    return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}-${String(previous.getUTCDate()).padStart(2, "0")}`;
+  }
+
   function displayName(user) {
     const source = user && typeof user === "object" ? user : {};
     const assigned = normalizeOfficeDisplayName(source.displayName)
@@ -269,7 +289,7 @@
   function attendanceReviewStatus(record, today) {
     if (!record || !record.checkInAt) return "출근 전";
     if (record.checkOutAt) return "퇴근 완료";
-    return record.workDate && record.workDate < safeText(today, workDate()) ? "퇴근 미기록" : "근무 중";
+    return record.workDate && record.workDate < safeText(today, attendanceWorkDate()) ? "퇴근 미기록" : "근무 중";
   }
 
   function workedMinutes(record, now) {
@@ -277,7 +297,7 @@
     const start = new Date(record.checkInAt).getTime();
     const end = record.checkOutAt
       ? new Date(record.checkOutAt).getTime()
-      : record.workDate === workDate(now) ? new Date(now || Date.now()).getTime() : start;
+      : record.workDate === attendanceWorkDate(now) ? new Date(now || Date.now()).getTime() : start;
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
     return Math.round((end - start) / 60000);
   }
@@ -291,7 +311,7 @@
   }
 
   function monthlyAttendanceSummary(rows, userId, month, now) {
-    const today = workDate(now);
+    const today = attendanceWorkDate(now);
     const records = monthlyAttendance(rows, userId, month);
     return {
       records,
@@ -587,6 +607,7 @@
   return {
     KOREA_TIME_ZONE,
     workDate,
+    attendanceWorkDate,
     displayName,
     normalizeOfficeDisplayName,
     normalizeOfficeUserId,
