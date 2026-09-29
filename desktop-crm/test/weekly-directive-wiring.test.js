@@ -10,6 +10,7 @@ const mainSource = read("main.js");
 const preloadSource = read("preload.js");
 const remoteSource = read("remote.js");
 const appSource = read("app.js");
+const styles = read("styles.css");
 const indexSource = read("index.html");
 const rules = JSON.parse(fs.readFileSync(path.join(__dirname, "../../database.rules.json"), "utf8")).rules.crmCompany;
 const directive = rules.weeklyDirectives.$directiveId;
@@ -217,4 +218,14 @@ test("펼친 자리에 텔레그램에 안 나가는 것까지 다 있다", () =
 test("지시서가 없는 사람을 눌러도 터지지 않는다", () => {
   const detail = appSource.slice(appSource.indexOf("function directiveDetail"), appSource.indexOf("// 이번 주 가용시간"));
   assert.match(detail, /이번 주 지시서가 아직 없습니다/u);
+});
+
+test("업무 지시 카드의 진행률은 상태 아래에서 카드 너비 안에 표시된다", () => {
+  const detail = appSource.slice(appSource.indexOf("function directiveDetail"), appSource.indexOf("// 이번 주 가용시간"));
+  assert.match(detail, /class="wd-task-progress" role="progressbar"/u);
+  assert.match(detail, /class="wd-task-progress-track"/u);
+  assert.doesNotMatch(detail, /class="wo-progress"/u);
+  assert.match(styles, /\.wd-task-foot\{display:grid;gap:8px;min-width:0\}/u);
+  assert.match(styles, /\.wd-task-progress\{display:grid;grid-template-columns:minmax\(0,1fr\) auto;/u);
+  assert.match(styles, /\.wd-task-progress-track\{[^}]*overflow:hidden/u);
 });

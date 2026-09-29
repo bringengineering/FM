@@ -1675,7 +1675,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wd-task dl{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;margin:0;font-size:13px}
 .wd-task dt{color:#8B95A1}
 .wd-task dd{margin:0;color:#4E5968}
-.wd-task-foot{display:flex;align-items:center;gap:10px}
+.wd-task-foot{display:grid;gap:8px;min-width:0}
+.wd-task-foot .wo-status{justify-self:end}
+.wd-task-progress{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;width:100%}
+.wd-task-progress-track{display:block;height:6px;border-radius:999px;background:#F2F4F6;overflow:hidden}
+.wd-task-progress-track i{display:block;height:100%;border-radius:999px;background:#3182F6}
+.wd-task-progress b{color:#4E5968;font-size:10px;white-space:nowrap}
 
 /* 문서관리 한 줄: 견적서 → 결과보고서 → 고객 알림 */
 .df-strip { border: 1px solid #E5E8EB; border-radius: 12px; background: #fff; padding: 14px 16px; margin-bottom: 14px; }

@@ -6415,7 +6415,10 @@
         </dl>
         <div class="wd-task-foot">
           <span class="wo-status">${esc(W ? W.statusLabel(order.status) : order.status)}</span>
-          <span class="wo-progress"><i style="width:${order.progress}%"></i><b>${order.progress}%</b></span>
+          <span class="wd-task-progress" role="progressbar" aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${order.progress}">
+            <span class="wd-task-progress-track"><i style="width:${order.progress}%"></i></span>
+            <b>${order.progress}%</b>
+          </span>
         </div>
       </article>`;
     }).join("");
