@@ -3609,7 +3609,7 @@
       : "아직 Gemini 문장을 만들지 않았습니다.";
 
     main.innerHTML = `<section class="building-monthly-report-page">
-      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>CRM의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">BRING OS Gemini</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header>
+      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>CRM의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header>
       <section class="building-monthly-toolbar">
         <label class="building-monthly-field"><span>계약 건물</span><select data-building-monthly-building>${buildings.map(item => { const linked = (store.contracts || []).find(entry => entry && String(entry.buildingId || "") === String(item.id) && entry.status !== "종료"); return `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(`${item.name || "건물명 미입력"}${linked && linked.name ? ` · ${linked.name}` : ""}`)}</option>`; }).join("")}</select></label>
         <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(previousMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>

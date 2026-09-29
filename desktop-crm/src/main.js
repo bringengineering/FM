@@ -11,7 +11,7 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const { createLocalWorkAssessor } = require("./local-gemini-assessment");
-const { createLocalBuildingReportWriter } = require("./local-gemini-building-report");
+const { createBuildingReportWriter } = require("./local-gemini-building-report");
 const { selectMonthlyReportPhotosWithGateway, MAX_IMAGES: MAX_MONTHLY_REPORT_PHOTOS } = require("./ai-monthly-report-photo-client");
 const Core = require("./core");
 const OfficeCore = require("./office-core");
@@ -174,7 +174,14 @@ const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "projectRoadmap" ? "projectRoadmap" : "";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
+const localGeminiReportsPreview = !app.isPackaged && process.env.BRING_CRM_LOCAL_GEMINI_REPORTS === "1";
+const LOCAL_GEMINI_REPORT_GATEWAY_URL = "http://127.0.0.1:8787/v1/assist";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
+function aiGatewayUrlForTask(task) {
+  return localGeminiReportsPreview && ["completion_report", "building_monthly_report"].includes(task)
+    ? LOCAL_GEMINI_REPORT_GATEWAY_URL
+    : CRM_AI_GATEWAY_URL;
+}
 const CRM_AI_PHOTO_CLASSIFY_URL = new URL("/v1/photo-classify", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_MONTHLY_REPORT_PHOTO_SELECT_URL = new URL("/v1/monthly-report-photo-select", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
@@ -9022,10 +9029,11 @@ secureCanonicalHandle("crm:ai-assist", async input => {
   }
   const idToken = await remoteClient.ensureIdToken(false);
   return assistWithGateway({
-    endpoint: CRM_AI_GATEWAY_URL,
+    endpoint: aiGatewayUrlForTask(input?.task),
     idToken,
     input,
-    fetchImpl: (url, options) => net.fetch(url, options)
+    fetchImpl: (url, options) => net.fetch(url, options),
+    allowLocalHttp: localGeminiReportsPreview && ["completion_report", "building_monthly_report"].includes(input?.task),
   });
 });
 let localWorkAssessor = null;
@@ -9043,7 +9051,7 @@ secureCanonicalHandle("crm:work-assessment", async input => {
   client.assertSessionGuardActive(guard);
   return result;
 });
-let localBuildingReportWriter = null;
+let buildingReportWriter = null;
 secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
   const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative", "manualWorks", "photos"]);
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !allowedKeys.has(key))) {
@@ -9062,16 +9070,27 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });
   }
-  if (!localBuildingReportWriter) {
-    localBuildingReportWriter = createLocalBuildingReportWriter({
+  if (!buildingReportWriter) {
+    buildingReportWriter = createBuildingReportWriter({
       userDataPath: app.getPath("userData"),
-      localAppData: process.env.LOCALAPPDATA || "",
     });
   }
-  const result = await localBuildingReportWriter({
+  const result = await buildingReportWriter({
     report,
     nextMonthPlan: input.nextMonthPlan,
     viewer: { uid: user.uid, role },
+    generate: async ({ prompt }) => {
+      const idToken = await client.ensureIdToken(false);
+      const response = await assistWithGateway({
+        endpoint: aiGatewayUrlForTask("building_monthly_report"),
+        idToken,
+        input: { task: "building_monthly_report", content: prompt },
+        fetchImpl: (url, options) => net.fetch(url, options),
+        allowLocalHttp: localGeminiReportsPreview,
+      });
+      client.assertSessionGuardActive(guard);
+      return { text: response.result.text, model: response.model || "gemini-3.5-flash-lite" };
+    },
   });
   client.assertSessionGuardActive(guard);
   return { ...result, report: { summary: report.summary, workCount: report.works.length } };

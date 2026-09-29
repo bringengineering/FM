@@ -1,15 +1,29 @@
 # BRING CRM AI Gateway
 
-BRING CRM과 Groq Cloud 사이에서 Firebase 직원 인증, 개인정보 마스킹, 무료 사용량 제한을 수행하는 별도 Cloudflare Worker입니다. 기존 카카오 민원 Worker와 독립적으로 배포합니다.
+BRING CRM의 AI 요청을 Firebase 직원 인증과 개인정보 마스킹 뒤 처리하는 별도 Cloudflare Worker입니다. 일반 AI 기능은 Groq를 유지하고, 작업 결과보고서와 건물 월간보고서만 Gemini API로 보냅니다. 기존 카카오 민원 Worker와 독립적으로 배포합니다.
 
 ## 보안 경계
 
 - `GROQ_API_KEY`는 Cloudflare Secret으로만 저장합니다.
+- `GEMINI_API_KEY`도 Cloudflare Secret으로만 저장합니다. Gemini는 `completion_report`와 `building_monthly_report`에만 사용합니다.
 - 키 값을 소스, `.env`, GitHub Actions 변수, CRM EXE에 넣지 않습니다.
-- Firebase ID 토큰은 Worker에서 검증하며 Groq에 전달하지 않습니다.
+- Firebase ID 토큰은 Worker에서 검증하며 Groq나 Gemini에 전달하지 않습니다.
 - 상담 원문은 저장하거나 로그에 남기지 않습니다.
 - 직원 이메일은 `CRM_ALLOWED_EMAILS`의 명시적 허용 목록과 대조합니다.
 - AI 응답은 초안이며 CRM 데이터를 자동으로 변경하지 않습니다.
+
+보고서 기본 모델은 `GEMINI_REPORT_MODEL = "gemini-3.5-flash-lite"`입니다. 모델명은 비밀값이 아니며 API 요청에서 서버가 지정합니다. 일반 AI, 음성 전사, 사진 분류는 기존 Groq 설정을 계속 사용합니다.
+
+## 로컬 Gemini 미리보기
+
+이 경로는 로컬 Worker에만 키를 읽히며 Cloudflare 운영 Worker나 CRM 정식 배포를 변경하지 않습니다.
+
+1. `.dev.vars.example`을 `.dev.vars`로 복사합니다. `.dev.vars`는 Git에서 제외됩니다.
+2. `.dev.vars`에 직접 `GEMINI_API_KEY`와 로컬 인증용 `FIREBASE_WEB_API_KEY`를 입력합니다. 키를 채팅, 코드, CRM 앱 설정에 넣지 마세요.
+3. 이 폴더에서 `npm run dev`를 실행해 로컬 Worker를 `127.0.0.1:8787`로 실행합니다.
+4. 별도 PowerShell에서 `desktop-crm` 폴더로 이동한 뒤 `$env:BRING_CRM_LOCAL_GEMINI_REPORTS = "1"; npm start`를 실행합니다.
+
+개발 모드에서만 작업 결과보고서와 건물 월간보고서 요청이 로컬 Worker로 갑니다. 패키징된 앱은 이 HTTP 미리보기 경로를 허용하지 않습니다. 두 보고서 생성은 Gemini 사용량을 소비할 수 있습니다.
 
 ## 작업 사진 구역 분류
 
@@ -49,11 +63,12 @@ binding = "AI_USAGE"
 id = "Cloudflare가 출력한 실제 namespace ID"
 ```
 
-Firebase Web API 키는 비밀 자격증명이 아니지만 운영 프로젝트를 명시하는 구성값이므로 Cloudflare 변수로 등록합니다. Groq 키는 화면이나 명령 인수에 쓰지 않고 프롬프트에서 직접 입력합니다.
+Firebase Web API 키는 비밀 자격증명이 아니지만 운영 프로젝트를 명시하는 구성값이므로 Cloudflare 변수로 등록합니다. Provider API 키는 화면이나 명령 인수에 쓰지 않고 Wrangler Secret 입력 프롬프트에서 직접 입력합니다.
 
 ```powershell
 npx wrangler secret put FIREBASE_WEB_API_KEY
 npx wrangler secret put GROQ_API_KEY
+npx wrangler secret put GEMINI_API_KEY
 npm test
 npm run deploy
 ```

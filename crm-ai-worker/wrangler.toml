@@ -11,6 +11,7 @@ crons = ["*/5 * * * *"]
 [vars]
 AI_ENABLED = "true"
 GROQ_MODEL = "qwen/qwen3.8-27b"
+GEMINI_REPORT_MODEL = "gemini-3.5-flash-lite"
 AI_COMPANY_DAILY_LIMIT = "1000"
 CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com,bringengineering1008@gmail.com"
 CRM_ADMIN_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"

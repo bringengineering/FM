@@ -9,12 +9,12 @@ const {
 } = require("./building-monthly-report-ai");
 const { runBringOsGemini } = require("./local-gemini-assessment");
 
-function createLocalBuildingReportWriter({ userDataPath, localAppData, run = runBringOsGemini, now = () => new Date() }) {
+function createBuildingReportWriter({ userDataPath, localAppData = "", run = runBringOsGemini, now = () => new Date() }) {
   const usagePath = path.join(userDataPath, "building-monthly-report-gemini-usage.json");
   const cache = new Map();
   let busy = false;
 
-  return async function write({ report, nextMonthPlan, viewer }) {
+  return async function write({ report, nextMonthPlan, viewer, generate = run }) {
     if (!viewer || !viewer.uid || !["admin", "member"].includes(viewer.role)) {
       throw new Error("월간 보고서 AI 작성 권한이 없습니다.");
     }
@@ -36,7 +36,7 @@ function createLocalBuildingReportWriter({ userDataPath, localAppData, run = run
       await fs.mkdir(userDataPath, { recursive: true });
       await fs.writeFile(usagePath, JSON.stringify({ day, calls: usage.calls + 1 }), { mode: 0o600 });
 
-      const response = await run({ localAppData, prompt: promptForBuildingMonthlyNarrative(prepared.source) });
+      const response = await generate({ localAppData, prompt: promptForBuildingMonthlyNarrative(prepared.source) });
       const narrative = parseBuildingMonthlyNarrative(response.text);
       const result = Object.freeze({
         ok: true,
@@ -54,4 +54,7 @@ function createLocalBuildingReportWriter({ userDataPath, localAppData, run = run
   };
 }
 
-module.exports = Object.freeze({ createLocalBuildingReportWriter });
+module.exports = Object.freeze({
+  createBuildingReportWriter,
+  createLocalBuildingReportWriter: createBuildingReportWriter,
+});
