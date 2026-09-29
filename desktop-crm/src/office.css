@@ -216,6 +216,13 @@
 .rfid-employee-select{display:flex;flex-direction:column;gap:7px}
 .rfid-employee-select>span{color:#4e5968;font-size:11px;font-weight:700}
 .rfid-employee-select select{width:100%;min-height:46px;padding:0 14px;border:1px solid #d9e1e8;border-radius:12px;background:#fff;color:#191f28;font:inherit}
+.rfid-serial-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px;margin-top:14px}
+.rfid-serial-picker label{display:flex;min-width:0;flex-direction:column;gap:7px}
+.rfid-serial-picker label>span{color:#4e5968;font-size:11px;font-weight:700}
+.rfid-serial-picker select{width:100%;min-height:42px;padding:0 12px;border:1px solid #d9e1e8;border-radius:11px;background:#fff;color:#191f28;font:inherit}
+.rfid-serial-status{display:flex;justify-content:space-between;gap:10px;margin-top:8px;color:#748394;font-size:10px;line-height:1.5}
+.rfid-serial-status span{flex:0 0 auto;color:#8b95a1}
+.rfid-reader-detected{margin-top:20px!important;padding:10px 11px;border-radius:10px;background:rgba(255,255,255,.1);color:#e7f1fb!important;font-size:10px!important}
 .rfid-register-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:17px;border:1px solid #e7edf3;border-radius:14px;background:#f9fbfd}
 .rfid-current{display:grid;grid-template-columns:10px auto;column-gap:8px;align-items:center}
 .rfid-current i{grid-row:1/3;width:8px;height:8px;border-radius:50%;background:#c9d2dc}
@@ -256,4 +263,4 @@
 .rfid-phase-note{margin:0 0 18px;padding:11px 14px;border-left:3px solid #91a3b7;color:#6b7684;background:#f7f8fa;font-size:10px}
 .rfid-access-denied{display:flex;flex-direction:column;gap:6px;margin-top:16px;padding:24px;color:#4e5968}
 .rfid-access-denied span{color:#8b95a1;font-size:11px}
-@media(max-width:900px){.rfid-layout{grid-template-columns:1fr}.rfid-register-actions,.rfid-capture{align-items:stretch;flex-direction:column}.rfid-capture .rfid-waves{display:none}}
+@media(max-width:900px){.rfid-layout{grid-template-columns:1fr}.rfid-register-actions,.rfid-capture{align-items:stretch;flex-direction:column}.rfid-capture .rfid-waves{display:none}.rfid-serial-status{flex-direction:column}.rfid-serial-status span{white-space:normal}}

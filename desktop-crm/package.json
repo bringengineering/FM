@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "electron-updater": "6.8.9",
-    "heic-convert": "2.1.0"
+    "heic-convert": "2.1.0",
+    "serialport": "13.0.0"
   },
   "devDependencies": {
     "electron": "39.8.10",

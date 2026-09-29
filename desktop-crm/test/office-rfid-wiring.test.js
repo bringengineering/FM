@@ -27,21 +27,30 @@ test("RFID IPC is narrow, canonical and classified as a mutation", () => {
   const main = read("main.js");
   assert.ok(preload.includes('saveOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-save", input)'));
   assert.ok(preload.includes('removeOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-remove", input)'));
+  assert.ok(preload.includes('listOfficeRfidPorts: () => ipcRenderer.invoke("crm:office-rfid-ports")'));
+  assert.ok(preload.includes('captureOfficeRfidSerial: input => ipcRenderer.invoke("crm:office-rfid-serial-capture", input)'));
+  assert.ok(preload.includes('cancelOfficeRfidSerialCapture: () => ipcRenderer.invoke("crm:office-rfid-serial-cancel")'));
   assert.ok(main.includes('secureCanonicalHandle("crm:office-rfid-card-save"'));
   assert.ok(main.includes('secureCanonicalHandle("crm:office-rfid-card-remove"'));
+  assert.ok(main.includes('secureCanonicalHandle("crm:office-rfid-ports"'));
+  assert.ok(main.includes('secureCanonicalHandle("crm:office-rfid-serial-capture"'));
+  assert.ok(main.includes('secureCanonicalHandle("crm:office-rfid-serial-cancel"'));
   assert.equal(MutationPolicy.classification("crm:office-rfid-card-save"), "mutation");
   assert.equal(MutationPolicy.classification("crm:office-rfid-card-remove"), "mutation");
+  assert.equal(MutationPolicy.classification("crm:office-rfid-ports"), "control");
+  assert.equal(MutationPolicy.classification("crm:office-rfid-serial-capture"), "mutation");
+  assert.equal(MutationPolicy.classification("crm:office-rfid-serial-cancel"), "control");
 });
 
-test("renderer captures card input only during explicit registration and never renders the raw buffer", () => {
+test("renderer uses the explicit selected serial port and never receives or renders a raw card buffer", () => {
   const office = read("office.js");
-  assert.ok(office.includes('state.rfidCapture && officeIsActive() && state.context?.view === "officeRfid"'));
-  assert.ok(office.includes('if (event.key === "Enter")'));
-  assert.ok(office.includes('if (event.key === "Escape")'));
-  assert.ok(office.includes('state.rfidCapture.buffer += event.key'));
-  assert.equal(office.includes("${state.rfidCapture.buffer}"), false);
-  assert.equal(office.includes("${esc(state.rfidCapture.buffer)}"), false);
-  assert.match(office, /카드번호는 화면에 표시되지 않습니다/);
+  assert.ok(office.includes('data-rfid-port'));
+  assert.ok(office.includes('data-rfid-reader-refresh'));
+  assert.ok(office.includes('captureOfficeRfidSerial({ userId: capture.userId, portPath: capture.portPath })'));
+  assert.ok(office.includes('9600bps · 8-N-1 · 하드웨어 흐름제어'));
+  assert.equal(office.includes("state.rfidCapture.buffer"), false);
+  assert.equal(office.includes("${capture.buffer}"), false);
+  assert.match(office, /카드번호는 화면이나 로그에 표시되지 않습니다/);
 });
 
 test("remote projections expose only masked summaries and mutation verification is exact", () => {
@@ -69,4 +78,3 @@ test("database rules keep RFID cards deny-by-default and enforce a closed schema
   assert.equal(rules.$fingerprint.$other[".validate"], false);
   assert.match(rules.$fingerprint.registeredBy[".validate"], /newData\.val\(\) === auth\.uid/);
 });
-

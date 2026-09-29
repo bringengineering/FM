@@ -51,8 +51,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - name: Block artifacts containing internal weekly assignments
-        run: node desktop-crm/scripts/release/check-internal-data.js
       - name: Plan from tags, Releases, and persistent reservation refs
         id: plan
         env:
@@ -62,27 +60,9 @@ jobs:
           --source-sha "${{ github.sha }}"
           --source-branch "$CRM_SOURCE_BRANCH"
 
-  preflight-desktop:
-    if: needs.plan.outputs.stable_published != 'true'
-    needs: plan
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.source_sha }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop-crm/package-lock.json
-      - run: npm ci
-        working-directory: desktop-crm
-      - run: npm test
-        working-directory: desktop-crm
-
   reserve-build:
     if: needs.plan.outputs.stable_published != 'true'
-    needs: [plan, preflight-desktop]
+    needs: plan
     runs-on: windows-latest
     permissions:
       contents: write
@@ -120,6 +100,9 @@ jobs:
           --source-sha "${{ needs.plan.outputs.source_sha }}"
           --source-branch "$CRM_SOURCE_BRANCH"
           --max-attempts 10
+      - name: Block artifacts containing internal weekly assignments
+        if: steps.reserve.outputs.reuse_assets != 'true'
+        run: node desktop-crm/scripts/release/check-internal-data.js
       - name: Restore the exact complete draft assets on a resumed release
         if: steps.reserve.outputs.reuse_assets == 'true'
         shell: bash

@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveOfficeDisplayName: input => ipcRenderer.invoke("crm:office-display-name-save", input),
   saveOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-save", input),
   removeOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-remove", input),
+  listOfficeRfidPorts: () => ipcRenderer.invoke("crm:office-rfid-ports"),
+  captureOfficeRfidSerial: input => ipcRenderer.invoke("crm:office-rfid-serial-capture", input),
+  cancelOfficeRfidSerialCapture: () => ipcRenderer.invoke("crm:office-rfid-serial-cancel"),
   pickOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-pick", input),
   dropOfficeAttachment: (file, input) => {
     let filePath = "";

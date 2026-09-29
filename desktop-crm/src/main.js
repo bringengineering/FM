@@ -15,6 +15,7 @@ const { createLocalBuildingReportWriter } = require("./local-gemini-building-rep
 const Core = require("./core");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
+const OfficeRfidSerial = require("./office-rfid-serial");
 const OfficeAttachment = require("./office-attachment");
 const { createOfficeAttachmentStageGate } = require("./office-attachment-stage-gate");
 const { createOfficeNotificationTracker } = require("./office-notification");
@@ -192,6 +193,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 let localOperationsData = null;
 let localOfficeData = null;
 let localOfficeRfidCards = Object.create(null);
+let officeRfidSerialReader = null;
 let localOfficeMessageFiles = Object.create(null);
 const localOfficeAttendanceAudits = new Map();
 const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
@@ -2695,6 +2697,67 @@ async function saveOfficeRfidCard(input) {
   }).map;
   localOfficeData.loadedAt = new Date().toISOString();
   return { ok: true, data: await readOffice() };
+}
+
+function getOfficeRfidSerialReader() {
+  if (!officeRfidSerialReader) {
+    const { SerialPort } = require("serialport");
+    officeRfidSerialReader = OfficeRfidSerial.createOfficeRfidSerial({ SerialPort });
+  }
+  return officeRfidSerialReader;
+}
+
+async function listOfficeRfidSerialPorts() {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 리더기는 지정된 근태 관리자만 확인할 수 있습니다.");
+  return { ok: true, ports: await getOfficeRfidSerialReader().listPorts() };
+}
+
+async function captureOfficeRfidCardFromSerial(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 카드는 지정된 근태 관리자만 등록할 수 있습니다.");
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (Object.keys(source).some(key => !["userId", "portPath"].includes(key))) {
+    throw new Error("RFID 리더기 요청이 올바르지 않습니다.");
+  }
+  const userId = OfficeRfidCore.normalizeUserId(source.userId);
+  const portPath = OfficeRfidSerial.normalizeComPath(source.portPath);
+  if (!userId || userId !== source.userId || !portPath || portPath !== source.portPath) {
+    throw new Error("직원과 리더기 포트를 확인해 주세요.");
+  }
+
+  let cardCode = "";
+  try {
+    try {
+      cardCode = await getOfficeRfidSerialReader().captureCardCode({ portPath });
+    } catch (error) {
+      const code = String(error && error.code || "");
+      const allowedCodes = new Set([
+        "RFID_SERIAL_UNAVAILABLE",
+        "RFID_SERIAL_PORT_INVALID",
+        "RFID_SERIAL_PORT_NOT_FOUND",
+        "RFID_SERIAL_PORT_BUSY",
+        "RFID_SERIAL_TIMEOUT",
+        "RFID_SERIAL_INVALID_DATA",
+        "RFID_SERIAL_OPEN_FAILED",
+        "RFID_SERIAL_CANCELLED",
+        "RFID_SERIAL_BUSY",
+      ]);
+      return { ok: false, code: allowedCodes.has(code) ? code : "RFID_SERIAL_OPEN_FAILED" };
+    }
+    const currentActor = assertOfficeSession();
+    if (currentActor.uid !== actor.uid || currentActor.officeAdmin !== true) {
+      throw new Error("로그인 상태가 변경되어 카드를 등록하지 않았습니다.");
+    }
+    return await saveOfficeRfidCard({ userId, cardCode });
+  } finally {
+    cardCode = "";
+  }
+}
+
+function cancelOfficeRfidSerialCapture() {
+  if (!officeRfidSerialReader) return { ok: false };
+  return { ok: officeRfidSerialReader.cancelCapture() };
 }
 
 async function removeOfficeRfidCard(input) {
@@ -5373,16 +5436,19 @@ async function createWindow() {
   mainWindow.webContents.on("did-start-loading", () => {
     officeMessengerPresence = false;
     officeMessengerPeerId = "";
+    cancelOfficeRfidSerialCapture();
   });
   mainWindow.webContents.on("render-process-gone", () => {
     officeMessengerPresence = false;
     officeMessengerPeerId = "";
+    cancelOfficeRfidSerialCapture();
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.on("close", event => {
     if (applicationExitAllowed) return;
     event.preventDefault();
+    cancelOfficeRfidSerialCapture();
     void requestApplicationExit("window");
   });
   mainWindow.on("closed", () => {
@@ -9081,6 +9147,13 @@ secureCanonicalHandle("crm:office-attendance-correct", input => correctOfficeAtt
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));
 secureCanonicalHandle("crm:office-rfid-card-save", input => saveOfficeRfidCard(input));
 secureCanonicalHandle("crm:office-rfid-card-remove", input => removeOfficeRfidCard(input));
+secureCanonicalHandle("crm:office-rfid-ports", () => listOfficeRfidSerialPorts());
+secureCanonicalHandle("crm:office-rfid-serial-capture", input => captureOfficeRfidCardFromSerial(input));
+secureCanonicalHandle("crm:office-rfid-serial-cancel", () => {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 리더기는 지정된 근태 관리자만 제어할 수 있습니다.");
+  return cancelOfficeRfidSerialCapture();
+});
 secureCanonicalHandle("crm:office-attachment-pick", input => pickOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-drop", input => dropOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-open", input => openOfficeAttachment(input));
@@ -9513,6 +9586,7 @@ app.whenReady().then(async () => {
   app.exit(1);
 });
 app.on("before-quit", event => {
+  cancelOfficeRfidSerialCapture();
   if (!applicationExitAllowed) {
     event.preventDefault();
     void requestApplicationExit("quit");

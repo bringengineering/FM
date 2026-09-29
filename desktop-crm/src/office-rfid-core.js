@@ -6,7 +6,7 @@
   "use strict";
 
   const USER_ID = /^[A-Za-z0-9._-]{1,128}$/;
-  const CARD_CODE = /^[0-9]{6,20}$/;
+  const CARD_CODE = /^[0-9A-F]{6,20}$/;
   const FINGERPRINT = /^[a-f0-9]{64}$/;
   const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
   const MAX_CARDS = 500;
@@ -18,7 +18,7 @@
   }
 
   function normalizeCardCode(value) {
-    const text = typeof value === "string" ? value.replace(/[\r\n]+$/g, "") : "";
+    const text = typeof value === "string" ? value.replace(/[\r\n]+$/g, "").toUpperCase() : "";
     return CARD_CODE.test(text) ? text : "";
   }
 
@@ -98,7 +98,10 @@
     });
     next[fingerprint] = duplicate && duplicate.userId === userId ? duplicate : {
       userId,
-      last4: cardCode.slice(-4),
+      // Firebase's existing closed schema allows four decimal digits only.
+      // EM card codes are hexadecimal, so retain the last four decimal digits
+      // for the masked display while the full identity remains a SHA-256 hash.
+      last4: cardCode.replace(/[A-F]/g, "").slice(-4).padStart(4, "0"),
       registeredAt,
       registeredBy,
     };

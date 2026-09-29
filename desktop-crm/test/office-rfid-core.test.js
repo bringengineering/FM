@@ -6,13 +6,27 @@ const Rfid = require("../src/office-rfid-core");
 
 const NOW = "2026-09-29T01:23:45.000Z";
 
-test("RFID keyboard input accepts only a bounded decimal card code", () => {
+test("RFID card input accepts only bounded hexadecimal identifiers and normalizes casing", () => {
   assert.equal(Rfid.normalizeCardCode("0012345678\r\n"), "0012345678");
+  assert.equal(Rfid.normalizeCardCode("3f00238493\r\n"), "3F00238493");
   assert.equal(Rfid.normalizeCardCode("12345"), "");
   assert.equal(Rfid.normalizeCardCode("123456789012345678901"), "");
   assert.equal(Rfid.normalizeCardCode("123 456"), "");
+  assert.equal(Rfid.normalizeCardCode("12345G"), "");
   assert.equal(Rfid.normalizeCardCode("123456\u202e"), "");
   assert.equal(Rfid.normalizeCardCode(123456), "");
+});
+
+test("CR100 hexadecimal card IDs preserve their identity while storing only a decimal mask", () => {
+  const cardCode = "3F00238493";
+  const plan = Rfid.replaceCard(null, {
+    userId: "member-1",
+    cardCode,
+    registeredAt: NOW,
+    registeredBy: "admin-1",
+  });
+  assert.equal(plan.map[plan.fingerprint].last4, "8493");
+  assert.equal(JSON.stringify(plan.map).includes(cardCode), false);
 });
 
 test("stored RFID data never contains the raw card code", () => {
@@ -86,4 +100,3 @@ test("removing a card removes only the selected employee mapping", () => {
   assert.equal(Rfid.registeredForUser(removed, "member-1"), null);
   assert.equal(Rfid.registeredForUser(removed, "member-2").last4, "5432");
 });
-
