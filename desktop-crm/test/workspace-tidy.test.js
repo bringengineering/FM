@@ -33,11 +33,16 @@ test("카드가 여는 화면이 그 카드가 남기는 폴더 안에 있다", 
   // 열리고, 사이드바가 곧바로 그 폴더로 따라가 버린다. 고른 것이 무시된
   // 것처럼 보인다.
   const nav = indexSource.slice(indexSource.indexOf("<nav"), indexSource.indexOf("</nav>"));
+  const cleaningPages = require("../src/cleaning-center-pages");
   const blocks = [...nav.matchAll(/data-nav-folder="([a-z-]+)"([\s\S]*?)(?=data-nav-folder="|$)/g)];
-  const viewsByFolder = new Map(blocks.map(([, key, body]) => [
-    key,
-    new Set([...body.matchAll(/data-view="([A-Za-z]+)"/g)].map(m => m[1])),
-  ]));
+  const viewsByFolder = new Map(blocks.map(([, key, body]) => {
+    const views = new Set([...body.matchAll(/data-view="([A-Za-z]+)"/g)].map(m => m[1]));
+    if (key === "cleaning-center") {
+      assert.match(body, /data-cleaning-pages-nav/u);
+      for (const screen of cleaningPages.SCREENS) views.add(screen.view);
+    }
+    return [key, views];
+  }));
   assert.ok(viewsByFolder.size >= 7, `폴더를 못 읽었다: ${viewsByFolder.size}`);
   for (const folder of WorkspaceShell.LANDING_FOLDERS) {
     if (folder.workspace !== "operations") continue;

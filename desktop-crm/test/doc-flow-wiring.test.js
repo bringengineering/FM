@@ -27,7 +27,7 @@ test("세 화면이 다 열리고 주소로도 열린다", () => {
   // viewMeta 에 없으면 화면이 조용히 대시보드로 튕긴다.
   assert.match(appSource, /\n    customerNotices: \[/u);
   assert.match(appSource, /\n    workReports: \[/u);
-  const allow = appSource.slice(appSource.indexOf('query.get("view")') - 900, appSource.indexOf('query.get("view")') + 200);
+  const allow = appSource.split(/\r?\n/u).filter(line => line.includes('query.get("view")')).join("\n");
   for (const view of ["workReports", "customerNotices"]) {
     assert.ok(allow.includes(`"${view}"`), `주소로 못 여는 화면: ${view}`);
   }

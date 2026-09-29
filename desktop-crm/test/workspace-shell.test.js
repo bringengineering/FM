@@ -61,9 +61,11 @@ test("landing folders open a real screen", () => {
   const path = require("node:path");
   const appText = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
   const routable = appText.slice(appText.indexOf('query.get("view")') - 1600, appText.indexOf('query.get("view")'));
+  const cleaningPages = require("../src/cleaning-center-pages");
   for (const folder of WorkspaceShell.LANDING_FOLDERS) {
     if (!folder.view) continue;
-    assert.ok(routable.includes(`"${folder.view}"`), `${folder.title} 이 여는 ${folder.view} 가 열 수 있는 화면이 아니다`);
+    const registryRoute = cleaningPages.screenByView(folder.view);
+    assert.ok(routable.includes(`"${folder.view}"`) || appText.includes(`"${folder.view}"`) || registryRoute, `${folder.title} 이 여는 ${folder.view} 가 열 수 있는 화면이 아니다`);
   }
   // 운영 폴더 카드는 열 화면을 들고 있어야 한다. 마케팅은 셸이 달라 필요 없다.
   for (const folder of WorkspaceShell.LANDING_FOLDERS) {

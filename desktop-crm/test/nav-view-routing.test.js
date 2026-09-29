@@ -13,7 +13,11 @@ const navSource = indexSource.slice(indexSource.indexOf("<nav"), indexSource.ind
 // 나지 않아서 코드만 봐서는 멀쩡해 보인다.
 //
 // 그래서 목록을 손으로 관리하지 않는다. 사이드바에서 읽어다 맞춘다.
-const navViews = [...new Set([...navSource.matchAll(/data-view="([A-Za-z]+)"/g)].map(match => match[1]))];
+const CleaningPages = require("../src/cleaning-center-pages");
+const navViews = [...new Set([
+  ...[...navSource.matchAll(/data-view="([A-Za-z]+)"/g)].map(match => match[1]),
+  ...CleaningPages.SCREENS.map(screen => screen.view),
+])];
 
 const viewMeta = appSource.slice(
   appSource.indexOf("const viewMeta = {"),
@@ -23,7 +27,7 @@ const viewMeta = appSource.slice(
 test("사이드바에서 여는 화면을 app.js 가 전부 알고 있다", () => {
   assert.ok(navViews.length > 15, "사이드바를 못 읽었다면 이 검사가 무의미하다");
   assert.ok(viewMeta.length > 0, "viewMeta 를 찾지 못했다");
-  const unknown = navViews.filter(view => !new RegExp(`\\n\\s*${view}:\\s*\\[`).test(viewMeta));
+  const unknown = navViews.filter(view => !new RegExp(`\\n\\s*${view}:\\s*\\[`).test(viewMeta) && !CleaningPages.viewMeta()[view]);
   assert.deepEqual(unknown, [], `viewMeta 에 없는 화면: ${unknown.join(", ")}`);
 });
 
