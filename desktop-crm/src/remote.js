@@ -3573,14 +3573,7 @@ class FirebaseRemoteClient {
       const userId = card.userId;
       await this.assertOfficeRfidTarget(userId, guard);
       const scannedAt = new Date(scannedAtMs);
-      const parts = OfficeRfidAttendanceCore.partsInKorea(scannedAt);
-      const minuteOfDay = parts.hour * 60 + parts.minute;
-      if (minuteOfDay >= 180 && minuteOfDay < 480) {
-        return { status: "ignored", code: "RFID_ATTENDANCE_RESET_WINDOW", userId, workDate: parts.workDate };
-      }
-      const workDate = minuteOfDay < 180
-        ? OfficeRfidAttendanceCore.previousWorkDate(parts.workDate)
-        : parts.workDate;
+      const workDate = OfficeRfidAttendanceCore.workDateForScan(scannedAt);
       const location = "officeRfidAttendance/" + userId + "/" + workDate;
       const legacyLocation = "officeAttendance/" + userId + "/" + workDate;
 

@@ -35,6 +35,11 @@ function previousWorkDate(value) {
     + "-" + String(previous.getUTCDate()).padStart(2, "0");
 }
 
+function workDateForScan(value) {
+  const parts = partsInKorea(value);
+  return parts.hour < 7 ? previousWorkDate(parts.workDate) : parts.workDate;
+}
+
 function validRecord(value, userId, workDate, strictRfid) {
   if (value == null) return null;
   if (!value || typeof value !== "object" || Array.isArray(value)
@@ -68,19 +73,10 @@ function decideAction({ nowValue, userId, rfidRecord, existingRecord }) {
   if (!USER_ID.test(uid)) throw new Error("RFID_ATTENDANCE_USER_INVALID");
   const now = nowValue instanceof Date ? new Date(nowValue.getTime()) : new Date(nowValue);
   if (!Number.isFinite(now.getTime())) throw new Error("RFID_ATTENDANCE_TIME_INVALID");
-  const parts = partsInKorea(now);
-  const minuteOfDay = parts.hour * 60 + parts.minute;
-  if (minuteOfDay >= 180 && minuteOfDay < 480) {
-    return Object.freeze({ status: "ignored", code: "RFID_ATTENDANCE_RESET_WINDOW", workDate: parts.workDate });
-  }
-
-  const workDate = minuteOfDay < 180 ? previousWorkDate(parts.workDate) : parts.workDate;
+  const workDate = workDateForScan(now);
   const current = validRecord(rfidRecord, uid, workDate, true);
   const legacy = validRecord(existingRecord, uid, workDate, false);
   const record = current || legacy;
-  if (minuteOfDay < 180 && (!record || !record.checkInAt)) {
-    return Object.freeze({ status: "ignored", code: "RFID_ATTENDANCE_NO_OPEN_SHIFT", workDate });
-  }
   if (record && record.checkOutAt) {
     return Object.freeze({ status: "ignored", code: "RFID_ATTENDANCE_ALREADY_COMPLETE", workDate });
   }
@@ -140,6 +136,7 @@ module.exports = Object.freeze({
   KOREA_TIME_ZONE,
   partsInKorea,
   previousWorkDate,
+  workDateForScan,
   decideAction,
   buildAttendanceRecord,
 });

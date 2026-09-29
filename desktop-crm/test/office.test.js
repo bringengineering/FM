@@ -11,6 +11,8 @@ const source = name => fs.readFile(path.join(__dirname, "..", "src", name), "utf
 
 test("workDate uses the Asia/Seoul business date", () => {
   assert.equal(Office.workDate("2026-08-30T15:30:00.000Z"), "2026-08-31");
+  assert.equal(Office.attendanceWorkDate("2026-08-31T21:59:00.000Z"), "2026-08-31");
+  assert.equal(Office.attendanceWorkDate("2026-08-31T22:00:00.000Z"), "2026-09-01");
 });
 
 test("attendance normalization, monthly totals, and missing checkout review are stable", () => {
@@ -27,6 +29,9 @@ test("attendance normalization, monthly totals, and missing checkout review are 
   assert.equal(summary.attendedDays, 2);
   assert.equal(summary.completedDays, 1);
   assert.equal(summary.missingCheckoutDays, 1);
+  const open = rows.find(row => row.workDate === "2026-08-31");
+  assert.equal(Office.attendanceReviewStatus(open, Office.attendanceWorkDate("2026-08-31T21:59:00.000Z")), "근무 중");
+  assert.equal(Office.attendanceReviewStatus(open, Office.attendanceWorkDate("2026-08-31T22:00:00.000Z")), "퇴근 미기록");
 });
 
 test("mailbox normalization de-duplicates mirrored messages and counts unread by sender", () => {

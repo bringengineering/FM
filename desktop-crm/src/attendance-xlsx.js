@@ -60,7 +60,7 @@ function safeFileSegment(value) {
 
 function sheetXml({ user, month, rows, now }) {
   const sorted = rows.slice().sort((a, b) => `${a.workDate}${a.checkInAt}`.localeCompare(`${b.workDate}${b.checkInAt}`));
-  const today = OfficeCore.workDate(now);
+  const today = OfficeCore.attendanceWorkDate(now);
   const summary = OfficeCore.monthlyAttendanceSummary(sorted, user.uid, month, now);
   const firstDataRow = 7;
   const lastDataRow = Math.max(firstDataRow, firstDataRow + sorted.length - 1);
