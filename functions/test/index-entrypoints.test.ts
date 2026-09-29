@@ -3888,6 +3888,16 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(`crmCompany/cleaningRefundRequests/${orderId}`);
   });
 
+  it("returns an authentication response for cleaning refunds when the CRM token is missing", async () => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningRefundsApi)(canonicalHttpRequest({}, {
+      method: "POST", headers: { authorization: "" },
+    }), output.response);
+    expect(output.state).toMatchObject({
+      status: 401, body: { ok: false, error: { code: "cleaning_refund_auth_required" } },
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith("crmCompany/cleaningOrders");
+  });
   it("requires an App Check attestation before reading a partner account", async () => {
     const output = httpResponseHarness();
     await requestHandler(entrypoints.cleaningPartnerApi)(canonicalHttpRequest({}, {

@@ -4610,7 +4610,9 @@ export const cleaningRefundsApi = onRequest(
       response.status(200).json({ ok: true, result: { request: committedDecision.request } });
     } catch (error) {
       const rawCode = error instanceof Error ? error.message : "";
-      const code = rawCode === "field_rate_limit_exceeded" ? "cleaning_refund_rate_limited"
+      const code = rawCode === "cleaning_order_auth_required" ? "cleaning_refund_auth_required"
+        : rawCode === "cleaning_order_forbidden" ? "cleaning_refund_forbidden"
+          : rawCode === "field_rate_limit_exceeded" ? "cleaning_refund_rate_limited"
         : rawCode === "crm_body_too_large" ? "cleaning_refund_body_too_large"
           : rawCode.startsWith("cleaning_refund_") || rawCode === "invalid_cleaning_refund_input" ? rawCode
             : "cleaning_refund_transaction_unavailable";

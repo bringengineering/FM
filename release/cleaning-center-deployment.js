@@ -60,6 +60,7 @@ function defaultRunCommand(command, args, cwd, { quiet = false } = {}) {
   const result = spawnSync(windowsFirebase ? "firebase.cmd" : command, args, {
     cwd,
     encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
     shell: windowsFirebase,
   });
   if (result.stdout && !quiet) process.stdout.write(result.stdout);
@@ -193,6 +194,7 @@ module.exports = {
   EXPECTED_FUNCTIONS,
   EXPECTED_PROJECT,
   buildCleaningDeploymentPlan,
+  defaultRunCommand,
   deployedFunctionNames,
   parseArgs,
   runCleaningDeployment,

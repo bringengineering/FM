@@ -6,11 +6,17 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   buildCleaningDeploymentPlan,
+  defaultRunCommand,
   runCleaningDeployment,
 } = require("./cleaning-center-deployment.js");
 
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-targets.json"), "utf8"));
 
+test("deployment runner captures Firebase CLI output beyond Node's small default buffer", () => {
+  const result = defaultRunCommand(process.execPath, ["-e", "process.stdout.write('x'.repeat(2 * 1024 * 1024))"], __dirname, { quiet: true });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.length, 2 * 1024 * 1024);
+});
 test("Cleaning Center deploy plan includes only the four approved functions and the Hosting site, no Rules", () => {
   const plan = buildCleaningDeploymentPlan(manifest, "bring-fm");
 
