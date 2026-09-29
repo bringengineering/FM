@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-save", input),
   saveOfficeAttendanceCorrection: input => ipcRenderer.invoke("crm:office-attendance-correct", input),
   saveOfficeDisplayName: input => ipcRenderer.invoke("crm:office-display-name-save", input),
+  saveOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-save", input),
+  removeOfficeRfidCard: input => ipcRenderer.invoke("crm:office-rfid-card-remove", input),
   pickOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-pick", input),
   dropOfficeAttachment: (file, input) => {
     let filePath = "";

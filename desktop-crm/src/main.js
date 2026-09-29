@@ -13,6 +13,7 @@ const { fileURLToPath, pathToFileURL } = require("node:url");
 const { createLocalWorkAssessor } = require("./local-gemini-assessment");
 const Core = require("./core");
 const OfficeCore = require("./office-core");
+const OfficeRfidCore = require("./office-rfid-core");
 const OfficeAttachment = require("./office-attachment");
 const { createOfficeAttachmentStageGate } = require("./office-attachment-stage-gate");
 const { createOfficeNotificationTracker } = require("./office-notification");
@@ -189,6 +190,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 }
 let localOperationsData = null;
 let localOfficeData = null;
+let localOfficeRfidCards = Object.create(null);
 let localOfficeMessageFiles = Object.create(null);
 const localOfficeAttendanceAudits = new Map();
 const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
@@ -1331,7 +1333,7 @@ function demoOffice() {
     { id: "msg_demo_01", senderId: actor.uid, receiverId: "office-member-1", message: "오늘 현장 일정 확인 부탁드립니다.", readAt: at(today, 9, 10), createdAt: at(today, 9, 6) },
     { id: "msg_demo_02", senderId: "office-member-1", receiverId: actor.uid, message: "네, 확인 후 CRM에 정리하겠습니다.", readAt: "", createdAt: at(today, 9, 12) },
   ];
-  return { users, attendance, messages, loadedAt: new Date().toISOString() };
+  return { users, attendance, messages, rfidCards: OfficeRfidCore.summaries(localOfficeRfidCards), rfidAdmin: actor.officeAdmin === true, loadedAt: new Date().toISOString() };
 }
 
 function demoVendors() {
@@ -2164,6 +2166,8 @@ async function readOffice() {
   assertOfficeSession();
   if (localTestMode) {
     localOfficeData = localOfficeData || demoOffice();
+    localOfficeData.rfidCards = OfficeRfidCore.summaries(localOfficeRfidCards);
+    localOfficeData.rfidAdmin = authState().user?.officeAdmin === true;
     return JSON.parse(JSON.stringify(localOfficeData));
   }
   if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
@@ -2656,6 +2660,55 @@ async function saveOfficeDisplayName(input) {
     && ["admin", "member", "viewer"].includes(String(item.role || "")));
   if (!target) throw new Error("이름을 수정할 활성 구성원을 찾지 못했습니다.");
   target.displayName = displayName;
+  localOfficeData.loadedAt = new Date().toISOString();
+  return { ok: true, data: await readOffice() };
+}
+
+async function saveOfficeRfidCard(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 카드는 지정된 근태 관리자만 등록할 수 있습니다.");
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (Object.keys(source).some(key => !["userId", "cardCode"].includes(key))) {
+    throw new Error("RFID 카드 등록 요청이 올바르지 않습니다.");
+  }
+  const userId = OfficeRfidCore.normalizeUserId(source.userId);
+  const cardCode = OfficeRfidCore.normalizeCardCode(source.cardCode);
+  if (!userId || userId !== source.userId || !cardCode || cardCode !== source.cardCode) {
+    throw new Error("직원과 카드 정보를 확인해 주세요.");
+  }
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.saveOfficeRfidCard({ userId, cardCode }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  const target = localOfficeData.users.find(item => item.uid === userId
+    && item.enabled === true
+    && item.mustChangePassword !== true
+    && ["admin", "member", "viewer"].includes(String(item.role || "")));
+  if (!target) throw new Error("카드를 등록할 활성 구성원을 찾지 못했습니다.");
+  localOfficeRfidCards = OfficeRfidCore.replaceCard(localOfficeRfidCards, {
+    userId,
+    cardCode,
+    registeredAt: new Date().toISOString(),
+    registeredBy: actor.uid,
+  }).map;
+  localOfficeData.loadedAt = new Date().toISOString();
+  return { ok: true, data: await readOffice() };
+}
+
+async function removeOfficeRfidCard(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 카드는 지정된 근태 관리자만 해제할 수 있습니다.");
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (Object.keys(source).some(key => key !== "userId")) throw new Error("RFID 카드 해제 요청이 올바르지 않습니다.");
+  const userId = OfficeRfidCore.normalizeUserId(source.userId);
+  if (!userId || userId !== source.userId) throw new Error("카드를 해제할 직원을 확인해 주세요.");
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.removeOfficeRfidCard({ userId }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  localOfficeRfidCards = OfficeRfidCore.removeCard(localOfficeRfidCards, userId);
   localOfficeData.loadedAt = new Date().toISOString();
   return { ok: true, data: await readOffice() };
 }
@@ -8957,6 +9010,8 @@ secureCanonicalHandle("crm:office-load", readOffice);
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
 secureCanonicalHandle("crm:office-attendance-correct", input => correctOfficeAttendance(input));
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));
+secureCanonicalHandle("crm:office-rfid-card-save", input => saveOfficeRfidCard(input));
+secureCanonicalHandle("crm:office-rfid-card-remove", input => removeOfficeRfidCard(input));
 secureCanonicalHandle("crm:office-attachment-pick", input => pickOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-drop", input => dropOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-open", input => openOfficeAttachment(input));
