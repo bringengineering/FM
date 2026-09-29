@@ -18,13 +18,15 @@ test("AI client accepts only the closed CRM automation tasks and allow-listed co
   for (const task of [
     "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
     "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-    "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake"
+    "work_order", "completion_report", "building_monthly_report", "monthly_management_report", "quote_draft", "consultation_intake"
   ]) {
     assert.equal(validateAssistInput({ task, content: "내용" }).task, task);
   }
   assert.throws(() => validateAssistInput({ task: "unknown", content: "내용" }), error => error?.code === "UNSUPPORTED_TASK");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "" }), error => error?.code === "INVALID_INPUT");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "가".repeat(12001) }), error => error?.code === "INPUT_TOO_LARGE");
+  assert.equal(validateAssistInput({ task: "building_monthly_report", content: "가".repeat(12001) }).content.length, 12001);
+  assert.throws(() => validateAssistInput({ task: "building_monthly_report", content: "가".repeat(13001) }), error => error?.code === "INPUT_TOO_LARGE");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "내용", groqKey: "gsk_forbidden" }), error => error?.code === "INVALID_INPUT");
 });
 
@@ -104,6 +106,18 @@ test("AI client fails safely on missing session, invalid endpoint, malformed out
   await assert.rejects(() => assistWithGateway({ endpoint: "http://gateway.example/v1/assist", idToken: "token", input: { task: "assistant_summary", content: "내용" } }), error => error?.code === "AI_CONFIGURATION_ERROR");
   await assert.rejects(() => assistWithGateway({ endpoint: "https://gateway.example/v1/assist", idToken: "token", input: { task: "assistant_summary", content: "내용" }, fetchImpl: async () => new Response("not-json", { status: 200 }) }), error => error?.code === "AI_INVALID_RESPONSE");
   await assert.rejects(() => assistWithGateway({ endpoint: "https://gateway.example/v1/assist", idToken: "token", input: { task: "assistant_summary", content: "내용" }, timeoutMs: 5, fetchImpl: async (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason))) }), error => error?.code === "AI_TEMPORARY_FAILURE");
+});
+
+test("AI client permits HTTP only for the fixed local preview endpoint", async () => {
+  const common = {
+    idToken: "firebase-token",
+    input: { task: "completion_report", content: "작업 완료" },
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true, requestId: "local-1", result: { text: "완료" } }), { status: 200 })
+  };
+  await assert.rejects(() => assistWithGateway({ ...common, endpoint: "http://127.0.0.1:8787/v1/assist" }), error => error?.code === "AI_CONFIGURATION_ERROR");
+  const result = await assistWithGateway({ ...common, endpoint: "http://127.0.0.1:8787/v1/assist", allowLocalHttp: true });
+  assert.equal(result.result.text, "완료");
+  await assert.rejects(() => assistWithGateway({ ...common, endpoint: "http://localhost:8787/v1/assist", allowLocalHttp: true }), error => error?.code === "AI_CONFIGURATION_ERROR");
 });
 
 test("Electron keeps the Firebase token in main and exposes only a narrow assist IPC", () => {

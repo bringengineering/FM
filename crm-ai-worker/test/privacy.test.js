@@ -20,6 +20,8 @@ test("privacy preserves ordinary Korean work descriptions", () => {
 test("privacy normalizes whitespace and enforces the content boundary", () => {
   assert.equal(normalizeText("  첫 줄\r\n\r\n  둘째 줄  "), "첫 줄\n\n둘째 줄");
   assert.throws(() => normalizeText("가".repeat(12001)), error => error?.code === "INPUT_TOO_LARGE");
+  assert.equal(normalizeText("가".repeat(12_500), 13_000).length, 12_500);
+  assert.throws(() => normalizeText("가".repeat(13_001), 13_000), error => error?.code === "INPUT_TOO_LARGE");
 });
 
 test("privacy context is copied through an explicit non-sensitive allow list", () => {

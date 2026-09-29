@@ -112,6 +112,60 @@ test("gateway masks sensitive content before Groq and returns a normalized resul
   assert.equal(calls[1].options.headers.authorization, "Bearer test-secret");
 });
 
+test("completion and building-owner reports use only the configured Gemini model", async () => {
+  const calls = [];
+  const worker = createWorker({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes("accounts:lookup")) return new Response(JSON.stringify({ users: [{ localId: "uid-1", email: "ameejin92@gmail.com" }] }), { status: 200 });
+    const body = JSON.parse(options.body);
+    const output = body.systemInstruction.parts[0].text.includes("월간 관리 보고서")
+      ? { summary: "이번 달 관리 내역을 확인했습니다.", attention: "", nextMonthPlan: "" }
+      : { text: "배수구 이물을 제거하고 작동을 확인했습니다." };
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(output) }] } }],
+      usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 16 }
+    }), { status: 200 });
+  }, requestId: () => "gemini-1" });
+  const env = environment({ GEMINI_API_KEY: "gemini-test-secret", GEMINI_REPORT_MODEL: "gemini-3.5-flash-lite" });
+
+  for (const [task, content] of [
+    ["completion_report", "배수구 이물 제거. 확인 연락처 010-1234-5678"],
+    ["building_monthly_report", "{\"buildingName\":\"햇빛빌라\",\"confirmedNextMonthPlan\":\"\"}"]
+  ]) {
+    const response = await worker.fetch(request({ task, content }), env);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.model, "gemini-3.5-flash-lite");
+    assert.equal(result.usage.inputTokens, 40);
+    assert.equal(result.usage.outputTokens, 16);
+  }
+
+  const providerCalls = calls.filter(call => call.url.includes("generativelanguage.googleapis.com"));
+  assert.equal(providerCalls.length, 2);
+  for (const call of providerCalls) {
+    assert.match(call.url, /\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/u);
+    assert.equal(call.options.headers["x-goog-api-key"], "gemini-test-secret");
+    assert.equal(call.options.redirect, "error");
+    assert.doesNotMatch(call.url, /gemini-test-secret/u);
+    const body = JSON.parse(call.options.body);
+    assert.equal(body.generationConfig.responseMimeType, "application/json");
+    assert.equal(body.generationConfig.temperature, 0.2);
+  }
+  assert.match(JSON.stringify(providerCalls[0].options.body), /\[전화번호\]/u);
+});
+
+test("Gemini reports fail closed without a key or with an unapproved model", async () => {
+  let providerCalls = 0;
+  const worker = createWorker({ fetchImpl: async url => {
+    if (String(url).includes("accounts:lookup")) return new Response(JSON.stringify({ users: [{ localId: "uid-1", email: "ameejin92@gmail.com" }] }), { status: 200 });
+    providerCalls += 1;
+    return new Response("unexpected", { status: 200 });
+  } });
+  assert.equal((await worker.fetch(request({ task: "completion_report", content: "작업 완료" }), environment({ GEMINI_API_KEY: "" }))).status, 503);
+  assert.equal((await worker.fetch(request({ task: "completion_report", content: "작업 완료" }), environment({ GEMINI_API_KEY: "secret", GEMINI_REPORT_MODEL: "unapproved-model" }))).status, 503);
+  assert.equal(providerCalls, 0);
+});
+
 test("gateway fails closed for disabled, limited, missing-secret, and broken-provider states", async () => {
   const worker = createWorker({ fetchImpl: successfulFetch([]), timeoutMs: 10 });
   assert.equal((await worker.fetch(request(), environment({ AI_ENABLED: "false" }))).status, 503);

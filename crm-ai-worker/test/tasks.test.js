@@ -16,6 +16,7 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "building_monthly_report",
     "directive_split",
     "directive_draft",
     "monthly_management_report",
@@ -97,6 +98,21 @@ test("task messages require Korean evidence-bounded JSON output", () => {
 test("task result normalizes general text output", () => {
   assert.deepEqual(normalizeTaskResult("assistant_summary", { text: "  핵심 상담 내용  ", ignored: "제거" }), { text: "핵심 상담 내용" });
   assert.throws(() => normalizeTaskResult("assistant_summary", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("building owner report returns only its bounded editable narrative fields", () => {
+  const result = normalizeTaskResult("building_monthly_report", {
+    summary: " 이번 달 공용부 점검을 완료했습니다. ",
+    attention: "",
+    nextMonthPlan: "옥상 방수 구간 재점검",
+    privateMemo: "제거"
+  });
+  assert.deepEqual(JSON.parse(result.text), {
+    summary: "이번 달 공용부 점검을 완료했습니다.",
+    attention: "",
+    nextMonthPlan: "옥상 방수 구간 재점검"
+  });
+  assert.throws(() => normalizeTaskResult("building_monthly_report", { summary: "", attention: "", nextMonthPlan: "" }), error => error?.code === "AI_INVALID_RESPONSE");
 });
 
 test("task result requires every consultation draft field", () => {

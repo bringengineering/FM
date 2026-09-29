@@ -1,4 +1,4 @@
-import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
+import { MAX_BUILDING_REPORT_CHARS, maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
@@ -18,8 +18,12 @@ const CONTRACTS_PATH = "/v1/contracts";
 const DOCUMENT_DELIVERY_PATH = "/v1/document-delivery";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+const GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models/";
+const GEMINI_REPORT_TASKS = new Set(["completion_report", "building_monthly_report"]);
+const GEMINI_REPORT_MODELS = new Set(["gemini-3.5-flash-lite"]);
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const MAX_GEMINI_RESPONSE_BYTES = 128 * 1024;
 
 const ERROR_STATUS = Object.freeze({
   AUTH_REQUIRED: 401,
@@ -34,7 +38,7 @@ const ERROR_STATUS = Object.freeze({
   AI_CONFIGURATION_ERROR: 503,
   GEMINI_NOT_CONFIGURED: 503,
   CONTRACT_DRIVE_UNAVAILABLE: 503,
-  CONTRACT_SOURCE_NOT_FOUND: 404,
+  CONTRACT_SOURCE_NOT_FOUND: 404
 });
 
 function base64url(value) {
@@ -121,7 +125,8 @@ async function readPayload(request) {
   catch { throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" }); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" });
   if (!supportedTaskIds().includes(value.task)) throw Object.assign(new Error("UNSUPPORTED_TASK"), { code: "UNSUPPORTED_TASK" });
-  const content = normalizeText(value.content);
+  const contentLimit = value.task === "building_monthly_report" ? MAX_BUILDING_REPORT_CHARS : undefined;
+  const content = normalizeText(value.content, contentLimit);
   if (!content) throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" });
   return { task: value.task, content, context: sanitizeContext(value.context) };
 }
@@ -213,6 +218,83 @@ async function callGroq(payload, env, fetchImpl, timeoutMs) {
     usage: {
       inputTokens: Math.max(0, Number(data?.usage?.prompt_tokens || 0)),
       outputTokens: Math.max(0, Number(data?.usage?.completion_tokens || 0))
+    }
+  };
+}
+
+async function readLimitedResponseText(response, maxBytes) {
+  const declaredLength = Number(response.headers.get("content-length") || 0);
+  if (declaredLength > maxBytes) throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  if (!response.body?.getReader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(bytes);
+}
+
+async function callGeminiReport(payload, env, fetchImpl, timeoutMs) {
+  if (!GEMINI_REPORT_TASKS.has(payload.task)) throw Object.assign(new Error("UNSUPPORTED_TASK"), { code: "UNSUPPORTED_TASK" });
+  if (!env.GEMINI_API_KEY) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  const model = String(env.GEMINI_REPORT_MODEL || "gemini-3.5-flash-lite").trim();
+  if (!GEMINI_REPORT_MODELS.has(model)) throw Object.assign(new Error("AI_CONFIGURATION_ERROR"), { code: "AI_CONFIGURATION_ERROR" });
+
+  const maskedContent = maskSensitiveText(payload.content, payload.task === "building_monthly_report" ? MAX_BUILDING_REPORT_CHARS : undefined);
+  const maskedContext = sanitizeContext(payload.context);
+  const messages = buildTaskMessages(payload.task, maskedContent, maskedContext);
+  let response;
+  try {
+    response = await fetchImpl(`${GEMINI_API_ROOT}${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": String(env.GEMINI_API_KEY), "content-type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: messages[0].content }] },
+        contents: [{ role: "user", parts: [{ text: messages[1].content }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: "application/json", maxOutputTokens: 4096 }
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch {
+    throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  }
+  if (response.status === 429) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  if (!response.ok) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+
+  let data;
+  try { data = JSON.parse(await readLimitedResponseText(response, MAX_GEMINI_RESPONSE_BYTES)); }
+  catch (error) {
+    if (error?.code === "AI_INVALID_RESPONSE") throw error;
+    throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  }
+  const rawText = data?.candidates?.[0]?.content?.parts?.map(part => typeof part?.text === "string" ? part.text : "").join("").trim();
+  if (!rawText) throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  let parsed;
+  try { parsed = JSON.parse(rawText); }
+  catch { throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" }); }
+  return {
+    result: normalizeTaskResult(payload.task, parsed),
+    model,
+    masked: maskedContent !== payload.content || JSON.stringify(maskedContext) !== JSON.stringify(payload.context),
+    usage: {
+      inputTokens: Math.max(0, Number(data?.usageMetadata?.promptTokenCount || 0)),
+      outputTokens: Math.max(0, Number(data?.usageMetadata?.candidatesTokenCount || 0))
     }
   };
 }
@@ -330,11 +412,14 @@ export function createWorker(options = {}) {
           const transcript = await callGroqTranscription(audio, env, fetchImpl, timeoutMs);
           return json({ ok: true, requestId: requestId(), transcript }, 200, cors);
         }
-        const response = await callGroq(payload, env, fetchImpl, timeoutMs);
+        const response = GEMINI_REPORT_TASKS.has(payload.task)
+          ? await callGeminiReport(payload, env, fetchImpl, timeoutMs)
+          : await callGroq(payload, env, fetchImpl, timeoutMs);
         return json({
           ok: true,
           requestId: requestId(),
           result: response.result,
+          ...(response.model ? { model: response.model } : {}),
           warnings: response.masked ? ["개인정보 형태를 마스킹한 뒤 AI에 전달했습니다."] : [],
           usage: response.usage
         }, 200, cors);

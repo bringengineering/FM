@@ -16,7 +16,7 @@ function textFiles(root) {
   return results;
 }
 
-test("CRM application and AI gateway package inputs contain no Groq credential values", () => {
+test("CRM application and AI gateway package inputs contain no provider credential values", () => {
   const roots = [
     path.join(repositoryRoot, "desktop-crm/src"),
     path.join(repositoryRoot, "desktop-crm/package.json"),
@@ -29,13 +29,14 @@ test("CRM application and AI gateway package inputs contain no Groq credential v
     const source = fs.readFileSync(file, "utf8");
     assert.doesNotMatch(source, /\bgsk_[A-Za-z0-9_-]{10,}\b/, `${path.relative(repositoryRoot, file)} contains a Groq key-shaped value`);
     assert.doesNotMatch(source, /GROQ_API_KEY\s*=\s*["'][^"']+["']/, `${path.relative(repositoryRoot, file)} assigns a Groq secret`);
+    assert.doesNotMatch(source, /GEMINI_API_KEY\s*=\s*["'][^"']+["']/, `${path.relative(repositoryRoot, file)} assigns a Gemini secret`);
   }
 });
 
 test("renderer and preload never reference the Groq secret or provider authorization", () => {
   for (const relative of ["desktop-crm/src/app.js", "desktop-crm/src/index.html", "desktop-crm/src/preload.js"]) {
     const source = fs.readFileSync(path.join(repositoryRoot, relative), "utf8");
-    assert.doesNotMatch(source, /GROQ_API_KEY|gsk_|api\.groq\.com|Bearer\s+\$\{?env\.GROQ_API_KEY/);
+    assert.doesNotMatch(source, /GROQ_API_KEY|GEMINI_API_KEY|gsk_|api\.groq\.com|generativelanguage\.googleapis\.com|Bearer\s+\$\{?env\.GROQ_API_KEY/);
   }
 });
 

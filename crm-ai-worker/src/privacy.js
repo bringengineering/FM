@@ -1,11 +1,12 @@
 const MAX_CONTENT_CHARS = 12_000;
+const MAX_BUILDING_REPORT_CHARS = 13_000;
 const CONTEXT_KEYS = ["customerType", "workType", "owner", "priority", "category", "urgency", "month"];
 
 function codedError(code) {
   return Object.assign(new Error(code), { code });
 }
 
-export function normalizeText(value) {
+export function normalizeText(value, maxChars = MAX_CONTENT_CHARS) {
   const text = String(value ?? "")
     .replace(/\r\n?/g, "\n")
     .replace(/[\t\f\v]+/g, " ")
@@ -13,12 +14,12 @@ export function normalizeText(value) {
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (text.length > MAX_CONTENT_CHARS) throw codedError("INPUT_TOO_LARGE");
+  if (text.length > maxChars) throw codedError("INPUT_TOO_LARGE");
   return text;
 }
 
-export function maskSensitiveText(value) {
-  return normalizeText(value)
+export function maskSensitiveText(value, maxChars = MAX_CONTENT_CHARS) {
+  return normalizeText(value, maxChars)
     .replace(/\b\d{6}\s*[-]\s*[1-4]\d{6}\b/g, "[주민번호]")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[이메일]")
     .replace(/(?<!\d)(?:\+?82[- ]?0?1[016789]|01[016789])[- ]?\d{3,4}[- ]?\d{4}(?!\d)/g, "[전화번호]")
@@ -36,4 +37,4 @@ export function sanitizeContext(input) {
   return result;
 }
 
-export { MAX_CONTENT_CHARS };
+export { MAX_CONTENT_CHARS, MAX_BUILDING_REPORT_CHARS };

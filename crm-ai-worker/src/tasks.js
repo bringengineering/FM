@@ -44,6 +44,10 @@ const TASKS = Object.freeze({
     instruction: "제공된 수행 내용, 전후 상태, 확정 비용, 미완료·후속조치만 사용해 완료보고서 초안을 작성하세요.",
     shape: "{\"text\":\"완료보고서 초안\"}"
   },
+  building_monthly_report: {
+    instruction: "계약 건물의 건물주에게 전달할 월간 관리 보고서를 정중하고 이해하기 쉬운 한국어로 작성하세요. 제공된 관리 내역과 수치를 변경하거나 추측하지 말고, 작업·원인·효과·계획을 만들지 마세요. confirmedNextMonthPlan이 비어 있으면 nextMonthPlan도 빈 문자열로 두세요. 제공 자료에 개인 연락처, 상세주소, 계좌정보, 내부 메모, 협력업체 원가나 이익률이 있으면 포함하지 마세요.",
+    shape: "{\"summary\":\"이번 달 관리 요약 2~4문장\",\"attention\":\"진행 중이거나 확인이 필요한 내용. 없으면 빈 문자열\",\"nextMonthPlan\":\"확정된 다음 달 계획. 입력이 없으면 빈 문자열\"}"
+  },
   directive_split: {
     instruction: "대표가 카톡·텔레그램에 흘려 적은 이번 주 할 일 뭉치를 받아, 사람별 주간 업무지시서로 갈라 쓰세요. 반드시 아래 모양만 쓰고 인사말이나 설명은 한 줄도 붙이지 마세요.\n== 사람이름 ==\n배경\\t(왜 하필 이번 주에 이것인지)\n목표\\t(이 주가 끝나면 무엇이 달라져 있는지)\n안 하면\\t(안 했을 때 무엇을 잃는지)\n(빈 줄)\n업무명\\t목적\\t완료기준\\t산출물\\t산출물 종류\\t산출물 수량\\t예상시간\\t가중치\\t마감\n그 아래에 그 사람 업무를 한 줄씩. 사람이 바뀌면 다시 == 이름 == 으로 시작하세요. 이름은 주어진 사람 목록에 있는 이름만 쓰세요. 누구 것인지 알 수 없는 줄은 마지막에 == 누구인지 모름 == 아래에 원문 그대로 한 줄씩 옮기고, 그 칸에는 업무 표를 만들지 마세요 — 짐작해서 아무에게나 붙이면 시킨 적 없는 일이 지시가 됩니다. 규칙은 이렇습니다. 적히지 않은 사실을 만들지 마세요. 완료기준은 '무엇이 있으면 끝인지'를 눈에 보이는 것으로 쓰세요. 산출물은 YYYYMMDD_이름.확장자 모양의 파일명으로 쓰세요. 산출물 종류는 사진·문서·표·링크·없음 중 원문에서 확인한 것만 쓰고, 종류나 수량을 알 수 없으면 비워 두세요. 비어 있는 항목은 사람이 확인하기 전 발행되지 않습니다. 예상시간은 0.5 단위 숫자만 쓰고, 사람마다 주어진 가용시간이 있으면 그 사람 예상시간 합이 그것을 넘지 않게 하세요. 가중치는 정수이고 사람마다 합이 정확히 100이어야 합니다. 마감이 적혀 있으면 그 날짜를 쓰고 없으면 비우세요.",
     shape: "{\"text\":\"== 이름 == 으로 갈라진 사람별 지시서\"}"
@@ -157,6 +161,14 @@ export function normalizeTaskResult(task, value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw codedError("AI_INVALID_RESPONSE");
   if (task === "quote_draft") return normalizeQuoteResult(value);
   if (task === "consultation_intake") return normalizeConsultationIntake(value);
+  if (task === "building_monthly_report") {
+    const narrative = {
+      summary: boundedString(value.summary).slice(0, 1200),
+      attention: optionalString(value.attention, 600),
+      nextMonthPlan: optionalString(value.nextMonthPlan, 800)
+    };
+    return { text: JSON.stringify(narrative) };
+  }
   if (task !== "consultation_structure") return { text: boundedString(value.text) };
   return {
     summary: boundedString(value.summary),

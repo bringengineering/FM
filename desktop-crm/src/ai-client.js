@@ -1,7 +1,7 @@
 const SUPPORTED_TASKS = new Set([
   "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
   "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-  "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake",
+  "work_order", "completion_report", "building_monthly_report", "monthly_management_report", "quote_draft", "consultation_intake",
   "directive_draft", "directive_split"
 ]);
 const INPUT_KEYS = new Set(["task", "content", "context"]);
@@ -34,7 +34,8 @@ function validateAssistInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw codedError("INVALID_INPUT");
   if (Object.keys(input).some(key => !INPUT_KEYS.has(key))) throw codedError("INVALID_INPUT");
   if (!SUPPORTED_TASKS.has(input.task)) throw codedError("UNSUPPORTED_TASK");
-  const content = safeText(input.content, 12_000);
+  const contentLimit = input.task === "building_monthly_report" ? 13_000 : 12_000;
+  const content = safeText(input.content, contentLimit);
   if (!content) throw codedError("INVALID_INPUT");
   const sourceContext = input.context && typeof input.context === "object" && !Array.isArray(input.context) ? input.context : {};
   const context = {};
@@ -83,6 +84,7 @@ function normalizedSuccess(value) {
     ok: true,
     requestId: value.requestId,
     result,
+    ...(typeof value.model === "string" && /^[A-Za-z0-9._-]{1,80}$/.test(value.model) ? { model: value.model } : {}),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter(item => typeof item === "string").slice(0, 3) : [],
     usage: {
       inputTokens: Math.max(0, Number(value.usage?.inputTokens || 0)),
@@ -96,7 +98,14 @@ async function assistWithGateway(options) {
   let url;
   try { url = new URL(endpoint); }
   catch { throw codedError("AI_CONFIGURATION_ERROR"); }
-  if (url.protocol !== "https:" || url.pathname !== "/v1/assist") throw codedError("AI_CONFIGURATION_ERROR");
+  const secureEndpoint = url.protocol === "https:" && url.pathname === "/v1/assist" && !url.username && !url.password && !url.search && !url.hash;
+  const localPreviewEndpoint = options?.allowLocalHttp === true
+    && url.protocol === "http:"
+    && url.hostname === "127.0.0.1"
+    && url.port === "8787"
+    && url.pathname === "/v1/assist"
+    && !url.username && !url.password && !url.search && !url.hash;
+  if (!secureEndpoint && !localPreviewEndpoint) throw codedError("AI_CONFIGURATION_ERROR");
   const idToken = String(options?.idToken || "").trim();
   if (!idToken) throw codedError("AUTH_REQUIRED");
   const input = validateAssistInput(options?.input);
