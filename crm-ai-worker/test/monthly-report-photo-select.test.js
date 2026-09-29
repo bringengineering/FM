@@ -8,7 +8,7 @@ const jpeg = () => `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0
 const basePayload = () => ({
   month: "2026-08",
   activities: [{ id: "a1", date: "2026-08-21", kind: "냉난방·필터 점검" }],
-  images: [{ id: "photo_1", date: "2026-08-21", activityName: "필터 점검", dataUrl: jpeg() }],
+  images: [{ id: "photo_1", date: "2026-08-21", dataUrl: jpeg() }],
 });
 
 function request(payload, token = "firebase-token") {
@@ -24,7 +24,7 @@ test("월간 사진 payload는 허용 필드·날짜·JPEG 형식만 받는다",
   assert.equal(parsed.images.length, 1);
   assert.equal(parsed.images[0].date, "2026-08-21");
   await assert.rejects(() => readMonthlyReportPhotoSelectionPayload(request({ ...basePayload(), driveUrl: "https://drive.google.com/private" })), error => error?.code === "INVALID_INPUT");
-  await assert.rejects(() => readMonthlyReportPhotoSelectionPayload(request({ ...basePayload(), images: [{ id: "x", date: "2026-08-21", activityName: "", dataUrl: "data:image/jpeg;base64,AAAA" }] })), error => error?.code === "INVALID_INPUT");
+  await assert.rejects(() => readMonthlyReportPhotoSelectionPayload(request({ ...basePayload(), images: [{ id: "x", date: "2026-08-21", dataUrl: "data:image/jpeg;base64,AAAA" }] })), error => error?.code === "INVALID_INPUT");
 });
 
 test("Gemini 응답은 요청된 ID만 최대 12장 선택하고 키는 헤더에만 둔다", async () => {
