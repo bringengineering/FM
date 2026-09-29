@@ -2,9 +2,10 @@
   "use strict";
 
   const Core = window.BringOfficeCore;
+  const Rfid = window.BringOfficeRfidCore;
   const state = {
     context: null,
-    data: { users: [], attendance: [], messages: [], loadedAt: "" },
+    data: { users: [], attendance: [], messages: [], rfidCards: [], rfidAdmin: false, loadedAt: "" },
     loaded: false,
     loading: false,
     error: "",
@@ -25,6 +26,9 @@
     adminMonth: Core.workDate().slice(0, 7),
     adminTab: "list",
     adminAttendanceCorrection: null,
+    selectedRfidUserId: "",
+    rfidCapture: null,
+    rfidCaptureTimer: null,
     busy: false,
     active: false,
     generation: 0,
@@ -143,7 +147,11 @@
 
   function applyOfficeData(payload, user, expectedRevision) {
     if (expectedRevision !== undefined && expectedRevision !== state.dataRevision) return false;
-    state.data = Core.normalizeOfficePayload(payload && payload.data || payload, user || currentUser());
+    const source = payload && payload.data || payload;
+    state.data = Object.assign(Core.normalizeOfficePayload(source, user || currentUser()), {
+      rfidCards: Rfid ? Rfid.summaries(source && source.rfidCards) : [],
+      rfidAdmin: source && source.rfidAdmin === true,
+    });
     const correction = state.adminAttendanceCorrection;
     if (correction) {
       const currentRecord = state.data.attendance.find(record => record.userId === correction.userId
@@ -190,7 +198,11 @@
   }
 
   function mergeConfirmedReadReceipts(payload, peerId, userId, messageIds) {
-    const normalized = Core.normalizeOfficePayload(payload && payload.data || payload, currentUser());
+    const source = payload && payload.data || payload;
+    const normalized = Object.assign(Core.normalizeOfficePayload(source, currentUser()), {
+      rfidCards: Rfid ? Rfid.summaries(source && source.rfidCards) : [],
+      rfidAdmin: source && source.rfidAdmin === true,
+    });
     const messages = Core.mergeConfirmedOfficeReadReceipts(
       state.data.messages,
       normalized.messages,
@@ -1266,6 +1278,140 @@
     }
   }
 
+  function rfidRegistrationFor(userId) {
+    return Rfid ? Rfid.registeredForUser(state.data.rfidCards, userId) : null;
+  }
+
+  function rfidRegisteredDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat("ko-KR", {
+      timeZone: Core.KOREA_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  }
+
+  function rfidView() {
+    if (!isAdmin() || !state.data.rfidAdmin) {
+      return `${officeHero("직원 카드 등록", "직원별 RFID 카드를 등록·교체·해제합니다", "")}
+        <section class="rfid-access-denied"><b>근태 관리자만 사용할 수 있습니다.</b><span>권한이 필요한 경우 CRM 관리자에게 문의해 주세요.</span></section>`;
+    }
+    const people = state.data.users.filter(user => user && user.uid);
+    if (!people.some(user => user.uid === state.selectedRfidUserId)) state.selectedRfidUserId = people[0]?.uid || "";
+    const selected = userById(state.selectedRfidUserId) || null;
+    const selectedCard = selected ? rfidRegistrationFor(selected.uid) : null;
+    const capture = state.rfidCapture;
+    const options = people.map(user => `<option value="${esc(user.uid)}"${user.uid === state.selectedRfidUserId ? " selected" : ""}>${esc(Core.displayName(user))} · ${esc(userMeta(user))}</option>`).join("");
+    const rows = state.data.rfidCards.map(card => {
+      const user = userById(card.userId);
+      if (!user) return "";
+      return `<tr>
+        <td><div class="rfid-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td>
+        <td><span class="rfid-mask">•••• ${esc(card.last4)}</span></td>
+        <td>${esc(rfidRegisteredDate(card.registeredAt))}</td>
+        <td><button type="button" class="mini-button danger" data-rfid-remove="${esc(user.uid)}"${state.busy || capture ? " disabled" : ""}>카드 해제</button></td>
+      </tr>`;
+    }).join("");
+    const status = selectedCard
+      ? `<span class="rfid-current is-registered"><i></i><b>등록됨</b><em>카드 •••• ${esc(selectedCard.last4)}</em></span>`
+      : `<span class="rfid-current"><i></i><b>등록 없음</b><em>새 카드를 태그해 주세요</em></span>`;
+    const registrationPanel = capture
+      ? `<div class="rfid-capture" role="status" aria-live="polite">
+          <span class="rfid-waves" aria-hidden="true">)))</span>
+          <div><b>새 카드를 태그해주세요</b><small>15초 안에 리더기에 카드를 가까이 대세요. 카드번호는 화면에 표시되지 않습니다.</small></div>
+          <button type="button" class="secondary-button" data-rfid-cancel>취소</button>
+        </div>`
+      : `<div class="rfid-register-actions">
+          <div>${status}</div>
+          <button type="button" class="primary-button" data-rfid-capture${!selected || state.busy ? " disabled" : ""}>${selectedCard ? "카드 교체 시작" : "카드 등록 시작"}</button>
+        </div>`;
+    return `${officeHero("직원 카드 등록", "직원별 RFID 카드를 등록·교체·해제합니다", `<span class="office-admin-lock">관리자 전용</span><button class="secondary-button" data-office-refresh${state.busy || capture ? " disabled" : ""}>새로고침</button>`)}
+      <section class="rfid-layout">
+        <article class="rfid-registration-panel">
+          <header><span>01</span><div><h3>직원과 카드 연결</h3><p>직원을 선택한 뒤 리더기에 새 카드를 태그하세요.</p></div></header>
+          <label class="rfid-employee-select"><span>직원 선택</span><select data-rfid-user${state.busy || capture ? " disabled" : ""}>${options}</select></label>
+          ${registrationPanel}
+          <aside class="rfid-security-note"><b>카드번호 보호</b><span>CRM에는 카드번호 원문을 저장하지 않습니다. 중복 확인용 단방향 지문과 끝 4자리만 보관합니다.</span></aside>
+        </article>
+        <article class="rfid-reader-guide">
+          <span>USB</span><h3>CR100 리더기 준비</h3><ol><li>USB 리더기를 PC에 연결합니다.</li><li>직원을 선택하고 등록 시작을 누릅니다.</li><li>리더기에 카드를 한 번 태그합니다.</li></ol>
+        </article>
+      </section>
+      <section class="rfid-list-panel">
+        <header><div><span>REGISTERED CARDS</span><h3>등록된 직원 카드</h3></div><b>${state.data.rfidCards.length}장</b></header>
+        <div class="office-table-wrap"><table class="office-table"><thead><tr><th>직원</th><th>카드</th><th>등록일</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="4" class="office-muted">아직 등록된 카드가 없습니다.</td></tr>`}</tbody></table></div>
+      </section>
+      <p class="rfid-phase-note">현재는 직원 카드 등록·교체·해제만 사용할 수 있습니다. 카드 태그 출퇴근 저장은 다음 단계에서 연결합니다.</p>`;
+  }
+
+  function clearRfidCapture(shouldRender) {
+    clearTimeout(state.rfidCaptureTimer);
+    state.rfidCaptureTimer = null;
+    if (state.rfidCapture) state.rfidCapture.buffer = "";
+    state.rfidCapture = null;
+    if (shouldRender && officeIsActive() && state.context?.view === "officeRfid") renderCurrent();
+  }
+
+  function beginRfidCapture() {
+    if (!Rfid || !isAdmin() || !state.data.rfidAdmin || state.busy || !state.selectedRfidUserId) return;
+    clearRfidCapture(false);
+    const capture = { userId: state.selectedRfidUserId, buffer: "" };
+    state.rfidCapture = capture;
+    state.rfidCaptureTimer = setTimeout(() => {
+      if (state.rfidCapture !== capture) return;
+      clearRfidCapture(true);
+      notify("카드 입력 시간이 지났습니다. 등록 시작을 다시 눌러 주세요.", "error");
+    }, 15000);
+    if (document.activeElement && typeof document.activeElement.blur === "function") document.activeElement.blur();
+    renderCurrent();
+  }
+
+  async function saveCapturedRfidCard(userId, cardCode) {
+    if (!Rfid || state.busy) return;
+    const normalized = Rfid.normalizeCardCode(cardCode);
+    if (!normalized) {
+      notify("카드를 읽지 못했습니다. 다시 태그해 주세요.", "error");
+      return;
+    }
+    const dataRevision = state.dataRevision;
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.saveOfficeRfidCard({ userId, cardCode: normalized });
+      if (!result || result.ok === false) throw new Error(result && result.error || "RFID 카드를 등록하지 못했습니다.");
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
+      notify("직원 카드를 등록했습니다.", "success");
+    } catch (error) {
+      notify(error && error.message || "RFID 카드를 등록하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
+  async function removeRfidCard(userId) {
+    if (!Rfid || state.busy || state.rfidCapture) return;
+    const user = userById(userId);
+    const card = rfidRegistrationFor(userId);
+    if (!user || !card || !window.confirm(`${Core.displayName(user)}님의 카드(•••• ${card.last4}) 연결을 해제할까요?`)) return;
+    const dataRevision = state.dataRevision;
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.removeOfficeRfidCard({ userId });
+      if (!result || result.ok === false) throw new Error(result && result.error || "RFID 카드 연결을 해제하지 못했습니다.");
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
+      notify("직원 카드 연결을 해제했습니다.", "success");
+    } catch (error) {
+      notify(error && error.message || "RFID 카드 연결을 해제하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
     syncMessengerPresence();
@@ -1282,6 +1428,7 @@
     else {
       if (state.context.view === "officeHome") state.context.container.innerHTML = homeView();
       else if (state.context.view === "officeAttendance") state.context.container.innerHTML = attendanceView();
+      else if (state.context.view === "officeRfid") state.context.container.innerHTML = rfidView();
       else if (state.context.view === "officeLeave") state.context.container.innerHTML = leaveView();
       else if (state.context.view === "officeMembers") state.context.container.innerHTML = membersView();
       else if (state.context.view === "officePayroll") state.context.container.innerHTML = payrollView();
@@ -1623,6 +1770,10 @@
   window.addEventListener("focus", acknowledgeVisibleConversation);
 
   document.addEventListener("click", event => {
+    if (event.target.closest("[data-rfid-capture]")) { beginRfidCapture(); return; }
+    if (event.target.closest("[data-rfid-cancel]")) { clearRfidCapture(true); return; }
+    const rfidRemove = event.target.closest("[data-rfid-remove]");
+    if (rfidRemove) { void removeRfidCard(rfidRemove.dataset.rfidRemove); return; }
     const leaveDecide = event.target.closest("[data-office-leave-decide]");
     if (leaveDecide) {
       void decideLeave(leaveDecide.dataset.officeLeaveUser, leaveDecide.dataset.officeLeaveId, leaveDecide.dataset.officeLeaveDecide);
@@ -1748,6 +1899,13 @@
   });
 
   document.addEventListener("change", event => {
+    if (event.target.matches("[data-rfid-user]")) {
+      if (!state.busy && !state.rfidCapture) {
+        state.selectedRfidUserId = Rfid ? Rfid.normalizeUserId(event.target.value) : "";
+        renderCurrent();
+      }
+      return;
+    }
     if (event.target.matches("[data-office-pay-month]")) {
       state.payrollMonth = event.target.value;
       renderCurrent();
@@ -1760,6 +1918,40 @@
   });
 
   document.addEventListener("keydown", event => {
+    if (state.rfidCapture && officeIsActive() && state.context?.view === "officeRfid") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        clearRfidCapture(true);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        const capture = state.rfidCapture;
+        const cardCode = capture.buffer;
+        const userId = capture.userId;
+        clearRfidCapture(false);
+        void saveCapturedRfidCard(userId, cardCode);
+        return;
+      }
+      if (/^[0-9]$/.test(event.key) && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (state.rfidCapture.buffer.length >= 20) {
+          clearRfidCapture(true);
+          notify("카드 입력이 너무 깁니다. 다시 태그해 주세요.", "error");
+          return;
+        }
+        state.rfidCapture.buffer += event.key;
+        return;
+      }
+      if (event.key.length === 1) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (event.target.closest("[data-office-attendance-correction-form]") && event.key === "Escape") {
       event.preventDefault();
       if (!state.busy) {
@@ -1823,7 +2015,10 @@
     },
     render(context) {
       const previousView = state.context && state.context.view;
-      if (previousView && previousView !== context.view) clearAdminAttendanceCorrection();
+      if (previousView && previousView !== context.view) {
+        clearAdminAttendanceCorrection();
+        clearRfidCapture(false);
+      }
       state.context = context;
       state.active = true;
       startClock();
@@ -1841,6 +2036,7 @@
       state.generation += 1;
       state.loading = false;
       clearAdminAttendanceCorrection();
+      clearRfidCapture(false);
       clearOfficeFileDrag();
       stopTimers();
     },
@@ -1877,9 +2073,10 @@
       syncMessengerPresence();
       state.generation += 1;
       stopTimers();
+      clearRfidCapture(false);
       clearOfficeFileDrag();
       state.context = null;
-      state.data = { users: [], attendance: [], messages: [], leave: [], leaveGrants: [], leaveAdmin: false, loadedAt: "" };
+      state.data = { users: [], attendance: [], messages: [], rfidCards: [], rfidAdmin: false, leave: [], leaveGrants: [], leaveAdmin: false, loadedAt: "" };
       state.dataRevision += 1;
       state.loaded = false;
       state.loading = false;
@@ -1893,6 +2090,7 @@
       officeReadReceiptPeerIds.clear();
       state.openingAttachmentId = "";
       state.selectedAdminUserId = "";
+      state.selectedRfidUserId = "";
       state.adminTab = "list";
       clearAdminAttendanceCorrection();
       state.busy = false;

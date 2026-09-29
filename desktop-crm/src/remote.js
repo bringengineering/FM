@@ -5,6 +5,7 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
+const OfficeRfidCore = require("./office-rfid-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
@@ -542,6 +543,16 @@ function createError(message, code, cause) {
   error.code = code;
   if (cause) error.cause = cause;
   return error;
+}
+
+function officeRfidMutationCommitted(value, intent) {
+  let stored;
+  try { stored = OfficeRfidCore.normalizeStoredMap(value); } catch (_) { return false; }
+  const assigned = Object.entries(stored).filter(([, row]) => row.userId === intent.userId);
+  if (intent.action === "remove") return assigned.length === 0;
+  return assigned.length === 1
+    && assigned[0][0] === intent.fingerprint
+    && assigned[0][1].userId === intent.userId;
 }
 
 function normalizeQuoteSupplierRecord(value, options = {}) {
@@ -1442,6 +1453,7 @@ class FirebaseRemoteClient {
     this.sharedMutationQueue = Promise.resolve();
     this.marketingMutationQueue = Promise.resolve();
     this.officeAttendanceCorrectionQueue = Promise.resolve();
+    this.officeRfidQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -2780,7 +2792,8 @@ class FirebaseRemoteClient {
     // 결재도 같은 기준이다. 승인 권한이 있는 사람까지만 남의 것을 본다.
     const approvalAdmin = session.role === "admin";
     const approvalLocation = approvalAdmin ? "officeApprovals" : `officeApprovals/${session.uid}`;
-    const [users, teamProfiles, attendance, leave, leaveGrants, members, approvals, payroll] = await Promise.all([
+    const rfidAdmin = session.officeAdmin === true;
+    const [users, teamProfiles, attendance, leave, leaveGrants, members, approvals, payroll, rfidCards] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
@@ -2791,6 +2804,7 @@ class FirebaseRemoteClient {
       this.dbRequest(memberLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(approvalLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(payrollLocation, { method: "GET" }).catch(() => null),
+      rfidAdmin ? this.dbRequest("officeRfidCards", { method: "GET" }) : Promise.resolve(null),
     ]);
     this.assertSessionGuardActive(guard);
     const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
@@ -2821,6 +2835,8 @@ class FirebaseRemoteClient {
         approvalAdmin,
         payroll: OfficeCore.flattenPayroll(payroll, session.uid),
         payrollAdmin,
+        rfidCards: rfidAdmin ? OfficeRfidCore.summaries(rfidCards) : [],
+        rfidAdmin,
         messages: OfficeCore.flattenMailbox(mailbox),
         loadedAt: new Date().toISOString(),
       },
@@ -3235,6 +3251,104 @@ class FirebaseRemoteClient {
     });
     this.assertSessionGuardActive(guard);
     return this.loadOffice();
+  }
+
+  async assertOfficeRfidTarget(userId, guard) {
+    const target = await this.dbRequest(`crmAccess/${userId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!target
+      || target.enabled !== true
+      || target.mustChangePassword === true
+      || !["admin", "member", "viewer"].includes(String(target.role || ""))) {
+      throw createError("카드를 등록할 활성 구성원을 찾지 못했습니다.", "ACCESS_DENIED");
+    }
+  }
+
+  async commitOfficeRfidMutation(intent, mutate, guard) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      this.assertSessionGuardActive(guard);
+      const snapshot = await this.dbReadWithEtag("officeRfidCards", false, guard);
+      let next;
+      try { next = mutate(snapshot.value); }
+      catch (error) {
+        if (error && error.code === "RFID_CARD_DUPLICATE") throw error;
+        throw createError(error && error.message || "RFID 카드 정보를 확인할 수 없습니다.", "RFID_CARD_INVALID", error);
+      }
+      if (officeRfidMutationCommitted(snapshot.value, intent)
+        && JSON.stringify(OfficeRfidCore.normalizeStoredMap(snapshot.value)) === JSON.stringify(next)) return;
+      try {
+        await this.dbConditionalPut("officeRfidCards", next, snapshot.etag, false, guard);
+      } catch (error) {
+        if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") continue;
+        if (error && ["BUILDING_SCHEDULE_WRITE_UNCONFIRMED", "BUILDING_SCHEDULE_WRITE_FAILED"].includes(error.code)) {
+          const check = await this.dbReadWithEtag("officeRfidCards", false, guard).catch(() => null);
+          if (check && officeRfidMutationCommitted(check.value, intent)) return;
+        }
+        throw createError("RFID 카드 저장 결과를 확인하지 못했습니다.", "RFID_CARD_WRITE_UNCONFIRMED", error);
+      }
+      const check = await this.dbReadWithEtag("officeRfidCards", false, guard);
+      if (officeRfidMutationCommitted(check.value, intent)) return;
+    }
+    throw createError("다른 관리자가 먼저 카드를 변경했습니다. 새로고침 후 다시 시도해 주세요.", "RFID_CARD_CONFLICT");
+  }
+
+  async saveOfficeRfidCard(input) {
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true) throw createError("RFID 카드는 지정된 근태 관리자만 등록할 수 있습니다.", "ACCESS_DENIED");
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    if (Object.keys(source).some(key => !["userId", "cardCode"].includes(key))) {
+      throw createError("RFID 카드 등록 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+    }
+    const userId = OfficeRfidCore.normalizeUserId(source.userId);
+    const cardCode = OfficeRfidCore.normalizeCardCode(source.cardCode);
+    if (!userId || userId !== source.userId || !cardCode || cardCode !== source.cardCode) {
+      throw createError("직원과 카드 정보를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const actorUid = String(session.uid || "");
+    const guard = this.captureSessionGuard();
+    const fingerprint = OfficeRfidCore.fingerprintCardCode(cardCode);
+    const registeredAt = new Date().toISOString();
+    const running = this.officeRfidQueue.then(async () => {
+      this.assertSessionGuardActive(guard);
+      const active = this.requireOfficeSession();
+      if (active.uid !== actorUid || active.officeAdmin !== true) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      await this.assertOfficeRfidTarget(userId, guard);
+      await this.commitOfficeRfidMutation(
+        { action: "save", userId, fingerprint },
+        value => OfficeRfidCore.replaceCard(value, { userId, cardCode, registeredAt, registeredBy: actorUid }).map,
+        guard,
+      );
+      this.assertSessionGuardActive(guard);
+      return this.loadOffice();
+    });
+    this.officeRfidQueue = running.catch(() => {});
+    return running;
+  }
+
+  async removeOfficeRfidCard(input) {
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true) throw createError("RFID 카드는 지정된 근태 관리자만 해제할 수 있습니다.", "ACCESS_DENIED");
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    if (Object.keys(source).some(key => key !== "userId")) throw createError("RFID 카드 해제 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+    const userId = OfficeRfidCore.normalizeUserId(source.userId);
+    if (!userId || userId !== source.userId) throw createError("카드를 해제할 직원을 확인해 주세요.", "VALIDATION_ERROR");
+    const actorUid = String(session.uid || "");
+    const guard = this.captureSessionGuard();
+    const running = this.officeRfidQueue.then(async () => {
+      this.assertSessionGuardActive(guard);
+      const active = this.requireOfficeSession();
+      if (active.uid !== actorUid || active.officeAdmin !== true) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      await this.assertOfficeRfidTarget(userId, guard);
+      await this.commitOfficeRfidMutation(
+        { action: "remove", userId },
+        value => OfficeRfidCore.removeCard(value, userId),
+        guard,
+      );
+      this.assertSessionGuardActive(guard);
+      return this.loadOffice();
+    });
+    this.officeRfidQueue = running.catch(() => {});
+    return running;
   }
 
   async sendOfficeMessage(input) {
@@ -6367,5 +6481,6 @@ module.exports = {
   officeAttendanceCorrectionAuditMatches,
   officeAttendanceCorrectionCommitted,
   planOfficeAttendanceCorrection,
+  officeRfidMutationCommitted,
   FirebaseRemoteClient
 };

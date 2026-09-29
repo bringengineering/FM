@@ -204,3 +204,47 @@
 .work-outcome-dialog [data-outcome-error] { color:#b42318; }
 .work-outcome-dialog footer { display:flex; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
 @media(max-width:600px) { .work-outcome-dialog { padding:16px; } .work-outcome-dialog .outcome-row { grid-template-columns:minmax(0,1fr); } .work-outcome-dialog input,.work-outcome-dialog textarea { font-size:16px; } }
+
+/* 직원 RFID 카드 등록 */
+.rfid-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,.8fr);gap:16px;margin:16px 0}
+.rfid-registration-panel,.rfid-reader-guide,.rfid-list-panel,.rfid-access-denied{background:#fff;border:1px solid #e5eaf0;border-radius:18px;box-shadow:0 8px 24px rgba(15,35,55,.05)}
+.rfid-registration-panel{padding:22px}
+.rfid-registration-panel>header{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}
+.rfid-registration-panel>header>span{display:grid;place-items:center;width:34px;height:34px;border-radius:12px;background:#eaf3ff;color:#2878e8;font-size:11px;font-weight:800}
+.rfid-registration-panel h3,.rfid-reader-guide h3,.rfid-list-panel h3{margin:0;color:#191f28;font-size:17px}
+.rfid-registration-panel p,.rfid-reader-guide p{margin:5px 0 0;color:#8b95a1;font-size:11px}
+.rfid-employee-select{display:flex;flex-direction:column;gap:7px}
+.rfid-employee-select>span{color:#4e5968;font-size:11px;font-weight:700}
+.rfid-employee-select select{width:100%;min-height:46px;padding:0 14px;border:1px solid #d9e1e8;border-radius:12px;background:#fff;color:#191f28;font:inherit}
+.rfid-register-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:17px;border:1px solid #e7edf3;border-radius:14px;background:#f9fbfd}
+.rfid-current{display:grid;grid-template-columns:10px auto;column-gap:8px;align-items:center}
+.rfid-current i{grid-row:1/3;width:8px;height:8px;border-radius:50%;background:#c9d2dc}
+.rfid-current b{color:#4e5968;font-size:12px}
+.rfid-current em{font-style:normal;color:#8b95a1;font-size:10px}
+.rfid-current.is-registered i{background:#00b875;box-shadow:0 0 0 5px rgba(0,184,117,.1)}
+.rfid-current.is-registered b{color:#00875a}
+.rfid-capture{display:flex;align-items:center;gap:15px;margin-top:16px;padding:19px;border:1px dashed #3182f6;border-radius:14px;background:#f2f7ff}
+.rfid-capture .rfid-waves{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#3182f6;color:#fff;font-size:15px;font-weight:900;letter-spacing:-3px;transform:rotate(-90deg)}
+.rfid-capture div{min-width:0;flex:1}
+.rfid-capture b{display:block;color:#1767d4;font-size:14px}
+.rfid-capture small{display:block;margin-top:5px;color:#6b7d90;font-size:10px;line-height:1.5}
+.rfid-security-note{display:flex;align-items:flex-start;gap:10px;margin-top:15px;padding:12px 14px;border-radius:12px;background:#f7f8fa;color:#6b7684;font-size:10px;line-height:1.5}
+.rfid-security-note b{color:#4e5968;white-space:nowrap}
+.rfid-reader-guide{padding:22px;background:linear-gradient(150deg,#142e4d,#1f4772);color:#fff;border-color:transparent}
+.rfid-reader-guide>span{display:inline-flex;padding:5px 8px;border-radius:7px;background:rgba(255,255,255,.13);font-size:9px;font-weight:800;letter-spacing:.08em}
+.rfid-reader-guide h3{margin-top:14px;color:#fff}
+.rfid-reader-guide ol{margin:20px 0 0;padding:0;list-style:none;counter-reset:rfid-guide;display:flex;flex-direction:column;gap:14px}
+.rfid-reader-guide li{counter-increment:rfid-guide;display:flex;align-items:center;gap:10px;color:#dbe9f7;font-size:11px;line-height:1.45}
+.rfid-reader-guide li::before{content:counter(rfid-guide);display:grid;place-items:center;flex:0 0 25px;height:25px;border-radius:50%;background:rgba(255,255,255,.13);color:#fff;font-size:10px;font-weight:800}
+.rfid-list-panel{overflow:hidden;margin-bottom:12px}
+.rfid-list-panel>header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #eef1f4}
+.rfid-list-panel>header span{display:block;margin-bottom:4px;color:#3182f6;font-size:9px;font-weight:800;letter-spacing:.09em}
+.rfid-list-panel>header>b{display:grid;place-items:center;min-width:34px;height:28px;padding:0 8px;border-radius:10px;background:#eaf3ff;color:#2878e8;font-size:11px}
+.rfid-user-cell{display:flex;align-items:center;gap:10px}
+.rfid-user-cell span{display:flex;flex-direction:column;gap:3px}
+.rfid-user-cell small{color:#8b95a1;font-size:10px}
+.rfid-mask{display:inline-flex;padding:6px 9px;border-radius:9px;background:#f2f4f6;color:#4e5968;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;font-weight:700;letter-spacing:.05em}
+.rfid-phase-note{margin:0 0 18px;padding:11px 14px;border-left:3px solid #91a3b7;color:#6b7684;background:#f7f8fa;font-size:10px}
+.rfid-access-denied{display:flex;flex-direction:column;gap:6px;margin-top:16px;padding:24px;color:#4e5968}
+.rfid-access-denied span{color:#8b95a1;font-size:11px}
+@media(max-width:900px){.rfid-layout{grid-template-columns:1fr}.rfid-register-actions,.rfid-capture{align-items:stretch;flex-direction:column}.rfid-capture .rfid-waves{display:none}}

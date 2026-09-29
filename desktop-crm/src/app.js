@@ -208,6 +208,7 @@
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
     officeHome: ["브링의 업무를 한 곳에서", "BRING OFFICE"],
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
+    officeRfid: ["직원 카드 등록·교체·해제", "직원 카드 등록"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     weeklyReports: ["CRM 활동을 모아 한 주 업무를 정리합니다", "주간업무보고서"],
@@ -926,6 +927,7 @@
       // 이름이 없어 이메일이 이름 자리에 올라온 경우 아랫줄을 한 번 더 보여주지 않는다
       userPill.classList.toggle("is-email-only", !!email && displayName === email);
       document.getElementById("navOfficeAdmin").hidden = user.officeAdmin !== true;
+      document.getElementById("navOfficeRfid").hidden = user.officeAdmin !== true;
     }
     restoreActiveNavFolder();
     workspaceCoordinator.start();
@@ -1491,7 +1493,7 @@
       customerManagementFolder?.classList.add("open");
       customerManagementFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
     }
-    const officeView = ["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView);
+    const officeView = ["officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView);
     const officeFolder = document.querySelector('[data-nav-folder="office"]');
     officeFolder?.classList.toggle("active", officeView);
     if (officeView) {
@@ -1545,7 +1547,7 @@
   function renderOperationsWorkspace() {
     if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
-    if (currentView !== "dashboard" && !["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
+    if (currentView !== "dashboard" && !["officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
     if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
@@ -1609,7 +1611,7 @@
     else if (currentView === "relationships") renderRelationships();
     else if (currentView === "partnerVendors") renderPartnerVendors();
     else if (currentView === "partnerQuotes") renderPartnerQuotes();
-    else if (["officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) {
+    else if (["officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin"].includes(currentView)) {
       const officeView = currentView;
       window.BringOffice.render({
         view: officeView,
@@ -17491,7 +17493,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
