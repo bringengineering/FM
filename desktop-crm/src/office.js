@@ -332,23 +332,21 @@
     return `<span class="office-status ${statusClass(record)}"><i></i>${Core.attendanceStatus(record)}</span>`;
   }
 
-  function attendancePunchActions() {
+  function attendanceLiveStatus() {
     const today = todayRecord();
-    const checkedIn = Boolean(today && today.checkInAt);
-    const checkedOut = Boolean(today && today.checkOutAt);
     const unavailable = !state.loaded;
     const status = unavailable
       ? `<span class="office-status before"><i></i>${state.error ? "확인 필요" : "불러오는 중"}</span>`
       : statusPill(today);
-    return `<div class="attendance-punch"><div><span data-office-date></span><b data-office-clock></b>${status}</div><button class="office-punch-button in" data-office-attendance="check-in" ${unavailable || checkedIn || state.busy ? "disabled" : ""}>출근하기</button><button class="office-punch-button out" data-office-attendance="check-out" ${unavailable || !checkedIn || checkedOut || state.busy ? "disabled" : ""}>퇴근하기</button></div>`;
+    return `<div class="attendance-live-status"><span data-office-date></span><b data-office-clock></b>${status}</div>`;
   }
 
   function dashboardAttendanceView() {
-    return `<section class="office-hero dashboard-attendance-hero" data-dashboard-attendance><div><span>BRING OFFICE</span><h2>내 근태현황</h2><p>주간 근무시간과 일자별 출퇴근 기록을 확인하세요</p></div><div class="office-hero-actions">${attendancePunchActions()}</div></section>`;
+    return `<section class="office-hero dashboard-attendance-hero" data-dashboard-attendance><div><span>BRING OFFICE</span><h2>내 근태현황</h2><p>태그기로 기록된 주간 출퇴근 현황을 확인하세요</p></div><div class="office-hero-actions">${attendanceLiveStatus()}</div></section>`;
   }
 
   function attendanceRows(rows, showUser) {
-    if (!rows.length) return `<div class="office-empty"><b>아직 근태 기록이 없습니다</b><span>출근하기 버튼을 누르면 첫 기록이 표시됩니다.</span></div>`;
+    if (!rows.length) return `<div class="office-empty"><b>아직 근태 기록이 없습니다</b><span>태그기에 출퇴근을 기록하면 이곳에 자동으로 표시됩니다.</span></div>`;
     return `<div class="office-table-wrap"><table class="office-table"><thead><tr>${showUser ? "<th>직원</th>" : ""}<th>날짜</th><th>출근시간</th><th>퇴근시간</th><th>근무 상태</th></tr></thead><tbody>${rows.map(row => {
       const user = userById(row.userId) || { uid: row.userId, displayName: row.userId };
       return `<tr>${showUser ? `<td><div class="office-user-cell">${avatar(user, "small")}<b>${esc(Core.displayName(user))}</b></div></td>` : ""}<td><b>${esc(formatDate(row.workDate))}</b><small>${esc(row.workDate)}</small></td><td>${esc(formatTime(row.checkInAt))}</td><td>${esc(formatTime(row.checkOutAt))}</td><td>${statusPill(row)}</td></tr>`;
@@ -384,7 +382,8 @@
     const barLeft = Math.max(0, Math.min(100, startMinute / 1440 * 100));
     const barWidth = Math.max(selected ? 1.8 : 0, Math.min(100 - barLeft, Math.max(0, endMinute - startMinute) / 1440 * 100));
     const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
-    return `${officeHero("내 근태현황", "주간 근무시간과 일자별 출퇴근 기록을 확인하세요", attendancePunchActions())}
+    return `${officeHero("내 근태현황", "태그기로 기록된 주간 출퇴근 현황을 확인하세요", attendanceLiveStatus())}
+      <section class="attendance-tag-note"><span aria-hidden="true">✓</span>출퇴근 기록은 태그기에서 자동으로 반영됩니다.</section>
       <section class="attendance-week-toolbar"><div><button data-office-week="previous" aria-label="이전 주">‹</button><strong>${esc(weekStart)} ~ ${esc(weekEnd)}</strong><button data-office-week="next" aria-label="다음 주">›</button><button class="attendance-today-button" data-office-week="today">오늘</button></div><span>브링엔지니어링 <b>09:00 ~ 18:00</b></span></section>
       <section class="attendance-week-summary"><div class="attendance-progress"><span>주간 누적 <b>${esc(durationText(totalMinutes))}</b></span><p>이번 주 근무시간을 기준으로 표시합니다.</p><div><i style="width:${Math.min(100, totalMinutes / 2400 * 100)}%"></i></div><small><b>40h</b><b>52h</b></small></div><article><span>근무일</span><b>${workedDays}<small>/5일</small></b></article><article><span>남은 근무일</span><b>${Math.max(0, 5 - workedDays)}<small>일</small></b></article><article><span>총 근로시간</span><b>${esc(durationText(totalMinutes))}</b></article><article><span>오늘 상태</span>${statusPill(today)}</article></section>
       <section class="attendance-week-days">${weekDates.map((workDate, index) => {
@@ -1443,24 +1442,6 @@
     }
   }
 
-  async function attendanceAction(action) {
-    if (state.busy) return;
-    const dataRevision = state.dataRevision;
-    state.busy = true;
-    renderCurrent();
-    try {
-      const result = await state.context.api.saveOfficeAttendance({ action, workDate: Core.workDate() });
-      if (!result || result.ok === false) throw new Error(result && result.error || "근태 시간을 저장하지 못했습니다.");
-      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
-      notify(action === "check-in" ? "출근 시간이 저장되었습니다." : "퇴근 시간이 저장되었습니다.", "success");
-    } catch (error) {
-      notify(error.message || "근태 시간을 저장하지 못했습니다.", "error");
-    } finally {
-      state.busy = false;
-      renderCurrent();
-    }
-  }
-
   async function selectUser(uid) {
     if (state.selectedUserId !== uid) {
       state.editingDisplayNameUserId = "";
@@ -1858,8 +1839,6 @@
       return;
     }
     if (event.target.closest("[data-office-attendance-export]")) { exportAdminAttendance(); return; }
-    const attendance = event.target.closest("[data-office-attendance]");
-    if (attendance) { attendanceAction(attendance.dataset.officeAttendance); return; }
     if (event.target.closest("[data-office-attachment-pick]")) { pickMessageAttachment(); return; }
     if (event.target.closest("[data-office-attachment-remove]")) {
       state.pendingAttachment = null;
