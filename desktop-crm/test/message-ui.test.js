@@ -32,6 +32,22 @@ test("information composer preserves a selected source and enables confirmation"
   assert.doesNotMatch(html, /type="submit" class="primary-button" disabled/);
 });
 
+test("cleaning order message composer shows canonical order context and keeps it as the required source", () => {
+  const html = MessageUI.renderWorkspace({
+    customers: [{ id: "c1", name: "김민수", phone: "010-1234-5678" }],
+    selectedCustomerId: "c1", templateId: "cleaning_schedule", channel: "kakao",
+    sourceType: "cleaningOrder", sourceId: "BR-260926-00128", writable: true,
+    cleaningOrderContext: { id: "BR-260926-00128", customerId: "c1", serviceLabel: "입주 청소", desiredDate: "2026-09-29", amountLabel: "270,000원" }
+  });
+  assert.match(html, /option value="cleaningOrder" selected/);
+  assert.match(html, /data-cleaning-message-order="BR-260926-00128"/);
+  assert.match(html, /입주 청소/);
+  assert.match(html, /2026-09-29/);
+  assert.match(html, /270,000원/);
+  assert.match(html, /발송 가능/);
+  assert.match(html, /발송 내용 확인/);
+});
+
 test("app shell includes policy module and customer message navigation", () => {
   const index = fs.readFileSync(path.join(__dirname, "../src/index.html"), "utf8");
   const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
@@ -43,5 +59,7 @@ test("app shell includes policy module and customer message navigation", () => {
   assert.match(app, /renderCustomerMessages/);
   assert.match(app, /data-message-consent-edit/);
   assert.match(app, /customerMessageForm/);
+  assert.match(app, /open-cleaning-order-message/);
+  assert.match(app, /cleaningOrderContext/);
   assert.match(styles, /\.message-workspace/);
 });

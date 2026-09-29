@@ -271,6 +271,8 @@ export interface GoogleDriveClientLike {
       fileId: string;
       fields: string;
       supportsAllDrives: true;
+      alt?: "media";
+      responseType?: "arraybuffer";
     }): Promise<GoogleResponseLike>;
     list(options: {
       q: string;
@@ -301,6 +303,7 @@ export interface GoogleDriveClientLike {
 export interface ValidatedDriveMediaAdapter
   extends DriveMediaAdapter, AdPackageDriveAdapter {
   verifyImageFileIds(fileIds: string[]): Promise<string[]>;
+  readImageFile(fileId: string): Promise<{ mimeType: string; bytes: Uint8Array }>;
   validateRootFolder(input: {
     rootFolderId: string;
     rootMode: DriveRootMode;
@@ -474,6 +477,23 @@ export function createGoogleDriveMediaAdapter(
   },
 ): ValidatedDriveMediaAdapter {
   return {
+    async readImageFile(fileId) {
+      if (typeof fileId !== "string" || !/^[A-Za-z0-9_-]{6,200}$/u.test(fileId)) throw safeInternalError("drive_source_invalid");
+      const metadata = await safeDriveRequest(async () => responseFile(await client.files.get({
+        fileId, fields: "id,mimeType,trashed,size", supportsAllDrives: true,
+      })));
+      if (!isRecord(metadata) || metadata.id !== fileId || metadata.trashed !== false
+        || !["image/jpeg", "image/png", "image/webp"].includes(String(metadata.mimeType))
+        || typeof metadata.size !== "string" || !/^\d{1,8}$/u.test(metadata.size)
+        || Number(metadata.size) < 1 || Number(metadata.size) > 7_000_000) throw safeInternalError("drive_source_invalid");
+      const media = await safeDriveRequest(async () => responseFile(await client.files.get({
+        fileId, fields: "id", supportsAllDrives: true, alt: "media", responseType: "arraybuffer",
+      })));
+      const raw = media as unknown;
+      const bytes = raw instanceof Uint8Array ? raw : raw instanceof ArrayBuffer ? new Uint8Array(raw) : null;
+      if (!bytes || bytes.byteLength !== Number(metadata.size) || bytes.byteLength > 7_000_000) throw safeInternalError("drive_source_invalid");
+      return { mimeType: String(metadata.mimeType), bytes: new Uint8Array(bytes) };
+    },
     async verifyImageFileIds(fileIds) {
       if (!Array.isArray(fileIds) || fileIds.length > 64
         || fileIds.some(id => typeof id !== "string" || !/^[A-Za-z0-9_-]{6,200}$/u.test(id))) {

@@ -72,3 +72,10 @@
 @media(prefers-reduced-motion:reduce) {
  .customer-atlas-workspace * { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
 }
+.customer-atlas-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; padding:10px 12px; border:1px solid var(--line,#E5E8EB); border-top:0; background:#fff; }
+.customer-atlas-kpis article { display:grid; gap:5px; min-width:0; padding:10px 12px; border:1px solid var(--line,#E5E8EB); border-radius:12px; background:linear-gradient(135deg,#F6FAFF,#fff); }
+.customer-atlas-kpis span,.customer-atlas-kpis small { color:var(--soft,#4E5968); font-size:11px; }
+.customer-atlas-kpis b { font-size:18px; overflow-wrap:anywhere; }
+.customer-atlas-record-action { display:block; width:100%; margin:6px 0; text-align:left; color:var(--blue-2,#1B64DA)!important; }
+@media(max-width:900px) { .customer-atlas-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:500px) { .customer-atlas-kpis { grid-template-columns:minmax(0,1fr); } }

@@ -206,6 +206,18 @@ describe("Drive runtime checksum and Storage adapter", () => {
 });
 
 describe("Google Drive v3 adapter", () => {
+  it("reads only a verified image from the authenticated company Drive within the 10 MB bound", async () => {
+    const get = vi.fn()
+      .mockResolvedValueOnce({ data: { id: "photo_01", mimeType: "image/jpeg", trashed: false, size: "5" } })
+      .mockResolvedValueOnce({ data: Buffer.from("photo") });
+    const adapter = createGoogleDriveMediaAdapter(driveClient({ get }));
+    await expect(adapter.readImageFile("photo_01")).resolves.toEqual({ mimeType: "image/jpeg", bytes: new Uint8Array(Buffer.from("photo")) });
+    expect(get).toHaveBeenNthCalledWith(2, { fileId: "photo_01", fields: "id", supportsAllDrives: true, alt: "media", responseType: "arraybuffer" });
+
+    const oversized = createGoogleDriveMediaAdapter(driveClient({ get: vi.fn(async () => ({ data: { id: "photo_01", mimeType: "image/jpeg", trashed: false, size: "10000001" } })) }));
+    await expect(oversized.readImageFile("photo_01")).rejects.toThrow("drive_source_invalid");
+  });
+
   it("verifies completion evidence against live, non-trashed Drive image metadata", async () => {
     const get = vi.fn(async ({ fileId }: { fileId: string }) => {
       if (fileId === "missing_01") throw new Error("not found");

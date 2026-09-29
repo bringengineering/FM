@@ -98,16 +98,21 @@ if (
   }
 }
 
-export async function ensureFieldAppCheckToken(): Promise<void> {
+export async function getFieldAppCheckToken(): Promise<string> {
   if (fieldAppCheckInitializationFailed || !fieldAppCheck) {
     throw new Error("field_app_check_unavailable");
   }
   try {
     const result = await getToken(fieldAppCheck, false);
     if (!result?.token) throw new Error("field_app_check_unavailable");
+    return result.token;
   } catch {
     throw new Error("field_app_check_unavailable");
   }
+}
+
+export async function ensureFieldAppCheckToken(): Promise<void> {
+  await getFieldAppCheckToken();
 }
 
 export const auth = getAuth(firebaseApp);
