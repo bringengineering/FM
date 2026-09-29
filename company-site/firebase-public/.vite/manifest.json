@@ -1,4 +1,8 @@
 {
+  "_firebase.client-CWwfxlXl.js": {
+    "file": "assets/firebase.client-CWwfxlXl.js",
+    "name": "firebase.client"
+  },
   "_framework-CXnKph_e.js": {
     "file": "assets/framework-CXnKph_e.js",
     "name": "framework",
@@ -21,19 +25,31 @@
     ]
   },
   "app/field/FieldApp.tsx": {
-    "file": "assets/FieldApp-BLD36BC3.js",
+    "file": "assets/FieldApp-B1-s4HXe.js",
     "name": "FieldApp",
     "src": "app/field/FieldApp.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-CWwfxlXl.js",
       "_framework-CXnKph_e.js"
     ]
   },
-  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-B_-6lmR3.js",
+  "app/partner/PartnerApp.tsx": {
+    "file": "assets/PartnerApp-DzCGxJtm.js",
+    "name": "PartnerApp",
+    "src": "app/partner/PartnerApp.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-CWwfxlXl.js",
+      "_framework-CXnKph_e.js"
+    ]
+  },
+  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
+    "file": "assets/layout-segment-context-lPJQEXAF.js",
     "name": "layout-segment-context",
-    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
+    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
@@ -42,7 +58,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-DVJ0zRte.js",
+    "file": "assets/index-Bkt3ferH.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
@@ -53,8 +69,9 @@
     "dynamicImports": [
       "virtual:vinext-app-browser-entry",
       "app/consult/ConsultForm.tsx",
+      "app/partner/PartnerApp.tsx",
       "app/field/FieldApp.tsx",
-      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
+      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
     ]
   }
 }

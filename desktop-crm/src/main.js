@@ -5431,6 +5431,22 @@ async function createWindow() {
       const emptyStateVisible = document.querySelector('.cleaning-orders-empty')?.textContent.includes('등록된 주문이 없습니다') === true;
       const cleaningStageCardCount = document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length;
       const emptyQueueScopeVisible = document.querySelector('.cleaning-stage-footnote')?.textContent.includes('확인된 전체 주문 0건') === true;
+      const cleaningDispatchTowerVisible = Boolean(document.querySelector('.cleaning-dispatch-tower'))
+        && document.querySelector('.cleaning-dispatch-tower')?.textContent.includes('배차 관제') === true;
+      const cleaningDispatchEmptyVisible = document.querySelector('.cleaning-dispatch-empty')?.textContent.includes('현재 배차 대상 주문이 없습니다') === true;
+      const cleaningScheduleCalendarVisible = Boolean(document.querySelector('.cleaning-schedule-calendar'))
+        && document.querySelector('.cleaning-schedule')?.textContent.includes('일정·지도 관제') === true
+        && Boolean(document.querySelector('[data-cleaning-schedule-date]'));
+      const scheduleMonthBefore = document.querySelector('.cleaning-schedule-nav strong')?.textContent || '';
+      document.querySelector('[data-cleaning-schedule-shift="-1"]')?.click();
+      const scheduleMonthPrevious = document.querySelector('.cleaning-schedule-nav strong')?.textContent || '';
+      document.querySelector('[data-cleaning-schedule-shift="1"]')?.click();
+      const scheduleMonthRestored = document.querySelector('.cleaning-schedule-nav strong')?.textContent || '';
+      document.querySelector('[data-cleaning-schedule-today]')?.click();
+      const cleaningScheduleNavigationWorks = Boolean(scheduleMonthBefore)
+        && scheduleMonthPrevious !== scheduleMonthBefore
+        && scheduleMonthRestored === scheduleMonthBefore
+        && Boolean(document.querySelector('.cleaning-schedule-day.is-today.is-selected'));
       const seeded = window.__crmTest.getStore();
       seeded.customers.push({ id: 'cleaning_smoke_customer', name: '스모크 테스트 고객', buildingIds: ['cleaning_smoke_building_linked'], buildingIdLinks: {} });
       seeded.buildings.push(
@@ -5453,8 +5469,8 @@ async function createWindow() {
         && !Array.from(buildingSelect.options).some(option => option.value === 'cleaning_smoke_building_unlinked');
       document.querySelector('#modal [data-action="close-modal"]')?.click();
       const modalClosed = window.__crmTest.snapshot().modalOpen === false;
-      const pass = screenVisible && queueVisible && emptyStateVisible && cleaningStageCardCount === 7 && emptyQueueScopeVisible && formFieldsPresent && linkedBuildingOnly && modalClosed;
-      return { pass, screenVisible, queueVisible, emptyStateVisible, cleaningStageCardCount, emptyQueueScopeVisible, formFieldsPresent, linkedBuildingOnly, modalClosed, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
+      const pass = screenVisible && queueVisible && emptyStateVisible && cleaningStageCardCount === 7 && emptyQueueScopeVisible && cleaningDispatchTowerVisible && cleaningDispatchEmptyVisible && cleaningScheduleCalendarVisible && cleaningScheduleNavigationWorks && formFieldsPresent && linkedBuildingOnly && modalClosed;
+      return { pass, screenVisible, queueVisible, emptyStateVisible, cleaningStageCardCount, emptyQueueScopeVisible, cleaningDispatchTowerVisible, cleaningDispatchEmptyVisible, cleaningScheduleCalendarVisible, cleaningScheduleNavigationWorks, formFieldsPresent, linkedBuildingOnly, modalClosed, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
     })()`, true);
     if (!cleaningCenterSmoke?.pass) throw new Error(`cleaning center local UI smoke failed: ${JSON.stringify(cleaningCenterSmoke)}`);
     console.log(JSON.stringify({ workflowReads, cleaningOrders, cleaningCenterSmoke, localOnly: true }));
@@ -5489,7 +5505,43 @@ async function createWindow() {
       route.remove();
       return true;
     }; true`, true);
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-center-summary-preview") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-360-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();
+        await wait(320);
+        window.__crmSmokeNavigate('customers');
+        for (let attempt = 0; attempt < 40 && !document.querySelector('.customer-atlas-workspace'); attempt += 1) await wait(100);
+        const metrics = [...document.querySelectorAll('.customer-atlas-kpis article')].map(card => ({
+          label: card.querySelector('span')?.textContent?.trim() || '',
+          value: card.querySelector('b')?.textContent?.trim() || '',
+          source: card.querySelector('small')?.textContent?.trim() || '',
+        }));
+        const tabs = [...document.querySelectorAll('.customer-atlas-tabs [role="tab"]')].map(tab => tab.textContent.trim());
+        const requiredTabs = ['상담 이력','주문 이력','결제','CS','메시지','메모'];
+        const snapshot = window.__crmTest?.snapshot();
+        return { pass: snapshot?.view === 'customers' && metrics.length === 4 && requiredTabs.every(label => tabs.includes(label)),
+          view: snapshot?.view || '', metricCount: metrics.length, metrics, tabs, fixtureOnly: true,
+          sourceNote: '현재 로컬 CRM 검토 화면의 조회 범위를 캡처했습니다. 회사 운영 데이터는 읽거나 변경하지 않았습니다.' };
+      })()`, true);
+      if (!actionResult?.pass) throw new Error(`customer 360 screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-cti-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
+        await wait(420);
+        window.__crmSmokeNavigate('cleaningCti');
+        for (let attempt = 0; attempt < 40 && !document.querySelector('.cleaning-cti'); attempt += 1) await wait(100);
+        const view = window.__crmTest?.snapshot().view;
+        const root = document.querySelector('.cleaning-cti');
+        const pass = view === 'cleaningCti' && Boolean(root)
+          && root.textContent.includes('실시간 CTI 연결이 없습니다')
+          && root.textContent.includes('최근 통화 이력');
+        return { pass, view, rendered: Boolean(root), honestProviderState: root?.textContent.includes('전화 연동 안 됨') === true,
+          fixtureOnly: true, customerCount: document.querySelectorAll('[data-cleaning-cti-customer] option').length - 1 };
+      })()`, true);
+      if (!actionResult?.pass) throw new Error(`cleaning CTI screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-center-summary-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
@@ -5548,6 +5600,21 @@ async function createWindow() {
         return { pass: Boolean(page && document.querySelectorAll('.building-monthly-work').length === 4 && document.querySelector('[data-building-monthly-pdf]')) && !bodyOverflow, workCount: document.querySelectorAll('.building-monthly-work').length, bodyOverflow, state: window.__crmTest.snapshot() };
       })()`, true);
       if (!actionResult?.pass) throw new Error(`building monthly report screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-pricing-policy-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
+        await wait(420);
+        const entry = document.querySelector('[data-action="open-cleaning-pricing-policy"]');
+        entry?.click();
+        await wait(160);
+        const dialog = document.querySelector('.cleaning-pricing-policy-modal');
+        const fields = ['data-cleaning-pricing-policy-form', 'data-cleaning-pricing-base', 'data-cleaning-pricing-addon', 'data-cleaning-pricing-save'];
+        return { pass: Boolean(entry && dialog) && fields.every(selector => dialog.querySelector('[' + selector + ']')),
+          entryVisible: Boolean(entry), dialogVisible: Boolean(dialog), fieldsPresent: fields.filter(selector => dialog?.querySelector('[' + selector + ']')).length,
+          fixtureOnly: true, snapshot: window.__crmTest?.snapshot() };
+      })()`, true);
+      if (!actionResult?.pass) throw new Error(`cleaning pricing policy screenshot action failed: ${JSON.stringify(actionResult)}`);
     } else if (["weekly-report-preview", "weekly-report-document-preview"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8606,6 +8673,7 @@ async function createWindow() {
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
     if (["cleaning-center-summary-preview", "building-monthly-report-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["cleaning-center-summary-preview", "customer-360-preview", "cleaning-pricing-policy-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -9271,8 +9339,36 @@ secureCanonicalHandle("crm:company-strategy-publish", input => saveAndSignalWall
 secureCanonicalHandle("crm:billing-ledger-load", input => localTestMode
   ? { invoices:[], receipts:[], localOnly:true }
   : remoteClient.loadBillingLedger(input));
+secureHandle("crm:cleaning-refunds-load", orderId => localTestMode ? [] : remoteClient.loadCleaningRefundRequests(orderId));
+secureCanonicalHandle("crm:cleaning-refund-create", input => remoteClient.createCleaningRefundRequest(input));
+secureCanonicalHandle("crm:cleaning-refund-decide", input => remoteClient.decideCleaningRefundRequest(input));
+secureCanonicalHandle("crm:cleaning-refund-execution", input => remoteClient.recordCleaningRefundExecution(input));
+secureHandle("crm:cleaning-extra-charges-load", orderId => localTestMode ? [] : remoteClient.loadCleaningExtraChargeRequests(orderId));
+secureHandle("crm:cleaning-rework-load", orderId => localTestMode ? [] : remoteClient.loadCleaningReworkRequests(orderId));
+secureCanonicalHandle("crm:cleaning-rework-create", input => {
+  if (localTestMode) throw new Error("로컬 미리보기에서는 재작업 자료를 CRM에 저장할 수 없습니다.");
+  return remoteClient.createCleaningReworkRequest(input);
+});
+secureCanonicalHandle("crm:cleaning-rework-complete", input => {
+  if (localTestMode) throw new Error("로컬 미리보기에서는 재작업 검수를 CRM에 저장할 수 없습니다.");
+  return remoteClient.completeCleaningRework(input);
+});
+secureCanonicalHandle("crm:cleaning-extra-charge-create", input => remoteClient.createCleaningExtraChargeRequest(input));
+secureCanonicalHandle("crm:cleaning-extra-charge-delivery", input => remoteClient.recordCleaningExtraChargeDelivery(input));
+secureCanonicalHandle("crm:cleaning-extra-charge-decision", input => remoteClient.recordCleaningExtraChargeDecision(input));
+secureCanonicalHandle("crm:cleaning-delay-incident-record", input => remoteClient.recordCleaningDelayIncident(input));
+secureCanonicalHandle("crm:cleaning-delay-action-record", input => remoteClient.recordCleaningDelayAction(input));
 const cleaningOrderIpc = createCleaningOrderIpcHandlers({ getRemoteClient: () => remoteClient, isLocalTestMode: () => localTestMode });
 secureHandle("crm:cleaning-orders-load", cleaningOrderIpc.load);
+secureHandle("crm:cleaning-settlement-review-load", cleaningOrderIpc.loadSettlementReview);
+secureHandle("crm:cleaning-pricing-load", async () => localTestMode ? [] : remoteClient.loadCleaningPricingPolicies());
+secureCanonicalHandle("crm:cleaning-pricing-save", input => {
+  if (localTestMode) {
+    if (String(authState().user?.role || "") !== "admin") throw new Error("관리자만 가격 정책을 저장할 수 있습니다.");
+    return { ok: true, record: { policy: { ...input.policy, policyId: input.requestId }, createdAt: new Date().toISOString(), createdByUid: "local-admin" }, localOnly: true };
+  }
+  return remoteClient.saveCleaningPricingPolicy(input);
+});
 secureHandle("crm:cleaning-order-load-by-id", cleaningOrderIpc.loadById);
 secureCanonicalHandle("crm:cleaning-order-create", cleaningOrderIpc.create);
 secureCanonicalHandle("crm:cleaning-order-transition", cleaningOrderIpc.transition);

@@ -138,9 +138,9 @@ function Assert-LocalContract {
         throw "The primary target must remain '$ProjectId' and own Database Rules."
     }
     $cleaningDeployment = $manifest.cleaningCenterManualDeployment
-    $expectedCleaningFunctions = @("cleaningOrdersApi", "projectCleaningOrdersToWallboard")
-    if ($null -eq $cleaningDeployment -or $cleaningDeployment.projectId -ne $ProjectId -or $cleaningDeployment.databaseRules -ne $true) {
-        throw "The Cleaning Center manual deployment target must remain on '$ProjectId' and include Database Rules."
+    $expectedCleaningFunctions = @("cleaningOrdersApi", "cleaningPartnerApi", "cleaningRefundsApi", "projectCleaningOrdersToWallboard")
+    if ($null -eq $cleaningDeployment -or $cleaningDeployment.projectId -ne $ProjectId -or $cleaningDeployment.databaseRules -ne $false) {
+        throw "The Cleaning Center manual deployment target must remain on '$ProjectId' and exclude Database Rules."
     }
     $cleaningFunctionNames = @($cleaningDeployment.functionNames)
     if (($cleaningFunctionNames -join ',') -ne ($expectedCleaningFunctions -join ',')) {

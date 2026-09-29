@@ -335,6 +335,10 @@ vi.mock("firebase-admin/app", () => ({
   initializeApp: registrations.initializeApp,
 }));
 
+vi.mock("firebase-admin/app-check", () => ({
+  getAppCheck: () => ({ verifyToken: vi.fn(async () => ({ appId: "test-app" })) }),
+}));
+
 vi.mock("firebase-admin/auth", () => ({
   getAuth: registrations.getAuth,
 }));
@@ -3853,6 +3857,153 @@ describe("Firebase entrypoint metadata", () => {
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
     });
+    expect(registration(entrypoints.cleaningRefundsApi)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
+    expect(registration(entrypoints.cleaningPartnerApi)).toMatchObject({
+      kind: "request",
+      options: {
+        region: "asia-northeast3",
+        cors: ["app://bring-crm", "https://bring-fm.web.app", "https://bring-fm.firebaseapp.com", "http://localhost:3000"],
+      },
+    });
+  });
+
+  it("restricts cleaning refund reads and mutations to admin CRM sessions", async () => {
+    const orderId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc501";
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_refund_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_refund_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const denied = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningRefundsApi)(canonicalHttpRequest({}, {
+      method: "GET", query: { orderId }, headers: { authorization: "Bearer current-project-id-token" },
+    }), denied.response);
+    expect(denied.state).toMatchObject({
+      status: 403, body: { ok: false, error: { code: "cleaning_refund_forbidden" } },
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(`crmCompany/cleaningRefundRequests/${orderId}`);
+  });
+
+  it("requires an App Check attestation before reading a partner account", async () => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningPartnerApi)(canonicalHttpRequest({}, {
+      method: "GET",
+      headers: { authorization: "Bearer current-project-id-token" },
+    }), output.response);
+    expect(output.state.status).toBe(401);
+    expect(output.state.body).toMatchObject({ ok: false, error: { code: "cleaning_partner_app_check_required" } });
+    expect(output.state.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("limits extra-charge request inspection and creation to admin CRM sessions", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const denied = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningPartnerApi)(canonicalHttpRequest({
+      action: "extra-charge-inspect", input: { orderId: "7c2ac2d0-9a09-42f3-b8f8-7237562fc501" },
+    }), denied.response);
+    expect(denied.state).toMatchObject({
+      status: 403, body: { ok: false, error: { code: "cleaning_order_forbidden" } },
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith("crmCompany/cleaningPartnerExtraCharges");
+  });
+
+  it("creates an admin extra-charge request from the canonical in-progress order context", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "cleaning_admin", email: "admin@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/cleaning_admin", {
+      enabled: true, role: "admin", email: "admin@bring.test",
+    });
+    const orderId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc501";
+    const customerId = "ac2ac2d0-9a09-42f3-b8f8-7237562fc504";
+    const buildingId = "bc2ac2d0-9a09-42f3-b8f8-7237562fc505";
+    const offerId = "8c2ac2d0-9a09-42f3-b8f8-7237562fc502";
+    const requestId = "9c2ac2d0-9a09-42f3-b8f8-7237562fc503";
+    registrations.pathValues.set(`crmCompany/cleaningOrders/${orderId}`, {
+      id: orderId, customerId, buildingId, status: "in_progress",
+    });
+    registrations.pathValues.set(`crmCompany/data/customers/${customerId}`, {
+      id: customerId, buildingIdLinks: { [buildingId]: true },
+    });
+    registrations.pathValues.set(`crmCompany/data/buildings/${buildingId}`, {
+      id: buildingId, customerId,
+    });
+    registrations.pathValues.set("crmCompany/data/partnerVendors/vendor_01", {
+      id: "vendor_01", archived: false,
+    });
+    registrations.pathValues.set(`crmCompany/cleaningPartnerDispatches/${orderId}`, {
+      orderId, revision: 2, acceptedOfferId: offerId,
+      offers: [{ id: offerId, orderId, vendorId: "vendor_01", serviceType: "move_in_cleaning", region: "원주시",
+        desiredDate: "2026-09-29", supplierAmount: 190000, expiresAt: "2026-09-28T04:00:00.000Z", status: "accepted",
+        revision: 2, createdAt: "2026-09-28T03:00:00.000Z", createdByUid: "admin_seed", respondedAt: "2026-09-28T03:10:00.000Z",
+        declineReason: "", progress: "started", events: [
+          { type: "offered", occurredAt: "2026-09-28T03:00:00.000Z", actorUid: "admin_seed", note: "" },
+          { type: "accepted", occurredAt: "2026-09-28T03:10:00.000Z", actorUid: "partner_seed", note: "" },
+          { type: "started", occurredAt: "2026-09-28T03:15:00.000Z", actorUid: "partner_seed", note: "" },
+        ] }],
+      events: [{ type: "offer_created", occurredAt: "2026-09-28T03:00:00.000Z", actorUid: "admin_seed", vendorId: "vendor_01", note: "" }],
+    });
+    const response = httpResponseHarness();
+    const previousEmulator = process.env.FUNCTIONS_EMULATOR;
+    process.env.FUNCTIONS_EMULATOR = "true";
+    try { await requestHandler(entrypoints.cleaningPartnerApi)(canonicalHttpRequest({
+      action: "extra-charge-create",
+      input: {
+        requestId, orderId, customerId, buildingId,
+        vendorId: "vendor_01", serviceType: "waste_disposal", amount: 13000,
+        reason: "현장 확인 결과 대형 폐기물이 발생했습니다.", evidenceFileIds: ["drive_file_123456"],
+      },
+    }), response.response); }
+    finally {
+      if (previousEmulator === undefined) delete process.env.FUNCTIONS_EMULATOR;
+      else process.env.FUNCTIONS_EMULATOR = previousEmulator;
+    }
+    expect(response.state).toMatchObject({
+      status: 200, body: { ok: true, result: { request: {
+        requestId, orderId, customerId, buildingId, status: "draft", revision: 1,
+      } } },
+    });
+    expect(registrations.transactionPaths).toContain(`crmCompany/cleaningPartnerExtraCharges/${orderId}`);
+    expect(registrations.pathValues.has("crmCompany/invoices")).toBe(false);
+    expect(registrations.pathValues.has("crmCompany/paymentReceipts")).toBe(false);
+  });
+
+  it("records a delay incident only for an admin and an actively assigned order", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "delay_admin", email: "admin@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/delay_admin", { enabled: true, role: "admin", email: "admin@bring.test" });
+    const orderId = "7c2ac2d0-9a09-42f3-b8f8-7237562fc501";
+    const offerId = "8c2ac2d0-9a09-42f3-b8f8-7237562fc502";
+    const incidentId = "9c2ac2d0-9a09-42f3-b8f8-7237562fc503";
+    registrations.pathValues.set(`crmCompany/cleaningOrders/${orderId}`, { id: orderId, status: "scheduled" });
+    registrations.pathValues.set(`crmCompany/cleaningPartnerDispatches/${orderId}`, {
+      orderId, revision: 2, acceptedOfferId: offerId,
+      offers: [{ id: offerId, orderId, vendorId: "vendor_01", serviceType: "move_in_cleaning", region: "원주시",
+        desiredDate: "2026-09-29", supplierAmount: 190000, expiresAt: "2026-09-28T04:00:00.000Z", status: "accepted",
+        revision: 2, createdAt: "2026-09-28T03:00:00.000Z", createdByUid: "admin_seed", respondedAt: "2026-09-28T03:10:00.000Z",
+        declineReason: "", progress: "departed", events: [
+          { type: "offered", occurredAt: "2026-09-28T03:00:00.000Z", actorUid: "admin_seed", note: "" },
+          { type: "accepted", occurredAt: "2026-09-28T03:10:00.000Z", actorUid: "partner_seed", note: "" },
+        ] }],
+      events: [{ type: "offer_created", occurredAt: "2026-09-28T03:00:00.000Z", actorUid: "admin_seed", vendorId: "vendor_01", note: "" }],
+    });
+    const response = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningPartnerApi)(canonicalHttpRequest({
+      action: "delay-record-incident",
+      input: { incidentId, orderId, expectedRevision: 2, issueType: "departure_delay", scheduledAt: "2026-09-28T03:00:00.000Z", delayMinutes: 18, note: "파트너 이동 지연 확인" },
+    }), response.response);
+    expect(response.state).toMatchObject({ status: 200, body: { ok: true, result: { orderId, revision: 3 } } });
+    expect(registrations.transactionPaths).toContain(`crmCompany/cleaningPartnerDispatches/${orderId}`);
   });
 
   it("places the cleaning wallboard trigger in the company Realtime Database region", () => {
@@ -3971,6 +4122,88 @@ describe("Firebase entrypoint metadata", () => {
     const denied = httpResponseHarness();
     await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, { method: "GET" }), denied.response);
     expect(denied.state).toMatchObject({ status: 403, body: { ok: false, error: { code: "cleaning_order_forbidden" } } });
+  });
+
+  it("stores versioned cleaning price policies in the authenticated admin API and serves the saved rows", async () => {
+    const adminUid = "pricing_admin";
+    registrations.pathValues.set(`crmCompany/access/${adminUid}`, {
+      enabled: true, role: "admin", email: "admin@bring.test",
+    });
+    registrations.adminVerifyIdToken.mockResolvedValue({
+      uid: adminUid, email: "admin@bring.test", email_verified: true,
+    });
+    const policy = {
+      name: "입주청소 가격표 v1.2", region: "원주시", effectiveFrom: "2026-10-01", publication: "published",
+      basePrices: {
+        apartment: [180000, 240000, 280000, 320000, 360000],
+        villa: [160000, 220000, 260000, 300000, 340000],
+        detached: [200000, 260000, 320000, 360000, 400000],
+      },
+      addOns: [{ id: "balcony", name: "베란다 청소", description: "베란다 바닥, 유리, 배수구 등", amount: 20000 }],
+      discountCaps: { promotion: 50000, membership: 30000 },
+    };
+    const requestId = "d40c8754-df83-4ab3-8f0e-e2d55dc3ccaa";
+    const save = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({
+      action: "pricing-policy-save", input: { requestId, policy },
+    }), save.response);
+    expect(save.state).toMatchObject({
+      status: 200,
+      body: { ok: true, result: { record: { policy: { policyId: requestId, effectiveFrom: "2026-10-01" } }, replayed: false } },
+    });
+    expect(registrations.mutationPaths).toContain("crmCompany/cleaningPricingPolicies");
+
+    const load = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, {
+      method: "GET", query: { pricingPolicies: "1" },
+    }), load.response);
+    expect(load.state).toMatchObject({ status: 200, body: { ok: true, result: { policies: [{ policy: { policyId: requestId } }] } } });
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "pricing_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/pricing_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const denied = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({
+      action: "pricing-policy-save", input: { requestId: "e5731900-9cf7-4d62-9a7f-d6f702a0e3de", policy },
+    }), denied.response);
+    expect(denied.state).toMatchObject({ status: 403, body: { ok: false, error: { code: "cleaning_pricing_policy_forbidden" } } });
+  });
+
+  it("serves a read-only cleaning settlement review only to administrators", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "settlement_admin", email: "admin@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/settlement_admin", {
+      enabled: true, role: "admin", email: "admin@bring.test",
+    });
+    registrations.pathValues.set("crmCompany/cleaningOrders", {});
+    registrations.pathValues.set("crmCompany/cleaningPartnerDispatches", {});
+    registrations.pathValues.set("crmCompany/data/partnerVendors", {});
+    const response = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, {
+      method: "GET", query: { settlementFrom: "2026-09-21", settlementTo: "2026-09-27" },
+    }), response.response);
+    expect(response.state).toMatchObject({ status: 200, body: { ok: true, result: {
+      fromDate: "2026-09-21", toDate: "2026-09-27", completedWorkCount: 0, grossSupplierAmount: 0,
+      excludedWorkCount: 0, partners: [], payoutEnabled: false,
+    } } });
+
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "settlement_member", email: "member@bring.test", email_verified: true,
+    });
+    registrations.pathValues.set("crmCompany/access/settlement_member", {
+      enabled: true, role: "member", email: "member@bring.test",
+    });
+    const denied = httpResponseHarness();
+    await requestHandler(entrypoints.cleaningOrdersApi)(canonicalHttpRequest({}, {
+      method: "GET", query: { settlementFrom: "2026-09-21", settlementTo: "2026-09-27" },
+    }), denied.response);
+    expect(denied.state).toMatchObject({
+      status: 403, body: { ok: false, error: { code: "cleaning_settlement_forbidden" } },
+    });
   });
 
   it("keeps cleaning-order list access read-only for viewers and blocks marketing-only members", async () => {
@@ -4636,7 +4869,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(21);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(4);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(6);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(4);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);

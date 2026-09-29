@@ -14,4 +14,8 @@ assert.match(source, /firebaseWriteRequest_\(recordUrl, "put", record/);
 assert.doesNotMatch(source, /record\.phone\s*=/);
 assert.doesNotMatch(source, /record\.content\s*=/);
 assert.match(source, /existing\.requestHash !== requestHash/);
+assert.match(source, /cleaning_extra_charge_approval: \{ purpose: "information", requiresSource: true/);
+assert.match(source, /cleaningOrder: "cleaningOrders"/);
+assert.match(source, /cleaningPartnerExtraCharges\/" \+ payload\.sourceId/);
+assert.match(source, /extraCharge\.status !== "draft"/);
 console.log("PASS customer message delivery handler security contract");

@@ -28,7 +28,13 @@ test('model column owns its heading and related records independently of profile
  const s=await setup();
  const column=visit(s.host).find(n=>n.className==='customer-atlas-model-column');
  assert.ok(column,'dedicated model column exists');
- assert.deepEqual(column.children.map(n=>n.className),['customer-atlas-heading','customer-atlas-stage','customer-atlas-history']);
+ assert.deepEqual(column.children.map(n=>n.className),['customer-atlas-heading','customer-atlas-kpis','customer-atlas-history','customer-atlas-stage']);
+ s.handle.dispose();
+});
+test('customer 360 metrics render from the selected CRM customer projection',async()=>{
+ const s=await setup({getSummary:()=>[{label:'가입일',value:'2024.09.12'},{label:'총 주문',value:'2건'},{label:'총 결제액',value:'240,000원'},{label:'CS 횟수',value:'1건'}]});
+ const metrics=visit(s.host).find(n=>n.className==='customer-atlas-kpis');
+ assert.ok(metrics);for(const value of ['가입일','총 주문','2건','총 결제액','240,000원','CS 횟수'])assert.match(text(metrics),new RegExp(value));
  s.handle.dispose();
 });
 test('profile removes only repeated building identity and renders labelled metadata safely',async()=>{

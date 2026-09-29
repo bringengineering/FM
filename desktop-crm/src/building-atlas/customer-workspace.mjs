@@ -1,12 +1,12 @@
 // Read-only CRM projection. Model IO remains exclusively in the existing host.
-export async function mountCustomerWorkspace({host,getCustomers,getBuildings,getVisibleCustomerIds=()=>getCustomers().map(c=>c.id),getVisibleBuildings=getBuildings,getProfile,getSections,getReferenceTargets=()=>[],mountAtlas,initialCustomerId,initialBuildingId,signal}={}) {
+export async function mountCustomerWorkspace({host,getCustomers,getBuildings,getVisibleCustomerIds=()=>getCustomers().map(c=>c.id),getVisibleBuildings=getBuildings,getProfile,getSections,getSummary=()=>[],getReferenceTargets=()=>[],mountAtlas,initialCustomerId,initialBuildingId,signal}={}) {
  const doc=host.ownerDocument;
  const el=(tag,text,id)=>{const n=doc.createElement(tag);if(text)n.textContent=text;if(id)n.id=id;return n;};
  const css=el('link');css.rel='stylesheet';css.href=new URL('./customer-workspace.css',import.meta.url).href;
  const shell=el('section');shell.className='customer-atlas-workspace';
- const list=el('aside',null,'customer-atlas-list'),content=el('section'),heading=el('header'),top=el('div'),stage=el('div'),profile=el('aside'),history=el('section'),tabs=el('div'),body=el('div'),modelColumn=el('div');
+ const list=el('aside',null,'customer-atlas-list'),content=el('section'),heading=el('header'),top=el('div'),kpis=el('div'),stage=el('div'),profile=el('aside'),history=el('section'),tabs=el('div'),body=el('div'),modelColumn=el('div');
  content.className='customer-atlas-content';top.className='customer-atlas-top';profile.className='customer-atlas-profile';history.className='customer-atlas-history';tabs.className='customer-atlas-tabs';tabs.setAttribute('role','tablist');
- heading.className='customer-atlas-heading';
+ heading.className='customer-atlas-heading';kpis.className='customer-atlas-kpis';
  stage.className='customer-atlas-stage';
  modelColumn.className='customer-atlas-model-column';
  list.setAttribute('aria-label','고객·건물 선택');
@@ -16,7 +16,7 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
  body.setAttribute('role','tabpanel');
  body.tabIndex=0;
  history.append(el('h3','관련 업무 기록'),tabs,body);
- modelColumn.append(heading,stage,history);
+ modelColumn.append(heading,kpis,history,stage);
  top.append(modelColumn,profile);
  content.append(top);shell.append(list,content);host.replaceChildren(css,shell);
  let atlas,disposed=false,busy=false,tab=0,selectedRecord=null,referenceWritable=false,referenceError='',referenceBusy=false,pendingBuildingId;
@@ -42,7 +42,7 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
   if(!referenceWritable)referencePanel.append(el('p','읽기 전용 · 연결을 저장할 수 없습니다.'));
   if(referenceError){const error=el('p',referenceError);error.setAttribute('role','alert');referencePanel.append(error);}
  }
- function renderRows(target,sections){target.replaceChildren();for(const section of sections||[]){target.append(el('h3',section.title));for(const line of section.lines?.length?section.lines:section.resources?.length?[]:['등록된 자료 없음'])target.append(el('p',String(line)));for(const r of section.resources||[]){const row=el('p',r.name||'사진');if(/^https:\/\//i.test(r.url||''))row.append(button('원본 열기','data-case-resource-link',r.url));target.append(row);}}}
+ function renderRows(target,sections){target.replaceChildren();for(const section of sections||[]){target.append(el('h3',section.title));const lines=section.lines?.length?section.lines:((section.resources?.length||section.actions?.length)?[]:['등록된 자료 없음']);for(const line of lines)target.append(el('p',String(line)));for(const action of section.actions||[]){const b=button(action.label,action.attribute,action.value);for(const [key,value] of Object.entries(action.attributes||{}))if(value!==undefined&&value!==null)b.setAttribute(key,String(value));b.className=action.className||'customer-atlas-record-action';target.append(b);}for(const r of section.resources||[]){const row=el('p',r.name||'사진');if(/^https:\/\//i.test(r.url||''))row.append(button('원본 열기','data-case-resource-link',r.url));target.append(row);}}}
  // Presentation only: keep the projection and its original values untouched.
  function renderProfile(sections,building,customer){
   profile.replaceChildren();
@@ -67,6 +67,8 @@ export async function mountCustomerWorkspace({host,getCustomers,getBuildings,get
   const building=getBuildings().find(b=>b.id===buildingId);heading.replaceChildren(el('h3',building?.name||'건물 미연결'),el('p',building?.address||'주소 미등록'));
   const customer=getCustomers().find(c=>c.id===customerId);
   const staleSelection=Boolean((customerId&&!customer)||(buildingId&&!building)||(customerId&&buildingId&&!customer?.buildings.some(b=>b.id===buildingId)));
+  kpis.replaceChildren();
+  for(const item of getSummary(customerId,buildingId)||[]){const card=el('article'),label=el('span',item.label||'CRM 지표'),value=el('b',item.value||'확인 중'),note=el('small',item.note||'기존 CRM 기록');card.append(label,value,note);kpis.append(card);}
   const chooser=button(`${building?.name||customer?.name||'고객·건물 선택'} · 변경`);chooser.id='customer-atlas-chooser-toggle';
   const choices=el('div',null,'customer-atlas-choices');choices.append(el('h3','고객·건물'));
   const updateChooser=()=>{list.className=chooserExpanded?'customer-atlas-chooser expanded':'customer-atlas-chooser';chooser.setAttribute('aria-expanded',String(chooserExpanded));};

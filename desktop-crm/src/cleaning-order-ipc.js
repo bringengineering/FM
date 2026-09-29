@@ -17,10 +17,27 @@ function createCleaningOrderIpcHandlers({ getRemoteClient, isLocalTestMode }) {
     return client[name].bind(client);
   }
 
+  function validDay(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }
+
   return Object.freeze({
     load(cursor) {
       if (isLocalTestMode()) return { orders: [], hasMore: false, nextCursor: null, localOnly: true };
       return remoteMethod('loadCleaningOrders', '로그인 후 청소 주문을 확인해 주세요.')(cursor);
+    },
+    loadSettlementReview(period) {
+      if (!isRecord(period) || Object.keys(period).length !== 2
+        || !Object.hasOwn(period, 'fromDate') || !Object.hasOwn(period, 'toDate')
+        || !validDay(period.fromDate) || !validDay(period.toDate) || period.fromDate > period.toDate
+        || Date.parse(`${period.toDate}T00:00:00.000Z`) - Date.parse(`${period.fromDate}T00:00:00.000Z`) > 31 * 86400000) {
+        throw new Error('정산 기간을 확인해 주세요.');
+      }
+      if (isLocalTestMode()) return { fromDate: period.fromDate, toDate: period.toDate, completedWorkCount: 0,
+        grossSupplierAmount: 0, excludedWorkCount: 0, partners: [], payoutEnabled: false, localOnly: true };
+      return remoteMethod('loadCleaningSettlementReview', '관리자 계정으로 로그인해 주세요.')(period);
     },
     loadById(orderId) {
       if (typeof orderId !== 'string' || !UUID.test(orderId)) throw new Error('주문 ID를 확인해 주세요.');

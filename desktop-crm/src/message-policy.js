@@ -7,6 +7,7 @@
 
   const TEMPLATES = Object.freeze({
     cleaning_schedule: Object.freeze({ id: "cleaning_schedule", label: "청소 예정일 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    cleaning_extra_charge_approval: Object.freeze({ id: "cleaning_extra_charge_approval", label: "추가 서비스 고객 승인 요청", purpose: "information", channels: ["kakao", "sms"], requiresSource: true }),
     move_in_cleaning_confirmation: Object.freeze({ id: "move_in_cleaning_confirmation", label: "입주청소 일정 확인", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
     requested_followup: Object.freeze({ id: "requested_followup", label: "요청한 견적·상담 후속", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
     work_completed: Object.freeze({ id: "work_completed", label: "작업 완료 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
@@ -25,7 +26,7 @@
     CHANNEL_NOT_ALLOWED: "이 템플릿에서 사용할 수 없는 발송 채널입니다.",
     CUSTOMER_REQUIRED: "수신 고객을 선택해 주세요.",
     PHONE_REQUIRED: "고객 연락처를 확인해 주세요.",
-    SOURCE_REQUIRED: "정보성 안내와 연결할 상담·작업·계약·입금 기록을 선택해 주세요.",
+    SOURCE_REQUIRED: "정보성 안내와 연결할 상담·작업·계약·입금·청소 주문 기록을 선택해 주세요.",
     MARKETING_CONSENT_REQUIRED: "선택한 채널의 광고성 정보 수신 동의가 없습니다.",
     MARKETING_CONSENT_WITHDRAWN: "고객이 선택한 채널의 광고성 수신 동의를 철회했습니다.",
     CONSENT_EVIDENCE_REQUIRED: "수신 동의 증빙과 동의 문구 버전을 등록해 주세요."

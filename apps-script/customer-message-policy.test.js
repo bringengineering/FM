@@ -27,6 +27,11 @@ assert.equal(result.allowed, true);
 result = context.customerMessagePolicy_({ id: "c1", phone: "01012345678" }, { templateId: "cleaning_schedule", channel: "kakao" });
 assert.equal(result.code, "SOURCE_REQUIRED");
 
+result = context.customerMessagePolicy_({ id: "c1", phone: "01012345678" }, { templateId: "cleaning_extra_charge_approval", channel: "sms", sourceType: "cleaningOrder", sourceId: "order-1" });
+assert.equal(result.allowed, true);
+assert.equal(result.template.purpose, "information");
+assert.equal(result.template.property, "KAKAO_CUSTOMER_TEMPLATE_CLEANING_EXTRA_CHARGE");
+
 result = context.customerMessagePolicy_({ id: "c1", phone: "01012345678" }, { templateId: "unknown", channel: "kakao", sourceType: "work", sourceId: "w1" });
 assert.equal(result.code, "TEMPLATE_NOT_ALLOWED");
 console.log("PASS customer message policy fails closed");

@@ -61,7 +61,7 @@ test("integrated operations view loads and saves through the trusted CRM bridge"
   assert.match(main, /crm:operations-intelligence-load/);
   assert.match(main, /crm:operation-save/);
   assert.match(app, /function renderOperationsIntelligence/);
-  assert.match(app, /\["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence"/);
+  assert.match(app, /\["dashboard", "cleaningCenter", "cleaningCti", "cleaningAnalytics", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence"/);
   assert.match(app, /data-operations-tab/);
   assert.match(app, /data-operations-period/);
   assert.match(app, /operationForm/);
