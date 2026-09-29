@@ -171,9 +171,14 @@ test("active Firebase hosting sources and exported assets target bring-fm only",
     /https:\/\/bring-fm-default-rtdb\.asia-southeast1\.firebasedatabase\.app/,
   );
 
-  const fieldAssetPath = JSON.parse(assetManifest)[
-    "app/field/components/v2/FieldV2App.tsx"
-  ].file;
+  const entries = JSON.parse(assetManifest);
+  const fieldApp = entries["app/field/FieldApp.tsx"];
+  assert.ok(fieldApp, "the active field app must be present in the Firebase export");
+  const firebaseClientKey = fieldApp.imports.find(key =>
+    key.startsWith("_firebase.client-"),
+  );
+  assert.ok(firebaseClientKey, "the active field app must load the Firebase client");
+  const fieldAssetPath = entries[firebaseClientKey].file;
   const fieldAsset = await readFile(
     new URL(`../firebase-public/${fieldAssetPath}`, import.meta.url),
     "utf8",
