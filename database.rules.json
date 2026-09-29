@@ -1768,6 +1768,9 @@
             "vacantUnits": {
               ".validate": true
             },
+            "monthlyReportEnabled": {
+              ".validate": "newData.isBoolean()"
+            },
             "buildingNo": {
               ".validate": "data.exists() && newData.isString() && newData.val() === data.val()"
             },

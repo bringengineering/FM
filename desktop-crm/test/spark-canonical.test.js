@@ -131,6 +131,26 @@ test("Spark canonical entity mutation is versioned, atomic, audited and idempote
   );
 });
 
+test("건물 월간보고 대상은 허용된 boolean 필드로 버전 관리된다", () => {
+  const data = { buildings: { building_1: canonicalBuilding() } };
+  const request = entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440040",
+    entityType: "buildings",
+    entityId: "building_1",
+    operation: "update",
+    patch: { monthlyReportEnabled: true },
+    reason: "월간보고 대상 지정",
+  });
+  const result = SparkCanonical.reduceEntity(data, request, ACTOR, NOW);
+  assert.equal(result.data.buildings.building_1.monthlyReportEnabled, true);
+  assert.equal(result.data.buildings.building_1.entityVersion, 2);
+
+  assert.throws(
+    () => SparkCanonical.reduceEntity(data, { ...request, requestId: "550e8400-e29b-41d4-a716-446655440041", patch: { monthlyReportEnabled: "true" } }, ACTOR, NOW),
+    error => error && error.code === "crm_monthly_report_enabled_invalid",
+  );
+});
+
 test("canonical vacancy mirror follows every transition away from the last vacant unit", () => {
   const transitions = [
     {

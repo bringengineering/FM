@@ -37,11 +37,15 @@ test("시험 버전은 자동 발송을 하지 않는다", () => {
   assert.doesNotMatch(view, /sendOwner|customer-notice-send|document-delivery-send/u);
 });
 
-test("건물 월간보고서 화면은 계약이 종료되지 않은 건물만 고른다", () => {
+test("건물 월간보고서는 건물의 명시적 보고 대상 설정으로 선택한다", () => {
   const app = read("app.js");
-  const start = app.indexOf("function contractedMonthlyReportBuildings");
-  const end = app.indexOf("function buildingMonthlyReportRequest", start);
+  const start = app.indexOf("function monthlyReportTargetBuildings");
+  const end = app.indexOf("function buildingMonthlyReportTargetManagerMarkup", start);
   const helper = app.slice(start, end);
-  assert.match(helper, /contract\.status !== "종료"/u);
-  assert.match(helper, /buildingIds\.has/u);
+  assert.match(helper, /building\.monthlyReportEnabled === true/u);
+  assert.doesNotMatch(helper, /store\.contracts|contract\.status/u);
+  assert.match(app, /<span>건물 선택<\/span>/u);
+  assert.match(app, /data-building-monthly-target="/u);
+  assert.match(app, /patch: \{ monthlyReportEnabled: enabled \}/u);
+  assert.match(app, /계약 연결 여부와 관계없이 이 건물을 월간보고/u);
 });
