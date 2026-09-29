@@ -3695,6 +3695,90 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(get(ref(anonymous, attendancePath)));
   }, 60_000);
 
+  it("allows only registered office-admin RFID tags to create and close attendance", async () => {
+    const officeAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const standardAdmin = environment.authenticatedContext(
+      "crm-standard-admin",
+      crmClaims("standard-admin@bring.test"),
+    ).database();
+    const member = environment.authenticatedContext(
+      "crm-legacy-member",
+      crmClaims("legacy@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const unverifiedAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmPasswordClaims("admin@bring.test", false),
+    ).database();
+    const anonymous = environment.unauthenticatedContext().database();
+    const fingerprint = "a".repeat(64);
+    const workDate = "2026-09-29";
+    const path = "crmCompany/officeRfidAttendance/crm-viewer/" + workDate;
+    const atMs = Date.now();
+    const at = new Date(atMs).toISOString();
+    const record = {
+      id: "crm-viewer_" + workDate,
+      userId: "crm-viewer",
+      workDate,
+      checkInAt: at,
+      checkOutAt: "",
+      createdAt: at,
+      updatedAt: at,
+      attendanceSource: "rfid",
+      attendanceFingerprint: fingerprint,
+      attendanceAt: at,
+      attendanceAtMs: atMs,
+      attendanceBy: "crm-admin",
+      attendanceAction: "check-in",
+    };
+
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), "crmCompany/officeRfidCards/" + fingerprint), {
+        userId: "crm-viewer",
+        last4: "1234",
+        registeredAt: NOW,
+        registeredBy: "crm-admin",
+      });
+    });
+
+    await assertSucceeds(set(ref(officeAdmin, path), record));
+    await assertSucceeds(get(ref(officeAdmin, "crmCompany/officeRfidAttendance")));
+    await assertSucceeds(get(ref(viewer, path)));
+    await assertFails(get(ref(anonymous, path)));
+    await assertFails(get(ref(viewer, "crmCompany/officeRfidAttendance")));
+    await assertFails(set(ref(anonymous, path), record));
+    await assertFails(set(ref(standardAdmin, path), record));
+    await assertFails(set(ref(member, path), record));
+    await assertFails(set(ref(viewer, path), record));
+    await assertFails(set(ref(unverifiedAdmin, path), record));
+
+    await new Promise((resolve) => setTimeout(resolve, 5100));
+    const outAtMs = Date.now();
+    const outAt = new Date(outAtMs).toISOString();
+    await assertSucceeds(set(ref(officeAdmin, path), {
+      ...record,
+      checkOutAt: outAt,
+      updatedAt: outAt,
+      attendanceAt: outAt,
+      attendanceAtMs: outAtMs,
+      attendanceAction: "check-out",
+    }));
+    await assertFails(set(ref(officeAdmin, "crmCompany/officeRfidAttendance/crm-viewer/2026-09-30"), {
+      ...record,
+      id: "crm-viewer_2026-09-30",
+      workDate: "2026-09-30",
+      attendanceFingerprint: "b".repeat(64),
+    }));
+    await assertFails(update(ref(officeAdmin, path), { extra: true }));
+    await assertFails(remove(ref(officeAdmin, path)));
+  }, 60_000);
+
   it("allows only atomic, audited office-admin attendance corrections", async () => {
     const officeAdmin = environment.authenticatedContext(
       "crm-admin",

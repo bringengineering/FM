@@ -107,3 +107,92 @@ test("RFID map commit retries one cross-device ETag conflict and verifies the st
   assert.equal(reads, 3);
 });
 
+test("automatic tag attendance requires the admin, hashes card identity, and alternates check-in with checkout", async () => {
+  const cardCode = "3F00238493";
+  const registered = Rfid.replaceCard(null, {
+    userId: "member-1",
+    cardCode,
+    registeredAt: "2026-09-29T01:23:45.000Z",
+    registeredBy: "admin-1",
+  });
+  const records = new Map();
+  const fake = backend({
+    officeRfidAttendanceQueue: Promise.resolve(),
+    dbRequest: async location => {
+      if (location === "officeRfidCards") return registered.map;
+      if (location === "crmAccess/member-1") return { enabled: true, role: "member", mustChangePassword: false };
+      if (location === "officeAttendance/member-1/2026-09-29") return null;
+      throw new Error("unexpected read path");
+    },
+    async dbReadWithEtag(location) {
+      return { value: records.get(location) || null, etag: "etag-" + (records.get(location)?.attendanceAtMs || "empty") };
+    },
+    async dbConditionalPut(location, value) {
+      records.set(location, structuredClone(value));
+    },
+  });
+  const originalNow = Date.now;
+  try {
+    Date.now = () => Date.parse("2026-09-29T00:00:00.000Z");
+    const checkedIn = await FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(fake, {
+      cardCode,
+      scannedAtMs: Date.now(),
+    });
+    assert.equal(checkedIn.status, "recorded");
+    assert.equal(checkedIn.action, "check-in");
+    assert.equal(checkedIn.userId, "member-1");
+    assert.equal(JSON.stringify([...records.values()]).includes(cardCode), false);
+
+    Date.now = () => Date.parse("2026-09-29T00:00:06.000Z");
+    const checkedOut = await FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(fake, {
+      cardCode,
+      scannedAtMs: Date.now(),
+    });
+    assert.equal(checkedOut.status, "recorded");
+    assert.equal(checkedOut.action, "check-out");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("automatic tag attendance rejects unregistered cards, malformed inputs, and non-admin sessions", async () => {
+  const cardCode = "3F00238493";
+  const nonAdmin = backend({ session: { uid: "member-1", officeAdmin: false } });
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(nonAdmin, {
+      cardCode,
+      scannedAtMs: Date.now(),
+    }),
+    error => error && error.code === "ACCESS_DENIED",
+  );
+
+  const registered = Rfid.replaceCard(null, {
+    userId: "member-1",
+    cardCode: "0012345678",
+    registeredAt: "2026-09-29T01:23:45.000Z",
+    registeredBy: "admin-1",
+  });
+  const fake = backend({
+    officeRfidAttendanceQueue: Promise.resolve(),
+    async dbRequest(location) {
+      if (location === "officeRfidCards") return registered.map;
+      throw new Error("unexpected read path");
+    },
+  });
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(fake, {
+      cardCode,
+      scannedAtMs: Date.now(),
+    }),
+    error => error && error.code === "RFID_CARD_NOT_REGISTERED",
+  );
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.recordOfficeAttendanceFromRfid.call(backend(), {
+      cardCode,
+      scannedAtMs: Date.now(),
+      extra: true,
+    }),
+    error => error && error.code === "VALIDATION_ERROR",
+  );
+});
+

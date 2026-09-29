@@ -63,7 +63,7 @@ test("휴가를 못 읽어도 근태·메신저는 살아 있다", () => {
   // 규칙이 막혔다고 오피스 전체가 죽으면 안 된다.
   const loader = remoteSource.slice(
     remoteSource.indexOf("async loadOfficeSnapshot"),
-    remoteSource.indexOf("async loadOfficeSnapshot") + 2000,
+    remoteSource.indexOf("async loadOfficeSnapshot") + 3000,
   );
   assert.match(loader, /this\.dbRequest\(leaveLocation, \{ method: "GET" \}\)\.catch\(\(\) => null\)/u);
   assert.match(loader, /this\.dbRequest\(grantLocation, \{ method: "GET" \}\)\.catch\(\(\) => null\)/u);

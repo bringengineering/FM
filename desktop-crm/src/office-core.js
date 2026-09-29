@@ -150,7 +150,7 @@
 
   function normalizeAttendance(value) {
     const source = value && typeof value === "object" ? value : {};
-    return {
+    const record = {
       id: safeText(source.id),
       userId: safeText(source.userId || source.user_id),
       workDate: safeText(source.workDate || source.work_date),
@@ -159,6 +159,8 @@
       createdAt: safeText(source.createdAt || source.created_at),
       updatedAt: safeText(source.updatedAt || source.updated_at)
     };
+    if (source.attendanceSource === "rfid") record.attendanceSource = "rfid";
+    return record;
   }
 
   function validWorkDate(value) {

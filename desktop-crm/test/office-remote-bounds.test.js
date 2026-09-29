@@ -95,6 +95,7 @@ test("loadOffice fetches only bounded per-peer conversations with bounded concur
     if (location === "crmAccess") return access;
     if (location === "teamProfiles") return {};
     if (location === "officeAttendance/member_1") return {};
+    if (location === "officeRfidAttendance/member_1") return {};
     const match = /^officeMailbox\/member_1\/(peer_\d{2})$/.exec(location);
     if (!match) throw new Error(`Unexpected request ${location}`);
     activeConversationReads += 1;
@@ -168,6 +169,7 @@ test("a superseded office reload cannot emit after a newer reload completes", as
     }
     if (location === "teamProfiles") return {};
     if (location === "officeAttendance/member_1") return {};
+    if (location === "officeRfidAttendance/member_1") return {};
     throw new Error(`Unexpected request ${options.method} ${location}`);
   };
 
@@ -198,6 +200,7 @@ test("a newer message mutation refresh supersedes an older polling reload", asyn
     if (location === "" && options.method === "PATCH") return null;
     if (location === "teamProfiles") return {};
     if (location === "officeAttendance/member_1") return {};
+    if (location === "officeRfidAttendance/member_1") return {};
     if (location === "officeMailbox/member_1/legacy_peer") return {};
     throw new Error(`Unexpected request ${options.method} ${location}`);
   };
@@ -239,6 +242,7 @@ test("background office polling observes mailbox messages from legacy sender cli
     };
     if (location === "teamProfiles") return {};
     if (location === "officeAttendance/member_1") return {};
+    if (location === "officeRfidAttendance/member_1") return {};
     if (location === "officeMailbox/member_1/legacy_peer") return { [legacyMessage.id]: legacyMessage };
     throw new Error(`Unexpected request ${options.method} ${location}`);
   };

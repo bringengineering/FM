@@ -16,6 +16,7 @@ const { selectMonthlyReportPhotosWithGateway, MAX_IMAGES: MAX_MONTHLY_REPORT_PHO
 const Core = require("./core");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
+const OfficeRfidAttendanceCore = require("./office-rfid-attendance-core");
 const OfficeRfidSerial = require("./office-rfid-serial");
 const OfficeAttachment = require("./office-attachment");
 const { createOfficeAttachmentStageGate } = require("./office-attachment-stage-gate");
@@ -204,6 +205,10 @@ let localOperationsData = null;
 let localOfficeData = null;
 let localOfficeRfidCards = Object.create(null);
 let officeRfidSerialReader = null;
+let officeRfidAttendanceSerialSession = null;
+let officeRfidAttendanceRetryTimer = null;
+let officeRfidAttendanceRequestedUid = "";
+let officeRfidAttendanceTagQueue = Promise.resolve();
 let localOfficeMessageFiles = Object.create(null);
 const localOfficeAttendanceAudits = new Map();
 const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
@@ -2768,6 +2773,164 @@ async function captureOfficeRfidCardFromSerial(input) {
 function cancelOfficeRfidSerialCapture() {
   if (!officeRfidSerialReader) return { ok: false };
   return { ok: officeRfidSerialReader.cancelCapture() };
+}
+
+function sendOfficeRfidAttendanceEvent(payload) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return false;
+  const source = payload && typeof payload === "object" ? payload : {};
+  const safe = {};
+  if (["starting", "connected", "disconnected", "stopped", "error", "tag", "tag-error"].includes(source.status)) {
+    safe.status = source.status;
+  } else return false;
+  if (typeof source.code === "string" && /^[A-Z0-9_]{1,64}$/.test(source.code)) safe.code = source.code;
+  if (OfficeCore.normalizeOfficeUserId(source.userId)) safe.userId = source.userId;
+  if (OfficeCore.validWorkDate(source.workDate)) safe.workDate = source.workDate;
+  if (["check-in", "check-out"].includes(source.action)) safe.action = source.action;
+  if (typeof source.timestamp === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(source.timestamp)) safe.timestamp = source.timestamp;
+  try {
+    mainWindow.webContents.send("crm:office-rfid-attendance-event", Object.freeze(safe));
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function officeRfidAttendanceSafeCode(value) {
+  const allowed = new Set([
+    "RFID_SERIAL_UNAVAILABLE",
+    "RFID_SERIAL_PORT_NOT_FOUND",
+    "RFID_SERIAL_PORT_BUSY",
+    "RFID_SERIAL_OPEN_FAILED",
+    "RFID_SERIAL_INVALID_DATA",
+    "RFID_SERIAL_PORT_SELECT_REQUIRED",
+    "RFID_CARD_NOT_REGISTERED",
+    "RFID_CARD_LOOKUP_FAILED",
+    "RFID_ATTENDANCE_RESET_WINDOW",
+    "RFID_ATTENDANCE_NO_OPEN_SHIFT",
+    "RFID_ATTENDANCE_ALREADY_COMPLETE",
+    "RFID_ATTENDANCE_DUPLICATE_SCAN",
+    "RFID_ATTENDANCE_ALREADY_SAVED",
+    "RFID_ATTENDANCE_CONFLICT",
+    "RFID_ATTENDANCE_WRITE_FAILED",
+    "RFID_ATTENDANCE_DATA_INVALID",
+  ]);
+  const code = String(value || "");
+  return allowed.has(code) ? code : "RFID_ATTENDANCE_WRITE_FAILED";
+}
+
+function scheduleOfficeRfidAttendanceRetry(uid) {
+  if (!uid || officeRfidAttendanceRequestedUid !== uid || officeRfidAttendanceRetryTimer) return;
+  officeRfidAttendanceRetryTimer = setTimeout(() => {
+    officeRfidAttendanceRetryTimer = null;
+    if (officeRfidAttendanceRequestedUid === uid) void startOfficeRfidAttendance();
+  }, 3000);
+}
+
+async function startOfficeRfidAttendance() {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 자동 출퇴근은 지정된 근태 관리자만 연결할 수 있습니다.");
+  if (localTestMode) return { ok: false, code: "RFID_SERIAL_UNAVAILABLE" };
+  if (!remoteClient) return { ok: false, code: "NETWORK" };
+  officeRfidAttendanceRequestedUid = actor.uid;
+  if (officeRfidAttendanceRetryTimer) {
+    clearTimeout(officeRfidAttendanceRetryTimer);
+    officeRfidAttendanceRetryTimer = null;
+  }
+  if (officeRfidAttendanceSerialSession && officeRfidAttendanceSerialSession.uid === actor.uid) {
+    return { ok: true, status: "connected", portPath: officeRfidAttendanceSerialSession.portPath };
+  }
+
+  sendOfficeRfidAttendanceEvent({ status: "starting" });
+  try {
+    const reader = getOfficeRfidSerialReader();
+    const ports = await reader.listPorts();
+    const matchingPorts = ports.filter(port => port.cp210x);
+    if (matchingPorts.length !== 1) {
+      const code = matchingPorts.length > 1 ? "RFID_SERIAL_PORT_SELECT_REQUIRED" : "RFID_SERIAL_PORT_NOT_FOUND";
+      sendOfficeRfidAttendanceEvent({ status: "error", code });
+      scheduleOfficeRfidAttendanceRetry(actor.uid);
+      return { ok: false, code };
+    }
+    const portPath = matchingPorts[0].path;
+    const serialSession = { uid: actor.uid, portPath, reader };
+    officeRfidAttendanceSerialSession = serialSession;
+    await reader.startAttendanceReader({
+      portPath,
+      onStatus: event => {
+        if (officeRfidAttendanceSerialSession !== serialSession
+          || officeRfidAttendanceRequestedUid !== serialSession.uid) return;
+        const code = officeRfidAttendanceSafeCode(event && event.code);
+        if (event && event.status === "connected") {
+          sendOfficeRfidAttendanceEvent({ status: "connected" });
+          return;
+        }
+        if (event && event.status === "disconnected") {
+          officeRfidAttendanceSerialSession = null;
+          sendOfficeRfidAttendanceEvent({ status: "disconnected", code });
+          scheduleOfficeRfidAttendanceRetry(serialSession.uid);
+        }
+      },
+      onCard: (cardCode, scannedAtMs) => {
+        const run = officeRfidAttendanceTagQueue.then(async () => {
+          const active = authState().user;
+          if (!active || active.uid !== serialSession.uid || active.officeAdmin !== true
+            || officeRfidAttendanceRequestedUid !== serialSession.uid) return;
+          try {
+            const result = await remoteClient.recordOfficeAttendanceFromRfid({ cardCode, scannedAtMs });
+            if (officeRfidAttendanceRequestedUid !== serialSession.uid) return;
+            if (result && result.status === "recorded") {
+              sendOfficeRfidAttendanceEvent({
+                status: "tag",
+                userId: result.userId,
+                workDate: result.workDate,
+                action: result.action,
+                timestamp: result.timestamp,
+              });
+            } else {
+              sendOfficeRfidAttendanceEvent({
+                status: "tag",
+                code: officeRfidAttendanceSafeCode(result && result.code),
+                userId: result && result.userId,
+                workDate: result && result.workDate,
+              });
+            }
+          } catch (error) {
+            sendOfficeRfidAttendanceEvent({
+              status: "tag-error",
+              code: officeRfidAttendanceSafeCode(error && error.code),
+            });
+          }
+        });
+        officeRfidAttendanceTagQueue = run.catch(() => {});
+        return run;
+      },
+    });
+    if (officeRfidAttendanceSerialSession !== serialSession) {
+      reader.stopAttendanceReader();
+      return { ok: false, code: "RFID_SERIAL_CANCELLED" };
+    }
+    return { ok: true, status: "connected", portPath };
+  } catch (error) {
+    officeRfidAttendanceSerialSession = null;
+    const code = officeRfidAttendanceSafeCode(error && error.code);
+    sendOfficeRfidAttendanceEvent({ status: "error", code });
+    scheduleOfficeRfidAttendanceRetry(actor.uid);
+    return { ok: false, code };
+  }
+}
+
+function stopOfficeRfidAttendance() {
+  const requestedUid = officeRfidAttendanceRequestedUid;
+  officeRfidAttendanceRequestedUid = "";
+  if (officeRfidAttendanceRetryTimer) {
+    clearTimeout(officeRfidAttendanceRetryTimer);
+    officeRfidAttendanceRetryTimer = null;
+  }
+  const active = officeRfidAttendanceSerialSession;
+  officeRfidAttendanceSerialSession = null;
+  if (active && active.reader) active.reader.stopAttendanceReader();
+  if (requestedUid) sendOfficeRfidAttendanceEvent({ status: "stopped" });
+  return { ok: Boolean(active || requestedUid) };
 }
 
 async function removeOfficeRfidCard(input) {
@@ -5661,11 +5824,13 @@ async function createWindow() {
     officeMessengerPresence = false;
     officeMessengerPeerId = "";
     cancelOfficeRfidSerialCapture();
+    stopOfficeRfidAttendance();
   });
   mainWindow.webContents.on("render-process-gone", () => {
     officeMessengerPresence = false;
     officeMessengerPeerId = "";
     cancelOfficeRfidSerialCapture();
+    stopOfficeRfidAttendance();
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -5673,11 +5838,13 @@ async function createWindow() {
     if (applicationExitAllowed) return;
     event.preventDefault();
     cancelOfficeRfidSerialCapture();
+    stopOfficeRfidAttendance();
     void requestApplicationExit("window");
   });
   mainWindow.on("closed", () => {
     officeMessengerPresence = false;
     officeMessengerPeerId = "";
+    stopOfficeRfidAttendance();
     closeOfficeNotifications();
     destroyValueScopeView();
     destroyFieldView();
@@ -9392,6 +9559,7 @@ secureHandle("crm:auth-change-password", async password => {
   finally { crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1); }
 });
 secureCanonicalHandle("crm:auth-logout", async input => {
+  stopOfficeRfidAttendance();
   updateOfficeAttachmentSession("", true);
   hideValueScopeView();
   if (!FIELD_OPERATIONS_ENABLED) {
@@ -9458,6 +9626,12 @@ secureCanonicalHandle("crm:office-rfid-serial-cancel", () => {
   const actor = assertOfficeSession();
   if (actor.officeAdmin !== true) throw new Error("RFID 리더기는 지정된 근태 관리자만 제어할 수 있습니다.");
   return cancelOfficeRfidSerialCapture();
+});
+secureCanonicalHandle("crm:office-rfid-attendance-start", () => startOfficeRfidAttendance());
+secureCanonicalHandle("crm:office-rfid-attendance-stop", () => {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("RFID 리더기는 지정된 근태 관리자만 제어할 수 있습니다.");
+  return stopOfficeRfidAttendance();
 });
 secureCanonicalHandle("crm:office-attachment-pick", input => pickOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-drop", input => dropOfficeAttachment(input));
@@ -9920,6 +10094,7 @@ app.whenReady().then(async () => {
 });
 app.on("before-quit", event => {
   cancelOfficeRfidSerialCapture();
+  stopOfficeRfidAttendance();
   if (!applicationExitAllowed) {
     event.preventDefault();
     void requestApplicationExit("quit");
