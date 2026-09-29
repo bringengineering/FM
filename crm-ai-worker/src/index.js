@@ -4,13 +4,15 @@ import { createDocumentDeliveryHandler } from "./document-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
+import { readMonthlyReportPhotoSelectionPayload, selectMonthlyReportPhotos } from "./monthly-report-photo-select.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-09-21-v8";
+const SERVICE_VERSION = "2026-09-29-v9";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
+const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
 const DOCUMENT_DELIVERY_PATH = "/v1/document-delivery";
@@ -28,9 +30,11 @@ const ERROR_STATUS = Object.freeze({
   RATE_LIMITED: 429,
   AI_DISABLED: 503,
   AI_TEMPORARY_FAILURE: 503,
-  AI_INVALID_RESPONSE: 502
-  , CONTRACT_DRIVE_UNAVAILABLE: 503
-  , CONTRACT_SOURCE_NOT_FOUND: 404
+  AI_INVALID_RESPONSE: 502,
+  AI_CONFIGURATION_ERROR: 503,
+  GEMINI_NOT_CONFIGURED: 503,
+  CONTRACT_DRIVE_UNAVAILABLE: 503,
+  CONTRACT_SOURCE_NOT_FOUND: 404,
 });
 
 function base64url(value) {
@@ -289,10 +293,10 @@ export function createWorker(options = {}) {
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
-      if (![ASSIST_PATH, PHOTO_CLASSIFY_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, PHOTO_CLASSIFY_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
-      if ([ASSIST_PATH, PHOTO_CLASSIFY_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
+      if ([ASSIST_PATH, PHOTO_CLASSIFY_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
@@ -308,6 +312,17 @@ export function createWorker(options = {}) {
             classifications: classified.classifications,
             warnings: ["사진 축소본은 분류에만 사용되며 이 서비스에 저장하지 않습니다."],
             usage: classified.usage,
+          }, 200, cors);
+        }
+        if (url.pathname === MONTHLY_REPORT_PHOTO_SELECT_PATH) {
+          const payload = await readMonthlyReportPhotoSelectionPayload(request);
+          const selection = await selectMonthlyReportPhotos(payload, env, fetchImpl, Math.max(timeoutMs, 45_000));
+          return json({
+            ok: true,
+            requestId: requestId(),
+            selected: selection.selected,
+            warnings: ["사진 축소본은 보고서 사진 선택에만 사용되며 이 서비스에 저장하지 않습니다."],
+            usage: selection.usage,
           }, 200, cors);
         }
         if (url.pathname === TRANSCRIBE_PATH) {

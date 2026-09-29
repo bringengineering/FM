@@ -21,6 +21,18 @@ BRING CRM과 Groq Cloud 사이에서 Firebase 직원 인증, 개인정보 마스
 
 검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 이후 두 승인 플래그를 `true`로 바꿔 배포합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 결과보고서는 `BRINGCOMPLETIONREPORTV1`만 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
 
+## 건물 월간보고서 사진 선택
+
+`POST /v1/monthly-report-photo-select`는 CRM 메인 프로세스가 선택한 Drive 폴더 안의 JPEG 축소본(최대 24장, 각 120KB 이하)만 Gemini에 전달합니다. Gemini는 보고서 업무와 관련된 사진을 최대 12장 골라 ID와 짧은 설명만 반환합니다. 주소·Drive 링크·계정 토큰은 보내지 않고, 사진 축소본은 저장하지 않습니다.
+
+Gemini API 키는 Cloudflare Worker Secret `GEMINI_API_KEY`로만 등록합니다. 키를 코드, `wrangler.toml`, `.env`, CRM 설치 파일 또는 채팅에 입력하지 마세요. 현재 안정 모델 기본값은 `gemini-3.8-flash`이며 필요할 때만 Worker 변수 `GEMINI_VISION_MODEL`로 변경합니다. Secret이 없으면 사진 선택 요청은 `GEMINI_NOT_CONFIGURED`로 fail closed 합니다.
+
+```powershell
+npx wrangler secret put GEMINI_API_KEY
+npm test
+npm run deploy
+```
+
 ## 최초 배포
 
 ```powershell

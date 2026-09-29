@@ -80,19 +80,66 @@
     );
   }
 
-  function workRows(store, buildingId, month) {
-    return rows(store && store.cases)
+  function statusLabel(item) {
+    const status = String(item && (item.statusValue || item.status) || "").trim();
+    if (DONE_STATUSES.has(status)) return "완료";
+    if (["planned", "예정"].includes(status)) return "예정";
+    return "진행 중";
+  }
+
+  function workRows(store, buildingId, month, manualWorks) {
+    const cases = rows(store && store.cases)
       .filter(item => item && !item.archivedAt && belongsToBuilding(item, buildingId))
       .filter(item => monthOf(caseDate(item)) === month)
+      .map(item => ({
+        id: text(item.id, 120), date: caseDate(item),
+        unit: text(item.unitName || item.unitNo, 40),
+        kind: text(item.serviceType || item.workType || item.issueType, 60) || "관리 업무",
+        summary: text(item.workSummary || item.summary || item.currentIssue, 180),
+        done: isDone(item), statusLabel: statusLabel(item),
+        amountText: moneyText(item.approvedAmount || item.totalAmount || item.billedAmount),
+      }));
+    const schedules = rows(store && store.serviceRecords)
+      .filter(item => item && !item.archivedAt && item.status !== "cancelled" && belongsToBuilding(item, buildingId))
+      .filter(item => monthOf(item.scheduledDate || item.completedAt) === month)
+      .map(item => ({
+        id: text(item.id, 120), date: dateKey(item.scheduledDate || item.completedAt),
+        unit: "공용부",
+        kind: text(item.title || item.serviceType, 60) || "관리 일정",
+        summary: text(item.summary, 180),
+        done: isDone(item), statusLabel: statusLabel(item), amountText: "",
+      }));
+    const manual = rows(manualWorks)
+      .filter(item => item && monthOf(item.date) === month)
+      .map(item => ({
+        id: text(item.id, 120), date: dateKey(item.date),
+        unit: text(item.unit, 40) || "공용부",
+        kind: text(item.kind, 60) || "관리 업무",
+        summary: text(item.summary, 180),
+        done: item.done === true, statusLabel: item.done === true ? "완료" : "진행 중", amountText: "",
+      }));
+
+    // 캘린더 일정과 처리 사례가 같은 일을 가리키는 경우 하나로 합친다.
+    // 보고서에는 자료 출처를 싣지 않아도 업무 자체는 빠지지 않는다.
+    const seen = new Set();
+    return cases.concat(schedules, manual)
+      .filter(item => item.date)
+      .filter(item => {
+        const signature = `${item.date}|${item.unit}|${item.kind}|${item.summary}`.toLocaleLowerCase("ko-KR");
+        if (seen.has(signature)) return false;
+        seen.add(signature);
+        return true;
+      })
       .slice(0, MAX_ROWS)
       .map(item => Object.freeze({
-        date: caseDate(item),
-        dateText: dayText(caseDate(item)),
-        unit: text(item.unitName || item.unitNo, 40),
-        kind: text(item.serviceType || item.workType || item.issueType, 40) || "관리 업무",
-        summary: text(item.workSummary || item.summary || item.currentIssue, 160),
-        done: isDone(item),
-        amountText: moneyText(item.approvedAmount || item.totalAmount || item.billedAmount),
+        date: item.date,
+        dateText: dayText(item.date),
+        unit: item.unit,
+        kind: item.kind,
+        summary: item.summary,
+        done: item.done,
+        statusLabel: item.statusLabel,
+        amountText: item.amountText,
       }))
       .sort((left, right) => String(left.date).localeCompare(String(right.date)));
   }
@@ -121,7 +168,7 @@
       ? String(source.month)
       : new Date().toISOString().slice(0, 7);
 
-    const works = workRows(store, buildingId, month);
+    const works = workRows(store, buildingId, month, source.manualWorks);
     const units = unitRows(store, buildingId);
     const vacant = units.filter(unit => unit.status === "vacant").length;
     const billed = works.reduce((total, item) => total + amount(item.amountText), 0);
@@ -144,6 +191,12 @@
       works: Object.freeze(works),
       units: Object.freeze(units),
       narrative,
+      photos: Object.freeze(rows(source.photos).slice(0, 12).map(photo => Object.freeze({
+        name: text(photo && photo.name, 120) || "현장 사진",
+        caption: text(photo && photo.caption, 180),
+        dataUrl: /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(String(photo && photo.dataUrl || ""))
+          && String(photo.dataUrl).length <= 220000 ? String(photo.dataUrl) : "",
+      })).filter(photo => photo.dataUrl)),
       summary: Object.freeze({
         workCount: works.length,
         doneCount: works.filter(item => item.done).length,

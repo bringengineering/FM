@@ -21,8 +21,16 @@ function worksHtml(works) {
     return `<p class="empty">이 기간에 처리한 업무가 없습니다.</p>`;
   }
   return `<table class="grid"><thead><tr><th>일자</th><th>호실</th><th>업무</th><th>내용</th><th>상태</th><th>금액</th></tr></thead><tbody>${
-    works.map(work => `<tr><td>${html(work.dateText)}</td><td>${html(work.unit || "공용부")}</td><td>${html(work.kind)}</td><td class="left">${html(work.summary)}</td><td><span class="chip ${work.done ? "done" : "todo"}">${work.done ? "완료" : "진행 중"}</span></td><td class="money">${html(work.amountText)}</td></tr>`).join("")
+    works.map(work => `<tr><td>${html(work.dateText)}</td><td>${html(work.unit || "공용부")}</td><td>${html(work.kind)}</td><td class="left">${html(work.summary)}</td><td><span class="chip ${work.done ? "done" : "todo"}">${html(work.statusLabel || (work.done ? "완료" : "진행 중"))}</span></td><td class="money">${html(work.amountText)}</td></tr>`).join("")
   }</tbody></table>`;
+}
+
+function photosHtml(photos) {
+  const rows = Array.isArray(photos) ? photos.filter(photo => photo && photo.dataUrl).slice(0, 12) : [];
+  if (!rows.length) return "";
+  return `<section class="photo-section"><h2>현장 사진</h2><div class="photos">${rows.map(photo =>
+    `<figure><img src="${html(photo.dataUrl)}" alt="${html(photo.caption || photo.name || "현장 사진")}"><figcaption>${html(photo.caption || photo.name || "현장 사진")}</figcaption></figure>`
+  ).join("")}</div></section>`;
 }
 
 function unitsHtml(units) {
@@ -83,6 +91,11 @@ section>h2{margin:0 0 2mm;font-size:10.5pt;font-weight:800}
 .unit.vacant span{color:#B4690E;font-weight:700}
 .unit.move_out_scheduled{border-color:#BBD8FA;background:#F7FAFF}
 .unit.move_out_scheduled span{color:#3182F6;font-weight:700}
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm}
+.photos figure{margin:0;break-inside:avoid;border:1px solid #E5E8EB;border-radius:2mm;overflow:hidden}
+.photos img{display:block;width:100%;height:45mm;object-fit:cover;background:#F2F4F6}
+.photos figcaption{padding:2mm;font-size:7.5pt;line-height:1.4;color:#4E5968}
+.photo-section{break-before:auto}
 .total{display:flex;align-items:center;justify-content:space-between;padding:3.5mm 4mm;border-radius:2mm;background:#191F28;color:#fff}
 .total span{font-size:9pt;font-weight:700}
 .total b{font-size:15pt;font-weight:800}
@@ -95,6 +108,7 @@ footer b{color:#191F28;font-size:9pt}
 ${report.narrative && report.narrative.summary ? `<section><h2>이번 달 관리 요약</h2><p class="greeting">${html(report.narrative.summary)}</p>${report.narrative.attention ? `<p class="greeting"><b>확인 사항</b> · ${html(report.narrative.attention)}</p>` : ""}</section>` : ""}
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
 <section><h2>처리한 업무</h2>${worksHtml(report.works)}</section>
+${photosHtml(report.photos)}
 <section><h2>호실 현황</h2>${unitsHtml(report.units)}</section>
 ${report.narrative && report.narrative.nextMonthPlan ? `<section><h2>다음 달 예정 관리</h2><p class="greeting">${html(report.narrative.nextMonthPlan)}</p></section>` : ""}
 ${summary.billedText ? `<div class="total"><span>${html(report.monthText)} 청구 합계</span><b>${html(summary.billedText)}</b></div>` : ""}

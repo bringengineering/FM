@@ -187,3 +187,36 @@ test("파일명은 건물과 연월로 만든다", () => {
   const name = Pdf.buildingReportFileName(Reports.buildBuildingMonthlyReport({ store, building, month: "2026-08" }));
   assert.match(name, /월간관리보고서_202608\.pdf$/u);
 });
+
+test("캘린더 일정과 보고서 직접 추가 업무를 출처 표시 없이 합친다", () => {
+  const built = Reports.buildBuildingMonthlyReport({
+    store: {
+      ...store,
+      serviceRecords: [
+        { id: "s1", buildingId: "b1", scheduledDate: "2026-08-11", title: "공용부 점검", status: "completed", summary: "소화기 위치 확인" },
+        { id: "s2", buildingId: "b1", scheduledDate: "2026-08-12", title: "취소된 일정", status: "cancelled" },
+        { id: "s3", buildingId: "b2", scheduledDate: "2026-08-13", title: "다른 건물 일정", status: "completed" },
+      ],
+    },
+    building, month: "2026-08",
+    manualWorks: [{ id: "m1", date: "2026-08-21", kind: "필터 교체", summary: "에어컨 필터 세척", done: true }],
+  });
+  assert.ok(built.works.some(work => work.kind === "공용부 점검" && work.statusLabel === "완료"));
+  assert.ok(built.works.some(work => work.kind === "필터 교체"));
+  assert.ok(!JSON.stringify(built).includes("취소된 일정"));
+  assert.ok(!JSON.stringify(built).includes("다른 건물 일정"));
+  assert.ok(!JSON.stringify(built).includes("manual"));
+});
+
+test("보고서 사진은 제한된 data image만 PDF에 렌더링한다", () => {
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff]).toString("base64")}`;
+  const built = Reports.buildBuildingMonthlyReport({ store, building, month: "2026-08", photos: [
+    { name: "IMG_001.jpg", caption: "후드 필터 청소", dataUrl },
+    { name: "bad.jpg", caption: "외부 주소", dataUrl: "https://example.com/image.jpg" },
+  ] });
+  assert.equal(built.photos.length, 1);
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.match(doc, /현장 사진/u);
+  assert.match(doc, /후드 필터 청소/u);
+  assert.doesNotMatch(doc, /https:\/\/example\.com/u);
+});

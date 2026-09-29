@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   assessWorkOrders: input => ipcRenderer.invoke("crm:work-assessment", input),
   generateBuildingMonthlyReportDraft: input => ipcRenderer.invoke("crm:building-monthly-report-draft", input),
+  findBuildingMonthlyReportPhotos: input => ipcRenderer.invoke("crm:building-monthly-report-photos-find", input),
+  selectBuildingMonthlyReportPhotos: input => ipcRenderer.invoke("crm:building-monthly-report-photos-select", input),
   wallboardAdmin: input => ipcRenderer.invoke("crm:wallboard-admin", input),
   chooseConsultationAudio: () => ipcRenderer.invoke("crm:consultation-audio-pick"),
   transcribeConsultationAudio: input => ipcRenderer.invoke("crm:consultation-audio-transcribe", input),
