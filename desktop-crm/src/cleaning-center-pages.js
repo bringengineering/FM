@@ -58,11 +58,7 @@
   const screenByView = view => SCREENS.find(item => item.view === String(view || "")) || null;
 
   function renderNavigation(activeView = "cleaningCenter") {
-    return SCREEN_GROUPS.map(group => {
-      const screens = SCREENS.filter(item => item.group === group.id);
-      const expanded = screens.some(item => item.view === activeView);
-      return `<section class="cleaning-nav-group${expanded ? " is-open" : ""}" data-cleaning-nav-group="${escapeHtml(group.id)}"><button type="button" class="cleaning-nav-group-toggle" data-cleaning-group-toggle="${escapeHtml(group.id)}" aria-expanded="${expanded}"><span aria-hidden="true">⌄</span><b>${escapeHtml(group.label)}</b><i aria-hidden="true">${screens.length}</i></button><div class="cleaning-nav-group-items">${screens.map(screen => `<button type="button" class="nav-item nav-child${screen.view === activeView ? " active" : ""}" data-view="${escapeHtml(screen.view)}" data-cleaning-view="${escapeHtml(screen.view)}" data-cleaning-screen="${escapeHtml(screen.reference)}" aria-label="${escapeHtml(`${screen.reference} ${screen.title}`)}"><span class="cleaning-nav-number" aria-hidden="true">${escapeHtml(screen.reference)}</span><b>${escapeHtml(screen.label)}</b></button>`).join("")}</div></section>`;
-    }).join("");
+    return SCREENS.map(screen => `<button type="button" class="nav-item nav-child${screen.view === activeView ? " active" : ""}" data-view="${escapeHtml(screen.view)}" data-cleaning-view="${escapeHtml(screen.view)}" data-cleaning-screen="${escapeHtml(screen.reference)}" aria-label="${escapeHtml(`${screen.reference} ${screen.title}`)}"><span class="cleaning-nav-number" aria-hidden="true">${escapeHtml(screen.reference)}</span><b>${escapeHtml(screen.label)}</b></button>`).join("");
   }
 
   function viewMeta() {

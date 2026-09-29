@@ -1498,17 +1498,16 @@
         || (view === "customers" && currentView === "buildings");
       button.classList.toggle("active", active);
     });
-    const cleaningScreen = window.BringCleaningCenterPages.screenByView(currentView);
-    document.querySelectorAll("[data-cleaning-nav-group]").forEach(group => {
-      const active = Boolean(cleaningScreen && group.dataset.cleaningNavGroup === cleaningScreen.group);
-      group.classList.toggle("is-open", active);
-      group.querySelector("[data-cleaning-group-toggle]")?.setAttribute("aria-expanded", String(active));
-    });
     // 화면이 다른 폴더로 넘어갔으면 사이드바도 따라간다. 링크로 건너뛰었는데
     // 왼쪽에 그 화면이 없으면 사람이 길을 잃는다.
     const viewFolder = navFolderOfView(currentView);
     if (viewFolder && activeNavFolder && viewFolder !== activeNavFolder) setActiveNavFolder(viewFolder);
     else applyNavFolderScope();
+    const cleaningPage = window.BringCleaningCenterPages.screenByView(currentView);
+    if (cleaningPage) {
+      const cleaningNavItem = document.querySelector(`[data-cleaning-screen="${cleaningPage.reference}"]`);
+      requestAnimationFrame(() => cleaningNavItem?.scrollIntoView({ block: "nearest" }));
+    }
     const customerManagementView = ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages";
     const customerManagementFolder = document.querySelector('[data-nav-folder="customer-management"]');
     customerManagementFolder?.classList.toggle("active", customerManagementView);
@@ -15005,14 +15004,6 @@
       const open = !folder.classList.contains("open");
       folder.classList.toggle("open", open);
       navFolderToggle.setAttribute("aria-expanded", String(open));
-      return;
-    }
-    const cleaningGroupToggle = event.target.closest("[data-cleaning-group-toggle]");
-    if (cleaningGroupToggle) {
-      const group = cleaningGroupToggle.closest("[data-cleaning-nav-group]");
-      const open = !group.classList.contains("is-open");
-      group.classList.toggle("is-open", open);
-      cleaningGroupToggle.setAttribute("aria-expanded", String(open));
       return;
     }
     const operationsTab = event.target.closest("[data-operations-tab]");

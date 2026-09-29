@@ -5882,11 +5882,15 @@ async function createWindow() {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
       document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
       await wait(320);
+      const cleaningNavigation = document.querySelector('.cleaning-center-navigation');
+      const navigationReferences = [...(cleaningNavigation?.querySelectorAll(':scope > [data-cleaning-screen]') || [])].map(item => item.dataset.cleaningScreen);
+      const flatNavigationWorks = navigationReferences.length === 34
+        && navigationReferences.every((reference, index) => reference === String(index + 1).padStart(2, '0'))
+        && !cleaningNavigation?.querySelector('[data-cleaning-nav-group]');
       document.querySelector('[data-cleaning-screen="01"]')?.click();
       await wait(100);
       const dashboardVisible = Boolean(document.querySelector('.cleaning-dashboard'));
       const dashboardFocused = !document.querySelector('.cleaning-dispatch-tower, .cleaning-schedule, .cleaning-payments');
-      document.querySelector('[data-cleaning-group-toggle="dispatch"]')?.click();
       document.querySelector('[data-cleaning-screen="08"]')?.click();
       await wait(100);
       const cleaningDispatchTowerVisible = Boolean(document.querySelector('.cleaning-dispatch-tower'))
@@ -5920,7 +5924,6 @@ async function createWindow() {
       window.__crmTest.replaceStoreForTest(seeded);
       await wait(50);
       const fixtureCounts = { customers: window.__crmTest.getStore().customers.length, buildings: window.__crmTest.getStore().buildings.length };
-      document.querySelector('[data-cleaning-group-toggle="intake"]')?.click();
       document.querySelector('[data-cleaning-screen="03"]')?.click();
       await wait(100);
       document.querySelector('[data-action="new-cleaning-order"]')?.click();
@@ -5940,19 +5943,22 @@ async function createWindow() {
       const modalClosed = window.__crmTest.snapshot().modalOpen === false;
       const routeChecks = [];
       for (const screen of window.BringCleaningCenterPages.SCREENS) {
-        const group = document.querySelector('[data-cleaning-nav-group="' + screen.group + '"]');
-        if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
         document.querySelector('[data-cleaning-screen="' + screen.reference + '"]')?.click();
         await wait(30);
+        const navItem = document.querySelector('[data-cleaning-screen="' + screen.reference + '"]');
+        const navContainer = document.querySelector('.cleaning-center-navigation');
+        const itemRect = navItem?.getBoundingClientRect();
+        const navRect = navContainer?.getBoundingClientRect();
+        const selectedNavVisible = Boolean(itemRect && navRect && itemRect.top >= navRect.top - 1 && itemRect.bottom <= navRect.bottom + 1);
         const pageSelector = screen.kind === 'dashboard' ? '.cleaning-dashboard'
           : screen.kind === 'cti' ? '.cleaning-cti'
             : screen.kind === 'analytics' ? '.cleaning-analytics'
               : '[data-cleaning-page="' + screen.view + '"]';
-        routeChecks.push({ reference: screen.reference, view: window.__crmTest.snapshot().view, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(pageSelector)) });
+        routeChecks.push({ reference: screen.reference, view: window.__crmTest.snapshot().view, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(pageSelector)) && navItem?.classList.contains('active') && selectedNavVisible });
       }
       const everyRouteLoads = routeChecks.length === 34 && routeChecks.every(item => item.pass);
-      const pass = dashboardVisible && dashboardFocused && cleaningDispatchTowerVisible && cleaningDispatchEmptyVisible && cleaningScheduleCalendarVisible && cleaningScheduleNavigationWorks && formFieldsPresent && linkedBuildingOnly && modalClosed && everyRouteLoads;
-      return { pass, dashboardVisible, dashboardFocused, cleaningDispatchTowerVisible, cleaningDispatchEmptyVisible, cleaningScheduleCalendarVisible, cleaningScheduleNavigationWorks, formFieldsPresent, linkedBuildingOnly, modalClosed, everyRouteLoads, routeChecks, fixtureCounts, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
+      const pass = flatNavigationWorks && dashboardVisible && dashboardFocused && cleaningDispatchTowerVisible && cleaningDispatchEmptyVisible && cleaningScheduleCalendarVisible && cleaningScheduleNavigationWorks && formFieldsPresent && linkedBuildingOnly && modalClosed && everyRouteLoads;
+      return { pass, flatNavigationWorks, navigationPageCount: navigationReferences.length, dashboardVisible, dashboardFocused, cleaningDispatchTowerVisible, cleaningDispatchEmptyVisible, cleaningScheduleCalendarVisible, cleaningScheduleNavigationWorks, formFieldsPresent, linkedBuildingOnly, modalClosed, everyRouteLoads, routeChecks, fixtureCounts, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
     })()`, true);
     if (!cleaningCenterSmoke?.pass) throw new Error(`cleaning center local UI smoke failed: ${JSON.stringify(cleaningCenterSmoke)}`);
     console.log(JSON.stringify({ workflowReads, cleaningOrders, cleaningCenterSmoke, localOnly: true }));
@@ -6047,18 +6053,21 @@ async function createWindow() {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
         await wait(220);
-        const pages = window.BringCleaningCenterPages.SCREENS.map(screen => ({ reference: screen.reference, view: screen.view, kind: screen.kind, group: screen.group }));
+        const pages = window.BringCleaningCenterPages.SCREENS.map(screen => ({ reference: screen.reference, view: screen.view, kind: screen.kind, label: screen.label, title: screen.title }));
         const output = [];
         for (const screen of pages) {
-          const group = document.querySelector('[data-cleaning-nav-group="' + screen.group + '"]');
-          if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
           document.querySelector('[data-cleaning-screen="' + screen.reference + '"]')?.click();
           await wait(100);
           const selector = screen.kind === 'dashboard' ? '.cleaning-dashboard'
             : screen.kind === 'cti' ? '.cleaning-cti'
               : screen.kind === 'analytics' ? '.cleaning-analytics'
                 : '[data-cleaning-page="' + screen.view + '"]';
-          output.push({ ...screen, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(selector)) });
+          const navItem = document.querySelector('[data-cleaning-screen="' + screen.reference + '"]');
+          const navContainer = document.querySelector('.cleaning-center-navigation');
+          const itemRect = navItem?.getBoundingClientRect();
+          const navRect = navContainer?.getBoundingClientRect();
+          const selectedNavVisible = Boolean(itemRect && navRect && itemRect.top >= navRect.top - 1 && itemRect.bottom <= navRect.bottom + 1);
+          output.push({ ...screen, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(selector)) && navItem?.classList.contains('active') && selectedNavVisible });
           window.__cleaningGalleryScreens = output;
         }
         return output;
@@ -6071,8 +6080,6 @@ async function createWindow() {
       for (const screen of screens) {
         await mainWindow.webContents.executeJavaScript(`(async () => {
           const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-          const group = document.querySelector('[data-cleaning-nav-group="${screen.group}"]');
-          if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
           document.querySelector('[data-cleaning-screen="${screen.reference}"]')?.click();
           await wait(80);
           return window.__crmTest.snapshot().view === '${screen.view}';
