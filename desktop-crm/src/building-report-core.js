@@ -16,7 +16,7 @@
     unknown: "확인 필요",
   });
 
-  const DONE_STATUSES = new Set(["완료", "종결", "종료", "complete", "done", "closed"]);
+  const DONE_STATUSES = new Set(["완료", "종결", "종료", "complete", "completed", "done", "closed"]);
   const MAX_ROWS = 60;
 
   function text(value, limit) {
