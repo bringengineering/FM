@@ -17,6 +17,7 @@ type FirebaseTargetManifest = {
     projectId: string;
     functionNames: string[];
     databaseRules: boolean;
+    hostingSiteId: string;
   };
   retiredLegacy: {
     projectId: string;
@@ -110,8 +111,9 @@ describe("Firebase function archival manifest", () => {
     expectCompleteFunctionArchive(manifest.primary.archivedFunctionNames);
     expect(manifest.cleaningCenterManualDeployment).toEqual({
       projectId: "bring-fm",
-      functionNames: ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"],
-      databaseRules: true,
+      functionNames: ["cleaningOrdersApi", "cleaningPartnerApi", "cleaningRefundsApi", "projectCleaningOrdersToWallboard"],
+      databaseRules: false,
+      hostingSiteId: "bring-fm",
     });
     expect(manifest.retiredLegacy.archivedFunctionNames).toEqual(RETIRED_LEGACY_FUNCTION_NAMES);
     expectCompleteFunctionArchive(manifest.retiredLegacy.archivedFunctionNames);

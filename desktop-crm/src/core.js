@@ -19,6 +19,10 @@
     "견적 받음": "상담 완료"
   });
   const PARTNER_INDUSTRIES = ["누수", "설비·배관", "전기·조명", "청소", "타일·방수", "도배·장판", "보일러·냉난방", "소방", "CCTV·보안", "방역", "폐기물", "기타"];
+  const CLEANING_PARTNER_SERVICE_TYPES = Object.freeze(["move_in_cleaning", "move_out_cleaning", "common_cleaning", "stair_cleaning", "other"]);
+  const CLEANING_PARTNER_ONBOARDING_STATUSES = Object.freeze(["not_started", "in_progress", "submitted", "approved", "changes_requested"]);
+  const CLEANING_PARTNER_AVAILABILITY_STATUSES = Object.freeze(["unknown", "available", "unavailable"]);
+  const CLEANING_PARTNER_COMPLIANCE_STATUSES = Object.freeze(["not_reviewed", "pending", "verified", "needs_review"]);
   const BUILDING_MAINTENANCE_INCLUDES = ["수도", "인터넷", "TV", "공용전기", "기타"];
   const BUILDING_ROOM_TYPES = ["원룸", "1.5룸", "투룸", "기타"];
   const BUILDING_ROOM_OPTIONS = ["냉장고", "세탁기", "에어컨", "전자레인지", "TV", "침대", "책상·의자", "옷장·행거", "신발장", "기타"];
@@ -596,9 +600,37 @@
     vendor.quoteUrl = String(vendor.quoteUrl || vendor.sourceUrl || "").trim();
     vendor.region = String(vendor.region || "원주").trim() || "원주";
     vendor.active = vendor.active !== false;
+    if ((vendor.industry === "청소" || vendor.service.includes("청소") || String(vendor.category || "").includes("청소"))
+      && vendor.cleaningProfile && typeof vendor.cleaningProfile === "object" && !Array.isArray(vendor.cleaningProfile)) {
+      vendor.cleaningProfile = normalizeCleaningPartnerProfile(vendor.cleaningProfile);
+    } else delete vendor.cleaningProfile;
     delete vendor.customerId;
     delete vendor.buildingId;
     return vendor;
+  }
+
+  function normalizeCleaningPartnerProfile(value) {
+    const profile = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const normalizeDate = input => {
+      const date = String(input || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+      const parsed = new Date(`${date}T00:00:00.000Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? date : "";
+    };
+    const cleanList = (input, allowed, limit, maxLength) => [...new Set((Array.isArray(input) ? input : [])
+      .map(item => String(item || "").trim())
+      .filter(item => item && item.length <= maxLength && (!allowed || allowed.includes(item))))].slice(0, limit);
+    const status = (input, allowed, fallback) => allowed.includes(String(input || "")) ? String(input) : fallback;
+    return {
+      serviceTypes: cleanList(profile.serviceTypes, CLEANING_PARTNER_SERVICE_TYPES, 5, 40),
+      serviceRegions: cleanList(profile.serviceRegions, null, 20, 120),
+      onboardingStatus: status(profile.onboardingStatus, CLEANING_PARTNER_ONBOARDING_STATUSES, "not_started"),
+      availabilityStatus: status(profile.availabilityStatus, CLEANING_PARTNER_AVAILABILITY_STATUSES, "unknown"),
+      availabilityCheckedAt: normalizeDate(profile.availabilityCheckedAt),
+      complianceStatus: status(profile.complianceStatus, CLEANING_PARTNER_COMPLIANCE_STATUSES, "not_reviewed"),
+      complianceCheckedAt: normalizeDate(profile.complianceCheckedAt),
+      note: String(profile.note || "").trim().slice(0, 500),
+    };
   }
 
   function partnerVendorFromQuote(value, vendorId) {
@@ -937,7 +969,7 @@
   }
 
   return {
-    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
+    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, CLEANING_PARTNER_SERVICE_TYPES, CLEANING_PARTNER_ONBOARDING_STATUSES, CLEANING_PARTNER_AVAILABILITY_STATUSES, CLEANING_PARTNER_COMPLIANCE_STATUSES, normalizeCleaningPartnerProfile, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,

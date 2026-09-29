@@ -6,7 +6,7 @@ const path = require("node:path");
 
 const EXPECTED_PROJECT = "bring-fm";
 const FUNCTION_CODEBASE = "field-platform";
-const EXPECTED_FUNCTIONS = ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"];
+const EXPECTED_FUNCTIONS = ["cleaningOrdersApi", "cleaningPartnerApi", "cleaningRefundsApi", "projectCleaningOrdersToWallboard"];
 const BASE_BRANCH = "codex/bring-field-platform";
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -26,25 +26,31 @@ function buildCleaningDeploymentPlan(manifest, expectedProjectId) {
   }
 
   const target = manifest.cleaningCenterManualDeployment;
+  const firebaseConfig = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "firebase.json"), "utf8"));
+  const hostingConfigs = Array.isArray(firebaseConfig.hosting) ? firebaseConfig.hosting : [firebaseConfig.hosting];
   const targetKeys = Object.keys(target).sort();
   if (manifest.primary.functionsDeploymentAllowed !== false
-    || target.databaseRules !== true
-    || JSON.stringify(targetKeys) !== JSON.stringify(["databaseRules", "functionNames", "projectId"])
+    || target.databaseRules !== false
+    || JSON.stringify(targetKeys) !== JSON.stringify(["databaseRules", "functionNames", "hostingSiteId", "projectId"])
+    || target.hostingSiteId !== EXPECTED_PROJECT
+    || hostingConfigs.length !== 1
+    || hostingConfigs[0]?.site !== target.hostingSiteId
     || !Array.isArray(target.functionNames)
     || JSON.stringify(target.functionNames) !== JSON.stringify(EXPECTED_FUNCTIONS)
     || manifest.primary.archivedFunctionNames?.some(name => EXPECTED_FUNCTIONS.includes(name))) {
     throw deploymentError(
       "CRM_CLEANING_DEPLOY_ALLOWLIST_INVALID",
-      "Only the exact Cleaning Center Functions allowlist and Database Rules may be deployed; general Functions deployment stays disabled.",
+      "Only the exact Cleaning Center Functions and the single bring-fm Hosting site may be deployed; Database Rules and general Functions deployment stay disabled.",
     );
   }
 
   return {
     projectId: EXPECTED_PROJECT,
     functionNames: [...EXPECTED_FUNCTIONS],
+    hostingSiteId: target.hostingSiteId,
     firebaseSelectors: [
       ...EXPECTED_FUNCTIONS.map(name => `functions:${FUNCTION_CODEBASE}:${name}`),
-      "database",
+      "hosting",
     ],
   };
 }
@@ -98,6 +104,14 @@ function runCleaningDeployment({
     );
   }
 
+  const exportedPartnerRoute = path.join(REPO_ROOT, "company-site", "firebase-public", "partner", "index.html");
+  if (!fs.existsSync(exportedPartnerRoute)) {
+    throw deploymentError(
+      "CRM_CLEANING_DEPLOY_HOSTING_NOT_BUILT",
+      "Build and Firebase-export the company site, including /partner, before applying this deployment.",
+    );
+  }
+
   const fetch = runCommand("git", ["fetch", "origin", BASE_BRANCH], cwd);
   if (fetch.status !== 0) {
     throw deploymentError("CRM_CLEANING_DEPLOY_BASE_FETCH_FAILED", "Could not refresh the official CRM release branch.");
@@ -125,7 +139,7 @@ function runCleaningDeployment({
   const verification = runCommand("firebase", ["functions:list", "--project", EXPECTED_PROJECT, "--json"], cwd, { quiet: true });
   const visibleFunctions = deployedFunctionNames(verification.stdout);
   if (verification.status !== 0 || EXPECTED_FUNCTIONS.some(name => !visibleFunctions.includes(name))) {
-    throw deploymentError("CRM_CLEANING_DEPLOY_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm both Cleaning Center Functions.");
+    throw deploymentError("CRM_CLEANING_DEPLOY_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm all four Cleaning Center Functions.");
   }
   return { status: "deployed", ...plan };
 }

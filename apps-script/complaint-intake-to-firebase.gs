@@ -8134,6 +8134,7 @@ function customerMessageTemplateCatalog_() {
     move_in_cleaning_confirmation: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_MOVE_IN_CLEANING", bodyProperty: "KAKAO_CUSTOMER_BODY_MOVE_IN_CLEANING" },
     requested_followup: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_REQUESTED_FOLLOWUP", bodyProperty: "KAKAO_CUSTOMER_BODY_REQUESTED_FOLLOWUP" },
     work_completed: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_WORK_COMPLETED", bodyProperty: "KAKAO_CUSTOMER_BODY_WORK_COMPLETED" },
+    cleaning_extra_charge_approval: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_EXTRA_CHARGE", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_EXTRA_CHARGE" },
     payment_reminder: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_PAYMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_PAYMENT" },
     cleaning_reengagement: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_REENGAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_REENGAGEMENT" },
     building_management_offer: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_BUILDING_MANAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_BUILDING_MANAGEMENT" },
@@ -8174,7 +8175,7 @@ function firebaseCompanyServerUrl_(childPath) {
 }
 
 function customerMessageSourceCollection_(sourceType) {
-  return ({ activity: "activities", work: "serviceRecords", contract: "contracts" })[String(sourceType || "")] || "";
+  return ({ activity: "activities", work: "serviceRecords", contract: "contracts", cleaningOrder: "cleaningOrders" })[String(sourceType || "")] || "";
 }
 
 function customerMessageSourceMatches_(customer, sourceRecord) {
@@ -8234,8 +8235,28 @@ function handleCustomerMessageSend_(payload) {
   if (policy.template.requiresSource) {
     const collection = customerMessageSourceCollection_(payload.sourceType);
     if (!collection || !/^[A-Za-z0-9_-]{1,160}$/.test(String(payload.sourceId || ""))) throw new Error("연결 업무 정보가 올바르지 않습니다.");
-    const sourceRecord = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/" + collection + "/" + payload.sourceId, payload.idToken), "연결 업무 조회 실패") || null;
+    const sourcePath = payload.sourceType === "cleaningOrder"
+      ? collection + "/" + payload.sourceId
+      : "data/" + collection + "/" + payload.sourceId;
+    const sourceRecord = firebaseReadJson_(firebaseCompanyAuthorizedUrl_(sourcePath, payload.idToken), "연결 업무 조회 실패") || null;
     if (!customerMessageSourceMatches_(customer, sourceRecord)) throw new Error("선택한 업무가 고객과 연결되어 있지 않습니다.");
+    if (payload.templateId === "cleaning_extra_charge_approval") {
+      const extraChargeRequestId = String(payload.variables && payload.variables.extraChargeRequestId || "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(extraChargeRequestId) || sourceRecord.id !== payload.sourceId) throw new Error("추가 서비스 요청 정보를 확인할 수 없습니다.");
+      const extraCharge = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("cleaningPartnerExtraCharges/" + payload.sourceId + "/" + extraChargeRequestId, payload.idToken), "추가 서비스 요청 조회 실패") || null;
+      if (!extraCharge || extraCharge.requestId !== extraChargeRequestId || extraCharge.orderId !== payload.sourceId
+        || extraCharge.customerId !== customerId || extraCharge.status !== "draft" || extraCharge.communication && extraCharge.communication.status === "accepted") {
+        throw new Error("고객 승인을 요청할 수 있는 추가 서비스 내역이 아닙니다.");
+      }
+      const services = { balcony_cleaning: "베란다 청소", window_cleaning: "창틀 청소", aircon_disassembly: "에어컨 분해 청소", waste_disposal: "폐기물 처리", other: "기타 서비스" };
+      payload.variables = {
+        orderId: payload.sourceId,
+        service: services[String(extraCharge.serviceType || "")] || "추가 서비스",
+        amount: Math.round(Number(extraCharge.amount) || 0).toLocaleString("ko-KR"),
+        reason: String(extraCharge.reason || "").slice(0, 160),
+        replyInstructions: "동의 또는 거절 의사를 회신해 주세요.",
+      };
+    }
   }
   const props = PropertiesService.getScriptProperties();
   const templateCode = String(props.getProperty(policy.template.property) || "").trim();

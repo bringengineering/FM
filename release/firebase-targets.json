@@ -55,8 +55,11 @@
     "projectId": "bring-fm",
     "functionNames": [
       "cleaningOrdersApi",
+      "cleaningPartnerApi",
+      "cleaningRefundsApi",
       "projectCleaningOrdersToWallboard"
     ],
-    "databaseRules": true
+    "databaseRules": false,
+    "hostingSiteId": "bring-fm"
   }
 }

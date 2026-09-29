@@ -57,3 +57,14 @@ test("unknown templates fail closed", () => {
   assert.equal(result.allowed, false);
   assert.equal(result.code, "TEMPLATE_NOT_ALLOWED");
 });
+
+test("extra-charge approval message permits approved informative channels and requires its source order", () => {
+  const customer = { id: "customer-1", phone: "010-1234-5678" };
+  for (const channel of ["kakao", "sms"]) {
+    const result = Policy.evaluateMessageRequest({ customer, templateId: "cleaning_extra_charge_approval", channel, sourceType: "cleaningOrder", sourceId: "order-1" });
+    assert.equal(result.allowed, true, `${channel} should be allowed for the configured informative template`);
+  }
+  const unlinked = Policy.evaluateMessageRequest({ customer, templateId: "cleaning_extra_charge_approval", channel: "sms" });
+  assert.equal(unlinked.allowed, false);
+  assert.equal(unlinked.code, "SOURCE_REQUIRED");
+});

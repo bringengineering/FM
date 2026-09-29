@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { getApps, initializeApp } from "firebase-admin/app";
+import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase, ServerValue } from "firebase-admin/database";
 import { getStorage } from "firebase-admin/storage";
@@ -20,6 +21,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {
   authorizeBillingActor,
+  auditBillingLedger,
   transactBillingLedger,
   type BillingMutationCommand,
 } from "./billing-ledger-mutation.js";
@@ -30,6 +32,19 @@ import {
 import { createCleaningOrderFirebaseDependencies } from "./cleaning-orders/firebase-adapter.js";
 import { createCleaningQuoteRevisionCore, reviewCleaningQuoteCore } from "./cleaning-orders/quotes.js";
 import { validateStoredCleaningOrder } from "./cleaning-orders/core.js";
+import { createCleaningPartnerFirebaseDependencies } from "./cleaning-partners/firebase-adapter.js";
+import { validateCleaningPartnerDispatch } from "./cleaning-partners/core.js";
+import type { CleaningDelayActionInput, CleaningDelayIncidentInput } from "./cleaning-partners/contracts.js";
+import {
+  cleaningRefundCoverageIsValid,
+  createCleaningRefundRequest,
+  decideCleaningRefundRequest,
+  recordCleaningRefundExecution,
+  validateCleaningRefundRequest,
+  type CleaningRefundRequest,
+} from "./cleaning-refunds.js";
+import { createCleaningPricingPolicy, normalizeCleaningPricingPolicy } from "./cleaning-pricing-policy.js";
+import { buildCleaningSettlementReview } from "./cleaning-settlements.js";
 import {
   buildCleaningWallboardProjection,
   shouldPublishCleaningWallboardProjection,
@@ -3839,6 +3854,13 @@ function cleaningOrderHttpStatus(code: string): number {
   if (code === "cleaning_quote_revision_conflict" || code === "cleaning_quote_request_conflict") return 409;
   if (code === "cleaning_quote_stored_data_invalid" || code === "cleaning_quote_write_failed" || code === "cleaning_quote_transaction_unavailable") return 503;
   if (code.startsWith("cleaning_quote_") || code === "invalid_cleaning_quote_input") return 400;
+  if (code === "cleaning_pricing_policy_forbidden") return 403;
+  if (code === "cleaning_pricing_policy_request_conflict" || code === "cleaning_pricing_policy_effective_date_conflict") return 409;
+  if (code === "cleaning_pricing_policy_stored_data_invalid" || code === "cleaning_pricing_policy_transaction_unavailable") return 503;
+  if (code.startsWith("cleaning_pricing_policy_") || code === "invalid_cleaning_pricing_policy") return 400;
+  if (code === "cleaning_settlement_forbidden") return 403;
+  if (code === "cleaning_settlement_source_invalid") return 503;
+  if (code.startsWith("cleaning_settlement_") || code === "invalid_cleaning_settlement_period") return 400;
   return 503;
 }
 
@@ -3897,6 +3919,75 @@ export const cleaningOrdersApi = onRequest(
     try {
       const actor = await authorizeCleaningOrderRequest(request);
       if (request.method === "GET") {
+        const settlementFrom = request.query.settlementFrom;
+        const settlementTo = request.query.settlementTo;
+        if (settlementFrom !== undefined || settlementTo !== undefined) {
+          if (actor.role !== "admin") throw new Error("cleaning_settlement_forbidden");
+          const queryKeys = Object.keys(request.query || {});
+          const validDay = (value: unknown): value is string => {
+            if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false;
+            const day = new Date(`${value}T00:00:00.000Z`);
+            return Number.isFinite(day.getTime()) && day.toISOString().slice(0, 10) === value;
+          };
+          if (queryKeys.length !== 2 || !validDay(settlementFrom) || !validDay(settlementTo)
+            || settlementFrom > settlementTo
+            || Date.parse(`${settlementTo}T00:00:00.000Z`) - Date.parse(`${settlementFrom}T00:00:00.000Z`) > 31 * 86_400_000) {
+            throw new Error("invalid_cleaning_settlement_period");
+          }
+          const [ordersSnapshot, dispatchesSnapshot, vendorsSnapshot] = await Promise.all([
+            adminDatabase.ref("crmCompany/cleaningOrders").get(),
+            adminDatabase.ref("crmCompany/cleaningPartnerDispatches").get(),
+            adminDatabase.ref("crmCompany/data/partnerVendors").get(),
+          ]);
+          const rawOrders = ordersSnapshot.val();
+          const rawDispatches = dispatchesSnapshot.val();
+          const rawVendors = vendorsSnapshot.val();
+          const asCollection = (value: unknown): Record<string, unknown> => {
+            if (value === null || value === undefined) return {};
+            if (!isRecord(value) || Object.keys(value).length > 10_000) throw new Error("cleaning_settlement_source_invalid");
+            return value;
+          };
+          const orderSource = asCollection(rawOrders);
+          const dispatchSource = asCollection(rawDispatches);
+          const vendorSource = asCollection(rawVendors);
+          const orders: Record<string, unknown> = {};
+          let invalidCompletedOrderCount = 0;
+          for (const [id, value] of Object.entries(orderSource)) {
+            if (validateStoredCleaningOrder(value, id)) orders[id] = value;
+            else if (isRecord(value) && value.status === "completed" && validDay(value.desiredDate)
+              && value.desiredDate >= settlementFrom && value.desiredDate <= settlementTo) invalidCompletedOrderCount += 1;
+          }
+          const dispatches: Record<string, unknown> = {};
+          for (const [id, value] of Object.entries(dispatchSource)) {
+            if (validateCleaningPartnerDispatch(value, id)) dispatches[id] = value;
+          }
+          const vendors: Record<string, unknown> = {};
+          for (const [id, value] of Object.entries(vendorSource)) {
+            if (isRecord(value) && value.id === id && value.archived !== true && value.deleted !== true) vendors[id] = value;
+          }
+          const review = buildCleaningSettlementReview({ fromDate: settlementFrom, toDate: settlementTo, orders, dispatches, vendors });
+          review.excludedWorkCount += invalidCompletedOrderCount;
+          response.status(200).json({ ok: true, result: review });
+          return;
+        }
+        if (request.query.pricingPolicies !== undefined) {
+          const queryKeys = Object.keys(request.query || {});
+          if (request.query.pricingPolicies !== "1" || queryKeys.length !== 1) throw new Error("invalid_cleaning_pricing_policy");
+          if (actor.role === "viewer") throw new Error("cleaning_pricing_policy_forbidden");
+          const policiesSnapshot = await adminDatabase.ref("crmCompany/cleaningPricingPolicies").get();
+          const rawPolicies = policiesSnapshot.val();
+          const entries = isRecord(rawPolicies) ? Object.entries(rawPolicies) : [];
+          if (entries.length > 500) throw new Error("cleaning_pricing_policy_stored_data_invalid");
+          const policies = entries.map(([policyId, rawRecord]) => {
+            if (!isRecord(rawRecord) || !isRecord(rawRecord.policy) || typeof rawRecord.createdAt !== "string"
+              || typeof rawRecord.createdByUid !== "string") throw new Error("cleaning_pricing_policy_stored_data_invalid");
+            const policy = normalizeCleaningPricingPolicy(rawRecord.policy);
+            if (policy.policyId !== policyId) throw new Error("cleaning_pricing_policy_stored_data_invalid");
+            return { policy, createdAt: rawRecord.createdAt, createdByUid: rawRecord.createdByUid };
+          }).sort((a, b) => b.policy.effectiveFrom.localeCompare(a.policy.effectiveFrom) || b.policy.policyId.localeCompare(a.policy.policyId));
+          response.status(200).json({ ok: true, result: { policies } });
+          return;
+        }
         const rawQuoteOrderId = request.query.quoteOrderId;
         if (rawQuoteOrderId !== undefined) {
           if (typeof rawQuoteOrderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawQuoteOrderId)
@@ -3966,6 +4057,28 @@ export const cleaningOrdersApi = onRequest(
       const body = canonicalCrmRawBody(request);
       if (!isRecord(body) || Object.keys(body).some(key => !["action", "input"].includes(key))
         || typeof body.action !== "string") throw new Error("invalid_cleaning_order_input");
+      if (body.action === "pricing-policy-save") {
+        if (actor.role !== "admin") throw new Error("cleaning_pricing_policy_forbidden");
+        const policyRef = adminDatabase.ref("crmCompany/cleaningPricingPolicies");
+        const timestamp = new Date().toISOString();
+        let transactionError = "";
+        const transaction = await policyRef.transaction(currentValue => {
+          const result = createCleaningPricingPolicy(currentValue, body.input, actor, timestamp);
+          if (!result.ok) {
+            transactionError = result.error;
+            return undefined;
+          }
+          if (result.replayed) return undefined;
+          const current = isRecord(currentValue) ? currentValue : {};
+          return { ...current, [result.record.policy.policyId]: result.record };
+        }, undefined, false);
+        const persisted = transaction.snapshot.val();
+        const requestInput = body.input;
+        const result = createCleaningPricingPolicy(persisted, requestInput, actor, timestamp);
+        if (!result.ok) throw new Error(transactionError || result.error);
+        response.status(200).json({ ok: true, result: { record: result.record, replayed: !transaction.committed } });
+        return;
+      }
       const deps = createCleaningOrderFirebaseDependencies(adminDatabase, undefined, async fileIds => {
         // Emulator fixtures are synthetic and never point to production data. Production fails closed
         // unless the company's configured Drive OAuth account confirms real, live image files.
@@ -4006,9 +4119,502 @@ export const cleaningOrdersApi = onRequest(
         : rawCode === "crm_body_too_large" ? "cleaning_order_body_too_large"
           : rawCode === "crm_body_invalid" ? "invalid_cleaning_order_input"
             : rawCode === "crm_json_required" ? "invalid_cleaning_order_input"
-              : rawCode.startsWith("cleaning_order_") || rawCode.startsWith("cleaning_quote_") || rawCode === "invalid_cleaning_order_input" || rawCode === "invalid_cleaning_quote_input" ? rawCode
-                : "cleaning_order_transaction_unavailable";
+              : rawCode.startsWith("cleaning_order_") || rawCode.startsWith("cleaning_quote_") || rawCode.startsWith("cleaning_pricing_policy_") || rawCode === "invalid_cleaning_order_input" || rawCode === "invalid_cleaning_quote_input" || rawCode === "invalid_cleaning_pricing_policy" ? rawCode
+                : rawCode.startsWith("cleaning_settlement_") || rawCode === "invalid_cleaning_settlement_period" ? rawCode
+                  : "cleaning_order_transaction_unavailable";
       response.status(cleaningOrderHttpStatus(code)).json({ ok: false, error: { code } });
+    }
+  },
+);
+
+function cleaningPartnerHttpStatus(code: string): number {
+  if (code === "cleaning_partner_auth_required" || code === "cleaning_partner_app_check_required") return 401;
+  if (code === "cleaning_partner_forbidden" || code === "cleaning_order_forbidden") return 403;
+  if (code === "cleaning_partner_order_not_found" || code === "cleaning_partner_vendor_not_found"
+    || code === "cleaning_partner_dispatch_not_found"
+    || code === "cleaning_partner_offer_not_found") return 404;
+  if (code === "cleaning_partner_order_already_assigned" || code === "cleaning_partner_offer_expired"
+    || code === "cleaning_partner_offer_not_expired"
+    || code === "cleaning_partner_offer_already_resolved" || code === "cleaning_partner_reassignment_required"
+    || code === "cleaning_partner_email_already_bound" || code === "cleaning_partner_offer_conflict"
+    || code === "cleaning_partner_revision_conflict" || code === "cleaning_partner_progress_transition_invalid"
+    || code === "cleaning_partner_order_not_assigned" || code === "cleaning_partner_reassignment_not_allowed") return 409;
+  if (code === "cleaning_delay_order_not_found" || code === "cleaning_delay_dispatch_not_found") return 404;
+  if (code === "cleaning_delay_revision_conflict" || code === "cleaning_delay_order_not_active"
+    || code === "cleaning_delay_no_active_assignment" || code === "cleaning_delay_incident_not_found") return 409;
+  if (code === "cleaning_rework_not_found") return 404;
+  if (code === "cleaning_rework_conflict" || code === "cleaning_rework_revision_conflict"
+    || code === "cleaning_rework_invalid_transition" || code === "cleaning_rework_order_context_invalid"
+    || code === "cleaning_rework_partner_context_invalid") return 409;
+  if (code === "cleaning_partner_rate_limited") return 429;
+  if (code === "cleaning_partner_body_too_large") return 413;
+  if (code === "cleaning_partner_transaction_unavailable" || code === "cleaning_partner_stored_data_invalid") return 503;
+  if (code === "cleaning_extra_charge_not_found") return 404;
+  if (code === "cleaning_extra_charge_conflict" || code === "cleaning_extra_charge_revision_conflict"
+    || code === "cleaning_extra_charge_already_sent" || code === "cleaning_extra_charge_not_awaiting_decision") return 409;
+  if (code === "cleaning_extra_charge_data_invalid" || code === "cleaning_extra_charge_transaction_unavailable") return 503;
+  if (code === "cleaning_partner_method_not_allowed") return 405;
+  return code.startsWith("cleaning_partner_") || code.startsWith("cleaning_extra_charge_") || code.startsWith("cleaning_delay_") || code.startsWith("cleaning_rework_")
+    || code === "invalid_cleaning_partner_input" ? 400 : 503;
+}
+
+async function verifyCleaningPartnerAppCheck(request: { get(name: string): string | undefined }): Promise<void> {
+  const token = request.get("x-firebase-appcheck") ?? request.get("x-firebase-app-check") ?? "";
+  if (!token || token.length > 8192) throw new Error("cleaning_partner_app_check_required");
+  try { await getAppCheck().verifyToken(token); }
+  catch { throw new Error("cleaning_partner_app_check_required"); }
+}
+
+async function authorizeCleaningPartnerRequest(request: {
+  get(name: string): string | undefined;
+  ip?: string;
+}): Promise<{ uid: string; email: string; vendorId: string }> {
+  await verifyCleaningPartnerAppCheck(request);
+  const authorization = request.get("authorization") ?? "";
+  const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/u.exec(authorization);
+  if (!bearer) throw new Error("cleaning_partner_auth_required");
+  let decoded;
+  try { decoded = await adminAuth.verifyIdToken(bearer[1], true); }
+  catch { throw new Error("cleaning_partner_auth_required"); }
+  if (!isPathSafeId(decoded.uid) || typeof decoded.email !== "string" || decoded.email_verified !== true) {
+    throw new Error("cleaning_partner_auth_required");
+  }
+  const requestIp = typeof request.ip === "string" && request.ip.length > 0 ? request.ip.slice(0, 128) : "unknown";
+  await consumeRateLimit(
+    adminDatabase.ref(`fieldPlatform/v2/rateLimits/cleaningPartners/ip/${desktopRateKey(requestIp)}`),
+    { limit: CANONICAL_CRM_IP_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+  );
+  await consumeRateLimit(
+    adminDatabase.ref(`fieldPlatform/v2/rateLimits/cleaningPartners/uid/${desktopRateKey(decoded.uid)}`),
+    { limit: CANONICAL_CRM_UID_RATE_LIMIT, windowMs: CANONICAL_CRM_RATE_WINDOW_MS, nowMs: Date.now() },
+  );
+  const deps = createCleaningPartnerFirebaseDependencies(adminDatabase);
+  const email = decoded.email.trim().toLowerCase();
+  const binding = await deps.readAccountForEmail(email);
+  if (!binding || !binding.enabled) throw new Error("cleaning_partner_forbidden");
+  return { uid: decoded.uid, email, vendorId: binding.vendorId };
+}
+
+export const cleaningPartnerApi = onRequest(
+  {
+    region: "asia-northeast3",
+    secrets: driveSecrets,
+    // The partner SPA is Firebase Hosting. Bearer auth and App Check remain mandatory;
+    // this explicit origin list only enables its cross-origin HTTPS request.
+    cors: ["app://bring-crm", "https://bring-fm.web.app", "https://bring-fm.firebaseapp.com", "http://localhost:3000"],
+  },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      const deps = createCleaningPartnerFirebaseDependencies(adminDatabase, undefined, async fileIds => {
+        // Evidence must resolve to current image files in the authenticated company Drive.
+        // Emulator fixtures are synthetic and are never accepted in production.
+        if (process.env.FUNCTIONS_EMULATOR === "true") return fileIds;
+        const adapter = createGoogleDriveMediaAdapterFromOAuth(readDriveOAuthConfig({
+          DRIVE_CLIENT_ID: driveClientId.value(),
+          DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+          DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+          DRIVE_ROOT_FOLDER_ID: driveRootFolderId.value(),
+          DRIVE_ROOT_MODE: driveRootMode.value(),
+        }));
+        return adapter.verifyImageFileIds(fileIds);
+      }, async fileId => {
+        if (process.env.FUNCTIONS_EMULATOR === "true") return null;
+        const adapter = createGoogleDriveMediaAdapterFromOAuth(readDriveOAuthConfig({
+          DRIVE_CLIENT_ID: driveClientId.value(),
+          DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+          DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+          DRIVE_ROOT_FOLDER_ID: driveRootFolderId.value(),
+          DRIVE_ROOT_MODE: driveRootMode.value(),
+        }));
+        const image = await adapter.readImageFile(fileId);
+        return { mimeType: image.mimeType, base64: Buffer.from(image.bytes).toString("base64") };
+      });
+      if (request.method === "GET") {
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const [offers, rework] = await Promise.all([
+          deps.readOffersForEmail(partner.email), deps.readCleaningReworksForEmail(partner.email),
+        ]);
+        response.status(200).json({ ok: true, result: { vendorId: partner.vendorId, offers, reworkRequests: rework.requests } });
+        return;
+      }
+      if (request.method !== "POST") {
+        response.set("Allow", "GET, POST");
+        throw new Error("cleaning_partner_method_not_allowed");
+      }
+      const body = canonicalCrmRawBody(request);
+      if (!isRecord(body) || typeof body.action !== "string" || !isRecord(body.input)
+        || Object.keys(body).some(key => !["action", "input", "reassignAccepted", "reassignReason"].includes(key))) {
+        throw new Error("invalid_cleaning_partner_input");
+      }
+      if (body.action === "accept" || body.action === "decline") {
+        if (Object.keys(body).length !== 2 || Object.keys(body.input).some(key => !["offerId", "action", "reason"].includes(key))
+          || Object.keys(body.input).length !== 3 || body.input.action !== body.action
+          || typeof body.input.offerId !== "string" || typeof body.input.reason !== "string") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const result = await deps.respond({
+          offerId: body.input.offerId,
+          action: body.action,
+          reason: body.input.reason,
+        }, partner.uid, partner.vendorId);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: result.dispatch.revision } });
+        return;
+      }
+      if (body.action === "progress") {
+        if (Object.keys(body).length !== 2 || Object.keys(body.input).length !== 3
+          || Object.keys(body.input).some(key => !["offerId", "nextProgress", "expectedRevision"].includes(key))
+          || typeof body.input.offerId !== "string" || typeof body.input.nextProgress !== "string"
+          || !Number.isSafeInteger(body.input.expectedRevision)) throw new Error("invalid_cleaning_partner_input");
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const result = await deps.advanceProgress({
+          offerId: body.input.offerId,
+          nextProgress: body.input.nextProgress,
+          expectedRevision: Number(body.input.expectedRevision),
+        }, partner.uid, partner.vendorId);
+        if (!result.ok) throw new Error(result.error);
+        const requestedOfferId = body.input.offerId as string;
+        const updatedOffer = result.dispatch.offers.find(item => item.id === requestedOfferId);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: updatedOffer?.revision, progress: updatedOffer?.progress } });
+        return;
+      }
+      if (body.action === "rework-photo") {
+        const input = body.input;
+        if (Object.keys(body).length !== 2 || Object.keys(input).length !== 3 || Object.keys(input).some(key => ![
+          "orderId", "requestId", "photoIndex",
+        ].includes(key)) || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+          || !Number.isSafeInteger(input.photoIndex)) throw new Error("invalid_cleaning_partner_input");
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const photo = await deps.readCleaningReworkPhotoForEmail(partner.email, input.orderId, input.requestId, Number(input.photoIndex));
+        if (!photo) throw new Error("cleaning_partner_photo_not_found");
+        response.status(200).json({ ok: true, result: photo });
+        return;
+      }
+      if (body.action === "rework-response") {
+        const input = body.input;
+        if (Object.keys(body).length !== 2 || Object.keys(input).length !== 5 || Object.keys(input).some(key => ![
+          "orderId", "requestId", "expectedRevision", "action", "reason",
+        ].includes(key)) || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+          || !Number.isSafeInteger(input.expectedRevision) || !["accept", "decline"].includes(String(input.action))
+          || typeof input.reason !== "string") throw new Error("invalid_cleaning_partner_input");
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const result = await deps.respondToCleaningRework(input as Parameters<typeof deps.respondToCleaningRework>[0], partner.uid, partner.vendorId);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { requestId: result.request.requestId, revision: result.request.revision, status: result.request.status } });
+        return;
+      }
+      if (body.action === "rework-progress") {
+        const input = body.input;
+        if (Object.keys(body).length !== 2 || Object.keys(input).length !== 4 || Object.keys(input).some(key => ![
+          "orderId", "requestId", "expectedRevision", "nextStatus",
+        ].includes(key)) || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+          || !Number.isSafeInteger(input.expectedRevision) || !["in_progress", "awaiting_review"].includes(String(input.nextStatus))) {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        const partner = await authorizeCleaningPartnerRequest(request);
+        const result = await deps.updateCleaningReworkProgress(input as Parameters<typeof deps.updateCleaningReworkProgress>[0], partner.uid, partner.vendorId);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { requestId: result.request.requestId, revision: result.request.revision, status: result.request.status } });
+        return;
+      }
+      const actor = await authorizeCleaningOrderRequest(request);
+      if (actor.role !== "admin") throw new Error("cleaning_order_forbidden");
+      if (body.action.startsWith("rework-")) {
+        if (Object.keys(body).length !== 2) throw new Error("invalid_cleaning_partner_input");
+        const input = body.input;
+        if (body.action === "rework-inspect") {
+          if (Object.keys(input).length !== 1 || typeof input.orderId !== "string"
+            || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.orderId)) {
+            throw new Error("invalid_cleaning_partner_input");
+          }
+          response.status(200).json({ ok: true, result: { requests: await deps.readCleaningReworkRequests(input.orderId) } });
+          return;
+        }
+        if (body.action === "rework-create") {
+          const result = await deps.createCleaningReworkRequest(input, actor.uid);
+          if (!result.ok) throw new Error(result.error);
+          response.status(200).json({ ok: true, result: { request: result.request } });
+          return;
+        }
+        if (body.action === "rework-complete") {
+          if (Object.keys(input).length !== 4 || Object.keys(input).some(key => ![
+            "orderId", "requestId", "expectedRevision", "reportId",
+          ].includes(key)) || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+            || !Number.isSafeInteger(input.expectedRevision) || typeof input.reportId !== "string") {
+            throw new Error("invalid_cleaning_partner_input");
+          }
+          const result = await deps.completeCleaningRework(input as Parameters<typeof deps.completeCleaningRework>[0], actor.uid);
+          if (!result.ok) throw new Error(result.error);
+          response.status(200).json({ ok: true, result: { request: result.request } });
+          return;
+        }
+      }
+      if (body.action === "delay-record-incident") {
+        const input = body.input;
+        if (Object.keys(body).length !== 2 || Object.keys(input).length !== 7 || Object.keys(input).some(key => ![
+          "incidentId", "orderId", "expectedRevision", "issueType", "scheduledAt", "delayMinutes", "note",
+        ].includes(key)) || typeof input.incidentId !== "string" || typeof input.orderId !== "string"
+          || !Number.isSafeInteger(input.expectedRevision) || typeof input.issueType !== "string"
+          || typeof input.scheduledAt !== "string" || !Number.isSafeInteger(input.delayMinutes) || typeof input.note !== "string") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        const result = await deps.recordDelayIncident(input as unknown as CleaningDelayIncidentInput, actor.uid);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: result.dispatch.revision } });
+        return;
+      }
+      if (body.action === "delay-record-action") {
+        const input = body.input;
+        if (Object.keys(body).length !== 2 || Object.keys(input).length !== 5 || Object.keys(input).some(key => ![
+          "incidentId", "orderId", "expectedRevision", "action", "note",
+        ].includes(key)) || typeof input.incidentId !== "string" || typeof input.orderId !== "string"
+          || !Number.isSafeInteger(input.expectedRevision) || typeof input.action !== "string" || typeof input.note !== "string") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        const result = await deps.recordDelayAction(input as unknown as CleaningDelayActionInput, actor.uid);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: result.dispatch.revision } });
+        return;
+      }
+      if (body.action.startsWith("extra-charge-")) {
+        if (Object.keys(body).length !== 2) throw new Error("invalid_cleaning_partner_input");
+        const input = body.input;
+        if (body.action === "extra-charge-inspect") {
+          if (Object.keys(input).length !== 1 || Object.keys(input)[0] !== "orderId"
+            || typeof input.orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.orderId)) {
+            throw new Error("invalid_cleaning_partner_input");
+          }
+          const orderSnapshot = await adminDatabase.ref(`crmCompany/cleaningOrders/${input.orderId}`).get();
+          if (!validateStoredCleaningOrder(orderSnapshot.val(), input.orderId)) throw new Error("cleaning_partner_order_not_found");
+          const requests = await deps.readExtraChargeRequests(input.orderId);
+          response.status(200).json({ ok: true, result: { requests } });
+          return;
+        }
+        if (body.action === "extra-charge-create") {
+          if (Object.keys(input).length !== 9 || Object.keys(input).some(key => ![
+            "requestId", "orderId", "customerId", "buildingId", "vendorId", "serviceType", "amount", "reason", "evidenceFileIds",
+          ].includes(key))) throw new Error("invalid_cleaning_partner_input");
+          const result = await deps.createExtraChargeRequest(input, actor.uid);
+          if (!result.ok) throw new Error(result.error);
+          response.status(200).json({ ok: true, result: { request: result.request } });
+          return;
+        }
+        if (body.action === "extra-charge-record-delivery") {
+          if (Object.keys(input).length !== 4 || Object.keys(input).some(key => !["orderId", "requestId", "expectedRevision", "messageDeliveryId"].includes(key))
+            || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+            || typeof input.messageDeliveryId !== "string" || !Number.isSafeInteger(input.expectedRevision)) {
+            throw new Error("invalid_cleaning_partner_input");
+          }
+          const result = await deps.recordExtraChargeDelivery({
+            orderId: input.orderId, requestId: input.requestId, expectedRevision: Number(input.expectedRevision), messageDeliveryId: input.messageDeliveryId,
+          }, actor.uid);
+          if (!result.ok) throw new Error(result.error);
+          response.status(200).json({ ok: true, result: { request: result.request } });
+          return;
+        }
+        if (body.action === "extra-charge-decision") {
+          if (Object.keys(input).length !== 5 || Object.keys(input).some(key => !["orderId", "requestId", "expectedRevision", "decision", "evidenceRef"].includes(key))
+            || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+            || !Number.isSafeInteger(input.expectedRevision) || typeof input.decision !== "string" || typeof input.evidenceRef !== "string") {
+            throw new Error("invalid_cleaning_partner_input");
+          }
+          const result = await deps.recordExtraChargeDecision({
+            orderId: input.orderId, requestId: input.requestId, expectedRevision: Number(input.expectedRevision),
+            decision: input.decision as "approve" | "decline", evidenceRef: input.evidenceRef,
+          }, actor.uid);
+          if (!result.ok) throw new Error(result.error);
+          response.status(200).json({ ok: true, result: { request: result.request } });
+          return;
+        }
+      }
+      if (body.action === "inspect-dispatch") {
+        if (Object.keys(body).length !== 2 || Object.keys(body.input).length !== 1
+          || Object.keys(body.input)[0] !== "orderId" || typeof body.input.orderId !== "string") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        const dispatch = await deps.expireDueOffers(body.input.orderId, actor.uid);
+        response.status(200).json({ ok: true, result: { dispatch } });
+        return;
+      }
+      if (body.action === "expire-offer") {
+        if (Object.keys(body).length !== 2 || Object.keys(body.input).length !== 3
+          || Object.keys(body.input).some(key => !["orderId", "offerId", "expectedRevision"].includes(key))
+          || typeof body.input.orderId !== "string" || typeof body.input.offerId !== "string"
+          || !Number.isSafeInteger(body.input.expectedRevision)) throw new Error("invalid_cleaning_partner_input");
+        const result = await deps.expireOffer({
+          orderId: body.input.orderId,
+          offerId: body.input.offerId,
+          expectedRevision: Number(body.input.expectedRevision),
+        }, actor.uid);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: result.dispatch.revision } });
+        return;
+      }
+      if (body.action === "bind-account") {
+        if (Object.keys(body).length !== 2 || Object.keys(body.input).length !== 3
+          || Object.keys(body.input).some(key => !["vendorId", "email", "enabled"].includes(key))
+          || typeof body.input.vendorId !== "string" || typeof body.input.email !== "string" || typeof body.input.enabled !== "boolean") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        let partnerUser;
+        try { partnerUser = await adminAuth.getUserByEmail(body.input.email.trim().toLowerCase()); }
+        catch (error) {
+          const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+          if (code === "auth/user-not-found") throw new Error("cleaning_partner_email_unverified");
+          throw error;
+        }
+        if (partnerUser.disabled || partnerUser.emailVerified !== true) throw new Error("cleaning_partner_email_unverified");
+        const result = await deps.bindAccount(body.input.vendorId, body.input.email, body.input.enabled, actor.uid);
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { binding: result.binding } });
+        return;
+      }
+      if (body.action === "offer" || body.action === "reassign") {
+        if (body.reassignAccepted !== undefined && typeof body.reassignAccepted !== "boolean") {
+          throw new Error("invalid_cleaning_partner_input");
+        }
+        if (body.reassignReason !== undefined && (typeof body.reassignReason !== "string" || body.reassignReason.length > 500)
+          || body.action !== "reassign" && body.reassignReason !== undefined) throw new Error("invalid_cleaning_partner_input");
+        const result = await deps.createOffer(body.input, actor.uid, body.action === "reassign" && body.reassignAccepted === true,
+          typeof body.reassignReason === "string" ? body.reassignReason : "");
+        if (!result.ok) throw new Error(result.error);
+        response.status(200).json({ ok: true, result: { orderId: result.dispatch.orderId, revision: result.dispatch.revision } });
+        return;
+      }
+      throw new Error("invalid_cleaning_partner_input");
+    } catch (error) {
+      const rawCode = error instanceof Error ? error.message : "";
+      const code = rawCode === "field_rate_limit_exceeded" ? "cleaning_partner_rate_limited"
+        : rawCode === "crm_body_too_large" ? "cleaning_partner_body_too_large"
+          : rawCode === "crm_body_invalid" || rawCode === "crm_json_required" ? "invalid_cleaning_partner_input"
+      : rawCode === "cleaning_partner_email_unverified" || rawCode.startsWith("cleaning_partner_") || rawCode.startsWith("cleaning_order_") || rawCode.startsWith("cleaning_extra_charge_") || rawCode.startsWith("cleaning_delay_") || rawCode === "invalid_cleaning_partner_input"
+              || rawCode.startsWith("cleaning_rework_")
+              ? rawCode : "cleaning_partner_transaction_unavailable";
+      response.status(cleaningPartnerHttpStatus(code)).json({ ok: false, error: { code } });
+    }
+  },
+);
+
+function cleaningRefundHttpStatus(code: string): number {
+  if (code === "cleaning_refund_auth_required") return 401;
+  if (code === "cleaning_refund_forbidden") return 403;
+  if (code === "cleaning_refund_order_not_found" || code === "cleaning_refund_invoice_not_found") return 404;
+  if (code === "cleaning_refund_conflict" || code === "cleaning_refund_revision_conflict" || code === "cleaning_refund_invalid_transition" || code === "cleaning_refund_paid_balance_changed") return 409;
+  if (code === "cleaning_refund_transaction_unavailable" || code === "cleaning_refund_stored_data_invalid") return 503;
+  if (code === "cleaning_refund_method_not_allowed") return 405;
+  if (code === "cleaning_refund_body_too_large") return 413;
+  return code.startsWith("cleaning_refund_") || code === "invalid_cleaning_refund_input" ? 400 : 503;
+}
+
+export const cleaningRefundsApi = onRequest(
+  { region: "asia-northeast3", cors: false },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      const actor = await authorizeCleaningOrderRequest(request);
+      if (actor.role !== "admin") throw new Error("cleaning_refund_forbidden");
+      const orderId = request.method === "GET" ? request.query.orderId : "";
+      if (request.method === "GET") {
+        if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(orderId)) throw new Error("invalid_cleaning_refund_input");
+        const order = await adminDatabase.ref(`crmCompany/cleaningOrders/${orderId}`).get();
+        if (!validateStoredCleaningOrder(order.val(), orderId)) throw new Error("cleaning_refund_order_not_found");
+        const [snapshot, ledgerSnapshot] = await Promise.all([
+          adminDatabase.ref(`crmCompany/cleaningRefundRequests/${orderId}`).get(),
+          adminDatabase.ref("crmCompany/billingLedger").get(),
+        ]);
+        const value = snapshot.val();
+        const requests = isRecord(value) ? Object.values(value) : [];
+        if (requests.some(item => !validateCleaningRefundRequest(item))) throw new Error("cleaning_refund_stored_data_invalid");
+        const ledger = ledgerSnapshot.val();
+        if (auditBillingLedger(ledger).length > 0 || !isRecord(ledger)) throw new Error("cleaning_refund_stored_data_invalid");
+        const invoices = isRecord(ledger.invoices) ? ledger.invoices : {};
+        const receipts = isRecord(ledger.receipts) ? ledger.receipts : {};
+        const invoice = Object.values(invoices).find(item => isRecord(item) && item.status === "approved"
+          && item.contractType === "one_off" && item.occurrenceId === orderId);
+        const paidAmount = isRecord(invoice) && typeof invoice.id === "string"
+          ? Object.values(receipts).filter(item => isRecord(item) && item.status === "approved" && item.invoiceId === invoice.id)
+            .reduce<number>((total, item) => total + Number(isRecord(item) ? item.amount : 0), 0) : 0;
+        const reservedAmount = requests.filter((item): item is CleaningRefundRequest => validateCleaningRefundRequest(item)
+          && item.status !== "declined").reduce((total, item) => total + item.amount, 0);
+        response.status(200).json({ ok: true, result: { requests,
+          payment: { invoiceId: isRecord(invoice) ? String(invoice.id || "") : "", paidAmount,
+            remainingAmount: Math.max(0, paidAmount - reservedAmount) } } });
+        return;
+      }
+      if (request.method !== "POST") { response.set("Allow", "GET, POST"); throw new Error("cleaning_refund_method_not_allowed"); }
+      const body = canonicalCrmRawBody(request);
+      if (!isRecord(body) || Object.keys(body).some(key => !["action", "input"].includes(key))
+        || typeof body.action !== "string" || !isRecord(body.input)) throw new Error("invalid_cleaning_refund_input");
+      const input = body.input;
+      const allowedAction = ["create", "decide", "record-execution"].includes(body.action);
+      if (!allowedAction || typeof input.orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.orderId)) throw new Error("invalid_cleaning_refund_input");
+      const orderSnapshot = await adminDatabase.ref(`crmCompany/cleaningOrders/${input.orderId}`).get();
+      const order = orderSnapshot.val();
+      if (!validateStoredCleaningOrder(order, input.orderId)) throw new Error("cleaning_refund_order_not_found");
+      const ledgerSnapshot = await adminDatabase.ref("crmCompany/billingLedger").get();
+      const ledger = ledgerSnapshot.val();
+      if (auditBillingLedger(ledger).length > 0 || !isRecord(ledger)) throw new Error("cleaning_refund_stored_data_invalid");
+      const invoices = isRecord(ledger.invoices) ? ledger.invoices : {};
+      const receipts = isRecord(ledger.receipts) ? ledger.receipts : {};
+      const invoice = Object.values(invoices).find(item => isRecord(item) && item.status === "approved"
+        && item.contractType === "one_off" && item.occurrenceId === input.orderId);
+      if (!isRecord(invoice) || typeof invoice.id !== "string") throw new Error("cleaning_refund_invoice_not_found");
+      const paidAmount = Object.values(receipts).filter(item => isRecord(item) && item.status === "approved" && item.invoiceId === invoice.id)
+        .reduce<number>((total, item) => total + Number(isRecord(item) ? item.amount : 0), 0);
+      if (!Number.isSafeInteger(paidAmount) || paidAmount <= 0 || paidAmount > Number(invoice.amount)) throw new Error("cleaning_refund_invoice_not_found");
+      const context = { orderId: order.id, customerId: order.customerId, buildingId: order.buildingId, invoiceId: invoice.id, paidAmount };
+      const collection = adminDatabase.ref(`crmCompany/cleaningRefundRequests/${input.orderId}`);
+      let decisionError = "";
+      let decision: { request: CleaningRefundRequest } | null = null;
+      const result = await collection.transaction(current => {
+        try {
+          let next: CleaningRefundRequest;
+          if (body.action === "create") {
+            if (Object.keys(body).length !== 2 || Object.keys(input).some(key => !["requestId", "orderId", "type", "amount", "reason", "paymentMethod", "csReference", "note"].includes(key))) throw new Error("invalid_cleaning_refund_input");
+            const created = createCleaningRefundRequest(current, { ...input, customerId: context.customerId, buildingId: context.buildingId, invoiceId: context.invoiceId }, context, actor.uid, new Date().toISOString());
+            if (!created.ok) throw new Error(created.error);
+            next = created.request;
+            decision = { request: next };
+            return { ...(isRecord(current) ? current : {}), [next.requestId]: next };
+          }
+          if (Object.keys(body).length !== 2 || typeof input.requestId !== "string") throw new Error("invalid_cleaning_refund_input");
+          const expectedFields = body.action === "decide"
+            ? ["orderId", "requestId", "expectedRevision", "decision", "note"]
+            : ["orderId", "requestId", "expectedRevision", "providerRef", "evidenceRef"];
+          if (Object.keys(input).some(key => !expectedFields.includes(key))
+            || expectedFields.some(key => !Object.hasOwn(input, key))) throw new Error("invalid_cleaning_refund_input");
+          const existing = isRecord(current) ? current[input.requestId] : undefined;
+          if (!(body.action === "decide" && input.decision === "decline") && !cleaningRefundCoverageIsValid(current, paidAmount)) {
+            throw new Error("cleaning_refund_paid_balance_changed");
+          }
+          const requestInput = { ...input, actorUid: actor.uid, now: new Date().toISOString() };
+          const changed = body.action === "decide"
+            ? decideCleaningRefundRequest(existing, requestInput as Parameters<typeof decideCleaningRefundRequest>[1])
+            : recordCleaningRefundExecution(existing, requestInput as Parameters<typeof recordCleaningRefundExecution>[1]);
+          if (!changed.ok) throw new Error(changed.error);
+          next = changed.request;
+          decision = { request: next };
+          return { ...(isRecord(current) ? current : {}), [next.requestId]: next };
+        } catch (error) {
+          decisionError = error instanceof Error ? error.message : "cleaning_refund_transaction_unavailable";
+          decision = null;
+          return undefined;
+        }
+      }, undefined, false);
+      const committedDecision = decision as { request: CleaningRefundRequest } | null;
+      if (!result.committed || !committedDecision) throw new Error(decisionError || "cleaning_refund_transaction_unavailable");
+      response.status(200).json({ ok: true, result: { request: committedDecision.request } });
+    } catch (error) {
+      const rawCode = error instanceof Error ? error.message : "";
+      const code = rawCode === "field_rate_limit_exceeded" ? "cleaning_refund_rate_limited"
+        : rawCode === "crm_body_too_large" ? "cleaning_refund_body_too_large"
+          : rawCode.startsWith("cleaning_refund_") || rawCode === "invalid_cleaning_refund_input" ? rawCode
+            : "cleaning_refund_transaction_unavailable";
+      response.status(cleaningRefundHttpStatus(code)).json({ ok: false, error: { code } });
     }
   },
 );

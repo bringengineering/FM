@@ -269,6 +269,61 @@ test('cleaning order transition modal cancellation only uses the shared close ac
   assert.doesNotMatch(closeHandler, /transitionCleaningOrder/u);
 });
 
+test('completed-order detail exposes a separate rework action and a CRM rework form', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const detail = ui.renderOrderDetails({ id: '123e4567-e89b-42d3-a456-426614174000', status: 'completed', canManageRework: true });
+  assert.match(detail, /manage-cleaning-rework/u);
+  assert.equal(typeof ui.renderCleaningReworkDialog, 'function');
+  const dialog = ui.renderCleaningReworkDialog({ order: { id: '123e4567-e89b-42d3-a456-426614174000', status: 'completed' },
+    requests: [{ requestId: '223e4567-e89b-42d3-a456-426614174000', revision: 4, status: 'awaiting_review', complaintTitle: '재작업', complaintDetail: '주방 확인', areas: ['kitchen'], desiredAt: '2026-10-01T00:00:00.000Z', events: [] }],
+    reports: [{ id: 'work_report_01', title: '재작업 결과보고' }], canManage: true });
+  assert.match(dialog, /cleaning-rework-create-form/u);
+  assert.match(dialog, /고객 안내/u);
+  assert.match(dialog, /검수 결과보고서/u);
+});
+
+test('rework data travels through the authenticated CRM preload bridge and stays local-only in preview', () => {
+  const policy = require('../src/mutation-policy');
+  for (const [channel, type] of [
+    ['crm:cleaning-rework-load', 'control'],
+    ['crm:cleaning-rework-create', 'mutation'],
+    ['crm:cleaning-rework-complete', 'mutation'],
+  ]) {
+    assert.doesNotThrow(() => policy.assertRegistered(channel));
+    assert.equal(policy.classification(channel), type);
+  }
+  const preload = read('desktop-crm/src/preload.js');
+  const main = read('desktop-crm/src/main.js');
+  const remote = read('desktop-crm/src/remote.js');
+  for (const method of ['loadCleaningReworkRequests', 'createCleaningReworkRequest', 'completeCleaningRework']) assert.match(preload, new RegExp(`${method}:`, 'u'));
+  for (const channel of ['crm:cleaning-rework-load', 'crm:cleaning-rework-create', 'crm:cleaning-rework-complete']) assert.ok(main.includes(channel));
+  for (const method of ['loadCleaningReworkRequests', 'createCleaningReworkRequest', 'completeCleaningRework']) assert.match(remote, new RegExp(`${method}\\(`, 'u'));
+});
+
+test('cleaning cancellation dialog records the selected reason and refund follow-up without pretending to refund or notify', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.renderCancellationConfirmation({ orderId: 'cancel-order', orderTitle: '입주 청소 24평', customerName: '김민수', buildingName: '원주시 무실로 123', expectedRevision: 3, requestId: 'request-1' });
+  assert.match(html, /주문 취소/u);
+  assert.match(html, /취소 사유/u);
+  assert.match(html, /환불 처리/u);
+  assert.match(html, /안내 메시지는 자동 발송되지 않으며/u);
+  assert.match(html, /data-order-id="cancel-order"[^>]*data-next-status="cancelled"/u);
+  const eligibleDetail = ui.renderOrderDetails({ id: 'cancel-order', status: 'scheduled', canCancelCleaningOrder: true });
+  const activeDetail = ui.renderOrderDetails({ id: 'cancel-order', status: 'in_progress', canCancelCleaningOrder: true });
+  assert.match(eligibleDetail, /data-action="cancel-cleaning-order" data-order-id="cancel-order"/u);
+  assert.doesNotMatch(activeDetail, /data-action="cancel-cleaning-order"/u);
+  const app = read('desktop-crm/src/app.js');
+  const handlerStart = app.indexOf('if (form.id === "cleaningOrderCancellationForm")');
+  const handlerEnd = app.indexOf('if (form.id === "cleaningOrderTransitionForm")', handlerStart);
+  const handler = app.slice(handlerStart, handlerEnd);
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
+  assert.match(handler, /api\.transitionCleaningOrder\(/u);
+  assert.match(handler, /refundTreatment/u);
+  assert.match(handler, /notifyCustomer/u);
+  assert.match(handler, /취소 사유:/u);
+  assert.doesNotMatch(handler, /sendCustomerMessage|dispatchCustomerMessage/u);
+});
+
 test('cleaning order intake requires an explicit service type instead of defaulting every request to move-in cleaning', () => {
   const app = read('desktop-crm/src/app.js');
   const start = app.indexOf('function openCleaningOrderForm()');
@@ -359,6 +414,66 @@ test('cleaning center dashboard derives stage KPIs only from loaded canonical cl
   assert.match(app, /ordersLoaded: cleaningOrderState\.loaded/u);
   assert.match(app, /data-cleaning-status-preset/u);
   assert.match(app, /cleaningOrderState\.statusFilter = cleaningStatusPreset\.dataset\.cleaningStatusPreset/u);
+  assert.match(app, /button\.classList\.toggle\("is-active", button\.dataset\.cleaningStatusPreset === status\)/u);
+});
+
+test('cleaning settlement review IPC is read-only, administrator-scoped, and unavailable in local preview', async () => {
+  const { createCleaningOrderIpcHandlers } = require('../src/cleaning-order-ipc');
+  const calls = [];
+  const remoteClient = {
+    loadCleaningSettlementReview: async period => { calls.push(period); return { partners: [], payoutEnabled: false }; },
+  };
+  const handlers = createCleaningOrderIpcHandlers({ getRemoteClient: () => remoteClient, isLocalTestMode: () => false });
+  const period = { fromDate: '2026-09-21', toDate: '2026-09-27' };
+  assert.deepEqual(await handlers.loadSettlementReview(period), { partners: [], payoutEnabled: false });
+  assert.deepEqual(calls, [period]);
+  assert.throws(() => handlers.loadSettlementReview({ ...period, extra: true }), /정산 기간/u);
+  assert.throws(() => handlers.loadSettlementReview({ fromDate: '2026-02-30', toDate: '2026-09-27' }), /정산 기간/u);
+
+  const localHandlers = createCleaningOrderIpcHandlers({ getRemoteClient: () => remoteClient, isLocalTestMode: () => true });
+  assert.deepEqual(await localHandlers.loadSettlementReview(period), { ...period, completedWorkCount: 0,
+    grossSupplierAmount: 0, excludedWorkCount: 0, partners: [], localOnly: true, payoutEnabled: false });
+  assert.equal(calls.length, 1, 'local review must not request company settlement data');
+});
+
+test('cleaning pricing policy screen matches the supplied versioned table and exposes editable policy fields', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const markup = ui.renderCleaningPricingPolicyDialog({ policies: [], today: '2026-09-28' });
+  for (const text of ['가격정책 설정', '적용 지역', '적용 시작일', '주거 형태', '18평 이하', '19~24평', '25~30평', '31~34평', '35평 이상', '베란다 청소', '창틀 청소', '에어컨 분해 청소', '폐기물 처리', '쿠폰/프로모션 최대 할인 한도', '멤버십 추가 할인 한도', '기존 확정 주문 금액은 변경하지 않습니다']) {
+    assert.ok(markup.includes(text), `pricing-policy dialog is missing: ${text}`);
+  }
+  for (const selector of ['data-cleaning-pricing-policy-form', 'data-cleaning-pricing-base', 'data-cleaning-pricing-addon', 'data-cleaning-pricing-save']) {
+    assert.ok(markup.includes(selector), `pricing-policy form is missing: ${selector}`);
+  }
+  const adminCenter = ui.render({ canManagePricingPolicies: true });
+  const readOnlyCenter = ui.render({ canManagePricingPolicies: false });
+  assert.match(adminCenter, /data-action="open-cleaning-pricing-policy"/u);
+  assert.doesNotMatch(readOnlyCenter, /data-action="open-cleaning-pricing-policy"/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /api\.saveCleaningPricingPolicy\(\{ requestId, policy \}\)/u);
+  assert.match(app, /data-action="apply-cleaning-price-policy"/u);
+  assert.match(app, /selectCleaningPricingPolicy\(cleaningPricingPolicyState\.policies, region, quoteDate\)/u);
+  assert.match(app, /cleaningQuotePricingMarkup\(\)\}\$\{cleaningQuotePriceReviewMarkup/u);
+  assert.match(app, /정책 \$\{policy\.policyId\} · \$\{policy\.effectiveFrom\}/u);
+});
+
+test('cleaning quote policy uses the effective regional version and respects add-on and discount caps', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const policy = {
+    policyId: 'wonju_20261001', name: '원주 가격표', region: '원주시', effectiveFrom: '2026-10-01', publication: 'published',
+    basePrices: { apartment: [180000, 240000, 280000, 320000, 360000], villa: [160000, 220000, 260000, 300000, 340000], detached: [200000, 260000, 320000, 360000, 400000] },
+    addOns: [{ id: 'balcony', name: '베란다 청소', description: '', amount: 20000 }],
+    discountCaps: { promotion: 50000, membership: 30000 },
+  };
+  const old = { ...policy, policyId: 'old', effectiveFrom: '2026-01-01', basePrices: { ...policy.basePrices, apartment: [100000, 110000, 120000, 130000, 140000] } };
+  assert.equal(ui.selectCleaningPricingPolicy([{ policy }, { policy: old }], '원주시', '2026-10-02').policyId, policy.policyId);
+  assert.equal(ui.selectCleaningPricingPolicy([{ policy }], '횡성군', '2026-10-02'), null);
+  assert.equal(ui.selectCleaningPricingPolicy([{ policy }], '원주시', '2026-09-30'), null);
+  assert.deepEqual(ui.calculateCleaningPrice(policy, { housingType: 'apartment', areaPyeong: 24, addOnIds: ['balcony'], promotionDiscount: 80000, membershipDiscount: 50000 }), {
+    policyId: policy.policyId, baseAmount: 240000, addOnAmount: 20000, promotionDiscount: 50000, membershipDiscount: 30000, totalAmount: 180000,
+    addons: policy.addOns,
+  });
+  assert.throws(() => ui.calculateCleaningPrice(policy, { housingType: 'apartment', areaPyeong: 24, addOnIds: ['missing'], promotionDiscount: 0, membershipDiscount: 0 }));
 });
 
 test('cleaning center shows the linked work-order assignee and due date so dispatch is visible', () => {
@@ -541,6 +656,11 @@ test('Electron local smoke verifies cleaning-order bridge without using company 
   assert.match(smoke, /linkedBuildingOnly/u);
   assert.match(smoke, /cleaningStageCardCount === 7/u);
   assert.match(smoke, /확인된 전체 주문 0건/u);
+  assert.match(smoke, /cleaningDispatchTowerVisible/u);
+  assert.match(smoke, /배차 관제/u);
+  assert.match(smoke, /cleaningScheduleCalendarVisible/u);
+  assert.match(smoke, /data-cleaning-schedule-date/u);
+  assert.match(smoke, /cleaningScheduleNavigationWorks/u);
 });
 
 test('isolated CRM screenshot action opens the Cleaning Center and records seven KPI cards', () => {
@@ -585,6 +705,373 @@ test('cleaning order detail modal consolidates linked data without exposing acto
   assert.match(html, /계단 · 완료/u);
   assert.match(html, /작업 전 1장 · 작업 후 1장/u);
   assert.match(html, /&lt;확인&gt;/u);
+});
+
+test('cleaning order detail opens the existing CRM message composer for its canonical customer and order', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const detail = ui.renderOrderDetails({ id: 'BR-260926-00128', customerId: 'customer-1', canMessageCustomer: true });
+  const app = read('desktop-crm/src/app.js');
+  assert.match(detail, /data-action="open-cleaning-order-message" data-order-id="BR-260926-00128"/u);
+  assert.match(app, /selectedMessageSourceType\s*=\s*["']cleaningOrder["']/u);
+  assert.match(app, /selectedMessageSourceId\s*=\s*order\.id/u);
+  assert.match(app, /currentView\s*=\s*["']customerMessages["']/u);
+});
+
+test('cleaning refund flow is connected from the order detail action through guarded request, decision, and evidence forms', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const detail = ui.renderOrderDetails({ id: 'order-refund-1', canManageRefund: true });
+  assert.match(detail, /data-action="manage-cleaning-refund"/u);
+  const dialog = ui.renderCleaningRefundDialog({
+    order: { id: 'order-refund-1', customerName: '고객 A' },
+    canManage: true,
+    payment: { paidAmount: 270000, remainingAmount: 240000 },
+    requests: [{ requestId: 'refund-1', type: 'partial', amount: 30000, reason: '고객 요청', status: 'pending', revision: 1, remainingPaidAmount: 240000, createdAt: '2026-09-28', events: [] }],
+  });
+  assert.match(dialog, /id="cleaningRefundForm"/u);
+  assert.match(dialog, /cleaning-refund-order-summary/u);
+  assert.match(dialog, /cleaning-refund-amount-preview/u);
+  assert.match(dialog, /name="type" value="partial"/u);
+  assert.match(dialog, /name="type" value="full"/u);
+  assert.match(dialog, /환불 후 결제 금액/u);
+  assert.match(dialog, /기존 결제 수단/u);
+  assert.match(dialog, /변경 이력 \(감사 로그\)/u);
+  assert.match(dialog, /cleaning-refund-decision-form/u);
+  assert.match(dialog, /data-refund-id="refund-1"/u);
+
+  const app = read('desktop-crm/src/app.js');
+  for (const value of ['manage-cleaning-refund', 'loadCleaningRefundRequests', 'createCleaningRefundRequest', 'decideCleaningRefundRequest', 'recordCleaningRefundExecution']) {
+    assert.ok(app.includes(value), `${value} must be wired into the CRM screen`);
+  }
+  assert.match(app, /canManageRefund:\s*canAdministerSecurity\(\)/u);
+  for (const form of ['cleaningRefundForm', 'cleaning-refund-decision-form', 'cleaning-refund-execution-form']) assert.ok(app.includes(form), `${form} submit handler missing`);
+  const policy = require('../src/mutation-policy');
+  for (const [channel, type] of [
+    ['crm:cleaning-refunds-load', 'control'],
+    ['crm:cleaning-refund-create', 'mutation'],
+    ['crm:cleaning-refund-decide', 'mutation'],
+    ['crm:cleaning-refund-execution', 'mutation'],
+  ]) {
+    assert.doesNotThrow(() => policy.assertRegistered(channel));
+    assert.equal(policy.classification(channel), type);
+  }
+  const preload = read('desktop-crm/src/preload.js');
+  const main = read('desktop-crm/src/main.js');
+  for (const method of ['loadCleaningExtraChargeRequests', 'createCleaningExtraChargeRequest', 'recordCleaningExtraChargeDelivery', 'recordCleaningExtraChargeDecision']) {
+    assert.ok(preload.includes(`${method}:`), `${method} must be exposed through the context bridge`);
+  }
+  for (const channel of ['crm:cleaning-extra-charges-load', 'crm:cleaning-extra-charge-create', 'crm:cleaning-extra-charge-delivery', 'crm:cleaning-extra-charge-decision']) {
+    assert.ok(main.includes(`"${channel}"`), `${channel} must be handled in the main process`);
+  }
+});
+
+test('cleaning extra-charge flow matches the customer approval screen and keeps approval separate from payment', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const detail = ui.renderOrderDetails({ id: 'order-extra-1', canManageExtraCharge: true });
+  assert.match(detail, /data-action="manage-cleaning-extra-charge"/u);
+  const dialog = ui.renderCleaningExtraChargeDialog({
+    order: { id: 'order-extra-1', customerName: '김민수', serviceType: 'move_in_cleaning', status: 'in_progress' },
+    customer: { id: 'customer-1', phone: '010-***-5678' },
+    partner: { id: 'partner-1', name: 'A클린' },
+    requests: [
+      { requestId: 'request-1', serviceType: 'waste_disposal', amount: 13000, reason: '현장 확인 결과 대형 폐기물 발생', evidenceFileIds: ['drive-1'], status: 'awaiting_customer_approval', revision: 2, communication: { status: 'accepted' }, events: [] },
+      { requestId: 'request-2', serviceType: 'window_cleaning', amount: 10000, reason: '초안', evidenceFileIds: [], status: 'draft', revision: 1, communication: { status: 'not_sent' }, events: [] },
+      { requestId: 'request-3', serviceType: 'other', amount: 1000, reason: '발송 실패', evidenceFileIds: [], status: 'draft', revision: 2, communication: { status: 'failed' }, events: [] },
+    ],
+    canManage: true,
+  });
+  for (const value of ['추가금 승인 요청', '추가 서비스', '추가 금액', '추가금 사유', '사진 증빙', '최대 5장', '고객 승인 상태', 'draft', 'not_sent', 'evidenceRef', '추가금은 고객 승인 전 결제·정산에 반영되지 않습니다']) {
+    assert.ok(dialog.includes(value), `${value} must appear in the extra-charge review flow`);
+  }
+  assert.match(dialog, /cleaning-extra-charge-create-form/u);
+  assert.match(dialog, /cleaning-extra-charge-decision-form/u);
+  assert.match(dialog, /data-request-id="request-1"/u);
+  assert.match(dialog, /data-communication-status="failed"/u);
+  assert.doesNotMatch(dialog, /결제 처리|정산 지급/u);
+  const app = read('desktop-crm/src/app.js');
+  for (const value of ['manage-cleaning-extra-charge', 'loadCleaningExtraChargeRequests', 'createCleaningExtraChargeRequest', 'recordCleaningExtraChargeDelivery', 'recordCleaningExtraChargeDecision', 'cleaning_extra_charge_approval', 'extraChargeRequestId', 'uploadBuildingDocument']) {
+    assert.ok(app.includes(value), `${value} must be wired into the extra-charge workflow`);
+  }
+  const policy = require('../src/mutation-policy');
+  for (const [channel, type] of [
+    ['crm:cleaning-extra-charges-load', 'control'],
+    ['crm:cleaning-extra-charge-create', 'mutation'],
+    ['crm:cleaning-extra-charge-delivery', 'mutation'],
+    ['crm:cleaning-extra-charge-decision', 'mutation'],
+  ]) {
+    assert.doesNotThrow(() => policy.assertRegistered(channel));
+    assert.equal(policy.classification(channel), type);
+  }
+});
+
+test('cleaning refund remote bridge uses authenticated admin requests and never calls a payment provider', async () => {
+  const { FirebaseRemoteClient } = require('../src/remote');
+  const remote = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  remote.session = { uid: 'refund-admin', role: 'admin', mustChangePassword: false };
+  remote.cleaningRefundsEndpoint = 'https://example.test/cleaningRefundsApi';
+  remote.ensureIdToken = async () => 'refund-id-token';
+  const sent = [];
+  remote.fetch = async (url, options) => {
+    sent.push({ url: new URL(url), options });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { requests: [], payment: { paidAmount: 10000, remainingAmount: 10000 }, request: { status: 'pending' } } }) };
+  };
+  const orderId = '123e4567-e89b-42d3-a456-426614174000';
+  await remote.loadCleaningRefundRequests(orderId);
+  await remote.createCleaningRefundRequest({ orderId, requestId: 'refund-1', type: 'partial', amount: 1000, reason: '고객 요청', paymentMethod: 'card', csReference: '', note: '' });
+  await remote.decideCleaningRefundRequest({ orderId, requestId: 'refund-1', expectedRevision: 1, decision: 'approve', note: '확인 완료' });
+  await remote.recordCleaningRefundExecution({ orderId, requestId: 'refund-1', expectedRevision: 2, providerRef: 'PG-1', evidenceRef: 'evidence-1' });
+  assert.equal(sent[0].url.searchParams.get('orderId'), orderId);
+  assert.deepEqual(sent.slice(1).map(item => JSON.parse(item.options.body).action), ['create', 'decide', 'record-execution']);
+  assert.ok(sent.every(item => item.options.headers.Authorization === 'Bearer refund-id-token'));
+  remote.session = { uid: 'refund-member', role: 'member', mustChangePassword: false };
+  await assert.rejects(remote.createCleaningRefundRequest({ orderId } ), { code: 'ACCESS_DENIED' });
+  assert.equal(sent.length, 4, 'refund operations are records only; no payment-provider endpoint is called');
+});
+
+test('delay response records expose incident history and guarded operator actions', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.renderCleaningPartnerDispatch({ order: { id: 'order-delay-1', title: '입주 청소' }, dispatch: {
+    orderId: 'order-delay-1', revision: 4, acceptedOfferId: 'offer-delay-1',
+    offers: [{ id: 'offer-delay-1', vendorId: 'vendor-delay-1', status: 'accepted', progress: 'departed', supplierAmount: 190000 }],
+    events: [{ type: 'incident_reported', incidentId: 'incident-delay-1', issueType: 'departure_delay', delayMinutes: 18,
+      scheduledAt: '2026-09-28T09:00:00.000Z', occurredAt: '2026-09-28T09:18:00.000Z', actorUid: 'admin-1', vendorId: 'vendor-delay-1', note: '<unsafe>' }],
+  }, vendors: [{ id: 'vendor-delay-1', name: 'A클린' }] });
+  assert.match(html, /지연·노쇼 기록/u);
+  assert.match(html, /지연·노쇼 대응/u);
+  assert.match(html, /자동 위치 추적이나 고객 알림은 실행하지 않습니다/u);
+  assert.doesNotMatch(html, /<unsafe>/u);
+  const app = read('desktop-crm/src/app.js');
+  for (const value of ['cleaningDelayIncidentForm', 'recordCleaningDelayIncident', 'recordCleaningDelayAction', 'emergency_reassignment_requested']) assert.ok(app.includes(value));
+  const policy = require('../src/mutation-policy');
+  for (const channel of ['crm:cleaning-delay-incident-record', 'crm:cleaning-delay-action-record']) {
+    assert.doesNotThrow(() => policy.assertRegistered(channel));
+    assert.equal(policy.classification(channel), 'mutation');
+  }
+});
+
+test('delay response screen follows the reference incident summary, three situations, actions, memo and timeline', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.renderCleaningDelayDialog({
+    order: { id: 'order-delay-1', title: '입주 청소', customerName: '고객 A', desiredDate: '2026-09-28', region: '원주시 무실동' },
+    partner: { id: 'vendor-delay-1', name: 'A클린' },
+    dispatch: { revision: 4, acceptedOfferId: 'offer-delay-1', offers: [{ id: 'offer-delay-1', vendorId: 'vendor-delay-1', status: 'accepted', progress: 'departed' }], events: [] },
+    incidents: [], activeIncident: null,
+  });
+  for (const value of ['지연·노쇼 대응', 'cleaning-delay-context', 'cleaning-delay-situations', 'cleaning-delay-actions', 'cleaning-delay-sla', 'cleaning-delay-timeline', '출발 지연', '현장 미도착', '노쇼 의심', '파트너 전화 확인', '고객 안내', '대체 파트너 검색', '대응 메모', '기준 미설정']) assert.ok(html.includes(value), `${value} missing from the reference-shaped delay screen`);
+  assert.match(html, /예정 시각 미기록/u);
+  assert.match(html, /위치 확인 불가/u);
+  assert.doesNotMatch(html, /09:18|12분 남음/u);
+});
+
+test('cleaning refund preview clamps partial and full refunds to the remaining approved paid amount', () => {
+  const ui = require('../src/cleaning-center-ui');
+  assert.deepEqual(ui.previewCleaningRefund({ paidAmount: 270000, remainingAmount: 240000, amount: 30000, type: 'partial' }), {
+    valid: true, refundAmount: 30000, paidAfterRefund: 240000, remainingAfterRequest: 210000,
+  });
+  assert.deepEqual(ui.previewCleaningRefund({ paidAmount: 270000, remainingAmount: 240000, amount: 250000, type: 'partial' }), {
+    valid: false, refundAmount: 250000, paidAfterRefund: 20000, remainingAfterRequest: -10000,
+  });
+  assert.deepEqual(ui.previewCleaningRefund({ paidAmount: 270000, remainingAmount: 240000, amount: 0, type: 'full' }), {
+    valid: true, refundAmount: 240000, paidAfterRefund: 30000, remainingAfterRequest: 0,
+  });
+});
+
+test('delay operation bridge authenticates admins and only records staff-reported actions', async () => {
+  const { FirebaseRemoteClient } = require('../src/remote');
+  const remote = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  remote.session = { uid: 'delay-admin', role: 'admin', mustChangePassword: false };
+  remote.cleaningPartnerEndpoint = 'https://example.test/cleaningPartnerApi';
+  remote.ensureIdToken = async () => 'delay-id-token';
+  const sent = [];
+  remote.fetch = async (url, options) => {
+    sent.push({ url, options });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { orderId: 'order-delay-1', revision: 3 } }) };
+  };
+  await remote.recordCleaningDelayIncident({ incidentId: 'incident-1', orderId: 'order-delay-1', expectedRevision: 2,
+    issueType: 'departure_delay', scheduledAt: '2026-09-28T09:00:00.000Z', delayMinutes: 18, note: '확인' });
+  await remote.recordCleaningDelayAction({ incidentId: 'incident-1', orderId: 'order-delay-1', expectedRevision: 3,
+    action: 'customer_notice_logged', note: '운영자가 직접 안내 후 기록' });
+  assert.deepEqual(sent.map(item => JSON.parse(item.options.body).action), ['delay-record-incident', 'delay-record-action']);
+  assert.ok(sent.every(item => item.options.headers.Authorization === 'Bearer delay-id-token'));
+  remote.session = { uid: 'delay-member', role: 'member', mustChangePassword: false };
+  await assert.rejects(remote.recordCleaningDelayIncident({}), { code: 'ACCESS_DENIED' });
+  assert.equal(sent.length, 2);
+});
+
+test('cleaning work order detail shows lifecycle from canonical status and actual acceptance criteria', () => {
+  const ui = require('../src/cleaning-center-ui');
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'assigned' }).activeIndex, 0);
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'doing' }).activeIndex, 1);
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'submitted' }).activeIndex, 2);
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'returned' }).returned, true);
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'done' }).complete, true);
+  assert.equal(ui.cleaningWorkOrderProgress({ status: 'unmapped' }).activeIndex, -1);
+
+  const html = ui.renderOrderDetails({
+    id: 'order-work-criteria', title: '공용부 청소',
+    relatedWorkOrders: [{ id: 'work-criteria', title: '계단 청소', status: 'returned', progress: 40,
+      why: '입주 전 공용부 위생 확보', what: '<script>계단·난간 세척</script>',
+      doneWhen: '체크리스트와 전후 사진 제출', startDate: '2026-09-28', dueDate: '2026-09-29' }],
+  });
+  assert.match(html, /작업 진행 단계/u);
+  assert.match(html, /보완 요청/u);
+  assert.match(html, /작업 목적/u);
+  assert.match(html, /입주 전 공용부 위생 확보/u);
+  assert.match(html, /&lt;script&gt;계단·난간 세척&lt;\/script&gt;/u);
+  assert.match(html, /체크리스트와 전후 사진 제출/u);
+  assert.match(html, /2026-09-28/u);
+  assert.doesNotMatch(html, /<script>/u);
+
+  const app = read('desktop-crm/src/app.js');
+  const start = app.indexOf('const viewCleaningOrderDetails =');
+  const handler = app.slice(start, app.indexOf('const manageQuoteButton =', start));
+  for (const field of ['why: item.why', 'what: item.what', 'doneWhen: item.doneWhen', 'startDate: item.startDate']) {
+    assert.ok(handler.includes(field), `${field} missing from work order detail mapping`);
+  }
+});
+
+test('cleaning photo review exposes real before and after Drive photos beside checklist gaps', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.renderOrderDetails({
+    id: 'order-photo-review', status: 'review_pending',
+    relatedReports: [{ id: 'report-photo-review', title: '현장 결과 보고', workDate: '2026-09-28', photoCount: 3,
+      checklistSummary: { progress: 50, done: 1, partial: 0, skipped: 0, items: [
+        { key: 'stairs', label: '계단', statusLabel: '완료', beforeCount: 1, afterCount: 2,
+          before: [{ id: 'before-photo', driveFileId: 'drive-before', caption: '작업 전 계단' }],
+          after: [{ id: 'after-photo-1', driveFileId: 'drive-after-1', caption: '작업 후 1' }, { id: 'after-photo-2', driveFileId: 'drive-after-2', caption: '작업 후 2' }] },
+      ] } }],
+  });
+  assert.match(html, /사진 검수/u);
+  assert.match(html, /data-report-drive-thumbnail="drive-before"/u);
+  assert.match(html, /data-report-drive-thumbnail="drive-after-1"/u);
+  assert.match(html, /작업 전 계단/u);
+  assert.match(html, /작업 후 2/u);
+  assert.match(html, /data-action="open-cleaning-report" data-record-id="report-photo-review"/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /before: \(entry\.before \|\| \[\]\)\.slice\(0, 4\)\.map/u);
+  assert.match(app, /after: \(entry\.after \|\| \[\]\)\.slice\(0, 4\)\.map/u);
+  assert.match(app, /scheduleReportDriveThumbnailLoading\(\)/u);
+});
+
+test('cleaning support panel shows active CRM cases for order buildings without claiming a direct order link', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const data = { casesLoaded: true, cleaningCases: [
+    { id: 'case-open', ticketNo: 'CS-100', name: '고객 A', buildingName: '햇빛빌라', issueType: '누수 확인', urgency: '긴급', currentStep: '현장 확인', percent: 35, visitDate: '2026-09-29' },
+    { id: 'case-done', ticketNo: 'CS-101', name: '고객 B', buildingName: '한솔빌딩', issueType: '소모품 문의', urgency: '일반', currentStep: '완료', percent: 100, done: true },
+  ] };
+  const summary = ui.summarizeCleaningSupport(data);
+  assert.equal(summary.state, 'ready');
+  assert.equal(summary.total, 2);
+  assert.equal(summary.open, 1);
+  assert.equal(summary.urgent, 1);
+  const html = ui.renderCleaningSupportPanel(data);
+  assert.match(html, /고객 요청·A\/S/u);
+  assert.match(html, /CS-100/u);
+  assert.match(html, /긴급/u);
+  assert.match(html, /현장 확인/u);
+  assert.match(html, /2026-09-29/u);
+  assert.match(html, /data-cleaning-case-open="case-open"/u);
+  assert.match(html, /동일 건물의 CRM 민원/u);
+  assert.match(html, /직접 연결된 A\/S 기록으로 단정하지 않습니다/u);
+  assert.match(ui.renderCleaningSupportPanel({ casesLoaded: true, cleaningCases: [] }), /표시할 고객 민원·요청이 없습니다/u);
+  assert.match(ui.renderCleaningSupportPanel({ casesLoaded: false }), /CRM 민원 자료를 불러오는 중/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /const cleaningCases = activeCases\(\)\.flatMap/u);
+  assert.match(app, /caseBelongsToBuilding\(item, candidate\)/u);
+  assert.match(app, /const cleaningCaseOpen = event\.target\.closest\('\[data-cleaning-case-open\]'\)/u);
+});
+
+test('cleaning payment panel counts only explicitly linked canonical invoice and approved receipt records', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const data = { billingLoaded: true, cleaningPayments: [
+    { orderId: 'order-paid', orderTitle: '입주 청소', buildingName: '햇빛빌라', desiredDate: '2026-09-27',
+      invoiceId: 'invoice-1', invoiceAmount: 120000, invoiceStatus: '확정', paymentState: '부분입금', paidAmount: 50000 },
+    { orderId: 'order-unbilled', orderTitle: '계단 청소', buildingName: '한솔빌딩', desiredDate: '2026-09-28', paymentState: '청구 장부에 연결된 기록 없음' },
+  ] };
+  const summary = ui.summarizeCleaningPayments(data);
+  assert.equal(summary.state, 'ready');
+  assert.equal(summary.orders, 2);
+  assert.equal(summary.linkedInvoices, 1);
+  assert.equal(summary.received, 50000);
+  assert.equal(summary.unlinked, 1);
+  const html = ui.renderCleaningPayments(data);
+  assert.match(html, /결제·정산/u);
+  assert.match(html, /120,000원/u);
+  assert.match(html, /50,000원/u);
+  assert.match(html, /부분입금/u);
+  assert.match(html, /data-action="view-cleaning-order-details" data-order-id="order-paid">환불·주문 상세/u);
+  assert.match(html, /청구 장부에 연결된 기록 없음/u);
+  assert.match(html, /data-cleaning-payment-tab="customer"/u);
+  assert.match(html, /data-cleaning-payment-tab="partner"/u);
+  assert.match(html, /data-cleaning-payment-tab="refund"/u);
+  assert.match(html, /data-cleaning-payment-tab="unpaid"/u);
+  assert.match(html, /class="cleaning-payment-table"/u);
+  assert.match(html, /<th scope="col">청구 확정액<\/th>/u);
+  assert.match(html, /<th scope="col">승인 입금액<\/th>/u);
+  assert.match(html, /<th scope="col">결제 상태<\/th>/u);
+  assert.match(html, /청구 확정액.*120,000원/u);
+  assert.match(html, /승인 입금액.*50,000원/u);
+  assert.match(html, /완료된 CRM 청소 주문의 수락 공급가 합계/u);
+  assert.match(html, /관리자 권한으로 로그인하면 주간 정산 검토 자료를 확인/u);
+  const unbilledRowStart = html.indexOf('order-unbilled');
+  const unbilledRow = html.slice(unbilledRowStart, html.indexOf('</tr>', unbilledRowStart));
+  assert.doesNotMatch(unbilledRow, /0원/u);
+  assert.match(ui.renderCleaningPayments({ billingLoaded: false }), /청구 장부를 불러오는 중/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /api\.loadBillingLedger\(\)/u);
+  assert.match(app, /api\.loadCleaningSettlementReview\(currentCleaningSettlementPeriod\(\)\)/u);
+  assert.match(app, /settlementReview: cleaningSettlementState\.review/u);
+  assert.match(app, /selectedSettlementVendorId: cleaningSettlementState\.selectedVendorId/u);
+  const uiSource = read('desktop-crm/src/cleaning-center-ui.js');
+  assert.match(uiSource, /invoice\.occurrenceId === String\(order\.id \|\| ""\)/u);
+  assert.match(app, /BringCleaningCenterUI\.buildCleaningPayments/u);
+  assert.match(app, /function openBillingLedger\(contractId, cleaningOrderId = ""\)/u);
+  assert.match(app, /cleaningOrderId: cleaningOrder\?\.id \|\| ""/u);
+  assert.match(app, /cleaningOrder\?\.quoteSummary\?\.status === "admin_approved"[\s\S]*?Number\.isSafeInteger\(cleaningOrder\.quoteSummary\.totalAmount\)[\s\S]*?관리자 승인 견적 확인 필요/u);
+  assert.match(app, /name="month" type="month"/u);
+  assert.match(ui.render({}).toString(), /data-cleaning-scroll-target="cleaning-payments-panel"/u);
+  assert.match(ui.render({}).toString(), /data-cleaning-scroll-target="cleaning-dispatch-tower"/u);
+  assert.match(app, /cleaningSectionJump\.dataset\.cleaningScrollTarget/u);
+  assert.match(app, /\$\{cleaningOrder \|\| editInvoice \? "readonly" : "required"\}/u);
+  assert.match(app, /proposalContract = \{ \.\.\.contract, amount, workDate: order\.desiredDate, paymentDueDate: order\.desiredDate, occurrenceId: order\.id \}/u);
+  assert.match(app, /BringBillingLedgerCore\.proposeInvoice\(proposalContract, month, state\.ledger\.invoices\)/u);
+});
+
+test('partner settlement panel totals only completed accepted offers and keeps unknown payout checks disabled', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.renderCleaningPayments({ billingLoaded: true, cleaningPayments: [{ orderId: 'billing-row', paymentState: 'unknown' }], settlementReview: {
+    fromDate: '2026-09-21', toDate: '2026-09-27', completedWorkCount: 27,
+    grossSupplierAmount: 4820000, excludedWorkCount: 2, payoutEnabled: false,
+    partners: [{ vendorId: 'vendor-a', vendorName: 'A클린', completedWorkCount: 27, grossSupplierAmount: 4820000,
+      workItems: [{ orderId: 'order-a', desiredDate: '2026-09-25', supplierAmount: 190000 }],
+      checks: { workCompletion: 'verified', customerInspection: 'unavailable', csHold: 'unavailable',
+        payoutAccount: 'unavailable', taxInvoice: 'unavailable' }, finalPayoutAmount: null, payoutEnabled: false }],
+  } });
+  assert.match(html, /파트너.*정산 검토/u);
+  assert.match(html, /A클린/u);
+  assert.match(html, /4,820,000원/u);
+  assert.match(html, /완료 공급가/u);
+  assert.match(html, /검수 승인 연결 필요/u);
+  assert.match(html, /지급 계좌 확인 필요/u);
+  assert.match(html, /최종 지급액 확인 불가/u);
+  assert.match(html, /정산 검토 상세/u);
+  assert.match(html, /완료 작업 정산 금액/u);
+});
+
+test('partner settlement review dialog follows the reference finalization hierarchy without inventing bank details', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const review = { fromDate: '2026-09-21', toDate: '2026-09-27', completedWorkCount: 2, grossSupplierAmount: 410000,
+    payoutEnabled: false, partners: [{ vendorId: 'vendor-a', vendorName: 'A클린', completedWorkCount: 2,
+      grossSupplierAmount: 410000, checks: { workCompletion: 'verified', customerInspection: 'unavailable', csHold: 'unavailable',
+        payoutAccount: 'unavailable', taxInvoice: 'unavailable' }, finalPayoutAmount: null, payoutEnabled: false }] };
+  const html = ui.renderCleaningSettlementDialog({ review, vendorId: 'vendor-a' });
+  for (const text of ['정산 확정·지급', 'A클린', '2026-09-21', '410,000원', '검수 승인 확인 필요', 'CS 보류 자료 확인 필요',
+    '지급 계좌 확인 필요', '세금계산서 확인 필요', '최종 지급액 확인 불가', '지급 예정일 확인 필요', '승인자 정보 미연결']) assert.ok(html.includes(text), text);
+  assert.match(html, /검수·CS·계좌·세금 확인 자료가 연결되기 전에는 지급을 확정할 수 없습니다/u);
+  assert.match(html, /button[^>]*disabled[^>]*>정산 확정·지급/u);
+  assert.doesNotMatch(html, /123-45|국민은행|BR20\d{10}/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /data-action="open-cleaning-settlement-review"/u);
+  assert.match(app, /renderCleaningSettlementDialog\(\{ review: cleaningSettlementState\.review, vendorId: cleaningSettlementState\.selectedVendorId \}\)/u);
 });
 
 test('cleaning order detail points out checklist gaps without claiming server approval', () => {
@@ -637,7 +1124,7 @@ test('cleaning order row exposes a detail action wired to a read-only CRM modal'
   const html = ui.render({ orders: [{ id: 'order-modal-1', title: '계단 청소', status: 'received' }] });
   assert.match(html, /data-action="view-cleaning-order-details" data-order-id="order-modal-1"/u);
   const app = read('desktop-crm/src/app.js');
-  const start = app.indexOf("data-action=\"view-cleaning-order-details\"");
+  const start = app.indexOf("const viewCleaningOrderDetails = event.target.closest('[data-action=\"view-cleaning-order-details\"]')");
   assert.notEqual(start, -1);
   const handler = app.slice(start - 300, start + 1700);
   assert.match(handler, /renderOrderDetails\(/u);
@@ -746,4 +1233,167 @@ test('order form limits building choices to the selected customer and keeps a re
   assert.match(app, /customerBuildings\(customerById\(customerSelect\.value\)\)/u);
   assert.match(app, /buildingSelect\.replaceChildren/u);
   assert.match(app, /form\.dataset\.requestId\s*\|\|\s*\(form\.dataset\.requestId\s*=\s*crypto\.randomUUID\(\)\)/u);
+});
+
+test('cleaning operations dashboard derives its KPIs and trends from loaded CRM orders and linked reports', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const orders = [
+    {
+      id: 'clean-1', title: '입주 청소', status: 'in_progress', serviceType: 'move_in_cleaning', customerId: 'customer-1', customerName: '김민수', customerPhone: '010-1234-5678',
+      createdAt: '2026-09-28T10:00:00+09:00', desiredDate: '2026-09-28', buildingName: '한빛빌딩',
+      buildingAddress: '서울특별시 강남구 역삼동 1',
+      relatedWorkOrders: [{ status: 'assigned' }],
+      relatedReports: [{ workDate: '2026-09-28' }],
+      history: [{ status: 'in_progress', changedAt: '2026-09-28T11:00:00+09:00' }],
+    },
+    { id: 'clean-2', title: '공용부 청소', status: 'review_pending', serviceType: 'common_cleaning', createdAt: '2026-09-27T13:00:00+09:00', buildingAddress: '서울특별시 강남구 역삼동 2' },
+  ];
+  const summary = ui.summarizeCleaningDashboard({
+    orders, ordersLoaded: true, ordersHasMore: false,
+    reportsLoaded: true, reportsError: '', asOf: '2026-09-28',
+  });
+  assert.equal(summary.state, 'ready');
+  assert.equal(summary.todayReceived, 1);
+  assert.equal(summary.inProgress, 1);
+  assert.equal(summary.reviewPending, 1);
+  assert.equal(summary.assigned, 1);
+  assert.equal(summary.days.at(-1).orders, 1);
+  assert.equal(summary.days.at(-1).reports, 1);
+  assert.equal(summary.regions[0].region, '강남구');
+  assert.equal(summary.regions[0].count, 2);
+  const failed = ui.summarizeCleaningDashboard({ orders, ordersLoaded: false, ordersLoading: false, ordersError: 'network', reportsLoaded: false, asOf: '2026-09-28' });
+  assert.equal(failed.state, 'error');
+  assert.equal(failed.total, 0);
+  assert.equal(failed.regions.length, 0);
+  assert.equal(failed.services.length, 0);
+  assert.equal(failed.days.at(-1).orders, 0);
+  assert.equal(failed.days.at(-1).reports, 0);
+  const html = ui.render({ orders, ordersLoaded: true, reportsLoaded: true, asOf: '2026-09-28', nowMs: Date.parse('2026-09-28T12:00:00+09:00'), orderStatusFilter: 'review_pending' });
+  assert.match(html, /안녕하세요\. 오늘의 청소 운영 현황입니다\./u);
+  assert.match(html, /오늘 매출/u);
+  assert.match(html, /청소 주문과 확정 청구·입금 장부가 연결되면 표시합니다/u);
+  assert.match(html, /최근 7일/u);
+  assert.match(html, /지역별 주문 현황/u);
+  assert.match(html, /cleaning-lead-queue/u);
+  assert.match(html, /cleaning-order-lead-meta/u);
+  assert.match(html, /접수 \d{2}\. \d{2}\. 10:00 · 2시간 0분 경과/u);
+  assert.match(html, /010-1234-5678/u);
+  assert.match(html, /유입경로 미기록/u);
+  assert.match(html, /data-customer-open="customer-1"/u);
+  assert.match(html, /data-cleaning-status-preset="quote_pending,approval_pending"/u);
+  assert.match(html, /data-cleaning-status-preset="review_pending" class="is-active"/u);
+  assert.doesNotMatch(html, /서울특별시 강남구 역삼동 1/u);
+});
+
+test('cleaning dashboard empty service and alert messages occupy a readable full-width row', () => {
+  const css = read('desktop-crm/src/cleaning-center.css');
+  assert.match(css, /\.cleaning-dashboard-service li\.cleaning-dashboard-muted,\.cleaning-dashboard-alerts li\.cleaning-dashboard-muted\s*\{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/u);
+});
+
+test('cleaning schedule calendar groups canonical orders by desired date and opens their details', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const data = {
+    ordersLoaded: true, asOf: '2026-09-28', scheduleMonth: '2026-09', selectedScheduleDate: '2026-09-28',
+    orders: [
+      { id: 'today-order', title: '입주 청소', status: 'scheduled', statusLabel: '일정 확정', desiredDate: '2026-09-28', serviceType: 'move_in_cleaning', customerName: '김민수', buildingName: '한빛빌라', buildingAddress: '강원도 원주시 무실동' },
+      { id: 'month-order', title: '공용부 청소', status: 'approval_pending', desiredDate: '2026-09-28', serviceType: 'common_cleaning', customerName: '박지은', buildingName: '한솔빌딩' },
+      { id: 'next-month-order', title: '계단 청소', status: 'scheduled', desiredDate: '2026-10-01', serviceType: 'stair_cleaning' },
+      { id: 'no-date-order', title: '날짜 미정 요청', status: 'reviewing' },
+    ],
+  };
+  const summary = ui.summarizeCleaningSchedule(data);
+  assert.equal(summary.state, 'ready');
+  assert.equal(summary.monthLabel, '2026년 9월');
+  assert.equal(summary.monthTotal, 2);
+  assert.equal(summary.selectedDateTotal, 2);
+  assert.equal(summary.days.find(item => item.date === '2026-09-28').count, 2);
+  const html = ui.renderCleaningSchedule(data);
+  assert.match(html, /일정 &amp; 지도 관제|일정·지도 관제/u);
+  assert.match(html, /data-cleaning-schedule-shift="-1"/u);
+  assert.match(html, /data-cleaning-schedule-date="2026-09-28"/u);
+  assert.match(html, /today-order/u);
+  assert.match(html, /한빛빌라/u);
+  assert.match(html, /주문에 지도 좌표가 저장되지 않아/u);
+  assert.doesNotMatch(html, /next-month-order/u);
+  assert.match(ui.render({ ...data, reportsLoaded: true }), /id="cleaningScheduleTitle"/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /cleaningScheduleMonth = WorkCalendar\.shiftMonth/u);
+  assert.match(app, /cleaningScheduleDateButton\.dataset\.cleaningScheduleDate/u);
+});
+
+test('cleaning order quote drafts require current per-item price confirmation', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const items = [{ unitPrice: 1000 }, { unitPrice: 250000 }];
+  assert.equal(ui.cleaningQuotePricesConfirmed(items, [], [0, 1]), false);
+  assert.equal(ui.cleaningQuotePricesConfirmed(items, [0], [0, 1]), false);
+  assert.equal(ui.cleaningQuotePricesConfirmed(items, [0, 1], [0, 1]), true);
+  assert.equal(ui.cleaningQuotePricesConfirmed(items, [0, 1], [0]), false);
+  assert.equal(ui.cleaningQuotePricesConfirmed([{ unitPrice: 0 }], [0], [0]), false);
+  assert.equal(ui.cleaningQuotePricesConfirmed([], [0], [0]), false);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /data-cleaning-quote-price-confirm=/u);
+  assert.match(app, /confirmedPriceIndices = \[\]/u);
+  assert.match(app, /if \(!cleaningQuotePricesConfirmed\(quote\)\) return showToast/u);
+  assert.match(app, /!cleaningQuotePricesConfirmed\(quote\) \? " disabled"/u);
+});
+
+test('cleaning partner search uses registered CRM fields and reports no invented recommendation metrics', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const partner = { id: 'vendor-1', name: '늘봄 <케어>', region: '원주시', serviceText: '청소 · 입주 청소', phone: '010-1111-2222' };
+  const html = ui.render({ cleaningPartners: [partner], orders: [], ordersLoaded: true, reportsLoaded: true, asOf: '2026-09-28' });
+  assert.match(html, /청소 협력업체 검색/u);
+  assert.match(html, /늘봄 &lt;케어&gt;/u);
+  assert.match(html, /data-cleaning-partner-filter="region"/u);
+  assert.match(html, /data-cleaning-partner-filter="service"/u);
+  assert.match(html, /추천 순위·수락률·평점·가격·실시간 가능 여부는 CRM에 근거 자료가 없어 표시하지 않습니다/u);
+  assert.equal(ui.matchesCleaningPartnerFilter(partner, { region: '원주', service: 'move_in_cleaning', query: '1111' }), true);
+  assert.equal(ui.matchesCleaningPartnerFilter(partner, { region: '서울', service: 'all', query: '' }), false);
+  assert.equal(ui.matchesCleaningPartnerFilter(partner, { region: '', service: 'stair_cleaning', query: '' }), false);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /cleaningPartners: allPartnerVendorRows\(\)\.filter/u);
+  assert.match(app, /applyCleaningPartnerFilters\(\)/u);
+  assert.match(app, /matchesCleaningPartnerFilter/u);
+});
+
+test('dispatch control tower derives assignment and delay counts from canonical cleaning orders', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const data = {
+    ordersLoaded: true,
+    asOf: '2026-09-28',
+    ordersHasMore: false,
+    orders: [
+      { id: 'waiting', title: '입주 청소', status: 'approval_pending', desiredDate: '2026-09-29', serviceType: 'move_in_cleaning', buildingAddress: '강원도 원주시 무실동', relatedWorkOrders: [] },
+      { id: 'assigned', title: '계단 청소', status: 'scheduled', desiredDate: '2026-09-28', serviceType: 'stair_cleaning', buildingAddress: '강원도 원주시 단계동', relatedWorkOrders: [{ id: 'work-1', assigneeName: '홍길동', dueDate: '2026-09-28', status: 'assigned' }] },
+      { id: 'overdue', title: '공용부 청소', status: 'in_progress', desiredDate: '2026-09-27', serviceType: 'common_cleaning', buildingAddress: '서울특별시 강남구 역삼동', relatedWorkOrders: [{ id: 'work-2', assigneeName: '담당자 미배정', dueDate: '2026-09-27', status: 'assigned' }] },
+      { id: 'done', title: '퇴실 청소', status: 'completed', desiredDate: '2026-09-28', history: [{ status: 'completed', changedAt: '2026-09-28T10:00:00+09:00' }] },
+    ],
+  };
+  const summary = ui.summarizeCleaningDispatch(data);
+  assert.equal(summary.state, 'ready');
+  assert.equal(summary.waitingAssignment, 2);
+  assert.equal(summary.scheduledToday, 1);
+  assert.equal(summary.completedToday, 1);
+  assert.equal(summary.overdue, 1);
+  assert.equal(summary.jobs.length, 3);
+  assert.equal(summary.regions[0].region, '원주시');
+  assert.equal(ui.matchesCleaningDispatchFilter(data.orders[1], { region: '원주', service: 'stair_cleaning', date: 'today', status: 'assigned' }, '2026-09-28'), true);
+  assert.equal(ui.matchesCleaningDispatchFilter(data.orders[0], { region: '', service: 'all', date: 'all', status: 'assigned' }, '2026-09-28'), false);
+  const html = ui.render({ ...data, reportsLoaded: true, canCreateWorkOrders: true, canManageDispatch: true });
+  assert.match(html, /DISPATCH CONTROL TOWER/u);
+  assert.match(html, /배정 대기/u);
+  assert.match(html, /건물 좌표가 없어 지도 핀/u);
+  assert.match(html, /data-cleaning-view="workOrders"/u);
+  assert.match(html, /data-action="create-cleaning-work-order" data-order-id="waiting"/u);
+  assert.match(html, /data-action="create-cleaning-partner-offer" data-order-id="waiting">배차·지연 이력/u);
+  assert.doesNotMatch(html, /수락률\s+\d/u);
+  const readOnlyHtml = ui.render({ ...data, reportsLoaded: true });
+  assert.doesNotMatch(readOnlyHtml, /data-action="create-cleaning-work-order"/u);
+  assert.doesNotMatch(readOnlyHtml, /data-action="create-cleaning-partner-offer"/u);
+  const pending = ui.render({ ordersLoading: true, reportsLoaded: true });
+  assert.match(pending, /배차 현황을 숨겼습니다|주문을 불러오는 중입니다/u);
+  assert.match(pending, /<strong>—<small>건<\/small><\/strong>/u);
+  const app = read('desktop-crm/src/app.js');
+  assert.match(app, /function applyCleaningDispatchFilters\(\)/u);
+  assert.match(app, /matchesCleaningDispatchFilter/u);
+  assert.match(app, /data-cleaning-dispatch-filter="region"/u);
 });

@@ -186,6 +186,8 @@ const FIREBASE = Object.freeze({
 });
 const DEFAULT_BILLING_MUTATION_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitBillingLedgerMutation";
 const DEFAULT_CLEANING_ORDERS_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningOrdersApi";
+const DEFAULT_CLEANING_PARTNER_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningPartnerApi";
+const DEFAULT_CLEANING_REFUNDS_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningRefundsApi";
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -1402,6 +1404,8 @@ class FirebaseRemoteClient {
     this.firebase = options.firebaseConfig || FIREBASE;
     this.billingMutationEndpoint = options.billingMutationEndpoint || DEFAULT_BILLING_MUTATION_ENDPOINT;
     this.cleaningOrdersEndpoint = options.cleaningOrdersEndpoint || DEFAULT_CLEANING_ORDERS_ENDPOINT;
+    this.cleaningPartnerEndpoint = options.cleaningPartnerEndpoint || DEFAULT_CLEANING_PARTNER_ENDPOINT;
+    this.cleaningRefundsEndpoint = options.cleaningRefundsEndpoint || DEFAULT_CLEANING_REFUNDS_ENDPOINT;
     this.databaseRoot = options.databaseRoot ?? "crmCompany";
     this.Core = options.Core;
     this.fs = options.fs;
@@ -2476,6 +2480,47 @@ class FirebaseRemoteClient {
     return this.callCleaningOrdersApi("GET", undefined, cursor || null);
   }
 
+  async loadCleaningSettlementReview(period) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 파트너 정산 검토 자료를 확인할 수 있습니다.", "ACCESS_DENIED");
+    if (!period || typeof period !== "object" || Array.isArray(period)
+      || Object.keys(period).length !== 2 || !Object.hasOwn(period, "fromDate") || !Object.hasOwn(period, "toDate")) {
+      throw createError("정산 기간을 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const validDay = value => {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false;
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
+    if (!validDay(period.fromDate) || !validDay(period.toDate) || period.fromDate > period.toDate
+      || Date.parse(`${period.toDate}T00:00:00.000Z`) - Date.parse(`${period.fromDate}T00:00:00.000Z`) > 31 * 86400000) {
+      throw createError("정산 기간을 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const result = await this.callCleaningOrdersApi("GET", undefined, null, undefined, undefined, false, period);
+    if (!result || result.fromDate !== period.fromDate || result.toDate !== period.toDate
+      || !Array.isArray(result.partners) || result.partners.length > 10_000
+      || !Number.isSafeInteger(result.completedWorkCount) || !Number.isSafeInteger(result.grossSupplierAmount)
+      || !Number.isSafeInteger(result.excludedWorkCount) || result.payoutEnabled !== false) {
+      throw createError("정산 검토 응답을 확인할 수 없습니다.", "PROTECTED_DATA_INVALID");
+    }
+    return result;
+  }
+
+  async loadCleaningPricingPolicies() {
+    const session = this.requireOfficeSession();
+    if (session.role === "viewer" || (session.role === "member" && session.marketingRole === "marketing")) {
+      throw createError("청소 가격 정책을 확인할 권한이 없습니다.", "ACCESS_DENIED");
+    }
+    const result = await this.callCleaningOrdersApi("GET", undefined, null, undefined, undefined, true);
+    return Array.isArray(result.policies) ? result.policies : [];
+  }
+
+  async saveCleaningPricingPolicy(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 가격 정책을 저장할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningOrdersApi("POST", { action: "pricing-policy-save", input });
+  }
+
   async loadCleaningOrderById(orderId) {
     this.requireOfficeSession();
     if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
@@ -2490,6 +2535,192 @@ class FirebaseRemoteClient {
       throw createError("주문을 등록할 권한이 없습니다.", "ACCESS_DENIED");
     }
     return this.callCleaningOrdersApi("POST", { action: "create", input });
+  }
+
+  async bindCleaningPartnerAccount(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 파트너 앱 계정을 연결할 수 있습니다.", "ACCESS_DENIED");
+    if (!input || typeof input.vendorId !== "string" || typeof input.email !== "string" || typeof input.enabled !== "boolean") {
+      throw createError("업체와 로그인 이메일을 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    return this.callCleaningPartnerAdminApi({ action: "bind-account", input });
+  }
+
+  async loadCleaningPartnerDispatch(orderId) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 파트너 배차 기록을 조회할 수 있습니다.", "ACCESS_DENIED");
+    if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(orderId)) {
+      throw createError("청소 주문 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const result = await this.callCleaningPartnerAdminApi({ action: "inspect-dispatch", input: { orderId } });
+    return result.dispatch;
+  }
+
+  async recordCleaningDelayIncident(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 지연·노쇼 대응을 기록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({ action: "delay-record-incident", input });
+  }
+
+  async recordCleaningDelayAction(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 지연 대응 조치를 기록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({ action: "delay-record-action", input });
+  }
+
+  async createCleaningPartnerOffer(input, options = {}) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 파트너 작업 제안을 보낼 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({
+      action: options.reassign ? "reassign" : "offer",
+      input,
+      ...(options.reassignAccepted === true ? { reassignAccepted: true } : {}),
+      ...(options.reassignReason ? { reassignReason: String(options.reassignReason) } : {}),
+    });
+  }
+
+  async loadCleaningExtraChargeRequests(orderId) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 추가금 승인 요청을 확인할 수 있습니다.", "ACCESS_DENIED");
+    if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      throw createError("청소 주문 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const result = await this.callCleaningPartnerAdminApi({ action: "extra-charge-inspect", input: { orderId } });
+    return Array.isArray(result.requests) ? result.requests : [];
+  }
+
+  async loadCleaningReworkRequests(orderId) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 재작업 요청을 확인할 수 있습니다.", "ACCESS_DENIED");
+    if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      throw createError("청소 주문 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const result = await this.callCleaningPartnerAdminApi({ action: "rework-inspect", input: { orderId } });
+    return Array.isArray(result.requests) ? result.requests : [];
+  }
+
+  async createCleaningReworkRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 재작업 요청을 등록할 수 있습니다.", "ACCESS_DENIED");
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw createError("재작업 요청 내용을 확인해 주세요.", "VALIDATION_ERROR");
+    return this.callCleaningPartnerAdminApi({ action: "rework-create", input });
+  }
+
+  async completeCleaningRework(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 재작업 검수를 완료할 수 있습니다.", "ACCESS_DENIED");
+    if (!input || typeof input.orderId !== "string" || typeof input.requestId !== "string"
+      || !Number.isSafeInteger(input.expectedRevision) || typeof input.reportId !== "string") {
+      throw createError("재작업 검수 자료를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    return this.callCleaningPartnerAdminApi({ action: "rework-complete", input });
+  }
+
+  async createCleaningExtraChargeRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 고객 추가금 승인 요청을 작성할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({ action: "extra-charge-create", input });
+  }
+
+  async recordCleaningExtraChargeDelivery(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 고객 추가금 메시지 결과를 기록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({ action: "extra-charge-record-delivery", input });
+  }
+
+  async recordCleaningExtraChargeDecision(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 고객 응답을 기록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningPartnerAdminApi({ action: "extra-charge-decision", input });
+  }
+
+  async loadCleaningRefundRequests(orderId) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 환불 내역을 확인할 수 있습니다.", "ACCESS_DENIED");
+    if (typeof orderId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      throw createError("청소 주문 ID를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const result = await this.callCleaningRefundsApi("GET", undefined, orderId);
+    return { requests: Array.isArray(result.requests) ? result.requests : [], payment: result.payment || null };
+  }
+
+  async createCleaningRefundRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 환불 요청을 등록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningRefundsApi("POST", { action: "create", input });
+  }
+
+  async decideCleaningRefundRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 청소 환불을 승인하거나 반려할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningRefundsApi("POST", { action: "decide", input });
+  }
+
+  async recordCleaningRefundExecution(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("관리자만 환불 처리 증빙을 기록할 수 있습니다.", "ACCESS_DENIED");
+    return this.callCleaningRefundsApi("POST", { action: "record-execution", input });
+  }
+
+  async callCleaningRefundsApi(method, body, orderId) {
+    const guard = this.captureSessionGuard();
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    const endpoint = new URL(this.cleaningRefundsEndpoint);
+    if (method === "GET") endpoint.searchParams.set("orderId", orderId);
+    let response;
+    try {
+      response = await this.fetch(endpoint.toString(), {
+        method, headers: { Accept: "application/json", Authorization: `Bearer ${token}`,
+          ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (cause) {
+      this.assertSessionGuardActive(guard);
+      throw createError("청소 환불 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.", "NETWORK", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    let payload;
+    try { payload = JSON.parse(await response.text()); }
+    catch (cause) { throw createError("청소 환불 서버 응답을 확인할 수 없습니다.", "PROTECTED_DATA_INVALID", cause); }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok || payload?.ok !== true || !payload.result) {
+      if (response.status === 401) throw createError("다시 로그인한 뒤 환불 요청을 확인해 주세요.", "AUTH_REQUIRED");
+      if (response.status === 403) throw createError("청소 환불을 관리할 권한이 없습니다.", "ACCESS_DENIED");
+      if (response.status === 409) throw createError("환불 정보가 변경되었습니다. 새로고침한 뒤 다시 확인해 주세요.", "CLEANING_REFUND_CONFLICT");
+      if (response.status >= 500) throw createError("청소 환불 자료를 확인할 수 없습니다.", "NETWORK");
+      throw createError(`청소 환불 요청이 거부되었습니다 (${String(payload?.error?.code || "invalid_request")}).`, "VALIDATION_ERROR");
+    }
+    return payload.result;
+  }
+
+  async callCleaningPartnerAdminApi(body) {
+    const guard = this.captureSessionGuard();
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    let response;
+    try {
+      response = await this.fetch(this.cleaningPartnerEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    } catch (cause) {
+      this.assertSessionGuardActive(guard);
+      throw createError("파트너 배차 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.", "NETWORK", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    let payload;
+    try { payload = JSON.parse(await response.text()); }
+    catch (cause) { throw createError("파트너 배차 응답을 확인할 수 없습니다.", "PROTECTED_DATA_INVALID", cause); }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok || payload?.ok !== true || !payload.result) {
+      if (response.status === 401) throw createError("다시 로그인한 뒤 요청을 보내 주세요.", "AUTH_REQUIRED");
+      if (response.status === 403) throw createError("파트너 배차를 관리할 권한이 없습니다.", "ACCESS_DENIED");
+      if (response.status === 409) throw createError("배차 정보가 변경되었습니다. 새로고침한 뒤 다시 확인해 주세요.", "CLEANING_PARTNER_CONFLICT");
+      if (response.status >= 500) throw createError("파트너 배차 서버에서 자료를 확인할 수 없습니다.", "NETWORK");
+      throw createError(`파트너 배차 요청이 거부되었습니다 (${String(payload?.error?.code || "invalid_request")}).`, "VALIDATION_ERROR");
+    }
+    return payload.result;
   }
 
   async transitionCleaningOrder(input) {
@@ -2522,7 +2753,7 @@ class FirebaseRemoteClient {
     return this.callCleaningOrdersApi("POST", { action: "quote-review", input });
   }
 
-  async callCleaningOrdersApi(method, body, cursor, quoteOrderId, orderId) {
+  async callCleaningOrdersApi(method, body, cursor, quoteOrderId, orderId, pricingPolicies = false, settlementPeriod = null) {
     const guard = this.captureSessionGuard();
     const token = await this.ensureIdToken(false);
     this.assertSessionGuardActive(guard);
@@ -2535,6 +2766,11 @@ class FirebaseRemoteClient {
       }
       if (method === "GET" && quoteOrderId) endpoint.searchParams.set("quoteOrderId", quoteOrderId);
       if (method === "GET" && orderId) endpoint.searchParams.set("orderId", orderId);
+      if (method === "GET" && pricingPolicies) endpoint.searchParams.set("pricingPolicies", "1");
+      if (method === "GET" && settlementPeriod) {
+        endpoint.searchParams.set("settlementFrom", settlementPeriod.fromDate);
+        endpoint.searchParams.set("settlementTo", settlementPeriod.toDate);
+      }
       response = await this.fetch(endpoint.toString(), {
         method,
         headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
@@ -2552,8 +2788,10 @@ class FirebaseRemoteClient {
     this.assertSessionGuardActive(guard);
     if (!response.ok || payload?.ok !== true || !payload.result) {
       if (response.status === 401) throw createError("다시 로그인한 뒤 주문을 확인해 주세요.", "AUTH_REQUIRED");
-      if (response.status === 403) throw createError("클리닝 주문을 이용할 권한이 없습니다.", "ACCESS_DENIED");
+      if (response.status === 403) throw createError(payload?.error?.code === "cleaning_settlement_forbidden"
+        ? "관리자만 파트너 정산 검토 자료를 확인할 수 있습니다." : "클리닝 주문을 이용할 권한이 없습니다.", "ACCESS_DENIED");
       if (response.status === 409) {
+        if (String(payload?.error?.code || "").startsWith("cleaning_pricing_policy_")) throw createError("같은 지역·적용일 가격표가 있거나 정책이 변경되었습니다. 가격표 목록을 새로고침해 주세요.", "CLEANING_PRICING_POLICY_CONFLICT");
         if (payload?.error?.code === "cleaning_order_completion_evidence_required") {
           throw createError("완료할 수 없습니다. 같은 주문·건물·서비스 유형의 결과보고서에서 작업일과 필수 체크리스트를 확인하고, 완료 항목의 전·후 사진 및 미수행 사유를 등록해 주세요.", "CLEANING_ORDER_EVIDENCE_REQUIRED");
         }

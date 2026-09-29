@@ -24,6 +24,7 @@ const routes = [
   { pathname: "/", outputFile: "index.html" },
   { pathname: "/consult", outputFile: "consult/index.html" },
   { pathname: "/field", outputFile: "field/index.html" },
+  { pathname: "/partner", outputFile: "partner/index.html" },
   {
     pathname: "/consult/complete",
     outputFile: "consult/complete/index.html",

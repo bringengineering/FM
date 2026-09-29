@@ -12,7 +12,7 @@ BRING CRM 운영 배포의 단일 기준은 `bringengineering/FM` 저장소의 �
 - 자동 Firebase 대상: `release/firebase-targets.json`의 `crmAutomaticRelease.projectId`와 `crmAutomaticRelease.databaseRules`
 - 허용 Firebase 명령: `--project bring-fm deploy --only database`
 
-manifest 어디에도 `functionSelectors`가 없어야 합니다. `primary.functionsDeploymentAllowed`는 `false`로 고정되고, `primary.archivedFunctionNames`는 과거 `bring-fm` 함수 이름을 실행 불가능한 기록으로만 보존합니다. `retiredLegacy`도 과거 `bring-fm-hj` 함수 이름을 보존하는 비배포 기록이며 `deploymentAllowed`가 `false`입니다. 따라서 CRM의 자동·수동 운영 모두 Cloud Functions를 배포하지 않습니다. `functions/src`에 남아 있는 구현은 이력 확인용일 뿐 배포 대상이 아닙니다. 자동 릴리스는 `bring-fm-hj`, Hosting, Functions 또는 범위 없는 `firebase deploy`를 절대 실행하지 않습니다.
+manifest 어디에도 `functionSelectors`가 없어야 합니다. `primary.functionsDeploymentAllowed`는 일반 Functions 전체 배포를 막기 위해 `false`로 고정합니다. `retiredLegacy`는 과거 `bring-fm-hj` 함수 이름을 보존하는 비배포 기록이며 `deploymentAllowed`가 `false`입니다. Cleaning Center 서버 API 세 개(`cleaningOrdersApi`, `cleaningPartnerApi`, `cleaningRefundsApi`)만 `release/cleaning-center-deployment.js`의 별도 수동 경로에서 명시적으로 배포할 수 있으며, 이 경로는 RTDB 규칙을 배포하지 않습니다. 자동 릴리스는 `bring-fm-hj`, Hosting, Functions 또는 범위 없는 `firebase deploy`를 절대 실행하지 않습니다.
 
 ## 최초 1회 WIF 연결
 

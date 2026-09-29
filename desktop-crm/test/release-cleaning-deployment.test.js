@@ -9,14 +9,17 @@ const {
   runCleaningDeployment,
 } = require("../../release/cleaning-center-deployment");
 
-test("cleaning deployment plan allows only the two reviewed bring-fm Functions plus Database Rules", () => {
+test("cleaning deployment plan allows only the four reviewed functions and bring-fm Hosting", () => {
   assert.deepEqual(buildCleaningDeploymentPlan(manifest, "bring-fm"), {
     projectId: "bring-fm",
-    functionNames: ["cleaningOrdersApi", "projectCleaningOrdersToWallboard"],
+    functionNames: ["cleaningOrdersApi", "cleaningPartnerApi", "cleaningRefundsApi", "projectCleaningOrdersToWallboard"],
+    hostingSiteId: "bring-fm",
     firebaseSelectors: [
       "functions:field-platform:cleaningOrdersApi",
+      "functions:field-platform:cleaningPartnerApi",
+      "functions:field-platform:cleaningRefundsApi",
       "functions:field-platform:projectCleaningOrdersToWallboard",
-      "database",
+      "hosting",
     ],
   });
 });
@@ -63,6 +66,8 @@ test("cleaning deployment applies only after project confirmation, merged-base, 
       if (command === "firebase" && args[0] === "functions:list") {
         return { status: 0, stdout: JSON.stringify({ result: [
           { id: "cleaningOrdersApi" },
+          { id: "cleaningPartnerApi" },
+          { id: "cleaningRefundsApi" },
           { id: "projectCleaningOrdersToWallboard" },
         ] }) };
       }
@@ -78,7 +83,7 @@ test("cleaning deployment applies only after project confirmation, merged-base, 
     ["firebase", [
       "deploy",
       "--only",
-      "functions:field-platform:cleaningOrdersApi,functions:field-platform:projectCleaningOrdersToWallboard,database",
+      "functions:field-platform:cleaningOrdersApi,functions:field-platform:cleaningPartnerApi,functions:field-platform:cleaningRefundsApi,functions:field-platform:projectCleaningOrdersToWallboard,hosting",
       "--project",
       "bring-fm",
       "--non-interactive",
@@ -87,7 +92,7 @@ test("cleaning deployment applies only after project confirmation, merged-base, 
   ]);
 });
 
-test("cleaning deployment reports success only after both Functions are visible in Firebase", () => {
+test("cleaning deployment reports success only after all four Functions are visible in Firebase", () => {
   assert.throws(() => runCleaningDeployment({
     manifest,
     expectedProjectId: "bring-fm",
