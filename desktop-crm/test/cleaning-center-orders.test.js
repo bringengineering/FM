@@ -6,12 +6,16 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('cleaning center is one sidebar destination and does not duplicate CRM module navigation', () => {
+test('cleaning center contains 34 separate routes without duplicating primary CRM modules', () => {
   const html = read('desktop-crm/src/index.html');
   const start = html.indexOf('data-nav-folder="cleaning-center"');
   const end = html.indexOf('data-view="settings"', start);
   const folder = html.slice(start, end);
-  assert.match(folder, /data-view="cleaningCenter"/u);
+  assert.match(folder, /data-cleaning-pages-nav/u);
+  const pages = require('../src/cleaning-center-pages');
+  assert.equal(pages.SCREENS.length, 34);
+  const navigation = pages.renderNavigation();
+  assert.equal([...navigation.matchAll(/data-cleaning-screen="\d{2}"/gu)].length, 34);
   for (const view of ['consultations', 'partnerQuotes', 'pipeline', 'customers', 'quotes', 'workOrders', 'workManagement', 'workReports', 'buildingAtlas', 'operationsIntelligence']) {
     assert.doesNotMatch(folder, new RegExp(`data-view="${view}"`), `${view} should be reached from its primary folder or the hub, not duplicated in the sidebar`);
   }
@@ -654,8 +658,12 @@ test('Electron local smoke verifies cleaning-order bridge without using company 
   assert.match(smoke, /cleaning_smoke_customer/u);
   assert.match(smoke, /buildingSelect\.options\.length\s*===\s*2/u);
   assert.match(smoke, /linkedBuildingOnly/u);
-  assert.match(smoke, /cleaningStageCardCount === 7/u);
-  assert.match(smoke, /확인된 전체 주문 0건/u);
+  assert.match(smoke, /data-cleaning-screen="03"/u);
+  assert.match(smoke, /dashboardVisible/u);
+  assert.match(smoke, /dashboardFocused/u);
+  assert.match(smoke, /data-cleaning-screen="01"/u);
+  assert.match(smoke, /data-cleaning-screen="08"/u);
+  assert.match(smoke, /data-cleaning-screen="09"/u);
   assert.match(smoke, /cleaningDispatchTowerVisible/u);
   assert.match(smoke, /배차 관제/u);
   assert.match(smoke, /cleaningScheduleCalendarVisible/u);
@@ -663,11 +671,11 @@ test('Electron local smoke verifies cleaning-order bridge without using company 
   assert.match(smoke, /cleaningScheduleNavigationWorks/u);
 });
 
-test('isolated CRM screenshot action opens the Cleaning Center and records seven KPI cards', () => {
+test('isolated CRM screenshot action opens the focused Cleaning Center dashboard', () => {
   const main = read('desktop-crm/src/main.js');
   assert.match(main, /cleaning-center-summary-preview/u);
-  assert.match(main, /cleaningStageCardCount === 7/u);
-  assert.match(main, /emptyQueueScopeVisible/u);
+  assert.match(main, /dashboardFocused && cards\.length === 6/u);
+  assert.match(main, /\.cleaning-dashboard/);
   assert.match(main, /"cleaning-center-summary-preview"/u);
 });
 

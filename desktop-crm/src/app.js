@@ -247,6 +247,7 @@
     security: ["운영매뉴얼 DATA-01", "정보·열쇠 관리"],
     settings: ["프로그램 관리", "설정"]
   };
+  Object.assign(viewMeta, window.BringCleaningCenterPages.viewMeta());
 
   const marketingController = MarketingUI.createController({
     core: MarketingCore,
@@ -1497,6 +1498,12 @@
         || (view === "customers" && currentView === "buildings");
       button.classList.toggle("active", active);
     });
+    const cleaningScreen = window.BringCleaningCenterPages.screenByView(currentView);
+    document.querySelectorAll("[data-cleaning-nav-group]").forEach(group => {
+      const active = Boolean(cleaningScreen && group.dataset.cleaningNavGroup === cleaningScreen.group);
+      group.classList.toggle("is-open", active);
+      group.querySelector("[data-cleaning-group-toggle]")?.setAttribute("aria-expanded", String(active));
+    });
     // 화면이 다른 폴더로 넘어갔으면 사이드바도 따라간다. 링크로 건너뛰었는데
     // 왼쪽에 그 화면이 없으면 사람이 길을 잃는다.
     const viewFolder = navFolderOfView(currentView);
@@ -1582,7 +1589,7 @@
         setMessengerPresence: syncOfficeMessengerPresence,
       });
     }
-    else if (currentView === "cleaningCenter") renderCleaningCenter();
+    else if (window.BringCleaningCenterPages.screenByView(currentView) && currentView !== "cleaningCti" && currentView !== "cleaningAnalytics") renderCleaningCenter();
     else if (currentView === "cleaningCti") renderCleaningCtiCenter();
     else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
     else if (currentView === "cases") renderCases();
@@ -1645,6 +1652,10 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
+  }
+
+  function isCleaningPageView(view = currentView) {
+    return Boolean(window.BringCleaningCenterPages.screenByView(view));
   }
 
   function renderCleaningCenter() {
@@ -1735,21 +1746,31 @@
       ledger: billingLedger,
       invoicePaymentState: BringBillingLedgerCore.invoicePaymentState,
     });
+    const cleaningPage = window.BringCleaningCenterPages.screenByView(currentView);
     main.innerHTML = window.BringCleaningCenterUI.render({
+      view: currentView,
+      pageKind: cleaningPage?.kind,
+      reference: cleaningPage?.reference,
+      pageTitle: cleaningPage?.title,
+      pageDescription: cleaningPage?.description,
       loading: operationsLoading || workOrderState.loading || deliveryState.loading,
       error,
       customers: { ready: true, value: (store.customers || []).filter(item => item && !item.archivedAt).length },
+      cleaningCustomers: (store.customers || []).filter(item => item && !item.archivedAt),
       buildings: { ready: true, value: (store.buildings || []).filter(item => item && !item.archivedAt).length },
       cases: { ready: Boolean(operations.loadedAt), value: activeRequestCount, error: Boolean(operationsError) },
       casesLoaded: Boolean(operations.loadedAt), casesError: Boolean(operationsError), cleaningCases,
       billingLoaded: cleaningBillingState.loaded, billingError: cleaningBillingState.error, cleaningPayments,
       settlementReview: cleaningSettlementState.review, settlementLoading: cleaningSettlementState.loading,
       settlementError: cleaningSettlementState.error, selectedSettlementVendorId: cleaningSettlementState.selectedVendorId,
+      pricingPolicies: cleaningPricingPolicyState.policies, pricingLoading: cleaningPricingPolicyState.loading,
+      pricingError: cleaningPricingPolicyState.error, securityAccessMarkup: cleaningPage?.kind === "permissions" ? renderAccessRoles() : "",
       workOrders: { ready: workOrderState.loaded && Boolean(W), value: openWorkOrders, error: Boolean(workOrderState.error) },
       deliveryFlows: { ready: deliveryState.loaded, value: deliveryState.loaded ? (deliveryCore()?.summarize(deliveryState.flows).running || 0) : null, error: Boolean(deliveryState.error) },
       partners: { ready: true, value: allPartnerVendorRows().filter(item => !item.archivedAt).length },
       cleaningPartners: allPartnerVendorRows().filter(item => !item.archivedAt && item.active !== false)
         .map(item => window.BringCleaningCenterUI.cleaningPartnerCandidateFromVendor(item, partnerPhoneText(item))),
+      selectedPartnerVendorId: selectedPartnerVendorDetailId,
       orders, ordersLoaded: cleaningOrderState.loaded, ordersLoading: cleaningOrderState.loading, ordersError: cleaningOrderState.error,
       ordersUpdatedAt: cleaningOrderState.lastLoadedAt, asOf: todayKey(), nowMs: Date.now(),
       reportsLoaded: reportState.loaded, reportsError: reportState.error,
@@ -1757,7 +1778,7 @@
       ordersHasMore: cleaningOrderState.hasMore, ordersLoadingMore: cleaningOrderState.loadingMore,
       ordersLoadMoreError: cleaningOrderState.loadMoreError,
       canWrite: canWriteCRM(),
-      canManagePricingPolicies: canAdministerSecurity() && typeof api.loadCleaningPricingPolicies === "function",
+      canManagePricingPolicies: canAdministerSecurity() && typeof api.loadCleaningPricingPolicies === "function" && typeof api.saveCleaningPricingPolicy === "function",
       canManageDispatch: canAdministerSecurity() && typeof api.loadCleaningPartnerDispatch === "function",
       canCreateWorkOrders: workOrderState.admin === true,
       canCreateWorkReports: reportState.canWork === true && canWriteCRM(),
@@ -1783,7 +1804,7 @@
       cleaningPricingPolicyState.attempted = true;
     } finally {
       cleaningPricingPolicyState.loading = false;
-      if (currentView === "cleaningCenter") renderCleaningCenter();
+      if (isCleaningPageView()) renderCleaningCenter();
     }
   }
 
@@ -1824,7 +1845,7 @@
   }
 
   function applyCleaningPartnerFilters() {
-    if (currentView !== "cleaningCenter") return;
+    if (currentView !== "cleaningPartnerSearch" && currentView !== "cleaningCenter") return;
     const region = main.querySelector('[data-cleaning-partner-filter="region"]')?.value || "";
     const service = main.querySelector('[data-cleaning-partner-filter="service"]')?.value || "all";
     const query = main.querySelector('[data-cleaning-partner-filter="query"]')?.value || "";
@@ -1867,7 +1888,7 @@
   }
 
   function applyCleaningDispatchFilters() {
-    if (currentView !== "cleaningCenter") return;
+    if (currentView !== "cleaningDispatchTower" && currentView !== "cleaningCenter") return;
     const filters = Object.fromEntries(["region", "service", "date", "status"].map(key => [
       key, main.querySelector(`[data-cleaning-dispatch-filter="${key}"]`)?.value || (key === "service" || key === "date" || key === "status" ? "all" : ""),
     ]));
@@ -1892,7 +1913,7 @@
   }
 
   function applyCleaningOrderFilters() {
-    if (currentView !== "cleaningCenter") return;
+    if (currentView !== "cleaningLeads" && currentView !== "cleaningCenter") return;
     const rows = Array.from(main.querySelectorAll(".cleaning-order-row"));
     const search = String(cleaningOrderState.search || "");
     const status = String(cleaningOrderState.statusFilter || "all");
@@ -1936,7 +1957,7 @@
       cleaningOrderState.error = error?.message || "청소 주문을 불러오지 못했습니다.";
     } finally {
       cleaningOrderState.loading = false;
-      if (currentView === "cleaningCenter") renderCleaningCenter();
+      if (isCleaningPageView()) renderCleaningCenter();
       else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
       else if (currentView === "workOrders") renderWorkOrders();
       else if (currentView === "workReports") renderWorkReports();
@@ -1964,7 +1985,7 @@
       cleaningOrderState.loadMoreError = error?.message || "이전 주문을 불러오지 못했습니다.";
     } finally {
       cleaningOrderState.loadingMore = false;
-      if (currentView === "cleaningCenter") renderCleaningCenter();
+      if (isCleaningPageView()) renderCleaningCenter();
       else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
     }
   }
@@ -2747,7 +2768,7 @@
       operationsLoading = false;
     }
     pageMeta();
-    if ((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || currentView === "cleaningCenter") render();
+    if ((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || isCleaningPageView()) render();
   }
 
   const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
@@ -5624,7 +5645,7 @@
     if (["dashboard", "weeklyReports", "projectRoadmap", "workOrders", "companyGoals"].includes(view)
       && isStale(workOrderState) && !workOrderTyping()) void loadWorkOrders();
     if (view === "companyGoals" && (!companyStrategyState.loaded || Date.now()-companyStrategyState.refreshedAt>=30*1000)) void loadCompanyStrategy();
-    if (view === "cleaningCenter") {
+    if (window.BringCleaningCenterPages.screenByView(view)) {
       if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
       if (!deliveryState.loaded && !deliveryState.loading) void loadDeliveryFlows();
       if (!operations.loadedAt && !operationsLoading) void refreshOperations({ silent: true, render: false });
@@ -5698,7 +5719,7 @@
     } finally {
       if (state === cleaningBillingState && generation === authGeneration && uid === currentAuthUid()) {
         state.loading = false;
-        if (currentView === "cleaningCenter") renderCleaningCenter();
+        if (isCleaningPageView()) renderCleaningCenter();
         else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
         else if (currentView === "customers") renderCustomers();
       }
@@ -5983,7 +6004,7 @@
       else if (currentView === "projectRoadmap") renderProjectRoadmap();
       else if (currentView === "weeklyReports") renderWeeklyReports();
       else if (currentView === "companyGoals") renderCompanyGoals();
-      else if (currentView === "cleaningCenter") renderCleaningCenter();
+      else if (isCleaningPageView()) renderCleaningCenter();
     }
   }
 
@@ -7973,7 +7994,7 @@
     } finally {
       reportState.loading = false;
       if (currentView === "workReports") renderWorkReports();
-      else if (currentView === "cleaningCenter") renderCleaningCenter();
+      else if (isCleaningPageView()) renderCleaningCenter();
     }
   }
 
@@ -9197,7 +9218,7 @@
       deliveryState.loading = false;
       updateDeliveryBadge();
       if (currentView === "deliveryFlow") renderDeliveryFlows();
-      else if (currentView === "cleaningCenter") renderCleaningCenter();
+      else if (isCleaningPageView()) renderCleaningCenter();
     }
   }
 
@@ -13330,7 +13351,7 @@
       return;
     }
     const cleaningSectionJump = event.target.closest("[data-cleaning-scroll-target]");
-    if (cleaningSectionJump && currentView === "cleaningCenter") {
+    if (cleaningSectionJump && isCleaningPageView()) {
       const section = ({ "cleaning-payments-panel": ".cleaning-payments-panel", "cleaning-dispatch-tower": ".cleaning-dispatch-tower" })[cleaningSectionJump.dataset.cleaningScrollTarget];
       if (section) main.querySelector(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
@@ -13372,27 +13393,27 @@
       return;
     }
     const cleaningScheduleShift = event.target.closest("[data-cleaning-schedule-shift]");
-    if (cleaningScheduleShift && currentView === "cleaningCenter") {
+    if (cleaningScheduleShift && currentView === "cleaningScheduleMap") {
       cleaningScheduleMonth = WorkCalendar.shiftMonth(cleaningScheduleMonth, Number(cleaningScheduleShift.dataset.cleaningScheduleShift) || 0);
       cleaningScheduleDate = `${cleaningScheduleMonth}-01`;
       renderCleaningCenter();
       return;
     }
-    if (event.target.closest("[data-cleaning-schedule-today]") && currentView === "cleaningCenter") {
+    if (event.target.closest("[data-cleaning-schedule-today]") && currentView === "cleaningScheduleMap") {
       cleaningScheduleDate = todayKey();
       cleaningScheduleMonth = cleaningScheduleDate.slice(0, 7);
       renderCleaningCenter();
       return;
     }
     const cleaningScheduleDateButton = event.target.closest("[data-cleaning-schedule-date]");
-    if (cleaningScheduleDateButton && currentView === "cleaningCenter") {
+    if (cleaningScheduleDateButton && currentView === "cleaningScheduleMap") {
       cleaningScheduleDate = cleaningScheduleDateButton.dataset.cleaningScheduleDate || todayKey();
       cleaningScheduleMonth = cleaningScheduleDate.slice(0, 7);
       renderCleaningCenter();
       return;
     }
     const cleaningStatusPreset = event.target.closest("[data-cleaning-status-preset]");
-    if (cleaningStatusPreset && currentView === "cleaningCenter") {
+    if (cleaningStatusPreset && ["cleaningCenter", "cleaningLeads"].includes(currentView)) {
       cleaningOrderState.statusFilter = cleaningStatusPreset.dataset.cleaningStatusPreset || "all";
       const statusSelect = main.querySelector("[data-cleaning-order-status]");
       if (statusSelect) statusSelect.value = cleaningOrderState.statusFilter;
@@ -13427,7 +13448,7 @@
         loadDeliveryFlows(),
         loadCleaningOrders(),
       ]);
-      if (currentView === "cleaningCenter") renderCleaningCenter();
+      if (isCleaningPageView()) renderCleaningCenter();
       return;
     }
     if (event.target.closest('[data-action="refresh-cleaning-billing"]')) {
@@ -14984,6 +15005,14 @@
       const open = !folder.classList.contains("open");
       folder.classList.toggle("open", open);
       navFolderToggle.setAttribute("aria-expanded", String(open));
+      return;
+    }
+    const cleaningGroupToggle = event.target.closest("[data-cleaning-group-toggle]");
+    if (cleaningGroupToggle) {
+      const group = cleaningGroupToggle.closest("[data-cleaning-nav-group]");
+      const open = !group.classList.contains("is-open");
+      group.classList.toggle("is-open", open);
+      cleaningGroupToggle.setAttribute("aria-expanded", String(open));
       return;
     }
     const operationsTab = event.target.closest("[data-operations-tab]");
@@ -18769,7 +18798,7 @@
     } finally {
       if (state === cleaningSettlementState && generation === authGeneration && uid === currentAuthUid()) {
         state.loading = false;
-        if (currentView === "cleaningCenter") renderCleaningCenter();
+        if (isCleaningPageView()) renderCleaningCenter();
       }
     }
   }
@@ -19281,7 +19310,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cleaningCenter", "cleaningCti", "cleaningAnalytics", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
@@ -19362,6 +19391,14 @@ document.addEventListener("keydown", event => {
     }),
     setDemo: () => { store = demoStore(); synchronizedStore = cloneStore(store); render(); },
     getStore: () => JSON.parse(JSON.stringify(store)),
+    replaceStoreForTest: data => {
+      if (!data || typeof data !== "object") return false;
+      store = Core.sanitizeStore(data);
+      synchronizedStore = cloneStore(store);
+      pendingRemoteStore = null;
+      render();
+      return true;
+    },
     getOperations: () => JSON.parse(JSON.stringify(operations)),
     setOperationsForTest: data => {
       if (new URLSearchParams(location.search).get("demo") !== "1" || !data || typeof data !== "object") return false;

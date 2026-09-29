@@ -5882,15 +5882,18 @@ async function createWindow() {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
       document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
       await wait(320);
-      for (let attempt = 0; attempt < 30 && document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length !== 7; attempt += 1) await wait(100);
-      const screenVisible = Boolean(document.querySelector('.cleaning-center'));
-      const queueVisible = Boolean(document.querySelector('.cleaning-orders-panel'));
-      const emptyStateVisible = document.querySelector('.cleaning-orders-empty')?.textContent.includes('등록된 주문이 없습니다') === true;
-      const cleaningStageCardCount = document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length;
-      const emptyQueueScopeVisible = document.querySelector('.cleaning-stage-footnote')?.textContent.includes('확인된 전체 주문 0건') === true;
+      document.querySelector('[data-cleaning-screen="01"]')?.click();
+      await wait(100);
+      const dashboardVisible = Boolean(document.querySelector('.cleaning-dashboard'));
+      const dashboardFocused = !document.querySelector('.cleaning-dispatch-tower, .cleaning-schedule, .cleaning-payments');
+      document.querySelector('[data-cleaning-group-toggle="dispatch"]')?.click();
+      document.querySelector('[data-cleaning-screen="08"]')?.click();
+      await wait(100);
       const cleaningDispatchTowerVisible = Boolean(document.querySelector('.cleaning-dispatch-tower'))
         && document.querySelector('.cleaning-dispatch-tower')?.textContent.includes('배차 관제') === true;
       const cleaningDispatchEmptyVisible = document.querySelector('.cleaning-dispatch-empty')?.textContent.includes('현재 배차 대상 주문이 없습니다') === true;
+      document.querySelector('[data-cleaning-screen="09"]')?.click();
+      await wait(100);
       const cleaningScheduleCalendarVisible = Boolean(document.querySelector('.cleaning-schedule-calendar'))
         && document.querySelector('.cleaning-schedule')?.textContent.includes('일정·지도 관제') === true
         && Boolean(document.querySelector('[data-cleaning-schedule-date]'));
@@ -5904,13 +5907,22 @@ async function createWindow() {
         && scheduleMonthPrevious !== scheduleMonthBefore
         && scheduleMonthRestored === scheduleMonthBefore
         && Boolean(document.querySelector('.cleaning-schedule-day.is-today.is-selected'));
+      // Schedule navigation persists the selected date. Let that local save finish
+      // before injecting isolated smoke fixtures through the remote-store test hook.
+      await wait(500);
       const seeded = window.__crmTest.getStore();
       seeded.customers.push({ id: 'cleaning_smoke_customer', name: '스모크 테스트 고객', buildingIds: ['cleaning_smoke_building_linked'], buildingIdLinks: {} });
       seeded.buildings.push(
         { id: 'cleaning_smoke_building_linked', name: '연결된 테스트 건물', ownerCustomerId: 'cleaning_smoke_customer' },
         { id: 'cleaning_smoke_building_unlinked', name: '미연결 테스트 건물', ownerCustomerId: 'cleaning_smoke_other_customer' }
       );
-      window.__crmTest.applyRemoteForTest(seeded);
+      seeded.updatedAt = new Date().toISOString();
+      window.__crmTest.replaceStoreForTest(seeded);
+      await wait(50);
+      const fixtureCounts = { customers: window.__crmTest.getStore().customers.length, buildings: window.__crmTest.getStore().buildings.length };
+      document.querySelector('[data-cleaning-group-toggle="intake"]')?.click();
+      document.querySelector('[data-cleaning-screen="03"]')?.click();
+      await wait(100);
       document.querySelector('[data-action="new-cleaning-order"]')?.click();
       const form = document.querySelector('#cleaningOrderForm');
       const formFieldsPresent = Boolean(form?.elements.namedItem('customerId')?.required
@@ -5926,8 +5938,21 @@ async function createWindow() {
         && !Array.from(buildingSelect.options).some(option => option.value === 'cleaning_smoke_building_unlinked');
       document.querySelector('#modal [data-action="close-modal"]')?.click();
       const modalClosed = window.__crmTest.snapshot().modalOpen === false;
-      const pass = screenVisible && queueVisible && emptyStateVisible && cleaningStageCardCount === 7 && emptyQueueScopeVisible && cleaningDispatchTowerVisible && cleaningDispatchEmptyVisible && cleaningScheduleCalendarVisible && cleaningScheduleNavigationWorks && formFieldsPresent && linkedBuildingOnly && modalClosed;
-      return { pass, screenVisible, queueVisible, emptyStateVisible, cleaningStageCardCount, emptyQueueScopeVisible, cleaningDispatchTowerVisible, cleaningDispatchEmptyVisible, cleaningScheduleCalendarVisible, cleaningScheduleNavigationWorks, formFieldsPresent, linkedBuildingOnly, modalClosed, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
+      const routeChecks = [];
+      for (const screen of window.BringCleaningCenterPages.SCREENS) {
+        const group = document.querySelector('[data-cleaning-nav-group="' + screen.group + '"]');
+        if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
+        document.querySelector('[data-cleaning-screen="' + screen.reference + '"]')?.click();
+        await wait(30);
+        const pageSelector = screen.kind === 'dashboard' ? '.cleaning-dashboard'
+          : screen.kind === 'cti' ? '.cleaning-cti'
+            : screen.kind === 'analytics' ? '.cleaning-analytics'
+              : '[data-cleaning-page="' + screen.view + '"]';
+        routeChecks.push({ reference: screen.reference, view: window.__crmTest.snapshot().view, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(pageSelector)) });
+      }
+      const everyRouteLoads = routeChecks.length === 34 && routeChecks.every(item => item.pass);
+      const pass = dashboardVisible && dashboardFocused && cleaningDispatchTowerVisible && cleaningDispatchEmptyVisible && cleaningScheduleCalendarVisible && cleaningScheduleNavigationWorks && formFieldsPresent && linkedBuildingOnly && modalClosed && everyRouteLoads;
+      return { pass, dashboardVisible, dashboardFocused, cleaningDispatchTowerVisible, cleaningDispatchEmptyVisible, cleaningScheduleCalendarVisible, cleaningScheduleNavigationWorks, formFieldsPresent, linkedBuildingOnly, modalClosed, everyRouteLoads, routeChecks, fixtureCounts, fixtureOnly: true, snapshot: window.__crmTest.snapshot() };
     })()`, true);
     if (!cleaningCenterSmoke?.pass) throw new Error(`cleaning center local UI smoke failed: ${JSON.stringify(cleaningCenterSmoke)}`);
     console.log(JSON.stringify({ workflowReads, cleaningOrders, cleaningCenterSmoke, localOnly: true }));
@@ -6002,26 +6027,62 @@ async function createWindow() {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
-        for (let attempt = 0; attempt < 30; attempt += 1) {
-          if (document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi').length === 7) break;
-          await wait(100);
-        }
-        const cards = [...document.querySelectorAll('.cleaning-order-stage-kpis .cleaning-stage-kpi')];
-        const scope = document.querySelector('.cleaning-stage-footnote')?.textContent || '';
-        const emptyQueueScopeVisible = scope.includes('확인된 전체 주문 0건');
-        const updatedAtVisible = scope.includes('자료 갱신');
-        const labels = cards.map(card => ({
-          label: card.querySelector('span')?.textContent?.trim() || '',
-          value: card.querySelector('strong')?.textContent?.trim() || '',
-        }));
+        await wait(200);
+        document.querySelector('[data-cleaning-screen="01"]')?.click();
+        await wait(120);
+        const dashboard = document.querySelector('.cleaning-dashboard');
+        const cards = dashboard ? [...dashboard.querySelectorAll('.cleaning-dashboard-kpi')] : [];
+        const dashboardFocused = Boolean(dashboard) && !document.querySelector('.cleaning-dispatch-tower, .cleaning-schedule, .cleaning-payments, .cleaning-support-panel');
+        const labels = cards.map(card => ({ label: card.querySelector('span')?.textContent?.trim() || '', value: card.querySelector('strong')?.textContent?.trim() || '' }));
         return {
           pass: window.__crmTest?.snapshot().view === 'cleaningCenter'
-            && cards.length === 7 && emptyQueueScopeVisible && updatedAtVisible,
-          cleaningStageCardCount: cards.length, emptyQueueScopeVisible, updatedAtVisible,
-          labels, scope, fixtureOnly: true,
+            && Boolean(dashboard) && dashboardFocused && cards.length === 6,
+          dashboardVisible: Boolean(dashboard), dashboardFocused, dashboardKpiCount: cards.length,
+          labels, fixtureOnly: true,
         };
       })()`, true);
       if (!actionResult?.pass) throw new Error(`cleaning center screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "cleaning-center-pages-gallery") {
+      const screens = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
+        await wait(220);
+        const pages = window.BringCleaningCenterPages.SCREENS.map(screen => ({ reference: screen.reference, view: screen.view, kind: screen.kind, group: screen.group }));
+        const output = [];
+        for (const screen of pages) {
+          const group = document.querySelector('[data-cleaning-nav-group="' + screen.group + '"]');
+          if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
+          document.querySelector('[data-cleaning-screen="' + screen.reference + '"]')?.click();
+          await wait(100);
+          const selector = screen.kind === 'dashboard' ? '.cleaning-dashboard'
+            : screen.kind === 'cti' ? '.cleaning-cti'
+              : screen.kind === 'analytics' ? '.cleaning-analytics'
+                : '[data-cleaning-page="' + screen.view + '"]';
+          output.push({ ...screen, pass: window.__crmTest.snapshot().view === screen.view && Boolean(document.querySelector(selector)) });
+          window.__cleaningGalleryScreens = output;
+        }
+        return output;
+      })()`, true);
+      const failedScreens = screens.filter(screen => !screen.pass);
+      if (screens.length !== 34 || failedScreens.length) throw new Error(`cleaning center gallery route check failed: ${JSON.stringify({ count: screens.length, failedScreens })}`);
+      const pagesDirectory = `${target}.pages`;
+      await fs.mkdir(pagesDirectory, { recursive: true });
+      const captured = [];
+      for (const screen of screens) {
+        await mainWindow.webContents.executeJavaScript(`(async () => {
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const group = document.querySelector('[data-cleaning-nav-group="${screen.group}"]');
+          if (group && !group.classList.contains('is-open')) group.querySelector('[data-cleaning-group-toggle]')?.click();
+          document.querySelector('[data-cleaning-screen="${screen.reference}"]')?.click();
+          await wait(80);
+          return window.__crmTest.snapshot().view === '${screen.view}';
+        })()`, true);
+        const image = await mainWindow.webContents.capturePage();
+        const file = path.join(pagesDirectory, `${screen.reference}-${screen.view}.png`);
+        await fs.writeFile(file, image.toPNG());
+        captured.push({ reference: screen.reference, file, bytes: image.toPNG().length });
+      }
+      actionResult = { pass: captured.length === 34, pageCount: screens.length, failedScreens, captured, fixtureOnly: true };
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-monthly-report-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
