@@ -33,20 +33,17 @@ test("plan checkout leaves Git authentication to the release planner token", () 
   assert.match(jobBlock("plan"), /actions\/checkout@[a-f0-9]{40}[\s\S]*?persist-credentials:\s*false/);
 });
 
-test("release triggers only for desktop sources and atomically reserves before the full desktop test suite", () => {
+test("release is manual-only and atomically reserves before desktop and Worker tests", () => {
   const trigger = release.slice(release.indexOf("on:"), release.indexOf("# One global queue"));
-  assert.match(trigger, /paths:\s*\n\s*- "desktop-crm\/\*\*"\s*\n\s*- "\.github\/workflows\/crm-release\.yml"/);
-  for (const forbiddenPath of [
-    "company-site/",
-    "database.rules.json",
-    "firebase.json",
-    "release/firebase-targets.json",
-  ]) assert.equal(trigger.includes(forbiddenPath), false);
+  assert.match(trigger, /workflow_dispatch:/);
+  assert.doesNotMatch(trigger, /push:/);
   const reserve = jobBlock("reserve-build");
   assert.match(reserve, /needs: plan/);
   assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("run: npm test"));
   assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("npm ci"));
   assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("check-internal-data.js"));
+  assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("Test CRM AI Worker after version reservation"));
+  assert.match(reserve, /working-directory: crm-ai-worker[\s\S]*?run: npm test/);
 });
 
 test("uses persistent atomic reservations with bounded retry and annotated tag finalization", () => {
@@ -81,7 +78,7 @@ test("creates the version-only commit before staging untracked release assets", 
   assert.ok(commitIndex < isolateIndex, "release-assets must not dirty the worktree before the scoped commit");
 });
 
-test("stages exactly three updater assets and publishes stable after reserved desktop tests and immutable staging", () => {
+test("stages exactly three updater assets and publishes stable after validated Worker deployment", () => {
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\n/);
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\.blockmap\n/);
   assert.match(release, /release-assets\/latest\.yml/);
@@ -89,8 +86,13 @@ test("stages exactly three updater assets and publishes stable after reserved de
   const reserve = jobBlock("reserve-build");
   assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("run: npm test"));
   assert.ok(reserve.indexOf("run: npm test") < reserve.indexOf("Build installer"));
-  assert.match(jobBlock("stage-release"), /needs: \[plan, reserve-build\]/);
-  assert.match(jobBlock("publish-stable"), /needs\.stage-release\.result == 'success'[\s\S]*needs: \[plan, reserve-build, stage-release\]/);
+  const deploy = jobBlock("deploy-ai-worker");
+  assert.match(deploy, /needs: \[plan, reserve-build\]/);
+  assert.match(deploy, /secrets\.CLOUDFLARE_API_TOKEN/);
+  assert.match(deploy, /npm run deploy -- --keep-vars --var WALLBOARD_SCHEDULED_REFRESH_ENABLED:true/);
+  assert.match(deploy, /\/health[\s\S]*health\.version !== expectedVersion/);
+  assert.match(jobBlock("stage-release"), /needs: \[plan, reserve-build, deploy-ai-worker\]/);
+  assert.match(jobBlock("publish-stable"), /needs\.stage-release\.result == 'success'[\s\S]*needs: \[plan, reserve-build, deploy-ai-worker, stage-release\]/);
   assert.ok(release.indexOf("--mode stage") < release.lastIndexOf("--mode publish"));
   assert.ok(release.lastIndexOf("probe-update-channel.js") > release.lastIndexOf("--mode publish"));
 });
