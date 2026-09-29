@@ -188,6 +188,7 @@
     return {
       buildingId: "", month: "", nextMonthPlan: "", narrative: null, loading: false, error: "", model: "", generatedAt: "",
       manualWorks: [], addWorkOpen: false, photos: [], photoCandidates: [], photoPickerOpen: false,
+      targetManagerOpen: false, targetSavingId: "",
       photoPickerSpace: "my", photoPickerPath: [{ id: "root", name: "내 드라이브" }], photoPickerEntries: [],
       photoPickerLoading: false, photoPickerError: "", photoPickerQuery: "", photoSelectBusy: false, photoError: "",
       ...patch,
@@ -1039,6 +1040,7 @@
     return {
       name: String(values.name || "").trim(),
       ownerCustomerId: String(values.ownerCustomerId || ""),
+      monthlyReportEnabled: values.monthlyReportEnabled === true,
       type: String(values.type || ""),
       status: String(values.status || ""),
       address: String(values.address || "").trim(),
@@ -3342,13 +3344,84 @@
     return `${month}-${String(day).padStart(2, "0")}`;
   }
 
-  function contractedMonthlyReportBuildings() {
-    const buildingIds = new Set((store.contracts || [])
-      .filter(contract => contract && contract.status !== "종료" && contract.buildingId)
-      .map(contract => String(contract.buildingId)));
+  function monthlyReportTargetBuildings() {
     return (store.buildings || [])
-      .filter(building => building && !building.archivedAt && buildingIds.has(String(building.id)))
+      .filter(building => building && !building.archivedAt && building.monthlyReportEnabled === true)
       .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+  }
+
+  function buildingMonthlyReportTargetManagerMarkup() {
+    if (!buildingMonthlyReportState.targetManagerOpen) return "";
+    const buildings = (store.buildings || [])
+      .filter(building => building && !building.archivedAt)
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+    const locked = !canWriteCRM() || !!buildingMonthlyReportState.targetSavingId;
+    const rows = buildings.map(building => {
+      const owner = customerById(building.ownerCustomerId);
+      const selected = building.monthlyReportEnabled === true;
+      return `<label class="building-monthly-target-option ${selected ? "is-selected" : ""}"><input type="checkbox" data-building-monthly-target="${attr(building.id)}" ${selected ? "checked" : ""} ${locked ? "disabled" : ""}><span><b>${esc(building.name || "건물명 미입력")}</b><small>${esc([owner && owner.name ? `건물주 ${owner.name}` : "건물주 연결 필요", building.roadAddress || building.address || building.jibunAddress || "주소 미입력"].join(" · "))}</small></span><em>${selected ? "보고 대상" : "대상 아님"}</em></label>`;
+    }).join("");
+    return `<div class="building-monthly-target-overlay" data-building-monthly-target-overlay><section class="building-monthly-target-modal" role="dialog" aria-modal="true" aria-labelledby="buildingMonthlyTargetTitle"><header><div><b id="buildingMonthlyTargetTitle">월간보고 대상 건물 관리</b><small>건물 정보에서 보고 대상을 지정합니다. 계약 상태와 무관합니다.</small></div><button type="button" data-building-monthly-target-close aria-label="닫기">×</button></header><div class="building-monthly-target-list">${rows || `<div class="building-monthly-empty">등록된 건물이 없습니다. 고객·건물 관리에서 먼저 건물을 등록해 주세요.<button type="button" class="secondary-button" data-building-monthly-target-add>고객·건물 관리 열기</button></div>`}</div><footer><small>${locked ? "조회 전용 계정은 대상을 변경할 수 없습니다." : "체크를 바꾸면 기존 건물 정보에 즉시 저장됩니다."}</small><button type="button" class="secondary-button" data-building-monthly-target-close>닫기</button></footer></section></div>`;
+  }
+
+  async function setBuildingMonthlyReportTarget(buildingId, enabled) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 보고 대상을 변경할 수 없습니다.", "error");
+    if (buildingMonthlyReportState.targetSavingId) return;
+    if (deferCanonicalMutation("건물")) return;
+    const building = buildingById(buildingId);
+    if (!building || building.archivedAt) return showToast("대상으로 설정할 건물을 찾지 못했습니다.", "error");
+    if (building.monthlyReportEnabled === enabled) return;
+    if (!Number.isInteger(building.entityVersion) || building.entityVersion < 1) return showToast("최신 건물 정보를 불러온 뒤 다시 시도해 주세요.", "error");
+    buildingMonthlyReportState.targetSavingId = buildingId;
+    renderBuildingMonthlyReports();
+    try {
+      const result = await commitCanonicalEntity({
+        entityType: "buildings",
+        entityId: building.id,
+        operation: "update",
+        expectedVersion: building.entityVersion,
+        patch: { monthlyReportEnabled: enabled },
+        reason: `건물 월간보고 대상 ${enabled ? "포함" : "제외"}`,
+      });
+      buildingMonthlyReportState.targetSavingId = "";
+      if (!result) return;
+      const targets = monthlyReportTargetBuildings();
+      if (!targets.some(item => String(item.id) === String(buildingMonthlyReportState.buildingId))) {
+        buildingMonthlyReportState.buildingId = targets[0] ? targets[0].id : "";
+        buildingMonthlyReportState.month = previousMonthKey();
+      }
+      renderBuildingMonthlyReports();
+      showToast(`${building.name || "건물"}을 ${enabled ? "월간보고 대상으로 설정했습니다." : "월간보고 대상에서 제외했습니다."}`, "success");
+    } catch (error) {
+      buildingMonthlyReportState.targetSavingId = "";
+      renderBuildingMonthlyReports();
+      showToast(error.message || "월간보고 대상을 변경하지 못했습니다.", "error");
+    }
+  }
+
+  function bindBuildingMonthlyReportTargetEvents() {
+    main.querySelector("[data-building-monthly-target-open]")?.addEventListener("click", () => {
+      buildingMonthlyReportState.targetManagerOpen = true;
+      renderBuildingMonthlyReports();
+    });
+    main.querySelectorAll("[data-building-monthly-target]").forEach(input => input.addEventListener("change", event => {
+      void setBuildingMonthlyReportTarget(event.currentTarget.dataset.buildingMonthlyTarget, event.currentTarget.checked);
+    }));
+    main.querySelectorAll("[data-building-monthly-target-close]").forEach(button => button.addEventListener("click", () => {
+      buildingMonthlyReportState.targetManagerOpen = false;
+      renderBuildingMonthlyReports();
+    }));
+    main.querySelector("[data-building-monthly-target-overlay]")?.addEventListener("click", event => {
+      if (event.target !== event.currentTarget) return;
+      buildingMonthlyReportState.targetManagerOpen = false;
+      renderBuildingMonthlyReports();
+    });
+    main.querySelector("[data-building-monthly-target-add]")?.addEventListener("click", () => {
+      buildingMonthlyReportState.targetManagerOpen = false;
+      currentView = "buildings";
+      selectedBuildingId = "";
+      render();
+    });
   }
 
   function buildingMonthlyReportRequest(building, month, extras = {}) {
@@ -3567,9 +3640,11 @@
   }
 
   function renderBuildingMonthlyReports() {
-    const buildings = contractedMonthlyReportBuildings();
+    const buildings = monthlyReportTargetBuildings();
     if (!buildings.length) {
-      main.innerHTML = `<section class="building-monthly-report-page"><header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>계약 건물의 관리 내역을 건물주에게 전달할 문서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header><div class="building-monthly-no-buildings"><h3>진행 중인 계약 건물이 없습니다</h3><p>계약 관리에서 건물과 연결된 계약을 등록하면 월간보고서를 만들 수 있습니다.</p></div></section>`;
+      const targetManager = buildingMonthlyReportTargetManagerMarkup();
+      main.innerHTML = `<section class="building-monthly-report-page"><header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>보고 대상으로 지정한 건물의 관리 기록을 건물주에게 전달할 문서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header><div class="building-monthly-no-buildings"><h3>월간보고 대상 건물이 없습니다</h3><p>계약 상태와 관계없이, 건물 관리에서 보고 대상으로 지정한 건물이 여기에 표시됩니다.</p><button type="button" class="primary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>건물 선택하기</button>${!canWriteCRM() ? `<small>조회 전용 계정은 관리자에게 보고 대상 설정을 요청해 주세요.</small>` : ""}</div>${targetManager}</section>`;
+      bindBuildingMonthlyReportTargetEvents();
       return;
     }
     if (!buildings.some(building => building.id === buildingMonthlyReportState.buildingId)) {
@@ -3608,10 +3683,11 @@
       ? `${esc(buildingMonthlyReportState.model || "Gemini")} · ${esc(dateText(buildingMonthlyReportState.generatedAt))}`
       : "아직 Gemini 문장을 만들지 않았습니다.";
 
+    const targetManager = buildingMonthlyReportTargetManagerMarkup();
     main.innerHTML = `<section class="building-monthly-report-page">
-      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>CRM의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header>
+      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>보고 대상으로 지정한 건물의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header>
       <section class="building-monthly-toolbar">
-        <label class="building-monthly-field"><span>계약 건물</span><select data-building-monthly-building>${buildings.map(item => { const linked = (store.contracts || []).find(entry => entry && String(entry.buildingId || "") === String(item.id) && entry.status !== "종료"); return `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(`${item.name || "건물명 미입력"}${linked && linked.name ? ` · ${linked.name}` : ""}`)}</option>`; }).join("")}</select></label>
+        <label class="building-monthly-field"><span>건물 선택</span><select data-building-monthly-building>${buildings.map(item => `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(item.name || "건물명 미입력")}</option>`).join("")}</select></label>
         <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(previousMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>
         <label class="building-monthly-field"><span>수신 건물주</span><div class="building-monthly-owner">${esc(owner && owner.name || "연결 필요")}</div></label>
       </section>
@@ -3622,11 +3698,14 @@
         <article class="building-monthly-kpi"><span>자료 확인</span><b>${missing.length ? `${missing.length}건` : "완료"}</b><small>${esc(missing[0] || "PDF 생성 가능")}</small></article>
       </div>
       <div class="building-monthly-layout">
-        <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "연결 계약")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>Drive의 YYMMDD_건물명(활동명) 폴더를 찾고 Gemini가 보고서에 필요한 사진을 고릅니다.</small></div><button type="button" class="secondary-button" data-building-monthly-drive-open>Drive 사진 찾기</button></header>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
+        <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>Drive의 YYMMDD_건물명(활동명) 폴더를 찾고 Gemini가 보고서에 필요한 사진을 고릅니다.</small></div><button type="button" class="secondary-button" data-building-monthly-drive-open>Drive 사진 찾기</button></header>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
         <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : narrative.summary ? "Gemini 다시 작성" : "Gemini 문장 만들기"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>캘린더 일정과 보고서에 직접 추가한 업무를 합쳐 정중한 월간 요약으로 정리합니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>건물주에게 보여줄 월간 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos">${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button></div><div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}</div></div></section>
       </div>
+      ${targetManager}
       ${photoPicker}
     </section>`;
+
+    bindBuildingMonthlyReportTargetEvents();
 
     main.querySelector("[data-building-monthly-building]")?.addEventListener("change", event => {
       buildingMonthlyReportState = createBuildingMonthlyReportState({ buildingId: event.target.value, month: buildingMonthlyReportState.month });
@@ -11851,6 +11930,7 @@
       <section class="building-form-section building-options-form-section"><header><div><h3>호실 옵션</h3><p>세입자에게 제공되는 기본 옵션을 모두 선택하세요.</p></div></header><div class="form-grid building-form-section-body">
         ${buildingChecklistField("제공 옵션", "roomOptions", BUILDING_ROOM_OPTIONS, building.roomOptions, "선택한 내용은 건물 상세에서 한눈에 확인할 수 있습니다.", "roomOptionOther", building.roomOptionOther, "예: 건조기, 인덕션")}
       </div></section>
+      <section class="building-form-section building-monthly-target-form-section"><header><div><h3>건물주 월간보고</h3><p>계약 연결 여부와 관계없이 이 건물을 월간보고서 선택 목록에 표시합니다.</p></div></header><div class="form-grid building-form-section-body"><label class="building-monthly-target-form-option wide"><input type="checkbox" name="monthlyReportEnabled" ${building.monthlyReportEnabled === true ? "checked" : ""}><span><b>월간보고 대상 건물</b><small>체크한 건물만 건물 월간보고서의 ‘건물 선택’ 목록에 표시됩니다.</small></span></label></div></section>
       <section class="building-form-section"><header><div><h3>관리 메모</h3><p>건물 운영 시 함께 확인할 내용을 적어 주세요.</p></div></header><div class="form-grid building-form-section-body">${areaField("건물 메모", "memo", building.memo, "wide")}</div></section>
       <div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
     openModal();
@@ -18124,8 +18204,10 @@
       const currentOwnerCustomerId = String(existing && existing.ownerCustomerId || "");
       const requestedOwnerCustomerId = existing ? currentOwnerCustomerId : String(raw.ownerCustomerId || "");
       if (requestedOwnerCustomerId && !customerById(requestedOwnerCustomerId)) return showToast("연결할 고객 정보를 다시 확인해 주세요.", "error");
+      const monthlyReportEnabled = raw.monthlyReportEnabled === "on";
       const patch = buildCanonicalBuildingPatch({
         name, ownerCustomerId: requestedOwnerCustomerId, type: existing ? existing.type : raw.type, status: existing ? existing.status : raw.status,
+        monthlyReportEnabled,
         address, roadAddress, jibunAddress, unitCount: existing ? existing.unitCount : raw.unitCount,
         rentDeposit: nonNegativeInteger(raw.rentDeposit), monthlyRent: nonNegativeInteger(raw.monthlyRent), maintenanceFee: nonNegativeInteger(raw.maintenanceFee),
         maintenanceIncludes, maintenanceIncludeOther, vacantUnitCount, vacantUnits, roomTypes, roomTypeOther, roomOptions, roomOptionOther,

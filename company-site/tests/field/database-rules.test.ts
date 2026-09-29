@@ -1786,6 +1786,7 @@ describe("field media database rule source", () => {
     const buildingFields = ((dataRules.buildings as Record<string, unknown>).$entityId as Record<string, unknown>);
     expect(buildingFields).toHaveProperty("roadAddress");
     expect(buildingFields).toHaveProperty("jibunAddress");
+    expect(buildingFields.monthlyReportEnabled).toEqual({ ".validate": "newData.isBoolean()" });
     expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('roadAddress').val()");
     expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('jibunAddress').val()");
     expect(String(buildingFields[".validate"])).toContain("child('buildingIdLinks').child($entityId).val() === true");
@@ -5465,6 +5466,7 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
       ...current.buildings.building_1,
       vacantUnitCount: 1,
       vacantUnits: ["101"],
+      monthlyReportEnabled: true,
       entityVersion: 2,
       updatedAt: "2026-08-09T00:00:01.000Z",
       updatedByAuthUid: "crm-member",
@@ -5501,6 +5503,8 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
       "canonicalAuditLogs/audit_1": audit,
     };
     await assertSucceeds(update(ref(member, "crmCompany/data"), atomicPatch));
+    expect((await get(ref(member, "crmCompany/data/buildings/building_1/monthlyReportEnabled"))).val())
+      .toBe(true);
     expect((await get(ref(member, "crmCompany/data/tasks/task_1"))).val().title)
       .toBe("Legacy task");
 
@@ -5516,6 +5520,12 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
       ...nextBuilding,
       clientTamper: true,
       entityVersion: 3,
+    }));
+    await assertFails(set(ref(member, "crmCompany/data/buildings/building_1"), {
+      ...nextBuilding,
+      monthlyReportEnabled: "true",
+      entityVersion: 3,
+      updatedAt: "2026-08-09T00:00:02.000Z",
     }));
     await assertFails(set(ref(member, "crmCompany/data/buildings/building_1"), {
       ...nextBuilding,

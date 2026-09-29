@@ -674,6 +674,7 @@
     return normalizeBuilding(Object.assign({
       id: random("bld"), buildingNo: `B-${dayKey(now).replace(/-/g, "")}-${String(Date.now()).slice(-4)}`,
       name: "", address: "", roadAddress: "", jibunAddress: "", type: "다가구", status: "영업후보", ownerCustomerId: "", unitCount: 0,
+      monthlyReportEnabled: false,
       rentDeposit: 0, monthlyRent: 0, maintenanceFee: 0, maintenanceIncludes: [], maintenanceIncludeOther: "",
       vacantUnitCount: 0, vacantUnits: [], roomTypes: [], roomTypeOther: "", roomOptions: [], roomOptionOther: "",
       manager: "김현진", memo: "", aliases: [], externalRefs: { paymentBuildingIds: [] }, createdAt: now, updatedAt: now
@@ -682,6 +683,7 @@
 
   function normalizeBuilding(value) {
     const building = Object.assign({}, value || {});
+    building.monthlyReportEnabled = building.monthlyReportEnabled === true;
     building.roadAddress = String(building.roadAddress || "").trim();
     building.jibunAddress = String(building.jibunAddress || "").trim();
     building.rentDeposit = nonNegativeInteger(building.rentDeposit);

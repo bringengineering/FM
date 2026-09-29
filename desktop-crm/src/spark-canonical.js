@@ -13,7 +13,7 @@ const FIELD_ALLOWLIST = Object.freeze({
     "name", "address", "roadAddress", "jibunAddress", "type", "status", "ownerCustomerId", "unitCount", "manager", "memo",
     "aliases", "externalRefs", "rentDeposit", "monthlyRent", "maintenanceFee", "maintenanceIncludes",
     "maintenanceIncludeOther", "roomTypes", "roomTypeOther", "roomOptions", "roomOptionOther",
-    "vacantUnitCount", "vacantUnits",
+    "vacantUnitCount", "vacantUnits", "monthlyReportEnabled",
   ]),
   buildingUnits: new Set([
     "crmBuildingId", "label", "unitLabel", "floorLabel", "floorOrder", "unitOrder", "status",
@@ -142,6 +142,10 @@ function normalizePatch(entityType, operation, value) {
         if (raw !== "" && !safeId(raw)) fail("crm_owner_customer_id_invalid");
         result[key] = raw;
       } else if (key === "unitCount") result[key] = integer(raw, key, 0, 100_000);
+      else if (key === "monthlyReportEnabled") {
+        if (typeof raw !== "boolean") fail("crm_monthly_report_enabled_invalid");
+        result[key] = raw;
+      }
       else if (["rentDeposit", "monthlyRent", "maintenanceFee"].includes(key)) result[key] = money(raw, key);
       else if (key === "vacantUnitCount") result[key] = integer(raw, key, 0, 100_000);
       else if (["maintenanceIncludes", "roomTypes", "roomOptions", "aliases"].includes(key)) result[key] = stringList(raw, key);
