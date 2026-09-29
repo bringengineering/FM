@@ -29,6 +29,8 @@
     selectedRfidUserId: "",
     rfidCapture: null,
     rfidCaptureTimer: null,
+    rfidCaptureIdleTimer: null,
+    rfidCaptureFeedback: null,
     busy: false,
     active: false,
     generation: 0,
@@ -1302,6 +1304,7 @@
     const selected = userById(state.selectedRfidUserId) || null;
     const selectedCard = selected ? rfidRegistrationFor(selected.uid) : null;
     const capture = state.rfidCapture;
+    const feedback = !capture ? state.rfidCaptureFeedback : null;
     const options = people.map(user => `<option value="${esc(user.uid)}"${user.uid === state.selectedRfidUserId ? " selected" : ""}>${esc(Core.displayName(user))} · ${esc(userMeta(user))}</option>`).join("");
     const rows = state.data.rfidCards.map(card => {
       const user = userById(card.userId);
@@ -1316,13 +1319,16 @@
     const status = selectedCard
       ? `<span class="rfid-current is-registered"><i></i><b>등록됨</b><em>카드 •••• ${esc(selectedCard.last4)}</em></span>`
       : `<span class="rfid-current"><i></i><b>등록 없음</b><em>새 카드를 태그해 주세요</em></span>`;
+    const feedbackPanel = feedback
+      ? `<div class="rfid-capture-feedback is-${["success", "pending"].includes(feedback.tone) ? feedback.tone : "error"}" role="status" aria-live="polite"><b>${esc(feedback.title)}</b><small>${esc(feedback.detail)}</small></div>`
+      : "";
     const registrationPanel = capture
       ? `<div class="rfid-capture" role="status" aria-live="polite">
           <span class="rfid-waves" aria-hidden="true">)))</span>
-          <div><b>새 카드를 태그해주세요</b><small>15초 안에 리더기에 카드를 가까이 대세요. 카드번호는 화면에 표시되지 않습니다.</small></div>
+          <div><b data-rfid-capture-status>${capture.buffer.length ? `카드 신호 감지 · ${capture.buffer.length}자리 읽음` : "리더기 입력 대기 중"}</b><small data-rfid-capture-detail>${capture.buffer.length ? "카드번호는 숨긴 채 입력을 확인하고 있습니다. 입력이 멈추면 자동 등록합니다." : "15초 안에 카드를 태그하세요. 번호는 표시하지 않고 감지 상태만 알려드립니다."}</small></div>
           <button type="button" class="secondary-button" data-rfid-cancel>취소</button>
         </div>`
-      : `<div class="rfid-register-actions">
+      : `${feedbackPanel}<div class="rfid-register-actions">
           <div>${status}</div>
           <button type="button" class="primary-button" data-rfid-capture${!selected || state.busy ? " disabled" : ""}>${selectedCard ? "카드 교체 시작" : "카드 등록 시작"}</button>
         </div>`;
@@ -1347,21 +1353,58 @@
 
   function clearRfidCapture(shouldRender) {
     clearTimeout(state.rfidCaptureTimer);
+    clearTimeout(state.rfidCaptureIdleTimer);
     state.rfidCaptureTimer = null;
+    state.rfidCaptureIdleTimer = null;
     if (state.rfidCapture) state.rfidCapture.buffer = "";
     state.rfidCapture = null;
     if (shouldRender && officeIsActive() && state.context?.view === "officeRfid") renderCurrent();
   }
 
+  function finishRfidCapture(capture) {
+    if (!capture || state.rfidCapture !== capture) return;
+    const userId = capture.userId;
+    const cardCode = capture.buffer;
+    clearRfidCapture(false);
+    state.rfidCaptureFeedback = {
+      tone: "pending",
+      title: "직원 카드 등록 중",
+      detail: "카드 정보를 안전하게 확인하고 직원 계정에 연결하고 있습니다.",
+    };
+    void saveCapturedRfidCard(userId, cardCode);
+  }
+
+  function updateRfidCaptureProgress(capture) {
+    if (!capture || state.rfidCapture !== capture) return;
+    const status = document.querySelector("[data-rfid-capture-status]");
+    const detail = document.querySelector("[data-rfid-capture-detail]");
+    if (status) status.textContent = `카드 신호 감지 · ${capture.buffer.length}자리 읽음`;
+    if (detail) detail.textContent = "카드번호는 숨긴 채 입력을 확인하고 있습니다. 입력이 멈추면 자동 등록합니다.";
+  }
+
+  function scheduleRfidCaptureFinish(capture) {
+    clearTimeout(state.rfidCaptureIdleTimer);
+    state.rfidCaptureIdleTimer = setTimeout(() => {
+      if (state.rfidCapture !== capture) return;
+      finishRfidCapture(capture);
+    }, 700);
+  }
+
   function beginRfidCapture() {
     if (!Rfid || !isAdmin() || !state.data.rfidAdmin || state.busy || !state.selectedRfidUserId) return;
     clearRfidCapture(false);
+    state.rfidCaptureFeedback = null;
     const capture = { userId: state.selectedRfidUserId, buffer: "" };
     state.rfidCapture = capture;
     state.rfidCaptureTimer = setTimeout(() => {
       if (state.rfidCapture !== capture) return;
-      clearRfidCapture(true);
-      notify("카드 입력 시간이 지났습니다. 등록 시작을 다시 눌러 주세요.", "error");
+      const digitsRead = capture.buffer.length;
+      clearRfidCapture(false);
+      state.rfidCaptureFeedback = digitsRead
+        ? { tone: "error", title: "카드 입력을 마치지 못했어요", detail: `${digitsRead}자리만 읽혔습니다. 태그를 다시 대고, 입력이 끝날 때까지 기다려 주세요.` }
+        : { tone: "error", title: "리더기 신호를 받지 못했어요", detail: "USB 연결을 확인하고 카드를 리더기 중앙에 다시 대 주세요." };
+      renderCurrent();
+      notify(state.rfidCaptureFeedback.title, "error");
     }, 15000);
     if (document.activeElement && typeof document.activeElement.blur === "function") document.activeElement.blur();
     renderCurrent();
@@ -1371,7 +1414,13 @@
     if (!Rfid || state.busy) return;
     const normalized = Rfid.normalizeCardCode(cardCode);
     if (!normalized) {
-      notify("카드를 읽지 못했습니다. 다시 태그해 주세요.", "error");
+      state.rfidCaptureFeedback = {
+        tone: "error",
+        title: "카드번호를 확인하지 못했어요",
+        detail: "6~20자리 숫자 신호를 읽지 못했습니다. 다시 태그해 주세요.",
+      };
+      notify(state.rfidCaptureFeedback.title, "error");
+      renderCurrent();
       return;
     }
     const dataRevision = state.dataRevision;
@@ -1381,9 +1430,20 @@
       const result = await state.context.api.saveOfficeRfidCard({ userId, cardCode: normalized });
       if (!result || result.ok === false) throw new Error(result && result.error || "RFID 카드를 등록하지 못했습니다.");
       applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
+      const registeredCard = rfidRegistrationFor(userId);
+      state.rfidCaptureFeedback = {
+        tone: "success",
+        title: "직원 카드 등록 완료",
+        detail: registeredCard ? `카드 •••• ${registeredCard.last4}가 직원 계정에 연결됐습니다.` : "태그한 카드가 직원 계정에 연결됐습니다.",
+      };
       notify("직원 카드를 등록했습니다.", "success");
-    } catch (error) {
-      notify(error && error.message || "RFID 카드를 등록하지 못했습니다.", "error");
+    } catch {
+      state.rfidCaptureFeedback = {
+        tone: "error",
+        title: "직원 카드 등록에 실패했어요",
+        detail: "연결 또는 권한을 확인한 뒤 다시 태그해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.",
+      };
+      notify("직원 카드 등록에 실패했습니다. 연결 상태와 권한을 확인해 주세요.", "error");
     } finally {
       state.busy = false;
       renderCurrent();
@@ -1908,21 +1968,32 @@
         event.preventDefault();
         event.stopPropagation();
         const capture = state.rfidCapture;
-        const cardCode = capture.buffer;
-        const userId = capture.userId;
-        clearRfidCapture(false);
-        void saveCapturedRfidCard(userId, cardCode);
+        if (capture.buffer) finishRfidCapture(capture);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (state.rfidCapture.buffer) finishRfidCapture(state.rfidCapture);
         return;
       }
       if (/^[0-9]$/.test(event.key) && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
         event.preventDefault();
         event.stopPropagation();
         if (state.rfidCapture.buffer.length >= 20) {
-          clearRfidCapture(true);
-          notify("카드 입력이 너무 깁니다. 다시 태그해 주세요.", "error");
+          clearRfidCapture(false);
+          state.rfidCaptureFeedback = {
+            tone: "error",
+            title: "리더기 입력이 너무 길어요",
+            detail: "카드번호 형식과 리더기 출력 설정을 확인한 뒤 다시 태그해 주세요.",
+          };
+          notify(state.rfidCaptureFeedback.title, "error");
+          renderCurrent();
           return;
         }
         state.rfidCapture.buffer += event.key;
+        updateRfidCaptureProgress(state.rfidCapture);
+        scheduleRfidCaptureFinish(state.rfidCapture);
         return;
       }
       if (event.key.length === 1) {

@@ -228,6 +228,15 @@
 .rfid-capture div{min-width:0;flex:1}
 .rfid-capture b{display:block;color:#1767d4;font-size:14px}
 .rfid-capture small{display:block;margin-top:5px;color:#6b7d90;font-size:10px;line-height:1.5}
+.rfid-capture-feedback{display:flex;flex-direction:column;gap:5px;margin-top:16px;padding:13px 15px;border:1px solid #f5d6d6;border-radius:12px;background:#fff8f8}
+.rfid-capture-feedback b{color:#b42332;font-size:12px}
+.rfid-capture-feedback small{color:#7d6265;font-size:10px;line-height:1.5}
+.rfid-capture-feedback.is-success{border-color:#cceedd;background:#f3fbf6}
+.rfid-capture-feedback.is-success b{color:#00875a}
+.rfid-capture-feedback.is-success small{color:#567667}
+.rfid-capture-feedback.is-pending{border-color:#d5e6ff;background:#f4f8ff}
+.rfid-capture-feedback.is-pending b{color:#1767d4}
+.rfid-capture-feedback.is-pending small{color:#617995}
 .rfid-security-note{display:flex;align-items:flex-start;gap:10px;margin-top:15px;padding:12px 14px;border-radius:12px;background:#f7f8fa;color:#6b7684;font-size:10px;line-height:1.5}
 .rfid-security-note b{color:#4e5968;white-space:nowrap}
 .rfid-reader-guide{padding:22px;background:linear-gradient(150deg,#142e4d,#1f4772);color:#fff;border-color:transparent}
