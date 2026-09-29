@@ -54,14 +54,17 @@ test('the Cleaning Center registry defines every supplied screen exactly once', 
   assert.ok(pages.SCREENS.every(({ group, kind }) => pages.SCREEN_GROUPS.some(item => item.id === group) && typeof kind === 'string'));
 });
 
-test('the Cleaning Center sidebar has one destination for each registry screen', () => {
+test('the Cleaning Center sidebar exposes all 34 pages as one flat, ordered list', () => {
   const html = read('desktop-crm/src/index.html');
   const folder = html.slice(html.indexOf('data-nav-folder="cleaning-center"'), html.indexOf('data-view="settings"', html.indexOf('data-nav-folder="cleaning-center"')));
   const navigation = pages.renderNavigation();
-  const navReferences = [...navigation.matchAll(/data-cleaning-screen="(\d{2})"/gu)].map(match => match[1]).sort();
-  assert.deepEqual(navReferences, expectedReferences.map(([reference]) => reference).sort());
+  const navReferences = [...navigation.matchAll(/data-cleaning-screen="(\d{2})"/gu)].map(match => match[1]);
+  assert.deepEqual(navReferences, expectedReferences.map(([reference]) => reference));
   assert.match(folder, /data-cleaning-pages-nav/u);
+  assert.doesNotMatch(navigation, /data-cleaning-nav-group|data-cleaning-group-toggle/u);
+  assert.equal((navigation.match(/class="nav-item nav-child/g) || []).length, 34);
   for (const [, view] of expectedReferences) assert.ok(navigation.includes(`data-view="${view}"`), `${view} must be navigable from Cleaning Center`);
+  assert.equal((navigation.match(/aria-label="\d{2} /gu) || []).length, 34, 'every page has a descriptive accessible name');
 });
 
 test('Cleaning Center routes have metadata and are deep-link allowlisted', () => {
@@ -139,10 +142,23 @@ test('pricing and permissions reference pages show their full CRM-backed working
   assert.match(settlement, /disabled aria-disabled="true"/u);
 });
 
-test('cleaning sidebar group toggles are handled independently from top-level folders', () => {
+test('the Cleaning Center navigation remains scrollable within the sidebar', () => {
+  const styles = read('desktop-crm/src/styles.css');
   const app = read('desktop-crm/src/app.js');
-  const navigation = pages.renderNavigation();
-  assert.match(navigation, /data-cleaning-group-toggle="overview"/u);
-  assert.match(app, /closest\("\[data-cleaning-group-toggle\]"\)/u);
-  assert.match(app, /group\.classList\.toggle\("is-open", open\)/u);
+  assert.match(styles, /\.cleaning-center-navigation\{[^}]*max-height:[^;}]+;[^}]*overflow-y:auto/su);
+  assert.match(styles, /\.cleaning-center-navigation>\.nav-item\.nav-child/su);
+  assert.match(app, /cleaningNavItem\?\.scrollIntoView\(\{ block: "nearest" \}\)/u);
+});
+
+test('the selected page is the only highlighted Cleaning Center destination', () => {
+  const navigation = pages.renderNavigation('cleaningDelayNoShow');
+  const activeReferences = [...navigation.matchAll(/class="nav-item nav-child active"[^>]*data-cleaning-screen="(\d{2})"/gu)].map(match => match[1]);
+  assert.deepEqual(activeReferences, ['33']);
+});
+
+test('the Electron smoke checks the real flat navigation and each selected route', () => {
+  const main = read('desktop-crm/src/main.js');
+  assert.match(main, /flatNavigationWorks/u);
+  assert.match(main, /selectedNavVisible/u);
+  assert.match(main, /cleaningNavigation\?\.querySelectorAll\(':scope > \[data-cleaning-screen\]'\)/u);
 });
