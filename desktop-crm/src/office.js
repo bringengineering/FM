@@ -1325,7 +1325,7 @@
     const registrationPanel = capture
       ? `<div class="rfid-capture" role="status" aria-live="polite">
           <span class="rfid-waves" aria-hidden="true">)))</span>
-          <div><b data-rfid-capture-status>${capture.buffer.length ? `카드 신호 감지 · ${capture.buffer.length}자리 읽음` : "리더기 입력 대기 중"}</b><small data-rfid-capture-detail>${capture.buffer.length ? "카드번호는 숨긴 채 입력을 확인하고 있습니다. 입력이 멈추면 자동 등록합니다." : "15초 안에 카드를 태그하세요. 번호는 표시하지 않고 감지 상태만 알려드립니다."}</small></div>
+          <div><b data-rfid-capture-status>${capture.buffer.length ? `카드 신호 감지 · ${capture.buffer.length}자리 읽음` : "리더기 입력 대기 중"}</b><small data-rfid-capture-detail>${capture.buffer.length ? "카드번호는 화면에 표시되지 않습니다. 입력을 확인하고 자동 등록을 준비합니다." : "15초 안에 카드를 태그하세요. 카드번호는 화면에 표시되지 않습니다. 감지 상태만 알려드립니다."}</small></div>
           <button type="button" class="secondary-button" data-rfid-cancel>취소</button>
         </div>`
       : `${feedbackPanel}<div class="rfid-register-actions">
