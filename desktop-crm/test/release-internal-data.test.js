@@ -12,8 +12,9 @@ test('public artifact gate blocks embedded internal assignments without printing
  assert.throws(()=>gate.assertPublishable({projects:[]}));
  assert.doesNotThrow(()=>gate.assertPublishable({containsInternalAssignments:false,projects:[]}));
 });
-test('release blocks internal assignment artifacts before any version reservation',()=>{
+test('release checks internal assignment artifacts only after atomically reserving its version',()=>{
  const workflow=fs.readFileSync(path.join(__dirname,'../../.github/workflows/crm-release.yml'),'utf8');
  const gate=workflow.indexOf('node desktop-crm/scripts/release/check-internal-data.js');
- assert.ok(gate>0);assert.ok(gate<workflow.indexOf('Plan from tags, Releases'));
+ const reservation=workflow.indexOf('node desktop-crm/scripts/release/reserve-version.js');
+ assert.ok(gate>0);assert.ok(reservation>0);assert.ok(reservation<gate);
 });

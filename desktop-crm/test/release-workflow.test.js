@@ -17,11 +17,11 @@ function jobBlock(name) {
   return match[1];
 }
 
-test("uses one non-cancelling production release queue and repairs a stable same-source channel before preflight", () => {
+test("uses one non-cancelling production release queue and repairs a stable same-source channel before reservation", () => {
   assert.match(release, /group:\s*crm-production-release/);
   assert.match(release, /cancel-in-progress:\s*false/);
   assert.match(release, /stable_published/);
-  assert.ok(release.indexOf("plan-version.js") < release.indexOf("preflight-desktop:"));
+  assert.ok(release.indexOf("plan-version.js") < release.indexOf("reserve-build:"));
   assert.match(release, /if:\s*needs\.plan\.outputs\.stable_published != 'true'/);
   const planner = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/plan-version.js"), "utf8");
   assert.match(planner, /verifyPublishedReleaseAssets/);
@@ -33,7 +33,7 @@ test("plan checkout leaves Git authentication to the release planner token", () 
   assert.match(jobBlock("plan"), /actions\/checkout@[a-f0-9]{40}[\s\S]*?persist-credentials:\s*false/);
 });
 
-test("release triggers only for desktop sources and reserves only after desktop preflight", () => {
+test("release triggers only for desktop sources and atomically reserves before the full desktop test suite", () => {
   const trigger = release.slice(release.indexOf("on:"), release.indexOf("# One global queue"));
   assert.match(trigger, /paths:\s*\n\s*- "desktop-crm\/\*\*"\s*\n\s*- "\.github\/workflows\/crm-release\.yml"/);
   for (const forbiddenPath of [
@@ -42,8 +42,11 @@ test("release triggers only for desktop sources and reserves only after desktop 
     "firebase.json",
     "release/firebase-targets.json",
   ]) assert.equal(trigger.includes(forbiddenPath), false);
-  assert.match(jobBlock("reserve-build"), /needs: \[plan, preflight-desktop\]/);
-  assert.ok(release.indexOf("working-directory: desktop-crm") < release.indexOf("reserve-version.js"));
+  const reserve = jobBlock("reserve-build");
+  assert.match(reserve, /needs: plan/);
+  assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("run: npm test"));
+  assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("npm ci"));
+  assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("check-internal-data.js"));
 });
 
 test("uses persistent atomic reservations with bounded retry and annotated tag finalization", () => {
@@ -78,11 +81,14 @@ test("creates the version-only commit before staging untracked release assets", 
   assert.ok(commitIndex < isolateIndex, "release-assets must not dirty the worktree before the scoped commit");
 });
 
-test("stages exactly three updater assets and publishes stable after desktop preflight and immutable staging", () => {
+test("stages exactly three updater assets and publishes stable after reserved desktop tests and immutable staging", () => {
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\n/);
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\.blockmap\n/);
   assert.match(release, /release-assets\/latest\.yml/);
-  assert.match(jobBlock("reserve-build"), /needs: \[plan, preflight-desktop\]/);
+  assert.match(jobBlock("reserve-build"), /needs: plan/);
+  const reserve = jobBlock("reserve-build");
+  assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("run: npm test"));
+  assert.ok(reserve.indexOf("run: npm test") < reserve.indexOf("Build installer"));
   assert.match(jobBlock("stage-release"), /needs: \[plan, reserve-build\]/);
   assert.match(jobBlock("publish-stable"), /needs\.stage-release\.result == 'success'[\s\S]*needs: \[plan, reserve-build, stage-release\]/);
   assert.ok(release.indexOf("--mode stage") < release.lastIndexOf("--mode publish"));
