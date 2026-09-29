@@ -34,6 +34,11 @@
     rfidReaderPortsLoaded: false,
     rfidReaderPortsLoading: false,
     rfidReaderPortsError: "",
+    rfidAttendanceStatus: "stopped",
+    rfidAttendanceCode: "",
+    rfidAttendanceMessage: "출퇴근 화면이 열려 있는 동안 태그기가 자동으로 연결됩니다.",
+    rfidAttendanceRequested: false,
+    rfidAttendanceStartPending: false,
     busy: false,
     active: false,
     generation: 0,
@@ -42,6 +47,7 @@
     syncTimer: null
   };
   let officeFileDragDepth = 0;
+  let officeRfidAttendanceUnsubscribe = null;
   const officeReadReceiptPeerIds = new Set();
 
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
@@ -133,6 +139,108 @@
     const activeView = document.querySelector("#nav .nav-item.active")?.dataset.view || "";
     const officeSurface = activeView.startsWith("office") || activeView === "dashboard";
     return state.active && contextActive && officeSurface && activeView === state.context?.view;
+  }
+
+  function officeRfidAttendanceShouldRun() {
+    return Boolean(state.active && state.context && state.context.view === "officeAttendance"
+      && typeof state.context.isActive === "function" && state.context.isActive()
+      && state.loaded && isAdmin() && state.data.rfidAdmin
+      && state.context.api && typeof state.context.api.startOfficeRfidAttendance === "function");
+  }
+
+  function officeRfidAttendanceCodeMessage(code) {
+    const messages = {
+      RFID_SERIAL_PORT_NOT_FOUND: "출퇴근 태그기(CP210x)를 찾지 못했습니다. USB 연결을 확인하면 자동으로 다시 연결합니다.",
+      RFID_SERIAL_PORT_BUSY: "태그기가 다른 프로그램에서 사용 중입니다. 연결을 확인하면 자동으로 다시 시도합니다.",
+      RFID_SERIAL_PORT_SELECT_REQUIRED: "CP210x 태그기가 여러 대 연결되어 있어 자동 연결할 수 없습니다.",
+      RFID_SERIAL_UNAVAILABLE: "이 PC에서는 RFID 태그 연결을 사용할 수 없습니다.",
+      RFID_SERIAL_OPEN_FAILED: "태그기 연결에 실패했습니다. USB 연결을 확인하면 자동으로 다시 시도합니다.",
+      RFID_SERIAL_INVALID_DATA: "태그기에서 올바르지 않은 데이터가 들어왔습니다. 연결을 다시 확인합니다.",
+      RFID_CARD_NOT_REGISTERED: "등록되지 않은 카드입니다. 직원 카드 등록 탭에서 먼저 등록해 주세요.",
+      RFID_CARD_LOOKUP_FAILED: "등록된 카드 정보를 확인하지 못했습니다. 네트워크 연결을 확인해 주세요.",
+      RFID_ATTENDANCE_RESET_WINDOW: "03:00~07:59에는 출퇴근 기록을 저장하지 않습니다. 08:00부터 새 근무일로 기록됩니다.",
+      RFID_ATTENDANCE_NO_OPEN_SHIFT: "전날 출근 기록이 없어 퇴근 처리하지 않았습니다.",
+      RFID_ATTENDANCE_ALREADY_COMPLETE: "오늘 출근·퇴근 기록이 이미 완료되어 추가 기록하지 않았습니다.",
+      RFID_ATTENDANCE_DUPLICATE_SCAN: "같은 태그가 연속으로 읽혀 중복 기록을 막았습니다.",
+      RFID_ATTENDANCE_CONFLICT: "동시에 다른 태그가 기록되어 저장하지 못했습니다. 다시 태그해 주세요.",
+      RFID_ATTENDANCE_WRITE_FAILED: "출퇴근 기록 저장에 실패했습니다. 연결 상태를 확인해 주세요.",
+      RFID_ATTENDANCE_DATA_INVALID: "기존 근태 자료를 안전하게 확인하지 못해 기록을 보류했습니다.",
+      RFID_ATTENDANCE_ALREADY_SAVED: "이미 반영된 태그 기록입니다.",
+      NETWORK: "서버에 연결할 수 없습니다. 네트워크 상태를 확인해 주세요.",
+    };
+    return messages[String(code || "")] || "태그 처리 중 문제가 발생했습니다. 근태 관리자에게 문의해 주세요.";
+  }
+
+  function handleOfficeRfidAttendanceEvent(event) {
+    if (!event || typeof event !== "object") return;
+    state.rfidAttendanceCode = String(event.code || "");
+    if (event.status === "tag" || event.status === "tag-error") {
+      state.rfidAttendanceStatus = event.code && event.code !== "RFID_ATTENDANCE_ALREADY_SAVED" ? "error" : "connected";
+    } else state.rfidAttendanceStatus = String(event.status || "error");
+    if (event.status === "starting") state.rfidAttendanceMessage = "출퇴근 태그기에 연결하고 있습니다…";
+    else if (event.status === "connected") state.rfidAttendanceMessage = "태그기 연결됨 · 카드를 태그하면 출퇴근이 자동 기록됩니다.";
+    else if (event.status === "disconnected" || event.status === "error") state.rfidAttendanceMessage = officeRfidAttendanceCodeMessage(event.code);
+    else if (event.status === "stopped") state.rfidAttendanceMessage = "출퇴근 화면이 열려 있는 동안 태그기가 자동으로 연결됩니다.";
+    else if (event.status === "tag" || event.status === "tag-error") {
+      if (!event.code || event.code === "RFID_ATTENDANCE_ALREADY_SAVED") {
+        const employee = userById(event.userId);
+        const name = employee ? Core.displayName(employee) : "직원";
+        state.rfidAttendanceMessage = event.action === "check-out"
+          ? `${name}님의 퇴근이 기록되었습니다.`
+          : event.action === "check-in" ? `${name}님의 출근이 기록되었습니다.` : "이미 반영된 태그 기록입니다.";
+        if (event.status === "tag") {
+          notify(state.rfidAttendanceMessage, "success");
+          void load(true);
+        }
+      } else {
+        state.rfidAttendanceMessage = officeRfidAttendanceCodeMessage(event.code);
+        notify(state.rfidAttendanceMessage, "error");
+      }
+    }
+    if (state.context && state.context.view === "officeAttendance" && officeIsActive()) renderCurrent();
+  }
+
+  function syncOfficeRfidAttendance() {
+    const api = state.context && state.context.api;
+    if (!officeRfidAttendanceUnsubscribe && api && typeof api.onOfficeRfidAttendanceEvent === "function") {
+      officeRfidAttendanceUnsubscribe = api.onOfficeRfidAttendanceEvent(handleOfficeRfidAttendanceEvent);
+    }
+    if (officeRfidAttendanceShouldRun()) {
+      if (state.rfidAttendanceRequested || state.rfidAttendanceStartPending) return;
+      state.rfidAttendanceRequested = true;
+      state.rfidAttendanceStartPending = true;
+      state.rfidAttendanceStatus = "starting";
+      state.rfidAttendanceCode = "";
+      state.rfidAttendanceMessage = "출퇴근 태그기에 연결하고 있습니다…";
+      Promise.resolve(api.startOfficeRfidAttendance()).then(result => {
+        if (!officeRfidAttendanceShouldRun()) {
+          state.rfidAttendanceRequested = false;
+          return api.stopOfficeRfidAttendance && api.stopOfficeRfidAttendance();
+        }
+        if (result && result.ok === false && !state.rfidAttendanceCode) {
+          state.rfidAttendanceStatus = "error";
+          state.rfidAttendanceCode = String(result.code || "");
+          state.rfidAttendanceMessage = officeRfidAttendanceCodeMessage(result.code);
+        }
+        return undefined;
+      }).catch(error => {
+        state.rfidAttendanceStatus = "error";
+        state.rfidAttendanceCode = String(error && error.code || "");
+        state.rfidAttendanceMessage = officeRfidAttendanceCodeMessage(error && error.code);
+      }).finally(() => {
+        state.rfidAttendanceStartPending = false;
+        if (state.context && state.context.view === "officeAttendance" && officeIsActive()) renderCurrent();
+      });
+      return;
+    }
+    if (state.rfidAttendanceRequested || state.rfidAttendanceStartPending) {
+      state.rfidAttendanceRequested = false;
+      state.rfidAttendanceStartPending = false;
+      if (api && typeof api.stopOfficeRfidAttendance === "function") void api.stopOfficeRfidAttendance().catch(() => {});
+      state.rfidAttendanceStatus = "stopped";
+      state.rfidAttendanceCode = "";
+      state.rfidAttendanceMessage = "출퇴근 화면이 열려 있는 동안 태그기가 자동으로 연결됩니다.";
+    }
   }
 
   function stopTimers() {
@@ -388,7 +496,7 @@
     const barWidth = Math.max(selected ? 1.8 : 0, Math.min(100 - barLeft, Math.max(0, endMinute - startMinute) / 1440 * 100));
     const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
     return `${officeHero("내 근태현황", "태그기로 기록된 주간 출퇴근 현황을 확인하세요", attendanceLiveStatus())}
-      <section class="attendance-tag-note"><span aria-hidden="true">✓</span>출퇴근 기록은 태그기에서 자동으로 반영됩니다.</section>
+      <section class="attendance-tag-note ${esc(state.rfidAttendanceStatus)}" role="status" aria-live="polite"><span aria-hidden="true">${state.rfidAttendanceStatus === "connected" ? "✓" : "•"}</span><div><b>${state.rfidAttendanceStatus === "connected" ? "태그기 연결됨" : state.rfidAttendanceStatus === "starting" ? "태그기 연결 중" : state.rfidAttendanceStatus === "error" || state.rfidAttendanceStatus === "disconnected" ? "태그기 연결 확인 필요" : "자동 출퇴근"}</b><small>${esc(state.rfidAttendanceMessage)}</small></div></section>
       <section class="attendance-week-toolbar"><div><button data-office-week="previous" aria-label="이전 주">‹</button><strong>${esc(weekStart)} ~ ${esc(weekEnd)}</strong><button data-office-week="next" aria-label="다음 주">›</button><button class="attendance-today-button" data-office-week="today">오늘</button></div><span>브링엔지니어링 <b>09:00 ~ 18:00</b></span></section>
       <section class="attendance-week-summary"><div class="attendance-progress"><span>주간 누적 <b>${esc(durationText(totalMinutes))}</b></span><p>이번 주 근무시간을 기준으로 표시합니다.</p><div><i style="width:${Math.min(100, totalMinutes / 2400 * 100)}%"></i></div><small><b>40h</b><b>52h</b></small></div><article><span>근무일</span><b>${workedDays}<small>/5일</small></b></article><article><span>남은 근무일</span><b>${Math.max(0, 5 - workedDays)}<small>일</small></b></article><article><span>총 근로시간</span><b>${esc(durationText(totalMinutes))}</b></article><article><span>오늘 상태</span>${statusPill(today)}</article></section>
       <section class="attendance-week-days">${weekDates.map((workDate, index) => {
@@ -504,7 +612,7 @@
 
   function adminAttendanceCorrectionRecords(userId) {
     return Core.monthlyAttendance(state.data.attendance, userId, state.adminMonth)
-      .filter(record => record.workDate <= Core.workDate());
+      .filter(record => record.workDate <= Core.workDate() && record.attendanceSource !== "rfid");
   }
 
   function selectAdminAttendanceCorrectionRecord(workDate) {
@@ -577,7 +685,7 @@
 
     if (state.adminTab === "detail" && selectedUser) {
       const summary = Core.monthlyAttendanceSummary(rows, selectedUser.uid, state.adminMonth);
-      const correctableRecords = summary.records.filter(record => record.workDate <= today);
+      const correctableRecords = summary.records.filter(record => record.workDate <= today && record.attendanceSource !== "rfid");
       const correctionEditor = adminAttendanceCorrectionEditor(selectedUser);
       return `${hero}${adminTabs(selectedUser)}${attendanceNameEditor}<section class="office-admin-detail office-admin-calendar-tab">
         <header class="office-admin-detail-head"><div class="office-admin-person">${avatar(selectedUser, "large")}<div><span>EMPLOYEE ATTENDANCE</span><h3>${esc(Core.displayName(selectedUser))}</h3><p>${esc(userMeta(selectedUser))}</p></div><div class="office-admin-person-actions"><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(selectedUser))} 이름 수정" data-office-display-name-edit="${esc(selectedUser.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button><button type="button" class="office-admin-time-edit-button" data-office-attendance-correction-open ${state.busy || !correctableRecords.length ? "disabled" : ""} title="${correctableRecords.length ? "기존 근태 기록의 시간을 수정합니다." : "이 달에는 수정할 기존 기록이 없습니다."}">시간 수정</button></div></div><div class="office-admin-month-actions"><button data-office-admin-month="previous" aria-label="이전 달">‹</button><strong>${esc(state.adminMonth.replace("-", ". "))}</strong><button data-office-admin-month="next" aria-label="다음 달">›</button><button class="attendance-today-button" data-office-admin-month="today">이번 달</button><button class="office-excel-button" data-office-attendance-export ${state.busy ? "disabled" : ""}><span class="office-btn-icon"><svg class="office-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5v11"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M4.5 19.5h15"/></svg></span> 엑셀 다운로드</button></div></header>
@@ -1489,6 +1597,7 @@
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
     syncMessengerPresence();
+    syncOfficeRfidAttendance();
     if (!officeIsActive()) return;
     if (state.context.view === "officeRfid" && state.loaded && isAdmin() && state.data.rfidAdmin
       && !state.rfidReaderPortsLoaded && !state.rfidReaderPortsLoading) void refreshRfidPorts();
@@ -2064,6 +2173,7 @@
       }
       state.context = context;
       state.active = true;
+      syncOfficeRfidAttendance();
       startClock();
       startSync();
       renderCurrent();
@@ -2076,6 +2186,7 @@
       }
       state.active = false;
       syncMessengerPresence();
+      syncOfficeRfidAttendance();
       state.generation += 1;
       state.loading = false;
       clearAdminAttendanceCorrection();
@@ -2114,6 +2225,7 @@
     reset() {
       state.active = false;
       syncMessengerPresence();
+      syncOfficeRfidAttendance();
       state.generation += 1;
       stopTimers();
       clearRfidCapture(false);
@@ -2139,6 +2251,11 @@
       state.rfidReaderPortsLoaded = false;
       state.rfidReaderPortsLoading = false;
       state.rfidReaderPortsError = "";
+      state.rfidAttendanceStatus = "stopped";
+      state.rfidAttendanceCode = "";
+      state.rfidAttendanceMessage = "출퇴근 화면이 열려 있는 동안 태그기가 자동으로 연결됩니다.";
+      state.rfidAttendanceRequested = false;
+      state.rfidAttendanceStartPending = false;
       state.rfidCaptureFeedback = null;
       state.adminTab = "list";
       clearAdminAttendanceCorrection();

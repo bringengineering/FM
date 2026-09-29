@@ -97,3 +97,38 @@ test("serial capture rejects an overlong hexadecimal token instead of accepting 
   const reader = createOfficeRfidSerial({ SerialPort: FakePort, timeoutMs: 100, interByteMs: 20 });
   await assert.rejects(reader.captureCardCode({ portPath: "COM3" }), error => error.code === "RFID_SERIAL_INVALID_DATA");
 });
+
+test("background attendance reader keeps the CP210x port open, masks repeated scans, and never exposes raw port details", async () => {
+  const statuses = [];
+  const cardScans = [];
+  const { FakePort, opened } = fakeSerialPort({ onOpen(port) {
+    port.emit("data", Buffer.from("\x023F00238493\x03", "ascii"));
+    port.emit("data", Buffer.from("\x023F00238493\x03", "ascii"));
+  } });
+  const reader = createOfficeRfidSerial({ SerialPort: FakePort, interByteMs: 10 });
+  const started = await reader.startAttendanceReader({
+    portPath: "COM3",
+    onCard: (code, scannedAtMs) => cardScans.push({ code, scannedAtMs }),
+    onStatus: status => statuses.push(status),
+  });
+  assert.deepEqual(started, { ok: true, portPath: "COM3" });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(cardScans.length, 1);
+  assert.equal(cardScans[0].code, "3F00238493");
+  assert.ok(Number.isSafeInteger(cardScans[0].scannedAtMs));
+  assert.ok(Math.abs(Date.now() - cardScans[0].scannedAtMs) < 1000);
+  assert.equal(statuses[0].status, "connected");
+  assert.deepEqual(opened[0].options, {
+    path: "COM3",
+    baudRate: 9600,
+    dataBits: 8,
+    parity: "none",
+    stopBits: 1,
+    rtscts: true,
+    autoOpen: false,
+  });
+  await assert.rejects(reader.captureCardCode({ portPath: "COM3" }), error => error.code === "RFID_SERIAL_BUSY");
+  assert.equal(reader.stopAttendanceReader(), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(opened[0].isOpen, false);
+});

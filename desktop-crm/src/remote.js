@@ -6,6 +6,7 @@ const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
+const OfficeRfidAttendanceCore = require("./office-rfid-attendance-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
@@ -555,6 +556,33 @@ function officeRfidMutationCommitted(value, intent) {
   return assigned.length === 1
     && assigned[0][0] === intent.fingerprint
     && assigned[0][1].userId === intent.userId;
+}
+
+function mergeOfficeAttendanceRecords(attendanceValue, rfidAttendanceValue) {
+  const rows = new Map();
+  OfficeCore.flattenAttendance(attendanceValue).forEach(row => {
+    rows.set(row.userId + "|" + row.workDate, row);
+  });
+  OfficeCore.flattenAttendance(rfidAttendanceValue).forEach(row => {
+    if (row.attendanceSource !== "rfid"
+      || !safeDirectId(row.userId)
+      || row.id !== row.userId + "_" + row.workDate
+      || !OfficeCore.validWorkDate(row.workDate)
+      || !officeAttendanceTimestamp(row.checkInAt)
+      || !(row.checkOutAt === "" || officeAttendanceTimestamp(row.checkOutAt) && row.checkOutAt > row.checkInAt)
+      || !officeAttendanceTimestamp(row.createdAt)
+      || !officeAttendanceTimestamp(row.updatedAt)) return;
+    const key = row.userId + "|" + row.workDate;
+    rows.set(key, row);
+  });
+  return [...rows.values()].sort((a, b) => (b.workDate + b.checkInAt).localeCompare(a.workDate + a.checkInAt));
+}
+
+function officeRfidAttendanceCommitted(value, expected) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return ["id", "userId", "workDate", "checkInAt", "checkOutAt", "createdAt", "updatedAt",
+    "attendanceSource", "attendanceFingerprint", "attendanceAt", "attendanceAtMs", "attendanceBy", "attendanceAction"]
+    .every(key => value[key] === expected[key]);
 }
 
 function normalizeQuoteSupplierRecord(value, options = {}) {
@@ -1458,6 +1486,7 @@ class FirebaseRemoteClient {
     this.marketingMutationQueue = Promise.resolve();
     this.officeAttendanceCorrectionQueue = Promise.resolve();
     this.officeRfidQueue = Promise.resolve();
+    this.officeRfidAttendanceQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -3014,6 +3043,7 @@ class FirebaseRemoteClient {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
     const attendanceLocation = session.officeAdmin === true ? "officeAttendance" : `officeAttendance/${session.uid}`;
+    const rfidAttendanceLocation = session.officeAdmin === true ? "officeRfidAttendance" : `officeRfidAttendance/${session.uid}`;
     // 휴가는 관리자만 전체를 본다. 근태의 officeAdmin 과 기준이 다르다 —
     // 휴가 사유는 더 사적이라 승인 권한이 있는 사람까지만 본다.
     const leaveAdmin = session.role === "admin";
@@ -3031,10 +3061,11 @@ class FirebaseRemoteClient {
     const approvalAdmin = session.role === "admin";
     const approvalLocation = approvalAdmin ? "officeApprovals" : `officeApprovals/${session.uid}`;
     const rfidAdmin = session.officeAdmin === true;
-    const [users, teamProfiles, attendance, leave, leaveGrants, members, approvals, payroll, rfidCards] = await Promise.all([
+    const [users, teamProfiles, attendance, rfidAttendance, leave, leaveGrants, members, approvals, payroll, rfidCards] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
+      this.dbRequest(rfidAttendanceLocation, { method: "GET" }),
       // 규칙이 막으면 빈 값으로 둔다. 휴가를 못 읽는다고 근태·메신저까지
       // 같이 죽으면 안 된다.
       this.dbRequest(leaveLocation, { method: "GET" }).catch(() => null),
@@ -3063,7 +3094,7 @@ class FirebaseRemoteClient {
       requestSequence,
       data: {
         users: mergedUsers,
-        attendance: OfficeCore.flattenAttendance(attendance),
+        attendance: mergeOfficeAttendanceRecords(attendance, rfidAttendance),
         leave: OfficeCore.flattenLeave(leave, session.uid),
         leaveGrants: OfficeCore.flattenLeaveGrants(leaveGrants, session.uid),
         leaveAdmin,
@@ -3500,6 +3531,125 @@ class FirebaseRemoteClient {
       || !["admin", "member", "viewer"].includes(String(target.role || ""))) {
       throw createError("카드를 등록할 활성 구성원을 찾지 못했습니다.", "ACCESS_DENIED");
     }
+  }
+
+  async recordOfficeAttendanceFromRfid(inputValue) {
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true) {
+      throw createError("RFID 출퇴근 기록은 지정된 근태 관리자만 연결할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const source = inputValue && typeof inputValue === "object" && !Array.isArray(inputValue) ? inputValue : {};
+    if (Object.keys(source).length !== 2
+      || !Object.prototype.hasOwnProperty.call(source, "cardCode")
+      || !Object.prototype.hasOwnProperty.call(source, "scannedAtMs")) {
+      throw createError("RFID 태그 요청 형식이 올바르지 않습니다.", "VALIDATION_ERROR");
+    }
+    const cardCode = OfficeRfidCore.normalizeCardCode(source.cardCode);
+    const scannedAtMs = Number(source.scannedAtMs);
+    if (!cardCode || cardCode !== source.cardCode || !Number.isSafeInteger(scannedAtMs)
+      || Math.abs(Date.now() - scannedAtMs) > 30000) {
+      throw createError("RFID 태그 시각 또는 카드 정보를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const actorUid = String(session.uid || "");
+    const fingerprint = OfficeRfidCore.fingerprintCardCode(cardCode);
+    const guard = this.captureSessionGuard();
+    const running = this.officeRfidAttendanceQueue.then(async () => {
+      this.assertSessionGuardActive(guard);
+      const active = this.requireOfficeSession();
+      if (active.uid !== actorUid || active.officeAdmin !== true) {
+        throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      }
+      let storedCards;
+      try {
+        storedCards = OfficeRfidCore.normalizeStoredMap(await this.dbRequest("officeRfidCards", { method: "GET" }));
+      } catch (error) {
+        throw createError("등록된 RFID 카드 정보를 확인할 수 없습니다.", "RFID_CARD_LOOKUP_FAILED", error);
+      }
+      this.assertSessionGuardActive(guard);
+      const card = storedCards[fingerprint];
+      if (!card || !card.userId) {
+        throw createError("등록되지 않은 카드입니다. 근태 관리자에게 카드를 등록해 주세요.", "RFID_CARD_NOT_REGISTERED");
+      }
+      const userId = card.userId;
+      await this.assertOfficeRfidTarget(userId, guard);
+      const scannedAt = new Date(scannedAtMs);
+      const parts = OfficeRfidAttendanceCore.partsInKorea(scannedAt);
+      const minuteOfDay = parts.hour * 60 + parts.minute;
+      if (minuteOfDay >= 180 && minuteOfDay < 480) {
+        return { status: "ignored", code: "RFID_ATTENDANCE_RESET_WINDOW", userId, workDate: parts.workDate };
+      }
+      const workDate = minuteOfDay < 180
+        ? OfficeRfidAttendanceCore.previousWorkDate(parts.workDate)
+        : parts.workDate;
+      const location = "officeRfidAttendance/" + userId + "/" + workDate;
+      const legacyLocation = "officeAttendance/" + userId + "/" + workDate;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        this.assertSessionGuardActive(guard);
+        const [snapshot, legacy] = await Promise.all([
+          this.dbReadWithEtag(location, false, guard),
+          this.dbRequest(legacyLocation, { method: "GET" }),
+        ]);
+        this.assertSessionGuardActive(guard);
+        let decision;
+        try {
+          decision = OfficeRfidAttendanceCore.decideAction({
+            nowValue: scannedAt,
+            userId,
+            rfidRecord: snapshot.value,
+            existingRecord: legacy,
+          });
+        } catch (error) {
+          throw createError("기존 출퇴근 기록을 안전하게 확인하지 못했습니다.", "RFID_ATTENDANCE_DATA_INVALID", error);
+        }
+        if (decision.status !== "record") {
+          const sameEvent = snapshot.value
+            && snapshot.value.attendanceSource === "rfid"
+            && snapshot.value.attendanceAtMs === scannedAtMs
+            && snapshot.value.attendanceFingerprint === fingerprint;
+          if (sameEvent) {
+            return {
+              status: "recorded",
+              code: "RFID_ATTENDANCE_ALREADY_SAVED",
+              userId,
+              workDate,
+              action: snapshot.value.attendanceAction,
+              timestamp: snapshot.value.attendanceAt,
+            };
+          }
+          return { status: "ignored", code: decision.code, userId, workDate };
+        }
+        const record = OfficeRfidAttendanceCore.buildAttendanceRecord({
+          userId,
+          workDate,
+          action: decision.action,
+          nowValue: scannedAt,
+          fingerprint,
+          actorUid,
+          existing: decision.existing,
+        });
+        try {
+          await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+        } catch (error) {
+          if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") continue;
+          if (error && ["BUILDING_SCHEDULE_WRITE_UNCONFIRMED", "BUILDING_SCHEDULE_WRITE_FAILED"].includes(error.code)) {
+            const check = await this.dbReadWithEtag(location, false, guard).catch(() => null);
+            if (check && officeRfidAttendanceCommitted(check.value, record)) {
+              return { status: "recorded", userId, workDate, action: record.attendanceAction, timestamp: record.attendanceAt };
+            }
+          }
+          throw createError("RFID 출퇴근 기록을 저장하지 못했습니다.", "RFID_ATTENDANCE_WRITE_FAILED", error);
+        }
+        this.assertSessionGuardActive(guard);
+        const check = await this.dbReadWithEtag(location, false, guard);
+        if (officeRfidAttendanceCommitted(check.value, record)) {
+          return { status: "recorded", userId, workDate, action: record.attendanceAction, timestamp: record.attendanceAt };
+        }
+      }
+      throw createError("다른 태그 기록과 겹쳐 저장하지 못했습니다. 태그를 다시 해 주세요.", "RFID_ATTENDANCE_CONFLICT");
+    });
+    this.officeRfidAttendanceQueue = running.catch(() => {});
+    return running;
   }
 
   async commitOfficeRfidMutation(intent, mutate, guard) {
