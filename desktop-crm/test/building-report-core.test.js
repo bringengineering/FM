@@ -103,6 +103,27 @@ test("건물 정보와 기간을 사람이 읽는 형태로 만든다", () => {
   assert.equal(built.documentTitle, "월간 관리 보고서");
 });
 
+test("검토한 Gemini 문장을 보고서에 안전하게 담는다", () => {
+  const built = report({ narrative: {
+    summary: "이번 달 주요 설비 조치를 완료했습니다.",
+    attention: "입주청소는 진행 중입니다.",
+    nextMonthPlan: "공용부 정기점검을 진행할 예정입니다.",
+  } });
+  assert.equal(built.narrative.summary, "이번 달 주요 설비 조치를 완료했습니다.");
+  assert.equal(built.narrative.attention, "입주청소는 진행 중입니다.");
+  assert.equal(built.narrative.nextMonthPlan, "공용부 정기점검을 진행할 예정입니다.");
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.match(doc, /이번 달 관리 요약/u);
+  assert.match(doc, /다음 달 예정 관리/u);
+});
+
+test("Gemini 문장도 HTML로 실행되지 않게 이스케이프한다", () => {
+  const built = report({ narrative: { summary: '<img src=x onerror=alert(1)>', attention: "", nextMonthPlan: "" } });
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.ok(!doc.includes("<img src=x"));
+  assert.match(doc, /&lt;img/u);
+});
+
 test("건물이 비어 있어도 보고서 모양은 무너지지 않는다", () => {
   const built = Reports.buildBuildingMonthlyReport({});
   assert.equal(built.buildingName, "관리 건물");

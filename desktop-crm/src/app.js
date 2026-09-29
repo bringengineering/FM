@@ -14,6 +14,7 @@
   const ManagementReportCore = window.BringManagementReportCore;
   const TenantHistoryCore = window.BringTenantHistoryCore;
   const AiOperationsUI = window.BringAiOperationsUI;
+  const BuildingReportCore = window.BringBuildingReportCore;
   const BuildingDocs = window.BringBuildingDocsCore;
   const WorkspaceShell = window.BringWorkspaceShell;
   const MarketingCore = window.MarketingCore;
@@ -180,6 +181,7 @@
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
   let managementBillingState = { month: "", ledger: null, loading: false, error: "", generation: -1, uid: "" };
+  let buildingMonthlyReportState = { buildingId: "", month: "", nextMonthPlan: "", narrative: null, loading: false, error: "", model: "", generatedAt: "" };
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
@@ -219,6 +221,7 @@
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
     workReports: ["사진과 작업정보로 AI 초안을 만듭니다", "작업 결과보고서"],
+    buildingMonthlyReports: ["계약 건물의 한 달 관리 내역을 건물주에게 보고합니다", "건물 월간보고서"],
     customerNotices: ["끝났다고 건물주에게 알립니다", "고객 알림"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
@@ -1521,7 +1524,8 @@
     const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
     const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
     const paymentCalendarView = currentView === "payments";
-    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView);
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView)
+      || currentView === "buildingMonthlyReports";
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
     if (currentView === "vacancies") {
@@ -1586,6 +1590,7 @@
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "workReports") renderWorkReports();
+    else if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
     else if (currentView === "customerNotices") renderCustomerNotices();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
@@ -3064,6 +3069,158 @@
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
   }
 
+  function contractedMonthlyReportBuildings() {
+    const buildingIds = new Set((store.contracts || [])
+      .filter(contract => contract && contract.status !== "종료" && contract.buildingId)
+      .map(contract => String(contract.buildingId)));
+    return (store.buildings || [])
+      .filter(building => building && !building.archivedAt && buildingIds.has(String(building.id)))
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+  }
+
+  function buildingMonthlyReportRequest(building, month, extras = {}) {
+    const owner = customerById(building && building.ownerCustomerId) || buildingCustomers(building)[0] || null;
+    return {
+      store: {
+        cases: buildingCases(building),
+        buildingUnits: buildingUnitsForBuilding(building).filter(unit => !unit.archivedAt),
+      },
+      building,
+      month,
+      ownerName: owner ? owner.name : "",
+      owner: store.settings.owner,
+      company: { name: store.company.name || "BRING Care", phone: store.company.phone, email: store.company.email },
+      nextMonthPlan: extras.nextMonthPlan || "",
+      narrative: extras.narrative || null,
+    };
+  }
+
+  function renderBuildingMonthlyReports() {
+    const buildings = contractedMonthlyReportBuildings();
+    if (!buildings.length) {
+      main.innerHTML = `<section class="building-monthly-report-page"><header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>계약 건물의 관리 내역을 건물주에게 전달할 문서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header><div class="building-monthly-no-buildings"><h3>진행 중인 계약 건물이 없습니다</h3><p>계약 관리에서 건물과 연결된 계약을 등록하면 월간보고서를 만들 수 있습니다.</p></div></section>`;
+      return;
+    }
+    if (!buildings.some(building => building.id === buildingMonthlyReportState.buildingId)) {
+      buildingMonthlyReportState.buildingId = buildings[0].id;
+      buildingMonthlyReportState.narrative = null;
+      buildingMonthlyReportState.error = "";
+    }
+    if (!/^\d{4}-\d{2}$/u.test(buildingMonthlyReportState.month) || buildingMonthlyReportState.month > previousMonthKey()) {
+      buildingMonthlyReportState.month = previousMonthKey();
+      buildingMonthlyReportState.narrative = null;
+    }
+    const building = buildingById(buildingMonthlyReportState.buildingId) || buildings[0];
+    const owner = customerById(building.ownerCustomerId) || buildingCustomers(building)[0] || null;
+    const contract = (store.contracts || []).find(item => item && String(item.buildingId || "") === String(building.id) && item.status !== "종료") || null;
+    const request = buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, {
+      nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
+      narrative: buildingMonthlyReportState.narrative,
+    });
+    const report = BuildingReportCore.buildBuildingMonthlyReport(request);
+    const narrative = report.narrative || { summary: "", attention: "", nextMonthPlan: "" };
+    const missing = [
+      !owner && "건물주 연결 필요",
+      !report.works.length && "처리 업무 없음",
+      !report.summary.unitCount && "호실 현황 없음",
+      !buildingMonthlyReportState.nextMonthPlan && "다음 달 계획 확인 필요",
+    ].filter(Boolean);
+    const workRows = report.works.length ? report.works.map(work => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${work.done ? "완료" : "진행 중"}</em></article>`).join("") : `<div class="building-monthly-empty">이 달에 연결된 처리 업무가 없습니다. 날짜와 건물 연결 상태를 확인해 주세요.</div>`;
+    const canGenerate = canWriteCRM() && typeof api.generateBuildingMonthlyReportDraft === "function";
+    const generatedLabel = buildingMonthlyReportState.generatedAt
+      ? `${esc(buildingMonthlyReportState.model || "Gemini")} · ${esc(dateText(buildingMonthlyReportState.generatedAt))}`
+      : "아직 Gemini 문장을 만들지 않았습니다.";
+
+    main.innerHTML = `<section class="building-monthly-report-page">
+      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>CRM의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">BRING OS Gemini</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em></div></header>
+      <section class="building-monthly-toolbar">
+        <label class="building-monthly-field"><span>계약 건물</span><select data-building-monthly-building>${buildings.map(item => { const linked = (store.contracts || []).find(entry => entry && String(entry.buildingId || "") === String(item.id) && entry.status !== "종료"); return `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(`${item.name || "건물명 미입력"}${linked && linked.name ? ` · ${linked.name}` : ""}`)}</option>`; }).join("")}</select></label>
+        <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(previousMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>
+        <label class="building-monthly-field"><span>수신 건물주</span><div class="building-monthly-owner">${esc(owner && owner.name || "연결 필요")}</div></label>
+      </section>
+      <div class="building-monthly-kpis">
+        <article class="building-monthly-kpi"><span>처리 업무</span><b>${report.summary.workCount}건</b><small>완료 ${report.summary.doneCount} · 진행 중 ${Math.max(0, report.summary.workCount - report.summary.doneCount)}</small></article>
+        <article class="building-monthly-kpi"><span>호실 현황</span><b>${report.summary.unitCount}호실</b><small>공실 ${report.summary.vacantCount} · 공실률 ${esc(report.summary.vacancyRateText || "확인 필요")}</small></article>
+        <article class="building-monthly-kpi"><span>건물주 청구 합계</span><b>${esc(report.summary.billedText || "미확정")}</b><small>업체 원가와 이익은 제외</small></article>
+        <article class="building-monthly-kpi"><span>자료 확인</span><b>${missing.length ? `${missing.length}건` : "완료"}</b><small>${esc(missing[0] || "PDF 생성 가능")}</small></article>
+      </div>
+      <div class="building-monthly-layout">
+        <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "연결 계약")}</p></div><span class="building-monthly-count">${report.works.length}건 자동 수집</span></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}</div><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
+        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : narrative.summary ? "Gemini 다시 작성" : "Gemini 문장 만들기"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>AI는 문장만 정리합니다</b>업무 건수·날짜·공실률·청구 합계는 CRM 계산값을 그대로 사용합니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>이번 달 관리 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div></article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button></div><div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}</div></div></section>
+      </div>
+    </section>`;
+
+    main.querySelector("[data-building-monthly-building]")?.addEventListener("change", event => {
+      buildingMonthlyReportState = { ...buildingMonthlyReportState, buildingId: event.target.value, nextMonthPlan: "", narrative: null, error: "", model: "", generatedAt: "" };
+      renderBuildingMonthlyReports();
+    });
+    main.querySelector("[data-building-monthly-month]")?.addEventListener("change", event => {
+      const nextMonth = String(event.target.value || "");
+      if (!/^\d{4}-\d{2}$/u.test(nextMonth) || nextMonth > previousMonthKey()) {
+        event.target.value = buildingMonthlyReportState.month;
+        showToast("종료된 달만 보고서로 만들 수 있습니다.", "error");
+        return;
+      }
+      buildingMonthlyReportState = { ...buildingMonthlyReportState, month: nextMonth, nextMonthPlan: "", narrative: null, error: "", model: "", generatedAt: "" };
+      renderBuildingMonthlyReports();
+    });
+    const planInput = main.querySelector("[data-building-monthly-next-plan]");
+    planInput?.addEventListener("input", event => { buildingMonthlyReportState.nextMonthPlan = event.target.value.slice(0, 800); });
+    main.querySelectorAll("[data-building-monthly-copy]").forEach(input => input.addEventListener("input", event => {
+      const key = event.target.dataset.buildingMonthlyCopy;
+      buildingMonthlyReportState.narrative = { ...(buildingMonthlyReportState.narrative || {}), [key]: event.target.value };
+    }));
+    main.querySelector("[data-building-monthly-generate]")?.addEventListener("click", async () => {
+      buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
+      buildingMonthlyReportState.loading = true;
+      buildingMonthlyReportState.error = "";
+      const requestKey = `${building.id}:${buildingMonthlyReportState.month}`;
+      renderBuildingMonthlyReports();
+      try {
+        const result = await api.generateBuildingMonthlyReportDraft(buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, { nextMonthPlan: buildingMonthlyReportState.nextMonthPlan }));
+        if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
+        buildingMonthlyReportState.narrative = { ...(result.narrative || {}) };
+        buildingMonthlyReportState.model = result.model || "Gemini";
+        buildingMonthlyReportState.generatedAt = result.generatedAt || new Date().toISOString();
+        showToast(result.cached ? "같은 자료로 만든 Gemini 초안을 불러왔습니다." : "Gemini가 건물주용 문장을 만들었습니다.", "success");
+      } catch (error) {
+        buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
+      } finally {
+        buildingMonthlyReportState.loading = false;
+        if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+      }
+    });
+    main.querySelector("[data-building-monthly-reset]")?.addEventListener("click", () => {
+      buildingMonthlyReportState.narrative = null;
+      buildingMonthlyReportState.error = "";
+      buildingMonthlyReportState.model = "";
+      buildingMonthlyReportState.generatedAt = "";
+      renderBuildingMonthlyReports();
+    });
+    main.querySelector("[data-building-monthly-preview]")?.addEventListener("click", () => {
+      showToast("오른쪽 문서가 PDF에 반영될 내용입니다.", "success");
+    });
+    main.querySelector("[data-building-monthly-pdf]")?.addEventListener("click", async () => {
+      buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
+      await exportBuildingMonthlyReportPdf(building, buildingMonthlyReportState.month, {
+        nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
+        narrative: buildingMonthlyReportState.narrative,
+      });
+    });
+  }
+
+  async function exportBuildingMonthlyReportPdf(building, month, extras = {}) {
+    try {
+      const result = await api.exportBuildingMonthlyReport(buildingMonthlyReportRequest(building, month, extras));
+      if (result.canceled) return;
+      if (!result.ok) return showToast(result.error || "보고서를 만들지 못했습니다.", "error");
+      const summary = result.summary || {};
+      showToast(`월간 보고서를 저장했습니다. 처리 업무 ${summary.workCount || 0}건.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
+    }
+  }
+
   async function createBuildingMonthlyReportPdf(buildingId) {
     const building = buildingById(buildingId);
     if (!building) return showToast("건물을 찾지 못했습니다.", "error");
@@ -3072,28 +3229,7 @@
     if (!/^\d{4}-\d{2}$/.test(String(month).trim())) {
       return showToast("연-월을 2026-08 형태로 입력해 주세요.", "error");
     }
-    const owner = customerById(building.ownerCustomerId) || buildingCustomers(building)[0] || null;
-    try {
-      const result = await api.exportBuildingMonthlyReport({
-        // 이 건물 것만 걸러 보낸다. 보고서 계산은 건물 기준으로 한 번 더
-        // 거르지만, 전체 데이터를 넘기면 무겁고 남의 건물 일이 오갈 이유도 없다.
-        store: {
-          cases: buildingCases(building),
-          buildingUnits: buildingUnitsForBuilding(building).filter(unit => !unit.archivedAt),
-        },
-        building,
-        month: String(month).trim(),
-        ownerName: owner ? owner.name : "",
-        owner: store.settings.owner,
-        company: { name: store.company.name || "BRING Care", phone: store.company.phone, email: store.company.email },
-      });
-      if (result.canceled) return;
-      if (!result.ok) return showToast(result.error || "보고서를 만들지 못했습니다.", "error");
-      const summary = result.summary || {};
-      showToast(`월간 보고서를 저장했습니다. 처리 업무 ${summary.workCount || 0}건.`, "success");
-    } catch (error) {
-      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
-    }
+    await exportBuildingMonthlyReportPdf(building, String(month).trim());
   }
 
   async function createServiceReportPdf(caseKey) {
@@ -17355,7 +17491,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cleaningCenter", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
@@ -17437,6 +17573,16 @@ document.addEventListener("keydown", event => {
     setDemo: () => { store = demoStore(); synchronizedStore = cloneStore(store); render(); },
     getStore: () => JSON.parse(JSON.stringify(store)),
     getOperations: () => JSON.parse(JSON.stringify(operations)),
+    setOperationsForTest: data => {
+      if (new URLSearchParams(location.search).get("demo") !== "1" || !data || typeof data !== "object") return false;
+      operations = {
+        cases: Array.isArray(data.cases) ? JSON.parse(JSON.stringify(data.cases)) : [],
+        payments: data.payments && typeof data.payments === "object" ? JSON.parse(JSON.stringify(data.payments)) : {},
+        caseSettings: data.caseSettings && typeof data.caseSettings === "object" ? JSON.parse(JSON.stringify(data.caseSettings)) : {},
+        loadedAt: new Date().toISOString(),
+      };
+      return true;
+    },
     customerSalesProgress: customerId => JSON.parse(JSON.stringify(customerSalesProgress(customerById(customerId)))),
     confirmPending: () => finishConfirmation(true),
     cancelPending: () => finishConfirmation(false),

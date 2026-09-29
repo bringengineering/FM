@@ -1,0 +1,67 @@
+.building-monthly-report-page{display:grid;gap:16px}
+.building-monthly-report-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:20px 22px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(135deg,#f6fcff,#edf8ff)}
+.building-monthly-report-hero span{display:block;margin-bottom:6px;color:#1687c7;font-size:11px;font-weight:800;letter-spacing:.08em}
+.building-monthly-report-hero h2{margin:0;color:#173b54;font-size:25px}
+.building-monthly-report-hero p{margin:7px 0 0;color:#6f8798;font-size:13px}
+.building-monthly-report-hero-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.building-monthly-gemini-state{display:inline-flex;align-items:center;gap:7px;padding:9px 11px;border:1px solid #b9e6d5;border-radius:11px;background:#edfbf5;color:#138963;font-size:11px;font-weight:800;white-space:nowrap}
+.building-monthly-gemini-state::before{content:"";width:7px;height:7px;border-radius:999px;background:#18a67a}
+.building-monthly-test-label{padding:8px 10px;border-radius:10px;background:#fff7e9;color:#b76a25;font-size:11px;font-weight:800;white-space:nowrap}
+.building-monthly-toolbar{display:grid;grid-template-columns:minmax(260px,1.4fr) minmax(170px,.65fr) minmax(200px,.8fr);gap:12px;align-items:end;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow)}
+.building-monthly-field{display:grid;gap:6px;color:#718899;font-size:11px;font-weight:700}
+.building-monthly-field select,.building-monthly-field input{width:100%;min-height:42px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:#f8fbfd;color:#1b4058}
+.building-monthly-owner{min-height:42px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#f8fbfd;color:#1b4058;font-size:13px;font-weight:800}
+.building-monthly-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.building-monthly-kpi{padding:15px 16px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.building-monthly-kpi span{display:block;color:#7890a0;font-size:11px}
+.building-monthly-kpi b{display:block;margin-top:6px;color:#183c54;font-size:22px}
+.building-monthly-kpi small{display:block;margin-top:2px;color:#8da1af;font-size:10px}
+.building-monthly-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(340px,.92fr);gap:14px;align-items:start}
+.building-monthly-panel{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow)}
+.building-monthly-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.building-monthly-panel>header h3{margin:0;color:#193d55;font-size:16px}
+.building-monthly-panel>header p{margin:4px 0 0;color:#8195a3;font-size:11px}
+.building-monthly-count{padding:6px 9px;border-radius:999px;background:#edf8ff;color:#1687c7;font-size:11px;font-weight:800;white-space:nowrap}
+.building-monthly-source-body{padding:14px 18px 18px}
+.building-monthly-work-list{display:grid;gap:8px}
+.building-monthly-work{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 12px;border:1px solid #dce9f1;border-radius:12px;background:#f8fbfd}
+.building-monthly-work time{color:#5c7b90;font-size:11px;font-weight:800}
+.building-monthly-work b{display:block;color:#1b4058;font-size:12px}
+.building-monthly-work p{margin:3px 0 0;color:#7c92a1;font-size:11px;line-height:1.45}
+.building-monthly-work em{padding:5px 8px;border-radius:999px;background:#e9f9f3;color:#128963;font-size:10px;font-style:normal;font-weight:800;white-space:nowrap}
+.building-monthly-work em.open{background:#edf7ff;color:#1687c7}
+.building-monthly-empty{padding:28px 18px;border:1px dashed #c8dbe7;border-radius:13px;color:#7c92a1;text-align:center;font-size:12px}
+.building-monthly-plan{display:grid;gap:7px;margin-top:14px}
+.building-monthly-plan span{color:#34576d;font-size:12px;font-weight:800}
+.building-monthly-plan small{color:#8398a6;font-size:10px}
+.building-monthly-plan textarea{min-height:96px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fffaf3;color:#1c3f56;resize:vertical;font:inherit;line-height:1.55}
+.building-monthly-exclusion{display:flex;gap:8px;margin-top:12px;padding:11px 12px;border:1px solid #f2d5b5;border-radius:12px;background:#fff8ee;color:#8b6a4b;font-size:10px;line-height:1.55}
+.building-monthly-exclusion b{color:#b56a28}
+.building-monthly-draft{position:sticky;top:10px}
+.building-monthly-draft-body{padding:14px 18px 18px}
+.building-monthly-ai-note{margin-bottom:12px;padding:11px 12px;border:1px solid #cfe4f1;border-radius:12px;background:#eff9ff;color:#54758a;font-size:10px;line-height:1.5}
+.building-monthly-ai-note b{display:block;margin-bottom:2px;color:#147fbb;font-size:11px}
+.building-monthly-error{margin-bottom:12px;padding:10px 12px;border:1px solid #fac8ce;border-radius:11px;background:#fff1f3;color:#c84856;font-size:11px}
+.building-monthly-paper{padding:18px;border:1px solid #d9e6ee;border-radius:13px;background:#fff;color:#1a384c}
+.building-monthly-paper-mark{color:#1687c7;font-size:10px;font-weight:900;letter-spacing:.1em}
+.building-monthly-paper h4{margin:7px 0 3px;font-size:19px}
+.building-monthly-paper-meta{padding-bottom:10px;border-bottom:1px solid #dce8ef;color:#8398a6;font-size:10px}
+.building-monthly-paper-greeting{margin:12px 0;color:#3a596c;font-size:11px;line-height:1.6}
+.building-monthly-paper-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.building-monthly-paper-stats div{padding:8px 4px;border-radius:8px;background:#f4f9fc;text-align:center}
+.building-monthly-paper-stats span{display:block;color:#8297a5;font-size:9px}
+.building-monthly-paper-stats b{display:block;margin-top:2px;font-size:12px}
+.building-monthly-copy{display:grid;gap:7px;margin-top:13px}
+.building-monthly-copy label{display:grid;gap:5px;color:#1687c7;font-size:11px;font-weight:800}
+.building-monthly-copy textarea{min-height:74px;padding:9px 10px;border:1px solid #dbe7ee;border-radius:10px;background:#fbfdfe;color:#27485d;resize:vertical;font:inherit;font-size:11px;line-height:1.55}
+.building-monthly-copy label:first-child textarea{min-height:104px}
+.building-monthly-copy textarea::placeholder{color:#9babb5}
+.building-monthly-report-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.building-monthly-report-actions .primary-button{grid-column:1/-1}
+.building-monthly-checks{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;color:#6e8595;font-size:10px}
+.building-monthly-checks span{padding:5px 7px;border-radius:8px;background:#f3f8fb}
+.building-monthly-no-buildings{padding:28px;border:1px solid var(--line);border-radius:18px;background:#fff;text-align:center}
+.building-monthly-no-buildings h3{margin:0;color:#193d55}
+.building-monthly-no-buildings p{margin:8px 0 0;color:#7890a0;font-size:12px}
+@media(max-width:1080px){.building-monthly-toolbar{grid-template-columns:1fr 1fr}.building-monthly-field:first-child{grid-column:1/-1}.building-monthly-layout{grid-template-columns:1fr}.building-monthly-draft{position:static}}
+@media(max-width:760px){.building-monthly-report-hero{flex-direction:column}.building-monthly-hero-actions{justify-content:flex-start}.building-monthly-toolbar{grid-template-columns:1fr}.building-monthly-field:first-child{grid-column:auto}.building-monthly-kpis{grid-template-columns:1fr 1fr}.building-monthly-work{grid-template-columns:52px minmax(0,1fr)}.building-monthly-work em{grid-column:2}.building-monthly-paper-stats{grid-template-columns:1fr 1fr}}

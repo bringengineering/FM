@@ -92,9 +92,11 @@ footer b{color:#191F28;font-size:9pt}
 </style></head><body><main class="doc">
 <header class="head"><div><h1>${html(report.documentTitle)}</h1><p class="sub">${html(report.buildingName)} · ${html(report.monthText)}</p></div><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAt)}</div></header>
 <p class="greeting">${html(report.ownerName || "건물주")}님, ${html(report.monthText)} ${html(report.buildingName)} 관리 내역을 보고드립니다.${report.address ? ` (${html(report.address)})` : ""}</p>
+${report.narrative && report.narrative.summary ? `<section><h2>이번 달 관리 요약</h2><p class="greeting">${html(report.narrative.summary)}</p>${report.narrative.attention ? `<p class="greeting"><b>확인 사항</b> · ${html(report.narrative.attention)}</p>` : ""}</section>` : ""}
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
 <section><h2>처리한 업무</h2>${worksHtml(report.works)}</section>
 <section><h2>호실 현황</h2>${unitsHtml(report.units)}</section>
+${report.narrative && report.narrative.nextMonthPlan ? `<section><h2>다음 달 예정 관리</h2><p class="greeting">${html(report.narrative.nextMonthPlan)}</p></section>` : ""}
 ${summary.billedText ? `<div class="total"><span>${html(report.monthText)} 청구 합계</span><b>${html(summary.billedText)}</b></div>` : ""}
 <footer><span>${html(contact)}</span><b>${html(report.company.name)}</b></footer>
 </main></body></html>`;

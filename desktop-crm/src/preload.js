@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   setOfficeMessengerPresence: input => ipcRenderer.invoke("crm:office-messenger-presence", input),
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   assessWorkOrders: input => ipcRenderer.invoke("crm:work-assessment", input),
+  generateBuildingMonthlyReportDraft: input => ipcRenderer.invoke("crm:building-monthly-report-draft", input),
   wallboardAdmin: input => ipcRenderer.invoke("crm:wallboard-admin", input),
   chooseConsultationAudio: () => ipcRenderer.invoke("crm:consultation-audio-pick"),
   transcribeConsultationAudio: input => ipcRenderer.invoke("crm:consultation-audio-transcribe", input),

@@ -125,6 +125,13 @@
     const units = unitRows(store, buildingId);
     const vacant = units.filter(unit => unit.status === "vacant").length;
     const billed = works.reduce((total, item) => total + amount(item.amountText), 0);
+    const inputNarrative = source.narrative && typeof source.narrative === "object" && !Array.isArray(source.narrative)
+      ? source.narrative : {};
+    const narrative = Object.freeze({
+      summary: text(inputNarrative.summary, 1200),
+      attention: text(inputNarrative.attention, 600),
+      nextMonthPlan: text(inputNarrative.nextMonthPlan || source.nextMonthPlan, 800),
+    });
 
     return Object.freeze({
       documentTitle: "월간 관리 보고서",
@@ -136,6 +143,7 @@
       issuedAt: dateKey(source.issuedAt) || dateKey(new Date().toISOString()),
       works: Object.freeze(works),
       units: Object.freeze(units),
+      narrative,
       summary: Object.freeze({
         workCount: works.length,
         doneCount: works.filter(item => item.done).length,

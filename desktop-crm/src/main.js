@@ -11,6 +11,7 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const { createLocalWorkAssessor } = require("./local-gemini-assessment");
+const { createLocalBuildingReportWriter } = require("./local-gemini-building-report");
 const Core = require("./core");
 const OfficeCore = require("./office-core");
 const OfficeAttachment = require("./office-attachment");
@@ -5459,6 +5460,41 @@ async function createWindow() {
         };
       })()`, true);
       if (!actionResult?.pass) throw new Error(`cleaning center screenshot action failed: ${JSON.stringify(actionResult)}`);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-monthly-report-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="documents"]')?.click();
+        await wait(160);
+        const seeded = window.__crmTest.getStore();
+        seeded.customers.push({ id: 'owner_monthly_customer', name: '이정훈', type: '건물주', buildingIds: ['owner_monthly_building'] });
+        seeded.buildings.push({ id: 'owner_monthly_building', name: '센트럴타워', ownerCustomerId: 'owner_monthly_customer', address: '강원특별자치도 원주시 혁신로 00' });
+        seeded.contracts.push({ id: 'owner_monthly_contract', name: '시설 종합관리', buildingId: 'owner_monthly_building', customerId: 'owner_monthly_customer', status: '진행 중', billingCycle: '월 정기' });
+        const reportCases = [
+          { id: 'owner_case_1', crmBuildingId: 'owner_monthly_building', serviceType: '배수펌프 점검', workCompletedAt: '2026-08-05', workSummary: '배수펌프 점검 및 이물 제거', statusValue: '완료', approvedAmount: '180000' },
+          { id: 'owner_case_2', crmBuildingId: 'owner_monthly_building', issueType: '냉방기 누수', unitName: '502호', workCompletedAt: '2026-08-12', workSummary: '냉방기 배수 상태 확인 및 누수 조치', statusValue: '완료', approvedAmount: '420000' },
+          { id: 'owner_case_3', crmBuildingId: 'owner_monthly_building', serviceType: '옥상 방수 점검', workCompletedAt: '2026-08-21', workSummary: '균열 의심 구간 추적 관찰', statusValue: '진행 중', approvedAmount: '480000' },
+          { id: 'owner_case_4', crmBuildingId: 'owner_monthly_building', serviceType: '출입문 설비', workCompletedAt: '2026-08-28', workSummary: '1층 도어클로저 교체', statusValue: '완료', approvedAmount: '300000' }
+        ];
+        for (let index = 1; index <= 18; index += 1) seeded.buildingUnits.push({ id: 'owner_unit_' + index, crmBuildingId: 'owner_monthly_building', label: index + '01호', status: index <= 2 ? 'vacant' : 'occupied' });
+        window.__crmTest.applyRemoteForTest(seeded);
+        window.__crmTest.setOperationsForTest({ cases: reportCases, payments: {}, caseSettings: {} });
+        window.__crmSmokeNavigate('buildingMonthlyReports');
+        await wait(180);
+        const buildingSelect = document.querySelector('[data-building-monthly-building]');
+        if (buildingSelect) { buildingSelect.value = 'owner_monthly_building'; buildingSelect.dispatchEvent(new Event('change', { bubbles: true })); await wait(120); }
+        const plan = document.querySelector('[data-building-monthly-next-plan]');
+        if (plan) { plan.value = '옥상 균열 의심 구간 재점검, 소방설비 월간 점검 및 공용부 조명 확인'; plan.dispatchEvent(new Event('input', { bubbles: true })); }
+        const copy = {
+          summary: '8월에는 배수펌프 이물 제거와 502호 냉방기 누수 조치를 완료해 시설 이용 불편을 해소했습니다. 공용 출입문 설비도 교체했으며, 옥상 방수 구간은 지속 확인하고 있습니다.',
+          attention: '옥상 균열 의심 구간은 다음 달 재점검 결과에 따라 추가 조치 여부를 안내드리겠습니다.',
+          nextMonthPlan: '옥상 방수 구간을 재점검하고 소방설비 및 공용부 조명 상태를 확인할 예정입니다.'
+        };
+        for (const [key, value] of Object.entries(copy)) { const input = document.querySelector('[data-building-monthly-copy="' + key + '"]'); if (input) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); } }
+        const page = document.querySelector('.building-monthly-report-page');
+        const bodyOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
+        return { pass: Boolean(page && document.querySelectorAll('.building-monthly-work').length === 4 && document.querySelector('[data-building-monthly-pdf]')) && !bodyOverflow, workCount: document.querySelectorAll('.building-monthly-work').length, bodyOverflow, state: window.__crmTest.snapshot() };
+      })()`, true);
+      if (!actionResult?.pass) throw new Error(`building monthly report screenshot action failed: ${JSON.stringify(actionResult)}`);
     } else if (["weekly-report-preview", "weekly-report-document-preview"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8516,7 +8552,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["cleaning-center-summary-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["cleaning-center-summary-preview", "building-monthly-report-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -8603,6 +8639,39 @@ secureCanonicalHandle("crm:work-assessment", async input => {
   const result = await localWorkAssessor({data, selectedUid: input.assigneeUid, viewer: {uid: user.uid, role}});
   client.assertSessionGuardActive(guard);
   return result;
+});
+let localBuildingReportWriter = null;
+secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
+  const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative"]);
+  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !allowedKeys.has(key))) {
+    throw new Error("월간 보고서 요청을 확인해 주세요.");
+  }
+  if (JSON.stringify(input).length > 300000) throw new Error("월간 보고서 자료가 너무 큽니다.");
+  const client = remoteClient;
+  const user = client?.authState().user;
+  const role = user?.accessRole || user?.role;
+  if (!user?.uid || !["admin", "member"].includes(role) || isMarketingOnlySession()) {
+    throw new Error("월간 보고서 AI 작성 권한이 없습니다.");
+  }
+  const guard = client.captureSessionGuard();
+  const report = BuildingReportCore.buildBuildingMonthlyReport(input);
+  const leaks = BuildingReportCore.findLeakedFields(report, input.store);
+  if (leaks.length) {
+    throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });
+  }
+  if (!localBuildingReportWriter) {
+    localBuildingReportWriter = createLocalBuildingReportWriter({
+      userDataPath: app.getPath("userData"),
+      localAppData: process.env.LOCALAPPDATA || "",
+    });
+  }
+  const result = await localBuildingReportWriter({
+    report,
+    nextMonthPlan: input.nextMonthPlan,
+    viewer: { uid: user.uid, role },
+  });
+  client.assertSessionGuardActive(guard);
+  return { ...result, report: { summary: report.summary, workCount: report.works.length } };
 });
 secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
