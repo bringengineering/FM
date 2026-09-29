@@ -6053,11 +6053,65 @@ async function createWindow() {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-workspace-enter-folder="cleaning-center"]')?.click();
         await wait(220);
+        const store = window.__crmTest.getStore();
+        const previewCustomers = [
+          { id: 'cc_preview_customer_1', name: '김민수', phone: '010-1234-5678', email: 'minsu.preview@example.test', type: '개인', buildingIds: ['cc_preview_building_1'] },
+          { id: 'cc_preview_customer_2', name: '이지은', phone: '010-2345-6789', email: 'jieun.preview@example.test', type: '개인', buildingIds: ['cc_preview_building_2'] },
+          { id: 'cc_preview_customer_3', name: '박서연', phone: '010-3456-7890', email: 'seoyeon.preview@example.test', type: '개인', buildingIds: ['cc_preview_building_3'] },
+          { id: 'cc_preview_customer_4', name: '최민수', phone: '010-4567-8901', email: 'minsu2.preview@example.test', type: '개인', buildingIds: ['cc_preview_building_4'] },
+        ];
+        const previewBuildings = [
+          { id: 'cc_preview_building_1', name: '무실동 브링아파트', ownerCustomerId: 'cc_preview_customer_1', address: '강원특별자치도 원주시 무실로 123', roadAddress: '강원특별자치도 원주시 무실로 123', buildingType: '아파트', areaPyeong: 24 },
+          { id: 'cc_preview_building_2', name: '테헤란빌', ownerCustomerId: 'cc_preview_customer_2', address: '서울특별시 강남구 테헤란로 45', roadAddress: '서울특별시 강남구 테헤란로 45', buildingType: '아파트', areaPyeong: 32 },
+          { id: 'cc_preview_building_3', name: '단구 주택', ownerCustomerId: 'cc_preview_customer_3', address: '강원특별자치도 원주시 단구로 21', roadAddress: '강원특별자치도 원주시 단구로 21', buildingType: '빌라', areaPyeong: 18 },
+          { id: 'cc_preview_building_4', name: '태장 단독주택', ownerCustomerId: 'cc_preview_customer_4', address: '강원특별자치도 원주시 태장로 77', roadAddress: '강원특별자치도 원주시 태장로 77', buildingType: '단독주택', areaPyeong: 35 },
+        ];
+        store.customers = [...store.customers.filter(item => !String(item.id || '').startsWith('cc_preview_')), ...previewCustomers];
+        store.buildings = [...store.buildings.filter(item => !String(item.id || '').startsWith('cc_preview_')), ...previewBuildings];
+        if (!window.__crmTest.replaceStoreForTest(store)) throw new Error('Could not seed isolated Cleaning Center screenshot records');
+        const previewOrders = [
+          ['00128','cc_preview_customer_1','cc_preview_building_1','입주청소 24평','move_in_cleaning','received','phone','2026-09-30T07:18:00+09:00','2026-10-03','김민지'],
+          ['00127','cc_preview_customer_2','cc_preview_building_2','이사청소 32평','move_out_cleaning','reviewing','naver','2026-09-30T07:05:00+09:00','2026-10-04','박수빈'],
+          ['00126','cc_preview_customer_3','cc_preview_building_3','거주청소 18평','move_in_cleaning','quote_pending','kakao','2026-09-30T06:52:00+09:00','2026-10-05','이준호'],
+          ['00125','cc_preview_customer_4','cc_preview_building_4','입주청소 35평','move_in_cleaning','approval_pending','website','2026-09-30T06:41:00+09:00','2026-10-06','김지현'],
+          ['00124','cc_preview_customer_1','cc_preview_building_1','이사청소 24평','move_out_cleaning','scheduled','direct','2026-09-30T06:20:00+09:00','2026-10-07','이준호'],
+          ['00123','cc_preview_customer_2','cc_preview_building_2','상가청소','common_cleaning','scheduled','partner','2026-09-30T06:05:00+09:00','2026-10-08','박수빈'],
+          ['00122','cc_preview_customer_3','cc_preview_building_3','거주청소 18평','move_in_cleaning','in_progress','phone','2026-09-30T05:48:00+09:00','2026-09-30','김지현'],
+          ['00121','cc_preview_customer_4','cc_preview_building_4','입주청소 35평','move_in_cleaning','review_pending','naver','2026-09-30T05:21:00+09:00','2026-09-30','이준호'],
+          ['00120','cc_preview_customer_1','cc_preview_building_1','입주청소 24평','move_in_cleaning','completed','kakao','2026-09-30T05:03:00+09:00','2026-09-29','김민지'],
+          ['00119','cc_preview_customer_2','cc_preview_building_2','이사청소 32평','move_out_cleaning','completed','website','2026-09-30T04:55:00+09:00','2026-09-29','박수빈'],
+          ['00118','cc_preview_customer_3','cc_preview_building_3','거주청소 18평','move_in_cleaning','cancelled','direct','2026-09-30T04:42:00+09:00','2026-09-29',''],
+          ['00117','cc_preview_customer_4','cc_preview_building_4','입주청소 35평','move_in_cleaning','revision_requested','phone','2026-09-30T04:30:00+09:00','2026-10-01','김지현'],
+        ].map(([suffix, customerId, buildingId, title, serviceType, status, sourceChannel, createdAt, desiredDate, assigneeName]) => ({
+          id: 'BR-260926-' + suffix, customerId, buildingId, title, serviceType, status, sourceChannel, createdAt, desiredDate, assigneeName,
+          customerName: previewCustomers.find(item => item.id === customerId).name,
+          customerPhone: previewCustomers.find(item => item.id === customerId).phone,
+          buildingName: previewBuildings.find(item => item.id === buildingId).name,
+          buildingAddress: previewBuildings.find(item => item.id === buildingId).roadAddress,
+          description: '화면 검수용 샘플 자료입니다. 실제 고객·주문 데이터가 아닙니다.',
+        }));
+        const previewWorkOrders = [{
+          id: 'cc_preview_work_1', cleaningOrderId: 'BR-260926-00122', buildingId: 'cc_preview_building_3',
+          title: '거주청소 18평 현장 작업', status: 'in_progress', progress: 60, assigneeUid: 'preview-worker',
+          assigneeName: '김지현', dueDate: '2026-09-30', what: '주방·욕실·바닥 청소', doneWhen: '작업 체크리스트와 결과보고 기록',
+        }];
+        const previewReports = [{
+          id: 'cc_preview_report_1', cleaningOrderId: 'BR-260926-00121', buildingId: 'cc_preview_building_4',
+          buildingName: '태장 단독주택', kind: 'moveIn', title: '입주청소 결과보고', workDate: '2026-09-30', workerName: '이준호',
+          items: [{ key: 'kitchen', status: 'done', note: '화면 검수용 결과 샘플', before: [], after: [] }],
+        }];
+        const previewPolicy = { policy: { policyId: 'preview_wonju_20261001', name: '화면 검수용 원주 가격표', region: '원주시', effectiveFrom: '2026-10-01', publication: 'published', basePrices: { apartment: [180000,240000,280000,320000,360000], villa: [160000,220000,260000,300000,340000], detached: [200000,260000,320000,360000,400000] }, addOns: [{ id: 'balcony', name: '베란다 청소', description: '화면 검수용 항목', amount: 20000 }], discountCaps: { promotion: 50000, membership: 30000 } } };
+        const previewSettlement = { fromDate: '2026-09-21', toDate: '2026-09-27', partners: [{ vendorId: 'preview-vendor', vendorName: '화면 검수용 A클린', completedWorkCount: 2, grossSupplierAmount: 390000, checks: { inspectionApproved: false, noOpenCases: false, accountVerified: false, taxInvoiceVerified: false } }] };
+        const injected = window.__crmTest.setCleaningOrdersForTest({ orders: previewOrders, workOrders: previewWorkOrders, reports: previewReports, workOrderAdmin: true, reportAdmin: true, reportCanWork: true, pricingPolicies: [previewPolicy], settlementReview: previewSettlement });
+        if (!injected?.accepted || injected.orderCount !== previewOrders.length || !injected.fixtureOnly) throw new Error('Isolated Cleaning Center preview data was not accepted');
+        window.__cleaningGalleryPreviewData = { orderCount: injected.orderCount, fixtureOnly: injected.fixtureOnly, label: '화면 검수용 샘플 · CRM 저장/운영 API 호출 없음' };
         const pages = window.BringCleaningCenterPages.SCREENS.map(screen => ({ reference: screen.reference, view: screen.view, kind: screen.kind, label: screen.label, title: screen.title }));
         const output = [];
         for (const screen of pages) {
+          document.querySelector('#modal [data-action="close-modal"]')?.click();
+          await wait(30);
           document.querySelector('[data-cleaning-screen="' + screen.reference + '"]')?.click();
-          await wait(100);
+          await wait(140);
           const selector = screen.kind === 'dashboard' ? '.cleaning-dashboard'
             : screen.kind === 'cti' ? '.cleaning-cti'
               : screen.kind === 'analytics' ? '.cleaning-analytics'
@@ -6080,16 +6134,38 @@ async function createWindow() {
       for (const screen of screens) {
         await mainWindow.webContents.executeJavaScript(`(async () => {
           const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const reference = '${screen.reference}';
+          const view = '${screen.view}';
           document.querySelector('[data-cleaning-screen="${screen.reference}"]')?.click();
           await wait(80);
-          return window.__crmTest.snapshot().view === '${screen.view}';
+          if (reference === '04') {
+            const customerPicker = document.querySelector('[data-cleaning-customer-select]');
+            if (customerPicker && [...customerPicker.options].some(option => option.value === 'cc_preview_customer_1')) {
+              customerPicker.value = 'cc_preview_customer_1';
+              customerPicker.dispatchEvent(new Event('change', { bubbles: true }));
+              await wait(80);
+            }
+          }
+          const modalActions = {
+            '20': '[data-action="create-cleaning-partner-offer"]', '21': '[data-action="create-cleaning-partner-offer"]',
+            '22': '[data-action="create-cleaning-partner-offer"]', '23': '[data-action="reassign-cleaning-partner"]',
+            '24': '[data-action="cancel-cleaning-order"]', '25': '[data-action="manage-cleaning-refund"]',
+            '26': '[data-action="manage-cleaning-rework"]', '27': '[data-action="new-cleaning-partner"]',
+            '30': '[data-action="open-cleaning-order-message"]', '31': '[data-action="new-consultation-reservation"]',
+            '32': '[data-action="manage-cleaning-extra-charge"]', '33': '[data-action="open-cleaning-delay-response"]'
+          };
+          const modalSelector = modalActions[reference];
+          const modalAction = modalSelector && document.querySelector('[data-cleaning-page="' + view + '"] ' + modalSelector);
+          if (modalAction && !modalAction.disabled) { modalAction.click(); await wait(100); }
+          return window.__crmTest.snapshot().view === view;
         })()`, true);
         const image = await mainWindow.webContents.capturePage();
         const file = path.join(pagesDirectory, `${screen.reference}-${screen.view}.png`);
         await fs.writeFile(file, image.toPNG());
         captured.push({ reference: screen.reference, file, bytes: image.toPNG().length });
       }
-      actionResult = { pass: captured.length === 34, pageCount: screens.length, failedScreens, captured, fixtureOnly: true };
+      const previewData = await mainWindow.webContents.executeJavaScript('window.__cleaningGalleryPreviewData || null', true);
+      actionResult = { pass: captured.length === 34 && previewData?.fixtureOnly === true && previewData.orderCount === 12, pageCount: screens.length, failedScreens, captured, fixtureOnly: true, fixtureData: previewData };
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-monthly-report-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));

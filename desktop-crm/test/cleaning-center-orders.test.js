@@ -508,7 +508,7 @@ test('cleaning order queue supports status and customer/building text filters wi
   assert.match(html, /data-cleaning-order-status/u);
   assert.match(html, /data-cleaning-filter-count/u);
   assert.match(html, /data-cleaning-no-match/u);
-  assert.match(app, /matchesOrderFilter\(\{[\s\S]*?title: row\.querySelector\("strong"\)/u);
+  assert.match(app, /matchesOrderFilter\(\{[\s\S]*?title: order\.title \|\| row\.querySelector\("strong"\)\?\.textContent/u);
   assert.match(app, /cleaningOrderState\.search = String\(event\.target\.value \|\| ""\)/u);
   assert.match(app, /cleaningOrderState\.statusFilter = event\.target\.value \|\| "all"/u);
 });

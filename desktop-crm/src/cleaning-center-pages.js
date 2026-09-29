@@ -22,7 +22,7 @@
     { reference: "01", view: "cleaningCenter", title: "통합 운영 대시보드", label: "센터 홈", group: "overview", kind: "dashboard" },
     { reference: "02", view: "cleaningCti", title: "CTI 상담센터", label: "CTI 상담센터", group: "intake", kind: "cti" },
     { reference: "03", view: "cleaningLeads", title: "신규문의", label: "신규 문의", group: "intake", kind: "order-queue" },
-    { reference: "04", view: "cleaningCustomer360", title: "Customer 360", label: "고객 360", group: "intake", kind: "customer" },
+    { reference: "04", view: "cleaningCustomer360", title: "고객 상세", label: "고객 상세", group: "intake", kind: "customer" },
     { reference: "05", view: "cleaningQuoteCalculator", title: "견적 계산기", label: "견적 계산기", group: "orders", kind: "quotes" },
     { reference: "06", view: "cleaningOrderDetail", title: "주문 상세", label: "주문 상세", group: "orders", kind: "order-detail" },
     { reference: "07", view: "cleaningPartnerSearch", title: "파트너 검색 / 추천", label: "파트너 검색", group: "dispatch", kind: "partner-search" },

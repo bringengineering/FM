@@ -75,6 +75,8 @@
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
   let selectedCleaningCustomer360Tab = "consultations";
+  let selectedCleaningQuoteOrderId = "";
+  let selectedCleaningOrderDetailId = "";
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
   let selectedMessageMode = "messages";
@@ -1688,6 +1690,8 @@
       customerPhone: customerPhoneText(customerById.get(String(order.customerId || ""))?.phone) || "",
       buildingName: buildingById.get(String(order.buildingId || ""))?.name || "",
       buildingAddress: (() => { const building = buildingById.get(String(order.buildingId || "")); return building?.roadAddress || building?.address || building?.jibunAddress || ""; })(),
+      buildingType: buildingById.get(String(order.buildingId || ""))?.buildingType || "",
+      areaPyeong: Number(buildingById.get(String(order.buildingId || ""))?.areaPyeong) || 0,
       relatedWorkOrders: linkedWorkOrders.map(item => ({ id: item.id, title: item.title || "제목 없는 업무", progress: Number(item.progress || 0), status: item.status, statusLabel: W?.statusLabel(item.status) || item.status, assigneeName: item.assigneeName || "담당자 미배정", dueDate: item.dueDate || "" })),
       relatedReports: linkedReports.map(item => {
         const R = reportCore();
@@ -1756,9 +1760,15 @@
       error,
       customers: { ready: true, value: (store.customers || []).filter(item => item && !item.archivedAt).length },
       cleaningCustomers: (store.customers || []).filter(item => item && !item.archivedAt),
+      cleaning360CustomerId: selectedCustomerHubId,
+      cleaning360Tab: selectedCleaningCustomer360Tab,
+      cleaningBuildings: (store.buildings || []).filter(item => item && !item.archivedAt),
+      cleaning360Activities: store.activities || [],
+      selectedQuoteOrderId: selectedCleaningQuoteOrderId,
+      selectedOrderDetailId: selectedCleaningOrderDetailId,
       buildings: { ready: true, value: (store.buildings || []).filter(item => item && !item.archivedAt).length },
       cases: { ready: Boolean(operations.loadedAt), value: activeRequestCount, error: Boolean(operationsError) },
-      casesLoaded: Boolean(operations.loadedAt), casesError: Boolean(operationsError), cleaningCases,
+      casesLoaded: Boolean(operations.loadedAt), casesError: Boolean(operationsError), cleaningCases, cleaning360Cases: cleaningCases,
       billingLoaded: cleaningBillingState.loaded, billingError: cleaningBillingState.error, cleaningPayments,
       settlementReview: cleaningSettlementState.review, settlementLoading: cleaningSettlementState.loading,
       settlementError: cleaningSettlementState.error, selectedSettlementVendorId: cleaningSettlementState.selectedVendorId,
@@ -1774,6 +1784,7 @@
       ordersUpdatedAt: cleaningOrderState.lastLoadedAt, asOf: todayKey(), nowMs: Date.now(),
       reportsLoaded: reportState.loaded, reportsError: reportState.error,
       orderSearch: cleaningOrderState.search, orderStatusFilter: cleaningOrderState.statusFilter,
+      leadChannelFilter: cleaningLeadChannelFilter,
       ordersHasMore: cleaningOrderState.hasMore, ordersLoadingMore: cleaningOrderState.loadingMore,
       ordersLoadMoreError: cleaningOrderState.loadMoreError,
       canWrite: canWriteCRM(),
@@ -1916,8 +1927,13 @@
     const rows = Array.from(main.querySelectorAll(".cleaning-order-row"));
     const search = String(cleaningOrderState.search || "");
     const status = String(cleaningOrderState.statusFilter || "all");
+    const channel = currentView === "cleaningLeads" ? cleaningLeadChannelFilter : "all";
+    const receivedDate = currentView === "cleaningLeads" ? String(main.querySelector("[data-cleaning-lead-date]")?.value || "") : "";
     for (const button of main.querySelectorAll("[data-cleaning-status-preset]")) {
       button.classList.toggle("is-active", button.dataset.cleaningStatusPreset === status);
+    }
+    for (const button of main.querySelectorAll("[data-cleaning-lead-channel]")) {
+      button.classList.toggle("is-active", button.dataset.cleaningLeadChannel === channel);
     }
     let visible = 0;
     for (const row of rows) {
@@ -1926,12 +1942,14 @@
         status: order.status || "",
         desiredDate: order.desiredDate || "",
         statusLabel: row.querySelector(".cleaning-order-status")?.textContent || "",
-        title: row.querySelector("strong")?.textContent || "",
-        customerName: row.querySelector(":scope > div > small")?.textContent || "",
-        description: row.querySelector(".cleaning-order-request p")?.textContent || "",
+        title: order.title || row.querySelector("strong")?.textContent || "",
+        customerName: order.customerName || row.querySelector(":scope > div > small")?.textContent || "",
+        description: order.description || row.querySelector(".cleaning-order-request p")?.textContent || "",
       }, search, status, todayKey());
-      row.hidden = !matches;
-      if (matches) visible += 1;
+      const rowChannel = String(row.dataset.cleaningLeadChannel || "unknown");
+      const rowDate = String(order.createdAt || "").slice(0, 10);
+      row.hidden = !(matches && (channel === "all" || rowChannel === channel) && (!receivedDate || rowDate === receivedDate));
+      if (!row.hidden) visible += 1;
     }
     const count = main.querySelector("[data-cleaning-filter-count]");
     if (count) count.textContent = `${visible} / ${rows.length}건`;
@@ -5693,6 +5711,7 @@
   let cleaningSettlementState = { review: null, loading: false, loaded: false, attempted: false, error: "", generation: -1, uid: "", selectedVendorId: "" };
   let cleaningScheduleMonth = Core.dayKey().slice(0, 7);
   let cleaningScheduleDate = Core.dayKey();
+  let cleaningLeadChannelFilter = "all";
   let cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "", confirmedPriceIndices: [], pricedPriceIndices: [] };
 
   async function loadCleaningBillingLedger() {
@@ -13333,7 +13352,7 @@
       return;
     }
     const customer360Message = event.target.closest("[data-cleaning-customer360-message]");
-    if (customer360Message && currentView === "customers") {
+    if (customer360Message && ["customers", "cleaningCustomer360"].includes(currentView)) {
       if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
       selectedMessageCustomerId = String(customer360Message.dataset.cleaningCustomer360Message || "");
       selectedMessageMode = "messages";
@@ -13418,6 +13437,18 @@
       if (statusSelect) statusSelect.value = cleaningOrderState.statusFilter;
       applyCleaningOrderFilters();
       main.querySelector(".cleaning-orders-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const cleaningCustomer360Tab = event.target.closest("[data-cleaning-customer360-tab]");
+    if (cleaningCustomer360Tab && currentView === "cleaningCustomer360") {
+      selectedCleaningCustomer360Tab = cleaningCustomer360Tab.dataset.cleaningCustomer360Tab || "consultations";
+      renderCleaningCenter();
+      return;
+    }
+    const cleaningLeadChannel = event.target.closest("[data-cleaning-lead-channel]");
+    if (cleaningLeadChannel && currentView === "cleaningLeads") {
+      cleaningLeadChannelFilter = cleaningLeadChannel.dataset.cleaningLeadChannel || "all";
+      applyCleaningOrderFilters();
       return;
     }
     const cleaningRoute = event.target.closest("[data-cleaning-view]");
@@ -16412,6 +16443,22 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-cleaning-quote-order-select]") && currentView === "cleaningQuoteCalculator") {
+      selectedCleaningQuoteOrderId = event.target.value || "";
+      renderCleaningCenter();
+      return;
+    }
+    if (event.target.matches("[data-cleaning-order-detail-select]") && currentView === "cleaningOrderDetail") {
+      selectedCleaningOrderDetailId = event.target.value || "";
+      renderCleaningCenter();
+      return;
+    }
+    if (event.target.matches("[data-cleaning-customer-select]") && currentView === "cleaningCustomer360") {
+      selectedCustomerHubId = customerById(event.target.value)?.id || "";
+      selectedCleaningCustomer360Tab = "consultations";
+      renderCleaningCenter();
+      return;
+    }
     if (event.target.matches("[data-cleaning-cti-customer]") && currentView === "cleaningCti") {
       selectedCleaningCtiCustomerId = customerById(event.target.value)?.id || "";
       renderCleaningCtiCenter();
@@ -16966,12 +17013,12 @@
       const publication = submitButton?.dataset.cleaningPricingSave === "published" ? "published" : "draft";
       const requestId = crypto.randomUUID();
       const basePrices = Object.fromEntries(["apartment", "villa", "detached"].map(housing => [housing,
-        [0, 1, 2, 3, 4].map(index => Number(values.get(`base_${housing}_${index}`)))]));
+        [0, 1, 2, 3, 4].map(index => Number(String(values.get(`base_${housing}_${index}`) || "").replace(/,/gu, "")))]));
       const addOns = [0, 1, 2, 3].map(index => ({
         id: String(values.get(`addon_id_${index}`) || "").trim(),
         name: String(values.get(`addon_name_${index}`) || "").trim(),
         description: String(values.get(`addon_description_${index}`) || "").trim(),
-        amount: Number(values.get(`addon_amount_${index}`)),
+        amount: Number(String(values.get(`addon_amount_${index}`) || "").replace(/,/gu, "")),
       }));
       const policy = {
         policyId: requestId,
@@ -16981,14 +17028,18 @@
         publication,
         basePrices,
         addOns,
-        discountCaps: { promotion: Number(values.get("promotionCap")), membership: Number(values.get("membershipCap")) },
+        discountCaps: {
+          promotion: Number(String(values.get("promotionCap") || "").replace(/,/gu, "")),
+          membership: Number(String(values.get("membershipCap") || "").replace(/,/gu, "")),
+        },
       };
       if (submitButton) submitButton.disabled = true;
       try {
         await api.saveCleaningPricingPolicy({ requestId, policy });
         cleaningPricingPolicyState.attempted = false;
         await loadCleaningPricingPolicies();
-        openCleaningPricingPolicyDialog();
+        if (currentView === "cleaningPricingPolicy") renderCleaningCenter();
+        else openCleaningPricingPolicyDialog();
         showToast(publication === "published" ? "가격표를 게시했습니다. 적용 시작일 이후 새 견적에서 선택됩니다." : "가격표를 임시저장했습니다.", "success");
       } catch (error) {
         if (submitButton) submitButton.disabled = false;
@@ -18841,6 +18892,10 @@
       applyCleaningOrderFilters();
       return;
     }
+    if (event.target.matches("[data-cleaning-lead-date]")) {
+      applyCleaningOrderFilters();
+      return;
+    }
     if (event.target.matches("[data-wo-progress-modal-input]")) {
       const value = workOrderCore()?.progressOf(event.target.value) || 0;
       const preview = event.target.form?.querySelector("[data-wo-progress-modal-preview]");
@@ -19400,6 +19455,42 @@ document.addEventListener("keydown", event => {
         loadedAt: new Date().toISOString(),
       };
       return true;
+    },
+    setCleaningOrdersForTest: data => {
+      if (new URLSearchParams(location.search).get("demo") !== "1" || !data || typeof data !== "object" || !Array.isArray(data.orders)) return false;
+      cleaningOrderState.orders = JSON.parse(JSON.stringify(data.orders)).filter(order => order && typeof order.id === "string" && order.id.trim());
+      cleaningOrderState.quoteSets = data.quoteSets && typeof data.quoteSets === "object" ? JSON.parse(JSON.stringify(data.quoteSets)) : Object.create(null);
+      cleaningOrderState.loaded = true;
+      cleaningOrderState.attempted = true;
+      cleaningOrderState.loading = false;
+      cleaningOrderState.loadingMore = false;
+      cleaningOrderState.error = "";
+      cleaningOrderState.loadMoreError = "";
+      cleaningOrderState.hasMore = false;
+      cleaningOrderState.nextCursor = null;
+      cleaningOrderState.lastLoadedAt = Date.now();
+      if (Array.isArray(data.workOrders)) {
+        workOrderState.orders = JSON.parse(JSON.stringify(data.workOrders));
+        workOrderState.loaded = true;
+        workOrderState.loading = false;
+        workOrderState.admin = data.workOrderAdmin === true;
+      }
+      if (Array.isArray(data.reports)) {
+        reportState.reports = JSON.parse(JSON.stringify(data.reports));
+        reportState.loaded = true;
+        reportState.loading = false;
+        reportState.admin = data.reportAdmin === true;
+        reportState.canWork = data.reportCanWork === true;
+        reportState.error = "";
+      }
+      if (Array.isArray(data.pricingPolicies)) {
+        cleaningPricingPolicyState = { policies: JSON.parse(JSON.stringify(data.pricingPolicies)), attempted: true, loading: false, error: "" };
+      }
+      if (data.settlementReview && typeof data.settlementReview === "object") {
+        cleaningSettlementState = { ...cleaningSettlementState, review: JSON.parse(JSON.stringify(data.settlementReview)), loading: false, loaded: true, attempted: true, error: "" };
+      }
+      renderCleaningCenter();
+      return { accepted: true, fixtureOnly: true, orderCount: cleaningOrderState.orders.length };
     },
     customerSalesProgress: customerId => JSON.parse(JSON.stringify(customerSalesProgress(customerById(customerId)))),
     confirmPending: () => finishConfirmation(true),
