@@ -1,5 +1,6 @@
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
+const PUBLIC_DOCUMENT_ORIGIN = "https://bring-crm-ai-gateway.bringengineering1008.workers.dev";
 
 function fail(code = "INVALID_INPUT") { throw Object.assign(new Error(code), { code }); }
 function json(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }); }
@@ -67,7 +68,7 @@ export async function sendNcpDocument(input, options = {}) {
     body = { type: new TextEncoder().encode(content).byteLength > 80 ? "LMS" : "SMS", from: clean(env.NCP_SENS_FROM, 20).replace(/\D/g, ""), content, messages: [{ to: input.phone }] };
   } else fail();
   const signature = await ncpSignature("POST", uri, timestamp, accessKey, secretKey);
-  const response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method: "POST", headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, body: JSON.stringify(body) });
+  const response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method: "POST", headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, body: JSON.stringify(body), redirect: "error" });
   let value; try { value = await response.json(); } catch { fail("DELIVERY_UNAVAILABLE"); }
   if (!response.ok) fail("DELIVERY_UNAVAILABLE");
   const providerMessageId = clean(value?.messages?.[0]?.messageId || value?.requestId, 120);
@@ -82,8 +83,6 @@ export function createDocumentDeliveryHandler(options = {}) {
   const sendProvider = options.sendProvider || (input => sendNcpDocument(input, { fetchImpl, now }));
   return async function handle(request, identity, env) {
     const url = new URL(request.url), capabilities = configured(env);
-    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, sms: capabilities.sms } });
-
     const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})$/.exec(url.pathname);
     if (publicMatch && request.method === "GET") {
       const documentId = await env.DOCUMENT_DELIVERY.get(`token:${publicMatch[1]}`);
@@ -92,7 +91,11 @@ export function createDocumentDeliveryHandler(options = {}) {
       const bytes = decodeBase64(document.bytes);
       return new Response(bytes, { headers: { "content-type": "application/pdf", "content-disposition": "inline", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
     }
-    if (!identity || !capabilities.storage) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
+    if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
+    const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+    if (!admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
+    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, sms: capabilities.sms } });
+    if (!capabilities.storage) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
 
     if (url.pathname === "/v1/document-delivery/documents" && request.method === "POST") {
       let input; try { input = await request.json(); } catch { fail(); }
@@ -101,7 +104,7 @@ export function createDocumentDeliveryHandler(options = {}) {
       decodeBase64(input.bytes);
       const expiration = expiry(input.expiresAt, now);
       const id = `doc_${randomId()}`, token = randomId();
-      const record = { id, token, documentId: safeId(input.documentId), documentType, documentName: clean(input.documentName, 160), customerId: safeId(input.customerId), expiresAt: expiration.expiresAt, secureUrl: `${url.origin}/d/${token}`, bytes: String(input.bytes), createdBy: identity.email, createdAt: new Date(now()).toISOString() };
+      const record = { id, token, documentId: safeId(input.documentId), documentType, documentName: clean(input.documentName, 160), customerId: safeId(input.customerId), expiresAt: expiration.expiresAt, secureUrl: `${PUBLIC_DOCUMENT_ORIGIN}/d/${token}`, bytes: String(input.bytes), createdBy: identity.email, createdAt: new Date(now()).toISOString() };
       if (!record.documentName) fail();
       await env.DOCUMENT_DELIVERY.put(`doc:${id}`, JSON.stringify(record), { expirationTtl: expiration.ttl });
       await env.DOCUMENT_DELIVERY.put(`token:${token}`, id, { expirationTtl: expiration.ttl });

@@ -61,16 +61,29 @@ test("알림 채널이 세 곳에 다 등록돼 있다", () => {
   assert.equal(MutationPolicy.classification("crm:customer-notice-send"), "mutation");
   assert.ok(mainSource.includes('secureCanonicalHandle("crm:customer-notice-send"'));
   assert.ok(preloadSource.includes('"crm:customer-notice-send"'));
+  assert.doesNotThrow(() => MutationPolicy.assertRegistered("crm:work-report-kakao-send"));
+  assert.equal(MutationPolicy.classification("crm:work-report-kakao-send"), "mutation");
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:work-report-kakao-send"'));
+  assert.ok(preloadSource.includes('"crm:work-report-kakao-send"'));
 });
 
-test("고객 번호로 바로 보내지 않는다고 화면과 서버가 같이 말한다", () => {
-  // 알림톡 템플릿 심사 전에 문자로 대신 보내면 정보성·광고성 구분 없이 나간다.
+test("작업 결과보고서 알림톡은 승인 상태와 수신번호를 확인하고 보낸다", () => {
   const send = mainSource.slice(mainSource.indexOf("async function sendCustomerNotice"), mainSource.indexOf("async function sendTelegramDirective"));
   assert.ok(send, "sendCustomerNotice 가 없다");
   assert.match(send, /requireTelegramAdmin\(\)/u);
   assert.match(send, /TelegramCore\.composeCustomerNotice/u);
   assert.ok(!/sendSms|문자로/u.test(send), "여기서 문자로 넘기면 안 된다");
-  // 화면이 말하지 않으면 사람은 고객에게 간 줄 안다.
-  assert.match(appSource, /알림톡 템플릿 심사가 끝나야/u);
+  const kakao = mainSource.slice(mainSource.indexOf("async function sendWorkReportToCustomerByKakao"), mainSource.indexOf("// 수주 진행 결과물."));
+  assert.ok(kakao, "결과보고서 알림톡 발송 경로가 없다");
+  assert.match(kakao, /user\.role !== "admin"/u);
+  assert.match(kakao, /capabilities\.kakao !== true/u);
+  assert.match(kakao, /WorkReportCore\.validateReport/u);
+  assert.match(kakao, /ownerContact\.replace\(\/\\D\/gu, ""\)/u);
+  assert.match(kakao, /documentType: "completion_report"/u);
+  assert.match(kakao, /channel: "kakao"/u);
+  assert.match(kakao, /"revoke"/u);
+  assert.match(appSource, /발신 설정 또는 승인 템플릿 확인 필요/u);
+  assert.match(appSource, /고객에게 알림톡 발송/u);
+  // 회사 텔레그램은 내부 전달 문구 수동 복사용으로 남겨 둔다.
   assert.match(appSource, /고객에게 바로 가지 않습니다/u);
 });

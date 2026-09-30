@@ -39,6 +39,25 @@
     return [];
   }
 
+  function workRowSignature(item) {
+    return JSON.stringify([
+      dateKey(item && item.date),
+      text(item && item.unit, 40) || "공용부",
+      text(item && item.kind, 60) || "관리 업무",
+      text(item && item.summary, 180),
+    ]).toLocaleLowerCase("ko-KR");
+  }
+
+  function workRowKey(item) {
+    const signature = workRowSignature(item);
+    let hash = 14695981039346656037n;
+    for (const character of signature) {
+      hash ^= BigInt(character.codePointAt(0));
+      hash = BigInt.asUintN(64, hash * 1099511628211n);
+    }
+    return `work_${hash.toString(36)}`;
+  }
+
   function monthOf(value) {
     return String(value == null ? "" : value).slice(0, 7);
   }
@@ -98,7 +117,7 @@
     return "진행 중";
   }
 
-  function workRows(store, buildingId, month, manualWorks) {
+  function workRows(store, buildingId, month, manualWorks, excludedWorkKeys) {
     const cases = rows(store && store.cases)
       .filter(item => item && !item.archivedAt && belongsToBuilding(item, buildingId))
       .filter(item => monthOf(caseDate(item)) === month)
@@ -133,14 +152,19 @@
     // 캘린더 일정과 처리 사례가 같은 일을 가리키는 경우 하나로 합친다.
     // 보고서에는 자료 출처를 싣지 않아도 업무 자체는 빠지지 않는다.
     const seen = new Set();
+    const excluded = new Set((Array.isArray(excludedWorkKeys) ? excludedWorkKeys : [])
+      .slice(0, MAX_ROWS)
+      .map(value => text(value, 24))
+      .filter(value => /^work_[a-z0-9]{1,20}$/u.test(value)));
     return cases.concat(schedules, manual)
       .filter(item => item.date)
       .filter(item => {
-        const signature = `${item.date}|${item.unit}|${item.kind}|${item.summary}`.toLocaleLowerCase("ko-KR");
+        const signature = workRowSignature(item);
         if (seen.has(signature)) return false;
         seen.add(signature);
         return true;
       })
+      .filter(item => !excluded.has(workRowKey(item)))
       .slice(0, MAX_ROWS)
       .map(item => Object.freeze({
         date: item.date,
@@ -179,7 +203,7 @@
       ? String(source.month)
       : new Date().toISOString().slice(0, 7);
 
-    const works = workRows(store, buildingId, month, source.manualWorks);
+    const works = workRows(store, buildingId, month, source.manualWorks, source.excludedWorkKeys);
     const units = unitRows(store, buildingId);
     const vacant = units.filter(unit => unit.status === "vacant").length;
     const billed = works.reduce((total, item) => total + amount(item.amountText), 0);
@@ -243,6 +267,7 @@
 
   return Object.freeze({
     buildBuildingMonthlyReport,
+    workRowKey,
     findLeakedFields,
     UNIT_STATUS_LABEL,
     moneyText,

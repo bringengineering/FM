@@ -189,7 +189,7 @@
   function createBuildingMonthlyReportState(patch = {}) {
     return {
       buildingId: "", month: "", nextMonthPlan: "", narrative: null, loading: false, error: "", model: "", generatedAt: "",
-      manualWorks: [], addWorkOpen: false, photos: [], photoCandidates: [], photoPickerOpen: false,
+      manualWorks: [], excludedWorkKeys: [], addWorkOpen: false, photos: [], photoCandidates: [], photoPickerOpen: false,
       targetManagerOpen: false, targetSavingId: "",
       photoPickerSpace: "my", photoPickerPath: [{ id: "root", name: "내 드라이브" }], photoPickerEntries: [],
       photoPickerLoading: false, photoPickerError: "", photoPickerQuery: "", photoSelectBusy: false, photoError: "",
@@ -3470,6 +3470,8 @@
 
   function buildingMonthlyReportRequest(building, month, extras = {}) {
     const owner = customerById(building && building.ownerCustomerId) || buildingCustomers(building)[0] || null;
+    const hasCurrentDraft = String(buildingMonthlyReportState.buildingId || "") === String(building && building.id || "")
+      && String(buildingMonthlyReportState.month || "") === String(month || "");
     const reportBuilding = building && typeof building === "object"
       ? { ...building, address: building.roadAddress || building.address || building.jibunAddress || "" }
       : building;
@@ -3487,8 +3489,18 @@
       nextMonthPlan: extras.nextMonthPlan || "",
       narrative: extras.narrative || null,
       manualWorks: Array.isArray(extras.manualWorks) ? extras.manualWorks : buildingMonthlyReportState.manualWorks,
+      excludedWorkKeys: Array.isArray(extras.excludedWorkKeys)
+        ? extras.excludedWorkKeys
+        : hasCurrentDraft && Array.isArray(buildingMonthlyReportState.excludedWorkKeys) ? buildingMonthlyReportState.excludedWorkKeys : [],
       photos: Array.isArray(extras.photos) ? extras.photos : buildingMonthlyReportState.photos.map(photo => ({ id: photo.id, caption: photo.caption })),
     };
+  }
+
+  function buildingMonthlyReportRequestKey(state = buildingMonthlyReportState) {
+    const excluded = Array.isArray(state.excludedWorkKeys)
+      ? [...new Set(state.excludedWorkKeys.map(value => String(value || "").trim()).filter(Boolean))].sort()
+      : [];
+    return `${state.buildingId}:${state.month}:${excluded.join(",")}`;
   }
 
   function monthlyDrivePathFor(space) {
@@ -3616,6 +3628,7 @@
     const building = buildingById(state.buildingId);
     if (!building) return showToast("보고서 건물을 다시 선택해 주세요.", "error");
     const requestKey = `${state.buildingId}:${state.month}`;
+    const workRequestKey = buildingMonthlyReportRequestKey(state);
     state.photoSelectBusy = true;
     state.photoError = "";
     renderBuildingMonthlyReports();
@@ -3628,7 +3641,7 @@
         fileIds: state.photoCandidates.map(photo => photo.id),
         activities,
       });
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
+      if (buildingMonthlyReportRequestKey() !== workRequestKey) return;
       const candidates = new Map(state.photoCandidates.map(photo => [String(photo.id), photo]));
       state.photos = (Array.isArray(result && result.selected) ? result.selected : []).map(photo => {
         const candidate = candidates.get(String(photo.id));
@@ -3640,7 +3653,7 @@
       renderBuildingMonthlyReports();
       void loadBuildingMonthlyPhotoThumbnails(requestKey);
     } catch (error) {
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` === requestKey) {
+      if (buildingMonthlyReportRequestKey() === workRequestKey) {
         state.photoError = error && error.message || "Gemini가 활동 사진을 선택하지 못했습니다.";
       }
     } finally {
@@ -3706,6 +3719,9 @@
       narrative: buildingMonthlyReportState.narrative,
     });
     const report = BuildingReportCore.buildBuildingMonthlyReport(request);
+    const excludedWorkKeys = new Set(buildingMonthlyReportState.excludedWorkKeys);
+    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport({ ...request, manualWorks: [] }).works;
+    const automaticWorkKeys = new Set(automaticWorks.map(work => BuildingReportCore.workRowKey(work)));
     const narrative = report.narrative || { summary: "", attention: "", nextMonthPlan: "" };
     const missing = [
       !owner && "건물주 연결 필요",
@@ -3713,8 +3729,12 @@
       !report.summary.unitCount && "호실 현황 없음",
       !buildingMonthlyReportState.nextMonthPlan && "다음 달 계획 확인 필요",
     ].filter(Boolean);
-    const workRows = report.works.length ? report.works.map(work => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${esc(work.statusLabel || (work.done ? "완료" : "진행 중"))}</em></article>`).join("") : `<div class="building-monthly-empty">이 달 캘린더에 연결된 일정이 없습니다. 필요하면 보고서에만 직접 추가할 수 있습니다.</div>`;
-    const manualRows = buildingMonthlyReportState.manualWorks.map((work, index) => `<article class="building-monthly-manual-work"><span>${esc(work.date)}</span><div><b>${esc(work.kind)}</b><small>${esc(work.summary)}</small></div><button type="button" data-building-monthly-manual-remove="${index}" aria-label="직접 추가 업무 삭제">×</button></article>`).join("");
+    const workRows = automaticWorks.length ? automaticWorks.map((work, index) => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${esc(work.statusLabel || (work.done ? "완료" : "진행 중"))}</em><button type="button" data-building-monthly-work-remove="${index}" aria-label="업무를 보고서에서 제외" title="보고서에서 제외">×</button></article>`).join("") : `<div class="building-monthly-empty">이 달 캘린더에 연결된 일정이 없습니다. 필요하면 보고서에만 직접 추가할 수 있습니다.</div>`;
+    const manualRows = buildingMonthlyReportState.manualWorks.map((work, index) => {
+      const key = BuildingReportCore.workRowKey(work);
+      if (excludedWorkKeys.has(key) || automaticWorkKeys.has(key)) return "";
+      return `<article class="building-monthly-manual-work"><span>${esc(work.date)}</span><div><b>${esc(work.kind)}</b><small>${esc(work.summary)}</small></div><button type="button" data-building-monthly-manual-remove="${index}" aria-label="직접 추가 업무 삭제">×</button></article>`;
+    }).join("");
     const photoRows = buildingMonthlyReportState.photos.map((photo, index) => `<article class="building-monthly-photo-card">${photo.thumbnail ? `<img src="${attr(photo.thumbnail)}" alt="${attr(photo.caption || photo.name || "현장 사진")}">` : `<span class="building-monthly-photo-placeholder" aria-label="사진 미리보기 불러오는 중">▧</span>`}<div><b>${esc(photo.caption || "현장 사진")}</b><small>${esc(`${photo.date || ""}${photo.activityName ? ` · ${photo.activityName}` : ""}`)}</small></div><button type="button" data-building-monthly-photo-remove="${index}" aria-label="사진 제외">×</button></article>`).join("");
     const paperPhotos = buildingMonthlyReportState.photos.map(photo => `<figure>${photo.thumbnail ? `<img src="${attr(photo.thumbnail)}" alt="${attr(photo.caption || "현장 사진")}">` : `<div class="building-monthly-paper-photo-placeholder">현장 사진</div>`}<figcaption>${esc(photo.caption || "현장 사진")}</figcaption></figure>`).join("");
     const candidateNames = buildingMonthlyReportState.photoCandidates.length
@@ -3823,6 +3843,35 @@
       buildingMonthlyReportState.addWorkOpen = false;
       renderBuildingMonthlyReports();
     });
+    main.querySelectorAll("[data-building-monthly-work-remove]").forEach(button => button.addEventListener("click", async () => {
+      const index = Number(button.dataset.buildingMonthlyWorkRemove);
+      const work = automaticWorks[index];
+      const key = work && BuildingReportCore.workRowKey(work);
+      if (!key) return;
+      const requestKey = buildingMonthlyReportRequestKey();
+      const confirmed = await requestConfirmation({
+        title: "업무를 보고서에서 제외할까요?",
+        description: "선택한 업무는 이 월간보고서에서만 빠집니다.",
+        target: `${work.dateText || "날짜 미정"} · ${work.unit || "공용부"} · ${work.kind || "관리 업무"}`,
+        message: "원본 CRM 일정과 캘린더 기록은 삭제되지 않습니다.",
+        warning: "Gemini 초안, 업무 집계, PDF에서도 함께 제외됩니다.",
+        confirmLabel: "보고서에서 제외",
+        cancelLabel: "취소",
+        tone: "warning",
+      });
+      if (!confirmed || buildingMonthlyReportRequestKey() !== requestKey) return;
+      const excluded = new Set(buildingMonthlyReportState.excludedWorkKeys);
+      if (excluded.has(key)) return;
+      excluded.add(key);
+      buildingMonthlyReportState.excludedWorkKeys = [...excluded].slice(-60);
+      buildingMonthlyReportState.narrative = null;
+      buildingMonthlyReportState.model = "";
+      buildingMonthlyReportState.generatedAt = "";
+      buildingMonthlyReportState.error = "";
+      buildingMonthlyReportState.loading = false;
+      renderBuildingMonthlyReports();
+      showToast("업무를 이 월간보고서에서 제외했습니다. CRM 일정은 유지됩니다.", "success");
+    }));
     main.querySelectorAll("[data-building-monthly-manual-remove]").forEach(button => button.addEventListener("click", () => {
       const index = Number(button.dataset.buildingMonthlyManualRemove);
       if (Number.isInteger(index) && index >= 0) buildingMonthlyReportState.manualWorks.splice(index, 1);
@@ -3858,20 +3907,24 @@
       buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
       buildingMonthlyReportState.loading = true;
       buildingMonthlyReportState.error = "";
-      const requestKey = `${building.id}:${buildingMonthlyReportState.month}`;
+      const requestKey = buildingMonthlyReportRequestKey();
       renderBuildingMonthlyReports();
       try {
         const result = await api.generateBuildingMonthlyReportDraft(buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, { nextMonthPlan: buildingMonthlyReportState.nextMonthPlan, manualWorks: buildingMonthlyReportState.manualWorks }));
-        if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
+        if (buildingMonthlyReportRequestKey() !== requestKey) return;
         buildingMonthlyReportState.narrative = { ...(result.narrative || {}) };
         buildingMonthlyReportState.model = result.model || "Gemini";
         buildingMonthlyReportState.generatedAt = result.generatedAt || new Date().toISOString();
         showToast(result.cached ? "같은 자료로 만든 Gemini 초안을 불러왔습니다." : "Gemini가 건물주용 문장을 만들었습니다.", "success");
       } catch (error) {
-        buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
+        if (buildingMonthlyReportRequestKey() === requestKey) {
+          buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
+        }
       } finally {
-        buildingMonthlyReportState.loading = false;
-        if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+        if (buildingMonthlyReportRequestKey() === requestKey) {
+          buildingMonthlyReportState.loading = false;
+          if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+        }
       }
     });
     main.querySelector("[data-building-monthly-reset]")?.addEventListener("click", () => {
@@ -4169,6 +4222,7 @@
       documentDeliveryCapabilities = { kakao: false, sms: false, loaded: true, loading: false };
     }
     if (currentView === "customerMessages" && selectedMessageMode === "documents") renderCustomerMessages();
+    else if (currentView === "customerNotices" && docFlowState.report) renderCustomerNotices();
   }
 
   function openMessageConsentEditor(customerId) {
@@ -8039,6 +8093,8 @@
     notice: null,     // 만든 문구
     sending: false,
     sentAt: "",
+    kakaoSending: false,
+    kakaoResult: null,
   };
 
   const docFlowCore = () => window.BringDocFlowCore;
@@ -8097,6 +8153,7 @@
     docFlowState.report = report;
     docFlowState.notice = N.draftFor("result", F.noticeValuesFromReport(report));
     docFlowState.sentAt = "";
+    docFlowState.kakaoResult = null;
     currentView = "customerNotices";
     render();
   }
@@ -8108,16 +8165,46 @@
     const report = docFlowState.report;
     const notice = docFlowState.notice;
     const body = notice ? notice.body : "";
+    if (report && !documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
+    const R = reportCore();
+    const reportCheck = report && R ? R.validateReport(report) : { ok: false };
+    const contactDigits = String(report && report.ownerContact || "").replace(/\D/gu, "");
+    const kakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.kakao === true;
+    const canKakaoSend = Boolean(report && reportCheck.ok && /^01\d{8,9}$/u.test(contactDigits) && kakaoReady && canAdministerSecurity() && !docFlowState.kakaoSending);
+    const kakaoStatus = documentDeliveryCapabilities.loading || !documentDeliveryCapabilities.loaded
+      ? "연결 상태 확인 중"
+      : kakaoReady ? "알림톡 발송 준비 완료" : "발신 설정 또는 승인 템플릿 확인 필요";
+    const kakaoBlockReason = !canAdministerSecurity() ? "관리자 권한이 필요합니다."
+      : !contactDigits ? "결과보고서에 건물주 휴대전화 번호를 입력해 주세요."
+        : !/^01\d{8,9}$/u.test(contactDigits) ? "건물주 연락처를 휴대전화 번호로 확인해 주세요."
+          : !reportCheck.ok ? "결과보고서의 필수 항목과 전·후 사진을 확인해 주세요."
+            : !kakaoReady ? "발신 프로필·발송 서버 설정과 카카오 승인 템플릿이 확인되어야 발송할 수 있습니다."
+              : "승인된 작업 결과보고서 템플릿으로 발송합니다.";
 
     main.innerHTML = `<section class="operations-hero">
-        <div><span>문서관리</span><h2>고객 알림</h2><p>작업이 끝났다는 것을 건물주에게 알립니다. 문구는 단계가 정하고, 보낼지는 사람이 정합니다.</p></div>
+        <div><span>문서관리</span><h2>고객 알림</h2><p>작업 결과보고서를 확인하고, 건물주에게 카카오 알림톡으로 안전하게 전달합니다.</p></div>
       </section>
       ${docFlowStrip("notice")}
       ${report ? `<section class="office-panel">
         <header><div><span>NOTICE</span><h3>${esc(report.buildingName || "건물 미지정")}</h3></div><small>${esc(report.workDate || "작업일 미기재")} · ${esc(report.ownerName || "건물주 미기재")}</small></header>
         <div class="df-notice">
-          <label><span>보낼 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
-          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 보내기 전에 고쳐 주세요.</p>` : ""}
+          <section class="df-kakao-card">
+            <header><div><b>카카오 알림톡 · 작업 결과보고서</b><small>발송 뒤 고객에게 보안 링크가 전달됩니다.</small></div><span class="${kakaoReady ? "is-ready" : "is-pending"}">${esc(kakaoStatus)}</span></header>
+            <div class="df-kakao-preview">
+              <b>BRING CARE · 작업 결과보고서 안내</b>
+              <p>${esc(report.ownerName || "건물주")}님, 요청하신 작업 결과보고서가 발행되었습니다.</p>
+              <p>작업명: ${esc(`${report.buildingName || "건물"} 작업 결과보고서`)}<br>열람기한: 발송일로부터 7일</p>
+              <div class="df-kakao-link"><span><b>작업 결과보고서</b><small>전·후 사진이 포함된 PDF</small></span><em>결과보고서 확인</em></div>
+            </div>
+            <div class="df-kakao-actions">
+              <button type="button" class="secondary-button" data-df-kakao-refresh${documentDeliveryCapabilities.loading ? " disabled" : ""}>연동 상태 확인</button>
+              <button type="button" class="primary-button" data-df-kakao-send${canKakaoSend ? "" : " disabled"}>${docFlowState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button>
+            </div>
+            <p class="df-kakao-hint">${esc(kakaoBlockReason)} 템플릿 문구와 버튼은 카카오 심사 승인본을 사용합니다.</p>
+            ${docFlowState.kakaoResult ? `<p class="df-kakao-result">알림톡 발송 요청을 접수했습니다 · ${esc(docFlowState.kakaoResult.requestedAt || "")} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}
+          </section>
+          <label><span>회사 텔레그램으로 보낼 내부 전달 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
+          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 내부 전달 전에 고쳐 주세요.</p>` : ""}
           <dl class="df-meta">
             <div><dt>받는 사람</dt><dd>${esc(report.ownerName || "미기재")}</dd></div>
             <div><dt>연락처</dt><dd>${esc(report.ownerContact || "미기재")}</dd></div>
@@ -8125,7 +8212,7 @@
           </dl>
           <div class="df-actions">
             <button type="button" class="secondary-button" data-df-copy>문구 복사</button>
-            <button type="button" class="primary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 보내기</button>
+            <button type="button" class="secondary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 내부 전달</button>
           </div>
           ${docFlowState.sentAt ? `<p class="office-muted">보냈습니다 · ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}</p>` : ""}
         </div>
@@ -8133,13 +8220,7 @@
         <b>아직 고른 보고서가 없습니다</b>
         <span>작업 결과보고서 목록에서 ‘고객 알림’ 을 누르면 그 보고서로 문구를 만듭니다.</span>
       </div></section>`}
-      <section class="office-panel">
-        <header><div><span>NOTE</span><h3>카카오 알림톡은 아직 못 보냅니다</h3></div></header>
-        <div class="df-note">
-          <p>알림톡 템플릿 심사가 끝나야 고객 번호로 바로 나갑니다. 그 전까지는 <b>회사 텔레그램방으로 문구를 보내고, 사람이 카카오톡에 붙여 넣습니다.</b></p>
-          <p class="office-muted">심사가 끝나면 이 화면의 [보내기] 가 고객 번호로 바로 나가게 바뀝니다. 문구와 단계는 그대로 씁니다.</p>
-        </div>
-      </section>`;
+      `;
   }
 
   async function sendCustomerNotice() {
@@ -8173,6 +8254,45 @@
       showToast(error && error.message || "보내지 못했습니다.", "error");
     } finally {
       docFlowState.sending = false;
+      render();
+    }
+  }
+
+  async function sendWorkReportByKakao() {
+    if (docFlowState.kakaoSending) return;
+    const report = docFlowState.report;
+    const R = reportCore();
+    if (!report || !R) { showToast("먼저 작업 결과보고서를 선택해 주세요.", "error"); return; }
+    if (!canAdministerSecurity()) { showToast("관리자만 고객에게 알림톡을 보낼 수 있습니다.", "error"); return; }
+    if (!documentDeliveryCapabilities.kakao) { showToast("발신 설정 또는 카카오 승인 템플릿을 확인해 주세요.", "error"); return; }
+    if (!R.validateReport(report).ok) { showToast("결과보고서의 필수 항목과 전·후 사진을 확인해 주세요.", "error"); return; }
+    if (!/^01\d{8,9}$/u.test(String(report.ownerContact || "").replace(/\D/gu, ""))) {
+      showToast("결과보고서에 건물주 휴대전화 번호를 입력해 주세요.", "error");
+      return;
+    }
+    const confirmed = await requestConfirmation({
+      title: "작업 결과보고서를 카카오 알림톡으로 보낼까요?",
+      description: "건물주에게 승인된 알림톡 템플릿과 7일 동안 열 수 있는 결과보고서 PDF 링크를 보냅니다.",
+      target: `${report.buildingName || "건물 미지정"} · ${report.ownerName || "건물주"} · ${report.ownerContact}`,
+      confirmLabel: "알림톡 발송",
+    });
+    if (!confirmed) return;
+    docFlowState.kakaoSending = true;
+    docFlowState.kakaoResult = null;
+    render();
+    try {
+      const result = await api.sendWorkReportToCustomerByKakao({
+        report,
+        company: (store.settings && store.settings.quoteCompany) || {},
+        secrets: reportSecrets(),
+      });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "알림톡 발송을 요청하지 못했습니다.");
+      docFlowState.kakaoResult = { status: result.status || "requested", requestedAt: new Date().toLocaleString("ko-KR") };
+      showToast(`알림톡 발송 요청을 접수했습니다.${result.photoFailures ? ` 사진 ${result.photoFailures}장은 첨부하지 못했습니다.` : ""} 실제 전달 완료와는 다를 수 있습니다.`, result.photoFailures ? "info" : "success");
+    } catch (error) {
+      showToast(error && error.message || "알림톡 발송 요청에 실패했습니다.", "error");
+    } finally {
+      docFlowState.kakaoSending = false;
       render();
     }
   }
@@ -14339,6 +14459,12 @@
       return;
     }
     if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
+    if (event.target.closest("[data-df-kakao-refresh]")) {
+      documentDeliveryCapabilities = Object.assign({}, documentDeliveryCapabilities, { loaded: false });
+      void refreshDocumentDeliveryCapabilities();
+      return;
+    }
+    if (event.target.closest("[data-df-kakao-send]")) { void sendWorkReportByKakao(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
       const refreshes=[loadWorkOrders()];

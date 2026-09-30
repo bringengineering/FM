@@ -146,6 +146,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   forgetTelegramSettings: () => ipcRenderer.invoke("crm:telegram-settings-forget"),
   sendTelegramContactAlert: input => ipcRenderer.invoke("crm:telegram-contact-alert", input),
   exportWorkReport: input => ipcRenderer.invoke("crm:work-report-export", input),
+  sendWorkReportToCustomerByKakao: input => ipcRenderer.invoke("crm:work-report-kakao-send", input),
   saveDeliveryFlow: input => ipcRenderer.invoke("crm:delivery-flow-save", input),
   advanceDeliveryStage: input => ipcRenderer.invoke("crm:delivery-stage-advance", input),
   uploadDeliveryFile: input => ipcRenderer.invoke("crm:delivery-file-upload", input),

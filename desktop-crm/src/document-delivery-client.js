@@ -1,13 +1,14 @@
 "use strict";
 
 const PATHS = Object.freeze({ capabilities: ["GET", "capabilities"], create: ["POST", "documents"], send: ["POST", "messages"], status: ["GET", "messages"], revoke: ["POST", "documents"] });
+const DOCUMENT_GATEWAY_HOST = "bring-crm-ai-gateway.bringengineering1008.workers.dev";
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 
 function fail(message, code = "DOCUMENT_DELIVERY_INVALID") { throw Object.assign(new Error(message), { code }); }
 function endpointUrl(value) {
   let url;
   try { url = new URL(String(value || "")); } catch { fail("문서 발송 연결 주소가 올바르지 않습니다."); }
-  if (url.protocol !== "https:" || url.pathname.replace(/\/$/, "") !== "/v1/document-delivery") fail("문서 발송 연결 주소가 올바르지 않습니다.");
+  if (url.protocol !== "https:" || url.hostname !== DOCUMENT_GATEWAY_HOST || url.port || url.username || url.password || url.search || url.hash || url.pathname.replace(/\/$/, "") !== "/v1/document-delivery") fail("문서 발송 연결 주소가 올바르지 않습니다.");
   return url;
 }
 function cleanId(value) { const text = String(value || ""); if (!/^[A-Za-z0-9_-]{1,120}$/.test(text)) fail("문서 발송 ID를 확인해 주세요."); return text; }

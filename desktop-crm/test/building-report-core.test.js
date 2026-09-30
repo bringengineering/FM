@@ -50,6 +50,17 @@ test("그 건물, 그 달 사건만 담는다", () => {
   assert.deepEqual(kinds, ["공용부 청소", "누수", "입주청소"]);
 });
 
+test("보고서에서 제외한 업무는 집계에서만 빠지고 원본 캘린더 자료는 유지한다", () => {
+  const selected = report().works.find(work => work.kind === "누수");
+  const built = report({ excludedWorkKeys: [Reports.workRowKey(selected)] });
+
+  assert.deepEqual(built.works.map(work => work.kind), ["공용부 청소", "입주청소"]);
+  assert.equal(built.summary.workCount, 2);
+  assert.equal(built.summary.doneCount, 1);
+  assert.equal(built.summary.billedText, "150,000원");
+  assert.ok(store.cases.some(item => item.id === "c2"), "원본 CRM 사건은 삭제되지 않아야 함");
+});
+
 test("다른 건물·다른 달·보관·미연결 사건은 빠진다", () => {
   const serialized = JSON.stringify(report());
   assert.ok(!serialized.includes("예초"), "지난달 사건이 들어감");
