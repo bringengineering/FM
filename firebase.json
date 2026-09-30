@@ -60,6 +60,27 @@
         ]
       },
       {
+        "source": "/crm-account-setup/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src https://asia-northeast3-bring-fm.cloudfunctions.net; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+          }
+        ]
+      },
+      {
         "source": "/field-sw.js",
         "headers": [
           {

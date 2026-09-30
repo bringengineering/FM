@@ -172,7 +172,9 @@ const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 // 실제 데이터와 분리된 화면을 프로그램 창으로 확인할 때만 쓰는 닫힌 경로다.
 // 제품 실행에서는 환경 변수가 없으므로 기존 로그인·저장 경로에 영향이 없다.
-const interactivePreviewView = process.env.BRING_CRM_PREVIEW_VIEW === "projectRoadmap" ? "projectRoadmap" : "";
+const interactivePreviewView = ["projectRoadmap", "officeAccountSetup"].includes(process.env.BRING_CRM_PREVIEW_VIEW)
+  ? process.env.BRING_CRM_PREVIEW_VIEW
+  : "";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1" || Boolean(interactivePreviewView)) && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const localGeminiReportsPreview = !app.isPackaged && process.env.BRING_CRM_LOCAL_GEMINI_REPORTS === "1";
@@ -6428,6 +6430,20 @@ async function createWindow() {
         const expectedActions = ['supplier:xlsx', 'supplier:pdf', 'recipient:xlsx', 'recipient:pdf'];
         return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && text.includes('브링엔지니어링') && text.includes('서 창 환') && text.includes('상지대길 83') && text.includes('공급가액') && text.includes('세액') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && JSON.stringify(exportActions) === JSON.stringify(expectedActions) && representativeText.includes('서 창 환') && confirmationText.includes('서 창 환') && sealCount === 2 && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), exportActions, representativeText, confirmationText, sealCount, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "crm-account-setup-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(180);
+        document.querySelector('[data-view="officeAccountSetup"]')?.click();
+        for (let attempt = 0; attempt < 40 && !document.querySelector('.crm-account-invite-form'); attempt += 1) await wait(100);
+        const rows = [...document.querySelectorAll('.crm-account-table tbody tr')];
+        const form = document.querySelector('.crm-account-invite-form');
+        const pass = Boolean(form && document.querySelector('[data-crm-account-refresh]') && rows.length === 2
+          && document.querySelector('[data-crm-account-resend="local-pending-member"]')
+          && !document.querySelector('[data-crm-account-invite-form] input').disabled);
+        return { pass, previewOnly: true, inviteRowCount: rows.length, createActionUnavailableInPreview: true, state: window.__crmTest?.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -9289,7 +9305,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["cleaning-center-summary-preview", "customer-360-preview", "cleaning-pricing-policy-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["cleaning-center-summary-preview", "customer-360-preview", "cleaning-pricing-policy-preview", "company-strategy-preview", "ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "weekly-report-preview", "weekly-report-document-preview", "project-roadmap-preview", "project-roadmap-progress-preview", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "crm-account-setup-preview", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -9775,6 +9791,26 @@ secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
 secureHandle("crm:save-now", data => writeStoreNow(data));
 secureCanonicalHandle("crm:office-load", readOffice);
+secureCanonicalHandle("crm:account-invites-load", () => {
+  if (localTestMode) {
+    const now = Date.now();
+    return (process.env.BRING_CRM_SCREENSHOT_VIEW === "officeAccountSetup" || interactivePreviewView === "officeAccountSetup")
+      ? [
+        { uid: "local-pending-member", email: "member.preview@bring.local", displayName: "미리보기 구성원", status: "pending", createdAt: now - 2 * 60 * 60 * 1000, expiresAt: now + 7 * 24 * 60 * 60 * 1000, lastSentAt: now - 2 * 60 * 60 * 1000 },
+        { uid: "local-complete-member", email: "complete.preview@bring.local", displayName: "설정 완료 구성원", status: "complete", createdAt: now - 3 * 24 * 60 * 60 * 1000, expiresAt: now - 2 * 24 * 60 * 60 * 1000, lastSentAt: now - 3 * 24 * 60 * 60 * 1000 },
+      ]
+      : [];
+  }
+  return remoteClient.loadCrmAccountInvites();
+});
+secureCanonicalHandle("crm:account-invite-register", input => {
+  if (localTestMode) throw new Error("미리보기에서는 이메일 초대를 발송하지 않습니다.");
+  return remoteClient.registerCrmAccount(input);
+});
+secureCanonicalHandle("crm:account-invite-resend", input => {
+  if (localTestMode) throw new Error("미리보기에서는 이메일 초대를 발송하지 않습니다.");
+  return remoteClient.resendCrmAccountInvite(input);
+});
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
 secureCanonicalHandle("crm:office-attendance-correct", input => correctOfficeAttendance(input));
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));

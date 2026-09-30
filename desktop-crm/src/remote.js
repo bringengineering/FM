@@ -189,6 +189,7 @@ const DEFAULT_BILLING_MUTATION_ENDPOINT = "https://asia-northeast3-bring-fm.clou
 const DEFAULT_CLEANING_ORDERS_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningOrdersApi";
 const DEFAULT_CLEANING_PARTNER_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningPartnerApi";
 const DEFAULT_CLEANING_REFUNDS_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningRefundsApi";
+const CRM_ACCOUNT_SETUP_FUNCTION_BASE = "https://asia-northeast3-bring-fm.cloudfunctions.net";
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -3040,6 +3041,69 @@ class FirebaseRemoteClient {
       throw createError("회사 공급자 정보의 저장 결과를 확인하지 못했습니다.", "QUOTE_SUPPLIER_WRITE_UNCONFIRMED");
     }
     return normalized;
+  }
+
+  async callCrmAccountSetupFunction(name, data) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") throw createError("CRM 계정 관리는 관리자만 사용할 수 있습니다.", "ACCESS_DENIED");
+    if (!["listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite"].includes(name)) {
+      throw createError("계정 관리 요청을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    const guard = this.captureSessionGuard();
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    let response;
+    try {
+      response = await this.fetch(`${CRM_ACCOUNT_SETUP_FUNCTION_BASE}/${name}`, {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ data: data && typeof data === "object" ? data : {} }),
+      });
+    } catch (cause) {
+      throw createError("계정 관리 서버에 연결할 수 없습니다.", "NETWORK", cause);
+    }
+    if (!response.ok) {
+      const status = Number(response.status) || 0;
+      try { await cancelResponseBody(response); } catch {}
+      if (status === 401 || status === 403) {
+        throw createError("관리자 권한을 확인해 주세요.", "ACCESS_DENIED");
+      }
+      if (status === 409) throw createError("이미 등록된 이메일입니다.", "ACCOUNT_SETUP_DUPLICATE");
+      if (status === 429) throw createError("요청이 많습니다. 잠시 후 다시 시도해 주세요.", "ACCOUNT_SETUP_RATE_LIMITED");
+      throw createError("계정 관리 요청을 처리하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    const payload = await readBoundedJsonResponse(response, 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED");
+    this.assertSessionGuardActive(guard);
+    if (!payload || typeof payload !== "object" || payload.error || !payload.result || typeof payload.result !== "object") {
+      throw createError("계정 관리 응답을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    return payload.result;
+  }
+
+  async loadCrmAccountInvites() {
+    const result = await this.callCrmAccountSetupFunction("listCrmAccountInvites", {});
+    return Array.isArray(result.accounts) ? result.accounts : [];
+  }
+
+  async registerCrmAccount(input) {
+    const email = String(input && input.email || "").trim().toLowerCase();
+    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(email)) {
+      throw createError("이메일 주소를 확인해 주세요.", "ACCOUNT_SETUP_EMAIL_INVALID");
+    }
+    return this.callCrmAccountSetupFunction("registerCrmAccount", { email });
+  }
+
+  async resendCrmAccountInvite(input) {
+    const uid = String(input && input.uid || "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/u.test(uid) || ["__proto__", "prototype", "constructor"].includes(uid)) {
+      throw createError("초대 대상을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    return this.callCrmAccountSetupFunction("resendCrmAccountInvite", { uid });
   }
 
   async loadOfficeSnapshot() {

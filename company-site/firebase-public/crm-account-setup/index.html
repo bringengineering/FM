@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>BRING CRM 계정 설정</title>
+  <link rel="stylesheet" href="./setup.css">
+</head>
+<body>
+  <main class="setup-card">
+    <div class="setup-logo"><img src="/bring-care-logo.png" alt="BRING 로고"></div>
+    <span class="setup-eyebrow">BRING ENGINEERING · CRM</span>
+    <h1 id="setupTitle">계정을 안전하게 설정합니다</h1>
+    <p id="setupDescription">이메일 인증 링크를 확인하고 새 비밀번호를 설정해 주세요.</p>
+    <form id="setupForm" hidden>
+      <label><span>인증 이메일</span><input id="setupEmail" name="email" type="email" autocomplete="email" maxlength="254" required></label>
+      <label><span>새 비밀번호</span><input id="setupPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required><small>영문과 숫자를 포함해 8자 이상 입력해 주세요.</small></label>
+      <label><span>새 비밀번호 확인</span><input id="setupPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+      <button id="setupSubmit" type="submit">이메일 인증 및 비밀번호 설정</button>
+    </form>
+    <div id="setupMessage" class="setup-message" role="status" aria-live="polite">초대 링크를 확인하고 있습니다…</div>
+    <div class="setup-note">비밀번호 원문은 회사 데이터베이스에 저장되지 않고 Firebase 인증에서 안전하게 관리됩니다.</div>
+  </main>
+  <script src="./setup-core.js"></script>
+  <script src="./setup.js"></script>
+</body>
+</html>
