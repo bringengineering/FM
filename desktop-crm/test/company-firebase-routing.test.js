@@ -36,14 +36,21 @@ test("migration exporter isolates its retired read-only source outside the produ
   assert.doesNotMatch(remote, /LEGACY_MIGRATION_FIREBASE|LEGACY_FIREBASE|bring-fm-hj/);
 });
 
-test("company namespace maps legacy client names without changing legacy export paths", () => {
+test("keeps CRM entities namespaced and routes operational roots canonically", () => {
   assert.equal(resolveDatabaseLocation("crmShared/data", "crmCompany"), "crmCompany/data");
   assert.equal(resolveDatabaseLocation("crmShared/data/buildingUnits", "crmCompany"), "crmCompany/data/buildingUnits");
   assert.equal(resolveDatabaseLocation("fieldSummaries", "crmCompany"), "crmCompany/fieldSummaries");
   assert.equal(resolveDatabaseLocation("crmAccess/uid-1", "crmCompany"), "crmCompany/access/uid-1");
-  assert.equal(resolveDatabaseLocation("cases/case-1", "crmCompany"), "crmCompany/cases/case-1");
+  assert.equal(resolveDatabaseLocation("cases/case-1", "crmCompany"), "cases/case-1");
+  assert.equal(resolveDatabaseLocation("workflow/board", "crmCompany"), "workflow/board");
+  assert.equal(
+    resolveDatabaseLocation("caseSettings/paymentScheduleSheet", "crmCompany"),
+    "caseSettings/paymentScheduleSheet",
+  );
+  assert.equal(resolveDatabaseLocation("paymentCalendars/shared", "crmCompany"), "paymentCalendars/shared");
   assert.equal(resolveDatabaseLocation("crmShared/data", ""), "crmShared/data");
   assert.equal(resolveDatabaseLocation("crmAccess/uid-1", ""), "crmAccess/uid-1");
+  assert.equal(resolveDatabaseLocation("paymentCalendars/shared", ""), "paymentCalendars/shared");
 });
 
 test("desktop exposes canonical CRM overlay IPC without a FIELD summary network bridge", async () => {

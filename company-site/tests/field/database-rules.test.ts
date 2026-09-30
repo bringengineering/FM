@@ -5355,6 +5355,95 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
   });
 });
 
+describe.runIf(databaseEmulatorAvailable)("shared payment calendar rules", () => {
+  it("limits shared calendar access to verified enabled CRM profiles and writer roles", async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), "paymentCalendars/shared"), {
+        schedules: { existing: { amount: 1000 } },
+      });
+    });
+
+    for (const [uid, email] of [
+      ["crm-admin", "admin@bring.test"],
+      ["crm-legacy-member", "legacy@bring.test"],
+      ["crm-viewer", "viewer@bring.test"],
+    ] as const) {
+      const database = environment.authenticatedContext(uid, crmPasswordClaims(email)).database();
+      await assertSucceeds(get(ref(database, "paymentCalendars/shared")));
+    }
+
+    for (const [uid, email] of [
+      ["crm-admin", "admin@bring.test"],
+      ["crm-legacy-member", "legacy@bring.test"],
+    ] as const) {
+      const database = environment.authenticatedContext(
+        uid,
+        crmPasswordClaims(email),
+      ).database();
+      await assertSucceeds(set(ref(database, `paymentCalendars/shared/schedules/${uid}`), { amount: 2000 }));
+    }
+
+    for (const [uid, email] of [
+      ["crm-viewer", "viewer@bring.test"],
+      ["crm-marketing", "marketing@bring.test"],
+    ] as const) {
+      const database = environment.authenticatedContext(
+        uid,
+        crmPasswordClaims(email),
+      ).database();
+      await assertSucceeds(get(ref(database, "paymentCalendars/shared")));
+      await assertFails(set(
+        ref(database, `paymentCalendars/shared/schedules/${uid}_forbidden`),
+        { amount: 1 },
+      ));
+    }
+
+    const denied = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-disabled",
+        crmPasswordClaims("disabled@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-admin",
+        crmPasswordClaims("wrong@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-admin",
+        crmPasswordClaims("admin@bring.test", false),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmPasswordClaims("member@bring.test"),
+      ).database(),
+    ];
+    for (const database of denied) {
+      await assertFails(get(ref(database, "paymentCalendars/shared")));
+      await assertFails(set(
+        ref(database, "paymentCalendars/shared/schedules/forbidden"),
+        { amount: 1 },
+      ));
+    }
+
+    const reservedUid = environment.authenticatedContext(
+      "shared",
+      crmPasswordClaims("shared@bring.test"),
+    ).database();
+    await assertFails(get(ref(reservedUid, "paymentCalendars/shared")));
+    await assertFails(set(
+      ref(reservedUid, "paymentCalendars/shared/schedules/forbidden"),
+      { amount: 1 },
+    ));
+
+    const ownerScoped = environment.authenticatedContext(
+      "crm-member",
+      crmPasswordClaims("member@bring.test"),
+    ).database();
+    await assertSucceeds(set(ref(ownerScoped, "paymentCalendars/crm-member/private"), { value: true }));
+    await assertFails(get(ref(ownerScoped, "paymentCalendars/crm-admin/private")));
+  });
+});
+
 describe.runIf(databaseEmulatorAvailable)("billing ledger rules", () => {
   const draft = { id: 'contract_2026-09', contractId: 'contract', billingMonth: '2026-09', dueDate: '2026-09-30', amount: 100000, status: 'draft', revision: 1, updatedAt: NOW, updatedBy: 'crm-member' };
   it('rejects every direct member invoice write but permits reading server records', async () => {

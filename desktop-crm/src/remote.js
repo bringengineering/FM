@@ -511,8 +511,12 @@ function resolveDatabasePatchLocation(location, databaseRoot) {
 }
 
 function resolveDatabaseLocation(location, databaseRoot) {
-  const companyLocation = resolveDatabasePatchLocation(location, databaseRoot);
-  if (!databaseRoot) return companyLocation;
+  const normalizedLocation = String(location || "").replace(/^\/+/, "");
+  if (!databaseRoot) return resolveDatabasePatchLocation(normalizedLocation, databaseRoot);
+  if (/^(?:cases|caseSettings|workflow|paymentCalendars)(?:\/|$)/.test(normalizedLocation)) {
+    return normalizedLocation;
+  }
+  const companyLocation = resolveDatabasePatchLocation(normalizedLocation, databaseRoot);
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
 }
 
