@@ -80,6 +80,11 @@
 .building-monthly-photo-section>header b,.building-monthly-photo-section>header small{display:block}
 .building-monthly-photo-section>header b{color:#1b4058;font-size:12px}
 .building-monthly-photo-section>header small{margin-top:3px;color:#8195a3;font-size:10px;line-height:1.45}
+.building-monthly-drive-status{display:flex;flex-direction:column;gap:3px;margin-bottom:10px;padding:9px 11px;border:1px solid #cfe4f1;border-radius:10px;background:#eff9ff;color:#53758a;font-size:10px;line-height:1.45}
+.building-monthly-drive-status b{color:#236080;font-size:11px}
+.building-monthly-drive-status small{color:#6f8798;font-size:10px}
+.building-monthly-drive-status.is-connected{border-color:#cce9d8;background:#f0fbf4}
+.building-monthly-drive-status.is-connected b{color:#238052}
 .building-monthly-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .building-monthly-photo-card{position:relative;display:grid;grid-template-columns:82px minmax(0,1fr) 27px;gap:9px;align-items:center;min-width:0;padding:8px;border:1px solid #dce9f1;border-radius:11px;background:#fff}
 .building-monthly-photo-card>img,.building-monthly-photo-placeholder{display:grid;width:82px;height:66px;place-items:center;border-radius:8px;background:#eef4f8;color:#9aabb6;object-fit:cover;font-size:22px}
