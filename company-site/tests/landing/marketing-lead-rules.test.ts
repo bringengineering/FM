@@ -9,8 +9,12 @@ describe("public marketing lead intake rules", () => {
 
     expect(leadRule[".write"]).toContain("auth == null");
     expect(leadRule[".write"]).toContain("!data.exists()");
-    expect(leadRule[".write"]).toContain("newData.numChildren() === 16");
-    expect(leadRule[".write"]).toContain("newData.numChildren() === 26");
+    expect(leadRule[".write"]).not.toContain("numChildren");
+    expect(leadRule[".write"]).toContain("!newData.child('businessName').exists()");
+    expect(leadRule[".write"]).toContain("newData.hasChildren(['leadType','businessName'");
+    for (const metadataField of ["id", "convertedOrderId", "convertedPartnerId", "convertedAt", "convertedBy"]) {
+      expect(leadRule[".write"]).toContain(`!newData.child('${metadataField}').exists()`);
+    }
     expect(leadRule.leadType[".validate"]).toContain("partner_application");
     expect(leadRule[".validate"]).toContain("newData.child('requestId').val() === $leadId");
     expect(leadRule[".validate"]).toContain("newData.child('phone').val().matches(/^010-");

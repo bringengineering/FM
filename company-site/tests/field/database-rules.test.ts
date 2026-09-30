@@ -1898,6 +1898,62 @@ afterAll(async () => {
   await cutoverEnvironment?.cleanup();
 });
 
+describe.runIf(databaseEmulatorAvailable)("public marketing lead intake emulator rules", () => {
+  const anonymous = () => environment.unauthenticatedContext().database();
+  const pathFor = (leadId: string) => `crmCompany/data/marketingLeadInbox/${leadId}`;
+  const leadId = (suffix: string) => `lead_${suffix.padEnd(20, "x")}`;
+  const baseLead = (id: string, partner = false) => ({
+    name: "테스트 건물주",
+    phone: "010-1234-5678",
+    location: "원주시 단계동",
+    needs: "계단 정기청소",
+    buildingInfo: "4층",
+    customerType: partner ? "cleaning_partner" : "building_owner",
+    service: "계단·공용부 청소",
+    sourcePath: "/stair-cleaning",
+    utmSource: "",
+    utmCampaign: "",
+    utmTerm: "",
+    utmContent: "",
+    consent: true,
+    requestId: id,
+    submittedAt: Date.now(),
+    status: "new",
+    ...(partner ? {
+      leadType: "partner_application",
+      businessName: "원주클린",
+      businessNumber: "",
+      services: "move_in,common_area",
+      headcount: 1,
+      dailyCapacity: 1,
+      vehicle: "",
+      experienceYears: 0,
+      invoiceAvailable: false,
+      insured: false,
+    } : {}),
+  });
+
+  it("allows only the two exact create-only public intake shapes", async () => {
+    const simpleId = leadId("publicSimpleLead0001");
+    const partnerId = leadId("publicPartnerLead01");
+    await assertSucceeds(set(ref(anonymous(), pathFor(simpleId)), baseLead(simpleId)));
+    await assertSucceeds(set(ref(anonymous(), pathFor(partnerId)), baseLead(partnerId, true)));
+
+    const metadataId = leadId("publicMetadataLead01");
+    await assertFails(set(ref(anonymous(), pathFor(metadataId)), { ...baseLead(metadataId), id: metadataId }));
+
+    const extraId = leadId("publicExtraField0001");
+    await assertFails(set(ref(anonymous(), pathFor(extraId)), { ...baseLead(extraId), privileged: true }));
+
+    const incompletePartnerId = leadId("publicPartnerMissing01");
+    const incompletePartner = baseLead(incompletePartnerId, true) as Record<string, unknown>;
+    delete incompletePartner.insured;
+    await assertFails(set(ref(anonymous(), pathFor(incompletePartnerId)), incompletePartner));
+
+    await assertFails(set(ref(anonymous(), pathFor(simpleId)), baseLead(simpleId)));
+  }, 60_000);
+});
+
 describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () => {
   const readerUid = "wallboard-reader";
   const readerEmail = "wallboard-reader@bring.test";
