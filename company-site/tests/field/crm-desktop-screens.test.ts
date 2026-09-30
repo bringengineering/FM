@@ -47,7 +47,7 @@ const SCREENS: Array<[string, string]> = [
   ["buildingDocuments", "문서"],
   ["workReports", "작업 결과보고서 작성"],
   ["companyWallboard", "회사 운영보드"],
-  ["customerNotices", "문구는 단계가 정하고"],
+  ["customerNotices", "카카오 알림톡으로 안전하게 전달합니다"],
   ["forms", "점검표·확인서"],
   ["security", "열쇠"],
   ["aiAssistant", "AI"],
@@ -998,9 +998,9 @@ describe("desktop CRM screens actually render", () => {
     expect(body, "보낼 문구 칸이 없다").toBeTruthy();
     expect(body.value).toContain("상지대 벤처창업관");
     expect(body.value).toContain("작업을 마쳤습니다");
-    // 고객에게 바로 가지 않는다는 것을 화면이 말해야 한다. 안 그러면
-    // 보낸 줄 알고 건물주는 연락을 못 받는다.
-    expect(shown).toContain("알림톡 템플릿 심사가 끝나야");
+    // 발신 설정 또는 승인 템플릿이 준비되지 않은 상태를 명확히 보여야 한다.
+    expect(shown).toContain("발신 설정 또는 승인 템플릿 확인 필요");
+    expect(shown).toContain("템플릿 문구와 버튼은 카카오 심사 승인본을 사용합니다.");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
