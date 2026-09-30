@@ -448,7 +448,14 @@
     try {
       const result = await state.context.api.registerCrmAccount({ email });
       if (!result || result.emailSent !== true) {
-        notify("계정은 비밀번호 없이 등록했지만 인증 메일 발송이 확인되지 않았습니다. 아래 목록에서 다시 보내 주세요.", "error");
+        const emailMessage = result && result.emailErrorCode === "crm_account_email_link_not_enabled"
+          ? "계정은 등록됐지만 Firebase 이메일 링크 로그인이 꺼져 있어 메일을 보내지 못했습니다. 관리자 설정 확인이 필요합니다."
+          : result && result.emailErrorCode === "crm_account_email_action_domain_invalid"
+            ? "계정은 등록됐지만 Firebase 인증 도메인 설정을 확인해야 메일을 보낼 수 있습니다."
+            : result && result.emailErrorCode === "crm_account_setup_rate_limited"
+              ? "계정은 등록됐지만 이메일 발송 한도에 걸렸습니다. 잠시 후 다시 보내 주세요."
+              : "계정은 비밀번호 없이 등록했지만 인증 메일 발송이 확인되지 않았습니다. 아래 목록에서 다시 보내 주세요.";
+        notify(emailMessage, "error");
       } else {
         state.crmAccountInviteEmailDraft = "";
         notify("계정을 등록했고 이메일 인증 링크를 보냈습니다.", "success");
