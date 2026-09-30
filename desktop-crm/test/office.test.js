@@ -256,6 +256,13 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(ui, /전체 근태관리와 모든 사용자의 메신저에 같은 이름/);
   assert.match(ui, /saveOfficeDisplayName/);
   assert.match(ui, /이메일 인증 링크 보내기/);
+  assert.match(ui, /crmAccountInviteEmailDraft: ""/);
+  assert.match(ui, /data-crm-account-invite-email/);
+  assert.match(ui, /value="\$\{esc\(state\.crmAccountInviteEmailDraft\)\}"/);
+  assert.match(ui, /state\.crmAccountInviteEmailDraft = event\.target\.value/);
+  assert.match(ui, /nextEmailInput\.replaceWith\(previousEmailInput\)/);
+  assert.match(ui, /state\.crmAccountInviteEmailDraft = email/);
+  assert.match(ui, /state\.crmAccountInviteEmailDraft = ""/);
   assert.match(ui, /초기 비밀번호를 만들거나 저장하지 않습니다/);
   assert.match(ui, /role === "admin"/);
   assert.match(main, /미리보기에서는 이메일 초대를 발송하지 않습니다/);

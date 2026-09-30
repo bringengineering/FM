@@ -10,6 +10,7 @@
     crmAccountInvitesLoaded: false,
     crmAccountInvitesLoading: false,
     crmAccountInviteError: "",
+    crmAccountInviteEmailDraft: "",
     loaded: false,
     loading: false,
     error: "",
@@ -441,6 +442,7 @@
   async function registerCrmAccount(form) {
     if (!isCrmAdmin() || state.busy) return;
     const email = String(new FormData(form).get("email") || "").trim();
+    state.crmAccountInviteEmailDraft = email;
     state.busy = true;
     renderCurrent();
     try {
@@ -448,6 +450,7 @@
       if (!result || result.emailSent !== true) {
         notify("계정은 비밀번호 없이 등록했지만 인증 메일 발송이 확인되지 않았습니다. 아래 목록에서 다시 보내 주세요.", "error");
       } else {
+        state.crmAccountInviteEmailDraft = "";
         notify("계정을 등록했고 이메일 인증 링크를 보냈습니다.", "success");
       }
       await refreshCrmAccountInvites();
@@ -519,7 +522,7 @@
       : `<div class="crm-account-table-wrap"><table class="crm-account-table"><thead><tr><th>구성원</th><th>상태</th><th>등록일</th><th>초대 만료일</th><th>작업</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="crm-account-empty">아직 등록된 계정 초대가 없습니다.</td></tr>`}</tbody></table></div>`;
     return `<section class="office-hero crm-account-hero"><div><span>ACCOUNT SETUP</span><h2>계정 등록</h2><p>이메일만 등록하면 임시 비밀번호 없이 초대 링크에서 이메일 인증과 새 비밀번호 설정을 한 번에 진행합니다.</p></div></section>
       <section class="office-panel crm-account-panel"><header><div><span>NEW MEMBER</span><h3>이메일 인증 링크 보내기</h3><p>등록된 이메일 주소로 일회용 링크를 보냅니다. 새 구성원은 링크에서 직접 비밀번호를 정합니다.</p></div></header>
-        <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
+        <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input data-crm-account-invite-email name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" value="${esc(state.crmAccountInviteEmailDraft)}" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
         <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 계정 설정 요청은 7일간 대기하며, 메일 링크가 만료되면 목록에서 새 링크를 보낼 수 있습니다. 이메일 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
       </section>
       <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기 계정은 인증 링크를 다시 보낼 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
@@ -1717,7 +1720,18 @@
       else if (state.context.view === "officePayroll") state.context.container.innerHTML = payrollView();
       else if (state.context.view === "officeApprovals") state.context.container.innerHTML = approvalsView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
-      else if (state.context.view === "officeAccountSetup") state.context.container.innerHTML = crmAccountSetupView();
+      else if (state.context.view === "officeAccountSetup") {
+        const previousEmailInput = state.context.container.querySelector("[data-crm-account-invite-email]");
+        const restoreEmailFocus = previousEmailInput && document.activeElement === previousEmailInput && !state.busy;
+        state.context.container.innerHTML = crmAccountSetupView();
+        const nextEmailInput = state.context.container.querySelector("[data-crm-account-invite-email]");
+        if (previousEmailInput && nextEmailInput) {
+          if (previousEmailInput.value !== state.crmAccountInviteEmailDraft) previousEmailInput.value = state.crmAccountInviteEmailDraft;
+          previousEmailInput.disabled = nextEmailInput.disabled;
+          nextEmailInput.replaceWith(previousEmailInput);
+          if (restoreEmailFocus && !previousEmailInput.disabled) previousEmailInput.focus({ preventScroll: true });
+        }
+      }
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
         updateClock();
@@ -2146,6 +2160,10 @@
   });
 
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-crm-account-invite-email]")) {
+      state.crmAccountInviteEmailDraft = event.target.value;
+      return;
+    }
     if (event.target.matches("[data-office-attendance-correction-form] input, [data-office-attendance-correction-form] textarea")) {
       if (!state.adminAttendanceCorrection || state.busy) return;
       if (event.target.name === "checkInTime") state.adminAttendanceCorrection.checkInTime = event.target.value;
@@ -2278,6 +2296,7 @@
           state.crmAccountInvites = [];
           state.crmAccountInvitesLoaded = false;
           state.crmAccountInviteError = "";
+          state.crmAccountInviteEmailDraft = "";
         }
       }
       state.context = context;
@@ -2293,6 +2312,7 @@
       state.crmAccountInvites = [];
       state.crmAccountInvitesLoaded = false;
       state.crmAccountInviteError = "";
+      state.crmAccountInviteEmailDraft = "";
       if (!state.active && !state.clockTimer && !state.syncTimer) {
         syncMessengerPresence();
         return;
