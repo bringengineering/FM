@@ -3368,11 +3368,15 @@
     }
   }
 
-  // 건물주에게 매달 드리는 관리 보고서. 기본은 지난달이다 — 이번 달은
-  // 아직 안 끝났으니 보고할 것이 아니다.
+  // 건물주에게 매달 드리는 관리 보고서. 기본은 지난달이지만, 진행 중인
+  // 이번 달도 작업 현황 확인을 위해 선택할 수 있다.
   function previousMonthKey() {
     const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    return new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1)).toISOString().slice(0, 7);
+  }
+
+  function currentMonthKey() {
+    return BuildingReportCore.currentMonthKey();
   }
 
   function monthLastDay(month) {
@@ -3688,7 +3692,7 @@
     if (!buildings.some(building => building.id === buildingMonthlyReportState.buildingId)) {
       buildingMonthlyReportState = createBuildingMonthlyReportState({ buildingId: buildings[0].id, month: previousMonthKey() });
     }
-    if (!/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(buildingMonthlyReportState.month) || buildingMonthlyReportState.month > previousMonthKey()) {
+    if (!BuildingReportCore.isReportMonthSelectable(buildingMonthlyReportState.month)) {
       buildingMonthlyReportState.month = previousMonthKey();
       buildingMonthlyReportState.narrative = null;
     }
@@ -3723,10 +3727,10 @@
 
     const targetManager = buildingMonthlyReportTargetManagerMarkup();
     main.innerHTML = `<section class="building-monthly-report-page">
-      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>보고 대상으로 지정한 건물의 확정된 관리 기록을 모아 건물주에게 전달할 보고서로 정리합니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header>
+      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>이번 달도 보고월로 선택할 수 있습니다. 캘린더 작업이 없어도 월 선택은 가능하며, 등록된 작업이 없으면 0건으로 표시됩니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">시험 버전 · 자동 발송 안 함</em><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header>
       <section class="building-monthly-toolbar">
         <label class="building-monthly-field"><span>건물 선택</span><select data-building-monthly-building>${buildings.map(item => `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(item.name || "건물명 미입력")}</option>`).join("")}</select></label>
-        <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(previousMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>
+        <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(currentMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>
         <label class="building-monthly-field"><span>수신 건물주</span><div class="building-monthly-owner">${esc(owner && owner.name || "연결 필요")}</div></label>
       </section>
       <div class="building-monthly-kpis">
@@ -3751,9 +3755,9 @@
     });
     main.querySelector("[data-building-monthly-month]")?.addEventListener("change", event => {
       const nextMonth = String(event.target.value || "");
-      if (!/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(nextMonth) || nextMonth > previousMonthKey()) {
+      if (!BuildingReportCore.isReportMonthSelectable(nextMonth)) {
         event.target.value = buildingMonthlyReportState.month;
-        showToast("종료된 달만 보고서로 만들 수 있습니다.", "error");
+        showToast("미래 월은 아직 보고서로 선택할 수 없습니다.", "error");
         return;
       }
       buildingMonthlyReportState = createBuildingMonthlyReportState({ buildingId: building.id, month: nextMonth });

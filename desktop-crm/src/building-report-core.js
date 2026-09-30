@@ -59,6 +59,17 @@
     return match ? `${match[1]}년 ${Number(match[2])}월` : "";
   }
 
+  function currentMonthKey(now = new Date()) {
+    const date = now instanceof Date ? now : new Date(now);
+    const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+    return `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function isReportMonthSelectable(month, now = new Date()) {
+    const key = String(month || "");
+    return /^\d{4}-(?:0[1-9]|1[0-2])$/u.test(key) && key <= currentMonthKey(now);
+  }
+
   function isDone(item) {
     return DONE_STATUSES.has(String((item && (item.statusValue || item.status)) || "").trim());
   }
@@ -236,5 +247,7 @@
     UNIT_STATUS_LABEL,
     moneyText,
     monthText,
+    currentMonthKey,
+    isReportMonthSelectable,
   });
 });
