@@ -48,6 +48,7 @@ const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
 const MutationPolicy = require("./mutation-policy");
+const WorkOrderProgressError = require("./work-order-progress-error");
 const { createWallboardLiveSync } = require("./wallboard-live-sync");
 const { saveAndSignalWallboard, saveWeeklyReportAndSignalWallboard } = require("./wallboard-mutation-signal");
 const { createCrmCommandBridge } = require("./crm-command-bridge");
@@ -9615,7 +9616,17 @@ secureCanonicalHandle("crm:project-weekly-report-save", input => saveWeeklyRepor
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
 secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
 secureCanonicalHandle("crm:project-save", input => saveAndSignalWallboard(() => remoteClient.saveProject(input), signalWallboardAfterSave));
-secureCanonicalHandle("crm:work-order-progress", input => saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), signalWallboardAfterSave));
+secureCanonicalHandle("crm:work-order-progress", async input => {
+  try {
+    return await saveAndSignalWallboard(() => remoteClient.updateWorkOrderProgress(input), signalWallboardAfterSave);
+  } catch (error) {
+    if (input && typeof input === "object" && !Array.isArray(input)
+      && Object.prototype.hasOwnProperty.call(input, "progress")) {
+      return WorkOrderProgressError.safeWorkOrderProgressError(error);
+    }
+    throw error;
+  }
+});
 secureCanonicalHandle("crm:work-outcome-draft-load", input => handleWorkOutcomeDraft('load', input));
 secureCanonicalHandle("crm:work-outcome-export", input => exportWorkOutcomeDocument(input));
 secureCanonicalHandle("crm:project-weekly-report-export", input => exportProjectWeeklyReport(input));

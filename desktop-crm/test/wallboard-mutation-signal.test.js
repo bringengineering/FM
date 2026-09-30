@@ -39,11 +39,16 @@ test('project and work-order writes use the post-save wallboard signal', () => {
   const main = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
   for (const [channel, method] of [
     ['crm:project-save', 'saveProject'],
-    ['crm:work-order-save', 'saveWorkOrder'],
-    ['crm:work-order-progress', 'updateWorkOrderProgress']
+    ['crm:work-order-save', 'saveWorkOrder']
   ]) {
     assert.match(main, new RegExp(`secureCanonicalHandle\\("${channel}", input => saveAndSignalWallboard\\(\\(\\) => remoteClient\\.${method}\\(input\\), signalWallboardAfterSave\\)`));
   }
+  const progressHandler = main.slice(
+    main.indexOf('secureCanonicalHandle("crm:work-order-progress"'),
+    main.indexOf('secureCanonicalHandle("crm:work-outcome-draft-load"'),
+  );
+  assert.match(progressHandler, /async input => \{[\s\S]*?saveAndSignalWallboard\(\(\) => remoteClient\.updateWorkOrderProgress\(input\), signalWallboardAfterSave\)/u);
+  assert.match(progressHandler, /hasOwnProperty\.call\(input, "progress"\)[\s\S]*?WorkOrderProgressError\.safeWorkOrderProgressError\(error\)/u);
 });
 
 test('only a confirmed weekly-report approval signals TV refresh',async()=>{

@@ -4480,7 +4480,11 @@ class FirebaseRemoteClient {
       if (response.status >= 500) {
         throw createError("일정 저장 결과를 서버에서 확인하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED");
       }
-      throw createError("일정을 저장하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_FAILED");
+      const error = createError("일정을 저장하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_FAILED");
+      // Keep only the numeric status for main-process error classification. Never forward
+      // Firebase's response body, which may contain implementation details.
+      if (String(location || "").startsWith("workOrders/")) error.status = Number(response.status) || 0;
+      throw error;
     }
     if (payload !== null && stableBuildingScheduleText(payload) !== stableBuildingScheduleText(value)) {
       throw createError("일정 저장 결과가 요청 내용과 일치하지 않습니다.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED");

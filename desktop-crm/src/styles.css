@@ -1007,6 +1007,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .work-order-progress-summary label b { color: #8B95A1; font-size: 11px; }
 .work-order-progress-preview { height: 7px; overflow: hidden; border-radius: 999px; background: #EEF1F4; }
 .work-order-progress-preview i { display: block; height: 100%; border-radius: inherit; background: #3182F6; transition: width .16s ease; }
+.work-order-progress-save-error { display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; border: 1px solid #F2C7C9; border-radius: 10px; background: #FFF5F5; color: #A63D43; font-size: 11px; font-weight: 700; line-height: 1.55; }
+.work-order-progress-save-error::before { display: grid; flex: 0 0 18px; width: 18px; height: 18px; place-items: center; border-radius: 50%; background: #F9E0E1; color: #A63D43; content: "!"; font-size: 12px; font-weight: 900; }
 @media (max-width: 560px) {
   .work-order-progress-summary { grid-template-columns: 1fr auto 1fr; gap: 9px; padding: 12px; }
   .work-order-progress-summary input { width: 68px; }
