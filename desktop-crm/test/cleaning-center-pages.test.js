@@ -273,10 +273,12 @@ test('extra-charge page only shows in-progress orders and opens the extra-charge
       { id: 'BR-002', status: 'scheduled', title: '예정 주문' },
     ], ordersLoaded: true, canWrite: true,
   });
-  assert.match(html, /현장 작업 진행 중인 주문/u);
+  assert.match(html, /현장에서 확인한 추가 서비스와 비용/u);
   assert.match(html, /BR-001/u);
   assert.doesNotMatch(html, /BR-002/u);
   assert.match(html, /data-action="manage-cleaning-extra-charge"/u);
+  assert.match(html, /cleaning-reference-workspace/u, 'the route gives the selected CRM order a dedicated work area');
+  assert.match(html, /cleaning-reference-order-context/u, 'the focused panel carries the real order context');
 });
 
 test('delay response page isolates scheduled and active cleaning orders', () => {
@@ -289,11 +291,13 @@ test('delay response page isolates scheduled and active cleaning orders', () => 
       { id: 'BR-103', status: 'completed', title: '완료된 주문' },
     ], ordersLoaded: true, canWrite: true,
   });
-  assert.match(html, /예정 시간 또는 현장 진행 중인 주문/u);
+  assert.match(html, /예정 시각과 현장 상태/u);
   assert.match(html, /BR-101/u);
   assert.match(html, /BR-102/u);
   assert.doesNotMatch(html, /BR-103/u);
   assert.match(html, /data-action="open-cleaning-delay-response"/u);
+  assert.match(html, /cleaning-reference-workspace/u, 'the incident route uses a focused work area');
+  assert.match(html, /cleaning-reference-order-context/u, 'the selected CRM order is visible beside the response action');
 });
 test('lead queue reference screen renders the channel rail and operational intake table', () => {
   const ui = require('../src/cleaning-center-ui');
@@ -361,4 +365,37 @@ test('partner offer reference opens the offer form instead of the dispatch-histo
     orders: [{ id: 'BR-001', status: 'scheduled', title: '입주청소 24평' }], ordersLoaded: true,
   });
   assert.match(html, /data-action="start-cleaning-partner-offer" data-order-id="BR-001"/u);
+  assert.match(html, /cleaning-reference-order-context/u);
+});
+
+test('references #21–26 give each partner and exception action its own CRM order context', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const cases = [
+    ['decline', 'cleaningPartnerDecline', '21', 'received', 'create-cleaning-partner-offer'],
+    ['no-response', 'cleaningPartnerNoResponse', '22', 'scheduled', 'create-cleaning-partner-offer'],
+    ['reassignment', 'cleaningReassignment', '23', 'in_progress', 'reassign-cleaning-partner'],
+    ['cancellation', 'cleaningOrderCancellation', '24', 'scheduled', 'cancel-cleaning-order'],
+    ['refund', 'cleaningPartialRefund', '25', 'completed', 'manage-cleaning-refund'],
+    ['rework', 'cleaningRework', '26', 'completed', 'manage-cleaning-rework'],
+  ];
+  for (const [pageKind, view, reference, status, action] of cases) {
+    const html = ui.render({ view, pageKind, reference, pageTitle: `screen ${reference}`, canWrite: true, ordersLoaded: true,
+      orders: [{ id: `BR-${reference}`, status, title: `주문 ${reference}`, customerName: '고객', buildingAddress: '원주시' }] });
+    assert.match(html, /cleaning-reference-order-context/u, `${reference}: focused CRM order context`);
+    assert.match(html, new RegExp(`data-action="${action}" data-order-id="BR-${reference}"`, 'u'), `${reference}: original workflow action`);
+    assert.match(html, new RegExp(`SCREEN ${reference}`, 'u'), `${reference}: route remains separate`);
+  }
+});
+
+test('reference #30 is a separate consent-aware customer message workspace', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.render({ view: 'cleaningCustomerMessage', pageKind: 'message', reference: '30', pageTitle: '고객 문자 발송', canWrite: true,
+    orders: [{ id: 'BR-030', status: 'scheduled', title: '입주 청소', customerId: 'customer-30', customerName: '고객 30', desiredDate: '2026-10-01' }] });
+  assert.match(html, /cleaning-reference-order-context/u);
+  assert.match(html, /수신 동의/u);
+  assert.match(html, /data-action="open-cleaning-order-message" data-order-id="BR-030"/u);
+  assert.match(html, /화면을 여는 것만으로 발송되지 않습니다/u);
+  const unlinked = ui.render({ view: 'cleaningCustomerMessage', pageKind: 'message', reference: '30', pageTitle: '고객 문자 발송', canWrite: true,
+    orders: [{ id: 'BR-031', status: 'scheduled', title: '고객 미연결 주문' }] });
+  assert.match(unlinked, /data-action="open-cleaning-order-message" data-order-id="BR-031" disabled/u);
 });

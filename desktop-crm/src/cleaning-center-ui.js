@@ -1244,6 +1244,17 @@
     return `<div class="cleaning-screen-order-list">${orders.map(order => `<article class="cleaning-screen-order-card"><div class="cleaning-screen-order-main"><small>${escapeHtml(order.id || "주문 번호 확인 필요")} · ${escapeHtml(regionLabel(order.buildingAddress))}</small><strong>${escapeHtml(order.title || "청소 요청")}</strong><span>${escapeHtml(order.customerName || "고객 연결 확인 필요")} · ${escapeHtml(order.buildingName || "건물 연결 확인 필요")}</span><small>${escapeHtml(order.serviceLabel || statusLabel(order.serviceType) || "서비스 유형 확인 필요")} · 희망일 ${escapeHtml(order.desiredDate || "일정 미정")}</small></div><span class="cleaning-order-status">${escapeHtml(order.statusLabel || statusLabel(order.status))}</span><div class="cleaning-screen-order-actions">${button(order)}</div></article>`).join("")}</div>`;
   }
 
+  function renderCleaningReferenceWorkspace(data, orders, options) {
+    const selected = orders.find(order => String(order.id || "") === String(data.selectedWorkflowOrderId || "")) || orders[0] || null;
+    const { title, description, actionLabel, action, note } = options;
+    const otherOrders = orders.filter(order => order !== selected);
+    const actionButton = selected ? `<button type="button" class="primary-button" data-action="${action}" data-order-id="${escapeHtml(selected.id)}"${action === "open-cleaning-order-message" && (!selected.customerId || data.canWrite !== true) ? " disabled" : ""}>${escapeHtml(actionLabel)}</button>` : "";
+    const context = selected ? `<section class="cleaning-reference-order-context"><header><div><span class="cleaning-center-eyebrow">선택한 CRM 주문</span><h4>${escapeHtml(selected.id || "주문번호 확인 필요")}</h4></div><span class="cleaning-order-status">${escapeHtml(selected.statusLabel || statusLabel(selected.status))}</span></header><dl><div><dt>고객</dt><dd>${escapeHtml(selected.customerName || "고객 연결 확인 필요")}</dd></div><div><dt>서비스</dt><dd>${escapeHtml(selected.serviceLabel || selected.title || "서비스 확인 필요")}</dd></div><div><dt>지역·현장</dt><dd>${escapeHtml(selected.buildingAddress || selected.buildingName || "주소 미등록")}</dd></div><div><dt>희망 일정</dt><dd>${escapeHtml(selected.desiredDate || "일정 미정")}</dd></div></dl><p>${escapeHtml(note)}</p><div class="cleaning-screen-order-actions">${actionButton}</div></section>` : `<p class="cleaning-screen-state">처리할 CRM 주문이 없습니다.</p>`;
+    const state = data.ordersLoading ? `<p class="cleaning-screen-state" role="status">CRM 주문을 불러오는 중입니다.</p>` : data.ordersError ? `<p class="cleaning-screen-state is-error" role="alert">주문 자료를 불러오지 못했습니다. 새로고침 후 다시 확인해 주세요.</p>` : "";
+    const queue = otherOrders.length ? renderCleaningOrderActionList({ ...data, orders: otherOrders }, order => `<button type="button" class="secondary-button" data-action="${action}" data-order-id="${escapeHtml(order.id)}"${action === "open-cleaning-order-message" && (!order.customerId || data.canWrite !== true) ? " disabled" : ""}>열기</button>`) : `<p class="cleaning-screen-state">추가 대상 주문이 없습니다.</p>`;
+    return `<section class="cleaning-screen-panel cleaning-reference-workspace"><header><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div><span class="cleaning-screen-count">대상 ${orders.length}건</span></header>${state}<div class="cleaning-reference-workspace-grid">${context}<section class="cleaning-reference-work-queue"><header><h4>다른 대상 주문</h4><small>주문별 조건과 이력은 열기에서 확인합니다.</small></header>${queue}</section></div><small class="cleaning-screen-footnote">${escapeHtml(note)}</small></section>`;
+  }
+
   function renderCleaningLeads(data) {
     const summary = summarizeCleaningDashboard(data);
     const statuses = [["received,reviewing", "미응답"], ["quote_pending,approval_pending", "상담중"], ["scheduled,in_progress", "견적대기"], ["review_pending", "콜백예약"]];
@@ -1437,17 +1448,30 @@
       const url = escapeHtml(data.partnerAppUrl || "https://bring-fm.web.app/partner");
       return renderCleaningScreenShell(data, `<section class="cleaning-screen-panel cleaning-partner-app-entry"><header><div><h3>파트너 전용 앱</h3><p>파트너 계정의 본인 배정 작업과 수락·진행 기록은 파트너 앱에서 처리합니다.</p></div><a class="primary-button" href="${url}" target="_blank" rel="noreferrer">파트너 앱 열기</a></header><div class="info-box">CRM 관리자 화면에 파트너용 임의 작업을 표시하지 않습니다. 로그인한 파트너의 권한과 서버가 반환하는 범위가 적용됩니다.</div><div class="cleaning-screen-app-stages"><span>제안 수신</span><span>수락·거절</span><span>현장 작업</span><span>사진 등록</span><span>완료 요청</span></div></section>`);
     }
+    const actionWorkflows = {
+      offer: { statuses: ["received", "reviewing", "quote_pending", "approval_pending", "scheduled"], title: "파트너 작업제안", description: "주문 조건을 확인하고 실제 파트너에게 작업을 제안합니다.", actionLabel: "파트너에게 작업 제안", action: "start-cleaning-partner-offer", note: "파트너 선택·공급가·응답 기한은 확인 창에서 검토합니다. 고객 연락처와 상세 주소는 제안에 포함되지 않습니다." },
+      decline: { statuses: ["received", "reviewing", "quote_pending", "approval_pending", "scheduled"], title: "업체 거절 처리", description: "파트너 응답 이력을 확인하고 다음 배정을 검토합니다.", actionLabel: "파트너 응답 이력 확인", action: "create-cleaning-partner-offer", note: "거절 사유와 다음 제안은 실제 배차 이력을 불러온 뒤 확인합니다." },
+      "no-response": { statuses: ["received", "reviewing", "quote_pending", "approval_pending", "scheduled"], title: "파트너 무응답 처리", description: "응답 기한이 지난 제안을 확인하고 운영 조치를 선택합니다.", actionLabel: "응답 대기 이력 확인", action: "create-cleaning-partner-offer", note: "기한 초과 여부는 서버의 제안 이력과 현재 시각으로 확인합니다." },
+      reassignment: { statuses: ["scheduled", "in_progress"], title: "작업 재배정", description: "현재 파트너와 일정을 확인한 뒤 대체 파트너를 검토합니다.", actionLabel: "파트너 재배정 검토", action: "reassign-cleaning-partner", note: "기존 배정 기록은 보존됩니다. 새 파트너 배정은 확인 절차를 거쳐 저장합니다." },
+      cancellation: { statuses: ["received", "reviewing", "quote_pending", "approval_pending", "scheduled"], title: "주문 취소", description: "취소 사유와 환불 후속 계획을 확인해 주문 이력에 기록합니다.", actionLabel: "취소 조건 확인", action: "cancel-cleaning-order", note: "취소 기록이 실제 PG 환불이나 고객 안내를 자동 실행하지 않습니다." },
+      refund: { statuses: ["completed"], title: "부분 환불 처리", description: "주문의 결제 내역과 환불 가능 잔액을 확인합니다.", actionLabel: "환불 가능액·이력 확인", action: "manage-cleaning-refund", note: "환불 요청은 승인된 CRM 입금액 범위에서만 가능합니다. 실제 환불은 PG에서 처리하고 증빙을 남깁니다." },
+      rework: { statuses: ["completed"], title: "재작업 요청", description: "완료 작업과 고객 요청을 확인하고 재작업 이력을 엽니다.", actionLabel: "재작업 요청 열기", action: "manage-cleaning-rework", note: "재작업은 원 주문 및 결제와 별도로 기록됩니다." },
+      message: { statuses: ["received", "reviewing", "quote_pending", "approval_pending", "scheduled", "in_progress", "review_pending", "completed"], title: "고객 문자 발송", description: "주문과 연결된 고객 및 수신 동의를 확인해 메시지 작성 화면을 엽니다.", actionLabel: "고객 안내 작성", action: "open-cleaning-order-message", note: "메시지 발송 전 CRM 동의 상태·템플릿·수신자 확인이 필요합니다. 화면을 여는 것만으로 발송되지 않습니다." },
+    };
+    const workflow = actionWorkflows[data.pageKind];
+    if (workflow) {
+      const orders = (Array.isArray(data.orders) ? data.orders : []).filter(order => workflow.statuses.includes(order?.status));
+      return renderCleaningScreenShell(data, renderCleaningReferenceWorkspace(data, orders, workflow));
+    }
     if (data.pageKind === "extra-charge") {
       const orders = (Array.isArray(data.orders) ? data.orders : []).filter(order => order?.status === "in_progress");
-      const content = renderCleaningOrderActionList({ ...data, orders }, order => `<button type="button" class="primary-button" data-action="manage-cleaning-extra-charge" data-order-id="${escapeHtml(order.id)}">추가금 승인 요청</button>`);
-      const state = data.ordersLoading ? `<p class="cleaning-screen-state" role="status">현장 작업 중인 주문을 불러오는 중입니다.</p>` : data.ordersError ? `<p class="cleaning-screen-state is-error" role="alert">주문을 불러오지 못했습니다. 새로고침 후 다시 확인해 주세요.</p>` : `<p class="cleaning-screen-footnote">현장 작업이 시작된 주문만 표시합니다. 고객의 사전 동의가 확인될 때까지 추가금은 청구되지 않습니다.</p>`;
-      return renderCleaningScreenShell(data, `<section class="cleaning-screen-panel cleaning-extra-charge-page"><header><div><h3>현장 작업 진행 중인 주문</h3><p>주문 하나를 선택해 추가 서비스, 금액, 사진 증빙과 고객 승인 이력을 관리합니다.</p></div></header>${state}<div class="cleaning-screen-order-list-wrap">${content}</div></section>`);
+      const content = renderCleaningReferenceWorkspace(data, orders, { title: "추가금 승인 요청", description: "현장에서 확인한 추가 서비스와 비용을 고객 동의 절차에 연결합니다.", actionLabel: "추가금 승인 요청 작성", action: "manage-cleaning-extra-charge", note: "현장 도착이 확인된 주문만 요청할 수 있습니다. 고객 동의와 증거 확인 전에는 추가금이 청구되지 않습니다." });
+      return renderCleaningScreenShell(data, content);
     }
     if (data.pageKind === "delay") {
       const orders = (Array.isArray(data.orders) ? data.orders : []).filter(order => ["scheduled", "in_progress"].includes(order?.status));
-      const content = renderCleaningOrderActionList({ ...data, orders }, order => `<button type="button" class="primary-button" data-action="open-cleaning-delay-response" data-order-id="${escapeHtml(order.id)}">지연·노쇼 대응 기록</button>`);
-      const state = data.ordersLoading ? `<p class="cleaning-screen-state" role="status">예정 시간 또는 현장 진행 중인 주문을 불러오는 중입니다.</p>` : data.ordersError ? `<p class="cleaning-screen-state is-error" role="alert">주문을 불러오지 못했습니다. 새로고침 후 다시 확인해 주세요.</p>` : `<p class="cleaning-screen-footnote">출발·도착 상태는 운영자가 실제로 확인해 기록합니다. GPS 추적이나 자동 연락은 하지 않습니다.</p>`;
-      return renderCleaningScreenShell(data, `<section class="cleaning-screen-panel cleaning-delay-page"><header><div><h3>예정 시간 또는 현장 진행 중인 주문</h3><p>주문을 열어 지연·현장 미도착·노쇼 의심 상황과 실제 대응 이력을 기록합니다.</p></div></header>${state}<div class="cleaning-screen-order-list-wrap">${content}</div></section>`);
+      const content = renderCleaningReferenceWorkspace(data, orders, { title: "지연 · 노쇼 대응", description: "예정 시각과 현장 상태를 확인하고 실제로 진행한 조치를 기록합니다.", actionLabel: "지연·노쇼 대응 열기", action: "open-cleaning-delay-response", note: "출발·도착 시각과 고객 안내 여부는 담당자가 확인한 뒤 기록합니다. GPS 추적이나 자동 연락은 하지 않습니다." });
+      return renderCleaningScreenShell(data, content);
     }
     if (data.pageKind === "registration") return renderCleaningScreenShell(data, `<section class="cleaning-screen-panel"><header><div><h3>신규 파트너 등록</h3><p>청소 협력업체 기본 정보와 서비스 범위를 기존 CRM 업체 기록에 저장합니다.</p></div><button type="button" class="primary-button" data-action="new-cleaning-partner"${data.canWrite ? "" : " disabled"}>＋ 파트너 등록</button></header><p class="cleaning-screen-state">사업자 자격의 외부 검증은 연결되지 않았습니다. 담당자가 입력한 정보로 저장합니다.</p></section>`);
     if (data.pageKind === "booking") {
