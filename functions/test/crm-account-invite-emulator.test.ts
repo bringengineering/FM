@@ -40,23 +40,36 @@ async function authRequest(method: string, body?: unknown): Promise<Record<strin
   return payload;
 }
 
+async function authEmulatorControlRequest(pathname: string): Promise<Record<string, unknown>> {
+  const url = emulatorUrl(AUTH_HOST, pathname);
+  const response = await fetch(url);
+  const payload = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(`Auth emulator control request failed (${response.status}).`);
+  return payload;
+}
+
 async function createPasswordUser(
   email: string,
+  auth: ReturnType<typeof getAdminAuth>,
   { verified = true } = {},
 ): Promise<EmulatorUser> {
-  let payload = await authRequest("accounts:signUp", {
+  const created = await authRequest("accounts:signUp", {
     email,
     password: TEST_PASSWORD,
     returnSecureToken: true,
   }) as unknown as AuthResponse;
   if (verified) {
-    payload = await authRequest("accounts:update", {
-      idToken: payload.idToken,
-      emailVerified: true,
-      returnSecureToken: true,
-    }) as unknown as AuthResponse;
+    await auth.updateUser(created.localId, { emailVerified: true });
   }
-  return { uid: payload.localId, email, idToken: payload.idToken };
+  const signedIn = await authRequest("accounts:signInWithPassword", {
+    email,
+    password: TEST_PASSWORD,
+    returnSecureToken: true,
+  }) as unknown as AuthResponse;
+  if (signedIn.localId !== created.localId || !signedIn.idToken) {
+    throw new Error("Auth emulator did not return the expected password identity.");
+  }
+  return { uid: signedIn.localId, email, idToken: signedIn.idToken };
 }
 
 async function setCrmAccess(
@@ -82,6 +95,15 @@ async function setCrmAccess(
     }),
   });
   if (!response.ok) throw new Error(`Database emulator seeding failed (${response.status}).`);
+}
+
+async function readCrmAccess(user: EmulatorUser): Promise<Record<string, unknown>> {
+  const url = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(user.uid)}.json`);
+  url.searchParams.set("ns", PROJECT_ID);
+  url.searchParams.set("auth", "owner");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Database emulator access check failed (${response.status}).`);
+  return await response.json() as Record<string, unknown>;
 }
 
 async function callFunction(name: string, data: Record<string, unknown>, idToken = "") {
@@ -110,22 +132,6 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
 
   beforeAll(async () => {
     if (!PROJECT_ID.startsWith("demo-")) throw new Error("Emulator test project must use the demo- prefix.");
-    admin = await createPasswordUser(`admin-${unique}@bring.test`);
-    member = await createPasswordUser(`member-${unique}@bring.test`);
-    viewer = await createPasswordUser(`viewer-${unique}@bring.test`);
-    disabledAdmin = await createPasswordUser(`disabled-${unique}@bring.test`);
-    unverifiedAdmin = await createPasswordUser(`unverified-${unique}@bring.test`, { verified: false });
-    passwordChangeAdmin = await createPasswordUser(`change-${unique}@bring.test`);
-
-    await Promise.all([
-      setCrmAccess(admin, { role: "admin" }),
-      setCrmAccess(member, { role: "member" }),
-      setCrmAccess(viewer, { role: "viewer" }),
-      setCrmAccess(disabledAdmin, { role: "admin", enabled: false }),
-      setCrmAccess(unverifiedAdmin, { role: "admin" }),
-      setCrmAccess(passwordChangeAdmin, { role: "admin", mustChangePassword: true }),
-    ]);
-
     const pair = generateKeyPairSync("rsa", {
       modulusLength: 2048,
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -139,7 +145,25 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
         privateKey: pair.privateKey,
       }),
     }, `crm-account-setup-emulator-${unique}`);
-    const customToken = await getAdminAuth(adminApp).createCustomToken(admin.uid);
+    const emulatorAuth = getAdminAuth(adminApp);
+
+    admin = await createPasswordUser(`admin-${unique}@bring.test`, emulatorAuth);
+    member = await createPasswordUser(`member-${unique}@bring.test`, emulatorAuth);
+    viewer = await createPasswordUser(`viewer-${unique}@bring.test`, emulatorAuth);
+    disabledAdmin = await createPasswordUser(`disabled-${unique}@bring.test`, emulatorAuth);
+    unverifiedAdmin = await createPasswordUser(`unverified-${unique}@bring.test`, emulatorAuth, { verified: false });
+    passwordChangeAdmin = await createPasswordUser(`change-${unique}@bring.test`, emulatorAuth);
+
+    await Promise.all([
+      setCrmAccess(admin, { role: "admin" }),
+      setCrmAccess(member, { role: "member" }),
+      setCrmAccess(viewer, { role: "viewer" }),
+      setCrmAccess(disabledAdmin, { role: "admin", enabled: false }),
+      setCrmAccess(unverifiedAdmin, { role: "admin" }),
+      setCrmAccess(passwordChangeAdmin, { role: "admin", mustChangePassword: true }),
+    ]);
+
+    const customToken = await emulatorAuth.createCustomToken(admin.uid);
     const customSignIn = await authRequest("accounts:signInWithCustomToken", {
       token: customToken,
       returnSecureToken: true,
@@ -178,9 +202,18 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
   }, 30_000);
 
   it("lets only an admin send an email link that verifies the email and sets the first password", async () => {
+    expect(admin.idToken.length).toBeGreaterThan(20);
+    const adminClaims = JSON.parse(Buffer.from(admin.idToken.split(".")[1] || "", "base64url").toString("utf8")) as {
+      email_verified?: unknown;
+      firebase?: { sign_in_provider?: unknown };
+    };
+    expect(adminClaims.email_verified).toBe(true);
+    expect(adminClaims.firebase?.sign_in_provider).toBe("password");
+    expect(await readCrmAccess(admin)).toMatchObject({ enabled: true, role: "admin", mustChangePassword: false });
     const invitedEmail = `invite-${unique}@bring.test`;
     const registered = await callFunction("registerCrmAccount", { email: invitedEmail }, admin.idToken);
-    expect(registered.status).toBe(200);
+    const registrationError = registered.payload.error as { status?: unknown; message?: unknown } | undefined;
+    expect(registered.status, `${String(registrationError?.status || "unknown")}: ${String(registrationError?.message || "")}`).toBe(200);
     expect(registered.payload.result).toMatchObject({ email: invitedEmail, status: "pending", emailSent: true });
     const registrationResult = registered.payload.result as { uid: string };
 
@@ -188,7 +221,7 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     expect((listed.payload.result as { accounts: Array<{ uid: string; email: string; status: string }> }).accounts)
       .toContainEqual(expect.objectContaining({ uid: registrationResult.uid, email: invitedEmail, status: "pending" }));
 
-    const codeResponse = await authRequest(`emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
+    const codeResponse = await authEmulatorControlRequest(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
       oobCodes?: Array<{ email: string; oobCode: string; requestType: string }>;
     };
     const actionCode = codeResponse.oobCodes?.find(code =>
@@ -209,7 +242,10 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
       password,
       returnSecureToken: true,
     }) as unknown as AuthResponse;
-    expect(login.emailVerified).toBe(true);
+    const profile = await authRequest("accounts:lookup", { idToken: login.idToken }) as {
+      users?: Array<{ emailVerified?: unknown }>;
+    };
+    expect(profile.users?.[0]?.emailVerified).toBe(true);
 
     const accessUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(registrationResult.uid)}.json`);
     accessUrl.searchParams.set("ns", PROJECT_ID);

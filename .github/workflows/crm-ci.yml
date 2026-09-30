@@ -104,6 +104,6 @@ jobs:
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
           FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
           CRM_ACCOUNT_SETUP_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
-        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm-account-setup emulators:exec --only auth,database,functions "pnpm --dir ../functions exec vitest run test/crm-account-invite-emulator.test.ts"
+        run: pnpm --dir company-site exec firebase --config ../firebase.account-setup-emulators.json --project demo-bring-fm-account-setup emulators:exec --only auth,database,functions "pnpm --dir ../functions exec vitest run test/crm-account-invite-emulator.test.ts"
       - name: Test billing transactions in local database emulator
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database "node --test ../functions/integration/billing-ledger-emulator.test.mjs"
