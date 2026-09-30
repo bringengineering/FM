@@ -15,6 +15,13 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
+    "redirects": [
+      {
+        "source": "/turnover-care",
+        "destination": "/building-care#turnover-package",
+        "type": 301
+      }
+    ],
     "headers": [
       {
         "source": "/crm-auth",
