@@ -6068,6 +6068,10 @@ async function createWindow() {
         ];
         store.customers = [...store.customers.filter(item => !String(item.id || '').startsWith('cc_preview_')), ...previewCustomers];
         store.buildings = [...store.buildings.filter(item => !String(item.id || '').startsWith('cc_preview_')), ...previewBuildings];
+        store.partnerVendors = [...store.partnerVendors.filter(item => !String(item.id || '').startsWith('cc_preview_')), {
+          id: 'cc_preview_vendor_1', name: 'A클린', industry: '청소', service: '입주청소', region: '원주시', phone: '010-9876-5432', active: true,
+          cleaningProfile: { serviceTypes: ['move_in_cleaning'], serviceRegions: ['원주시'], onboardingStatus: 'approved', availabilityStatus: 'available', complianceStatus: 'verified' },
+        }];
         if (!window.__crmTest.replaceStoreForTest(store)) throw new Error('Could not seed isolated Cleaning Center screenshot records');
         const previewOrders = [
           ['00128','cc_preview_customer_1','cc_preview_building_1','입주청소 24평','move_in_cleaning','received','phone','2026-09-30T07:18:00+09:00','2026-10-03','김민지'],
@@ -6136,8 +6140,18 @@ async function createWindow() {
           const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
           const reference = '${screen.reference}';
           const view = '${screen.view}';
+          if (window.__crmTest.snapshot().modalOpen) {
+            document.querySelector('#modal [data-action="close-modal"]')?.click();
+            await wait(100);
+          }
+          const modalClosed = window.__crmTest.snapshot().modalOpen === false;
+          if (!modalClosed) throw new Error('cleaning center capture could not dismiss prior modal for reference ' + reference);
           document.querySelector('[data-cleaning-screen="${screen.reference}"]')?.click();
           await wait(80);
+          const pageState = window.__crmTest.snapshot();
+          if (pageState.view !== view || pageState.modalOpen !== false) {
+            throw new Error('cleaning center capture route mismatch for reference ' + reference + ': ' + JSON.stringify(pageState));
+          }
           if (reference === '04') {
             const customerPicker = document.querySelector('[data-cleaning-customer-select]');
             if (customerPicker && [...customerPicker.options].some(option => option.value === 'cc_preview_customer_1')) {
@@ -6147,17 +6161,19 @@ async function createWindow() {
             }
           }
           const modalActions = {
-            '20': '[data-action="create-cleaning-partner-offer"]', '21': '[data-action="create-cleaning-partner-offer"]',
-            '22': '[data-action="create-cleaning-partner-offer"]', '23': '[data-action="reassign-cleaning-partner"]',
-            '24': '[data-action="cancel-cleaning-order"]', '25': '[data-action="manage-cleaning-refund"]',
-            '26': '[data-action="manage-cleaning-rework"]', '27': '[data-action="new-cleaning-partner"]',
-            '30': '[data-action="open-cleaning-order-message"]', '31': '[data-action="new-consultation-reservation"]',
-            '32': '[data-action="manage-cleaning-extra-charge"]', '33': '[data-action="open-cleaning-delay-response"]'
+            '20': '[data-action="start-cleaning-partner-offer"]',
+            '24': '[data-action="cancel-cleaning-order"]', '27': '[data-action="new-cleaning-partner"]',
+            '31': '[data-action="new-consultation-reservation"]'
           };
           const modalSelector = modalActions[reference];
           const modalAction = modalSelector && document.querySelector('[data-cleaning-page="' + view + '"] ' + modalSelector);
           if (modalAction && !modalAction.disabled) { modalAction.click(); await wait(100); }
-          return window.__crmTest.snapshot().view === view;
+          const finalState = window.__crmTest.snapshot();
+          const expectedModalOpen = Boolean(modalAction && !modalAction.disabled);
+          if (finalState.view !== view || finalState.modalOpen !== expectedModalOpen) {
+            throw new Error('cleaning center capture route mismatch for reference ' + reference + ': ' + JSON.stringify(finalState));
+          }
+          return true;
         })()`, true);
         const image = await mainWindow.webContents.capturePage();
         const file = path.join(pagesDirectory, `${screen.reference}-${screen.view}.png`);

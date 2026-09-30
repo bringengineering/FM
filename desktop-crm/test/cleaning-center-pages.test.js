@@ -344,6 +344,21 @@ test('visual gallery injects labeled Cleaning Center data only in isolated demo 
   assert.match(app, /setCleaningOrdersForTest:[\s\S]{0,3000}renderCleaningCenter\(\)/u);
   assert.ok(main.indexOf('cleaning-center-pages-gallery') < main.indexOf('화면 검수용 샘플 · CRM 저장/운영 API 호출 없음'));
   assert.match(main, /window\.__crmTest\.setCleaningOrdersForTest\(\{ orders: previewOrders, workOrders: previewWorkOrders, reports: previewReports,[\s\S]{0,240}settlementReview: previewSettlement \}\)/u);
+  assert.match(main, /cc_preview_vendor_1[\s\S]{0,300}industry: '청소'[\s\S]{0,300}onboardingStatus: 'approved'/u);
   assert.match(main, /previewData\?\.fixtureOnly === true && previewData\.orderCount === 12/u);
   assert.match(main, /fixtureOnly:\s*true/u);
+  const captureLoop = main.slice(main.indexOf('for (const screen of screens) {', main.indexOf('cleaning-center-pages-gallery')));
+  assert.match(captureLoop, /close-modal[\s\S]{0,240}modalClosed[\s\S]{0,240}if \(!modalClosed\)/u);
+  assert.match(captureLoop, /pageState\.view !== view \|\| pageState\.modalOpen !== false/u);
+  assert.match(captureLoop, /finalState\.view !== view \|\| finalState\.modalOpen !== expectedModalOpen/u);
+  assert.match(captureLoop, /throw new Error\('cleaning center capture route mismatch/u);
+});
+
+test('partner offer reference opens the offer form instead of the dispatch-history dialog', () => {
+  const ui = require('../src/cleaning-center-ui');
+  const html = ui.render({
+    view: 'cleaningPartnerOffer', pageKind: 'offer', reference: '20', pageTitle: '파트너 작업제안',
+    orders: [{ id: 'BR-001', status: 'scheduled', title: '입주청소 24평' }], ordersLoaded: true,
+  });
+  assert.match(html, /data-action="start-cleaning-partner-offer" data-order-id="BR-001"/u);
 });
