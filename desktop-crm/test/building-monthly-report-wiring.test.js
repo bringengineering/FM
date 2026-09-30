@@ -37,6 +37,32 @@ test("시험 버전은 자동 발송을 하지 않는다", () => {
   assert.doesNotMatch(view, /sendOwner|customer-notice-send|document-delivery-send/u);
 });
 
+test("월간보고서에서 Drive 상태를 안내하고 바로 연결한 뒤 사진 폴더를 연다", () => {
+  const app = read("app.js");
+  const css = read("building-monthly-report.css");
+  const start = app.indexOf("async function connectBuildingMonthlyDrive");
+  const end = app.indexOf("async function switchBuildingMonthlyDriveSpace", start);
+  const connect = app.slice(start, end);
+  const viewStart = app.indexOf("function renderBuildingMonthlyReports");
+  const viewEnd = app.indexOf("async function exportBuildingMonthlyReportPdf", viewStart);
+  const view = app.slice(viewStart, viewEnd);
+  assert.ok(connect.length > 0);
+  assert.match(view, /data-building-monthly-drive-connect/u);
+  assert.match(view, /data-building-monthly-drive-open/u);
+  assert.match(view, /회사 Drive 연결이 필요합니다/u);
+  assert.match(view, /building-monthly-drive-status/u);
+  assert.doesNotMatch(app, /설정에서 Drive를 연결해 주세요/u);
+  assert.match(connect, /api\.driveStatus\(\)/u);
+  assert.match(connect, /api\.connectDrive\(\)/u);
+  assert.match(connect, /await openBuildingMonthlyPhotoPicker\(\)/u);
+  assert.match(connect, /canWriteCRM\(\)/u);
+  assert.match(connect, /sessionIsCurrent/u);
+  assert.match(connect, /reportIsCurrent/u);
+  assert.match(connect, /authGeneration/u);
+  assert.match(connect, /currentAuthUid\(\)/u);
+  assert.match(css, /\.building-monthly-drive-status\.is-connected/u);
+});
+
 test("캘린더 업무 제외는 원본 일정을 유지하면서 초안·집계·PDF에 적용한다", () => {
   const app = read("app.js");
   const main = read("main.js");
