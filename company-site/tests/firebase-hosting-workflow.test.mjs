@@ -24,6 +24,9 @@ test("production site workflow builds, verifies, and deploys Firebase Hosting", 
   assert.match(workflow, /building-care\/index\.html/);
   assert.match(workflow, /stair-cleaning\/index\.html/);
   assert.match(workflow, /move-in-cleaning\/index\.html/);
+  assert.match(workflow, /crm-account-setup\/index\.html/);
+  assert.match(workflow, /crm-account-setup\/setup\.js/);
+  assert.match(workflow, /crm-account-setup\/setup\.css/);
   assert.match(workflow, /FirebaseExtended\/action-hosting-deploy/);
   assert.match(workflow, /FIREBASE_SERVICE_ACCOUNT/);
   assert.match(workflow, /channelId: live/);

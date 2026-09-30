@@ -6,6 +6,10 @@
   const state = {
     context: null,
     data: { users: [], attendance: [], messages: [], rfidCards: [], rfidAdmin: false, loadedAt: "" },
+    crmAccountInvites: [],
+    crmAccountInvitesLoaded: false,
+    crmAccountInvitesLoading: false,
+    crmAccountInviteError: "",
     loaded: false,
     loading: false,
     error: "",
@@ -55,6 +59,7 @@
   const currentUser = () => state.context && state.context.currentAuth && state.context.currentAuth.user || {};
   const currentUserId = () => String(currentUser().uid || "");
   const isAdmin = () => currentUser().officeAdmin === true;
+  const isCrmAdmin = () => currentUser().role === "admin";
   const userById = uid => state.data.users.find(user => user.uid === uid);
   const myAttendance = () => state.data.attendance.filter(row => row.userId === currentUserId()).sort((a, b) => `${b.workDate}${b.checkInAt}`.localeCompare(`${a.workDate}${a.checkInAt}`));
   const todayRecord = () => myAttendance().find(row => row.workDate === Core.attendanceWorkDate()) || null;
@@ -416,6 +421,60 @@
     }
   }
 
+  async function refreshCrmAccountInvites() {
+    if (!isCrmAdmin() || state.crmAccountInvitesLoading) return;
+    state.crmAccountInvitesLoading = true;
+    state.crmAccountInviteError = "";
+    renderCurrent();
+    try {
+      const result = await state.context.api.loadCrmAccountInvites();
+      state.crmAccountInvites = Array.isArray(result) ? result : [];
+      state.crmAccountInvitesLoaded = true;
+    } catch (error) {
+      state.crmAccountInviteError = error && error.message || "계정 초대를 불러오지 못했습니다.";
+    } finally {
+      state.crmAccountInvitesLoading = false;
+      if (officeIsActive() && state.context?.view === "officeAccountSetup") renderCurrent();
+    }
+  }
+
+  async function registerCrmAccount(form) {
+    if (!isCrmAdmin() || state.busy) return;
+    const email = String(new FormData(form).get("email") || "").trim();
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.registerCrmAccount({ email });
+      if (!result || result.emailSent !== true) {
+        notify("계정은 비밀번호 없이 등록했지만 인증 메일 발송이 확인되지 않았습니다. 아래 목록에서 다시 보내 주세요.", "error");
+      } else {
+        notify("계정을 등록했고 이메일 인증 링크를 보냈습니다.", "success");
+      }
+      await refreshCrmAccountInvites();
+    } catch (error) {
+      notify(error && error.message || "계정을 등록하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
+  async function resendCrmAccountInvite(uid) {
+    if (!isCrmAdmin() || state.busy || !/^[A-Za-z0-9_-]{1,128}$/u.test(String(uid || ""))) return;
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.resendCrmAccountInvite({ uid });
+      if (result && result.emailSent === true) notify("인증 및 비밀번호 설정 링크를 다시 보냈습니다.", "success");
+      await refreshCrmAccountInvites();
+    } catch (error) {
+      notify(error && error.message || "인증 메일을 다시 보내지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   function chooseDefaultUser() {
     const peers = state.data.users.filter(user => user.uid !== currentUserId());
     if (state.selectedUserId && peers.some(user => user.uid === state.selectedUserId)) return;
@@ -443,6 +502,29 @@
 
   function errorPanel() {
     return `<section class="office-loading office-error"><span>!</span><b>자료를 불러오지 못했습니다</b><p>${esc(state.error)}</p><button class="secondary-button" data-office-refresh>다시 시도</button></section>`;
+  }
+
+  function crmAccountSetupView() {
+    if (!isCrmAdmin()) {
+      return `<section class="office-loading office-error"><span>!</span><b>관리자 전용 메뉴입니다</b><p>CRM 관리자 계정으로 로그인해 주세요.</p></section>`;
+    }
+    const rows = state.crmAccountInvites.map(account => {
+      const pending = account.status === "pending";
+      const createdAt = account.createdAt ? new Date(account.createdAt).toLocaleString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
+      const expiresAt = account.expiresAt ? new Date(account.expiresAt).toLocaleDateString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
+      return `<tr><td><b>${esc(account.displayName || account.email)}</b>${account.displayName ? `<small>${esc(account.email)}</small>` : ""}</td><td><span class="crm-account-status ${pending ? "pending" : "complete"}">${pending ? "설정 대기" : "설정 완료"}</span></td><td>${esc(createdAt)}</td><td>${pending ? esc(expiresAt) : "—"}</td><td>${pending ? `<button type="button" class="secondary-button" data-crm-account-resend="${esc(account.uid)}" ${state.busy ? "disabled" : ""}>메일 다시 보내기</button>` : "—"}</td></tr>`;
+    }).join("");
+    const accountRows = state.crmAccountInvitesLoading && !state.crmAccountInvitesLoaded
+      ? `<div class="office-loading"><span class="office-loader"></span><b>계정 현황을 불러오는 중입니다</b></div>`
+      : `<div class="crm-account-table-wrap"><table class="crm-account-table"><thead><tr><th>구성원</th><th>상태</th><th>등록일</th><th>초대 만료일</th><th>작업</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="crm-account-empty">아직 등록된 계정 초대가 없습니다.</td></tr>`}</tbody></table></div>`;
+    return `<section class="office-hero crm-account-hero"><div><span>ACCOUNT SETUP</span><h2>계정 등록</h2><p>이메일만 등록하면 임시 비밀번호 없이 초대 링크에서 이메일 인증과 새 비밀번호 설정을 한 번에 진행합니다.</p></div></section>
+      <section class="office-panel crm-account-panel"><header><div><span>NEW MEMBER</span><h3>이메일 인증 링크 보내기</h3><p>등록된 이메일 주소로 일회용 링크를 보냅니다. 새 구성원은 링크에서 직접 비밀번호를 정합니다.</p></div></header>
+        <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
+        <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 계정 설정 요청은 7일간 대기하며, 메일 링크가 만료되면 목록에서 새 링크를 보낼 수 있습니다. 이메일 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
+      </section>
+      <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기 계정은 인증 링크를 다시 보낼 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
+        ${state.crmAccountInviteError ? `<div class="crm-account-error" role="alert">${esc(state.crmAccountInviteError)}</div>` : ""}${accountRows}
+      </section>`;
   }
 
   // 날짜 칸이 빈 채로 열리면 사람은 연도부터 네 자리를 친다. 그 해 안으로
@@ -1635,6 +1717,7 @@
       else if (state.context.view === "officePayroll") state.context.container.innerHTML = payrollView();
       else if (state.context.view === "officeApprovals") state.context.container.innerHTML = approvalsView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
+      else if (state.context.view === "officeAccountSetup") state.context.container.innerHTML = crmAccountSetupView();
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
         updateClock();
@@ -2002,6 +2085,9 @@
     }
     const refresh = event.target.closest("[data-office-refresh]");
     if (refresh) { load(true); return; }
+    if (event.target.closest("[data-crm-account-refresh]")) { void refreshCrmAccountInvites(); return; }
+    const resendAccount = event.target.closest("[data-crm-account-resend]");
+    if (resendAccount) { void resendCrmAccountInvite(resendAccount.dataset.crmAccountResend); return; }
     const displayNameEdit = event.target.closest("[data-office-display-name-edit]");
     if (displayNameEdit) {
       beginDisplayNameEdit(displayNameEdit.dataset.officeDisplayNameEdit, displayNameEdit.dataset.officeDisplayNameSurface);
@@ -2144,6 +2230,8 @@
   });
 
   document.addEventListener("submit", event => {
+    const crmAccountForm = event.target.closest("[data-crm-account-invite-form]");
+    if (crmAccountForm) { event.preventDefault(); void registerCrmAccount(crmAccountForm); return; }
     const leaveForm = event.target.closest("[data-office-leave-form]");
     if (leaveForm) { event.preventDefault(); void submitLeaveRequest(leaveForm); return; }
     const approvalForm = event.target.closest("[data-office-approval-form]");
@@ -2186,6 +2274,11 @@
       if (previousView && previousView !== context.view) {
         clearAdminAttendanceCorrection();
         clearRfidCapture(false);
+        if (previousView === "officeAccountSetup") {
+          state.crmAccountInvites = [];
+          state.crmAccountInvitesLoaded = false;
+          state.crmAccountInviteError = "";
+        }
       }
       state.context = context;
       state.active = true;
@@ -2194,8 +2287,12 @@
       startSync();
       renderCurrent();
       load(Boolean(state.loaded && previousView && previousView !== context.view));
+      if (context.view === "officeAccountSetup" && !state.crmAccountInvitesLoaded) void refreshCrmAccountInvites();
     },
     deactivate() {
+      state.crmAccountInvites = [];
+      state.crmAccountInvitesLoaded = false;
+      state.crmAccountInviteError = "";
       if (!state.active && !state.clockTimer && !state.syncTimer) {
         syncMessengerPresence();
         return;

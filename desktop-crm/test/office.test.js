@@ -197,11 +197,17 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(html, />근태관리</);
   assert.match(html, /data-view="officeMessenger"/);
   assert.match(html, /id="navOfficeAdmin"/);
+  assert.match(html, /id="navOfficeAccountSetup"[^>]*data-view="officeAccountSetup" hidden/);
   assert.match(app, /user\.officeAdmin !== true/);
+  assert.match(app, /user\.role !== "admin"/);
+  assert.match(app, /officeAccountSetup/);
   assert.match(app, /window\.BringOffice\.render/);
   assert.match(app, /setMessengerPresence: syncOfficeMessengerPresence/);
   assert.match(app, /\{ active: true, peerId \}/);
   assert.match(preload, /crm:office-load/);
+  assert.match(preload, /crm:account-invites-load/);
+  assert.match(preload, /crm:account-invite-register/);
+  assert.match(preload, /crm:account-invite-resend/);
   assert.match(preload, /crm:office-attendance-save/);
   assert.match(preload, /crm:office-display-name-save/);
   assert.match(preload, /crm:office-attendance-export/);
@@ -213,6 +219,9 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(preload, /crm:office-messenger-presence/);
   assert.match(preload, /crm:office-data/);
   assert.match(main, /secureCanonicalHandle\("crm:office-messages-read"/);
+  assert.match(main, /secureCanonicalHandle\("crm:account-invites-load"/);
+  assert.match(main, /secureCanonicalHandle\("crm:account-invite-register"/);
+  assert.match(main, /secureCanonicalHandle\("crm:account-invite-resend"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-display-name-save"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-attachment-pick"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-attachment-drop"/);
@@ -223,6 +232,7 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(main, /actor\.officeAdmin !== true/);
   assert.doesNotMatch(main, /userId === actor\.uid/);
   assert.match(remote, /this\.dbRequest\("crmAccess"/);
+  assert.match(remote, /this\.callCrmAccountSetupFunction\("registerCrmAccount"/);
   assert.match(remote, /this\.dbRequest\("teamProfiles"/);
   assert.match(remote, /OfficeCore\.mergeOfficeUsers\(users, teamProfiles\)/);
   assert.match(remote, /crmAccess\/\$\{userId\}\/displayName/);
@@ -245,6 +255,11 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(ui, /data-office-display-name-surface="attendance"/);
   assert.match(ui, /전체 근태관리와 모든 사용자의 메신저에 같은 이름/);
   assert.match(ui, /saveOfficeDisplayName/);
+  assert.match(ui, /이메일 인증 링크 보내기/);
+  assert.match(ui, /초기 비밀번호를 만들거나 저장하지 않습니다/);
+  assert.match(ui, /role === "admin"/);
+  assert.match(main, /미리보기에서는 이메일 초대를 발송하지 않습니다/);
+  assert.match(main, /crm-account-setup-preview/);
   assert.match(ui, /data-office-attachment-pick/);
   assert.match(ui, /data-office-attachment-drop-zone/);
   assert.match(ui, /dropOfficeAttachment\(file, \{ receiverId \}\)/);

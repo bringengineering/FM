@@ -149,6 +149,21 @@ function Assert-LocalContract {
     if (@($cleaningFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -gt 0) {
         throw "A manually approved Cleaning Center Function must not also be archived."
     }
+    $crmAccountSetupDeployment = $manifest.crmAccountSetupManualDeployment
+    $expectedCrmAccountSetupFunctions = @("completeCrmAccountSetup", "listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite")
+    if ($null -eq $crmAccountSetupDeployment -or $crmAccountSetupDeployment.projectId -ne $ProjectId -or $crmAccountSetupDeployment.databaseRules -ne $false -or $crmAccountSetupDeployment.region -ne "asia-northeast3") {
+        throw "CRM account setup deployment must remain a separate bring-fm target without Database Rules."
+    }
+    $crmAccountSetupFunctionNames = @($crmAccountSetupDeployment.functionNames)
+    if (($crmAccountSetupFunctionNames -join ',') -ne ($expectedCrmAccountSetupFunctions -join ',')) {
+        throw "CRM account setup deployment must contain exactly: $($expectedCrmAccountSetupFunctions -join ', ')"
+    }
+    if (@($crmAccountSetupFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -gt 0) {
+        throw "An approved CRM account setup Function must not also be archived."
+    }
+    if (@($crmAccountSetupFunctionNames | Where-Object { $cleaningFunctionNames -contains $_ }).Count -gt 0) {
+        throw "CRM account setup deployment must not overlap the Cleaning Center target."
+    }
     if ($null -eq $manifest.primary.PSObject.Properties["functionsDeploymentAllowed"] -or $manifest.primary.functionsDeploymentAllowed -ne $false) {
         throw "The primary target must explicitly forbid Functions deployment."
     }

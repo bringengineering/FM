@@ -174,7 +174,7 @@ test("기존 상세 디자인 안에서 프로젝트 기간을 연장하고 연�
 });
 
 test("프로젝트 로드맵은 회사 데이터와 분리된 프로그램 미리보기를 허용한다", () => {
-  assert.match(main, /BRING_CRM_PREVIEW_VIEW === "projectRoadmap" \? "projectRoadmap" : ""/u);
+  assert.match(main, /\["projectRoadmap", "officeAccountSetup"\]\.includes\(process\.env\.BRING_CRM_PREVIEW_VIEW\)/u);
   assert.match(main, /Boolean\(interactivePreviewView\)/u);
   assert.match(main, /interactivePreviewView \? \{ demo: "1", view: interactivePreviewView \} : \{\}/u);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "project-roadmap-preview"/u);

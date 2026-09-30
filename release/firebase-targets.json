@@ -51,6 +51,17 @@
     "projectId": "bring-fm",
     "databaseRules": true
   },
+  "crmAccountSetupManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "completeCrmAccountSetup",
+      "listCrmAccountInvites",
+      "registerCrmAccount",
+      "resendCrmAccountInvite"
+    ],
+    "region": "asia-northeast3",
+    "databaseRules": false
+  },
   "cleaningCenterManualDeployment": {
     "projectId": "bring-fm",
     "functionNames": [

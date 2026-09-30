@@ -19,6 +19,12 @@ type FirebaseTargetManifest = {
     databaseRules: boolean;
     hostingSiteId: string;
   };
+  crmAccountSetupManualDeployment: {
+    projectId: string;
+    functionNames: string[];
+    region: string;
+    databaseRules: false;
+  };
   retiredLegacy: {
     projectId: string;
     status: "retired";
@@ -90,6 +96,7 @@ describe("Firebase function archival manifest", () => {
   it("archives every unapproved export and keeps the cleaning deployment allowlist exact", () => {
     expect(Object.keys(manifest).sort()).toEqual([
       "cleaningCenterManualDeployment",
+      "crmAccountSetupManualDeployment",
       "crmAutomaticRelease",
       "primary",
       "retiredLegacy",
@@ -115,6 +122,17 @@ describe("Firebase function archival manifest", () => {
       databaseRules: false,
       hostingSiteId: "bring-fm",
     });
+    expect(manifest.crmAccountSetupManualDeployment).toEqual({
+      projectId: "bring-fm",
+      functionNames: [
+        "completeCrmAccountSetup",
+        "listCrmAccountInvites",
+        "registerCrmAccount",
+        "resendCrmAccountInvite",
+      ],
+      region: "asia-northeast3",
+      databaseRules: false,
+    });
     expect(manifest.retiredLegacy.archivedFunctionNames).toEqual(RETIRED_LEGACY_FUNCTION_NAMES);
     expectCompleteFunctionArchive(manifest.retiredLegacy.archivedFunctionNames);
     expect(manifestSource).not.toContain("functions:");
@@ -123,11 +141,20 @@ describe("Firebase function archival manifest", () => {
 
     const primaryExports = new Set(manifest.primary.archivedFunctionNames);
     const cleaningExports = new Set(manifest.cleaningCenterManualDeployment.functionNames);
+    const accountSetupExports = new Set(manifest.crmAccountSetupManualDeployment.functionNames);
     const retiredExports = new Set(manifest.retiredLegacy.archivedFunctionNames);
     expect([...primaryExports].filter((name) => retiredExports.has(name))).toEqual([]);
     expect([...primaryExports].filter((name) => cleaningExports.has(name))).toEqual([]);
-    expect(sortedUnique([...primaryExports, ...cleaningExports, ...retiredExports]))
+    expect([...primaryExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
+    expect([...cleaningExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
+    expect(sortedUnique([...primaryExports, ...cleaningExports, ...accountSetupExports, ...retiredExports]))
       .toEqual(functionExports(indexSource));
+
+    for (const name of accountSetupExports) {
+      const block = exportBlock(name);
+      expect(block).toContain("onCall(");
+      expect(block).toContain('region: "asia-northeast3"');
+    }
   });
 
   it("archives every hard-coded bring-fm-hj RTDB export without a deploy selector", () => {

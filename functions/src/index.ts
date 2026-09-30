@@ -57,6 +57,19 @@ import {
   type FieldRole,
 } from "./auth/provision-field-user.js";
 import {
+  CRM_ACCOUNT_INVITE_TTL_MS,
+  CRM_ACCOUNT_SETUP_CONTINUE_URL,
+  CRM_FIREBASE_WEB_API_KEY,
+  createCrmAccountAccessRecord,
+  createCrmAccountInviteRecord,
+  crmAccountEmailHash,
+  canManageCrmAccountSetup,
+  isCrmAccountInviteUsable,
+  normalizeCrmAccountEmail,
+  validateCrmAccountSetupPassword,
+  type CrmAccountInviteRecord,
+} from "./auth/crm-account-invite.js";
+import {
   consumeDesktopFieldHandoffCore,
   issueDesktopFieldHandoffCore,
   sha256Base64Url,
@@ -3455,6 +3468,391 @@ export const provisionFieldUser = onCall(
         throw new HttpsError("permission-denied", error.message);
       }
       throw error;
+    }
+  },
+);
+
+const CRM_ACCOUNT_SETUP_CODE_LIMIT = 4096;
+const CRM_ACCOUNT_SETUP_RESPONSE_LIMIT = 16 * 1024;
+const CRM_ACCOUNT_SETUP_RATE_WINDOW_MS = 10 * 60 * 1_000;
+
+function crmAccountSetupError(code: string): HttpsError {
+  if (code === "crm_account_email_invalid") {
+    return new HttpsError("invalid-argument", "crm_account_email_invalid");
+  }
+  if (code === "crm_account_password_invalid") {
+    return new HttpsError("invalid-argument", "crm_account_password_invalid");
+  }
+  if (code === "crm_account_duplicate") {
+    return new HttpsError("already-exists", "crm_account_duplicate");
+  }
+  if (code === "crm_account_invite_invalid" || code === "crm_account_setup_invalid") {
+    return new HttpsError("failed-precondition", "crm_account_setup_invalid");
+  }
+  if (code === "crm_account_setup_rate_limited") {
+    return new HttpsError("resource-exhausted", "crm_account_setup_rate_limited");
+  }
+  return new HttpsError("internal", "crm_account_setup_unavailable");
+}
+
+function crmAccountSetupSafeUid(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 128
+    && /^[A-Za-z0-9_-]+$/u.test(value)
+    && !["__proto__", "prototype", "constructor"].includes(value);
+}
+
+async function requireCrmAccountSetupAdmin(request: CallableRequest<unknown>): Promise<{ uid: string; email: string }> {
+  const uid = request.auth?.uid;
+  const email = request.auth?.token.email;
+  const firebaseClaim = request.auth?.token.firebase;
+  const identity = {
+    uid,
+    email,
+    emailVerified: request.auth?.token.email_verified,
+    signInProvider: isRecord(firebaseClaim) ? firebaseClaim.sign_in_provider : undefined,
+  };
+  if (!crmAccountSetupSafeUid(uid) || typeof email !== "string") {
+    throw new HttpsError("unauthenticated", "crm_account_setup_auth_required");
+  }
+  const access = (await adminDatabase.ref(`crmCompany/access/${uid}`).get()).val() as {
+    email?: unknown;
+    enabled?: unknown;
+    role?: unknown;
+    mustChangePassword?: unknown;
+  } | null;
+  if (!canManageCrmAccountSetup(identity, access)) {
+    throw new HttpsError("permission-denied", "crm_account_setup_admin_required");
+  }
+  return { uid, email: email.trim().toLowerCase() };
+}
+
+async function consumeCrmAccountAdminRateLimit(uid: string, action: string): Promise<void> {
+  await consumeRateLimit(
+    adminDatabase.ref(`crmCompany/accountSetupRateLimits/admin/${action}/${desktopRateKey(uid)}`),
+    { limit: 30, windowMs: CRM_ACCOUNT_SETUP_RATE_WINDOW_MS, nowMs: Date.now() },
+  );
+}
+
+async function postCrmIdentityToolkit(
+  method: "sendOobCode" | "signInWithEmailLink",
+  body: UnknownRecord,
+): Promise<UnknownRecord> {
+  const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  let endpoint: URL;
+  if (emulatorHost) {
+    let emulatorOrigin: URL;
+    try { emulatorOrigin = new URL(`http://${emulatorHost}`); }
+    catch { throw new Error("crm_account_identity_request_failed"); }
+    if (
+      emulatorOrigin.protocol !== "http:"
+      || !["127.0.0.1", "localhost"].includes(emulatorOrigin.hostname)
+      || emulatorOrigin.username
+      || emulatorOrigin.password
+      || emulatorOrigin.pathname !== "/"
+      || emulatorOrigin.search
+      || emulatorOrigin.hash
+    ) throw new Error("crm_account_identity_request_failed");
+    endpoint = new URL(`/identitytoolkit.googleapis.com/v1/accounts:${method}`, emulatorOrigin.origin);
+    endpoint.searchParams.set("key", "demo-api-key");
+  } else {
+    endpoint = new URL(`https://identitytoolkit.googleapis.com/v1/accounts:${method}`);
+    endpoint.searchParams.set("key", CRM_FIREBASE_WEB_API_KEY);
+  }
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(12_000),
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("crm_account_identity_request_failed");
+  }
+  if (
+    !response.ok
+    || !response.headers.get("content-type")?.toLowerCase().includes("application/json")
+  ) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("crm_account_identity_request_failed");
+  }
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength && (!/^\d+$/u.test(declaredLength) || Number(declaredLength) > CRM_ACCOUNT_SETUP_RESPONSE_LIMIT)) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("crm_account_identity_response_invalid");
+  }
+  if (!response.body) throw new Error("crm_account_identity_response_invalid");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value.byteLength;
+      if (size > CRM_ACCOUNT_SETUP_RESPONSE_LIMIT) {
+        await reader.cancel();
+        throw new Error("crm_account_identity_response_invalid");
+      }
+      chunks.push(part.value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  let value: unknown;
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error("crm_account_identity_response_invalid"); }
+  if (!isRecord(value)) throw new Error("crm_account_identity_response_invalid");
+  return value;
+}
+
+async function sendCrmAccountSetupEmail(email: string): Promise<void> {
+  await postCrmIdentityToolkit("sendOobCode", {
+    requestType: "EMAIL_SIGNIN",
+    email,
+    continueUrl: CRM_ACCOUNT_SETUP_CONTINUE_URL,
+    canHandleCodeInApp: true,
+  });
+}
+
+function crmAccountInviteIndex(emailHash: string): string {
+  if (!/^[a-f0-9]{64}$/u.test(emailHash)) throw new Error("crm_account_setup_invalid");
+  return `crmCompany/accountInviteIndex/${emailHash}`;
+}
+
+export const registerCrmAccount = onCall(
+  { region: "asia-northeast3" },
+  async (request) => {
+    const actor = await requireCrmAccountSetupAdmin(request);
+    try {
+      await consumeCrmAccountAdminRateLimit(actor.uid, "register");
+      const input = isRecord(request.data) ? request.data : {};
+      const email = normalizeCrmAccountEmail(input.email);
+      const accessSnapshot = await adminDatabase.ref("crmCompany/access").get();
+      let emailAlreadyAllowed = false;
+      accessSnapshot.forEach((child) => {
+        const record = child.val() as { email?: unknown } | null;
+        if (typeof record?.email === "string" && record.email.trim().toLowerCase() === email) {
+          emailAlreadyAllowed = true;
+          return true;
+        }
+        return false;
+      });
+      if (emailAlreadyAllowed) throw new Error("crm_account_duplicate");
+      try {
+        await adminAuth.getUserByEmail(email);
+        throw new Error("crm_account_duplicate");
+      } catch (error) {
+        if (error instanceof Error && error.message === "crm_account_duplicate") throw error;
+        if (isRecord(error) && error.code === "auth/user-not-found") {
+          // No existing Firebase identity: this is the only case in which a new
+          // account is created. Existing credentials are never overwritten.
+        } else {
+          throw error;
+        }
+      }
+
+      const user = await adminAuth.createUser({ email, emailVerified: false, disabled: false });
+      const now = Date.now();
+      const accessRecord = createCrmAccountAccessRecord(email, actor.uid, now);
+      const inviteRecord = createCrmAccountInviteRecord(email, actor.uid, now);
+      const indexPath = crmAccountInviteIndex(inviteRecord.emailHash);
+      try {
+        await adminDatabase.ref().update({
+          [`crmCompany/access/${user.uid}`]: accessRecord,
+          [`crmCompany/accountInvites/${user.uid}`]: inviteRecord,
+          [indexPath]: { uid: user.uid, emailHash: inviteRecord.emailHash, status: "pending" },
+        });
+      } catch {
+        try { await adminAuth.deleteUser(user.uid); } catch {}
+        throw new Error("crm_account_setup_unavailable");
+      }
+
+      let emailSent = false;
+      try {
+        await sendCrmAccountSetupEmail(email);
+        emailSent = true;
+        await adminDatabase.ref(`crmCompany/accountInvites/${user.uid}`).update({ lastSentAt: now });
+      } catch {
+        // Keep the account pending so an authorized administrator can retry.
+      }
+      return { uid: user.uid, email, status: "pending", createdAt: now, lastSentAt: emailSent ? now : 0, emailSent };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "crm_account_email_invalid" || code === "crm_account_duplicate") throw crmAccountSetupError(code);
+      if (code === "field_rate_limit_exceeded") throw crmAccountSetupError("crm_account_setup_rate_limited");
+      throw crmAccountSetupError("crm_account_setup_unavailable");
+    }
+  },
+);
+
+export const listCrmAccountInvites = onCall(
+  { region: "asia-northeast3" },
+  async (request) => {
+    const actor = await requireCrmAccountSetupAdmin(request);
+    try {
+      await consumeCrmAccountAdminRateLimit(actor.uid, "list");
+      const snapshot = await adminDatabase.ref("crmCompany/accountInvites").limitToLast(200).get();
+      const rows: Array<{
+        uid: string;
+        email: string;
+        displayName: string;
+        status: "pending" | "complete";
+        createdAt: number;
+        expiresAt: number;
+        lastSentAt: number;
+      }> = [];
+      const values = snapshot.val();
+      if (isRecord(values)) {
+        for (const [uid, raw] of Object.entries(values)) {
+          if (!crmAccountSetupSafeUid(uid) || !isRecord(raw)) continue;
+          try {
+            const user = await adminAuth.getUser(uid);
+            if (!user.email) continue;
+            rows.push({
+              uid,
+              email: user.email,
+              displayName: user.displayName || "",
+              status: raw.status === "complete" || user.emailVerified ? "complete" : "pending",
+              createdAt: Number(raw.createdAt) || 0,
+              expiresAt: Number(raw.expiresAt) || 0,
+              lastSentAt: Number(raw.lastSentAt) || 0,
+            });
+          } catch {
+            // Stale invite records are omitted without exposing the auth error.
+          }
+        }
+      }
+      rows.sort((a, b) => b.createdAt - a.createdAt);
+      return { accounts: rows };
+    } catch (error) {
+      if (error instanceof Error && error.message === "field_rate_limit_exceeded") {
+        throw crmAccountSetupError("crm_account_setup_rate_limited");
+      }
+      throw crmAccountSetupError("crm_account_setup_unavailable");
+    }
+  },
+);
+
+export const resendCrmAccountInvite = onCall(
+  { region: "asia-northeast3" },
+  async (request) => {
+    const actor = await requireCrmAccountSetupAdmin(request);
+    try {
+      await consumeCrmAccountAdminRateLimit(actor.uid, "resend");
+      const input = isRecord(request.data) ? request.data : {};
+      const uid = input.uid;
+      if (!crmAccountSetupSafeUid(uid)) throw new Error("crm_account_setup_invalid");
+      const inviteRef = adminDatabase.ref(`crmCompany/accountInvites/${uid}`);
+      const snapshot = await inviteRef.get();
+      const raw = snapshot.val();
+      if (!isRecord(raw) || raw.status !== "pending") throw new Error("crm_account_setup_invalid");
+      const user = await adminAuth.getUser(uid);
+      if (!user.email || user.disabled) throw new Error("crm_account_setup_invalid");
+      const email = normalizeCrmAccountEmail(user.email);
+      if (raw.emailHash !== crmAccountEmailHash(email)) throw new Error("crm_account_setup_invalid");
+      const now = Date.now();
+      if (Number(raw.lastSentAt) > 0 && now - Number(raw.lastSentAt) < 60_000) {
+        throw new Error("crm_account_setup_rate_limited");
+      }
+      const expiresAt = Math.max(Number(raw.expiresAt) || 0, now + CRM_ACCOUNT_INVITE_TTL_MS);
+      await sendCrmAccountSetupEmail(email);
+      await inviteRef.update({ lastSentAt: now, expiresAt });
+      return { uid, email, status: user.emailVerified ? "complete" : "pending", lastSentAt: now, emailSent: true };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (["crm_account_setup_invalid", "crm_account_setup_rate_limited"].includes(code)) {
+        throw crmAccountSetupError(code);
+      }
+      if (code === "field_rate_limit_exceeded") throw crmAccountSetupError("crm_account_setup_rate_limited");
+      throw crmAccountSetupError("crm_account_setup_unavailable");
+    }
+  },
+);
+
+export const completeCrmAccountSetup = onCall(
+  { region: "asia-northeast3", cors: ["https://bring-fm.web.app"] },
+  async (request) => {
+    try {
+      const input = isRecord(request.data) ? request.data : {};
+      const email = normalizeCrmAccountEmail(input.email);
+      const password = validateCrmAccountSetupPassword(input.password);
+      const oobCode = input.oobCode;
+      if (
+        typeof oobCode !== "string"
+        || oobCode.length < 6
+        || oobCode.length > CRM_ACCOUNT_SETUP_CODE_LIMIT
+        || /[\u0000-\u0020\u007f]/u.test(oobCode)
+      ) throw new Error("crm_account_setup_invalid");
+      const ipKey = desktopRateKey(safeRequestIp(request));
+      await consumeRateLimit(
+        adminDatabase.ref(`crmCompany/accountSetupRateLimits/complete/${ipKey}`),
+        { limit: 12, windowMs: CRM_ACCOUNT_SETUP_RATE_WINDOW_MS, nowMs: Date.now() },
+      );
+      await consumeRateLimit(
+        adminDatabase.ref(`crmCompany/accountSetupRateLimits/email/${crmAccountEmailHash(email)}`),
+        { limit: 8, windowMs: CRM_ACCOUNT_SETUP_RATE_WINDOW_MS, nowMs: Date.now() },
+      );
+      const emailHash = crmAccountEmailHash(email);
+      const indexSnapshot = await adminDatabase.ref(`crmCompany/accountInviteIndex/${emailHash}`).get();
+      const index = indexSnapshot.val() as { uid?: unknown; status?: unknown; emailHash?: unknown } | null;
+      if (!index || index.emailHash !== emailHash || !crmAccountSetupSafeUid(index.uid)) {
+        throw new Error("crm_account_setup_invalid");
+      }
+      const uid = index.uid;
+      const inviteSnapshot = await adminDatabase.ref(`crmCompany/accountInvites/${uid}`).get();
+      const invite = inviteSnapshot.val();
+      if (!isCrmAccountInviteUsable(invite, email, Date.now())) throw new Error("crm_account_setup_invalid");
+      const existing = await adminAuth.getUser(uid);
+      if (existing.disabled || normalizeCrmAccountEmail(existing.email) !== email) {
+        throw new Error("crm_account_setup_invalid");
+      }
+
+      const signedIn = await postCrmIdentityToolkit("signInWithEmailLink", { email, oobCode });
+      if (
+        typeof signedIn.localId !== "string"
+        || signedIn.localId !== uid
+        || typeof signedIn.idToken !== "string"
+      ) throw new Error("crm_account_setup_invalid");
+      const decoded = await adminAuth.verifyIdToken(signedIn.idToken, true);
+      if (
+        decoded.uid !== uid
+        || typeof decoded.email !== "string"
+        || normalizeCrmAccountEmail(decoded.email) !== email
+      ) throw new Error("crm_account_setup_invalid");
+
+      // The one-time email sign-in code is the proof of mailbox control. Only
+      // after Firebase accepts it for this exact pre-created UID do we set the
+      // chosen password and mark the Auth identity verified.
+      await adminAuth.updateUser(uid, { password, emailVerified: true });
+      const completedAt = Date.now();
+      await adminDatabase.ref().update({
+        [`crmCompany/accountInvites/${uid}/status`]: "complete",
+        [`crmCompany/accountInvites/${uid}/completedAt`]: completedAt,
+        [`crmCompany/accountInviteIndex/${emailHash}/status`]: "complete",
+        [`crmCompany/access/${uid}/accountSetupPending`]: false,
+        [`crmCompany/access/${uid}/mustChangePassword`]: false,
+      });
+      return { ok: true };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "crm_account_email_invalid" || code === "crm_account_password_invalid") {
+        throw crmAccountSetupError(code);
+      }
+      if (
+        code === "crm_account_setup_invalid"
+        || code.startsWith("auth/invalid-action-code")
+        || code.startsWith("auth/expired-action-code")
+        || code.startsWith("auth/invalid-email")
+      ) throw crmAccountSetupError("crm_account_setup_invalid");
+      if (code === "field_rate_limit_exceeded") throw crmAccountSetupError("crm_account_setup_rate_limited");
+      throw crmAccountSetupError("crm_account_setup_unavailable");
     }
   },
 );
