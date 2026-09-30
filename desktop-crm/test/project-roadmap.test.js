@@ -65,6 +65,14 @@ test("로드맵 옆 성과 패널에 전체 진도·검수율·상태·다가오
   assert.match(css, /\.roadmap-board\s*\{[^}]*overflow:\s*auto/u);
 });
 
+test("로드맵 위에서 세로 휠은 페이지로 전달하고 타임라인 가로 스크롤만 보드에서 처리한다", () => {
+  const boardRule = css.match(/\.roadmap-board\s*\{([^}]*)\}/u)?.[1] || "";
+  assert.match(boardRule, /overscroll-behavior-x:\s*contain/u);
+  assert.match(boardRule, /overscroll-behavior-y:\s*auto/u);
+  assert.doesNotMatch(boardRule, /overscroll-behavior:\s*contain/u);
+  assert.match(css, /\.main-content\s*\{[^}]*overflow-y:\s*auto/u);
+});
+
 test("로드맵은 8주와 8일을 전환하고 편집 중에는 날짜 축을 바꾸지 않는다", () => {
   const start = app.indexOf("function renderProjectRoadmap(");
   const end = app.indexOf("\n  function renderWorkOrders(", start);
