@@ -189,7 +189,7 @@
   function createBuildingMonthlyReportState(patch = {}) {
     return {
       buildingId: "", month: "", nextMonthPlan: "", narrative: null, loading: false, error: "", model: "", generatedAt: "",
-      manualWorks: [], addWorkOpen: false, photos: [], photoCandidates: [], photoPickerOpen: false,
+      manualWorks: [], excludedWorkKeys: [], addWorkOpen: false, photos: [], photoCandidates: [], photoPickerOpen: false,
       targetManagerOpen: false, targetSavingId: "",
       photoPickerSpace: "my", photoPickerPath: [{ id: "root", name: "내 드라이브" }], photoPickerEntries: [],
       photoPickerLoading: false, photoPickerError: "", photoPickerQuery: "", photoSelectBusy: false, photoError: "",
@@ -3468,6 +3468,8 @@
 
   function buildingMonthlyReportRequest(building, month, extras = {}) {
     const owner = customerById(building && building.ownerCustomerId) || buildingCustomers(building)[0] || null;
+    const hasCurrentDraft = String(buildingMonthlyReportState.buildingId || "") === String(building && building.id || "")
+      && String(buildingMonthlyReportState.month || "") === String(month || "");
     const reportBuilding = building && typeof building === "object"
       ? { ...building, address: building.roadAddress || building.address || building.jibunAddress || "" }
       : building;
@@ -3485,8 +3487,18 @@
       nextMonthPlan: extras.nextMonthPlan || "",
       narrative: extras.narrative || null,
       manualWorks: Array.isArray(extras.manualWorks) ? extras.manualWorks : buildingMonthlyReportState.manualWorks,
+      excludedWorkKeys: Array.isArray(extras.excludedWorkKeys)
+        ? extras.excludedWorkKeys
+        : hasCurrentDraft && Array.isArray(buildingMonthlyReportState.excludedWorkKeys) ? buildingMonthlyReportState.excludedWorkKeys : [],
       photos: Array.isArray(extras.photos) ? extras.photos : buildingMonthlyReportState.photos.map(photo => ({ id: photo.id, caption: photo.caption })),
     };
+  }
+
+  function buildingMonthlyReportRequestKey(state = buildingMonthlyReportState) {
+    const excluded = Array.isArray(state.excludedWorkKeys)
+      ? [...new Set(state.excludedWorkKeys.map(value => String(value || "").trim()).filter(Boolean))].sort()
+      : [];
+    return `${state.buildingId}:${state.month}:${excluded.join(",")}`;
   }
 
   function monthlyDrivePathFor(space) {
@@ -3614,6 +3626,7 @@
     const building = buildingById(state.buildingId);
     if (!building) return showToast("보고서 건물을 다시 선택해 주세요.", "error");
     const requestKey = `${state.buildingId}:${state.month}`;
+    const workRequestKey = buildingMonthlyReportRequestKey(state);
     state.photoSelectBusy = true;
     state.photoError = "";
     renderBuildingMonthlyReports();
@@ -3626,7 +3639,7 @@
         fileIds: state.photoCandidates.map(photo => photo.id),
         activities,
       });
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
+      if (buildingMonthlyReportRequestKey() !== workRequestKey) return;
       const candidates = new Map(state.photoCandidates.map(photo => [String(photo.id), photo]));
       state.photos = (Array.isArray(result && result.selected) ? result.selected : []).map(photo => {
         const candidate = candidates.get(String(photo.id));
@@ -3638,7 +3651,7 @@
       renderBuildingMonthlyReports();
       void loadBuildingMonthlyPhotoThumbnails(requestKey);
     } catch (error) {
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` === requestKey) {
+      if (buildingMonthlyReportRequestKey() === workRequestKey) {
         state.photoError = error && error.message || "Gemini가 활동 사진을 선택하지 못했습니다.";
       }
     } finally {
@@ -3704,6 +3717,9 @@
       narrative: buildingMonthlyReportState.narrative,
     });
     const report = BuildingReportCore.buildBuildingMonthlyReport(request);
+    const excludedWorkKeys = new Set(buildingMonthlyReportState.excludedWorkKeys);
+    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport({ ...request, manualWorks: [] }).works;
+    const automaticWorkKeys = new Set(automaticWorks.map(work => BuildingReportCore.workRowKey(work)));
     const narrative = report.narrative || { summary: "", attention: "", nextMonthPlan: "" };
     const missing = [
       !owner && "건물주 연결 필요",
@@ -3711,8 +3727,12 @@
       !report.summary.unitCount && "호실 현황 없음",
       !buildingMonthlyReportState.nextMonthPlan && "다음 달 계획 확인 필요",
     ].filter(Boolean);
-    const workRows = report.works.length ? report.works.map(work => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${esc(work.statusLabel || (work.done ? "완료" : "진행 중"))}</em></article>`).join("") : `<div class="building-monthly-empty">이 달 캘린더에 연결된 일정이 없습니다. 필요하면 보고서에만 직접 추가할 수 있습니다.</div>`;
-    const manualRows = buildingMonthlyReportState.manualWorks.map((work, index) => `<article class="building-monthly-manual-work"><span>${esc(work.date)}</span><div><b>${esc(work.kind)}</b><small>${esc(work.summary)}</small></div><button type="button" data-building-monthly-manual-remove="${index}" aria-label="직접 추가 업무 삭제">×</button></article>`).join("");
+    const workRows = automaticWorks.length ? automaticWorks.map((work, index) => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${esc(work.statusLabel || (work.done ? "완료" : "진행 중"))}</em><button type="button" data-building-monthly-work-remove="${index}" aria-label="업무를 보고서에서 제외" title="보고서에서 제외">×</button></article>`).join("") : `<div class="building-monthly-empty">이 달 캘린더에 연결된 일정이 없습니다. 필요하면 보고서에만 직접 추가할 수 있습니다.</div>`;
+    const manualRows = buildingMonthlyReportState.manualWorks.map((work, index) => {
+      const key = BuildingReportCore.workRowKey(work);
+      if (excludedWorkKeys.has(key) || automaticWorkKeys.has(key)) return "";
+      return `<article class="building-monthly-manual-work"><span>${esc(work.date)}</span><div><b>${esc(work.kind)}</b><small>${esc(work.summary)}</small></div><button type="button" data-building-monthly-manual-remove="${index}" aria-label="직접 추가 업무 삭제">×</button></article>`;
+    }).join("");
     const photoRows = buildingMonthlyReportState.photos.map((photo, index) => `<article class="building-monthly-photo-card">${photo.thumbnail ? `<img src="${attr(photo.thumbnail)}" alt="${attr(photo.caption || photo.name || "현장 사진")}">` : `<span class="building-monthly-photo-placeholder" aria-label="사진 미리보기 불러오는 중">▧</span>`}<div><b>${esc(photo.caption || "현장 사진")}</b><small>${esc(`${photo.date || ""}${photo.activityName ? ` · ${photo.activityName}` : ""}`)}</small></div><button type="button" data-building-monthly-photo-remove="${index}" aria-label="사진 제외">×</button></article>`).join("");
     const paperPhotos = buildingMonthlyReportState.photos.map(photo => `<figure>${photo.thumbnail ? `<img src="${attr(photo.thumbnail)}" alt="${attr(photo.caption || "현장 사진")}">` : `<div class="building-monthly-paper-photo-placeholder">현장 사진</div>`}<figcaption>${esc(photo.caption || "현장 사진")}</figcaption></figure>`).join("");
     const candidateNames = buildingMonthlyReportState.photoCandidates.length
@@ -3821,6 +3841,35 @@
       buildingMonthlyReportState.addWorkOpen = false;
       renderBuildingMonthlyReports();
     });
+    main.querySelectorAll("[data-building-monthly-work-remove]").forEach(button => button.addEventListener("click", async () => {
+      const index = Number(button.dataset.buildingMonthlyWorkRemove);
+      const work = automaticWorks[index];
+      const key = work && BuildingReportCore.workRowKey(work);
+      if (!key) return;
+      const requestKey = buildingMonthlyReportRequestKey();
+      const confirmed = await requestConfirmation({
+        title: "업무를 보고서에서 제외할까요?",
+        description: "선택한 업무는 이 월간보고서에서만 빠집니다.",
+        target: `${work.dateText || "날짜 미정"} · ${work.unit || "공용부"} · ${work.kind || "관리 업무"}`,
+        message: "원본 CRM 일정과 캘린더 기록은 삭제되지 않습니다.",
+        warning: "Gemini 초안, 업무 집계, PDF에서도 함께 제외됩니다.",
+        confirmLabel: "보고서에서 제외",
+        cancelLabel: "취소",
+        tone: "warning",
+      });
+      if (!confirmed || buildingMonthlyReportRequestKey() !== requestKey) return;
+      const excluded = new Set(buildingMonthlyReportState.excludedWorkKeys);
+      if (excluded.has(key)) return;
+      excluded.add(key);
+      buildingMonthlyReportState.excludedWorkKeys = [...excluded].slice(-60);
+      buildingMonthlyReportState.narrative = null;
+      buildingMonthlyReportState.model = "";
+      buildingMonthlyReportState.generatedAt = "";
+      buildingMonthlyReportState.error = "";
+      buildingMonthlyReportState.loading = false;
+      renderBuildingMonthlyReports();
+      showToast("업무를 이 월간보고서에서 제외했습니다. CRM 일정은 유지됩니다.", "success");
+    }));
     main.querySelectorAll("[data-building-monthly-manual-remove]").forEach(button => button.addEventListener("click", () => {
       const index = Number(button.dataset.buildingMonthlyManualRemove);
       if (Number.isInteger(index) && index >= 0) buildingMonthlyReportState.manualWorks.splice(index, 1);
@@ -3856,20 +3905,24 @@
       buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
       buildingMonthlyReportState.loading = true;
       buildingMonthlyReportState.error = "";
-      const requestKey = `${building.id}:${buildingMonthlyReportState.month}`;
+      const requestKey = buildingMonthlyReportRequestKey();
       renderBuildingMonthlyReports();
       try {
         const result = await api.generateBuildingMonthlyReportDraft(buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, { nextMonthPlan: buildingMonthlyReportState.nextMonthPlan, manualWorks: buildingMonthlyReportState.manualWorks }));
-        if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
+        if (buildingMonthlyReportRequestKey() !== requestKey) return;
         buildingMonthlyReportState.narrative = { ...(result.narrative || {}) };
         buildingMonthlyReportState.model = result.model || "Gemini";
         buildingMonthlyReportState.generatedAt = result.generatedAt || new Date().toISOString();
         showToast(result.cached ? "같은 자료로 만든 Gemini 초안을 불러왔습니다." : "Gemini가 건물주용 문장을 만들었습니다.", "success");
       } catch (error) {
-        buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
+        if (buildingMonthlyReportRequestKey() === requestKey) {
+          buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
+        }
       } finally {
-        buildingMonthlyReportState.loading = false;
-        if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+        if (buildingMonthlyReportRequestKey() === requestKey) {
+          buildingMonthlyReportState.loading = false;
+          if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+        }
       }
     });
     main.querySelector("[data-building-monthly-reset]")?.addEventListener("click", () => {

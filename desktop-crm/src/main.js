@@ -9481,7 +9481,7 @@ secureCanonicalHandle("crm:work-assessment", async input => {
 });
 let buildingReportWriter = null;
 secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
-  const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative", "manualWorks", "photos"]);
+  const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative", "manualWorks", "excludedWorkKeys", "photos"]);
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !allowedKeys.has(key))) {
     throw new Error("월간 보고서 요청을 확인해 주세요.");
   }

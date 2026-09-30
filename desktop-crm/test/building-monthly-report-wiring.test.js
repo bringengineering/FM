@@ -37,6 +37,22 @@ test("시험 버전은 자동 발송을 하지 않는다", () => {
   assert.doesNotMatch(view, /sendOwner|customer-notice-send|document-delivery-send/u);
 });
 
+test("캘린더 업무 제외는 원본 일정을 유지하면서 초안·집계·PDF에 적용한다", () => {
+  const app = read("app.js");
+  const main = read("main.js");
+  const core = read("building-report-core.js");
+  const start = app.indexOf("function renderBuildingMonthlyReports");
+  const end = app.indexOf("async function exportBuildingMonthlyReportPdf", start);
+  const view = app.slice(start, end);
+  assert.ok(view.length > 0);
+  assert.match(view, /data-building-monthly-work-remove=/u);
+  assert.match(view, /원본 CRM 일정과 캘린더 기록은 삭제되지 않습니다\./u);
+  assert.match(view, /excludedWorkKeys/u);
+  assert.match(view, /buildingMonthlyReportRequestKey\(\)/u);
+  assert.match(main, /"manualWorks", "excludedWorkKeys", "photos"/u);
+  assert.match(core, /source\.excludedWorkKeys/u);
+});
+
 test("건물 월간보고서는 건물의 명시적 보고 대상 설정으로 선택한다", () => {
   const app = read("app.js");
   const start = app.indexOf("function monthlyReportTargetBuildings");
