@@ -1,0 +1,56 @@
+{
+  "currency": "KRW",
+  "purchase_price": 1100000000,
+  "financing": {
+    "ltv_target": "0.60",
+    "rate_percent": "4.5",
+    "term_months": 240,
+    "grace_months": 0,
+    "repayment_type": "equal_payment"
+  },
+  "targets": {
+    "target_irr": "0.12",
+    "min_dscr": "1.25",
+    "min_cash_on_cash": "0.04",
+    "max_real_leverage": "0.80",
+    "min_downside_dscr": "1.00"
+  },
+  "vacancy_rate": "0.05",
+  "stabilized_vacancy_rate": "0.05",
+  "acquisition_cost_rate": "0.05",
+  "capex": 60000000,
+  "contingency_rate": "0.10",
+  "hold_years": 5,
+  "rent_growth": "0.02",
+  "opex_growth": "0.02",
+  "exit_cap_rate": "0.048",
+  "selling_cost_rate": "0.02",
+  "discount_rate": "0.08",
+  "revenue_loss_months_year1": 0,
+  "assume_deposits": true,
+  "opex": {
+    "property_management": 3600000,
+    "repairs": 2400000,
+    "insurance": 1200000,
+    "utilities_common": 3000000
+  },
+  "units": [
+    {"unit_id": "101", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "102", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "103", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "104", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "201", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "202", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "203", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "204", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "301", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "302", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "303", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true},
+    {"unit_id": "304", "area_m2": "23", "deposit": 10000000, "monthly_rent": 650000, "market_rent": 700000, "occupied": true}
+  ],
+  "data": {
+    "deposit_data_complete": true,
+    "senior_lien_data_complete": true,
+    "refinance_dependent": false
+  }
+}

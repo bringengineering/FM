@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브링케어 투자준비 워크북</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#14171f; --panel2:#1c2029; --line:#2b3040;
+    --text:#eceef4; --dim:#9aa2b4; --faint:#636b80;
+    --gold:#e6b450; --good:#5ec98a; --prog:#4a9fe0; --bad:#e07a7a; --mid:#d9b45a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.6 "Pretendard","Malgun Gothic",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding:0 0 90px}
+  .wrap{max-width:960px;margin:0 auto;padding:0 18px}
+
+  /* top bar */
+  #bar{position:sticky;top:0;z-index:20;background:rgba(11,13,18,.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  #bar .wrap{display:flex;align-items:center;gap:12px;padding:11px 18px;flex-wrap:wrap}
+  #bar h1{font-size:15px;margin:0;white-space:nowrap}
+  #bar h1 small{color:var(--faint);font-weight:400;font-size:11.5px;margin-left:5px}
+  #overall{flex:1;min-width:150px;display:flex;align-items:center;gap:9px}
+  #overall .track{flex:1;height:8px;background:var(--panel2);border-radius:20px;overflow:hidden;min-width:80px}
+  #overall .fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--good));width:0;transition:width .3s}
+  #overall b{color:var(--gold);font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:7px;padding:6px 11px;cursor:pointer;font:inherit;font-size:12.5px;white-space:nowrap}
+  .btn:hover{color:var(--text);border-color:#3d4970}
+  .btn.on{background:var(--gold);color:#0b0d12;border-color:var(--gold);font-weight:600}
+
+  header.intro{padding:26px 0 8px}
+  header.intro .eyebrow{color:var(--gold);font-size:11.5px;letter-spacing:2px;text-transform:uppercase;margin-bottom:7px}
+  header.intro p{color:var(--dim);max-width:74ch;margin:6px 0 0}
+
+  section{margin-top:22px;scroll-margin-top:56px}
+  .sec-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid #3a3320;padding-bottom:7px;margin-bottom:4px}
+  .sec-head h2{font-size:15px;margin:0;color:var(--text)}
+  .sec-head .sdesc{color:var(--faint);font-size:12px}
+  .sec-head .sprog{margin-left:auto;font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sec-head .sprog b{color:var(--good)}
+
+  .item{border-bottom:1px solid rgba(43,48,64,.5);padding:12px 0}
+  .item:last-child{border-bottom:0}
+  .item .ihead{display:flex;align-items:flex-start;gap:9px}
+  .st{flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid var(--faint);color:var(--faint);background:transparent;white-space:nowrap;min-width:60px;text-align:center;user-select:none}
+  .st.s1{color:var(--mid);border-color:#5c4820;background:rgba(217,180,90,.12)}
+  .st.s2{color:#0b0d12;background:var(--good);border-color:var(--good)}
+  .item .lab{flex:1;min-width:0}
+  .item .lab .t{font-size:13.5px;font-weight:600;color:var(--text)}
+  .item .lab .t .goal{font-weight:400;color:var(--gold);font-size:12px;margin-left:6px}
+  .item .lab .t .rk{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:6px;border:1px solid}
+  .rk-hi{color:#0b0d12;background:var(--bad);border-color:var(--bad)}
+  .rk-md{color:var(--mid);background:rgba(217,180,90,.14);border-color:#5c4820}
+  .rk-lo{color:var(--good);background:rgba(94,201,138,.12);border-color:#2f5540}
+  .item .hint{color:var(--faint);font-size:11.5px;margin-top:2px}
+  .item .fieldwrap{margin-top:8px;margin-left:69px}
+  .item input.f,.item textarea.f{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font:inherit;font-size:13px}
+  .item input.f:focus,.item textarea.f:focus{outline:none;border-color:var(--gold)}
+  .item textarea.f{min-height:52px;resize:vertical;line-height:1.55}
+  .item input.f.short{max-width:220px}
+
+  /* VC table (add rows) */
+  .vc-row{display:grid;grid-template-columns:1.3fr 1.4fr .8fr .9fr auto;gap:6px;margin-bottom:6px}
+  .vc-row input{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 8px;font:inherit;font-size:12.5px;min-width:0}
+  .vc-row input:focus{outline:none;border-color:var(--gold)}
+  .vc-del{background:transparent;border:1px solid transparent;color:var(--faint);border-radius:6px;padding:0 8px;cursor:pointer}
+  .vc-del:hover{color:var(--bad);border-color:#5c2f2f}
+  .addbtn{background:transparent;border:1px dashed var(--line);color:var(--dim);border-radius:7px;padding:7px 12px;cursor:pointer;font:inherit;font-size:12.5px;margin-top:4px}
+  .addbtn:hover{color:var(--text);border-color:var(--gold)}
+  .vc-head{display:grid;grid-template-columns:1.3fr 1.4fr .8fr .9fr auto;gap:6px;font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px;padding:0 2px}
+
+  #modal{position:fixed;inset:0;background:rgba(6,8,12,.78);z-index:50;display:none;align-items:center;justify-content:center;padding:20px}
+  #modal.on{display:flex}
+  #modalbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:640px;width:100%;padding:18px}
+  #modalbox h3{margin:0 0 8px;font-size:15px}
+  #modalbox p{color:var(--faint);font-size:12px;margin:0 0 10px}
+  #modaltx{width:100%;min-height:200px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,monospace;resize:vertical}
+  #modalbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+
+  .savenote{color:var(--faint);font-size:11px}
+  .foot{margin-top:30px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+
+  /* presentation mode */
+  body.pres .st{pointer-events:none}
+  body.pres .item.empty{display:none}
+  body.pres .hint{display:none}
+  body.pres input.f,body.pres textarea.f{border-color:transparent;background:transparent;padding:6px 0;color:var(--text);resize:none}
+  body.pres .addbtn,body.pres .vc-del{display:none}
+  body.pres .item .fieldwrap{margin-left:69px}
+  body.pres #editonly{display:none}
+</style>
+</head>
+<body>
+
+<div id="bar"><div class="wrap">
+  <h1>투자준비 워크북 <small>브링케어</small></h1>
+  <div id="overall"><div class="track"><div class="fill" id="ofill"></div></div><b id="opct">0%</b></div>
+  <button class="btn" id="presBtn">발표 모드</button>
+  <button class="btn" id="ioBtn" title="저장/불러오기">내보내기·불러오기</button>
+  <span class="savenote" id="savenote"></span>
+</div></div>
+
+<div class="wrap">
+  <header class="intro">
+    <div class="eyebrow">Investment Readiness Workbook</div>
+    <p>투자유치 실전 가이드(VC 실무서 기반)를 <b style="color:var(--text)">직접 채워나가는 작업판</b>으로 만든 것. 항목마다 상태를 <b style="color:var(--text)">미착수 → 진행 → 완료</b>로 넘기고 내용을 채우면 상단 <b style="color:var(--text)">투자준비도 %</b>가 오른다. 투자자를 만날 땐 <b style="color:var(--text)">발표 모드</b>로 채운 것만 깔끔히 보여준다. 입력은 이 브라우저에 자동 저장된다.</p>
+  </header>
+  <div id="app"></div>
+
+  <div class="foot">
+    브링케어 투자준비 워크북 v1.0 · 근거: 국내 VC 투자유치 실무서(밀리, 142p) + 브링케어_체계도 v1.3 · MASTER_CONTEXT<br>
+    입력값은 브라우저 localStorage에 저장됩니다(기기·브라우저별 개별). 다른 기기로 옮기려면 '내보내기'로 복사해 '불러오기'에 붙여넣으세요.
+  </div>
+</div>
+
+<div id="modal"><div id="modalbox">
+  <h3>내보내기 · 불러오기</h3>
+  <p>아래 JSON을 복사해 보관하거나, 다른 기기의 내용을 붙여넣고 [불러오기]를 누르세요.</p>
+  <textarea id="modaltx" spellcheck="false"></textarea>
+  <div id="modalbtns">
+    <button class="btn" id="copyBtn">복사</button>
+    <button class="btn" id="loadBtn">불러오기(붙여넣은 내용 적용)</button>
+    <button class="btn" id="closeBtn">닫기</button>
+  </div>
+</div></div>
+
+<script>
+// ============================================================
+// MODEL — 투자준비 항목. type: text/num(짧은 입력) | area(서술) | check(상태만) | vc(VC 표)
+// seed: 기본 채움값(수정 가능). hint: 책 기반 가이드.
+// ============================================================
+const RK = {hi:'높음', md:'중간', lo:'낮음'};
+const SECTIONS = [
+  { id:'unit', title:'A. 유닛이코노믹스 검증', desc:'투자 설득의 뿌리 — 가정을 사실로', items:[
+    {id:'u1', t:'등록 건물 수', goal:'BEP 35~40동', type:'num', seed:'6', hint:'현재 실계약 동수. 성장 곡선의 출발점.'},
+    {id:'u2', t:'평균 실수령 단가(원/동·월)', goal:'80,000+', type:'num', hint:'재무대장 가정 vs 실제 계약의 차이를 실측.'},
+    {id:'u3', t:'1인 관리 가능 동수', goal:'55동 검증', type:'num', hint:'가장 민감한 가정. 8주 타임로그로 검증.'},
+    {id:'u4', t:'동당 평균 업무시간(분/월)', goal:'90분 검증', type:'num', hint:'PM-01 순회 중 실측. 용량 가정의 근거.'},
+    {id:'u5', t:'공용부 결합률(%)', goal:'70%', type:'num', hint:'이익의 44%가 결합서비스에서 나온다.'},
+    {id:'u6', t:'월 실제 현금손익(원)', goal:'적자폭 확정', type:'text', hint:'대표 급여 0 / 반영 두 시나리오로.'},
+    {id:'u7', t:'8주 타임로그 완료', goal:'8주', type:'check', hint:'"팔수록 흑자"의 증거. 완료 시 상태만 완료로.'},
+  ]},
+  { id:'reject', title:'B. 투심위 부결 24 방어', desc:'각 패턴에 30초 답변을 직접 써넣기', items:[
+    {id:'r9', t:'#9 낮은 진입장벽·모방 우려', rk:'hi', type:'area', hint:'가장 자주 받는 질문(1·3·9). 무엇이 복제 불가인가?', seed:'ValueScope 데이터 해자(원주 24,933건·중개사 786곳 CRM)+공동관리 Zone 선점+26 SOP는 흉내낼 수 없다.'},
+    {id:'r10', t:'#10 확장성 결여 BM', rk:'hi', type:'area', hint:'노동집약처럼 보이는 걸 어떻게 복제 구조로?', seed:'매뉴얼 v1.0=프랜차이즈 본부화. "본부(기준·데이터)+현지 파트너" 구조로 인력 선형투입 탈피, 도시 단위 복제.'},
+    {id:'r13', t:'#13 전형적 내수산업(로컬)', rk:'hi', type:'area', hint:'로컬을 약점 아닌 전략으로.', seed:'Zero to One 지역 독점→인접 확장(원주→춘천→강릉). 국내 다가구 관리 TAM으로 천장 반박.'},
+    {id:'r20', t:'#20 전통산업 저평가', rk:'hi', type:'area', hint:'단, 억지 하이테크는 역효과. 데이터로 증명.', seed:'"관리회사"가 아니라 "부동산 데이터·운영 OS"(ValueScope 엔진·CRM·AI 민원분류).'},
+    {id:'r19', t:'#19 비용절감 타겟팅(매출향상 아님)', rk:'md', type:'area', hint:'비용절감 소구는 감점. 매출로 리프레임.', seed:'핵심 소구는 관리비 절감이 아니라 공실 해소·임대수익 회복(건물주 매출↑).'},
+    {id:'r3', t:'#3 틈새시장 국한 우려', rk:'md', type:'area', hint:'틈새 넘어서는 성장path 제시.', seed:''},
+    {id:'r7', t:'#7 보조금 의존 BM 인상', rk:'md', type:'area', hint:'지원사업은 부수, 본질은 자립 유닛이코노믹스.', seed:''},
+    {id:'r2', t:'#2 성숙·정체 시장 포지셔닝', rk:'md', type:'area', hint:'소형 다가구 통합관리는 미개척 영역.', seed:''},
+    {id:'rlo', t:'나머지 저위험(1·4·5·6·8·11·12·14·15·16·17·18·21·22·23·24)', rk:'lo', type:'area', hint:'특이사항·보완 필요분만 메모.', seed:''},
+  ]},
+  { id:'bm', title:'C. BM 자가진단 3키워드', desc:'고객가치제안 · 시장진입 · 수익모델', items:[
+    {id:'bm1', t:'고객가치제안', type:'area', hint:'건물주의 어떤 통증을 어떻게 해소하나.', seed:'공실·관리 통증 해소. "혼자 15만/함께 8.9만"+공실 시계로 끊김 없는 사이클.'},
+    {id:'bm2', t:'시장진입', type:'area', hint:'어떻게 고객을 얻나. 진입 증거.', seed:'공실 해결을 입구로(무료 진단→관리 전환), 권역 밀집블록 집중. 7동 계약=진입 증명.'},
+    {id:'bm3', t:'수익모델', type:'area', hint:'팔수록 흑자인가(유닛이코노믹스와 직결).', seed:'월 관리비 지속수익(로열티형)+결합서비스. 검증 과제=A섹션 실측.'},
+  ]},
+  { id:'cap', title:'D. 캡테이블 & 지분 (최우선)', desc:'미합의 시 VC 눈엔 대주주 리스크', items:[
+    {id:'c1', t:'현재 지분 구조', type:'area', hint:'대표/공동창업자/기타 지분율.', seed:''},
+    {id:'c2', t:'초기멤버 역할·보상·지분 서면 합의', goal:'라운드 전 필수', type:'check', hint:'미합의=희석·분쟁 리스크. 완료 처리 전 반드시 문서화.'},
+    {id:'c3', t:'스톡옵션 풀 설정', type:'text', hint:'희석증권으로 잡힌다. VC가 다 센다.'},
+    {id:'c4', t:'가수금 정리 여부', type:'text', hint:'대표가 회사에 넣은 돈. 투자 전 정리 or 출자전환 각오.'},
+    {id:'c5', t:'10% 희석 후 지분 시뮬레이션', type:'area', hint:'포스트 10억·1억 투자 후 각자 지분.', seed:''},
+  ]},
+  { id:'val', title:'E. 기업가치 9억 논리', desc:'미래가치 설득 = Valuation Gap 좁히기', items:[
+    {id:'v1', t:'프리/포스트머니 정리', type:'text', seed:'프리 9억 + 1억 = 포스트 10억, 지분 10%', hint:'포스트머니=프리머니+투자금.'},
+    {id:'v2', t:'9억 방어 논거 ①', type:'area', seed:'ValueScope 데이터 자산 — 별도 구축비용·복제 불가.', hint:'왜 이 밸류가 정당한가.'},
+    {id:'v3', t:'9억 방어 논거 ②', type:'area', seed:'복제 가능한 운영 표준 — 도시당 유닛 반복.', hint:''},
+    {id:'v4', t:'9억 방어 논거 ③', type:'area', seed:'실현수익률 기반 정직한 모델 + 6동→100동→다도시 성장 path.', hint:''},
+  ]},
+  { id:'exit', title:'F. EXIT 시나리오', desc:'EXIT 안 보이면 부결', items:[
+    {id:'e1', t:'현실 경로(1순위)', type:'area', seed:'M&A(프롭테크·관리 대기업) 또는 후속 라운드 구주매각(국내 EXIT 10건 중 5~6건).', hint:'IPO는 평균 13~14년. 현실적 경로부터.'},
+    {id:'e2', t:'장기 경로', type:'area', seed:'다도시 플랫폼화 시 IPO(코스닥) 지향.', hint:'"지향"으로 제시, 선언만으론 안 믿음.'},
+    {id:'e3', t:'안전장치(상환 플랜B)', type:'area', seed:'BEP 흑자 전환 후 이익잉여금=RCPS 상환 여력. VC 안전장치.', hint:'적자 누적이면 상환 불가.'},
+  ]},
+  { id:'vc', title:'G. 타깃 VC/AC 리스트', desc:'초기·지역·정부매칭으로 좁혀라', items:[
+    {id:'vctbl', t:'후보 리스트', type:'vc', hint:'대형펀드 X. 시드·강원 지역·프롭테크·소셜/AI·TIPS·모태 지역계정. 펀드 주목적 매칭이 핵심.'},
+  ]},
+  { id:'ir', title:'H. IR 덱 10장', desc:'대면 전에 승부는 난다 — 자료가 첫인상', items:[
+    {id:'ir1', t:'1. 문제 (건물주 공실·관리 통증)', type:'check'},
+    {id:'ir2', t:'2. 솔루션 (지역 공동관리 Zone)', type:'check'},
+    {id:'ir3', t:'3. 시장 (TAM/SAM/SOM·다가구 규모)', type:'check'},
+    {id:'ir4', t:'4. BM·수익구조 (지속수익+결합)', type:'check'},
+    {id:'ir5', t:'5. 실적·트랙션 (7동/12건+ 실측)', type:'check'},
+    {id:'ir6', t:'6. 데이터 해자 (ValueScope)', type:'check'},
+    {id:'ir7', t:'7. 팀 (도메인 전문성)', type:'check'},
+    {id:'ir8', t:'8. 재무·유닛이코노믹스', type:'check'},
+    {id:'ir9', t:'9. EXIT 시나리오', type:'check'},
+    {id:'ir10', t:'10. 투자 제안 (얼마·지분·용처)+마일스톤', type:'check', hint:'투자제안·로드맵 누락=마침표 없는 문장.'},
+  ]},
+  { id:'plan', title:'I. 다음 90일 실행', desc:'준비 = 이 목록을 지우는 것', items:[
+    {id:'p1', t:'캡테이블 확정 + 지분·스톡옵션 합의', type:'check'},
+    {id:'p2', t:'유닛이코노믹스 검증(6동 실측·8주 타임로그)', type:'check'},
+    {id:'p3', t:'부결 9·10·13·20 답변 스크립트 암기', type:'check'},
+    {id:'p4', t:'IR덱 10장 작성', type:'check'},
+    {id:'p5', t:'타깃 VC 롱→숏리스트(주목적 매칭)', type:'check'},
+    {id:'p6', t:'EXIT 스토리 1페이지', type:'check'},
+    {id:'p7', t:'자금 필요시점 역산해 착수 시점 확정', type:'check', hint:'프로세스 3~6개월+버퍼.'},
+  ]},
+];
+
+// ---------- store ----------
+const KEY='bring-invest-workbook-v1';
+let store={};
+try{ store=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){ store={}; }
+function persist(){ try{ localStorage.setItem(KEY,JSON.stringify(store)); note('저장됨'); }catch(e){ note('저장 불가'); } }
+let noteT; function note(m){ const el=document.getElementById('savenote'); el.textContent=m; clearTimeout(noteT); noteT=setTimeout(()=>el.textContent='',1400); }
+const g=id=>store[id]||{};
+const esc=s=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+// seed defaults once
+if(!store.__seeded){
+  SECTIONS.forEach(s=>s.items.forEach(it=>{ if(it.seed){ store[it.id]={...g(it.id), v:it.seed, s:1}; } }));
+  store.__seeded=true; persist();
+}
+
+// ---------- completion ----------
+function isDone(it){
+  const d=g(it.id);
+  if(it.type==='vc'){ return (d.rows||[]).some(r=>r&&r.name) ? 2 : 0; }
+  if(it.type==='check'){ return d.s||0; }
+  // text/num/area: status drives; but if content exists treat >= 진행
+  let st=d.s||0; if(!st && (d.v||'').trim()) st=1; return st;
+}
+function itemFilled(it){ // for pres-mode empty hiding
+  const d=g(it.id);
+  if(it.type==='vc') return (d.rows||[]).some(r=>r&&r.name);
+  if(it.type==='check') return (d.s||0)>0;
+  return (d.v||'').trim().length>0 || (d.s||0)>0;
+}
+
+// ---------- render ----------
+const STLAB=['미착수','진행','완료'];
+function render(){
+  const app=document.getElementById('app');
+  app.innerHTML=SECTIONS.map(sec=>{
+    const items=sec.items.map(it=>itemHTML(it)).join('');
+    return `<section id="sec-${sec.id}">
+      <div class="sec-head"><h2>${esc(sec.title)}</h2><span class="sdesc">${esc(sec.desc)}</span>
+        <span class="sprog" id="sp-${sec.id}"></span></div>
+      ${items}</section>`;
+  }).join('');
+  bind();
+  updateProgress();
+}
+function itemHTML(it){
+  const d=g(it.id); const st=isDone(it);
+  const stCls=st===2?'s2':st===1?'s1':'';
+  const rk=it.rk?`<span class="rk rk-${it.rk}">${RK[it.rk]}</span>`:'';
+  const goal=it.goal?`<span class="goal">목표 ${esc(it.goal)}</span>`:'';
+  const hint=it.hint?`<div class="hint">${esc(it.hint)}</div>`:'';
+  let field='';
+  if(it.type==='area') field=`<textarea class="f" data-v="${it.id}" placeholder="여기에 채우기…">${esc(d.v)}</textarea>`;
+  else if(it.type==='text') field=`<input class="f" data-v="${it.id}" value="${esc(d.v)}" placeholder="여기에 채우기…">`;
+  else if(it.type==='num') field=`<input class="f short" data-v="${it.id}" value="${esc(d.v)}" placeholder="현재값">`;
+  else if(it.type==='vc') field=vcHTML(it.id,d);
+  const fieldwrap=field?`<div class="fieldwrap">${field}</div>`:'';
+  const empty=itemFilled(it)?'':'empty';
+  return `<div class="item ${empty}" data-item="${it.id}">
+    <div class="ihead">
+      <button class="st ${stCls}" data-st="${it.id}">${STLAB[st]}</button>
+      <div class="lab"><div class="t">${esc(it.t)}${goal}${rk}</div>${hint}</div>
+    </div>${fieldwrap}</div>`;
+}
+function vcHTML(id,d){
+  const rows=(d.rows&&d.rows.length)?d.rows:[{}];
+  const rowsH=rows.map((r,i)=>`<div class="vc-row" data-vc="${id}" data-i="${i}">
+    <input data-k="name" value="${esc(r.name)}" placeholder="VC/AC명">
+    <input data-k="focus" value="${esc(r.focus)}" placeholder="펀드 주목적(섹터·지역)">
+    <input data-k="stage" value="${esc(r.stage)}" placeholder="단계(시드…)">
+    <input data-k="status" value="${esc(r.status)}" placeholder="컨택 상태">
+    <button class="vc-del" data-del="${id}" data-i="${i}">✕</button></div>`).join('');
+  return `<div class="vc-head"><span>VC/AC명</span><span>펀드 주목적</span><span>단계</span><span>컨택 상태</span><span></span></div>
+    ${rowsH}<button class="addbtn" data-add="${id}">+ 후보 추가</button>`;
+}
+
+function bind(){
+  document.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.st; const cur=g(id).s||0; const nx=(cur+1)%3;
+    store[id]={...g(id), s:nx}; persist(); refreshItem(id);
+  });
+  document.querySelectorAll('textarea.f,input.f').forEach(el=>{
+    if(!el.dataset.v) return;
+    el.oninput=()=>{ const id=el.dataset.v; store[id]={...g(id), v:el.value}; persistThrottled(); updateProgress(); markFilled(id); };
+  });
+  document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.add; const d=g(id); const rows=(d.rows||[]).slice(); rows.push({}); store[id]={...d,rows}; persist(); render();
+  });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.del,i=+b.dataset.i; const d=g(id); const rows=(d.rows||[]).slice(); rows.splice(i,1); if(!rows.length)rows.push({}); store[id]={...d,rows}; persist(); render();
+  });
+  document.querySelectorAll('[data-vc] input').forEach(el=>{
+    el.oninput=()=>{ const w=el.closest('[data-vc]'); const id=w.dataset.vc,i=+w.dataset.i,k=el.dataset.k;
+      const d=g(id); const rows=(d.rows||[{}]).slice(); rows[i]={...rows[i],[k]:el.value}; store[id]={...d,rows}; persistThrottled(); updateProgress(); };
+  });
+}
+let pT; function persistThrottled(){ clearTimeout(pT); pT=setTimeout(persist,500); }
+function markFilled(id){ const el=document.querySelector(`[data-item="${id}"]`); const it=findItem(id); if(el&&it) el.classList.toggle('empty', !itemFilled(it)); }
+function findItem(id){ for(const s of SECTIONS) for(const it of s.items) if(it.id===id) return it; }
+function refreshItem(id){
+  const it=findItem(id); const wrap=document.querySelector(`[data-item="${id}"]`); if(!wrap||!it) return;
+  const st=isDone(it); const btn=wrap.querySelector('.st'); btn.className='st '+(st===2?'s2':st===1?'s1':''); btn.textContent=STLAB[st];
+  wrap.classList.toggle('empty', !itemFilled(it)); updateProgress();
+}
+function updateProgress(){
+  let tot=0,done=0;
+  SECTIONS.forEach(sec=>{
+    let st=0,sd=0;
+    sec.items.forEach(it=>{ st++; if(isDone(it)===2) sd++; });
+    tot+=st; done+=sd;
+    const el=document.getElementById('sp-'+sec.id); if(el) el.innerHTML=`<b>${sd}</b>/${st} 완료`;
+  });
+  const pct=tot?Math.round(done/tot*100):0;
+  document.getElementById('ofill').style.width=pct+'%';
+  document.getElementById('opct').textContent=pct+'%';
+}
+
+// ---------- controls ----------
+document.getElementById('presBtn').onclick=function(){
+  document.body.classList.toggle('pres'); this.classList.toggle('on');
+  this.textContent=document.body.classList.contains('pres')?'편집 모드':'발표 모드';
+};
+const modal=document.getElementById('modal');
+document.getElementById('ioBtn').onclick=()=>{ document.getElementById('modaltx').value=JSON.stringify(store,null,2); modal.classList.add('on'); };
+document.getElementById('closeBtn').onclick=()=>modal.classList.remove('on');
+document.getElementById('copyBtn').onclick=()=>{ const t=document.getElementById('modaltx'); t.select(); try{document.execCommand('copy');note('복사됨');}catch(e){} };
+document.getElementById('loadBtn').onclick=()=>{
+  try{ const d=JSON.parse(document.getElementById('modaltx').value); store=d; persist(); render(); modal.classList.remove('on'); note('불러옴'); }
+  catch(e){ alert('JSON 형식이 올바르지 않습니다.'); }
+};
+modal.onclick=e=>{ if(e.target===modal) modal.classList.remove('on'); };
+
+render();
+</script>
+</body>
+</html>
