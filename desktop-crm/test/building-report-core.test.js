@@ -36,6 +36,15 @@ function report(overrides) {
   });
 }
 
+test("보고 월은 현재 달까지 선택하고 미래 달만 막는다", () => {
+  const today = new Date("2026-09-30T00:00:00.000Z");
+  assert.equal(Reports.currentMonthKey(today), "2026-09");
+  assert.equal(Reports.isReportMonthSelectable("2026-08", today), true);
+  assert.equal(Reports.isReportMonthSelectable("2026-09", today), true);
+  assert.equal(Reports.isReportMonthSelectable("2026-10", today), false);
+  assert.equal(Reports.isReportMonthSelectable("2026-13", today), false);
+});
+
 test("그 건물, 그 달 사건만 담는다", () => {
   const kinds = report().works.map(work => work.kind);
   assert.deepEqual(kinds, ["공용부 청소", "누수", "입주청소"]);

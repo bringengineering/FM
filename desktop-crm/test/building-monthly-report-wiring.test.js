@@ -49,3 +49,17 @@ test("건물 월간보고서는 건물의 명시적 보고 대상 설정으로 �
   assert.match(app, /patch: \{ monthlyReportEnabled: enabled \}/u);
   assert.match(app, /계약 연결 여부와 관계없이 이 건물을 월간보고/u);
 });
+
+test("캘린더 작업이 없어도 현재 달까지 보고 월을 선택할 수 있다", () => {
+  const app = read("app.js");
+  const core = read("building-report-core.js");
+  const start = app.indexOf("function renderBuildingMonthlyReports");
+  const end = app.indexOf("async function exportBuildingMonthlyReportPdf", start);
+  const view = app.slice(start, end);
+  assert.ok(view.length > 0);
+  assert.match(core, /function isReportMonthSelectable\(month, now = new Date\(\)\)/u);
+  assert.match(view, /max="\$\{attr\(currentMonthKey\(\)\)\}" value=/u);
+  assert.match(view, /BuildingReportCore\.isReportMonthSelectable\(buildingMonthlyReportState\.month\)/u);
+  assert.match(view, /BuildingReportCore\.isReportMonthSelectable\(nextMonth\)/u);
+  assert.match(view, /캘린더 작업이 없어도 월 선택은 가능/u);
+});
