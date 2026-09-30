@@ -4167,6 +4167,7 @@
       documentDeliveryCapabilities = { kakao: false, sms: false, loaded: true, loading: false };
     }
     if (currentView === "customerMessages" && selectedMessageMode === "documents") renderCustomerMessages();
+    else if (currentView === "customerNotices" && docFlowState.report) renderCustomerNotices();
   }
 
   function openMessageConsentEditor(customerId) {
@@ -8037,6 +8038,8 @@
     notice: null,     // 만든 문구
     sending: false,
     sentAt: "",
+    kakaoSending: false,
+    kakaoResult: null,
   };
 
   const docFlowCore = () => window.BringDocFlowCore;
@@ -8095,6 +8098,7 @@
     docFlowState.report = report;
     docFlowState.notice = N.draftFor("result", F.noticeValuesFromReport(report));
     docFlowState.sentAt = "";
+    docFlowState.kakaoResult = null;
     currentView = "customerNotices";
     render();
   }
@@ -8106,16 +8110,46 @@
     const report = docFlowState.report;
     const notice = docFlowState.notice;
     const body = notice ? notice.body : "";
+    if (report && !documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
+    const R = reportCore();
+    const reportCheck = report && R ? R.validateReport(report) : { ok: false };
+    const contactDigits = String(report && report.ownerContact || "").replace(/\D/gu, "");
+    const kakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.kakao === true;
+    const canKakaoSend = Boolean(report && reportCheck.ok && /^01\d{8,9}$/u.test(contactDigits) && kakaoReady && canAdministerSecurity() && !docFlowState.kakaoSending);
+    const kakaoStatus = documentDeliveryCapabilities.loading || !documentDeliveryCapabilities.loaded
+      ? "연결 상태 확인 중"
+      : kakaoReady ? "알림톡 발송 준비 완료" : "발신 설정 또는 승인 템플릿 확인 필요";
+    const kakaoBlockReason = !canAdministerSecurity() ? "관리자 권한이 필요합니다."
+      : !contactDigits ? "결과보고서에 건물주 휴대전화 번호를 입력해 주세요."
+        : !/^01\d{8,9}$/u.test(contactDigits) ? "건물주 연락처를 휴대전화 번호로 확인해 주세요."
+          : !reportCheck.ok ? "결과보고서의 필수 항목과 전·후 사진을 확인해 주세요."
+            : !kakaoReady ? "발신 프로필·발송 서버 설정과 카카오 승인 템플릿이 확인되어야 발송할 수 있습니다."
+              : "승인된 작업 결과보고서 템플릿으로 발송합니다.";
 
     main.innerHTML = `<section class="operations-hero">
-        <div><span>문서관리</span><h2>고객 알림</h2><p>작업이 끝났다는 것을 건물주에게 알립니다. 문구는 단계가 정하고, 보낼지는 사람이 정합니다.</p></div>
+        <div><span>문서관리</span><h2>고객 알림</h2><p>작업 결과보고서를 확인하고, 건물주에게 카카오 알림톡으로 안전하게 전달합니다.</p></div>
       </section>
       ${docFlowStrip("notice")}
       ${report ? `<section class="office-panel">
         <header><div><span>NOTICE</span><h3>${esc(report.buildingName || "건물 미지정")}</h3></div><small>${esc(report.workDate || "작업일 미기재")} · ${esc(report.ownerName || "건물주 미기재")}</small></header>
         <div class="df-notice">
-          <label><span>보낼 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
-          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 보내기 전에 고쳐 주세요.</p>` : ""}
+          <section class="df-kakao-card">
+            <header><div><b>카카오 알림톡 · 작업 결과보고서</b><small>발송 뒤 고객에게 보안 링크가 전달됩니다.</small></div><span class="${kakaoReady ? "is-ready" : "is-pending"}">${esc(kakaoStatus)}</span></header>
+            <div class="df-kakao-preview">
+              <b>BRING CARE · 작업 결과보고서 안내</b>
+              <p>${esc(report.ownerName || "건물주")}님, 요청하신 작업 결과보고서가 발행되었습니다.</p>
+              <p>작업명: ${esc(`${report.buildingName || "건물"} 작업 결과보고서`)}<br>열람기한: 발송일로부터 7일</p>
+              <div class="df-kakao-link"><span><b>작업 결과보고서</b><small>전·후 사진이 포함된 PDF</small></span><em>결과보고서 확인</em></div>
+            </div>
+            <div class="df-kakao-actions">
+              <button type="button" class="secondary-button" data-df-kakao-refresh${documentDeliveryCapabilities.loading ? " disabled" : ""}>연동 상태 확인</button>
+              <button type="button" class="primary-button" data-df-kakao-send${canKakaoSend ? "" : " disabled"}>${docFlowState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button>
+            </div>
+            <p class="df-kakao-hint">${esc(kakaoBlockReason)} 템플릿 문구와 버튼은 카카오 심사 승인본을 사용합니다.</p>
+            ${docFlowState.kakaoResult ? `<p class="df-kakao-result">알림톡 발송 요청을 접수했습니다 · ${esc(docFlowState.kakaoResult.requestedAt || "")} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}
+          </section>
+          <label><span>회사 텔레그램으로 보낼 내부 전달 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
+          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 내부 전달 전에 고쳐 주세요.</p>` : ""}
           <dl class="df-meta">
             <div><dt>받는 사람</dt><dd>${esc(report.ownerName || "미기재")}</dd></div>
             <div><dt>연락처</dt><dd>${esc(report.ownerContact || "미기재")}</dd></div>
@@ -8123,7 +8157,7 @@
           </dl>
           <div class="df-actions">
             <button type="button" class="secondary-button" data-df-copy>문구 복사</button>
-            <button type="button" class="primary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 보내기</button>
+            <button type="button" class="secondary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 내부 전달</button>
           </div>
           ${docFlowState.sentAt ? `<p class="office-muted">보냈습니다 · ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}</p>` : ""}
         </div>
@@ -8131,13 +8165,7 @@
         <b>아직 고른 보고서가 없습니다</b>
         <span>작업 결과보고서 목록에서 ‘고객 알림’ 을 누르면 그 보고서로 문구를 만듭니다.</span>
       </div></section>`}
-      <section class="office-panel">
-        <header><div><span>NOTE</span><h3>카카오 알림톡은 아직 못 보냅니다</h3></div></header>
-        <div class="df-note">
-          <p>알림톡 템플릿 심사가 끝나야 고객 번호로 바로 나갑니다. 그 전까지는 <b>회사 텔레그램방으로 문구를 보내고, 사람이 카카오톡에 붙여 넣습니다.</b></p>
-          <p class="office-muted">심사가 끝나면 이 화면의 [보내기] 가 고객 번호로 바로 나가게 바뀝니다. 문구와 단계는 그대로 씁니다.</p>
-        </div>
-      </section>`;
+      `;
   }
 
   async function sendCustomerNotice() {
@@ -8171,6 +8199,45 @@
       showToast(error && error.message || "보내지 못했습니다.", "error");
     } finally {
       docFlowState.sending = false;
+      render();
+    }
+  }
+
+  async function sendWorkReportByKakao() {
+    if (docFlowState.kakaoSending) return;
+    const report = docFlowState.report;
+    const R = reportCore();
+    if (!report || !R) { showToast("먼저 작업 결과보고서를 선택해 주세요.", "error"); return; }
+    if (!canAdministerSecurity()) { showToast("관리자만 고객에게 알림톡을 보낼 수 있습니다.", "error"); return; }
+    if (!documentDeliveryCapabilities.kakao) { showToast("발신 설정 또는 카카오 승인 템플릿을 확인해 주세요.", "error"); return; }
+    if (!R.validateReport(report).ok) { showToast("결과보고서의 필수 항목과 전·후 사진을 확인해 주세요.", "error"); return; }
+    if (!/^01\d{8,9}$/u.test(String(report.ownerContact || "").replace(/\D/gu, ""))) {
+      showToast("결과보고서에 건물주 휴대전화 번호를 입력해 주세요.", "error");
+      return;
+    }
+    const confirmed = await requestConfirmation({
+      title: "작업 결과보고서를 카카오 알림톡으로 보낼까요?",
+      description: "건물주에게 승인된 알림톡 템플릿과 7일 동안 열 수 있는 결과보고서 PDF 링크를 보냅니다.",
+      target: `${report.buildingName || "건물 미지정"} · ${report.ownerName || "건물주"} · ${report.ownerContact}`,
+      confirmLabel: "알림톡 발송",
+    });
+    if (!confirmed) return;
+    docFlowState.kakaoSending = true;
+    docFlowState.kakaoResult = null;
+    render();
+    try {
+      const result = await api.sendWorkReportToCustomerByKakao({
+        report,
+        company: (store.settings && store.settings.quoteCompany) || {},
+        secrets: reportSecrets(),
+      });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "알림톡 발송을 요청하지 못했습니다.");
+      docFlowState.kakaoResult = { status: result.status || "requested", requestedAt: new Date().toLocaleString("ko-KR") };
+      showToast(`알림톡 발송 요청을 접수했습니다.${result.photoFailures ? ` 사진 ${result.photoFailures}장은 첨부하지 못했습니다.` : ""} 실제 전달 완료와는 다를 수 있습니다.`, result.photoFailures ? "info" : "success");
+    } catch (error) {
+      showToast(error && error.message || "알림톡 발송 요청에 실패했습니다.", "error");
+    } finally {
+      docFlowState.kakaoSending = false;
       render();
     }
   }
@@ -14337,6 +14404,12 @@
       return;
     }
     if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
+    if (event.target.closest("[data-df-kakao-refresh]")) {
+      documentDeliveryCapabilities = Object.assign({}, documentDeliveryCapabilities, { loaded: false });
+      void refreshDocumentDeliveryCapabilities();
+      return;
+    }
+    if (event.target.closest("[data-df-kakao-send]")) { void sendWorkReportByKakao(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
       const refreshes=[loadWorkOrders()];

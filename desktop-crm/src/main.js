@@ -4777,6 +4777,52 @@ async function exportWorkOutcomeDocument(input) {
   return { ok: true, filePath: result.filePath, format };
 }
 
+async function createWorkReportPdfArtifact(options, copyType) {
+  const checked = WorkReportCore.validateReport(options.report);
+  if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
+  const report = checked.report;
+  const leaks = WorkReportCore.findLeakedFields(report, options.secrets);
+  if (leaks.length) {
+    return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
+  }
+
+  const seal = await readLocalQuoteSeal();
+  if (!seal) throw Object.assign(new Error("보고서 인감을 먼저 등록해 주세요. 설정에서 견적서 인감을 등록하면 같이 씁니다."), { code: "QUOTE_SEAL_REQUIRED" });
+
+  const images = {};
+  let heicConverted = 0;
+  let photoFailures = 0;
+  if (driveSessionView().connected) {
+    const photos = report.items.flatMap(item => [...item.before, ...item.after]);
+    for (const photo of photos.slice(0, 40)) {
+      try {
+        const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId });
+        if (fetched && fetched.content) {
+          const original = Buffer.from(fetched.content);
+          const isHeic = HeicJpegConverter.looksLikeHeic(original)
+            || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
+            || /\.hei[cf]$/iu.test(String(fetched.name || ""));
+          const content = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
+          const mimeType = isHeic ? "image/jpeg" : (fetched.mimeType || "image/jpeg");
+          if (isHeic) heicConverted += 1;
+          images[photo.id] = `data:${mimeType};base64,${content.toString("base64")}`;
+        }
+      } catch (_error) {
+        // 사진 일부를 못 읽어도 보고서는 생성하고 누락 수를 사용자에게 알린다.
+        photoFailures += 1;
+      }
+    }
+  }
+
+  const documentHtml = createWorkReportHtml(report, copyType, {
+    company: options.company,
+    sealImage: seal,
+    images,
+  });
+  const bytes = await createReportPdfBytes(documentHtml, "work-report");
+  return { ok: true, report, bytes, photos: Object.keys(images).length, heicConverted, photoFailures };
+}
+
 async function exportWorkReport(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   // 이 문서에는 건물주 이름·주소와 현장 사진이 담긴다. 마케팅 전용 계정이
@@ -4843,6 +4889,61 @@ async function exportWorkReport(input) {
   const bytes = await createReportPdfBytes(documentHtml, "work-report");
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, copyType, photos: Object.keys(images).length, heicConverted, photoFailures };
+}
+
+async function sendWorkReportToCustomerByKakao(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("관리자만 고객에게 알림톡을 보낼 수 있습니다."), { code: "ACCESS_DENIED" });
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 전용 계정은 결과보고서를 보낼 수 없습니다."), { code: "ACCESS_DENIED" });
+
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const checked = WorkReportCore.validateReport(options.report);
+  if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
+  const report = checked.report;
+  const phone = report.ownerContact.replace(/\D/gu, "");
+  if (!/^01\d{8,9}$/u.test(phone)) throw Object.assign(new Error("건물주 연락처를 휴대전화 번호로 확인해 주세요."), { code: "RECIPIENT_PHONE_REQUIRED" });
+
+  // 서버 capability 는 승인 템플릿, 발신 프로필, NCP 발송 설정을 모두 확인한다.
+  // 화면의 버튼 상태와 별개로 매 발송 때 서버에서 다시 확인한다.
+  const capabilities = await runDocumentDelivery("capabilities");
+  if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.kakao !== true) {
+    return { ok: false, code: "KAKAO_DOCUMENT_DELIVERY_NOT_READY", error: "카카오 알림톡 발신 설정과 승인 템플릿 상태를 확인해 주세요." };
+  }
+
+  const artifact = await createWorkReportPdfArtifact(options, "owner");
+  if (!artifact.ok) return artifact;
+  if (artifact.bytes.length > 12 * 1024 * 1024) {
+    return { ok: false, code: "DOCUMENT_TOO_LARGE", error: "사진을 줄여 결과보고서 PDF를 12MB 이하로 만들어 주세요." };
+  }
+
+  const customerId = `notice_${crypto.randomBytes(16).toString("hex")}`;
+  const created = await runDocumentDelivery("create", {
+    documentId: `report_${crypto.randomBytes(16).toString("hex")}`,
+    customerId,
+    documentType: "completion_report",
+    documentName: `${report.buildingName || "건물"} 작업 결과보고서`,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    mimeType: "application/pdf",
+    bytes: artifact.bytes,
+  });
+  if (!created || created.ok !== true || !created.documentId) {
+    return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "보안 보고서 링크를 만들지 못했습니다." };
+  }
+
+  const sent = await runDocumentDelivery("send", {
+    channel: "kakao",
+    idempotencyKey: crypto.randomBytes(20).toString("hex"),
+    documentId: created.documentId,
+    customerId,
+    customerName: report.ownerName || "건물주",
+    phone,
+  });
+  if (!sent || sent.ok !== true) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "알림톡 발송을 요청하지 못했습니다." };
+  }
+  return { ok: true, status: sent.status || "requested", messageId: sent.messageId || "", photos: artifact.photos, photoFailures: artifact.photoFailures };
 }
 
 // 수주 진행 결과물. 건물별·단계별로 쌓는다. 날짜로 나누면 "우산동 빌딩
@@ -9547,6 +9648,7 @@ secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContact
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
+secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
 secureCanonicalHandle("crm:payroll-save", input => remoteClient.savePayrollSlip(input));
