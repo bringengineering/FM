@@ -3,6 +3,7 @@
 
   const FUNCTION_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/completeCrmAccountSetup";
   const form = document.getElementById("setupForm");
+  const displayName = document.getElementById("setupDisplayName");
   const email = document.getElementById("setupEmail");
   const password = document.getElementById("setupPassword");
   const passwordConfirm = document.getElementById("setupPasswordConfirm");
@@ -35,7 +36,7 @@
   }
   actionCode = action.actionCode;
   form.hidden = false;
-  setMessage("메일 주소와 새 비밀번호를 입력해 주세요.");
+  setMessage("이름과 메일 주소를 확인하고 새 비밀번호를 설정해 주세요.");
 
   async function boundedJson(response) {
     const declaredLength = response.headers.get("content-length");
@@ -91,7 +92,7 @@
         redirect: "error",
         credentials: "omit",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ data: { email: email.value, password: password.value, oobCode: actionCode } }),
+        body: JSON.stringify({ data: { displayName: displayName.value, email: email.value, password: password.value, oobCode: actionCode } }),
       });
       const payload = await boundedJson(response);
       if (!response.ok || payload?.result?.ok !== true) throw new Error("account_setup_failed");
