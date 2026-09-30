@@ -95,17 +95,13 @@ test("login copy consistently describes allowed email and password login", () =>
   assert.equal(showLogin.includes(copy.google), false);
 });
 
-test("login guides the first password change without revealing the password", () => {
-  // 예전에는 로그인 화면에 최초 비밀번호(1234)를 그대로 적어 두었다. 프로그램만
-  // 열면 누구나 볼 수 있어, 아직 한 번도 로그인하지 않은 계정을 가로챌 수 있었다.
-  // 비밀번호 변경 강제는 이미 app.js 의 mustChangePassword 흐름이 하고 있으므로
-  // 안내 문구에서 값은 빼고 '관리자에게 확인' 으로 돌린다.
+test("new accounts set their password from the email verification link", () => {
   const temporaryPassword = html.match(/<div\b[^>]*\bclass=["']temporary-password["'][^>]*>([\s\S]*?)<\/div>/i);
-  assert.ok(temporaryPassword, "첫 비밀번호 안내는 로그인 화면에 남아 있어야 합니다");
+  assert.ok(temporaryPassword, "계정 설정 안내는 로그인 화면에 남아 있어야 합니다");
   const visibleCopy = temporaryPassword[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  assert.match(visibleCopy, /새 비밀번호/);
-  assert.match(visibleCopy, /관리자에게 확인/);
-  assert.doesNotMatch(html, /최초 비밀번호[^<]*\b1234\b/, "로그인 화면에 최초 비밀번호를 그대로 적으면 안 됩니다");
+  assert.match(visibleCopy, /이메일 인증 링크에서 비밀번호를 설정/);
+  assert.match(visibleCopy, /인증 메일이 오지 않으면 관리자에게 다시 요청/);
+  assert.doesNotMatch(visibleCopy, /최초 비밀번호|임시 비밀번호/);
 });
 
 test("첫 로그인은 비밀번호를 바꾸기 전까지 앱으로 들어갈 수 없다", () => {
