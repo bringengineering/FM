@@ -2642,6 +2642,63 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(update(ref(admin, at("h5")), { title: "건물지도 보완", updatedAt: NOW, updatedBy: "crm-admin" }));
   });
 
+  it("lets the assigned member update a legacy work order with no progress field without allowing others", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const otherMember = environment.authenticatedContext("crm-sales", crmClaims("sales@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order: Record<string, unknown> = {
+      id: "legacy-progress",
+      title: "건물지도",
+      why: "현장에서 동 호수를 못 찾아 헤맵니다.",
+      what: "도면을 받아 층별 지도를 만듭니다.",
+      doneWhen: "층별 지도 PDF 가 올라오면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "황우중",
+      projectId: "p1",
+      track: "tech",
+      buildingId: "",
+      startDate: "2026-09-07",
+      dueDate: "2026-09-11",
+      hours: 6.5,
+      weight: 40,
+      deliverable: "20260911_건물지도.pdf",
+      deliverableKind: "doc",
+      deliverableCount: 1,
+      status: "assigned",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+    await assertSucceeds(set(ref(admin, at("legacy-progress")), order));
+
+    const progressPatch = (uid: string, fromProgress: number, toProgress: number, id: string) => ({
+      progress: toProgress,
+      latestProgressUpdateId: id,
+      progressUpdates: {
+        [id]: {
+          id,
+          fromProgress,
+          toProgress,
+          note: "진행한 내용과 확인 결과를 기록했습니다.",
+          nextAction: "다음 작업을 확인합니다.",
+          createdAt: NOW,
+          createdBy: uid,
+          createdByName: uid,
+        },
+      },
+      updatedAt: NOW,
+      updatedBy: uid,
+    });
+
+    await assertSucceeds(update(ref(member, at("legacy-progress")), progressPatch("crm-legacy-member", 0, 25, "pu_legacy1")));
+    await assertFails(update(ref(otherMember, at("legacy-progress")), progressPatch("crm-sales", 25, 50, "pu_other1")));
+    await assertFails(update(ref(viewer, at("legacy-progress")), progressPatch("crm-viewer", 25, 50, "pu_viewer1")));
+  });
+
   it("keeps a work order's schedule and progress in a shape the chart can draw", async () => {
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const at = (id: string) => `crmCompany/workOrders/${id}`;
