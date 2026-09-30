@@ -15,6 +15,10 @@ const workflowPath = path.join(
 
 test("production site workflow builds, verifies, and deploys Firebase Hosting", async () => {
   const workflow = await readFile(workflowPath, "utf8");
+  const accountSetupPage = await readFile(
+    path.join(repositoryRoot, "company-site/public/crm-account-setup/index.html"),
+    "utf8",
+  );
 
   assert.match(workflow, /codex\/bring-field-platform/);
   assert.match(workflow, /pnpm\/action-setup/);
@@ -25,8 +29,13 @@ test("production site workflow builds, verifies, and deploys Firebase Hosting", 
   assert.match(workflow, /stair-cleaning\/index\.html/);
   assert.match(workflow, /move-in-cleaning\/index\.html/);
   assert.match(workflow, /crm-account-setup\/index\.html/);
+  assert.match(workflow, /crm-account-setup\/setup-core\.js/);
   assert.match(workflow, /crm-account-setup\/setup\.js/);
   assert.match(workflow, /crm-account-setup\/setup\.css/);
+  assert.match(accountSetupPage, /href="\/crm-account-setup\/setup\.css"/);
+  assert.match(accountSetupPage, /src="\/crm-account-setup\/setup-core\.js"/);
+  assert.match(accountSetupPage, /src="\/crm-account-setup\/setup\.js"/);
+  assert.doesNotMatch(accountSetupPage, /(?:href|src)="\.\/setup/);
   assert.match(workflow, /FirebaseExtended\/action-hosting-deploy/);
   assert.match(workflow, /FIREBASE_SERVICE_ACCOUNT/);
   assert.match(workflow, /channelId: live/);
