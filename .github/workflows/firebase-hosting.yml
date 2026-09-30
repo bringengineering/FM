@@ -45,6 +45,7 @@ jobs:
           test -s company-site/firebase-public/stair-cleaning/index.html
           test -s company-site/firebase-public/move-in-cleaning/index.html
           test -s company-site/firebase-public/crm-account-setup/index.html
+          test -s company-site/firebase-public/crm-account-setup/setup-core.js
           test -s company-site/firebase-public/crm-account-setup/setup.js
           test -s company-site/firebase-public/crm-account-setup/setup.css
       - name: Deploy live Firebase Hosting
