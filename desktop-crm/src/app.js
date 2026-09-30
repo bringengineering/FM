@@ -7810,6 +7810,24 @@
     setTimeout(() => modalContent.querySelector('[name="progressNote"]')?.focus(), 30);
   }
 
+  function showWorkOrderProgressSaveError(form, error) {
+    const message = error && error.ok === false && typeof error.error === "string"
+      ? error.error.slice(0, 180)
+      : "진행률을 저장하지 못했습니다. 입력 내용은 유지됩니다. 저장 권한 또는 연결 상태를 확인해 주세요.";
+    if (!form || !form.querySelector) return showToast(message, "error");
+    let notice = form.querySelector("[data-wo-progress-save-error]");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.className = "work-order-progress-save-error";
+      notice.dataset.woProgressSaveError = "true";
+      notice.setAttribute("role", "alert");
+      notice.setAttribute("aria-live", "polite");
+      const actions = form.querySelector(".form-actions");
+      form.insertBefore(notice, actions || null);
+    }
+    notice.textContent = message;
+  }
+
   async function setWorkOrderProgress(orderId, value, progressNote, nextAction, form) {
     const W = workOrderCore();
     if (!W || workOrderState.busyId) return;
@@ -7822,18 +7840,22 @@
     const submit = form && form.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
     try {
-      await api.updateWorkOrderProgress({
+      const result = await api.updateWorkOrderProgress({
         id: orderId,
         progress: next,
         progressNote: note,
         nextAction: String(nextAction || "").trim(),
       });
+      if (result && result.ok === false) {
+        showWorkOrderProgressSaveError(form, result);
+        return;
+      }
       workOrderState.loaded = false;
       closeModal();
       showToast(`진행률 ${current.progress}% → ${next}%와 진행 내용을 저장했습니다.`, "success");
       await loadWorkOrders();
-    } catch (error) {
-      showToast(error && error.message || "진행률을 바꾸지 못했습니다.", "error");
+    } catch {
+      showWorkOrderProgressSaveError(form, null);
     } finally {
       workOrderState.busyId = "";
       if (submit && document.contains(submit)) submit.disabled = false;
