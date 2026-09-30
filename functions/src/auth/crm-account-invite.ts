@@ -31,6 +31,32 @@ export interface CrmAccountAccessRecord {
   createdBy: string;
 }
 
+export function canManageCrmAccountSetup(identity: unknown, access: unknown): identity is {
+  uid: string;
+  email: string;
+  emailVerified: true;
+  signInProvider: "password";
+} {
+  if (!identity || typeof identity !== "object" || Array.isArray(identity)
+    || !access || typeof access !== "object" || Array.isArray(access)) return false;
+  const actor = identity as Record<string, unknown>;
+  const record = access as Record<string, unknown>;
+  return typeof actor.uid === "string"
+    && actor.uid.length > 0
+    && actor.uid.length <= 128
+    && /^[A-Za-z0-9_-]+$/u.test(actor.uid)
+    && !["__proto__", "prototype", "constructor"].includes(actor.uid)
+    && typeof actor.email === "string"
+    && actor.email.trim().length > 0
+    && actor.emailVerified === true
+    && actor.signInProvider === "password"
+    && record.enabled === true
+    && record.role === "admin"
+    && record.mustChangePassword !== true
+    && typeof record.email === "string"
+    && record.email.trim().toLowerCase() === actor.email.trim().toLowerCase();
+}
+
 export function normalizeCrmAccountEmail(value: unknown): string {
   if (typeof value !== "string") throw new Error("crm_account_email_invalid");
   const email = value.trim().toLowerCase();

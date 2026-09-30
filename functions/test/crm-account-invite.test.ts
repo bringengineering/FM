@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canManageCrmAccountSetup,
   createCrmAccountAccessRecord,
   createCrmAccountInviteRecord,
   crmAccountEmailHash,
@@ -10,6 +11,28 @@ import {
 } from "../src/auth/crm-account-invite.js";
 
 describe("CRM account invitations", () => {
+  it("allows account-management calls only from a verified, enabled password-provider administrator", () => {
+    const identity = { uid: "admin-1", email: "admin@example.com", emailVerified: true, signInProvider: "password" };
+    const access = { email: "ADMIN@example.com", enabled: true, role: "admin", mustChangePassword: false };
+    expect(canManageCrmAccountSetup(identity, access)).toBe(true);
+    for (const deniedIdentity of [
+      { ...identity, emailVerified: false },
+      { ...identity, signInProvider: "google.com" },
+      { ...identity, signInProvider: "custom" },
+      { ...identity, email: "different@example.com" },
+      { ...identity, uid: "../admin-1" },
+    ]) expect(canManageCrmAccountSetup(deniedIdentity, access)).toBe(false);
+    for (const deniedAccess of [
+      { ...access, enabled: false },
+      { ...access, role: "member" },
+      { ...access, role: "viewer" },
+      { ...access, mustChangePassword: true },
+      { ...access, email: "" },
+    ]) expect(canManageCrmAccountSetup(identity, deniedAccess)).toBe(false);
+    expect(canManageCrmAccountSetup(null, access)).toBe(false);
+    expect(canManageCrmAccountSetup(identity, null)).toBe(false);
+  });
+
   it("normalizes email consistently and hashes it without storing the address in the invite index", () => {
     expect(normalizeCrmAccountEmail("  Team.Member@Example.com ")).toBe("team.member@example.com");
     expect(crmAccountEmailHash("Team.Member@Example.com")).toMatch(/^[a-f0-9]{64}$/u);

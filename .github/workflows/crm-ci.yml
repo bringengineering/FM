@@ -82,6 +82,11 @@ jobs:
       - run: pnpm --dir company-site install --frozen-lockfile
       - run: pnpm --dir functions test
       - run: pnpm --dir functions build
+      - name: Verify narrowly scoped CRM Functions deploy contract
+        run: node --test release/crm-account-setup-deployment.test.js release/cleaning-center-deployment.test.js
+      - name: Verify Firebase deployment isolation guards
+        shell: pwsh
+        run: ./release/test/bootstrap-bring-fm-wif.test.ps1
       - run: node --test functions/integration/billing-ledger-audit-cli.test.mjs
       - run: pnpm --dir company-site test:field:run
       - run: pnpm --dir company-site typecheck:field
@@ -94,5 +99,11 @@ jobs:
           FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
           BRING_CLEANING_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-cleaning-functions emulators:exec --only auth,database,functions "pnpm exec vitest run tests/field/cleaning-orders-functions-emulator.test.ts"
+      - name: Test CRM account setup email verification and password flow in local emulators
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
+          CRM_ACCOUNT_SETUP_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm-account-setup emulators:exec --only auth,database,functions "pnpm --dir ../functions exec vitest run test/crm-account-invite-emulator.test.ts"
       - name: Test billing transactions in local database emulator
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database "node --test ../functions/integration/billing-ledger-emulator.test.mjs"

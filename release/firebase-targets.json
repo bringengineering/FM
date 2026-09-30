@@ -12,7 +12,6 @@
       "cleanupDesktopFieldHandoffs",
       "commitBillingLedgerMutation",
       "commitCanonicalCrmEntity",
-      "completeCrmAccountSetup",
       "configureBuildingUnits",
       "createAdPackage",
       "createDesktopFieldHandoff",
@@ -22,13 +21,10 @@
       "finalizeFieldMedia",
       "getFieldMediaAccess",
       "listAdPackageReviewCandidates",
-      "listCrmAccountInvites",
       "listFieldCaptureWorkspace",
       "listFieldOperationsWorkspace",
       "provisionFieldUser",
       "recordFieldOperatorSwitch",
-      "registerCrmAccount",
-      "resendCrmAccountInvite",
       "saveFieldRegistration",
       "setManagementContractStatus",
       "startFieldCaptureSession",
@@ -54,6 +50,17 @@
   "crmAutomaticRelease": {
     "projectId": "bring-fm",
     "databaseRules": true
+  },
+  "crmAccountSetupManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "completeCrmAccountSetup",
+      "listCrmAccountInvites",
+      "registerCrmAccount",
+      "resendCrmAccountInvite"
+    ],
+    "region": "asia-northeast3",
+    "databaseRules": false
   },
   "cleaningCenterManualDeployment": {
     "projectId": "bring-fm",

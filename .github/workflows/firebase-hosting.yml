@@ -44,6 +44,9 @@ jobs:
           test -s company-site/firebase-public/building-care/index.html
           test -s company-site/firebase-public/stair-cleaning/index.html
           test -s company-site/firebase-public/move-in-cleaning/index.html
+          test -s company-site/firebase-public/crm-account-setup/index.html
+          test -s company-site/firebase-public/crm-account-setup/setup.js
+          test -s company-site/firebase-public/crm-account-setup/setup.css
       - name: Deploy live Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@7c850a480ce753f4f06f010801fc5a43787740bb # v0
         with:

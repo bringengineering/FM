@@ -63,6 +63,7 @@ import {
   createCrmAccountAccessRecord,
   createCrmAccountInviteRecord,
   crmAccountEmailHash,
+  canManageCrmAccountSetup,
   isCrmAccountInviteUsable,
   normalizeCrmAccountEmail,
   validateCrmAccountSetupPassword,
@@ -3505,7 +3506,14 @@ function crmAccountSetupSafeUid(value: unknown): value is string {
 async function requireCrmAccountSetupAdmin(request: CallableRequest<unknown>): Promise<{ uid: string; email: string }> {
   const uid = request.auth?.uid;
   const email = request.auth?.token.email;
-  if (!crmAccountSetupSafeUid(uid) || typeof email !== "string" || request.auth?.token.email_verified !== true) {
+  const firebaseClaim = request.auth?.token.firebase;
+  const identity = {
+    uid,
+    email,
+    emailVerified: request.auth?.token.email_verified,
+    signInProvider: isRecord(firebaseClaim) ? firebaseClaim.sign_in_provider : undefined,
+  };
+  if (!crmAccountSetupSafeUid(uid) || typeof email !== "string") {
     throw new HttpsError("unauthenticated", "crm_account_setup_auth_required");
   }
   const access = (await adminDatabase.ref(`crmCompany/access/${uid}`).get()).val() as {
@@ -3514,14 +3522,7 @@ async function requireCrmAccountSetupAdmin(request: CallableRequest<unknown>): P
     role?: unknown;
     mustChangePassword?: unknown;
   } | null;
-  if (
-    !access
-    || access.enabled !== true
-    || access.role !== "admin"
-    || access.mustChangePassword === true
-    || typeof access.email !== "string"
-    || access.email.trim().toLowerCase() !== email.trim().toLowerCase()
-  ) {
+  if (!canManageCrmAccountSetup(identity, access)) {
     throw new HttpsError("permission-denied", "crm_account_setup_admin_required");
   }
   return { uid, email: email.trim().toLowerCase() };
@@ -3538,8 +3539,27 @@ async function postCrmIdentityToolkit(
   method: "sendOobCode" | "signInWithEmailLink",
   body: UnknownRecord,
 ): Promise<UnknownRecord> {
-  const endpoint = new URL(`https://identitytoolkit.googleapis.com/v1/accounts:${method}`);
-  endpoint.searchParams.set("key", CRM_FIREBASE_WEB_API_KEY);
+  const emulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  let endpoint: URL;
+  if (emulatorHost) {
+    let emulatorOrigin: URL;
+    try { emulatorOrigin = new URL(`http://${emulatorHost}`); }
+    catch { throw new Error("crm_account_identity_request_failed"); }
+    if (
+      emulatorOrigin.protocol !== "http:"
+      || !["127.0.0.1", "localhost"].includes(emulatorOrigin.hostname)
+      || emulatorOrigin.username
+      || emulatorOrigin.password
+      || emulatorOrigin.pathname !== "/"
+      || emulatorOrigin.search
+      || emulatorOrigin.hash
+    ) throw new Error("crm_account_identity_request_failed");
+    endpoint = new URL(`/identitytoolkit.googleapis.com/v1/accounts:${method}`, emulatorOrigin.origin);
+    endpoint.searchParams.set("key", "demo-api-key");
+  } else {
+    endpoint = new URL(`https://identitytoolkit.googleapis.com/v1/accounts:${method}`);
+    endpoint.searchParams.set("key", CRM_FIREBASE_WEB_API_KEY);
+  }
   let response: Response;
   try {
     response = await fetch(endpoint, {
