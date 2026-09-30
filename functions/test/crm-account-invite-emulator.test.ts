@@ -231,6 +231,7 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     const password = "FirstPassword-OnlyInEmulator-2026!";
     const completed = await callFunction("completeCrmAccountSetup", {
       email: invitedEmail,
+      displayName: "초대 구성원",
       password,
       oobCode: actionCode,
     });
@@ -243,15 +244,15 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
       returnSecureToken: true,
     }) as unknown as AuthResponse;
     const profile = await authRequest("accounts:lookup", { idToken: login.idToken }) as {
-      users?: Array<{ emailVerified?: unknown }>;
+      users?: Array<{ emailVerified?: unknown; displayName?: unknown }>;
     };
-    expect(profile.users?.[0]?.emailVerified).toBe(true);
+    expect(profile.users?.[0]).toMatchObject({ emailVerified: true, displayName: "초대 구성원" });
 
     const accessUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(registrationResult.uid)}.json`);
     accessUrl.searchParams.set("ns", PROJECT_ID);
     accessUrl.searchParams.set("auth", "owner");
     const access = await fetch(accessUrl).then(response => response.json()) as Record<string, unknown>;
-    expect(access).toMatchObject({ enabled: true, role: "member", accountSetupPending: false, mustChangePassword: false });
+    expect(access).toMatchObject({ enabled: true, role: "member", accountSetupPending: false, mustChangePassword: false, displayName: "초대 구성원" });
     expect(access).not.toHaveProperty("password");
 
     const inviteUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/accountInvites/${encodeURIComponent(registrationResult.uid)}.json`);
@@ -262,6 +263,7 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
 
     const replayed = await callFunction("completeCrmAccountSetup", {
       email: invitedEmail,
+      displayName: "초대 구성원",
       password: "SecondPassword-OnlyInEmulator-2026!",
       oobCode: actionCode,
     });

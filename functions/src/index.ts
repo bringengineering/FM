@@ -16,6 +16,7 @@ import {
   onRequest,
   type CallableRequest,
 } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
@@ -66,6 +67,7 @@ import {
   canManageCrmAccountSetup,
   isCrmAccountInviteUsable,
   normalizeCrmAccountEmail,
+  normalizeCrmAccountDisplayName,
   validateCrmAccountSetupPassword,
   type CrmAccountInviteRecord,
 } from "./auth/crm-account-invite.js";
@@ -3483,6 +3485,15 @@ function crmAccountSetupError(code: string): HttpsError {
   if (code === "crm_account_password_invalid") {
     return new HttpsError("invalid-argument", "crm_account_password_invalid");
   }
+  if (code === "crm_account_display_name_invalid") {
+    return new HttpsError("invalid-argument", "crm_account_display_name_invalid");
+  }
+  if (code === "crm_account_email_link_not_enabled") {
+    return new HttpsError("failed-precondition", "crm_account_email_link_not_enabled");
+  }
+  if (code === "crm_account_email_action_domain_invalid") {
+    return new HttpsError("failed-precondition", "crm_account_email_action_domain_invalid");
+  }
   if (code === "crm_account_duplicate") {
     return new HttpsError("already-exists", "crm_account_duplicate");
   }
@@ -3572,10 +3583,7 @@ async function postCrmIdentityToolkit(
   } catch {
     throw new Error("crm_account_identity_request_failed");
   }
-  if (
-    !response.ok
-    || !response.headers.get("content-type")?.toLowerCase().includes("application/json")
-  ) {
+  if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     try { await response.body?.cancel(); } catch {}
     throw new Error("crm_account_identity_request_failed");
   }
@@ -3609,7 +3617,27 @@ async function postCrmIdentityToolkit(
   try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
   catch { throw new Error("crm_account_identity_response_invalid"); }
   if (!isRecord(value)) throw new Error("crm_account_identity_response_invalid");
+  if (!response.ok) {
+    const error = isRecord(value.error) ? value.error : {};
+    const rawCode = typeof error.message === "string" ? error.message.split(/[\s:]/u, 1)[0].toUpperCase() : "";
+    const safeCode = /^[A-Z0-9_]{1,64}$/u.test(rawCode) ? rawCode : "REQUEST_FAILED";
+    throw new Error(`crm_account_identity_${safeCode.toLowerCase()}`);
+  }
   return value;
+}
+
+function crmAccountIdentityFailureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const match = /^crm_account_identity_([a-z0-9_]{1,64})$/u.exec(message);
+  return match?.[1] || "request_failed";
+}
+
+function crmAccountIdentityFailureAsSetupCode(error: unknown): string {
+  const code = crmAccountIdentityFailureCode(error);
+  if (code === "too_many_attempts_try_later") return "crm_account_setup_rate_limited";
+  if (code === "operation_not_allowed" || code === "email_link_signin_disabled" || code === "email_signin_disabled") return "crm_account_email_link_not_enabled";
+  if (code === "invalid_continue_uri" || code === "unauthorized_domain") return "crm_account_email_action_domain_invalid";
+  return "crm_account_setup_unavailable";
 }
 
 async function sendCrmAccountSetupEmail(email: string): Promise<void> {
@@ -3679,8 +3707,22 @@ export const registerCrmAccount = onCall(
         await sendCrmAccountSetupEmail(email);
         emailSent = true;
         await adminDatabase.ref(`crmCompany/accountInvites/${user.uid}`).update({ lastSentAt: now });
-      } catch {
+      } catch (error) {
         // Keep the account pending so an authorized administrator can retry.
+        logger.warn("CRM account invitation email was not sent", {
+          functionName: "registerCrmAccount",
+          identityError: crmAccountIdentityFailureCode(error),
+        });
+        const emailErrorCode = crmAccountIdentityFailureAsSetupCode(error);
+        return {
+          uid: user.uid,
+          email,
+          status: "pending",
+          createdAt: now,
+          lastSentAt: 0,
+          emailSent: false,
+          emailErrorCode: emailErrorCode === "crm_account_setup_unavailable" ? "" : emailErrorCode,
+        };
       }
       return { uid: user.uid, email, status: "pending", createdAt: now, lastSentAt: emailSent ? now : 0, emailSent };
     } catch (error) {
@@ -3771,7 +3813,13 @@ export const resendCrmAccountInvite = onCall(
         throw crmAccountSetupError(code);
       }
       if (code === "field_rate_limit_exceeded") throw crmAccountSetupError("crm_account_setup_rate_limited");
-      throw crmAccountSetupError("crm_account_setup_unavailable");
+      const setupCode = crmAccountIdentityFailureAsSetupCode(error);
+      if (setupCode !== "crm_account_setup_unavailable") throw crmAccountSetupError(setupCode);
+      logger.error("CRM account invitation resend failed", {
+        functionName: "resendCrmAccountInvite",
+        identityError: crmAccountIdentityFailureCode(error),
+      });
+      throw crmAccountSetupError(setupCode);
     }
   },
 );
@@ -3782,6 +3830,9 @@ export const completeCrmAccountSetup = onCall(
     try {
       const input = isRecord(request.data) ? request.data : {};
       const email = normalizeCrmAccountEmail(input.email);
+      // Omit-name requests are retained for links sent by the previous page
+      // version while Hosting and Functions are rolled out in separate steps.
+      const displayName = input.displayName === undefined ? "" : normalizeCrmAccountDisplayName(input.displayName);
       const password = validateCrmAccountSetupPassword(input.password);
       const oobCode = input.oobCode;
       if (
@@ -3830,19 +3881,26 @@ export const completeCrmAccountSetup = onCall(
       // The one-time email sign-in code is the proof of mailbox control. Only
       // after Firebase accepts it for this exact pre-created UID do we set the
       // chosen password and mark the Auth identity verified.
-      await adminAuth.updateUser(uid, { password, emailVerified: true });
+      const authUpdate: { password: string; emailVerified: boolean; displayName?: string } = {
+        password,
+        emailVerified: true,
+      };
+      if (displayName) authUpdate.displayName = displayName;
+      await adminAuth.updateUser(uid, authUpdate);
       const completedAt = Date.now();
-      await adminDatabase.ref().update({
+      const accountUpdate: Record<string, unknown> = {
         [`crmCompany/accountInvites/${uid}/status`]: "complete",
         [`crmCompany/accountInvites/${uid}/completedAt`]: completedAt,
         [`crmCompany/accountInviteIndex/${emailHash}/status`]: "complete",
         [`crmCompany/access/${uid}/accountSetupPending`]: false,
         [`crmCompany/access/${uid}/mustChangePassword`]: false,
-      });
+      };
+      if (displayName) accountUpdate[`crmCompany/access/${uid}/displayName`] = displayName;
+      await adminDatabase.ref().update(accountUpdate);
       return { ok: true };
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
-      if (code === "crm_account_email_invalid" || code === "crm_account_password_invalid") {
+      if (code === "crm_account_email_invalid" || code === "crm_account_password_invalid" || code === "crm_account_display_name_invalid") {
         throw crmAccountSetupError(code);
       }
       if (

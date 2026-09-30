@@ -71,6 +71,18 @@ export function normalizeCrmAccountEmail(value: unknown): string {
   return email;
 }
 
+export function normalizeCrmAccountDisplayName(value: unknown): string {
+  if (typeof value !== "string") throw new Error("crm_account_display_name_invalid");
+  const displayName = value.trim();
+  if (
+    !displayName
+    || [...displayName].length > 80
+    || Buffer.byteLength(displayName, "utf8") > 240
+    || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(displayName)
+  ) throw new Error("crm_account_display_name_invalid");
+  return displayName;
+}
+
 export function crmAccountEmailHash(email: string): string {
   return createHash("sha256").update(normalizeCrmAccountEmail(email)).digest("hex");
 }

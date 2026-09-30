@@ -6,6 +6,7 @@ import {
   createCrmAccountInviteRecord,
   crmAccountEmailHash,
   isCrmAccountInviteUsable,
+  normalizeCrmAccountDisplayName,
   normalizeCrmAccountEmail,
   validateCrmAccountSetupPassword,
 } from "../src/auth/crm-account-invite.js";
@@ -36,6 +37,13 @@ describe("CRM account invitations", () => {
   it("normalizes email consistently and hashes it without storing the address in the invite index", () => {
     expect(normalizeCrmAccountEmail("  Team.Member@Example.com ")).toBe("team.member@example.com");
     expect(crmAccountEmailHash("Team.Member@Example.com")).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("normalizes a member name without accepting blank, oversized, or control-character values", () => {
+    expect(normalizeCrmAccountDisplayName("  김현진  ")).toBe("김현진");
+    for (const value of ["", "   ", "이름\n가로채기", "x".repeat(81), "김".repeat(81)]) {
+      expect(() => normalizeCrmAccountDisplayName(value)).toThrow("crm_account_display_name_invalid");
+    }
   });
 
   it.each(["", "not-an-email", "x@y", "a b@example.com", `x@${"a".repeat(250)}.com`])(

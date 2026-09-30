@@ -126,7 +126,7 @@ async function cancelResponseBody(response) {
 async function readBoundedJsonResponse(response, maxBytes, errorCode = "DATABASE_ERROR", options = {}) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw createError("응답 크기 제한이 올바르지 않습니다.", errorCode);
   if (!response || typeof response.ok !== "boolean") throw createError("서버 응답을 확인할 수 없습니다.", errorCode);
-  if (!response.ok) {
+  if (!response.ok && options.allowError !== true) {
     await cancelResponseBody(response);
     const error = createError(`database request rejected (${Number(response.status) || 0})`, errorCode);
     error.status = Number(response.status) || 0;
@@ -3069,12 +3069,29 @@ class FirebaseRemoteClient {
     }
     if (!response.ok) {
       const status = Number(response.status) || 0;
-      try { await cancelResponseBody(response); } catch {}
+      let failurePayload = null;
+      try {
+        failurePayload = await readBoundedJsonResponse(response, 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED", { allowError: true });
+      } catch {
+        try { await cancelResponseBody(response); } catch {}
+      }
+      const serverCode = String(failurePayload && failurePayload.error && failurePayload.error.message || "");
       if (status === 401 || status === 403) {
         throw createError("관리자 권한을 확인해 주세요.", "ACCESS_DENIED");
       }
       if (status === 409) throw createError("이미 등록된 이메일입니다.", "ACCOUNT_SETUP_DUPLICATE");
-      if (status === 429) throw createError("요청이 많습니다. 잠시 후 다시 시도해 주세요.", "ACCOUNT_SETUP_RATE_LIMITED");
+      if (status === 429 || serverCode === "crm_account_setup_rate_limited") {
+        throw createError("요청이 많습니다. 잠시 후 다시 시도해 주세요.", "ACCOUNT_SETUP_RATE_LIMITED");
+      }
+      if (serverCode === "crm_account_email_link_not_enabled") {
+        throw createError("Firebase에서 이메일 링크 로그인이 꺼져 있습니다. 관리자에게 설정 확인을 요청해 주세요.", "ACCOUNT_SETUP_EMAIL_LINK_DISABLED");
+      }
+      if (serverCode === "crm_account_email_action_domain_invalid") {
+        throw createError("Firebase 인증 도메인 설정을 확인해 주세요.", "ACCOUNT_SETUP_EMAIL_DOMAIN_INVALID");
+      }
+      if (serverCode === "crm_account_display_name_invalid") {
+        throw createError("이름은 80자 이내로 입력해 주세요.", "ACCOUNT_SETUP_NAME_INVALID");
+      }
       throw createError("계정 관리 요청을 처리하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
     const payload = await readBoundedJsonResponse(response, 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED");

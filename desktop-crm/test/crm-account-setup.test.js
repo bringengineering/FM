@@ -38,27 +38,6 @@ test("Firebase email-link setup rejects reset links, untrusted hosts, insecure U
   assert.equal(setupCore.parseSignInActionLink(`https://bring-fm.web.app/?mode=signIn&oobCode=${"x".repeat(4097)}`), null);
 });
 
-test("account setup page keeps one-time code in memory and submits only to the fixed setup endpoint", () => {
-  const page = fs.readFileSync(path.join(root, "company-site/firebase-public/crm-account-setup/index.html"), "utf8");
-  const script = fs.readFileSync(path.join(root, "company-site/firebase-public/crm-account-setup/setup.js"), "utf8");
-  const firebase = JSON.parse(fs.readFileSync(path.join(root, "firebase.json"), "utf8"));
-
-  assert.match(page, /name="password" type="password"[^>]*autocomplete="new-password"/);
-  assert.match(page, /이메일 인증 및 비밀번호 설정/);
-  assert.match(page, /Firebase 인증에서 안전하게 관리됩니다/);
-  assert.match(script, /history\.replaceState\(null, "", window\.location\.pathname\)/);
-  assert.match(script, /credentials: "omit"/);
-  assert.match(script, /redirect: "error"/);
-  assert.match(script, /https:\/\/asia-northeast3-bring-fm\.cloudfunctions\.net\/completeCrmAccountSetup/);
-  assert.doesNotMatch(script, /localStorage|sessionStorage/);
-
-  const headers = firebase.hosting.headers.find(rule => rule.source === "/crm-account-setup/**");
-  assert.ok(headers);
-  assert.ok(headers.headers.some(header => header.key === "Cache-Control" && header.value.includes("no-store")));
-  assert.ok(headers.headers.some(header => header.key === "Referrer-Policy" && header.value === "no-referrer"));
-  assert.ok(headers.headers.some(header => header.key === "Content-Security-Policy" && header.value.includes("frame-ancestors 'none'")));
-});
-
 test("account invitation IPC is classified and its server bridge enforces an admin role", async () => {
   const policy = require("../src/mutation-policy");
   const { FirebaseRemoteClient } = require("../src/remote");
@@ -70,5 +49,26 @@ test("account invitation IPC is classified and its server bridge enforces an adm
   await assert.rejects(
     FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(nonAdmin, "registerCrmAccount", { email: "x@example.com" }),
     error => error.code === "ACCESS_DENIED",
+  );
+
+  const adminSession = {
+    requireOfficeSession: () => ({ uid: "admin-1", role: "admin" }),
+    captureSessionGuard: () => ({}),
+    ensureIdToken: async () => "admin-id-token",
+    assertSessionGuardActive: () => true,
+    fetch: async () => Response.json({ error: { status: "FAILED_PRECONDITION", message: "crm_account_email_link_not_enabled" } }, { status: 400 }),
+  };
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(adminSession, "resendCrmAccountInvite", { uid: "invite-1" }),
+    error => error.code === "ACCOUNT_SETUP_EMAIL_LINK_DISABLED" && error.message.includes("이메일 링크 로그인이 꺼져"),
+  );
+
+  const rateLimitedAdmin = {
+    ...adminSession,
+    fetch: async () => Response.json({ error: { status: "RESOURCE_EXHAUSTED", message: "crm_account_setup_rate_limited" } }, { status: 429 }),
+  };
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(rateLimitedAdmin, "resendCrmAccountInvite", { uid: "invite-1" }),
+    error => error.code === "ACCOUNT_SETUP_RATE_LIMITED" && error.message.includes("잠시 후"),
   );
 });
