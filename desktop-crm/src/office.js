@@ -520,7 +520,7 @@
     return `<section class="office-hero crm-account-hero"><div><span>ACCOUNT SETUP</span><h2>계정 등록</h2><p>이메일만 등록하면 임시 비밀번호 없이 초대 링크에서 이메일 인증과 새 비밀번호 설정을 한 번에 진행합니다.</p></div></section>
       <section class="office-panel crm-account-panel"><header><div><span>NEW MEMBER</span><h3>이메일 인증 링크 보내기</h3><p>등록된 이메일 주소로 일회용 링크를 보냅니다. 새 구성원은 링크에서 직접 비밀번호를 정합니다.</p></div></header>
         <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
-        <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 초대는 7일간 유효합니다. 메일 링크가 먼저 만료되면 목록에서 다시 보낼 수 있으며, 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
+        <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 계정 설정 요청은 7일간 대기하며, 메일 링크가 만료되면 목록에서 새 링크를 보낼 수 있습니다. 이메일 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
       </section>
       <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기 계정은 인증 링크를 다시 보낼 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
         ${state.crmAccountInviteError ? `<div class="crm-account-error" role="alert">${esc(state.crmAccountInviteError)}</div>` : ""}${accountRows}
