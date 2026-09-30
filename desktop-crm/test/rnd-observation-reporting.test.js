@@ -1,0 +1,10 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+test('observation reports keep zero distinct from missing and exclude undisclosed field records',async()=>{
+ const {createProject}=await import('../src/rnd-control/portfolio.mjs'),{applyResearch}=await import('../src/rnd-control/research.mjs'),{summarizePortfolio}=await import('../src/rnd-control/portfolio-summary.mjs'),{indexProjects,searchPage}=await import('../src/rnd-control/search.mjs'),{buildRndExport}=await import('../src/rnd-control/export.mjs');
+ let p={...createProject('p','Pilot'),research:{experiments:[{id:'exp',status:'running',planVersion:1,plan:{id:'exp',hypothesis:'H2'},authorUid:'u'}]}};
+ for(const status of ['OBSERVED','MISSING','NOT_INSPECTED','UNOBSERVABLE'])p=applyResearch(p,{type:'observation',observation:{id:'o-'+status,experimentId:'exp',unitId:'building-1',name:'Temperature',unit:'C',status,value:status==='OBSERVED'?0:null,reason:'Field visit',observedAt:'2026-09-16T00:00:00.000Z'}},{uid:'u',role:'member'});
+ const s=summarizePortfolio([p]);assert.equal(s.observationsObserved,1);assert.equal(s.observationsMissing,1);assert.equal(s.observationsNotInspected,1);assert.equal(s.observationsUnobservable,1);
+ assert.equal(searchPage(indexProjects([p]),{type:'관측',query:'OBSERVED 0'}).total,1);const missing=searchPage(indexProjects([p]),{type:'관측',query:'MISSING'});assert.equal(missing.total,1);assert.match(missing.rows[0].label,/값 없음/);assert.ok(!missing.rows[0].label.includes('0 C'));
+ const internal=buildRndExport(p);assert.equal(internal.manifest.includedObservations.length,4);assert.match(internal.files['observations/o-OBSERVED.md'],/0 C/);assert.match(internal.files['observations/o-MISSING.md'],/값 없음/);
+ const review=buildRndExport(p,{mode:'review'});assert.deepEqual(review.manifest.includedObservations,[]);assert.ok(!Object.keys(review.files).some(f=>f.startsWith('observations/')));assert.equal(review.manifest.excluded.filter(e=>e.reason==='OBSERVATION_DISCLOSURE_UNCONFIRMED').length,4);
+});

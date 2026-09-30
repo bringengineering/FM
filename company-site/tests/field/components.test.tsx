@@ -1172,13 +1172,14 @@ describe("BuildingWizard", () => {
 
   it("claims local autosave completion only after the storage write succeeds", async () => {
     const originalSetItem = Storage.prototype.setItem;
+    const draftKey = wizardDraftStorageKey(staffSession.uid, "autosave-write-order");
     const statusAtWrite: string[] = [];
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
       this: Storage,
       key,
       value,
     ) {
-      statusAtWrite.push(
+      if (key === draftKey) statusAtWrite.push(
         screen.queryByText("로컬 자동저장 완료") ? "complete" : "pending",
       );
       return originalSetItem.call(this, key, value);
@@ -1196,8 +1197,15 @@ describe("BuildingWizard", () => {
   });
 
   it("reports local autosave failure without claiming completion", async () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+    const originalSetItem = Storage.prototype.setItem;
+    const draftKey = wizardDraftStorageKey(staffSession.uid, "autosave-write-failure");
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (key === draftKey) throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+      return originalSetItem.call(this, key, value);
     });
 
     try {
@@ -1205,6 +1213,7 @@ describe("BuildingWizard", () => {
 
       expect(screen.queryByText("로컬 자동저장 완료")).not.toBeInTheDocument();
       expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
+      expect(setItem).toHaveBeenCalledWith(draftKey, expect.any(String));
     } finally {
       setItem.mockRestore();
     }

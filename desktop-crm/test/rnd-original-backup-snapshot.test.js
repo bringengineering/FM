@@ -1,0 +1,11 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+function response(value,etag='v1'){const bytes=Buffer.from(JSON.stringify(value));let done=false;return{ok:true,headers:{get:name=>name==='etag'?etag:null},body:{getReader:()=>({read:async()=>done?{done:true}:(done=true,{done:false,value:bytes}),cancel:async()=>{},releaseLock:()=>{}})}};}
+test('backup snapshot reader uses fixed read-only bounded endpoint and current administrator',async()=>{
+ const {createOriginalBackupSnapshotReader}=require('../src/rnd-control/original-backup-snapshot');let request;
+ const source={projects:{p:{id:'p'}}};const read=createOriginalBackupSnapshotReader({access:async()=>({uid:'u',email:'u@example.test',role:'admin'}),captureSession:()=>1,isCurrent:()=>true,token:async()=>'fixture-secret',databaseUrl:'https://test.invalid',fetch:async(url,options)=>{request={url,options};return response(source);}});
+ const result=await read();assert.deepEqual(result.value,source);assert.equal(result.etag,'v1');assert.equal(result.actorUid,'u');assert.match(result.contentSHA256,/^[a-f0-9]{64}$/);assert.equal(result.token,undefined);assert.equal(request.url,'https://test.invalid/rndControl.json?auth=fixture-secret');assert.equal(request.options.method,'GET');assert.equal(request.options.redirect,'error');assert.equal(request.options.headers['X-Firebase-ETag'],'true');
+});
+test('backup snapshot reader refuses unauthorized, changed session, oversized and unversioned responses',async()=>{
+ const {createOriginalBackupSnapshotReader}=require('../src/rnd-control/original-backup-snapshot');
+ for(const mode of ['member','session','oversized','no-etag','non-stream']){let generation=1,calls=0;const read=createOriginalBackupSnapshotReader({access:async()=>({uid:'u',email:'u@example.test',role:mode==='member'?'member':'admin'}),captureSession:()=>generation,isCurrent:g=>g===generation,token:async()=>{if(mode==='session')generation++;return'token';},databaseUrl:'https://test.invalid',fetch:async()=>{calls++;const value=response({projects:{}},mode==='no-etag'?null:'v1');if(mode==='oversized')value.headers.get=name=>name==='content-length'?String(20*1024*1024+1):'v1';if(mode==='non-stream')delete value.body;return value;}});await assert.rejects(()=>read());if(['member','session'].includes(mode))assert.equal(calls,0);}
+});

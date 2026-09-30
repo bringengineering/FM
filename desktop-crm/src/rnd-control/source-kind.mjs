@@ -1,0 +1,1 @@
+export function sourceKind(url){let u;try{u=new URL(url);}catch{return '원출처 링크 미확인';}if(u.hostname==='docs.google.com'&&/^\/(document|spreadsheets|presentation)\//.test(u.pathname))return '가변 Google 문서 링크 · 버전 이름만으로 고정 스냅샷을 입증하지 않습니다';if(u.hostname==='drive.google.com')return 'Drive 파일 링크 · 회사 보관권한·원본 버전·내용은 별도 검증';return '외부 출처 링크 · 내용 고정 여부 별도 검토';}

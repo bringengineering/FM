@@ -1,0 +1,4 @@
+const test=require('node:test'),assert=require('node:assert/strict'),{createHash}=require('node:crypto');
+test('last asynchronous access cannot return mapping after private session clear',async()=>{
+ const {createOriginalRestoreSessions}=require('../src/rnd-control/original-restore-sessions');let checks=0,store;const actor={uid:'u',email:'u@test',role:'admin'},value={};store=createOriginalRestoreSessions({access:async()=>{if(++checks===4)store.clear();return actor;},isCurrent:()=>true,readSnapshot:async()=>({value,etag:'e',emptyRoot:false}),map:()=>({canApply:false})});store.add({preview:{previewId:'p',sharedETag:'e',sharedEmptyRoot:false,sharedRootSHA256:createHash('sha256').update(JSON.stringify(value)).digest('hex')},actor,binding:1,currentIds:{projects:[],visits:[],importJobs:[]}});await assert.rejects(()=>store.mapping({previewId:'p',targets:{}}),/만료/);assert.equal(checks,4);
+});

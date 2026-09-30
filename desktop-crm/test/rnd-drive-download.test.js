@@ -1,0 +1,19 @@
+const test=require('node:test'),assert=require('node:assert/strict'),{createHash}=require('node:crypto');
+const {createRndDrive,COMPANY}=require('../src/rnd-control/drive');
+function fixture(){const bytes=Buffer.from([0,255,128,13]),sha256=createHash('sha256').update(bytes).digest('hex'),ref={projectId:'p',artifactId:'a',versionId:'v',providerFileId:'f',sha256};let media=0,cancel=0,changed=false,clear=false,service;
+ service=createRndDrive({rootFolderId:'root',auth:()=>({user:{uid:'u',email:'u@example.test',role:'member'}}),fetch:async url=>{
+  if(url.includes('userinfo'))return{ok:true,json:async()=>({email:COMPANY,email_verified:true})};
+  if(url.includes('/files/root?'))return{ok:true,json:async()=>({id:'root',mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},owners:[{emailAddress:COMPANY}]})};
+  if(url.includes('alt=media')){media++;let index=0;return{ok:true,body:{getReader:()=>({read:async()=>{if(clear)service.clear();if(index++===0)return{done:false,value:changed?Buffer.from('wrong'):bytes.subarray(0,2)};if(index===2)return{done:false,value:bytes.subarray(2)};return{done:true};},cancel:async()=>{cancel++;}})}};}
+  return{ok:true,json:async()=>({id:'f',name:'v__측정.csv',size:bytes.length,parents:['root'],mimeType:'application/octet-stream',owners:[{emailAddress:COMPANY}],appProperties:{projectId:'p',artifactId:'a',rndVersion:'v',sha256}})};
+ }});return{service,ref,bytes,counts:()=>({media,cancel}),tamper:()=>changed=true,clearDuringRead:()=>clear=true};}
+test('trusted Drive download returns only verified original bytes plus metadata',async()=>{const f=fixture();await f.service.connect('fixture-token');const result=await f.service.downloadVersion(f.ref);assert.deepEqual(result.bytes,f.bytes);assert.equal(result.reference.projectId,f.ref.projectId);assert.equal(result.reference.sha256,f.ref.sha256);assert.equal(result.reference.providerFileId,'f');assert.equal(result.fileName,'측정.csv');assert.equal(result.mimeType,'application/octet-stream');assert.equal(result.token,undefined);assert.equal(result.reference.token,undefined);assert.deepEqual(f.counts(),{media:1,cancel:1});const metadata=await f.service.verifyVersion(f.ref);assert.equal(metadata.bytes,undefined);});
+test('Drive original download rejects hash mismatch and clears reader on session change',async()=>{for(const mode of ['tamper','clearDuringRead']){const f=fixture();await f.service.connect('fixture-token');f[mode]();await assert.rejects(()=>f.service.downloadVersion(f.ref));assert.equal(f.counts().cancel,1);}});
+test('Drive original download enforces trusted remaining budget before media request',async()=>{const f=fixture();await f.service.connect('fixture-token');await assert.rejects(()=>f.service.downloadVersion(f.ref,{maxBytes:1}));for(const maxBytes of [-1,NaN,100*1024*1024+1])await assert.rejects(()=>f.service.downloadVersion(f.ref,{maxBytes}));assert.equal(f.counts().media,0);});
+test('actual Drive adapter and original package builder preserve binary bytes end to end with HTTP fixtures',async()=>{
+ const {buildOriginalBackup}=require('../src/rnd-control/original-backup');const f=fixture();await f.service.connect('fixture-token');
+ const result=await buildOriginalBackup({projects:[{id:'p',refs:[{...f.ref,sizeBytes:f.bytes.length}]}],visits:[],importJobs:[]},{check:async()=>{},download:(ref,options)=>f.service.downloadVersion(ref,options)});
+ const archive=result.bytes;let offset=0,found=false;
+ while(archive.readUInt32LE(offset)===0x04034b50){const nameLength=archive.readUInt16LE(offset+26),size=archive.readUInt32LE(offset+18),name=archive.subarray(offset+30,offset+30+nameLength).toString(),start=offset+30+nameLength;if(name==='originals/f.bin'){assert.deepEqual(archive.subarray(start,start+size),f.bytes);found=true;}offset=start+size;}
+ assert.equal(found,true);assert.equal(result.manifest.files[0].sha256,f.ref.sha256);assert.equal(result.manifest.fullBackup,false);
+});

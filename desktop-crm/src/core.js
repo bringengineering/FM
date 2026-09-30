@@ -153,7 +153,19 @@
         const field = String(path || "").split(/[.\[]/).pop().replace(/\]$/, "").replace(/[^0-9a-zㄱ-힣]/gi, "");
         const normalizedValue = node.trim();
         const fieldCredential = SECRET_FIELD.test(field) && normalizedValue.length >= 4 && !/^\*+$/.test(normalizedValue);
-        const type = prohibitedSecretType(node) || (fieldCredential ? "credential" : "");
+        if (/^snapshotjson$/i.test(field)) {
+          let parsed;
+          try { parsed = JSON.parse(node); } catch {}
+          if (parsed && typeof parsed === "object") {
+            visit(parsed, path);
+            const withoutHashValues = node.replace(/("(?:sha256|manifestHash|baselineManifestHash|resultManifestHash|archiveSHA256|visitsSHA256)"\s*:\s*)"[0-9a-f]{64}"/gi, '$1"[hash]"');
+            const type = RESIDENT_REGISTRATION_NUMBER.test(withoutHashValues.normalize("NFKC")) ? "resident-registration-number" : SECRET_VALUE.test(node.normalize("NFKC")) ? "credential" : "";
+            if (type) findings.push({ path: path || "$", type });
+            return;
+          }
+        }
+        const structuredHash = /^(?:sha256|manifesthash|baselinemanifesthash|resultmanifesthash|archivesha256|visitssha256)$/i.test(field) && /^[0-9a-f]{64}$/i.test(node);
+        const type = (structuredHash ? (SECRET_VALUE.test(node) ? "credential" : "") : prohibitedSecretType(node)) || (fieldCredential ? "credential" : "");
         if (type) findings.push({ path: path || "$", type });
         return;
       }
