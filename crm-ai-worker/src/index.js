@@ -9,7 +9,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-01-gemini-redirect-v1";
+const SERVICE_VERSION = "2026-10-01-monthly-photo-recovery-v1";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -35,6 +35,8 @@ const ERROR_STATUS = Object.freeze({
   AI_DISABLED: 503,
   AI_TEMPORARY_FAILURE: 503,
   AI_INVALID_RESPONSE: 502,
+  AI_RESPONSE_INCOMPLETE: 502,
+  AI_CONTENT_BLOCKED: 422,
   AI_CONFIGURATION_ERROR: 503,
   GEMINI_NOT_CONFIGURED: 503,
   CONTRACT_DRIVE_UNAVAILABLE: 503,
@@ -400,7 +402,7 @@ export function createWorker(options = {}) {
         }
         if (url.pathname === MONTHLY_REPORT_PHOTO_SELECT_PATH) {
           const payload = await readMonthlyReportPhotoSelectionPayload(request);
-          const selection = await selectMonthlyReportPhotos(payload, env, fetchImpl, Math.max(timeoutMs, 45_000));
+          const selection = await selectMonthlyReportPhotos(payload, env, fetchImpl, Math.max(timeoutMs, 75_000));
           return json({
             ok: true,
             requestId: requestId(),

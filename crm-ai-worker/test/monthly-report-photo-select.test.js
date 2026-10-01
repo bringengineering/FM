@@ -32,7 +32,7 @@ test("Gemini 응답은 요청된 ID만 최대 12장 선택하고 키는 헤더�
   let captured;
   const result = await selectMonthlyReportPhotos(payload, { GEMINI_API_KEY: "test-secret", GEMINI_VISION_MODEL: "gemini-3.8-flash" }, async (url, options) => {
     captured = { url: String(url), options, body: JSON.parse(options.body) };
-    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ selected: [{ id: "photo_1", caption: "에어컨 필터 상태", reason: "업무 내용과 일치" }, { id: "unknown", caption: "임의 사진", reason: "" }] }) }] } }] });
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", caption: "에어컨 필터 상태", reason: "업무 내용과 일치" }] }) }] } }] });
   });
   assert.equal(result.selected.length, 1);
   assert.equal(result.selected[0].id, "photo_1");
@@ -41,6 +41,10 @@ test("Gemini 응답은 요청된 ID만 최대 12장 선택하고 키는 헤더�
   assert.equal(captured.options.redirect, "manual");
   assert.ok(!captured.url.includes("test-secret"));
   assert.equal(captured.body.contents[0].parts.filter(part => part.inline_data).length, 1);
+  assert.deepEqual(captured.body.generationConfig.responseJsonSchema.properties.selected.items.properties.id.enum, ["p1"]);
+  assert.equal(captured.body.generationConfig.maxOutputTokens, 8192);
+  assert.equal(captured.body.generationConfig.thinkingConfig.thinkingLevel, "LOW");
+  assert.ok(!JSON.stringify(captured.body).includes('photo_1'));
   assert.doesNotMatch(JSON.stringify(captured.body), /drive\.google\.com|@gmail\.com|010-\d/u);
 });
 
@@ -65,7 +69,7 @@ test("월간 사진 선택 route는 인증 후 Gemini를 부르고 API 키가 �
     fetchImpl: async (url, options = {}) => {
       calls.push({ url: String(url), options });
       if (String(url).includes("accounts:lookup")) return Response.json({ users: [{ localId: "u1", email: "worker@example.com", emailVerified: true }] });
-      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ selected: [{ id: "photo_1", caption: "후드 필터 청소", reason: "정기 점검 업무와 일치" }] }) }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 8 } });
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", caption: "후드 필터 청소", reason: "정기 점검 업무와 일치" }] }) }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 8 } });
     },
   });
   const env = {

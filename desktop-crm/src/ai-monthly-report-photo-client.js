@@ -2,6 +2,7 @@
 
 const MAX_IMAGES = 24;
 const MAX_IMAGE_BYTES = 120 * 1024;
+const MAX_RESPONSE_BYTES = 64 * 1024;
 const AI_GATEWAY_HOST = "bring-crm-ai-gateway.bringengineering1008.workers.dev";
 
 function codedError(code) {
@@ -14,9 +15,12 @@ function codedError(code) {
     AI_DISABLED: "회사 AI 기능이 현재 꺼져 있습니다.",
     AI_TEMPORARY_FAILURE: "Gemini 사진 선택을 일시적으로 완료하지 못했습니다.",
     AI_INVALID_RESPONSE: "Gemini 사진 선택 결과를 안전하게 확인할 수 없습니다.",
+    AI_RESPONSE_INCOMPLETE: "사진을 나눠 다시 검토했지만 AI 응답이 끝까지 도착하지 않았습니다. 기존 초안은 유지됩니다. 잠시 후 다시 시도해 주세요.",
+    AI_CONTENT_BLOCKED: "일부 사진을 AI 안전 정책에 따라 검토할 수 없습니다. 사진을 확인해 주세요. 기존 초안은 유지됩니다.",
     GEMINI_NOT_CONFIGURED: "Gemini 사진 선택 API 키가 AI Worker에 설정되지 않았습니다.",
   };
-  return Object.assign(new Error(messages[code] || messages.AI_TEMPORARY_FAILURE), { code });
+  const knownCode = Object.hasOwn(messages, code) ? code : "AI_TEMPORARY_FAILURE";
+  return Object.assign(new Error(messages[knownCode]), { code: knownCode });
 }
 
 function validImage(value) {
@@ -61,33 +65,62 @@ function validDayInMonth(value, month) {
 }
 
 function normalizeResponse(value, expectedIds) {
-  if (!value || value.ok !== true || !Array.isArray(value.selected)) throw codedError("AI_INVALID_RESPONSE");
+  if (!value || value.ok !== true || !Array.isArray(value.selected)
+    || value.selected.length > Math.min(12, expectedIds.length)) throw codedError("AI_INVALID_RESPONSE");
   const expected = new Set(expectedIds);
   const seen = new Set();
   const selected = [];
   value.selected.forEach(row => {
+    if (!row || typeof row !== "object" || Array.isArray(row)
+      || typeof row.id !== "string" || typeof row.caption !== "string" || !row.caption.trim()
+      || typeof row.reason !== "string") throw codedError("AI_INVALID_RESPONSE");
     const id = String(row && row.id || "");
     if (!expected.has(id) || seen.has(id)) throw codedError("AI_INVALID_RESPONSE");
     seen.add(id);
     selected.push({ id, caption: String(row.caption || "").replace(/[\r\n]+/gu, " ").trim().slice(0, 140), reason: String(row.reason || "").replace(/[\r\n]+/gu, " ").trim().slice(0, 140) });
   });
-  return { ok: true, requestId: String(value.requestId || "").slice(0, 120), selected, warnings: Array.isArray(value.warnings) ? value.warnings.filter(item => typeof item === "string").slice(0, 5) : [] };
+  return { ok: true, requestId: String(value.requestId || "").slice(0, 120), selected, warnings: Array.isArray(value.warnings) ? value.warnings.filter(item => typeof item === "string").slice(0, 5).map(item => item.slice(0, 240)) : [] };
+}
+
+async function readResponse(response) {
+  if (Number(response.headers.get("content-length") || 0) > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => {});
+    throw codedError("AI_INVALID_RESPONSE");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw codedError("AI_INVALID_RESPONSE");
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) throw codedError("AI_INVALID_RESPONSE");
+      text += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode());
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    if (error?.name === "AbortError" || error?.name === "TimeoutError") throw codedError("AI_TEMPORARY_FAILURE");
+    throw codedError("AI_INVALID_RESPONSE");
+  } finally { reader.releaseLock(); }
 }
 
 async function selectMonthlyReportPhotosWithGateway(options) {
   let url;
   try { url = new URL(String(options && options.endpoint || "")); }
   catch { throw codedError("AI_TEMPORARY_FAILURE"); }
-  if (url.protocol !== "https:" || url.hostname !== AI_GATEWAY_HOST || url.username || url.password
+  if (url.protocol !== "https:" || url.hostname !== AI_GATEWAY_HOST || url.port || url.username || url.password
     || url.search || url.hash || url.pathname !== "/v1/monthly-report-photo-select") throw codedError("AI_TEMPORARY_FAILURE");
   const idToken = String(options && options.idToken || "").trim();
   if (!idToken) throw codedError("AUTH_REQUIRED");
   const input = validateInput(options && options.input);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(options && options.timeoutMs || 90_000));
-  let response;
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(90_000, Number(options && options.timeoutMs) || 90_000)));
   try {
-    response = await (options.fetchImpl || globalThis.fetch)(url.href, {
+    const response = await (options.fetchImpl || globalThis.fetch)(url.href, {
       method: "POST",
       headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
       body: JSON.stringify(input),
@@ -95,16 +128,16 @@ async function selectMonthlyReportPhotosWithGateway(options) {
       redirect: "error",
       signal: controller.signal,
     });
-  } catch { throw codedError("AI_TEMPORARY_FAILURE"); }
-  finally { clearTimeout(timeout); }
-  let value;
-  try { value = await response.json(); }
-  catch { throw codedError("AI_INVALID_RESPONSE"); }
-  if (!response.ok || value?.ok !== true) {
-    const known = ["AUTH_REQUIRED", "FORBIDDEN", "INVALID_INPUT", "INPUT_TOO_LARGE", "RATE_LIMITED", "AI_DISABLED", "AI_TEMPORARY_FAILURE", "AI_INVALID_RESPONSE", "GEMINI_NOT_CONFIGURED"];
-    throw codedError(known.includes(value?.code) ? value.code : "AI_TEMPORARY_FAILURE");
-  }
-  return normalizeResponse(value, input.images.map(image => image.id));
+    // Keep the timeout active through body consumption, not only HTTP headers.
+    const value = await readResponse(response);
+    if (!response.ok || value?.ok !== true) {
+      const known = ["AUTH_REQUIRED", "FORBIDDEN", "INVALID_INPUT", "INPUT_TOO_LARGE", "RATE_LIMITED", "AI_DISABLED", "AI_TEMPORARY_FAILURE", "AI_INVALID_RESPONSE", "AI_RESPONSE_INCOMPLETE", "AI_CONTENT_BLOCKED", "GEMINI_NOT_CONFIGURED"];
+      throw codedError(known.includes(value?.code) ? value.code : "AI_TEMPORARY_FAILURE");
+    }
+    return normalizeResponse(value, input.images.map(image => image.id));
+  } catch (error) {
+    throw codedError(error?.code);
+  } finally { clearTimeout(timeout); }
 }
 
 module.exports = Object.freeze({ MAX_IMAGES, MAX_IMAGE_BYTES, validateInput, normalizeResponse, selectMonthlyReportPhotosWithGateway });
