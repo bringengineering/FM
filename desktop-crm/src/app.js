@@ -193,6 +193,7 @@
       targetManagerOpen: false, targetSavingId: "", kakaoSending: false, kakaoResult: null,
       photoPickerSpace: "my", photoPickerPath: [{ id: "root", name: "내 드라이브" }], photoPickerEntries: [],
       photoPickerLoading: false, photoPickerError: "", photoPickerQuery: "", photoSelectBusy: false, photoError: "", driveConnectBusy: false,
+      driveConnectError: null, driveConnectHelpOpen: false,
       ...patch,
     };
   }
@@ -3588,6 +3589,30 @@
     }
   }
 
+  const DRIVE_CONNECT_ERROR_COPY = Object.freeze({
+    DRIVE_RECONNECT_REQUIRED: "Google Drive 권한이 만료되었거나 취소됐습니다. 다시 연결해 주세요.",
+    DRIVE_OAUTH_CLIENT_INVALID: "회사 Drive 인증 설정을 확인해야 합니다. 보고서나 사진 폴더 문제가 아닙니다.",
+    DRIVE_OAUTH_CLIENT_UNAUTHORIZED: "Google에서 CRM의 Drive 연결을 허용하지 않았습니다. 앱 권한 설정을 확인해야 합니다.",
+    DRIVE_OAUTH_SCOPE_INVALID: "Google Drive 접근 권한 설정을 확인해야 합니다.",
+    DRIVE_OAUTH_REQUEST_INVALID: "Google 인증 요청 설정을 확인해야 합니다.",
+    DRIVE_OAUTH_TEMPORARY_FAILURE: "Google 인증 서버가 일시적으로 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
+    DRIVE_OAUTH_REJECTED: "Google 인증 단계에서 연결을 완료하지 못했습니다.",
+    DRIVE_CONNECT_CANCELLED: "Drive 연결을 취소했습니다.",
+    DRIVE_CONNECT_TIMEOUT: "Drive 연결 시간이 초과됐습니다. 다시 시도해 주세요.",
+    DRIVE_CONNECT_FAILED: "Google Drive 연결을 완료하지 못했습니다. 다시 시도해 주세요.",
+  });
+
+  function buildingMonthlyDriveConnectFailure(error) {
+    const rawMessage = String(error && error.message || "");
+    const taggedCode = rawMessage.match(/\[CRM_DRIVE_ERROR=([A-Z0-9_]+)\]/u);
+    let code = taggedCode && taggedCode[1] || "";
+    if (!code && (/DRIVE_CONNECT_CANCELLED|Drive 연결이 취소/u.test(rawMessage))) code = "DRIVE_CONNECT_CANCELLED";
+    if (!code && (/DRIVE_CONNECT_TIMEOUT|시간이 초과/u.test(rawMessage))) code = "DRIVE_CONNECT_TIMEOUT";
+    if (!code && (/DRIVE_RECONNECT_REQUIRED|권한을 다시 연결/u.test(rawMessage))) code = "DRIVE_RECONNECT_REQUIRED";
+    if (!Object.prototype.hasOwnProperty.call(DRIVE_CONNECT_ERROR_COPY, code)) code = "DRIVE_CONNECT_FAILED";
+    return { code, message: DRIVE_CONNECT_ERROR_COPY[code] };
+  }
+
   async function connectBuildingMonthlyDrive() {
     const state = buildingMonthlyReportState;
     if (state.driveConnectBusy) return;
@@ -3605,6 +3630,8 @@
       && currentView === "buildingMonthlyReports";
     state.driveConnectBusy = true;
     state.photoError = "";
+    state.driveConnectError = null;
+    state.driveConnectHelpOpen = false;
     renderBuildingMonthlyReports();
     try {
       if (!driveState.loaded) {
@@ -3621,11 +3648,12 @@
       if (!driveState.connected) throw new Error("회사 Drive 연결을 확인하지 못했습니다.");
       if (!reportIsCurrent()) return;
       state.photoError = "";
+      state.driveConnectError = null;
       showToast("회사 Drive 에 연결했습니다.", "success");
       await openBuildingMonthlyPhotoPicker();
     } catch (error) {
       if (sessionIsCurrent() && reportIsCurrent()) {
-        state.photoError = error && error.message || "회사 Drive 에 연결하지 못했습니다.";
+        state.driveConnectError = buildingMonthlyDriveConnectFailure(error);
       }
     } finally {
       if (state === buildingMonthlyReportState) state.driveConnectBusy = false;
@@ -3826,9 +3854,13 @@
     const photoPicker = buildingMonthlyPhotoPickerMarkup();
     const monthlyDriveConnected = driveState.loaded && driveState.connected;
     const monthlyDriveStatusLoading = !driveState.loaded || buildingMonthlyDriveStatusLoading;
+    const driveConnectError = buildingMonthlyReportState.driveConnectError;
+    const driveConnectErrorMarkup = driveConnectError
+      ? `<div class="building-monthly-drive-connect-error" role="alert"><div class="building-monthly-drive-connect-error-title"><span aria-hidden="true">!</span><b>Drive 연결을 완료하지 못했습니다</b></div><p>${esc(driveConnectError.message)}</p><small>건물 월간보고서 내용이나 사진 폴더가 아니라 Google 인증 단계의 문제입니다.</small><div class="building-monthly-drive-connect-error-actions"><button type="button" class="secondary-button" data-building-monthly-drive-error-retry ${!canWriteCRM() || buildingMonthlyReportState.driveConnectBusy ? "disabled" : ""}>다시 연결</button><button type="button" class="secondary-button" data-building-monthly-drive-error-help aria-expanded="${buildingMonthlyReportState.driveConnectHelpOpen ? "true" : "false"}">${buildingMonthlyReportState.driveConnectHelpOpen ? "안내 닫기" : "안내 보기"}</button></div>${buildingMonthlyReportState.driveConnectHelpOpen ? `<div class="building-monthly-drive-connect-error-help">민감한 Google 응답은 표시하지 않고 안전한 오류 유형만 확인합니다.<br><b>오류 유형: ${esc(driveConnectError.code)}</b></div>` : ""}</div>`
+      : "";
     const monthlyDriveStatus = monthlyDriveConnected
-      ? `<div class="building-monthly-drive-status is-connected" role="status"><b>회사 Drive 연결됨</b><small>${esc(driveState.email || "회사 계정")} · 사진 폴더를 찾아 선택할 수 있습니다.</small></div>`
-      : `<div class="building-monthly-drive-status" role="status"><b>${monthlyDriveStatusLoading ? "Drive 연결 상태 확인 중" : "회사 Drive 연결이 필요합니다"}</b><small>${monthlyDriveStatusLoading ? "연결 상태를 확인하고 있습니다." : canWriteCRM() ? "연결하면 이 화면에서 바로 사진 폴더를 선택할 수 있습니다." : "쓰기 권한 계정에서 Drive 연결을 진행해 주세요."}</small></div>`;
+      ? `<div class="building-monthly-drive-status is-connected" role="status"><b>회사 Drive 연결됨</b><small>${esc(driveState.email || "회사 계정")} · 사진 폴더를 찾아 선택할 수 있습니다.</small></div>${driveConnectErrorMarkup}`
+      : `<div class="building-monthly-drive-status" role="status"><b>${monthlyDriveStatusLoading ? "Drive 연결 상태 확인 중" : "회사 Drive 연결이 필요합니다"}</b><small>${monthlyDriveStatusLoading ? "연결 상태를 확인하고 있습니다." : canWriteCRM() ? "연결하면 이 화면에서 바로 사진 폴더를 선택할 수 있습니다." : "쓰기 권한 계정에서 Drive 연결을 진행해 주세요."}</small></div>${driveConnectErrorMarkup}`;
     const monthlyDriveAction = monthlyDriveConnected
       ? `<button type="button" class="secondary-button" data-building-monthly-drive-open ${buildingMonthlyReportState.driveConnectBusy || buildingMonthlyReportState.photoPickerLoading ? "disabled" : ""}>Drive 사진 찾기</button>`
       : `<button type="button" class="secondary-button" data-building-monthly-drive-connect ${!canWriteCRM() || monthlyDriveStatusLoading || buildingMonthlyReportState.driveConnectBusy ? "disabled" : ""}>${buildingMonthlyReportState.driveConnectBusy ? "Drive 연결 중…" : driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button>`;
@@ -3976,6 +4008,11 @@
       renderBuildingMonthlyReports();
     }));
     main.querySelector("[data-building-monthly-drive-connect]")?.addEventListener("click", connectBuildingMonthlyDrive);
+    main.querySelector("[data-building-monthly-drive-error-retry]")?.addEventListener("click", connectBuildingMonthlyDrive);
+    main.querySelector("[data-building-monthly-drive-error-help]")?.addEventListener("click", () => {
+      buildingMonthlyReportState.driveConnectHelpOpen = !buildingMonthlyReportState.driveConnectHelpOpen;
+      renderBuildingMonthlyReports();
+    });
     main.querySelector("[data-building-monthly-drive-open]")?.addEventListener("click", openBuildingMonthlyPhotoPicker);
     main.querySelector("[data-building-monthly-photos-select]")?.addEventListener("click", selectBuildingMonthlyPhotoCandidates);
     main.querySelector("[data-building-monthly-drive-close]")?.addEventListener("click", () => {

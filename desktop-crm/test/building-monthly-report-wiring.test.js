@@ -72,7 +72,13 @@ test("월간보고서에서 Drive 상태를 안내하고 바로 연결한 뒤 �
   assert.match(connect, /reportIsCurrent/u);
   assert.match(connect, /authGeneration/u);
   assert.match(connect, /currentAuthUid\(\)/u);
+  assert.match(connect, /buildingMonthlyDriveConnectFailure\(error\)/u);
+  assert.match(view, /building-monthly-drive-connect-error-title/u);
+  assert.match(view, /data-building-monthly-drive-error-retry/u);
+  assert.match(view, /data-building-monthly-drive-error-help/u);
+  assert.match(view, /오류 유형:/u);
   assert.match(css, /\.building-monthly-drive-status\.is-connected/u);
+  assert.match(css, /\.building-monthly-drive-connect-error/u);
 });
 
 test("캘린더 업무 제외는 원본 일정을 유지하면서 초안·집계·PDF에 적용한다", () => {

@@ -10,6 +10,15 @@ const AUTH_TIMEOUT_MS = 3 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 30 * 1000;
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{6,300}\.apps\.googleusercontent\.com$/u;
 const BRING_FM_PROJECT_NUMBER = "864976295990";
+const GOOGLE_TOKEN_FAILURES = Object.freeze({
+  invalid_grant: Object.freeze({ code: "DRIVE_RECONNECT_REQUIRED", message: "Google Drive 권한이 만료되었거나 취소되었습니다. 다시 연결해 주세요." }),
+  invalid_client: Object.freeze({ code: "DRIVE_OAUTH_CLIENT_INVALID", message: "회사 Drive 인증 설정이 올바르지 않습니다. 관리자 확인이 필요합니다." }),
+  unauthorized_client: Object.freeze({ code: "DRIVE_OAUTH_CLIENT_UNAUTHORIZED", message: "이 CRM의 Google Drive 연결이 허용되지 않았습니다. 앱 권한 설정 확인이 필요합니다." }),
+  invalid_scope: Object.freeze({ code: "DRIVE_OAUTH_SCOPE_INVALID", message: "요청한 Google Drive 권한이 허용되지 않았습니다. 앱 권한 설정 확인이 필요합니다." }),
+  invalid_request: Object.freeze({ code: "DRIVE_OAUTH_REQUEST_INVALID", message: "Google 인증 요청 설정에 문제가 있습니다. 관리자 확인이 필요합니다." }),
+  server_error: Object.freeze({ code: "DRIVE_OAUTH_TEMPORARY_FAILURE", message: "Google 인증 서버가 일시적으로 응답하지 않았습니다. 잠시 후 다시 시도해 주세요." }),
+  temporarily_unavailable: Object.freeze({ code: "DRIVE_OAUTH_TEMPORARY_FAILURE", message: "Google 인증 서버가 일시적으로 응답하지 않았습니다. 잠시 후 다시 시도해 주세요." }),
+});
 
 function createError(message, code, cause) {
   const error = new Error(message);
@@ -32,6 +41,14 @@ function normalizeClientId(value) {
 function normalizeBringFmClientId(value) {
   const clientId = normalizeClientId(value);
   return clientId.startsWith(`${BRING_FM_PROJECT_NUMBER}-`) ? clientId : "";
+}
+
+function classifyGoogleTokenFailure(value) {
+  const key = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return GOOGLE_TOKEN_FAILURES[key] || Object.freeze({
+    code: "DRIVE_OAUTH_REJECTED",
+    message: "Google 인증 단계에서 연결을 완료하지 못했습니다.",
+  });
 }
 
 function createPkcePair(randomBytes = crypto.randomBytes) {
@@ -106,11 +123,10 @@ async function requestJson(fetchImpl, url, options, requestCode) {
     }
     const payload = await readBoundedJson(response);
     if (!response.ok) {
-      const oauthError = String(payload.error || "");
-      if (oauthError === "invalid_grant") {
-        throw createError("Google Drive 권한을 다시 연결해 주세요.", "DRIVE_RECONNECT_REQUIRED");
-      }
-      throw createError("Google 인증 요청을 완료하지 못했습니다.", requestCode);
+      const failure = classifyGoogleTokenFailure(payload.error);
+      // Keep Google's free-form error_description private. Only a stable, safe
+      // code crosses IPC so the renderer can show an actionable explanation.
+      throw createError(`${failure.message} [CRM_DRIVE_ERROR=${failure.code}]`, failure.code || requestCode);
     }
     return payload;
   } finally {
@@ -302,6 +318,7 @@ module.exports = {
   DRIVE_SCOPE,
   authorizeDrive,
   buildAuthorizationUrl,
+  classifyGoogleTokenFailure,
   createPkcePair,
   exchangeAuthorizationCode,
   loadAccountEmail,

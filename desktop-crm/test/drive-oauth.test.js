@@ -76,6 +76,39 @@ test("revoked refresh credentials require an explicit reconnect", async () => {
   }), error => error && error.code === "DRIVE_RECONNECT_REQUIRED");
 });
 
+test("Google OAuth failures are reduced to safe, actionable codes without provider descriptions", async () => {
+  const cases = [
+    ["invalid_client", "DRIVE_OAUTH_CLIENT_INVALID", "인증 설정"],
+    ["unauthorized_client", "DRIVE_OAUTH_CLIENT_UNAUTHORIZED", "앱 권한"],
+    ["invalid_scope", "DRIVE_OAUTH_SCOPE_INVALID", "권한"],
+    ["invalid_request", "DRIVE_OAUTH_REQUEST_INVALID", "요청 설정"],
+    ["temporarily_unavailable", "DRIVE_OAUTH_TEMPORARY_FAILURE", "일시적으로"],
+    ["unexpected_sensitive_provider_value", "DRIVE_OAUTH_REJECTED", "인증 단계"],
+  ];
+  for (const [providerError, code, safeMessage] of cases) {
+    const secretDescription = "private diagnostic text must not escape";
+    await assert.rejects(DriveOAuth.exchangeAuthorizationCode({
+      clientId: CLIENT_ID,
+      code: "authorization-code",
+      verifier: "pkce-verifier",
+      redirectUri: "http://127.0.0.1:43123/oauth2/callback",
+      fetchImpl: async () => new Response(JSON.stringify({ error: providerError, error_description: secretDescription }), { status: 400 }),
+    }), error => {
+      assert.equal(error.code, code);
+      assert.match(error.message, new RegExp(`CRM_DRIVE_ERROR=${code}`, "u"));
+      assert.match(error.message, new RegExp(safeMessage, "u"));
+      assert.doesNotMatch(error.message, /private diagnostic text|unexpected_sensitive_provider_value/u);
+      return true;
+    });
+  }
+});
+
+test("only known Google token errors receive specialized classifications", () => {
+  assert.equal(DriveOAuth.classifyGoogleTokenFailure("invalid_grant").code, "DRIVE_RECONNECT_REQUIRED");
+  assert.equal(DriveOAuth.classifyGoogleTokenFailure({ error: "invalid_client" }).code, "DRIVE_OAUTH_REJECTED");
+  assert.equal(DriveOAuth.classifyGoogleTokenFailure("unknown-provider-error").code, "DRIVE_OAUTH_REJECTED");
+});
+
 test("complete desktop authorization accepts only the matching loopback state", async () => {
   let authorizationUrl;
   const fetchImpl = async (url, init) => {
