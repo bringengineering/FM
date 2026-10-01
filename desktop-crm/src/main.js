@@ -35,6 +35,7 @@ const { createServiceReportHtml, serviceReportFileName } = require("./service-re
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
 const BuildingMonthlyReportDrive = require("./building-monthly-report-drive");
+const { createMonthlyPhotoSourceStore, normalizeFolder: normalizeMonthlyPhotoFolder } = require("./monthly-photo-source");
 const OwnerOsReportCore = require("./owner-os-report-core");
 const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const BuildingDocsDrive = require("./building-docs-drive");
@@ -4401,6 +4402,67 @@ async function browseWorkReportDrive(input) {
   };
 }
 
+function monthlyPhotoSourceContext() {
+  const user = remoteClient?.authState().user;
+  if (!user?.uid || !["admin", "member"].includes(user.accessRole || user.role) || isMarketingOnlySession()) {
+    throw Object.assign(new Error("월간보고서 사진 설정 권한이 없습니다."), { code: "FORBIDDEN" });
+  }
+  const picker = reportDrivePickerReady();
+  const guard = remoteClient.captureSessionGuard();
+  const account = String(driveSession?.email || "").trim().toLowerCase();
+  if (!account || driveSession?.ownerUid !== user.uid) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  return { uid: user.uid, account, picker, assertCurrent() {
+    remoteClient.assertSessionGuardActive(guard);
+    // A same-account token refresh increments its epoch but does not change scope.
+    // Explicit reconnect/disconnect resets the picker; account changes fail closed.
+    if (reportDrivePickerSession !== picker || driveSession?.ownerUid !== user.uid || String(driveSession?.email || "").trim().toLowerCase() !== account) {
+      throw Object.assign(new Error("Drive 연결이 변경되었습니다. 다시 시도해 주세요."), { code: "SESSION_CHANGED" });
+    }
+  } };
+}
+
+function monthlyPhotoSourceStore() {
+  return createMonthlyPhotoSourceStore({ fs, directory: path.dirname(dataFile()), safeStorage, encode: encodeProtectedJson, decode: decodeProtectedJson });
+}
+
+async function savedMonthlyPhotoSource(input = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => key !== "folderId")) throw new Error("활동사진 폴더 요청을 확인해 주세요.");
+  const context = monthlyPhotoSourceContext();
+  if (Object.hasOwn(input, "folderId")) {
+    const folder = context.picker.folders.get(reportDrivePickerId(input.folderId));
+    if (!folder || folder.kind !== "folder" || !normalizeMonthlyPhotoFolder(folder)) throw new Error("Drive 화면에서 활동사진 폴더를 먼저 열어 주세요.");
+    const saved = await monthlyPhotoSourceStore().save(context.uid, context.account, folder);
+    context.assertCurrent();
+    return { ok: true, folder: saved };
+  }
+  const saved = await monthlyPhotoSourceStore().load(context.uid, context.account);
+  context.assertCurrent();
+  if (!saved) return { ok: true, folder: null };
+  // Revalidate the exact saved folder with today's Google permissions, not renderer input.
+  const response = await authenticatedDriveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(saved.id)}?fields=id,name,mimeType,driveId,trashed&supportsAllDrives=true`, { redirect: "error", signal: AbortSignal.timeout(15000) });
+  context.assertCurrent();
+  if (!response.ok) throw new Error("저장된 활동사진 폴더를 열 수 없습니다. 접근 권한을 확인하거나 폴더를 다시 지정해 주세요.");
+  const body = await readReportDriveThumbnailBody(response);
+  context.assertCurrent();
+  if (body.length > 16000) throw new Error("활동사진 폴더 응답을 확인하지 못했습니다.");
+  let metadata;
+  try { metadata = JSON.parse(body.toString("utf8")); } catch { throw new Error("활동사진 폴더 응답을 확인하지 못했습니다."); }
+  const folder = normalizeMonthlyPhotoFolder(metadata);
+  if (!folder || folder.id !== saved.id || metadata.trashed || metadata.mimeType !== BuildingDocsDrive.FOLDER_MIME) throw new Error("활동사진 폴더를 다시 지정해 주세요.");
+  context.picker.folders.set(folder.id, folder);
+  return { ok: true, folder };
+}
+
+function monthlyPhotoDriveDeps() {
+  return { accessToken: "managed-in-main-process", fetchImpl: async (url, init) => {
+    const response = await authenticatedDriveFetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(15000) });
+    return { ok: response.ok, status: response.status, json: async () => {
+      const bytes = await readReportDriveThumbnailBody(response);
+      return JSON.parse(bytes.toString("utf8"));
+    } };
+  } };
+}
+
 /** Selected Drive directory is the only search boundary; this never crawls Drive globally. */
 async function findBuildingMonthlyReportPhotos(input) {
   const user = remoteClient && remoteClient.authState().user;
@@ -4420,14 +4482,12 @@ async function findBuildingMonthlyReportPhotos(input) {
   if (!folderId || !picker.folders.has(folderId)) throw Object.assign(new Error("Drive에서 폴더를 다시 선택해 주세요."), { code: "DRIVE_FOLDER_NOT_LISTED" });
   if (!buildingName && !buildingAddress) throw Object.assign(new Error("건물명 또는 주소가 필요합니다."), { code: "BUILDING_REQUIRED" });
   const root = picker.folders.get(folderId);
-  const listed = await BuildingDocsDrive.listFolder(driveApiDeps(), folderId, { maxPages: 3, driveId: String(root.driveId || "") });
-  if (reportDrivePickerSession !== picker || driveSessionOwnerUid() !== String(user.uid || "")) {
-    throw Object.assign(new Error("로그인 상태가 변경되어 Drive 목록을 반영하지 않았습니다."), { code: "SESSION_CHANGED" });
-  }
-  const activityFolders = listed.folders
-    .map(item => ({ item, parsed: BuildingMonthlyReportDrive.parseActivityFolderName(item && item.name, month, buildingName, buildingAddress) }))
-    .filter(row => row.parsed)
-    .slice(0, 40);
+  const context = monthlyPhotoSourceContext();
+  const found = await BuildingMonthlyReportDrive.findActivityFolders({ root, month, buildingName, buildingAddress,
+    assertCurrent: context.assertCurrent,
+    list: folder => BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), folder.id, { maxPages: 3, driveId: String(root.driveId || "") }),
+  });
+  const activityFolders = found.folders;
   const photos = [];
   const seen = new Set();
   let next = 0;
@@ -4445,10 +4505,11 @@ async function findBuildingMonthlyReportPhotos(input) {
       kind: "folder",
     };
     picker.folders.set(folderRecord.id, folderRecord);
-    const nested = await BuildingDocsDrive.listFolder(driveApiDeps(), folderIdValue, { maxPages: 2, driveId: folderRecord.driveId });
+    const nested = await BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), folderIdValue, { maxPages: 2, driveId: folderRecord.driveId });
+    context.assertCurrent();
     if (nested.truncated) nestedTruncated = true;
     let files = nested.files.filter(file => REPORT_DRIVE_IMAGE_MIME.has(String(file && file.mimeType || "").toLowerCase()));
-    if (!files.length && nested.folders.length) {
+    if (nested.folders.length) {
       for (const child of nested.folders.slice(0, 4)) {
         const childId = reportDrivePickerId(child && child.id);
         if (!childId) continue;
@@ -4461,15 +4522,17 @@ async function findBuildingMonthlyReportPhotos(input) {
           kind: "folder",
         };
         picker.folders.set(childId, childRecord);
-        const childFiles = await BuildingDocsDrive.listFolder(driveApiDeps(), childId, { maxPages: 2, driveId: childRecord.driveId });
+        const childFiles = await BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), childId, { maxPages: 2, driveId: childRecord.driveId });
+        context.assertCurrent();
         if (childFiles.truncated) nestedTruncated = true;
         files = files.concat(childFiles.files.filter(file => REPORT_DRIVE_IMAGE_MIME.has(String(file && file.mimeType || "").toLowerCase())));
       }
     }
     const activityName = row.parsed.activityName || folderRecord.name.replace(/^\d{6}[_ -]+/u, "").slice(0, 100);
+    if (files.length > 24 || nested.folders.length > 4) nestedTruncated = true;
     files.slice(0, 24).forEach(file => {
       const id = reportDrivePickerId(file && file.id);
-      if (!id || seen.has(id) || photos.length >= 24) return;
+      if (!id || seen.has(id)) return;
       seen.add(id);
       const publicFile = {
         id,
@@ -4484,6 +4547,7 @@ async function findBuildingMonthlyReportPhotos(input) {
         kind: "file",
         monthlyReportDate: row.parsed.date,
         monthlyReportActivity: activityName,
+        monthlyReportBuilding: BuildingMonthlyReportDrive.normalizeWord(buildingName || buildingAddress),
       };
       picker.files.set(id, publicFile);
       if (publicFile.thumbnailLink) picker.thumbnails.set(id, publicFile.thumbnailLink);
@@ -4492,10 +4556,11 @@ async function findBuildingMonthlyReportPhotos(input) {
     });
   }
   async function worker() {
-    while (next < activityFolders.length && photos.length < 24) {
+    while (next < activityFolders.length) {
+      context.assertCurrent();
       const index = next++;
       try { await scanFolder(activityFolders[index]); }
-      catch (_) { nestedTruncated = true; }
+      catch (error) { context.assertCurrent(); if (error?.code === "DRIVE_AUTH_REQUIRED") throw error; nestedTruncated = true; }
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, activityFolders.length) }, () => worker()));
@@ -4504,10 +4569,25 @@ async function findBuildingMonthlyReportPhotos(input) {
   }
   return {
     ok: true,
-    photos,
+    // Round-robin prevents a large first folder from crowding out later dates.
+    photos: balancedMonthlyPhotos(photos, 120),
     foldersFound: activityFolders.length,
-    truncated: listed.truncated || nestedTruncated || activityFolders.length > 40 || photos.length >= 24,
+    truncated: found.truncated || nestedTruncated || photos.length > 120,
   };
+}
+
+function balancedMonthlyPhotos(photos, limit) {
+  const groups = new Map();
+  for (const photo of photos.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+    const key = `${photo.date}:${photo.activityName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(photo);
+  }
+  const result = [];
+  while (result.length < limit && [...groups.values()].some(group => group.length)) {
+    for (const group of groups.values()) if (group.length && result.length < limit) result.push(group.shift());
+  }
+  return result;
 }
 
 async function readReportDriveThumbnailBody(response) {
@@ -4741,6 +4821,11 @@ async function selectBuildingMonthlyReportPhotos(input) {
   });
   remoteClient.assertSessionGuardActive(guard);
   const preparedIds = new Set(preparedImages.map(image => image.id));
+  if (picker !== reportDrivePickerSession) throw new Error("Drive 연결이 변경되었습니다. 사진을 다시 찾아 주세요.");
+  result.selected.filter(photo => preparedIds.has(photo.id)).forEach(photo => {
+    const file = picker.files.get(photo.id);
+    if (file) file.monthlyReportCaption = photo.caption;
+  });
   return {
     ...result,
     selected: result.selected.filter(photo => preparedIds.has(photo.id)),
@@ -9668,7 +9753,18 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     throw new Error("월간 보고서 AI 작성 권한이 없습니다.");
   }
   const guard = client.captureSessionGuard();
-  const report = BuildingReportCore.buildBuildingMonthlyReport(input);
+  const photoInputs = input.photos || [];
+  if (!Array.isArray(photoInputs) || photoInputs.length > 12) throw new Error("보고서 사진을 다시 확인해 주세요.");
+  const photoEvidence = photoInputs.map(photo => {
+    if (!photo || typeof photo !== "object" || Object.keys(photo).some(key => !["id", "caption"].includes(key))) throw new Error("보고서 사진을 다시 확인해 주세요.");
+    const file = reportDrivePickerReady().files.get(reportDrivePickerId(photo.id));
+    const building = input.building || {};
+    const buildingName = ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name;
+    const identity = BuildingMonthlyReportDrive.normalizeWord(buildingName || building.roadAddress || building.address || building.jibunAddress);
+    if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
+    return { date: file.monthlyReportDate, caption: file.monthlyReportCaption, kind: BuildingMonthlyReportDrive.activityCategory(file.monthlyReportActivity) };
+  });
+  const report = { ...BuildingReportCore.buildBuildingMonthlyReport(input), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });
@@ -9701,6 +9797,7 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
 secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-photos-find", input => findBuildingMonthlyReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-photos-select", input => selectBuildingMonthlyReportPhotos(input));
+secureCanonicalHandle("crm:building-monthly-report-photo-source", input => savedMonthlyPhotoSource(input));
 secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBuildingMonthlyReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:quote-kakao-send", input => sendQuoteToCustomerByKakao(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
