@@ -4,8 +4,13 @@ import {
   canManageCrmAccountSetup,
   createCrmAccountAccessRecord,
   createCrmAccountInviteRecord,
+  createCrmAccountSetupToken,
+  appendCrmAccountSetupToken,
   crmAccountEmailHash,
+  crmAccountSetupTokenHash,
   isCrmAccountInviteUsable,
+  isCrmAccountSetupTokenUsable,
+  maskCrmAccountEmail,
   normalizeCrmAccountDisplayName,
   normalizeCrmAccountEmail,
   validateCrmAccountSetupPassword,
@@ -67,9 +72,16 @@ describe("CRM account invitations", () => {
   });
 
   it("creates a seven-day invite index without duplicating the email address", () => {
-    const invite = createCrmAccountInviteRecord("new@example.com", "admin-1", 1_800_000_000_000);
+    const setupToken = createCrmAccountSetupToken();
+    const setupTokenHash = crmAccountSetupTokenHash(setupToken);
+    const invite = createCrmAccountInviteRecord("new@example.com", "admin-1", 1_800_000_000_000, setupTokenHash);
     expect(invite).toMatchObject({
       emailHash: crmAccountEmailHash("new@example.com"),
+      setupTokens: [{
+        tokenHash: setupTokenHash,
+        createdAt: 1_800_000_000_000,
+        expiresAt: 1_800_604_800_000,
+      }],
       status: "pending",
       createdAt: 1_800_000_000_000,
       expiresAt: 1_800_604_800_000,
@@ -80,6 +92,31 @@ describe("CRM account invitations", () => {
     expect(isCrmAccountInviteUsable(invite, "NEW@example.com", 1_800_000_000_001)).toBe(true);
     expect(isCrmAccountInviteUsable(invite, "other@example.com", 1_800_000_000_001)).toBe(false);
     expect(isCrmAccountInviteUsable(invite, "new@example.com", invite.expiresAt)).toBe(false);
+    expect(isCrmAccountSetupTokenUsable(invite, setupToken, 1_800_000_000_001)).toBe(true);
+    expect(isCrmAccountSetupTokenUsable(invite, createCrmAccountSetupToken(), 1_800_000_000_001)).toBe(false);
+    expect(isCrmAccountSetupTokenUsable({ ...invite, status: "complete" }, setupToken, 1_800_000_000_001)).toBe(false);
+    expect(crmAccountSetupTokenHash(setupToken)).not.toBe(setupToken);
+    expect(() => crmAccountSetupTokenHash("not-a-token")).toThrow("crm_account_setup_invalid");
+    expect(maskCrmAccountEmail("Invitee@example.com")).toBe("in•••••@example.com");
+  });
+
+  it("keeps a bounded history of expiring hashed setup links when an invite is resent", () => {
+    const now = 1_800_000_000_000;
+    const firstToken = createCrmAccountSetupToken();
+    const invite = createCrmAccountInviteRecord("new@example.com", "admin-1", now, crmAccountSetupTokenHash(firstToken));
+    let tokens = invite.setupTokens;
+    const generated: string[] = [firstToken];
+    for (let index = 0; index < 6; index += 1) {
+      const token = createCrmAccountSetupToken();
+      generated.push(token);
+      tokens = appendCrmAccountSetupToken({ ...invite, setupTokens: tokens }, crmAccountSetupTokenHash(token), now + index + 1);
+    }
+    expect(tokens).toHaveLength(5);
+    expect(tokens.every(item => item.tokenHash !== crmAccountSetupTokenHash(generated.at(-1)))).toBe(false);
+    expect(tokens.every(item => /^[a-f0-9]{64}$/u.test(item.tokenHash))).toBe(true);
+    expect(isCrmAccountSetupTokenUsable({ ...invite, setupTokens: tokens }, generated.at(-1), now + 10)).toBe(true);
+    expect(isCrmAccountSetupTokenUsable({ ...invite, setupTokens: tokens }, generated[1], now + 10)).toBe(false);
+    expect(isCrmAccountSetupTokenUsable({ ...invite, setupTokens: tokens }, generated.at(-1), now + 7 * 24 * 60 * 60 * 1_000 + 20)).toBe(false);
   });
 
   it("accepts a strong first password and rejects short, non-alphanumeric, or control-character input", () => {

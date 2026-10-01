@@ -6,6 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   EXPECTED_FUNCTIONS,
+  EXISTING_FUNCTIONS,
   parseArgs,
   parseFunctionInventory,
   runCrmAccountSetupUpdate,
@@ -19,6 +20,16 @@ const deployedCodeHash = "d".repeat(40);
 
 function rows(codeHash = previousCodeHash) {
   return EXPECTED_FUNCTIONS.map(name => ({
+    id: `projects/bring-fm/locations/asia-northeast3/functions/${name}`,
+    region: "asia-northeast3",
+    state: "ACTIVE",
+    codebase: "field-platform",
+    labels: { "firebase-functions-codebase": "field-platform", "firebase-functions-hash": codeHash },
+  }));
+}
+
+function existingRows(codeHash = previousCodeHash) {
+  return EXISTING_FUNCTIONS.map(name => ({
     id: `projects/bring-fm/locations/asia-northeast3/functions/${name}`,
     region: "asia-northeast3",
     state: "ACTIVE",
@@ -55,10 +66,10 @@ test("update arguments require the current project, expected hash, and rollback 
   assert.throws(() => parseArgs(["--unexpected"]), { code: "CRM_ACCOUNT_SETUP_UPDATE_ARGUMENT_INVALID" });
 });
 
-test("update deploys only four pinned callables after exact-source and baseline checks, then verifies one new hash", () => {
+test("update deploys only five pinned callables after exact-source and baseline checks, then verifies one new hash", () => {
   const calls = [];
   let inventoryCall = 0;
-  const rollbackSource = EXPECTED_FUNCTIONS.map(name =>
+  const rollbackSource = EXISTING_FUNCTIONS.map(name =>
     `export const ${name} = onCall({ region: "asia-northeast3" }, async () => ({}));`,
   ).join("\n");
   const result = runCrmAccountSetupUpdate({
@@ -76,7 +87,7 @@ test("update deploys only four pinned callables after exact-source and baseline 
       if (args[0] === "status") return { status: 0, stdout: "" };
       if (args[0] === "functions:list") {
         inventoryCall += 1;
-        return { status: 0, stdout: JSON.stringify({ result: rows(inventoryCall === 1 ? previousCodeHash : deployedCodeHash) }) };
+        return { status: 0, stdout: JSON.stringify({ result: inventoryCall === 1 ? existingRows(previousCodeHash) : rows(deployedCodeHash) }) };
       }
       return { status: 0, stdout: "" };
     },
@@ -122,6 +133,33 @@ test("update stops before deployment if any current function differs from the co
   assert.equal(calls.some(call => call.args[0] === "deploy"), false);
 });
 
+test("update rejects a missing legacy callable or a partially deployed new callable", () => {
+  for (const current of [
+    existingRows().slice(1),
+    [...existingRows(), { ...rows().find(row => row.id.endsWith("/getCrmAccountSetupInvite")), labels: { "firebase-functions-codebase": "field-platform", "firebase-functions-hash": "e".repeat(40) } }],
+  ]) {
+    const calls = [];
+    assert.throws(() => runCrmAccountSetupUpdate({
+      manifest,
+      expectedProjectId: "bring-fm",
+      apply: true,
+      confirmProject: "bring-fm",
+      expectedCodeHash: previousCodeHash,
+      rollbackSourceSha,
+      runCommand(command, args) {
+        calls.push({ command, args });
+        if (args[0] === "rev-parse") return { status: 0, stdout: `${sourceSha}\n` };
+        if (args[0] === "merge-base" || args[0] === "fetch") return { status: 0, stdout: "" };
+        if (args[0] === "show") return { status: 0, stdout: EXISTING_FUNCTIONS.map(name => `export const ${name} = onCall({ region: "asia-northeast3" });`).join("\n") };
+        if (args[0] === "status") return { status: 0, stdout: "" };
+        if (args[0] === "functions:list") return { status: 0, stdout: JSON.stringify({ result: current }) };
+        return { status: 0, stdout: "" };
+      },
+    }), { code: "CRM_ACCOUNT_SETUP_UPDATE_BASELINE_CHANGED" });
+    assert.equal(calls.some(call => call.args[0] === "deploy"), false);
+  }
+});
+
 test("update refuses stale source, dirty checkout, wrong project, or unverified rollback commit", () => {
   for (const scenario of [
     { expectedProjectId: "bring-fm-hj", expected: "CRM_ACCOUNT_SETUP_DEPLOY_PROJECT_MISMATCH" },
@@ -139,7 +177,7 @@ test("update refuses stale source, dirty checkout, wrong project, or unverified 
       runCommand(_command, args) {
         if (args[0] === "rev-parse") return { status: 0, stdout: `${args[1] === "FETCH_HEAD" ? (scenario.remoteHead || sourceSha) : sourceSha}\n` };
         if (args[0] === "merge-base") return { status: scenario.rollbackAncestry === false ? 1 : 0, stdout: "" };
-        if (args[0] === "show") return { status: 0, stdout: EXPECTED_FUNCTIONS.map(name => `export const ${name} = onCall({ region: "asia-northeast3" });`).join("\n") };
+        if (args[0] === "show") return { status: 0, stdout: EXISTING_FUNCTIONS.map(name => `export const ${name} = onCall({ region: "asia-northeast3" });`).join("\n") };
         if (args[0] === "status") return { status: 0, stdout: scenario.dirty ? " M functions/src/index.ts\n" : "" };
         if (args[0] === "functions:list") return { status: 0, stdout: JSON.stringify({ result: rows() }) };
         return { status: 0, stdout: "" };

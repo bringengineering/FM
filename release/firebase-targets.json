@@ -55,6 +55,7 @@
     "projectId": "bring-fm",
     "functionNames": [
       "completeCrmAccountSetup",
+      "getCrmAccountSetupInvite",
       "listCrmAccountInvites",
       "registerCrmAccount",
       "resendCrmAccountInvite"

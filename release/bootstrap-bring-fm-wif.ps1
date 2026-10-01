@@ -150,7 +150,7 @@ function Assert-LocalContract {
         throw "A manually approved Cleaning Center Function must not also be archived."
     }
     $crmAccountSetupDeployment = $manifest.crmAccountSetupManualDeployment
-    $expectedCrmAccountSetupFunctions = @("completeCrmAccountSetup", "listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite")
+    $expectedCrmAccountSetupFunctions = @("completeCrmAccountSetup", "getCrmAccountSetupInvite", "listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite")
     if ($null -eq $crmAccountSetupDeployment -or $crmAccountSetupDeployment.projectId -ne $ProjectId -or $crmAccountSetupDeployment.databaseRules -ne $false -or $crmAccountSetupDeployment.region -ne "asia-northeast3") {
         throw "CRM account setup deployment must remain a separate bring-fm target without Database Rules."
     }

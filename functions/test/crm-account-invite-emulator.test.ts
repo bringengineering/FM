@@ -192,8 +192,16 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
       expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((result.payload.error as { status?: string }).status);
     }
 
+    const invalidAnonymousPreview = await callFunction("getCrmAccountSetupInvite", {
+      uid: "missing-invite",
+      setupToken: "A".repeat(43),
+    });
+    expect(invalidAnonymousPreview.payload.error).toBeDefined();
+    expect((invalidAnonymousPreview.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+
     const invalidAnonymousCompletion = await callFunction("completeCrmAccountSetup", {
-      email: `nobody-${unique}@bring.test`,
+      uid: "missing-invite",
+      setupToken: "A".repeat(43),
       password: "EmulatorOnly-Strong-2026!",
       oobCode: "invalid-oob-code",
     });
@@ -222,15 +230,38 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
       .toContainEqual(expect.objectContaining({ uid: registrationResult.uid, email: invitedEmail, status: "pending" }));
 
     const codeResponse = await authEmulatorControlRequest(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
-      oobCodes?: Array<{ email: string; oobCode: string; requestType: string }>;
+      oobCodes?: Array<{ email: string; oobCode: string; oobLink?: string; requestType: string }>;
     };
-    const actionCode = codeResponse.oobCodes?.find(code =>
-      code.email === invitedEmail && code.requestType === "EMAIL_SIGNIN")?.oobCode;
+    const actionEntry = codeResponse.oobCodes?.find(code =>
+      code.email === invitedEmail && code.requestType === "EMAIL_SIGNIN");
+    const actionCode = actionEntry?.oobCode;
     expect(actionCode).toBeTruthy();
+    expect(actionEntry?.oobLink).toBeTruthy();
+    const actionUrl = new URL(actionEntry!.oobLink!);
+    const continueUrlValue = actionUrl.searchParams.get("continueUrl");
+    expect(continueUrlValue).toBeTruthy();
+    const continueUrl = new URL(continueUrlValue!);
+    const setupToken = continueUrl.searchParams.get("invite");
+    expect(continueUrl.searchParams.get("uid")).toBe(registrationResult.uid);
+    expect(continueUrl.searchParams.has("email")).toBe(false);
+    expect(setupToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+
+    const preview = await callFunction("getCrmAccountSetupInvite", {
+      uid: registrationResult.uid,
+      setupToken,
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.payload.result).toMatchObject({ uid: registrationResult.uid });
+    const maskedEmail = (preview.payload.result as { maskedEmail: string }).maskedEmail;
+    expect(maskedEmail).toMatch(/^in•{3,6}@bring\.test$/u);
+    expect(maskedEmail).not.toBe(invitedEmail);
 
     const password = "FirstPassword-OnlyInEmulator-2026!";
     const completed = await callFunction("completeCrmAccountSetup", {
-      email: invitedEmail,
+      uid: registrationResult.uid,
+      setupToken,
+      // A malicious email field is ignored; the recipient comes from Auth UID.
+      email: `attacker-${unique}@bring.test`,
       displayName: "초대 구성원",
       password,
       oobCode: actionCode,
@@ -244,15 +275,15 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
       returnSecureToken: true,
     }) as unknown as AuthResponse;
     const profile = await authRequest("accounts:lookup", { idToken: login.idToken }) as {
-      users?: Array<{ emailVerified?: unknown; displayName?: unknown }>;
+      users?: Array<{ email?: unknown; emailVerified?: unknown; displayName?: unknown }>;
     };
-    expect(profile.users?.[0]).toMatchObject({ emailVerified: true, displayName: "초대 구성원" });
+    expect(profile.users?.[0]).toMatchObject({ email: invitedEmail, emailVerified: true, displayName: "초대 구성원" });
 
     const accessUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(registrationResult.uid)}.json`);
     accessUrl.searchParams.set("ns", PROJECT_ID);
     accessUrl.searchParams.set("auth", "owner");
     const access = await fetch(accessUrl).then(response => response.json()) as Record<string, unknown>;
-    expect(access).toMatchObject({ enabled: true, role: "member", accountSetupPending: false, mustChangePassword: false, displayName: "초대 구성원" });
+    expect(access).toMatchObject({ email: invitedEmail, enabled: true, role: "member", accountSetupPending: false, mustChangePassword: false, displayName: "초대 구성원" });
     expect(access).not.toHaveProperty("password");
 
     const inviteUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/accountInvites/${encodeURIComponent(registrationResult.uid)}.json`);
@@ -262,11 +293,49 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     expect(invite.status).toBe("complete");
 
     const replayed = await callFunction("completeCrmAccountSetup", {
-      email: invitedEmail,
+      uid: registrationResult.uid,
+      setupToken,
       displayName: "초대 구성원",
       password: "SecondPassword-OnlyInEmulator-2026!",
       oobCode: actionCode,
     });
     expect(replayed.payload.error).toBeDefined();
+
+    const legacyEmail = `legacy-${unique}@bring.test`;
+    const legacyRegistered = await callFunction("registerCrmAccount", { email: legacyEmail }, admin.idToken);
+    expect(legacyRegistered.status).toBe(200);
+    const legacyUid = (legacyRegistered.payload.result as { uid: string }).uid;
+    const legacyCodeResponse = await authEmulatorControlRequest(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
+      oobCodes?: Array<{ email: string; oobCode: string; requestType: string }>;
+    };
+    const legacyCode = legacyCodeResponse.oobCodes?.find(code =>
+      code.email === legacyEmail && code.requestType === "EMAIL_SIGNIN")?.oobCode;
+    expect(legacyCode).toBeTruthy();
+
+    const spoofedLegacyCompletion = await callFunction("completeCrmAccountSetup", {
+      email: `attacker-${unique}@bring.test`,
+      displayName: "초대 구성원",
+      password: "LegacyPassword-OnlyInEmulator-2026!",
+      oobCode: legacyCode,
+    });
+    expect(spoofedLegacyCompletion.payload.error).toBeDefined();
+    expect((spoofedLegacyCompletion.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+
+    const legacyCompletion = await callFunction("completeCrmAccountSetup", {
+      email: legacyEmail,
+      displayName: "기존 화면 구성원",
+      password: "LegacyPassword-OnlyInEmulator-2026!",
+      oobCode: legacyCode,
+    });
+    expect(legacyCompletion.status).toBe(200);
+    const legacyAccess = await emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(legacyUid)}.json`);
+    legacyAccess.searchParams.set("ns", PROJECT_ID);
+    legacyAccess.searchParams.set("auth", "owner");
+    expect(await fetch(legacyAccess).then(response => response.json())).toMatchObject({
+      email: legacyEmail,
+      role: "member",
+      accountSetupPending: false,
+      displayName: "기존 화면 구성원",
+    });
   }, 30_000);
 });

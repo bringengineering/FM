@@ -1,8 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export const CRM_ACCOUNT_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 export const CRM_ACCOUNT_SETUP_PASSWORD_MIN_LENGTH = 8;
 export const CRM_ACCOUNT_SETUP_PASSWORD_MAX_LENGTH = 128;
+export const CRM_ACCOUNT_SETUP_TOKEN_TTL_MS = CRM_ACCOUNT_INVITE_TTL_MS;
+export const CRM_ACCOUNT_SETUP_TOKEN_HISTORY_LIMIT = 5;
 export const CRM_ACCOUNT_SETUP_CONTINUE_URL = "https://bring-fm.web.app/crm-account-setup/";
 
 // This Firebase web API key is a public client identifier already used by the
@@ -12,6 +14,7 @@ export const CRM_FIREBASE_WEB_API_KEY = "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg
 
 export interface CrmAccountInviteRecord {
   emailHash: string;
+  setupTokens: Array<{ tokenHash: string; createdAt: number; expiresAt: number }>;
   status: "pending" | "complete";
   createdAt: number;
   expiresAt: number;
@@ -87,6 +90,28 @@ export function crmAccountEmailHash(email: string): string {
   return createHash("sha256").update(normalizeCrmAccountEmail(email)).digest("hex");
 }
 
+export function createCrmAccountSetupToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function crmAccountSetupTokenHash(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value)) {
+    throw new Error("crm_account_setup_invalid");
+  }
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+export function maskCrmAccountEmail(value: string): string {
+  const email = normalizeCrmAccountEmail(value);
+  const separator = email.lastIndexOf("@");
+  const local = email.slice(0, separator);
+  const domain = email.slice(separator + 1);
+  const visibleLength = Math.min(2, Math.max(1, Math.ceil(local.length / 3)));
+  const visible = local.slice(0, visibleLength);
+  const hidden = "•".repeat(Math.max(3, Math.min(6, local.length - visibleLength)));
+  return `${visible}${hidden}@${domain}`;
+}
+
 export function validateCrmAccountSetupPassword(value: unknown): string {
   if (
     typeof value !== "string"
@@ -126,19 +151,83 @@ export function createCrmAccountInviteRecord(
   email: string,
   actorUid: string,
   now: number,
+  setupTokenHash: string,
 ): CrmAccountInviteRecord {
   const normalizedEmail = normalizeCrmAccountEmail(email);
-  if (!actorUid || actorUid.length > 128 || !Number.isSafeInteger(now) || now <= 0) {
+  if (
+    !actorUid
+    || actorUid.length > 128
+    || !Number.isSafeInteger(now)
+    || now <= 0
+    || !/^[a-f0-9]{64}$/u.test(setupTokenHash)
+  ) {
     throw new Error("crm_account_invite_invalid");
   }
   return {
     emailHash: crmAccountEmailHash(normalizedEmail),
+    setupTokens: [{
+      tokenHash: setupTokenHash,
+      createdAt: now,
+      expiresAt: now + CRM_ACCOUNT_SETUP_TOKEN_TTL_MS,
+    }],
     status: "pending",
     createdAt: now,
     expiresAt: now + CRM_ACCOUNT_INVITE_TTL_MS,
     invitedBy: actorUid,
     lastSentAt: 0,
   };
+}
+
+export function appendCrmAccountSetupToken(
+  invite: unknown,
+  setupTokenHash: string,
+  now: number,
+): Array<{ tokenHash: string; createdAt: number; expiresAt: number }> {
+  if (
+    !invite
+    || typeof invite !== "object"
+    || Array.isArray(invite)
+    || !/^[a-f0-9]{64}$/u.test(setupTokenHash)
+    || !Number.isSafeInteger(now)
+    || now <= 0
+  ) throw new Error("crm_account_setup_invalid");
+  const record = invite as Partial<CrmAccountInviteRecord>;
+  const previous = Array.isArray(record.setupTokens)
+    ? record.setupTokens.filter((item): item is { tokenHash: string; createdAt: number; expiresAt: number } =>
+      Boolean(item)
+      && typeof item === "object"
+      && /^[a-f0-9]{64}$/u.test(String(item.tokenHash || ""))
+      && Number.isSafeInteger(item.createdAt)
+      && Number.isSafeInteger(item.expiresAt)
+      && item.expiresAt > now)
+    : [];
+  return [
+    ...previous.filter(item => item.tokenHash !== setupTokenHash),
+    { tokenHash: setupTokenHash, createdAt: now, expiresAt: now + CRM_ACCOUNT_SETUP_TOKEN_TTL_MS },
+  ].slice(-CRM_ACCOUNT_SETUP_TOKEN_HISTORY_LIMIT);
+}
+
+export function isCrmAccountSetupTokenUsable(
+  invite: unknown,
+  setupToken: unknown,
+  now: number,
+): invite is CrmAccountInviteRecord {
+  if (!invite || typeof invite !== "object" || Array.isArray(invite)) return false;
+  const record = invite as Partial<CrmAccountInviteRecord>;
+  let tokenHash: string;
+  try { tokenHash = crmAccountSetupTokenHash(setupToken); }
+  catch { return false; }
+  return record.status === "pending"
+    && Number.isSafeInteger(record.expiresAt)
+    && Number(record.expiresAt) > now
+    && Array.isArray(record.setupTokens)
+    && record.setupTokens.some(item =>
+      Boolean(item)
+      && typeof item === "object"
+      && item.tokenHash === tokenHash
+      && Number.isSafeInteger(item.expiresAt)
+      && Number(item.expiresAt) > now,
+    );
 }
 
 export function isCrmAccountInviteUsable(

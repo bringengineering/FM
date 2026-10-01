@@ -126,6 +126,7 @@ describe("Firebase function archival manifest", () => {
       projectId: "bring-fm",
       functionNames: [
         "completeCrmAccountSetup",
+        "getCrmAccountSetupInvite",
         "listCrmAccountInvites",
         "registerCrmAccount",
         "resendCrmAccountInvite",
