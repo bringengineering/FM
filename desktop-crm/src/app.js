@@ -17362,6 +17362,12 @@
     }
     if (event.target.matches("[data-alimtalk-saved-document]") && currentView === "customerAlimTalk") {
       customerAlimTalkState.savedDocumentId = event.target.value;
+      const record = SavedCustomerDocuments.list(store.buildingDocuments, customerById(customerAlimTalkState.selectedCustomerIds[0]), customerAlimTalkState.category)
+        .find(item => item.id === customerAlimTalkState.savedDocumentId);
+      if (record && customerAlimTalkState.category === "buildingMonthlyReport") {
+        customerAlimTalkState.buildingId = record.buildingId;
+        customerAlimTalkState.month = record.savedCustomerDocument.month;
+      }
       customerAlimTalkState.result = "";
       renderCustomerAlimTalk();
       return;

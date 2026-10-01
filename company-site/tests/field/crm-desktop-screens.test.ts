@@ -47,7 +47,7 @@ const SCREENS: Array<[string, string]> = [
   ["buildingDocuments", "문서"],
   ["workReports", "작업 결과보고서 작성"],
   ["companyWallboard", "회사 운영보드"],
-  ["customerNotices", "카카오 알림톡으로 안전하게 전달합니다"],
+  ["customerAlimTalk", "알림톡 발송"],
   ["forms", "점검표·확인서"],
   ["security", "열쇠"],
   ["aiAssistant", "AI"],
@@ -965,42 +965,51 @@ describe("desktop CRM screens actually render", () => {
     expect(sheet()).toContain("진행률은 업무지시 상세에서 기록하며");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
-  it("견적서에서 결과보고서로, 결과보고서에서 고객 알림으로 이어진다", async () => {
-    // 세 장이 남남이면 건물명·주소·건물주를 세 번 친다. 그러면 세 군데가
-    // 조금씩 달라지고, 어느 것이 맞는지는 아무도 모른다.
+  it("문서관리의 강제 연결을 없애고 CRM 알림톡에서 저장본을 명시적으로 고른다", async () => {
     (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
     await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="workReports"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    (booted.document.querySelector('[data-workspace-enter-folder="documents"]') as HTMLElement).click();
     await sleep(150);
-    navItem.click();
+    (booted.document.querySelector('.nav-item[data-view="workReports"]') as HTMLElement).click();
     await sleep(300);
-
-    const main = booted.document.getElementById("main") as HTMLElement;
-    // 어디까지 왔는지가 세 화면 위에 같은 모양으로 있어야 한다.
-    const strip = booted.document.querySelector(".df-strip") as HTMLElement;
-    expect(strip, "문서관리 한 줄이 없다").toBeTruthy();
-    expect(strip.textContent).toContain("견적서");
-    expect(strip.textContent).toContain("작업 결과보고서");
-    expect(strip.textContent).toContain("고객 알림");
-    expect(main.textContent).toContain("상지대 벤처창업관");
-
-    const notice = booted.document.querySelector('[data-df-notice="r1"]') as HTMLElement;
-    expect(notice, "보고서 줄에서 고객 알림으로 갈 수 있어야 한다").toBeTruthy();
-    notice.click();
-    await sleep(300);
-
-    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
-    expect(shown).toContain("고객 알림");
-    // 문구가 그 보고서의 건물명으로 채워져야 한다. 안 채워지면 사람이 또 친다.
-    const body = booted.document.querySelector("[data-df-body]") as HTMLTextAreaElement;
-    expect(body, "보낼 문구 칸이 없다").toBeTruthy();
-    expect(body.value).toContain("상지대 벤처창업관");
-    expect(body.value).toContain("작업을 마쳤습니다");
-    // 발신 설정 또는 승인 템플릿이 준비되지 않은 상태를 명확히 보여야 한다.
-    expect(shown).toContain("발신 설정 또는 승인 템플릿 확인 필요");
-    expect(shown).toContain("템플릿 문구와 버튼은 카카오 심사 승인본을 사용합니다.");
+    expect(booted.document.querySelector(".df-strip")).toBeNull();
+    expect(booted.document.querySelector('[data-df-notice="r1"]')).toBeNull();
+    expect(booted.document.querySelector('.nav-item[data-view="customerNotices"]')).toBeNull();
+    expect(booted.document.querySelector('.nav-item[data-view="customerMessages"]')).toBeNull();
+    const testApi = (booted.window as unknown as {__crmTest: {getStore: () => Record<string, unknown>; replaceStoreForTest: (data: unknown) => boolean}}).__crmTest;
+    const data = testApi.getStore();
+    data.customers = [{id: "saved_customer", name: "저장본 테스트 고객", phone: "01000000000"}];
+    data.buildings = [{id: "saved_building", name: "샘플 건물", ownerCustomerId: "saved_customer", monthlyReportEnabled: true}];
+    data.buildingDocuments = ["quote", "buildingMonthlyReport"].map(kind => ({id: "saved_" + kind, title: kind === "quote" ? "샘플 저장 견적" : "샘플 저장 월간보고",
+      driveFileId: "drive_fixture_pdf", buildingId: kind === "quote" ? "" : "saved_building", updatedAt: "2026-10-02T00:00:00.000Z",
+      savedCustomerDocument: {version: 1, kind, customerId: "saved_customer", recipientPhone: "01000000000", sha256: "a".repeat(64), size: 100, month: kind === "quote" ? "" : "2026-09"}}));
+    testApi.replaceStoreForTest(data);
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement)?.click();
+    await sleep(100);
+    (booted.document.querySelector('[data-workspace-enter-folder="customer-management"]') as HTMLElement).click();
+    await sleep(150);
+    (booted.document.querySelector('.nav-item[data-view="customerAlimTalk"]') as HTMLElement).click();
+    await sleep(200);
+    (booted.document.querySelector('[data-alimtalk-recipient="saved_customer"]') as HTMLInputElement).click();
+    await sleep(150);
+    for (const kind of ["quote", "buildingMonthlyReport"]) {
+      (booted.document.querySelector('[data-alimtalk-category="' + kind + '"]') as HTMLElement).click();
+      await sleep(100);
+      const select = booted.document.querySelector("[data-alimtalk-saved-document]") as HTMLSelectElement;
+      expect(select, kind + " 저장 목록").toBeTruthy();
+      expect(select.options.length).toBe(2);
+      expect(select.value).toBe("");
+      select.value = "saved_" + kind;
+      select.dispatchEvent(new booted.window.Event("change", {bubbles: true}));
+      await sleep(100);
+      const preview = booted.document.querySelector("[data-alimtalk-preview]") as HTMLButtonElement;
+      expect(preview.disabled).toBe(false);
+      preview.click();
+      await sleep(150);
+      const call = booted.calls.filter(item => item.name === "previewSavedCustomerDocument").at(-1);
+      expect(call?.input).toMatchObject({kind, documentId: "saved_" + kind, customerId: "saved_customer", sha256: "a".repeat(64)});
+    }
+    expect(booted.calls.filter(item => item.name === "sendSavedCustomerDocument")).toHaveLength(0);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });

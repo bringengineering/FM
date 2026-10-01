@@ -43,8 +43,8 @@
       const documents = Array.isArray(state.savedDocuments) ? state.savedDocuments : [];
       const picked = documents.find(item => item.id === state.savedDocumentId);
       previewTitle = monthly ? "건물 월간보고서" : "견적서 발송";
-      previewText = picked ? picked.title + " · " + String(picked.updatedAt || "").slice(0, 10) + " 저장본" : "문서관리에서 CRM에 저장한 문서를 선택해 주세요.";
-      const options = documents.map(item => `<option value="${esc(item.id)}" ${item.id === state.savedDocumentId ? "selected" : ""}>${esc(item.title)} · ${esc(String(item.updatedAt || "").slice(0, 10))}</option>`).join("");
+      previewText = picked ? picked.title + " · " + new Date(picked.updatedAt).toLocaleString("ko-KR") + " 저장본" : "문서관리에서 CRM에 저장한 문서를 선택해 주세요.";
+      const options = documents.map(item => `<option value="${esc(item.id)}" ${item.id === state.savedDocumentId ? "selected" : ""}>${esc(item.title)} · ${esc(new Date(item.updatedAt).toLocaleString("ko-KR"))}</option>`).join("");
       sourcePanel = `<label class="alimtalk-source-select"><span>문서관리 저장 문서 · ${documents.length}건</span><select data-alimtalk-saved-document ${singleRecipient && !state.busy ? "" : "disabled"}><option value="">저장 문서 선택</option>${options}</select></label><section class="alimtalk-source-card"><b>저장본 불러오기</b><p>${esc(previewText)}</p><p>별도 업로드 없이 CRM에 저장한 PDF를 그대로 보냅니다. 수정한 내용은 문서관리에서 다시 저장해 주세요.</p><button type="button" class="secondary-button" data-alimtalk-preview ${picked && singleRecipient && !state.busy ? "" : "disabled"}>저장 PDF 미리보기</button> <button type="button" class="secondary-button" ${monthly ? "data-alimtalk-open-monthly" : "data-alimtalk-open-quote"} ${singleRecipient ? "" : "disabled"}>문서관리에서 작성·저장</button></section>`;
       const capability = monthly ? state.kakaoMonthlyReady : state.kakaoReady;
       ready = Boolean(singleRecipient && picked && capability && state.writable && state.adminCanSend);
