@@ -41,6 +41,18 @@ test("setup parser accepts only trusted Firebase sign-in links with opaque invit
       setupToken: "A".repeat(43),
     },
   );
+  const canonicalContinueUrl = new URL(continueUrl.href);
+  canonicalContinueUrl.pathname = "/crm-account-setup";
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parse(signInLink({ continueUrl: canonicalContinueUrl.href })))),
+    {
+      mode: "signIn",
+      actionCode: "emulator-one-time-code",
+      uid: "authUser_123",
+      setupToken: "A".repeat(43),
+    },
+    "Firebase Hosting's no-trailing-slash canonical route must keep the invite state",
+  );
   assert.equal(parse(signInLink({ continueUrl: "https://attacker.example/crm-account-setup/?uid=authUser_123&invite=" + "A".repeat(43) })), null);
   const withUntrustedEmail = new URL(continueUrl.href);
   withUntrustedEmail.searchParams.set("email", "attacker@example.com");

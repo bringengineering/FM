@@ -11,6 +11,7 @@
   ]);
   const CONTINUE_HOST = "bring-fm.web.app";
   const CONTINUE_PATH = "/crm-account-setup/";
+  const CONTINUE_PATH_WITHOUT_SLASH = "/crm-account-setup";
 
   function isSafeHttpsUrl(parsed) {
     return parsed.protocol === "https:"
@@ -20,7 +21,8 @@
   }
 
   function readInviteState(parsed) {
-    if (parsed.hostname !== CONTINUE_HOST || parsed.pathname !== CONTINUE_PATH) return null;
+    if (parsed.hostname !== CONTINUE_HOST
+      || ![CONTINUE_PATH, CONTINUE_PATH_WITHOUT_SLASH].includes(parsed.pathname)) return null;
     const uid = parsed.searchParams.get("uid") || "";
     const setupToken = parsed.searchParams.get("invite") || "";
     if (!/^[A-Za-z0-9_-]{1,128}$/u.test(uid)

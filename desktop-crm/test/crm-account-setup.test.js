@@ -33,6 +33,16 @@ test("Firebase email-link setup accepts only trusted sign-in action links", () =
   assert.equal(direct && direct.uid, uid);
   assert.equal(direct && direct.setupToken, setupToken);
 
+  const canonicalContinueUrl = new URL(continueUrl.href);
+  canonicalContinueUrl.pathname = "/crm-account-setup";
+  actionUrl.searchParams.set("continueUrl", canonicalContinueUrl.href);
+  const canonical = setupCore.parseSignInActionLink(actionUrl.href);
+  assert.equal(canonical && canonical.mode, "signIn");
+  assert.equal(canonical && canonical.actionCode, "one-time-code-123");
+  assert.equal(canonical && canonical.uid, uid);
+  assert.equal(canonical && canonical.setupToken, setupToken);
+  actionUrl.searchParams.set("continueUrl", continueUrl.href);
+
   const innerUrl = new URL("https://bring-fm.web.app/crm-account-setup/");
   innerUrl.searchParams.set("mode", "signIn");
   innerUrl.searchParams.set("oobCode", "one-time-code-456");
