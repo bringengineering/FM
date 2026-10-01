@@ -9,7 +9,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-01-monthly-photo-recovery-v1";
+const SERVICE_VERSION = "2026-10-02-monthly-photo-small-batches-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";

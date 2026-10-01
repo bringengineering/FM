@@ -5,7 +5,7 @@ import { createWorker } from "../src/index.js";
 import Client from "../../desktop-crm/src/ai-monthly-report-photo-client.js";
 
 const env = { GEMINI_API_KEY: "synthetic-key-only" };
-const image = index => ({ id: `drive_${index}_${"a".repeat(160)}`, date: `2026-09-${index % 2 ? "10" : "20"}`, dataUrl: "data:image/jpeg;base64,/9j/4AAB" });
+const image = index => ({ id: `drive_${index}_${"a".repeat(160)}`, date: `2026-09-${index % 2 ? "10" : "20"}`, dataUrl: `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, index]).toString("base64")}` });
 const input = (count = 2) => ({ month: "2026-09", activities: [], images: Array.from({ length: count }, (_, at) => image(at)) });
 const payload = async (count = 2) => readMonthlyReportPhotoSelectionPayload(new Request("https://test.invalid", { method: "POST", body: JSON.stringify(input(count)) }));
 const row = id => ({ id, caption: "바닥 표면 상태", reason: "실내 현장을 확인할 수 있음" });
@@ -36,7 +36,7 @@ test("a complete JSON fence is accepted, unrelated surrounding prose is not", as
   assert.equal(calls, 3);
 });
 
-test("truncated 24-photo output retries two 12-photo groups, preserving IDs and dates", async () => {
+test("24 real candidates use at most 8 images per call and recover a truncated group", async () => {
   const p = await payload(24);
   const batches = [];
   const result = await selectMonthlyReportPhotos(p, env, async (_, options) => {
@@ -45,12 +45,56 @@ test("truncated 24-photo output retries two 12-photo groups, preserving IDs and 
     if (batches.length === 1) return provider([{ text: '{"selected":[' }], "MAX_TOKENS");
     return good(ids);
   });
-  assert.deepEqual(batches, [24, 12, 12]);
+  assert.deepEqual(batches.sort((a, b) => a - b), [4, 4, 8, 8, 8]);
   assert.equal(result.selected.length, 12);
   assert.equal(new Set(result.selected.map(r => r.id)).size, 12);
   assert.ok(result.selected.every(r => p.images.some(i => i.id === r.id)));
   assert.equal(new Set(result.selected.map(r => p.images.find(i => i.id === r.id).date)).size, 2);
-  assert.deepEqual(result.usage, { inputTokens: 30, outputTokens: 60 });
+  assert.deepEqual(result.usage, { inputTokens: 50, outputTokens: 100 });
+});
+
+test("all 24 candidates are reviewed exactly once with concurrency capped at two", async () => {
+  let active = 0, peak = 0;
+  const sizes = [], encoded = [];
+  const p = await payload(24);
+  const result = await selectMonthlyReportPhotos(p, env, async (_, options) => {
+    active++; peak = Math.max(peak, active);
+    const body = JSON.parse(options.body);
+    sizes.push(idsFrom(options).length);
+    encoded.push(...body.contents[0].parts.filter(part => part.inline_data).map(part => part.inline_data.data));
+    await new Promise(resolve => setTimeout(resolve, 5));
+    active--;
+    return good(idsFrom(options));
+  });
+  assert.deepEqual(sizes, [8, 8, 8]);
+  assert.equal(peak, 2);
+  assert.deepEqual(new Set(encoded), new Set(p.images.map(image => image.encoded)));
+  assert.equal(encoded.length, 24);
+  assert.equal(result.selected.length, 12);
+});
+
+test("every truncated group recovers once within the nine-call bound", async () => {
+  let calls = 0;
+  const result = await selectMonthlyReportPhotos(await payload(24), env, async (_, options) => {
+    calls++;
+    const ids = idsFrom(options);
+    return ids.length === 8 ? provider([{ text: '{"selected":' }], "MAX_TOKENS") : good(ids);
+  });
+  assert.equal(calls, 9);
+  assert.equal(result.selected.length, 12);
+});
+
+test("identical JPEGs on the same date are reviewed once without losing the original ID", async () => {
+  const p = await payload(2);
+  const images = [p.images[0], { ...p.images[0], id: "duplicate_id" }];
+  let calls = 0;
+  const result = await selectMonthlyReportPhotos({ ...p, images }, env, async (_, options) => {
+    calls++;
+    assert.deepEqual(idsFrom(options), ["p1"]);
+    return good(["p1"]);
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.selected[0].id, p.images[0].id);
 });
 
 test("MAX_TOKENS never accepts even parseable partial output; singleton retries only once", async () => {

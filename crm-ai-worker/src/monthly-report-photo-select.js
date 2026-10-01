@@ -7,6 +7,7 @@ const MAX_REQUEST_BYTES = 5 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const TOTAL_TIMEOUT_MS = 75_000;
 const ATTEMPT_TIMEOUT_MS = 35_000;
+const PROVIDER_BATCH_SIZE = 8;
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -241,20 +242,46 @@ export async function selectMonthlyReportPhotos(payload, env, fetchImpl = global
   const usage = { inputTokens: 0, outputTokens: 0 };
   const attempt = batch => selectAttempt(batch, env, model, fetchImpl,
     AbortSignal.any([deadline, cancellation.signal, AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)]), usage);
-  let selected;
-  try {
-    try { selected = await attempt(payload); }
+  async function recover(batch) {
+    try { return await attempt(batch); }
     catch (error) {
       // Only retry malformed/incomplete model output, never authorization, safety,
-      // quota, redirects or provider configuration failures. At most 3 calls total.
+      // quota, redirects or provider configuration failures. At most 3 calls per
+      // group, 9 total, sharing one deadline and cancellation across all groups.
       if (!["AI_INVALID_RESPONSE", "AI_RESPONSE_INCOMPLETE"].includes(error?.code) || deadline.aborted) throw error;
-      const midpoint = Math.ceil(payload.images.length / 2);
-      const batches = [payload.images.slice(0, midpoint), payload.images.slice(midpoint)].filter(images => images.length);
-      const recovered = await Promise.all(batches.map(images => attempt({ ...payload, images })));
-      selected = recovered.flat();
+      const midpoint = Math.ceil(batch.images.length / 2);
+      // Sequential recovery keeps global provider concurrency at two or less.
+      const halves = [batch.images.slice(0, midpoint), batch.images.slice(midpoint)].filter(images => images.length);
+      const recovered = [];
+      for (const images of halves) recovered.push(...await attempt({ ...batch, images }));
+      return recovered;
     }
+  }
+  // 24 real photographs exceeded the upstream deadline in production, whereas
+  // 8 completed in ~5s. Review every candidate in small groups from the outset.
+  const seen = new Set();
+  const images = payload.images.filter(image => {
+    if (typeof image.encoded !== "string") return true;
+    const key = `${image.date}:${image.encoded}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const groups = [];
+  for (let at = 0; at < images.length; at += PROVIDER_BATCH_SIZE) groups.push(images.slice(at, at + PROVIDER_BATCH_SIZE));
+  const results = new Array(groups.length);
+  let cursor = 0;
+  async function review() {
+    while (cursor < groups.length) {
+      if (deadline.aborted || cancellation.signal.aborted) throw failure("AI_TEMPORARY_FAILURE");
+      const at = cursor++;
+      results[at] = await recover({ ...payload, images: groups[at] });
+    }
+  }
+  try {
+    await Promise.all(Array.from({ length: Math.min(2, groups.length) }, () => review()));
   } finally { cancellation.abort(); }
-  return Object.freeze({ selected: representativeSelection(selected, payload.images), usage: Object.freeze(usage) });
+  return Object.freeze({ selected: representativeSelection(results.flat(), payload.images), usage: Object.freeze(usage) });
 }
 
 export const monthlyReportPhotoLimits = Object.freeze({ MAX_IMAGES, MAX_SELECTED, MAX_IMAGE_BYTES, MAX_REQUEST_BYTES });
