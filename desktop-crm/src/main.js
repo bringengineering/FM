@@ -3135,6 +3135,7 @@ async function saveCustomerDocument(input) {
     title = artifact.report.buildingName + " " + artifact.report.monthText + " 월간 관리 보고서";
   }
   session.check();
+  if (!/^01\d{8,9}$/.test(SavedCustomerDocuments.phone(customer.phone))) throw new Error("알림톡 수신 고객의 휴대전화 번호를 확인해 주세요.");
   const checked = SavedCustomerDocumentPdf.verifyPdf(bytes);
   const id = "saved_" + crypto.randomUUID(), now = new Date().toISOString();
   const uploaded = await BuildingDocsDrive.uploadDocument(driveApiDeps(), {
