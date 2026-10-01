@@ -10,6 +10,7 @@
     "bring-fm.web.app",
   ]);
   const CONTINUE_HOST = "bring-fm.web.app";
+  // Firebase Hosting cleanUrls canonicalizes this route without a trailing slash.
   const CONTINUE_PATH = "/crm-account-setup/";
   const CONTINUE_PATH_WITHOUT_SLASH = "/crm-account-setup";
 
