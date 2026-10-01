@@ -4,56 +4,53 @@ const path = require("node:path");
 const test = require("node:test");
 
 const MutationPolicy = require("../src/mutation-policy");
-const DocFlow = require("../src/doc-flow-core");
+const vm = require("node:vm");
 const read = name => fs.readFileSync(path.join(__dirname, "../src", name), "utf8");
 const appSource = read("app.js");
 const mainSource = read("main.js");
 const preloadSource = read("preload.js");
 const indexSource = read("index.html");
 
-test("문서관리에 견적서·결과보고서·고객 알림이 그 순서로 놓여 있다", () => {
-  const nav = indexSource.slice(indexSource.indexOf("문서관리"));
-  const order = DocFlow.STEPS.map(step => nav.indexOf(`data-view="${step.view}"`));
-  assert.ok(order.every(at => at >= 0), `문서관리에 없는 화면: ${JSON.stringify(order)}`);
-  assert.deepEqual([...order].sort((a, b) => a - b), order, "순서가 견적서 → 결과보고서 → 고객 알림 이어야 한다");
-  // 같은 화면이 두 군데 있으면 어느 것을 눌러야 하는지 알 수 없다.
-  assert.equal(indexSource.split('data-view="quotes"').length - 1, 1);
+test("발송 메뉴는 CRM의 알림톡 발송 하나이고 문서 화면은 독립적으로 남는다", () => {
+  const crm = indexSource.slice(indexSource.indexOf('data-nav-folder="customer-management"'), indexSource.indexOf('data-nav-folder="project"'));
+  const docs = indexSource.slice(indexSource.indexOf('data-nav-folder="documents"'), indexSource.indexOf('data-nav-folder="workflow"'));
+  assert.match(crm, /data-view="customerAlimTalk"/);
+  for (const view of ["quotes", "workReports", "buildingMonthlyReports"]) assert.ok(docs.includes('data-view="' + view + '"'));
+  for (const view of ["customerMessages", "customerNotices"]) assert.ok(!indexSource.includes('data-view="' + view + '"'));
+  assert.equal(indexSource.split('data-view="customerAlimTalk"').length - 1, 1);
+  assert.doesNotMatch(docs, /customerAlimTalk/);
 });
 
-test("세 화면이 다 열리고 주소로도 열린다", () => {
-  for (const step of DocFlow.STEPS) {
-    assert.ok(appSource.includes(`"${step.view}"`), step.view);
+test("견적서·결과보고서의 단계·다음 안내와 자동 전달 경로를 제거했다", () => {
+  assert.doesNotMatch(appSource, /docFlowStrip|docFlowState|handOffQuoteToReport|handOffReportToNotice|data-df-/);
+  assert.doesNotMatch(indexSource, /doc-flow-core\.js/);
+  const quotes = appSource.slice(appSource.indexOf("function renderQuotes()"), appSource.indexOf("function refreshQuotesView()"));
+  assert.match(quotes, /main.innerHTML = renderAiQuoteAssistant\(\)/);
+  assert.doesNotMatch(quotes, /reportSeedFromQuote|normalizeReport|currentView =/);
+});
+
+test("기존 고객 알림·메시지 주소는 통합 화면으로 전환하고 고객 업무 문맥은 보존한다", () => {
+  const start = appSource.indexOf("function renderOperationsWorkspace() {");
+  const body = appSource.slice(start + "function renderOperationsWorkspace() {".length, appSource.indexOf('    if (!["customers", "buildingAtlas"]', start));
+  assert.ok(body.trim());
+  for (const oldView of ["customerMessages", "customerNotices", "customerAlimTalk"]) {
+    const context = {currentView: oldView, customerAlimTalkState: {}, selectedMessageCustomerId: "sample-customer", selectedMessageTemplateId: "cleaning_schedule", selectedMessageSourceType: "cleaningOrder", selectedMessageSourceId: "sample-order"};
+    vm.runInNewContext(body, context);
+    assert.equal(context.currentView, "customerAlimTalk");
+    if (oldView === "customerMessages") {
+      assert.equal(context.customerAlimTalkState.selectedCustomerIds[0], "sample-customer");
+      assert.equal(context.customerAlimTalkState.sourceId, "sample-order");
+      assert.equal(context.customerAlimTalkState.category, "notice");
+    }
   }
-  // viewMeta 에 없으면 화면이 조용히 대시보드로 튕긴다.
-  assert.match(appSource, /\n    customerNotices: \[/u);
-  assert.match(appSource, /\n    workReports: \[/u);
-  const allow = appSource.split(/\r?\n/u).filter(line => line.includes('query.get("view")')).join("\n");
-  for (const view of ["workReports", "customerNotices"]) {
-    assert.ok(allow.includes(`"${view}"`), `주소로 못 여는 화면: ${view}`);
+});
+
+test("비동기 자료·발신 설정이 도착하면 통합 화면을 갱신한다", () => {
+  for (const name of ["refreshDocumentDeliveryCapabilities", "loadWorkReports", "refreshQuotesView"]) {
+    const start = appSource.indexOf("function " + name + "(");
+    const body = appSource.slice(start, appSource.indexOf("\n  }", start));
+    assert.match(body, /currentView === "customerAlimTalk"\) renderCustomerAlimTalk\(\)/);
   }
-  assert.match(appSource, /currentView === "customerNotices"\) renderCustomerNotices\(\)/u);
-});
-
-test("모듈을 화면이 싣는다", () => {
-  assert.ok(indexSource.includes('src="./doc-flow-core.js"'));
-  assert.ok(indexSource.includes('src="./notify-core.js"'), "문구를 만드는 모듈을 안 실으면 알림 화면이 안 뜬다");
-});
-
-test("견적서가 아는 것을 결과보고서가 물려받는다", () => {
-  const hand = appSource.slice(appSource.indexOf("function handOffQuoteToReport"), appSource.indexOf("function handOffReportToNotice"));
-  assert.ok(hand, "handOffQuoteToReport 가 없다");
-  assert.match(hand, /F\.reportSeedFromQuote\(quote\)/u);
-  assert.match(hand, /R\.normalizeReport\(seed\)/u);
-  // 못 채운 칸을 말 없이 넘기면 빈 보고서가 그대로 나간다.
-  assert.match(hand, /missing\.join/u);
-  assert.match(hand, /특수·기타/u);
-  // 견적을 만들 때마다 저절로 만들면 안 한 일의 보고서가 쌓인다.
-  assert.ok(!/api\.saveWorkReport/u.test(hand), "누르기 전에 저장하면 안 된다");
-});
-
-test("알림 문구를 화면에서 새로 쓰지 않는다", () => {
-  const hand = appSource.slice(appSource.indexOf("function handOffReportToNotice"), appSource.indexOf("function renderCustomerNotices"));
-  assert.match(hand, /N\.draftFor\("result", F\.noticeValuesFromReport\(report\)\)/u);
 });
 
 test("알림 채널이 세 곳에 다 등록돼 있다", () => {
@@ -82,8 +79,6 @@ test("작업 결과보고서 알림톡은 승인 상태와 수신번호를 확�
   assert.match(kakao, /documentType: "completion_report"/u);
   assert.match(kakao, /channel: "kakao"/u);
   assert.match(kakao, /"revoke"/u);
-  assert.match(appSource, /발신 설정 또는 승인 템플릿 확인 필요/u);
-  assert.match(appSource, /고객에게 알림톡 발송/u);
-  // 회사 텔레그램은 내부 전달 문구 수동 복사용으로 남겨 둔다.
-  assert.match(appSource, /고객에게 바로 가지 않습니다/u);
+  assert.match(appSource, /requestConfirmationFor/);
+  assert.match(appSource, /api\.sendWorkReportToCustomerByKakao/);
 });

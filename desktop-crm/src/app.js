@@ -80,7 +80,7 @@
   let selectedCleaningOrderDetailId = "";
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
-  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", busy: false, result: "", returningFromComposer: false };
+  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", busy: false, result: "", messageToolsOpen: false };
   let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
@@ -1578,6 +1578,17 @@
   }
 
   function renderOperationsWorkspace() {
+    // Keep old bookmarks/customer shortcuts working, but expose only one CRM screen.
+    if (currentView === "customerMessages") {
+      customerAlimTalkState.selectedCustomerIds = selectedMessageCustomerId ? [String(selectedMessageCustomerId)] : [];
+      customerAlimTalkState.category = "notice";
+      customerAlimTalkState.templateId = selectedMessageTemplateId;
+      customerAlimTalkState.sourceType = selectedMessageSourceType;
+      customerAlimTalkState.sourceId = selectedMessageSourceId;
+      customerAlimTalkState.messageToolsOpen = true;
+      currentView = "customerAlimTalk";
+    }
+    if (currentView === "customerNotices") currentView = "customerAlimTalk";
     if (!["customers", "buildingAtlas"].includes(currentView) && (buildingAtlasView || buildingAtlasLoading)) disposeBuildingAtlas();
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     if (currentView !== "dashboard" && !["officeHome", "officeAttendance", "officeRfid", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "officeAccountSetup"].includes(currentView)) window.BringOffice?.deactivate?.();
@@ -1628,9 +1639,7 @@
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "workReports") renderWorkReports();
     else if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
-    else if (currentView === "customerNotices") renderCustomerNotices();
     else if (currentView === "customers") renderCustomers();
-    else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
     else if (currentView === "buildings") renderBuildings();
     else if (currentView === "buildingAtlas") renderBuildingAtlas();
@@ -4447,15 +4456,24 @@
   }
 
   function renderCustomerMessages() {
-    if (!store.customers.some(item => item.id === selectedMessageCustomerId)) selectedMessageCustomerId = store.customers[0]?.id || "";
+    customerAlimTalkState.selectedCustomerIds = selectedMessageCustomerId ? [String(selectedMessageCustomerId)] : [];
+    customerAlimTalkState.templateId = selectedMessageTemplateId;
+    customerAlimTalkState.sourceType = selectedMessageSourceType;
+    customerAlimTalkState.sourceId = selectedMessageSourceId;
+    customerAlimTalkState.messageToolsOpen = true;
+    renderCustomerAlimTalk();
+  }
+
+  function renderCustomerMessageTools() {
     const cleaningMessageOrder = selectedMessageSourceType === "cleaningOrder"
       ? cleaningOrderState.orders.find(item => String(item.id || "") === String(selectedMessageSourceId || "")) || null
       : null;
     const cleaningMessageQuoteSet = cleaningMessageOrder && cleaningOrderState.quoteSets?.[cleaningMessageOrder.id];
     const cleaningMessageQuote = cleaningMessageQuoteSet?.latestQuoteId && cleaningMessageQuoteSet?.revisions?.[cleaningMessageQuoteSet.latestQuoteId];
     const cleaningServiceLabels = { move_in_cleaning: "입주 청소", move_out_cleaning: "퇴실 청소", common_cleaning: "공용부 청소", stair_cleaning: "계단 청소", other: "기타 서비스" };
-    main.innerHTML = MessageUI.renderWorkspace({
-      customers: store.customers,
+    return MessageUI.renderWorkspace({
+      embedded: true,
+      customers: store.customers.filter(item => String(item.id) === String(selectedMessageCustomerId)),
       mode: selectedMessageMode,
       selectedCustomerId: selectedMessageCustomerId,
       templateId: selectedMessageTemplateId,
@@ -4479,7 +4497,6 @@
       documentDeliveries: customerMessageDeliveries().filter(item => item.documentId),
       writable: canWriteCRM()
     });
-    if (selectedMessageMode === "documents" && !documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
   }
 
   function normalizedPhone(value) { return String(value || "").replace(/\D/gu, ""); }
@@ -4546,9 +4563,17 @@
       quote,
       selectedBuildingOwner,
     });
+    if (state.category === "notice" && customer) {
+      selectedMessageCustomerId = customer.id;
+      selectedMessageTemplateId = state.templateId;
+      selectedMessageSourceType = state.sourceType;
+      selectedMessageSourceId = state.sourceId;
+      main.insertAdjacentHTML("beforeend", `<details class="alimtalk-legacy-tools" data-alimtalk-tools ${state.messageToolsOpen ? "open" : ""}><summary>안내 상세 작성·SMS·수신 동의 관리</summary>${renderCustomerMessageTools()}</details>`);
+    }
+    main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries() }));
     if (!documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
     if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
-    if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading) void loadAiQuoteSeal();
+    if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading && !aiAssistantState.sealError) void loadAiQuoteSeal();
   }
 
   function openCustomerAlimTalk() {
@@ -4665,8 +4690,7 @@
     } catch (_error) {
       documentDeliveryCapabilities = { kakao: false, monthlyReport: false, sms: false, loaded: true, loading: false };
     }
-    if (currentView === "customerMessages" && selectedMessageMode === "documents") renderCustomerMessages();
-    else if (currentView === "customerNotices" && docFlowState.report) renderCustomerNotices();
+    if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
     else if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
   }
 
@@ -5518,15 +5542,9 @@
     main.innerHTML = renderAiReportAssistant();
   }
 
-  // 견적서는 고객에게 보내는 서류라 CRM 폴더에 산다. AI 로 초안을 뽑는 것은
-  // 그 안의 한 가지 방법일 뿐이라, AI 비서 탭에 숨어 있을 이유가 없었다.
+  // 문서는 독립적으로 작성한다. 고객과 발송 자료는 CRM 알림톡 발송에서 고른다.
   function renderQuotes() {
-    // 견적서를 만든 다음 무엇을 해야 하는지가 이 화면에 없었다. 그래서
-    // 결과보고서 화면에서 건물명·주소·건물주를 처음부터 다시 쳤다.
-    const handOff = aiAssistantState.quote
-      ? `<div class="df-handoff"><button type="button" class="primary-button" data-df-report>이 견적으로 결과보고서 만들기</button><small>건물명·주소·건물주·연락처·작업 종류가 그대로 넘어갑니다. 작업일과 작업자는 비워 둡니다.</small></div>`
-      : `<div class="df-handoff"><small>견적서를 만들면 그대로 결과보고서로 넘길 수 있습니다.</small></div>`;
-    main.innerHTML = docFlowStrip("quote") + handOff + renderAiQuoteAssistant();
+    main.innerHTML = renderAiQuoteAssistant();
     if (!aiAssistantState.supplierLoaded && !aiAssistantState.supplierLoading) void loadAiQuoteSupplier();
     if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading) void loadAiQuoteSeal();
   }
@@ -5534,6 +5552,7 @@
   // 견적 화면을 다시 그린다. 화면이 옮겨 다녀도 부르는 쪽이 안 바뀌게 한다.
   function refreshQuotesView() {
     if (currentView === "quotes") renderQuotes();
+    else if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
   }
 
   function renderAiReportAssistant() {
@@ -8539,6 +8558,7 @@
     } finally {
       reportState.loading = false;
       if (currentView === "workReports") renderWorkReports();
+      else if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
       else if (isCleaningPageView()) renderCleaningCenter();
     }
   }
@@ -8550,219 +8570,6 @@
     return { vendorNames: vendors, vendorAmounts: [], privateMemos: [] };
   }
 
-  // --- 문서관리 한 줄 (견적서 → 결과보고서 → 고객 알림) ---
-  //
-  // 세 장이 남남이면 같은 것을 세 번 적게 된다. 앞 장이 아는 것을 뒷 장이
-  // 물려받게 하고, 어디까지 왔는지를 세 화면 모두 위에 같은 모양으로 둔다.
-  let docFlowState = {
-    quote: null,      // 견적서 화면에서 넘긴 것
-    report: null,     // 결과보고서 화면에서 고른 것
-    notice: null,     // 만든 문구
-    sending: false,
-    sentAt: "",
-    kakaoSending: false,
-    kakaoResult: null,
-  };
-
-  const docFlowCore = () => window.BringDocFlowCore;
-  const notifyCore = () => window.BringNotifyCore;
-
-  function docFlowStrip(currentKey) {
-    const F = docFlowCore();
-    if (!F) return "";
-    const chain = F.chain(docFlowState);
-    const label = {
-      quote: docFlowState.quote ? `${docFlowState.quote.projectName || docFlowState.quote.recipient || "견적"}` : "아직 없음",
-      report: docFlowState.report ? `${docFlowState.report.buildingName || "건물 미지정"}` : "아직 없음",
-      notice: docFlowState.sentAt ? `보냄 ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}` : (docFlowState.notice ? "문구 만듦" : "아직 없음"),
-    };
-    return `<section class="df-strip">
-      <ol>${chain.steps.map(step => `<li class="${step.done ? "is-done" : ""}${step.key === currentKey ? " is-here" : ""}${step.ready ? "" : " is-locked"}">
-        <button type="button" data-df-go="${esc(step.view)}"${step.ready ? "" : " disabled"}>
-          <b>${step.no}</b>
-          <span>${esc(step.label)}</span>
-          <small>${label[step.key]}</small>
-        </button>
-      </li>`).join("")}</ol>
-      <p>${esc(chain.next ? `다음: ${chain.next.label} — ${chain.next.hint}` : "세 장이 다 끝났습니다.")}</p>
-    </section>`;
-  }
-
-  // 견적서에서 결과보고서로 넘긴다. 만드는 것은 사람이 누른다 — 견적을 낼
-  // 때마다 보고서가 생기면 안 한 일의 보고서가 쌓인다.
-  function handOffQuoteToReport() {
-    const F = docFlowCore();
-    const R = reportCore();
-    const quote = aiAssistantState.quote;
-    if (!F || !R) { showToast("모듈을 불러오지 못했습니다.", "error"); return; }
-    if (!quote) { showToast("먼저 견적서를 만들어 주세요.", "error"); return; }
-    if (!reportState.canWork) { showToast("결과보고서를 만들 권한이 없습니다.", "error"); return; }
-    const { seed, missing, matched } = F.reportSeedFromQuote(quote);
-    docFlowState.quote = quote;
-    reportState.draft = R.normalizeReport(seed);
-    reportState.selectedId = "";
-    currentView = "workReports";
-    render();
-    const notice = [];
-    if (!matched) notice.push("작업 종류를 못 맞춰 ‘특수·기타’ 로 열었습니다");
-    if (missing.length) notice.push(`${missing.join("·")} 을(를) 채워 주세요`);
-    showToast(notice.length ? `견적서에서 옮겼습니다. ${notice.join(" · ")}.` : "견적서에서 옮겼습니다.", notice.length ? "info" : "success");
-  }
-
-  // 결과보고서에서 고객 알림으로 넘긴다.
-  function handOffReportToNotice(reportId) {
-    const F = docFlowCore();
-    const N = notifyCore();
-    if (!F || !N) { showToast("모듈을 불러오지 못했습니다.", "error"); return; }
-    const report = reportState.reports.find(item => item && item.id === reportId)
-      || (reportState.draft && reportState.draft.id === reportId ? reportState.draft : null);
-    if (!report) { showToast("보고서를 찾지 못했습니다.", "error"); return; }
-    docFlowState.report = report;
-    docFlowState.notice = N.draftFor("result", F.noticeValuesFromReport(report));
-    docFlowState.sentAt = "";
-    docFlowState.kakaoResult = null;
-    currentView = "customerNotices";
-    render();
-  }
-
-  function renderCustomerNotices() {
-    const F = docFlowCore();
-    const N = notifyCore();
-    if (!F || !N) { main.innerHTML = `<section class="operations-hero"><div><h2>고객 알림</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    const report = docFlowState.report;
-    const notice = docFlowState.notice;
-    const body = notice ? notice.body : "";
-    if (report && !documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
-    const R = reportCore();
-    const reportCheck = report && R ? R.validateReport(report) : { ok: false };
-    const contactDigits = String(report && report.ownerContact || "").replace(/\D/gu, "");
-    const kakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.kakao === true;
-    const canKakaoSend = Boolean(report && reportCheck.ok && /^01\d{8,9}$/u.test(contactDigits) && kakaoReady && canAdministerSecurity() && !docFlowState.kakaoSending);
-    const kakaoStatus = documentDeliveryCapabilities.loading || !documentDeliveryCapabilities.loaded
-      ? "연결 상태 확인 중"
-      : kakaoReady ? "알림톡 발송 준비 완료" : "발신 설정 또는 승인 템플릿 확인 필요";
-    const kakaoBlockReason = !canAdministerSecurity() ? "관리자 권한이 필요합니다."
-      : !contactDigits ? "결과보고서에 건물주 휴대전화 번호를 입력해 주세요."
-        : !/^01\d{8,9}$/u.test(contactDigits) ? "건물주 연락처를 휴대전화 번호로 확인해 주세요."
-          : !reportCheck.ok ? "결과보고서의 필수 항목과 전·후 사진을 확인해 주세요."
-            : !kakaoReady ? "발신 프로필·발송 서버 설정과 카카오 승인 템플릿이 확인되어야 발송할 수 있습니다."
-              : "승인된 작업 결과보고서 템플릿으로 발송합니다.";
-
-    main.innerHTML = `<section class="operations-hero">
-        <div><span>문서관리</span><h2>고객 알림</h2><p>작업 결과보고서를 확인하고, 건물주에게 카카오 알림톡으로 안전하게 전달합니다.</p></div>
-      </section>
-      ${docFlowStrip("notice")}
-      ${report ? `<section class="office-panel">
-        <header><div><span>NOTICE</span><h3>${esc(report.buildingName || "건물 미지정")}</h3></div><small>${esc(report.workDate || "작업일 미기재")} · ${esc(report.ownerName || "건물주 미기재")}</small></header>
-        <div class="df-notice">
-          <section class="df-kakao-card">
-            <header><div><b>카카오 알림톡 · 작업 결과보고서</b><small>발송 뒤 고객에게 보안 링크가 전달됩니다.</small></div><span class="${kakaoReady ? "is-ready" : "is-pending"}">${esc(kakaoStatus)}</span></header>
-            <div class="df-kakao-preview">
-              <b>BRING CARE · 작업 결과보고서 안내</b>
-              <p>${esc(report.ownerName || "건물주")}님, 요청하신 작업 결과보고서가 발행되었습니다.</p>
-              <p>작업명: ${esc(`${report.buildingName || "건물"} 작업 결과보고서`)}<br>열람기한: 발송일로부터 7일</p>
-              <div class="df-kakao-link"><span><b>작업 결과보고서</b><small>전·후 사진이 포함된 PDF</small></span><em>결과보고서 확인</em></div>
-            </div>
-            <div class="df-kakao-actions">
-              <button type="button" class="secondary-button" data-df-kakao-refresh${documentDeliveryCapabilities.loading ? " disabled" : ""}>연동 상태 확인</button>
-              <button type="button" class="primary-button" data-df-kakao-send${canKakaoSend ? "" : " disabled"}>${docFlowState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button>
-            </div>
-            <p class="df-kakao-hint">${esc(kakaoBlockReason)} 템플릿 문구와 버튼은 카카오 심사 승인본을 사용합니다.</p>
-            ${docFlowState.kakaoResult ? `<p class="df-kakao-result">알림톡 발송 요청을 접수했습니다 · ${esc(docFlowState.kakaoResult.requestedAt || "")} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}
-          </section>
-          <label><span>회사 텔레그램으로 보낼 내부 전달 문구</span><textarea rows="4" data-df-body>${esc(body)}</textarea></label>
-          ${notice && notice.missing.length ? `<p class="df-warn">채우지 못한 칸이 있습니다: ${esc(notice.missing.join(", "))}. 내부 전달 전에 고쳐 주세요.</p>` : ""}
-          <dl class="df-meta">
-            <div><dt>받는 사람</dt><dd>${esc(report.ownerName || "미기재")}</dd></div>
-            <div><dt>연락처</dt><dd>${esc(report.ownerContact || "미기재")}</dd></div>
-            <div><dt>단계 문구</dt><dd>${esc(notice ? notice.title : "-")}</dd></div>
-          </dl>
-          <div class="df-actions">
-            <button type="button" class="secondary-button" data-df-copy>문구 복사</button>
-            <button type="button" class="secondary-button" data-df-send${docFlowState.sending ? " disabled" : ""}>회사 텔레그램으로 내부 전달</button>
-          </div>
-          ${docFlowState.sentAt ? `<p class="office-muted">보냈습니다 · ${esc(docFlowState.sentAt.slice(0, 16).replace("T", " "))}</p>` : ""}
-        </div>
-      </section>` : `<section class="office-panel"><div class="office-empty">
-        <b>아직 고른 보고서가 없습니다</b>
-        <span>작업 결과보고서 목록에서 ‘고객 알림’ 을 누르면 그 보고서로 문구를 만듭니다.</span>
-      </div></section>`}
-      `;
-  }
-
-  async function sendCustomerNotice() {
-    if (docFlowState.sending) return;
-    const report = docFlowState.report;
-    const field = document.querySelector("[data-df-body]");
-    const body = field ? String(field.value || "").trim() : "";
-    if (!report) { showToast("먼저 보고서를 골라 주세요.", "error"); return; }
-    if (!body) { showToast("보낼 문구가 비어 있습니다.", "error"); return; }
-    const confirmed = await requestConfirmation({
-      title: "회사 텔레그램으로 보냅니다",
-      description: "고객에게 바로 가지 않습니다. 회사방에 문구가 올라가고, 사람이 카카오톡에 붙여 넣습니다.",
-      target: `${report.buildingName || "건물 미지정"} · ${report.ownerName || "건물주 미기재"}`,
-      confirmLabel: "보내기",
-    });
-    if (!confirmed) return;
-    docFlowState.sending = true;
-    render();
-    try {
-      const result = await api.sendCustomerNotice({
-        buildingName: report.buildingName,
-        ownerName: report.ownerName,
-        ownerContact: report.ownerContact,
-        workDate: report.workDate,
-        body,
-      });
-      if (!result || result.ok !== true) throw new Error((result && result.error) || "보내지 못했습니다.");
-      docFlowState.sentAt = new Date().toISOString();
-      showToast("회사 텔레그램방으로 보냈습니다.", "success");
-    } catch (error) {
-      showToast(error && error.message || "보내지 못했습니다.", "error");
-    } finally {
-      docFlowState.sending = false;
-      render();
-    }
-  }
-
-  async function sendWorkReportByKakao() {
-    if (docFlowState.kakaoSending) return;
-    const report = docFlowState.report;
-    const R = reportCore();
-    if (!report || !R) { showToast("먼저 작업 결과보고서를 선택해 주세요.", "error"); return; }
-    if (!canAdministerSecurity()) { showToast("관리자만 고객에게 알림톡을 보낼 수 있습니다.", "error"); return; }
-    if (!documentDeliveryCapabilities.kakao) { showToast("발신 설정 또는 카카오 승인 템플릿을 확인해 주세요.", "error"); return; }
-    if (!R.validateReport(report).ok) { showToast("결과보고서의 필수 항목과 전·후 사진을 확인해 주세요.", "error"); return; }
-    if (!/^01\d{8,9}$/u.test(String(report.ownerContact || "").replace(/\D/gu, ""))) {
-      showToast("결과보고서에 건물주 휴대전화 번호를 입력해 주세요.", "error");
-      return;
-    }
-    const confirmed = await requestConfirmation({
-      title: "작업 결과보고서를 카카오 알림톡으로 보낼까요?",
-      description: "건물주에게 승인된 알림톡 템플릿과 7일 동안 열 수 있는 결과보고서 PDF 링크를 보냅니다.",
-      target: `${report.buildingName || "건물 미지정"} · ${report.ownerName || "건물주"} · ${report.ownerContact}`,
-      confirmLabel: "알림톡 발송",
-    });
-    if (!confirmed) return;
-    docFlowState.kakaoSending = true;
-    docFlowState.kakaoResult = null;
-    render();
-    try {
-      const result = await api.sendWorkReportToCustomerByKakao({
-        report,
-        company: (store.settings && store.settings.quoteCompany) || {},
-        secrets: reportSecrets(),
-      });
-      if (!result || result.ok !== true) throw new Error((result && result.error) || "알림톡 발송을 요청하지 못했습니다.");
-      docFlowState.kakaoResult = { status: result.status || "requested", requestedAt: new Date().toLocaleString("ko-KR") };
-      showToast(`알림톡 발송 요청을 접수했습니다.${result.photoFailures ? ` 사진 ${result.photoFailures}장은 첨부하지 못했습니다.` : ""} 실제 전달 완료와는 다를 수 있습니다.`, result.photoFailures ? "info" : "success");
-    } catch (error) {
-      showToast(error && error.message || "알림톡 발송 요청에 실패했습니다.", "error");
-    } finally {
-      docFlowState.kakaoSending = false;
-      render();
-    }
-  }
 
   function renderWorkReports() {
     const R = reportCore();
@@ -8792,7 +8599,6 @@
           ${reportState.canWork ? editAccess.editable || (item.cleaningOrderId && !linkedOrder) ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">${linkedOrder || !item.cleaningOrderId ? "고치기" : "상태 확인 후 편집"}</button>` : `<span class="wr-readonly-label" title="${esc(editAccess.reason)}">읽기 전용</span>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
-          <button type="button" class="mini-button" data-df-notice="${esc(item.id)}">고객 알림</button>
         </td>
       </tr>`;
     }).join("");
@@ -8805,7 +8611,6 @@
         <button type="button" class="secondary-button" data-report-history>작성 내역 ${reports.length ? `<b>${reports.length}</b>` : ""}</button>
         ${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>＋ 새 보고서</button>` : ""}
       </div>
-      ${docFlowStrip("report")}
       ${status}
       ${draft ? reportState.readOnlyReason ? renderReadOnlyWorkReport(R, draft, reportState.readOnlyReason) : reportEditor(R, draft) : `<div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
@@ -13921,6 +13726,12 @@
     } catch (error) { showToast(error.message || "건물을 보관하지 못했습니다.", "error"); }
   }
 
+  document.addEventListener("toggle", event => {
+    if (event.target.matches?.("[data-alimtalk-tools]") && event.target.isConnected) {
+      customerAlimTalkState.messageToolsOpen = event.target.open;
+    }
+  }, true);
+
   document.addEventListener("click", async event => {
     const alimtalkCategory = event.target.closest("[data-alimtalk-category]");
     if (alimtalkCategory && currentView === "customerAlimTalk") {
@@ -13940,7 +13751,6 @@
       return;
     }
     if (event.target.closest("[data-alimtalk-open-quote]") && currentView === "customerAlimTalk") {
-      customerAlimTalkState.returningFromComposer = true;
       currentView = "quotes";
       render();
       return;
@@ -13952,7 +13762,6 @@
       if (String(buildingMonthlyReportState.buildingId) !== String(building.id) || String(buildingMonthlyReportState.month) !== String(customerAlimTalkState.month)) {
         buildingMonthlyReportState = createBuildingMonthlyReportState({ buildingId: building.id, month: customerAlimTalkState.month });
       }
-      customerAlimTalkState.returningFromComposer = true;
       currentView = "buildingMonthlyReports";
       render();
       return;
@@ -14946,27 +14755,6 @@
       } else if (fromTodayActions) showToast("원본 업무를 찾지 못했습니다. 새로고침 후 확인해 주세요.");
       return;
     }
-    const dfGo = event.target.closest("[data-df-go]");
-    if (dfGo) { currentView = dfGo.dataset.dfGo; render(); return; }
-    if (event.target.closest("[data-df-report]")) { handOffQuoteToReport(); return; }
-    const dfNotice = event.target.closest("[data-df-notice]");
-    if (dfNotice) { handOffReportToNotice(dfNotice.dataset.dfNotice); return; }
-    if (event.target.closest("[data-df-copy]")) {
-      const field = document.querySelector("[data-df-body]");
-      const body = field ? String(field.value || "") : "";
-      if (!body) { showToast("복사할 문구가 없습니다.", "error"); return; }
-      void navigator.clipboard.writeText(body)
-        .then(() => showToast("문구를 복사했습니다. 카카오톡에 붙여 넣으세요.", "success"))
-        .catch(() => showToast("복사하지 못했습니다. 문구를 직접 선택해 주세요.", "error"));
-      return;
-    }
-    if (event.target.closest("[data-df-send]")) { void sendCustomerNotice(); return; }
-    if (event.target.closest("[data-df-kakao-refresh]")) {
-      documentDeliveryCapabilities = Object.assign({}, documentDeliveryCapabilities, { loaded: false });
-      void refreshDocumentDeliveryCapabilities();
-      return;
-    }
-    if (event.target.closest("[data-df-kakao-send]")) { void sendWorkReportByKakao(); return; }
     const liveRefresh = event.target.closest("[data-live-refresh]");
     if (liveRefresh) {
       const refreshes=[loadWorkOrders()];
@@ -17514,6 +17302,10 @@
       if (alimtalkRecipient.checked) {
         if (!customerAlimTalkState.selectedCustomerIds.includes(id)) customerAlimTalkState.selectedCustomerIds.push(id);
       } else customerAlimTalkState.selectedCustomerIds = customerAlimTalkState.selectedCustomerIds.filter(value => value !== id);
+      customerAlimTalkState.sourceType = "";
+      customerAlimTalkState.sourceId = "";
+      customerAlimTalkState.workReportId = "";
+      selectedMessageNote = "";
       customerAlimTalkState.result = "";
       renderCustomerAlimTalk();
       return;
