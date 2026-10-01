@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const FUNCTION_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/completeCrmAccountSetup";
+  const FUNCTION_BASE = "https://asia-northeast3-bring-fm.cloudfunctions.net";
   const form = document.getElementById("setupForm");
   const displayName = document.getElementById("setupDisplayName");
   const email = document.getElementById("setupEmail");
@@ -10,11 +10,23 @@
   const submit = document.getElementById("setupSubmit");
   const message = document.getElementById("setupMessage");
   let actionCode = "";
+  let inviteUid = "";
+  let inviteToken = "";
   let completed = false;
 
   function setMessage(text, tone) {
     message.textContent = String(text || "");
     message.className = `setup-message${tone ? ` is-${tone}` : ""}`;
+  }
+
+  function showInvalidInvite() {
+    form.hidden = true;
+    actionCode = "";
+    inviteUid = "";
+    inviteToken = "";
+    document.getElementById("setupTitle").textContent = "유효한 초대 링크가 아닙니다";
+    document.getElementById("setupDescription").textContent = "관리자에게 새 이메일 인증 링크를 요청해 주세요.";
+    setMessage("링크가 만료되었거나 올바르지 않습니다.", "error");
   }
 
   function readActionCode() {
@@ -25,18 +37,6 @@
     const nested = params.get("link") || params.get("deep_link_id");
     return nested ? window.BringCrmAccountSetup.parseSignInActionLink(nested) : null;
   }
-
-  const action = readActionCode();
-  try { window.history.replaceState(null, "", window.location.pathname); } catch (_) {}
-  if (!action || action.mode !== "signIn") {
-    document.getElementById("setupTitle").textContent = "유효한 초대 링크가 아닙니다";
-    document.getElementById("setupDescription").textContent = "관리자에게 새 이메일 인증 링크를 요청해 주세요.";
-    setMessage("링크가 만료되었거나 올바르지 않습니다.", "error");
-    return;
-  }
-  actionCode = action.actionCode;
-  form.hidden = false;
-  setMessage("이름과 메일 주소를 확인하고 새 비밀번호를 설정해 주세요.");
 
   async function boundedJson(response) {
     const declaredLength = response.headers.get("content-length");
@@ -64,8 +64,49 @@
     }
     const bytes = new Uint8Array(size);
     let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  }
+
+  async function callSetupFunction(name, data) {
+    const response = await fetch(`${FUNCTION_BASE}/${name}`, {
+      method: "POST",
+      redirect: "error",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ data }),
+    });
+    const payload = await boundedJson(response);
+    if (!response.ok || !payload?.result) throw new Error("account_setup_failed");
+    return payload.result;
+  }
+
+  async function initializeAccountSetup() {
+    const action = readActionCode();
+    try { window.history.replaceState(null, "", window.location.pathname); } catch (_) {}
+    if (!action || action.mode !== "signIn") {
+      showInvalidInvite();
+      return;
+    }
+
+    actionCode = action.actionCode;
+    inviteUid = action.uid;
+    inviteToken = action.setupToken;
+    setMessage("초대받은 이메일 주소를 확인하고 있습니다…");
+    try {
+      const invite = await callSetupFunction("getCrmAccountSetupInvite", {
+        uid: inviteUid,
+        setupToken: inviteToken,
+      });
+      if (typeof invite.maskedEmail !== "string" || invite.maskedEmail.length > 320) {
+        throw new Error("account_setup_failed");
+      }
+      email.textContent = invite.maskedEmail;
+      form.hidden = false;
+      setMessage("초대받은 주소가 확인되었습니다. 이름과 새 비밀번호를 입력해 주세요.");
+    } catch (_) {
+      showInvalidInvite();
+    }
   }
 
   form.addEventListener("submit", async event => {
@@ -87,26 +128,29 @@
     submit.disabled = true;
     setMessage("이메일 인증과 비밀번호 설정을 처리하고 있습니다…");
     try {
-      const response = await fetch(FUNCTION_URL, {
-        method: "POST",
-        redirect: "error",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ data: { displayName: displayName.value, email: email.value, password: password.value, oobCode: actionCode } }),
+      const result = await callSetupFunction("completeCrmAccountSetup", {
+        uid: inviteUid,
+        setupToken: inviteToken,
+        displayName: displayName.value,
+        password: password.value,
+        oobCode: actionCode,
       });
-      const payload = await boundedJson(response);
-      if (!response.ok || payload?.result?.ok !== true) throw new Error("account_setup_failed");
+      if (result?.ok !== true) throw new Error("account_setup_failed");
       completed = true;
       actionCode = "";
+      inviteUid = "";
+      inviteToken = "";
       password.value = "";
       passwordConfirm.value = "";
       form.hidden = true;
       document.getElementById("setupTitle").textContent = "계정 설정이 완료되었습니다";
       document.getElementById("setupDescription").textContent = "이메일 인증과 새 비밀번호 설정을 마쳤습니다.";
-      setMessage("BRING CRM 앱에서 등록한 이메일과 새 비밀번호로 로그인해 주세요.", "success");
+      setMessage("초대 메일이 발송된 주소와 새 비밀번호로 BRING CRM에 로그인해 주세요.", "success");
     } catch (_) {
       setMessage("링크가 만료되었거나 정보를 확인할 수 없습니다. CRM 관리자에게 새 인증 링크를 요청해 주세요.", "error");
       submit.disabled = false;
     }
   });
+
+  void initializeAccountSetup();
 })();

@@ -17,7 +17,7 @@
     <p id="setupDescription">이메일 인증 링크를 확인하고 새 비밀번호를 설정해 주세요.</p>
     <form id="setupForm" hidden>
       <label><span>이름</span><input id="setupDisplayName" name="displayName" type="text" autocomplete="name" maxlength="80" required></label>
-      <label><span>인증 이메일</span><input id="setupEmail" name="email" type="email" autocomplete="email" maxlength="254" required></label>
+      <label><span>초대받은 이메일</span><span id="setupEmail" class="setup-email-value" aria-live="polite">초대 링크에서 주소를 확인합니다.</span></label>
       <label><span>새 비밀번호</span><input id="setupPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required><small>영문과 숫자를 포함해 8자 이상 입력해 주세요.</small></label>
       <label><span>새 비밀번호 확인</span><input id="setupPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
       <button id="setupSubmit" type="submit">이메일 인증 및 비밀번호 설정</button>
