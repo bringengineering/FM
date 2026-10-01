@@ -4509,6 +4509,48 @@ class FirebaseRemoteClient {
     return true;
   }
 
+  // 진행률은 규칙이 담당자와 변경 전 진행률을 검사하므로, 업무 레코드 전체를
+  // 덮어쓰지 않고 변경 필드만 한 PATCH 로 보낸다. 옛 지시의 필드까지 다시
+  // 검증하면서 생기는 거절을 피하고, 규칙의 fromProgress 비교는 동시 변경을 막는다.
+  async dbPatchWorkOrderProgress(location, patch, retried, guardValue) {
+    const guard = guardValue || null;
+    if (guard) this.assertSessionGuardActive(guard);
+    const token = await this.ensureIdToken(false);
+    if (guard) this.assertSessionGuardActive(guard);
+    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}&print=silent`;
+    let response;
+    try {
+      if (guard) this.assertSessionGuardActive(guard);
+      response = await this.fetch(url, {
+        method: "PATCH",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (guard) this.assertSessionGuardActive(guard);
+      await response.text();
+    } catch (cause) {
+      if (guard && !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+      throw createError("진행률 저장 결과를 확인하지 못했습니다. 새로고침 후 저장 여부를 확인해 주세요.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED", cause);
+    }
+    if (guard) this.assertSessionGuardActive(guard);
+    if (!response.ok) {
+      if (!retried && response.status === 401) {
+        await this.ensureIdToken(true);
+        if (guard) this.assertSessionGuardActive(guard);
+        return this.dbPatchWorkOrderProgress(location, patch, true, guard);
+      }
+      if (response.status >= 500) {
+        throw createError("진행률 저장 결과를 확인하지 못했습니다. 새로고침 후 저장 여부를 확인해 주세요.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED");
+      }
+      const error = createError("진행률 변경을 서버가 거부했습니다.", "BUILDING_SCHEDULE_WRITE_FAILED");
+      // 전달하는 응답 정보는 숫자 상태 코드뿐이다. Firebase 응답 본문은 보관하지 않는다.
+      error.status = Number(response.status) || 0;
+      throw error;
+    }
+    return true;
+  }
+
   async putBuildingScheduleWithRecovery(location, record, etag, guard) {
     try {
       await this.dbConditionalPut(location, record, etag, false, guard);
@@ -5520,27 +5562,8 @@ class FirebaseRemoteClient {
       && !movingDates
       && !Object.prototype.hasOwnProperty.call(source, "outcomeReport")
       && !nextStatus;
-    let persisted;
-    if (progressOnlyEdit) {
-      // The permission rules freeze instruction fields for assignees. Replacing
-      // the whole normalized record would materialize defaults (for example,
-      // an empty dueDate) that never existed on older records and look like an
-      // instruction edit. Keep the exact server shape and change only the
-      // progress fields plus audit metadata.
-      try {
-        persisted = JSON.parse(JSON.stringify(existing));
-      } catch (_) {
-        throw createError("업무 원본을 확인할 수 없어 저장하지 않았습니다. 새로고침 후 다시 시도해 주세요.", "WORK_ORDER_DATA_INVALID");
-      }
-      const oldUpdates = persisted.progressUpdates && typeof persisted.progressUpdates === "object" && !Array.isArray(persisted.progressUpdates)
-        ? persisted.progressUpdates
-        : {};
-      persisted.progress = saved.progress;
-      persisted.latestProgressUpdateId = newProgressUpdate.id;
-      persisted.progressUpdates = Object.assign({}, oldUpdates, { [newProgressUpdate.id]: newProgressUpdate });
-      persisted.updatedAt = saved.updatedAt;
-      persisted.updatedBy = saved.updatedBy;
-    } else {
+    let persisted = null;
+    if (!progressOnlyEdit) {
       persisted = Object.assign({}, saved);
       if (!saved.results.length) delete persisted.results;
       if (saved.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(saved.progressUpdates);
@@ -5548,8 +5571,33 @@ class FirebaseRemoteClient {
       if (!saved.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
     }
     try {
-      await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
+      if (progressOnlyEdit) {
+        const progressPatch = {
+          progress: saved.progress,
+          latestProgressUpdateId: newProgressUpdate.id,
+          [`progressUpdates/${newProgressUpdate.id}`]: newProgressUpdate,
+          updatedAt: saved.updatedAt,
+          updatedBy: saved.updatedBy,
+        };
+        await this.dbPatchWorkOrderProgress(location, progressPatch, false, guard);
+      } else {
+        await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
+      }
     } catch (error) {
+      if (progressOnlyEdit && Number(error && error.status) === 403) {
+        // The rules reject a stale progress transition if another person saved
+        // first. Re-read once so that race is reported as a conflict, not a
+        // misleading permission failure.
+        const latest = await this.dbReadWithEtag(location, false, guard).catch(() => null);
+        this.assertSessionGuardActive(guard);
+        if (latest && latest.value && typeof latest.value === "object" && !Array.isArray(latest.value)) {
+          const latestOrder = WorkOrderCore.normalizeOrder(Object.assign({ id: orderId }, latest.value));
+          if (latestOrder.progress !== current.progress
+            || latestOrder.latestProgressUpdateId !== current.latestProgressUpdateId) {
+            throw createError("다른 사용자가 먼저 진행률을 변경했습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.", "WORK_ORDER_CONFLICT", error);
+          }
+        }
+      }
       if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") {
         throw createError("다른 사용자가 업무를 먼저 변경했습니다. 새로고침해 결과물과 검수 상태를 확인한 뒤 다시 시도하세요.", "WORK_ORDER_CONFLICT", error);
       }
