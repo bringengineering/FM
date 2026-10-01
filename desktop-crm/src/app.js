@@ -24,6 +24,8 @@
   const DocumentDelivery = window.BringDocumentDeliveryCore;
   const MessageUI = window.BringMessageUI;
   const CustomerAlimTalkUI = window.BringCustomerAlimTalkUI;
+  const SavedCustomerDocuments = window.BringSavedCustomerDocuments;
+  let customerDocumentSaving = false;
   const CleaningConsultationReservationUI = window.BringCleaningConsultationReservationUI;
   const AiConsultationCore = window.BringAiConsultationCore;
   const ContractReadinessUI = window.BringContractReadinessUI;
@@ -80,7 +82,7 @@
   let selectedCleaningOrderDetailId = "";
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
-  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", busy: false, result: "", messageToolsOpen: false };
+  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", savedDocumentId: "", busy: false, result: "", messageToolsOpen: false };
   let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
@@ -3969,7 +3971,7 @@
       </div>
       <div class="building-monthly-layout">
         <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>기억한 폴더에서 건물명·보고월에 맞는 사진을 찾아 Gemini가 검토합니다.</small></div>${monthlyDriveAction}</header>${monthlyDriveStatus}<p class="building-monthly-auto-status" role="status">${esc(buildingMonthlyReportState.autoProgress || (buildingMonthlyReportState.photoSource ? `자동 연결 폴더 · ${buildingMonthlyReportState.photoSource.name}` : "처음 한 번 활동사진 상위 폴더를 지정해 주세요. 다음부터는 자동으로 찾습니다."))}</p>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error" role="alert">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
-        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>건물주에게 보여줄 월간 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos">${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} 월간보고서 알림톡 발송 요청을 접수했습니다 · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
+        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>건물주에게 보여줄 월간 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos">${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-crm-save ${customerDocumentSaving || !canWriteCRM() ? "disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} 월간보고서 알림톡 발송 요청을 접수했습니다 · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
       </div>
       ${targetManager}
       ${photoPicker}
@@ -4157,6 +4159,14 @@
     });
     main.querySelector("[data-building-monthly-preview]")?.addEventListener("click", () => {
       showToast("오른쪽 문서가 PDF에 반영될 내용입니다.", "success");
+    });
+    main.querySelector("[data-building-monthly-crm-save]")?.addEventListener("click", async () => {
+      buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
+      await saveDocumentForCustomer({kind: "buildingMonthlyReport", reportRequest: buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, {
+        nextMonthPlan: buildingMonthlyReportState.nextMonthPlan, narrative: buildingMonthlyReportState.narrative,
+        manualWorks: buildingMonthlyReportState.manualWorks, excludedWorkKeys: buildingMonthlyReportState.excludedWorkKeys,
+        photos: buildingMonthlyReportState.photos.map(photo => ({id: photo.id, caption: photo.caption})),
+      })});
     });
     main.querySelector("[data-building-monthly-pdf]")?.addEventListener("click", async () => {
       buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
@@ -4513,19 +4523,13 @@
     const building = targets.find(item => String(item.id) === String(state.buildingId)) || null;
     const month = /^\d{4}-(0[1-9]|1[0-2])$/u.test(state.month) ? state.month : previousMonthKey();
     state.month = month;
-    let quote = null;
-    try { if (aiAssistantState.quote) quote = window.BringQuoteCore.normalizeDraft(aiAssistantState.quote); } catch (_error) { quote = null; }
-    const quotePhoneMatches = Boolean(quote && customer && normalizedPhone(quote.recipientPhone) === normalizedPhone(customer.phone));
-    const quoteNameMatches = Boolean(quote && customer && [customer.name, customer.company].filter(Boolean).some(name => Core.normalizeText(name) === Core.normalizeText(quote.recipient)));
-    const quoteReady = Boolean(quote && quotePhoneMatches && quoteNameMatches && window.BringQuoteCore.recipientComplete(quote)
-      && window.BringQuoteCore.supplierComplete(quote.company) && aiAssistantState.sealConfigured);
-    const matchingReports = customer ? (reportState.reports || []).filter(report => normalizedPhone(report.ownerContact) === normalizedPhone(customer.phone)) : [];
+    const savedDocuments = SavedCustomerDocuments.list(store.buildingDocuments, customer, state.category)
+      .filter(record => state.category !== "buildingMonthlyReport" || targets.some(item => String(item.id) === record.buildingId));
+    if (!savedDocuments.some(item => item.id === state.savedDocumentId)) state.savedDocumentId = "";
+    const matchingReports = customer ? (reportState.reports || []).filter(report => !report.archivedAt && !report.deletedAt && report.deleted !== true && normalizedPhone(report.ownerContact) === normalizedPhone(customer.phone)) : [];
     const workReport = matchingReports.find(report => String(report.id || "") === String(state.workReportId || "")) || null;
     const reportCheck = workReport && reportCore() ? reportCore().validateReport(workReport) : { ok: false };
     const workReportReady = Boolean(workReport && reportCheck.ok && customer && normalizedPhone(workReport.ownerContact) === normalizedPhone(customer.phone));
-    const monthlyStateMatches = Boolean(building && String(buildingMonthlyReportState.buildingId) === String(building.id) && String(buildingMonthlyReportState.month) === month);
-    const monthlyReportReady = Boolean(monthlyStateMatches && String(building.ownerCustomerId || "") === String(customer && customer.id || "")
-      && String(buildingMonthlyReportState.narrative && buildingMonthlyReportState.narrative.summary || "").trim());
     const template = MessagePolicy.TEMPLATES[state.templateId] || MessagePolicy.TEMPLATES.cleaning_schedule;
     const kakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.kakao === true;
     const selectedDecision = customer ? MessagePolicy.evaluateMessageRequest({ customer, templateId: template.id, channel: "kakao", sourceType: state.sourceType, sourceId: state.sourceId }) : { allowed: false };
@@ -4542,17 +4546,13 @@
       buildingId: state.buildingId,
       month,
       maxMonth: currentMonthKey(),
-      monthlyReportReady,
-      monthlyReportLabel: monthlyStateMatches
-        ? `${building.name || "건물"} · ${month} · 업무 ${BuildingReportCore.buildBuildingMonthlyReport(buildingMonthlyReportRequest(building, month, { narrative: buildingMonthlyReportState.narrative, manualWorks: buildingMonthlyReportState.manualWorks, excludedWorkKeys: buildingMonthlyReportState.excludedWorkKeys, photos: buildingMonthlyReportState.photos.map(photo => ({ id: photo.id, caption: photo.caption })) })).summary.workCount}건 · 사진 ${buildingMonthlyReportState.photos.length}장`
-        : "월간보고서 화면에서 내용과 Drive 사진을 준비해 주세요.",
+      savedDocuments,
+      savedDocumentId: state.savedDocumentId,
       kakaoMonthlyReady: documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.monthlyReport === true,
       workReports: matchingReports,
       workReportId: state.workReportId,
       workReportReady,
       workReportLabel: workReport ? `${workReport.buildingName || "건물"} · ${workReport.workDate || "작업일 미기록"} · ${reportCheck.ok ? "필수 항목 확인" : reportCheck.error || "필수 항목 확인 필요"}` : "연락처가 일치하는 작업 결과보고서를 선택해 주세요.",
-      quoteReady,
-      quoteLabel: quote ? `${quote.projectName || "견적서"} · ${quote.recipient} · ${quotePhoneMatches && quoteNameMatches ? "선택 고객과 일치" : "수신 정보 확인 필요"}` : "견적서 화면에서 견적서와 수신 고객 정보를 준비해 주세요.",
       kakaoReady,
       writable: canWriteCRM(),
       adminCanSend: canAdministerSecurity(),
@@ -4560,7 +4560,6 @@
       result: state.result,
       sourceTypeRequired: Boolean(template.requiresSource),
       noticeDecision: selectedDecision,
-      quote,
       selectedBuildingOwner,
     });
     if (state.category === "notice" && customer) {
@@ -4571,14 +4570,61 @@
       main.insertAdjacentHTML("beforeend", `<details class="alimtalk-legacy-tools" data-alimtalk-tools ${state.messageToolsOpen ? "open" : ""}><summary>안내 상세 작성·SMS·수신 동의 관리</summary>${renderCustomerMessageTools()}</details>`);
     }
     main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries() }));
+    if (state.busy) main.querySelectorAll?.("input, select, textarea, button").forEach(control => { control.disabled = true; });
     if (!documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
     if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
-    if (!aiAssistantState.sealLoaded && !aiAssistantState.sealLoading && !aiAssistantState.sealError) void loadAiQuoteSeal();
+
   }
 
   function openCustomerAlimTalk() {
     currentView = "customerAlimTalk";
     render();
+  }
+
+  function selectedCustomerDocumentRequest() {
+    const state = customerAlimTalkState;
+    if (state.selectedCustomerIds.length !== 1) throw new Error("고객 한 명을 선택해 주세요.");
+    const customer = customerById(state.selectedCustomerIds[0]);
+    if (state.category === "workReport") {
+      const report = reportState.reports.find(item => String(item.id) === state.workReportId && !item.archivedAt && !item.deletedAt && item.deleted !== true);
+      if (!report || !customer || !reportCore().validateReport(report).ok || normalizedPhone(report.ownerContact) !== normalizedPhone(customer.phone)) throw new Error("저장 결과보고서와 수신 고객을 확인해 주세요.");
+      return {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt || "", title: [report.buildingName, report.workDate].filter(Boolean).join(" · ")};
+    }
+    const record = SavedCustomerDocuments.list(store.buildingDocuments, customer, state.category).find(item => item.id === state.savedDocumentId);
+    if (!record) throw new Error("문서관리에서 CRM에 저장한 문서를 선택해 주세요.");
+    return {kind: state.category, documentId: record.id, customerId: customer.id, updatedAt: record.updatedAt, sha256: record.savedCustomerDocument.sha256, title: record.title};
+  }
+
+  async function previewCustomerDocument() {
+    const state = customerAlimTalkState;
+    if (state.busy) return;
+    try {
+      const request = selectedCustomerDocumentRequest();
+      state.busy = true;
+      renderCustomerAlimTalk();
+      const result = await api.previewSavedCustomerDocument(request);
+      if (!result || result.ok !== true) throw new Error(result && result.error || "PDF 미리보기를 열지 못했습니다.");
+      showToast("저장 문서 PDF를 열었습니다.", "success");
+    } catch (error) { showToast(error.message || "저장 문서를 확인하지 못했습니다.", "error"); }
+    finally { state.busy = false; if (currentView === "customerAlimTalk") renderCustomerAlimTalk(); }
+  }
+
+  async function saveDocumentForCustomer(request) {
+    if (customerDocumentSaving || !canWriteCRM()) return;
+    const generation = authGeneration;
+    customerDocumentSaving = true;
+    const origin = currentView;
+    render();
+    try {
+      const result = await api.saveCustomerDocument(request);
+      if (generation !== authGeneration) return;
+      if (!result || result.ok !== true || !result.record) throw new Error(result && result.error || "문서를 CRM에 저장하지 못했습니다.");
+      store.buildingDocuments = [...(store.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
+      if (synchronizedStore) synchronizedStore.buildingDocuments = [...(synchronizedStore.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
+      showToast("CRM에 저장했습니다. CRM → 알림톡 발송에서 고객과 저장 문서를 선택해 주세요.", "success");
+    } catch (error) {
+      if (generation === authGeneration) showToast(error.message || "문서를 저장하지 못했습니다.", "error");
+    } finally { customerDocumentSaving = false; if (generation === authGeneration && currentView === origin) render(); }
   }
 
   async function sendCustomerAlimTalk() {
@@ -4620,51 +4666,15 @@
         await refreshOperations({ silent: true, render: false });
         state.result = failures.length ? `발송 요청 ${sent}명 · 실패 ${failures.length}명: ${failures.join(" / ")}` : `${sent}명 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.`;
         showToast(failures.length ? state.result : `${sent}명 알림톡 발송 요청을 접수했습니다.`, failures.length ? "error" : "success");
-      } else if (state.category === "quote") {
+      } else {
         const customer = customers[0];
-        const quote = aiAssistantState.quote && window.BringQuoteCore.normalizeDraft(aiAssistantState.quote);
-        if (!quote || normalizedPhone(quote.recipientPhone) !== normalizedPhone(customer.phone)
-          || ![customer.name, customer.company].filter(Boolean).some(name => Core.normalizeText(name) === Core.normalizeText(quote.recipient))) throw new Error("선택 고객의 이름·전화번호가 견적서 수신 정보와 일치하지 않습니다.");
-        if (!QuoteCore.supplierComplete(quote.company) || !QuoteCore.recipientComplete(quote) || !aiAssistantState.sealConfigured) throw new Error("회사 공급자 정보·인감·견적서 수신 정보를 모두 확인해 주세요.");
-        if (!documentDeliveryCapabilities.kakao) throw new Error("알림톡 발신 설정과 승인 견적서 템플릿을 확인해 주세요.");
-        if (!await requestConfirmationFor("견적서를 알림톡으로 보낼까요?", "수신자용 PDF가 보안 링크로 발송됩니다. 링크는 7일 뒤 만료됩니다.", `${customerDisplayName(customer)} · ${customerPhoneText(customer.phone)}`, `${quote.projectName}\n합계 ${QuoteCore.money(quote.totalAmount)}`)) return;
-        const result = await api.sendQuoteToCustomerByKakao({ customerId: customer.id, customerName: customerDisplayName(customer), customerPhone: customer.phone, quote });
-        if (!result || result.ok !== true) throw new Error(result && result.error || "견적서 알림톡을 발송하지 못했습니다.");
-        state.result = "견적서 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
-        showToast(state.result, "success");
-      } else if (state.category === "workReport") {
-        const customer = customers[0];
-        const report = reportState.reports.find(item => String(item.id || "") === String(state.workReportId || ""));
-        const R = reportCore();
-        if (!report || !R || !R.validateReport(report).ok) throw new Error("발송할 결과보고서의 필수 항목과 사진을 확인해 주세요.");
-        if (normalizedPhone(report.ownerContact) !== normalizedPhone(customer.phone)) throw new Error("결과보고서의 건물주 연락처가 선택 고객과 일치하지 않습니다.");
-        if (!documentDeliveryCapabilities.kakao) throw new Error("알림톡 발신 설정과 승인 결과보고서 템플릿을 확인해 주세요.");
-        if (!await requestConfirmationFor("작업 결과보고서를 알림톡으로 보낼까요?", "선택한 고객에게 보고서 PDF 보안 링크를 발송합니다. 링크는 7일 뒤 만료됩니다.", `${customerDisplayName(customer)} · ${customerPhoneText(customer.phone)}`, `${report.buildingName || "건물"} · ${report.workDate || "작업일 미기록"}`)) return;
-        const result = await api.sendWorkReportToCustomerByKakao({ report, targetCustomerId: customer.id, targetCustomerPhone: customer.phone,
-          company: store.settings && store.settings.quoteCompany || {}, secrets: reportSecrets() });
-        if (!result || result.ok !== true) throw new Error(result && result.error || "작업 결과보고서 알림톡을 발송하지 못했습니다.");
-        state.result = "작업 결과보고서 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
-        showToast(state.result, "success");
-      } else if (state.category === "buildingMonthlyReport") {
-        const customer = customers[0];
-        const building = buildingById(state.buildingId);
-        if (!building || building.monthlyReportEnabled !== true || String(building.ownerCustomerId || "") !== String(customer.id)) throw new Error("월간보고 대상 건물과 건물주 고객 연결을 확인해 주세요.");
-        if (String(buildingMonthlyReportState.buildingId) !== String(building.id) || String(buildingMonthlyReportState.month) !== String(state.month)
-          || !String(buildingMonthlyReportState.narrative && buildingMonthlyReportState.narrative.summary || "").trim()) throw new Error("월간보고서 화면에서 보고월·내용·사진을 먼저 확인해 주세요.");
-        if (!/^01\d{8,9}$/u.test(normalizedPhone(customer.phone))) throw new Error("선택 고객의 휴대전화 번호를 확인해 주세요.");
-        if (!documentDeliveryCapabilities.monthlyReport) throw new Error("월간보고서 알림톡 발신 설정과 승인 템플릿을 확인해 주세요.");
-        const reportRequest = buildingMonthlyReportRequest(building, state.month, {
-          nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
-          narrative: buildingMonthlyReportState.narrative,
-          manualWorks: buildingMonthlyReportState.manualWorks,
-          excludedWorkKeys: buildingMonthlyReportState.excludedWorkKeys,
-          photos: buildingMonthlyReportState.photos.map(photo => ({ id: photo.id, caption: photo.caption })),
-        });
-        const preview = BuildingReportCore.buildBuildingMonthlyReport(reportRequest);
-        if (!await requestConfirmationFor("건물 월간보고서를 알림톡으로 보낼까요?", "선택한 건물의 보고서 PDF 보안 링크를 발송합니다. 링크는 7일 뒤 만료됩니다.", `${customerDisplayName(customer)} · ${building.name || "건물"} · ${state.month}`, `업무 ${preview.summary.workCount}건 · 사진 ${reportRequest.photos.length}장\n${preview.narrative.summary}`)) return;
-        const result = await api.sendBuildingMonthlyReportToCustomerByKakao({ ownerName: customerDisplayName(customer), ownerContact: customer.phone, targetCustomerId: customer.id, targetCustomerPhone: customer.phone, reportRequest });
-        if (!result || result.ok !== true) throw new Error(result && result.error || "월간보고서 알림톡을 발송하지 못했습니다.");
-        state.result = "건물 월간보고서 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
+        const request = selectedCustomerDocumentRequest();
+        const title = state.category === "workReport" ? "작업 결과보고서" : SavedCustomerDocuments.KINDS[state.category];
+        if (!await requestConfirmationFor(title + "를 알림톡으로 보낼까요?", "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
+        const result = await api.sendSavedCustomerDocument(request);
+        if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
+        state.result = title + " 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
+        await refreshOperations({ silent: true, render: false });
         showToast(state.result, "success");
       }
     } catch (error) {
@@ -5750,7 +5760,7 @@
     const modeSwitch = `<div class="ai-quote-mode-switch" role="tablist" aria-label="견적서 작성 방식"><button type="button" data-quote-mode="ai" class="${manual ? "" : "active"}" aria-selected="${!manual}">AI 작성</button><button type="button" data-quote-mode="manual" class="${manual ? "active" : ""}" aria-selected="${manual}">수기 작성</button></div>${moveInCleaningQuotePreset(quote)}`;
     const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote));
     const disabled = canExport ? "" : " disabled";
-    const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div></div>`;
+    const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button><button type="button" data-ai-quote-crm-save${disabled || customerDocumentSaving || !canWriteCRM() ? " disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button></div></div>`;
     return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuotePricingMarkup()}${cleaningQuotePriceReviewMarkup(quote)}${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy || !cleaningQuotePricesConfirmed(quote) ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "공급받는자 성명과 전화번호를 입력하면 네 가지 파일을 저장할 수 있습니다."}</footer></section></section>`;
   }
 
@@ -10825,7 +10835,7 @@
 
   function renderBuildingDocuments() {
     const buildings = (store.buildings || []).filter(item => item && !item.archivedAt);
-    const documents = store.buildingDocuments || [];
+    const documents = (store.buildingDocuments || []).filter(item => !item.savedCustomerDocument);
     const summary = BuildingDocs.summarize(documents, buildings);
     if (buildingDocsState.buildingId && !buildings.some(item => item.id === buildingDocsState.buildingId)) {
       buildingDocsState.buildingId = "";
@@ -13733,6 +13743,11 @@
   }, true);
 
   document.addEventListener("click", async event => {
+    if (currentView === "customerAlimTalk" && customerAlimTalkState.busy && event.target.closest("[data-alimtalk-category], [data-alimtalk-clear], [data-alimtalk-open-quote], [data-alimtalk-open-monthly], [data-alimtalk-send], [data-alimtalk-preview]")) return;
+    if (event.target.closest("[data-alimtalk-preview]") && currentView === "customerAlimTalk") {
+      await previewCustomerDocument();
+      return;
+    }
     const alimtalkCategory = event.target.closest("[data-alimtalk-category]");
     if (alimtalkCategory && currentView === "customerAlimTalk") {
       customerAlimTalkState.category = CustomerAlimTalkUI.categories.some(item => item.id === alimtalkCategory.dataset.alimtalkCategory) ? alimtalkCategory.dataset.alimtalkCategory : "notice";
@@ -15360,6 +15375,10 @@
         aiAssistantState.quoteError = error.message || "품목을 삭제하지 못했습니다.";
         showToast(aiAssistantState.quoteError, "error");
       }
+      return;
+    }
+    if (event.target.closest("[data-ai-quote-crm-save]")) {
+      await saveDocumentForCustomer({kind: "quote", quote: aiAssistantState.quote});
       return;
     }
     const aiQuoteExport = event.target.closest("[data-ai-quote-export]");
@@ -17305,6 +17324,7 @@
       customerAlimTalkState.sourceType = "";
       customerAlimTalkState.sourceId = "";
       customerAlimTalkState.workReportId = "";
+      customerAlimTalkState.savedDocumentId = "";
       selectedMessageNote = "";
       customerAlimTalkState.result = "";
       renderCustomerAlimTalk();
@@ -17336,6 +17356,12 @@
     if (event.target.matches("[data-alimtalk-month]") && currentView === "customerAlimTalk") {
       if (!BuildingReportCore.isReportMonthSelectable(event.target.value)) return showToast("미래 월은 보고서로 선택할 수 없습니다.", "error");
       customerAlimTalkState.month = event.target.value;
+      customerAlimTalkState.result = "";
+      renderCustomerAlimTalk();
+      return;
+    }
+    if (event.target.matches("[data-alimtalk-saved-document]") && currentView === "customerAlimTalk") {
+      customerAlimTalkState.savedDocumentId = event.target.value;
       customerAlimTalkState.result = "";
       renderCustomerAlimTalk();
       return;

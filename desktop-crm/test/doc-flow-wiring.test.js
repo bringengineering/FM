@@ -80,5 +80,7 @@ test("작업 결과보고서 알림톡은 승인 상태와 수신번호를 확�
   assert.match(kakao, /channel: "kakao"/u);
   assert.match(kakao, /"revoke"/u);
   assert.match(appSource, /requestConfirmationFor/);
-  assert.match(appSource, /api\.sendWorkReportToCustomerByKakao/);
+  assert.match(appSource, /api\.sendSavedCustomerDocument/);
+  assert.match(mainSource, /async function readSavedWorkReportPdf/);
+  assert.match(mainSource, /remoteClient\.loadWorkReports\(\)/);
 });

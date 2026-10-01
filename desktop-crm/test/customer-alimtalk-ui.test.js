@@ -34,7 +34,7 @@ test("통합 화면 렌더링은 자료가 없어도 동작하고 실패한 인�
     monthlyReportTargetBuildings: () => [], previousMonthKey: () => "2026-09", currentMonthKey: () => "2026-10",
     aiAssistantState: {quote: null, sealLoaded: false, sealLoading: false, sealError: "조회 실패"},
     reportState: {reports: [], loaded: true}, buildingMonthlyReportState: {}, documentDeliveryCapabilities: {loaded: true, kakao: false},
-    MessagePolicy, CustomerAlimTalkUI: AlimTalkUI, MessageUI, main: output, canWriteCRM: () => false, canAdministerSecurity: () => false,
+    MessagePolicy, CustomerAlimTalkUI: AlimTalkUI, SavedCustomerDocuments: require("../src/saved-customer-documents"), MessageUI, main: output, canWriteCRM: () => false, canAdministerSecurity: () => false,
     selectedMessageCustomerId: "", selectedMessageTemplateId: "", selectedMessageSourceType: "", selectedMessageSourceId: "",
     customerMessageDeliveries: () => [{customerName: "샘플", templateLabel: "안내", status: "requested"}],
     renderCustomerMessageTools: () => "<section>기존 안내 도구</section>", loadAiQuoteSeal: () => {sealCalls++;},

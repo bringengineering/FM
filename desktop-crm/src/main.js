@@ -24,6 +24,8 @@ const { createOfficeNotificationTracker } = require("./office-notification");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const { createWeeklyReportHwpx, weeklyReportFileName } = require("./weekly-report-hwpx");
 const QuoteCore = require("./quote-core");
+const SavedCustomerDocuments = require("./saved-customer-documents");
+const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
@@ -3089,6 +3091,136 @@ async function exportAiQuote(input) {
     : createQuoteWorkbook(quote, copyType, new Date(), seal);
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, format };
+}
+
+function savedDocumentSession(write = false) {
+  const user = authState().user;
+  if (!user || user.mustChangePassword || !remoteClient || isMarketingOnlySession()) throw new Error("문서에 접근할 CRM 로그인 권한을 확인해 주세요.");
+  if (write) assertMainMutationAllowed();
+  const guard = remoteClient.captureSessionGuard();
+  return {user, check: () => remoteClient.assertSessionGuardActive(guard)};
+}
+
+async function saveCustomerDocument(input) {
+  const session = savedDocumentSession(true);
+  const options = input && typeof input === "object" ? input : {};
+  if (!Object.hasOwn(SavedCustomerDocuments.KINDS, options.kind)) throw new Error("저장할 문서 종류를 확인해 주세요.");
+  const data = await remoteClient.loadStore(); session.check();
+  const rootFolderId = String(data?.company?.buildingDocsFolderId || "");
+  if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.");
+  const customers = (data.customers || []).filter(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+  let customer, building, bytes, title, month = "";
+  if (options.kind === "quote") {
+    const quote = QuoteCore.normalizeDraft(options.quote);
+    QuoteCore.normalizeSupplier(quote.company, {requireComplete: true});
+    QuoteCore.normalizeRecipient(quote, {requireComplete: true});
+    const matches = customers.filter(row => SavedCustomerDocuments.phone(row.phone) === SavedCustomerDocuments.phone(quote.recipientPhone)
+      && [row.name, row.company].some(value => String(value || "").trim() === quote.recipient));
+    if (matches.length !== 1) throw new Error("견적서 성명·전화번호와 일치하는 CRM 고객 한 명을 확인해 주세요.");
+    customer = matches[0];
+    const seal = await readLocalQuoteSeal(); session.check();
+    if (!seal) throw new Error("회사 인감을 등록한 후 견적서를 저장해 주세요.");
+    bytes = await createQuotePdfBytes(quote, "recipient", seal);
+    title = quote.projectName + " 견적서";
+  } else {
+    const request = options.reportRequest || {};
+    building = (data.buildings || []).find(row => row && !row.archivedAt && String(row.id) === String(request.building?.id));
+    customer = building && customers.find(row => String(row.id) === String(building.ownerCustomerId));
+    if (!customer || !/^01\d{8,9}$/.test(SavedCustomerDocuments.phone(customer.phone))) throw new Error("건물주 고객과 휴대전화 번호를 연결해 주세요.");
+    const artifact = await prepareBuildingMonthlyReportArtifact({...request, building, ownerName: customer.name || customer.company});
+    session.check();
+    if (!artifact.ok) return artifact;
+    bytes = await createReportPdfBytes(artifact.html, "building-report");
+    month = artifact.report.month;
+    title = artifact.report.buildingName + " " + artifact.report.monthText + " 월간 관리 보고서";
+  }
+  session.check();
+  const checked = SavedCustomerDocumentPdf.verifyPdf(bytes);
+  const id = "saved_" + crypto.randomUUID(), now = new Date().toISOString();
+  const uploaded = await BuildingDocsDrive.uploadDocument(driveApiDeps(), {
+    rootFolderId, folderPath: ["CRM 발송 문서", SavedCustomerDocuments.KINDS[options.kind], now.slice(0,4)],
+    fileName: id + ".pdf", mimeType: "application/pdf", documentKey: id, content: checked.bytes,
+  });
+  session.check();
+  const record = {id, title: String(title).slice(0,160), buildingId: building?.id || "", docType: "etc", driveFileId: uploaded.id,
+    updatedAt: now, updatedBy: session.user.uid, savedCustomerDocument: {version: 1, kind: options.kind, customerId: customer.id,
+      recipientPhone: SavedCustomerDocuments.phone(customer.phone), sha256: checked.sha256, size: checked.size, month}};
+  if (!SavedCustomerDocuments.normalize(record)) throw new Error("저장 문서 정보를 확인할 수 없습니다.");
+  // Refresh after the upload so a concurrent CRM edit is not replaced by an old snapshot.
+  const latest = await remoteClient.loadStore(); session.check();
+  if (!SavedCustomerDocuments.matches(record, (latest.customers || []).find(row => row.id === customer.id), options.kind)
+    || (building && !(latest.buildings || []).some(row => row.id === building.id && row.ownerCustomerId === customer.id && !row.archivedAt))) throw new Error("고객·건물 정보가 변경되었습니다. 저장을 다시 시도해 주세요.");
+  latest.buildingDocuments = [...(latest.buildingDocuments || []), record];
+  const saved = await remoteClient.saveStoreNow(latest); session.check();
+  if (!saved || saved.ok !== true || saved.pending) throw new Error("PDF 보관 후 CRM 기록을 저장하지 못했습니다. 다시 저장해 주세요.");
+  return {ok: true, record};
+}
+
+async function readSavedCustomerPdf(input, session) {
+  const data = await remoteClient.loadStore(); session.check();
+  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, input);
+  if (resolved.record.savedCustomerDocument.kind === "buildingMonthlyReport"
+    && !(data.buildings || []).some(row => row && !row.archivedAt && row.id === resolved.record.buildingId && row.ownerCustomerId === resolved.customer.id)) throw new Error("저장 문서의 건물주 연결이 변경되었습니다.");
+  const bytes = await SavedCustomerDocumentPdf.download(authenticatedDriveFetch, resolved.record.driveFileId, resolved.record.savedCustomerDocument);
+  session.check();
+  return {...resolved, bytes};
+}
+
+async function readSavedWorkReportPdf(input, session) {
+  const source = await remoteClient.loadWorkReports(); session.check();
+  const data = await remoteClient.loadStore(); session.check();
+  const customer = (data.customers || []).find(row => row.id === input.customerId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+  const report = (source.reports || []).find(row => row.id === input.documentId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+  if (!report || !customer || !/^01\d{8,9}$/.test(SavedCustomerDocuments.phone(customer.phone))
+    || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(customer.phone)) throw new Error("고객과 저장 결과보고서를 다시 선택해 주세요.");
+  if (String(report.updatedAt || "") !== input.updatedAt) throw new Error("결과보고서가 변경되었습니다. 목록을 새로 확인해 주세요.");
+  const artifact = await createWorkReportPdfArtifact({report, company: data.settings?.quoteCompany || {},
+    secrets: {vendorNames: (data.partnerVendors || []).map(row => row.name).filter(Boolean), vendorAmounts: [], privateMemos: []}}, "owner");
+  session.check();
+  if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
+  const expectedPhotos = report.items.reduce((count, item) => count + item.before.length + item.after.length, 0);
+  if (artifact.photoFailures || artifact.photos < expectedPhotos) throw new Error("결과보고서 사진을 모두 읽지 못했습니다. Drive 연결과 사진 권한을 확인해 주세요.");
+  return {customer, bytes: artifact.bytes, record: {title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
+}
+
+async function previewSavedCustomerDocument(input) {
+  const session = savedDocumentSession();
+  const {bytes} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
+  SavedCustomerDocumentPdf.verifyPdf(bytes); session.check();
+  const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "bring-saved-pdf-"));
+  const file = path.join(folder, "report.pdf");
+  try {
+    await fs.writeFile(file, bytes, {flag: "wx", mode: 0o600}); session.check();
+    if (await shell.openPath(file)) throw new Error("PDF 미리보기를 열지 못했습니다.");
+  } catch (error) {
+    await fs.unlink(file).catch(() => {}); await fs.rmdir(folder).catch(() => {}); throw error;
+  }
+  setTimeout(() => { void fs.unlink(file).then(() => fs.rmdir(folder)).catch(() => {}); }, 30 * 60 * 1000).unref();
+  return {ok: true};
+}
+
+async function sendSavedCustomerDocument(input) {
+  const session = savedDocumentSession(true);
+  if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
+  const {record, customer, bytes} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
+  SavedCustomerDocumentPdf.verifyPdf(bytes);
+  const monthly = record.savedCustomerDocument.kind === "buildingMonthlyReport";
+  const capabilities = await runDocumentDelivery("capabilities"); session.check();
+  if (!capabilities?.ok || capabilities.capabilities?.[monthly ? "monthlyReport" : "kakao"] !== true) throw new Error("문서 알림톡 발신 설정과 승인 템플릿을 확인해 주세요.");
+  const customerId = "saved_" + crypto.randomBytes(16).toString("hex");
+  const created = await runDocumentDelivery("create", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
+    documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: record.title,
+    ...(monthly ? {reportMonth: record.savedCustomerDocument.month} : {}),
+    expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64")});
+  if (!created?.ok || !created.documentId) throw new Error("문서 보안 링크를 준비하지 못했습니다.");
+  try {
+    session.check();
+    const sent = await runDocumentDelivery("send", {channel: "kakao", idempotencyKey: crypto.randomUUID(), documentId: created.documentId,
+      customerId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)});
+    session.check();
+    if (!sent?.ok) throw new Error("문서 알림톡 발송을 접수하지 못했습니다.");
+    return {ok: true, status: sent.status || "requested"};
+  } catch (error) { await runDocumentDelivery("revoke", {documentId: created.documentId}).catch(() => {}); throw error; }
 }
 
 async function sendQuoteToCustomerByKakao(input) {
@@ -9800,6 +9932,9 @@ secureCanonicalHandle("crm:building-monthly-report-photos-select", input => sele
 secureCanonicalHandle("crm:building-monthly-report-photo-source", input => savedMonthlyPhotoSource(input));
 secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBuildingMonthlyReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:quote-kakao-send", input => sendQuoteToCustomerByKakao(input));
+secureCanonicalHandle("crm:customer-document-save", input => saveCustomerDocument(input));
+secureCanonicalHandle("crm:customer-document-preview", input => previewSavedCustomerDocument(input));
+secureCanonicalHandle("crm:customer-document-send", input => sendSavedCustomerDocument(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "상담 녹음 파일 선택",
