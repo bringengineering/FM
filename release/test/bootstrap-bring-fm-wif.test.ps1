@@ -114,7 +114,7 @@ Assert-True (($cleaningFunctionNames -join ',') -eq "cleaningOrdersApi,cleaningP
 Assert-True (@($cleaningFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -eq 0) "Approved Cleaning Center Functions remain marked as archived."
 $crmAccountSetupFunctionNames = @($manifest.crmAccountSetupManualDeployment.functionNames)
 Assert-True ($manifest.crmAccountSetupManualDeployment.projectId -eq "bring-fm" -and $manifest.crmAccountSetupManualDeployment.databaseRules -eq $false -and $manifest.crmAccountSetupManualDeployment.region -eq "asia-northeast3") "CRM account setup deployment target is not safely pinned to bring-fm and asia-northeast3 without Database Rules."
-Assert-True (($crmAccountSetupFunctionNames -join ',') -eq "completeCrmAccountSetup,getCrmAccountSetupInvite,listCrmAccountInvites,registerCrmAccount,resendCrmAccountInvite") "CRM account setup deployment allowlist is not exact."
+Assert-True (($crmAccountSetupFunctionNames -join ',') -eq "archiveCrmAccountInvite,completeCrmAccountSetup,getCrmAccountSetupInvite,listCrmAccountInvites,registerCrmAccount,resendCrmAccountInvite") "CRM account setup deployment allowlist is not exact."
 Assert-True (@($crmAccountSetupFunctionNames | Where-Object { $manifest.primary.archivedFunctionNames -contains $_ }).Count -eq 0) "Approved CRM account setup Functions remain marked as archived."
 Assert-True (@($crmAccountSetupFunctionNames | Where-Object { $cleaningFunctionNames -contains $_ }).Count -eq 0) "CRM account setup Functions overlap the Cleaning Center allowlist."
 Assert-True ($manifest.retiredLegacy.projectId -eq "bring-fm-hj") "Retired legacy project marker is missing."
