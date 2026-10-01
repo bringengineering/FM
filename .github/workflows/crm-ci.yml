@@ -109,4 +109,7 @@ jobs:
         # Drive broker uses the same real Auth/RTDB emulator boundary, no Google secrets.
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database "node --test ../functions/integration/billing-ledger-emulator.test.mjs"
       - name: Test Drive OAuth canonical roles with local Auth and Database emulators
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
         run: pnpm --dir company-site exec firebase --config ../firebase.account-setup-emulators.json --project demo-bring-fm-drive-oauth emulators:exec --only auth,database "pnpm --dir ../functions exec vitest run test/crm-drive-oauth-emulator.test.ts"
