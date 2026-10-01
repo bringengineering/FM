@@ -27,9 +27,10 @@ function parseActivityFolderName(value, month, buildingName, buildingAddress) {
   const reportMonth = String(month || "");
   if (!/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(reportMonth)) return null;
   const name = String(value || "").trim().slice(0, 220);
-  const match = /^(\d{6})[_ -]+(.{1,200})$/u.exec(name);
-  if (!match || !match[1].startsWith(`${reportMonth.slice(2, 4)}${reportMonth.slice(5, 7)}`)) return null;
-  const compact = match[1];
+  const match = /^(\d{8}|\d{6})[_ -]+(.{1,200})$/u.exec(name);
+  if (!match) return null;
+  const compact = match[1].length === 8 && match[1].startsWith("20") ? match[1].slice(2) : match[1];
+  if (compact.length !== 6 || !compact.startsWith(`${reportMonth.slice(2, 4)}${reportMonth.slice(5, 7)}`)) return null;
   const date = `20${compact.slice(0, 2)}-${compact.slice(2, 4)}-${compact.slice(4, 6)}`;
   const parsedDate = new Date(`${date}T00:00:00Z`);
   if (!Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) return null;
@@ -39,8 +40,41 @@ function parseActivityFolderName(value, month, buildingName, buildingAddress) {
   const activityName = String(activityMatch ? activityMatch[2] : "").trim().slice(0, 100);
   const expected = String(buildingName || buildingAddress || "").trim();
   const expectedWord = normalizeWord(expected);
-  if (!expectedWord || !normalizeWord(identity).includes(expectedWord)) return null;
+  // Substring matching could silently mix e.g. 햇빛빌라 and 햇빛빌라2.
+  if (!expectedWord || normalizeWord(identity) !== expectedWord) return null;
   return Object.freeze({ date, activityName });
 }
 
-module.exports = Object.freeze({ parseActivityFolderName, normalizeWord, activityCategory });
+async function findActivityFolders({ root, month, buildingName, buildingAddress, list, assertCurrent = () => {} }) {
+  const queue = [{ folder: root, depth: 0 }];
+  const visited = new Set();
+  const matches = [];
+  let truncated = false;
+  while (queue.length && visited.size < 60 && matches.length < 40) {
+    assertCurrent();
+    const { folder, depth } = queue.shift();
+    if (visited.has(folder.id)) continue;
+    visited.add(folder.id);
+    const parsed = parseActivityFolderName(folder.name, month, buildingName, buildingAddress);
+    if (parsed) { matches.push({ item: folder, parsed }); continue; }
+    // Never descend into a dated folder for a different month/building.
+    if (/^\d{6,8}[_ -]/u.test(folder.name || "")) continue;
+    const children = await list(folder);
+    assertCurrent();
+    truncated ||= children.truncated === true;
+    for (const child of children.folders || []) {
+      if (!/^[A-Za-z0-9_-]{10,200}$/u.test(String(child.id || ""))) continue;
+      if (/^\d{6,8}[_ -]/u.test(child.name || "") && !parseActivityFolderName(child.name, month, buildingName, buildingAddress)) continue;
+      const grouping = String(child.name || "").trim();
+      if (/^20\d{2}년?$/u.test(grouping) && grouping.slice(0, 4) !== month.slice(0, 4)) continue;
+      const yearMonth = /^(20\d{2})[.\-_년 ]+(\d{1,2})월?$/u.exec(grouping);
+      if (yearMonth && `${yearMonth[1]}-${yearMonth[2].padStart(2, "0")}` !== month) continue;
+      const item = { ...child, parentId: folder.id, driveId: root.driveId || "" };
+      if (depth < 3 && queue.length < 160) queue.push({ folder: item, depth: depth + 1 });
+      else truncated = true;
+    }
+  }
+  return { folders: matches.sort((a, b) => a.parsed.date.localeCompare(b.parsed.date) || a.item.id.localeCompare(b.item.id)), truncated: truncated || queue.length > 0 };
+}
+
+module.exports = Object.freeze({ parseActivityFolderName, normalizeWord, activityCategory, findActivityFolders });

@@ -27,6 +27,26 @@
  const performancePreview=new URLSearchParams(location.search).get('performanceSeed')==='1';
  if(weeklyPreview&&new URLSearchParams(location.search).get('weeklyRole')==='member')user={...user,role:'member',accessRole:'member',officeAdmin:false};
  const methods={authState:async()=>({required:false,user}),load:async()=>{listeners.onSyncState?.({status:'connected',message:'가상 데이터 · 서버 연결 차단'});return clone();},dataPath:async()=>'가상 데이터 — 서버 접근 없음',loadCustomerPhotos:async()=>({}),loadCanonicalBuildingUnits:async()=>[],loadFieldSummaries:async()=>({}),loadFieldTeamProfiles:async()=>[],loadOperations:async()=>({cases:[],payments:{},caseSettings:{}}),loadWorkflowVendors:async()=>[],loadDriveImportCandidates:async()=>[],loadWorkReports:async()=>[],updateState:async()=>({status:'disabled',message:'미리보기'}),loadOffice:async()=>({}),loadContractSources:async()=>({})};
+ if(new URLSearchParams(location.search).get('monthlySeed')==='1') {
+   data.buildings[0].monthlyReportEnabled=true;data.buildings[1].monthlyReportEnabled=true;
+   const source={id:'syntheticMonthlyFolder01',name:'07. 건물 임대차 & 활동 사진',kind:'folder'};
+   window.__monthlyQA={calls:[],fail:false,delay:0};
+   methods.driveStatus=async()=>({connected:true,email:'preview@example.invalid'});
+   methods.buildingMonthlyPhotoSource=async input=>{
+     if(input.folderId){if(input.folderId!==source.id)throw new Error('가상 폴더만 사용');localStorage.setItem('monthly-synthetic-source','1');}
+     return {ok:true,folder:localStorage.getItem('monthly-synthetic-source')?source:null};
+   };
+   methods.browseWorkReportDrive=async input=>({ok:true,folder:input.folderId===source.id?source:{id:'root',name:'내 드라이브'},entries:input.folderId===source.id?[]:[source]});
+   methods.findBuildingMonthlyReportPhotos=async input=>{
+     window.__monthlyQA.calls.push('find');
+     if(window.__monthlyQA.delay)await new Promise(resolve=>setTimeout(resolve,window.__monthlyQA.delay));
+     if(window.__monthlyQA.fail)throw new Error('가상 Drive 읽기 실패');
+     return {ok:true,photos:Array.from({length:50},(_,n)=>({id:`synthetic_${n}`,name:`테스트 사진 ${n}`,date:`${input.month}-${String(n%20+1).padStart(2,'0')}`,activityName:'공용부 점검'}))};
+   };
+   methods.selectBuildingMonthlyReportPhotos=async input=>{window.__monthlyQA.calls.push(`select:${input.fileIds.length}`);return {ok:true,selected:input.fileIds.slice(0,2).map(id=>({id,caption:'공용부 바닥 상태 확인'})),warnings:[]};};
+   methods.generateBuildingMonthlyReportDraft=async input=>{window.__monthlyQA.calls.push('draft');return {ok:true,narrative:{summary:`${input.month} 사진 ${input.photos.length}장과 CRM 기록을 바탕으로 작성한 가상 초안입니다.`,attention:'사진만으로 작업 완료를 단정하지 않습니다.',nextMonthPlan:''},model:'synthetic-only',generatedAt:new Date().toISOString()};};
+   methods.loadWorkReportDriveThumbnail=async()=>({ok:true,dataUrl:''});
+ }
  window.bringCRM=new Proxy(methods,{get(target,key){if(key in target)return target[key];if(String(key).startsWith('on'))return callback=>{listeners[key]=callback;};if(/^(save|commit|delete|remove|create|send|login|logout|change|upload|import|restore|openExternal)/i.test(String(key)))return async()=>{blockedWrites++;throw new Error('테스트 실행: 쓰기/외부 작업 차단');};return async()=>({});}});
  // Do not let the catch-all proxy advertise desktop-only recovery capability.
  // Only the explicit synthetic recovery scenario below implements these methods.

@@ -20,6 +20,9 @@
 .building-monthly-panel{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow)}
 .building-monthly-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
 .building-monthly-panel>header h3{margin:0;color:#193d55;font-size:16px}
+.building-monthly-draft>header{flex-wrap:wrap}
+.building-monthly-draft>header .primary-button{max-width:100%;white-space:normal;line-height:1.45}
+.building-monthly-auto-status{margin:10px 0;color:#54758a;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .building-monthly-panel>header p{margin:4px 0 0;color:#8195a3;font-size:11px}
 .building-monthly-count{padding:6px 9px;border-radius:999px;background:#edf8ff;color:#1687c7;font-size:11px;font-weight:800;white-space:nowrap}
 .building-monthly-source-body{padding:14px 18px 18px}

@@ -196,6 +196,7 @@
       photoPickerSpace: "my", photoPickerPath: [{ id: "root", name: "내 드라이브" }], photoPickerEntries: [],
       photoPickerLoading: false, photoPickerError: "", photoPickerQuery: "", photoSelectBusy: false, photoError: "", driveConnectBusy: false,
       driveConnectError: null, driveConnectHelpOpen: false,
+      autoBusy: false, autoProgress: "", photoSource: null,
       ...patch,
     };
   }
@@ -3550,11 +3551,19 @@
   }
 
   async function openBuildingMonthlyPhotoPicker() {
+    const state = buildingMonthlyReportState;
+    const generation = authGeneration;
+    if (state.autoBusy) return;
     buildingMonthlyReportState.photoError = "";
     if (!driveState.loaded) {
-      try { driveState = Object.assign({ loaded: true }, await api.driveStatus()); }
+      try {
+        const result = await api.driveStatus();
+        if (state !== buildingMonthlyReportState || generation !== authGeneration) return;
+        driveState = Object.assign({ loaded: true }, result);
+      }
       catch { driveState = { connected: false, email: "", loaded: true }; }
     }
+    if (state !== buildingMonthlyReportState || generation !== authGeneration) return;
     if (!driveState.connected) {
       buildingMonthlyReportState.photoError = "회사 Drive 연결이 필요합니다. 위의 회사 Drive 연결 버튼을 눌러 주세요.";
       renderBuildingMonthlyReports();
@@ -3692,35 +3701,23 @@
 
   async function findAndSelectBuildingMonthlyPhotos(building) {
     const state = buildingMonthlyReportState;
-    const requestKey = `${state.buildingId}:${state.month}`;
     const path = state.photoPickerPath;
     const folder = path[path.length - 1];
-    if (!folder || state.photoPickerLoading) return;
+    if (!folder || state.photoPickerLoading || state.autoBusy) return;
+    const generation = authGeneration;
     state.photoPickerLoading = true;
     state.photoPickerError = "";
     renderBuildingMonthlyReports();
     try {
-      const found = await api.findBuildingMonthlyReportPhotos({
-        folderId: folder.id,
-        month: state.month,
-        buildingName: ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name || "",
-        buildingAddress: building.roadAddress || building.address || building.jibunAddress || "",
-      });
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` !== requestKey) return;
-      state.photoCandidates = Array.isArray(found && found.photos) ? found.photos : [];
+      const saved = await api.buildingMonthlyPhotoSource({ folderId: folder.id });
+      if (state !== buildingMonthlyReportState || generation !== authGeneration) return;
+      state.photoSource = saved.folder;
       state.photoPickerOpen = false;
-      if (!state.photoCandidates.length) {
-        state.photoError = "이 폴더에서 이번 달의 YYMMDD_건물명(활동명) 사진 폴더를 찾지 못했습니다.";
-        if (found && found.truncated) state.photoError += " 폴더가 많아 일부만 확인했으니 활동사진 하위 폴더를 직접 열어 다시 시도해 주세요.";
-        renderBuildingMonthlyReports();
-        return;
-      }
-      state.photoError = found.truncated ? "사진 폴더가 많아 일부만 확인했습니다. 날짜 폴더를 나눠 확인해 주세요." : "";
-      renderBuildingMonthlyReports();
-      await selectBuildingMonthlyPhotoCandidates();
+      state.photoPickerLoading = false;
+      await automaticallyWriteBuildingMonthlyReport(building, saved.folder);
     } catch (error) {
-      if (`${buildingMonthlyReportState.buildingId}:${buildingMonthlyReportState.month}` === requestKey) {
-        state.photoPickerError = error && error.message || "Drive 활동사진을 찾지 못했습니다.";
+      if (state === buildingMonthlyReportState && generation === authGeneration) {
+        state.photoPickerError = error && error.message || "활동사진 폴더를 저장하지 못했습니다.";
         state.photoPickerOpen = true;
       }
     } finally {
@@ -3729,9 +3726,74 @@
     }
   }
 
+  async function automaticallyWriteBuildingMonthlyReport(building, selectedFolder = null) {
+    const state = buildingMonthlyReportState;
+    if (state.autoBusy || state.loading || state.photoSelectBusy || state.driveConnectBusy || !canWriteCRM()) return;
+    const generation = authGeneration;
+    const uid = currentAuthUid();
+    const originalRequest = buildingMonthlyReportRequest(building, state.month, { nextMonthPlan: state.nextMonthPlan, photos: [] });
+    const fingerprint = JSON.stringify(originalRequest);
+    const isCurrent = () => state === buildingMonthlyReportState && generation === authGeneration && uid === currentAuthUid()
+      && currentView === "buildingMonthlyReports" && fingerprint === JSON.stringify(buildingMonthlyReportRequest(building, state.month, { nextMonthPlan: state.nextMonthPlan, photos: [] }));
+    state.autoBusy = true;
+    state.autoProgress = "활동사진 폴더 확인 중…";
+    state.error = "";
+    renderBuildingMonthlyReports();
+    try {
+      const normalizeName = value => String(value || "").normalize("NFKC").replace(/[\s·・.,_()[\]{}-]/gu, "").toLowerCase();
+      const sameNames = (store.buildings || []).filter(item => !item.archivedAt && normalizeName(item.name) === normalizeName(building.name));
+      if (building.name && sameNames.length > 1) throw new Error("같은 이름의 건물이 여러 개 있어 사진을 자동 연결하지 않았습니다. 건물명과 사진 폴더명을 구분해 주세요.");
+      if (!driveState.loaded) {
+        const status = await api.driveStatus();
+        if (!isCurrent()) return;
+        driveState = { loaded: true, ...status };
+      }
+      if (!driveState.connected) {
+        state.autoBusy = false;
+        await connectBuildingMonthlyDrive();
+        return;
+      }
+      const source = selectedFolder || (await api.buildingMonthlyPhotoSource({})).folder;
+      if (!isCurrent()) return;
+      if (!source) {
+        state.autoBusy = false;
+        showToast("처음 한 번만 활동사진 상위 폴더를 지정해 주세요.");
+        await openBuildingMonthlyPhotoPicker();
+        return;
+      }
+      state.photoSource = source;
+      const report = BuildingReportCore.buildBuildingMonthlyReport(originalRequest);
+      const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
+      const result = await window.BringMonthlyReportAutomation.run({
+        isCurrent,
+        onProgress: message => { state.autoProgress = message; if (isCurrent()) renderBuildingMonthlyReports(); },
+        find: () => api.findBuildingMonthlyReportPhotos({ folderId: source.id, month: state.month,
+          buildingName: ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name,
+          buildingAddress: building.roadAddress || building.address || building.jibunAddress || "" }),
+        select: batch => api.selectBuildingMonthlyReportPhotos({ month: state.month, fileIds: batch.map(photo => photo.id), activities }),
+        draft: photos => api.generateBuildingMonthlyReportDraft({ ...originalRequest, photos: photos.map(photo => ({ id: photo.id, caption: photo.caption })) }),
+      });
+      if (!isCurrent()) return;
+      state.photos = result.photos;
+      state.photoCandidates = result.candidates;
+      state.photoError = result.warning;
+      state.narrative = { ...result.generated.narrative };
+      state.model = result.generated.model || "Gemini";
+      state.generatedAt = result.generated.generatedAt || new Date().toISOString();
+      showToast("사진 검토와 보고서 초안 작성이 끝났습니다. 내용을 확인한 뒤 저장·발송해 주세요.", "success");
+      void loadBuildingMonthlyPhotoThumbnails(`${state.buildingId}:${state.month}`);
+    } catch (error) {
+      if (state === buildingMonthlyReportState && generation === authGeneration) state.error = error?.message || "자동 작성을 완료하지 못했습니다. 다시 시도해 주세요.";
+    } finally {
+      state.autoBusy = false;
+      state.autoProgress = "";
+      if (state === buildingMonthlyReportState && generation === authGeneration && currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+    }
+  }
+
   async function selectBuildingMonthlyPhotoCandidates() {
     const state = buildingMonthlyReportState;
-    if (state.photoSelectBusy || !state.photoCandidates.length) return;
+    if (state.autoBusy || state.photoSelectBusy || !state.photoCandidates.length) return;
     const building = buildingById(state.buildingId);
     if (!building) return showToast("보고서 건물을 다시 선택해 주세요.", "error");
     const requestKey = `${state.buildingId}:${state.month}`;
@@ -3743,17 +3805,24 @@
       const request = buildingMonthlyReportRequest(building, state.month, { manualWorks: state.manualWorks });
       const report = BuildingReportCore.buildBuildingMonthlyReport(request);
       const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
-      const result = await api.selectBuildingMonthlyReportPhotos({
-        month: state.month,
-        fileIds: state.photoCandidates.map(photo => photo.id),
-        activities,
-      });
+      const selected = [];
+      const warnings = [];
+      for (let at = 0; at < state.photoCandidates.length; at += 24) {
+        const batch = await api.selectBuildingMonthlyReportPhotos({ month: state.month, fileIds: state.photoCandidates.slice(at, at + 24).map(photo => photo.id), activities });
+        if (state !== buildingMonthlyReportState || buildingMonthlyReportRequestKey() !== workRequestKey) return;
+        selected.push(...batch.selected);
+        warnings.push(...(batch.warnings || []));
+      }
+      const result = { selected, warnings };
       if (buildingMonthlyReportRequestKey() !== workRequestKey) return;
       const candidates = new Map(state.photoCandidates.map(photo => [String(photo.id), photo]));
       state.photos = (Array.isArray(result && result.selected) ? result.selected : []).map(photo => {
         const candidate = candidates.get(String(photo.id));
         return candidate ? { ...candidate, caption: String(photo.caption || "현장 사진").slice(0, 140), thumbnail: "" } : null;
       }).filter(Boolean);
+      state.photos = window.BringMonthlyReportAutomation.representativePhotos(state.photos);
+      state.narrative = null;
+      state.generatedAt = "";
       state.photoError = state.photos.length
         ? ((Array.isArray(result && result.warnings) && result.warnings.length) ? result.warnings.join(" ").slice(0, 240) : "")
         : "Gemini가 이번 달 업무를 보여주는 데 적절한 사진을 찾지 못했습니다. 필요하면 후보를 다시 검토해 주세요.";
@@ -3800,7 +3869,7 @@
     const breadcrumbs = path.map((entry, index) => `<button type="button" data-building-monthly-drive-breadcrumb="${index}" ${index === path.length - 1 ? "disabled" : ""}>${esc(entry.name || "폴더")}</button>`).join("<span>›</span>");
     const rows = folders.length ? folders.map(entry => `<button type="button" class="building-monthly-drive-folder" data-building-monthly-drive-folder="${attr(entry.id)}"><span>📁</span><b>${esc(entry.name || "이름 없는 폴더")}</b><small>폴더 열기</small></button>`).join("") : `<div class="building-monthly-drive-empty">${state.photoPickerLoading ? "Drive 폴더를 불러오는 중입니다…" : "하위 폴더가 없습니다. 상위 폴더로 이동해 보세요."}</div>`;
     const current = path[path.length - 1];
-    return `<div class="building-monthly-drive-overlay" role="presentation"><section class="building-monthly-drive-modal" role="dialog" aria-modal="true" aria-label="Drive 활동 사진 폴더 선택"><header><div><b>Google Drive 활동사진 찾기</b><small>07. 건물임대차 &amp; 활동사진 아래의 이번 달 폴더를 찾습니다.</small></div><button type="button" data-building-monthly-drive-close aria-label="닫기">×</button></header><nav class="building-monthly-drive-spaces"><button type="button" data-building-monthly-drive-space="my" class="${state.photoPickerSpace === "my" ? "active" : ""}">내 드라이브</button><button type="button" data-building-monthly-drive-space="shared" class="${state.photoPickerSpace === "shared" ? "active" : ""}">공유 드라이브</button><button type="button" data-building-monthly-drive-space="shared-with-me" class="${state.photoPickerSpace === "shared-with-me" ? "active" : ""}">공유 문서함</button></nav><div class="building-monthly-drive-body"><label class="building-monthly-drive-search"><span class="search-mark" aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" value="${attr(state.photoPickerQuery)}" placeholder="폴더 이름 검색" data-building-monthly-drive-search></label><div class="building-monthly-drive-breadcrumbs">${breadcrumbs}</div><div class="building-monthly-drive-folder-list">${state.photoPickerLoading ? `<div class="building-monthly-drive-empty">Drive에서 폴더를 불러오고 있습니다…</div>` : rows}</div>${state.photoPickerError ? `<div class="building-monthly-drive-error">${esc(state.photoPickerError)}</div>` : ""}</div><footer><span>현재 위치 · ${esc(current.name || "폴더")}</span><button type="button" class="primary-button" data-building-monthly-drive-scan ${state.photoPickerLoading ? "disabled" : ""}>이 폴더에서 이번 달 사진 찾기</button></footer></section></div>`;
+    return `<div class="building-monthly-drive-overlay" role="presentation"><section class="building-monthly-drive-modal" role="dialog" aria-modal="true" aria-label="Drive 활동 사진 폴더 선택"><header><div><b>Google Drive 활동사진 찾기</b><small>활동사진 상위 폴더를 한 번 지정하면 이 PC에서 계정별로 기억합니다.</small></div><button type="button" data-building-monthly-drive-close aria-label="닫기">×</button></header><nav class="building-monthly-drive-spaces"><button type="button" data-building-monthly-drive-space="my" class="${state.photoPickerSpace === "my" ? "active" : ""}">내 드라이브</button><button type="button" data-building-monthly-drive-space="shared" class="${state.photoPickerSpace === "shared" ? "active" : ""}">공유 드라이브</button><button type="button" data-building-monthly-drive-space="shared-with-me" class="${state.photoPickerSpace === "shared-with-me" ? "active" : ""}">공유 문서함</button></nav><div class="building-monthly-drive-body"><label class="building-monthly-drive-search"><span class="search-mark" aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input type="search" value="${attr(state.photoPickerQuery)}" placeholder="폴더 이름 검색" data-building-monthly-drive-search></label><div class="building-monthly-drive-breadcrumbs">${breadcrumbs}</div><div class="building-monthly-drive-folder-list">${state.photoPickerLoading ? `<div class="building-monthly-drive-empty">Drive에서 폴더를 불러오고 있습니다…</div>` : rows}</div>${state.photoPickerError ? `<div class="building-monthly-drive-error">${esc(state.photoPickerError)}</div>` : ""}</div><footer><span>현재 위치 · ${esc(current.name || "폴더")}</span><button type="button" class="primary-button" data-building-monthly-drive-scan ${state.photoPickerLoading || !/^[A-Za-z0-9_-]{10,200}$/u.test(current.id) ? "disabled" : ""}>이 폴더 기억하고 AI 보고서 작성</button></footer></section></div>`;
   }
 
   function renderBuildingMonthlyReports() {
@@ -3868,7 +3937,7 @@
       ? `<div class="building-monthly-drive-status is-connected" role="status"><b>회사 Drive 연결됨</b><small>${esc(driveState.email || "회사 계정")} · 사진 폴더를 찾아 선택할 수 있습니다.</small></div>${driveConnectErrorMarkup}`
       : `<div class="building-monthly-drive-status" role="status"><b>${monthlyDriveStatusLoading ? "Drive 연결 상태 확인 중" : "회사 Drive 연결이 필요합니다"}</b><small>${monthlyDriveStatusLoading ? "연결 상태를 확인하고 있습니다." : canWriteCRM() ? "연결하면 이 화면에서 바로 사진 폴더를 선택할 수 있습니다." : "쓰기 권한 계정에서 Drive 연결을 진행해 주세요."}</small></div>${driveConnectErrorMarkup}`;
     const monthlyDriveAction = monthlyDriveConnected
-      ? `<button type="button" class="secondary-button" data-building-monthly-drive-open ${buildingMonthlyReportState.driveConnectBusy || buildingMonthlyReportState.photoPickerLoading ? "disabled" : ""}>Drive 사진 찾기</button>`
+      ? `<button type="button" class="secondary-button" data-building-monthly-drive-open ${buildingMonthlyReportState.driveConnectBusy || buildingMonthlyReportState.photoPickerLoading ? "disabled" : ""}>활동사진 폴더 지정·변경</button>`
       : `<button type="button" class="secondary-button" data-building-monthly-drive-connect ${!canWriteCRM() || monthlyDriveStatusLoading || buildingMonthlyReportState.driveConnectBusy ? "disabled" : ""}>${buildingMonthlyReportState.driveConnectBusy ? "Drive 연결 중…" : driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button>`;
     const canGenerate = canWriteCRM() && typeof api.generateBuildingMonthlyReportDraft === "function";
     const generatedLabel = buildingMonthlyReportState.generatedAt
@@ -3890,8 +3959,8 @@
         <article class="building-monthly-kpi"><span>자료 확인</span><b>${missing.length ? `${missing.length}건` : "완료"}</b><small>${esc(missing[0] || "PDF 생성 가능")}</small></article>
       </div>
       <div class="building-monthly-layout">
-        <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>Drive의 YYMMDD_건물명(활동명) 폴더를 찾고 Gemini가 보고서에 필요한 사진을 고릅니다.</small></div>${monthlyDriveAction}</header>${monthlyDriveStatus}${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error" role="alert">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
-        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : narrative.summary ? "Gemini 다시 작성" : "Gemini 문장 만들기"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>캘린더 일정과 보고서에 직접 추가한 업무를 합쳐 정중한 월간 요약으로 정리합니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>건물주에게 보여줄 월간 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos">${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} 월간보고서 알림톡 발송 요청을 접수했습니다 · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
+        <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>기억한 폴더에서 건물명·보고월에 맞는 사진을 찾아 Gemini가 검토합니다.</small></div>${monthlyDriveAction}</header>${monthlyDriveStatus}<p class="building-monthly-auto-status" role="status">${esc(buildingMonthlyReportState.autoProgress || (buildingMonthlyReportState.photoSource ? `자동 연결 폴더 · ${buildingMonthlyReportState.photoSource.name}` : "처음 한 번 활동사진 상위 폴더를 지정해 주세요. 다음부터는 자동으로 찾습니다."))}</p>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error" role="alert">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
+        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(owner && `${owner.name} 건물주` || "건물주 연결 필요")}</div><p class="building-monthly-paper-greeting">${esc(owner && owner.name || "건물주")}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>건물주에게 보여줄 월간 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label><label>확인 사항<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos">${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} 월간보고서 알림톡 발송 요청을 접수했습니다 · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
       </div>
       ${targetManager}
       ${photoPicker}
@@ -4011,6 +4080,8 @@
     main.querySelectorAll("[data-building-monthly-photo-remove]").forEach(button => button.addEventListener("click", () => {
       const index = Number(button.dataset.buildingMonthlyPhotoRemove);
       if (Number.isInteger(index) && index >= 0) buildingMonthlyReportState.photos.splice(index, 1);
+      buildingMonthlyReportState.narrative = null;
+      buildingMonthlyReportState.generatedAt = "";
       renderBuildingMonthlyReports();
     }));
     main.querySelector("[data-building-monthly-drive-connect]")?.addEventListener("click", connectBuildingMonthlyDrive);
@@ -4039,23 +4110,30 @@
     main.querySelector("[data-building-monthly-drive-scan]")?.addEventListener("click", () => findAndSelectBuildingMonthlyPhotos(building));
     main.querySelector("[data-building-monthly-generate]")?.addEventListener("click", async () => {
       buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
+      await automaticallyWriteBuildingMonthlyReport(building);
+    });
+    main.querySelector("[data-building-monthly-text-only]")?.addEventListener("click", async () => {
+      if (buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.loading) return;
+      const state = buildingMonthlyReportState;
+      const generation = authGeneration;
+      buildingMonthlyReportState.nextMonthPlan = String(planInput && planInput.value || "").slice(0, 800);
       buildingMonthlyReportState.loading = true;
       buildingMonthlyReportState.error = "";
       const requestKey = buildingMonthlyReportRequestKey();
       renderBuildingMonthlyReports();
       try {
         const result = await api.generateBuildingMonthlyReportDraft(buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, { nextMonthPlan: buildingMonthlyReportState.nextMonthPlan, manualWorks: buildingMonthlyReportState.manualWorks }));
-        if (buildingMonthlyReportRequestKey() !== requestKey) return;
+        if (state !== buildingMonthlyReportState || generation !== authGeneration || buildingMonthlyReportRequestKey() !== requestKey) return;
         buildingMonthlyReportState.narrative = { ...(result.narrative || {}) };
         buildingMonthlyReportState.model = result.model || "Gemini";
         buildingMonthlyReportState.generatedAt = result.generatedAt || new Date().toISOString();
         showToast(result.cached ? "같은 자료로 만든 Gemini 초안을 불러왔습니다." : "Gemini가 건물주용 문장을 만들었습니다.", "success");
       } catch (error) {
-        if (buildingMonthlyReportRequestKey() === requestKey) {
+        if (state === buildingMonthlyReportState && generation === authGeneration && buildingMonthlyReportRequestKey() === requestKey) {
           buildingMonthlyReportState.error = error && error.message || "Gemini 문장을 만들지 못했습니다.";
         }
       } finally {
-        if (buildingMonthlyReportRequestKey() === requestKey) {
+        if (state === buildingMonthlyReportState && generation === authGeneration && buildingMonthlyReportRequestKey() === requestKey) {
           buildingMonthlyReportState.loading = false;
           if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
         }
@@ -4081,6 +4159,9 @@
       });
     });
     main.querySelector("[data-building-monthly-kakao-send]")?.addEventListener("click", () => sendBuildingMonthlyReportByKakao(building, owner, planInput));
+    if (buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy || buildingMonthlyReportState.loading) {
+      main.querySelectorAll(".building-monthly-panel button, .building-monthly-panel input, .building-monthly-panel textarea, .building-monthly-panel select").forEach(control => { control.disabled = true; });
+    }
   }
 
   async function exportBuildingMonthlyReportPdf(building, month, extras = {}) {
