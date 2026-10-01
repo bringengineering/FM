@@ -1516,6 +1516,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  *
  * 같은 일이 다른 자리에서 또 나지 않게 여기서 한 번에 막는다. 요소를
  * 감추면서 굳이 보이게 하고 싶은 곳은 없다. */
+.alimtalk-legacy-tools{margin:16px 0;padding:16px;border:1px solid #dfe7f0;border-radius:12px;background:#fff}
+.alimtalk-legacy-tools>summary{font-size:13px;font-weight:700;color:#315577;cursor:pointer}
+.alimtalk-legacy-tools[open]>summary{margin-bottom:16px}
+.alimtalk-legacy-tools .message-workspace{margin:0}
+.customer-alimtalk-page~.message-history{margin-top:16px}
 [hidden] { display: none !important; }
 
 /* 텔레그램 알림 설정 */

@@ -6,9 +6,46 @@ const MessagePolicy = require("../src/message-policy");
 globalThis.BringMessagePolicy = MessagePolicy;
 const AlimTalkUI = require("../src/customer-alimtalk-ui");
 const MutationPolicy = require("../src/mutation-policy");
+const vm = require("node:vm");
+const MessageUI = require("../src/message-ui");
+
+test("통합 발송 화면은 숫자 단계 표시 없이 자료를 고르고 기존 이력을 합친다", () => {
+  const html = AlimTalkUI.render({ customers: [] });
+  assert.doesNotMatch(html, /01　|02　|03　/);
+  assert.match(html, /<h3>고객 선택<\/h3>/);
+  assert.match(html, /<h3>발송 종류<\/h3>/);
+  const app = read("app.js");
+  assert.match(app, /MessageUI.renderHistory\(\{ deliveries: customerMessageDeliveries\(\) \}\)/);
+  assert.match(app, /data-alimtalk-tools/);
+  assert.match(app, /embedded: true/);
+});
 
 const read = name => fs.readFileSync(path.join(__dirname, "../src", name), "utf8");
 const customer = (id, name, phone, consent = {}) => ({ id, name, phone, messageConsents: consent });
+
+test("통합 화면 렌더링은 자료가 없어도 동작하고 실패한 인감 조회를 반복하지 않는다", () => {
+  const app = read("app.js");
+  const start = app.indexOf("  function renderCustomerAlimTalk()");
+  const fn = app.slice(start, app.indexOf("  function openCustomerAlimTalk()", start));
+  const state = {selectedCustomerIds: ["c1"], category: "notice", templateId: "cleaning_schedule", month: "2026-09", sourceType: "", sourceId: ""};
+  const output = {innerHTML: "", extra: "", insertAdjacentHTML(_position, html) { this.extra += html; }};
+  let sealCalls = 0;
+  const context = {customerAlimTalkState: state, store: {customers: [customer("c1", "샘플", "01000000000")]},
+    monthlyReportTargetBuildings: () => [], previousMonthKey: () => "2026-09", currentMonthKey: () => "2026-10",
+    aiAssistantState: {quote: null, sealLoaded: false, sealLoading: false, sealError: "조회 실패"},
+    reportState: {reports: [], loaded: true}, buildingMonthlyReportState: {}, documentDeliveryCapabilities: {loaded: true, kakao: false},
+    MessagePolicy, CustomerAlimTalkUI: AlimTalkUI, SavedCustomerDocuments: require("../src/saved-customer-documents"), MessageUI, main: output, canWriteCRM: () => false, canAdministerSecurity: () => false,
+    selectedMessageCustomerId: "", selectedMessageTemplateId: "", selectedMessageSourceType: "", selectedMessageSourceId: "",
+    customerMessageDeliveries: () => [{customerName: "샘플", templateLabel: "안내", status: "requested"}],
+    renderCustomerMessageTools: () => "<section>기존 안내 도구</section>", loadAiQuoteSeal: () => {sealCalls++;},
+    normalizedPhone: value => String(value).replace(/\D/g, "")};
+  vm.runInNewContext(fn + "\nrenderCustomerAlimTalk();", context);
+  assert.match(output.innerHTML, /알림톡 발송/);
+  assert.match(output.extra, /발송 이력/);
+  assert.match(output.extra, /기존 안내 도구/);
+  assert.equal(sealCalls, 0);
+  assert.match(output.innerHTML, /data-alimtalk-send[^>]*disabled/);
+});
 
 test("알림톡 발송 화면은 네 가지 발송 종류와 고객 검색·선택을 표시한다", () => {
   const html = AlimTalkUI.render({ customers: [customer("c1", "고객 <김>", "010-1234-5678")], writable: true });

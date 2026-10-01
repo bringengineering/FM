@@ -54,7 +54,8 @@ test("app shell includes policy module and customer message navigation", () => {
   const styles = fs.readFileSync(path.join(__dirname, "../src/styles.css"), "utf8");
   assert.match(index, /message-policy\.js/);
   assert.match(index, /message-ui\.js/);
-  assert.match(index, /data-view="customerMessages"/);
+  assert.match(index, /data-view="customerAlimTalk"/);
+  assert.doesNotMatch(index, /data-view="customerMessages"/);
   assert.match(app, /currentView === "customerMessages"/);
   assert.match(app, /renderCustomerMessages/);
   assert.match(app, /data-message-consent-edit/);
@@ -62,4 +63,23 @@ test("app shell includes policy module and customer message navigation", () => {
   assert.match(app, /open-cleaning-order-message/);
   assert.match(app, /cleaningOrderContext/);
   assert.match(styles, /\.message-workspace/);
+});
+test("통합 화면의 상세 안내 도구는 중복 제목·탭·이력 없이 기존 입력 기능을 유지한다", () => {
+  const html = MessageUI.renderWorkspace({embedded: true, customers: [{id: "c1", name: "샘플 고객", phone: "01000000000"}], selectedCustomerId: "c1", templateId: "cleaning_schedule", sourceType: "work", sourceId: "work_1", channel: "sms", writable: true});
+  assert.doesNotMatch(html, /<h2>|data-message-mode|class="message-history"/);
+  assert.match(html, /customerMessageForm/);
+  assert.match(html, /option value="sms" selected/);
+  assert.match(html, /수신 동의 관리/);
+  assert.match(html, /name="note"/);
+});
+
+test("통합 발송 이력은 문서·메시지를 함께 표시하고 원본을 변경하지 않으며 HTML을 이스케이프한다", () => {
+  const deliveries = [{documentName: "견적 <img>", customerName: "샘플", channel: "kakao", status: "requested"}, {templateLabel: "일정 안내", customerName: "샘플", channel: "sms", status: "delivered"}];
+  const before = JSON.stringify(deliveries);
+  const html = MessageUI.renderHistory({deliveries});
+  assert.match(html, /견적 &lt;img&gt;/);
+  assert.match(html, /일정 안내/);
+  assert.match(html, /SMS/);
+  assert.doesNotMatch(html, /<img>/);
+  assert.equal(JSON.stringify(deliveries), before);
 });
