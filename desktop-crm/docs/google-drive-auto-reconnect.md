@@ -1,7 +1,8 @@
 # Google Drive 자동 재연결
 
 CRM은 Google Drive의 짧은 접근 토큰만 저장하지 않는다. 사용자가 한 번 동의하면
-OAuth Authorization Code + PKCE로 받은 갱신 토큰을 Windows `safeStorage`로 암호화해
+OAuth Authorization Code + PKCE를 회사 인증 서버에서 교환한다. 서버는 개인별
+갱신 토큰을 CRM UID에 묶어 암호화한 뒤 반환하며, 이를 Windows `safeStorage`로 다시 암호화해
 CRM 사용자 UID와 함께 로컬에 저장한다. 앱 시작 시 만료가 5분 이내인 접근 토큰을
 자동 갱신하며, Drive가 `401`을 반환하면 한 번 갱신한 뒤 같은 요청을 한 번만 다시
 시도한다.
@@ -17,8 +18,10 @@ BRING CRM 전용 OAuth 클라이언트를 `데스크톱 앱` 유형으로 만든
 포트의 `127.0.0.1` loopback redirect를 허용하지 않으므로 사용할 수 없다.
 
 발급된 공개 Client ID를 GitHub Actions 저장소 변수
-`BRING_CRM_GOOGLE_DRIVE_CLIENT_ID`에 넣는다. Client secret은 저장하거나 앱에 포함하지
-않는다. 릴리스 워크플로와 앱 실행 경로는 이 변수가 비었거나 Google Client ID 형식이
+`BRING_CRM_GOOGLE_DRIVE_CLIENT_ID`에 넣는다. 동일 클라이언트의 ID/secret은 서버의
+`DRIVE_CLIENT_ID`/`DRIVE_CLIENT_SECRET`에만 보관하고 앱에는 secret을 포함하지
+않는다. 최초 교환과 자동 갱신은 `crmDriveOAuth` 인증 서버가 처리한다.
+릴리스 워크플로와 앱 실행 경로는 이 변수가 비었거나 Google Client ID 형식이
 아니거나 `bring-fm` 프로젝트 번호로 시작하지 않으면 중단한다. `bring-fm-hj`를 포함한
 다른 프로젝트의 Client ID로 우회하지 않는다.
 
@@ -40,4 +43,8 @@ Client ID는 공개 식별자지만 계정·토큰·Client secret은 로그나 �
 
 `bring-fm` Client ID가 포함된 암호화 연결 파일만 복원한다. Client ID가 없거나 다른
 프로젝트에서 발급된 기존 연결은 안전하게 지우고 한 번 다시 연결하도록 안내한다.
-재연결 뒤에는 `bring-fm` 갱신 토큰 형식으로 저장되어 업데이트 후에도 자동 복원된다.
+서버 경유 이전 연결도 한 번 재연결해야 한다. 재연결 뒤에는 `drive-v1.` 암호화
+갱신정보로 저장되어 같은 CRM 계정으로 로그인하면 자동 복원된다. 계정 변경,
+승인 철회, 서버 secret 변경 시에는 다른 계정의 연결을 재사용하지 않는다.
+
+서버 배포 및 확인 절차는 `release/crm-drive-oauth-deployment.md`를 따른다.
