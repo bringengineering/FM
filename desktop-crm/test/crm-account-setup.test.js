@@ -16,17 +16,35 @@ vm.runInNewContext(
 const setupCore = setupCoreContext.BringCrmAccountSetup;
 
 test("Firebase email-link setup accepts only trusted sign-in action links", () => {
+  const uid = "authUser_123";
+  const setupToken = "A".repeat(43);
+  const continueUrl = new URL("https://bring-fm.web.app/crm-account-setup/");
+  continueUrl.searchParams.set("uid", uid);
+  continueUrl.searchParams.set("invite", setupToken);
+  const actionUrl = new URL("https://bring-fm.firebaseapp.com/__/auth/action");
+  actionUrl.searchParams.set("mode", "signIn");
+  actionUrl.searchParams.set("oobCode", "one-time-code-123");
+  actionUrl.searchParams.set("continueUrl", continueUrl.href);
   const direct = setupCore.parseSignInActionLink(
-    "https://bring-fm.firebaseapp.com/__/auth/action?mode=signIn&oobCode=one-time-code-123",
+    actionUrl.href,
   );
   assert.equal(direct && direct.mode, "signIn");
   assert.equal(direct && direct.actionCode, "one-time-code-123");
+  assert.equal(direct && direct.uid, uid);
+  assert.equal(direct && direct.setupToken, setupToken);
 
-  const inner = "https://bring-fm.web.app/crm-account-setup/?mode=signIn&oobCode=one-time-code-456";
+  const innerUrl = new URL("https://bring-fm.web.app/crm-account-setup/");
+  innerUrl.searchParams.set("mode", "signIn");
+  innerUrl.searchParams.set("oobCode", "one-time-code-456");
+  innerUrl.searchParams.set("uid", uid);
+  innerUrl.searchParams.set("invite", setupToken);
+  const inner = innerUrl.href;
   const wrapped = `https://bring-fm.firebaseapp.com/__/auth/action?link=${encodeURIComponent(inner)}`;
   const nested = setupCore.parseSignInActionLink(wrapped);
   assert.equal(nested && nested.mode, "signIn");
   assert.equal(nested && nested.actionCode, "one-time-code-456");
+  assert.equal(nested && nested.uid, uid);
+  assert.equal(nested && nested.setupToken, setupToken);
 });
 
 test("Firebase email-link setup rejects reset links, untrusted hosts, insecure URLs, and oversized codes", () => {
@@ -49,6 +67,8 @@ test("account setup page requires a display name and keeps its invalid-link form
   for (const page of [sourcePage, exportedPage]) {
     assert.match(page, /id="setupForm" hidden/);
     assert.match(page, /id="setupDisplayName" name="displayName" type="text" autocomplete="name" maxlength="80" required/);
+    assert.match(page, /id="setupEmail" class="setup-email-value"/);
+    assert.doesNotMatch(page, /<input[^>]+id="setupEmail"/);
     assert.match(page, /name="password" type="password"[^>]*autocomplete="new-password"/);
     assert.match(page, /이메일 인증 및 비밀번호 설정/);
     assert.match(page, /Firebase 인증에서 안전하게 관리됩니다/);
@@ -58,7 +78,13 @@ test("account setup page requires a display name and keeps its invalid-link form
     assert.match(script, /credentials: "omit"/);
     assert.match(script, /redirect: "error"/);
     assert.match(script, /history\.replaceState\(null, "", window\.location\.pathname\)/);
-    assert.match(script, /https:\/\/asia-northeast3-bring-fm\.cloudfunctions\.net\/completeCrmAccountSetup/);
+    assert.match(script, /FUNCTION_BASE = "https:\/\/asia-northeast3-bring-fm\.cloudfunctions\.net"/);
+    assert.match(script, /callSetupFunction\("getCrmAccountSetupInvite"/);
+    assert.match(script, /callSetupFunction\("completeCrmAccountSetup"/);
+    assert.match(script, /email\.textContent = invite\.maskedEmail/);
+    assert.match(script, /uid: inviteUid/);
+    assert.match(script, /setupToken: inviteToken/);
+    assert.doesNotMatch(script, /email:\s*email\.value/);
     assert.doesNotMatch(script, /localStorage|sessionStorage/);
   }
   for (const style of [sourceStyle, exportedStyle]) assert.match(style, /#setupForm\[hidden\]\{display:none!important\}/);
