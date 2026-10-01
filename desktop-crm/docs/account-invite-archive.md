@@ -6,4 +6,6 @@ CRM administrators can remove a completed item from **계정 등록 → 계정 �
 
 Deploy the six pinned account setup callables using `release/crm-account-setup-update.js` after the complete tests and emulator role checks. The pre-deploy inventory must match the recorded live hash, and the rollback source must be an ancestor of the latest release branch. No Firebase rules deployment or data migration is needed.
 
+The desktop release waits for the new archive callable after validating the installer. Its bounded, unauthenticated readiness check requires the exact authentication denial and cannot archive records. Publication stops if the separately deployed backend is unavailable. Invitation listing uses the existing key index with pagination, so archived records do not require a new production database index.
+
 Rollback: restore the preceding desktop release/update pointer and redeploy the five pre-existing account callables from the recorded rollback source. Keep the additive archive callable; do not delete user or invitation data. Existing archived records retain their full contents. Restoring a particular archived row is a separate authorized administrative operation removing only its two archive fields, not recreating a login account.
