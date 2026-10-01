@@ -66,7 +66,7 @@ test("update arguments require the current project, expected hash, and rollback 
   assert.throws(() => parseArgs(["--unexpected"]), { code: "CRM_ACCOUNT_SETUP_UPDATE_ARGUMENT_INVALID" });
 });
 
-test("update deploys only five pinned callables after exact-source and baseline checks, then verifies one new hash", () => {
+test("update deploys only six pinned callables after exact-source and baseline checks, then verifies one new hash", () => {
   const calls = [];
   let inventoryCall = 0;
   const rollbackSource = EXISTING_FUNCTIONS.map(name =>
@@ -136,7 +136,7 @@ test("update stops before deployment if any current function differs from the co
 test("update rejects a missing legacy callable or a partially deployed new callable", () => {
   for (const current of [
     existingRows().slice(1),
-    [...existingRows(), { ...rows().find(row => row.id.endsWith("/getCrmAccountSetupInvite")), labels: { "firebase-functions-codebase": "field-platform", "firebase-functions-hash": "e".repeat(40) } }],
+    [...existingRows(), { ...rows().find(row => row.id.endsWith("/archiveCrmAccountInvite")), labels: { "firebase-functions-codebase": "field-platform", "firebase-functions-hash": "e".repeat(40) } }],
   ]) {
     const calls = [];
     assert.throws(() => runCrmAccountSetupUpdate({

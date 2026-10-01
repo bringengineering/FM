@@ -485,6 +485,50 @@
     }
   }
 
+  function confirmCrmAccountInviteArchive(account) {
+    return new Promise(resolve => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "work-outcome-dialog crm-account-archive-dialog";
+      dialog.setAttribute("aria-labelledby", "crm-account-archive-title");
+      dialog.setAttribute("aria-describedby", "crm-account-archive-description");
+      dialog.innerHTML = `<h2 id="crm-account-archive-title">설정 완료 이력을 삭제할까요?</h2><p data-archive-member></p><p id="crm-account-archive-description">이 항목이 계정 설정 현황에서 사라집니다.<br>로그인 계정과 기존 업무 기록은 유지됩니다.</p><form method="dialog"><footer><button type="submit" value="cancel" autofocus>취소</button><button type="submit" value="archive" class="crm-account-archive-confirm">목록에서 삭제</button></footer></form>`;
+      dialog.querySelector("[data-archive-member]").textContent = account.displayName || account.email;
+      dialog.addEventListener("close", () => {
+        const confirmed = dialog.returnValue === "archive";
+        dialog.remove();
+        resolve(confirmed);
+      }, { once: true });
+      document.body.append(dialog);
+      dialog.showModal();
+    });
+  }
+
+  async function archiveCrmAccountInvite(uid) {
+    if (!isCrmAdmin() || state.busy || state.crmAccountInvitesLoading) return;
+    const account = state.crmAccountInvites.find(row => row.uid === uid && row.status === "complete");
+    if (!account) return;
+    const guard = captureContextGuard();
+    if (!await confirmCrmAccountInviteArchive(account)) return;
+    if (!contextGuardActive(guard) || !isCrmAdmin() || state.busy || state.crmAccountInvitesLoading) return;
+    const sessionActive = () => guard.generation === state.generation && guard.uid === currentUserId();
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.archiveCrmAccountInvite({ uid });
+      if (!sessionActive()) return;
+      if (!result || result.uid !== uid || result.archived !== true) throw new Error("삭제 결과를 확인하지 못했습니다. 새로고침해 주세요.");
+      state.crmAccountInvites = state.crmAccountInvites.filter(row => row.uid !== uid);
+      notify("설정 완료 이력을 목록에서 삭제했습니다. 로그인 계정은 유지됩니다.", "success");
+    } catch (error) {
+      if (sessionActive()) notify(error && error.message || "설정 이력을 삭제하지 못했습니다.", "error");
+    } finally {
+      if (sessionActive()) {
+        state.busy = false;
+        renderCurrent();
+      }
+    }
+  }
+
   function chooseDefaultUser() {
     const peers = state.data.users.filter(user => user.uid !== currentUserId());
     if (state.selectedUserId && peers.some(user => user.uid === state.selectedUserId)) return;
@@ -522,7 +566,7 @@
       const pending = account.status === "pending";
       const createdAt = account.createdAt ? new Date(account.createdAt).toLocaleString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
       const expiresAt = account.expiresAt ? new Date(account.expiresAt).toLocaleDateString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
-      return `<tr><td><b>${esc(account.displayName || account.email)}</b>${account.displayName ? `<small>${esc(account.email)}</small>` : ""}</td><td><span class="crm-account-status ${pending ? "pending" : "complete"}">${pending ? "설정 대기" : "설정 완료"}</span></td><td>${esc(createdAt)}</td><td>${pending ? esc(expiresAt) : "—"}</td><td>${pending ? `<button type="button" class="secondary-button" data-crm-account-resend="${esc(account.uid)}" ${state.busy ? "disabled" : ""}>메일 다시 보내기</button>` : "—"}</td></tr>`;
+      return `<tr><td><b>${esc(account.displayName || account.email)}</b>${account.displayName ? `<small>${esc(account.email)}</small>` : ""}</td><td><span class="crm-account-status ${pending ? "pending" : "complete"}">${pending ? "설정 대기" : "설정 완료"}</span></td><td>${esc(createdAt)}</td><td>${pending ? esc(expiresAt) : "—"}</td><td>${pending ? `<button type="button" class="secondary-button" data-crm-account-resend="${esc(account.uid)}" ${state.busy ? "disabled" : ""}>메일 다시 보내기</button>` : `<button type="button" class="secondary-button crm-account-archive-button" data-crm-account-archive="${esc(account.uid)}" ${state.busy || state.crmAccountInvitesLoading ? "disabled" : ""}>삭제</button>`}</td></tr>`;
     }).join("");
     const accountRows = state.crmAccountInvitesLoading && !state.crmAccountInvitesLoaded
       ? `<div class="office-loading"><span class="office-loader"></span><b>계정 현황을 불러오는 중입니다</b></div>`
@@ -532,7 +576,7 @@
         <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input data-crm-account-invite-email name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" value="${esc(state.crmAccountInviteEmailDraft)}" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
         <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 계정 설정 요청은 7일간 대기하며, 메일 링크가 만료되면 목록에서 새 링크를 보낼 수 있습니다. 이메일 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
       </section>
-      <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기 계정은 인증 링크를 다시 보낼 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
+      <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기는 메일 재발송, 설정 완료는 목록에서 삭제할 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading || state.busy ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
         ${state.crmAccountInviteError ? `<div class="crm-account-error" role="alert">${esc(state.crmAccountInviteError)}</div>` : ""}${accountRows}
       </section>`;
   }
@@ -2109,6 +2153,8 @@
     if (event.target.closest("[data-crm-account-refresh]")) { void refreshCrmAccountInvites(); return; }
     const resendAccount = event.target.closest("[data-crm-account-resend]");
     if (resendAccount) { void resendCrmAccountInvite(resendAccount.dataset.crmAccountResend); return; }
+    const archiveAccount = event.target.closest("[data-crm-account-archive]");
+    if (archiveAccount) { void archiveCrmAccountInvite(archiveAccount.dataset.crmAccountArchive); return; }
     const displayNameEdit = event.target.closest("[data-office-display-name-edit]");
     if (displayNameEdit) {
       beginDisplayNameEdit(displayNameEdit.dataset.officeDisplayNameEdit, displayNameEdit.dataset.officeDisplayNameSurface);

@@ -10181,6 +10181,10 @@ secureCanonicalHandle("crm:account-invite-resend", input => {
   if (localTestMode) throw new Error("미리보기에서는 이메일 초대를 발송하지 않습니다.");
   return remoteClient.resendCrmAccountInvite(input);
 });
+secureCanonicalHandle("crm:account-invite-archive", input => {
+  if (localTestMode) throw new Error("미리보기에서는 실제 계정 설정 이력을 변경하지 않습니다.");
+  return remoteClient.archiveCrmAccountInvite(input);
+});
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
 secureCanonicalHandle("crm:office-attendance-correct", input => correctOfficeAttendance(input));
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));

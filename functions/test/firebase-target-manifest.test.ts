@@ -129,6 +129,7 @@ describe("Firebase function archival manifest", () => {
     expect(manifest.crmAccountSetupManualDeployment).toEqual({
       projectId: "bring-fm",
       functionNames: [
+        "archiveCrmAccountInvite",
         "completeCrmAccountSetup",
         "getCrmAccountSetupInvite",
         "listCrmAccountInvites",

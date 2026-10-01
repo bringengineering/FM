@@ -13,7 +13,7 @@ const {
 
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "firebase-targets.json"), "utf8"));
 
-test("CRM account setup plan is an exact bring-fm five-callable allowlist without rules or Hosting", () => {
+test("CRM account setup plan is an exact bring-fm six-callable allowlist without rules or Hosting", () => {
   const plan = buildCrmAccountSetupDeploymentPlan(manifest, "bring-fm");
   assert.deepEqual(plan.functionNames, EXPECTED_FUNCTIONS);
   assert.equal(plan.region, "asia-northeast3");
@@ -44,9 +44,10 @@ test("Firebase function inventory parser extracts names and deployment regions w
   assert.equal(parseDeployedFunctionRows("not-json"), null);
 });
 
-test("applying CRM account setup deploy confirms source, snapshots current inventory, and selects only five functions", () => {
+test("applying CRM account setup deploy confirms source, snapshots current inventory, and selects only six functions", () => {
   const calls = [];
   const afterRows = [
+    { name: "projects/bring-fm/locations/asia-northeast3/functions/archiveCrmAccountInvite" },
     { name: "projects/bring-fm/locations/asia-northeast3/functions/completeCrmAccountSetup" },
     { name: "projects/bring-fm/locations/asia-northeast3/functions/getCrmAccountSetupInvite" },
     { name: "projects/bring-fm/locations/asia-northeast3/functions/listCrmAccountInvites" },

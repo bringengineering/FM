@@ -114,10 +114,15 @@ test("account invitation IPC is classified and its server bridge enforces an adm
   assert.equal(policy.classification("crm:account-invites-load"), "control");
   assert.equal(policy.classification("crm:account-invite-register"), "mutation");
   assert.equal(policy.classification("crm:account-invite-resend"), "mutation");
+  assert.equal(policy.classification("crm:account-invite-archive"), "mutation");
 
   const nonAdmin = { requireOfficeSession: () => ({ uid: "member-1", role: "member" }) };
   await assert.rejects(
     FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(nonAdmin, "registerCrmAccount", { email: "x@example.com" }),
+    error => error.code === "ACCESS_DENIED",
+  );
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(nonAdmin, "archiveCrmAccountInvite", { uid: "invite-1" }),
     error => error.code === "ACCESS_DENIED",
   );
 
@@ -141,4 +146,19 @@ test("account invitation IPC is classified and its server bridge enforces an adm
     FirebaseRemoteClient.prototype.callCrmAccountSetupFunction.call(rateLimitedAdmin, "resendCrmAccountInvite", { uid: "invite-1" }),
     error => error.code === "ACCOUNT_SETUP_RATE_LIMITED" && error.message.includes("잠시 후"),
   );
+});
+
+test("completed-invite archive validates targets and requires an exact server acknowledgement", async () => {
+  const { FirebaseRemoteClient } = require("../src/remote");
+  const calls = [];
+  const client = { callCrmAccountSetupFunction: async (name, data) => { calls.push({ name, data }); return { uid: data.uid, archived: true }; } };
+  for (const uid of ["", "../access", "__proto__", "constructor", "prototype", "x".repeat(129), 123]) {
+    await assert.rejects(FirebaseRemoteClient.prototype.archiveCrmAccountInvite.call(client, { uid }), error => error.code === "ACCOUNT_SETUP_REQUEST_FAILED");
+  }
+  assert.equal(calls.length, 0);
+  assert.deepEqual(await FirebaseRemoteClient.prototype.archiveCrmAccountInvite.call(client, { uid: "member-1", email: "ignored@example.com" }), { uid: "member-1", archived: true });
+  assert.deepEqual(calls, [{ name: "archiveCrmAccountInvite", data: { uid: "member-1" } }]);
+  for (const result of [{ uid: "other", archived: true }, { uid: "member-1", archived: false }, {}]) {
+    await assert.rejects(FirebaseRemoteClient.prototype.archiveCrmAccountInvite.call({ callCrmAccountSetupFunction: async () => result }, { uid: "member-1" }), error => error.code === "ACCOUNT_SETUP_REQUEST_FAILED");
+  }
 });

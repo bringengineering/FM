@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadCrmAccountInvites: () => ipcRenderer.invoke("crm:account-invites-load"),
   registerCrmAccount: input => ipcRenderer.invoke("crm:account-invite-register", input),
   resendCrmAccountInvite: input => ipcRenderer.invoke("crm:account-invite-resend", input),
+  archiveCrmAccountInvite: input => ipcRenderer.invoke("crm:account-invite-archive", input),
   saveOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-save", input),
   saveOfficeAttendanceCorrection: input => ipcRenderer.invoke("crm:office-attendance-correct", input),
   saveOfficeDisplayName: input => ipcRenderer.invoke("crm:office-display-name-save", input),

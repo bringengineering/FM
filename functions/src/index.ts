@@ -3516,6 +3516,9 @@ const CRM_ACCOUNT_SETUP_RESPONSE_LIMIT = 16 * 1024;
 const CRM_ACCOUNT_SETUP_RATE_WINDOW_MS = 10 * 60 * 1_000;
 
 function crmAccountSetupError(code: string): HttpsError {
+  if (code === "crm_account_invite_not_complete") {
+    return new HttpsError("failed-precondition", code);
+  }
   if (code === "crm_account_email_invalid") {
     return new HttpsError("invalid-argument", "crm_account_email_invalid");
   }
@@ -3854,7 +3857,8 @@ export const listCrmAccountInvites = onCall(
     const actor = await requireCrmAccountSetupAdmin(request);
     try {
       await consumeCrmAccountAdminRateLimit(actor.uid, "list");
-      const snapshot = await adminDatabase.ref("crmCompany/accountInvites").limitToLast(200).get();
+      const snapshot = await adminDatabase.ref("crmCompany/accountInvites")
+        .orderByChild("archivedAt").equalTo(null).limitToLast(200).get();
       const rows: Array<{
         uid: string;
         email: string;
@@ -3875,7 +3879,7 @@ export const listCrmAccountInvites = onCall(
               uid,
               email: user.email,
               displayName: user.displayName || "",
-              status: raw.status === "complete" || user.emailVerified ? "complete" : "pending",
+              status: raw.status === "complete" ? "complete" : "pending",
               createdAt: Number(raw.createdAt) || 0,
               expiresAt: Number(raw.expiresAt) || 0,
               lastSentAt: Number(raw.lastSentAt) || 0,
@@ -3891,6 +3895,42 @@ export const listCrmAccountInvites = onCall(
       if (error instanceof Error && error.message === "field_rate_limit_exceeded") {
         throw crmAccountSetupError("crm_account_setup_rate_limited");
       }
+      throw crmAccountSetupError("crm_account_setup_unavailable");
+    }
+  },
+);
+
+export const archiveCrmAccountInvite = onCall(
+  { region: "asia-northeast3" },
+  async (request) => {
+    const actor = await requireCrmAccountSetupAdmin(request);
+    try {
+      await consumeCrmAccountAdminRateLimit(actor.uid, "archive");
+      const input = isRecord(request.data) ? request.data : {};
+      const uid = input.uid;
+      if (!crmAccountSetupSafeUid(uid)) throw new Error("crm_account_setup_invalid");
+      const now = Date.now();
+      const result = await adminDatabase.ref(`crmCompany/accountInvites/${uid}`).transaction(raw => {
+        // The first transaction callback may see an empty local cache. Returning
+        // it unchanged lets RTDB retry against the actual server snapshot.
+        if (!isRecord(raw) || raw.status !== "complete") return raw;
+        // Preserve the invitation and first archive audit; never touch Auth,
+        // access grants, employee profiles, or the member's work records.
+        if (typeof raw.archivedAt === "number" && Number.isSafeInteger(raw.archivedAt) && raw.archivedAt > 0
+          && crmAccountSetupSafeUid(raw.archivedBy)) return raw;
+        return { ...raw, archivedAt: now, archivedBy: actor.uid };
+      });
+      if (!result.committed || result.snapshot.child("status").val() !== "complete"
+        || !Number.isSafeInteger(result.snapshot.child("archivedAt").val())) {
+        throw new Error("crm_account_invite_not_complete");
+      }
+      return { uid, archived: true };
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (["crm_account_setup_invalid", "crm_account_invite_not_complete"].includes(code)) {
+        throw crmAccountSetupError(code);
+      }
+      if (code === "field_rate_limit_exceeded") throw crmAccountSetupError("crm_account_setup_rate_limited");
       throw crmAccountSetupError("crm_account_setup_unavailable");
     }
   },
