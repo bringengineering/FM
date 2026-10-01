@@ -4452,6 +4452,16 @@ async function savedMonthlyPhotoSource(input = {}) {
   return { ok: true, folder };
 }
 
+function monthlyPhotoDriveDeps() {
+  return { accessToken: "managed-in-main-process", fetchImpl: async (url, init) => {
+    const response = await authenticatedDriveFetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(15000) });
+    return { ok: response.ok, status: response.status, json: async () => {
+      const bytes = await readReportDriveThumbnailBody(response);
+      return JSON.parse(bytes.toString("utf8"));
+    } };
+  } };
+}
+
 /** Selected Drive directory is the only search boundary; this never crawls Drive globally. */
 async function findBuildingMonthlyReportPhotos(input) {
   const user = remoteClient && remoteClient.authState().user;
@@ -4474,7 +4484,7 @@ async function findBuildingMonthlyReportPhotos(input) {
   const context = monthlyPhotoSourceContext();
   const found = await BuildingMonthlyReportDrive.findActivityFolders({ root, month, buildingName, buildingAddress,
     assertCurrent: context.assertCurrent,
-    list: folder => BuildingDocsDrive.listFolder(driveApiDeps(), folder.id, { maxPages: 3, driveId: String(root.driveId || "") }),
+    list: folder => BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), folder.id, { maxPages: 3, driveId: String(root.driveId || "") }),
   });
   const activityFolders = found.folders;
   const photos = [];
@@ -4494,7 +4504,7 @@ async function findBuildingMonthlyReportPhotos(input) {
       kind: "folder",
     };
     picker.folders.set(folderRecord.id, folderRecord);
-    const nested = await BuildingDocsDrive.listFolder(driveApiDeps(), folderIdValue, { maxPages: 2, driveId: folderRecord.driveId });
+    const nested = await BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), folderIdValue, { maxPages: 2, driveId: folderRecord.driveId });
     context.assertCurrent();
     if (nested.truncated) nestedTruncated = true;
     let files = nested.files.filter(file => REPORT_DRIVE_IMAGE_MIME.has(String(file && file.mimeType || "").toLowerCase()));
@@ -4511,7 +4521,7 @@ async function findBuildingMonthlyReportPhotos(input) {
           kind: "folder",
         };
         picker.folders.set(childId, childRecord);
-        const childFiles = await BuildingDocsDrive.listFolder(driveApiDeps(), childId, { maxPages: 2, driveId: childRecord.driveId });
+        const childFiles = await BuildingDocsDrive.listFolder(monthlyPhotoDriveDeps(), childId, { maxPages: 2, driveId: childRecord.driveId });
         context.assertCurrent();
         if (childFiles.truncated) nestedTruncated = true;
         files = files.concat(childFiles.files.filter(file => REPORT_DRIVE_IMAGE_MIME.has(String(file && file.mimeType || "").toLowerCase())));

@@ -67,3 +67,18 @@ test("권한 조회 중 Google 연결이 바뀌면 이전 폴더를 반영하지
   await assert.rejects(h.run({}), { code: "SESSION_CHANGED" });
   assert.equal(h.picker.folders.size, 0);
 });
+
+test("자동 검색 네트워크는 제한된 응답 크기·시간·리디렉션 정책을 사용한다", async () => {
+  let request;
+  const context = vm.createContext({ AbortSignal, JSON,
+    authenticatedDriveFetch: async (url, options) => { request = { url, options }; return { ok: true, status: 200 }; },
+    readReportDriveThumbnailBody: async () => Buffer.from('{"files":[]}'),
+  });
+  vm.runInContext(source.slice(source.indexOf("function monthlyPhotoDriveDeps()"), source.indexOf("/** Selected Drive directory")), context);
+  const response = await context.monthlyPhotoDriveDeps().fetchImpl("https://www.googleapis.com/drive/v3/files", {});
+  assert.equal(request.options.redirect, "error");
+  assert.ok(request.options.signal instanceof AbortSignal);
+  assert.equal((await response.json()).files.length, 0);
+  context.readReportDriveThumbnailBody = async () => { throw new Error("response too large"); };
+  await assert.rejects(response.json(), /too large/u);
+});
