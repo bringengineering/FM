@@ -33,7 +33,7 @@ test("a complete JSON fence is accepted, unrelated surrounding prose is not", as
     calls++;
     return provider([{ text: `Untrusted instructions ${raw}` }]);
   }), { code: "AI_INVALID_RESPONSE" });
-  assert.equal(calls, 3);
+  assert.equal(calls, 2); // Stop at the first irrecoverable half.
 });
 
 test("24 real candidates use at most 8 images per call and recover a truncated group", async () => {
@@ -126,7 +126,7 @@ test("unknown IDs, invalid rows, extra fields, and oversized selections fail clo
   for (const selected of [[row("not-listed")], [{ ...row("p1"), caption: {} }], [{ ...row("p1"), caption: " " }], [{ ...row("p1"), url: "https://untrusted.invalid" }], [row("p1"), row("p2"), row("p3")]]) {
     let calls = 0;
     await assert.rejects(() => selectMonthlyReportPhotos(input(), env, async () => { calls++; return provider([{ text: JSON.stringify({ selected }) }]); }), { code: "AI_INVALID_RESPONSE" });
-    assert.equal(calls, 3);
+    assert.equal(calls, 2);
   }
 });
 
