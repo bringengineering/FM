@@ -37,4 +37,6 @@ test("archive backend readiness gates publication after installer validation", (
   assert.ok(gate > yaml.indexOf("Verify restored or newly built release assets before upload"));
   assert.ok(gate < yaml.indexOf("Deploy CRM AI Worker"));
   assert.ok(gate < yaml.indexOf("--mode publish"));
+  const ci = fs.readFileSync(path.join(__dirname, "../../.github/workflows/crm-ci.yml"), "utf8");
+  assert.equal((ci.match(/"release\/\*\*"/g) || []).length, 2, "both push and PR CI must validate deployment guard changes");
 });

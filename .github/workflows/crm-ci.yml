@@ -9,7 +9,7 @@ on:
       - "crm-ai-worker/**"
       - "database.rules.json"
       - "firebase.json"
-      - "release/firebase-targets.json"
+      - "release/**"
       - ".github/workflows/crm-*.yml"
   push:
     branches:
@@ -21,7 +21,7 @@ on:
       - "crm-ai-worker/**"
       - "database.rules.json"
       - "firebase.json"
-      - "release/firebase-targets.json"
+      - "release/**"
       - ".github/workflows/crm-*.yml"
 
 permissions:
