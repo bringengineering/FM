@@ -124,7 +124,9 @@ export async function selectMonthlyReportPhotos(payload, env, fetchImpl = global
         contents: [{ role: "user", parts }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 2400 },
       }),
-      redirect: "error",
+      // Do not follow redirects or forward the key to another origin.
+      // Workers supports manual mode; the non-2xx check below rejects redirects.
+      redirect: "manual",
       signal: AbortSignal.timeout(Math.max(15_000, timeoutMs)),
     });
   } catch { throw failure("AI_TEMPORARY_FAILURE"); }

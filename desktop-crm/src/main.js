@@ -3090,6 +3090,57 @@ async function exportAiQuote(input) {
   return { ok: true, format };
 }
 
+async function sendQuoteToCustomerByKakao(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("관리자만 견적서를 고객에게 보낼 수 있습니다."), { code: "ACCESS_DENIED" });
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 전용 계정은 견적서를 보낼 수 없습니다."), { code: "ACCESS_DENIED" });
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 발송 요청이 올바르지 않습니다.");
+  const customerId = String(input.customerId || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/u.test(customerId)) throw Object.assign(new Error("수신 고객을 다시 선택해 주세요."), { code: "CUSTOMER_REQUIRED" });
+  const customerPhone = String(input.customerPhone || "").replace(/\D/gu, "");
+  const customerName = String(input.customerName || "").trim().slice(0, 100);
+  if (!/^01\d{8,9}$/u.test(customerPhone) || !customerName) throw Object.assign(new Error("고객 이름과 휴대전화 번호를 확인해 주세요."), { code: "RECIPIENT_REQUIRED" });
+  const quote = QuoteCore.normalizeDraft(input.quote);
+  QuoteCore.normalizeSupplier(quote.company, { requireComplete: true });
+  QuoteCore.normalizeRecipient(quote, { requireComplete: true });
+  if (quote.recipientPhone.replace(/\D/gu, "") !== customerPhone || quote.recipient !== customerName) {
+    throw Object.assign(new Error("견적서 수신 정보가 선택한 고객과 일치하지 않습니다."), { code: "RECIPIENT_MISMATCH" });
+  }
+  const capabilities = await runDocumentDelivery("capabilities");
+  if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.kakao !== true) {
+    return { ok: false, code: "KAKAO_DOCUMENT_DELIVERY_NOT_READY", error: "알림톡 발신 설정과 승인 견적서 템플릿을 확인해 주세요." };
+  }
+  const seal = await readLocalQuoteSeal();
+  if (!seal) return { ok: false, code: "QUOTE_SEAL_REQUIRED", error: "견적서 인감을 확인할 수 없어 발송하지 않았습니다." };
+  const bytes = await createQuotePdfBytes(quote, "recipient", seal);
+  if (bytes.length > 12 * 1024 * 1024) return { ok: false, code: "DOCUMENT_TOO_LARGE", error: "견적 PDF를 12MB 이하로 만들어 주세요." };
+  const deliveryCustomerId = `quote_${crypto.randomBytes(16).toString("hex")}`;
+  const created = await runDocumentDelivery("create", {
+    documentId: `quote_${crypto.randomBytes(16).toString("hex")}`,
+    customerId: deliveryCustomerId,
+    documentType: "quote",
+    documentName: `${quote.projectName} 견적서`.slice(0, 160),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    mimeType: "application/pdf",
+    bytes: bytes.toString("base64"),
+  });
+  if (!created || created.ok !== true || !created.documentId) return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "견적서 보안 링크를 만들지 못했습니다." };
+  const sent = await runDocumentDelivery("send", {
+    channel: "kakao",
+    idempotencyKey: crypto.randomBytes(20).toString("hex"),
+    documentId: created.documentId,
+    customerId: deliveryCustomerId,
+    customerName,
+    phone: customerPhone,
+  });
+  if (!sent || sent.ok !== true) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "견적서 알림톡 발송을 요청하지 못했습니다." };
+  }
+  return { ok: true, status: sent.status || "requested", messageId: sent.messageId || "" };
+}
+
 async function exportServiceReport(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -3202,9 +3253,18 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   if (!ownerCustomerId) {
     return { ok: false, code: "OWNER_NOT_LINKED", error: "건물 정보에서 건물주 고객을 먼저 연결해 주세요." };
   }
+  if (options.targetCustomerId != null && String(options.targetCustomerId) !== ownerCustomerId) {
+    return { ok: false, code: "RECIPIENT_MISMATCH", error: "선택한 고객이 해당 건물의 건물주로 연결되어 있지 않습니다." };
+  }
   const phone = String(options.ownerContact || "").replace(/\D/gu, "");
   if (!/^01\d{8,9}$/u.test(phone)) {
     return { ok: false, code: "RECIPIENT_PHONE_REQUIRED", error: "건물주 휴대전화 번호를 확인해 주세요." };
+  }
+  if (options.targetCustomerId != null) {
+    const targetPhone = String(options.targetCustomerPhone || "").replace(/\D/gu, "");
+    if (!/^[A-Za-z0-9_-]{1,120}$/u.test(String(options.targetCustomerId)) || targetPhone !== phone) {
+      return { ok: false, code: "RECIPIENT_MISMATCH", error: "건물주 연락처가 선택한 고객과 일치하지 않습니다." };
+    }
   }
   const capabilities = await runDocumentDelivery("capabilities");
   if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.monthlyReport !== true) {
@@ -4995,6 +5055,15 @@ async function sendWorkReportToCustomerByKakao(input) {
   const report = checked.report;
   const phone = report.ownerContact.replace(/\D/gu, "");
   if (!/^01\d{8,9}$/u.test(phone)) throw Object.assign(new Error("건물주 연락처를 휴대전화 번호로 확인해 주세요."), { code: "RECIPIENT_PHONE_REQUIRED" });
+  if (options.targetCustomerId != null) {
+    if (!/^[A-Za-z0-9_-]{1,120}$/u.test(String(options.targetCustomerId)) || String(options.targetCustomerId).trim() === "") {
+      throw Object.assign(new Error("수신 고객을 다시 선택해 주세요."), { code: "CUSTOMER_REQUIRED" });
+    }
+    const targetPhone = String(options.targetCustomerPhone || "").replace(/\D/gu, "");
+    if (!/^01\d{8,9}$/u.test(targetPhone) || targetPhone !== phone) {
+      throw Object.assign(new Error("보고서 연락처가 선택한 고객과 일치하지 않습니다."), { code: "RECIPIENT_MISMATCH" });
+    }
+  }
 
   // 서버 capability 는 승인 템플릿, 발신 프로필, NCP 발송 설정을 모두 확인한다.
   // 화면의 버튼 상태와 별개로 매 발송 때 서버에서 다시 확인한다.
@@ -9633,6 +9702,7 @@ secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelecte
 secureCanonicalHandle("crm:building-monthly-report-photos-find", input => findBuildingMonthlyReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-photos-select", input => selectBuildingMonthlyReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBuildingMonthlyReportToCustomerByKakao(input));
+secureCanonicalHandle("crm:quote-kakao-send", input => sendQuoteToCustomerByKakao(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "상담 녹음 파일 선택",

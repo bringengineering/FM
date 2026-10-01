@@ -38,9 +38,24 @@ test("Gemini 응답은 요청된 ID만 최대 12장 선택하고 키는 헤더�
   assert.equal(result.selected[0].id, "photo_1");
   assert.equal(captured.url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
   assert.equal(captured.options.headers["x-goog-api-key"], "test-secret");
+  assert.equal(captured.options.redirect, "manual");
   assert.ok(!captured.url.includes("test-secret"));
   assert.equal(captured.body.contents[0].parts.filter(part => part.inline_data).length, 1);
   assert.doesNotMatch(JSON.stringify(captured.body), /drive\.google\.com|@gmail\.com|010-\d/u);
+});
+
+test("월간 사진 선택은 리디렉션을 따라가거나 다른 호스트에 키를 전송하지 않는다", async () => {
+  const payload = await readMonthlyReportPhotoSelectionPayload(request(basePayload()));
+  for (const status of [301, 302, 303, 307, 308]) {
+    const calls = [];
+    await assert.rejects(() => selectMonthlyReportPhotos(payload, { GEMINI_API_KEY: "placeholder-only" }, async (url, options) => {
+      calls.push({ url: String(url), options });
+      return new Response(null, { status, headers: { location: "https://other.example.invalid/redirect" } });
+    }), error => error?.code === "AI_TEMPORARY_FAILURE");
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0].url).hostname, "generativelanguage.googleapis.com");
+    assert.equal(calls[0].options.redirect, "manual");
+  }
 });
 
 test("월간 사진 선택 route는 인증 후 Gemini를 부르고 API 키가 없으면 fail closed", async () => {

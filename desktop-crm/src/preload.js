@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   checkContractSource: input => ipcRenderer.invoke("crm:contract-source-check", input),
   decideContractSource: input => ipcRenderer.invoke("crm:contract-source-decision", input),
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
+  sendQuoteToCustomerByKakao: input => ipcRenderer.invoke("crm:quote-kakao-send", input),
   exportServiceReport: input => ipcRenderer.invoke("crm:service-report-export", input),
   exportBuildingMonthlyReport: input => ipcRenderer.invoke("crm:building-monthly-report-export", input),
   sendBuildingMonthlyReportToCustomerByKakao: input => ipcRenderer.invoke("crm:building-monthly-report-kakao-send", input),
