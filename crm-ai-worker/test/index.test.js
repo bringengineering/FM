@@ -145,13 +145,36 @@ test("completion and building-owner reports use only the configured Gemini model
   for (const call of providerCalls) {
     assert.match(call.url, /\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/u);
     assert.equal(call.options.headers["x-goog-api-key"], "gemini-test-secret");
-    assert.equal(call.options.redirect, "error");
+    assert.equal(call.options.redirect, "manual");
     assert.doesNotMatch(call.url, /gemini-test-secret/u);
     const body = JSON.parse(call.options.body);
     assert.equal(body.generationConfig.responseMimeType, "application/json");
     assert.equal(body.generationConfig.temperature, 0.2);
   }
   assert.match(JSON.stringify(providerCalls[0].options.body), /\[전화번호\]/u);
+});
+
+test("Gemini reports reject all redirects without forwarding credentials or following Location", async () => {
+  for (const task of ["completion_report", "building_monthly_report"]) {
+    for (const status of [301, 302, 303, 307, 308]) {
+      const providerCalls = [];
+      const worker = createWorker({ fetchImpl: async (url, options) => {
+        if (new URL(url).hostname === "identitytoolkit.googleapis.com") {
+          return Response.json({ users: [{ localId: "test-member", email: "member@example.invalid" }] });
+        }
+        providerCalls.push({ url: String(url), options });
+        return new Response(null, { status, headers: { location: "https://other.example.invalid/redirect" } });
+      } });
+      const response = await worker.fetch(request({ task, content: "공용부 조명 점검" }), environment({
+        GEMINI_API_KEY: "placeholder-only", CRM_ALLOWED_EMAILS: "member@example.invalid"
+      }));
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { ok: false, code: "AI_TEMPORARY_FAILURE" });
+      assert.equal(providerCalls.length, 1);
+      assert.equal(new URL(providerCalls[0].url).hostname, "generativelanguage.googleapis.com");
+      assert.equal(providerCalls[0].options.redirect, "manual");
+    }
+  }
 });
 
 test("Gemini reports fail closed without a key or with an unapproved model", async () => {
