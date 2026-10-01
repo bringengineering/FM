@@ -58,6 +58,7 @@
 .building-monthly-copy textarea::placeholder{color:#9babb5}
 .building-monthly-report-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .building-monthly-report-actions .primary-button{grid-column:1/-1}
+.building-monthly-kakao-result{margin:10px 0 0;padding:10px 12px;border:1px solid #bde8d9;border-radius:10px;background:#effbf5;color:#16835f;font-size:11px;line-height:1.5}
 .building-monthly-checks{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;color:#6e8595;font-size:10px}
 .building-monthly-checks span{padding:5px 7px;border-radius:8px;background:#f3f8fb}
 .building-monthly-panel-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}

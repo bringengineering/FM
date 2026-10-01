@@ -27,14 +27,26 @@ test("Gemini 초안은 격리된 IPC 경로로만 요청한다", () => {
   assert.match(main, /isMarketingOnlySession\(\)/u);
 });
 
-test("시험 버전은 자동 발송을 하지 않는다", () => {
+test("월간보고서는 승인된 템플릿 준비 상태와 관리 권한이 있을 때만 수동 발송한다", () => {
   const app = read("app.js");
+  const main = read("main.js");
+  const preload = read("preload.js");
+  const policy = require("../src/mutation-policy");
   const start = app.indexOf("function renderBuildingMonthlyReports");
   const end = app.indexOf("async function exportBuildingMonthlyReportPdf", start);
   const view = app.slice(start, end);
   assert.ok(view.length > 0);
-  assert.match(view, /시험 버전 · 자동 발송 안 함/u);
-  assert.doesNotMatch(view, /sendOwner|customer-notice-send|document-delivery-send/u);
+  assert.match(view, /data-building-monthly-kakao-send/u);
+  assert.match(view, /documentDeliveryCapabilities\.monthlyReport/u);
+  assert.match(view, /canAdministerSecurity\(\)/u);
+  assert.match(app, /월간보고서 알림톡 발송 요청을 접수했습니다/u);
+  assert.match(main, /async function sendBuildingMonthlyReportToCustomerByKakao/u);
+  assert.match(main, /capabilities\.monthlyReport !== true/u);
+  assert.match(main, /documentType: "monthly_report"/u);
+  assert.match(main, /await runDocumentDelivery\("revoke"/u);
+  assert.match(preload, /sendBuildingMonthlyReportToCustomerByKakao: input => ipcRenderer\.invoke\("crm:building-monthly-report-kakao-send", input\)/u);
+  assert.doesNotThrow(() => policy.assertRegistered("crm:building-monthly-report-kakao-send"));
+  assert.equal(policy.classification("crm:building-monthly-report-kakao-send"), "mutation");
 });
 
 test("월간보고서에서 Drive 상태를 안내하고 바로 연결한 뒤 사진 폴더를 연다", () => {

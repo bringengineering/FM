@@ -15,13 +15,14 @@ const memory = () => {
 test("maps each CRM document to the approved fixed Kakao template", () => {
   assert.equal(documentTemplate("quote"), "BRINGCUSTOMERQUOTEV1");
   assert.equal(documentTemplate("completion_report"), "BRINGCOMPLETIONREPORTV1");
+  assert.equal(documentTemplate("monthly_report"), "BRINGMONTHLYREPORTV1");
   assert.throws(() => documentTemplate("contract"), /INVALID_INPUT/);
 });
 
 test("capabilities stay closed until storage, NCP secrets and approval switch exist", async () => {
   const handler = createDocumentDeliveryHandler();
   const response = await handler(new Request("https://gateway.test/v1/document-delivery/capabilities"), identity, { CRM_ADMIN_EMAILS: identity.email, DOCUMENT_DELIVERY: memory() });
-  assert.deepEqual(await response.json(), { ok: true, capabilities: { kakao: false, sms: false } });
+  assert.deepEqual(await response.json(), { ok: true, capabilities: { kakao: false, monthlyReport: false, sms: false } });
 });
 
 test("document delivery denies anonymous and non-admin users before reading or sending customer files", async () => {
@@ -61,7 +62,47 @@ test("sends the exact approved AlimTalk variables and deduplicates the request k
   assert.equal((await second.json()).messageId, "message_1");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].templateCode, "BRINGCUSTOMERQUOTEV1");
-  assert.deepEqual(calls[0].variables, { 고객명: "엄준식", 문서명: "입주청소 견적서", 만료일: "2026-09-11", 문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token" });
+  assert.deepEqual(calls[0].variables, { 고객명: "엄준식", 문서명: "입주청소 견적서", 보고월: "", 만료일: "2026-09-11", 문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token" });
+});
+
+test("monthly AlimTalk is enabled only by its own approved-template flag", async () => {
+  const storage = memory();
+  await storage.put("doc:doc_month", JSON.stringify({
+    id: "doc_month", token: "token", documentType: "monthly_report", documentName: "햇빛빌라 2026년 8월 월간 관리 보고서",
+    reportMonth: "2026-08", customerId: "c1", expiresAt: "2026-09-11T00:00:00Z",
+    secureUrl: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
+  }));
+  const calls = [];
+  const handler = createDocumentDeliveryHandler({
+    now: () => Date.parse("2026-09-04T00:00:00Z"),
+    randomId: () => "monthly_message_1",
+    sendProvider: async input => { calls.push(input); return { providerMessageId: "ncp_month_1" }; }
+  });
+  const env = {
+    DOCUMENT_DELIVERY: storage, CRM_ADMIN_EMAILS: identity.email, DOCUMENT_DELIVERY_ENABLED: "true",
+    KAKAO_DOCUMENT_TEMPLATES_APPROVED: "true", KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED: "false",
+    NCP_ACCESS_KEY: "a", NCP_SECRET_KEY: "s", NCP_BIZ_MESSAGE_SERVICE_ID: "service", KAKAO_CHANNEL_ID: "@bringcare"
+  };
+  const capabilities = await handler(new Request("https://gateway.test/v1/document-delivery/capabilities"), identity, env);
+  assert.deepEqual((await capabilities.json()).capabilities, { kakao: true, monthlyReport: false, sms: false });
+  const request = () => new Request("https://gateway.test/v1/document-delivery/messages", {
+    method: "POST", body: JSON.stringify({
+      documentId: "doc_month", customerId: "c1", customerName: "건물주", phone: "01091690478",
+      channel: "kakao", idempotencyKey: "monthly_request_123"
+    })
+  });
+  assert.equal((await handler(request(), identity, env)).status, 503);
+  assert.equal(calls.length, 0);
+
+  env.KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED = "true";
+  const sent = await handler(request(), identity, env);
+  assert.equal((await sent.json()).ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].templateCode, "BRINGMONTHLYREPORTV1");
+  assert.deepEqual(calls[0].variables, {
+    고객명: "건물주", 문서명: "햇빛빌라 2026년 8월 월간 관리 보고서", 보고월: "2026-08", 만료일: "2026-09-11",
+    문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
+  });
 });
 
 test("builds the reviewed NCP AlimTalk payload without exposing credentials", async () => {

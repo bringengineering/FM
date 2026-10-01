@@ -3121,6 +3121,22 @@ async function exportServiceReport(input) {
 }
 
 async function exportBuildingMonthlyReport(input) {
+  const artifact = await prepareBuildingMonthlyReportArtifact(input);
+  if (!artifact.ok) return artifact;
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "월간 관리 보고서 PDF 저장",
+    defaultPath: buildingReportFileName(artifact.report),
+    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
+  const bytes = await createReportPdfBytes(artifact.html, "building-report");
+  if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, summary: artifact.report.summary };
+}
+
+async function prepareBuildingMonthlyReportArtifact(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("월간 보고서 요청이 올바르지 않습니다.");
@@ -3131,6 +3147,10 @@ async function exportBuildingMonthlyReport(input) {
   }
   const sessionGuard = remoteClient && remoteClient.authState().user ? remoteClient.captureSessionGuard() : null;
   if (JSON.stringify(input).length > 350000) throw Object.assign(new Error("월간 보고서 자료가 너무 큽니다."), { code: "INPUT_TOO_LARGE" });
+  const month = String(input.month || "");
+  if (!/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(month) || !BuildingReportCore.isReportMonthSelectable(month)) {
+    throw Object.assign(new Error("보고 월을 확인해 주세요."), { code: "INVALID_INPUT" });
+  }
   const selectedPhotos = Array.isArray(input.photos) ? input.photos : [];
   if (selectedPhotos.length > 12 || selectedPhotos.some(photo => !photo || typeof photo !== "object" || Array.isArray(photo)
     || Object.keys(photo).some(key => !["id", "caption"].includes(key)))) {
@@ -3142,8 +3162,6 @@ async function exportBuildingMonthlyReport(input) {
     const accessToken = await ensureDriveAccessToken();
     if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
     if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
-    const month = String(input.month || "");
-    if (!/^\d{4}-(?:0[1-9]|1[0-2])$/u.test(month)) throw Object.assign(new Error("보고 월을 확인해 주세요."), { code: "INVALID_INPUT" });
     reportPhotos = await Promise.all(selectedPhotos.map(async photo => {
       const id = reportDrivePickerId(photo.id);
       const file = id && picker.files.get(id);
@@ -3170,17 +3188,74 @@ async function exportBuildingMonthlyReport(input) {
       { code: "BUILDING_REPORT_LEAK" },
     );
   }
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: "월간 관리 보고서 PDF 저장",
-    defaultPath: buildingReportFileName(report),
-    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
+  return { ok: true, report, html: createBuildingReportHtml(report), sessionGuard };
+}
+
+async function sendBuildingMonthlyReportToCustomerByKakao(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") return { ok: false, code: "ACCESS_DENIED", error: "관리자만 고객에게 월간 보고서를 보낼 수 있습니다." };
+  if (isMarketingOnlySession()) return { ok: false, code: "MARKETING_ONLY_FORBIDDEN", error: "마케팅 전용 계정은 월간 보고서를 보낼 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const ownerCustomerId = String(options.reportRequest && options.reportRequest.building && options.reportRequest.building.ownerCustomerId || "").trim();
+  if (!ownerCustomerId) {
+    return { ok: false, code: "OWNER_NOT_LINKED", error: "건물 정보에서 건물주 고객을 먼저 연결해 주세요." };
+  }
+  const phone = String(options.ownerContact || "").replace(/\D/gu, "");
+  if (!/^01\d{8,9}$/u.test(phone)) {
+    return { ok: false, code: "RECIPIENT_PHONE_REQUIRED", error: "건물주 휴대전화 번호를 확인해 주세요." };
+  }
+  const capabilities = await runDocumentDelivery("capabilities");
+  if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.monthlyReport !== true) {
+    return { ok: false, code: "KAKAO_MONTHLY_REPORT_NOT_READY", error: "월간보고서 발신 설정과 승인 템플릿 상태를 확인해 주세요." };
+  }
+
+  const artifact = await prepareBuildingMonthlyReportArtifact(options.reportRequest);
+  if (!artifact.ok) return artifact;
+  const bytes = await createReportPdfBytes(artifact.html, "building-report");
+  if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
+  if (bytes.length > 12 * 1024 * 1024) {
+    return { ok: false, code: "DOCUMENT_TOO_LARGE", error: "사진을 줄여 월간 보고서 PDF를 12MB 이하로 만들어 주세요." };
+  }
+  if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
+
+  const customerId = `monthly_${crypto.randomBytes(16).toString("hex")}`;
+  const documentName = `${artifact.report.buildingName} ${artifact.report.monthText} 월간 관리 보고서`.slice(0, 160);
+  const created = await runDocumentDelivery("create", {
+    documentId: `report_${crypto.randomBytes(16).toString("hex")}`,
+    customerId,
+    documentType: "monthly_report",
+    documentName,
+    reportMonth: artifact.report.month,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    mimeType: "application/pdf",
+    bytes: bytes.toString("base64"),
   });
-  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-  if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  const bytes = await createReportPdfBytes(createBuildingReportHtml(report), "building-report");
-  if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
-  return { ok: true, summary: report.summary };
+  if (!created || created.ok !== true || !created.documentId) {
+    return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "보안 월간보고서 링크를 만들지 못했습니다." };
+  }
+
+  let sent;
+  try {
+    if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
+    sent = await runDocumentDelivery("send", {
+      channel: "kakao",
+      idempotencyKey: crypto.randomBytes(20).toString("hex"),
+      documentId: created.documentId,
+      customerId,
+      customerName: artifact.report.ownerName || String(options.ownerName || "건물주").slice(0, 80),
+      phone,
+    });
+  } catch (error) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    throw error;
+  }
+  if (!sent || sent.ok !== true) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "월간보고서 알림톡 발송을 요청하지 못했습니다." };
+  }
+  return { ok: true, status: sent.status || "requested", messageId: sent.messageId || "", month: artifact.report.month };
 }
 
 // 결과보고서와 월간 보고서가 같은 방식으로 문서를 그린다. 창을 따로 두면
@@ -3459,7 +3534,7 @@ async function runWorkflowAction(input) {
 
 async function runDocumentDelivery(action, input) {
   if (localTestMode) {
-    if (action === "capabilities") return { ok: true, capabilities: { kakao: false, sms: false } };
+    if (action === "capabilities") return { ok: true, capabilities: { kakao: false, monthlyReport: false, sms: false } };
     return { ok: false, code: "DOCUMENT_DELIVERY_UNAVAILABLE", error: "문서 발송 중계 서버 연결이 필요합니다." };
   }
   if (!remoteClient || !remoteClient.authState().user) return { ok: false, code: "AUTH_REQUIRED", error: "로그인이 필요합니다." };
@@ -9543,6 +9618,7 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
 secureCanonicalHandle("crm:work-report-photo-classify", input => classifySelectedWorkReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-photos-find", input => findBuildingMonthlyReportPhotos(input));
 secureCanonicalHandle("crm:building-monthly-report-photos-select", input => selectBuildingMonthlyReportPhotos(input));
+secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBuildingMonthlyReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "상담 녹음 파일 선택",

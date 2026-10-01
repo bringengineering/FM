@@ -17,15 +17,18 @@ function decodeBase64(value) {
 export function documentTemplate(type) {
   if (type === "quote") return "BRINGCUSTOMERQUOTEV1";
   if (type === "completion_report") return "BRINGCOMPLETIONREPORTV1";
+  if (type === "monthly_report") return "BRINGMONTHLYREPORTV1";
   fail();
 }
 
 function configured(env) {
   const storage = env.DOCUMENT_DELIVERY && typeof env.DOCUMENT_DELIVERY.get === "function";
   const ncp = Boolean(env.NCP_ACCESS_KEY && env.NCP_SECRET_KEY);
+  const kakaoBase = Boolean(storage && ncp && env.DOCUMENT_DELIVERY_ENABLED === "true" && env.NCP_BIZ_MESSAGE_SERVICE_ID && env.KAKAO_CHANNEL_ID);
   return {
     storage,
-    kakao: Boolean(storage && ncp && env.DOCUMENT_DELIVERY_ENABLED === "true" && env.KAKAO_DOCUMENT_TEMPLATES_APPROVED === "true" && env.NCP_BIZ_MESSAGE_SERVICE_ID && env.KAKAO_CHANNEL_ID),
+    kakao: Boolean(kakaoBase && env.KAKAO_DOCUMENT_TEMPLATES_APPROVED === "true"),
+    monthlyReport: Boolean(kakaoBase && env.KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED === "true"),
     sms: Boolean(storage && ncp && env.DOCUMENT_DELIVERY_ENABLED === "true" && env.NCP_SENS_SERVICE_ID && env.NCP_SENS_FROM)
   };
 }
@@ -38,7 +41,13 @@ function expiry(value, now) {
 
 function linkVariables(document, customerName) {
   const url = new URL(document.secureUrl);
-  return { 고객명: clean(customerName, 80), 문서명: document.documentName, 만료일: document.expiresAt.slice(0, 10), 문서링크: `${url.host}${url.pathname}` };
+  return {
+    고객명: clean(customerName, 80),
+    문서명: document.documentName,
+    보고월: document.reportMonth || "",
+    만료일: document.expiresAt.slice(0, 10),
+    문서링크: `${url.host}${url.pathname}`
+  };
 }
 
 async function ncpSignature(method, uri, timestamp, accessKey, secretKey) {
@@ -48,8 +57,16 @@ async function ncpSignature(method, uri, timestamp, accessKey, secretKey) {
 }
 
 function alimTalkContent(templateCode, variables) {
-  const title = templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서" : templateCode === "BRINGCOMPLETIONREPORTV1" ? "작업 결과보고서" : fail();
-  return `[BRING CARE ${title} 안내]\n${variables.고객명}님, 요청하신 ${title}가 발행되었습니다.\n\n${title === "견적서" ? "견적명" : "작업명"}: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 ${title === "견적서" ? "견적서" : "결과보고서"}를 확인해 주세요.\n문의: 033-748-8919`;
+  if (templateCode === "BRINGCUSTOMERQUOTEV1") {
+    return `[BRING CARE 견적서 안내]\n${variables.고객명}님, 요청하신 견적서가 발행되었습니다.\n\n견적명: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 견적서를 확인해 주세요.\n문의: 033-748-8919`;
+  }
+  if (templateCode === "BRINGCOMPLETIONREPORTV1") {
+    return `[BRING CARE 작업 결과보고서 안내]\n${variables.고객명}님, 요청하신 작업 결과보고서가 발행되었습니다.\n\n작업명: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 결과보고서를 확인해 주세요.\n문의: 033-748-8919`;
+  }
+  if (templateCode === "BRINGMONTHLYREPORTV1") {
+    return `[BRING CARE 월간 관리 보고서 안내]\n${variables.고객명}님, ${variables.보고월} 월간 관리 보고서가 준비되었습니다.\n\n건물·보고서: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 월간 관리 내역을 확인해 주세요.\n문의: 033-748-8919`;
+  }
+  return fail();
 }
 
 export async function sendNcpDocument(input, options = {}) {
@@ -61,7 +78,10 @@ export async function sendNcpDocument(input, options = {}) {
   if (input.channel === "kakao") {
     uri = `/alimtalk/v2/services/${encodeURIComponent(clean(env.NCP_BIZ_MESSAGE_SERVICE_ID, 200))}/messages`;
     const link = `https://${input.variables.문서링크}`;
-    body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인" : "결과보고서 확인", linkMobile: link, linkPc: link }] }] };
+    const buttonName = input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인"
+      : input.templateCode === "BRINGCOMPLETIONREPORTV1" ? "결과보고서 확인"
+        : input.templateCode === "BRINGMONTHLYREPORTV1" ? "월간 보고서 확인" : fail();
+    body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: buttonName, linkMobile: link, linkPc: link }] }] };
   } else if (input.channel === "sms") {
     uri = `/sms/v2/services/${encodeURIComponent(clean(env.NCP_SENS_SERVICE_ID, 200))}/messages`;
     const content = `[BRING CARE] ${input.variables.고객명}님, ${input.variables.문서명}\nhttps://${input.variables.문서링크}\n열람기한: ${input.variables.만료일}`;
@@ -94,7 +114,7 @@ export function createDocumentDeliveryHandler(options = {}) {
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
     const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
     if (!admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
-    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, sms: capabilities.sms } });
+    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport: capabilities.monthlyReport, sms: capabilities.sms } });
     if (!capabilities.storage) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
 
     if (url.pathname === "/v1/document-delivery/documents" && request.method === "POST") {
@@ -102,9 +122,11 @@ export function createDocumentDeliveryHandler(options = {}) {
       const documentType = clean(input.documentType, 40); documentTemplate(documentType);
       if (input.mimeType !== "application/pdf") fail();
       decodeBase64(input.bytes);
+      const reportMonth = documentType === "monthly_report" ? clean(input.reportMonth, 7) : "";
+      if (documentType === "monthly_report" && !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(reportMonth)) fail();
       const expiration = expiry(input.expiresAt, now);
       const id = `doc_${randomId()}`, token = randomId();
-      const record = { id, token, documentId: safeId(input.documentId), documentType, documentName: clean(input.documentName, 160), customerId: safeId(input.customerId), expiresAt: expiration.expiresAt, secureUrl: `${PUBLIC_DOCUMENT_ORIGIN}/d/${token}`, bytes: String(input.bytes), createdBy: identity.email, createdAt: new Date(now()).toISOString() };
+      const record = { id, token, documentId: safeId(input.documentId), documentType, documentName: clean(input.documentName, 160), reportMonth, customerId: safeId(input.customerId), expiresAt: expiration.expiresAt, secureUrl: `${PUBLIC_DOCUMENT_ORIGIN}/d/${token}`, bytes: String(input.bytes), createdBy: identity.email, createdAt: new Date(now()).toISOString() };
       if (!record.documentName) fail();
       await env.DOCUMENT_DELIVERY.put(`doc:${id}`, JSON.stringify(record), { expirationTtl: expiration.ttl });
       await env.DOCUMENT_DELIVERY.put(`token:${token}`, id, { expirationTtl: expiration.ttl });
@@ -116,9 +138,11 @@ export function createDocumentDeliveryHandler(options = {}) {
       const key = safeId(input.idempotencyKey), cached = await env.DOCUMENT_DELIVERY.get(`request:${key}`, "json");
       if (cached) return json(cached);
       const channel = input.channel === "sms" ? "sms" : input.channel === "kakao" ? "kakao" : fail();
-      if (!capabilities[channel]) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
       const document = await env.DOCUMENT_DELIVERY.get(`doc:${safeId(input.documentId)}`, "json");
       if (!document || document.customerId !== safeId(input.customerId)) return json({ ok: false, code: "DOCUMENT_NOT_FOUND" }, 404);
+      const channelReady = channel === "sms" ? capabilities.sms
+        : document.documentType === "monthly_report" ? capabilities.monthlyReport : capabilities.kakao;
+      if (!channelReady) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
       const provider = await sendProvider({ channel, phone: phone(input.phone), templateCode: documentTemplate(document.documentType), variables, document, env });
       const result = { ok: true, messageId, status: "requested", channel, templateId: documentTemplate(document.documentType), providerMessageId: clean(provider.providerMessageId, 120) };

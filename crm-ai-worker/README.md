@@ -31,9 +31,11 @@ BRING CRM의 AI 요청을 Firebase 직원 인증과 개인정보 마스킹 뒤 �
 
 ## CRM 고객 문서 발송
 
-견적서와 작업 결과보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
+견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`, `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
 
-검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 이후 두 승인 플래그를 `true`로 바꿔 배포합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 결과보고서는 `BRINGCOMPLETIONREPORTV1`만 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 견적서와 작업 결과보고서 템플릿 승인이 확인된 뒤 `KAKAO_DOCUMENT_TEMPLATES_APPROVED=true`, 월간보고서 템플릿 승인이 확인된 뒤 `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=true`로 각각 설정합니다. 각 전용 템플릿이 승인되기 전에는 해당 문서 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 결과보고서는 `BRINGCOMPLETIONREPORTV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`만 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+
+월간보고서 템플릿 승인 요청 본문은 Worker의 `alimTalkContent()`가 만드는 문구와 버튼명(`월간 보고서 확인`)을 그대로 사용해야 합니다. NCP 콘솔에서 승인 상태를 확인하기 전에는 승인 플래그를 켜지 마세요.
 
 ## 건물 월간보고서 사진 선택
 
