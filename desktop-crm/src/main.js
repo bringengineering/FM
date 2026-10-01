@@ -4408,13 +4408,14 @@ function monthlyPhotoSourceContext() {
     throw Object.assign(new Error("월간보고서 사진 설정 권한이 없습니다."), { code: "FORBIDDEN" });
   }
   const picker = reportDrivePickerReady();
-  const epoch = driveSessionEpoch;
   const guard = remoteClient.captureSessionGuard();
-  const account = String(driveSession?.email || "").trim();
-  if (!account) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  const account = String(driveSession?.email || "").trim().toLowerCase();
+  if (!account || driveSession?.ownerUid !== user.uid) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
   return { uid: user.uid, account, picker, assertCurrent() {
     remoteClient.assertSessionGuardActive(guard);
-    if (epoch !== driveSessionEpoch || reportDrivePickerSession !== picker) {
+    // A same-account token refresh increments its epoch but does not change scope.
+    // Explicit reconnect/disconnect resets the picker; account changes fail closed.
+    if (reportDrivePickerSession !== picker || driveSession?.ownerUid !== user.uid || String(driveSession?.email || "").trim().toLowerCase() !== account) {
       throw Object.assign(new Error("Drive 연결이 변경되었습니다. 다시 시도해 주세요."), { code: "SESSION_CHANGED" });
     }
   } };
