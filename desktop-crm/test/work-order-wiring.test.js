@@ -118,7 +118,7 @@ test("규칙이 모르는 칸과 https 아닌 링크를 막는다", () => {
 test("진행률을 바꿀 때 진행 내용을 필수로 받고 변경 이력을 보존한다", () => {
   const progress = methodBody(remoteSource, "updateWorkOrderProgress");
   assert.match(progress, /PROGRESS_NOTE_REQUIRED/u);
-  assert.match(progress, /progressUpdates: \[\.\.\.current\.progressUpdates, update\]/u);
+  assert.match(progress, /progressUpdates: \[\.\.\.current\.progressUpdates, newProgressUpdate\]/u);
   assert.match(progress, /progressUpdatesMap\(saved\.progressUpdates\)/u);
 
   const progressRules = order.progressUpdates;

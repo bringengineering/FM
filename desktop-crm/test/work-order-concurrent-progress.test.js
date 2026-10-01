@@ -5,10 +5,10 @@ const path=require('node:path');
 const vm=require('node:vm');
 const W=require('../src/work-order-core');
 const source=fs.readFileSync(path.join(__dirname,'../src/remote.js'),'utf8');
-function client(role='member',race=false,status='doing'){
+function client(role='member',race=false,status='doing',initialRecord=null){
  const start=source.indexOf('  async updateWorkOrderProgress(input) {');
  const end=source.indexOf('\n  async loadProjectWeeklyReports()',start);
- let record=W.normalizeOrder({id:'work1',title:'업무',why:'이유',what:'내용',doneWhen:'기준',assigneeUid:'u',status});
+ let record=initialRecord||W.normalizeOrder({id:'work1',title:'업무',why:'이유',what:'내용',doneWhen:'기준',assigneeUid:'u',status});
  let puts=0,reads=0;
  const context={WorkOrderCore:W,WorkOutcomeCore:require('../src/work-outcome-core'),createError:(message,code)=>Object.assign(new Error(message),{code})};
  vm.createContext(context);vm.runInContext(`globalThis.client={${source.slice(start,end)}}`,context);
@@ -27,6 +27,21 @@ test('progress saves against the exact server snapshot version',async()=>{
  assert.equal(updates.length,1);assert.equal(updates[0].fromProgress,0);assert.equal(updates[0].toProgress,50);
   assert.equal(updates[0].note,'접수 화면과 담당자 연결을 마쳤습니다.');assert.equal(updates[0].createdBy,'u');
  assert.equal(c.stats().record.latestProgressUpdateId,updates[0].id);
+});
+test('assignee progress edits preserve sparse legacy instruction fields exactly',async()=>{
+ const oldUpdate={id:'pu_prev1',fromProgress:0,toProgress:50,note:'기존 진행 내용',nextAction:'',createdAt:'2026-09-10T09:00:00.000Z',createdBy:'u',createdByName:'담당자'};
+ const raw={id:'work1',title:'업무',why:'이유',what:'내용',doneWhen:'기준',assigneeUid:'u',status:'doing',progress:50,
+  progressUpdates:{pu_prev1:oldUpdate},latestProgressUpdateId:'pu_prev1',updatedAt:'2026-09-10T09:00:00.000Z',updatedBy:'u'};
+ const c=client('member',false,'doing',raw);
+ await c.api.updateWorkOrderProgress({id:'work1',progress:100,progressNote:'최종 검토와 제출을 마쳤습니다.'});
+ const saved=c.stats().record;
+ for(const field of ['dueDate','startDate','projectId','track','hours','weight','deliverable','deliverableKind','deliverableCount','buildingId','createdAt','createdBy']){
+  assert.equal(Object.prototype.hasOwnProperty.call(saved,field),false,`${field} must not be synthesized`);
+ }
+ assert.equal(JSON.stringify(saved.progressUpdates.pu_prev1),JSON.stringify(oldUpdate),'prior audit history is left byte-for-byte equivalent');
+ assert.equal(saved.progress,100);
+ assert.equal(saved.progressUpdates[saved.latestProgressUpdateId].fromProgress,50);
+ assert.equal(saved.progressUpdates[saved.latestProgressUpdateId].toProgress,100);
 });
 test('approval update timestamp is written with done status and then the order is immutable',async()=>{
  const c=client('admin',false,'submitted');

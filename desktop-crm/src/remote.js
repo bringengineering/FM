@@ -5483,12 +5483,13 @@ class FirebaseRemoteClient {
       throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");
     }
 
+    let newProgressUpdate = null;
     if (record.progress !== current.progress) {
       if (current.progressUpdates.length >= 200) {
         throw createError("이 업무의 진행 기록이 200건에 도달했습니다. 관리자에게 기록 보관을 요청해 주세요.", "PROGRESS_HISTORY_FULL");
       }
       const now = new Date().toISOString();
-      const update = WorkOrderCore.normalizeProgressUpdate({
+      newProgressUpdate = WorkOrderCore.normalizeProgressUpdate({
         id: `pu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
         fromProgress: current.progress,
         toProgress: record.progress,
@@ -5499,8 +5500,8 @@ class FirebaseRemoteClient {
         createdByName: String(session.displayName || session.email || session.uid),
       });
       record = Object.assign({}, record, {
-        latestProgressUpdateId: update.id,
-        progressUpdates: [...current.progressUpdates, update],
+        latestProgressUpdateId: newProgressUpdate.id,
+        progressUpdates: [...current.progressUpdates, newProgressUpdate],
       });
     }
 
@@ -5513,11 +5514,39 @@ class FirebaseRemoteClient {
       updatedAt: new Date().toISOString(),
       updatedBy: session.uid,
     });
-    const persisted = Object.assign({}, saved);
-    if (!saved.results.length) delete persisted.results;
-    if (saved.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(saved.progressUpdates);
-    else delete persisted.progressUpdates;
-    if (!saved.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
+    const progressOnlyEdit = progressRequested
+      && requestedProgress !== current.progress
+      && !addResult
+      && !movingDates
+      && !Object.prototype.hasOwnProperty.call(source, "outcomeReport")
+      && !nextStatus;
+    let persisted;
+    if (progressOnlyEdit) {
+      // The permission rules freeze instruction fields for assignees. Replacing
+      // the whole normalized record would materialize defaults (for example,
+      // an empty dueDate) that never existed on older records and look like an
+      // instruction edit. Keep the exact server shape and change only the
+      // progress fields plus audit metadata.
+      try {
+        persisted = JSON.parse(JSON.stringify(existing));
+      } catch (_) {
+        throw createError("업무 원본을 확인할 수 없어 저장하지 않았습니다. 새로고침 후 다시 시도해 주세요.", "WORK_ORDER_DATA_INVALID");
+      }
+      const oldUpdates = persisted.progressUpdates && typeof persisted.progressUpdates === "object" && !Array.isArray(persisted.progressUpdates)
+        ? persisted.progressUpdates
+        : {};
+      persisted.progress = saved.progress;
+      persisted.latestProgressUpdateId = newProgressUpdate.id;
+      persisted.progressUpdates = Object.assign({}, oldUpdates, { [newProgressUpdate.id]: newProgressUpdate });
+      persisted.updatedAt = saved.updatedAt;
+      persisted.updatedBy = saved.updatedBy;
+    } else {
+      persisted = Object.assign({}, saved);
+      if (!saved.results.length) delete persisted.results;
+      if (saved.progressUpdates.length) persisted.progressUpdates = WorkOrderCore.progressUpdatesMap(saved.progressUpdates);
+      else delete persisted.progressUpdates;
+      if (!saved.latestProgressUpdateId) delete persisted.latestProgressUpdateId;
+    }
     try {
       await this.dbConditionalPut(location, persisted, snapshot.etag, false, guard);
     } catch (error) {
