@@ -9,7 +9,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-09-29-v9";
+const SERVICE_VERSION = "2026-10-01-gemini-redirect-v1";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -268,7 +268,9 @@ async function callGeminiReport(payload, env, fetchImpl, timeoutMs) {
         contents: [{ role: "user", parts: [{ text: messages[1].content }] }],
         generationConfig: { temperature: 0.2, responseMimeType: "application/json", maxOutputTokens: 4096 }
       }),
-      redirect: "error",
+      // Workers rejects redirect: "error"; manual keeps secrets on the fixed origin.
+      // The non-2xx check below rejects redirects without following Location.
+      redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs)
     });
   } catch {
