@@ -3,6 +3,7 @@ const http = require("node:http");
 
 const AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const BROKER_ENDPOINT = "https://asia-northeast3-bring-fm.cloudfunctions.net/crmDriveOAuth";
 const USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const TOKEN_RESPONSE_MAX_BYTES = 64 * 1024;
@@ -157,17 +158,7 @@ async function exchangeAuthorizationCode(input) {
   if (!clientId || !code || !verifier || typeof fetchImpl !== "function") {
     throw createError("Drive 연결 설정을 확인하지 못했습니다.", "DRIVE_OAUTH_CONFIG_INVALID");
   }
-  const payload = await requestJson(fetchImpl, TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      code,
-      code_verifier: verifier,
-      redirect_uri: redirectUri,
-      grant_type: "authorization_code",
-    }).toString(),
-  }, "DRIVE_CONNECT_FAILED");
+  const payload = await requestBroker(input, { action: "exchange", clientId, code, verifier, redirectUri });
   const tokens = normalizeTokenPayload(payload);
   return Object.assign(tokens, { clientId });
 }
@@ -179,16 +170,41 @@ async function refreshAccessToken(input) {
   if (!clientId || !refreshToken || typeof fetchImpl !== "function") {
     throw createError("Drive 자동 연결 정보를 확인하지 못했습니다.", "DRIVE_RECONNECT_REQUIRED");
   }
-  const payload = await requestJson(fetchImpl, TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }).toString(),
-  }, "DRIVE_REFRESH_FAILED");
+  const payload = await requestBroker(input, { action: "refresh", clientId, refreshToken });
   return Object.assign(normalizeTokenPayload(payload, refreshToken), { clientId });
+}
+
+async function requestBroker(input, body) {
+  if (!input || typeof input.getIdToken !== "function" || typeof input.fetchImpl !== "function") {
+    throw createError("CRM에 다시 로그인한 뒤 Drive를 연결해 주세요.", "DRIVE_AUTH_REQUIRED");
+  }
+  const idToken = cleanToken(await input.getIdToken());
+  if (!idToken) throw createError("CRM에 다시 로그인해 주세요.", "DRIVE_AUTH_REQUIRED");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await input.fetchImpl(BROKER_ENDPOINT, {
+      method: "POST", redirect: "error", signal: controller.signal,
+      headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${idToken}` },
+      body: JSON.stringify(body),
+    });
+    const payload = await readBoundedJson(response);
+    if (!response.ok) {
+      const messages = {
+        DRIVE_AUTH_REQUIRED: "CRM에 다시 로그인한 뒤 Drive를 연결해 주세요.",
+        DRIVE_ACCESS_DENIED: "회사 Drive 연결 권한을 확인해 주세요.",
+        DRIVE_RATE_LIMITED: "Drive 연결 요청이 많습니다. 잠시 후 다시 시도해 주세요.",
+      };
+      Object.values(GOOGLE_TOKEN_FAILURES).forEach(value => { messages[value.code] = value.message; });
+      const rawCode = payload && payload.error && payload.error.code;
+      const code = Object.hasOwn(messages, rawCode) ? rawCode : "DRIVE_OAUTH_TEMPORARY_FAILURE";
+      throw createError(`${messages[code]} [CRM_DRIVE_ERROR=${code}]`, code);
+    }
+    return payload;
+  } catch (error) {
+    if (error && /^DRIVE_/u.test(error.code || "")) throw error;
+    throw createError("회사 Drive 인증 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.", "DRIVE_OAUTH_TEMPORARY_FAILURE");
+  } finally { clearTimeout(timeout); }
 }
 
 async function loadAccountEmail(fetchImpl, accessToken) {
@@ -209,7 +225,7 @@ async function loadAccountEmail(fetchImpl, accessToken) {
 }
 
 function callbackPage() {
-  return "<!doctype html><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"><title>BRING CRM Drive 연결 완료</title><body style='font-family:sans-serif;text-align:center;padding:70px;background:#eef9ff;color:#17364d'><h2>Drive 연결이 완료되었습니다.</h2><p>이 창을 닫고 BRING CRM으로 돌아가세요.</p></body>";
+  return "<!doctype html><meta charset='utf-8'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\"><title>BRING CRM Google 승인 확인</title><body style='font-family:sans-serif;text-align:center;padding:70px;background:#eef9ff;color:#17364d'><h2>Google 승인을 받았습니다.</h2><p>CRM에서 연결을 마무리하고 있습니다. 이 창을 닫고 연결 결과를 확인해 주세요.</p></body>";
 }
 
 async function receiveAuthorizationCode(input) {
@@ -293,6 +309,10 @@ async function receiveAuthorizationCode(input) {
 
 async function authorizeDrive(input) {
   const clientId = normalizeClientId(input && input.clientId);
+  // Fail before opening Google if the deployed server and this installer use
+  // different clients. A browser callback alone does not mean connection success.
+  const readiness = await requestBroker(input, { action: "check", clientId });
+  if (readiness.ready !== true) throw createError("회사 Drive 인증 설정을 확인해 주세요.", "DRIVE_OAUTH_CLIENT_INVALID");
   const received = await receiveAuthorizationCode({
     clientId,
     openExternal: input && input.openExternal,
@@ -305,6 +325,7 @@ async function authorizeDrive(input) {
     verifier: received.verifier,
     redirectUri: received.redirectUri,
     fetchImpl: input && input.fetchImpl,
+    getIdToken: input && input.getIdToken,
   });
   const email = await loadAccountEmail(input && input.fetchImpl, tokens.accessToken);
   return Object.assign(tokens, { email });
@@ -314,6 +335,7 @@ module.exports = {
   AUTHORIZATION_ENDPOINT,
   BRING_FM_PROJECT_NUMBER,
   TOKEN_ENDPOINT,
+  BROKER_ENDPOINT,
   USERINFO_ENDPOINT,
   DRIVE_SCOPE,
   authorizeDrive,

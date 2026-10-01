@@ -29,11 +29,12 @@ test("Drive OAuth authorization URL uses loopback PKCE and offline consent", () 
   assert.match(url.searchParams.get("scope"), /https:\/\/www\.googleapis\.com\/auth\/drive/u);
 });
 
-test("authorization code exchange sends PKCE without a client secret", async () => {
+test("authorization exchange sends PKCE to authenticated company broker without bundling secret", async () => {
   let request;
   const tokens = await DriveOAuth.exchangeAuthorizationCode({
     clientId: CLIENT_ID,
     code: "authorization-code",
+    getIdToken: async () => "crm-id-token",
     verifier: "pkce-verifier",
     redirectUri: "http://127.0.0.1:43123/oauth2/callback",
     fetchImpl: async (url, init) => {
@@ -44,11 +45,13 @@ test("authorization code exchange sends PKCE without a client secret", async () 
       });
     },
   });
-  assert.equal(request.url, DriveOAuth.TOKEN_ENDPOINT);
-  const body = new URLSearchParams(request.init.body);
-  assert.equal(body.get("code_verifier"), "pkce-verifier");
-  assert.equal(body.get("grant_type"), "authorization_code");
-  assert.equal(body.has("client_secret"), false);
+  assert.equal(request.url, DriveOAuth.BROKER_ENDPOINT);
+  assert.equal(request.init.headers.authorization, "Bearer crm-id-token");
+  assert.equal(request.init.redirect, "error");
+  const body = JSON.parse(request.init.body);
+  assert.equal(body.verifier, "pkce-verifier");
+  assert.equal(body.action, "exchange");
+  assert.equal(Object.hasOwn(body, "client_secret"), false);
   assert.equal(tokens.refreshToken, "refresh-token");
   assert.equal(tokens.clientId, CLIENT_ID);
 });
@@ -57,10 +60,12 @@ test("refresh rotates access credentials and preserves an omitted refresh token"
   const refreshed = await DriveOAuth.refreshAccessToken({
     clientId: CLIENT_ID,
     refreshToken: "saved-refresh-token",
+    getIdToken: async () => "crm-id-token",
     fetchImpl: async (_url, init) => {
-      const body = new URLSearchParams(init.body);
-      assert.equal(body.get("refresh_token"), "saved-refresh-token");
-      assert.equal(body.has("client_secret"), false);
+      assert.equal(_url, DriveOAuth.BROKER_ENDPOINT);
+      const body = JSON.parse(init.body);
+      assert.equal(body.refreshToken, "saved-refresh-token");
+      assert.equal(Object.hasOwn(body, "client_secret"), false);
       return new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200 });
     },
   });
@@ -72,7 +77,8 @@ test("revoked refresh credentials require an explicit reconnect", async () => {
   await assert.rejects(DriveOAuth.refreshAccessToken({
     clientId: CLIENT_ID,
     refreshToken: "revoked-refresh-token",
-    fetchImpl: async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }),
+    getIdToken: async () => "crm-id-token",
+    fetchImpl: async () => new Response(JSON.stringify({ error: { code: "DRIVE_RECONNECT_REQUIRED" } }), { status: 400 }),
   }), error => error && error.code === "DRIVE_RECONNECT_REQUIRED");
 });
 
@@ -83,16 +89,17 @@ test("Google OAuth failures are reduced to safe, actionable codes without provid
     ["invalid_scope", "DRIVE_OAUTH_SCOPE_INVALID", "권한"],
     ["invalid_request", "DRIVE_OAUTH_REQUEST_INVALID", "요청 설정"],
     ["temporarily_unavailable", "DRIVE_OAUTH_TEMPORARY_FAILURE", "일시적으로"],
-    ["unexpected_sensitive_provider_value", "DRIVE_OAUTH_REJECTED", "인증 단계"],
+    ["unexpected_sensitive_provider_value", "DRIVE_OAUTH_TEMPORARY_FAILURE", "일시적으로"],
   ];
   for (const [providerError, code, safeMessage] of cases) {
     const secretDescription = "private diagnostic text must not escape";
     await assert.rejects(DriveOAuth.exchangeAuthorizationCode({
       clientId: CLIENT_ID,
       code: "authorization-code",
+      getIdToken: async () => "crm-id-token",
       verifier: "pkce-verifier",
       redirectUri: "http://127.0.0.1:43123/oauth2/callback",
-      fetchImpl: async () => new Response(JSON.stringify({ error: providerError, error_description: secretDescription }), { status: 400 }),
+      fetchImpl: async () => new Response(JSON.stringify({ error: { code: providerError === "unexpected_sensitive_provider_value" ? providerError : code }, error_description: secretDescription }), { status: 400 }),
     }), error => {
       assert.equal(error.code, code);
       assert.match(error.message, new RegExp(`CRM_DRIVE_ERROR=${code}`, "u"));
@@ -112,10 +119,11 @@ test("only known Google token errors receive specialized classifications", () =>
 test("complete desktop authorization accepts only the matching loopback state", async () => {
   let authorizationUrl;
   const fetchImpl = async (url, init) => {
-    if (url === DriveOAuth.TOKEN_ENDPOINT) {
-      const body = new URLSearchParams(init.body);
-      assert.equal(body.get("code"), "loopback-code");
-      assert.ok(body.get("code_verifier"));
+    if (url === DriveOAuth.BROKER_ENDPOINT) {
+      const body = JSON.parse(init.body);
+      if (body.action === "check") return new Response(JSON.stringify({ ready: true }), { status: 200 });
+      assert.equal(body.code, "loopback-code");
+      assert.ok(body.verifier);
       return new Response(JSON.stringify({ access_token: "access-token", refresh_token: "refresh-token", expires_in: 3600 }), { status: 200 });
     }
     if (url === DriveOAuth.USERINFO_ENDPOINT) {
@@ -127,6 +135,7 @@ test("complete desktop authorization accepts only the matching loopback state", 
   const result = await DriveOAuth.authorizeDrive({
     clientId: CLIENT_ID,
     fetchImpl,
+    getIdToken: async () => "crm-id-token",
     timeoutMs: 3000,
     openExternal: async value => {
       authorizationUrl = new URL(value);
@@ -135,6 +144,7 @@ test("complete desktop authorization accepts only the matching loopback state", 
       callback.searchParams.set("code", "loopback-code");
       const response = await fetch(callback);
       assert.equal(response.status, 200);
+      assert.doesNotMatch(await response.text(), /Drive 연결이 완료되었습니다/u);
     },
   });
   assert.equal(authorizationUrl.hostname, "accounts.google.com");
@@ -145,4 +155,29 @@ test("complete desktop authorization accepts only the matching loopback state", 
 test("oversized OAuth responses are rejected before parsing", async () => {
   const response = new Response(JSON.stringify({ padding: "x".repeat(70 * 1024) }), { status: 200 });
   await assert.rejects(DriveOAuth.readBoundedJson(response), error => error && error.code === "DRIVE_OAUTH_RESPONSE_INVALID");
+});
+
+test("missing CRM identity prevents credential transmission", async () => {
+  let called = false;
+  await assert.rejects(DriveOAuth.refreshAccessToken({ clientId: CLIENT_ID, refreshToken: "test",
+    fetchImpl: async () => { called = true; return new Response("{}"); } }), { code: "DRIVE_AUTH_REQUIRED" });
+  assert.equal(called, false);
+});
+
+test("preflight rejects mismatched server config before opening Google", async () => {
+  let opened = false;
+  await assert.rejects(DriveOAuth.authorizeDrive({ clientId: CLIENT_ID,
+    getIdToken: async () => "crm-id-token",
+    fetchImpl: async () => new Response(JSON.stringify({ error: { code: "DRIVE_OAUTH_CLIENT_INVALID" } }), { status: 503 }),
+    openExternal: async () => { opened = true; } }), { code: "DRIVE_OAUTH_CLIENT_INVALID" });
+  assert.equal(opened, false);
+});
+
+test("broker network failures redact their error details", async () => {
+  await assert.rejects(DriveOAuth.refreshAccessToken({ clientId: CLIENT_ID, refreshToken: "test",
+    getIdToken: async () => "crm-id-token", fetchImpl: async () => { throw new Error("private-token"); } }), error => {
+    assert.equal(error.code, "DRIVE_OAUTH_TEMPORARY_FAILURE");
+    assert.doesNotMatch(error.message, /private-token/u);
+    return true;
+  });
 });

@@ -3663,7 +3663,8 @@ async function restoreDriveSession() {
   if (!ownerUid || localTestMode) return driveSessionView();
   try {
     const saved = await protectedDriveSessionStore().load(ownerUid);
-    const allowedSavedSession = saved && DriveOAuth.normalizeBringFmClientId(saved.clientId);
+    const allowedSavedSession = saved && DriveOAuth.normalizeBringFmClientId(saved.clientId)
+      && saved.clientId === CRM_DRIVE_OAUTH_CLIENT_ID && String(saved.refreshToken || "").startsWith("drive-v1.");
     if (saved && !allowedSavedSession) await protectedDriveSessionStore().clear();
     driveSession = allowedSavedSession ? Object.assign({}, saved, { restored: true }) : null;
     driveReconnectRequired = Boolean(saved && !allowedSavedSession);
@@ -3812,6 +3813,7 @@ async function ensureDriveAccessToken(force = false) {
       const refreshed = await DriveOAuth.refreshAccessToken({
         clientId: current.clientId,
         refreshToken: current.refreshToken,
+        getIdToken: () => driveOAuthIdToken(ownerUid),
         fetchImpl: (url, init) => net.fetch(url, init),
       });
       if (driveSessionEpoch !== expectedEpoch || driveSessionOwnerUid() !== ownerUid || driveSession !== current) {
@@ -3885,6 +3887,7 @@ async function connectDrive() {
     }
     const received = await DriveOAuth.authorizeDrive({
       clientId: CRM_DRIVE_OAUTH_CLIENT_ID,
+      getIdToken: () => driveOAuthIdToken(ownerUid),
       fetchImpl: (url, init) => net.fetch(url, init),
       openExternal: url => shell.openExternal(url),
       signal: controller.signal,
@@ -3916,6 +3919,17 @@ async function disconnectDrive() {
   driveSessionEpoch += 1;
   resetReportDrivePickerSession();
   return driveSessionView();
+}
+
+async function driveOAuthIdToken(expectedUid) {
+  if (!remoteClient || driveSessionOwnerUid() !== expectedUid) {
+    throw Object.assign(new Error("CRM 로그인 상태가 변경되었습니다."), { code: "SESSION_CHANGED" });
+  }
+  const idToken = await remoteClient.ensureIdToken(false);
+  if (driveSessionOwnerUid() !== expectedUid) {
+    throw Object.assign(new Error("CRM 로그인 상태가 변경되었습니다."), { code: "SESSION_CHANGED" });
+  }
+  return idToken;
 }
 
 // 화면이 아무 경로나 올려 달라고 하지 못하게, 이 세션에서 사람이 직접 고른

@@ -51,6 +51,12 @@
     "projectId": "bring-fm",
     "databaseRules": true
   },
+  "crmDriveOAuthManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": ["crmDriveOAuth"],
+    "region": "asia-northeast3",
+    "databaseRules": false
+  },
   "crmAccountSetupManualDeployment": {
     "projectId": "bring-fm",
     "functionNames": [

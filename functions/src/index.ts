@@ -18,6 +18,7 @@ import {
 } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
+import { handleCrmDriveOAuth } from "./auth/crm-drive-oauth.js";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {
@@ -273,6 +274,37 @@ const driveSecrets = [
   driveRootFolderId,
   driveRootMode,
 ];
+
+// Separately deployed, authenticated Desktop OAuth broker. Never expose the
+// field platform's shared refresh token or root folder to desktop callers.
+export const crmDriveOAuth = onRequest({
+  region: "asia-northeast3", cors: false, secrets: [driveClientId, driveClientSecret],
+  timeoutSeconds: 30, maxInstances: 3,
+}, async (request, response) => {
+  const oauthConfig = { clientId: driveClientId.value(), clientSecret: driveClientSecret.value() };
+  // Public readiness bit, never the secret value. The release gate cannot ship
+  // a desktop that points at a missing broker or a different OAuth client.
+  response.set("X-Bring-Drive-Ready", oauthConfig.clientId === "864976295990-r81g59mb2fkl8cmomoupehauo1fmmprj.apps.googleusercontent.com"
+    && typeof oauthConfig.clientSecret === "string" && oauthConfig.clientSecret.length > 0 ? "1" : "0");
+  response.set("Cache-Control", "no-store");
+  response.set("X-Content-Type-Options", "nosniff");
+  response.set("Allow", "POST");
+  const result = await handleCrmDriveOAuth({
+    method: request.method, authorization: request.get("authorization") || "",
+    contentType: request.get("content-type") || "", ip: request.ip || "unknown",
+    rawBody: request.rawBody,
+  }, {
+    verifyToken: token => adminAuth.verifyIdToken(token, true),
+    readAccess: async uid => (await adminDatabase.ref(`crmCompany/access/${uid}`).get()).val(),
+    rateLimit: (kind, value) => consumeRateLimit(
+      adminDatabase.ref(`fieldPlatform/v2/rateLimits/crmDriveOAuth/${kind}/${desktopRateKey(value)}`),
+      { limit: kind === "ip" ? 120 : 30, windowMs: 10 * 60 * 1000, nowMs: Date.now() },
+    ),
+    config: () => oauthConfig,
+    fetchImpl: fetch,
+  });
+  response.status(result.status).json(result.body);
+});
 
 type UnknownRecord = Record<string, unknown>;
 

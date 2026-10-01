@@ -12,6 +12,9 @@ type FirebaseProjectTarget = {
 
 type FirebaseTargetManifest = {
   schemaVersion: number;
+  crmDriveOAuthManualDeployment: {
+    projectId: string; functionNames: string[]; region: string; databaseRules: false;
+  };
   primary: FirebaseProjectTarget;
   cleaningCenterManualDeployment: {
     projectId: string;
@@ -98,6 +101,7 @@ describe("Firebase function archival manifest", () => {
       "cleaningCenterManualDeployment",
       "crmAccountSetupManualDeployment",
       "crmAutomaticRelease",
+      "crmDriveOAuthManualDeployment",
       "primary",
       "retiredLegacy",
       "schemaVersion",
@@ -135,6 +139,9 @@ describe("Firebase function archival manifest", () => {
       databaseRules: false,
     });
     expect(manifest.retiredLegacy.archivedFunctionNames).toEqual(RETIRED_LEGACY_FUNCTION_NAMES);
+    expect(manifest.crmDriveOAuthManualDeployment).toEqual({
+      projectId: "bring-fm", functionNames: ["crmDriveOAuth"], region: "asia-northeast3", databaseRules: false,
+    });
     expectCompleteFunctionArchive(manifest.retiredLegacy.archivedFunctionNames);
     expect(manifestSource).not.toContain("functions:");
     expect("functionSelectors" in manifest.primary).toBe(false);
@@ -148,7 +155,7 @@ describe("Firebase function archival manifest", () => {
     expect([...primaryExports].filter((name) => cleaningExports.has(name))).toEqual([]);
     expect([...primaryExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
     expect([...cleaningExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
-    expect(sortedUnique([...primaryExports, ...cleaningExports, ...accountSetupExports, ...retiredExports]))
+    expect(sortedUnique([...primaryExports, ...cleaningExports, ...accountSetupExports, ...retiredExports, ...manifest.crmDriveOAuthManualDeployment.functionNames]))
       .toEqual(functionExports(indexSource));
 
     for (const name of accountSetupExports) {
