@@ -60,6 +60,7 @@
   "crmAccountSetupManualDeployment": {
     "projectId": "bring-fm",
     "functionNames": [
+      "archiveCrmAccountInvite",
       "completeCrmAccountSetup",
       "getCrmAccountSetupInvite",
       "listCrmAccountInvites",

@@ -187,6 +187,12 @@
 @media(max-width:600px) { .outcome-performance dl { grid-template-columns:minmax(0,1fr); } }
 .work-outcome-dialog { width:min(850px,calc(100vw - 32px)); max-height:90vh; box-sizing:border-box; border:1px solid #dce3eb; border-radius:20px; padding:24px; color:var(--text,#191f28); background:#fff; overflow:auto; box-shadow:0 16px 60px #172b4d33; }
 .work-outcome-dialog::backdrop { background:#172b4d88; }
+.crm-account-archive-dialog { width:min(460px,calc(100vw - 32px)); }
+.crm-account-archive-dialog h2 { margin:0 0 14px; font-size:20px; }
+.crm-account-archive-dialog form { margin-top:22px; }
+.crm-account-archive-dialog [data-archive-member] { color:var(--text,#191f28); font-weight:700; }
+.crm-account-archive-dialog button.crm-account-archive-confirm { background:#bd3444; color:#fff; border-color:#bd3444; }
+.crm-account-table .crm-account-archive-button { color:#bd3444; border-color:#efcbd0; box-shadow:none; }
 .work-outcome-dialog header h2 { margin:0 0 8px; }
 .work-outcome-dialog p { line-height:1.6; color:var(--soft,#4e5968); overflow-wrap:anywhere; }
 .work-outcome-dialog fieldset { border:0; padding:0; margin:0; min-width:0; }

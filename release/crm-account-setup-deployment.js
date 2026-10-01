@@ -11,6 +11,7 @@ const EXPECTED_REGION = "asia-northeast3";
 const FUNCTION_CODEBASE = "field-platform";
 const BASE_BRANCH = "codex/bring-field-platform";
 const EXPECTED_FUNCTIONS = [
+  "archiveCrmAccountInvite",
   "completeCrmAccountSetup",
   "getCrmAccountSetupInvite",
   "listCrmAccountInvites",
@@ -63,7 +64,7 @@ function buildCrmAccountSetupDeploymentPlan(manifest, expectedProjectId) {
     })) {
     throw deploymentError(
       "CRM_ACCOUNT_SETUP_DEPLOY_ALLOWLIST_INVALID",
-      "Only the five reviewed CRM account setup callables may deploy; general Functions, Hosting, and Database Rules remain outside this target.",
+      "Only the six reviewed CRM account setup callables may deploy; general Functions, Hosting, and Database Rules remain outside this target.",
     );
   }
 
@@ -158,7 +159,7 @@ function runCrmAccountSetupDeployment({
   const deployedRows = parseDeployedFunctionRows(verification.stdout);
   if (verification.status !== 0 || !deployedRows
     || EXPECTED_FUNCTIONS.some(name => !deployedRows.some(row => row.name === name && row.region === EXPECTED_REGION))) {
-    throw deploymentError("CRM_ACCOUNT_SETUP_DEPLOY_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm all five expected Functions in asia-northeast3.");
+    throw deploymentError("CRM_ACCOUNT_SETUP_DEPLOY_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm all six expected Functions in asia-northeast3.");
   }
   return { status: "deployed", ...plan, baselineFunctionCount: beforeRows.length };
 }

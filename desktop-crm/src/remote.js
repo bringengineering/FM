@@ -3046,7 +3046,7 @@ class FirebaseRemoteClient {
   async callCrmAccountSetupFunction(name, data) {
     const session = this.requireOfficeSession();
     if (session.role !== "admin") throw createError("CRM 계정 관리는 관리자만 사용할 수 있습니다.", "ACCESS_DENIED");
-    if (!["listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite"].includes(name)) {
+    if (!["listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite", "archiveCrmAccountInvite"].includes(name)) {
       throw createError("계정 관리 요청을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
     const guard = this.captureSessionGuard();
@@ -3092,6 +3092,9 @@ class FirebaseRemoteClient {
       if (serverCode === "crm_account_display_name_invalid") {
         throw createError("이름은 80자 이내로 입력해 주세요.", "ACCOUNT_SETUP_NAME_INVALID");
       }
+      if (serverCode === "crm_account_invite_not_complete") {
+        throw createError("설정 완료된 이력만 삭제할 수 있습니다. 목록을 새로고침해 주세요.", "ACCOUNT_SETUP_NOT_COMPLETE");
+      }
       throw createError("계정 관리 요청을 처리하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
     const payload = await readBoundedJsonResponse(response, 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED");
@@ -3121,6 +3124,18 @@ class FirebaseRemoteClient {
       throw createError("초대 대상을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
     return this.callCrmAccountSetupFunction("resendCrmAccountInvite", { uid });
+  }
+
+  async archiveCrmAccountInvite(input) {
+    const uid = typeof input?.uid === "string" ? input.uid : "";
+    if (!/^[A-Za-z0-9_-]{1,128}$/u.test(uid) || ["__proto__", "prototype", "constructor"].includes(uid)) {
+      throw createError("삭제 대상을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    const result = await this.callCrmAccountSetupFunction("archiveCrmAccountInvite", { uid });
+    if (result.uid !== uid || result.archived !== true) {
+      throw createError("설정 이력의 삭제 결과를 확인하지 못했습니다. 새로고침해 주세요.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    return { uid, archived: true };
   }
 
   async loadOfficeSnapshot() {

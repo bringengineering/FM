@@ -21,6 +21,8 @@ export interface CrmAccountInviteRecord {
   invitedBy: string;
   lastSentAt: number;
   completedAt?: number;
+  archivedAt?: number;
+  archivedBy?: string;
 }
 
 export interface CrmAccountAccessRecord {

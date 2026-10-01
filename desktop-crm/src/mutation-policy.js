@@ -24,6 +24,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
+  'crm:account-invite-archive',
   'crm:project-weekly-report-save',
   'crm:company-strategy-draft-save','crm:company-strategy-publish',
   'crm:billing-invoice-save','crm:billing-receipt-save','crm:billing-draft-return',

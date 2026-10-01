@@ -14,7 +14,7 @@ const {
 const REPO_ROOT = path.resolve(__dirname, "..");
 const SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const CODE_HASH_PATTERN = /^[a-f0-9]{40}$/u;
-const EXISTING_FUNCTIONS = EXPECTED_FUNCTIONS.filter(name => name !== "getCrmAccountSetupInvite");
+const EXISTING_FUNCTIONS = EXPECTED_FUNCTIONS.filter(name => name !== "archiveCrmAccountInvite");
 
 function updateError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -47,12 +47,12 @@ function parseFunctionInventory(stdout) {
   }).filter(row => row.name);
 }
 
-function requireAccountSetupInventory(stdout, expectedCodeHash, label, { allowMissingSetupInvite = false } = {}) {
+function requireAccountSetupInventory(stdout, expectedCodeHash, label, { allowMissingArchive = false } = {}) {
   const rows = parseFunctionInventory(stdout);
   if (!rows) throw updateError("CRM_ACCOUNT_SETUP_UPDATE_INVENTORY_INVALID", `Could not read the ${label} Functions inventory.`);
   const selected = rows.filter(row => EXPECTED_FUNCTIONS.includes(row.name));
   const names = selected.map(row => row.name).sort();
-  const expectedNames = allowMissingSetupInvite && !names.includes("getCrmAccountSetupInvite")
+  const expectedNames = allowMissingArchive && !names.includes("archiveCrmAccountInvite")
     ? EXISTING_FUNCTIONS
     : EXPECTED_FUNCTIONS;
   if (selected.length !== expectedNames.length
@@ -127,7 +127,7 @@ function runCrmAccountSetupUpdate({
     const match = new RegExp(`export const ${name}\\s*=\\s*onCall\\s*\\([\\s\\S]*?region:\\s*[\"']${EXPECTED_REGION}[\"']`, "u");
     return !match.test(rollbackSource.stdout);
   })) {
-    throw updateError("CRM_ACCOUNT_SETUP_UPDATE_ROLLBACK_NOT_VERIFIED", "The rollback source does not contain the four previously deployed account setup callables.");
+    throw updateError("CRM_ACCOUNT_SETUP_UPDATE_ROLLBACK_NOT_VERIFIED", "The rollback source does not contain the five previously deployed account setup callables.");
   }
   const status = runCommand("git", ["status", "--porcelain"], cwd, { quiet: true });
   if (status.status !== 0 || status.stdout.trim()) {
@@ -136,7 +136,7 @@ function runCrmAccountSetupUpdate({
 
   const before = runCommand("firebase", ["functions:list", "--project", EXPECTED_PROJECT, "--json"], cwd, { quiet: true });
   if (before.status !== 0) throw updateError("CRM_ACCOUNT_SETUP_UPDATE_INVENTORY_UNAVAILABLE", "Could not capture the current Firebase Functions inventory.");
-  const beforeRows = requireAccountSetupInventory(before.stdout, expectedCodeHash, "pre-deploy", { allowMissingSetupInvite: true });
+  const beforeRows = requireAccountSetupInventory(before.stdout, expectedCodeHash, "pre-deploy", { allowMissingArchive: true });
   const deploy = runCommand("firebase", [
     "deploy",
     "--only",
@@ -152,9 +152,9 @@ function runCrmAccountSetupUpdate({
   }
   const afterRows = requireAccountSetupInventory(after.stdout, undefined, "post-deploy");
   const afterHashes = [...new Set(afterRows.map(row => row.codeHash))];
-  if (deploy.status !== 0) throw updateError("CRM_ACCOUNT_SETUP_UPDATE_DEPLOY_FAILED", "Firebase did not confirm a successful five-function update; inspect the captured inventory before retrying.");
+  if (deploy.status !== 0) throw updateError("CRM_ACCOUNT_SETUP_UPDATE_DEPLOY_FAILED", "Firebase did not confirm a successful six-function update; inspect the captured inventory before retrying.");
   if (afterHashes.length !== 1 || !afterHashes[0] || afterHashes[0] === expectedCodeHash) {
-    throw updateError("CRM_ACCOUNT_SETUP_UPDATE_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm one new common code hash for all five Functions.");
+    throw updateError("CRM_ACCOUNT_SETUP_UPDATE_VERIFY_FAILED", "Deployment returned, but Firebase did not confirm one new common code hash for all six Functions.");
   }
   return {
     status: "updated",

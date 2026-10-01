@@ -176,6 +176,12 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
   });
 
   it("denies anonymous, non-admin, disabled, unverified, wrong-provider, and must-change-password callers", async () => {
+    for (const idToken of ["", member.idToken, viewer.idToken, disabledAdmin.idToken,
+      passwordChangeAdmin.idToken, unverifiedAdmin.idToken, customTokenAdmin]) {
+      const result = await callFunction("archiveCrmAccountInvite", { uid: "completed-invite" }, idToken);
+      expect(result.payload.error).toBeDefined();
+      expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((result.payload.error as { status?: string }).status);
+    }
     const anonymous = await callFunction("registerCrmAccount", { email: `denied-${unique}@bring.test` });
     expect(anonymous.payload.error).toBeDefined();
     expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((anonymous.payload.error as { status?: string }).status);
@@ -207,6 +213,60 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     });
     expect(invalidAnonymousCompletion.payload.error).toBeDefined();
     expect((invalidAnonymousCompletion.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+  }, 30_000);
+
+  it("archives completed history without changing Auth, access, or work data, and rejects pending/unsafe targets", async () => {
+    const auth = getAdminAuth(adminApp!);
+    const user = await createPasswordUser(`archive-${unique}@bring.test`, auth);
+    await setCrmAccess(user, { role: "member" });
+    const read = async (path: string) => {
+      const url = emulatorUrl(DATABASE_HOST, `/${path}.json`);
+      url.searchParams.set("ns", PROJECT_ID);
+      url.searchParams.set("auth", "owner");
+      const response = await fetch(url);
+      expect(response.ok).toBe(true);
+      return response.json();
+    };
+    const write = async (path: string, value: unknown) => {
+      const url = emulatorUrl(DATABASE_HOST, `/${path}.json`);
+      url.searchParams.set("ns", PROJECT_ID);
+      url.searchParams.set("auth", "owner");
+      const response = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+      expect(response.ok).toBe(true);
+    };
+    const original = { status: "complete", createdAt: Date.now(), completedAt: Date.now(), emailHash: "emulator-only", setupTokens: [] };
+    const work = { "2026-10-01": { checkInAt: "2026-10-01T00:00:00Z" } };
+    // Archived rows must not crowd active invitations out of the 200-row window.
+    const oldArchives = Object.fromEntries(Array.from({ length: 205 }, (_, i) => [`zz-archived-${i}`, { ...original, archivedAt: 1, archivedBy: admin.uid }]));
+    await write("crmCompany/accountInvites", { ...oldArchives, [user.uid]: original, [member.uid]: { status: "pending", createdAt: Date.now() } });
+    await write(`crmCompany/officeAttendance/${user.uid}`, work);
+    const accessBefore = await readCrmAccess(user);
+    const authBefore = await auth.getUser(user.uid);
+    const listed = await callFunction("listCrmAccountInvites", {}, admin.idToken);
+    expect(listed.status).toBe(200);
+    expect((listed.payload.result as { accounts: Array<{ uid: string }> }).accounts).toContainEqual(expect.objectContaining({ uid: user.uid }));
+    for (const uid of [member.uid, "missing-invite", "../access", "__proto__", 123]) {
+      const denied = await callFunction("archiveCrmAccountInvite", { uid }, admin.idToken);
+      expect(denied.payload.error).toBeDefined();
+    }
+    expect(await read(`crmCompany/accountInvites/${member.uid}`)).toMatchObject({ status: "pending" });
+    const replies = await Promise.all([1, 2].map(() => callFunction("archiveCrmAccountInvite", { uid: user.uid }, admin.idToken)));
+    for (const reply of replies) expect(reply.payload.result).toEqual({ uid: user.uid, archived: true });
+    const archived = await read(`crmCompany/accountInvites/${user.uid}`);
+    expect(archived).toMatchObject({ status: "complete", createdAt: original.createdAt, completedAt: original.completedAt, emailHash: original.emailHash, archivedBy: admin.uid });
+    expect(archived.archivedAt).toBeGreaterThan(0);
+    const repeated = await callFunction("archiveCrmAccountInvite", { uid: user.uid }, admin.idToken);
+    expect(repeated.status).toBe(200);
+    expect(await read(`crmCompany/accountInvites/${user.uid}`)).toEqual(archived);
+    const afterList = await callFunction("listCrmAccountInvites", {}, admin.idToken);
+    expect((afterList.payload.result as { accounts: Array<{ uid: string }> }).accounts.some(row => row.uid === user.uid)).toBe(false);
+    expect(await readCrmAccess(user)).toEqual(accessBefore);
+    expect(await read(`crmCompany/officeAttendance/${user.uid}`)).toEqual(work);
+    const authAfter = await auth.getUser(user.uid);
+    expect(authAfter.emailVerified).toBe(authBefore.emailVerified);
+    expect(authAfter.disabled).toBe(authBefore.disabled);
+    const login = await authRequest("accounts:signInWithPassword", { email: user.email, password: TEST_PASSWORD, returnSecureToken: true });
+    expect(login.localId).toBe(user.uid);
   }, 30_000);
 
   it("lets only an admin send an email link that verifies the email and sets the first password", async () => {
