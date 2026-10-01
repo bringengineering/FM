@@ -64,6 +64,7 @@ test("invited email is displayed from the server response and never submitted as
   assert.doesNotMatch(html, /<input[^>]+id="setupEmail"/u);
   assert.match(script, /email\.textContent\s*=\s*invite\.maskedEmail/u);
   assert.match(script, /callSetupFunction\("getCrmAccountSetupInvite"/u);
+  assert.match(script, /params\.get\("link"\)\s*\|\|\s*params\.get\("deep_link_id"\)\s*\|\|\s*params\.get\("continueUrl"\)/u);
   assert.match(script, /uid:\s*inviteUid/u);
   assert.match(script, /setupToken:\s*inviteToken/u);
   assert.doesNotMatch(script, /email:\s*email\.value/u);

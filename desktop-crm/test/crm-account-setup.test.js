@@ -81,6 +81,7 @@ test("account setup page requires a display name and keeps its invalid-link form
     assert.match(script, /FUNCTION_BASE = "https:\/\/asia-northeast3-bring-fm\.cloudfunctions\.net"/);
     assert.match(script, /callSetupFunction\("getCrmAccountSetupInvite"/);
     assert.match(script, /callSetupFunction\("completeCrmAccountSetup"/);
+    assert.match(script, /params\.get\("link"\)\s*\|\|\s*params\.get\("deep_link_id"\)\s*\|\|\s*params\.get\("continueUrl"\)/);
     assert.match(script, /email\.textContent = invite\.maskedEmail/);
     assert.match(script, /uid: inviteUid/);
     assert.match(script, /setupToken: inviteToken/);

@@ -34,7 +34,7 @@
     const direct = params.get("oobCode");
     const mode = params.get("mode");
     if (direct && mode) return window.BringCrmAccountSetup.parseSignInActionLink(window.location.href);
-    const nested = params.get("link") || params.get("deep_link_id");
+    const nested = params.get("link") || params.get("deep_link_id") || params.get("continueUrl");
     return nested ? window.BringCrmAccountSetup.parseSignInActionLink(nested) : null;
   }
 
