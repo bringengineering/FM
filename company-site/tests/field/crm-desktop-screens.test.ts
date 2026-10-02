@@ -80,7 +80,7 @@ function dayFromMonday(offset: number): string {
   return utc.toISOString().slice(0, 10);
 }
 
-async function boot(): Promise<Booted> {
+async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Booted> {
   const errors: string[] = [];
   const dom = new JSDOM(indexHtml, { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
   const window = dom.window as unknown as JSDOM["window"] & Record<string, unknown>;
@@ -233,6 +233,7 @@ async function boot(): Promise<Booted> {
     },
   };
 
+  Object.assign(payloads, payloadOverrides);
   const api: Record<string, unknown> = {};
   const calls: Array<{ name: string; input: unknown }> = [];
   for (const name of names) {
@@ -277,6 +278,63 @@ async function boot(): Promise<Booted> {
   if (shell) shell.hidden = false;
   return { window, document, errors, calls };
 }
+
+describe("weekly report progress labels", () => {
+  it.each([false, true])("진행률을 화면·초안·저장에 반영하고 작성한 요약 보존: %s", async customSummary => {
+    const week = mondayOf(new Date());
+    const orders = [100, 60].map((progress, index) => ({
+      id: `weekly_${index}`, title: `주간 진행률 검증 ${index}`, assigneeUid: "u-admin",
+      assigneeName: "서창환", status: "assigned", progress,
+      updatedBy: "u-admin", updatedAt: `${week}T01:00:00.000Z`,
+    }));
+    const previousSummary = customSummary ? "직접 작성한 주간 요약입니다." : "이번 주 주요 업무 2건을 정리했습니다., 진행·검토 2건입니다.";
+    const screen = await boot({
+      loadWorkOrders: { uid: "u-admin", admin: false, canWork: true, members: [], projects: [], orders },
+      loadGrowth: { uid: "u-admin", canWork: true, checkins: [{
+        id: "weekly_report_u-admin_" + week, uid: "u-admin", week, updatedAt: `${week}T00:00:00Z`,
+        answers: { done: ["주간업무보고서 v1", "[보고 요약]", previousSummary, "[자동 수집]",
+          "- (지시함) 주간 진행률 검증 0 · 업무지시", "- (지시함) 주간 진행률 검증 1 · 업무지시", "[직접 추가]"].join("\n"), next: "" },
+      }], reviews: [] },
+    });
+    try {
+      const click = async (selector: string) => {
+        const button = screen.document.querySelector(selector) as HTMLElement;
+        expect(button, selector).toBeTruthy();
+        button.click();
+        await sleep(180);
+      };
+      await click('[data-workspace-enter-folder="project"]');
+      await click('.nav-item[data-view="weeklyReports"]');
+      const chips = () => [...screen.document.querySelectorAll(".weekly-report-item .weekly-status")].map(node => node.textContent);
+      expect(chips()).toEqual(["완료", "진행 60%"]);
+      expect(screen.document.querySelector(".weekly-report-kpis")?.textContent).toContain("완료 업무1건");
+      expect(screen.document.querySelector(".weekly-ai-summary")?.textContent).toContain(customSummary ? previousSummary : "완료 1건, 진행·검토 1건");
+      await click("[data-weekly-draft-preview]");
+      const resultCells = screen.document.querySelectorAll(".weekly-document-section table")[0].querySelectorAll("tbody tr td:last-child");
+      expect([...resultCells].map(node => node.textContent)).toEqual(["완료", "진행 60%"]);
+      await click("[data-weekly-document-export]");
+      const exported = screen.calls.find(call => call.name === "exportWeeklyReport")?.input as {items: Array<{result: string}>};
+      expect(exported.items.map(item => item.result)).toEqual(["완료", "진행 60%"]);
+      await click("[data-weekly-document-close]");
+      await click("[data-weekly-submit]");
+      expect([...screen.document.querySelectorAll(".weekly-preview-row .weekly-status")].map(node => node.textContent)).toEqual(["완료", "진행 60%"]);
+      await click("[data-weekly-preview-close]");
+      // 제목·날짜·메모·상태가 같아도 숫자만 변경되면 다시 그려져야 한다.
+      orders[1].progress = 80;
+      await click('.nav-item[data-view="workOrders"]');
+      await click("[data-live-refresh]");
+      await click('.nav-item[data-view="weeklyReports"]');
+      expect(chips()).toEqual(["완료", "진행 80%"]);
+      await click("[data-weekly-submit]");
+      await click("[data-weekly-preview-confirm]");
+      const submitted = screen.calls.find(call => call.name === "saveGrowthCheckin")?.input as { answers: {done: string} };
+      expect(submitted?.answers.done).toContain("(진행 80%) 주간 진행률 검증 1");
+      expect(submitted?.answers.done).toContain("(완료) 주간 진행률 검증 0");
+      expect(screen.calls.some(call => /saveWorkOrder|reviewWorkOrder/.test(call.name))).toBe(false);
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+});
 
 describe("desktop CRM screens actually render", () => {
   let booted: Booted;

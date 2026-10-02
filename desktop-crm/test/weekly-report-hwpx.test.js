@@ -55,3 +55,14 @@ test("문서 입력은 길이와 개수를 제한하고 파일명을 안전하�
   assert.equal(Hwpx.weeklyReportFileName(report()), "2026-09-21_주간업무보고서_김현진.hwpx");
   assert.throws(() => Hwpx.createWeeklyReportHwpx(report({ reporter: "", weekStart: "not-a-date" })), /보고 기간/u);
 });
+
+test("업무지시 진행률 표시를 한글 문서 결과 열에도 보존한다", () => {
+  const Weekly = require("../src/weekly-report-core");
+  const items = [100, 60, 0].map(progress => ({
+    source: "업무지시", title: `진행률 ${progress} 업무`, status: "assigned", progress,
+  })).map(item => ({ ...item, result: Weekly.statusLabel(item) }));
+  const output = Hwpx.createWeeklyReportHwpx(report({ items }));
+  for (const label of ["완료", "진행 60%", "진행 0%"]) {
+    assert.ok(output.bytes.includes(Buffer.from(label, "utf8")), label);
+  }
+});

@@ -69,6 +69,88 @@ test("업무지시는 예정으로 뭉개지 않고 실제 업무지시 상태�
   assert.equal(Weekly.STATUS_LABELS[statuses["보완 업무"]], "보완 요청");
 });
 
+test("업무지시의 실제 진행률로 완료와 진행을 표시하되 원본 검수 상태는 바꾸지 않는다", () => {
+  const actor = { uid: "weekly-owner" };
+  const orders = [100, 60, 0].map(progress => ({
+    id: `p${progress}`, title: `업무 ${progress}`, assigneeUid: actor.uid, status: "assigned", progress,
+    progressUpdates: [{ note: "진행 기록", toProgress: progress, createdBy: actor.uid, createdAt: "2026-09-23T03:00:00.000Z" }],
+  }));
+  orders.push({ ...orders[0], id: "submitted", title: "검수 전 제출 업무", status: "submitted" });
+  const before = structuredClone(orders);
+  const result = Weekly.collect({ week: "2026-09-23", actor, orders });
+  const byId = Object.fromEntries(result.items.map(row => [row.id, row]));
+  assert.equal(byId["order:p100"].status, "completed");
+  assert.equal(Weekly.statusLabel(byId["order:p100"]), "완료");
+  assert.equal(byId["order:p60"].status, "in_progress");
+  assert.equal(Weekly.statusLabel(byId["order:p60"]), "진행 60%");
+  assert.equal(Weekly.statusLabel(byId["order:p0"]), "진행 0%");
+  assert.equal(Weekly.statusLabel(byId["order:submitted"]), "완료");
+  assert.match(Weekly.defaultSummary(result.items, []), /완료 2건, 진행·검토 2건/u);
+  assert.deepEqual(orders, before);
+});
+
+test("현재 진행률을 우선하고 진행률 필드가 없는 옛 업무는 이번 주 진행 기록에서 보완한다", () => {
+  const actor = { uid: "weekly-owner" };
+  const order = {
+    id: "history", title: "진행 이력 업무", assigneeUid: actor.uid, status: "assigned",
+    progressUpdates: [
+      { note: "최근 기록", toProgress: 70, createdBy: actor.uid, createdAt: "2026-09-24T03:00:00Z" },
+      { note: "이전 기록", toProgress: 20, createdBy: actor.uid, createdAt: "2026-09-22T03:00:00Z" },
+      { note: "다른 주 기록", toProgress: 100, createdBy: actor.uid, createdAt: "2026-09-28T03:00:00Z" },
+    ],
+  };
+  const collect = source => Weekly.collect({ week: "2026-09-23", actor, orders: [source] }).items[0];
+  assert.equal(Weekly.statusLabel(collect(order)), "진행 70%");
+  assert.equal(Weekly.statusLabel(collect({ ...order, progress: "80" })), "진행 80%");
+  assert.equal(Weekly.statusLabel(collect({ ...order, progress: 0 })), "진행 0%");
+});
+
+test("누락되거나 유효하지 않은 진행률은 완료로 오인하지 않고 기존 상태를 보존한다", () => {
+  for (const progress of [undefined, null, "", " ", true, false, [], {}, NaN, Infinity, -1, 101, "100%", "<img>"]) {
+    const actor = { uid: "weekly-owner" };
+    const row = Weekly.collect({ week: "2026-09-23", actor, orders: [{
+      id: "invalid", title: "확인 필요", assigneeUid: actor.uid, status: "assigned", progress,
+      updatedBy: actor.uid, updatedAt: "2026-09-23T03:00:00Z",
+    }] }).items[0];
+    assert.equal(Weekly.statusLabel(row), "지시함", String(progress));
+    assert.equal(row.status, "assigned");
+    assert.equal(Object.hasOwn(row, "progress"), false);
+  }
+  assert.equal(Weekly.statusLabel({ status: "completed", progress: 40 }), "완료");
+});
+
+test("업무일정은 작성자가 아니라 본인 담당자와 선택한 주의 기준 날짜로 수집한다", () => {
+  const actor = { uid: "weekly-owner", name: "담당자", email: "owner@example.test" };
+  const rows = [
+    { id: "mine", owner: actor.name, createdBy: "other", completedAt: "2026-09-23", status: "completed" },
+    { id: "email", owner: actor.email.toUpperCase(), updatedAt: "2026-09-24", status: "in_progress" },
+    { id: "scheduled", owner: actor.uid, scheduledDate: "2026-09-25", status: "planned" },
+    { id: "created-only", owner: "other", createdBy: actor.uid, completedAt: "2026-09-23" },
+    { id: "unassigned", owner: "", createdBy: actor.uid, scheduledDate: "2026-09-23" },
+    { id: "previous", owner: actor.uid, completedAt: "2026-09-20", updatedAt: "2026-09-23" },
+  ].map(row => ({ ...row, title: row.id }));
+  const result = Weekly.collect({ week: "2026-09-23", actor, store: { serviceRecords: rows } });
+  assert.deepEqual(result.items.map(row => row.id).sort(), ["schedule:email", "schedule:mine", "schedule:scheduled"]);
+});
+
+test("진행률은 저장·재열기와 AI 요약 원문에도 남으며 기존 상태 문자열도 읽는다", () => {
+  const automatic = [
+    { title: "완료 업무", source: "업무지시", status: "assigned", progress: 100 },
+    { title: "부분 업무", source: "업무지시", status: "assigned", progress: 60 },
+    { title: "시작 업무", source: "업무지시", status: "doing", progress: 0 },
+  ];
+  const saved = Weekly.serializeDone({ automatic });
+  assert.match(saved, /\(완료\) 완료 업무/u);
+  assert.match(saved, /\(진행 60%\) 부분 업무/u);
+  const parsed = Weekly.parseDone(saved);
+  assert.deepEqual(parsed.automatic.map(Weekly.statusLabel), ["완료", "진행 60%", "진행 0%"]);
+  assert.equal(parsed.automatic[1].progress, 60);
+  assert.match(Weekly.sourceText(automatic, []), /진행 60% · 부분 업무/u);
+  assert.match(Weekly.defaultSummary(parsed.automatic, []), /완료 1건, 진행·검토 2건/u);
+  assert.equal(Weekly.serializeDone({ automatic: parsed.automatic }), saved);
+  assert.equal(Weekly.parseDone(saved.replace("진행 60%", "진행 999%")).automatic.length, 2);
+});
+
 test("보고서와 직접 작성한 다음 주 계획을 읽을 수 있는 문자열로 왕복 저장한다", () => {
   const done = Weekly.serializeDone({
     summary: "제안서와 API 도입 검토를 진행했습니다.",
