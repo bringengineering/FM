@@ -219,6 +219,13 @@
     return UNVIEWABLE.indexOf(text(mimeType, 60).toLowerCase()) >= 0;
   }
 
+  function phaseHint(file, folderName) {
+    const value = [file && file.name, (file && file.parentName) || folderName].map(word => text(word, 300)).join(" / ");
+    const before = /(?:작업|청소|시공)\s*전|(?:^|[\s_()/.-])(?:전|before)(?=$|[\s_()/.-])/iu.test(value);
+    const after = /(?:작업|청소|시공)\s*후|(?:^|[\s_()/.-])(?:후|after)(?=$|[\s_()/.-])/iu.test(value);
+    return before && after ? "conflict" : before ? "before" : after ? "after" : "";
+  }
+
   /**
    * 한 위치의 사진을 작업 전과 후로 가른다.
    *
@@ -228,14 +235,28 @@
    */
   function splitBeforeAfter(photos, options) {
     const settings = options && typeof options === "object" ? options : {};
+    const named = { before: [], after: [], unsorted: [] };
+    const remaining = [];
+    rows(photos).forEach(photo => {
+      const hint = phaseHint(photo, settings.folderName);
+      if (hint === "before" || hint === "after") named[hint].push(Object.assign({}, photo, { phaseReason: "파일·폴더의 전·후 표기" }));
+      else if (hint === "conflict") named.unsorted.push(Object.assign({}, photo, { phaseReason: "전·후 표기가 서로 다릅니다." }));
+      else remaining.push(photo);
+    });
+    const finish = split => Object.assign({}, split, {
+      before: named.before.concat(split.before), after: named.after.concat(split.after), unsorted: named.unsorted.concat(split.unsorted),
+      confident: !named.unsorted.length && !split.unsorted.length,
+      reason: named.before.length + named.after.length ? `파일·폴더 전·후 표기를 우선했습니다. ${split.reason}`.trim() : split.reason,
+    });
     const gapMs = (Number(settings.gapMinutes) > 0 ? Number(settings.gapMinutes) : GAP_MINUTES) * 60 * 1000;
-    const list = rows(photos)
+    const list = remaining
       .map(photo => Object.assign({}, photo, takenAt(photo)))
-      .filter(photo => Number.isFinite(photo.at))
+      .filter(photo => Number.isFinite(photo.at) && photo.from !== "drive")
       .sort((left, right) => left.at - right.at);
-    const undated = rows(photos).filter(photo => !Number.isFinite(takenAt(photo).at));
+    // Drive createdTime is upload time, never evidence of before/after work.
+    const undated = remaining.filter(photo => !Number.isFinite(takenAt(photo).at) || takenAt(photo).from === "drive");
 
-    if (!list.length) return { before: [], after: [], unsorted: undated, confident: false, reason: "찍은 시각을 알 수 없습니다." };
+    if (!list.length) return finish({ before: [], after: [], unsorted: undated, confident: false, reason: undated.length ? "촬영시각을 알 수 없습니다. 전·후를 선택해 주세요." : "" });
 
     let cutAt = -1;
     let widest = 0;
@@ -244,18 +265,18 @@
       if (gap >= gapMs && gap > widest) { widest = gap; cutAt = index; }
     }
     if (cutAt < 0) {
-      return {
+      return finish({
         before: [], after: [], unsorted: list.concat(undated), confident: false,
         reason: "사진이 한 번에 찍혔습니다. 작업 전인지 후인지 골라 주세요.",
-      };
+      });
     }
-    return {
-      before: list.slice(0, cutAt),
-      after: list.slice(cutAt),
+    return finish({
+      before: list.slice(0, cutAt).map(photo => Object.assign({}, photo, { phaseReason: "파일명 촬영시각으로 추천 · 확인 필요" })),
+      after: list.slice(cutAt).map(photo => Object.assign({}, photo, { phaseReason: "파일명 촬영시각으로 추천 · 확인 필요" })),
       unsorted: undated,
       confident: true,
       reason: `${Math.round(widest / 60000)}분이 벌어진 자리에서 나눴습니다.`,
-    };
+    });
   }
 
   /**
@@ -286,7 +307,7 @@
         if (other.length) skipped.push({ folder: text(folder && folder.name, 120), count: other.length, why: "사진이 아닙니다." });
         return;
       }
-      const split = splitBeforeAfter(images.concat(heic));
+      const split = splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name });
       buckets.push({
         folder: text(folder && folder.name, 120),
         itemKey: itemKeyForFolder(kind, folder && folder.name),
@@ -339,6 +360,9 @@
       return { ok: false, code: "CORE_MISSING", error: "결과보고서 모듈을 못 불러왔습니다." };
     }
     const made = plan && typeof plan === "object" ? plan : {};
+    if (settings.requireResolved && photoReviewRows(made).some(row => !row.itemKey || row.phase === "unsorted")) {
+      return { ok: false, code: "PHOTO_REVIEW_REQUIRED", error: "모든 사진의 구역과 전·후를 확인해 주세요." };
+    }
     const kind = text(settings.kind, 20) || text(made.kind, 20);
     if (!core.kindOf(kind)) {
       return { ok: false, code: "KIND_REQUIRED", error: "작업 종류를 골라 주세요." };
@@ -399,7 +423,67 @@
     review: "분류 확인 필요",
   });
 
-  // AI는 구역만 추천한다. 작업 전·후는 기존 촬영시각 판정을 그대로 둔다.
+  function photoReviewRows(plan) {
+    return rows(plan && plan.buckets).flatMap(bucket => ["before", "after", "unsorted"].flatMap(phase => rows(bucket[phase]).map(file => ({
+      id: text(file.id, 200), file, phase,
+      itemKey: text(bucket.itemKey || bucket.manualItemKey, 40),
+      reason: text(file.aiReason || bucket.reason, 120),
+      phaseReason: text(file.phaseReason, 120),
+    }))));
+  }
+
+  function assignPhotoPhase(plan, fileId, phase) {
+    if (!["before", "after", "unsorted"].includes(phase)) return plan;
+    return Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => {
+      const copy = Object.assign({}, bucket);
+      let moved;
+      ["before", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
+        if (text(file.id, 200) !== text(fileId, 200)) return true;
+        moved = Object.assign({}, file, { phaseReason: phase === "unsorted" ? "직접 확인 대기" : "사용자가 직접 선택했습니다." }); return false;
+      }); });
+      if (moved) copy[phase].push(moved);
+      return copy;
+    }) });
+  }
+
+  function assignPhotoCategory(plan, fileId, itemKey) {
+    let moved; let phase;
+    const buckets = rows(plan && plan.buckets).map(bucket => {
+      const copy = Object.assign({}, bucket);
+      ["before", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
+        if (text(file.id, 200) !== text(fileId, 200)) return true;
+        moved = Object.assign({}, file, { aiReason: "사용자가 직접 선택했습니다." }); phase = key; return false;
+      }); });
+      copy.heic = rows(bucket.heic).filter(file => text(file.id, 200) !== text(fileId, 200));
+      return copy;
+    });
+    if (!moved) return plan;
+    const key = text(itemKey, 40);
+    let target = buckets.find(bucket => bucket.itemKey === key && !bucket.manualItemKey);
+    if (!target) { target = { folder: AI_CATEGORY_LABELS[key] || "직접 분류", itemKey: key, before: [], after: [], unsorted: [], heic: [], skipped: 0, reason: "사용자가 직접 선택했습니다." }; buckets.push(target); }
+    target[phase].push(moved);
+    if (unviewable(moved.mimeType)) target.heic.push(moved);
+    return Object.assign({}, plan, { buckets: buckets.filter(bucket => bucket.before.length + bucket.after.length + bucket.unsorted.length) });
+  }
+
+  function mergeDraftPhotos(existingItems, incomingItems) {
+    const merged = rows(existingItems).map(item => Object.assign({}, item, { before: rows(item.before).slice(), after: rows(item.after).slice() }));
+    const identity = photo => text(photo && (photo.driveFileId || photo.id), 200);
+    const seen = new Set(merged.flatMap(item => rows(item.before).concat(rows(item.after))).map(identity).filter(Boolean));
+    let added = 0;
+    rows(incomingItems).forEach(item => {
+      let target = merged.find(row => row.key === item.key);
+      if (!target) { target = Object.assign({}, item, { before: [], after: [] }); merged.push(target); }
+      ["before", "after"].forEach(phase => rows(item[phase]).forEach(photo => {
+        const id = identity(photo);
+        if (!id || seen.has(id)) return;
+        seen.add(id); target[phase].push(photo); added += 1;
+      }));
+    });
+    return { items: merged, added };
+  }
+
+  // AI는 구역만 추천한다. 작업 전·후는 촬영시각 추천과 사용자 선택을 유지한다.
   // 원본 계획을 매번 다시 묶으므로 사용자가 한 사진의 분류를 바꿔도 다른
   // 사진의 단계나 메타데이터가 손실되지 않는다.
   function applyPhotoClassifications(plan, classifications) {
@@ -468,6 +552,11 @@
     viewable,
     unviewable,
     splitBeforeAfter,
+    phaseHint,
+    photoReviewRows,
+    assignPhotoPhase,
+    assignPhotoCategory,
+    mergeDraftPhotos,
     planFromTree,
     toReportDraft,
     applyPhotoClassifications,

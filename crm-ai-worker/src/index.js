@@ -391,7 +391,7 @@ export function createWorker(options = {}) {
         await enforceLimits(identity, env, now);
         if (url.pathname === PHOTO_CLASSIFY_PATH) {
           const photos = await readPhotoClassificationPayload(request);
-          const classified = await classifyPhotos(photos, env, fetchImpl, Math.max(timeoutMs, 30_000));
+          const classified = await classifyPhotos(photos, env, fetchImpl, Math.max(timeoutMs, 60_000));
           return json({
             ok: true,
             requestId: requestId(),
