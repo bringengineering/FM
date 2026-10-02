@@ -11,13 +11,13 @@ const root = folder("root", "07. 건물 임대차 & 활동 사진");
 const photos = Array.from({ length: 53 }, (_, n) => ({ id: `photo_${n}`, date: `2026-09-${String(n % 26 + 1).padStart(2, "0")}`, activityName: "청소" }));
 const goodDraft = { ok: true, narrative: { summary: "확인된 관리 기록 요약" } };
 
-test("한 번의 실행으로 검색 → 24장 단위 검토 → 12장 이하 초안을 순서대로 만든다", async () => {
+test("월 12장 제한 없이 24장 단위 검토 후 모든 날짜의 활동 사진으로 초안을 만든다", async () => {
   const events = [];
   const result = await Automation.run({
     isCurrent: () => true,
     find: async () => { events.push("find"); return { ok: true, photos }; },
     select: async batch => { events.push(batch.length); return { ok: true, selected: batch.map(p => ({ id: p.id, caption: "바닥 상태 확인" })) }; },
-    draft: async selected => { events.push("draft"); assert.equal(selected.length, 12); assert.equal(new Set(selected.map(p => p.date)).size, 12); return goodDraft; },
+    draft: async (selected, candidates) => { events.push("draft"); assert.equal(selected.length, 53); assert.equal(new Set(selected.map(p => p.date)).size, 26); assert.equal(candidates.length, 53); return goodDraft; },
   });
   assert.deepEqual(events, ["find", 24, 24, 5, "draft"]);
   assert.equal(result.candidates.length, 53);

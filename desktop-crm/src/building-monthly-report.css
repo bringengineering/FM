@@ -107,7 +107,21 @@
 .building-monthly-photo-card small{margin-top:4px;color:#8195a3;font-size:9px;white-space:nowrap}
 .building-monthly-photo-empty{grid-column:1/-1;padding:16px;border:1px dashed #d5e4ed;border-radius:10px;color:#8398a6;text-align:center;font-size:11px}
 .building-monthly-candidates{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;color:#7890a0;font-size:10px}
-.building-monthly-paper-photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+.building-monthly-paper-photos{display:grid;gap:14px;margin-top:18px}
+.building-monthly-paper-cover{padding:16px 14px;background:#eaf6fd;border-top:3px solid #80cdec}
+.building-monthly-paper-cover .building-monthly-paper-meta{border:0;padding-bottom:0;color:#52768a}
+.building-monthly-paper h5{margin:8px 0 10px;color:#1a465e;font-size:12px;line-height:1.5}
+.building-monthly-activity-log{margin-top:18px}
+.building-monthly-activity-log article{display:grid;grid-template-columns:75px minmax(0,1fr);gap:10px;padding:12px 4px;border-top:1px solid #d8eaf4}
+.building-monthly-activity-log time{font-size:10px;color:#1687b7}
+.building-monthly-activity-log b{font-size:11px;color:#234f66}
+.building-monthly-activity-log p{margin:5px 0;font-size:11px;color:#44677c;line-height:1.65;overflow-wrap:anywhere}
+.building-monthly-activity-log small{font-size:10px;color:#6a8190}
+.building-monthly-activity-photos h5{padding:9px 10px;background:#eaf6fd}
+.building-monthly-activity-photos h5 time{display:inline-block;margin-right:6px;font-size:10px;font-weight:600;color:#367b9d}
+.building-monthly-activity-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.building-monthly-activity-photo-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.building-monthly-paper-photos figcaption time{display:block;margin-bottom:4px;color:#267c9f;font-size:9px}
 .building-monthly-paper-photos figure{margin:0;overflow:hidden;border:1px solid #d9e6ee;border-radius:9px;background:#fff}
 .building-monthly-paper-photos img,.building-monthly-paper-photo-placeholder{display:grid;width:100%;height:105px;place-items:center;background:#eef4f8;color:#9aabb6;object-fit:cover}
 .building-monthly-paper-photos figcaption{padding:6px 8px;color:#5c7b90;font-size:9px;line-height:1.4}

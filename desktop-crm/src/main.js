@@ -37,6 +37,7 @@ const { createServiceReportHtml, serviceReportFileName } = require("./service-re
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
 const BuildingMonthlyReportDrive = require("./building-monthly-report-drive");
+const MonthlyPhotoFingerprint = require("./monthly-photo-fingerprint");
 const { createMonthlyPhotoSourceStore, normalizeFolder: normalizeMonthlyPhotoFolder } = require("./monthly-photo-source");
 const OwnerOsReportCore = require("./owner-os-report-core");
 const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
@@ -3321,6 +3322,26 @@ async function exportBuildingMonthlyReport(input) {
   return { ok: true, summary: artifact.report.summary };
 }
 
+function monthlyReportBuildingIdentity(building = {}) {
+  const name = ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name;
+  return BuildingMonthlyReportDrive.normalizeWord(name || building.roadAddress || building.address || building.jibunAddress);
+}
+
+function monthlyReportActivityEvidence(input) {
+  const ids = input.activityFileIds == null ? (input.photos || []).map(photo => photo.id) : input.activityFileIds;
+  if (!Array.isArray(ids) || ids.length > 120) throw new Error("활동 기록을 다시 불러와 주세요.");
+  if (!ids.length) return [];
+  const picker = reportDrivePickerReady();
+  const identity = monthlyReportBuildingIdentity(input.building);
+  return [...new Set(ids)].map(value => {
+    const file = picker.files.get(reportDrivePickerId(value));
+    if (!identity || !file || file.monthlyReportBuilding !== identity || file.monthlyReportDate?.slice(0, 7) !== input.month) {
+      throw new Error("선택한 건물과 보고 월의 활동 기록을 다시 찾아 주세요.");
+    }
+    return { date: file.monthlyReportDate, activityName: file.monthlyReportActivity, caption: file.monthlyReportCaption || "" };
+  });
+}
+
 async function prepareBuildingMonthlyReportArtifact(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -3337,35 +3358,38 @@ async function prepareBuildingMonthlyReportArtifact(input) {
     throw Object.assign(new Error("보고 월을 확인해 주세요."), { code: "INVALID_INPUT" });
   }
   const selectedPhotos = Array.isArray(input.photos) ? input.photos : [];
-  if (selectedPhotos.length > 12 || selectedPhotos.some(photo => !photo || typeof photo !== "object" || Array.isArray(photo)
+  if (selectedPhotos.length > BuildingReportCore.MAX_REPORT_PHOTOS || selectedPhotos.some(photo => !photo || typeof photo !== "object" || Array.isArray(photo)
     || Object.keys(photo).some(key => !["id", "caption"].includes(key)))) {
     throw Object.assign(new Error("보고서 사진 선택을 다시 확인해 주세요."), { code: "INVALID_INPUT" });
   }
+  const activityEvidence = monthlyReportActivityEvidence(input);
   let reportPhotos = [];
   if (selectedPhotos.length) {
     const picker = reportDrivePickerReady();
     const accessToken = await ensureDriveAccessToken();
     if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
     if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
-    reportPhotos = await Promise.all(selectedPhotos.map(async photo => {
+    const loadPhoto = async photo => {
       const id = reportDrivePickerId(photo.id);
       const file = id && picker.files.get(id);
-      if (!file || !file.monthlyReportDate || String(file.monthlyReportDate).slice(0, 7) !== month) {
+      if (!file || !file.monthlyReportDate || String(file.monthlyReportDate).slice(0, 7) !== month || file.monthlyReportBuilding !== monthlyReportBuildingIdentity(input.building)) {
         throw Object.assign(new Error("선택한 월간 활동 사진을 Drive에서 다시 찾아 주세요."), { code: "DRIVE_FILE_NOT_LISTED" });
       }
-      let dataUrl = "";
-      const thumb = picker.thumbnails.get(id);
-      if (thumb) {
-        try { dataUrl = (await fetchReportDriveThumbnail(thumb, accessToken)).dataUrl || ""; } catch (_) {}
-      }
+      // Normalize every image to the same decoded, bounded JPEG used for AI.
+      // Large Drive thumbnails must not disappear at the PDF data-URL guard.
+      const dataUrl = await workReportClassificationSource(file, picker, accessToken);
       if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-      if (!dataUrl) dataUrl = await workReportClassificationSource(file, picker, accessToken);
-      if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-      return { name: file.name, caption: String(photo.caption || "").replace(/[\r\n]+/gu, " ").trim().slice(0, 140), dataUrl };
-    }));
+      return { id: file.id, name: file.name, date: file.monthlyReportDate, activityName: file.monthlyReportActivity,
+        caption: String(photo.caption || file.monthlyReportCaption || "").replace(/[\r\n]+/gu, " ").trim().slice(0, 140), dataUrl,
+        ...MonthlyPhotoFingerprint.fingerprint(dataUrl, nativeImage) };
+    };
+    // Keep image downloads bounded even when a month has many activity groups.
+    for (let at = 0; at < selectedPhotos.length; at += 4) {
+      reportPhotos.push(...await Promise.all(selectedPhotos.slice(at, at + 4).map(loadPhoto)));
+    }
   }
   if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, photos: reportPhotos });
+  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos });
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(
@@ -4625,6 +4649,21 @@ async function findBuildingMonthlyReportPhotos(input) {
   const seen = new Set();
   let next = 0;
   let nestedTruncated = false;
+  function registerPhoto(file, parsed, parent) {
+    const id = reportDrivePickerId(file && file.id);
+    if (!id || seen.has(id) || !REPORT_DRIVE_IMAGE_MIME.has(String(file.mimeType || "").toLowerCase())) return;
+    seen.add(id);
+    const record = { id, name: String(file.name || "현장 사진").trim().slice(0, 220),
+      mimeType: String(file.mimeType || "").toLowerCase().slice(0, 80), size: Math.max(0, Number(file.size || 0)),
+      createdTime: String(file.createdTime || "").slice(0, 40), webViewLink: reportDriveViewLink(file.webViewLink),
+      thumbnailLink: reportDriveThumbnailLink(file.thumbnailLink), parentId: parent.id, parentName: parent.name,
+      kind: "file", monthlyReportDate: parsed.date, monthlyReportActivity: parsed.activityName || "활동명 확인 필요",
+      monthlyReportBuilding: BuildingMonthlyReportDrive.normalizeWord(buildingName || buildingAddress) };
+    picker.files.set(id, record);
+    if (record.thumbnailLink) picker.thumbnails.set(id, record.thumbnailLink);
+    else picker.thumbnails.delete(id);
+    photos.push({ id, name: record.name, mimeType: record.mimeType, size: record.size, date: record.monthlyReportDate, activityName: record.monthlyReportActivity });
+  }
   async function scanFolder(row) {
     const folder = row.item;
     const folderIdValue = reportDrivePickerId(folder && folder.id);
@@ -4661,31 +4700,11 @@ async function findBuildingMonthlyReportPhotos(input) {
         files = files.concat(childFiles.files.filter(file => REPORT_DRIVE_IMAGE_MIME.has(String(file && file.mimeType || "").toLowerCase())));
       }
     }
-    const activityName = row.parsed.activityName || folderRecord.name.replace(/^\d{6}[_ -]+/u, "").slice(0, 100);
     if (files.length > 24 || nested.folders.length > 4) nestedTruncated = true;
     files.slice(0, 24).forEach(file => {
-      const id = reportDrivePickerId(file && file.id);
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      const publicFile = {
-        id,
-        name: String(file.name || "현장 사진").trim().slice(0, 220),
-        mimeType: String(file.mimeType || "").toLowerCase().slice(0, 80),
-        size: Math.max(0, Number(file.size || 0)),
-        createdTime: String(file.createdTime || "").slice(0, 40),
-        webViewLink: reportDriveViewLink(file.webViewLink),
-        thumbnailLink: reportDriveThumbnailLink(file.thumbnailLink),
-        parentId: folderRecord.id,
-        parentName: folderRecord.name,
-        kind: "file",
-        monthlyReportDate: row.parsed.date,
-        monthlyReportActivity: activityName,
-        monthlyReportBuilding: BuildingMonthlyReportDrive.normalizeWord(buildingName || buildingAddress),
-      };
-      picker.files.set(id, publicFile);
-      if (publicFile.thumbnailLink) picker.thumbnails.set(id, publicFile.thumbnailLink);
-      else picker.thumbnails.delete(id);
-      photos.push({ id, name: publicFile.name, mimeType: publicFile.mimeType, size: publicFile.size, date: row.parsed.date, activityName });
+      const named = BuildingMonthlyReportDrive.parseActivityFileName(file.name, month, buildingName, buildingAddress);
+      if (!named && /^\d{6,8}[_ -]/u.test(file.name || "")) return;
+      registerPhoto(file, named || row.parsed, folderRecord);
     });
   }
   async function worker() {
@@ -4697,6 +4716,7 @@ async function findBuildingMonthlyReportPhotos(input) {
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, activityFolders.length) }, () => worker()));
+  for (const row of found.files || []) registerPhoto(row.item, row.parsed, row.parent);
   if (reportDrivePickerSession !== picker || driveSessionOwnerUid() !== String(user.uid || "")) {
     throw Object.assign(new Error("로그인 상태가 변경되어 Drive 사진 목록을 반영하지 않았습니다."), { code: "SESSION_CHANGED" });
   }
@@ -4913,7 +4933,7 @@ async function selectBuildingMonthlyReportPhotos(input) {
     return {
       id: String(item.id || `activity_${index}`).replace(/[^A-Za-z0-9_-]/gu, "_").slice(0, 120),
       date,
-      kind: BuildingMonthlyReportDrive.activityCategory(item.kind),
+      kind: String(item.kind || "").replace(/\s+/gu, " ").trim().slice(0, 80),
     };
   }).filter(Boolean);
   const picker = reportDrivePickerReady();
@@ -4931,16 +4951,20 @@ async function selectBuildingMonthlyReportPhotos(input) {
       const index = cursor++;
       const file = files[index];
       try {
+        const dataUrl = await workReportClassificationSource(file, picker, accessToken);
+        file.monthlyReportFingerprint = MonthlyPhotoFingerprint.fingerprint(dataUrl, nativeImage);
         images[index] = {
           id: file.id,
           date: file.monthlyReportDate,
-          dataUrl: await workReportClassificationSource(file, picker, accessToken),
+          activityName: String(file.monthlyReportActivity || "").slice(0, 100),
+          dataUrl,
         };
       } catch (_) { unavailable.push(index); }
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => prepare()));
-  const preparedImages = images.filter(Boolean);
+  const preparedImages = images.filter(Boolean).filter((image, index, all) => !all.slice(0, index).some(other =>
+    BuildingReportCore.similarPhoto(picker.files.get(image.id).monthlyReportFingerprint, picker.files.get(other.id).monthlyReportFingerprint)));
   if (!preparedImages.length) throw Object.assign(new Error("Gemini에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   remoteClient.assertSessionGuardActive(guard);
   const idToken = await remoteClient.ensureIdToken(false);
@@ -4961,7 +4985,7 @@ async function selectBuildingMonthlyReportPhotos(input) {
   });
   return {
     ...result,
-    selected: result.selected.filter(photo => preparedIds.has(photo.id)),
+    selected: result.selected.filter(photo => preparedIds.has(photo.id)).map(photo => ({ ...photo, ...picker.files.get(photo.id).monthlyReportFingerprint })),
     candidateCount: files.length,
     warnings: [...result.warnings, ...(unavailable.length ? [`사진 ${unavailable.length}장은 축소 변환할 수 없어 Gemini 검토에서 제외했습니다.`] : [])].slice(0, 5),
   };
@@ -9874,7 +9898,7 @@ secureCanonicalHandle("crm:work-assessment", async input => {
 });
 let buildingReportWriter = null;
 secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
-  const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative", "manualWorks", "excludedWorkKeys", "photos"]);
+  const allowedKeys = new Set(["store", "building", "month", "ownerName", "owner", "company", "nextMonthPlan", "narrative", "manualWorks", "excludedWorkKeys", "photos", "activityFileIds"]);
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(key => !allowedKeys.has(key))) {
     throw new Error("월간 보고서 요청을 확인해 주세요.");
   }
@@ -9887,7 +9911,7 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
   }
   const guard = client.captureSessionGuard();
   const photoInputs = input.photos || [];
-  if (!Array.isArray(photoInputs) || photoInputs.length > 12) throw new Error("보고서 사진을 다시 확인해 주세요.");
+  if (!Array.isArray(photoInputs) || photoInputs.length > BuildingReportCore.MAX_REPORT_PHOTOS) throw new Error("보고서 사진을 다시 확인해 주세요.");
   const photoEvidence = photoInputs.map(photo => {
     if (!photo || typeof photo !== "object" || Object.keys(photo).some(key => !["id", "caption"].includes(key))) throw new Error("보고서 사진을 다시 확인해 주세요.");
     const file = reportDrivePickerReady().files.get(reportDrivePickerId(photo.id));
@@ -9895,9 +9919,9 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     const buildingName = ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name;
     const identity = BuildingMonthlyReportDrive.normalizeWord(buildingName || building.roadAddress || building.address || building.jibunAddress);
     if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
-    return { date: file.monthlyReportDate, caption: file.monthlyReportCaption, kind: BuildingMonthlyReportDrive.activityCategory(file.monthlyReportActivity) };
+    return { date: file.monthlyReportDate, caption: file.monthlyReportCaption, kind: file.monthlyReportActivity };
   });
-  const report = { ...BuildingReportCore.buildBuildingMonthlyReport(input), photoEvidence };
+  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input) }), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });

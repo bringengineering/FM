@@ -13,6 +13,44 @@ const provider = (parts, finishReason = "STOP") => Response.json({ candidates: [
 const good = ids => provider([{ text: JSON.stringify({ selected: ids.map(row) }) }]);
 const idsFrom = options => JSON.parse(options.body).generationConfig.responseJsonSchema.properties.selected.items.properties.id.enum;
 
+test("activity-aware clients keep all 24 dates and original waste-disposal labels", async () => {
+  const request = input(24);
+  request.images = request.images.map((image, at) => ({ ...image, date: `2026-09-${String(at + 1).padStart(2, "0")}`, activityName: "폐기물처리" }));
+  const p = await readMonthlyReportPhotoSelectionPayload(new Request("https://test.invalid", { method: "POST", body: JSON.stringify(request) }));
+  let calls = 0;
+  const result = await selectMonthlyReportPhotos(p, env, async (_, options) => {
+    calls++;
+    const content = JSON.parse(options.body).contents[0].parts.filter(part => part.text).map(part => part.text).join("\n");
+    assert.match(content, /폐기물처리/u);
+    assert.match(content, /activityName/u);
+    assert.match(content, /최대 3장/u);
+    assert.match(content, /서류 확인/u);
+    return good(idsFrom(options));
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.selected.length, 24);
+  assert.equal(Client.normalizeResponse({ ok: true, selected: result.selected }, p.images.map(image => image.id)).selected.length, 24);
+});
+
+test("activity-aware selection has separate three-photo caps for two activities on the same date", async () => {
+  const request = input(12);
+  request.images = request.images.map((image, at) => ({ ...image, date: "2026-09-20", activityName: at < 6 ? "폐기물처리" : "공용부청소" }));
+  const p = await readMonthlyReportPhotoSelectionPayload(new Request("https://test.invalid", { method: "POST", body: JSON.stringify(request) }));
+  const result = await selectMonthlyReportPhotos(p, env, async (_, options) => good(idsFrom(options)));
+  assert.equal(result.selected.length, 6);
+  for (const kind of ["폐기물처리", "공용부청소"]) assert.equal(result.selected.filter(row => p.images.find(image => image.id === row.id).activityName === kind).length, 3);
+});
+
+test("identical photographs are not reused for another date or activity", async () => {
+  const p = await payload(1);
+  const images = [p.images[0], { ...p.images[0], id: "another-date", date: "2026-09-30", activityName: "폐기물처리" }];
+  const result = await selectMonthlyReportPhotos({ ...p, images }, env, async (_, options) => {
+    assert.equal(idsFrom(options).length, 1);
+    return good(idsFrom(options));
+  });
+  assert.equal(result.selected.length, 1);
+});
+
 test("multi-part JSON is joined and thought summaries are excluded", async () => {
   const raw = JSON.stringify({ selected: [row("p2")] });
   let calls = 0;

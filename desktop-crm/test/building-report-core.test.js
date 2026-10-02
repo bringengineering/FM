@@ -236,7 +236,7 @@ test("보고서 사진은 제한된 data image만 PDF에 렌더링한다", () =>
   ] });
   assert.equal(built.photos.length, 1);
   const doc = Pdf.createBuildingReportHtml(built);
-  assert.match(doc, /현장 사진/u);
+  assert.match(doc, /현장 활동 사진/u);
   assert.match(doc, /후드 필터 청소/u);
   assert.doesNotMatch(doc, /https:\/\/example\.com/u);
 });
