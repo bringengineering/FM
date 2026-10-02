@@ -115,17 +115,33 @@
     return WORK_ORDER_STATUS_MAP[status] || statusOf(status);
   }
 
+  function progressOf(value) {
+    if (typeof value !== "number" && !(typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value.trim()))) return null;
+    const progress = Number(value);
+    return Number.isFinite(progress) && progress >= 0 && progress <= 100 ? Math.round(progress) : null;
+  }
+
   function item(value) {
     const source = value && typeof value === "object" ? value : {};
+    const progress = progressOf(source.progress);
+    const status = Object.hasOwn(STATUS_LABELS, source.status) ? source.status : statusOf(source.status);
     return {
       id: text(source.id, 160),
       source: text(source.source, 40) || "CRM",
       title: text(source.title, 240),
       detail: text(source.detail, 500),
-      status: Object.hasOwn(STATUS_LABELS, source.status) ? source.status : statusOf(source.status),
+      // 보고서의 완료 표시는 검수 승인과 별개다. 원본 업무 상태는 바꾸지 않는다.
+      status: status === "completed" || progress === 100 ? "completed" : progress !== null ? "in_progress" : status,
+      ...(progress !== null ? { progress } : {}),
       date: dateKey(source.date),
       confidence: source.confidence === "review" ? "review" : "confirmed",
     };
+  }
+
+  function statusLabel(value) {
+    const row = item(value);
+    if (row.status === "completed") return STATUS_LABELS.completed;
+    return row.progress !== undefined ? `진행 ${row.progress}%` : STATUS_LABELS[row.status];
   }
 
   function addCandidate(target, candidate) {
@@ -157,6 +173,7 @@
         title: order.title,
         detail: progress && (progress.note || progress.nextAction) || order.outcomeReport || order.reviewNote || order.what,
         status: workOrderStatusOf(order.status),
+        progress: progressOf(order.progress) ?? progressOf(progress && progress.toProgress),
         date: changedAt,
       });
     });
@@ -292,7 +309,7 @@
   }
 
   function defaultSummary(automatic, manual) {
-    const items = [...list(automatic), ...list(manual)].filter(row => text(row.title));
+    const items = [...list(automatic), ...list(manual)].map(item).filter(row => row.title);
     if (!items.length) return "이번 주에 자동으로 확인된 업무가 없습니다. 빠진 업무가 있다면 직접 추가해 주세요.";
     const completed = items.filter(row => row.status === "completed").length;
     const progressing = items.length - completed;
@@ -305,17 +322,20 @@
     const manual = list(source.manual).map(normalizeManual).filter(row => row.title);
     const summary = String(source.summary || defaultSummary(automatic, manual)).replace(/\r/g, "").trim().slice(0, 450);
     const rows = [REPORT_HEADER, SECTIONS.summary, summary, SECTIONS.automatic];
-    automatic.slice(0, 8).forEach(row => rows.push(`- (${STATUS_LABELS[row.status]}) ${row.title.slice(0, 100)}${row.source ? ` · ${row.source.slice(0, 24)}` : ""}`));
+    automatic.slice(0, 8).forEach(row => rows.push(`- (${statusLabel(row)}) ${row.title.slice(0, 100)}${row.source ? ` · ${row.source.slice(0, 24)}` : ""}`));
     rows.push(SECTIONS.manual);
     manual.slice(0, 8).forEach(row => rows.push(`- (${STATUS_LABELS[row.status]}) ${row.title.slice(0, 100)}`));
     return rows.join("\n").slice(0, 2000);
   }
 
   function parseStatusLine(value) {
-    const match = /^-\s*\((완료|진행 중|예정|검토 중|지시함|검수 대기|보완 요청)\)\s*(.+?)(?:\s*·\s*([^·]+))?$/.exec(String(value || "").trim());
+    const match = /^-\s*\((완료|진행 중|진행 \d{1,3}%|예정|검토 중|지시함|검수 대기|보완 요청)\)\s*(.+?)(?:\s*·\s*([^·]+))?$/.exec(String(value || "").trim());
     if (!match) return null;
+    const progressMatch = /^진행 (\d{1,3})%$/.exec(match[1]);
+    const progress = progressMatch ? progressOf(progressMatch[1]) : null;
+    if (progressMatch && progress === null) return null;
     const status = Object.keys(STATUS_LABELS).find(key => STATUS_LABELS[key] === match[1]) || "in_progress";
-    return { title: text(match[2], 240), source: text(match[3], 40), status };
+    return { title: text(match[2], 240), source: text(match[3], 40), status, ...(progress !== null ? { progress } : {}) };
   }
 
   function parseDone(value) {
@@ -363,7 +383,7 @@
   function sourceText(automatic, manual) {
     return [...list(automatic).map(item), ...list(manual).map(normalizeManual)]
       .filter(row => row.title)
-      .map(row => `- ${STATUS_LABELS[row.status]} · ${row.title}${row.source ? ` (${row.source})` : ""}`)
+      .map(row => `- ${statusLabel(row)} · ${row.title}${row.source ? ` (${row.source})` : ""}`)
       .join("\n")
       .slice(0, 10000);
   }
@@ -371,7 +391,7 @@
   return {
     REPORT_HEADER, NEXT_HEADER, STATUS_LABELS,
     text, validDate, dateKey, addDays, weekStart, weekRange, inWeek, rangeLabel,
-    statusOf, collect, normalizeManual, normalizePlan, defaultSummary,
+    statusOf, statusLabel, collect, normalizeManual, normalizePlan, defaultSummary,
     serializeDone, parseDone, serializePlans, parsePlans, sourceText,
   };
 });

@@ -11264,7 +11264,7 @@
       weeklyReportState.manual = parsed.manual;
       weeklyReportState.plans = W.parsePlans(existing && existing.answers && existing.answers.next);
       weeklyReportState.summary = parsed.summary;
-      weeklyReportState.summaryCustomized = Boolean(parsed.summary);
+      weeklyReportState.summaryCustomized = Boolean(parsed.summary && parsed.summary !== W.defaultSummary(parsed.automatic, parsed.manual));
       weeklyReportState.existing = existing;
       weeklyReportState.error = "";
       weeklyReportState.warning = parsed.legacy ? "기존 주간 기록을 직접 추가 항목으로 가져왔습니다. 제출 전에 내용을 확인해 주세요." : "";
@@ -11277,20 +11277,19 @@
       projects: workOrderState.projects,
       cases: activeCases(),
     });
-    const signature = JSON.stringify(collected.items.map(item => [item.id, item.source, item.status, item.date, item.title, item.detail]));
+    const signature = JSON.stringify(collected.items.map(item => [item.id, item.source, item.status, item.progress, item.date, item.title, item.detail]));
     if (signature !== weeklyReportState.sourceSignature) {
       weeklyReportState.sourceSignature = signature;
       weeklyReportState.automatic = collected.items;
       weeklyReportState.candidates = collected.candidates.length;
       weeklyReportState.omitted = collected.omitted;
-      if (!weeklyReportState.summaryCustomized) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
     }
-    if (!weeklyReportState.summary) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
+    if (!weeklyReportState.summaryCustomized || !weeklyReportState.summary) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
     return { W, currentWeek, week, actor, existing };
   }
 
-  function weeklyStatusChip(W, status) {
-    return `<span class="weekly-status is-${esc(status)}">${esc(W.STATUS_LABELS[status] || "진행 중")}</span>`;
+  function weeklyStatusChip(W, item) {
+    return `<span class="weekly-status is-${esc(item.status)}">${esc(W.statusLabel(item))}</span>`;
   }
 
   function weeklyReportItemRows(W) {
@@ -11298,13 +11297,13 @@
       <article class="weekly-report-item">
         <span class="weekly-source">${esc(item.source)}</span>
         <div><b>${esc(item.title)}</b>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div>
-        ${weeklyStatusChip(W, item.status)}
+        ${weeklyStatusChip(W, item)}
       </article>`).join("");
     const manual = weeklyReportState.manual.map(item => `
       <article class="weekly-report-item is-manual">
         <span class="weekly-source">직접 추가</span>
         <div><b>${esc(item.title)}</b><small>자동 수집에서 빠진 업무</small></div>
-        ${weeklyStatusChip(W, item.status)}
+        ${weeklyStatusChip(W, item)}
         <button type="button" class="weekly-remove" data-weekly-manual-remove="${esc(item.id)}" aria-label="${esc(item.title)} 삭제">×</button>
       </article>`).join("");
     return automatic + manual;
@@ -11326,7 +11325,7 @@
       <article class="weekly-preview-row">
         <span class="weekly-preview-kind">${esc(item.source || "직접 추가")}</span>
         <div><b>${esc(item.title)}</b>${item.detail ? `<small>${esc(item.detail)}</small>` : ""}</div>
-        ${weeklyStatusChip(W, item.status)}
+        ${weeklyStatusChip(W, item)}
       </article>`).join("") || `<div class="weekly-preview-empty">제출할 이번 주 업무가 없습니다.</div>`;
     const planRows = weeklyReportState.plans.map(plan => `
       <article class="weekly-preview-row is-plan">
@@ -11385,7 +11384,7 @@
         title: item.title,
         detail: item.detail || (item.source ? `${item.source}에 기록된 진행사항입니다.` : "자동 수집에서 빠진 업무를 직접 추가했습니다."),
         status: item.status,
-        result: context.W.STATUS_LABELS[item.status] || "진행 중",
+        result: context.W.statusLabel(item),
       })),
       plans: weeklyReportState.plans.map(plan => ({
         priority: plan.priority,
@@ -11492,7 +11491,7 @@
       <div class="weekly-report-kpis">
         <div><span>자동 수집</span><b>${weeklyReportState.candidates}건</b><small>업무 결과가 있는 CRM 기록</small></div>
         <div><span>보고서 반영</span><b>${allItems.length}건</b><small>${weeklyReportState.omitted ? `중요도 순 · ${weeklyReportState.omitted}건 제외` : "중복 제거 후 반영"}</small></div>
-        <div><span>완료 업무</span><b>${completed}건</b><small>완료 상태 기준</small></div>
+        <div><span>완료 업무</span><b>${completed}건</b><small>완료 상태 또는 업무지시 진행률 100%</small></div>
         <div><span>직접 추가</span><b>${weeklyReportState.manual.length}건</b><small>자동 수집에서 빠진 업무</small></div>
       </div>
       <section class="weekly-report-layout">
