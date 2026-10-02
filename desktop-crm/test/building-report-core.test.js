@@ -144,6 +144,45 @@ test("Gemini 문장도 HTML로 실행되지 않게 이스케이프한다", () =>
   assert.match(doc, /&lt;img/u);
 });
 
+test("월간 요약은 내용과 소수점을 유지하면서 문장별 문단으로 나눈다", () => {
+  const sentences = [
+    "이번 달 관리를 보고드립니다.",
+    "공실률은 12.5%이며 업무 7건 중 6건을 완료했습니다.",
+    "공용부 청소와 점검을 마쳤습니다.",
+    "다음 달 방역 작업 예정",
+  ];
+  const doc = pdfHtml({ narrative: { summary: sentences.join(" ") } });
+  const section = doc.match(/<section class="monthly-summary">([\s\S]*?)<\/section>/u)[1];
+  assert.deepEqual([...section.matchAll(/<p class="greeting">(.*?)<\/p>/gu)].map(match => match[1]), sentences);
+  assert.match(doc, /\.monthly-summary h2\{font-size:12pt;color:#111;/u);
+  assert.match(doc, /\.monthly-summary \.greeting\{font-size:11\.5pt;line-height:1\.85;color:#111;/u);
+});
+
+test("월간 요약 문단은 직접 줄바꿈과 특수문자도 안전하게 표시한다", () => {
+  const built = report();
+  const doc = Pdf.createBuildingReportHtml({ ...built, narrative: {
+    summary: '첫 줄\r\n\r\n둘째 줄 <script>alert("x")</script> & 확인. 다음 문장입니다!',
+  } });
+  const section = doc.match(/<section class="monthly-summary">([\s\S]*?)<\/section>/u)[1];
+  assert.equal((section.match(/<p class="greeting">/gu) || []).length, 3);
+  assert.match(section, /<p class="greeting">첫 줄<\/p>/u);
+  assert.match(section, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; &amp; 확인\./u);
+  assert.doesNotMatch(section, /<script>/u);
+});
+
+test("현장 사진은 강제 새 페이지 없이 이어지고 사진 묶음은 잘리지 않는다", () => {
+  const doc = pdfHtml({ photos: [{
+    date: "2026-08-05", activityName: "공용부 청소", caption: "현장 기록",
+    dataUrl: "data:image/jpeg;base64,/9j/",
+  }] });
+  const photoSectionRules = [...doc.matchAll(/\.photo-section\{([^}]+)\}/gu)].map(match => match[1]);
+  assert.deepEqual(photoSectionRules, ["break-before:auto"]);
+  assert.match(doc, /\.photo-group\{break-inside:avoid;/u);
+  assert.ok(doc.indexOf("호실 현황</h2>") < doc.indexOf('<section class="photo-section">'));
+  assert.match(doc, /날짜별 현장 활동 사진/u);
+  assert.match(doc, /현장 기록/u);
+});
+
 test("건물이 비어 있어도 보고서 모양은 무너지지 않는다", () => {
   const built = Reports.buildBuildingMonthlyReport({});
   assert.equal(built.buildingName, "관리 건물");
