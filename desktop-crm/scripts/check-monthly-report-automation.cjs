@@ -29,6 +29,44 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('[data-building-monthly-copy="summary"]')?.value.includes("가상 초안"));
     assert.deepEqual(await page.evaluate(() => window.__monthlyQA.calls), ["find", "select:24", "select:24", "select:2", "draft"]);
     assert.equal(await page.locator(".building-monthly-photo-card").count(), 6);
+    const caption = '폐기물과 적치 물품 정리 · <img src=x onerror="alert(1)">';
+    const firstPhoto = page.locator('.building-monthly-photo-card').first();
+    const photoId = await firstPhoto.locator('[data-building-monthly-caption-edit]').getAttribute('data-building-monthly-caption-edit');
+    await firstPhoto.getByRole('button', { name: '설명 수정' }).click();
+    const captionInput = page.locator('#buildingMonthlyPhotoCaption');
+    await captionInput.fill(caption);
+    await page.locator('[data-building-monthly-caption-form]').getByRole('button', { name: '설명 저장' }).click();
+    assert.equal(await firstPhoto.locator('b').textContent(), caption);
+    assert.equal(await page.locator('.building-monthly-activity-photo-grid figcaption span').first().textContent(), caption);
+    assert.equal(await page.locator('img[src="x"]').count(), 0);
+    await page.locator('[data-building-monthly-pdf]').click();
+    await page.waitForFunction(() => window.__monthlyQA.exported);
+    assert.equal(await page.evaluate(id => window.__monthlyQA.exported.photos.find(photo => photo.id === id)?.caption, photoId), caption);
+    await firstPhoto.getByRole('button', { name: '설명 수정' }).click();
+    await captionInput.fill('취소될 내용');
+    await page.locator('[data-building-monthly-caption-form]').getByRole('button', { name: '취소', exact: true }).click();
+    assert.equal(await firstPhoto.locator('b').textContent(), caption);
+    await page.locator('[data-building-monthly-photos-select]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-building-monthly-photos-select]')?.disabled);
+    assert.equal(await firstPhoto.locator('b').textContent(), caption);
+    await page.locator('[data-building-monthly-generate]').click();
+    await page.waitForFunction(() => document.querySelector('[data-building-monthly-copy="summary"]')?.value.includes('가상 초안') && !document.querySelector('[data-building-monthly-generate]')?.disabled);
+    assert.equal(await firstPhoto.locator('b').textContent(), caption);
+    // Editor is available both in the source list and under the report photo.
+    await page.locator('.building-monthly-activity-photo-grid [data-building-monthly-caption-edit]').first().click();
+    assert.equal(await captionInput.inputValue(), caption);
+    for (const width of [1280, 760, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.waitForTimeout(200); // Existing modal size/position transition is 160 ms.
+      const bounds = await page.locator('.modal-card:has(.building-monthly-caption-editor)').evaluate(el => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, viewport: innerWidth, scroll: el.scrollWidth, client: el.clientWidth }; });
+      assert.ok(bounds.left >= 0 && bounds.right <= bounds.viewport && bounds.scroll <= bounds.client + 1, `Caption editor clipped at ${width}px: ${JSON.stringify(bounds)}`);
+    }
+    if (process.env.BRING_QA_OUTPUT_DIR) {
+      require('node:fs').mkdirSync(process.env.BRING_QA_OUTPUT_DIR, { recursive: true });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.locator('.modal-card:has(.building-monthly-caption-editor)').screenshot({ path: path.join(process.env.BRING_QA_OUTPUT_DIR, 'monthly-caption-editor.png') });
+    }
+    await page.locator('[data-building-monthly-caption-form]').getByRole('button', { name: '취소', exact: true }).click();
     for (const width of [1280, 980, 760]) {
       await page.setViewportSize({ width, height: 1000 });
       const clipped = await page.locator("[data-building-monthly-generate]").evaluate(button => { const rect = button.getBoundingClientRect(); return rect.width < button.scrollWidth - 2 || rect.left < 0 || rect.right > innerWidth + 1; });
@@ -50,7 +88,7 @@ async function main() {
     assert.deepEqual(await page.evaluate(() => window.__monthlyQA.calls), ["find"]);
     assert.equal(await page.locator('[data-building-monthly-copy="summary"]').inputValue(), "");
     assert.deepEqual(errors, []);
-    console.log("PASS: one-click photos/draft, 24-photo batches, remembered folder, failure preservation, stale-building cancellation, 760/980/1280px layout; external traffic blocked.");
+    console.log("PASS: caption save/cancel, HTML escaping, PDF request, rescan preservation, 360/760/1280px editor; one-click photos/draft, 24-photo batches, remembered folder, failure preservation, stale-building cancellation; external traffic blocked.");
   } finally { if (browser) await browser.close(); server.kill(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
