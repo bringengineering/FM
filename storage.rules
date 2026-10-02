@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isFieldUser() {
+      return request.auth != null &&
+        request.auth.token.get('fieldPlatform', false) == true;
+    }
+
+    function ownsPath(uid) {
+      return isFieldUser() && request.auth.uid == uid;
+    }
+
+    function isUuid(value) {
+      return value is string &&
+        value.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+    }
+
+    function hasExactBinding(uid, captureSessionId) {
+      return request.resource != null &&
+        request.resource.metadata.keys().hasOnly([
+          'capturedBy',
+          'captureSessionId',
+          'mediaId'
+        ]) &&
+        request.resource.metadata.capturedBy == uid &&
+        request.resource.metadata.captureSessionId == captureSessionId &&
+        isUuid(request.resource.metadata.mediaId);
+    }
+
+    function isApprovedPhoto(fileName) {
+      return (
+        request.resource.contentType == 'image/jpeg' &&
+        fileName == request.resource.metadata.mediaId + '.jpg'
+      ) || (
+        request.resource.contentType == 'image/png' &&
+        fileName == request.resource.metadata.mediaId + '.png'
+      ) || (
+        request.resource.contentType == 'image/webp' &&
+        fileName == request.resource.metadata.mediaId + '.webp'
+      ) || (
+        request.resource.contentType == 'image/heic' &&
+        fileName == request.resource.metadata.mediaId + '.heic'
+      ) || (
+        request.resource.contentType == 'image/heif' &&
+        fileName == request.resource.metadata.mediaId + '.heif'
+      );
+    }
+
+    function isApprovedVideo(fileName) {
+      return (
+        request.resource.contentType == 'video/mp4' &&
+        fileName == request.resource.metadata.mediaId + '.mp4'
+      ) || (
+        request.resource.contentType == 'video/quicktime' &&
+        fileName == request.resource.metadata.mediaId + '.mov'
+      ) || (
+        request.resource.contentType == 'video/webm' &&
+        fileName == request.resource.metadata.mediaId + '.webm'
+      );
+    }
+
+    match /field-media/{uid}/{captureSessionId}/photos/{fileName} {
+      allow read: if ownsPath(uid);
+      allow create: if ownsPath(uid) &&
+        isUuid(captureSessionId) &&
+        hasExactBinding(uid, captureSessionId) &&
+        isApprovedPhoto(fileName) &&
+        request.resource.size > 0 &&
+        request.resource.size <= 25 * 1024 * 1024 &&
+        resource == null;
+    }
+
+    match /field-media/{uid}/{captureSessionId}/videos/{fileName} {
+      allow read: if ownsPath(uid);
+      allow create: if ownsPath(uid) &&
+        isUuid(captureSessionId) &&
+        hasExactBinding(uid, captureSessionId) &&
+        isApprovedVideo(fileName) &&
+        request.resource.size > 0 &&
+        request.resource.size <= 500 * 1024 * 1024 &&
+        resource == null;
+    }
+
+    match /field-media-finalized/{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

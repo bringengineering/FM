@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "name": "BRING service operations vocabulary",
+  "purpose": "공용 CRM, 클리닝센터, 현장업무, TV 집계가 같은 업무 용어와 정식 ID를 사용하도록 하는 계약입니다.",
+  "idPolicy": {
+    "customer": { "source": "crmCompany/data/customers", "copyEntity": false, "key": "existing customer id" },
+    "building": { "source": "crmCompany/data/buildings", "copyEntity": false, "key": "existing building id" },
+    "space": { "source": "crmCompany/buildingAtlas/{buildingId}", "copyEntity": false, "key": "existing building and space ids" },
+    "cleaningOrder": { "source": "crmCompany/cleaningOrders", "copyEntity": true, "key": "client UUID used as order id and create idempotency key" }
+  },
+  "entities": {
+    "Customer": { "source": "crmCompany/data/customers", "sensitivity": "internal-sensitive" },
+    "Building": { "source": "crmCompany/data/buildings", "sensitivity": "internal-sensitive" },
+    "Space": { "source": "crmCompany/buildingAtlas", "sensitivity": "internal-sensitive" },
+    "CleaningOrder": { "id": "crmCompany/cleaningOrders/{uuid}", "sensitivity": "internal-sensitive", "statuses": ["received", "reviewing", "quote_pending", "approval_pending", "scheduled", "in_progress", "review_pending", "revision_requested", "completed", "cancelled"] },
+    "Quote": { "source": "existing CRM quote records", "sensitivity": "internal-sensitive" },
+    "WorkExecution": { "source": "existing CRM workOrders and workReports", "sensitivity": "internal-sensitive" },
+    "Evidence": { "source": "existing Drive and CRM evidence references", "sensitivity": "restricted" },
+    "Invoice": { "source": "crmCompany/billingLedger/invoices", "sensitivity": "restricted-financial" },
+    "Receipt": { "source": "crmCompany/billingLedger/receipts", "sensitivity": "restricted-financial" },
+    "User": { "source": "crmCompany/access and teamProfiles", "sensitivity": "internal-sensitive" },
+    "Partner": { "source": "existing CRM partner/vendor records", "sensitivity": "internal-sensitive" }
+  },
+  "workflowTermMappings": [
+    { "term": "접수", "canonicalStatus": "received" },
+    { "term": "확인중", "canonicalStatus": "reviewing" },
+    { "term": "견적대기", "canonicalStatus": "quote_pending" },
+    { "term": "승인대기", "canonicalStatus": "approval_pending" },
+    { "term": "작업대기", "canonicalStatus": "scheduled" },
+    { "term": "작업중", "canonicalStatus": "in_progress" },
+    { "term": "검수대기", "canonicalStatus": "review_pending" },
+    { "term": "보완요청", "canonicalStatus": "revision_requested" },
+    { "term": "완료", "canonicalStatus": "completed" },
+    { "term": "취소", "canonicalStatus": "cancelled" }
+  ],
+  "relationships": [
+    { "name": "requests", "from": "Customer", "to": "CleaningOrder", "cardinality": "one-to-many", "key": "customerId" },
+    { "name": "concerns", "from": "CleaningOrder", "to": "Building", "cardinality": "many-to-one", "key": "buildingId" },
+    { "name": "locatedAt", "from": "CleaningOrder", "to": "Space", "cardinality": "many-to-zero-or-one", "key": "spaceId when a CRM space record is available" },
+    { "name": "pricedBy", "from": "CleaningOrder", "to": "Quote", "cardinality": "one-to-zero-or-many", "key": "existing quote id reference" },
+    { "name": "fulfilledBy", "from": "CleaningOrder", "to": "WorkExecution", "cardinality": "one-to-zero-or-many", "key": "cleaningOrderId reference" },
+    { "name": "produces", "from": "WorkExecution", "to": "Evidence", "cardinality": "one-to-zero-or-many", "key": "existing evidence reference" },
+    { "name": "billedBy", "from": "CleaningOrder", "to": "Invoice", "cardinality": "one-to-zero-or-many", "key": "existing billing ledger reference" },
+    { "name": "settledBy", "from": "Invoice", "to": "Receipt", "cardinality": "one-to-zero-or-many", "key": "invoiceId" },
+    { "name": "performedBy", "from": "WorkExecution", "to": "Partner", "cardinality": "many-to-zero-or-one", "key": "existing partner id when applicable" },
+    { "name": "assignedTo", "from": "CleaningOrder", "to": "User", "cardinality": "many-to-zero-or-one", "key": "assigneeUid when assignment support is released" }
+  ],
+  "wallboardProjection": {
+    "source": "crmCompany/wallboard/cleaningOperations",
+    "allowedFields": ["schemaVersion", "total", "open", "completed", "overdue", "byStatus", "updatedAt"],
+    "excluded": ["customer name", "phone", "address", "request description", "order id", "assignee uid", "evidence link"]
+  },
+  "automation": {
+    "n8n": {
+      "sourceOfTruth": false,
+      "canMutateCanonicalRecords": false,
+      "allowedFutureUse": ["signed event notifications", "reminders", "retryable non-critical integrations"],
+      "currentStatus": "No active n8n workflow was verified; do not assume deployed automation."
+    }
+  }
+}

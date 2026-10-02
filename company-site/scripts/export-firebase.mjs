@@ -23,19 +23,26 @@ const { default: worker } = await import(workerUrl.href);
 const routes = [
   { pathname: "/", outputFile: "index.html" },
   { pathname: "/consult", outputFile: "consult/index.html" },
+  { pathname: "/field", outputFile: "field/index.html" },
+  { pathname: "/partner", outputFile: "partner/index.html" },
   {
     pathname: "/consult/complete",
     outputFile: "consult/complete/index.html",
   },
+  { pathname: "/stair-cleaning", outputFile: "stair-cleaning/index.html" },
+  { pathname: "/building-care", outputFile: "building-care/index.html" },
+  { pathname: "/move-in-cleaning", outputFile: "move-in-cleaning/index.html" },
+  { pathname: "/turnover-care", outputFile: "turnover-care/index.html" },
+  { pathname: "/care-records", outputFile: "care-records/index.html" },
 ];
 
 for (const route of routes) {
   const response = await worker.fetch(
-    new Request(`https://bring-fm-hj.web.app${route.pathname}`, {
+    new Request(`https://bring-fm.web.app${route.pathname}`, {
       headers: {
         accept: "text/html",
-        host: "bring-fm-hj.web.app",
-        "x-forwarded-host": "bring-fm-hj.web.app",
+        host: "bring-fm.web.app",
+        "x-forwarded-host": "bring-fm.web.app",
         "x-forwarded-proto": "https",
       },
     }),

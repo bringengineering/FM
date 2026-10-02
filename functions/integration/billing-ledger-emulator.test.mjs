@@ -1,0 +1,204 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { after, test } from 'node:test';
+import { initializeApp, deleteApp } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
+import { transactBillingLedger } from '../lib/billing-ledger-mutation.js';
+
+const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) {
+  throw new Error('Local Firebase Database emulator is required');
+}
+
+const app = initializeApp({
+  databaseURL: 'https://demo-bring-fm-default-rtdb.firebaseio.com',
+  projectId: 'demo-bring-fm',
+}, `billing-concurrency-${randomUUID()}`);
+const database = getDatabase(app);
+const testRoot = database.ref(`testOnly/billingLedgerConcurrency/${randomUUID()}`);
+const now = '2026-09-25T00:00:00.000Z';
+const actor = { uid: 'member-1', role: 'member' };
+
+after(async () => {
+  await testRoot.remove();
+  await deleteApp(app);
+});
+
+function invoice(id, month = '2026-09') {
+  return {
+    id, contractId: 'contract-1', contractType: 'regular', billingMonth: month,
+    dueDate: '2026-09-30', amount: 100000, status: 'draft',
+  };
+}
+
+function command(record, requestId) {
+  return { kind: 'invoice', record, expectedRevision: 0, requestId, actor, now };
+}
+
+test('concurrent creation for one contract month commits exactly one invoice', async () => {
+  const ref = testRoot.child('same-month');
+  const attempts = await Promise.allSettled([
+    transactBillingLedger(ref, command(invoice('invoice-1'), 'request-1')),
+    transactBillingLedger(ref, command(invoice('invoice-2'), 'request-2')),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_duplicate_invoice').length, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(Object.keys(saved.invoices).length, 1);
+});
+
+test('concurrent updates of one revision commit exactly one update', async () => {
+  const ref = testRoot.child('same-revision');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  const before = (await ref.get()).val();
+  assert.equal(before?.invoices?.['invoice-1']?.revision, 1);
+  const update = (amount, requestId) => transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), amount }, expectedRevision: 1,
+    requestId, actor, now,
+  });
+  const attempts = await Promise.allSettled([
+    update(110000, 'request-update-1'),
+    update(120000, 'request-update-2'),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_revision_conflict').length, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].revision, 2);
+});
+
+test('concurrent manager approvals of one invoice commit exactly one approval', async () => {
+  const ref = testRoot.child('same-approval');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  const approve = uid => transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+    expectedRevision: 1, requestId: `request-approve-${uid}`,
+    actor: { uid, role: 'admin' }, now,
+  });
+  const attempts = await Promise.allSettled([
+    approve('admin-1'),
+    approve('admin-2'),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_revision_conflict').length, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].status, 'approved');
+  assert.equal(saved.invoices['invoice-1'].revision, 2);
+  assert.ok(['admin-1', 'admin-2'].includes(saved.invoices['invoice-1'].approvedBy));
+});
+
+test('concurrent return and approval of one draft cannot both commit', async () => {
+  const ref = testRoot.child('return-versus-approval');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  const attempts = await Promise.allSettled([
+    transactBillingLedger(ref, {
+      action: 'return', kind: 'invoice', record: { id: 'invoice-1' },
+      expectedRevision: 1, requestId: 'request-return', reason: '청구 금액 증빙을 다시 확인해 주세요',
+      actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+    transactBillingLedger(ref, {
+      kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+      expectedRevision: 1, requestId: 'request-approve', actor: { uid: 'admin-2', role: 'admin' }, now,
+    }),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_revision_conflict').length, 1);
+  const record = (await ref.get()).val().invoices['invoice-1'];
+  assert.equal(record.revision, 2);
+  assert.equal(record.status === 'approved' && record.returnPending === true, false);
+});
+
+test('concurrent approval of the same bank transaction commits one receipt', async () => {
+  const ref = testRoot.child('same-transaction');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  await transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+    expectedRevision: 1, requestId: 'request-approve',
+    actor: { uid: 'admin-1', role: 'admin' }, now,
+  });
+  const receipt = id => ({
+    id, invoiceId: 'invoice-1', receivedAt: '2026-09-25', amount: 50000,
+    transactionRef: 'bank-transaction-1', evidenceRef: 'proof-1', status: 'approved',
+  });
+  const attempts = await Promise.allSettled(['receipt-1', 'receipt-2'].map((id, index) =>
+    transactBillingLedger(ref, {
+      kind: 'receipt', record: receipt(id), expectedRevision: 0,
+      requestId: `request-receipt-${index}`, actor: { uid: 'admin-1', role: 'admin' }, now,
+    })));
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  assert.equal(attempts.filter(result => result.status === 'rejected'
+    && result.reason?.message === 'billing_duplicate_transaction').length, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(Object.keys(saved.receipts).length, 1);
+});
+
+test('invoice void and linked receipt approval cannot both commit', async () => {
+  const ref = testRoot.child('void-versus-receipt');
+  await transactBillingLedger(ref, command(invoice('invoice-1'), 'request-create'));
+  await transactBillingLedger(ref, {
+    kind: 'invoice', record: { ...invoice('invoice-1'), status: 'approved' },
+    expectedRevision: 1, requestId: 'request-approve',
+    actor: { uid: 'admin-1', role: 'admin' }, now,
+  });
+  const attempts = await Promise.allSettled([
+    transactBillingLedger(ref, {
+      kind: 'invoice', record: { ...invoice('invoice-1'), status: 'void', voidReason: 'cancelled' },
+      expectedRevision: 2, requestId: 'request-void', actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+    transactBillingLedger(ref, {
+      kind: 'receipt', record: {
+        id: 'receipt-1', invoiceId: 'invoice-1', receivedAt: '2026-09-25', amount: 50000,
+        transactionRef: 'bank-transaction-1', evidenceRef: 'proof-1', status: 'approved',
+      },
+      expectedRevision: 0, requestId: 'request-receipt', actor: { uid: 'admin-1', role: 'admin' }, now,
+    }),
+  ]);
+  assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1,
+    JSON.stringify(attempts.map(result => result.status === 'rejected' ? result.reason?.message : 'ok')));
+  const rejected = attempts.find(result => result.status === 'rejected');
+  assert.ok(['billing_invoice_has_receipts', 'billing_invoice_not_approved'].includes(rejected.reason?.message));
+  const saved = (await ref.get()).val();
+  const approvedReceipts = Object.values(saved.receipts ?? {}).filter(item => item.status === 'approved');
+  assert.equal(saved.invoices['invoice-1'].status === 'void' && approvedReceipts.length > 0, false);
+});
+
+test('a replay cannot report a pre-read result after another writer changed the invoice', async () => {
+  const ref = testRoot.child('stale-replay');
+  const original = command(invoice('invoice-1'), 'request-create');
+  await transactBillingLedger(ref, original);
+  const raceRef = {
+    async get() {
+      const snapshot = await ref.get();
+      await transactBillingLedger(ref, {
+        kind: 'invoice', record: { ...invoice('invoice-1'), amount: 120000 },
+        expectedRevision: 1, requestId: 'request-other', actor, now,
+      });
+      return snapshot;
+    },
+    transaction: (...args) => ref.transaction(...args),
+  };
+  await assert.rejects(transactBillingLedger(raceRef, original),
+    error => error?.message === 'billing_revision_conflict');
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].amount, 120000);
+  assert.equal(saved.invoices['invoice-1'].revision, 2);
+});
+
+test('an unchanged replay returns the existing invoice without increasing revision', async () => {
+  const ref = testRoot.child('safe-replay');
+  const original = command(invoice('invoice-1'), 'request-create');
+  await transactBillingLedger(ref, original);
+  const replay = await transactBillingLedger(ref, original);
+  assert.equal(replay.repeated, true);
+  assert.equal(replay.record.revision, 1);
+  const saved = (await ref.get()).val();
+  assert.equal(saved.invoices['invoice-1'].revision, 1);
+  assert.equal(Object.keys(saved.invoices).length, 1);
+});
