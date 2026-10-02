@@ -16,6 +16,16 @@ function statCard(label, value, tone) {
   return `<div class="stat${tone ? ` ${tone}` : ""}"><span>${html(label)}</span><b>${html(value || "—")}</b></div>`;
 }
 
+function summaryParagraphsHtml(value) {
+  // Keep the reviewed text intact; only separate sentences for the printed page.
+  return String(value == null ? "" : value).trim()
+    .split(/\n+|(?<=[.!?])\s+(?=[가-힣A-Z])/u)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+    .map(paragraph => `<p class="greeting">${html(paragraph)}</p>`)
+    .join("");
+}
+
 function worksHtml(works) {
   if (!works.length) {
     return `<p class="empty">이 기간에 처리한 업무가 없습니다.</p>`;
@@ -108,9 +118,12 @@ html,body{color:#193e53}
 .head h1{font-size:20pt;letter-spacing:-.02em;color:#193e53}
 .head .brand{display:block;margin-bottom:3mm;color:#148cc1;font-size:9pt;font-weight:800;letter-spacing:.18em}
 .head .sub{color:#456f87}.head .meta,.head .meta b{color:#456f87}
-.monthly-summary{padding:4mm 5mm;background:#f3faff;border-left:1mm solid #83cde9}
+.monthly-summary{padding:5mm 6mm;background:#f3faff;border-left:1mm solid #83cde9}
 section>h2{color:#214d65;font-size:11pt;break-after:avoid}
 .greeting{color:#45677b;line-height:1.8}
+.monthly-summary h2{font-size:12pt;color:#111;margin-bottom:3mm}
+.monthly-summary .greeting{font-size:11.5pt;line-height:1.85;color:#111;margin:0 0 3mm;word-break:keep-all;overflow-wrap:anywhere;orphans:2;widows:2}
+.monthly-summary .greeting:last-child{margin-bottom:0}
 .stat{border-color:#d8eaf4;background:#f4fbff}.stat b{color:#214d65}
 .grid th,.grid td{border-color:#d8eaf4;vertical-align:top;overflow-wrap:anywhere;word-break:normal;padding:3mm 2mm;line-height:1.65}
 .grid thead th{background:#eaf6fd;color:#386f8a}
@@ -118,7 +131,7 @@ section>h2{color:#214d65;font-size:11pt;break-after:avoid}
 .grid td:first-child{color:#148cc1;font-weight:700}.grid .activity-name{text-align:left;font-weight:700}
 .grid td small{display:block;margin-top:1mm;font-size:7.3pt;color:#6a8190}
 .grid tr,.unit,.total{break-inside:avoid}.grid thead{display:table-header-group}
-.photo-section{break-before:page}.photo-group{break-inside:avoid;margin:5mm 0 7mm}
+.photo-group{break-inside:avoid;margin:5mm 0 7mm}
 .photo-group h3{padding:3mm 4mm;background:#eaf6fd;border-top:.3mm solid #d8eaf4;font-size:10pt;margin:0 0 3mm;line-height:1.5}
 .photo-group h3 time{display:inline-block;margin-right:4mm;color:#347c9d;font-size:9pt}
 .photos{grid-template-columns:repeat(2,minmax(0,1fr));gap:3mm}.photos.three{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -129,7 +142,7 @@ section>h2{color:#214d65;font-size:11pt;break-after:avoid}
 </style></head><body><main class="doc">
 <header class="head"><div><span class="brand">BRING CARE</span><h1>${html(report.documentTitle)}</h1><p class="sub">${html(report.buildingName)} · ${html(report.monthText)}</p></div><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAt)}</div></header>
 <p class="greeting">${html(report.ownerName || "건물주")}님, ${html(report.monthText)} ${html(report.buildingName)} 관리 내역을 보고드립니다.${report.address ? ` (${html(report.address)})` : ""}</p>
-${report.narrative && report.narrative.summary ? `<section class="monthly-summary"><h2>이번 달 관리 요약</h2><p class="greeting">${html(report.narrative.summary)}</p></section>` : ""}
+${report.narrative && report.narrative.summary ? `<section class="monthly-summary"><h2>이번 달 관리 요약</h2>${summaryParagraphsHtml(report.narrative.summary)}</section>` : ""}
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
 <section><h2>날짜별 활동 내역</h2>${worksHtml(report.activities || report.works)}</section>
 ${report.narrative?.attention ? `<section><h2>관리 결과 및 후속 확인</h2><p class="greeting">${html(report.narrative.attention)}</p></section>` : ""}
