@@ -18,6 +18,81 @@
 
   const DONE_STATUSES = new Set(["완료", "종결", "종료", "complete", "completed", "done", "closed"]);
   const MAX_ROWS = 60;
+  const MAX_REPORT_PHOTOS = 120;
+  const MAX_ACTIVITY_PHOTOS = 3;
+
+  function activityKey(photo) {
+    return `${dateKey(photo && photo.date)}:${text(photo && (photo.activityName || photo.kind), 100).normalize("NFKC").replace(/\s+/gu, "")}`;
+  }
+
+  function similarPhoto(left, right) {
+    if (!left || !right) return false;
+    if ((left.id && left.id === right.id) || (left.imageHash && left.imageHash === right.imageHash)
+      || (left.dataUrl && left.dataUrl === right.dataUrl)) return true;
+    if (!/^[01]{64}$/u.test(left.sceneHash || "") || !/^[01]{64}$/u.test(right.sceneHash || "")) return false;
+    if (!Array.isArray(left.sceneTone) || !Array.isArray(right.sceneTone) || left.sceneTone.length !== 3 || right.sceneTone.length !== 3) return false;
+    if (!(left.sceneRatio > 0) || !(right.sceneRatio > 0) || Math.abs(left.sceneRatio / right.sceneRatio - 1) > 0.08) return false;
+    if (left.sceneTone.some((value, i) => !Number.isFinite(value) || !Number.isFinite(right.sceneTone[i]) || Math.abs(value - right.sceneTone[i]) > 16)) return false;
+    let distance = 0;
+    for (let i = 0; i < 64; i += 1) if (left.sceneHash[i] !== right.sceneHash[i]) distance += 1;
+    return distance <= 4;
+  }
+
+  function representativePhotos(photos, limit = MAX_REPORT_PHOTOS) {
+    const selected = [];
+    const counts = new Map();
+    const ordered = rows(photos).filter(photo => photo && typeof photo === "object" && !Array.isArray(photo)).slice(0, 240).sort((a, b) => String(a.date || "9999").localeCompare(String(b.date || "9999"))
+      || activityKey(a).localeCompare(activityKey(b), "ko"));
+    for (const photo of ordered) {
+      const key = activityKey(photo);
+      if ((counts.get(key) || 0) >= MAX_ACTIVITY_PHOTOS || selected.some(other => similarPhoto(photo, other))) continue;
+      selected.push(photo);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      if (selected.length >= Math.min(MAX_REPORT_PHOTOS, Math.max(1, limit))) break;
+    }
+    return selected;
+  }
+
+  function groupPhotos(photos) {
+    const groups = new Map();
+    for (const photo of representativePhotos(photos)) {
+      const key = activityKey(photo);
+      if (!groups.has(key)) groups.set(key, { date: dateKey(photo.date), activityName: text(photo.activityName, 100) || "활동명 확인 필요", photos: [] });
+      groups.get(key).photos.push(photo);
+    }
+    return [...groups.values()];
+  }
+
+  function activityRows(works, evidence, month) {
+    const groups = new Map();
+    for (const photo of rows(evidence).filter(photo => photo && typeof photo === "object" && !Array.isArray(photo)).slice(0, 240)) {
+      const date = dateKey(photo.date);
+      const kind = text(photo.activityName || photo.kind, 100);
+      const parsed = new Date(`${date}T00:00:00Z`);
+      if (!date || monthOf(date) !== month || !kind || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) continue;
+      const key = activityKey({ date, kind });
+      if (!groups.has(key)) groups.set(key, { date, dateText: dayText(date), kind, summaries: [], observations: [], done: false, statusLabel: "작업 결과 확인 필요", unit: "", amountText: "", workCount: 0 });
+      const group = groups.get(key);
+      const caption = text(photo.caption, 140);
+      if (caption && !group.observations.includes(caption)) group.observations.push(caption);
+    }
+    for (const work of works) {
+      const key = activityKey(work);
+      if (!groups.has(key)) groups.set(key, { ...work, summaries: [], observations: [], workCount: 0, done: true });
+      const group = groups.get(key);
+      group.workCount += 1;
+      group.done = group.workCount === 1 ? work.done : group.done && work.done;
+      group.statusLabel = group.done ? "완료" : work.statusLabel === "예정" ? "예정" : "진행 중";
+      group.unit = group.unit || work.unit;
+      group.amountText = group.amountText || work.amountText;
+      if (work.summary && !group.summaries.includes(work.summary)) group.summaries.push(work.summary);
+    }
+    return [...groups.values()].sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind, "ko")).map(group => Object.freeze({
+      date: group.date, dateText: group.dateText, kind: group.kind, unit: group.unit, done: group.done, statusLabel: group.statusLabel, amountText: group.amountText,
+      summary: group.summaries.join(" / ") || (group.workCount ? "작업 내용 미입력" : `${group.kind} 관련 현장 기록입니다.${group.observations.length ? ` ${group.observations.slice(0, 3).join(" · ")}.` : ""} 작업 결과는 확인 후 반영합니다.`),
+      observations: Object.freeze(group.observations.slice(0, 3)),
+    }));
+  }
 
   function text(value, limit) {
     return String(value == null ? "" : value).replace(/\s+/gu, " ").trim().slice(0, limit || 300);
@@ -214,6 +289,13 @@
       attention: text(inputNarrative.attention, 600),
       nextMonthPlan: text(inputNarrative.nextMonthPlan || source.nextMonthPlan, 800),
     });
+    const photos = representativePhotos(rows(source.photos)).map(photo => Object.freeze({
+      name: text(photo && photo.name, 120) || "현장 사진", caption: text(photo && photo.caption, 180),
+      date: dateKey(photo.date), activityName: text(photo.activityName, 100),
+      dataUrl: /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(String(photo && photo.dataUrl || ""))
+        && String(photo.dataUrl).length <= 220000 ? String(photo.dataUrl) : "",
+    })).filter(photo => photo.dataUrl);
+    const activities = activityRows(works, rows(source.activityEvidence).concat(rows(source.photos)), month);
 
     return Object.freeze({
       documentTitle: "월간 관리 보고서",
@@ -226,12 +308,8 @@
       works: Object.freeze(works),
       units: Object.freeze(units),
       narrative,
-      photos: Object.freeze(rows(source.photos).slice(0, 12).map(photo => Object.freeze({
-        name: text(photo && photo.name, 120) || "현장 사진",
-        caption: text(photo && photo.caption, 180),
-        dataUrl: /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(String(photo && photo.dataUrl || ""))
-          && String(photo.dataUrl).length <= 220000 ? String(photo.dataUrl) : "",
-      })).filter(photo => photo.dataUrl)),
+      photos: Object.freeze(photos),
+      activities: Object.freeze(activities),
       summary: Object.freeze({
         workCount: works.length,
         doneCount: works.filter(item => item.done).length,
@@ -274,5 +352,6 @@
     monthText,
     currentMonthKey,
     isReportMonthSelectable,
+    activityRows, activityKey, groupPhotos, representativePhotos, similarPhoto, MAX_REPORT_PHOTOS, MAX_ACTIVITY_PHOTOS,
   });
 });

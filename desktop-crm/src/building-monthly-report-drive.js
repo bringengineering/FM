@@ -45,10 +45,15 @@ function parseActivityFolderName(value, month, buildingName, buildingAddress) {
   return Object.freeze({ date, activityName });
 }
 
+function parseActivityFileName(value, month, buildingName, buildingAddress) {
+  return parseActivityFolderName(String(value || "").replace(/\.(?:jpe?g|png|webp|heic|heif|gif)$/iu, ""), month, buildingName, buildingAddress);
+}
+
 async function findActivityFolders({ root, month, buildingName, buildingAddress, list, assertCurrent = () => {} }) {
   const queue = [{ folder: root, depth: 0 }];
   const visited = new Set();
   const matches = [];
+  const files = [];
   let truncated = false;
   while (queue.length && visited.size < 60 && matches.length < 40) {
     assertCurrent();
@@ -62,6 +67,12 @@ async function findActivityFolders({ root, month, buildingName, buildingAddress,
     const children = await list(folder);
     assertCurrent();
     truncated ||= children.truncated === true;
+    for (const file of children.files || []) {
+      const parsedFile = parseActivityFileName(file.name, month, buildingName, buildingAddress);
+      if (!parsedFile) continue;
+      if (files.length >= 120) { truncated = true; break; }
+      files.push({ item: file, parsed: parsedFile, parent: folder });
+    }
     for (const child of children.folders || []) {
       if (!/^[A-Za-z0-9_-]{10,200}$/u.test(String(child.id || ""))) continue;
       if (/^\d{6,8}[_ -]/u.test(child.name || "") && !parseActivityFolderName(child.name, month, buildingName, buildingAddress)) continue;
@@ -74,7 +85,7 @@ async function findActivityFolders({ root, month, buildingName, buildingAddress,
       else truncated = true;
     }
   }
-  return { folders: matches.sort((a, b) => a.parsed.date.localeCompare(b.parsed.date) || a.item.id.localeCompare(b.item.id)), truncated: truncated || queue.length > 0 };
+  return { folders: matches.sort((a, b) => a.parsed.date.localeCompare(b.parsed.date) || a.item.id.localeCompare(b.item.id)), files, truncated: truncated || queue.length > 0 };
 }
 
-module.exports = Object.freeze({ parseActivityFolderName, normalizeWord, activityCategory, findActivityFolders });
+module.exports = Object.freeze({ parseActivityFolderName, parseActivityFileName, normalizeWord, activityCategory, findActivityFolders });

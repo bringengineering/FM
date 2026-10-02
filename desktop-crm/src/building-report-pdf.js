@@ -20,17 +20,17 @@ function worksHtml(works) {
   if (!works.length) {
     return `<p class="empty">이 기간에 처리한 업무가 없습니다.</p>`;
   }
-  return `<table class="grid"><thead><tr><th>일자</th><th>호실</th><th>업무</th><th>내용</th><th>상태</th><th>금액</th></tr></thead><tbody>${
-    works.map(work => `<tr><td>${html(work.dateText)}</td><td>${html(work.unit || "공용부")}</td><td>${html(work.kind)}</td><td class="left">${html(work.summary)}</td><td><span class="chip ${work.done ? "done" : "todo"}">${html(work.statusLabel || (work.done ? "완료" : "진행 중"))}</span></td><td class="money">${html(work.amountText)}</td></tr>`).join("")
+  return `<table class="grid"><thead><tr><th>일자</th><th>활동명</th><th>작업 내용 및 확인 결과</th><th>상태</th></tr></thead><tbody>${
+    works.map(work => `<tr><td>${html(work.dateText)}</td><td class="activity-name">${html(work.kind)}</td><td class="left">${html(work.summary)}${work.unit || work.amountText ? `<small>${html([work.unit, work.amountText].filter(Boolean).join(" · "))}</small>` : ""}</td><td><span class="chip ${work.done ? "done" : "todo"}">${html(work.statusLabel || (work.done ? "완료" : "진행 중"))}</span></td></tr>`).join("")
   }</tbody></table>`;
 }
 
 function photosHtml(photos) {
-  const rows = Array.isArray(photos) ? photos.filter(photo => photo && photo.dataUrl).slice(0, 12) : [];
+  const rows = Array.isArray(photos) ? photos.filter(photo => photo && photo.dataUrl) : [];
   if (!rows.length) return "";
-  return `<section class="photo-section"><h2>현장 사진</h2><div class="photos">${rows.map(photo =>
-    `<figure><img src="${html(photo.dataUrl)}" alt="${html(photo.caption || photo.name || "현장 사진")}"><figcaption>${html(photo.caption || photo.name || "현장 사진")}</figcaption></figure>`
-  ).join("")}</div></section>`;
+  return `<section class="photo-section"><h2>날짜별 현장 활동 사진</h2>${BuildingReportCore.groupPhotos(rows).map(group => `<section class="photo-group"><h3><time>${html(group.date || "날짜 확인 필요")}</time>${html(group.activityName)}</h3><div class="photos${group.photos.length === 3 ? " three" : ""}">${group.photos.map(photo =>
+    `<figure><img src="${html(photo.dataUrl)}" alt="${html(photo.caption || group.activityName)}"><figcaption><time>${html(group.date || "날짜 확인 필요")} · ${html(group.activityName)}</time>${html(photo.caption || `${group.activityName} 관련 현장 사진`)}</figcaption></figure>`
+  ).join("")}</div></section>`).join("")}</section>`;
 }
 
 function unitsHtml(units) {
@@ -58,7 +58,7 @@ function createBuildingReportHtml(report) {
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff;color:#191F28;font-family:"Malgun Gothic","맑은 고딕",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{width:186mm}
-.doc{display:flex;flex-direction:column;gap:6mm}
+.doc{display:block}.doc>header,.doc>section,.doc>p,.doc>.total{margin-bottom:6mm}
 .head{display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:3mm;border-bottom:1.6px solid #191F28}
 .head h1{margin:0;font-size:19pt;font-weight:800;letter-spacing:.14em}
 .head .sub{margin:1.5mm 0 0;font-size:10pt;color:#4E5968}
@@ -102,16 +102,41 @@ section>h2{margin:0 0 2mm;font-size:10.5pt;font-weight:800}
 .empty{margin:0;padding:4mm;border:1px dashed #E5E8EB;border-radius:2mm;color:#8B95A1;font-size:8.5pt;text-align:center}
 footer{margin-top:2mm;padding-top:3mm;border-top:1px solid #E5E8EB;display:flex;justify-content:space-between;align-items:baseline;font-size:8pt;color:#8B95A1}
 footer b{color:#191F28;font-size:9pt}
+/* Approved BRING CARE paper: quiet sky-blue sections, chronological records. */
+html,body{color:#193e53}
+.head{align-items:center;background:#eaf6fd;border-top:1mm solid #80cdec;border-bottom:0;padding:6mm 5mm}
+.head h1{font-size:20pt;letter-spacing:-.02em;color:#193e53}
+.head .brand{display:block;margin-bottom:3mm;color:#148cc1;font-size:9pt;font-weight:800;letter-spacing:.18em}
+.head .sub{color:#456f87}.head .meta,.head .meta b{color:#456f87}
+.monthly-summary{padding:4mm 5mm;background:#f3faff;border-left:1mm solid #83cde9}
+section>h2{color:#214d65;font-size:11pt;break-after:avoid}
+.greeting{color:#45677b;line-height:1.8}
+.stat{border-color:#d8eaf4;background:#f4fbff}.stat b{color:#214d65}
+.grid th,.grid td{border-color:#d8eaf4;vertical-align:top;overflow-wrap:anywhere;word-break:normal;padding:3mm 2mm;line-height:1.65}
+.grid thead th{background:#eaf6fd;color:#386f8a}
+.grid th:nth-child(1){width:15mm}.grid th:nth-child(2){width:30mm}.grid th:nth-child(3){width:auto}.grid th:nth-child(4){width:27mm}
+.grid td:first-child{color:#148cc1;font-weight:700}.grid .activity-name{text-align:left;font-weight:700}
+.grid td small{display:block;margin-top:1mm;font-size:7.3pt;color:#6a8190}
+.grid tr,.unit,.total{break-inside:avoid}.grid thead{display:table-header-group}
+.photo-section{break-before:page}.photo-group{break-inside:avoid;margin:5mm 0 7mm}
+.photo-group h3{padding:3mm 4mm;background:#eaf6fd;border-top:.3mm solid #d8eaf4;font-size:10pt;margin:0 0 3mm;line-height:1.5}
+.photo-group h3 time{display:inline-block;margin-right:4mm;color:#347c9d;font-size:9pt}
+.photos{grid-template-columns:repeat(2,minmax(0,1fr));gap:3mm}.photos.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.photos img{height:54mm;object-fit:contain;background:#f4f9fc}.photos.three img{height:42mm}
+.photos figure{border-color:#d8eaf4;border-radius:0}.photos figcaption{color:#34586e;line-height:1.6}
+.photos figcaption time{display:block;color:#357e9e;font-size:7pt;margin-bottom:1mm}
+.total{background:#eaf6fd;color:#214d65;border:1px solid #d8eaf4}footer{border-color:#d8eaf4}footer b{color:#148cc1}
 </style></head><body><main class="doc">
-<header class="head"><div><h1>${html(report.documentTitle)}</h1><p class="sub">${html(report.buildingName)} · ${html(report.monthText)}</p></div><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAt)}</div></header>
+<header class="head"><div><span class="brand">BRING CARE</span><h1>${html(report.documentTitle)}</h1><p class="sub">${html(report.buildingName)} · ${html(report.monthText)}</p></div><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAt)}</div></header>
 <p class="greeting">${html(report.ownerName || "건물주")}님, ${html(report.monthText)} ${html(report.buildingName)} 관리 내역을 보고드립니다.${report.address ? ` (${html(report.address)})` : ""}</p>
-${report.narrative && report.narrative.summary ? `<section><h2>이번 달 관리 요약</h2><p class="greeting">${html(report.narrative.summary)}</p>${report.narrative.attention ? `<p class="greeting"><b>확인 사항</b> · ${html(report.narrative.attention)}</p>` : ""}</section>` : ""}
+${report.narrative && report.narrative.summary ? `<section class="monthly-summary"><h2>이번 달 관리 요약</h2><p class="greeting">${html(report.narrative.summary)}</p></section>` : ""}
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
-<section><h2>처리한 업무</h2>${worksHtml(report.works)}</section>
-${photosHtml(report.photos)}
+<section><h2>날짜별 활동 내역</h2>${worksHtml(report.activities || report.works)}</section>
+${report.narrative?.attention ? `<section><h2>관리 결과 및 후속 확인</h2><p class="greeting">${html(report.narrative.attention)}</p></section>` : ""}
 <section><h2>호실 현황</h2>${unitsHtml(report.units)}</section>
 ${report.narrative && report.narrative.nextMonthPlan ? `<section><h2>다음 달 예정 관리</h2><p class="greeting">${html(report.narrative.nextMonthPlan)}</p></section>` : ""}
 ${summary.billedText ? `<div class="total"><span>${html(report.monthText)} 청구 합계</span><b>${html(summary.billedText)}</b></div>` : ""}
+${photosHtml(report.photos)}
 <footer><span>${html(contact)}</span><b>${html(report.company.name)}</b></footer>
 </main></body></html>`;
 }

@@ -47,11 +47,11 @@ function validateInput(input) {
   });
   const images = input.images.map(item => {
     if (!item || typeof item !== "object" || Array.isArray(item)
-      || Object.keys(item).some(key => !["id", "date", "dataUrl"].includes(key))) throw codedError("INVALID_INPUT");
+      || Object.keys(item).some(key => !["id", "date", "dataUrl", "activityName"].includes(key))) throw codedError("INVALID_INPUT");
     const id = String(item.id || "").trim();
     const date = String(item.date || "").trim();
     if (!/^[A-Za-z0-9_-]{1,200}$/u.test(id) || !validDayInMonth(date, input.month) || !validImage(item.dataUrl)) throw codedError("INVALID_INPUT");
-    return { id, date, dataUrl: item.dataUrl };
+    return { id, date, dataUrl: item.dataUrl, ...(item.activityName == null ? {} : { activityName: String(item.activityName).replace(/\s+/gu, " ").trim().slice(0, 100) }) };
   });
   if (new Set(images.map(item => item.id)).size !== images.length) throw codedError("INVALID_INPUT");
   return { month: input.month, activities, images };
@@ -66,7 +66,7 @@ function validDayInMonth(value, month) {
 
 function normalizeResponse(value, expectedIds) {
   if (!value || value.ok !== true || !Array.isArray(value.selected)
-    || value.selected.length > Math.min(12, expectedIds.length)) throw codedError("AI_INVALID_RESPONSE");
+    || value.selected.length > Math.min(MAX_IMAGES, expectedIds.length)) throw codedError("AI_INVALID_RESPONSE");
   const expected = new Set(expectedIds);
   const seen = new Set();
   const selected = [];
