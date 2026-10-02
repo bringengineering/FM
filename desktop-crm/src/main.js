@@ -3327,18 +3327,28 @@ function monthlyReportBuildingIdentity(building = {}) {
   return BuildingMonthlyReportDrive.normalizeWord(name || building.roadAddress || building.address || building.jibunAddress);
 }
 
+function monthlyReportPhotoCaption(photo, file) {
+  // A report-local, reviewed caption is allowed; identity/date/activity still
+  // come exclusively from the account-scoped Drive picker cache.
+  if (photo?.caption != null && (typeof photo.caption !== "string" || photo.caption.length > 140)) {
+    throw Object.assign(new Error("사진 설명은 140자 이내의 글로 입력해 주세요."), { code: "INVALID_INPUT" });
+  }
+  return String(photo?.caption || file.monthlyReportCaption || "").replace(/\s+/gu, " ").trim().slice(0, 140);
+}
+
 function monthlyReportActivityEvidence(input) {
   const ids = input.activityFileIds == null ? (input.photos || []).map(photo => photo.id) : input.activityFileIds;
   if (!Array.isArray(ids) || ids.length > 120) throw new Error("활동 기록을 다시 불러와 주세요.");
   if (!ids.length) return [];
   const picker = reportDrivePickerReady();
   const identity = monthlyReportBuildingIdentity(input.building);
+  const captions = new Map((input.photos || []).map(photo => [photo.id, photo]));
   return [...new Set(ids)].map(value => {
     const file = picker.files.get(reportDrivePickerId(value));
     if (!identity || !file || file.monthlyReportBuilding !== identity || file.monthlyReportDate?.slice(0, 7) !== input.month) {
       throw new Error("선택한 건물과 보고 월의 활동 기록을 다시 찾아 주세요.");
     }
-    return { date: file.monthlyReportDate, activityName: file.monthlyReportActivity, caption: file.monthlyReportCaption || "" };
+    return { date: file.monthlyReportDate, activityName: file.monthlyReportActivity, caption: monthlyReportPhotoCaption(captions.get(file.id), file) };
   });
 }
 
@@ -3362,6 +3372,7 @@ async function prepareBuildingMonthlyReportArtifact(input) {
     || Object.keys(photo).some(key => !["id", "caption"].includes(key)))) {
     throw Object.assign(new Error("보고서 사진 선택을 다시 확인해 주세요."), { code: "INVALID_INPUT" });
   }
+  selectedPhotos.forEach(photo => monthlyReportPhotoCaption(photo, {}));
   const activityEvidence = monthlyReportActivityEvidence(input);
   let reportPhotos = [];
   if (selectedPhotos.length) {
@@ -3380,7 +3391,7 @@ async function prepareBuildingMonthlyReportArtifact(input) {
       const dataUrl = await workReportClassificationSource(file, picker, accessToken);
       if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
       return { id: file.id, name: file.name, date: file.monthlyReportDate, activityName: file.monthlyReportActivity,
-        caption: String(photo.caption || file.monthlyReportCaption || "").replace(/[\r\n]+/gu, " ").trim().slice(0, 140), dataUrl,
+        caption: monthlyReportPhotoCaption(photo, file), dataUrl,
         ...MonthlyPhotoFingerprint.fingerprint(dataUrl, nativeImage) };
     };
     // Keep image downloads bounded even when a month has many activity groups.
@@ -9919,7 +9930,7 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     const buildingName = ["", "건물명 미입력", "관리 건물"].includes(String(building.name || "").trim()) ? "" : building.name;
     const identity = BuildingMonthlyReportDrive.normalizeWord(buildingName || building.roadAddress || building.address || building.jibunAddress);
     if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
-    return { date: file.monthlyReportDate, caption: file.monthlyReportCaption, kind: file.monthlyReportActivity };
+    return { date: file.monthlyReportDate, caption: monthlyReportPhotoCaption(photo, file), kind: file.monthlyReportActivity };
   });
   const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input) }), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);

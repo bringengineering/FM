@@ -105,6 +105,21 @@
 .building-monthly-photo-card b,.building-monthly-photo-card small{display:block;overflow:hidden;text-overflow:ellipsis}
 .building-monthly-photo-card b{color:#34576d;font-size:11px;line-height:1.4}
 .building-monthly-photo-card small{margin-top:4px;color:#8195a3;font-size:9px;white-space:nowrap}
+.building-monthly-caption-edit{display:block;margin-top:6px;padding:5px 9px;border:1px solid #d3e6f5;border-radius:7px;background:#f2f9ff;color:#2378b5;font:inherit;font-size:11px;cursor:pointer}
+.building-monthly-caption-edit:disabled{opacity:.5;cursor:not-allowed}
+.building-monthly-photo-card b,.building-monthly-activity-photo-grid figcaption{overflow-wrap:anywhere}
+.modal-card:has(.building-monthly-caption-editor){width:min(580px,calc(100vw - 32px));padding:0;overflow:auto}
+.building-monthly-caption-editor .modal-head{padding:22px 24px;background:#edf7ff;border-bottom:1px solid #d5e5f0}
+.building-monthly-caption-editor .modal-head small{display:block;margin-bottom:7px;font-size:12px;color:#297cb5}
+.building-monthly-caption-editor form{padding:22px 24px}
+.building-monthly-caption-meta{margin:0 0 20px;color:#658297;font-size:13px}
+.building-monthly-caption-editor label{display:block;margin-bottom:10px;color:#21465e;font-size:14px;font-weight:700}
+.building-monthly-caption-editor textarea{width:100%;min-height:112px;padding:13px 14px;border:1px solid #adcfe8;border-radius:9px;background:#fbfdff;color:#21465e;font:inherit;font-size:16px;line-height:1.65;resize:vertical}
+.building-monthly-caption-count{text-align:right;margin:7px 0;color:#658297;font-size:12px}
+.building-monthly-caption-help{color:#658297;font-size:12px;line-height:1.6}
+.building-monthly-caption-error{color:#bc3344;font-size:12px}
+.building-monthly-caption-editor .form-actions{flex-wrap:wrap}
+@media print{.building-monthly-caption-edit{display:none}}
 .building-monthly-photo-empty{grid-column:1/-1;padding:16px;border:1px dashed #d5e4ed;border-radius:10px;color:#8398a6;text-align:center;font-size:11px}
 .building-monthly-candidates{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;color:#7890a0;font-size:10px}
 .building-monthly-paper-photos{display:grid;gap:14px;margin-top:18px}

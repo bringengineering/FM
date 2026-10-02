@@ -61,3 +61,53 @@ test("로그인 해제와 마케팅 계정은 PDF용 사진을 내려받지 않�
   assert.equal((await h.context.prepareBuildingMonthlyReportArtifact(h.input)).ok, false);
   assert.equal(h.stats().downloads, 0);
 });
+
+test("수정한 사진 설명은 PDF와 날짜별 활동 내역에 반영하되 Drive 원본 메타데이터는 유지한다", async () => {
+  const h = harness();
+  const caption = "쓰레기와 적치 물품을\n정리한 현장입니다.";
+  const input = { ...h.input, photos: [{ id: "photo_0", caption }], activityFileIds: ["photo_0"] };
+  const result = await h.context.prepareBuildingMonthlyReportArtifact(input);
+  assert.equal(result.report.photos[0].caption, "쓰레기와 적치 물품을 정리한 현장입니다.");
+  assert.equal(result.report.photos[0].date, "2026-09-01");
+  assert.equal(result.report.photos[0].activityName, "폐기물처리");
+  assert.match(result.report.activities[0].summary, /적치 물품/u);
+  assert.equal(h.files.get("photo_0").monthlyReportCaption, "검증된 사진 관찰");
+  const html = require("../src/building-report-pdf").createBuildingReportHtml(result.report);
+  assert.match(html, /쓰레기와 적치 물품을 정리한 현장입니다\./u);
+  assert.doesNotMatch(html, /설명 수정|설명 저장/u);
+});
+
+test("사진 설명의 HTML은 PDF에서 이스케이프하고 비문자·140자 초과는 다운로드 전에 거부한다", async () => {
+  const h = harness();
+  for (const caption of [{ url: "https://example.invalid" }, 42, "가".repeat(141)]) {
+    await assert.rejects(h.context.prepareBuildingMonthlyReportArtifact({ ...h.input, photos: [{ id: "photo_0", caption }] }), { code: "INVALID_INPUT" });
+  }
+  assert.equal(h.stats().downloads, 0);
+  const result = await h.context.prepareBuildingMonthlyReportArtifact({ ...h.input, photos: [{ id: "photo_0", caption: '<img src=x onerror="alert(1)">' }], activityFileIds: ["photo_0"] });
+  const html = require("../src/building-report-pdf").createBuildingReportHtml(result.report);
+  assert.doesNotMatch(html, /<img src=x/u);
+  assert.match(html, /&lt;img src=x/u);
+});
+
+test("AI 문장 재작성도 수정한 설명을 사용하고 다른 건물·미등록 사진은 계속 거부한다", async () => {
+  const h = harness();
+  let captured;
+  h.context.remoteClient.authState = () => ({ user: { uid: "synthetic", role: "member" } });
+  h.context.secureCanonicalHandle = (_name, handler) => { h.context.draft = handler; };
+  h.context.createBuildingReportWriter = () => async input => { captured = input.report; return { narrative: {} }; };
+  h.context.app = { getPath: () => "synthetic-only" };
+  const start = source.indexOf("let buildingReportWriter = null;");
+  const end = source.indexOf('secureCanonicalHandle("crm:work-report-photo-classify"', start);
+  vm.runInContext(source.slice(start, end), h.context);
+  const input = { ...h.input, photos: [{ id: "photo_0", caption: "직접 검토한 사진 설명" }], activityFileIds: ["photo_0"] };
+  await h.context.draft(input);
+  assert.equal(captured.photoEvidence[0].caption, "직접 검토한 사진 설명");
+  assert.match(captured.activities[0].summary, /직접 검토한/u);
+  assert.equal(captured.photoEvidence[0].kind, "폐기물처리");
+  await assert.rejects(h.context.draft({ ...input, building: { name: "다른 건물" } }));
+  await assert.rejects(h.context.draft({ ...input, photos: [{ id: "unlisted", caption: "직접 검토" }] }));
+  h.context.remoteClient.authState = () => ({ user: { uid: "synthetic", role: "viewer" } });
+  await assert.rejects(h.context.draft(input), /권한/u);
+  h.context.remoteClient.authState = () => ({ user: null });
+  await assert.rejects(h.context.draft(input), /권한/u);
+});

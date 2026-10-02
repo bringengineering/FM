@@ -31,6 +31,7 @@
    data.buildings[0].monthlyReportEnabled=true;data.buildings[1].monthlyReportEnabled=true;
    const source={id:'syntheticMonthlyFolder01',name:'07. 건물 임대차 & 활동 사진',kind:'folder'};
    window.__monthlyQA={calls:[],fail:false,delay:0};
+   methods.exportBuildingMonthlyReport=async input=>{window.__monthlyQA.exported=structuredClone(input);return {ok:true};};
    methods.driveStatus=async()=>({connected:true,email:'preview@example.invalid'});
    methods.buildingMonthlyPhotoSource=async input=>{
      if(input.folderId){if(input.folderId!==source.id)throw new Error('가상 폴더만 사용');localStorage.setItem('monthly-synthetic-source','1');}
