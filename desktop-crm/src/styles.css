@@ -1437,6 +1437,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-ai-photo-card b { color: #191F28; font-size: 10px; }
 .wr-ai-photo-card span { margin: 4px 0 7px; color: #6B7684; font-size: 8px; }
 .wr-ai-photo-card select { width: 100%; min-height: 32px; padding: 5px 27px 5px 8px; border: 1px solid #CFE0EE; border-radius: 8px; background: #fff; color: #173F5F; font-size: 9px; font-weight: 750; }
+.wr-ai-photo-review>header { flex-wrap: wrap; }
+.wr-ai-photo-review>header span { font-size: 12px; }
+.wr-ai-photo-review>div,.wr-ai-ready-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,250px),1fr)); gap: 12px; max-height: 420px; overflow-y: auto; }
+.wr-ai-photo-review details { margin-top: 14px; border-top: 1px solid #E5E8EB; padding-top: 12px; }
+.wr-ai-photo-review summary { padding: 6px 0; font-size: 12px; cursor: pointer; }
+.wr-ai-ready-grid { margin-top: 10px; }
+.wr-ai-photo-card b { font-size: 12px; }
+.wr-ai-photo-card span,.wr-ai-photo-card small { font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
+.wr-ai-photo-card label { display: block; margin-top: 8px; color: #6B7684; font-size: 11px; }
+.wr-ai-photo-card select { font-size: 12px; min-height: 36px; }
+.wr-ai-photo-card small { display: block; margin-top: 7px; color: #6B7684; }
 .wr-drive-head em { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #00875A; font-size: 10px; font-style: normal; font-weight: 850; }
 .wr-drive-head em i { width: 7px; height: 7px; border-radius: 50%; background: #04A66B; }
 .wr-drive-launch { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 11px; padding: 12px; border: 1px solid #DDE6EE; border-radius: 11px; background: #fff; }

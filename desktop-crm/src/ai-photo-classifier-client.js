@@ -14,6 +14,7 @@ const ERROR_MESSAGES = Object.freeze({
   INPUT_TOO_LARGE: "한 번에 분류할 사진이 너무 많거나 큽니다.",
   RATE_LIMITED: "AI 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",
   AI_DISABLED: "회사 AI 기능이 현재 꺼져 있습니다.",
+  GEMINI_NOT_CONFIGURED: "회사 Gemini 연결 설정을 확인해 주세요. 사진은 직접 분류할 수 있습니다.",
   AI_TEMPORARY_FAILURE: "AI 사진 분류를 일시적으로 사용할 수 없습니다.",
   AI_INVALID_RESPONSE: "AI 사진 분류 결과를 안전하게 확인할 수 없습니다.",
   AI_CONFIGURATION_ERROR: "회사 AI 사진 분류 주소가 올바르지 않습니다.",

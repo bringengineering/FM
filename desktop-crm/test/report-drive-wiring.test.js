@@ -192,7 +192,8 @@ test("AI 사진 분류는 표시된 파일의 작은 JPEG만 전송하고 사람
   assert.match(classify, /classifyPhotosWithGateway/u);
   assert.doesNotMatch(classify, /webViewLink|ownerContact|siteAddress/u);
   const box = functionBody(appSource, "reportDriveBox");
-  assert.match(box, /AI로 사진 구역 분류/u);
+  assert.match(box, /Gemini 사진 구역 자동분류/u);
+  assert.match(box, /data-report-photo-phase/u);
   assert.match(box, /data-report-photo-category/u);
   assert.match(box, /분류 확인 후 초안에 적용/u);
   assert.match(appSource, /async function classifyReportDrivePhotos/u);
@@ -212,9 +213,13 @@ test("Drive 사진 선택 전에 CRM 건물을 먼저 고르게 한다", () => {
 test("끌어온 것이 사람이 적은 것을 덮지 않는다", () => {
   // 사람이 이미 적어 둔 비고와 상태가 사라지면, 다시 적을 사람은 없다.
   const body = functionBody(appSource, "applyReportDrivePlan");
-  assert.match(body, /before: item\.before\.concat\(found\.before\)/u);
-  assert.match(body, /after: item\.after\.concat\(found\.after\)/u);
-  assert.match(body, /note: item\.note \|\| found\.note/u);
+  assert.match(body, /P\.mergeDraftPhotos\(draft\.items, made\.draft\.items\)/u);
+  const existing = [{ key: "bath", note: "직접 작성", status: "partial", before: [{ id: "a", caption: "원래 설명" }], after: [] }];
+  const merged = P.mergeDraftPhotos(existing, [{ key: "bath", note: "덮어쓰면 안 됨", status: "done", before: [{ id: "a" }], after: [{ id: "b" }] }]);
+  assert.equal(merged.items[0].note, "직접 작성");
+  assert.equal(merged.items[0].status, "partial");
+  assert.equal(merged.items[0].before[0].caption, "원래 설명");
+  assert.equal(merged.added, 1);
   // 저장은 사람이 누를 때만. 여기서 서버로 보내지 않는다.
   assert.doesNotMatch(body, /api\.saveWorkReport/u);
 });
@@ -223,7 +228,7 @@ test("자동 연결되지 않은 Drive 폴더는 사람이 보고서 항목을 �
   const box = functionBody(appSource, "reportDriveBox");
   assert.match(box, /data-report-drive-item/u);
   assert.match(box, /보고서 항목 선택/u);
-  assert.match(box, /보고서 항목을 먼저 선택하세요/u);
+  assert.match(box, /구역·전후 확인 필요/u);
   assert.match(box, /unresolvedCount/u);
   const assign = functionBody(appSource, "assignReportDriveBucket");
   assert.match(assign, /R\.itemsFor/u);
@@ -238,7 +243,7 @@ test("자동 연결되지 않은 Drive 폴더는 사람이 보고서 항목을 �
 test("화면과 규칙이 같은 모듈을 쓴다", () => {
   // 화면이 항목 잇는 표를 따로 들면 서버와 어긋난다.
   const body = functionBody(appSource, "applyReportDrivePlan");
-  assert.match(body, /P\.toReportDraft\(resolvedPlan, \{ core: R, kind: draft\.kind \}\)/u);
+  assert.match(body, /P\.toReportDraft\(resolvedPlan, \{ core: R, kind: draft\.kind, requireResolved: true \}\)/u);
   assert.ok(indexSource.includes('<script src="./report-photo-plan.js"></script>'));
   // main.js 도 같은 모듈을 쓴다.
   assert.match(mainSource, /const ReportPhotoPlan = require\("\.\/report-photo-plan"\)/u);

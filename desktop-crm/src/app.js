@@ -8576,7 +8576,7 @@
     selectedId: "", draft: null, busyKey: "", readOnlyReason: "",
     driveScanning: false,
     drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
-    driveClassificationLoading: false, driveClassifications: [],
+    driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
     driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
@@ -8588,6 +8588,7 @@
   const reportCore = () => window.BringWorkReportCore;
 
   function resetReportDriveSelection() {
+    reportState.driveRequestGeneration += 1;
     reportState.driveScanning = false;
     reportState.drivePlan = null;
     reportState.driveBasePlan = null;
@@ -8864,17 +8865,22 @@
     const unresolvedCount = plan ? plan.buckets.filter(bucket => !effectiveItemKey(bucket)
       && bucket.before.length + bucket.after.length + bucket.unsorted.length > 0).length : 0;
     const matchedCount = plan ? plan.buckets.filter(bucket => effectiveItemKey(bucket)).length : 0;
-    const classifications = plan && Array.isArray(plan.aiClassifications) ? plan.aiClassifications : [];
+    const photoRows = plan ? reportPhotoPlan().photoReviewRows(plan) : [];
+    const pendingCount = photoRows.filter(row => !reportItemKeys.has(row.itemKey) || row.phase === "unsorted").length;
+    const planWarnings = plan ? plan.warnings.filter(line => !/^\d+(?:곳은 작업 전·후|장은 AI가)/u.test(String(line))) : [];
     const selectedFiles = reportState.driveSelected instanceof Map ? reportState.driveSelected : new Map();
-    const classificationCards = classifications.map(row => {
-      const file = selectedFiles.get(String(row.id)) || {};
+    const classificationCard = row => {
+      const file = selectedFiles.get(String(row.id)) || row.file || {};
       const thumbnail = reportState.driveThumbnails instanceof Map ? String(reportState.driveThumbnails.get(String(row.id)) || "") : "";
       const preview = thumbnail
         ? `<span class="wr-ai-photo-thumb"><img src="${attr(thumbnail)}" alt=""></span>`
         : `<span class="wr-ai-photo-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span aria-hidden="true">▧</span></span>`;
-      const selectedKey = row.category === "review" ? "" : String(row.category || "");
-      return `<article class="wr-ai-photo-card${selectedKey ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${selectedKey ? `AI 추천 ${Number(row.confidence || 0)}%` : "직접 확인 필요"}${row.reason ? ` · ${esc(row.reason)}` : ""}</span><select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></div></article>`;
-    }).join("");
+      const selectedKey = reportItemKeys.has(row.itemKey) ? row.itemKey : "";
+      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span><label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>전·후<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ["before", "작업 전"], ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "전·후를 직접 선택해 주세요." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
+    };
+    const needsReview = row => !reportItemKeys.has(row.itemKey) || row.phase === "unsorted";
+    const classificationCards = photoRows.filter(needsReview).map(classificationCard).join("");
+    const readyCards = photoRows.filter(row => !needsReview(row)).map(classificationCard).join("");
     const rows = plan
       ? plan.buckets.map((bucket, index) => {
         const key = effectiveItemKey(bucket);
@@ -8897,27 +8903,27 @@
     return `<div class="wide wr-drive">
       <div class="wr-drive-head">
         <b>회사 Drive에서 사진 선택</b>
-        <small>주소나 폴더 ID를 입력하지 않고 Drive 화면에서 직접 고릅니다.</small>
+        <small>사진을 가져오면 입주청소 구역을 Gemini가 자동 추천합니다. 전·후는 직접 확인할 수 있습니다.</small>
         ${connected ? `<em><i></i>${driveState.autoRefresh ? "자동 연결됨" : driveState.restored ? "자동 복원됨" : "연결 유지됨"}</em>` : ""}
       </div>
       <div class="wr-drive-launch">
         <span class="wr-drive-launch-icon" aria-hidden="true">D</span>
         <div><b>${connected ? esc(driveState.email || "회사 계정") : driveState.reconnectRequired ? "Drive 재연결이 필요합니다" : driveState.loaded ? "Drive 연결이 필요합니다" : "Drive 연결 상태 확인 중…"}</b><small>${connected ? (selected ? `${selected}장 선택됨 · 다시 열어 변경할 수 있습니다.` : driveState.autoRefresh ? "업데이트 후에도 보안 연결을 자동으로 갱신합니다." : driveState.restored ? "다시 연결하지 않고 바로 사진을 선택할 수 있습니다." : "연결 정보가 안전하게 저장되었습니다.") : driveState.reconnectRequired ? "Google 권한이 만료되거나 해제되었습니다. 한 번 다시 연결하면 이후 업데이트에서 자동 복원됩니다." : "회사 Google 계정으로 연결하면 앱 안에서 사진을 선택할 수 있습니다."}</small></div>
         ${connected
-          ? `<button type="button" class="primary-button" data-report-drive-open${reportState.driveBrowserLoading ? " disabled" : ""}>Drive에서 사진 선택</button>`
+          ? `<button type="button" class="primary-button" data-report-drive-open${reportState.driveBrowserLoading || reportState.driveClassificationLoading ? " disabled" : ""}>Drive에서 사진 선택</button>`
           : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>${driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button>`}
       </div>
       ${reportState.driveError ? `<p class="wr-drive-error" role="alert">${esc(reportState.driveError)}</p>` : ""}
       ${plan ? `
-        ${plan.warnings.length ? `<ul class="wr-drive-warn">${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
-        ${plan.kind === "moveIn" ? `<div class="wr-ai-classify-bar"><div><b>사진 구역 자동 분류</b><small>원본 대신 메타데이터를 제거한 작은 JPEG만 회사 AI에 전송합니다. 주소·연락처·Drive 링크는 보내지 않습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected || selected > 30 ? " disabled" : ""}>${reportState.driveClassificationLoading ? "AI가 사진 분류 중…" : plan.aiClassified ? "✨ AI로 다시 분류" : "✨ AI로 사진 구역 분류"}</button></div>` : ""}
-        ${classificationCards ? `<div class="wr-ai-photo-review"><header><b>사진별 분류 확인</b><span>${classifications.length}장 · ${classifications.filter(row => row.category === "review").length}장 확인 필요</span></header><div>${classificationCards}</div></div>` : ""}
+        ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        ${plan.kind === "moveIn" ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
+        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·전후 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span></header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
           <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th><th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <div class="wr-drive-actions">
-          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount && !unresolvedCount && !reportState.driveClassificationLoading ? "" : " disabled"}>${unresolvedCount ? (plan.aiClassified ? "분류할 사진을 먼저 확인하세요" : "보고서 항목을 먼저 선택하세요") : "분류 확인 후 초안에 적용"}</button>
+          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount && !unresolvedCount && !pendingCount && !reportState.driveClassificationLoading ? "" : " disabled"}>${pendingCount ? `${pendingCount}장 구역·전후 확인 필요` : "분류 확인 후 초안에 적용"}</button>
           <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${matchedCount}개${unresolvedCount ? ` · 선택할 구역 ${unresolvedCount}개` : ""}</small>
         </div>` : ""}
     </div>`;
@@ -9156,7 +9162,8 @@
   }
 
   async function planSelectedReportDrivePhotos() {
-    if (reportState.driveScanning || !(reportState.driveSelected instanceof Map) || !reportState.driveSelected.size) return;
+    if (reportState.driveScanning || reportState.driveClassificationLoading || !(reportState.driveSelected instanceof Map) || !reportState.driveSelected.size) return;
+    const generation = ++reportState.driveRequestGeneration;
     preserveReportDraft();
     reportState.driveScanning = true;
     reportState.driveError = "";
@@ -9167,46 +9174,63 @@
         kind: reportState.draft ? reportState.draft.kind : "",
         buildingName: reportState.draft ? reportState.draft.buildingName : "",
       });
+      if (generation !== reportState.driveRequestGeneration) return;
+      preserveReportDraft();
       if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
       reportState.driveBasePlan = result.plan;
       reportState.drivePlan = result.plan;
       reportState.driveClassifications = [];
       reportState.drivePickerOpen = false;
-      showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 분류를 확인해 주세요.`, "success");
+      if (result.plan.kind === "moveIn") await classifyReportDrivePhotos();
+      else showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 구역과 전·후를 확인해 주세요.`, "success");
     } catch (error) {
+      if (generation !== reportState.driveRequestGeneration) return;
       reportState.drivePlan = null;
       reportState.driveBasePlan = null;
       reportState.driveClassifications = [];
       reportState.driveError = error && error.message || "선택한 사진을 분류하지 못했습니다.";
     } finally {
-      reportState.driveScanning = false;
-      if (currentView === "workReports") renderWorkReports();
+      if (generation === reportState.driveRequestGeneration) {
+        reportState.driveScanning = false;
+        if (currentView === "workReports") { preserveReportDraft(); renderWorkReports(); }
+      }
     }
   }
 
   async function classifyReportDrivePhotos() {
     const P = reportPhotoPlan();
     const basePlan = reportState.driveBasePlan || reportState.drivePlan;
-    if (!P || !basePlan || reportState.driveClassificationLoading) return;
+    if (!P || !basePlan || basePlan.kind !== "moveIn" || reportState.driveClassificationLoading) return;
+    const generation = reportState.driveRequestGeneration;
+    const active = () => generation === reportState.driveRequestGeneration && reportState.driveBasePlan === basePlan && currentView === "workReports";
     const fileIds = [...(reportState.driveSelected instanceof Map ? reportState.driveSelected.keys() : [])];
     if (!fileIds.length) return showToast("분류할 사진을 다시 선택해 주세요.", "error");
-    if (fileIds.length > 30) return showToast("AI 사진 분류는 한 번에 30장까지 가능합니다.", "error");
+    if (fileIds.length > 100) return showToast("사진은 한 번에 100장까지 선택해 주세요.", "error");
+    const manual = new Map(reportState.driveClassifications.filter(row => row.manual).map(row => [String(row.id), row]));
     preserveReportDraft();
     reportState.driveClassificationLoading = true;
     reportState.driveError = "";
     renderWorkReports();
     try {
-      const result = await api.classifyWorkReportPhotos({ fileIds, kind: "moveIn" });
-      if (!result || result.ok !== true || !Array.isArray(result.classifications)) throw new Error((result && result.error) || "AI 사진 분류 결과를 확인하지 못했습니다.");
-      reportState.driveClassifications = result.classifications;
-      reportState.drivePlan = P.applyPhotoClassifications(basePlan, result.classifications);
-      const review = result.classifications.filter(row => row.category === "review").length;
-      showToast(`AI가 사진 ${result.classifications.length}장을 분류했습니다.${review ? ` ${review}장은 직접 확인해 주세요.` : " 구역을 확인해 주세요."}`, review ? "" : "success");
+      const classifications = [];
+      for (let start = 0; start < fileIds.length; start += 30) {
+        if (!active()) return;
+        const result = await api.classifyWorkReportPhotos({ fileIds: fileIds.slice(start, start + 30), kind: "moveIn" });
+        if (!active()) return;
+        if (!result || result.ok !== true || !Array.isArray(result.classifications)) throw new Error("Gemini 사진 분류 결과를 확인하지 못했습니다.");
+        classifications.push(...result.classifications.map(row => manual.get(String(row.id)) || row));
+        reportState.driveClassifications = classifications.concat([...manual.values()].filter(row => !classifications.some(item => item.id === row.id)));
+        reportState.drivePlan = P.applyPhotoClassifications(basePlan, reportState.driveClassifications);
+      }
+      const review = P.photoReviewRows(reportState.drivePlan).filter(row => !row.itemKey || row.phase === "unsorted").length;
+      showToast(`Gemini가 사진 ${fileIds.length}장을 분류했습니다.${review ? ` ${review}장의 구역·전후를 확인해 주세요.` : " 확인 후 초안에 적용해 주세요."}`, review ? "" : "success");
     } catch (error) {
-      reportState.driveError = error && error.message || "AI 사진 분류를 완료하지 못했습니다.";
+      if (active()) reportState.driveError = `${error && error.message || "Gemini 사진 분류를 완료하지 못했습니다."} 선택한 사진은 유지됩니다. 직접 구역·전후를 정하거나 다시 시도해 주세요.`;
     } finally {
-      reportState.driveClassificationLoading = false;
-      if (currentView === "workReports") renderWorkReports();
+      if (generation === reportState.driveRequestGeneration) {
+        reportState.driveClassificationLoading = false;
+        if (currentView === "workReports") { preserveReportDraft(); renderWorkReports(); }
+      }
     }
   }
 
@@ -9214,18 +9238,28 @@
     const R = reportCore();
     const P = reportPhotoPlan();
     const basePlan = reportState.driveBasePlan;
-    if (!R || !P || !basePlan) return;
+    if (!R || !P || !basePlan || reportState.driveClassificationLoading) return;
+    preserveReportDraft();
     const fileId = String(fileIdValue || "");
-    const allowed = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor("moveIn") : R.itemsFor("moveIn", [])).map(item => item.key));
+    const allowed = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(basePlan.kind) : R.itemsFor(basePlan.kind, [])).map(item => item.key));
     const itemKey = String(itemKeyValue || "");
     const category = allowed.has(itemKey) ? itemKey : "review";
     const rows = Array.isArray(reportState.driveClassifications) ? reportState.driveClassifications.slice() : [];
     const index = rows.findIndex(row => String(row && row.id || "") === fileId);
-    const next = { id: fileId, category, confidence: category === "review" ? 0 : 100, reason: category === "review" ? "사용자가 확인할 항목으로 남겼습니다." : "사용자가 직접 선택했습니다." };
+    const next = { id: fileId, category, manual: true, confidence: category === "review" ? 0 : 100, reason: category === "review" ? "사용자가 확인할 항목으로 남겼습니다." : "사용자가 직접 선택했습니다." };
     if (index >= 0) rows[index] = next;
     else rows.push(next);
     reportState.driveClassifications = rows;
-    reportState.drivePlan = P.applyPhotoClassifications(basePlan, rows);
+    reportState.drivePlan = P.assignPhotoCategory(reportState.drivePlan, fileId, category === "review" ? "" : category);
+    renderWorkReports();
+  }
+
+  function assignReportPhotoPhase(fileId, phase) {
+    const P = reportPhotoPlan();
+    if (!P || !reportState.drivePlan || reportState.driveClassificationLoading) return;
+    preserveReportDraft();
+    reportState.driveBasePlan = P.assignPhotoPhase(reportState.driveBasePlan, fileId, phase);
+    reportState.drivePlan = P.assignPhotoPhase(reportState.drivePlan, fileId, phase);
     renderWorkReports();
   }
 
@@ -9233,7 +9267,7 @@
     const R = reportCore();
     const P = reportPhotoPlan();
     const plan = reportState.drivePlan;
-    if (!R || !P || !plan) return;
+    if (!R || !P || !plan || reportState.driveClassificationLoading) return;
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
     const allowedKeys = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(draft.kind) : R.itemsFor(draft.kind, [])).map(item => item.key));
     const resolvedBucketKey = bucket => {
@@ -9249,31 +9283,19 @@
         itemKey: resolvedBucketKey(bucket),
       })),
     });
-    const made = P.toReportDraft(resolvedPlan, { core: R, kind: draft.kind });
+    const made = P.toReportDraft(resolvedPlan, { core: R, kind: draft.kind, requireResolved: true });
     if (!made.ok) { showToast(made.error, "error"); return; }
 
     // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
-    const byKey = new Map(made.draft.items.map(item => [item.key, item]));
-    const merged = draft.items.map(item => {
-      const found = byKey.get(item.key);
-      if (!found) return item;
-      return Object.assign({}, item, {
-        before: item.before.concat(found.before),
-        after: item.after.concat(found.after),
-        note: item.note || found.note,
-      });
-    });
-    made.draft.items.forEach(item => {
-      if (!merged.some(existing => existing.key === item.key)) merged.push(item);
-    });
+    const merged = P.mergeDraftPhotos(draft.items, made.draft.items);
     reportState.draft = R.normalizeReport(Object.assign({}, draft, {
-      items: merged,
+      items: merged.items,
       buildingName: draft.buildingName || made.draft.buildingName,
       workDate: draft.workDate || made.draft.workDate,
     }));
     reportState.aiDraftAt = "";
     reportState.driveLeftovers = made.leftovers;
-    const added = made.draft.items.reduce((sum, item) => sum + item.before.length + item.after.length, 0);
+    const added = merged.added;
     showToast(`사진 ${added}장을 초안에 얹었습니다.${made.leftovers.length ? ` 못 붙인 폴더 ${made.leftovers.length}개는 그대로 뒀습니다.` : ""} 확인하고 저장해 주세요.`, "success");
     renderWorkReports();
   }
@@ -17042,6 +17064,10 @@
       assignReportPhotoCategory(event.target.dataset.reportPhotoCategory, event.target.value);
       return;
     }
+    if (event.target.matches("[data-report-photo-phase]")) {
+      assignReportPhotoPhase(event.target.dataset.reportPhotoPhase, event.target.value);
+      return;
+    }
     if (event.target.matches("[data-report-drive-item]")) {
       assignReportDriveBucket(event.target.dataset.reportDriveItem, event.target.value);
       return;
@@ -17084,6 +17110,9 @@
       return;
     }
     if (event.target.matches("[data-report-kind]")) {
+      reportState.driveRequestGeneration += 1;
+      reportState.driveScanning = false;
+      reportState.driveClassificationLoading = false;
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
       reportState.drivePlan = null;
       reportState.driveBasePlan = null;
@@ -17092,6 +17121,7 @@
       return;
     }
     if (event.target.matches("[data-report-building]")) {
+      resetReportDriveSelection();
       const form = event.target.form;
       const building = (store.buildings || []).find(item => String(item && item.id || "") === String(event.target.value || ""));
       if (form && form.elements.siteAddress) form.elements.siteAddress.value = workReportBuildingAddress(building);

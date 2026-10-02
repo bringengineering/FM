@@ -4881,7 +4881,9 @@ async function workReportClassificationSource(file, picker, accessToken) {
 async function classifySelectedWorkReportPhotos(input) {
   if (!remoteClient || !authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 결과보고서 사진을 분류할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
+  const guard = remoteClient.captureSessionGuard();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (Object.keys(options).some(key => !["kind", "fileIds"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
   if (options.kind !== "moveIn") throw Object.assign(new Error("입주청소 사진만 AI로 구역을 분류할 수 있습니다."), { code: "INVALID_INPUT" });
   const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
   if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
@@ -4889,7 +4891,8 @@ async function classifySelectedWorkReportPhotos(input) {
   const picker = reportDrivePickerReady();
   const files = ids.map(id => picker.files.get(id));
   if (files.some(file => !file)) throw Object.assign(new Error("Drive 화면에 표시된 사진만 분류할 수 있습니다."), { code: "DRIVE_FILE_NOT_LISTED" });
-  const accessToken = String(driveSession && driveSession.accessToken || "");
+  const accessToken = await ensureDriveAccessToken();
+  remoteClient.assertSessionGuardActive(guard);
   if (!accessToken) throw Object.assign(new Error("회사 Drive 에 다시 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
 
   const images = [];
@@ -4908,15 +4911,18 @@ async function classifySelectedWorkReportPhotos(input) {
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => prepare()));
+  remoteClient.assertSessionGuardActive(guard);
   const prepared = images.filter(Boolean);
   if (!prepared.length) throw Object.assign(new Error("AI에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const idToken = await remoteClient.ensureIdToken(false);
+  remoteClient.assertSessionGuardActive(guard);
   const result = await classifyPhotosWithGateway({
     endpoint: CRM_AI_PHOTO_CLASSIFY_URL,
     idToken,
     input: { kind: "moveIn", images: prepared },
     fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
   });
+  remoteClient.assertSessionGuardActive(guard);
   return Object.assign({}, result, {
     classifications: result.classifications.concat(unavailable),
     warnings: result.warnings.concat(unavailable.length ? [`${unavailable.length}장은 축소본을 만들지 못해 직접 확인해야 합니다.`] : []),
@@ -5062,7 +5068,7 @@ async function planSelectedWorkReportPhotos(input) {
     const itemKey = ReportPhotoPlan.itemKeyForFolder(kind, folderName);
     const groupKey = itemKey ? `item:${itemKey}` : `folder:${parent.id}`;
     if (!grouped.has(groupKey)) grouped.set(groupKey, { name: folderName, files: [] });
-    grouped.get(groupKey).files.push(file);
+    grouped.get(groupKey).files.push({ ...file, parentName: String(parent.name || "") });
   });
   const common = reportDriveCommonFolder(picker, files);
   const plan = ReportPhotoPlan.planFromTree(

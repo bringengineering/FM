@@ -139,6 +139,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
     browseWorkReportDrive: { ok: true, folder: { id: "root", name: "내 드라이브" }, entries: [
       { id: "p1", name: "20260831_172901.jpg", kind: "file", mimeType: "image/jpeg" },
       { id: "p2", name: "20260901_101819.jpg", kind: "file", mimeType: "image/jpeg" },
+      { id: "p3", name: "20260831_190000.jpg", kind: "file", mimeType: "image/jpeg" },
     ] },
     planWorkReportDrivePhotos: {
       ok: true,
@@ -653,13 +654,15 @@ describe("desktop CRM screens actually render", () => {
     expect(scan!.disabled, "사진 선택 전에는 가져오기를 막는다").toBe(true);
     (booted.document.querySelector('[data-report-drive-file="p1"]') as HTMLButtonElement).click();
     (booted.document.querySelector('[data-report-drive-file="p2"]') as HTMLButtonElement).click();
+    (booted.document.querySelector('[data-report-drive-file="p3"]') as HTMLButtonElement).click();
     expect(scan!.disabled).toBe(false);
     const before = booted.calls.length;
     scan!.click();
     await sleep(250);
     const asked = booted.calls.slice(before).find(call => call.name === "planWorkReportDrivePhotos");
     expect(asked, "훑기 통로로 실제로 나가야 한다").toBeTruthy();
-    expect((asked!.input as { fileIds: string[] }).fileIds).toEqual(["p1", "p2"]);
+    expect((asked!.input as { fileIds: string[] }).fileIds).toEqual(["p1", "p2", "p3"]);
+    expect(booted.calls.slice(before).some(call => call.name === "classifyWorkReportPhotos"), "선택 후 Gemini 분류를 자동 요청해야 한다").toBe(true);
 
     const table = booted.document.querySelector(".wr-drive-table") as HTMLElement | null;
     expect(table, "무엇이 어디에 붙는지 표가 나와야 한다").toBeTruthy();
@@ -677,6 +680,12 @@ describe("desktop CRM screens actually render", () => {
     unmatched!.value = reportItemKey;
     unmatched!.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
     await sleep(100);
+    const pendingApply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
+    expect(pendingApply.disabled, "구역만 정하고 전후 미분류 사진을 조용히 빼면 안 된다").toBe(true);
+    const phase = booted.document.querySelector('[data-report-photo-phase="p3"]') as HTMLSelectElement;
+    phase.value = "after";
+    phase.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(100);
     const apply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
     expect(apply.disabled).toBe(false);
     apply.click();
@@ -688,6 +697,7 @@ describe("desktop CRM screens actually render", () => {
     expect(bath, "욕실 항목이 있어야 한다").toBeTruthy();
     const links = [...bath!.querySelectorAll("[data-report-open-photo]")];
     expect(links.length, "전·후 한 장씩 붙어야 한다").toBe(2);
+    expect(booted.document.querySelectorAll("[data-report-drop-photo]").length, "선택한 3장 모두 붙어야 한다").toBe(3);
     // 얹었다고 서버에 쓰지 않는다. 사람이 저장을 눌러야 한다.
     expect(booted.calls.some(call => call.name === "saveWorkReport")).toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
