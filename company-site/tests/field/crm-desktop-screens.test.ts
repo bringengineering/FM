@@ -242,7 +242,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };
   }
-  api.load = async () => ({
+  api.load = async () => payloadOverrides.load || ({
     customers: [], buildings: [{ id: "b1", name: "우산동 빌딩", address: "강원 원주시" }],
     contracts: [], cases: [], tasks: [], activities: [], vacancies: [], partnerVendors: [],
     quotes: [], relationships: [], payments: [], settings: { owner: "김현진" },
@@ -278,6 +278,124 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   if (shell) shell.hidden = false;
   return { window, document, errors, calls };
 }
+
+describe("schedule owner picker", () => {
+  async function openSchedule(owner = "", creating = false) {
+    const date = new Date().toLocaleDateString("sv-SE");
+    const screen = await boot({
+      authState: { required: true, enforceRoles: true, user: { uid: "u-admin", role: "member", displayName: "서창환" } },
+      commitBuildingSchedule: { ok: false, code: "TEST_ONLY" }, load: {
+      customers: [{ id: "c1", name: "테스트 고객건물", buildingId: "b1" }],
+      buildings: [{ id: "b1", name: "테스트 건물", ownerCustomerId: "c1" }],
+      serviceRecords: [{ id: "s1", buildingId: "b1", title: "담당자 확인 일정", scheduledDate: date, status: "planned", serviceType: "inspection", owner }],
+      settings: { owner: "기본 담당자", onboardingComplete: true },
+    } });
+    const click = async (selector: string) => {
+      const button = screen.document.querySelector(selector) as HTMLElement;
+      expect(button, selector).toBeTruthy(); button.click(); await sleep(120);
+    };
+    await click('[data-workspace-enter-folder="calendar"]');
+    await click('.nav-item[data-view="buildingCalendar"]');
+    if (creating) await click('[data-action="new-building-schedule"]');
+    else await click('[data-work-calendar-edit="s1"]');
+    expect(screen.errors).toEqual([]);
+    expect(screen.document.querySelector("#buildingScheduleForm")).toBeTruthy();
+    return { ...screen, click };
+  }
+
+  function choose(screen: Booted, value: string) {
+    const select = screen.document.querySelector("[data-schedule-owner-picker] select") as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new screen.window.Event("change", { bubbles: true }));
+    return screen.document.querySelector('[name="owner"]') as HTMLInputElement;
+  }
+
+  it.each(["", "외부 협력 담당자", "서창환"])("기존 담당자 %s 보존, 직원 선택·직접 입력·미지정 저장", async owner => {
+    const screen = await openSchedule(owner);
+    try {
+      const form = screen.document.querySelector("#buildingScheduleForm") as HTMLFormElement;
+      const input = form.elements.namedItem("owner") as HTMLInputElement;
+      expect(input.value).toBe(owner);
+      const options = [...form.querySelectorAll("option[data-owner]")] as HTMLOptionElement[];
+      expect(options.map(option => option.textContent)).toEqual(["서창환", "황우중"]);
+      for (const target of [owner, "황우중", "직접 입력한 담당자", ""]) {
+        if (target === "황우중") choose(screen, options.find(option => option.textContent === target)!.value);
+        else if (target === "직접 입력한 담당자") { choose(screen, "manual").value = target; expect(input.type).toBe("text"); }
+        else if (target === "" && input.value !== "") choose(screen, "");
+        expect(input.value).toBe(target);
+        expect(new screen.window.FormData(form).get("owner")).toBe(target);
+        const before = screen.calls.filter(call => call.name === "commitBuildingSchedule").length;
+        form.dispatchEvent(new screen.window.Event("submit", { bubbles: true, cancelable: true }));
+        await sleep(80);
+        expect(screen.errors).toEqual([]);
+        const commits = screen.calls.filter(call => call.name === "commitBuildingSchedule");
+        expect(commits.length, screen.document.getElementById("toast")?.textContent).toBe(before + 1);
+        expect((commits.at(-1)?.input as { values: { owner: string } })?.values.owner).toBe(target);
+      }
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+
+  it("새 일정 등록에도 직원 드롭다운을 사용한다", async () => {
+    const screen = await openSchedule("", true);
+    try {
+      const api = screen.window.bringCRM as Record<string, unknown>;
+      screen.window.structuredClone = structuredClone;
+      api.commitBuildingSchedule = async (input: { recordId: string; values: Record<string, unknown> }) => {
+        screen.calls.push({ name: "commitBuildingSchedule", input });
+        return { ok: true, record: { ...input.values, id: input.recordId } };
+      };
+      const form = screen.document.querySelector("#buildingScheduleForm") as HTMLFormElement;
+      (form.elements.namedItem("title") as HTMLInputElement).value = "신규 일정";
+      (form.elements.namedItem("buildingId") as HTMLSelectElement).value = "b1";
+      const option = form.querySelector('option[data-owner="황우중"]') as HTMLOptionElement;
+      choose(screen, option.value);
+      form.dispatchEvent(new screen.window.Event("submit", { bubbles: true, cancelable: true }));
+      await sleep(100);
+      const commit = screen.calls.find(call => call.name === "commitBuildingSchedule")?.input as { operation: string; values: { owner: string } };
+      expect(commit.operation).toBe("create"); expect(commit.values.owner).toBe("황우중");
+      expect(screen.document.getElementById("modal")?.classList.contains("open")).toBe(false);
+      expect(screen.document.getElementById("main")?.textContent).toContain("신규 일정");
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+
+  it("목록 로딩 중 입력·실패·닫힌 창을 보호하고 직원명을 HTML로 해석하지 않는다", async () => {
+    const screen = await openSchedule("기존 담당자");
+    try {
+      const api = screen.window.bringCRM as Record<string, unknown>;
+      let resolve!: (value: unknown) => void;
+      api.loadWorkOrders = () => new Promise(done => { resolve = done; });
+      await screen.click('[data-action="close-modal"]');
+      await screen.click('[data-work-calendar-edit="s1"]');
+      choose(screen, "manual").value = "입력 중인 담당자";
+      resolve({ members: [{ uid: "x", displayName: '<img src=x onerror="alert(1)">' }, { uid: "y", displayName: "서창환" }, { uid: "z", displayName: "서창환" }, { uid: "off", displayName: "비활성", enabled: false }] });
+      await sleep(50);
+      expect((screen.document.querySelector('[name="owner"]') as HTMLInputElement).value).toBe("입력 중인 담당자");
+      expect(screen.document.querySelector("[data-schedule-owner-picker] img")).toBeNull();
+      expect(screen.document.querySelectorAll("option[data-owner]")).toHaveLength(2);
+      choose(screen, ""); expect(choose(screen, "manual").value).toBe("입력 중인 담당자");
+      await screen.click('[data-action="close-modal"]');
+      api.loadWorkOrders = async () => { throw new Error("private failure details"); };
+      await screen.click('[data-work-calendar-edit="s1"]');
+      expect(screen.document.querySelector("[data-schedule-owner-picker]")?.textContent).toContain("불러오지 못했습니다");
+      expect(screen.document.querySelector("[data-schedule-owner-picker]")?.textContent).not.toContain("private failure");
+      expect(choose(screen, "manual").value).toBe("기존 담당자");
+      await screen.click('[data-action="close-modal"]');
+      api.loadWorkOrders = () => new Promise(done => { resolve = done; });
+      await screen.click('[data-work-calendar-edit="s1"]');
+      const stale = screen.document.querySelector("[data-schedule-owner-picker]")!;
+      const resolveStale = resolve;
+      await screen.click('[data-action="close-modal"]');
+      await screen.click('[data-work-calendar-edit="s1"]');
+      resolveStale({ members: [{ uid: "old", displayName: "닫힌 창 응답" }] });
+      // The current request alone may update its own form.
+      resolve({ members: [] }); await sleep(50);
+      expect(stale.querySelectorAll("option[data-owner]")).toHaveLength(0);
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+});
 
 describe("weekly report progress labels", () => {
   it.each([false, true])("진행률을 화면·초안·저장에 반영하고 작성한 요약 보존: %s", async customSummary => {

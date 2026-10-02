@@ -10473,6 +10473,63 @@
     }
   }
 
+  function scheduleOwnerField(owner) {
+    return `<div class="field" data-schedule-owner-picker><label for="scheduleOwnerSelect">담당자</label><select id="scheduleOwnerSelect" aria-label="담당자 선택"><option value=""${owner ? "" : " selected"}>미지정</option>${owner ? `<option value="existing" selected>${esc(owner)} (기존 담당자)</option>` : ""}<option value="manual">직접 입력…</option></select><input name="owner" type="text" hidden style="display:none" value="${attr(owner)}" maxlength="120" aria-label="담당자 직접 입력" placeholder="담당자 이름 입력"><small class="hint" role="status">직원 목록을 불러오는 중입니다. 직접 입력도 가능합니다.</small></div>`;
+  }
+
+  function bindScheduleOwnerPicker(form) {
+    const picker = form?.querySelector("[data-schedule-owner-picker]");
+    if (!picker) return;
+    const select = picker.querySelector("select");
+    const input = picker.querySelector("input");
+    const hint = picker.querySelector("small");
+    const openedOwner = input.value;
+    const openedGeneration = authGeneration;
+    const openedUid = currentAuthUid();
+    let touched = false;
+    let manualValue = openedOwner;
+    let manual = false;
+    const active = () => form.isConnected && modal.classList.contains("open") && openedGeneration === authGeneration
+      && openedUid === currentAuthUid() && canWriteCRM() && !input.disabled;
+    select.addEventListener("change", () => {
+      if (!active()) return;
+      touched = true;
+      if (manual) manualValue = input.value;
+      manual = select.value === "manual";
+      input.hidden = !manual;
+      input.style.display = manual ? "" : "none";
+      input.value = manual ? manualValue : select.value === "existing" ? openedOwner
+        : select.selectedOptions[0]?.dataset.owner || "";
+      if (manual) input.focus();
+    });
+    // Reuse the authorized staff list. Do not cache it across account changes or
+    // reset values typed while this request is in flight.
+    void (async () => {
+      try {
+        const data = await api.loadWorkOrders();
+        if (!active()) return;
+        if (!Array.isArray(data?.members) || data.localOnly === true) throw new Error("unavailable");
+        const names = [...new Set(data.members.filter(member => member && member.uid
+          && member.enabled !== false && member.mustChangePassword !== true)
+          .map(member => typeof member.displayName === "string" ? member.displayName.trim() : "")
+          .filter(name => name && name.length <= 120))].sort((a, b) => a.localeCompare(b, "ko"));
+        const manualOption = select.querySelector('[value="manual"]');
+        names.forEach((name, index) => {
+          const option = document.createElement("option");
+          option.value = `member:${index}`;
+          option.textContent = name;
+          option.dataset.owner = name;
+          select.insertBefore(option, manualOption);
+          if (!touched && name === openedOwner) select.value = option.value;
+        });
+        hint.textContent = names.length ? "등록된 직원을 선택하거나 직접 입력하세요."
+          : "선택 가능한 직원이 없습니다. 직접 입력할 수 있습니다.";
+      } catch (error) {
+        if (active()) hint.textContent = "직원 목록을 불러오지 못했습니다. 기존 담당자를 유지하거나 직접 입력해 주세요.";
+      }
+    })();
+  }
+
   function buildingScheduleEditor(recordId, defaultDate) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 등록하거나 변경할 수 없습니다.", "error");
     const existing = String(recordId || "") ? store.serviceRecords.find(record => record.id === recordId) : null;
@@ -10494,7 +10551,7 @@
       if (!value) return "고객건물을 선택해 주세요";
       const choice = buildingOptions.find(candidate => candidate.value === value);
       return choice ? customerManagedBuildingChoiceLabel(choice) : value;
-    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
+    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
     openModal();
     const form = document.getElementById("buildingScheduleForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -10502,6 +10559,7 @@
     if (form && form.elements.scheduledDate) form.elements.scheduledDate.required = true;
     if (form && form.elements.owner) form.elements.owner.maxLength = 120;
     if (form && form.elements.summary) form.elements.summary.maxLength = 2000;
+    bindScheduleOwnerPicker(form);
     setTimeout(() => form && (form.elements.buildingId || form.elements.title)?.focus(), 30);
   }
 
@@ -10515,7 +10573,7 @@
     const item = existing || { id: `service_${crypto.randomUUID()}`, buildingId: selectedChoice && selectedChoice.value || "", title: "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", startTime: "", endTime: "", completedAt: "", amount: 0, vendorName: "", owner: store.settings && store.settings.owner || "김현진", summary: "", evidenceUrl: "" };
     const cancelled = item.status === "cancelled";
     const returnView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "workManagement";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>고객·건물 관리 목록의 고객건물별 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("고객건물 *", "buildingId", buildingOptions.map(choice => choice.value), item.buildingId, value => customerManagedBuildingChoiceLabel(buildingOptions.find(choice => choice.value === value)) || value)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>고객·건물 관리 목록의 고객건물별 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("고객건물 *", "buildingId", buildingOptions.map(choice => choice.value), item.buildingId, value => customerManagedBuildingChoiceLabel(buildingOptions.find(choice => choice.value === value)) || value)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${scheduleOwnerField(item.owner || "")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
     openModal();
     const form = document.getElementById("workRecordForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -10523,7 +10581,11 @@
     if (form && form.elements.owner) form.elements.owner.maxLength = 120;
     if (form && form.elements.vendorName) form.elements.vendorName.maxLength = 160;
     if (form && form.elements.summary) form.elements.summary.maxLength = 2000;
-    if (cancelled && form) [...form.elements].forEach(control => { if (control.name) control.disabled = true; });
+    if (cancelled && form) {
+      [...form.elements].forEach(control => { if (control.name) control.disabled = true; });
+      form.querySelector("[data-schedule-owner-picker] select").disabled = true;
+      form.querySelector("[data-schedule-owner-picker] small").textContent = "취소된 작업의 담당자는 변경할 수 없습니다.";
+    } else bindScheduleOwnerPicker(form);
   }
 
   function renderConsultations() {
