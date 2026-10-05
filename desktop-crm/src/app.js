@@ -8937,7 +8937,11 @@
 
   function reportPairThumbnail(row) {
     const value = reportState.driveThumbnails instanceof Map ? reportState.driveThumbnails.get(row.id) : "";
-    return value ? `<span class="wr-pair-thumb"><img src="${attr(value)}" alt="${attr(row.file.name || "작업 사진")}"></span>` : `<span class="wr-pair-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span>사진 불러오는 중</span></span>`;
+    return (value ? `<span class="wr-pair-thumb"><img src="${attr(value)}" alt="${attr(row.file.name || "작업 사진")}"></span>` : `<span class="wr-pair-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span>사진 불러오는 중</span></span>`) + reportPhotoCaptureLabel(row);
+  }
+
+  function reportPhotoCaptureLabel(row) {
+    return `<small class="wr-photo-capture-time">${esc(window.BringPhotoCaptureTime.label(row.file.captureTime))}</small>`;
   }
 
   function reportPairMain() {
@@ -8949,9 +8953,9 @@
     const groups = V.groups(plan).filter(group => group.paired && (filter === "all" || group.space === filter));
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     return `<section class="wr-pair-review">
-      <div class="wr-ai-classify-bar"><div><b>Gemini 구역·전후 추천</b><small>공간·대상 분류 → 같은 장소 비교 → 확인 후 적용. 사진 축소본만 전송하며 파일명·Drive 링크는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
+      <div class="wr-ai-classify-bar"><div><b>Gemini 구역·전후 추천</b><small>원본 촬영시간 확인 → 같은 장소 비교 → 확인 후 적용. 사진 축소본과 상대 시간 간격만 전송하며 파일명·Drive 링크·촬영 날짜·GPS는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
       <header class="wr-pair-summary"><b>선택 ${rows.length}장</b><span>확인 완료 ${confirmed}장</span><button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}장</button></header>
-      <p class="wr-pair-help">AI 추천은 확정이 아닙니다. 전·후를 비교하고 확인한 사진만 초안에 넣으세요.</p>
+      <p class="wr-pair-help">원본 촬영시간 ${rows.filter(row => window.BringPhotoCaptureTime.normalize(row.file.captureTime)).length}/${rows.length}장 확인. 중간에 찍은 전 사진도 같은 장면과 함께 비교합니다. AI 추천은 확정이 아닙니다.</p>
       <nav class="wr-pair-filters" aria-label="사진 공간 필터">${[["all", "전체"], ...Object.entries(V.SPACES).filter(([key]) => key !== "unknown")].map(([key, label]) => `<button type="button" class="mini-button${filter === key ? " is-active" : ""}" data-report-review-filter="${key}">${esc(label)}</button>`).join("")}</nav>
       <div class="wr-pair-groups">${groups.map(group => `<article class="wr-pair-card"><header><b>${esc(V.SPACES[group.space])} · ${esc(V.TARGETS[group.target])}</b><span>${group.rows.every(row => row.file.reviewConfirmed) ? "확인 완료" : "추천 검토"}</span><button type="button" class="mini-button" data-report-review-swap="${attr(group.id)}"${disabled}>전·후 바꾸기</button><button type="button" class="mini-button" data-report-review-unpair="${attr(group.id)}"${disabled}>구역 변경·사진 이동</button></header>
         <div class="wr-pair-images">${["before", "after"].map(phase => { const row = group.rows.find(item => item.phase === phase); return row ? `<figure><strong>${phase === "before" ? "작업 전" : "작업 후"}</strong>${reportPairThumbnail(row)}<figcaption>${esc(row.file.name || "선택한 사진")}</figcaption></figure>` : `<p>사진을 확인해 주세요.</p>`; }).join("")}</div>
@@ -8964,7 +8968,7 @@
   function reportPairPending() {
     const V = window.BringPhotoPairReview, plan = reportState.drivePlan;
     if (!V || plan?.kind !== "moveIn") return "";
-    const rows = V.flatten(plan).filter(row => !row.file.reviewPair);
+    const rows = V.flatten(plan).filter(row => !row.file.reviewPair).sort(V.byCaptureTime);
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     const select = (labels, selected, attrs) => `<select ${attrs}${disabled}>${Object.entries(labels).map(([key, label]) => `<option value="${key}"${key === selected ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
     const phases = { unsorted: "확인 필요", before: "작업 전", after: "작업 후" };
@@ -9261,19 +9265,21 @@
     const manual = new Map(reportState.driveClassifications.filter(row => row.manual).map(row => [String(row.id), row]));
     preserveReportDraft();
     reportState.driveClassificationLoading = true;
-    reportState.photoReviewStage = "공간·대상 분석 중…";
+    reportState.photoReviewStage = "원본 촬영시간·공간 분석 중…";
     reportState.driveError = "";
     renderWorkReports();
     try {
       const classifications = [];
+      const captureTimes = [];
       for (let start = 0; start < fileIds.length; start += 30) {
         if (!active()) return;
         const result = await api.classifyWorkReportPhotos({ fileIds: fileIds.slice(start, start + 30), kind: "moveIn" });
         if (!active()) return;
         if (!result || result.ok !== true || !Array.isArray(result.classifications)) throw new Error("Gemini 사진 분류 결과를 확인하지 못했습니다.");
         classifications.push(...result.classifications.map(row => manual.get(String(row.id)) || row));
+        captureTimes.push(...(Array.isArray(result.captureTimes) ? result.captureTimes : []));
         reportState.driveClassifications = classifications.concat([...manual.values()].filter(row => !classifications.some(item => item.id === row.id)));
-        reportState.drivePlan = window.BringPhotoPairReview.decorate(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), reportState.driveClassifications);
+        reportState.drivePlan = window.BringPhotoPairReview.withCaptureTimes(window.BringPhotoPairReview.decorate(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), reportState.driveClassifications), captureTimes);
       }
       const V = window.BringPhotoPairReview;
       const groups = V.comparisonGroups(reportState.drivePlan);

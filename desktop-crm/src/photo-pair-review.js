@@ -1,12 +1,12 @@
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./photo-capture-time") : root.BringPhotoCaptureTime);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BringPhotoPairReview = api;
-})(typeof globalThis === "object" ? globalThis : this, function () {
+})(typeof globalThis === "object" ? globalThis : this, function (Capture) {
   "use strict";
   const SPACES = Object.freeze({ living: "거실", bedroom: "방", kitchen: "주방", bath: "욕실", veranda: "베란다", entrance: "현관", other: "기타 공간", unknown: "확인 필요" });
   const TARGETS = Object.freeze({ floor: "바닥", window: "창호·새시", sink: "세면대·싱크대", cabinet: "수납장", hood: "후드·필터", toilet: "변기", wall: "벽면", aircon: "에어컨", refrigerator: "냉장고", other: "기타 대상", unknown: "확인 필요" });
-  const EVIDENCE = Object.freeze({ debris_removed: "같은 장소의 먼지·쓰레기 감소를 비교한 AI 추천입니다.", stain_reduced: "같은 표면의 오염 변화를 비교한 AI 추천입니다.", items_removed: "같은 장소의 잔류물 변화를 비교한 AI 추천입니다." });
+  const EVIDENCE = Object.freeze({ debris_removed: "같은 장소의 먼지·쓰레기 감소를 비교한 AI 추천입니다.", stain_reduced: "같은 표면의 오염 변화를 비교한 AI 추천입니다.", items_removed: "같은 장소의 잔류물 변화를 비교한 AI 추천입니다.", same_scene_time: "같은 장면과 원본 촬영 순서로 추천했습니다. 실제 작업 전·후인지 확인해 주세요." });
   const list = value => Array.isArray(value) ? value.filter(Boolean) : [];
   const key = (value, labels) => Object.hasOwn(labels, value) ? value : "unknown";
   const flatten = plan => list(plan?.buckets).flatMap(bucket => ["before", "after", "unsorted"].flatMap(phase => list(bucket[phase]).map(file => ({ id: String(file.id), file, phase, itemKey: bucket.itemKey || bucket.manualItemKey || "" }))));
@@ -30,6 +30,14 @@
     return "finish";
   }
   const resolved = row => !!row.itemKey && key(row.file.reviewSpace, SPACES) !== "unknown" && key(row.file.reviewTarget, TARGETS) !== "unknown" && ["before", "after"].includes(row.phase);
+  function withCaptureTimes(plan, times) {
+    const byId = new Map(list(times).map(row => [String(row.id), Capture.normalize(row.captureTime)]));
+    return rebuild(plan, flatten(plan).map(row => byId.has(row.id) ? { ...row, file: { ...row.file, captureTime: byId.get(row.id) } } : row));
+  }
+  function byCaptureTime(left, right) {
+    const a = Capture.normalize(left.file.captureTime), b = Capture.normalize(right.file.captureTime);
+    return a && b ? a.local.localeCompare(b.local) : a ? -1 : b ? 1 : 0;
+  }
   function decorate(plan, classifications) {
     const decisions = new Map(list(classifications).map(row => [String(row.id), row]));
     return rebuild(plan, flatten(plan).map(row => {
@@ -42,11 +50,20 @@
   }
   function comparisonGroups(plan) {
     const groups = new Map();
-    flatten(plan).filter(row => !row.file.reviewConfirmed && !row.file.reviewPair && key(row.file.reviewSpace, SPACES) !== "unknown" && key(row.file.reviewTarget, TARGETS) !== "unknown").forEach(row => {
+    flatten(plan).sort(byCaptureTime).filter(row => !row.file.reviewConfirmed && !row.file.reviewPair && key(row.file.reviewSpace, SPACES) !== "unknown" && key(row.file.reviewTarget, TARGETS) !== "unknown").forEach(row => {
       const id = `${row.file.reviewSpace}:${row.file.reviewTarget}`;
       if (!groups.has(id)) groups.set(id, []); groups.get(id).push(row.id);
     });
-    return [...groups.values()].filter(ids => ids.length > 1);
+    // A 30-photo boundary must not separate all early shots from all late shots.
+    // Interleave ends only for large groups; no photo is assigned a phase here.
+    return [...groups.values()].filter(ids => ids.length > 1).map(ids => {
+      if (ids.length <= 30) return ids;
+      const mixed = [];
+      for (let lo = 0, hi = ids.length - 1; lo <= hi; lo += 1, hi -= 1) {
+        mixed.push(ids[lo]); if (hi !== lo) mixed.push(ids[hi]);
+      }
+      return mixed;
+    });
   }
   function applyPairs(plan, pairs) {
     const rows = flatten(plan).map(row => ({ ...row, file: { ...row.file } })); const byId = new Map(rows.map(row => [row.id, row])); const used = new Set();
@@ -55,6 +72,9 @@
       if (!before || !after || before === after || used.has(before.id) || used.has(after.id) || !Object.hasOwn(EVIDENCE, pair.evidence)) continue;
       if (before.file.reviewSpace !== after.file.reviewSpace || before.file.reviewTarget !== after.file.reviewTarget || key(before.file.reviewSpace, SPACES) === "unknown" || key(before.file.reviewTarget, TARGETS) === "unknown") continue;
       if ([before, after].some(row => row.file.reviewConfirmed || row.file.reviewPair || row.file.reviewUnpaired)) continue;
+      const gap = Capture.differenceMinutes(before.file.captureTime, after.file.captureTime);
+      if (Number.isFinite(gap) && gap <= 0) continue;
+      if (pair.evidence === "same_scene_time" && (!Number.isFinite(gap) || gap < 40)) continue;
       // Explicit names/time hints and manual choices outrank visual suggestions.
       if ((before.phase !== "unsorted" && before.phase !== "before") || (after.phase !== "unsorted" && after.phase !== "after")) continue;
       const pairId = `pair:${before.id}:${after.id}`;
@@ -93,7 +113,7 @@
   }
   function groups(plan) {
     const result = new Map();
-    for (const row of flatten(plan)) {
+    for (const row of flatten(plan).sort(byCaptureTime)) {
       const id = row.file.reviewPair || `single:${row.id}`;
       if (!result.has(id)) result.set(id, { id, space: key(row.file.reviewSpace, SPACES), target: key(row.file.reviewTarget, TARGETS), paired: !!row.file.reviewPair, rows: [] });
       result.get(id).rows.push(row);
@@ -112,5 +132,5 @@
     }
     return { items, added: [...incomingIds].filter(id => !oldPhotos.has(id)).length };
   }
-  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, confirmedPlan, mergeReviewed, categoryFor });
+  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, withCaptureTimes, byCaptureTime, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, confirmedPlan, mergeReviewed, categoryFor });
 });

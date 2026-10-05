@@ -9,6 +9,13 @@ const {
 
 const jpeg = bytes => `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(bytes || 4)]).toString("base64")}`;
 
+test("촬영 정보는 비교 요청의 제한된 상대 분만 허용한다", () => {
+  const input = { kind: "moveIn", mode: "compare", images: [{ id: "a", dataUrl: jpeg(), captureMinute: 156 }] };
+  assert.equal(validatePhotoClassificationInput(input).images[0].captureMinute, 156);
+  for (const captureMinute of [-1, 1440, 1.5, "1", NaN, Infinity]) assert.throws(() => validatePhotoClassificationInput({ ...input, images: [{ ...input.images[0], captureMinute }] }), { code: "INVALID_INPUT" });
+  assert.throws(() => validatePhotoClassificationInput({ ...input, mode: "classify" }), { code: "INVALID_INPUT" });
+});
+
 test("전후 비교 응답은 예상 ID와 허용된 근거만 받는다", async () => {
   const input = { kind: "moveIn", mode: "compare", images: [{ id: "a", dataUrl: jpeg() }, { id: "b", dataUrl: jpeg() }] };
   const opts = { endpoint: "https://gateway.example/v1/photo-classify", idToken: "test", input };
