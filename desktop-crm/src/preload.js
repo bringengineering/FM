@@ -149,6 +149,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   submitWeeklyReport: input => ipcRenderer.invoke("crm:weekly-report-submit", input),
   weeklyReportDeliveryStatus: input => ipcRenderer.invoke("crm:weekly-report-delivery-status", input),
   retryWeeklyReportDelivery: input => ipcRenderer.invoke("crm:weekly-report-delivery-retry", input),
+  loadWeeklyReportDraft: input => ipcRenderer.invoke("crm:weekly-report-draft-load", input),
+  saveWeeklyReportDraft: input => ipcRenderer.invoke("crm:weekly-report-draft-save", input),
   saveGrowthReview: input => ipcRenderer.invoke("crm:growth-review-save", input),
   loadTelegramSettings: () => ipcRenderer.invoke("crm:telegram-settings-load"),
   findTelegramChats: input => ipcRenderer.invoke("crm:telegram-chats-find", input),
