@@ -44,7 +44,7 @@ function validatePhotoClassificationInput(input) {
   if (!Array.isArray(input.images) || !input.images.length || input.images.length > MAX_PHOTOS) throw codedError("INPUT_TOO_LARGE");
   const seen = new Set();
   const images = input.images.map(image => {
-    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl"].includes(key))) {
+    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl", "captureMinute"].includes(key))) {
       throw codedError("INVALID_INPUT");
     }
     const id = String(image.id || "").trim();
@@ -52,7 +52,8 @@ function validatePhotoClassificationInput(input) {
     seen.add(id);
     const dataUrl = String(image.dataUrl || "");
     decodedJpegBytes(dataUrl);
-    return { id, dataUrl };
+    if (image.captureMinute !== undefined && (input.mode !== "compare" || !Number.isInteger(image.captureMinute) || image.captureMinute < 0 || image.captureMinute > 1439)) throw codedError("INVALID_INPUT");
+    return { id, dataUrl, ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}) };
   });
   return { kind: "moveIn", images, ...(input.mode ? { mode: input.mode } : {}) };
 }
@@ -89,7 +90,7 @@ function normalizeSuccess(value, expectedIds, mode) {
     if (!Array.isArray(value.pairs)) throw codedError("AI_INVALID_RESPONSE");
     for (const pair of value.pairs) {
       if (!pair || !expected.has(pair.beforeId) || !expected.has(pair.afterId) || pair.beforeId === pair.afterId || paired.has(pair.beforeId) || paired.has(pair.afterId)
-        || !["debris_removed", "stain_reduced", "items_removed"].includes(pair.evidence)) throw codedError("AI_INVALID_RESPONSE");
+        || !["debris_removed", "stain_reduced", "items_removed", "same_scene_time"].includes(pair.evidence)) throw codedError("AI_INVALID_RESPONSE");
       pairs.push({ beforeId: pair.beforeId, afterId: pair.afterId, evidence: pair.evidence });
       paired.add(pair.beforeId); paired.add(pair.afterId);
     }

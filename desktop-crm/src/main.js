@@ -47,6 +47,7 @@ const BuildingDocsDrive = require("./building-docs-drive");
 const { createDriveSessionStore } = require("./drive-session-store");
 const DriveOAuth = require("./drive-oauth");
 const ReportPhotoPlan = require("./report-photo-plan");
+const PhotoCaptureTime = require("./photo-capture-time");
 const HeicJpegConverter = require("./heic-jpeg-converter");
 const TelegramCore = require("./telegram-core");
 const ServiceReportCore = require("./service-report-core");
@@ -4883,8 +4884,10 @@ function safeClassificationJpeg(sourceBuffer) {
 }
 
 async function workReportClassificationSource(file, picker, accessToken, mode = "preview") {
+  const workReview = mode === "classify" || mode === "compare";
+  if (workReview && file.workReviewJpeg) return file.workReviewJpeg;
   const thumbnailLink = picker.thumbnails.get(file.id);
-  if (thumbnailLink && mode !== "compare") {
+  if (thumbnailLink && !workReview) {
     try {
       const preview = await fetchReportDriveThumbnail(thumbnailLink, accessToken);
       const match = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/u.exec(String(preview && preview.dataUrl || ""));
@@ -4900,16 +4903,20 @@ async function workReportClassificationSource(file, picker, accessToken, mode = 
     }
   }
   const fetched = await BuildingDocsDrive.downloadFile(
-    { fetchImpl: (url, init) => fetch(url, init), accessToken },
+    { fetchImpl: (url, init) => fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(45_000) }), accessToken },
     { fileId: file.id },
   );
   if (!fetched || !fetched.content) throw Object.assign(new Error("사진을 읽지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const original = Buffer.from(fetched.content);
+  if (workReview) file.captureTime = PhotoCaptureTime.readOriginal(original);
   const isHeic = HeicJpegConverter.looksLikeHeic(original)
     || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || file.mimeType || ""))
     || /\.hei[cf]$/iu.test(String(fetched.name || file.name || ""));
   const viewable = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
-  return safeClassificationJpeg(viewable);
+  const jpeg = safeClassificationJpeg(viewable);
+  // Session-owned picker only: cache small stripped JPEGs, never original bytes.
+  if (workReview) file.workReviewJpeg = jpeg;
+  return jpeg;
 }
 
 async function classifySelectedWorkReportPhotos(input) {
@@ -4948,6 +4955,10 @@ async function classifySelectedWorkReportPhotos(input) {
   await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => prepare()));
   remoteClient.assertSessionGuardActive(guard);
   const prepared = images.filter(Boolean);
+  if (options.mode === "compare") {
+    const minutes = PhotoCaptureTime.relativeMinutes(files);
+    prepared.forEach(image => { if (minutes.has(image.id)) image.captureMinute = minutes.get(image.id); });
+  }
   if (!prepared.length) throw Object.assign(new Error("AI에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const idToken = await remoteClient.ensureIdToken(false);
   remoteClient.assertSessionGuardActive(guard);
@@ -4959,6 +4970,7 @@ async function classifySelectedWorkReportPhotos(input) {
   });
   remoteClient.assertSessionGuardActive(guard);
   return Object.assign({}, result, {
+    captureTimes: files.map(file => ({ id: file.id, captureTime: PhotoCaptureTime.normalize(file.captureTime) })),
     classifications: result.classifications.concat(unavailable),
     warnings: result.warnings.concat(unavailable.length ? [`${unavailable.length}장은 축소본을 만들지 못해 직접 확인해야 합니다.`] : []),
   });

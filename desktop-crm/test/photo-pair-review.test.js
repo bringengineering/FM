@@ -5,6 +5,36 @@ const P = require("../src/report-photo-plan");
 const R = require("../src/work-report-core");
 const seed = (count = 4) => V.decorate(P.planFromTree({ name: "입주청소(샘플)_20261005", files: Array.from({ length: count }, (_, i) => ({ id: `p${i}`, name: `IMG_${i}.JPG`, mimeType: "image/jpeg" })) }, { kind: "moveIn" }), Array.from({ length: count }, (_, i) => ({ id: `p${i}`, category: "floor", space: "veranda", target: "floor" })));
 const pair = { beforeId: "p0", afterId: "p1", evidence: "debris_removed" };
+const timed = (id, local) => ({ id, captureTime: { local: `2026-10-02T${local}`, offset: "+09:00", source: "exif-original" } });
+
+test("원본 시간은 혼자서 전후를 나누지 않으며 중간 전 사진은 같은 장면의 늦은 사진과 묶는다", () => {
+  const plan = V.withCaptureTimes(seed(), [timed("p0", "09:00:00"), timed("p1", "14:00:00"), timed("p2", "15:00:00"), timed("p3", "16:40:00")]);
+  assert.ok(V.flatten(plan).every(row => row.phase === "unsorted"));
+  const result = V.applyPairs(plan, [{ beforeId: "p2", afterId: "p3", evidence: "same_scene_time" }]);
+  assert.equal(V.flatten(result).find(row => row.id === "p2").phase, "before");
+  assert.equal(V.flatten(result).find(row => row.id === "p1").phase, "unsorted");
+  assert.equal(V.flatten(V.confirmedPlan(result)).length, 0);
+  assert.equal(V.flatten(result).find(row => row.id === "p3").file.captureTime.local, "2026-10-02T16:40:00");
+});
+test("시간 추천은 40분 이상 같은 날만 허용하고 역순·시간 누락·수동 지정 충돌을 막는다", () => {
+  const timePair = { ...pair, evidence: "same_scene_time" };
+  const pairs = plan => V.groups(V.applyPairs(plan, [timePair])).filter(group => group.paired).length;
+  assert.equal(pairs(seed()), 0);
+  assert.equal(pairs(V.withCaptureTimes(seed(), [timed("p0", "14:00:00"), timed("p1", "14:39:59")])), 0);
+  const plan = V.withCaptureTimes(seed(), [timed("p0", "14:00:00"), timed("p1", "16:40:00")]);
+  assert.equal(pairs(plan), 1);
+  assert.equal(pairs(V.update(plan, ["p1"], { phase: "before" })), 0);
+  assert.equal(V.groups(V.applyPairs(plan, [{ ...pair, beforeId: "p1", afterId: "p0" }])).filter(group => group.paired).length, 0);
+  assert.equal(pairs(V.withCaptureTimes(plan, [{ id: "p1", captureTime: { ...timed("p1", "16:40:00").captureTime, local: "2026-10-03T16:40:00" } }])), 0);
+});
+test("58장 비교는 시간순 양 끝을 섞어 초반 전 사진과 마무리 후 사진이 다른 배치로 갈라지지 않는다", () => {
+  const plan = V.withCaptureTimes(seed(58), Array.from({ length: 58 }, (_, i) => timed(`p${i}`, `${i < 29 ? "09" : "16"}:${String(i % 29).padStart(2, "0")}:00`)));
+  const ids = V.comparisonGroups(plan)[0];
+  assert.deepEqual(ids.slice(0, 4), ["p0", "p57", "p1", "p56"]);
+  assert.equal(new Set(ids).size, 58);
+  assert.ok(ids.slice(0, 30).some(id => Number(id.slice(1)) >= 29));
+  assert.ok(ids.slice(30).some(id => Number(id.slice(1)) < 29));
+});
 
 test("공간·대상을 분리하고 같은 종류의 바닥을 다른 공간에 몰아넣지 않는다", () => {
   assert.equal(V.categoryFor("bath", "floor"), "bath");

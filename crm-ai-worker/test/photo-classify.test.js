@@ -6,6 +6,32 @@ import { classifyPhotos, readPhotoClassificationPayload, normalizePairs } from "
 
 const jpeg = () => `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 1]).toString("base64")}`;
 
+test("촬영시각 상대 분은 서버에서도 제한하며 날짜·GPS를 받지 않는다", async () => {
+  const photo = { id: "a", dataUrl: jpeg(), captureMinute: 156 };
+  assert.equal((await readPhotoClassificationPayload(request([photo], "fixture", "compare"))).images[0].captureMinute, 156);
+  for (const captureMinute of [-1, 1440, 0.5, "2"]) await assert.rejects(() => readPhotoClassificationPayload(request([{ ...photo, captureMinute }], "fixture", "compare")), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request([photo])), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request([{ ...photo, captureDate: "2026-10-02" }], "fixture", "compare")), { code: "INVALID_INPUT" });
+});
+test("같은 장면 시간 추천은 시간 근거와 높은 장면 일치 점수 둘 다 필요하다", () => {
+  const good = { beforeId: "p1", afterId: "p2", matchConfidence: 95, phaseConfidence: 90, evidence: "same_scene_time" };
+  const check = (times, overrides = {}) => normalizePairs(JSON.stringify({ pairs: [{ ...good, ...overrides }] }), times.map((captureMinute, i) => ({ id: `p${i + 1}`, captureMinute })));
+  assert.equal(check([0, 40]).length, 1);
+  for (const times of [[undefined, 40], [0, undefined], [0, 39], [40, 0], [0, 0]]) assert.equal(check(times).length, 0);
+  assert.equal(check([0, 60], { matchConfidence: 94 }).length, 0);
+  assert.equal(check([60, 0], { evidence: "debris_removed" }).length, 0);
+});
+test("AI에는 실제 날짜 대신 원본 기준 상대 간격과 중간 전 사진 예외만 알려준다", async () => {
+  const images = [{ id: "private_1", dataUrl: jpeg(), captureMinute: 0 }, { id: "private_2", dataUrl: jpeg(), captureMinute: 156 }];
+  const result = await classifyPhotos({ kind: "moveIn", mode: "compare", images }, env(), async (_, options) => {
+    assert.match(options.body, /captureMinute=156/u);
+    assert.match(options.body, /중간에도 추가 촬영/u);
+    assert.doesNotMatch(options.body, /private_|2026-10-02|DateTimeOriginal|latitude/u);
+    return responseForPair([{ beforeId: "p1", afterId: "p2", matchConfidence: 96, phaseConfidence: 90, evidence: "same_scene_time" }]);
+  });
+  assert.deepEqual(result.pairs, [{ beforeId: "private_1", afterId: "private_2", evidence: "same_scene_time" }]);
+});
+
 test("전후 비교는 같은 요청의 ID만 허용하고 중복·낮은 점수·근거 없음은 제외한다", () => {
   const good = { beforeId: "p1", afterId: "p2", matchConfidence: 90, phaseConfidence: 90, evidence: "debris_removed" };
   const images = ["p1", "p2", "p3", "p4"].map(id => ({ id }));

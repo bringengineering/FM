@@ -27,7 +27,8 @@ function installFixture() {
       if (window.__photoQA.delay) await new Promise(resolve => setTimeout(resolve, window.__photoQA.delay));
       if (window.__photoQA.fail) throw new Error("가상 Gemini 연결 실패");
       if (input.mode === "compare") return { ok: true, classifications: [], pairs: [{ beforeId: input.fileIds[0], afterId: input.fileIds[1], evidence: "debris_removed" }] };
-      return { ok: true, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "review", "review"][n], space: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "unknown", "unknown"][n], target: n < 2 ? "floor" : n < 6 ? "sink" : "unknown", confidence: 90, reason: "가상 구역 추천" }; }) };
+      const captureTimes = input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, captureTime: n < 6 ? { local: `2026-10-02T${n % 2 ? "16:40:45" : "14:04:14"}`, offset: "+09:00", source: "exif-original" } : null }; });
+      return { ok: true, captureTimes, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "review", "review"][n], space: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "unknown", "unknown"][n], target: n < 2 ? "floor" : n < 6 ? "sink" : "unknown", confidence: 90, reason: "가상 구역 추천" }; }) };
     },
   });
 }
@@ -68,6 +69,10 @@ async function main() {
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 2);
     assert.equal(await page.locator('.wr-pair-card').count(), 3);
     assert.equal(await page.locator('img[src="x"]').count(), 0);
+    assert.equal(await page.locator('.wr-photo-capture-time').count(), 8);
+    assert.match(await page.locator('.wr-pair-help').textContent(), /촬영시간 6\/8장 확인/u);
+    assert.equal(await page.locator('.wr-photo-capture-time').filter({ hasText: '원본 촬영시간 없음' }).count(), 2);
+    assert.equal(await page.locator('.wr-photo-capture-time').filter({ hasText: '2026-10-02 14:04:14' }).count(), 3);
     if (process.env.BRING_QA_SCREENSHOT) {
       await page.locator('.wr-ai-photo-section').evaluate(element => element.scrollIntoView({ block: 'start' }));
       await page.screenshot({ path: process.env.BRING_QA_SCREENSHOT });
