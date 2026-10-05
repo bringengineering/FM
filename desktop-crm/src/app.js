@@ -11372,7 +11372,7 @@
     week: "", loadedKey: "", sourceSignature: "", automatic: [], candidates: 0, omitted: 0,
     manual: [], plans: [], summary: "", summaryCustomized: false, existing: null,
     busy: false, aiLoading: false, previewOpen: false, documentPreviewOpen: false,
-    exportingDocument: false, error: "", warning: "",
+    exportingDocument: false, error: "", warning: "", delivery: null, deliveryKey: "",
   };
 
   const weeklyReportCore = () => window.BringWeeklyReportCore;
@@ -11396,7 +11396,7 @@
     const week = weeklyReportState.week;
     const actor = weeklyReportActor();
     const existing = (growthState.checkins || []).find(item => isWeeklyReportCheckin(item) && item.uid === (growthState.uid || actor.uid) && item.week === week) || null;
-    const loadedKey = `${week}:${existing && existing.id || ""}:${existing && existing.updatedAt || ""}`;
+    const loadedKey = `${actor.uid}:${week}:${existing && existing.id || ""}:${existing && existing.updatedAt || ""}`;
     if (weeklyReportState.loadedKey !== loadedKey) {
       const parsed = W.parseDone(existing && existing.answers && existing.answers.done);
       weeklyReportState.loadedKey = loadedKey;
@@ -11493,7 +11493,7 @@
             <header><b>다음 주 계획</b><span>직접 작성 ${weeklyReportState.plans.length}건</span></header>
             <div class="weekly-preview-list">${planRows}</div>
           </section>
-          <div class="weekly-preview-notice"><b>확인해 주세요</b><span>최종 제출을 누르면 ${savedAt ? "기존 보고서가 수정 내용으로 갱신됩니다." : "보고서 상태가 제출 완료로 변경됩니다."} 내용이 다르면 돌아가서 수정할 수 있습니다.</span></div>
+          <div class="weekly-preview-notice"><b>업무방에 공유됩니다</b><span>최종 제출을 누르면 CRM에 저장한 뒤 업무봇이 <strong>브링엔지니어링 업무방</strong>으로 요약과 전체 PDF 보고서를 보냅니다. 수정 제출도 공유됩니다. 내용이 다르면 돌아가서 수정해 주세요.</span></div>
         </div>
         <footer class="weekly-preview-actions">
           <button type="button" class="secondary-button" data-weekly-preview-close>돌아가서 수정</button>
@@ -11672,8 +11672,9 @@
             <p>${savedAt ? `${dateText(savedAt)}에 저장했습니다. 수정 후 다시 제출할 수 있습니다.` : "내용을 확인한 뒤 제출하면 회사 공용 서버에 저장됩니다."}</p>
             <div class="weekly-submit-actions">
               <button type="button" class="secondary-button" data-weekly-draft-preview${loading || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>초안 보기</button>
-              <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
+              <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장·전송 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
             </div>
+            ${weeklyDeliveryMarkup(context)}
           </section>
           <details class="weekly-manager-card">
             <summary><span>관리자 의견</span><em>${context.existing && context.existing.leadNote ? "1" : "0"}</em></summary>
@@ -11683,6 +11684,39 @@
         </aside>
       </section>
       ${weeklyReportState.documentPreviewOpen ? weeklyReportDocumentPreviewMarkup(context) : weeklyReportState.previewOpen ? weeklyReportPreviewMarkup(context, allItems, completed, savedAt) : ""}`;
+    refreshWeeklyDeliveryStatus(context);
+  }
+
+  function weeklyDeliveryKey(context) { return `${context.actor.uid}:${context.existing?.id || ""}:${context.existing?.updatedAt || ""}`; }
+  function weeklyDeliveryMarkup(context) {
+    if (!context.existing) return '<p>최종 제출 후 업무봇이 업무방으로 요약과 PDF를 보냅니다.</p>';
+    const status=weeklyReportState.deliveryKey===weeklyDeliveryKey(context)?weeklyReportState.delivery?.status:'loading';
+    const messages={sent:'텔레그램 전송 완료 · PDF 첨부',failed:'CRM 저장 완료 · 텔레그램 전송 실패',unknown:'CRM 저장 완료 · 전송 여부 확인 필요',none:'전송 내역 없음 · 최종 제출하면 PDF를 보냅니다.',unavailable:'CRM 저장 완료 · 전송 상태를 확인하지 못했습니다.',loading:'텔레그램 전송 상태 확인 중…'};
+    return `<div class="weekly-delivery-status" role="status"><b>업무봇 · 브링엔지니어링 업무방</b><p>${messages[status]||messages.loading}</p>${status==='unknown'?'<small>중복 전송을 막기 위해 재발송을 보류했습니다. 업무방에 첨부파일이 없는 것을 확인한 경우에만 다시 보내세요.</small>':''}${['failed','unavailable','unknown'].includes(status)?`<button type="button" class="secondary-button" data-weekly-telegram-retry${weeklyReportState.busy?' disabled':''}>${status==='unknown'?'업무방 확인 후 다시 보내기':status==='failed'?'PDF 다시 보내기':'전송 상태 다시 확인'}</button>`:''}</div>`;
+  }
+  function refreshWeeklyDeliveryStatus(context) {
+    const key=weeklyDeliveryKey(context);
+    if(!context.existing||weeklyReportState.busy||weeklyReportState.deliveryKey===key||!api.weeklyReportDeliveryStatus)return;
+    weeklyReportState.deliveryKey=key;weeklyReportState.delivery=null;
+    api.weeklyReportDeliveryStatus({id:context.existing.id}).then(result=>{
+      if(weeklyReportState.deliveryKey!==key||weeklyReportActor().uid!==context.actor.uid)return;
+      weeklyReportState.delivery=result;
+      if(currentView==='weeklyReports')renderWeeklyReports();
+    }).catch(()=>{if(weeklyReportState.deliveryKey===key){weeklyReportState.delivery={status:'unavailable'};if(currentView==='weeklyReports')renderWeeklyReports();}});
+  }
+  async function retryWeeklyDelivery() {
+    const context=hydrateWeeklyReport();if(!context?.existing||weeklyReportState.busy)return;
+    if(weeklyReportState.delivery?.status==='unavailable'){weeklyReportState.deliveryKey='';renderWeeklyReports();return;}
+    const confirmMissing=weeklyReportState.delivery?.status==='unknown';
+    if(confirmMissing&&!window.confirm('브링엔지니어링 업무방에 이 주간보고서 PDF가 없는 것을 직접 확인했나요? 이미 전송됐다면 중복 발송됩니다. 없는 것을 확인한 경우에만 확인을 눌러 주세요.'))return;
+    const key=weeklyDeliveryKey(context);weeklyReportState.busy=true;renderWeeklyReports();
+    try{
+      const result=await api.retryWeeklyReportDelivery({id:context.existing.id,confirmMissing});
+      if(weeklyReportActor().uid!==context.actor.uid||weeklyDeliveryKey(hydrateWeeklyReport())!==key)return;
+      weeklyReportState.deliveryKey=key;weeklyReportState.delivery=result;
+      showToast(result.status==='sent'?'PDF 보고서를 업무방에 보냈습니다.':result.status==='none'?'저장된 전송 자료가 없습니다. 내용을 확인한 뒤 최종 제출해 주세요.':'전송 상태를 확인해 주세요.',result.status==='sent'?'success':'error');
+    }catch{showToast('전송 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.','error');}
+    finally{weeklyReportState.busy=false;if(currentView==='weeklyReports')renderWeeklyReports();}
   }
 
   function updateWeeklyDefaultSummary() {
@@ -11735,14 +11769,19 @@
       answers,
     }));
     if (!checked.ok) return showToast(checked.error, "error");
+    const snapshot = structuredClone({summary:weeklyReportState.summary,automatic:weeklyReportState.automatic,manual:weeklyReportState.manual,plans:weeklyReportState.plans,department:weeklyReportDocumentPayload(context).department});
     weeklyReportState.busy = true;
     renderWeeklyReports();
     try {
-      await api.saveGrowthCheckin(checked.checkin);
+      const result=await api.submitWeeklyReport({checkin:checked.checkin,snapshot});
+      if(weeklyReportActor().uid!==context.actor.uid)return;
       weeklyReportState.loadedKey = "";
+      weeklyReportState.deliveryKey = "";
       growthState.loaded = false;
-      showToast("주간업무보고서를 제출했습니다.", "success");
+      showToast(result.delivery?.status==='sent'?"주간보고서를 저장하고 업무방에 PDF를 보냈습니다.":"주간보고서는 저장했습니다. 텔레그램 전송 상태를 확인해 주세요.", result.delivery?.status==='sent'?"success":"error");
       await loadGrowth();
+      const savedContext=hydrateWeeklyReport();
+      if(savedContext?.actor.uid===context.actor.uid){weeklyReportState.deliveryKey=weeklyDeliveryKey(savedContext);weeklyReportState.delivery=result.delivery;}
     } catch (error) {
       weeklyReportState.error = error && error.message || "주간업무보고서를 저장하지 못했습니다.";
     } finally {
@@ -14606,6 +14645,7 @@
       requestAnimationFrame(() => main.querySelector("[data-weekly-submit]")?.focus());
       return;
     }
+    if (event.target.closest("[data-weekly-telegram-retry]")) { await retryWeeklyDelivery(); return; }
     if (event.target.closest("[data-weekly-preview-confirm]")) {
       weeklyReportState.previewOpen = false;
       await saveWeeklyReport();

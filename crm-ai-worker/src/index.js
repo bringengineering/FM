@@ -1,6 +1,8 @@
 import { MAX_BUILDING_REPORT_CHARS, maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
+import { weeklyDeliveryRequest, boundedJson } from "./weekly-report-delivery.js";
+export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
@@ -9,7 +11,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-02-bringcare-monthly-activities-v3";
+const SERVICE_VERSION = "2026-10-05-weekly-report-telegram-pdf-v1";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -138,7 +140,7 @@ function bearerToken(request) {
   return match ? match[1] : "";
 }
 
-async function verifyFirebaseIdentity(idToken, env, fetchImpl) {
+async function verifyFirebaseIdentity(idToken, env, fetchImpl, canonicalAccess = false) {
   if (!idToken) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   if (!env.FIREBASE_WEB_API_KEY) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   let response;
@@ -146,21 +148,24 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl) {
     response = await fetchImpl(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken })
+      body: JSON.stringify({ idToken }),
+      ...(canonicalAccess ? { redirect: 'error', signal: AbortSignal.timeout(10000) } : {})
     });
   } catch {
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
   if (!response.ok) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   let payload;
-  try { payload = await response.json(); }
+  try { payload = canonicalAccess ? await boundedJson(response, 65536) : await response.json(); }
   catch { throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" }); }
   const user = Array.isArray(payload.users) ? payload.users[0] : null;
   const email = String(user?.email || "").trim().toLowerCase();
   const uid = String(user?.localId || "").trim();
   if (!email || !uid) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   const allowed = new Set(String(env.CRM_ALLOWED_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
-  if (!allowed.has(email)) throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
+  // Weekly delivery uses the canonical per-user CRM access record (checked by
+  // its handler), not the narrower AI-provider email allowlist.
+  if (!canonicalAccess && !allowed.has(email)) throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
   return { uid, email, emailVerified: user?.emailVerified === true };
 }
 
@@ -361,6 +366,13 @@ export function createWorker(options = {}) {
     async fetch(request, env) {
       const url = new URL(request.url);
       const cors = corsHeaders(request, env);
+      if (url.pathname === '/v1/weekly-report-delivery') {
+        if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
+        const result=await weeklyDeliveryRequest(request,env,{fetchImpl,verifyIdentity:token=>verifyFirebaseIdentity(token,env,fetchImpl,true),rateLimit:identity=>enforceBurstLimit(identity,env)});
+        const headers=new Headers(result.headers);
+        for(const [key,value] of Object.entries(cors))headers.set(key,value);
+        return new Response(result.body,{status:result.status,headers});
+      }
       if (url.pathname.startsWith('/v1/wallboard/')) return wallboardRequest(request, env, {
         cors, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl),
         refreshWallboard: options.refreshWallboard || (async ({idToken,identity,env:refreshEnv}) => {
@@ -375,7 +387,8 @@ export function createWorker(options = {}) {
       if (url.pathname.startsWith('/tv/api/')) return wallboardWebRequest(request, env);
       if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
-        return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
+        return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true",
+          weeklyReportDelivery: Boolean(env.WEEKLY_REPORT_DELIVERIES && env.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN && env.WEEKLY_REPORT_TELEGRAM_CHAT_ID) });
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
