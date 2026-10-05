@@ -13,8 +13,13 @@ try{
   const file=path.join(directory,'secrets.json');
   await writeFile(file,JSON.stringify(values),{mode:0o600,flag:'wx'});
   const status=await new Promise((resolve,reject)=>{
-    const child=spawn(process.execPath,[path.resolve('node_modules/wrangler/bin/wrangler.js'),'deploy','--keep-vars','--var','WALLBOARD_SCHEDULED_REFRESH_ENABLED:true','--secrets-file',file],{shell:false,windowsHide:true,stdio:'inherit',timeout:180000});
+    const child=spawn(process.execPath,[path.resolve('node_modules/wrangler/bin/wrangler.js'),'deploy','--keep-vars','--var','WALLBOARD_SCHEDULED_REFRESH_ENABLED:true','--secrets-file',file],{shell:false,windowsHide:true,stdio:['ignore','pipe','pipe'],timeout:180000});
+    // Wrangler also lists ordinary bindings, which can contain staff addresses.
+    // Drain bounded output without forwarding any values into CI logs.
+    let outputBytes=0;const drain=chunk=>{outputBytes+=chunk.length;if(outputBytes>2*1024*1024)child.kill();};
+    child.stdout.on('data',drain);child.stderr.on('data',drain);
     child.on('error',reject);child.on('exit',code=>resolve(code));
   });
   if(status!==0)throw new Error('WORKER_DEPLOY_FAILED');
+  console.log('Worker deployment completed. Secret values and binding contents were omitted.');
 }finally{await rm(directory,{recursive:true,force:true});}
