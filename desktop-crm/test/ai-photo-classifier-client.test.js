@@ -9,6 +9,16 @@ const {
 
 const jpeg = bytes => `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(bytes || 4)]).toString("base64")}`;
 
+test("전후 비교 응답은 예상 ID와 허용된 근거만 받는다", async () => {
+  const input = { kind: "moveIn", mode: "compare", images: [{ id: "a", dataUrl: jpeg() }, { id: "b", dataUrl: jpeg() }] };
+  const opts = { endpoint: "https://gateway.example/v1/photo-classify", idToken: "test", input };
+  const fetchImpl = pair => async () => Response.json({ ok: true, requestId: "r", classifications: [], pairs: [pair] });
+  const pair = { beforeId: "a", afterId: "b", evidence: "debris_removed" };
+  assert.deepEqual((await classifyPhotosWithGateway({ ...opts, fetchImpl: fetchImpl(pair) })).pairs, [pair]);
+  await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: fetchImpl({ ...pair, afterId: "foreign" }) }), { code: "AI_INVALID_RESPONSE" });
+  assert.throws(() => validatePhotoClassificationInput({ ...input, mode: "upload" }), { code: "INVALID_INPUT" });
+});
+
 test("사진 분류 입력은 30장 이하의 작은 JPEG와 제한된 필드만 받는다", () => {
   assert.deepEqual(validatePhotoClassificationInput({ kind: "moveIn", images: [{ id: "drive_1", dataUrl: jpeg() }] }), {
     kind: "moveIn", images: [{ id: "drive_1", dataUrl: jpeg() }],

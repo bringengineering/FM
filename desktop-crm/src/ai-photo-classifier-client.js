@@ -2,6 +2,8 @@
 
 const MAX_PHOTOS = 30;
 const MAX_JPEG_BYTES = 120 * 1024;
+const SPACES = new Set(["living", "bedroom", "kitchen", "bath", "veranda", "entrance", "other", "unknown"]);
+const TARGETS = new Set(["floor", "window", "sink", "cabinet", "hood", "toilet", "wall", "aircon", "refrigerator", "other", "unknown"]);
 const CATEGORIES = new Set([
   "floor", "window", "kitchen", "hood", "bath", "veranda", "storage",
   "aircon", "refrigerator", "finish", "review",
@@ -36,7 +38,8 @@ function decodedJpegBytes(dataUrl) {
 
 function validatePhotoClassificationInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw codedError("INVALID_INPUT");
-  if (Object.keys(input).some(key => !["kind", "images"].includes(key))) throw codedError("INVALID_INPUT");
+  if (Object.keys(input).some(key => !["kind", "images", "mode"].includes(key))) throw codedError("INVALID_INPUT");
+  if (input.mode !== undefined && !["classify", "compare"].includes(input.mode)) throw codedError("INVALID_INPUT");
   if (input.kind !== "moveIn") throw codedError("INVALID_INPUT");
   if (!Array.isArray(input.images) || !input.images.length || input.images.length > MAX_PHOTOS) throw codedError("INPUT_TOO_LARGE");
   const seen = new Set();
@@ -51,10 +54,10 @@ function validatePhotoClassificationInput(input) {
     decodedJpegBytes(dataUrl);
     return { id, dataUrl };
   });
-  return { kind: "moveIn", images };
+  return { kind: "moveIn", images, ...(input.mode ? { mode: input.mode } : {}) };
 }
 
-function normalizeSuccess(value, expectedIds) {
+function normalizeSuccess(value, expectedIds, mode) {
   if (!value || value.ok !== true || typeof value.requestId !== "string" || !value.requestId || !Array.isArray(value.classifications)) {
     throw codedError("AI_INVALID_RESPONSE");
   }
@@ -71,16 +74,31 @@ function normalizeSuccess(value, expectedIds) {
       id,
       category,
       confidence,
+      ...(row.space !== undefined || row.target !== undefined ? {
+        space: SPACES.has(row.space) ? row.space : "unknown",
+        target: TARGETS.has(row.target) ? row.target : "unknown",
+      } : {}),
       reason: String(row.reason || "").trim().slice(0, 120),
     };
   });
   expectedIds.forEach(id => {
-    if (!seen.has(id)) classifications.push({ id, category: "review", confidence: 0, reason: "AI가 분류 결과를 주지 않아 확인이 필요합니다." });
+    if (mode !== "compare" && !seen.has(id)) classifications.push({ id, category: "review", confidence: 0, reason: "AI가 분류 결과를 주지 않아 확인이 필요합니다." });
   });
+  const pairs = []; const paired = new Set();
+  if (mode === "compare") {
+    if (!Array.isArray(value.pairs)) throw codedError("AI_INVALID_RESPONSE");
+    for (const pair of value.pairs) {
+      if (!pair || !expected.has(pair.beforeId) || !expected.has(pair.afterId) || pair.beforeId === pair.afterId || paired.has(pair.beforeId) || paired.has(pair.afterId)
+        || !["debris_removed", "stain_reduced", "items_removed"].includes(pair.evidence)) throw codedError("AI_INVALID_RESPONSE");
+      pairs.push({ beforeId: pair.beforeId, afterId: pair.afterId, evidence: pair.evidence });
+      paired.add(pair.beforeId); paired.add(pair.afterId);
+    }
+  }
   return {
     ok: true,
     requestId: value.requestId,
     classifications,
+    ...(mode === "compare" ? { pairs } : {}),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter(item => typeof item === "string").slice(0, 5) : [],
     usage: {
       inputTokens: Math.max(0, Number(value.usage?.inputTokens || 0)),
@@ -121,7 +139,7 @@ async function classifyPhotosWithGateway(options) {
     const code = Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, value?.code) ? value.code : "AI_TEMPORARY_FAILURE";
     throw codedError(code);
   }
-  return normalizeSuccess(value, input.images.map(image => image.id));
+  return normalizeSuccess(value, input.images.map(image => image.id), input.mode);
 }
 
 module.exports = Object.freeze({

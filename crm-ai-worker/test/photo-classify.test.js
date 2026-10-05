@@ -2,9 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createWorker } from "../src/index.js";
-import { classifyPhotos, readPhotoClassificationPayload } from "../src/photo-classify.js";
+import { classifyPhotos, readPhotoClassificationPayload, normalizePairs } from "../src/photo-classify.js";
 
 const jpeg = () => `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 1]).toString("base64")}`;
+
+test("전후 비교는 같은 요청의 ID만 허용하고 중복·낮은 점수·근거 없음은 제외한다", () => {
+  const good = { beforeId: "p1", afterId: "p2", matchConfidence: 90, phaseConfidence: 90, evidence: "debris_removed" };
+  const images = ["p1", "p2", "p3", "p4"].map(id => ({ id }));
+  const pairs = normalizePairs(JSON.stringify({ pairs: [good, { ...good, afterId: "p3" }, { ...good, beforeId: "foreign", afterId: "p4" }, { ...good, beforeId: "p3", afterId: "p4", phaseConfidence: 30 }] }), images);
+  assert.deepEqual(pairs, [{ beforeId: "p1", afterId: "p2", evidence: "debris_removed" }]);
+  assert.deepEqual(normalizePairs(JSON.stringify({ pairs: [{ ...good, evidence: "unknown" }] }), images), []);
+});
+test("전후 비교는 6장 분류 경계를 넘어 비교하고 사진 원본 식별정보를 제공자에 보내지 않는다", async () => {
+  const images = Array.from({ length: 8 }, (_, i) => ({ id: `private_${i}`, dataUrl: jpeg() }));
+  let calls = 0;
+  const result = await classifyPhotos({ kind: "moveIn", mode: "compare", images }, env(), async (_, options) => {
+    calls += 1; assert.equal(options.redirect, "manual");
+    const body = JSON.parse(options.body);
+    assert.equal(options.body.includes("private_"), false);
+    assert.equal(body.generationConfig.responseJsonSchema.properties.pairs.items.properties.beforeId.enum.length, 8);
+    return responseForPair([{ beforeId: "p1", afterId: "p8", matchConfidence: 95, phaseConfidence: 88, evidence: "stain_reduced" }]);
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.pairs, [{ beforeId: "private_0", afterId: "private_7", evidence: "stain_reduced" }]);
+});
+const responseForPair = pairs => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs }) }] } }] });
+test("확장된 공간·대상 분류도 닫힌 값으로 정규화한다", async () => {
+  const result = await classifyPhotos({ kind: "moveIn", images: [{ id: "one", dataUrl: jpeg() }] }, env(), async () => responseFor([{ id: "p1", category: "floor", space: "<script>", target: "floor", confidence: 90 }]));
+  assert.equal(result.classifications[0].space, "unknown"); assert.equal(result.classifications[0].target, "floor");
+});
 const env = overrides => ({
   AI_ENABLED: "true",
   FIREBASE_WEB_API_KEY: "public-key",
@@ -16,11 +42,11 @@ const env = overrides => ({
   ...(overrides || {}),
 });
 
-function request(images, token = "firebase-token") {
+function request(images, token = "firebase-token", mode) {
   return new Request("https://ai.example/v1/photo-classify", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ kind: "moveIn", images }),
+    body: JSON.stringify({ kind: "moveIn", images, ...(mode ? { mode } : {}) }),
   });
 }
 
@@ -28,6 +54,7 @@ test("사진 분류 payload는 JPEG 시그니처와 허용 필드까지 검사�
   assert.equal((await readPhotoClassificationPayload(request([{ id: "a", dataUrl: jpeg() }]))).images.length, 1);
   await assert.rejects(() => readPhotoClassificationPayload(request([{ id: "a", dataUrl: "data:image/jpeg;base64,AAAA" }])), error => error?.code === "INVALID_INPUT");
   await assert.rejects(() => readPhotoClassificationPayload(request([{ id: "a", dataUrl: jpeg(), driveUrl: "https://drive.google.com/x" }])), error => error?.code === "INVALID_INPUT");
+  await assert.rejects(() => readPhotoClassificationPayload(request([{ id: "a", dataUrl: jpeg() }], "firebase-token", "arbitrary")), error => error?.code === "INVALID_INPUT");
 });
 
 test("사진 분류 route는 인증 뒤 Gemini에 6장씩 요청하고 낮은 확신은 확인으로 남긴다", async () => {
@@ -67,6 +94,22 @@ test("사진 분류 route는 인증 뒤 Gemini에 6장씩 요청하고 낮은 �
 });
 
 const payload = { kind: "moveIn", images: [{ id: "private-drive-id", dataUrl: jpeg() }] };
+test("전후 비교 route도 인증을 요구하고 검증된 짝만 클라이언트로 전달한다", async () => {
+  let providers = 0;
+  const worker = createWorker({ fetchImpl: async (url) => {
+    if (String(url).includes("accounts:lookup")) return Response.json({ users: [{ localId: "u1", email: "worker@example.com", emailVerified: true }] });
+    providers += 1;
+    return responseForPair([{ beforeId: "p1", afterId: "p2", matchConfidence: 92, phaseConfidence: 90, evidence: "debris_removed" }]);
+  } });
+  const images = [{ id: "before", dataUrl: jpeg() }, { id: "after", dataUrl: jpeg() }];
+  assert.equal((await worker.fetch(request(images, "", "compare"), env())).status, 401);
+  assert.equal(providers, 0);
+  const response = await worker.fetch(request(images, "firebase-token", "compare"), env());
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.deepEqual(result.pairs, [{ beforeId: "before", afterId: "after", evidence: "debris_removed" }]);
+  assert.equal(providers, 1);
+});
 const responseFor = rows => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: rows }) }] } }] });
 
 test("Gemini 누락·비정상 구역은 확인 대기이며 원본 ID는 제공자에 전송하지 않는다", async () => {
