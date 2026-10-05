@@ -4851,6 +4851,7 @@ function safeClassificationJpeg(sourceBuffer) {
   const size = source.getSize();
   const longest = Math.max(1, Number(size.width || 0), Number(size.height || 0));
   const attempts = [
+    { edge: 1024, quality: 76 },
     { edge: 768, quality: 68 },
     { edge: 640, quality: 58 },
     { edge: 512, quality: 48 },
@@ -4871,15 +4872,21 @@ function safeClassificationJpeg(sourceBuffer) {
   throw Object.assign(new Error("사진 축소본이 허용 크기를 넘습니다."), { code: "PHOTO_PREVIEW_TOO_LARGE" });
 }
 
-async function workReportClassificationSource(file, picker, accessToken) {
+async function workReportClassificationSource(file, picker, accessToken, mode = "preview") {
   const thumbnailLink = picker.thumbnails.get(file.id);
-  if (thumbnailLink) {
+  if (thumbnailLink && mode !== "compare") {
     try {
       const preview = await fetchReportDriveThumbnail(thumbnailLink, accessToken);
       const match = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/u.exec(String(preview && preview.dataUrl || ""));
-      if (match) return safeClassificationJpeg(Buffer.from(match[1], "base64"));
+      if (match) {
+        const bytes = Buffer.from(match[1], "base64");
+        const size = nativeImage.createFromBuffer(bytes).getSize();
+        // Tiny Drive thumbnails lose room fixtures and surface detail. Other report
+        // consumers retain their existing preview path; work-photo review upgrades it.
+        if (mode === "preview" || Math.max(size.width, size.height) >= 768) return safeClassificationJpeg(bytes);
+      }
     } catch (_) {
-      // Google 미리보기가 없을 때만 아래의 제한된 원본 다운로드로 보완한다.
+      // 미리보기가 없거나 작으면 아래의 제한된 다운로드로 보완한다.
     }
   }
   const fetched = await BuildingDocsDrive.downloadFile(
@@ -4900,7 +4907,8 @@ async function classifySelectedWorkReportPhotos(input) {
   if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 결과보고서 사진을 분류할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
   const guard = remoteClient.captureSessionGuard();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  if (Object.keys(options).some(key => !["kind", "fileIds"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (Object.keys(options).some(key => !["kind", "fileIds", "mode"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (options.mode !== undefined && !["classify", "compare"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
   if (options.kind !== "moveIn") throw Object.assign(new Error("입주청소 사진만 AI로 구역을 분류할 수 있습니다."), { code: "INVALID_INPUT" });
   const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
   if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
@@ -4921,7 +4929,7 @@ async function classifySelectedWorkReportPhotos(input) {
       cursor += 1;
       const file = files[index];
       try {
-        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken) };
+        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken, options.mode || "classify") };
       } catch (_) {
         unavailable.push({ id: file.id, category: "review", confidence: 0, reason: "사진 축소본을 만들지 못해 직접 확인이 필요합니다." });
       }
@@ -4936,7 +4944,7 @@ async function classifySelectedWorkReportPhotos(input) {
   const result = await classifyPhotosWithGateway({
     endpoint: CRM_AI_PHOTO_CLASSIFY_URL,
     idToken,
-    input: { kind: "moveIn", images: prepared },
+    input: { kind: "moveIn", images: prepared, ...(options.mode ? { mode: options.mode } : {}) },
     fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
   });
   remoteClient.assertSessionGuardActive(guard);

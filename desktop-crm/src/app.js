@@ -8577,6 +8577,7 @@
     driveScanning: false,
     drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
     driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
+    photoReviewFilter: "all", photoReviewSelected: new Set(), photoReviewBulk: {}, photoReviewStage: "",
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
     driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
@@ -8594,6 +8595,9 @@
     reportState.driveBasePlan = null;
     reportState.driveClassificationLoading = false;
     reportState.driveClassifications = [];
+    reportState.photoReviewFilter = "all";
+    reportState.photoReviewSelected = new Set();
+    reportState.photoReviewBulk = {};
     reportState.driveLeftovers = [];
     reportState.driveError = "";
     reportState.drivePickerOpen = false;
@@ -8914,7 +8918,7 @@
           : `<button type="button" class="primary-button" data-report-drive-connect${driveState.loaded ? "" : " disabled"}>${driveState.reconnectRequired ? "회사 Drive 다시 연결" : "회사 Drive 연결"}</button>`}
       </div>
       ${reportState.driveError ? `<p class="wr-drive-error" role="alert">${esc(reportState.driveError)}</p>` : ""}
-      ${plan ? `
+      ${plan && plan.kind === "moveIn" ? reportPairMain() : plan ? `
         ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         ${plan.kind === "moveIn" ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
         ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·전후 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span></header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
@@ -8927,6 +8931,51 @@
           <small>선택 ${Number(plan.selectedCount || selected || plan.photoCount)}장 · 항목에 붙는 구역 ${matchedCount}개${unresolvedCount ? ` · 선택할 구역 ${unresolvedCount}개` : ""}</small>
         </div>` : ""}
     </div>`;
+  }
+
+  function reportPairThumbnail(row) {
+    const value = reportState.driveThumbnails instanceof Map ? reportState.driveThumbnails.get(row.id) : "";
+    return value ? `<span class="wr-pair-thumb"><img src="${attr(value)}" alt="${attr(row.file.name || "작업 사진")}"></span>` : `<span class="wr-pair-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span>사진 불러오는 중</span></span>`;
+  }
+
+  function reportPairMain() {
+    const V = window.BringPhotoPairReview; if (!V) return `<p role="alert">사진 비교 모듈을 불러오지 못했습니다.</p>`;
+    const plan = reportState.drivePlan, rows = V.flatten(plan);
+    const confirmed = rows.filter(row => row.file.reviewConfirmed && V.resolved(row)).length;
+    const unresolved = rows.filter(row => !V.resolved(row)).length;
+    const filter = reportState.photoReviewFilter || "all";
+    const groups = V.groups(plan).filter(group => group.paired && (filter === "all" || group.space === filter));
+    const disabled = reportState.driveClassificationLoading ? " disabled" : "";
+    return `<section class="wr-pair-review">
+      <div class="wr-ai-classify-bar"><div><b>Gemini 구역·전후 추천</b><small>공간·대상 분류 → 같은 장소 비교 → 확인 후 적용. 사진 축소본만 전송하며 파일명·Drive 링크는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
+      <header class="wr-pair-summary"><b>선택 ${rows.length}장</b><span>확인 완료 ${confirmed}장</span><button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}장</button></header>
+      <p class="wr-pair-help">AI 추천은 확정이 아닙니다. 전·후를 비교하고 확인한 사진만 초안에 넣으세요.</p>
+      <nav class="wr-pair-filters" aria-label="사진 공간 필터">${[["all", "전체"], ...Object.entries(V.SPACES).filter(([key]) => key !== "unknown")].map(([key, label]) => `<button type="button" class="mini-button${filter === key ? " is-active" : ""}" data-report-review-filter="${key}">${esc(label)}</button>`).join("")}</nav>
+      <div class="wr-pair-groups">${groups.map(group => `<article class="wr-pair-card"><header><b>${esc(V.SPACES[group.space])} · ${esc(V.TARGETS[group.target])}</b><span>${group.rows.every(row => row.file.reviewConfirmed) ? "확인 완료" : "추천 검토"}</span><button type="button" class="mini-button" data-report-review-swap="${attr(group.id)}"${disabled}>전·후 바꾸기</button><button type="button" class="mini-button" data-report-review-unpair="${attr(group.id)}"${disabled}>구역 변경·사진 이동</button></header>
+        <div class="wr-pair-images">${["before", "after"].map(phase => { const row = group.rows.find(item => item.phase === phase); return row ? `<figure><strong>${phase === "before" ? "작업 전" : "작업 후"}</strong>${reportPairThumbnail(row)}<figcaption>${esc(row.file.name || "선택한 사진")}</figcaption></figure>` : `<p>사진을 확인해 주세요.</p>`; }).join("")}</div>
+        <footer><small>${esc(group.rows[0].file.phaseReason || "같은 장소인지 확인해 주세요.")}</small><label><input type="checkbox" data-report-review-confirm-pair="${attr(group.id)}"${group.rows.every(row => row.file.reviewConfirmed) ? " checked" : ""}${disabled}> 이 전·후 짝 확인</label></footer></article>`).join("") || `<p class="wr-pair-empty">${reportState.driveClassificationLoading ? "구역과 같은 장소의 전·후 짝을 분석하고 있습니다." : "아직 확인할 전·후 짝이 없습니다. 오른쪽에서 공간·대상과 전·후를 지정하거나 사진 2장을 골라 묶으세요."}</p>`}</div>
+      ${(plan.warnings || []).length ? `<details class="wr-pair-warnings"><summary>분석 안내</summary><ul>${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul></details>` : ""}
+      <div class="wr-drive-actions"><button type="button" class="primary-button" data-report-drive-apply${confirmed && !disabled ? "" : " disabled"}>확인한 사진 ${confirmed}장 초안에 적용</button><small>확인하지 않은 사진은 남겨 둡니다. 작업 완료 상태는 바꾸지 않습니다.</small></div>
+    </section>`;
+  }
+
+  function reportPairPending() {
+    const V = window.BringPhotoPairReview, plan = reportState.drivePlan;
+    if (!V || plan?.kind !== "moveIn") return "";
+    const rows = V.flatten(plan).filter(row => !row.file.reviewPair);
+    const disabled = reportState.driveClassificationLoading ? " disabled" : "";
+    const select = (labels, selected, attrs) => `<select ${attrs}${disabled}>${Object.entries(labels).map(([key, label]) => `<option value="${key}"${key === selected ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
+    const phases = { unsorted: "확인 필요", before: "작업 전", after: "작업 후" };
+    return `<section class="wr-ai-card wr-pair-pending" data-report-review-pending><header><div><span>PHOTO REVIEW</span><h4>개별·일괄 확인</h4></div><em>${rows.length}장</em></header><p>짝을 찾지 못한 사진입니다. 같은 구역의 여러 장을 한 번에 지정할 수 있습니다.</p>
+      <details class="wr-pair-bulk" open><summary>선택한 사진 일괄 지정</summary><label>공간${select({ "": "변경 안 함", ...V.SPACES }, reportState.photoReviewBulk?.space || "", 'data-report-review-bulk="space"')}</label><label>대상${select({ "": "변경 안 함", ...V.TARGETS }, reportState.photoReviewBulk?.target || "", 'data-report-review-bulk="target"')}</label><label>전·후${select({ "": "변경 안 함", ...phases }, reportState.photoReviewBulk?.phase || "", 'data-report-review-bulk="phase"')}</label><div><button type="button" class="mini-button" data-report-review-select-all${disabled}>목록 모두 선택·해제</button><button type="button" class="primary-button" data-report-review-bulk-apply${disabled}>선택한 사진에 적용</button><button type="button" class="mini-button" data-report-review-manual-pair${disabled}>선택 2장 전·후 짝으로 묶기</button></div></details>
+      <div class="wr-pair-pending-list">${rows.map(row => `<article class="wr-pair-single${V.resolved(row) ? "" : " needs-review"}" data-report-review-row="${attr(row.id)}"><label class="wr-pair-select"><input type="checkbox" data-report-review-select="${attr(row.id)}"${reportState.photoReviewSelected?.has(row.id) ? " checked" : ""}${disabled}> ${esc(row.file.name || "선택한 사진")}</label>${reportPairThumbnail(row)}<label>공간${select(V.SPACES, row.file.reviewSpace || "unknown", `data-report-review-space="${attr(row.id)}"`)}</label><label>대상${select(V.TARGETS, row.file.reviewTarget || "unknown", `data-report-review-target="${attr(row.id)}"`)}</label><label>전·후${select(phases, row.phase, `data-report-photo-phase="${attr(row.id)}"`)}</label><small>${esc(row.file.phaseReason || "전·후 판단 근거가 부족합니다. 직접 확인해 주세요.")}</small><label class="wr-pair-select"><input type="checkbox" data-report-review-confirm="${attr(row.id)}"${row.file.reviewConfirmed ? " checked" : ""}${!V.resolved(row) || disabled ? " disabled" : ""}> 이 사진 분류 확인</label></article>`).join("") || `<p>모든 사진이 전·후 짝으로 묶여 있습니다.</p>`}</div>
+    </section>`;
+  }
+
+  function commitReportPhotoReview(plan) {
+    if (!plan || reportState.driveClassificationLoading) return;
+    preserveReportDraft(); reportState.drivePlan = plan; reportState.driveBasePlan = plan;
+    renderWorkReports();
   }
 
   function preserveReportDraft() {
@@ -9180,6 +9229,7 @@
       reportState.driveBasePlan = result.plan;
       reportState.drivePlan = result.plan;
       reportState.driveClassifications = [];
+      reportState.photoReviewSelected = new Set(); reportState.photoReviewBulk = {}; reportState.photoReviewFilter = "all";
       reportState.drivePickerOpen = false;
       if (result.plan.kind === "moveIn") await classifyReportDrivePhotos();
       else showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 구역과 전·후를 확인해 주세요.`, "success");
@@ -9209,6 +9259,7 @@
     const manual = new Map(reportState.driveClassifications.filter(row => row.manual).map(row => [String(row.id), row]));
     preserveReportDraft();
     reportState.driveClassificationLoading = true;
+    reportState.photoReviewStage = "공간·대상 분석 중…";
     reportState.driveError = "";
     renderWorkReports();
     try {
@@ -9220,7 +9271,29 @@
         if (!result || result.ok !== true || !Array.isArray(result.classifications)) throw new Error("Gemini 사진 분류 결과를 확인하지 못했습니다.");
         classifications.push(...result.classifications.map(row => manual.get(String(row.id)) || row));
         reportState.driveClassifications = classifications.concat([...manual.values()].filter(row => !classifications.some(item => item.id === row.id)));
-        reportState.drivePlan = P.applyPhotoClassifications(basePlan, reportState.driveClassifications);
+        reportState.drivePlan = window.BringPhotoPairReview.decorate(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), reportState.driveClassifications);
+      }
+      const V = window.BringPhotoPairReview;
+      const groups = V.comparisonGroups(reportState.drivePlan);
+      for (let index = 0; index < groups.length; index += 1) {
+        if (!active()) return;
+        const ids = groups[index];
+        if (ids.length > 30) reportState.drivePlan.warnings = [...(reportState.drivePlan.warnings || []), "30장이 넘는 구역은 나누어 비교했습니다. 묶음 사이에 남은 사진은 직접 짝을 확인해 주세요."];
+        for (let start = 0; start < ids.length; start += 30) {
+          const batch = ids.slice(start, start + 30); if (batch.length < 2) continue;
+          reportState.photoReviewStage = `전·후 비교 ${index + 1}/${groups.length}`;
+          preserveReportDraft(); renderWorkReports();
+          try {
+            const compared = await api.classifyWorkReportPhotos({ fileIds: batch, kind: "moveIn", mode: "compare" });
+            if (!active()) return;
+            if (!compared?.ok || !Array.isArray(compared.pairs)) throw new Error("전·후 비교 결과를 확인하지 못했습니다.");
+            reportState.drivePlan = V.applyPairs(reportState.drivePlan, compared.pairs);
+          } catch (error) {
+            if (!active()) return;
+            reportState.driveError = `${error?.message || "전·후 비교를 완료하지 못했습니다."} 구역 추천과 사진은 유지됩니다. 남은 사진은 직접 확인해 주세요.`;
+            break;
+          }
+        }
       }
       const review = P.photoReviewRows(reportState.drivePlan).filter(row => !row.itemKey || row.phase === "unsorted").length;
       showToast(`Gemini가 사진 ${fileIds.length}장을 분류했습니다.${review ? ` ${review}장의 구역·전후를 확인해 주세요.` : " 확인 후 초안에 적용해 주세요."}`, review ? "" : "success");
@@ -9257,6 +9330,7 @@
   function assignReportPhotoPhase(fileId, phase) {
     const P = reportPhotoPlan();
     if (!P || !reportState.drivePlan || reportState.driveClassificationLoading) return;
+    if (reportState.drivePlan.kind === "moveIn") { commitReportPhotoReview(window.BringPhotoPairReview.update(reportState.drivePlan, [fileId], { phase })); return; }
     preserveReportDraft();
     reportState.driveBasePlan = P.assignPhotoPhase(reportState.driveBasePlan, fileId, phase);
     reportState.drivePlan = P.assignPhotoPhase(reportState.drivePlan, fileId, phase);
@@ -9266,8 +9340,10 @@
   function applyReportDrivePlan() {
     const R = reportCore();
     const P = reportPhotoPlan();
-    const plan = reportState.drivePlan;
+    const sourcePlan = reportState.drivePlan;
+    const plan = sourcePlan?.kind === "moveIn" ? window.BringPhotoPairReview.confirmedPlan(sourcePlan) : sourcePlan;
     if (!R || !P || !plan || reportState.driveClassificationLoading) return;
+    if (sourcePlan.kind === "moveIn" && !window.BringPhotoPairReview.flatten(plan).length) { showToast("분류를 확인한 사진을 먼저 선택해 주세요.", "error"); return; }
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
     const allowedKeys = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(draft.kind) : R.itemsFor(draft.kind, [])).map(item => item.key));
     const resolvedBucketKey = bucket => {
@@ -9287,7 +9363,7 @@
     if (!made.ok) { showToast(made.error, "error"); return; }
 
     // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
-    const merged = P.mergeDraftPhotos(draft.items, made.draft.items);
+    const merged = sourcePlan.kind === "moveIn" ? window.BringPhotoPairReview.mergeReviewed(draft.items, made.draft.items) : P.mergeDraftPhotos(draft.items, made.draft.items);
     reportState.draft = R.normalizeReport(Object.assign({}, draft, {
       items: merged.items,
       buildingName: draft.buildingName || made.draft.buildingName,
@@ -9505,6 +9581,7 @@
           </section>
         </div>
         <aside class="wr-ai-side">
+          ${reportPairPending()}
           <section class="wr-ai-card wr-ai-location-summary">
             <header><div><span>LIVE CHECK</span><h4>입력 내용 확인</h4></div><em class="${addressParts.base ? "is-ready" : ""}">${addressParts.base ? "✓ 주소 연결됨" : "주소 확인 필요"}</em></header>
             <dl>
@@ -9526,7 +9603,7 @@
             <p class="wr-ai-safe">원본 사진·고객 연락처·주소는 AI에 전송하지 않습니다.</p>
           </section>
           <section class="wr-ai-card wr-ai-finish">
-            <header><div><span>FINAL CHECK</span><h4>저장 준비</h4></div><strong>${sum.progress}%</strong></header>
+            <header><div><span>FINAL CHECK</span><h4>작업 항목 완료율</h4></div><strong>${sum.progress}%</strong></header>
             <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
             <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped} · 사진 ${sum.photos}장</p>
             ${blockers.length
@@ -14697,6 +14774,36 @@
     if (reportDriveFile) { toggleReportDriveFile(reportDriveFile.dataset.reportDriveFile); return; }
     if (event.target.closest("[data-report-drive-plan]")) { await planSelectedReportDrivePhotos(); return; }
     if (event.target.closest("[data-report-photo-classify]")) { await classifyReportDrivePhotos(); return; }
+    const pairFilter = event.target.closest("[data-report-review-filter]");
+    if (pairFilter) { preserveReportDraft(); reportState.photoReviewFilter = pairFilter.dataset.reportReviewFilter; renderWorkReports(); return; }
+    if (event.target.closest("[data-report-review-focus]")) { document.querySelector("[data-report-review-pending]")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    const pairSwap = event.target.closest("[data-report-review-swap]");
+    if (pairSwap) { commitReportPhotoReview(window.BringPhotoPairReview.swap(reportState.drivePlan, pairSwap.dataset.reportReviewSwap)); return; }
+    const unpair = event.target.closest("[data-report-review-unpair]");
+    if (unpair) {
+      const V = window.BringPhotoPairReview;
+      const ids = V.flatten(reportState.drivePlan).filter(row => row.file.reviewPair === unpair.dataset.reportReviewUnpair).map(row => row.id);
+      reportState.photoReviewSelected = new Set(ids);
+      commitReportPhotoReview(V.update(reportState.drivePlan, ids, {}));
+      document.querySelector("[data-report-review-pending]")?.scrollIntoView({ behavior: "smooth", block: "center" }); return;
+    }
+    if (event.target.closest("[data-report-review-select-all]")) {
+      if (reportState.driveClassificationLoading) return;
+      const ids = window.BringPhotoPairReview.flatten(reportState.drivePlan).filter(row => !row.file.reviewPair).map(row => row.id);
+      reportState.photoReviewSelected = new Set(ids.every(id => reportState.photoReviewSelected.has(id)) ? [] : ids);
+      preserveReportDraft(); renderWorkReports(); return;
+    }
+    if (event.target.closest("[data-report-review-bulk-apply]")) {
+      const ids = [...reportState.photoReviewSelected]; if (!ids.length) { showToast("먼저 사진을 선택해 주세요."); return; }
+      const changes = Object.fromEntries(Object.entries(reportState.photoReviewBulk || {}).filter(([, value]) => value));
+      if (!Object.keys(changes).length) { showToast("변경할 공간·대상 또는 전·후를 골라 주세요."); return; }
+      commitReportPhotoReview(window.BringPhotoPairReview.update(reportState.drivePlan, ids, changes)); return;
+    }
+    if (event.target.closest("[data-report-review-manual-pair]")) {
+      const made = window.BringPhotoPairReview.manualPair(reportState.drivePlan, [...reportState.photoReviewSelected]);
+      if (!made) { showToast("같은 공간·대상의 작업 전 1장과 작업 후 1장을 선택해 주세요.", "error"); return; }
+      reportState.photoReviewSelected = new Set(); commitReportPhotoReview(made); return;
+    }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
     if (event.target.closest("[data-report-history]")) {
@@ -17099,6 +17206,23 @@
       cleaningOrderState.statusFilter = event.target.value || "all";
       applyCleaningOrderFilters();
       return;
+    }
+    if (event.target.matches("[data-report-review-select]")) {
+      if (reportState.driveClassificationLoading) return;
+      const id = event.target.dataset.reportReviewSelect;
+      if (event.target.checked) reportState.photoReviewSelected.add(id); else reportState.photoReviewSelected.delete(id);
+      return;
+    }
+    if (event.target.matches("[data-report-review-bulk]")) { reportState.photoReviewBulk[event.target.dataset.reportReviewBulk] = event.target.value; return; }
+    if (event.target.matches("[data-report-review-space], [data-report-review-target]")) {
+      const field = event.target.matches("[data-report-review-space]") ? "space" : "target";
+      const id = field === "space" ? event.target.dataset.reportReviewSpace : event.target.dataset.reportReviewTarget;
+      commitReportPhotoReview(window.BringPhotoPairReview.update(reportState.drivePlan, [id], { [field]: event.target.value })); return;
+    }
+    if (event.target.matches("[data-report-review-confirm], [data-report-review-confirm-pair]")) {
+      const V = window.BringPhotoPairReview;
+      const ids = event.target.dataset.reportReviewConfirmPair ? V.flatten(reportState.drivePlan).filter(row => row.file.reviewPair === event.target.dataset.reportReviewConfirmPair).map(row => row.id) : [event.target.dataset.reportReviewConfirm];
+      commitReportPhotoReview(V.confirm(reportState.drivePlan, ids, event.target.checked)); return;
     }
     if (event.target.matches("[data-report-photo-category]")) {
       assignReportPhotoCategory(event.target.dataset.reportPhotoCategory, event.target.value);

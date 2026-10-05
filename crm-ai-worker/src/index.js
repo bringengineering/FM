@@ -11,7 +11,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-05-weekly-report-telegram-pdf-v1";
+const SERVICE_VERSION = "2026-10-05-work-photo-pairs-v1";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -409,6 +409,7 @@ export function createWorker(options = {}) {
             ok: true,
             requestId: requestId(),
             classifications: classified.classifications,
+            ...(classified.pairs ? { pairs: classified.pairs } : {}),
             warnings: ["사진 축소본은 분류에만 사용되며 이 서비스에 저장하지 않습니다."],
             usage: classified.usage,
           }, 200, cors);
