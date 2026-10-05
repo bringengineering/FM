@@ -98,6 +98,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   const names = [...preload.matchAll(/^\s{2}([A-Za-z0-9_]+):/gmu)].map(match => match[1]);
   const empty = { admin: true, canWork: true, uid: "u-admin", loadedAt: "2026-09-06T00:00:00.000Z" };
   const payloads: Record<string, unknown> = {
+    authState: { required: true, enforceRoles: true, user: { uid: 'u-admin', email: 'admin@bring.test', role: 'admin', displayName: '서창환' } },
     submitWeeklyReport: { saved: true, delivery: { status: 'sent' } },
     weeklyReportDeliveryStatus: { status: 'none' },
     retryWeeklyReportDelivery: { status: 'sent' },
@@ -249,6 +250,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   for (const name of names) {
     api[name] = async (input: unknown) => {
       calls.push({ name, input });
+      if (typeof payloads[name] === 'function') return (payloads[name] as (input: unknown) => unknown)(input);
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };
   }
@@ -465,6 +467,86 @@ describe("weekly report progress labels", () => {
       expect(screen.calls.some(call => call.name === 'saveGrowthCheckin')).toBe(false);
       expect(screen.document.querySelector('.weekly-delivery-status')?.textContent).toContain('텔레그램 전송 완료 · PDF 첨부');
       expect(screen.calls.some(call => /saveWorkOrder|reviewWorkOrder/.test(call.name))).toBe(false);
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+});
+
+describe('weekly manual draft recovery', () => {
+  it('저장 완료가 다음 입력을 지우지 않고 저장 실패도 숨기지 않는다', async () => {
+    let finish: (() => void) | undefined;
+    let fail = false;
+    const screen = await boot({ saveWeeklyReportDraft: () => fail ? Promise.reject(new Error('TEST_WRITE_FAILURE')) : new Promise<void>(resolve => { finish = resolve; }) });
+    try {
+      const click = async (selector: string) => { (screen.document.querySelector(selector) as HTMLElement).click(); await sleep(180); };
+      await click('[data-workspace-enter-folder="project"]'); await click('.nav-item[data-view="weeklyReports"]');
+      const add = async (title: string) => {
+        const form = screen.document.querySelector('[data-weekly-manual-form]') as HTMLFormElement;
+        (form.querySelector('input') as HTMLInputElement).value = title;
+        form.dispatchEvent(new screen.window.Event('submit', { bubbles: true, cancelable: true })); await sleep(100);
+      };
+      await add('저장할 업무');
+      const input = screen.document.querySelector('[data-weekly-manual-form] input') as HTMLInputElement;
+      input.value = '다음 업무 입력 중'; input.focus();
+      finish?.(); await sleep(100);
+      expect(screen.document.querySelector('[data-weekly-manual-form] input')).toBe(input);
+      expect(input.value).toBe('다음 업무 입력 중');
+      expect(screen.document.querySelector('.weekly-manual-save')?.textContent).toContain('저장됨');
+      fail = true; await add('저장 재시도할 업무');
+      expect(screen.document.querySelector('.weekly-manual-save')?.textContent).toContain('저장하지 못했습니다');
+      expect(screen.document.querySelectorAll('.weekly-report-item.is-manual')).toHaveLength(2);
+      expect(screen.calls.some(call => call.name === 'submitWeeklyReport')).toBe(false);
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+  it('추가·삭제 즉시 저장하고 주차 이동과 앱 재시작 후 복원하며 자동 제출하지 않는다', async () => {
+    const drafts = new Map<string, unknown>();
+    const overrides = {
+      loadWeeklyReportDraft: (value: { week: string; expectedUid: string }) => drafts.get(`${value.expectedUid}:${value.week}`) || null,
+      saveWeeklyReportDraft: (value: { week: string; expectedUid: string; baseReport: string; manual: unknown[] }) => {
+        drafts.set(`${value.expectedUid}:${value.week}`, structuredClone({ baseReport: value.baseReport, draft: { manual: value.manual }, savedAt: new Date().toISOString() }));
+        return { savedAt: new Date().toISOString() };
+      },
+    };
+    let screen = await boot(overrides);
+    const click = async (selector: string) => { (screen.document.querySelector(selector) as HTMLElement).click(); await sleep(180); };
+    const open = async () => { await click('[data-workspace-enter-folder="project"]'); await click('.nav-item[data-view="weeklyReports"]'); };
+    try {
+      await open();
+      const form = screen.document.querySelector('[data-weekly-manual-form]') as HTMLFormElement;
+      (form.querySelector('[name="title"]') as HTMLInputElement).value = '직접 추가한 검증 업무';
+      form.dispatchEvent(new screen.window.Event('submit', { bubbles: true, cancelable: true }));
+      await sleep(180);
+      expect(screen.document.querySelector('.weekly-manual-save')?.textContent).toContain('이 PC에 초안 저장됨');
+      expect(screen.calls.filter(call => call.name === 'saveWeeklyReportDraft')).toHaveLength(1);
+      await click('[data-weekly-shift="-1"]');
+      expect(screen.document.querySelectorAll('.weekly-report-item.is-manual')).toHaveLength(0);
+      await click('[data-weekly-current]');
+      expect(screen.document.querySelector('.weekly-report-item.is-manual')?.textContent).toContain('직접 추가한 검증 업무');
+      expect(screen.calls.some(call => call.name === 'submitWeeklyReport')).toBe(false);
+      expect(screen.errors).toEqual([]);
+      screen.window.close();
+      screen = await boot(overrides); await open();
+      expect(screen.document.querySelector('.weekly-report-item.is-manual')?.textContent).toContain('직접 추가한 검증 업무');
+      await click('[data-weekly-manual-remove]');
+      expect(screen.document.querySelectorAll('.weekly-report-item.is-manual')).toHaveLength(0);
+      expect((screen.calls.find(call => call.name === 'saveWeeklyReportDraft')?.input as {manual: unknown[]}).manual).toEqual([]);
+      expect(screen.calls.some(call => call.name === 'submitWeeklyReport' || call.name === 'retryWeeklyReportDelivery')).toBe(false);
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
+  }, 60000);
+  it('초안을 못 읽으면 덮어쓰기·제출을 막고 재시도 후 복원한다', async () => {
+    let fail = true;
+    const screen = await boot({ loadWeeklyReportDraft: () => { if (fail) throw new Error('TEST_READ_FAILURE'); return { baseReport: '[]', savedAt: new Date().toISOString(), draft: { manual: [{ id: 'm1', title: '보존할 초안', status: 'completed' }] } }; } });
+    try {
+      const click = async (selector: string) => { (screen.document.querySelector(selector) as HTMLElement).click(); await sleep(180); };
+      await click('[data-workspace-enter-folder="project"]'); await click('.nav-item[data-view="weeklyReports"]');
+      expect(screen.document.querySelector('.weekly-manual-save')?.textContent).toContain('불러오지 못했습니다');
+      expect((screen.document.querySelector('[data-weekly-manual-form] button') as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.document.querySelector('[data-weekly-submit]') as HTMLButtonElement).disabled).toBe(true);
+      fail = false; await click('[data-weekly-draft-retry]');
+      expect(screen.document.querySelector('.weekly-report-item.is-manual')?.textContent).toContain('보존할 초안');
+      expect(screen.calls.some(call => call.name === 'saveWeeklyReportDraft')).toBe(false);
       expect(screen.errors).toEqual([]);
     } finally { screen.window.close(); }
   }, 60000);

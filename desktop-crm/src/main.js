@@ -1700,6 +1700,16 @@ async function clearFieldAuthQuarantineMarker() {
 
 let localStoreCoordinator = null;
 let workOutcomeDraftStore = null;
+let weeklyReportDraftStore = null;
+function handleWeeklyReportDraft(action, input) {
+  if (!remoteClient) throw new Error('다시 로그인해 주세요.');
+  if (!weeklyReportDraftStore) weeklyReportDraftStore = require('./work-outcome-draft-store').create({
+    fs, directory: path.join(path.dirname(dataFile()), 'weekly-report-drafts-v1'),
+    encode: value => encodeProtectedJson(safeStorage, value),
+    decode: raw => decodeProtectedJson(safeStorage, raw),
+  });
+  return require('./weekly-report-draft').createWeeklyDraftService({ remote: remoteClient, store: weeklyReportDraftStore, marketingOnly: isMarketingOnlySession })(action, input);
+}
 function getWorkOutcomeDraftStore() {
   if (!workOutcomeDraftStore) workOutcomeDraftStore = require('./work-outcome-draft-store').create({
     fs, directory: path.join(path.dirname(dataFile()), 'work-outcome-drafts-v1'),
@@ -10056,6 +10066,8 @@ secureCanonicalHandle("crm:weekly-report-export", input => exportWeeklyReport(in
 secureCanonicalHandle("crm:weekly-report-submit", input => weeklyDeliveryService().submit(input));
 secureCanonicalHandle("crm:weekly-report-delivery-status", input => weeklyDeliveryService().status(input));
 secureCanonicalHandle("crm:weekly-report-delivery-retry", input => weeklyDeliveryService().retry(input));
+secureCanonicalHandle("crm:weekly-report-draft-load", input => handleWeeklyReportDraft('load', input));
+secureCanonicalHandle("crm:weekly-report-draft-save", input => handleWeeklyReportDraft('save', input));
 secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(input));
 secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());

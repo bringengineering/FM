@@ -11,7 +11,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-05-work-photo-pairs-v1";
+const SERVICE_VERSION = "2026-10-05-weekly-delivery-edge-fix-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -149,7 +149,9 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl, canonicalAccess =
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ idToken }),
-      ...(canonicalAccess ? { redirect: 'error', signal: AbortSignal.timeout(10000) } : {})
+      // Workers does not support redirect:error. Manual mode plus the non-2xx
+      // check below rejects redirects without forwarding the Firebase token.
+      ...(canonicalAccess ? { redirect: 'manual', signal: AbortSignal.timeout(10000) } : {})
     });
   } catch {
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });

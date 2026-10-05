@@ -24,7 +24,8 @@ export function pdfBytes(value) {
 }
 async function readRecord(path,token,fetchImpl) {
   const url=new URL(`${DB}/crmCompany/${path}.json`);url.searchParams.set('auth',token);
-  let response;try{response=await fetchImpl(url,{redirect:'error',signal:AbortSignal.timeout(10000)});}catch{fail('DELIVERY_UNAVAILABLE');}
+  // Edge fetch supports follow/manual only; never follow a token-bearing URL.
+  let response;try{response=await fetchImpl(url,{redirect:'manual',signal:AbortSignal.timeout(10000)});}catch{fail('DELIVERY_UNAVAILABLE');}
   if([401,403].includes(response.status))fail('FORBIDDEN');
   if(!response.ok)fail('DELIVERY_UNAVAILABLE');
   return boundedJson(response,65536);
@@ -62,7 +63,7 @@ export async function weeklyDeliveryRequest(request,env,{verifyIdentity,fetchImp
 // One Durable Object per author/report. Persist the claim before contacting
 // Telegram; a timeout/crash remains uncertain, never an automatic duplicate.
 export class WeeklyReportDeliveries {
-  constructor(state,env){this.storage=state.storage;this.env=env;this.queue=Promise.resolve();this.fetchImpl=fetch;}
+  constructor(state,env){this.storage=state.storage;this.env=env;this.queue=Promise.resolve();this.fetchImpl=fetch.bind(globalThis);}
   fetch(request){const result=this.queue.then(()=>this.command(request));this.queue=result.catch(()=>{});return result;}
   async command(request){
     try{
@@ -118,7 +119,7 @@ export class WeeklyReportDeliveries {
     record={...record,status:'sending',attempts:(record.attempts||0)+1};
     await this.storage.put('current',record);
     try{
-      const response=await this.fetchImpl(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(25000)});
+      const response=await this.fetchImpl(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:form,redirect:'manual',signal:AbortSignal.timeout(25000)});
       const result=await boundedJson(response,65536);
       if(response.ok&&result.ok===true&&Number.isSafeInteger(result.result?.message_id)){
         record={...record,status:'sent',sentAt:new Date().toISOString()};delete record.report;
