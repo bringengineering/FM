@@ -84,6 +84,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   const errors: string[] = [];
   const dom = new JSDOM(indexHtml, { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
   const window = dom.window as unknown as JSDOM["window"] & Record<string, unknown>;
+  window.structuredClone = structuredClone;
   window.addEventListener("error", (event: ErrorEvent) => errors.push(`window error: ${event.message}`));
   // 화면을 여는 길이 async 다. 거기서 터지면 promise 거절로 새어 나가고,
   // try/catch 도 window error 도 못 본다. 진짜 버그가 그렇게 숨어 있었다.
@@ -97,6 +98,9 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   const names = [...preload.matchAll(/^\s{2}([A-Za-z0-9_]+):/gmu)].map(match => match[1]);
   const empty = { admin: true, canWork: true, uid: "u-admin", loadedAt: "2026-09-06T00:00:00.000Z" };
   const payloads: Record<string, unknown> = {
+    submitWeeklyReport: { saved: true, delivery: { status: 'sent' } },
+    weeklyReportDeliveryStatus: { status: 'none' },
+    retryWeeklyReportDelivery: { status: 'sent' },
     loadSupplies: {
       ...empty,
       items: [{ id: "i-lax", name: "락스 4L", unit: "통", category: "clean", active: true }],
@@ -437,6 +441,9 @@ describe("weekly report progress labels", () => {
       await click("[data-weekly-document-close]");
       await click("[data-weekly-submit]");
       expect([...screen.document.querySelectorAll(".weekly-preview-row .weekly-status")].map(node => node.textContent)).toEqual(["완료", "진행 60%"]);
+      expect(screen.document.querySelector('.weekly-preview-notice')?.textContent).toContain('브링엔지니어링 업무방');
+      expect(screen.document.querySelector('.weekly-preview-notice')?.textContent).toContain('PDF');
+      expect(screen.calls.some(call => call.name === 'submitWeeklyReport')).toBe(false);
       await click("[data-weekly-preview-close]");
       // 제목·날짜·메모·상태가 같아도 숫자만 변경되면 다시 그려져야 한다.
       orders[1].progress = 80;
@@ -446,13 +453,41 @@ describe("weekly report progress labels", () => {
       expect(chips()).toEqual(["완료", "진행 80%"]);
       await click("[data-weekly-submit]");
       await click("[data-weekly-preview-confirm]");
-      const submitted = screen.calls.find(call => call.name === "saveGrowthCheckin")?.input as { answers: {done: string} };
-      expect(submitted?.answers.done).toContain("(진행 80%) 주간 진행률 검증 1");
-      expect(submitted?.answers.done).toContain("(완료) 주간 진행률 검증 0");
+      const submitted = screen.calls.find(call => call.name === "submitWeeklyReport")?.input as { checkin: {answers: {done: string}}, snapshot: {automatic: Array<{progress: number}>} };
+      expect(submitted?.checkin.answers.done).toContain("(진행 80%) 주간 진행률 검증 1");
+      expect(submitted?.checkin.answers.done).toContain("(완료) 주간 진행률 검증 0");
+      expect(submitted.snapshot.automatic.map(row => row.progress)).toEqual([100,80]);
+      expect(screen.calls.some(call => call.name === 'saveGrowthCheckin')).toBe(false);
+      expect(screen.document.querySelector('.weekly-delivery-status')?.textContent).toContain('텔레그램 전송 완료 · PDF 첨부');
       expect(screen.calls.some(call => /saveWorkOrder|reviewWorkOrder/.test(call.name))).toBe(false);
       expect(screen.errors).toEqual([]);
     } finally { screen.window.close(); }
   }, 60000);
+});
+
+describe('weekly Telegram delivery status',()=>{
+  it.each(['failed','unknown'])('saved report stays visible and guarded retry handles %s',async status=>{
+    const week=mondayOf(new Date());
+    const screen=await boot({weeklyReportDeliveryStatus:{status},loadGrowth:{uid:'u-admin',canWork:true,checkins:[{
+      id:'weekly_report_'+week+'_u-admin',uid:'u-admin',week,updatedAt:week+'T00:00:00Z',answers:{done:'주간업무보고서 v1\n[보고 요약]\n테스트 요약\n[자동 수집]\n[직접 추가]',next:'[다음 주 계획 · 직접 작성]'},
+    }],reviews:[]}});
+    try{
+      const click=async(selector:string)=>{const button=screen.document.querySelector(selector) as HTMLElement;expect(button).toBeTruthy();button.click();await sleep(180);};
+      await click('[data-workspace-enter-folder="project"]');await click('.nav-item[data-view="weeklyReports"]');
+      expect(screen.document.querySelector('.weekly-delivery-status')?.textContent).toContain('CRM 저장 완료');
+      if(status==='unknown'){
+        screen.window.confirm=()=>false;await click('[data-weekly-telegram-retry]');
+        expect(screen.calls.some(call=>call.name==='retryWeeklyReportDelivery')).toBe(false);
+        screen.window.confirm=()=>true;
+      }
+      await click('[data-weekly-telegram-retry]');
+      const retry=screen.calls.find(call=>call.name==='retryWeeklyReportDelivery')?.input as {confirmMissing:boolean};
+      expect(retry.confirmMissing).toBe(status==='unknown');
+      expect(screen.calls.some(call=>call.name==='submitWeeklyReport'||call.name==='saveGrowthCheckin')).toBe(false);
+      expect(screen.document.querySelector('.weekly-delivery-status')?.textContent).toContain('텔레그램 전송 완료');
+      expect(screen.errors).toEqual([]);
+    }finally{screen.window.close();}
+  },60000);
 });
 
 describe("desktop CRM screens actually render", () => {

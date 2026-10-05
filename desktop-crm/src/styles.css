@@ -252,6 +252,10 @@
 .weekly-submit-actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
 .weekly-submit-actions .primary-button { margin-top: 0; }
 .weekly-submit-actions .secondary-button { min-height: 40px; }
+.weekly-delivery-status { margin-top: 16px; padding: 14px; border: 1px solid #d9e7f3; border-radius: 10px; background: #f4f9ff; overflow-wrap: anywhere; }
+.weekly-delivery-status b { font-size: 12px; color: #15599c; }
+.weekly-delivery-status small { display: block; color: #735a26; line-height: 1.6; }
+.weekly-delivery-status button { margin-top: 10px; width: 100%; }
 .weekly-manager-card { overflow: hidden; }
 .weekly-manager-card summary { display: flex; align-items: center; justify-content: space-between; padding: 17px 18px; color: #234d62; font-size: 13px; font-weight: 900; cursor: pointer; }
 .weekly-manager-card summary em { min-width: 24px; padding: 4px 7px; border-radius: 999px; background: #e5f4fa; color: #1885b4; font-size: 10px; font-style: normal; text-align: center; }
@@ -1484,7 +1488,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-pair-single>small { display: block; color: #6B7684; line-height: 1.5; font-size: 10px; margin: 8px 0; }
 .wr-pair-empty { padding: 24px 12px; text-align: center; color: #6B7684; font-size: 12px; background: #fff; border-radius: 10px; }
 .wr-pair-warnings { margin-top: 12px; color: #6B7684; font-size: 11px; }
-@media (min-width: 1181px) { .wr-ai-side:has(.wr-pair-pending) { max-height: calc(100vh - 130px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; } }
+@media (min-width: 1181px) {
+  .wr-ai-editor:has(.wr-pair-pending) { overflow: clip; }
+  .wr-ai-side:has(.wr-pair-pending) { top: 98px; max-height: calc(100vh - 130px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+}
 @media (max-width: 700px) { .wr-pair-images { gap: 6px; } .wr-pair-thumb { height: 140px; } .wr-pair-card { padding: 9px; } }
 .wr-drive-head em { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #00875A; font-size: 10px; font-style: normal; font-weight: 850; }
 .wr-drive-head em i { width: 7px; height: 7px; border-radius: 50%; background: #04A66B; }

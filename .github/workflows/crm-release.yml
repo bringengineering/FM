@@ -224,7 +224,9 @@ jobs:
       - name: Deploy CRM AI Worker while preserving production settings
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npm run deploy -- --keep-vars --var WALLBOARD_SCHEDULED_REFRESH_ENABLED:true
+          WEEKLY_REPORT_TELEGRAM_BOT_TOKEN: ${{ secrets.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN }}
+          WEEKLY_REPORT_TELEGRAM_CHAT_ID: ${{ secrets.WEEKLY_REPORT_TELEGRAM_CHAT_ID }}
+        run: node scripts/deploy-with-weekly-secrets.mjs
         working-directory: crm-ai-worker
       - name: Verify the deployed Worker health and source version
         run: |
@@ -266,7 +268,7 @@ jobs:
               let offset = 0;
               for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
               const health = JSON.parse(new TextDecoder().decode(bytes));
-              if (health.ok !== true || health.service !== 'bring-crm-ai-gateway' || health.version !== expectedVersion) {
+              if (health.ok !== true || health.service !== 'bring-crm-ai-gateway' || health.version !== expectedVersion || health.weeklyReportDelivery !== true) {
                 throw new Error('Deployed Worker health does not match the expected service and source version.');
               }
               console.log(`Worker health verified for source version ${expectedVersion}.`);

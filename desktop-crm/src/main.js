@@ -23,6 +23,8 @@ const { createOfficeAttachmentStageGate } = require("./office-attachment-stage-g
 const { createOfficeNotificationTracker } = require("./office-notification");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const { createWeeklyReportHwpx, weeklyReportFileName } = require("./weekly-report-hwpx");
+const { createWeeklyDeliveryService } = require("./weekly-report-delivery");
+const { weeklyReportPdfHtml } = require("./weekly-report-pdf");
 const QuoteCore = require("./quote-core");
 const SavedCustomerDocuments = require("./saved-customer-documents");
 const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
@@ -3044,6 +3046,21 @@ async function exportOfficeAttendance(input) {
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   await fs.writeFile(result.filePath, workbook);
   return { ok: true, path: result.filePath };
+}
+
+function weeklyDeliveryService() {
+  const pendingPath=(uid,id)=>path.join(path.dirname(dataFile()),'weekly-report-outbox',crypto.createHash('sha256').update(`${uid}:${id}`).digest('hex')+'.json');
+  const store={
+    async get(uid,id){try{const raw=await fs.readFile(pendingPath(uid,id),'utf8');const decoded=decodeProtectedJson(safeStorage,raw);if(!decoded.encrypted)throw new Error('PROTECTED_DATA_INVALID');return decoded.value;}catch(error){if(error.code==='ENOENT')return null;throw error;}},
+    async put(uid,id,value){const target=pendingPath(uid,id);await fs.mkdir(path.dirname(target),{recursive:true});const temporary=target+'.'+crypto.randomUUID()+'.tmp';try{await fs.writeFile(temporary,encodeProtectedJson(safeStorage,value),{flag:'wx'});await fs.rename(temporary,target);}finally{await fs.unlink(temporary).catch(()=>{});}},
+    async remove(uid,id){await fs.unlink(pendingPath(uid,id)).catch(error=>{if(error.code!=='ENOENT')throw error;});},
+  };
+  return createWeeklyDeliveryService({remote:remoteClient,store,fetchImpl:(url,options)=>net.fetch(url,options),
+    createPdf:async report=>{
+      const logo=await fs.readFile(path.join(__dirname,'assets','bring-logo.png'));
+      return createReportPdfBytes(weeklyReportPdfHtml(report,`data:image/png;base64,${logo.toString('base64')}`),'weekly-report-pdf');
+    },
+  });
 }
 
 async function exportWeeklyReport(input) {
@@ -10036,6 +10053,9 @@ secureCanonicalHandle("crm:contract-source-check", async input => {
 secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
 secureCanonicalHandle("crm:weekly-report-export", input => exportWeeklyReport(input));
+secureCanonicalHandle("crm:weekly-report-submit", input => weeklyDeliveryService().submit(input));
+secureCanonicalHandle("crm:weekly-report-delivery-status", input => weeklyDeliveryService().status(input));
+secureCanonicalHandle("crm:weekly-report-delivery-retry", input => weeklyDeliveryService().retry(input));
 secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(input));
 secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());

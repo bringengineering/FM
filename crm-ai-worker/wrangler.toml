@@ -62,3 +62,11 @@ namespace_id = "10082"
 [ratelimits.simple]
 limit = 240
 period = 60
+
+[[durable_objects.bindings]]
+name = "WEEKLY_REPORT_DELIVERIES"
+class_name = "WeeklyReportDeliveries"
+
+[[migrations]]
+tag = "weekly-report-delivery-sqlite-v1"
+new_sqlite_classes = ["WeeklyReportDeliveries"]
