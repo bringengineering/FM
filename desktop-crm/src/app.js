@@ -135,6 +135,7 @@
   let securityTab = "assets";
   let dataPath = "";
   let currentAuth = { required: true, user: null, error: "" };
+  const weeklyDraftCache = new Map();
   let currentSync = { status: "offline", message: "서버 연결 확인 중" };
   let operationsCheckSnapshot = null;
   let operationsCheckReceivedAt = "";
@@ -749,6 +750,7 @@
       marketingLoaded = false;
     }
     if (previousUid !== currentAuthUid()) {
+      weeklyDraftCache.clear();
       operationsCheckSnapshot = null;
       operationsCheckReceivedAt = "";
       operationsCheckFilters = {};
@@ -11459,7 +11461,7 @@
   function weeklyReportActor() {
     const user = currentAuth.user || {};
     return {
-      uid: workOrderState.uid || growthState.uid || user.uid || "",
+      uid: user.uid || workOrderState.uid || growthState.uid || "",
       name: user.displayName || user.name || store.settings.owner || "",
       email: user.email || "",
     };
@@ -11472,7 +11474,7 @@
     if (!weeklyReportState.week) weeklyReportState.week = currentWeek;
     const week = weeklyReportState.week;
     const actor = weeklyReportActor();
-    const existing = (growthState.checkins || []).find(item => isWeeklyReportCheckin(item) && item.uid === (growthState.uid || actor.uid) && item.week === week) || null;
+    const existing = (growthState.checkins || []).find(item => isWeeklyReportCheckin(item) && item.uid === actor.uid && item.week === week) || null;
     const loadedKey = `${actor.uid}:${week}:${existing && existing.id || ""}:${existing && existing.updatedAt || ""}`;
     if (weeklyReportState.loadedKey !== loadedKey) {
       const parsed = W.parseDone(existing && existing.answers && existing.answers.done);
@@ -11500,8 +11502,76 @@
       weeklyReportState.candidates = collected.candidates.length;
       weeklyReportState.omitted = collected.omitted;
     }
+    const draft = weeklyManualDraft({ W, actor, week, existing });
+    if (draft?.ready) weeklyReportState.manual = draft.manual;
     if (!weeklyReportState.summaryCustomized || !weeklyReportState.summary) weeklyReportState.summary = W.defaultSummary(weeklyReportState.automatic, weeklyReportState.manual);
     return { W, currentWeek, week, actor, existing };
+  }
+
+  function weeklyManualSignature(manual) {
+    return JSON.stringify(manual.map(item => ({ title: item.title, status: item.status })));
+  }
+
+  function weeklyManualDraft(context) {
+    if (!context.actor.uid || !growthState.loaded || !growthState.canWork) return null;
+    const key = `${context.actor.uid}:${context.week}`;
+    let entry = weeklyDraftCache.get(key);
+    const baseline = context.W.parseDone(context.existing?.answers?.done).manual;
+    const baseReport = weeklyManualSignature(baseline);
+    if (!entry) {
+      entry = { ready: false, status: 'loading', manual: baseline, baseReport, dirty: false, sequence: 0 };
+      weeklyDraftCache.set(key, entry);
+      Promise.resolve().then(() => api.loadWeeklyReportDraft({ week: context.week, expectedUid: context.actor.uid })).then(value => {
+        if (weeklyDraftCache.get(key) !== entry || currentAuthUid() !== context.actor.uid) return;
+        if (value?.draft && (value.baseReport === baseReport || String(value.savedAt || '') > String(context.existing?.updatedAt || ''))) {
+          entry.manual = value.draft.manual.map(context.W.normalizeManual);
+          entry.dirty = weeklyManualSignature(entry.manual) !== baseReport;
+          entry.status = 'saved';
+        } else entry.status = 'idle';
+        entry.ready = true;
+        if (currentView === 'weeklyReports' && weeklyReportState.week === context.week) renderWeeklyReports();
+      }).catch(() => {
+        if (weeklyDraftCache.get(key) !== entry || currentAuthUid() !== context.actor.uid) return;
+        // Do not overwrite an unreadable recovery draft with an empty list.
+        entry.status = 'load-error';
+        if (currentView === 'weeklyReports' && weeklyReportState.week === context.week) renderWeeklyReports();
+      });
+    } else if (entry.ready && !entry.dirty && entry.baseReport !== baseReport) {
+      entry.manual = baseline;
+      entry.baseReport = baseReport;
+      entry.status = 'idle';
+    }
+    return entry;
+  }
+
+  function persistWeeklyManual(context = hydrateWeeklyReport()) {
+    const key = `${context.actor.uid}:${context.week}`, entry = weeklyDraftCache.get(key);
+    if (!entry?.ready || currentAuthUid() !== context.actor.uid) return;
+    entry.manual = weeklyReportState.manual.map(context.W.normalizeManual);
+    entry.dirty = true;
+    entry.status = 'saving';
+    const sequence = ++entry.sequence;
+    // Invoke immediately so the main process captures this account's guard.
+    const request = api.saveWeeklyReportDraft({ week: context.week, expectedUid: context.actor.uid, baseReport: entry.baseReport, manual: entry.manual });
+    Promise.resolve(request).then(() => {
+      if (entry.sequence === sequence) entry.status = 'saved';
+    }).catch(() => {
+      if (entry.sequence === sequence) entry.status = 'save-error';
+    }).finally(() => {
+      if (weeklyDraftCache.get(key) === entry && currentAuthUid() === context.actor.uid && currentView === 'weeklyReports' && weeklyReportState.week === context.week) {
+        // Updating a save badge must not replace the form while the next title
+        // is being typed (including an active Korean IME composition).
+        const badge = main.querySelector('.weekly-manual-save');
+        if (badge) badge.outerHTML = weeklyManualSaveMarkup(context);
+      }
+    });
+  }
+
+  function weeklyManualSaveMarkup(context) {
+    const entry = weeklyDraftCache.get(`${context.actor.uid}:${context.week}`);
+    const status = entry?.status || 'loading';
+    const labels = { loading: '저장된 초안 불러오는 중…', idle: '직접 추가 시 이 PC에 자동 저장', saving: '초안 저장 중…', saved: '✓ 이 PC에 초안 저장됨', 'save-error': '초안을 저장하지 못했습니다', 'load-error': '저장된 초안을 불러오지 못했습니다' };
+    return `<div class="weekly-manual-save ${status.endsWith('error') ? 'is-error' : ''}" role="status">${esc(labels[status])}${status.endsWith('error') ? '<button type="button" class="mini-button" data-weekly-draft-retry>다시 시도</button>' : ''}</div>`;
   }
 
   function weeklyStatusChip(W, item) {
@@ -11723,12 +11793,13 @@
           </article>
 
           <section class="weekly-section-card">
-            <header><div><span>빠진 업무 보완</span><h3>이번 주 업무 직접 추가</h3></div><small>한 줄이면 충분합니다</small></header>
+            <header><div><span>빠진 업무 보완</span><h3>이번 주 업무 직접 추가</h3></div>${weeklyManualSaveMarkup(context)}</header>
             <form class="weekly-inline-form" data-weekly-manual-form>
-              <input name="title" maxlength="240" placeholder="예: 레이브클라우드 유선미팅" required>
+              <input name="title" maxlength="240" placeholder="예: 레이브클라우드 유선미팅" required${weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready && !weeklyReportState.busy ? '' : ' disabled'}>
               <select name="status" aria-label="업무 상태"><option value="completed">완료</option><option value="in_progress">진행 중</option><option value="review">검토 중</option></select>
-              <button type="submit" class="primary-button"${canSave ? "" : " disabled"}>＋ 업무 추가</button>
+              <button type="submit" class="primary-button"${canSave && !weeklyReportState.busy && weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready ? "" : " disabled"}>＋ 업무 추가</button>
             </form>
+            <p class="weekly-manual-save-note">본인 계정·주차별로 이 PC에 보관됩니다. 앱을 다시 켜도 복원되며, 텔레그램 전송은 최종 제출할 때만 진행합니다.</p>
           </section>
 
           <section class="weekly-section-card weekly-next-card">
@@ -11749,7 +11820,7 @@
             <p>${savedAt ? `${dateText(savedAt)}에 저장했습니다. 수정 후 다시 제출할 수 있습니다.` : "내용을 확인한 뒤 제출하면 회사 공용 서버에 저장됩니다."}</p>
             <div class="weekly-submit-actions">
               <button type="button" class="secondary-button" data-weekly-draft-preview${loading || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>초안 보기</button>
-              <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장·전송 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
+              <button type="button" class="primary-button" data-weekly-submit${weeklyReportState.busy || !canSave || !weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready || (!allItems.length && !weeklyReportState.plans.length) ? " disabled" : ""}>${weeklyReportState.busy ? "저장·전송 중…" : savedAt ? "수정 내용 제출" : "주간보고서 제출"}</button>
             </div>
             ${weeklyDeliveryMarkup(context)}
           </section>
@@ -11834,6 +11905,7 @@
     const context = hydrateWeeklyReport();
     const G = growthCore();
     if (!context || !G || weeklyReportState.busy) return;
+    if (!weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready) return showToast('저장된 초안을 먼저 불러와 주세요.', 'error');
     const existing = context.existing || {};
     const answers = Object.assign({}, existing.answers || {}, {
       done: context.W.serializeDone({ summary: weeklyReportState.summary, automatic: weeklyReportState.automatic, manual: weeklyReportState.manual }),
@@ -11858,6 +11930,12 @@
       showToast(result.delivery?.status==='sent'?"주간보고서를 저장하고 업무방에 PDF를 보냈습니다.":"주간보고서는 저장했습니다. 텔레그램 전송 상태를 확인해 주세요.", result.delivery?.status==='sent'?"success":"error");
       await loadGrowth();
       const savedContext=hydrateWeeklyReport();
+      const localDraft = weeklyDraftCache.get(`${context.actor.uid}:${context.week}`);
+      if (localDraft && savedContext?.actor.uid === context.actor.uid && savedContext.week === context.week) {
+        localDraft.baseReport = weeklyManualSignature(context.W.parseDone(savedContext.existing?.answers?.done).manual);
+        persistWeeklyManual(savedContext);
+        localDraft.dirty = false;
+      }
       if(savedContext?.actor.uid===context.actor.uid){weeklyReportState.deliveryKey=weeklyDeliveryKey(savedContext);weeklyReportState.delivery=result.delivery;}
     } catch (error) {
       weeklyReportState.error = error && error.message || "주간업무보고서를 저장하지 못했습니다.";
@@ -11889,11 +11967,14 @@
     const W = weeklyReportCore();
     if (!W) return;
     if (!growthState.loaded || !growthState.canWork) return showToast("주간보고서 저장 권한을 확인한 뒤 다시 시도해 주세요.", "error");
+    const context = hydrateWeeklyReport();
+    if (weeklyReportState.busy || !weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready) return;
     if (weeklyReportState.manual.length >= 8) return showToast("직접 추가 업무는 한 주에 8건까지 적을 수 있습니다.", "error");
     const raw = Object.fromEntries(new FormData(form).entries());
     const item = W.normalizeManual({ id: `manual_${Date.now().toString(36)}`, title: raw.title, status: raw.status }, weeklyReportState.manual.length);
     if (!item.title) return showToast("추가할 업무를 입력해 주세요.", "error");
     weeklyReportState.manual.push(item);
+    persistWeeklyManual(context);
     updateWeeklyDefaultSummary();
     renderWeeklyReports();
   }
@@ -14683,8 +14764,19 @@
     }
     const weeklyManualRemove = event.target.closest("[data-weekly-manual-remove]");
     if (weeklyManualRemove) {
+      const context = hydrateWeeklyReport();
+      if (weeklyReportState.busy || !weeklyDraftCache.get(`${context.actor.uid}:${context.week}`)?.ready) return;
       weeklyReportState.manual = weeklyReportState.manual.filter(item => item.id !== weeklyManualRemove.dataset.weeklyManualRemove);
+      persistWeeklyManual(context);
       updateWeeklyDefaultSummary();
+      renderWeeklyReports();
+      return;
+    }
+    if (event.target.closest('[data-weekly-draft-retry]')) {
+      const context = hydrateWeeklyReport();
+      const key = `${context.actor.uid}:${context.week}`, entry = weeklyDraftCache.get(key);
+      if (entry?.status === 'load-error') weeklyDraftCache.delete(key);
+      else if (entry?.status === 'save-error') persistWeeklyManual(context);
       renderWeeklyReports();
       return;
     }

@@ -4,6 +4,18 @@ The desktop saves the weekly report before sending anything. The final confirmat
 explicitly names the company work room and PDF sharing. Only the dedicated weekly
 submission IPC triggers delivery; ordinary growth/1:1 saves never do.
 
+Directly added work is also saved **before submission**, by user/company/week,
+in the desktop's OS-encrypted `weekly-report-drafts-v1` recovery store. This is
+local to the same PC, not shared or sent to Telegram. Additions and deletions are
+persisted immediately; failed reads block overwriting a recovery draft, and failed
+writes remain visible with a retry action. Updating the save badge does not replace
+the form or interrupt typing. Account changes invalidate pending UI recovery.
+
+Edge requests use `redirect: manual` with non-success status rejection. Workers
+does not implement `redirect: error`; native fetch stored on a Durable Object also
+needs its global receiver bound. The workerd regression test uses native outbound
+fetch (including redirects and multipart Telegram calls), not a fetch replacement.
+
 ## Access and data
 
 - Firebase verifies the caller, then the gateway reads `/crmCompany/access/{uid}`
