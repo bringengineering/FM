@@ -89,7 +89,14 @@ test("stages exactly three updater assets and publishes stable after validated W
   const deploy = jobBlock("deploy-ai-worker");
   assert.match(deploy, /needs: \[plan, reserve-build\]/);
   assert.match(deploy, /secrets\.CLOUDFLARE_API_TOKEN/);
-  assert.match(deploy, /npm run deploy -- --keep-vars --var WALLBOARD_SCHEDULED_REFRESH_ENABLED:true/);
+  assert.match(deploy, /node scripts\/deploy-with-weekly-secrets\.mjs/);
+  assert.match(deploy, /secrets\.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN/);
+  assert.match(deploy, /secrets\.WEEKLY_REPORT_TELEGRAM_CHAT_ID/);
+  const deployment=fs.readFileSync(path.join(root,'crm-ai-worker/scripts/deploy-with-weekly-secrets.mjs'),'utf8');
+  assert.match(deployment, /'deploy','--keep-vars','--var','WALLBOARD_SCHEDULED_REFRESH_ENABLED:true','--secrets-file'/);
+  assert.match(deployment, /mode:0o600/);
+  assert.match(deployment, /finally\{await rm\(directory/);
+  assert.doesNotMatch(deployment, /console\.log\(values/);
   assert.match(deploy, /\/health[\s\S]*health\.version !== expectedVersion/);
   assert.match(jobBlock("stage-release"), /needs: \[plan, reserve-build, deploy-ai-worker\]/);
   assert.match(jobBlock("publish-stable"), /needs\.stage-release\.result == 'success'[\s\S]*needs: \[plan, reserve-build, deploy-ai-worker, stage-release\]/);
