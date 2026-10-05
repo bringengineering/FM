@@ -38,6 +38,13 @@ test('uncertain delivery can only resume after explicit missing-file confirmatio
  await h.object.fetch(internal({...h.command,action:'retry'}));assert.equal(h.sends(),1);
  await h.object.fetch(internal({...h.command,action:'retry',confirmMissing:true}));assert.equal(h.sends(),2);
 });
+test('failed PDF payload expires but uncertain claim does not automatically clear',async()=>{
+ for(const mode of ['reject','timeout']){
+  const h=await harness(mode);await h.object.fetch(internal(h.command));assert.ok((await h.storage.list({prefix:'pdf:'})).size>0);
+  await h.object.alarm();assert.equal((await h.storage.list({prefix:'pdf:'})).size,0);
+  const state=await h.storage.get('current');assert.equal(state.report,undefined);assert.equal(state.status,mode==='reject'?'none':'unknown');
+ }
+});
 test('anonymous, unverified, disabled, password-change, foreign owner, private and arbitrary destination are denied',async()=>{
  for(const kind of ['anonymous','unverified','disabled','password','foreign','private','destination']){
   let forwarded=0;const env={WEEKLY_REPORT_DELIVERIES:{idFromName:n=>n,get:()=>({fetch:async()=>{forwarded++;return Response.json({ok:true});}})}};

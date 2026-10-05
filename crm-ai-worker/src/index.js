@@ -1,7 +1,7 @@
 import { MAX_BUILDING_REPORT_CHARS, maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
-import { weeklyDeliveryRequest } from "./weekly-report-delivery.js";
+import { weeklyDeliveryRequest, boundedJson } from "./weekly-report-delivery.js";
 export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
@@ -148,14 +148,15 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl, canonicalAccess =
     response = await fetchImpl(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken })
+      body: JSON.stringify({ idToken }),
+      ...(canonicalAccess ? { redirect: 'error', signal: AbortSignal.timeout(10000) } : {})
     });
   } catch {
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
   if (!response.ok) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   let payload;
-  try { payload = await response.json(); }
+  try { payload = canonicalAccess ? await boundedJson(response, 65536) : await response.json(); }
   catch { throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" }); }
   const user = Array.isArray(payload.users) ? payload.users[0] : null;
   const email = String(user?.email || "").trim().toLowerCase();
@@ -368,8 +369,9 @@ export function createWorker(options = {}) {
       if (url.pathname === '/v1/weekly-report-delivery') {
         if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
         const result=await weeklyDeliveryRequest(request,env,{fetchImpl,verifyIdentity:token=>verifyFirebaseIdentity(token,env,fetchImpl,true),rateLimit:identity=>enforceBurstLimit(identity,env)});
-        for(const [key,value] of Object.entries(cors))result.headers.set(key,value);
-        return result;
+        const headers=new Headers(result.headers);
+        for(const [key,value] of Object.entries(cors))headers.set(key,value);
+        return new Response(result.body,{status:result.status,headers});
       }
       if (url.pathname.startsWith('/v1/wallboard/')) return wallboardRequest(request, env, {
         cors, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl),
