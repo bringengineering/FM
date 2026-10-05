@@ -140,6 +140,11 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
     driveStatus: { connected: true, email: "test@example.test" },
+    classifyWorkReportPhotos: { ok: true, classifications: [
+      { id: "p1", category: "bath", space: "bath", target: "floor", confidence: 90 },
+      { id: "p2", category: "bath", space: "bath", target: "floor", confidence: 90 },
+      { id: "p3", category: "review", space: "unknown", target: "unknown", confidence: 0 },
+    ], pairs: [{ beforeId: "p1", afterId: "p2", evidence: "debris_removed" }] },
     browseWorkReportDrive: { ok: true, folder: { id: "root", name: "내 드라이브" }, entries: [
       { id: "p1", name: "20260831_172901.jpg", kind: "file", mimeType: "image/jpeg" },
       { id: "p2", name: "20260901_101819.jpg", kind: "file", mimeType: "image/jpeg" },
@@ -699,28 +704,37 @@ describe("desktop CRM screens actually render", () => {
     expect((asked!.input as { fileIds: string[] }).fileIds).toEqual(["p1", "p2", "p3"]);
     expect(booted.calls.slice(before).some(call => call.name === "classifyWorkReportPhotos"), "선택 후 Gemini 분류를 자동 요청해야 한다").toBe(true);
 
-    const table = booted.document.querySelector(".wr-drive-table") as HTMLElement | null;
-    expect(table, "무엇이 어디에 붙는지 표가 나와야 한다").toBeTruthy();
+    const comparison = booted.document.querySelector(".wr-pair-card") as HTMLElement | null;
+    expect(comparison, "같은 구역의 전·후 사진 비교가 나와야 한다").toBeTruthy();
+    expect(booted.calls.slice(before).some(call => call.name === "classifyWorkReportPhotos" && (call.input as { mode?: string }).mode === "compare")).toBe(true);
     const shown = (booted.document.querySelector(".wr-drive") as HTMLElement).textContent || "";
-    expect(shown).toContain("화장실");
     expect(shown).toContain("욕실");
-    expect(shown, "못 붙인 폴더도 숨기지 않는다").toContain("공간기획");
+    expect(comparison!.querySelectorAll("figure").length).toBe(2);
+    expect(booted.document.querySelector('[data-report-review-row="p3"]'), "못 분류한 사진도 숨기지 않는다").toBeTruthy();
     expect(shown, "못 여는 사진은 미리 말해 준다").toContain("HEIC");
 
-    // 자동으로 못 붙인 폴더는 사람이 보고서 항목을 골라야 초안에 얹을 수 있다.
-    const unmatched = booted.document.querySelector('[data-report-drive-item="1"]') as HTMLSelectElement | null;
-    expect(unmatched, "못 붙인 폴더의 보고서 항목을 고르는 칸이 있어야 한다").toBeTruthy();
-    const reportItemKey = [...unmatched!.options].find(option => option.value)?.value || "";
-    expect(reportItemKey).not.toBe("");
-    unmatched!.value = reportItemKey;
-    unmatched!.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
-    await sleep(100);
+    // 구역과 전후를 정해도 사람이 확인하기 전에는 보고서에 넣지 않는다.
+    for (const [selector, value] of [["space", "living"], ["target", "floor"]]) {
+      const control = booted.document.querySelector(`[data-report-review-${selector}="p3"]`) as HTMLSelectElement;
+      expect(control).toBeTruthy();
+      control.value = value;
+      control.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+      await sleep(50);
+    }
     const pendingApply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
     expect(pendingApply.disabled, "구역만 정하고 전후 미분류 사진을 조용히 빼면 안 된다").toBe(true);
     const phase = booted.document.querySelector('[data-report-photo-phase="p3"]') as HTMLSelectElement;
     phase.value = "after";
     phase.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
     await sleep(100);
+    expect((booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement).disabled).toBe(true);
+    for (const selector of ['[data-report-review-confirm="p3"]', '[data-report-review-confirm-pair]']) {
+      const checkbox = booted.document.querySelector(selector) as HTMLInputElement;
+      expect(checkbox.disabled).toBe(false);
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+      await sleep(50);
+    }
     const apply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
     expect(apply.disabled).toBe(false);
     apply.click();
