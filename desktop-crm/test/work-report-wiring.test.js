@@ -191,7 +191,7 @@ test("항목은 코드가 깔고 사람은 사진만 붙인다", () => {
   assert.match(body, /R\.KINDS\.map/u);
   // 못 낼 이유를 저장 단추 누르기 전에 다 보여 준다.
   assert.match(body, /R\.blockers\(draft\)/u);
-  assert.match(body, /blockers\.length \? " disabled" : ""/u);
+  assert.match(body, /blockers\.length \|\| reportState\.saveBusy \? " disabled" : ""/u);
   assert.match(body, /R\.itemIssue\(item\)/u);
 });
 

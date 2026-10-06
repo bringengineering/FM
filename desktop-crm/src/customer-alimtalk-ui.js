@@ -38,17 +38,20 @@
     let previewText = "고객과 발송 종류를 선택하면 승인된 문구와 자료를 확인합니다.";
     let ready = false;
     let blockReason = customers.length ? "고객을 선택해 주세요." : "연락처가 등록된 고객이 없습니다.";
-    if (state.category === "quote" || state.category === "buildingMonthlyReport") {
+    if (state.category === "quote" || state.category === "buildingMonthlyReport" || (state.category === "workReport" && state.savedDocuments?.length)) {
       const monthly = state.category === "buildingMonthlyReport";
       const documents = Array.isArray(state.savedDocuments) ? state.savedDocuments : [];
       const picked = documents.find(item => item.id === state.savedDocumentId);
-      previewTitle = monthly ? "건물 월간보고서" : "견적서 발송";
+      previewTitle = monthly ? "건물 월간보고서" : state.category === "workReport" ? "작업 결과보고서" : "견적서 발송";
       previewText = picked ? picked.title + " · " + new Date(picked.updatedAt).toLocaleString("ko-KR") + " 저장본" : "문서관리에서 CRM에 저장한 문서를 선택해 주세요.";
       const options = documents.map(item => `<option value="${esc(item.id)}" ${item.id === state.savedDocumentId ? "selected" : ""}>${esc(item.title)} · ${esc(new Date(item.updatedAt).toLocaleString("ko-KR"))}</option>`).join("");
       sourcePanel = `<label class="alimtalk-source-select"><span>문서관리 저장 문서 · ${documents.length}건</span><select data-alimtalk-saved-document ${singleRecipient && !state.busy ? "" : "disabled"}><option value="">저장 문서 선택</option>${options}</select></label><section class="alimtalk-source-card"><b>저장본 불러오기</b><p>${esc(previewText)}</p><p>별도 업로드 없이 CRM에 저장한 PDF를 그대로 보냅니다. 수정한 내용은 문서관리에서 다시 저장해 주세요.</p><button type="button" class="secondary-button" data-alimtalk-preview ${picked && singleRecipient && !state.busy ? "" : "disabled"}>저장 PDF 미리보기</button> <button type="button" class="secondary-button" ${monthly ? "data-alimtalk-open-monthly" : "data-alimtalk-open-quote"} ${singleRecipient ? "" : "disabled"}>문서관리에서 작성·저장</button></section>`;
+      if (state.category === "workReport") sourcePanel = sourcePanel.replace("data-alimtalk-open-quote", "data-view=\"workReports\"");
       const capability = monthly ? state.kakaoMonthlyReady : state.kakaoReady;
       ready = Boolean(singleRecipient && picked && capability && state.writable && state.adminCanSend);
+      if (picked?.workReportDelivery && picked.workReportDelivery.status !== "failed") ready = false;
       blockReason = !singleRecipient ? "고객별 문서라 한 명씩 발송해야 합니다." : !state.adminCanSend ? "문서 발송은 관리자만 가능합니다." : !picked ? "발송할 저장 문서를 선택해 주세요." : !capability ? "알림톡 발신 설정과 승인 템플릿을 확인해 주세요." : !state.writable ? "메시지를 발송할 쓰기 권한이 필요합니다." : "선택한 저장 PDF와 수신 고객을 확인한 뒤 발송할 수 있습니다.";
+      if (picked?.workReportDelivery && picked.workReportDelivery.status !== "failed") blockReason = "이미 발송 요청한 저장본입니다. 중복 발송을 막았습니다. 발송 기록을 확인해 주세요.";
     } else if (state.category === "workReport") {
       previewTitle = "작업 결과보고서";
       previewText = state.workReportLabel || "선택한 고객 연락처와 일치하는 작업 결과보고서를 고르세요.";

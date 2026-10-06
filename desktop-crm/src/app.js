@@ -4523,7 +4523,13 @@
   function customerMessageDeliveries() {
     const value = operations && operations.messageDeliveries;
     const rows = Array.isArray(value) ? value : Object.values(value || {});
-    return rows.slice().sort((left, right) => String(right.requestedAt || "").localeCompare(String(left.requestedAt || "")));
+    const reports = (store.buildingDocuments || []).filter(row => row.savedCustomerDocument?.kind === "workReport" && row.workReportDelivery).map(row => ({
+      id: row.id, documentId: row.id, documentType: "completion_report", documentName: row.title,
+      customerId: row.savedCustomerDocument.customerId, customerName: customerById(row.savedCustomerDocument.customerId)?.name || "건물주",
+      channel: "kakao", templateLabel: "작업 결과보고서", requestedAt: row.workReportDelivery.requestedAt,
+      status: ({sending: "발송 처리 중", requested: "발송 요청 접수", failed: "발송 준비 실패", unknown: "발송 결과 확인 필요"})[row.workReportDelivery.status] || "확인 필요",
+    }));
+    return [...rows, ...reports].sort((left, right) => String(right.requestedAt || "").localeCompare(String(left.requestedAt || "")));
   }
 
   function renderCustomerMessages() {
@@ -4646,7 +4652,7 @@
     const state = customerAlimTalkState;
     if (state.selectedCustomerIds.length !== 1) throw new Error("고객 한 명을 선택해 주세요.");
     const customer = customerById(state.selectedCustomerIds[0]);
-    if (state.category === "workReport") {
+    if (state.category === "workReport" && !state.savedDocumentId) {
       const report = reportState.reports.find(item => String(item.id) === state.workReportId && !item.archivedAt && !item.deletedAt && item.deleted !== true);
       if (!report || !customer || !reportCore().validateReport(report).ok || normalizedPhone(report.ownerContact) !== normalizedPhone(customer.phone)) throw new Error("저장 결과보고서와 수신 고객을 확인해 주세요.");
       return {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt || "", title: [report.buildingName, report.workDate].filter(Boolean).join(" · ")};
@@ -4732,7 +4738,11 @@
         const request = selectedCustomerDocumentRequest();
         const title = state.category === "workReport" ? "작업 결과보고서" : SavedCustomerDocuments.KINDS[state.category];
         if (!await requestConfirmationFor(title + "를 알림톡으로 보낼까요?", "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
-        const result = await api.sendSavedCustomerDocument(request);
+        const sendGeneration = authGeneration;
+        let result;
+        try { result = await api.sendSavedCustomerDocument(request); }
+        finally { if (request.kind === "workReport" && request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
+        if (sendGeneration !== authGeneration) return;
         if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
         state.result = title + " 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
         await refreshOperations({ silent: true, render: false });
@@ -8575,7 +8585,7 @@
   let reportState = {
     reports: [], admin: false, canWork: false, uid: "",
     loaded: false, loading: false, error: "",
-    selectedId: "", draft: null, busyKey: "", readOnlyReason: "",
+    selectedId: "", draft: null, busyKey: "", readOnlyReason: "", saveBusy: false, saveError: "",
     driveScanning: false,
     drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
     driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
@@ -8586,7 +8596,7 @@
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
     driveThumbnails: new Map(), driveThumbnailLoading: new Set(), driveThumbnailGeneration: 0,
     aiLoading: false, aiError: "", aiDraftAt: "", aiRequestGeneration: 0, aiSuggestion: "",
-    autoPhotoIds: new Set(), autoPhotoReportId: "", aiSuggestionSignature: "",
+      autoPhotoIds: new Set(), autoPhotoReportId: "", aiSuggestionSignature: "",
   };
   let reportDriveThumbnailObserver = null;
 
@@ -8703,6 +8713,7 @@
         ${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>＋ 새 보고서</button>` : ""}
       </div>
       ${status}
+      ${reportState.saveError && !draft ? `<div class="info-box" role="alert">${esc(reportState.saveError)}</div>` : ""}
       ${draft ? reportState.readOnlyReason ? renderReadOnlyWorkReport(R, draft, reportState.readOnlyReason) : reportEditor(R, draft) : `<div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
         <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사진</span><b>${monthly.reduce((sum, item) => sum + R.photoCount(item), 0)}</b><small>장</small></div>
@@ -8718,6 +8729,8 @@
             </table></div>`
           : `<div class="office-empty"><b>아직 낸 보고서가 없습니다</b><span>${reportState.canWork ? "‘새 보고서’ 를 누르고 작업 종류만 고르면 항목이 깔립니다." : "작업자가 보고서를 내면 여기에 쌓입니다."}</span></div>`}
       </section>`;
+    const savingForm = main.querySelector("[data-report-form]");
+    if (savingForm) savingForm.inert = Boolean(reportState.saveBusy);
     scheduleReportDriveThumbnailLoading();
   }
 
@@ -9640,6 +9653,7 @@
     if (photoConfirmations) blockers.push({ key: "photoReview", text: `AI 추천 사진 ${photoConfirmations}장의 구역·전후를 확인해 주세요. 초안은 먼저 만들 수 있습니다.` });
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) blockers.push({ key: "analysisBusy", text: "AI 분석·초안 작성을 마친 뒤 저장해 주세요." });
     const sum = R.summarizeItems(draft);
+    const reportOwner = (store.customers || []).find(row => String(row.id) === String(selectedBuilding?.ownerCustomerId || "") && !row.archivedAt && !row.deletedAt && row.deleted !== true);
     const basicReady = Boolean(draft.buildingId && draft.workDate);
     const photosReady = sum.photos > 0;
     const issueCount = draft.items.filter(item => R.itemIssue(item)).length;
@@ -9761,7 +9775,11 @@
             ${blockers.length
               ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
               : `<div class="wr-ai-ready">✓ 보고서를 저장할 준비가 됐습니다.</div>`}
-            <div class="wr-ai-finish-actions"><button class="primary-button" type="submit"${blockers.length ? " disabled" : ""}>결과보고서 저장</button><button class="secondary-button" type="button" data-report-cancel>취소</button></div>
+            <div class="wr-save-recipient"><span>선택한 수신자</span><b>${esc(reportOwner?.name || reportOwner?.company || "건물주 연결 필요")}</b><small>${esc(reportOwner?.phone || "번호가 없어도 PDF·CRM 저장은 가능합니다.")}</small></div>
+            ${reportState.saveError ? `<p class="wr-ai-error" role="alert">${esc(reportState.saveError)}</p>` : ""}
+            <div class="wr-ai-finish-actions"><button class="secondary-button" type="button" data-report-draft-pdf${blockers.length || reportState.saveBusy ? " disabled" : ""}>PDF로 저장</button><button class="primary-button" type="submit"${blockers.length || reportState.saveBusy ? " disabled" : ""}>${reportState.saveBusy ? "저장 처리 중…" : "결과보고서 저장"}</button></div>
+            <p class="wr-ai-safe">PDF로 저장: 내 컴퓨터에 저장 · 결과보고서 저장: CRM에 PDF 보관 후 발송 여부 확인</p>
+            <button class="secondary-button" type="button" data-report-cancel${reportState.saveBusy ? " disabled" : ""}>취소</button>
           </section>
         </aside>
       </div>
@@ -9814,26 +9832,95 @@
     renderWorkReports();
   }
 
-  async function saveWorkReportFromForm() {
+  function rememberWorkReportPdf(record) {
+    store.buildingDocuments = [...(store.buildingDocuments || []).filter(row => row.id !== record.id), record];
+    if (synchronizedStore) synchronizedStore.buildingDocuments = [...(synchronizedStore.buildingDocuments || []).filter(row => row.id !== record.id), record];
+  }
+
+  async function refreshWorkReportPdfRecord(id, generation) {
+    try {
+      const latest = await api.load();
+      if (generation !== authGeneration) return;
+      const record = (latest?.buildingDocuments || []).find(row => row.id === id);
+      if (record && SavedCustomerDocuments.normalize(record)) rememberWorkReportPdf(record);
+    } catch (_) { /* Keep the saved PDF; an uncertain send must not be retried automatically. */ }
+  }
+
+  async function saveWorkReportFromForm({ pdfOnly = false } = {}) {
     const R = reportCore();
-    if (!R) return;
+    if (!R || reportState.saveBusy || reportState.busyKey || !reportState.canWork || reportState.readOnlyReason) return;
     const draft = readReportForm();
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) return showToast("분석·초안 작성이 끝난 뒤 저장해 주세요.", "error");
     if (reportPhotoConfirmationCount(draft)) return showToast("초안에 자동 반영된 사진의 구역·전후를 확인한 뒤 저장해 주세요.", "error");
     const checked = R.validateReport(draft);
     if (!checked.ok) { showToast(checked.error, "error"); return; }
+    const generation = authGeneration;
+    const saveToken = {};
+    reportState.saveToken = saveToken;
+    const active = () => generation === authGeneration && reportState.saveToken === saveToken;
+    reportState.draft = checked.report;
+    reportState.saveBusy = true;
+    reportState.saveError = "";
+    renderWorkReports();
+    let reportSaved = false, pdfSaved = false, archivedId = "";
     try {
+      if (pdfOnly) {
+        const result = await api.exportWorkReport({report: checked.report, copyType: "owner", company: store.settings?.quoteCompany || {}, secrets: reportSecrets(), strictPhotos: true});
+        if (!active() || result?.canceled) return;
+        if (!result?.ok) throw new Error(result?.error || "PDF를 저장하지 못했습니다.");
+        showToast("PDF를 내 컴퓨터에 저장했습니다. 고객 알림은 보내지 않았습니다.", "success");
+        return;
+      }
       const saved = await api.saveWorkReport(checked.report);
+      if (!active()) return;
+      if (!saved?.id || !saved.updatedAt) throw new Error("CRM 저장 결과를 확인하지 못했습니다.");
+      reportSaved = true;
+      reportState.draft = saved;
+      const archived = await api.saveCustomerDocument({kind: "workReport", reportId: saved.id, updatedAt: saved.updatedAt});
+      if (!active()) return;
+      if (!archived?.ok || !archived.record) throw new Error("PDF 보관을 완료하지 못했습니다.");
+      pdfSaved = true;
+      archivedId = archived.record.id;
+      rememberWorkReportPdf(archived.record);
       reportState.draft = null;
       resetReportDriveSelection();
       reportState.aiError = "";
       reportState.aiDraftAt = "";
       reportState.selectedId = saved.id;
       reportState.loaded = false;
-      showToast("결과보고서를 저장했습니다.", "success");
+      showToast("보고서와 PDF를 CRM에 저장했습니다.", "success");
       await loadWorkReports();
+      if (!active() || currentView !== "workReports") return;
+      const doc = archived.record.savedCustomerDocument;
+      const owner = customerById(doc.customerId);
+      const building = (store.buildings || []).find(row => row.id === archived.record.buildingId);
+      if (!owner || building?.ownerCustomerId !== owner.id || !SavedCustomerDocuments.matches(archived.record, owner, "workReport")) {
+        showToast("저장되었습니다. 건물주 연결·휴대전화 번호를 확인한 뒤 고객 알림에서 발송해 주세요.");
+        return;
+      }
+      if (!canAdministerSecurity()) { showToast("저장되었습니다. 고객 알림 발송은 관리자에게 요청해 주세요."); return; }
+      const accepted = await requestConfirmation({title: "저장되었습니다.", description: "고객 알림을 보내시겠습니까?",
+        target: `${building.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
+        message: "브링케어 카카오 알림톡으로 저장한 보고서 보기 링크를 보냅니다. 링크는 7일 뒤 만료됩니다.",
+        warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success"});
+      if (!accepted || !active()) return;
+      const result = await api.sendSavedCustomerDocument({kind: "workReport", documentId: archived.record.id, customerId: owner.id,
+        updatedAt: archived.record.updatedAt, sha256: doc.sha256});
+      if (!active()) return;
+      if (!result?.ok) throw new Error("알림톡 발송 결과를 확인하지 못했습니다.");
+      if (result.record) rememberWorkReportPdf(result.record);
+      showToast("알림톡 발송 요청을 접수했습니다. 고객 알림에서 결과를 확인해 주세요.", "success");
     } catch (error) {
-      showToast(error && error.message || "저장하지 못했습니다.", "error");
+      if (!active()) return;
+      reportState.saveError = `${pdfSaved ? "CRM·PDF 저장은 완료됐습니다. " : reportSaved ? "보고서는 CRM에 저장됐습니다. PDF 보관을 다시 시도해 주세요. " : ""}${error?.message || "처리하지 못했습니다."}`;
+      showToast(reportState.saveError, "error");
+      if (pdfSaved) await refreshWorkReportPdfRecord(archivedId, generation);
+    } finally {
+      if (reportState.saveToken === saveToken) {
+        reportState.saveBusy = false;
+        if (generation !== authGeneration) { reportState.draft = null; reportState.saveError = ""; resetReportDriveSelection(); }
+        if (active() && currentView === "workReports") renderWorkReports();
+      }
     }
   }
 
@@ -14708,6 +14795,7 @@
     }
     const linkedReportButton = event.target.closest('[data-action="open-cleaning-report"]');
     if (linkedReportButton) {
+      if (reportState.saveBusy) return showToast("보고서 저장 처리가 끝난 뒤 열어 주세요.");
       const R = reportCore();
       const found = R && R.findReport(reportState.reports, linkedReportButton.dataset.recordId);
       if (!found) return showToast("연결된 결과보고서를 불러오지 못했습니다. 현황을 새로고침해 주세요.", "error");
@@ -14725,6 +14813,7 @@
     }
     const createCleaningWorkReport = event.target.closest('[data-action="create-cleaning-work-report"]');
     if (createCleaningWorkReport) {
+      if (reportState.saveBusy) return showToast("보고서 저장 처리가 끝난 뒤 작성해 주세요.");
       const R = reportCore();
       const order = cleaningOrderState.orders.find(item => item.id === createCleaningWorkReport.dataset.orderId);
       if (!R || !order || !reportState.canWork || !canWriteCRM()) return showToast("결과보고서를 작성할 권한이 없습니다.", "error");
@@ -14863,6 +14952,8 @@
     // 목록 밖을 누르면 닫는다. 열어 둔 채로 두면 메뉴를 가린다.
     if (!event.target.closest("[data-nav-folder-switch]")) closeNavFolderSwitch();
     if (event.target.closest("[data-report-new]")) {
+      if (reportState.saveBusy) return showToast("보고서 저장 처리가 끝난 뒤 작성해 주세요.");
+      reportState.saveError = "";
       const R = reportCore();
       if (R) {
         reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() });
@@ -14877,6 +14968,8 @@
     }
     const reportEdit = event.target.closest("[data-report-edit]");
     if (reportEdit) {
+      if (reportState.saveBusy) return showToast("보고서 저장 처리가 끝난 뒤 수정해 주세요.");
+      reportState.saveError = "";
       const R = reportCore();
       const found = R && R.findReport(reportState.reports, reportEdit.dataset.reportEdit);
       if (found) {
@@ -15087,6 +15180,8 @@
       return;
     }
     if (event.target.closest("[data-report-cancel]")) {
+      if (reportState.saveBusy) return;
+      reportState.saveError = "";
       reportState.draft = null;
       reportState.readOnlyReason = "";
       resetReportDriveSelection();
@@ -15101,6 +15196,7 @@
     if (reportDropPhoto) { dropWorkReportPhoto(reportDropPhoto.dataset.reportDropPhoto, reportDropPhoto.dataset.reportItem, reportDropPhoto.dataset.reportPhase); return; }
     const reportExport = event.target.closest("[data-report-export]");
     if (reportExport) { await exportWorkReportPdf(reportExport.dataset.reportExport, reportExport.dataset.reportCopy); return; }
+    if (event.target.closest("[data-report-draft-pdf]")) { await saveWorkReportFromForm({pdfOnly: true}); return; }
     const reportPhoto = event.target.closest("[data-report-open-photo]");
     if (reportPhoto) {
       event.preventDefault();

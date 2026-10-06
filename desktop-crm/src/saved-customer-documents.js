@@ -4,26 +4,35 @@
   else root.BringSavedCustomerDocuments = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function() {
   "use strict";
-  const KINDS = Object.freeze({quote: "견적서", buildingMonthlyReport: "건물 월간보고서"});
+  const KINDS = Object.freeze({quote: "견적서", buildingMonthlyReport: "건물 월간보고서", workReport: "작업 결과보고서"});
   const ID = /^[A-Za-z0-9_-]{1,120}$/;
   const phone = value => String(value || "").replace(/\D/gu, "");
   const text = (value, max) => typeof value === "string" ? value.trim().slice(0, max) : "";
   function normalize(input) {
     const row = input || {}, doc = row.savedCustomerDocument;
-    if (!doc || doc.version !== 1 || !Object.hasOwn(KINDS, doc.kind) || !ID.test(row.id || "") || !ID.test(doc.customerId || "")
+    const workReport = doc?.kind === "workReport";
+    if (!doc || doc.version !== 1 || !Object.hasOwn(KINDS, doc.kind) || !ID.test(row.id || "") || !(ID.test(doc.customerId || "") || (workReport && doc.customerId === ""))
       || !/^[A-Za-z0-9_-]{6,200}$/.test(row.driveFileId || "") || !/^[a-f0-9]{64}$/.test(doc.sha256 || "")
       || !Number.isSafeInteger(doc.size) || doc.size < 5 || doc.size > 12 * 1024 * 1024
-      || !/^01\d{8,9}$/.test(doc.recipientPhone || "") || typeof row.updatedAt !== "string" || !Number.isFinite(Date.parse(row.updatedAt))
+      || !(/^01\d{8,9}$/.test(doc.recipientPhone || "") || (workReport && doc.recipientPhone === "")) || typeof row.updatedAt !== "string" || !Number.isFinite(Date.parse(row.updatedAt))
+      || (workReport && (!ID.test(row.buildingId || "") || !ID.test(doc.reportId || "") || typeof doc.reportUpdatedAt !== "string" || !Number.isFinite(Date.parse(doc.reportUpdatedAt))))
       || (doc.kind === "buildingMonthlyReport" && (!ID.test(row.buildingId || "") || !/^\d{4}-(0[1-9]|1[0-2])$/.test(doc.month || "")))) return null;
     return {id: row.id, title: text(row.title, 160), buildingId: text(row.buildingId, 120), driveFileId: row.driveFileId,
       updatedAt: row.updatedAt, archivedAt: text(row.archivedAt, 40),
       savedCustomerDocument: {version: 1, kind: doc.kind, customerId: doc.customerId, recipientPhone: doc.recipientPhone,
-        sha256: doc.sha256, size: doc.size, month: text(doc.month, 7)}};
+        sha256: doc.sha256, size: doc.size, month: text(doc.month, 7),
+        ...(workReport ? {reportId: doc.reportId, reportUpdatedAt: doc.reportUpdatedAt} : {})},
+      ...(workReport && row.workReportDelivery ? {workReportDelivery: delivery(row.workReportDelivery)} : {})};
+  }
+  function delivery(input) {
+    const status = ["sending", "requested", "failed", "unknown"].includes(input.status) ? input.status : "unknown";
+    return {status, requestedAt: text(input.requestedAt, 40), messageId: text(input.messageId, 120)};
   }
   function matches(row, customer, kind) {
     const record = normalize(row);
     return Boolean(record && !record.archivedAt && !row.deletedAt && row.deleted !== true && customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true
       && record.savedCustomerDocument.kind === kind && record.savedCustomerDocument.customerId === String(customer.id)
+      && /^01\d{8,9}$/.test(record.savedCustomerDocument.recipientPhone)
       && record.savedCustomerDocument.recipientPhone === phone(customer.phone));
   }
   function list(rows, customer, kind) {

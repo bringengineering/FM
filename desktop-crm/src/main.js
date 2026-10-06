@@ -28,6 +28,7 @@ const { weeklyReportPdfHtml } = require("./weekly-report-pdf");
 const QuoteCore = require("./quote-core");
 const SavedCustomerDocuments = require("./saved-customer-documents");
 const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
+const WorkReportArchive = require("./work-report-archive");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const WorkReportCore = require("./work-report-core");
@@ -3127,13 +3128,43 @@ function savedDocumentSession(write = false) {
   if (!user || user.mustChangePassword || !remoteClient || isMarketingOnlySession()) throw new Error("문서에 접근할 CRM 로그인 권한을 확인해 주세요.");
   if (write) assertMainMutationAllowed();
   const guard = remoteClient.captureSessionGuard();
-  return {user, check: () => remoteClient.assertSessionGuardActive(guard)};
+  return {user, guard, check: () => remoteClient.assertSessionGuardActive(guard)};
+}
+
+let workReportArchiveService = null;
+function archivedWorkReports() {
+  if (!workReportArchiveService) workReportArchiveService = WorkReportArchive.createService({
+    store: () => remoteClient.loadStore(), reports: () => remoteClient.loadWorkReports(),
+    pdf: options => createWorkReportPdfArtifact(options, "owner"),
+    upload: input => BuildingDocsDrive.uploadDocument(driveApiDeps(), input),
+    download: (fileId, metadata) => SavedCustomerDocumentPdf.download(authenticatedDriveFetch, fileId, metadata),
+    delivery: (action, input) => runDocumentDelivery(action, input),
+    mutate: async (id, change, session) => {
+      if (!/^saved_wr_[a-f0-9]{40}$/.test(id)) throw new Error("저장 보고서 식별자를 확인해 주세요.");
+      const location = `crmShared/data/buildingDocuments/${id}`;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        session.check();
+        const snapshot = await remoteClient.dbReadWithEtag(location, false, session.guard); session.check();
+        if (snapshot.value != null && (typeof snapshot.value !== "object" || Array.isArray(snapshot.value) || snapshot.value.id !== id)) throw new Error("건물 문서함 구조를 확인해 주세요.");
+        const next = change(snapshot.value || null);
+        if (!next || next.id !== id || !SavedCustomerDocuments.normalize(next)) throw new Error("저장 보고서 정보를 확인해 주세요.");
+        try {
+          await remoteClient.dbConditionalPut(location, next, snapshot.etag, false, session.guard); session.check();
+          return next;
+        } catch (error) {
+          if (error.code !== "BUILDING_SCHEDULE_CONFLICT" || attempt === 2) throw error;
+        }
+      }
+    },
+  });
+  return workReportArchiveService;
 }
 
 async function saveCustomerDocument(input) {
   const session = savedDocumentSession(true);
   const options = input && typeof input === "object" ? input : {};
   if (!Object.hasOwn(SavedCustomerDocuments.KINDS, options.kind)) throw new Error("저장할 문서 종류를 확인해 주세요.");
+  if (options.kind === "workReport") return archivedWorkReports().save(options, session);
   const data = await remoteClient.loadStore(); session.check();
   const rootFolderId = String(data?.company?.buildingDocsFolderId || "");
   if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.");
@@ -3215,7 +3246,7 @@ async function readSavedWorkReportPdf(input, session) {
 
 async function previewSavedCustomerDocument(input) {
   const session = savedDocumentSession();
-  const {bytes} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
+  const {bytes} = input?.kind === "workReport" ? await (input.sha256 ? archivedWorkReports().read(input, session) : readSavedWorkReportPdf(input, session)) : await readSavedCustomerPdf(input, session);
   SavedCustomerDocumentPdf.verifyPdf(bytes); session.check();
   const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "bring-saved-pdf-"));
   const file = path.join(folder, "report.pdf");
@@ -3232,6 +3263,7 @@ async function previewSavedCustomerDocument(input) {
 async function sendSavedCustomerDocument(input) {
   const session = savedDocumentSession(true);
   if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
+  if (input?.kind === "workReport" && input.sha256) return archivedWorkReports().send(input, session);
   const {record, customer, bytes} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
   SavedCustomerDocumentPdf.verifyPdf(bytes);
   const monthly = record.savedCustomerDocument.kind === "buildingMonthlyReport";
@@ -5293,6 +5325,7 @@ async function createWorkReportPdfArtifact(options, copyType) {
 }
 
 async function exportWorkReport(input) {
+  const session = savedDocumentSession();
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   // 이 문서에는 건물주 이름·주소와 현장 사진이 담긴다. 마케팅 전용 계정이
   // 볼 자료가 아니다.
@@ -5344,18 +5377,22 @@ async function exportWorkReport(input) {
     }
   }
 
+  session.check();
+  if (options.strictPhotos === true && (photoFailures || Object.keys(images).length < photos.length)) return {ok: false, error: "PDF 사진을 모두 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요."};
   const result = await dialog.showSaveDialog(mainWindow, {
     title: `${WorkReportCore.copyOf(copyType).label} PDF 저장`,
     defaultPath: workReportFileName(report, copyType),
     filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  session.check();
   const documentHtml = createWorkReportHtml(report, copyType, {
     company: options.company,
     sealImage: seal,
     images,
   });
   const bytes = await createReportPdfBytes(documentHtml, "work-report");
+  session.check();
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, copyType, photos: Object.keys(images).length, heicConverted, photoFailures };
 }
