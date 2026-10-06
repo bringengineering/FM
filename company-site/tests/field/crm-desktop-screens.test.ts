@@ -141,6 +141,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
     driveStatus: { connected: true, email: "test@example.test" },
+    assist: { result: { text: "자동 분석 사진으로 만든 검토용 초안입니다. 작업 완료 여부는 담당자가 확인합니다." } },
     classifyWorkReportPhotos: { ok: true, classifications: [
       { id: "p1", category: "bath", space: "bath", target: "floor", confidence: 90 },
       { id: "p2", category: "bath", space: "bath", target: "floor", confidence: 90 },
@@ -795,7 +796,12 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.document.querySelector('[data-report-review-row="p3"]'), "못 분류한 사진도 숨기지 않는다").toBeTruthy();
     expect(shown, "못 여는 사진은 미리 말해 준다").toContain("HEIC");
 
-    // 구역과 전후를 정해도 사람이 확인하기 전에는 보고서에 넣지 않는다.
+    // 분류된 사진으로 초안은 먼저 만들되, 미분류는 보관하고 저장 전 확인은 유지한다.
+    expect(booted.document.querySelectorAll("[data-report-drop-photo]").length).toBe(2);
+    expect(booted.calls.slice(before).some(call => call.name === "assist" && (call.input as { task?: string }).task === "completion_report")).toBe(true);
+    expect((booted.document.querySelector('[name="summary"]') as HTMLTextAreaElement).value).toContain("검토용 초안");
+    expect(booted.document.querySelectorAll('[data-report-review-confirm-area]:checked').length).toBe(0);
+    expect(booted.document.querySelector('.wr-blockers')?.textContent).toContain('AI 추천 사진 2장');
     for (const [selector, value] of [["space", "living"], ["target", "floor"]]) {
       const control = booted.document.querySelector(`[data-report-review-${selector}="p3"]`) as HTMLSelectElement;
       expect(control).toBeTruthy();
@@ -804,12 +810,15 @@ describe("desktop CRM screens actually render", () => {
       await sleep(50);
     }
     const pendingApply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
-    expect(pendingApply.disabled, "구역만 정하고 전후 미분류 사진을 조용히 빼면 안 된다").toBe(true);
+    expect(pendingApply.disabled, "미분류 사진이 있어도 분류된 사진으로 초안을 만들 수 있다").toBe(false);
+    expect(booted.document.querySelector('[data-report-review-row="p3"]')).toBeTruthy();
     const phase = booted.document.querySelector('[data-report-photo-phase="p3"]') as HTMLSelectElement;
     phase.value = "after";
     phase.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
     await sleep(100);
-    expect((booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement).disabled).toBe(true);
+    expect((booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement).disabled).toBe(false);
+    expect(booted.document.querySelectorAll("[data-report-drop-photo]").length).toBe(3);
+    expect(booted.document.querySelector('.wr-blockers')?.textContent).toContain('AI 추천 사진 3장');
     for (const selector of ['[data-report-review-confirm-area="living"]', '[data-report-review-confirm-area="bath"]']) {
       const checkbox = booted.document.querySelector(selector) as HTMLInputElement;
       expect(checkbox.disabled).toBe(false);
