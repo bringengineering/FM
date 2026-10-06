@@ -591,7 +591,7 @@
               "key": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
               "label": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
               "detail": { ".validate": "newData.isString() && newData.val().length <= 300" },
-              "status": { ".validate": "newData.isString() && (newData.val() === 'done' || newData.val() === 'partial' || newData.val() === 'skipped')" },
+              "status": { ".validate": "newData.isString() && (newData.val() === 'done' || newData.val() === 'partial' || newData.val() === 'skipped' || (newData.val() === 'recorded' && newData.parent().parent().parent().child('kind').val() === 'common'))" },
               "note": { ".validate": "newData.isString() && newData.val().length <= 500" },
               "before": { "$photoIndex": {
                 ".validate": "newData.hasChildren(['id','driveFileId'])",
@@ -601,6 +601,17 @@
                 "caption": { ".validate": "newData.isString() && newData.val().length <= 120" },
                 "$other": { ".validate": false }
               } },
+              "during": {
+                ".validate": "newData.parent().parent().parent().child('kind').val() === 'common'",
+                "$photoIndex": {
+                  ".validate": "newData.hasChildren(['id','driveFileId'])",
+                  "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
+                  "driveFileId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+                  "webViewLink": { ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^https:\\/\\/(drive|docs)\\.google\\.com\\//))" },
+                  "caption": { ".validate": "newData.isString() && newData.val().length <= 120" },
+                  "$other": { ".validate": false }
+                }
+              },
               "after": { "$photoIndex": {
                 ".validate": "newData.hasChildren(['id','driveFileId'])",
                 "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },

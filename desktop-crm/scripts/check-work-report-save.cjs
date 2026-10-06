@@ -27,7 +27,8 @@ async function main(){
     await context.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname==="/preview-fixture.js")return route.fulfill({contentType:"text/javascript",body:fs.readFileSync(path.join(__dirname,"operations-check-preview-fixture.js"),"utf8")+`\n(${installFixture.toString()})();`});return route.continue();});
     const page=await context.newPage(), errors=[];page.on("pageerror",error=>errors.push(error.message));
     page.setDefaultTimeout(15000);
-    await page.goto(origin+"/?view=workReports&unifiedSeed=1",{waitUntil:"networkidle"});
+    await page.goto(origin+"/?view=workReports&unifiedSeed=1",{waitUntil:"domcontentloaded",timeout:60000});
+    console.log("Renderer loaded; checking save actions.");
     const workspace=page.locator('[data-workspace-enter="operations"][data-workspace-enter-folder="documents"]');if(await workspace.isVisible())await workspace.click();
     await page.locator('[data-view="workReports"]').evaluate(button=>button.click());
     await page.locator('[data-report-edit="wr_save_test"]').click();

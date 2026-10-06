@@ -2857,6 +2857,30 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(member, at("w11")), report("w11", { updatedBy: "crm-admin" })));
     // 지우는 길은 없다. 나간 보고서의 근거가 사라지면 안 된다.
     await assertFails(remove(ref(member, at("w1"))));
+    // 공용부 작업 과정만 확장한다. 기존 접근권한·Drive 사진 검증은 유지한다.
+    const common = (id: string, patch: Record<string, unknown> = {}) => report(id, {
+      kind: "common", items: [item("windows", "공용 창호", { status: "recorded", before: [], after: [], during: [shot("working")] })], ...patch,
+    });
+    await assertSucceeds(set(ref(member, at("common-working")), common("common-working")));
+    const admin = environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test")).database();
+    await assertSucceeds(set(ref(admin, at("common-admin")), common("common-admin", { updatedBy: "crm-admin" })));
+    await assertSucceeds(get(ref(viewer, at("common-working"))));
+    for (const [uid, email, verified, provider] of [
+      ["crm-viewer", "viewer@bring.test", true, "password"],
+      ["crm-disabled", "disabled@bring.test", true, "password"],
+      ["crm-member", "member@bring.test", true, "password"],
+      ["crm-legacy-member", "legacy@bring.test", false, "password"],
+      ["crm-legacy-member", "wrong@bring.test", true, "password"],
+    ] as const) {
+      const denied = environment.authenticatedContext(uid, crmPasswordClaims(email, verified, provider)).database();
+      await assertFails(set(ref(denied, at("common-denied")), common("common-denied", { updatedBy: uid })));
+    }
+    await assertFails(set(ref(environment.unauthenticatedContext().database(), at("common-anonymous")), common("common-anonymous")));
+    for (const during of [[{ id: "x", driveFileId: "x", webViewLink: "https://evil.invalid/a" }], [{ id: "x" }], [{ ...shot("x"), secret: "not-allowed" }]]) {
+      await assertFails(set(ref(member, at("common-bad-photo")), common("common-bad-photo", { items: [item("windows", "창호", { status: "recorded", during })] })));
+    }
+    await assertFails(set(ref(member, at("common-unknown-column")), common("common-unknown-column", { items: [item("windows", "창호", { during: [shot("x")], extra: true })] })));
+    await assertFails(set(ref(member, at("noncommon-during")), common("noncommon-during", { kind: "moveIn" })));
   });
 
   it("keeps a delivery flow's stages in the shape the board can draw", async () => {

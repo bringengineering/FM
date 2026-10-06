@@ -53,6 +53,33 @@ test("전후 비교는 6장 분류 경계를 넘어 비교하고 사진 원본 �
   assert.deepEqual(result.pairs, [{ beforeId: "private_0", afterId: "private_7", evidence: "stain_reduced" }]);
 });
 const responseForPair = pairs => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs }) }] } }] });
+
+test("공용부는 청소 동작이 명확할 때만 작업 중으로 분류한다", async () => {
+  const images = ["working", "person", "clean", "low", "bad"].map(id => ({ id, dataUrl: jpeg() }));
+  const payload = await readPhotoClassificationPayload(new Request("https://ai.example/v1/photo-classify", { method: "POST", body: JSON.stringify({ kind: "common", images }) }));
+  const result = await classifyPhotos(payload, env(), async (_, options) => {
+    assert.match(options.body, /공용부 청소/);
+    assert.match(options.body, /사람이 서 있거나 도구만 놓인/);
+    assert.doesNotMatch(options.body, /working|image id=person/);
+    return responseFor([
+      { id: "p1", category: "windows", confidence: 95, phase: "during", phaseConfidence: 94, action: "wiping" },
+      { id: "p2", category: "stairs", confidence: 90, phase: "during", phaseConfidence: 95, action: "unknown" },
+      { id: "p3", category: "corridor", confidence: 90, phase: "after", phaseConfidence: 99, action: "mopping" },
+      { id: "p4", category: "handrail", confidence: 74, phase: "during", phaseConfidence: 70, action: "wiping" },
+      { id: "p5", category: "constructor", confidence: 99, phase: "during", phaseConfidence: 95, action: "<script>" },
+    ]);
+  });
+  assert.deepEqual(result.classifications.map(row => row.phase), ["during", "unknown", "unknown", "unknown", "unknown"]);
+  assert.deepEqual(result.classifications.slice(3).map(row => row.category), ["review", "review"]);
+});
+
+test("공용부 전후 비교는 높은 점수여도 촬영시간만 근거인 쌍을 제외한다", async () => {
+  const result = await classifyPhotos({ kind: "common", mode: "compare", images: [{ id: "a", dataUrl: jpeg(), captureMinute: 0 }, { id: "b", dataUrl: jpeg(), captureMinute: 100 }] }, env(), async (_, options) => {
+    assert.match(options.body, /same_scene_time은 금지/);
+    return responseForPair([{ beforeId: "p1", afterId: "p2", matchConfidence: 99, phaseConfidence: 99, evidence: "same_scene_time" }]);
+  });
+  assert.deepEqual(result.pairs, []);
+});
 test("확장된 공간·대상 분류도 닫힌 값으로 정규화한다", async () => {
   const result = await classifyPhotos({ kind: "moveIn", images: [{ id: "one", dataUrl: jpeg() }] }, env(), async () => responseFor([{ id: "p1", category: "floor", space: "<script>", target: "floor", confidence: 90 }]));
   assert.equal(result.classifications[0].space, "unknown"); assert.equal(result.classifications[0].target, "floor");
@@ -120,6 +147,16 @@ test("사진 분류 route는 인증 뒤 Gemini에 6장씩 요청하고 낮은 �
 });
 
 const payload = { kind: "moveIn", images: [{ id: "private-drive-id", dataUrl: jpeg() }] };
+test("공용부 Gemini 지시는 입주청소 구역 예시와 섞이지 않는다", async () => {
+  await classifyPhotos({...payload,kind:"common"},env(),async (_url,options)=>{
+    const prompt=JSON.parse(options.body).contents[0].parts[0].text;
+    assert.match(prompt,/category=stairs/);
+    assert.match(prompt,/category=corridor/);
+    assert.match(prompt,/phaseConfidence, action/);
+    assert.doesNotMatch(prompt,/category=bath|category=veranda|living,floor,floor/);
+    return responseFor([{id:"p1",category:"stairs",confidence:90,phase:"during",phaseConfidence:95,action:"mopping"}]);
+  });
+});
 test("전후 비교 route도 인증을 요구하고 검증된 짝만 클라이언트로 전달한다", async () => {
   let providers = 0;
   const worker = createWorker({ fetchImpl: async (url) => {

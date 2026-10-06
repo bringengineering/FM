@@ -8,6 +8,7 @@ const CATEGORIES = new Set([
   "floor", "window", "kitchen", "hood", "bath", "veranda", "storage",
   "aircon", "refrigerator", "finish", "review",
 ]);
+const COMMON_CATEGORIES = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final", "review"]);
 
 const ERROR_MESSAGES = Object.freeze({
   AUTH_REQUIRED: "로그인 정보가 만료되었습니다. 다시 로그인해 주세요.",
@@ -40,7 +41,7 @@ function validatePhotoClassificationInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw codedError("INVALID_INPUT");
   if (Object.keys(input).some(key => !["kind", "images", "mode"].includes(key))) throw codedError("INVALID_INPUT");
   if (input.mode !== undefined && !["classify", "compare"].includes(input.mode)) throw codedError("INVALID_INPUT");
-  if (input.kind !== "moveIn") throw codedError("INVALID_INPUT");
+  if (!["moveIn", "common"].includes(input.kind)) throw codedError("INVALID_INPUT");
   if (!Array.isArray(input.images) || !input.images.length || input.images.length > MAX_PHOTOS) throw codedError("INPUT_TOO_LARGE");
   const seen = new Set();
   const images = input.images.map(image => {
@@ -55,10 +56,10 @@ function validatePhotoClassificationInput(input) {
     if (image.captureMinute !== undefined && (input.mode !== "compare" || !Number.isInteger(image.captureMinute) || image.captureMinute < 0 || image.captureMinute > 1439)) throw codedError("INVALID_INPUT");
     return { id, dataUrl, ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}) };
   });
-  return { kind: "moveIn", images, ...(input.mode ? { mode: input.mode } : {}) };
+  return { kind: input.kind, images, ...(input.mode ? { mode: input.mode } : {}) };
 }
 
-function normalizeSuccess(value, expectedIds, mode) {
+function normalizeSuccess(value, expectedIds, mode, kind) {
   if (!value || value.ok !== true || typeof value.requestId !== "string" || !value.requestId || !Array.isArray(value.classifications)) {
     throw codedError("AI_INVALID_RESPONSE");
   }
@@ -69,12 +70,16 @@ function normalizeSuccess(value, expectedIds, mode) {
     const id = String(row.id || "");
     const category = String(row.category || "");
     const confidence = Math.max(0, Math.min(100, Math.round(Number(row.confidence) || 0)));
-    if (!expected.has(id) || seen.has(id) || !CATEGORIES.has(category)) throw codedError("AI_INVALID_RESPONSE");
+    if (!expected.has(id) || seen.has(id) || !(kind === "common" ? COMMON_CATEGORIES : CATEGORIES).has(category)) throw codedError("AI_INVALID_RESPONSE");
     seen.add(id);
     return {
       id,
       category,
       confidence,
+      ...(kind === "common" ? {
+        phase: row.phase === "during" && Number.isFinite(row.phaseConfidence) && row.phaseConfidence >= 85 && ["wiping", "sweeping", "mopping", "scrubbing", "washing", "collecting"].includes(row.action) ? "during" : "unknown",
+        phaseConfidence: Math.max(0, Math.min(100, Number(row.phaseConfidence) || 0)),
+      } : {}),
       ...(row.space !== undefined || row.target !== undefined ? {
         space: SPACES.has(row.space) ? row.space : "unknown",
         target: TARGETS.has(row.target) ? row.target : "unknown",
@@ -91,6 +96,7 @@ function normalizeSuccess(value, expectedIds, mode) {
     for (const pair of value.pairs) {
       if (!pair || !expected.has(pair.beforeId) || !expected.has(pair.afterId) || pair.beforeId === pair.afterId || paired.has(pair.beforeId) || paired.has(pair.afterId)
         || !["debris_removed", "stain_reduced", "items_removed", "same_scene_time"].includes(pair.evidence)) throw codedError("AI_INVALID_RESPONSE");
+      if (kind === "common" && pair.evidence === "same_scene_time") continue;
       pairs.push({ beforeId: pair.beforeId, afterId: pair.afterId, evidence: pair.evidence });
       paired.add(pair.beforeId); paired.add(pair.afterId);
     }
@@ -140,7 +146,7 @@ async function classifyPhotosWithGateway(options) {
     const code = Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, value?.code) ? value.code : "AI_TEMPORARY_FAILURE";
     throw codedError(code);
   }
-  return normalizeSuccess(value, input.images.map(image => image.id), input.mode);
+  return normalizeSuccess(value, input.images.map(image => image.id), input.mode, input.kind);
 }
 
 module.exports = Object.freeze({

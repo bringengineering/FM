@@ -4958,7 +4958,7 @@ async function classifySelectedWorkReportPhotos(input) {
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   if (Object.keys(options).some(key => !["kind", "fileIds", "mode"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
   if (options.mode !== undefined && !["classify", "compare"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
-  if (options.kind !== "moveIn") throw Object.assign(new Error("입주청소 사진만 AI로 구역을 분류할 수 있습니다."), { code: "INVALID_INPUT" });
+  if (!["moveIn", "common"].includes(options.kind)) throw Object.assign(new Error("입주청소·공용부청소 사진을 AI로 분류할 수 있습니다."), { code: "INVALID_INPUT" });
   const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
   if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
   if (ids.length > MAX_AI_CLASSIFICATION_PHOTOS) throw Object.assign(new Error(`AI 사진 분류는 한 번에 ${MAX_AI_CLASSIFICATION_PHOTOS}장까지 가능합니다.`), { code: "INPUT_TOO_LARGE" });
@@ -4997,7 +4997,7 @@ async function classifySelectedWorkReportPhotos(input) {
   const result = await classifyPhotosWithGateway({
     endpoint: CRM_AI_PHOTO_CLASSIFY_URL,
     idToken,
-    input: { kind: "moveIn", images: prepared, ...(options.mode ? { mode: options.mode } : {}) },
+    input: { kind: options.kind, images: prepared, ...(options.mode ? { mode: options.mode } : {}) },
     fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
   });
   remoteClient.assertSessionGuardActive(guard);
@@ -5211,7 +5211,8 @@ async function uploadWorkReportPhoto(input) {
   }
   const reportId = String(options.reportId || "");
   const itemKey = String(options.itemKey || "");
-  const phase = options.phase === "after" ? "after" : "before";
+  if (!["before", "during", "after"].includes(options.phase)) throw Object.assign(new Error("사진 작업 단계를 확인해 주세요."), { code: "INVALID_INPUT" });
+  const phase = options.phase;
   if (!reportId || !itemKey) throw Object.assign(new Error("어느 보고서의 어느 항목인지 정해 주세요."), { code: "ITEM_REQUIRED" });
 
   const content = await fs.readFile(filePath);
@@ -5222,7 +5223,7 @@ async function uploadWorkReportPhoto(input) {
       rootFolderId: String(options.rootFolderId || ""),
       folderPath: ["결과보고서", String(options.buildingName || "건물 없음"), `${day}_${String(options.kindLabel || "작업")}`],
       fileName: "",
-      docTypeLabel: `${String(options.itemLabel || itemKey)} ${phase === "after" ? "작업 후" : "작업 전"}`,
+      docTypeLabel: `${String(options.itemLabel || itemKey)} ${phase === "during" ? "작업 중" : phase === "after" ? "작업 후" : "작업 전"}`,
       documentDate: day,
       originalFileName: path.basename(filePath),
       mimeType: String(options.mimeType || "application/octet-stream"),
