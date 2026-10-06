@@ -15,7 +15,7 @@ function installFixture() {
       window.__photoQA.aiCalls.push(input);
       if (window.__photoQA.aiDelay) await new Promise(resolve => setTimeout(resolve, window.__photoQA.aiDelay));
       if (window.__photoQA.aiFail) throw new Error("가상 문장 작성 실패");
-      return { result: { text: `사진 분류를 반영한 검토용 초안 ${window.__photoQA.aiCalls.length}. 완료 여부는 담당자가 확인합니다.` } };
+      return { result: { text: `사진 분류를 반영한 검토용 초안 ${window.__photoQA.aiCalls.length}. 완료 여부는 담당자가 확인합니다.${window.__photoQA.longDraft ? '\n구역별 현장 사진 안내입니다.\n'.repeat(65) : ''}` } };
     },
     loadWorkReports: async () => ({ reports: [], admin: true, canWork: true, uid: "preview-only" }),
     driveStatus: async () => ({ connected: true, email: "preview@example.invalid" }),
@@ -87,9 +87,27 @@ async function main() {
     assert.equal(await page.locator('[data-report-form] button[type="submit"]').isDisabled(), true);
     assert.match(await page.locator('.wr-auto-draft-notice').textContent(), /확인 필요 2장 보관/);
     await page.locator('[name="summary"]').fill('담당자가 직접 작성한 본문');
+    await page.evaluate(() => { window.__photoQA.longDraft = true; });
     await page.locator('[data-report-ai-draft]').click();
     await page.locator('[data-report-ai-accept]').waitFor();
     assert.equal(await page.locator('[name="summary"]').inputValue(), '담당자가 직접 작성한 본문');
+    // A long suggestion and pending photos must never trap the save controls
+    // below a clipped sticky sidebar, even at laptop heights or increased zoom.
+    for (const viewport of [{ width: 1520, height: 940 }, { width: 1280, height: 720 }, { width: 960, height: 720 }]) {
+      await page.setViewportSize(viewport);
+      const actions = page.locator('.wr-ai-finish-actions');
+      await actions.scrollIntoViewIfNeeded();
+      const reachable = await actions.evaluate(element => {
+        const button = element.querySelector('[data-report-cancel]');
+        const rect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return rect.top >= 0 && rect.bottom <= innerHeight && (hit === button || button.contains(hit));
+      });
+      assert.equal(reachable, true, `긴 제안에서도 저장·취소 버튼에 도달해야 한다 (${viewport.width}×${viewport.height})`);
+      assert.equal(await page.locator('[data-report-form] button[type="submit"]').isDisabled(), true, "스크롤 수정은 검토 게이트를 우회하지 않는다");
+    }
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.evaluate(() => { window.__photoQA.longDraft = false; });
     await page.locator('[data-report-ai-accept]').click();
     assert.match(await page.locator('[name="summary"]').inputValue(), /검토용 초안 2/);
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 2);

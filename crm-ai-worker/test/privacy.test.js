@@ -17,6 +17,13 @@ test("privacy preserves ordinary Korean work descriptions", () => {
   );
 });
 
+test("structured work dates use Korean notation without exempting date-shaped financial numbers", () => {
+  assert.equal(
+    maskSensitiveText("작업일: 2026년 10월 06일\n계좌 2026-10-06 / 123-456-789012"),
+    "작업일: 2026년 10월 06일\n계좌 [계좌번호] / [계좌번호]"
+  );
+});
+
 test("privacy normalizes whitespace and enforces the content boundary", () => {
   assert.equal(normalizeText("  첫 줄\r\n\r\n  둘째 줄  "), "첫 줄\n\n둘째 줄");
   assert.throws(() => normalizeText("가".repeat(12001)), error => error?.code === "INPUT_TOO_LARGE");

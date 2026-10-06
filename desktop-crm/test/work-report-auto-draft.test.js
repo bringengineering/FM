@@ -45,6 +45,55 @@ test("분석된 사진은 사람의 승인 없이 초안에만 반영되고 확�
   await h.context.saveWorkReportFromForm();
   assert.match(h.toasts.at(-1), /구역·전후를 확인/);
 });
+
+test("고객용 작성 자료는 작업일을 날짜로 보존하고 내부 기본 완료 상태·장수를 나열하지 않는다", async () => {
+  const { pathToFileURL } = require("node:url");
+  const { maskSensitiveText } = await import(pathToFileURL(path.join(__dirname, "../../crm-ai-worker/src/privacy.js")));
+  const h = harness();
+  h.state.draft.ownerContact = "010-1111-2222";
+  h.state.draft.siteAddress = "테스트로 123";
+  await h.context.createWorkReportAiDraft({ automatic: true });
+  const content = h.calls[0].content;
+  const facts = content.split("브링케어가 건물주에게")[0];
+  assert.match(facts, /작업일: 2026년 10월 06일/);
+  assert.match(facts, /욕실 \| 사진 구분: 작업 전·작업 후/);
+  assert.doesNotMatch(facts, /미입력|입력 상태|상태: 완료|\d+장|010-1111|테스트로/);
+  assert.match(maskSensitiveText(content), /작업일: 2026년 10월 06일/);
+  assert.doesNotMatch(maskSensitiveText(content), /\[계좌번호\]/);
+  assert.match(content, /고객용 작업보고서/);
+  assert.match(content, /작업 메모가 없으면.*중립적인 안내/);
+});
+
+test("실제 미완료·후속 메모는 유지하고 사진이 한쪽뿐이면 없는 전후를 만들지 않는다", () => {
+  const h = harness();
+  h.context.syncReportAnalysisPhotos();
+  const bath = h.state.draft.items.find(item => item.key === "bath");
+  bath.before = [];
+  bath.status = "partial";
+  bath.note = "배수구 추가 점검 필요";
+  const window = h.state.draft.items.find(item => item.key === "window");
+  window.status = "skipped";
+  window.note = "창호 작업은 다음 방문 시 진행 예정";
+  h.state.draft.followUp = "점검 일정 별도 협의";
+  h.state.draft.workDate = "";
+  const content = h.context.workReportAiContent(R, h.state.draft);
+  const facts = content.split("브링케어가 건물주에게")[0];
+  assert.doesNotMatch(facts, /작업일:|작업 범위:|작업 전/);
+  assert.match(facts, /욕실 \| 사진 구분: 작업 후 \| 미완료 사항:/);
+  assert.match(facts, /배수구 추가 점검 필요/);
+  assert.match(facts, /창호 작업은 다음 방문 시 진행 예정/);
+  assert.match(facts, /점검 일정 별도 협의/);
+});
+
+test("날짜 표시 수정은 자유 입력 계좌번호·연락처 가림을 완화하지 않는다", async () => {
+  const { pathToFileURL } = require("node:url");
+  const { maskSensitiveText } = await import(pathToFileURL(path.join(__dirname, "../../crm-ai-worker/src/privacy.js")));
+  const h = harness();
+  h.state.draft.items[0].note = "계좌 2026-10-06 / 123-456-789012 / 010-1111-2222";
+  const masked = maskSensitiveText(h.context.workReportAiContent(R, h.state.draft));
+  assert.match(masked, /작업일: 2026년 10월 06일/);
+  assert.match(masked, /계좌 \[계좌번호\] \/ \[계좌번호\] \/ \[전화번호\]/);
+});
 test("사진 이동·미분류 전환은 즉시 동기화되고 로컬 사진·상태·메모·캡션은 보존된다", () => {
   const h = harness(); h.context.syncReportAnalysisPhotos();
   const bath = h.state.draft.items.find(i => i.key === "bath");

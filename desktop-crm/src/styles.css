@@ -1186,7 +1186,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-ai-step.is-active b { color: #1B64DA; }
 .wr-ai-layout { display: grid; grid-template-columns: minmax(560px,1.45fr) minmax(320px,.72fr); gap: 14px; align-items: start; padding: 14px; }
 .wr-ai-main,.wr-ai-side { display: grid; gap: 14px; min-width: 0; }
-.wr-ai-side { position: sticky; top: 10px; }
+/* 긴 초안과 검수 목록도 문서 스크롤에 포함해 하단 저장 버튼이 잘리지 않게 한다. */
+.wr-ai-side { position: static; }
 .wr-ai-card { min-width: 0; padding: 17px; border: 1px solid #E5E8EB; border-radius: 16px; background: #fff; box-shadow: 0 5px 16px rgba(31,66,87,.035); }
 .wr-ai-card>header { display: flex; align-items: center; gap: 11px; margin-bottom: 15px; }
 .wr-ai-card>header>div { min-width: 0; }
@@ -1518,10 +1519,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-pair-single>small { display: block; color: #6B7684; line-height: 1.5; font-size: 10px; margin: 8px 0; }
 .wr-pair-empty { padding: 24px 12px; text-align: center; color: #6B7684; font-size: 12px; background: #fff; border-radius: 10px; }
 .wr-pair-warnings { margin-top: 12px; color: #6B7684; font-size: 11px; }
-@media (min-width: 1181px) {
-  .wr-ai-editor:has(.wr-pair-pending) { overflow: clip; }
-  .wr-ai-side:has(.wr-pair-pending) { top: 98px; max-height: calc(100vh - 130px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-}
 @media (max-width: 700px) { .wr-pair-images { gap: 6px; } .wr-pair-thumb { height: 140px; } .wr-pair-card { padding: 9px; } }
 .wr-drive-head em { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #00875A; font-size: 10px; font-style: normal; font-weight: 850; }
 .wr-drive-head em i { width: 7px; height: 7px; border-radius: 50%; background: #04A66B; }

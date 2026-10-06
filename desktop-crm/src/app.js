@@ -9506,18 +9506,20 @@
     const report = R.normalizeReport(draft);
     const lines = [
       `작업 종류: ${R.kindLabel(report.kind)}`,
-      `작업일: ${report.workDate || "미입력"}`,
-      `작업 범위: ${report.area || "미입력"}`,
       `보고 구분: ${R.categoryLabel(report.category)}`,
-      "항목별 입력 자료 (AI 추천 분류는 아직 담당자 확인 전일 수 있음):",
     ];
+    // 구조화된 작업일만 날짜 표기로 바꾼다. 자유 입력의 계좌번호 가림은 우회하지 않는다.
+    if (report.workDate) lines.push(`작업일: ${report.workDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$1년 $2월 $3일")}`);
+    if (report.area) lines.push(`작업 범위: ${report.area}`);
+    lines.push("구역별 자료 (사진 구분은 아직 담당자 확인 전일 수 있으며, 완료 증명이 아님):");
     report.items.forEach(item => {
-      if (!item.before.length && !item.after.length && !item.note) return;
-      lines.push(`- ${item.label} | 입력 상태 ${R.statusLabel(item.status)} | 작업 전 사진 ${item.before.length}장 | 작업 후 사진 ${item.after.length}장${item.note ? ` | 메모 ${item.note}` : ""}`);
+      if (!item.before.length && !item.after.length && !item.note && item.status === "done") return;
+      const phases = [item.before.length ? "작업 전" : "", item.after.length ? "작업 후" : ""].filter(Boolean);
+      lines.push(`- ${item.label}${phases.length ? ` | 사진 구분: ${phases.join("·")}` : ""}${item.status !== "done" ? ` | 미완료 사항: ${R.statusLabel(item.status)}` : ""}${item.note ? ` | 작성자 기재 내용: ${item.note}` : ""}`);
     });
     if (report.summary) lines.push(`기존 발견·조치 메모: ${report.summary}`);
     if (report.followUp) lines.push(`기존 후속 메모: ${report.followUp}`);
-    lines.push("위 입력 자료만 사용해 검토용 보고서 초안을 작성하세요. 사진 개수·AI 분류나 기본 입력 상태만으로 청소 완료·오염 제거·효과를 단정하지 마세요. 사진 원본을 본 것처럼 쓰지 마세요. 메모에 없는 구체적 작업·원인·결과는 추측하지 말고 담당자 확인이 필요하다고 표시하세요.");
+    lines.push("브링케어가 건물주에게 전달할 고객용 작업보고서 본문을 작성하세요. 인사, 구역별 사진 안내, 기재된 작업·미완료·후속 사항, 문의 안내와 감사 인사 순서로 정중하고 간결하게 작성하세요. 사진 개수·AI 분류나 기본 입력 상태만으로 청소 완료·오염 제거·효과를 단정하지 마세요. 사진 원본을 본 것처럼 쓰지 마세요. 구체적인 작업 메모가 없으면 구역별 현장 사진을 전달한다는 중립적인 안내만 쓰세요. 전·후가 모두 있는 구역만 비교 사진으로 안내하고 한쪽만 있으면 해당 사진만 안내하세요. 내부 검수 문구(입력 상태, AI 분류, 담당자 확인 필요), 사진 장수, 미입력·대괄호 자리표시자는 본문에 넣지 마세요. 다만 실제 미완료 작업·하자·후속조치가 기재되어 있으면 숨기지 말고 고객이 이해할 말로 안내하세요. 건물명·주소는 보고서 표지에 따로 표시되므로 추측하거나 자리표시자를 쓰지 마세요.");
     return lines.join("\n");
   }
 
@@ -9547,7 +9549,7 @@
     const signature = workReportAiSignature(draft);
     renderWorkReports();
     try {
-      // 문장 작성에는 링크·연락처·주소 없이 입력 상태·사진 수·메모만 보낸다.
+      // 문장 작성에는 링크·연락처·주소 없이 작업 정보·사진 구분·메모만 보낸다.
       // AI 사진 추천과 사람이 확인한 사실을 동일하게 취급하지 않는다.
       const content = workReportAiContent(R, draft);
       const context = { workType: R.kindLabel(draft.kind), category: R.categoryLabel(draft.category) };
@@ -9717,7 +9719,7 @@
             <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
             <div class="wr-ai-photo-guide"><span>1</span><p><b>작업 전·후 사진을 등록하세요.</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
             ${reportState.canWork ? reportDriveBox(R) : ""}
-            <div class="wr-ai-manual-head"><div><b>항목별 사진 · 자동 반영 및 직접 등록</b><small>분석된 사진은 자동 반영됩니다. 문장 작성에는 입력 상태·사진 수·메모만 사용하며, 완료 여부는 담당자가 확인합니다.</small></div><span>${draft.items.length}개 구역</span></div>
+            <div class="wr-ai-manual-head"><div><b>항목별 사진 · 자동 반영 및 직접 등록</b><small>분석된 사진은 자동 반영됩니다. 문장 작성에는 작업 정보·사진 구분·메모만 사용하며, 완료 여부는 담당자가 확인합니다.</small></div><span>${draft.items.length}개 구역</span></div>
             <div class="wr-items">${cards}</div>
           </section>
           <section class="wr-ai-card">
@@ -9744,7 +9746,7 @@
             <div class="wr-ai-review-list">${reviewRows}</div>
           </section>
           <section class="wr-ai-card wr-ai-draft">
-            <header><div><span>BRING CRM AI</span><h4>AI 보고서 초안</h4></div>${reportState.aiDraftAt ? `<em>작성됨</em>` : ""}</header>
+            <header><div><span>BRING CRM AI</span><h4>건물주용 AI 보고서 초안</h4></div>${reportState.aiDraftAt ? `<em>작성됨</em>` : ""}</header>
             ${draft.summary ? `<div class="wr-ai-draft-preview">${esc(draft.summary)}</div>` : `<div class="wr-ai-draft-empty"><b>아직 초안이 없습니다</b><p>사진과 작업 상태를 확인하면 AI가 정돈된 보고서 문장을 만듭니다.</p></div>`}
             <button type="button" class="primary-button wr-ai-generate" data-report-ai-draft${reportState.aiLoading || reportState.driveScanning || reportState.driveClassificationLoading || !photosReady ? " disabled" : ""}>${reportState.aiLoading ? "AI가 작성 중…" : draft.summary ? "✦ AI 초안 다시 만들기" : "✦ AI 초안 만들기"}</button>
             ${reportState.aiSuggestion ? `<div class="wr-ai-suggestion"><b>새 AI 제안 · 기존 내용 유지 중</b><p>${esc(reportState.aiSuggestion)}</p><button type="button" class="secondary-button" data-report-ai-accept>이 제안으로 본문 바꾸기</button></div>` : ""}
