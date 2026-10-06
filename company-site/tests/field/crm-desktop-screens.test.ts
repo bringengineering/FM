@@ -786,7 +786,7 @@ describe("desktop CRM screens actually render", () => {
     expect((asked!.input as { fileIds: string[] }).fileIds).toEqual(["p1", "p2", "p3"]);
     expect(booted.calls.slice(before).some(call => call.name === "classifyWorkReportPhotos"), "선택 후 Gemini 분류를 자동 요청해야 한다").toBe(true);
 
-    const comparison = booted.document.querySelector(".wr-pair-card") as HTMLElement | null;
+    const comparison = booted.document.querySelector(".wr-area-card") as HTMLElement | null;
     expect(comparison, "같은 구역의 전·후 사진 비교가 나와야 한다").toBeTruthy();
     expect(booted.calls.slice(before).some(call => call.name === "classifyWorkReportPhotos" && (call.input as { mode?: string }).mode === "compare")).toBe(true);
     const shown = (booted.document.querySelector(".wr-drive") as HTMLElement).textContent || "";
@@ -810,7 +810,7 @@ describe("desktop CRM screens actually render", () => {
     phase.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
     await sleep(100);
     expect((booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement).disabled).toBe(true);
-    for (const selector of ['[data-report-review-confirm="p3"]', '[data-report-review-confirm-pair]']) {
+    for (const selector of ['[data-report-review-confirm-area="living"]', '[data-report-review-confirm-area="bath"]']) {
       const checkbox = booted.document.querySelector(selector) as HTMLInputElement;
       expect(checkbox.disabled).toBe(false);
       checkbox.checked = true;

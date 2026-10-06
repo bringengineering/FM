@@ -34,7 +34,7 @@ const WorkReportCore = require("./work-report-core");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
 const ProjectWeeklyReportExport = require("./project-weekly-report-export");
-const { createWorkReportHtml, workReportFileName } = require("./work-report-pdf");
+const { createWorkReportHtml, workReportFileName, workReportPdfPhotos } = require("./work-report-pdf");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
@@ -5235,10 +5235,22 @@ async function exportWorkOutcomeDocument(input) {
   return { ok: true, filePath: result.filePath, format };
 }
 
+function workReportPdfJpeg(content) {
+  if (!Buffer.isBuffer(content) || !content.length || content.length > 24 * 1024 * 1024) throw new Error("보고서 사진을 확인해 주세요.");
+  let image = nativeImage.createFromBuffer(content);
+  const { width, height } = image.getSize();
+  if (image.isEmpty() || !width || !height || width * height > 40000000) throw new Error("보고서 사진을 확인해 주세요.");
+  if (Math.max(width, height) > 1280) image = image.resize(width >= height ? { width: 1280 } : { height: 1280 });
+  const jpeg = image.toJPEG(80);
+  if (!jpeg.length || jpeg.length > 1024 * 1024) throw new Error("보고서 사진 용량을 확인해 주세요.");
+  return jpeg;
+}
+
 async function createWorkReportPdfArtifact(options, copyType) {
   const checked = WorkReportCore.validateReport(options.report);
   if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
   const report = checked.report;
+  const photos = workReportPdfPhotos(report);
   const leaks = WorkReportCore.findLeakedFields(report, options.secrets);
   if (leaks.length) {
     return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
@@ -5251,8 +5263,7 @@ async function createWorkReportPdfArtifact(options, copyType) {
   let heicConverted = 0;
   let photoFailures = 0;
   if (driveSessionView().connected) {
-    const photos = report.items.flatMap(item => [...item.before, ...item.after]);
-    for (const photo of photos.slice(0, 40)) {
+    for (const photo of photos) {
       try {
         const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId });
         if (fetched && fetched.content) {
@@ -5260,8 +5271,8 @@ async function createWorkReportPdfArtifact(options, copyType) {
           const isHeic = HeicJpegConverter.looksLikeHeic(original)
             || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
             || /\.hei[cf]$/iu.test(String(fetched.name || ""));
-          const content = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
-          const mimeType = isHeic ? "image/jpeg" : (fetched.mimeType || "image/jpeg");
+          const content = workReportPdfJpeg(isHeic ? await HeicJpegConverter.convertToJpeg(original) : original);
+          const mimeType = "image/jpeg";
           if (isHeic) heicConverted += 1;
           images[photo.id] = `data:${mimeType};base64,${content.toString("base64")}`;
         }
@@ -5293,6 +5304,7 @@ async function exportWorkReport(input) {
   const checked = WorkReportCore.validateReport(options.report);
   if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
   const report = checked.report;
+  const photos = workReportPdfPhotos(report);
 
   // 건물주와 청창사 양쪽에 나가는 문서다. 협력업체명·업체 단가가 섞였으면
   // 만들지 않는다. 만들고 나서 지우는 것보다 안 만드는 편이 낫다.
@@ -5308,8 +5320,7 @@ async function exportWorkReport(input) {
   let heicConverted = 0;
   let photoFailures = 0;
   if (driveSessionView().connected) {
-    const photos = report.items.flatMap(item => [...item.before, ...item.after]);
-    for (const photo of photos.slice(0, 40)) {
+    for (const photo of photos) {
       try {
         const fetched = await BuildingDocsDrive.downloadFile(
           driveApiDeps(),
@@ -5320,8 +5331,8 @@ async function exportWorkReport(input) {
           const isHeic = HeicJpegConverter.looksLikeHeic(original)
             || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
             || /\.hei[cf]$/iu.test(String(fetched.name || ""));
-          const content = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
-          const mimeType = isHeic ? "image/jpeg" : (fetched.mimeType || "image/jpeg");
+          const content = workReportPdfJpeg(isHeic ? await HeicJpegConverter.convertToJpeg(original) : original);
+          const mimeType = "image/jpeg";
           if (isHeic) heicConverted += 1;
           images[photo.id] = `data:${mimeType};base64,${content.toString("base64")}`;
         }
