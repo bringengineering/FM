@@ -134,6 +134,19 @@ test("모두 미분류일 때는 AI 호출 없이 안내하고 분류하면 재�
   await h.context.createWorkReportAiDraft();
   assert.equal(h.calls.length, 1); assert.equal(h.state.aiError, "");
 });
+
+test("공용부 작업 중 사진으로 AI 본문을 만들고 완료를 자동 확정하지 않는다", async () => {
+  const h = harness();
+  h.state.draft = R.normalizeReport({ id: "common", buildingId: "b1", kind: "common", workDate: "2026-10-06" });
+  h.state.drivePlan = P.applyPhotoClassifications(P.planFromTree({ files: ["during", "review"].map(id => ({ id, mimeType: "image/jpeg" })) }, { kind: "common" }), [{ id: "during", category: "windows", confidence: 92, phase: "during", phaseConfidence: 95 }]);
+  await h.context.createWorkReportAiDraft({ automatic: true });
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0].content, /사진 구분: 작업 중/);
+  assert.match(h.calls[0].content, /작업 과정 기록, 완료 여부 미확정/);
+  assert.equal(R.photoCount(h.state.draft), 1);
+  assert.equal(R.progress(h.state.draft), 0);
+  assert.equal(R.validateReport(h.state.draft).ok, true);
+});
 test("AI 실패도 사진은 유지되며 재시도 시 중복되지 않는다", async () => {
   const h = harness(); h.context.api.assist = async () => { throw new Error("secret-bearing provider error"); };
   await h.context.createWorkReportAiDraft({ automatic: true });

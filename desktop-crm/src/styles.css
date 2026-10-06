@@ -1146,6 +1146,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-item > header small { display: block; margin-top: 3px; color: #8B95A1; font-size: 9px; line-height: 1.45; }
 .wr-item > header select { height: 28px; padding: 0 6px; border: 1px solid #E5E8EB; border-radius: 8px; background: #fff; color: #4E5968; font: inherit; font-size: 10px; }
 .wr-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wr-shots.is-common > div:first-child { grid-column: 1 / -1; }
 .wr-shots > div { display: flex; flex-direction: column; gap: 5px; padding: 8px; border: 1px dashed #E5E8EB; border-radius: 10px; background: #FAFBFC; }
 .wr-shots > div > span { color: #4E5968; font-size: 9px; font-weight: 800; }
 .wr-shots ul { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }

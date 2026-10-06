@@ -37,6 +37,13 @@ on:
         description: "올릴 커밋 SHA. 비우면 브랜치 끝. 되돌릴 때 옛날 SHA 를 넣는다."
         required: false
         default: ""
+      snapshot_only:
+        description: "배포 없이 현재 운영 규칙을 백업하고 기준 커밋과 비교"
+        type: boolean
+        default: false
+      baseline:
+        description: "백업 검증용 기준 커밋 SHA (snapshot_only일 때 필수)"
+        required: false
 
 # 규칙은 한 벌뿐이다. 두 배포가 겹치면 나중 것이 먼저 것을 덮는데, 어느
 # 것이 나중인지는 순서가 아니라 끝난 시각이 정한다. 줄을 세우고 취소하지
@@ -110,7 +117,22 @@ jobs:
             echo "- 되돌리려면: 이 워크플로를 Run workflow 로 돌리면서 rules_ref 에 이전 SHA 를 넣는다"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Back up live rules without deploying
+        if: inputs.snapshot_only == true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RULES_BASE_REF: ${{ inputs.baseline }}
+        run: node release/snapshot-crm-rules.cjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always() && inputs.snapshot_only == true
+        with:
+          name: crm-rules-before-${{ github.run_id }}
+          path: ${{ runner.temp }}/crm-rules-snapshot/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Deploy database rules
+        if: inputs.snapshot_only != true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
@@ -151,7 +173,7 @@ jobs:
             if (!/^-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(key.private_key)) {
               fail("private_key 가 깨졌습니다. 편집기를 거치지 말고 받은 파일 그대로 붙여 넣어 주세요.");
             }
-            console.log(`서비스 계정: ${key.client_email}`);
+            console.log("서비스 계정 형식 확인 완료.");
           ' "$key"
 
           # export 로 둔다. 명령 앞에 붙이는 형태는 중간에 낀 도구가

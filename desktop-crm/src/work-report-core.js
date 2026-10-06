@@ -136,6 +136,7 @@
 
   // 한 항목이 가질 수 있는 상태. 진척도는 여기서 센다.
   const ITEM_STATUSES = Object.freeze([
+    { key: "recorded", label: "작업 기록", weight: 0 },
     { key: "done", label: "완료", weight: 1 },
     { key: "partial", label: "일부", weight: 0.5 },
     { key: "skipped", label: "못 함", weight: 0 },
@@ -241,6 +242,7 @@
       status: statusOf(status) ? status : "done",
       note: text(value.note, 500),
       before: rows(value.before).map(normalizePhoto).filter(photo => photo.id),
+      during: rows(value.during).map(normalizePhoto).filter(photo => photo.id),
       after: rows(value.after).map(normalizePhoto).filter(photo => photo.id),
     };
   }
@@ -250,11 +252,11 @@
   function itemsFor(kindKey, existing) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
-    const saved = rows(existing).map(item => normalizeItem(item));
+    const saved = rows(existing).map(item => normalizeItem(kindKey === "common" && !item.status ? { ...item, status: "recorded" } : item));
     const savedKeys = new Set(saved.map(item => item.key));
     return kind.items.filter(standard => !standard.optional || savedKeys.has(standard.key)).map(standard => {
       const found = saved.find(item => item.key === standard.key);
-      return normalizeItem(found || { key: standard.key, status: "done" }, standard);
+      return normalizeItem(found || { key: standard.key, status: kindKey === "common" ? "recorded" : "done" }, standard);
     });
   }
 
@@ -325,12 +327,14 @@
   //
   // 후 사진만 있으면 원래 깨끗했는지 우리가 닦은 것인지 알 수 없다. 그
   // 둘을 가르지 못하면 그 사진은 아무것도 증명하지 않는다.
-  function itemIssue(item) {
+  function itemIssue(item, kind) {
     const row = normalizeItem(item);
+    if (row.status === "recorded") return kind === "common" ? null : "작업 상태를 확인해 주세요.";
     if (row.status === "skipped") {
       return row.note ? null : "못 한 이유를 적어 주세요.";
     }
     if (row.status === "done") {
+      if (kind === "common") return row.before.length + row.during.length + row.after.length ? null : "작업 사진을 등록해 주세요.";
       if (!row.before.length && !row.after.length) return "전·후 사진이 없습니다.";
       if (!row.before.length) return "작업 전 사진이 없습니다.";
       if (!row.after.length) return "작업 후 사진이 없습니다.";
@@ -344,11 +348,12 @@
     if (!report.buildingId) return { ok: false, error: "어느 건물인지 정해 주세요.", code: "BUILDING_REQUIRED" };
     if (!report.workDate) return { ok: false, error: "작업한 날짜를 골라 주세요.", code: "DATE_REQUIRED" };
     const closed = report.items.filter(item => item.status !== "skipped");
+    if (report.kind === "common" && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
     if (!closed.length) {
       return { ok: false, error: "한 항목도 하지 않은 것은 결과보고서가 아닙니다.", code: "NOTHING_DONE" };
     }
     for (const item of report.items) {
-      const issue = itemIssue(item);
+      const issue = itemIssue(item, report.kind);
       if (issue) return { ok: false, error: `${item.label}: ${issue}`, code: "ITEM_INCOMPLETE" };
     }
     return { ok: true, report };
@@ -365,7 +370,7 @@
 
   function photoCount(report) {
     const item = normalizeReport(report);
-    return item.items.reduce((total, row) => total + row.before.length + row.after.length, 0);
+    return item.items.reduce((total, row) => total + row.before.length + row.during.length + row.after.length, 0);
   }
 
   // 아직 못 낸 이유들. 화면에서 이걸 먼저 보여 줘야 사람이 무엇을 더 해야
@@ -375,7 +380,7 @@
     const list = [];
     if (!item.workDate) list.push({ key: "workDate", text: "작업한 날짜를 골라 주세요." });
     item.items.forEach(row => {
-      const issue = itemIssue(row);
+      const issue = itemIssue(row, item.kind);
       if (issue) list.push({ key: row.key, text: `${row.label}: ${issue}` });
     });
     return list;
@@ -387,13 +392,14 @@
 
   function summarizeItems(report) {
     const item = normalizeReport(report);
-    const counts = { done: 0, partial: 0, skipped: 0 };
+    const counts = { done: 0, partial: 0, skipped: 0, recorded: 0 };
     item.items.forEach(row => { counts[row.status] = (counts[row.status] || 0) + 1; });
     return {
       total: item.items.length,
       done: counts.done,
       partial: counts.partial,
       skipped: counts.skipped,
+      recorded: counts.recorded,
       progress: progress(item),
       photos: photoCount(item),
     };
@@ -404,8 +410,8 @@
   function resultLine(item) {
     const row = normalizeItem(item);
     if (row.status === "skipped") return `미실시 — ${row.note || "사유 미기재"}`;
-    const photos = row.before.length + row.after.length;
-    const base = row.status === "done" ? `${row.label} 완료` : `${row.label} 일부 시행`;
+    const photos = row.before.length + row.during.length + row.after.length;
+    const base = row.status === "recorded" ? `${row.label} 작업 기록 (완료 미확정)` : row.status === "done" ? `${row.label} 완료` : `${row.label} 일부 시행`;
     const evidence = photos ? ` (사진 ${photos}장)` : "";
     return `${base}${evidence}${row.note ? ` · ${row.note}` : ""}`;
   }

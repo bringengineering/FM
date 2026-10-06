@@ -39,6 +39,7 @@ function installFixture() {
       if (window.__photoQA.fail) throw new Error("가상 Gemini 연결 실패");
       // Deliberately provide no pairs: explicit phases still form multi-photo areas.
       if (input.mode === "compare") return { ok: true, classifications: [], pairs: [] };
+      if (input.kind === "common") return { ok: true, classifications: input.fileIds.map(id => ({ id, category: "windows", confidence: 93, phase: Number(id.split("_")[1]) < 18 ? "during" : "unknown", phaseConfidence: 95 })) };
       const captureTimes = input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, captureTime: phase(n) ? { local: `2026-10-02T${phase(n) === "작업 후" ? "16:40:45" : "14:04:14"}`, offset: "+09:00", source: "exif-original" } : null }; });
       return { ok: true, captureTimes, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: space(n) === "unknown" ? "review" : space(n), space: space(n), target: space(n) === "unknown" ? "unknown" : "sink", confidence: 90, reason: "가상 구역 추천" }; }) };
     },
@@ -218,6 +219,32 @@ async function main() {
     await page.locator('[data-report-kind]').selectOption('stairs');
     await page.waitForTimeout(650);
     assert.equal(await page.locator('[data-report-photo-phase]').count(), 0, "이전 종류의 비동기 결과를 새 보고서에 적용하면 안 된다");
+    // The common-area path uses the same real renderer with different evidence.
+    await page.evaluate(() => { window.__photoQA.fail = false; window.__photoQA.delay = 0; window.__photoQA.aiDelay = 0; window.__photoQA.longDraft = false; });
+    await page.locator('[data-report-cancel]').click();
+    await page.locator('[data-report-new]').click();
+    await page.locator('[data-report-kind]').selectOption('common');
+    await page.locator('[data-report-building]').selectOption('b1');
+    await selectPhotos();
+    await page.waitForFunction(() => document.querySelector('[name="summary"]')?.value.includes('검토용 초안'));
+    assert.equal(await page.locator('[data-report-drop-photo][data-report-phase="during"]').count(), 18);
+    assert.equal(await page.locator('[data-report-photo-phase="synthetic_18"]').inputValue(), 'unsorted');
+    assert.equal(await page.locator('[data-report-photo-phase="synthetic_0"] option').count(), 4);
+    assert.equal(await page.locator('[data-report-status="windows"]').inputValue(), 'recorded');
+    assert.equal(await page.locator('[data-report-form] button[type="submit"]').isEnabled(), true);
+    await page.locator('[data-report-photo-phase="synthetic_0"]').selectOption('after');
+    await page.locator('[data-report-photo-category="synthetic_0"]').selectOption('handrail');
+    await page.locator('[data-report-photo-classify]').click();
+    await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
+    assert.equal(await page.locator('[data-report-photo-phase="synthetic_0"]').inputValue(), 'after');
+    assert.equal(await page.locator('[data-report-photo-category="synthetic_0"]').inputValue(), 'handrail');
+    await page.locator('[data-report-drop-photo="synthetic_0"]').click();
+    await page.locator('[data-report-ai-draft]').click();
+    await page.locator('[data-report-ai-accept]').waitFor();
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 17);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false);
+    if (process.env.BRING_QA_COMMON_SCREENSHOT) { await page.locator('.wr-drive').scrollIntoViewIfNeeded(); await page.screenshot({ path: process.env.BRING_QA_COMMON_SCREENSHOT }); }
+    console.log("PASS common-area: during-only draft, unresolved retained, recorded not completed, manual changes survive retry, removal survives drafting, narrow layout");
     assert.deepEqual(errors, []);
     console.log("PASS real renderer: automatic 18-photo draft with 2 unresolved retained, no false confirmation, manual text/suggestion preservation, retry, late typing, removed-photo retention, unequal area groups, moves, addition, save review gate, escaping, duplicate prevention, provider failure, responsive layout, stale-kind guard");
   } finally { await browser?.close(); server.kill(); }

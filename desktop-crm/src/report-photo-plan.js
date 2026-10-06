@@ -307,11 +307,14 @@
         if (other.length) skipped.push({ folder: text(folder && folder.name, 120), count: other.length, why: "사진이 아닙니다." });
         return;
       }
-      const split = splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name });
+      const split = kind === "common"
+        ? { before: [], after: [], unsorted: images.concat(heic), confident: false, reason: "공용부는 청소 동작과 같은 장소의 변화를 분석합니다. 촬영시각만으로 전·후를 나누지 않습니다." }
+        : splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name });
       buckets.push({
         folder: text(folder && folder.name, 120),
         itemKey: itemKeyForFolder(kind, folder && folder.name),
         before: split.before,
+        ...(kind === "common" ? { during: [] } : {}),
         after: split.after,
         unsorted: split.unsorted,
         confident: split.confident,
@@ -360,7 +363,7 @@
       return { ok: false, code: "CORE_MISSING", error: "결과보고서 모듈을 못 불러왔습니다." };
     }
     const made = plan && typeof plan === "object" ? plan : {};
-    if (settings.requireResolved && photoReviewRows(made).some(row => !row.itemKey || row.phase === "unsorted")) {
+    if (settings.requireResolved && made.kind !== "common" && photoReviewRows(made).some(row => !row.itemKey || row.phase === "unsorted")) {
       return { ok: false, code: "PHOTO_REVIEW_REQUIRED", error: "모든 사진의 구역과 전·후를 확인해 주세요." };
     }
     const kind = text(settings.kind, 20) || text(made.kind, 20);
@@ -387,10 +390,11 @@
         return;
       }
       target.before = target.before.concat(bucket.before.map(toPhoto));
+      if (kind === "common") target.during = target.during.concat(rows(bucket.during).map(toPhoto));
       target.after = target.after.concat(bucket.after.map(toPhoto));
       // 못 가른 것은 작업 전에 몰아 두지 않는다. 몰아 두면 사람이
       // 옮겼는지 원래 그런지 알 수 없다. 메모로 남겨 눈에 띄게 한다.
-      if (bucket.unsorted.length) {
+      if (bucket.unsorted.length && kind !== "common") {
         target.note = text(`${target.note ? `${target.note} / ` : ""}전·후를 못 가른 사진 ${bucket.unsorted.length}장이 Drive 에 더 있습니다.`, 500);
       }
     });
@@ -410,6 +414,7 @@
   }
 
   const AI_CATEGORY_LABELS = Object.freeze({
+    entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "공용 창호·창틀", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인",
     floor: "바닥",
     window: "창호·새시",
     kitchen: "싱크대·상하부장",
@@ -424,7 +429,7 @@
   });
 
   function photoReviewRows(plan) {
-    return rows(plan && plan.buckets).flatMap(bucket => ["before", "after", "unsorted"].flatMap(phase => rows(bucket[phase]).map(file => ({
+    return rows(plan && plan.buckets).flatMap(bucket => ["before", "during", "after", "unsorted"].flatMap(phase => rows(bucket[phase]).map(file => ({
       id: text(file.id, 200), file, phase,
       itemKey: text(bucket.itemKey || bucket.manualItemKey, 40),
       reason: text(file.aiReason || bucket.reason, 120),
@@ -433,13 +438,13 @@
   }
 
   function assignPhotoPhase(plan, fileId, phase) {
-    if (!["before", "after", "unsorted"].includes(phase)) return plan;
+    if (!["before", "after", "unsorted", ...(plan?.kind === "common" ? ["during"] : [])].includes(phase)) return plan;
     return Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => {
       const copy = Object.assign({}, bucket);
       let moved;
-      ["before", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
+      ["before", "during", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
         if (text(file.id, 200) !== text(fileId, 200)) return true;
-        moved = Object.assign({}, file, { phaseReason: phase === "unsorted" ? "직접 확인 대기" : "사용자가 직접 선택했습니다." }); return false;
+        moved = Object.assign({}, file, { manualPhase: true, phaseReason: phase === "unsorted" ? "직접 확인 대기" : "사용자가 직접 선택했습니다." }); return false;
       }); });
       if (moved) copy[phase].push(moved);
       return copy;
@@ -450,9 +455,9 @@
     let moved; let phase;
     const buckets = rows(plan && plan.buckets).map(bucket => {
       const copy = Object.assign({}, bucket);
-      ["before", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
+      ["before", "during", "after", "unsorted"].forEach(key => { copy[key] = rows(bucket[key]).filter(file => {
         if (text(file.id, 200) !== text(fileId, 200)) return true;
-        moved = Object.assign({}, file, { aiReason: "사용자가 직접 선택했습니다." }); phase = key; return false;
+        moved = Object.assign({}, file, { manualCategory: true, aiReason: "사용자가 직접 선택했습니다." }); phase = key; return false;
       }); });
       copy.heic = rows(bucket.heic).filter(file => text(file.id, 200) !== text(fileId, 200));
       return copy;
@@ -460,21 +465,21 @@
     if (!moved) return plan;
     const key = text(itemKey, 40);
     let target = buckets.find(bucket => bucket.itemKey === key && !bucket.manualItemKey);
-    if (!target) { target = { folder: AI_CATEGORY_LABELS[key] || "직접 분류", itemKey: key, before: [], after: [], unsorted: [], heic: [], skipped: 0, reason: "사용자가 직접 선택했습니다." }; buckets.push(target); }
+    if (!target) { target = { folder: AI_CATEGORY_LABELS[key] || "직접 분류", itemKey: key, before: [], during: [], after: [], unsorted: [], heic: [], skipped: 0, reason: "사용자가 직접 선택했습니다." }; buckets.push(target); }
     target[phase].push(moved);
     if (unviewable(moved.mimeType)) target.heic.push(moved);
-    return Object.assign({}, plan, { buckets: buckets.filter(bucket => bucket.before.length + bucket.after.length + bucket.unsorted.length) });
+    return Object.assign({}, plan, { buckets: buckets.filter(bucket => bucket.before.length + rows(bucket.during).length + bucket.after.length + bucket.unsorted.length) });
   }
 
   function mergeDraftPhotos(existingItems, incomingItems) {
-    const merged = rows(existingItems).map(item => Object.assign({}, item, { before: rows(item.before).slice(), after: rows(item.after).slice() }));
+    const merged = rows(existingItems).map(item => Object.assign({}, item, { before: rows(item.before).slice(), during: rows(item.during).slice(), after: rows(item.after).slice() }));
     const identity = photo => text(photo && (photo.driveFileId || photo.id), 200);
-    const seen = new Set(merged.flatMap(item => rows(item.before).concat(rows(item.after))).map(identity).filter(Boolean));
+    const seen = new Set(merged.flatMap(item => rows(item.before).concat(rows(item.during), rows(item.after))).map(identity).filter(Boolean));
     let added = 0;
     rows(incomingItems).forEach(item => {
       let target = merged.find(row => row.key === item.key);
-      if (!target) { target = Object.assign({}, item, { before: [], after: [] }); merged.push(target); }
-      ["before", "after"].forEach(phase => rows(item[phase]).forEach(photo => {
+      if (!target) { target = Object.assign({}, item, { before: [], during: [], after: [] }); merged.push(target); }
+      ["before", "during", "after"].forEach(phase => rows(item[phase]).forEach(photo => {
         const id = identity(photo);
         if (!id || seen.has(id)) return;
         seen.add(id); target[phase].push(photo); added += 1;
@@ -488,6 +493,7 @@
   // 사진의 단계나 메타데이터가 손실되지 않는다.
   function applyPhotoClassifications(plan, classifications) {
     const source = plan && typeof plan === "object" ? plan : {};
+    if (source.kind === "common") return applyCommonClassifications(source, classifications);
     const decisions = new Map(rows(classifications).map(row => [text(row && row.id, 200), {
       id: text(row && row.id, 200),
       category: Object.hasOwn(AI_CATEGORY_LABELS, text(row && row.category, 40)) ? text(row.category, 40) : "review",
@@ -537,7 +543,88 @@
     });
   }
 
+  // Common-area evidence has two independent axes. Missing AI decisions never
+  // erase a previous recommendation or a user's explicit correction.
+  function applyCommonClassifications(plan, classifications) {
+    const allowed = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final"]);
+    const decisions = new Map(rows(classifications).map(row => [text(row.id, 200), row]));
+    let result = plan;
+    for (const row of photoReviewRows(plan)) {
+      const decision = decisions.get(row.id);
+      if (!decision) continue;
+      if (!row.file.manualCategory) {
+        const category = (decision.manual || Number(decision.confidence) >= 75) && allowed.has(decision.category) ? decision.category : "";
+        result = assignPhotoCategory(result, row.id, category);
+      }
+      if (!row.file.manualPhase) {
+        const phase = decision.phase === "during" && Number(decision.phaseConfidence) >= 85 ? "during" : "unsorted";
+        result = assignPhotoPhase(result, row.id, phase);
+      }
+    }
+    const previous = new Map(photoReviewRows(plan).map(row => [row.id, row.file]));
+    return { ...result, aiClassified: true, buckets: rows(result.buckets).map(bucket => ({ ...bucket,
+      reason: "구역·작업 단계 추천입니다. 완료 여부와 별도로 확인해 주세요.",
+      ...Object.fromEntries(["before", "during", "after", "unsorted"].map(phase => [phase, rows(bucket[phase]).map(file => {
+        const old = previous.get(file.id) || {};
+        return { ...file, manualCategory: !!old.manualCategory, manualPhase: !!old.manualPhase,
+          aiReason: old.manualCategory ? "사용자가 직접 선택했습니다." : (bucket.itemKey ? "공용부 구역 추천" : "구역 확인 필요"),
+          phaseReason: old.manualPhase ? old.phaseReason : phase === "during" ? "청소 동작이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : "전·후 판단 근거가 부족해 확인이 필요합니다." };
+      })])),
+    })) };
+  }
+
+  function commonComparisonGroups(plan) {
+    return rows(plan?.buckets).filter(bucket => bucket.itemKey).map(bucket => rows(bucket.unsorted).filter(file => !file.manualPhase).map(file => file.id)).filter(ids => ids.length > 1);
+  }
+
+  function mergeCommonSelection(incoming, existing) {
+    const old = new Map(photoReviewRows(existing).map(row => [row.id, row]));
+    let result = incoming;
+    for (const row of photoReviewRows(incoming)) {
+      const saved = old.get(row.id); if (!saved) continue;
+      result = assignPhotoCategory(result, row.id, saved.itemKey);
+      result = assignPhotoPhase(result, row.id, saved.phase);
+    }
+    return { ...result, buckets: rows(result.buckets).map(bucket => ({ ...bucket,
+      ...Object.fromEntries(["before", "during", "after", "unsorted"].map(phase => [phase, rows(bucket[phase]).map(file => ({ ...file, ...(old.get(file.id)?.file || {}) }))])),
+    })) };
+  }
+
+  function removeCommonPhotos(plan, ids) {
+    const removed = new Set(ids);
+    const buckets = rows(plan?.buckets).map(bucket => ({ ...bucket,
+      ...Object.fromEntries(["before", "during", "after", "unsorted", "heic"].map(phase => [phase, rows(bucket[phase]).filter(file => !removed.has(file.id))])),
+    }));
+    const photoCount = buckets.reduce((sum, bucket) => sum + ["before", "during", "after", "unsorted"].reduce((n, phase) => n + bucket[phase].length, 0), 0);
+    return { ...plan, buckets, photoCount, selectedCount: photoCount };
+  }
+
+  function applyCommonPairs(plan, pairs) {
+    const byId = new Map(photoReviewRows(plan).map(row => [row.id, row]));
+    const used = new Set(); let result = plan;
+    for (const pair of rows(pairs)) {
+      const before = byId.get(pair.beforeId), after = byId.get(pair.afterId);
+      if (!["debris_removed", "stain_reduced", "items_removed"].includes(pair.evidence) || !before || !after || before.id === after.id || used.has(before.id) || used.has(after.id)) continue;
+      if (!before.itemKey || before.itemKey !== after.itemKey || [before, after].some(row => row.phase !== "unsorted" || row.file.manualPhase)) continue;
+      used.add(before.id); used.add(after.id);
+      result = assignPhotoPhase(assignPhotoPhase(result, before.id, "before"), after.id, "after");
+    }
+    return { ...result, buckets: rows(result.buckets).map(bucket => ({ ...bucket,
+      ...Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => used.has(file.id) ? { ...file, manualPhase: false, phaseReason: "같은 장소의 명확한 변화로 전·후 추천 · 저장 전 확인" } : file)])),
+    })) };
+  }
+
+  function syncCommonDraftPhotos(existing, incoming, managedIds) {
+    const phases = ["before", "during", "after"], identity = photo => photo.driveFileId || photo.id;
+    const previous = new Map(rows(existing).flatMap(item => phases.flatMap(phase => rows(item[phase]))).map(photo => [identity(photo), photo]));
+    const managed = new Set(managedIds);
+    const kept = rows(existing).map(item => ({ ...item, ...Object.fromEntries(phases.map(phase => [phase, rows(item[phase]).filter(photo => !managed.has(identity(photo)))])) }));
+    const enriched = rows(incoming).map(item => ({ ...item, ...Object.fromEntries(phases.map(phase => [phase, rows(item[phase]).map(photo => ({ ...photo, ...previous.get(identity(photo)) }))])) }));
+    return { ...mergeDraftPhotos(kept, enriched), ids: enriched.flatMap(item => phases.flatMap(phase => rows(item[phase]))).map(identity) };
+  }
+
   return Object.freeze({
+    commonComparisonGroups, applyCommonPairs, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
     VIEWABLE,
     UNVIEWABLE,
     GAP_MINUTES,

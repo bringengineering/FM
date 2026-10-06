@@ -45,19 +45,26 @@ function photoTag(photo, images) {
 }
 
 function itemRows(report, copyKey) {
-  return report.items.map((item, index) => {
+  return report.items.filter(item => item.status !== "recorded" || item.before.length + item.during.length + item.after.length || item.note).map((item, index) => {
     const status = WorkReportCore.statusLabel(item.status);
     const weight = (WorkReportCore.statusOf(item.status) || { weight: 0 }).weight;
     const rate = `${Math.round(weight * 100)}%`;
+    const detail = item.status === "recorded" ? (item.during.length ? "청소 작업 과정 사진 기록" : "현장 사진 기록") : item.detail;
     // 청창사 서식은 '진척도' 와 '결과평가' 를 요구한다. 건물주용에는 그 대신
     // 무엇을 했는지만 적는다 — 건물주는 퍼센트를 보러 오지 않는다.
     return copyKey === "program"
       ? `<tr><td>${index + 1}</td><td>${html(item.label)}</td><td class="left">${html(item.detail)}</td><td>${html(rate)}</td><td class="left">${html(WorkReportCore.resultLine(item))}</td></tr>`
-      : `<tr><td>${index + 1}</td><td>${html(item.label)}</td><td class="left">${html(item.detail)}</td><td>${html(status)}</td><td class="left">${html(item.note || "")}</td></tr>`;
+      : `<tr><td>${index + 1}</td><td>${html(item.label)}</td><td class="left">${html(detail)}</td><td>${html(status)}</td><td class="left">${html(item.note || "")}</td></tr>`;
   }).join("");
 }
 
 function photoBoard(report, images) {
+  if (report.kind === "common") {
+    return report.items.flatMap(item => ["during", "before", "after"].flatMap(phase => {
+      const photos = item[phase];
+      return Array.from({ length: Math.ceil(photos.length / 4) }, (_, index) => `<section class="board"><h3>${html(item.label)} · ${{ during: "작업 중", before: "작업 전", after: "작업 후" }[phase]}${photos.length > 4 ? ` · ${index + 1}/${Math.ceil(photos.length / 4)}` : ""}</h3><div class="common-photos">${photos.slice(index * 4, index * 4 + 4).map(photo => photoTag(photo, images)).join("")}</div></section>`);
+    })).join("") || `<p class="none">붙인 사진이 없습니다.</p>`;
+  }
   const blocks = report.items
     .filter(item => item.before.length || item.after.length)
     .flatMap(item => {
@@ -75,7 +82,7 @@ function photoBoard(report, images) {
 }
 
 function workReportPdfPhotos(report) {
-  const photos = report.items.flatMap(item => [...item.before, ...item.after]);
+  const photos = report.items.flatMap(item => [...item.before, ...(item.during || []), ...item.after]);
   // Match the picker budget, but reject oversized accumulated reports explicitly.
   if (photos.length > 100) throw Object.assign(new Error("PDF 사진은 보고서당 100장까지 넣을 수 있습니다. 보고서를 나누어 주세요."), { code: "REPORT_PHOTO_LIMIT" });
   return photos;
@@ -156,6 +163,7 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 .board{margin-bottom:4mm;break-inside:avoid}
 .board h3{margin:0 0 1.5mm;color:${color};font-size:9pt}
 .pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3mm}
+.common-photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3mm}
 .cell{display:grid;min-width:0;align-content:start;gap:1.2mm}
 .cell>span{color:${color};font-size:7.5pt;font-weight:800}
 .shot{display:grid;place-items:center;min-width:0;height:44mm;overflow:hidden;border:.65px solid ${color};border-radius:1.5mm;background:${light}}
