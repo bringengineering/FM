@@ -147,6 +147,16 @@ test("사진 분류 route는 인증 뒤 Gemini에 6장씩 요청하고 낮은 �
 });
 
 const payload = { kind: "moveIn", images: [{ id: "private-drive-id", dataUrl: jpeg() }] };
+test("공용부 Gemini 지시는 입주청소 구역 예시와 섞이지 않는다", async () => {
+  await classifyPhotos({...payload,kind:"common"},env(),async (_url,options)=>{
+    const prompt=JSON.parse(options.body).contents[0].parts[0].text;
+    assert.match(prompt,/category=stairs/);
+    assert.match(prompt,/category=corridor/);
+    assert.match(prompt,/phaseConfidence, action/);
+    assert.doesNotMatch(prompt,/category=bath|category=veranda|living,floor,floor/);
+    return responseFor([{id:"p1",category:"stairs",confidence:90,phase:"during",phaseConfidence:95,action:"mopping"}]);
+  });
+});
 test("전후 비교 route도 인증을 요구하고 검증된 짝만 클라이언트로 전달한다", async () => {
   let providers = 0;
   const worker = createWorker({ fetchImpl: async (url) => {
