@@ -5240,7 +5240,7 @@ async function uploadWorkReportPhoto(input) {
   };
 }
 
-// 결과보고서를 PDF 로 낸다. 견적서와 같은 창, 같은 인감을 쓴다.
+// 결과보고서는 인감 없이 PDF로 낸다. 인감은 견적서에서만 사용한다.
 //
 // 사진은 여기서 Drive 에서 받아 data: 로 박는다. 링크로 두면 받은 사람의
 // PDF 에서는 아예 안 열린다.
@@ -5289,9 +5289,6 @@ async function createWorkReportPdfArtifact(options, copyType) {
     return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
   }
 
-  const seal = await readLocalQuoteSeal();
-  if (!seal) throw Object.assign(new Error("보고서 인감을 먼저 등록해 주세요. 설정에서 견적서 인감을 등록하면 같이 씁니다."), { code: "QUOTE_SEAL_REQUIRED" });
-
   const images = {};
   let heicConverted = 0;
   let photoFailures = 0;
@@ -5318,7 +5315,6 @@ async function createWorkReportPdfArtifact(options, copyType) {
 
   const documentHtml = createWorkReportHtml(report, copyType, {
     company: options.company,
-    sealImage: seal,
     images,
   });
   const bytes = await createReportPdfBytes(documentHtml, "work-report");
@@ -5346,9 +5342,6 @@ async function exportWorkReport(input) {
   if (leaks.length) {
     return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
   }
-
-  const seal = await readLocalQuoteSeal();
-  if (!seal) throw Object.assign(new Error("보고서 인감을 먼저 등록해 주세요. 설정에서 견적서 인감을 등록하면 같이 쓰입니다."), { code: "QUOTE_SEAL_REQUIRED" });
 
   const images = {};
   let heicConverted = 0;
@@ -5389,7 +5382,6 @@ async function exportWorkReport(input) {
   session.check();
   const documentHtml = createWorkReportHtml(report, copyType, {
     company: options.company,
-    sealImage: seal,
     images,
   });
   const bytes = await createReportPdfBytes(documentHtml, "work-report");

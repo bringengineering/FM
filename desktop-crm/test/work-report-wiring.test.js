@@ -64,11 +64,14 @@ test("업체 정보가 섞인 보고서는 아예 만들지 않는다", () => {
   assert.match(appSource, /secrets: reportSecrets\(\)/u);
 });
 
-test("인감 없이는 보고서를 못 만든다", () => {
-  // 청창사 서식이 표지에 대표자 날인을 요구한다. 없으면 반려된다.
-  const body = functionBody(mainSource, "exportWorkReport");
-  assert.match(body, /readLocalQuoteSeal\(\)/u);
-  assert.match(body, /QUOTE_SEAL_REQUIRED/u);
+test("보고서 PDF 다운로드·보관·발송은 인감을 요구하지 않고 견적서는 유지한다", () => {
+  for (const name of ["exportWorkReport", "createWorkReportPdfArtifact", "exportBuildingMonthlyReport", "prepareBuildingMonthlyReportArtifact"]) {
+    assert.doesNotMatch(functionBody(mainSource, name), /readLocalQuoteSeal|QUOTE_SEAL_REQUIRED|sealImage/u);
+  }
+  for (const name of ["exportAiQuote", "sendQuoteToCustomerByKakao"]) {
+    assert.match(functionBody(mainSource, name), /readLocalQuoteSeal\(\)/u);
+    assert.match(functionBody(mainSource, name), /QUOTE_SEAL_REQUIRED/u);
+  }
 });
 
 test("사진은 인쇄 직전에 받아 문서 안에 박는다", () => {

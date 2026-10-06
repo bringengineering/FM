@@ -17,6 +17,15 @@ function sampleQuote() {
 
 const seal = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
+test("보고서 인감 제거와 관계없이 견적서는 유효한 인감을 계속 요구한다", () => {
+  for (const copy of ["recipient", "supplier"]) {
+    for (const missing of [undefined, Buffer.alloc(0), Buffer.from("not a seal")]) {
+      assert.throws(() => createQuotePdfHtml(sampleQuote(), copy, missing), /인감/);
+    }
+    assert.equal((createQuotePdfHtml(sampleQuote(), copy, seal).match(/data:image\/png;base64/g) || []).length, 2);
+  }
+});
+
 test("quote PDF HTML keeps both copies identical except for their requested colors", () => {
   const quote = sampleQuote();
   const recipient = createQuotePdfHtml(quote, "recipient", seal);

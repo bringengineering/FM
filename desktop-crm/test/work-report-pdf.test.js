@@ -34,7 +34,7 @@ const company = {
   phone: "010-0000-0000",
 };
 
-const options = (patch = {}) => Object.assign({ company, sealImage: PNG, images: {} }, patch);
+const options = (patch = {}) => Object.assign({ company, images: {} }, patch);
 
 test("두 벌이 서로 다른 표를 낸다", () => {
   const owner = createWorkReportHtml(report(), "owner", options());
@@ -54,24 +54,22 @@ test("청창사용에만 계약기간과 수행업체가 나온다", () => {
   const program = createWorkReportHtml(report(), "program", options());
   assert.match(program, /2026-05-12 ~ 2026-05-26/u);
   assert.match(program, /브링엔지니어링/u);
-  assert.match(program, /수행업체 대표자/u);
+  assert.match(program, /수행 업체/u);
   assert.doesNotMatch(owner, /계약 기간/u);
   assert.doesNotMatch(owner, /수행 업체/u);
 });
 
-test("표지에 대표자 날인이 들어간다", () => {
-  // 청창사 서식이 요구하는 것이다. 없으면 반려된다.
-  const program = createWorkReportHtml(report(), "program", options());
-  assert.match(program, /<img src="data:image\/png;base64,[A-Za-z0-9+/=]+" alt="대표자 날인">/u);
-  assert.match(program, /서 창 환/u, "이름은 자간을 벌려 도장 옆에 앉힌다");
-});
-
-test("인감이 아닌 것은 받지 않는다", () => {
-  // 인감이 아닌 것이 들어가면 문서가 통째로 못 믿을 것이 된다.
-  assert.throws(() => createWorkReportHtml(report(), "owner", options({ sealImage: Buffer.from("not a png") })), /인감 이미지는/u);
-  assert.throws(() => createWorkReportHtml(report(), "owner", options({ sealImage: Buffer.alloc(0) })), /인감 이미지는/u);
-  const big = Buffer.concat([PNG.subarray(0, 8), Buffer.alloc(512 * 1024 + 1, 1)]);
-  assert.throws(() => createWorkReportHtml(report(), "owner", options({ sealImage: big })), /512KB/u);
+test("두 보고서는 인감 없이 생성되고 기존 인감 옵션도 표시하지 않는다", () => {
+  for (const copy of ["owner", "program"]) {
+    const expected = createWorkReportHtml(report(), copy, options());
+    for (const sealImage of [undefined, PNG, Buffer.from("not a png"), Buffer.alloc(0), Buffer.alloc(512 * 1024 + 1)]) {
+      assert.equal(createWorkReportHtml(report(), copy, options({sealImage})), expected);
+    }
+    assert.doesNotMatch(expected, /대표자 날인|서명 또는 인|class="sign"|class="stamp"|data:image\/png;base64/u);
+    assert.match(expected, /class="report-footer"/u);
+    assert.match(expected, /수신\(건물주\)/u);
+    assert.match(expected, /브링엔지니어링/u);
+  }
 });
 
 test("사진은 data 로 박는다", () => {
