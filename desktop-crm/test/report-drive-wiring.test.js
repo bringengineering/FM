@@ -258,7 +258,7 @@ test("쓰던 양식의 칸이 화면·자료·인쇄에 다 있다", () => {
     assert.ok(appSource.includes(`name="${key}"`), `${key} 가 화면에 없다`);
     assert.ok(appSource.includes(`raw.${key}`), `${key} 를 화면이 안 읽는다`);
   });
-  ["문서번호", "요청자(건물주)", "연락 방식", "후속 필요 사항", "확인자(건물주)"].forEach(label => {
+  ["문서번호", "요청자(건물주)", "연락 방식", "후속 필요 사항", "수신(건물주)"].forEach(label => {
     assert.ok(pdfSource.includes(label), `${label} 이 인쇄물에 없다`);
   });
 });

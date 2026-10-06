@@ -1,14 +1,13 @@
 "use strict";
 
-// 결과보고서를 종이로 낸다. 견적서와 같은 길을 쓴다 — 같은 인감, 같은
-// 저장 경로, 같은 생김새다. 서식이 회사마다 다르면 받는 사람은 그걸 먼저
-// 의심한다.
+// 결과보고서를 종이로 낸다. 인감은 견적서에서만 사용하며 보고서에는
+// 인감·날인란을 넣지 않는다.
 //
 // 두 벌이 나온다.
 //
 //   건물주 제출용   무엇을 했는지. 사진이 주인공이다.
 //   청창사 제출용   용역 보고 서식. 계약기간·사업비·수행업체·항목별 진척도와
-//                   결과평가가 있고, 표지에 대표자 날인이 들어간다.
+//                   결과평가가 있다.
 //
 // 사진은 data: 로 박는다. 링크로 두면 인쇄할 때 빈 칸이 되고, 건물주가
 // 받은 PDF 에서는 아예 안 열린다.
@@ -20,21 +19,6 @@ function html(value) {
   return String(value == null ? "" : value).replace(/[&<>"']/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[character]);
-}
-
-function spacedDisplayName(value) {
-  return Array.from(String(value || "").replace(/\s+/g, "")).join(" ");
-}
-
-// 견적서와 같은 검사다. 인감이 아닌 것이 들어오면 문서가 통째로 못 믿을
-// 것이 된다.
-function sealDataUrl(value) {
-  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value || []);
-  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  if (!buffer.length || buffer.length > 512 * 1024 || !buffer.subarray(0, 8).equals(signature)) {
-    throw new Error("보고서 인감 이미지는 512KB 이하 PNG 파일이어야 합니다.");
-  }
-  return `data:image/png;base64,${buffer.toString("base64")}`;
 }
 
 // 사진은 미리 읽어 온 것을 받는다. 여기서 네트워크를 타면 인쇄가 멈춘다.
@@ -94,12 +78,10 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
   if (!copy) throw new Error("보고서 종류를 확인해 주세요.");
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
-  const seal = sealDataUrl(options.sealImage);
   const program = copy.key === "program";
   const color = program ? "#1B5E20" : "#1454D8";
   const light = program ? "#EEF7EE" : "#EFF4FF";
   const summary = WorkReportCore.summarizeItems(report);
-  const representative = spacedDisplayName(company.representative);
 
   // 쓰던 양식(작업점검_결과보고서_양식)의 1. 기본 정보 칸을 그대로 옮긴다.
   const headRows = [
@@ -177,11 +159,9 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 .note p{margin:0;white-space:pre-wrap}
 .notices{padding:2.5mm 4mm;border-top:.65px solid ${color};background:${light};color:#4E5968;font-size:7pt;line-height:1.6}
 .notices p{margin:0 0 .8mm}
-.sign .stamp{color:#8B95A1;font-weight:400}
-.sign{display:grid;grid-template-columns:1fr 1fr;min-height:14mm;border-top:1.2px solid ${color}}
-.sign div{display:flex;align-items:center;justify-content:center;gap:2.5mm;color:${color};font-size:8.5pt;font-weight:800}
-.sign div:first-child{border-right:.65px solid ${color}}
-.sign img{width:11mm;height:11mm;object-fit:contain}
+.report-footer{display:grid;grid-template-columns:1fr 1fr;min-height:10mm;border-top:1.2px solid ${color}}
+.report-footer div{display:flex;align-items:center;justify-content:center;gap:2.5mm;color:${color};font-size:8.5pt;font-weight:800}
+.report-footer div:first-child{border-right:.65px solid ${color}}
 </style></head><body><main class="doc">
 <header class="title">${html(copy.title.split("").join(" "))}</header>
 <div class="brand"><span>BRING ENGINEERING</span><span>${html(copy.label)}</span></div>
@@ -193,9 +173,9 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 <section class="note"><h4>후속 필요 사항 · 권고</h4><p>${html(report.followUp) || "없음"}</p></section>
 <div class="boards">${photoBoard(report, images)}</div>
 <section class="notices">${WorkReportCore.NOTICES.map(line => `<p>\u00b7 ${html(line)}</p>`).join("")}</section>
-<footer class="sign">
-  <div>${html(program ? "수행업체 대표자" : "담당자")}&nbsp;&nbsp;${html(representative || company.businessName || "")}<img src="${seal}" alt="대표자 날인"></div>
-  <div>확인자(건물주)&nbsp;&nbsp;${html(report.ownerName || "")}<span class="stamp">(서명 또는 인)</span></div>
+<footer class="report-footer">
+  <div>${html(program ? "수행 업체" : "작성 업체")}&nbsp;&nbsp;${html(company.businessName || company.representative || "")}</div>
+  <div>수신(건물주)&nbsp;&nbsp;${html(report.ownerName || "")}</div>
 </footer>
 </main></body></html>`;
 }
