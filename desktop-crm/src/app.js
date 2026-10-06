@@ -8585,14 +8585,25 @@
     driveBrowserSpace: "my",
     driveBrowserEntries: [], driveBrowserPath: [{ id: "root", name: "내 드라이브" }], driveSelected: new Map(),
     driveThumbnails: new Map(), driveThumbnailLoading: new Set(), driveThumbnailGeneration: 0,
-    aiLoading: false, aiError: "", aiDraftAt: "",
+    aiLoading: false, aiError: "", aiDraftAt: "", aiRequestGeneration: 0, aiSuggestion: "",
+    autoPhotoIds: new Set(), autoPhotoReportId: "", aiSuggestionSignature: "",
   };
   let reportDriveThumbnailObserver = null;
 
   const reportCore = () => window.BringWorkReportCore;
 
   function resetReportDriveSelection() {
+    // Switching building/kind must not turn provisional photos into reviewed ones.
+    if (reportState.draft?.id === reportState.autoPhotoReportId) {
+      reportState.draft.items = window.BringPhotoPairReview.syncDraftPhotos(reportState.draft.items, [], reportState.autoPhotoIds).items;
+    }
     reportState.driveRequestGeneration += 1;
+    reportState.aiRequestGeneration += 1;
+    reportState.aiLoading = false;
+    reportState.aiSuggestion = "";
+    reportState.autoPhotoIds = new Set();
+    reportState.autoPhotoReportId = "";
+    reportState.aiSuggestionSignature = "";
     reportState.driveScanning = false;
     reportState.drivePlan = null;
     reportState.driveBasePlan = null;
@@ -8972,7 +8983,8 @@
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     return `<section class="wr-pair-review">
       <div class="wr-area-heading"><h4>구역별 전·후 사진 확인</h4><p>구역마다 작업 전·후 사진을 여러 장 넣을 수 있습니다. 장수가 달라도 괜찮아요.</p></div>
-      <div class="wr-ai-classify-bar"><div><b>Gemini 구역·전후 추천</b><small>원본 촬영시간 확인 → 같은 장소 비교 → 확인 후 적용. 사진 축소본과 상대 시간 간격만 전송하며 파일명·Drive 링크·촬영 날짜·GPS는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
+      <div class="wr-ai-classify-bar"><div><b>Gemini 분석 → 사진 자동 배치 → 초안 작성</b><small>원본 촬영시간과 같은 장소를 비교해 추천합니다. 사진 축소본과 상대 시간 간격만 전송하며 파일명·Drive 링크·촬영 날짜·GPS는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
+      ${!reportState.driveClassificationLoading && reportState.autoPhotoIds.size ? `<div class="wr-auto-draft-notice" role="status"><b>분석 결과가 초안에 자동 반영되었습니다</b><span>사진 ${reportState.autoPhotoIds.size}장 반영 · 확인 필요 ${unresolved}장 보관</span><small>AI 추천은 확정이 아닙니다. 초안은 먼저 만들고, 저장 전에 구역별 분류를 확인하세요.</small></div>` : ""}
       <header class="wr-pair-summary"><b>선택 ${rows.length}장</b><span>확인 완료 ${confirmed}장</span><button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}장</button></header>
       <p class="wr-pair-help">원본 촬영시간 ${rows.filter(row => window.BringPhotoCaptureTime.normalize(row.file.captureTime)).length}/${rows.length}장 확인. 중간에 찍은 전 사진도 같은 장면과 함께 비교합니다. AI 추천은 확정이 아닙니다.</p>
       <nav class="wr-pair-filters" aria-label="사진 구역 필터"><button type="button" class="mini-button${filter === "all" ? " is-active" : ""}" data-report-review-filter="all">전체 ${rows.length}</button>${areas.map(group => `<button type="button" class="mini-button${filter === group.space ? " is-active" : ""}" data-report-review-filter="${group.space}">${esc(V.SPACES[group.space])} ${group.rows.length}</button>`).join("")}<button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}</button></nav>
@@ -8982,7 +8994,7 @@
           ${collapsed ? "" : `<div class="wr-area-columns">${["before", "after"].map(phase => `<section class="wr-area-phase is-${phase}" data-report-area-phase="${phase}"><h5>${phase === "before" ? "작업 전" : "작업 후"} · ${group[phase].length}장</h5><div class="wr-area-photo-grid">${group[phase].map(reportAreaPhoto).join("") || `<p class="wr-area-empty">등록된 사진이 없습니다.<br>반대쪽과 장수를 맞출 필요는 없습니다.</p>`}</div><button type="button" class="wr-area-add" data-report-review-add="${group.space}" data-report-review-add-phase="${phase}"${disabled}>+ 사진 추가</button></section>`).join("")}</div>`}</article>`;
       }).join("") || `<p class="wr-pair-empty">${reportState.driveClassificationLoading ? "구역과 작업 전·후를 분석하고 있습니다." : "이 구역에 분류된 사진이 없습니다. 확인 필요 목록에서 구역·대상과 전·후를 지정해 주세요."}</p>`}</div>
       ${(plan.warnings || []).length ? `<details class="wr-pair-warnings"><summary>분석 안내</summary><ul>${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul></details>` : ""}
-      <div class="wr-drive-actions"><button type="button" class="primary-button" data-report-drive-apply${confirmed && !disabled ? "" : " disabled"}>확인한 구역 초안에 적용 · ${confirmed}장</button><small>확인하지 않은 사진은 남겨 둡니다. 작업 완료 상태는 바꾸지 않습니다.</small></div>
+      <div class="wr-drive-actions"><button type="button" class="secondary-button" data-report-drive-apply${rows.length > unresolved && !disabled ? "" : " disabled"}>분류된 사진 초안에 반영 · ${rows.length - unresolved}장</button><small>사진은 자동 반영됩니다. 구역 분류 확인은 저장 전 절차이며 작업 완료 상태는 바꾸지 않습니다.</small></div>
     </section>`;
   }
 
@@ -8993,7 +9005,7 @@
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     const select = (labels, selected, attrs) => `<select ${attrs}${disabled}>${Object.entries(labels).map(([key, label]) => `<option value="${key}"${key === selected ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
     const phases = { unsorted: "확인 필요", before: "작업 전", after: "작업 후" };
-    return `<section class="wr-ai-card wr-pair-pending" data-report-review-pending><header><div><span>PHOTO REVIEW</span><h4>확인 필요</h4></div><em>${rows.length}장</em></header><p>구역·대상 또는 전·후가 불확실한 사진입니다. 지정하면 해당 구역으로 이동합니다. 중간에 찍은 전 사진도 직접 옮길 수 있습니다.</p>
+    return `<section class="wr-ai-card wr-pair-pending" data-report-review-pending><header><div><span>PHOTO REVIEW</span><h4>확인 필요</h4></div><em>${rows.length}장</em></header><p>구역·대상 또는 전·후가 불확실한 사진은 여기 보관됩니다. 나머지 사진으로 초안을 먼저 만들 수 있습니다. 분류하면 해당 구역과 초안에 자동 반영됩니다.</p>
       ${rows.length ? `<details class="wr-pair-bulk"><summary>선택한 사진 일괄 지정</summary><label>구역${select({ "": "변경 안 함", ...V.SPACES }, reportState.photoReviewBulk?.space || "", 'data-report-review-bulk="space"')}</label><label>대상${select({ "": "변경 안 함", ...V.TARGETS }, reportState.photoReviewBulk?.target || "", 'data-report-review-bulk="target"')}</label><label>전·후${select({ "": "변경 안 함", ...phases }, reportState.photoReviewBulk?.phase || "", 'data-report-review-bulk="phase"')}</label><div><button type="button" class="mini-button" data-report-review-select-all${disabled}>목록 모두 선택·해제</button><button type="button" class="primary-button" data-report-review-bulk-apply${disabled}>선택한 사진에 적용</button></div></details>` : ""}
       <div class="wr-pair-pending-list">${rows.map(row => `<article class="wr-pair-single needs-review" data-report-review-row="${attr(row.id)}"><label class="wr-pair-select"><input type="checkbox" data-report-review-select="${attr(row.id)}"${reportState.photoReviewSelected?.has(row.id) ? " checked" : ""}${disabled}> ${esc(row.file.name || "선택한 사진")}</label>${reportPairThumbnail(row)}${reportReviewFields(row)}<small>${esc(row.file.phaseReason || "전·후 판단 근거가 부족합니다. 직접 확인해 주세요.")}</small></article>`).join("") || `<p>모든 사진의 구역·전후가 지정되었습니다. 왼쪽에서 구역별로 확인 후 적용해 주세요.</p>`}</div>
     </section>`;
@@ -9009,7 +9021,31 @@
       if (reportState.photoReviewFilter !== "all") reportState.photoReviewFilter = editing.file.reviewSpace;
       reportState.photoReviewCollapsed.delete(editing.file.reviewSpace);
     }
+    syncReportAnalysisPhotos();
     renderWorkReports();
+  }
+
+  function syncReportAnalysisPhotos() {
+    const R = reportCore(), P = reportPhotoPlan(), V = window.BringPhotoPairReview;
+    if (!R || !P || !V || reportState.drivePlan?.kind !== "moveIn" || !reportState.draft) return false;
+    const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    const made = P.toReportDraft(V.draftPlan(reportState.drivePlan), { core: R, kind: draft.kind, requireResolved: true });
+    if (!made.ok) return false;
+    const merged = V.syncDraftPhotos(draft.items, made.draft.items, reportState.autoPhotoIds);
+    reportState.draft = R.normalizeReport({ ...draft, items: merged.items });
+    reportState.autoPhotoIds = new Set(merged.ids);
+    reportState.autoPhotoReportId = draft.id;
+    return true;
+  }
+
+  function reportPhotoConfirmationCount(draft) {
+    const V = window.BringPhotoPairReview;
+    const ids = new Set(draft.items.flatMap(item => [...item.before, ...item.after]).map(photo => photo.driveFileId || photo.id));
+    const rows = new Map(V.flatten(reportState.drivePlan).map(row => [row.id, row]));
+    return [...reportState.autoPhotoIds].filter(id => {
+      const row = rows.get(id);
+      return ids.has(id) && (!row || !V.resolved(row) || !row.file.reviewConfirmed);
+    }).length;
   }
 
   function preserveReportDraft() {
@@ -9137,7 +9173,7 @@
   }
 
   async function openReportDrivePicker(destination = null) {
-    if (reportState.driveScanning || reportState.driveClassificationLoading) return;
+    if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) return;
     preserveReportDraft();
     if (!reportState.draft || !reportState.draft.buildingId) {
       showToast("건물을 먼저 골라 주세요.", "error");
@@ -9247,7 +9283,7 @@
   }
 
   async function planSelectedReportDrivePhotos() {
-    if (reportState.driveScanning || reportState.driveClassificationLoading || !(reportState.driveSelected instanceof Map) || !reportState.driveSelected.size) return;
+    if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading || !(reportState.driveSelected instanceof Map) || !reportState.driveSelected.size) return;
     if (reportState.photoReviewAdd && new Set([...reportState.driveSelected.keys(), ...window.BringPhotoPairReview.flatten(reportState.drivePlan).map(row => row.id)]).size > 100) {
       showToast("기존 사진을 포함해 한 번에 100장까지 선택할 수 있습니다.", "error"); return;
     }
@@ -9257,6 +9293,7 @@
     const destination = reportState.photoReviewAdd;
     const V = window.BringPhotoPairReview;
     const previousIds = new Set(V.flatten(previousPlan).map(row => row.id));
+    let analyzed = false;
     preserveReportDraft();
     reportState.driveScanning = true;
     reportState.driveError = "";
@@ -9278,7 +9315,7 @@
       reportState.drivePickerOpen = false;
       reportState.photoReviewAdd = null;
       if (result.plan.kind === "moveIn") {
-        await classifyReportDrivePhotos();
+        analyzed = await classifyReportDrivePhotos({ autoDraft: false });
         if (generation !== reportState.driveRequestGeneration) return;
         if (destination) {
           const addedIds = V.flatten(reportState.drivePlan).filter(row => !previousIds.has(row.id)).map(row => row.id);
@@ -9286,6 +9323,7 @@
           reportState.driveBasePlan = reportState.drivePlan;
           reportState.photoReviewCollapsed.delete(destination.space);
         }
+        if (analyzed) { syncReportAnalysisPhotos(); renderWorkReports(); }
       }
       else showToast(`Drive 사진 ${reportState.driveSelected.size}장을 가져왔습니다. 구역과 전·후를 확인해 주세요.`, "success");
     } catch (error) {
@@ -9300,13 +9338,16 @@
         if (currentView === "workReports") { preserveReportDraft(); renderWorkReports(); }
       }
     }
+    if (analyzed && generation === reportState.driveRequestGeneration && currentView === "workReports") await createWorkReportAiDraft({ automatic: true });
   }
 
-  async function classifyReportDrivePhotos() {
+  async function classifyReportDrivePhotos({ autoDraft = true } = {}) {
     const P = reportPhotoPlan();
     const basePlan = reportState.driveBasePlan || reportState.drivePlan;
-    if (!P || !basePlan || basePlan.kind !== "moveIn" || reportState.driveClassificationLoading) return;
+    if (!P || !basePlan || basePlan.kind !== "moveIn" || reportState.driveClassificationLoading || reportState.aiLoading) return;
     const generation = reportState.driveRequestGeneration;
+    const previousPlan = reportState.drivePlan;
+    let analyzed = false;
     const active = () => generation === reportState.driveRequestGeneration && reportState.driveBasePlan === basePlan && currentView === "workReports";
     const fileIds = [...(reportState.driveSelected instanceof Map ? reportState.driveSelected.keys() : [])];
     if (!fileIds.length) return showToast("분류할 사진을 다시 선택해 주세요.", "error");
@@ -9353,15 +9394,24 @@
         }
       }
       const review = P.photoReviewRows(reportState.drivePlan).filter(row => !row.itemKey || row.phase === "unsorted").length;
-      showToast(`Gemini가 사진 ${fileIds.length}장을 분류했습니다.${review ? ` ${review}장의 구역·전후를 확인해 주세요.` : " 확인 후 초안에 적용해 주세요."}`, review ? "" : "success");
+      analyzed = true;
+      showToast(`Gemini가 사진 ${fileIds.length}장을 분석했습니다.${review ? ` ${review}장은 확인 필요 목록에 보관합니다.` : " 분류된 사진을 초안에 자동 반영합니다."}`, "success");
     } catch (error) {
-      if (active()) reportState.driveError = `${error && error.message || "Gemini 사진 분류를 완료하지 못했습니다."} 선택한 사진은 유지됩니다. 직접 구역·전후를 정하거나 다시 시도해 주세요.`;
+      if (active()) {
+        reportState.drivePlan = previousPlan;
+        reportState.driveError = "Gemini 사진 분류를 완료하지 못했습니다. 선택한 사진은 유지됩니다. 직접 구역·전후를 정하거나 다시 시도해 주세요.";
+      }
     } finally {
       if (generation === reportState.driveRequestGeneration) {
         reportState.driveClassificationLoading = false;
         if (currentView === "workReports") { preserveReportDraft(); renderWorkReports(); }
       }
     }
+    if (analyzed && active() && autoDraft) {
+      syncReportAnalysisPhotos(); renderWorkReports();
+      await createWorkReportAiDraft({ automatic: true });
+    }
+    return analyzed;
   }
 
   function assignReportPhotoCategory(fileIdValue, itemKeyValue) {
@@ -9398,9 +9448,16 @@
     const R = reportCore();
     const P = reportPhotoPlan();
     const sourcePlan = reportState.drivePlan;
-    const plan = sourcePlan?.kind === "moveIn" ? window.BringPhotoPairReview.confirmedPlan(sourcePlan) : sourcePlan;
+    if (sourcePlan?.kind === "moveIn") {
+      if (reportState.driveClassificationLoading || reportState.driveScanning) return;
+      if (syncReportAnalysisPhotos()) {
+        renderWorkReports();
+        showToast("분류된 사진을 초안에 반영했습니다. 저장 전 구역별 분류를 확인해 주세요.", "success");
+      }
+      return;
+    }
+    const plan = sourcePlan;
     if (!R || !P || !plan || reportState.driveClassificationLoading) return;
-    if (sourcePlan.kind === "moveIn" && !window.BringPhotoPairReview.flatten(plan).length) { showToast("분류를 확인한 사진을 먼저 선택해 주세요.", "error"); return; }
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
     const allowedKeys = new Set((typeof R.itemCatalogFor === "function" ? R.itemCatalogFor(draft.kind) : R.itemsFor(draft.kind, [])).map(item => item.key));
     const resolvedBucketKey = bucket => {
@@ -9420,7 +9477,7 @@
     if (!made.ok) { showToast(made.error, "error"); return; }
 
     // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
-    const merged = sourcePlan.kind === "moveIn" ? window.BringPhotoPairReview.mergeReviewed(draft.items, made.draft.items) : P.mergeDraftPhotos(draft.items, made.draft.items);
+    const merged = P.mergeDraftPhotos(draft.items, made.draft.items);
     reportState.draft = R.normalizeReport(Object.assign({}, draft, {
       items: merged.items,
       buildingName: draft.buildingName || made.draft.buildingName,
@@ -9452,33 +9509,46 @@
       `작업일: ${report.workDate || "미입력"}`,
       `작업 범위: ${report.area || "미입력"}`,
       `보고 구분: ${R.categoryLabel(report.category)}`,
-      "항목별 확인 사실:",
+      "항목별 입력 자료 (AI 추천 분류는 아직 담당자 확인 전일 수 있음):",
     ];
     report.items.forEach(item => {
-      lines.push(`- ${item.label} | 상태 ${R.statusLabel(item.status)} | 작업 전 사진 ${item.before.length}장 | 작업 후 사진 ${item.after.length}장${item.note ? ` | 메모 ${item.note}` : ""}`);
+      if (!item.before.length && !item.after.length && !item.note) return;
+      lines.push(`- ${item.label} | 입력 상태 ${R.statusLabel(item.status)} | 작업 전 사진 ${item.before.length}장 | 작업 후 사진 ${item.after.length}장${item.note ? ` | 메모 ${item.note}` : ""}`);
     });
     if (report.summary) lines.push(`기존 발견·조치 메모: ${report.summary}`);
     if (report.followUp) lines.push(`기존 후속 메모: ${report.followUp}`);
-    lines.push("위 사실만 사용해 발견 사항과 조치 결과를 간결한 완료보고서 문장으로 작성하세요. 사진에 보이지 않는 상태·원인·효과는 추측하지 마세요.");
+    lines.push("위 입력 자료만 사용해 검토용 보고서 초안을 작성하세요. 사진 개수·AI 분류나 기본 입력 상태만으로 청소 완료·오염 제거·효과를 단정하지 마세요. 사진 원본을 본 것처럼 쓰지 마세요. 메모에 없는 구체적 작업·원인·결과는 추측하지 말고 담당자 확인이 필요하다고 표시하세요.");
     return lines.join("\n");
   }
 
-  async function createWorkReportAiDraft() {
+  function workReportAiSignature(draft) {
+    return JSON.stringify([draft.id, draft.buildingId, draft.kind, draft.workDate, draft.category, draft.area, draft.followUp, draft.items]);
+  }
+
+  async function createWorkReportAiDraft({ automatic = false } = {}) {
     const R = reportCore();
-    if (!R || reportState.aiLoading) return;
+    if (!R || !reportState.canWork || !reportState.draft || reportState.readOnlyReason || reportState.aiLoading || reportState.driveClassificationLoading || reportState.driveScanning) return;
+    syncReportAnalysisPhotos();
     const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    if (automatic && draft.summary.trim()) { renderWorkReports(); return; }
     const summary = R.summarizeItems(draft);
     if (!summary.photos) {
-      showToast("사진을 한 장 이상 등록한 뒤 AI 초안을 만들어 주세요.", "error");
+      reportState.aiError = "아직 구역과 전·후가 정해진 사진이 없습니다. 확인 필요 목록에서 사진을 분류하면 초안을 만들 수 있습니다.";
+      renderWorkReports();
       return;
     }
     reportState.draft = draft;
     reportState.aiLoading = true;
     reportState.aiError = "";
+    reportState.aiSuggestion = "";
+    const generation = ++reportState.aiRequestGeneration;
+    const selectionGeneration = reportState.driveRequestGeneration;
+    const active = () => generation === reportState.aiRequestGeneration && selectionGeneration === reportState.driveRequestGeneration && currentView === "workReports" && reportState.draft?.id === draft.id;
+    const signature = workReportAiSignature(draft);
     renderWorkReports();
     try {
-      // 원본 사진 링크·고객 연락처·주소는 AI로 보내지 않는다. 사람이 확인한
-      // 항목 상태와 사진 개수, 직접 적은 메모만 전달한다.
+      // 문장 작성에는 링크·연락처·주소 없이 입력 상태·사진 수·메모만 보낸다.
+      // AI 사진 추천과 사람이 확인한 사실을 동일하게 취급하지 않는다.
       const content = workReportAiContent(R, draft);
       const context = { workType: R.kindLabel(draft.kind), category: R.categoryLabel(draft.category) };
       const response = await api.assist({
@@ -9487,15 +9557,33 @@
         context,
       });
       const text = String(response?.result?.text || "").trim();
+      if (!active()) return;
       if (!text) throw new Error("AI 초안이 비어 있습니다.");
-      reportState.draft = R.normalizeReport(Object.assign({}, draft, { summary: text }));
+      const latest = R.normalizeReport(readReportForm() || reportState.draft);
+      reportState.draft = latest;
+      if (workReportAiSignature(latest) !== signature) {
+        reportState.aiError = "작성 중 사진이나 입력 내용이 변경되어 이전 초안을 적용하지 않았습니다. 현재 자료로 다시 만들어 주세요.";
+        return;
+      }
+      if (latest.summary.trim()) {
+        reportState.aiSuggestion = text.slice(0, 2000);
+        reportState.aiSuggestionSignature = signature;
+        showToast("기존 문장은 유지했습니다. 새 AI 제안을 확인한 뒤 적용할 수 있습니다.");
+        return;
+      }
+      reportState.draft = R.normalizeReport(Object.assign({}, latest, { summary: text }));
       reportState.aiDraftAt = new Date().toISOString();
       showToast("AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
     } catch (error) {
-      reportState.aiError = error && error.message || "AI 초안을 만들지 못했습니다.";
+      if (active()) {
+        preserveReportDraft();
+        reportState.aiError = "AI 초안을 만들지 못했습니다. 사진과 입력 내용은 유지됩니다. 다시 시도해 주세요.";
+      }
     } finally {
-      reportState.aiLoading = false;
-      if (currentView === "workReports") renderWorkReports();
+      if (generation === reportState.aiRequestGeneration) {
+        reportState.aiLoading = false;
+        if (currentView === "workReports") renderWorkReports();
+      }
     }
   }
 
@@ -9546,6 +9634,9 @@
     const addressParts = workReportAddressParts(draft, selectedBuilding);
     const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
     const blockers = R.blockers(draft);
+    const photoConfirmations = reportPhotoConfirmationCount(draft);
+    if (photoConfirmations) blockers.push({ key: "photoReview", text: `AI 추천 사진 ${photoConfirmations}장의 구역·전후를 확인해 주세요. 초안은 먼저 만들 수 있습니다.` });
+    if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) blockers.push({ key: "analysisBusy", text: "AI 분석·초안 작성을 마친 뒤 저장해 주세요." });
     const sum = R.summarizeItems(draft);
     const basicReady = Boolean(draft.buildingId && draft.workDate);
     const photosReady = sum.photos > 0;
@@ -9626,7 +9717,7 @@
             <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
             <div class="wr-ai-photo-guide"><span>1</span><p><b>작업 전·후 사진을 등록하세요.</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
             ${reportState.canWork ? reportDriveBox(R) : ""}
-            <div class="wr-ai-manual-head"><div><b>항목별 직접 등록</b><small>AI는 사진 원본을 받지 않으며, 확인된 항목과 사진 수만 보고 문장을 만듭니다.</small></div><span>${draft.items.length}개 구역</span></div>
+            <div class="wr-ai-manual-head"><div><b>항목별 사진 · 자동 반영 및 직접 등록</b><small>분석된 사진은 자동 반영됩니다. 문장 작성에는 입력 상태·사진 수·메모만 사용하며, 완료 여부는 담당자가 확인합니다.</small></div><span>${draft.items.length}개 구역</span></div>
             <div class="wr-items">${cards}</div>
           </section>
           <section class="wr-ai-card">
@@ -9655,7 +9746,9 @@
           <section class="wr-ai-card wr-ai-draft">
             <header><div><span>BRING CRM AI</span><h4>AI 보고서 초안</h4></div>${reportState.aiDraftAt ? `<em>작성됨</em>` : ""}</header>
             ${draft.summary ? `<div class="wr-ai-draft-preview">${esc(draft.summary)}</div>` : `<div class="wr-ai-draft-empty"><b>아직 초안이 없습니다</b><p>사진과 작업 상태를 확인하면 AI가 정돈된 보고서 문장을 만듭니다.</p></div>`}
-            <button type="button" class="primary-button wr-ai-generate" data-report-ai-draft${reportState.aiLoading || !photosReady ? " disabled" : ""}>${reportState.aiLoading ? "AI가 작성 중…" : draft.summary ? "✦ AI 초안 다시 만들기" : "✦ AI 초안 만들기"}</button>
+            <button type="button" class="primary-button wr-ai-generate" data-report-ai-draft${reportState.aiLoading || reportState.driveScanning || reportState.driveClassificationLoading || !photosReady ? " disabled" : ""}>${reportState.aiLoading ? "AI가 작성 중…" : draft.summary ? "✦ AI 초안 다시 만들기" : "✦ AI 초안 만들기"}</button>
+            ${reportState.aiSuggestion ? `<div class="wr-ai-suggestion"><b>새 AI 제안 · 기존 내용 유지 중</b><p>${esc(reportState.aiSuggestion)}</p><button type="button" class="secondary-button" data-report-ai-accept>이 제안으로 본문 바꾸기</button></div>` : ""}
+            <p class="wr-ai-safe">분석 후 초안을 자동 작성합니다. 기존 문장은 자동으로 덮어쓰지 않습니다. 저장·발송 전 내용을 확인해 주세요.</p>
             ${reportState.aiError ? `<p class="wr-ai-error" role="alert">${esc(reportState.aiError)}</p>` : ""}
             <p class="wr-ai-safe">원본 사진·고객 연락처·주소는 AI에 전송하지 않습니다.</p>
           </section>
@@ -9723,6 +9816,8 @@
     const R = reportCore();
     if (!R) return;
     const draft = readReportForm();
+    if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) return showToast("분석·초안 작성이 끝난 뒤 저장해 주세요.", "error");
+    if (reportPhotoConfirmationCount(draft)) return showToast("초안에 자동 반영된 사진의 구역·전후를 확인한 뒤 저장해 주세요.", "error");
     const checked = R.validateReport(draft);
     if (!checked.ok) { showToast(checked.error, "error"); return; }
     try {
@@ -9788,13 +9883,20 @@
 
   function dropWorkReportPhoto(photoId, itemKey, phase) {
     const R = reportCore();
-    if (!R) return;
+    if (!R || reportState.driveScanning || reportState.driveClassificationLoading) return;
     const draft = readReportForm();
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
     // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
     item[phase] = item[phase].filter(photo => photo.id !== photoId);
     reportState.draft = R.normalizeReport(draft);
+    if (reportState.drivePlan?.kind === "moveIn") {
+      reportState.drivePlan = window.BringPhotoPairReview.remove(reportState.drivePlan, [photoId]);
+      reportState.driveBasePlan = reportState.drivePlan;
+      reportState.driveSelected.delete(photoId);
+      reportState.autoPhotoIds.delete(photoId);
+    }
+    reportState.aiSuggestion = "";
     reportState.aiDraftAt = "";
     renderWorkReports();
   }
@@ -14958,6 +15060,19 @@
     }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
+    if (event.target.closest("[data-report-ai-accept]")) {
+      if (!reportState.aiSuggestion || reportState.aiLoading) return;
+      preserveReportDraft();
+      if (workReportAiSignature(reportState.draft) !== reportState.aiSuggestionSignature) {
+        reportState.aiSuggestion = "";
+        reportState.aiError = "사진이나 입력 내용이 변경됐습니다. 현재 자료로 초안을 다시 만들어 주세요.";
+        renderWorkReports(); return;
+      }
+      reportState.draft.summary = reportState.aiSuggestion;
+      reportState.aiSuggestion = "";
+      reportState.aiDraftAt = new Date().toISOString();
+      renderWorkReports(); return;
+    }
     if (event.target.closest("[data-report-history]")) {
       document.querySelector("[data-report-history-panel]")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
@@ -17426,13 +17541,8 @@
       return;
     }
     if (event.target.matches("[data-report-kind]")) {
-      reportState.driveRequestGeneration += 1;
-      reportState.driveScanning = false;
-      reportState.driveClassificationLoading = false;
+      resetReportDriveSelection();
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
-      reportState.drivePlan = null;
-      reportState.driveBasePlan = null;
-      reportState.driveClassifications = [];
       syncReportDraft();
       return;
     }

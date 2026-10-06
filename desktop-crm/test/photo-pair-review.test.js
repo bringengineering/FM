@@ -45,10 +45,11 @@ test("공간·대상을 분리하고 같은 종류의 바닥을 다른 공간에
   assert.equal(V.categoryFor("bath", "untrusted"), "");
   assert.equal(V.categoryFor("kitchen", "hood"), "hood");
 });
-test("전후 짝은 추천일 뿐 확인 전에는 초안에 한 장도 적용하지 않는다", () => {
+test("초안용 추천과 사람이 확인한 최종 사진을 별도로 반환한다", () => {
   const plan = V.applyPairs(seed(), [pair]);
   assert.equal(V.groups(plan).filter(group => group.paired).length, 1);
   assert.equal(V.flatten(V.confirmedPlan(plan)).length, 0);
+  assert.equal(V.flatten(V.draftPlan(plan)).length, 2);
   const approved = V.confirm(plan, ["p0", "p1", "p2"], true);
   assert.equal(V.flatten(V.confirmedPlan(approved)).length, 2);
   const made = P.toReportDraft(V.confirmedPlan(approved), { core: R, requireResolved: true });

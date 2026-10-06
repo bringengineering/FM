@@ -9,8 +9,14 @@ function installFixture() {
   const phase = n => n < 3 || (n >= 8 && n < 12) || (n >= 14 && n < 16) || n >= 20 ? "작업 전" : n < 18 ? "작업 후" : "";
   const space = n => n < 8 || n >= 20 ? "bath" : n < 14 ? "kitchen" : n < 18 ? "veranda" : "unknown";
   const photos = Array.from({ length: 22 }, (_, index) => ({ id: `synthetic_${index}`, name: index === 0 ? '<img src=x onerror="alert(1)">.jpg' : `예시 사진 ${index + 1}.jpg`, mimeType: "image/jpeg", kind: "file", parentName: phase(index) }));
-  window.__photoQA = { calls: [], fail: false, planFail: false, delay: 0 };
+  window.__photoQA = { calls: [], aiCalls: [], fail: false, planFail: false, delay: 0, aiFail: false, aiDelay: 0 };
   Object.assign(window.bringCRM, {
+    assist: async input => {
+      window.__photoQA.aiCalls.push(input);
+      if (window.__photoQA.aiDelay) await new Promise(resolve => setTimeout(resolve, window.__photoQA.aiDelay));
+      if (window.__photoQA.aiFail) throw new Error("가상 문장 작성 실패");
+      return { result: { text: `사진 분류를 반영한 검토용 초안 ${window.__photoQA.aiCalls.length}. 완료 여부는 담당자가 확인합니다.` } };
+    },
     loadWorkReports: async () => ({ reports: [], admin: true, canWork: true, uid: "preview-only" }),
     driveStatus: async () => ({ connected: true, email: "preview@example.invalid" }),
     browseWorkReportDrive: async () => ({ ok: true, folder: { id: "root", name: "내 드라이브" }, entries: photos }),
@@ -72,8 +78,20 @@ async function main() {
       await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
     };
     await selectPhotos();
+    await page.waitForFunction(() => document.querySelector('[name="summary"]')?.value.includes('검토용 초안 1'));
     assert.deepEqual(await page.evaluate(() => window.__photoQA.calls.map(row => row.mode)), ["classify", "compare", "compare", "compare"], "구역 분류 다음 같은 구역 사진끼리 비교해야 한다");
-    assert.equal(await page.locator('[data-report-drive-apply]').isDisabled(), true);
+    assert.equal(await page.locator('[data-report-drive-apply]').isEnabled(), true);
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 18, "확인 버튼 없이 분류된 사진 18장이 자동 반영된다");
+    assert.equal(await page.locator('[data-report-review-confirm-area]:checked').count(), 0, "초안 자동 배치는 사람의 확인이 아니다");
+    assert.match(await page.locator('.wr-blockers').textContent(), /AI 추천 사진 18장/);
+    assert.equal(await page.locator('[data-report-form] button[type="submit"]').isDisabled(), true);
+    assert.match(await page.locator('.wr-auto-draft-notice').textContent(), /확인 필요 2장 보관/);
+    await page.locator('[name="summary"]').fill('담당자가 직접 작성한 본문');
+    await page.locator('[data-report-ai-draft]').click();
+    await page.locator('[data-report-ai-accept]').waitFor();
+    assert.equal(await page.locator('[name="summary"]').inputValue(), '담당자가 직접 작성한 본문');
+    await page.locator('[data-report-ai-accept]').click();
+    assert.match(await page.locator('[name="summary"]').inputValue(), /검토용 초안 2/);
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 2);
     assert.equal(await page.locator('.wr-area-card').count(), 3);
     const bath = () => page.locator('[data-report-area="bath"]');
@@ -94,7 +112,7 @@ async function main() {
     }
     await page.locator('[data-report-review-confirm-area="bath"]').check();
     await page.locator('[data-report-drive-apply]').click();
-    assert.equal(await page.locator('[data-report-drop-photo]').count(), 8, "확인한 구역의 전3·후5가 모두 들어간다");
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 18, "일부 구역 확인은 이미 반영한 사진을 버리지 않는다");
     await page.locator('[data-report-review-edit="synthetic_0"]').click();
     await page.locator('[data-report-photo-phase="synthetic_0"]').selectOption('after');
     assert.equal(await page.locator('[data-report-review-confirm-area="bath"]').isChecked(), false, "사진 이동 후 구역 재확인이 필요하다");
@@ -102,7 +120,7 @@ async function main() {
     assert.equal(await phaseCount('bath', 'after'), 6);
     await page.locator('[data-report-review-confirm-area="bath"]').check();
     await page.locator('[data-report-drive-apply]').click();
-    assert.equal(await page.locator('[data-report-drop-photo]').count(), 8, "전후 바꾸기 재적용도 중복이 없다");
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 18, "전후 바꾸기 재적용도 중복이 없다");
     await page.locator('[data-report-review-collapse="bath"]').click();
     assert.equal(await bath().locator('figure').count(), 0);
     await page.locator('[data-report-review-collapse="bath"]').click();
@@ -130,6 +148,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 0, "재분류해도 전후 선택을 유지해야 한다");
     assert.equal(await page.locator('[data-report-review-confirm-area]:checked').count(), 3);
+    assert.equal(await page.evaluate(() => window.__photoQA.aiCalls.length), 2, "기존 문장이 있으면 재분석이 본문을 덮어쓰거나 새 AI 호출을 하지 않는다");
     // Add to one phase without resetting previously reviewed photos.
     await page.locator('[data-report-review-add="bath"][data-report-review-add-phase="after"]').click();
     await page.locator('[data-report-drive-file="synthetic_20"]').click();
@@ -152,6 +171,27 @@ async function main() {
     await page.locator('[data-report-photo-classify]').click();
     await page.waitForFunction(() => document.querySelector('.wr-drive-error')?.textContent.includes('선택한 사진은 유지'));
     assert.equal(await page.locator('.wr-area-card figure').count(), 21, "실패해도 사진을 버리지 않는다");
+    await page.evaluate(() => { window.__photoQA.aiFail = true; });
+    await page.locator('[name="summary"]').fill('');
+    await page.locator('[data-report-ai-draft]').click();
+    await page.waitForFunction(() => document.querySelector('.wr-ai-error')?.textContent.includes('사진과 입력 내용은 유지'));
+    assert.equal(await readPhotos(), 21);
+    await page.evaluate(() => { window.__photoQA.aiFail = false; });
+    await page.locator('[data-report-ai-draft]').click();
+    await page.waitForFunction(() => document.querySelector('[name="summary"]')?.value.includes('검토용 초안 4'));
+    // Directly typing while a late response is in flight must not be lost.
+    await page.evaluate(() => { window.__photoQA.aiDelay = 400; });
+    await page.locator('[name="summary"]').fill('');
+    await page.locator('[data-report-ai-draft]').click();
+    await page.locator('[name="summary"]').fill('응답 대기 중 작성한 문장');
+    await page.locator('[data-report-ai-accept]').waitFor();
+    assert.equal(await page.locator('[name="summary"]').inputValue(), '응답 대기 중 작성한 문장');
+    // Removing a report photo must not silently re-add it on draft generation.
+    await page.locator('[data-report-drop-photo="synthetic_20"]').click();
+    assert.equal(await readPhotos(), 20);
+    await page.locator('[data-report-ai-draft]').click();
+    await page.locator('[data-report-ai-accept]').waitFor();
+    assert.equal(await readPhotos(), 20);
     await page.setViewportSize({ width: 960, height: 1100 });
     assert.equal(await page.locator('[data-report-drive-apply]').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false, "좁은 화면에서 가로 넘침이 없어야 한다");
@@ -161,7 +201,7 @@ async function main() {
     await page.waitForTimeout(650);
     assert.equal(await page.locator('[data-report-photo-phase]').count(), 0, "이전 종류의 비동기 결과를 새 보고서에 적용하면 안 된다");
     assert.deepEqual(errors, []);
-    console.log("PASS real renderer: unequal area groups (3/5 and 4/2), individual moves, collapse, 21-photo retention, addition, review gate, escaping, duplicate prevention, manual preservation, provider/plan failure, responsive layout, stale-kind guard");
+    console.log("PASS real renderer: automatic 18-photo draft with 2 unresolved retained, no false confirmation, manual text/suggestion preservation, retry, late typing, removed-photo retention, unequal area groups, moves, addition, save review gate, escaping, duplicate prevention, provider failure, responsive layout, stale-kind guard");
   } finally { await browser?.close(); server.kill(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

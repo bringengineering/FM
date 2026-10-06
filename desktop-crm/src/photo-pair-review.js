@@ -141,6 +141,18 @@
     return rebuild({ ...incoming, selectedCount: selected.size, photoCount: selected.size }, [...selected.values()]);
   }
   function confirmedPlan(plan) { return rebuild(plan, flatten(plan).filter(row => row.file.reviewConfirmed && resolved(row))); }
+  // Draft placement is not human approval. Keep confirmation flags untouched.
+  function draftPlan(plan) { return rebuild(plan, flatten(plan).filter(resolved)); }
+  function remove(plan, ids) { const removed = new Set(ids); return rebuild(plan, flatten(plan).filter(row => !removed.has(row.id))); }
+  function syncDraftPhotos(existing, incoming, managedIds = []) {
+    const identity = photo => photo.driveFileId || photo.id;
+    const previous = new Map(list(existing).flatMap(item => [...list(item.before), ...list(item.after)]).map(photo => [identity(photo), photo]));
+    const managed = new Set(managedIds);
+    const kept = list(existing).map(item => ({ ...item, before: list(item.before).filter(photo => !managed.has(identity(photo))), after: list(item.after).filter(photo => !managed.has(identity(photo))) }));
+    const enriched = list(incoming).map(item => ({ ...item, ...Object.fromEntries(["before", "after"].map(phase => [phase, list(item[phase]).map(photo => ({ ...photo, ...previous.get(identity(photo)) }))])) }));
+    const merged = mergeReviewed(kept, enriched);
+    return { ...merged, ids: list(incoming).flatMap(item => [...list(item.before), ...list(item.after)]).map(identity) };
+  }
   function mergeReviewed(existing, incoming) {
     const oldPhotos = new Map(list(existing).flatMap(item => list(item.before).concat(list(item.after))).map(photo => [photo.driveFileId || photo.id, photo]));
     const incomingIds = new Set(list(incoming).flatMap(item => list(item.before).concat(list(item.after))).map(photo => photo.driveFileId || photo.id));
@@ -152,5 +164,5 @@
     }
     return { items, added: [...incomingIds].filter(id => !oldPhotos.has(id)).length };
   }
-  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, withCaptureTimes, byCaptureTime, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, areaGroups, pendingRows, mergeSelection, confirmedPlan, mergeReviewed, categoryFor });
+  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, withCaptureTimes, byCaptureTime, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, areaGroups, pendingRows, mergeSelection, confirmedPlan, draftPlan, remove, syncDraftPhotos, mergeReviewed, categoryFor });
 });
