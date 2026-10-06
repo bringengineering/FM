@@ -1469,6 +1469,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-area-phase.is-after h5 { color: #1B64DA; }
 .wr-area-photo-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(115px,100%),1fr)); gap: 10px; align-items: start; }
 .wr-area-photo { min-width: 0; margin: 0; padding: 5px; border: 1px solid #E1E8EF; border-radius: 9px; background: #fff; }
+.wr-auto-draft-notice { display: grid; gap: 6px; margin: 12px 0; padding: 14px; border: 1px solid #BFDFFF; border-radius: 12px; background: #EDF7FF; color: #285A85; font-size: 12px; line-height: 1.6; }
+.wr-auto-draft-notice small { color: #627D94; }
+.wr-ai-suggestion { margin-top: 14px; padding: 12px; border: 1px solid #BEDCFA; border-radius: 10px; background: #F5FAFF; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.wr-ai-suggestion p { white-space: pre-wrap; }
 .wr-area-photo .wr-pair-thumb { height: 116px; }
 .wr-area-photo .wr-photo-capture-time { display: block; font-size: 9px; color: #6B7684; margin: 6px 0; overflow-wrap: anywhere; }
 .wr-area-photo figcaption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; font-size: 10px; color: #4E5968; }

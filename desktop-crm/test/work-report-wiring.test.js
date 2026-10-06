@@ -210,7 +210,7 @@ test("사진을 빼도 Drive 에서는 지우지 않는다", () => {
   const start = appSource.indexOf("function dropWorkReportPhoto(");
   const body = appSource.slice(start, appSource.indexOf("\n  async function exportWorkReportPdf(", start));
   assert.match(body, /filter\(photo => photo\.id !== photoId\)/u);
-  assert.doesNotMatch(body, /delete|삭제/u);
+  assert.doesNotMatch(body, /api\./u, "사진 빼기는 로컬 선택만 바꾸며 Drive API를 호출하지 않는다");
 });
 
 test("두 벌을 각각 낼 수 있다", () => {
