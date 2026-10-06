@@ -9041,7 +9041,11 @@
   function reportPhotoConfirmationCount(draft) {
     const V = window.BringPhotoPairReview;
     const ids = new Set(draft.items.flatMap(item => [...item.before, ...item.after]).map(photo => photo.driveFileId || photo.id));
-    return reportState.drivePlan?.kind === "moveIn" ? V.flatten(reportState.drivePlan).filter(row => ids.has(row.id) && !row.file.reviewConfirmed).length : 0;
+    const rows = new Map(V.flatten(reportState.drivePlan).map(row => [row.id, row]));
+    return [...reportState.autoPhotoIds].filter(id => {
+      const row = rows.get(id);
+      return ids.has(id) && (!row || !V.resolved(row) || !row.file.reviewConfirmed);
+    }).length;
   }
 
   function preserveReportDraft() {

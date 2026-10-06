@@ -141,7 +141,6 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
     // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
     // 지어낸 것만 통과한다.
     driveStatus: { connected: true, email: "test@example.test" },
-    assist: { result: { text: "자동 분석 사진으로 만든 검토용 초안입니다. 작업 완료 여부는 담당자가 확인합니다." } },
     classifyWorkReportPhotos: { ok: true, classifications: [
       { id: "p1", category: "bath", space: "bath", target: "floor", confidence: 90 },
       { id: "p2", category: "bath", space: "bath", target: "floor", confidence: 90 },
@@ -251,6 +250,9 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   for (const name of names) {
     api[name] = async (input: unknown) => {
       calls.push({ name, input });
+      if (name === "assist" && (input as { task?: string })?.task === "completion_report" && !payloadOverrides.assist) {
+        return { ok: true, result: { text: "자동 분석 사진으로 만든 검토용 초안입니다. 작업 완료 여부는 담당자가 확인합니다." } };
+      }
       if (typeof payloads[name] === 'function') return (payloads[name] as (input: unknown) => unknown)(input);
       return payloads[name] ? JSON.parse(JSON.stringify(payloads[name])) : { ok: true };
     };

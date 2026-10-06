@@ -70,6 +70,13 @@ test("자동 작성은 기존 본문을 건드리지 않고 명시적 재작성�
   assert.equal(h.state.draft.summary, "직접 작성");
   assert.equal(h.state.aiSuggestion, "AI 테스트 초안");
 });
+test("새 선택 분석 실패나 Drive 재연결로 추천 목록이 없어져도 저장 검토는 우회되지 않는다", async () => {
+  const h = harness(); h.context.syncReportAnalysisPhotos();
+  h.state.drivePlan = null;
+  assert.equal(h.context.reportPhotoConfirmationCount(h.state.draft), 2);
+  await h.context.saveWorkReportFromForm();
+  assert.match(h.toasts.at(-1), /구역·전후를 확인/);
+});
 test("모두 미분류일 때는 AI 호출 없이 안내하고 분류하면 재시도할 수 있다", async () => {
   const h = harness(); h.state.drivePlan = V.update(h.state.drivePlan, ["before", "after"], { phase: "unsorted" });
   await h.context.createWorkReportAiDraft({ automatic: true });
