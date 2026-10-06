@@ -31,6 +31,7 @@ const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
 const WorkReportArchive = require("./work-report-archive");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
+const ReportPdfRenderer = require("./report-pdf-renderer");
 const WorkReportCore = require("./work-report-core");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
@@ -3550,37 +3551,9 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
 // 결과보고서와 월간 보고서가 같은 방식으로 문서를 그린다. 창을 따로 두면
 // 보안 설정이 갈라지므로 한 곳에서 만든다.
 async function createReportPdfBytes(documentHtml, partitionName) {
-  const pdfWindow = new BrowserWindow({
-    show: false,
-    width: 1000,
-    height: 1400,
-    autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      partition: `${partitionName}-${crypto.randomUUID()}`,
-    },
+  return ReportPdfRenderer.renderReportPdf(documentHtml, {
+    BrowserWindow, partitionName, tempRoot: app.getPath("temp"),
   });
-  pdfWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  pdfWindow.webContents.on("will-attach-webview", event => event.preventDefault());
-  pdfWindow.webContents.on("will-navigate", (event, targetUrl) => {
-    if (!String(targetUrl || "").startsWith("data:text/html")) event.preventDefault();
-  });
-  pdfWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-  try {
-    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(documentHtml)}`);
-    await pdfWindow.webContents.executeJavaScript("document.fonts.ready.then(() => true)", true);
-    return await pdfWindow.webContents.printToPDF({
-      landscape: false,
-      pageSize: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    });
-  } finally {
-    if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
-  }
 }
 
 async function createQuotePdfBytes(quote, copyType, seal) {
