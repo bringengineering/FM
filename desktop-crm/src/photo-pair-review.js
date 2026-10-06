@@ -120,6 +120,26 @@
     }
     return [...result.values()];
   }
+  // Pair evidence is an AI hint, never a display or report admission requirement.
+  // Different targets in the same room and unequal phase counts share one card.
+  function areaGroups(plan) {
+    const result = new Map();
+    for (const row of flatten(plan).filter(resolved).sort(byCaptureTime)) {
+      const space = row.file.reviewSpace;
+      if (!result.has(space)) result.set(space, { space, rows: [], before: [], after: [] });
+      const group = result.get(space);
+      group.rows.push(row); group[row.phase].push(row);
+    }
+    return Object.keys(SPACES).filter(space => result.has(space)).map(space => result.get(space));
+  }
+  const pendingRows = plan => flatten(plan).filter(row => !resolved(row)).sort(byCaptureTime);
+  function mergeSelection(incoming, existing, append = false) {
+    const previous = new Map(flatten(existing).map(row => [row.id, row]));
+    const selected = new Map();
+    for (const row of flatten(incoming)) selected.set(row.id, previous.get(row.id) || row);
+    if (append) for (const row of previous.values()) if (!selected.has(row.id)) selected.set(row.id, row);
+    return rebuild({ ...incoming, selectedCount: selected.size, photoCount: selected.size }, [...selected.values()]);
+  }
   function confirmedPlan(plan) { return rebuild(plan, flatten(plan).filter(row => row.file.reviewConfirmed && resolved(row))); }
   function mergeReviewed(existing, incoming) {
     const oldPhotos = new Map(list(existing).flatMap(item => list(item.before).concat(list(item.after))).map(photo => [photo.driveFileId || photo.id, photo]));
@@ -132,5 +152,5 @@
     }
     return { items, added: [...incomingIds].filter(id => !oldPhotos.has(id)).length };
   }
-  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, withCaptureTimes, byCaptureTime, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, confirmedPlan, mergeReviewed, categoryFor });
+  return Object.freeze({ SPACES, TARGETS, flatten, resolved, decorate, withCaptureTimes, byCaptureTime, comparisonGroups, applyPairs, update, confirm, swap, manualPair, groups, areaGroups, pendingRows, mergeSelection, confirmedPlan, mergeReviewed, categoryFor });
 });

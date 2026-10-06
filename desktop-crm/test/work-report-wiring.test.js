@@ -227,7 +227,8 @@ test("HEIC 사진은 제한된 작업 스레드에서 JPG로 바꿔 PDF에 넣�
   const body = mainSource.slice(start, mainSource.indexOf("\n// 수주 진행 결과물", start));
   assert.match(body, /HeicJpegConverter\.looksLikeHeic/u);
   assert.match(body, /await HeicJpegConverter\.convertToJpeg/u);
-  assert.match(body, /mimeType = isHeic \? "image\/jpeg"/u);
+  assert.match(body, /mimeType = "image\/jpeg"/u);
+  assert.match(body, /workReportPdfJpeg\(/u);
   assert.match(body, /heicConverted/u);
   assert.match(body, /photoFailures/u);
 });

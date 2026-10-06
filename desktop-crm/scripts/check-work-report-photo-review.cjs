@@ -6,8 +6,10 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { chromium } = require("playwright");
 function installFixture() {
-  const photos = Array.from({ length: 8 }, (_, index) => ({ id: `synthetic_${index}`, name: index === 0 ? '<img src=x onerror="alert(1)">.jpg' : `예시 사진 ${index + 1}.jpg`, mimeType: "image/jpeg", kind: "file", parentName: index < 6 ? (index % 2 ? "작업 후" : "작업 전") : "" }));
-  window.__photoQA = { calls: [], fail: false, delay: 0 };
+  const phase = n => n < 3 || (n >= 8 && n < 12) || (n >= 14 && n < 16) || n >= 20 ? "작업 전" : n < 18 ? "작업 후" : "";
+  const space = n => n < 8 || n >= 20 ? "bath" : n < 14 ? "kitchen" : n < 18 ? "veranda" : "unknown";
+  const photos = Array.from({ length: 22 }, (_, index) => ({ id: `synthetic_${index}`, name: index === 0 ? '<img src=x onerror="alert(1)">.jpg' : `예시 사진 ${index + 1}.jpg`, mimeType: "image/jpeg", kind: "file", parentName: phase(index) }));
+  window.__photoQA = { calls: [], fail: false, planFail: false, delay: 0 };
   Object.assign(window.bringCRM, {
     loadWorkReports: async () => ({ reports: [], admin: true, canWork: true, uid: "preview-only" }),
     driveStatus: async () => ({ connected: true, email: "preview@example.invalid" }),
@@ -21,14 +23,18 @@ function installFixture() {
       ctx.fillStyle = "#314e63"; ctx.font = "20px sans-serif"; ctx.fillText("TEST FIXTURE", 160, 150);
       return { ok: true, dataUrl: canvas.toDataURL("image/jpeg") };
     },
-    planWorkReportDrivePhotos: async input => ({ ok: true, plan: window.BringReportPhotoPlan.planFromTree({ name: "예시 사진", files: photos.filter(photo => input.fileIds.includes(photo.id)) }, { kind: input.kind, buildingName: input.buildingName }) }),
+    planWorkReportDrivePhotos: async input => {
+      if (window.__photoQA.planFail) throw new Error("가상 가져오기 실패");
+      return { ok: true, plan: window.BringReportPhotoPlan.planFromTree({ name: "예시 사진", files: photos.filter(photo => input.fileIds.includes(photo.id)) }, { kind: input.kind, buildingName: input.buildingName }) };
+    },
     classifyWorkReportPhotos: async input => {
       window.__photoQA.calls.push({ count: input.fileIds.length, mode: input.mode || "classify" });
       if (window.__photoQA.delay) await new Promise(resolve => setTimeout(resolve, window.__photoQA.delay));
       if (window.__photoQA.fail) throw new Error("가상 Gemini 연결 실패");
-      if (input.mode === "compare") return { ok: true, classifications: [], pairs: [{ beforeId: input.fileIds[0], afterId: input.fileIds[1], evidence: "debris_removed" }] };
-      const captureTimes = input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, captureTime: n < 6 ? { local: `2026-10-02T${n % 2 ? "16:40:45" : "14:04:14"}`, offset: "+09:00", source: "exif-original" } : null }; });
-      return { ok: true, captureTimes, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "review", "review"][n], space: ["veranda", "veranda", "kitchen", "kitchen", "bath", "bath", "unknown", "unknown"][n], target: n < 2 ? "floor" : n < 6 ? "sink" : "unknown", confidence: 90, reason: "가상 구역 추천" }; }) };
+      // Deliberately provide no pairs: explicit phases still form multi-photo areas.
+      if (input.mode === "compare") return { ok: true, classifications: [], pairs: [] };
+      const captureTimes = input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, captureTime: phase(n) ? { local: `2026-10-02T${phase(n) === "작업 후" ? "16:40:45" : "14:04:14"}`, offset: "+09:00", source: "exif-original" } : null }; });
+      return { ok: true, captureTimes, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: space(n) === "unknown" ? "review" : space(n), space: space(n), target: space(n) === "unknown" ? "unknown" : "sink", confidence: 90, reason: "가상 구역 추천" }; }) };
     },
   });
 }
@@ -60,6 +66,8 @@ async function main() {
     const selectPhotos = async () => {
       await page.locator('[data-report-drive-open]').click();
       await page.locator('[data-report-drive-select-all]').click();
+      await page.locator('[data-report-drive-file="synthetic_20"]').click();
+      await page.locator('[data-report-drive-file="synthetic_21"]').click();
       await page.locator('[data-report-drive-plan]').click();
       await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
     };
@@ -67,50 +75,83 @@ async function main() {
     assert.deepEqual(await page.evaluate(() => window.__photoQA.calls.map(row => row.mode)), ["classify", "compare", "compare", "compare"], "구역 분류 다음 같은 구역 사진끼리 비교해야 한다");
     assert.equal(await page.locator('[data-report-drive-apply]').isDisabled(), true);
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 2);
-    assert.equal(await page.locator('.wr-pair-card').count(), 3);
+    assert.equal(await page.locator('.wr-area-card').count(), 3);
+    const bath = () => page.locator('[data-report-area="bath"]');
+    const phaseCount = async (space, phase) => page.locator(`[data-report-area="${space}"] [data-report-area-phase="${phase}"] figure`).count();
+    assert.equal(await phaseCount('bath', 'before'), 3);
+    assert.equal(await phaseCount('bath', 'after'), 5);
+    assert.equal(await phaseCount('kitchen', 'before'), 4);
+    assert.equal(await phaseCount('kitchen', 'after'), 2);
+    assert.equal(await page.locator('[data-report-review-manual-pair]').count(), 0);
     assert.equal(await page.locator('img[src="x"]').count(), 0);
-    assert.equal(await page.locator('.wr-photo-capture-time').count(), 8);
-    assert.match(await page.locator('.wr-pair-help').textContent(), /촬영시간 6\/8장 확인/u);
+    assert.equal(await page.locator('.wr-photo-capture-time').count(), 20);
+    assert.match(await page.locator('.wr-pair-help').textContent(), /촬영시간 18\/20장 확인/u);
     assert.equal(await page.locator('.wr-photo-capture-time').filter({ hasText: '원본 촬영시간 없음' }).count(), 2);
-    assert.equal(await page.locator('.wr-photo-capture-time').filter({ hasText: '2026-10-02 14:04:14' }).count(), 3);
+    assert.equal(await page.locator('.wr-photo-capture-time').filter({ hasText: '2026-10-02 14:04:14' }).count(), 9);
     if (process.env.BRING_QA_SCREENSHOT) {
       await page.locator('.wr-ai-photo-section').evaluate(element => element.scrollIntoView({ block: 'start' }));
       await page.screenshot({ path: process.env.BRING_QA_SCREENSHOT });
     }
-    await page.locator('[data-report-review-confirm-pair]').first().check();
+    await page.locator('[data-report-review-confirm-area="bath"]').check();
     await page.locator('[data-report-drive-apply]').click();
-    assert.equal(await page.locator('[data-report-drop-photo]').count(), 2, "미확인 사진은 남겨 두고 확인한 짝만 적용한다");
-    await page.locator('[data-report-review-swap]').first().click();
-    assert.equal(await page.locator('[data-report-drive-apply]').isDisabled(), true, "전후를 바꾸면 다시 확인해야 한다");
-    await page.locator('[data-report-review-confirm-pair]').first().check();
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 8, "확인한 구역의 전3·후5가 모두 들어간다");
+    await page.locator('[data-report-review-edit="synthetic_0"]').click();
+    await page.locator('[data-report-photo-phase="synthetic_0"]').selectOption('after');
+    assert.equal(await page.locator('[data-report-review-confirm-area="bath"]').isChecked(), false, "사진 이동 후 구역 재확인이 필요하다");
+    assert.equal(await phaseCount('bath', 'before'), 2);
+    assert.equal(await phaseCount('bath', 'after'), 6);
+    await page.locator('[data-report-review-confirm-area="bath"]').check();
     await page.locator('[data-report-drive-apply]').click();
-    assert.equal(await page.locator('[data-report-drop-photo]').count(), 2, "전후 바꾸기 재적용도 중복이 없다");
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 8, "전후 바꾸기 재적용도 중복이 없다");
+    await page.locator('[data-report-review-collapse="bath"]').click();
+    assert.equal(await bath().locator('figure').count(), 0);
+    await page.locator('[data-report-review-collapse="bath"]').click();
+    assert.equal(await bath().locator('figure').count(), 8);
+    await page.locator('.wr-pair-bulk summary').click();
     await page.locator('[data-report-review-select-all]').click();
     await page.locator('[data-report-review-bulk="space"]').selectOption('veranda');
     await page.locator('[data-report-review-bulk="target"]').selectOption('floor');
     await page.locator('[data-report-review-bulk-apply]').click();
-    await page.locator('[data-report-photo-phase="synthetic_6"]').selectOption('before');
-    await page.locator('[data-report-photo-phase="synthetic_7"]').selectOption('after');
-    await page.locator('[data-report-review-manual-pair]').click();
-    assert.equal(await page.locator('.wr-pair-card').count(), 4);
-    for (let i = 0; i < 4; i++) await page.locator('[data-report-review-confirm-pair]').nth(i).check();
+    await page.locator('[data-report-photo-phase="synthetic_18"]').selectOption('before');
+    await page.locator('[data-report-photo-phase="synthetic_19"]').selectOption('after');
+    assert.equal(await page.locator('.wr-area-card').count(), 3);
+    assert.equal(await page.locator('.wr-pair-single').count(), 0);
+    for (const space of ['bath', 'kitchen', 'veranda']) await page.locator(`[data-report-review-confirm-area="${space}"]`).check();
     assert.equal(await page.locator('[data-report-drive-apply]').isEnabled(), true);
     await page.locator('[data-report-drive-apply]').click();
-    assert.match(await page.locator('.wr-pair-summary').textContent(), /확인 완료 8장/);
+    assert.match(await page.locator('.wr-pair-summary').textContent(), /확인 완료 20장/);
     const readPhotos = () => page.locator('[data-report-drop-photo]').count();
     // Report item photo rows use the existing removal controls; no database save is invoked.
     const before = await readPhotos();
-    assert.equal(before, 8, "8장이 실제 보고서 항목에 붙어야 한다");
+    assert.equal(before, 20, "20장이 실제 보고서 항목에 붙어야 한다");
     await page.locator('[data-report-drive-apply]').click();
     assert.equal(await readPhotos(), before, "반복 적용은 중복 사진을 만들지 않는다");
     await page.locator('[data-report-photo-classify]').click();
     await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
     assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 0, "재분류해도 전후 선택을 유지해야 한다");
-    assert.equal(await page.locator('[data-report-review-confirm-pair]:checked').count(), 4);
+    assert.equal(await page.locator('[data-report-review-confirm-area]:checked').count(), 3);
+    // Add to one phase without resetting previously reviewed photos.
+    await page.locator('[data-report-review-add="bath"][data-report-review-add-phase="after"]').click();
+    await page.locator('[data-report-drive-file="synthetic_20"]').click();
+    await page.locator('[data-report-drive-plan]').click();
+    await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
+    assert.equal(await phaseCount('bath', 'after'), 7);
+    assert.match(await page.locator('.wr-pair-summary').textContent(), /확인 완료 20장/);
+    await page.locator('[data-report-review-confirm-area="bath"]').check();
+    await page.locator('[data-report-drive-apply]').click();
+    assert.equal(await readPhotos(), 21);
+    await page.evaluate(() => { window.__photoQA.planFail = true; });
+    await page.locator('[data-report-review-add="bath"][data-report-review-add-phase="before"]').click();
+    await page.locator('[data-report-drive-file="synthetic_21"]').click();
+    await page.locator('[data-report-drive-plan]').click();
+    await page.waitForFunction(() => document.querySelector('.wr-drive-error')?.textContent.includes('가상 가져오기 실패'));
+    await page.locator('[data-report-drive-close]').first().click();
+    assert.equal(await page.locator('.wr-area-photo').count(), 21, "추가 실패도 이전 사진을 유지한다");
+    await page.evaluate(() => { window.__photoQA.planFail = false; });
     await page.evaluate(() => { window.__photoQA.fail = true; });
     await page.locator('[data-report-photo-classify]').click();
     await page.waitForFunction(() => document.querySelector('.wr-drive-error')?.textContent.includes('선택한 사진은 유지'));
-    assert.equal(await page.locator('.wr-pair-card figure').count(), 8, "실패해도 사진을 버리지 않는다");
+    assert.equal(await page.locator('.wr-area-card figure').count(), 21, "실패해도 사진을 버리지 않는다");
     await page.setViewportSize({ width: 960, height: 1100 });
     assert.equal(await page.locator('[data-report-drive-apply]').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false, "좁은 화면에서 가로 넘침이 없어야 한다");
@@ -120,7 +161,7 @@ async function main() {
     await page.waitForTimeout(650);
     assert.equal(await page.locator('[data-report-photo-phase]').count(), 0, "이전 종류의 비동기 결과를 새 보고서에 적용하면 안 된다");
     assert.deepEqual(errors, []);
-    console.log("PASS real renderer: automatic Gemini request, review gate, escaping, 8-photo retention, duplicate prevention, manual phase preservation, provider failure, stale-kind guard");
+    console.log("PASS real renderer: unequal area groups (3/5 and 4/2), individual moves, collapse, 21-photo retention, addition, review gate, escaping, duplicate prevention, manual preservation, provider/plan failure, responsive layout, stale-kind guard");
   } finally { await browser?.close(); server.kill(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

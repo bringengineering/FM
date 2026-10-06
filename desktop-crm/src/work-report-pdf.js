@@ -60,14 +60,25 @@ function itemRows(report, copyKey) {
 function photoBoard(report, images) {
   const blocks = report.items
     .filter(item => item.before.length || item.after.length)
-    .map(item => `<section class="board">
-      <h3>${html(item.label)}</h3>
-      <div class="pair">
-        <div class="cell"><span>작업 전</span>${item.before.slice(0, 2).map(photo => photoTag(photo, images)).join("") || `<div class="shot empty">사진 없음</div>`}</div>
-        <div class="cell"><span>작업 후</span>${item.after.slice(0, 2).map(photo => photoTag(photo, images)).join("") || `<div class="shot empty">사진 없음</div>`}</div>
-      </div>
-    </section>`).join("");
+    .flatMap(item => {
+      // Keep each print block small enough for A4; never truncate the evidence.
+      const count = Math.ceil(Math.max(item.before.length, item.after.length) / 2);
+      return Array.from({ length: count }, (_, index) => `<section class="board">
+        <h3>${html(item.label)}${count > 1 ? ` · 사진 ${index + 1}/${count}` : ""}</h3>
+        <div class="pair">${["before", "after"].map(phase => {
+          const photos = item[phase].slice(index * 2, index * 2 + 2);
+          return `<div class="cell"><span>${phase === "before" ? "작업 전" : "작업 후"} · 총 ${item[phase].length}장</span>${photos.map(photo => photoTag(photo, images)).join("") || `<div class="shot empty">${item[phase].length ? "이어서 표시할 사진 없음" : "사진 없음"}</div>`}</div>`;
+        }).join("")}</div>
+      </section>`);
+    }).join("");
   return blocks || `<section class="board"><h3>증빙 사진</h3><p class="none">붙인 사진이 없습니다.</p></section>`;
+}
+
+function workReportPdfPhotos(report) {
+  const photos = report.items.flatMap(item => [...item.before, ...item.after]);
+  // Match the picker budget, but reject oversized accumulated reports explicitly.
+  if (photos.length > 100) throw Object.assign(new Error("PDF 사진은 보고서당 100장까지 넣을 수 있습니다. 보고서를 나누어 주세요."), { code: "REPORT_PHOTO_LIMIT" });
+  return photos;
 }
 
 function createWorkReportHtml(input, copyType = "owner", options = {}) {
@@ -144,11 +155,11 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 .boards{padding:3mm 4mm}
 .board{margin-bottom:4mm;break-inside:avoid}
 .board h3{margin:0 0 1.5mm;color:${color};font-size:9pt}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:3mm}
-.cell{display:grid;gap:1.2mm}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3mm}
+.cell{display:grid;min-width:0;align-content:start;gap:1.2mm}
 .cell>span{color:${color};font-size:7.5pt;font-weight:800}
-.shot{display:grid;place-items:center;height:44mm;overflow:hidden;border:.65px solid ${color};border-radius:1.5mm;background:${light}}
-.shot img{width:100%;height:100%;object-fit:cover}
+.shot{display:grid;place-items:center;min-width:0;height:44mm;overflow:hidden;border:.65px solid ${color};border-radius:1.5mm;background:${light}}
+.shot img{width:100%;min-width:0;height:100%;object-fit:contain}
 .shot.empty{color:#8B95A1;font-size:7.5pt}
 .none{color:#8B95A1;font-size:8pt}
 .cats{display:flex;flex-wrap:wrap;align-items:center;gap:4mm;padding:2mm 4mm;border-bottom:1px solid ${color};font-size:8pt}
@@ -189,4 +200,4 @@ function workReportFileName(input, copyType = "owner") {
   return `${safeFileSegment(base)}_${copy.label}.pdf`;
 }
 
-module.exports = { createWorkReportHtml, workReportFileName };
+module.exports = { createWorkReportHtml, workReportFileName, workReportPdfPhotos };
