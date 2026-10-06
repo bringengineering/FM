@@ -76,10 +76,18 @@ function harness(options = {}) {
   let active = true;
   const state = {user: {uid: "user_a", role: options.role || "admin"}};
   const context = {Buffer, crypto, Object, Date, String, Error, SavedCustomerDocuments: Docs, SavedCustomerDocumentPdf: Pdf,
+    WorkReportArchive: require("../src/work-report-archive"),
     authState: () => state, isMarketingOnlySession: () => Boolean(options.marketing),
     assertMainMutationAllowed: () => {if (!["member","admin"].includes(state.user?.role)) throw Error("denied");},
     remoteClient: {captureSessionGuard: () => 1, assertSessionGuardActive: () => {if (!active) throw Error("session changed");},
       loadStore: async () => data, loadWorkReports: async () => ({reports: options.reports || []}),
+      dbReadWithEtag: async location => {events.push(["etag-read",location]);return {value:data.buildingDocuments.find(row=>row.id===location.split("/").at(-1)) || null,etag:'"fixture"'};},
+      dbConditionalPut: async (location,value,etag) => {
+        assert.match(location,/^crmShared\/data\/buildingDocuments\/saved_wr_[a-f0-9]{40}$/);
+        assert.equal(etag,'"fixture"');events.push(["conditional-put",location]);
+        if(options.conflictOnce){options.conflictOnce=false;throw Object.assign(Error("conflict"),{code:"BUILDING_SCHEDULE_CONFLICT"});}
+        data.buildingDocuments=[...data.buildingDocuments.filter(row=>row.id!==value.id),value];return {ok:true};
+      },
       saveStoreNow: async value => {events.push(["persist", value]); return {ok: true};}},
     QuoteCore: {normalizeDraft: value => value, normalizeSupplier: () => {}, normalizeRecipient: () => {}},
     readLocalQuoteSeal: async () => "fixture", createQuotePdfBytes: async () => bytes,
@@ -111,6 +119,28 @@ test("메인 저장은 수신자 PDF만 비공개 회사 Drive에 보관하고 �
   assert.equal("bytes" in result.record, false);
   h.data.company.buildingDocsFolderId = "";
   await assert.rejects(h.context.saveCustomerDocument({kind: "quote"}), /회사 Drive/);
+});
+
+test("작업보고서 메인 저장은 원본 조회 후 개별 문서 노드 CAS로만 등록하고 충돌을 재확인한다",async()=>{
+  const R=require("../src/work-report-core");
+  const report=R.normalizeReport({id:"wr_main",buildingId:"b1",workDate:"2026-10-06",updatedAt:"2026-10-06T00:00:00Z"});
+  report.items.forEach((item,index)=>Object.assign(item,index===0?{before:[{id:"before"}],after:[{id:"after"}]}:{status:"skipped",note:"대상 제외"}));
+  const h=harness({reports:[report],conflictOnce:true});h.data.buildings=[{id:"b1",name:"예시 건물",ownerCustomerId:customer.id}];
+  const result=await h.context.saveCustomerDocument({kind:"workReport",reportId:report.id,updatedAt:report.updatedAt});
+  assert.equal(result.ok,true);assert.ok(Docs.normalize(result.record));
+  assert.equal(h.events.filter(e=>e[0]==="conditional-put").length,2);
+  assert.equal(h.events.some(e=>e[0]==="persist"||e[0]==="send"),false);
+  assert.equal(h.data.buildingDocuments.length,2,"기존 견적서 기록을 덮어쓰지 않는다");
+  const sent=await h.context.sendSavedCustomerDocument(request(result.record));assert.equal(sent.ok,true);
+  await assert.rejects(h.context.sendSavedCustomerDocument(request(result.record)),/이미 발송/);
+});
+
+test("작업보고서 보관 채널은 익명·조회자·마케팅·비밀번호 변경 필요 계정을 차단한다",async()=>{
+  for(const options of [{role:"viewer"},{marketing:true},{anonymous:true},{password:true}]) {
+    const h=harness(options);if(options.anonymous)h.state.user=null;if(options.password)h.state.user.mustChangePassword=true;
+    await assert.rejects(h.context.saveCustomerDocument({kind:"workReport",reportId:"wr_main",updatedAt:"2026-10-06T00:00:00Z"}));
+    assert.equal(h.events.length,0);
+  }
 });
 test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 실패 시 보안 링크를 폐기한다", async () => {
   const h = harness();

@@ -64,7 +64,7 @@ async function main() {
     });
     const page = await context.newPage(); const errors = [];
     page.on("pageerror", error => errors.push(error.message));
-    await page.goto(`${origin}/?view=workReports`, { waitUntil: "networkidle" });
+    await page.goto(`${origin}/?view=workReports`, { waitUntil: "domcontentloaded", timeout: 60000 });
     const workspace = page.locator('[data-workspace-enter="operations"][data-workspace-enter-folder="documents"]');
     if (await workspace.isVisible()) await workspace.click();
     await page.locator('[data-view="workReports"]').evaluate(button => button.click());
@@ -99,7 +99,7 @@ async function main() {
       const actions = page.locator('.wr-ai-finish-actions');
       await actions.scrollIntoViewIfNeeded();
       const reachable = await actions.evaluate(element => {
-        const button = element.querySelector('[data-report-cancel]');
+        const button = element.querySelector('button[type="submit"]');
         const rect = button.getBoundingClientRect();
         const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
         return rect.top >= 0 && rect.bottom <= innerHeight && (hit === button || button.contains(hit));
