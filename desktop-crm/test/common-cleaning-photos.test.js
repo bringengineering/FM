@@ -28,6 +28,12 @@ test('명확한 전후 쌍만 적용하고 작업 중·시간뿐인 쌍은 거�
   assert.equal(R.photoCount(report(paired)),3);
   assert.equal(P.photoReviewRows(paired).find(x=>x.id==='work').phase,'during');
 });
+test('작업 중이지만 구역이 불명확한 사진은 미배치 목록에 남는다',()=>{
+  const p=P.applyPhotoClassifications(plan(),files().map(file=>({id:file.id,category:'review',confidence:0,phase:'during',phaseConfidence:95})));
+  const result=P.toReportDraft(p,{core:R,requireResolved:true});
+  assert.equal(R.photoCount(report(p)),0);
+  assert.equal(result.leftovers.reduce((n,bucket)=>n+bucket.during.length,0),4);
+});
 test('재분류·Drive 재선택 뒤 수동 구역과 단계가 우선한다',()=>{
   let p=P.assignPhotoPhase(P.assignPhotoCategory(classified(),'work','stairs'),'work','after');
   p=P.mergeCommonSelection(plan(),p);

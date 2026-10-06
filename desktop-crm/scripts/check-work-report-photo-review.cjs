@@ -221,7 +221,7 @@ async function main() {
     assert.equal(await page.locator('[data-report-photo-phase]').count(), 0, "이전 종류의 비동기 결과를 새 보고서에 적용하면 안 된다");
     // The common-area path uses the same real renderer with different evidence.
     await page.evaluate(() => { window.__photoQA.fail = false; window.__photoQA.delay = 0; window.__photoQA.aiDelay = 0; window.__photoQA.longDraft = false; });
-    await page.locator('[data-report-cancel]').click();
+    await page.locator('[data-report-cancel]').first().click();
     await page.locator('[data-report-new]').click();
     await page.locator('[data-report-kind]').selectOption('common');
     await page.locator('[data-report-building]').selectOption('b1');

@@ -386,7 +386,7 @@
     rows(made.buckets).forEach(bucket => {
       const target = bucket.itemKey ? byKey.get(bucket.itemKey) : null;
       if (!target) {
-        if (bucket.before.length || bucket.after.length || bucket.unsorted.length) leftovers.push(bucket);
+        if (bucket.before.length || rows(bucket.during).length || bucket.after.length || bucket.unsorted.length) leftovers.push(bucket);
         return;
       }
       target.before = target.before.concat(bucket.before.map(toPhoto));
