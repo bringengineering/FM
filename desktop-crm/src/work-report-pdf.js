@@ -14,6 +14,7 @@
 
 const WorkReportCore = require("./work-report-core");
 const { safeFileSegment } = require("./attendance-xlsx");
+const { createOwnerReportHtml } = require("./work-report-owner-pdf");
 
 function html(value) {
   return String(value == null ? "" : value).replace(/[&<>"']/g, character => ({
@@ -76,6 +77,7 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
   const report = WorkReportCore.normalizeReport(input);
   const copy = WorkReportCore.copyOf(copyType);
   if (!copy) throw new Error("보고서 종류를 확인해 주세요.");
+  if (copy.key === "owner") return createOwnerReportHtml(report, options);
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const program = copy.key === "program";

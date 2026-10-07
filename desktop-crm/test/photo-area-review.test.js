@@ -65,7 +65,7 @@ test("58장도 초안과 두 종류 PDF에서 잘리지 않고 각각 한 번만
     for (const value of Object.values(images)) assert.equal(html.split(`src="${value}"`).length - 1, 1);
     assert.match(html, /작업 전 · 총 23장/);
     assert.match(html, /작업 후 · 총 35장/);
-    assert.match(html, /사진 18\/18/);
+    assert.match(html, type === "owner" ? /사진 10\/10/ : /사진 18\/18/);
   }
   assert.equal(V.mergeReviewed(made.draft.items, made.draft.items).added, 0);
 });

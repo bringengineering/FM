@@ -40,7 +40,7 @@ test("두 벌이 서로 다른 표를 낸다", () => {
   const owner = createWorkReportHtml(report(), "owner", options());
   const program = createWorkReportHtml(report(), "program", options());
   // 건물주는 퍼센트를 보러 오지 않는다.
-  assert.match(owner, /<th>상태<\/th><th>비고<\/th>/u);
+  assert.match(owner, /<th>작업 구역<\/th><th>보고 내용<\/th><th>현장 사진<\/th>/u);
   assert.doesNotMatch(owner, /<th>진척도<\/th>/u);
   // 청창사 서식은 진척도와 결과평가를 요구한다.
   assert.match(program, /<th>수행범위<\/th><th>진척도<\/th><th>결과평가<\/th>/u);
