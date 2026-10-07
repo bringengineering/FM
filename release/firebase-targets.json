@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "primary": {
+    "projectId": "bring-fm",
+    "functionsDeploymentAllowed": false,
+    "archivedFunctionNames": [
+      "appendOwnerNote",
+      "archiveOwnerNote",
+      "assignFieldJob",
+      "changeFieldVisit",
+      "claimFieldJob",
+      "cleanupDesktopFieldHandoffs",
+      "commitBillingLedgerMutation",
+      "commitCanonicalCrmEntity",
+      "configureBuildingUnits",
+      "createAdPackage",
+      "createDesktopFieldHandoff",
+      "createFieldJobs",
+      "exchangeDesktopFieldHandoff",
+      "excludeFieldMedia",
+      "finalizeFieldMedia",
+      "getFieldMediaAccess",
+      "listAdPackageReviewCandidates",
+      "listFieldCaptureWorkspace",
+      "listFieldOperationsWorkspace",
+      "provisionFieldUser",
+      "recordFieldOperatorSwitch",
+      "saveFieldRegistration",
+      "setManagementContractStatus",
+      "startFieldCaptureSession",
+      "transitionFieldJob"
+    ],
+    "databaseRules": true
+  },
+  "retiredLegacy": {
+    "projectId": "bring-fm-hj",
+    "status": "retired",
+    "deploymentAllowed": false,
+    "archivedFunctionNames": [
+      "generateFieldAdPackageToDrive",
+      "rebuildMapProjectionOnBuildingWrite",
+      "rebuildMapProjectionOnListingWrite",
+      "rebuildMapProjectionOnMediaWrite",
+      "recoverFieldAdPackageGeneration",
+      "recoverFieldMediaDriveSync",
+      "syncFieldMediaToDrive"
+    ],
+    "databaseRules": false
+  },
+  "crmAutomaticRelease": {
+    "projectId": "bring-fm",
+    "databaseRules": true
+  },
+  "crmDriveOAuthManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": ["crmDriveOAuth"],
+    "region": "asia-northeast3",
+    "databaseRules": false
+  },
+  "crmAccountSetupManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "archiveCrmAccountInvite",
+      "completeCrmAccountSetup",
+      "getCrmAccountSetupInvite",
+      "listCrmAccountInvites",
+      "registerCrmAccount",
+      "resendCrmAccountInvite"
+    ],
+    "region": "asia-northeast3",
+    "databaseRules": false
+  },
+  "cleaningCenterManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": [
+      "cleaningOrdersApi",
+      "cleaningPartnerApi",
+      "cleaningRefundsApi",
+      "projectCleaningOrdersToWallboard"
+    ],
+    "databaseRules": false,
+    "hostingSiteId": "bring-fm"
+  }
+}

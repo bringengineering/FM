@@ -1,0 +1,295 @@
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+} from "firebase/auth";
+import { get, ref } from "firebase/database";
+import { httpsCallable } from "firebase/functions";
+
+import { auth, database, functions } from "./firebase.client";
+import {
+  BRING_COMPANY_GOOGLE_ACCOUNT,
+  GOOGLE_DRIVE_FILE_SCOPE,
+  driveTokenManager,
+} from "./drive-auth.client";
+import type { UserRole } from "./types";
+import { isFieldRequestId, isPlainFieldRecord } from "./v2/contracts";
+
+export interface FieldAuthUser {
+  uid: string;
+  displayName: string | null;
+  email?: string | null;
+  getIdTokenResult(forceRefresh?: boolean): Promise<{
+    claims: Record<string, unknown>;
+  }>;
+}
+
+export interface FieldAuthDependencies {
+  signInWithGoogle(): Promise<{ user: FieldAuthUser }>;
+  provisionFieldUser(): Promise<void>;
+  getFieldUser(uid: string): Promise<unknown>;
+  signOut(): Promise<void>;
+}
+
+export interface FieldSession {
+  uid: string;
+  displayName: string;
+  role: UserRole;
+}
+
+export type FieldSessionListener = (session: FieldSession | null) => void;
+export type FieldSessionErrorListener = (error: Error) => void;
+export type FieldSessionObserver = (
+  listener: FieldSessionListener,
+  errorListener?: FieldSessionErrorListener,
+) => () => void;
+
+const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
+
+function isUserRole(value: unknown): value is UserRole {
+  return typeof value === "string" && roles.has(value as UserRole);
+}
+
+function isEnabledFieldUser(value: unknown, role: UserRole): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "enabled" in value &&
+    value.enabled === true &&
+    "role" in value &&
+    value.role === role
+  );
+}
+
+async function sessionFromUser(
+  user: FieldAuthUser,
+  forceRefresh: boolean,
+): Promise<FieldSession | null> {
+  const tokenResult = await user.getIdTokenResult(forceRefresh);
+  if (
+    tokenResult.claims.fieldPlatform !== true ||
+    !isUserRole(tokenResult.claims.fieldRole)
+  ) {
+    return null;
+  }
+
+  return {
+    uid: user.uid,
+    displayName: user.displayName?.trim() || "브링 담당자",
+    role: tokenResult.claims.fieldRole,
+  };
+}
+
+const provisionCallable = httpsCallable<undefined, { enabled: boolean; role: UserRole }>(
+  functions,
+  "provisionFieldUser",
+);
+
+const defaultDependencies: FieldAuthDependencies = {
+  async signInWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    provider.addScope(GOOGLE_DRIVE_FILE_SCOPE);
+    provider.setCustomParameters({ login_hint: BRING_COMPANY_GOOGLE_ACCOUNT });
+    const result = await signInWithPopup(auth, provider);
+    if (result.user.email?.trim().toLowerCase() !== BRING_COMPANY_GOOGLE_ACCOUNT) {
+      await firebaseSignOut(auth).catch(() => undefined);
+      throw new Error("field_company_account_required");
+    }
+    const oauthCredential = GoogleAuthProvider.credentialFromResult(result);
+    if (oauthCredential?.accessToken) {
+      driveTokenManager.adoptAccessToken(oauthCredential.accessToken);
+    }
+    return result;
+  },
+  async provisionFieldUser() {
+    await provisionCallable();
+  },
+  async getFieldUser(uid) {
+    const snapshot = await get(ref(database, `fieldPlatform/users/${uid}`));
+    return snapshot.val() as unknown;
+  },
+  async signOut() {
+    await firebaseSignOut(auth);
+  },
+};
+
+function errorCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
+function loginStartError(error: unknown): Error {
+  if (error instanceof Error && error.message === "field_company_account_required") {
+    return error;
+  }
+  const code = errorCode(error);
+  if (code === "auth/unauthorized-domain") {
+    return new Error("field_login_domain_not_authorized");
+  }
+  if (
+    code === "auth/operation-not-supported-in-this-environment" ||
+    code === "auth/web-storage-unsupported"
+  ) {
+    return new Error("field_login_browser_unsupported");
+  }
+  return new Error("field_login_start_failed");
+}
+
+function provisioningError(error: unknown): Error {
+  return new Error(
+    errorCode(error) === "functions/permission-denied"
+      ? "field_access_denied"
+      : "field_provision_failed",
+  );
+}
+
+async function restoreFieldSession(
+  user: FieldAuthUser,
+  dependencies: Pick<FieldAuthDependencies, "getFieldUser" | "provisionFieldUser">,
+): Promise<FieldSession> {
+  const restored = await sessionFromUser(user, false);
+  if (restored) return verifyEnabledFieldSession(restored, dependencies);
+
+  try {
+    await dependencies.provisionFieldUser();
+  } catch (error) {
+    throw provisioningError(error);
+  }
+
+  const provisioned = await sessionFromUser(user, true);
+  if (!provisioned) {
+    throw new Error("field_access_denied");
+  }
+
+  return verifyEnabledFieldSession(provisioned, dependencies);
+}
+
+async function verifyEnabledFieldSession(
+  session: FieldSession,
+  dependencies: Pick<FieldAuthDependencies, "getFieldUser">,
+): Promise<FieldSession> {
+  const fieldUser = await dependencies.getFieldUser(session.uid);
+  if (!isEnabledFieldUser(fieldUser, session.role)) {
+    throw new Error("field_access_denied");
+  }
+  return session;
+}
+
+export async function loginFieldUser(
+  dependencies: FieldAuthDependencies = defaultDependencies,
+): Promise<FieldSession> {
+  let credential: { user: FieldAuthUser };
+  try {
+    credential = await dependencies.signInWithGoogle();
+  } catch (error) {
+    throw loginStartError(error);
+  }
+
+  try {
+    return await restoreFieldSession(credential.user, dependencies);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "field_access_denied" ||
+        error.message === "field_provision_failed")
+    ) {
+      await dependencies.signOut().catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+export async function logoutFieldUser(
+  dependencies: Pick<FieldAuthDependencies, "signOut"> = defaultDependencies,
+): Promise<void> {
+  await dependencies.signOut();
+}
+
+export function observeDesktopLogout(
+  logout: () => Promise<void> = logoutFieldUser,
+): () => void {
+  let running = false;
+  const listener = (event: Event) => {
+    if (running) return;
+    const requestId = event instanceof CustomEvent
+      && isPlainFieldRecord(event.detail)
+      && Object.keys(event.detail).length === 1
+      && isFieldRequestId(event.detail.requestId)
+      ? event.detail.requestId
+      : "";
+    if (!requestId) return;
+    running = true;
+    void logout().then(() => {
+      window.dispatchEvent(new CustomEvent("bring-field-logout-complete", { detail: { requestId } }));
+    }).catch(() => {
+      window.dispatchEvent(new CustomEvent("bring-field-logout-failed", { detail: { requestId } }));
+    }).finally(() => { running = false; });
+  };
+  window.addEventListener("bring-crm-logout", listener);
+  return () => window.removeEventListener("bring-crm-logout", listener);
+}
+
+export function observeFieldSession(
+  listener: FieldSessionListener,
+  errorListener?: FieldSessionErrorListener,
+  dependencies: Pick<
+    FieldAuthDependencies,
+    "getFieldUser" | "provisionFieldUser" | "signOut"
+  > = defaultDependencies,
+): ReturnType<FieldSessionObserver> {
+  let active = true;
+  let currentUser: FieldAuthUser | null = null;
+  let revision = 0;
+  let suppressSignedOut = false;
+
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    const currentRevision = ++revision;
+    if (!user) {
+      if (!suppressSignedOut) {
+        listener(null);
+      }
+      return;
+    }
+
+    void restoreFieldSession(user, dependencies)
+      .then((session) => {
+        if (active && revision === currentRevision) {
+          listener(session);
+        }
+      })
+      .catch(async (error: unknown) => {
+        if (!active || revision !== currentRevision) return;
+
+        const failure = error instanceof Error
+          ? error
+          : new Error("field_session_restore_failed");
+        if (
+          failure.message === "field_access_denied" ||
+          failure.message === "field_provision_failed"
+        ) {
+          suppressSignedOut = true;
+          try {
+            await dependencies.signOut().catch(() => undefined);
+          } finally {
+            suppressSignedOut = false;
+          }
+        }
+
+        if (!active || (currentUser !== null && currentUser !== user)) return;
+        if (errorListener) {
+          errorListener(failure);
+        } else {
+          listener(null);
+        }
+      });
+  });
+
+  return () => {
+    active = false;
+    revision += 1;
+    unsubscribe();
+  };
+}

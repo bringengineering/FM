@@ -1,0 +1,12 @@
+name = "bring-care-kakao-intake"
+main = "src/index.js"
+compatibility_date = "2026-07-27"
+workers_dev = true
+preview_urls = false
+
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1

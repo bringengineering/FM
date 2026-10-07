@@ -1,0 +1,22 @@
+.operations-check{margin:20px 0;scroll-margin-top:20px}
+.operations-check .operations-check-body{padding:18px}
+.operations-check .operations-check-readonly{font-size:12px;color:#526b7b;border:1px solid #c9deeb;border-radius:16px;padding:5px 10px}
+.operations-check .operations-check-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.operations-check .operations-check-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px solid #dce7ef;border-radius:12px;background:#f4faff;color:#214156;cursor:pointer}
+.operations-check .operations-check-card strong{font-size:26px}
+.operations-check .operations-check-card:focus-visible,.operations-check button:focus-visible{outline:3px solid #2385bf;outline-offset:2px}
+.operations-check .operations-check-card:disabled{cursor:default;opacity:.65}
+.operations-check details{padding:14px 0;color:#536b7c;font-size:13px}
+.operations-check summary{cursor:pointer}
+.operations-check .operations-check-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+.operations-check [aria-pressed=true]{background:#e6f3ff;border-color:#62a8d2}
+.operations-check .operations-check-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.operations-check .operations-check-filters label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:130px;font-size:12px}
+.operations-check input,.operations-check select{width:100%;min-height:36px;border:1px solid #c9deeb;border-radius:8px;padding:8px;background:white;color:#214156}
+.operations-check .operations-check-count{color:#526b7b;font-size:12px;margin:16px 0 8px}
+.operations-check .operations-check-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-top:1px solid #e5edf3}
+.operations-check .operations-check-row div{min-width:0;overflow-wrap:anywhere}
+.operations-check .operations-check-row small{display:block;color:#657c8b;margin-top:5px}
+.operations-check .operations-check-row p{font-size:13px;margin:6px 0;color:#536b7c}
+.operations-check .operations-check-row button{flex-shrink:0}
+@media(max-width:700px){.operations-check .operations-check-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.operations-check .operations-check-row{align-items:flex-start;flex-direction:column}.operations-check .operations-check-body{padding:12px}}

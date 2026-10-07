@@ -1,0 +1,401 @@
+import { generateKeyPairSync } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cert, deleteApp, initializeApp, type App } from "firebase-admin/app";
+import { getAuth as getAdminAuth } from "firebase-admin/auth";
+
+const PROJECT_ID = "demo-bring-fm-account-setup";
+const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "";
+const DATABASE_HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST || "";
+const FUNCTIONS_HOST = process.env.CRM_ACCOUNT_SETUP_FUNCTIONS_EMULATOR_HOST || "127.0.0.1:5001";
+const ENABLED = Boolean(AUTH_HOST && DATABASE_HOST);
+const TEST_PASSWORD = "EmulatorOnly-Strong-2026!";
+
+type EmulatorUser = { uid: string; email: string; idToken: string };
+type AuthResponse = {
+  localId: string;
+  idToken: string;
+  emailVerified?: boolean;
+};
+
+function emulatorUrl(host: string, pathname: string): URL {
+  const url = new URL(`http://${host}${pathname}`);
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname)
+    || !url.port || url.username || url.password) {
+    throw new Error("CRM account setup emulator tests may use only loopback services.");
+  }
+  return url;
+}
+
+async function authRequest(method: string, body?: unknown): Promise<Record<string, unknown>> {
+  const url = emulatorUrl(AUTH_HOST, `/identitytoolkit.googleapis.com/v1/${method}?key=demo-api-key`);
+  const response = await fetch(url, {
+    method: body === undefined ? "GET" : "POST",
+    ...(body === undefined ? {} : {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  });
+  const payload = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(`Auth emulator request failed (${method}, ${response.status}).`);
+  return payload;
+}
+
+async function authEmulatorControlRequest(pathname: string): Promise<Record<string, unknown>> {
+  const url = emulatorUrl(AUTH_HOST, pathname);
+  const response = await fetch(url);
+  const payload = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(`Auth emulator control request failed (${response.status}).`);
+  return payload;
+}
+
+async function createPasswordUser(
+  email: string,
+  auth: ReturnType<typeof getAdminAuth>,
+  { verified = true } = {},
+): Promise<EmulatorUser> {
+  const created = await authRequest("accounts:signUp", {
+    email,
+    password: TEST_PASSWORD,
+    returnSecureToken: true,
+  }) as unknown as AuthResponse;
+  if (verified) {
+    await auth.updateUser(created.localId, { emailVerified: true });
+  }
+  const signedIn = await authRequest("accounts:signInWithPassword", {
+    email,
+    password: TEST_PASSWORD,
+    returnSecureToken: true,
+  }) as unknown as AuthResponse;
+  if (signedIn.localId !== created.localId || !signedIn.idToken) {
+    throw new Error("Auth emulator did not return the expected password identity.");
+  }
+  return { uid: signedIn.localId, email, idToken: signedIn.idToken };
+}
+
+async function setCrmAccess(
+  user: EmulatorUser,
+  { role, enabled = true, mustChangePassword = false }: {
+    role: "admin" | "member" | "viewer";
+    enabled?: boolean;
+    mustChangePassword?: boolean;
+  },
+): Promise<void> {
+  const url = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(user.uid)}.json`);
+  url.searchParams.set("ns", PROJECT_ID);
+  url.searchParams.set("auth", "owner");
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: user.email,
+      role,
+      enabled,
+      mustChangePassword,
+      officeAdmin: false,
+    }),
+  });
+  if (!response.ok) throw new Error(`Database emulator seeding failed (${response.status}).`);
+}
+
+async function readCrmAccess(user: EmulatorUser): Promise<Record<string, unknown>> {
+  const url = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(user.uid)}.json`);
+  url.searchParams.set("ns", PROJECT_ID);
+  url.searchParams.set("auth", "owner");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Database emulator access check failed (${response.status}).`);
+  return await response.json() as Record<string, unknown>;
+}
+
+async function callFunction(name: string, data: Record<string, unknown>, idToken = "") {
+  const url = emulatorUrl(FUNCTIONS_HOST, `/${PROJECT_ID}/asia-northeast3/${name}`);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
+    body: JSON.stringify({ data }),
+  });
+  return { status: response.status, payload: await response.json() as Record<string, unknown> };
+}
+
+describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase emulators", () => {
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let admin: EmulatorUser;
+  let member: EmulatorUser;
+  let viewer: EmulatorUser;
+  let disabledAdmin: EmulatorUser;
+  let unverifiedAdmin: EmulatorUser;
+  let passwordChangeAdmin: EmulatorUser;
+  let customTokenAdmin = "";
+  let adminApp: App | null = null;
+
+  beforeAll(async () => {
+    if (!PROJECT_ID.startsWith("demo-")) throw new Error("Emulator test project must use the demo- prefix.");
+    const pair = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    adminApp = initializeApp({
+      projectId: PROJECT_ID,
+      credential: cert({
+        projectId: PROJECT_ID,
+        clientEmail: `firebase-adminsdk-emulator@${PROJECT_ID}.iam.gserviceaccount.com`,
+        privateKey: pair.privateKey,
+      }),
+    }, `crm-account-setup-emulator-${unique}`);
+    const emulatorAuth = getAdminAuth(adminApp);
+
+    admin = await createPasswordUser(`admin-${unique}@bring.test`, emulatorAuth);
+    member = await createPasswordUser(`member-${unique}@bring.test`, emulatorAuth);
+    viewer = await createPasswordUser(`viewer-${unique}@bring.test`, emulatorAuth);
+    disabledAdmin = await createPasswordUser(`disabled-${unique}@bring.test`, emulatorAuth);
+    unverifiedAdmin = await createPasswordUser(`unverified-${unique}@bring.test`, emulatorAuth, { verified: false });
+    passwordChangeAdmin = await createPasswordUser(`change-${unique}@bring.test`, emulatorAuth);
+
+    await Promise.all([
+      setCrmAccess(admin, { role: "admin" }),
+      setCrmAccess(member, { role: "member" }),
+      setCrmAccess(viewer, { role: "viewer" }),
+      setCrmAccess(disabledAdmin, { role: "admin", enabled: false }),
+      setCrmAccess(unverifiedAdmin, { role: "admin" }),
+      setCrmAccess(passwordChangeAdmin, { role: "admin", mustChangePassword: true }),
+    ]);
+
+    const customToken = await emulatorAuth.createCustomToken(admin.uid);
+    const customSignIn = await authRequest("accounts:signInWithCustomToken", {
+      token: customToken,
+      returnSecureToken: true,
+    }) as unknown as AuthResponse;
+    customTokenAdmin = customSignIn.idToken;
+  }, 30_000);
+
+  afterAll(async () => {
+    if (adminApp) await deleteApp(adminApp);
+  });
+
+  it("denies anonymous, non-admin, disabled, unverified, wrong-provider, and must-change-password callers", async () => {
+    for (const idToken of ["", member.idToken, viewer.idToken, disabledAdmin.idToken,
+      passwordChangeAdmin.idToken, unverifiedAdmin.idToken, customTokenAdmin]) {
+      const result = await callFunction("archiveCrmAccountInvite", { uid: "completed-invite" }, idToken);
+      expect(result.payload.error).toBeDefined();
+      expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((result.payload.error as { status?: string }).status);
+    }
+    const anonymous = await callFunction("registerCrmAccount", { email: `denied-${unique}@bring.test` });
+    expect(anonymous.payload.error).toBeDefined();
+    expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((anonymous.payload.error as { status?: string }).status);
+
+    for (const user of [member, viewer, disabledAdmin, passwordChangeAdmin]) {
+      const result = await callFunction("registerCrmAccount", { email: `denied-${unique}@bring.test` }, user.idToken);
+      expect(result.payload.error).toBeDefined();
+      expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((result.payload.error as { status?: string }).status);
+    }
+
+    for (const idToken of [unverifiedAdmin.idToken, customTokenAdmin]) {
+      const result = await callFunction("registerCrmAccount", { email: `denied-${unique}@bring.test` }, idToken);
+      expect(result.payload.error).toBeDefined();
+      expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((result.payload.error as { status?: string }).status);
+    }
+
+    const invalidAnonymousPreview = await callFunction("getCrmAccountSetupInvite", {
+      uid: "missing-invite",
+      setupToken: "A".repeat(43),
+    });
+    expect(invalidAnonymousPreview.payload.error).toBeDefined();
+    expect((invalidAnonymousPreview.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+
+    const invalidAnonymousCompletion = await callFunction("completeCrmAccountSetup", {
+      uid: "missing-invite",
+      setupToken: "A".repeat(43),
+      password: "EmulatorOnly-Strong-2026!",
+      oobCode: "invalid-oob-code",
+    });
+    expect(invalidAnonymousCompletion.payload.error).toBeDefined();
+    expect((invalidAnonymousCompletion.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+  }, 30_000);
+
+  it("archives completed history without changing Auth, access, or work data, and rejects pending/unsafe targets", async () => {
+    const auth = getAdminAuth(adminApp!);
+    const user = await createPasswordUser(`archive-${unique}@bring.test`, auth);
+    await setCrmAccess(user, { role: "member" });
+    const read = async (path: string) => {
+      const url = emulatorUrl(DATABASE_HOST, `/${path}.json`);
+      url.searchParams.set("ns", PROJECT_ID);
+      url.searchParams.set("auth", "owner");
+      const response = await fetch(url);
+      expect(response.ok).toBe(true);
+      return response.json();
+    };
+    const write = async (path: string, value: unknown) => {
+      const url = emulatorUrl(DATABASE_HOST, `/${path}.json`);
+      url.searchParams.set("ns", PROJECT_ID);
+      url.searchParams.set("auth", "owner");
+      const response = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+      expect(response.ok).toBe(true);
+    };
+    const original = { status: "complete", createdAt: Date.now(), completedAt: Date.now(), emailHash: "emulator-only", setupTokens: [] };
+    const work = { "2026-10-01": { checkInAt: "2026-10-01T00:00:00Z" } };
+    // Archived rows must not crowd active invitations out of the 200-row window.
+    const oldArchives = Object.fromEntries(Array.from({ length: 205 }, (_, i) => [`zz-archived-${i}`, { ...original, archivedAt: 1, archivedBy: admin.uid }]));
+    await write("crmCompany/accountInvites", { ...oldArchives, [user.uid]: original, [member.uid]: { status: "pending", createdAt: Date.now() } });
+    await write(`crmCompany/officeAttendance/${user.uid}`, work);
+    const accessBefore = await readCrmAccess(user);
+    const authBefore = await auth.getUser(user.uid);
+    const listed = await callFunction("listCrmAccountInvites", {}, admin.idToken);
+    expect(listed.status).toBe(200);
+    expect((listed.payload.result as { accounts: Array<{ uid: string }> }).accounts).toContainEqual(expect.objectContaining({ uid: user.uid }));
+    for (const uid of [member.uid, "missing-invite", "../access", "__proto__", 123]) {
+      const denied = await callFunction("archiveCrmAccountInvite", { uid }, admin.idToken);
+      expect(denied.payload.error).toBeDefined();
+    }
+    expect(await read(`crmCompany/accountInvites/${member.uid}`)).toMatchObject({ status: "pending" });
+    const replies = await Promise.all([1, 2].map(() => callFunction("archiveCrmAccountInvite", { uid: user.uid }, admin.idToken)));
+    for (const reply of replies) expect(reply.payload.result).toEqual({ uid: user.uid, archived: true });
+    const archived = await read(`crmCompany/accountInvites/${user.uid}`);
+    expect(archived).toMatchObject({ status: "complete", createdAt: original.createdAt, completedAt: original.completedAt, emailHash: original.emailHash, archivedBy: admin.uid });
+    expect(archived.archivedAt).toBeGreaterThan(0);
+    const repeated = await callFunction("archiveCrmAccountInvite", { uid: user.uid }, admin.idToken);
+    expect(repeated.status).toBe(200);
+    expect(await read(`crmCompany/accountInvites/${user.uid}`)).toEqual(archived);
+    const afterList = await callFunction("listCrmAccountInvites", {}, admin.idToken);
+    expect((afterList.payload.result as { accounts: Array<{ uid: string }> }).accounts.some(row => row.uid === user.uid)).toBe(false);
+    expect(await readCrmAccess(user)).toEqual(accessBefore);
+    expect(await read(`crmCompany/officeAttendance/${user.uid}`)).toEqual(work);
+    const authAfter = await auth.getUser(user.uid);
+    expect(authAfter.emailVerified).toBe(authBefore.emailVerified);
+    expect(authAfter.disabled).toBe(authBefore.disabled);
+    const login = await authRequest("accounts:signInWithPassword", { email: user.email, password: TEST_PASSWORD, returnSecureToken: true });
+    expect(login.localId).toBe(user.uid);
+  }, 30_000);
+
+  it("lets only an admin send an email link that verifies the email and sets the first password", async () => {
+    expect(admin.idToken.length).toBeGreaterThan(20);
+    const adminClaims = JSON.parse(Buffer.from(admin.idToken.split(".")[1] || "", "base64url").toString("utf8")) as {
+      email_verified?: unknown;
+      firebase?: { sign_in_provider?: unknown };
+    };
+    expect(adminClaims.email_verified).toBe(true);
+    expect(adminClaims.firebase?.sign_in_provider).toBe("password");
+    expect(await readCrmAccess(admin)).toMatchObject({ enabled: true, role: "admin", mustChangePassword: false });
+    const invitedEmail = `invite-${unique}@bring.test`;
+    const registered = await callFunction("registerCrmAccount", { email: invitedEmail }, admin.idToken);
+    const registrationError = registered.payload.error as { status?: unknown; message?: unknown } | undefined;
+    expect(registered.status, `${String(registrationError?.status || "unknown")}: ${String(registrationError?.message || "")}`).toBe(200);
+    expect(registered.payload.result).toMatchObject({ email: invitedEmail, status: "pending", emailSent: true });
+    const registrationResult = registered.payload.result as { uid: string };
+
+    const listed = await callFunction("listCrmAccountInvites", {}, admin.idToken);
+    expect((listed.payload.result as { accounts: Array<{ uid: string; email: string; status: string }> }).accounts)
+      .toContainEqual(expect.objectContaining({ uid: registrationResult.uid, email: invitedEmail, status: "pending" }));
+
+    const codeResponse = await authEmulatorControlRequest(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
+      oobCodes?: Array<{ email: string; oobCode: string; oobLink?: string; requestType: string }>;
+    };
+    const actionEntry = codeResponse.oobCodes?.find(code =>
+      code.email === invitedEmail && code.requestType === "EMAIL_SIGNIN");
+    const actionCode = actionEntry?.oobCode;
+    expect(actionCode).toBeTruthy();
+    expect(actionEntry?.oobLink).toBeTruthy();
+    const actionUrl = new URL(actionEntry!.oobLink!);
+    const continueUrlValue = actionUrl.searchParams.get("continueUrl");
+    expect(continueUrlValue).toBeTruthy();
+    const continueUrl = new URL(continueUrlValue!);
+    const setupToken = continueUrl.searchParams.get("invite");
+    expect(continueUrl.searchParams.get("uid")).toBe(registrationResult.uid);
+    expect(continueUrl.searchParams.has("email")).toBe(false);
+    expect(setupToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+
+    const preview = await callFunction("getCrmAccountSetupInvite", {
+      uid: registrationResult.uid,
+      setupToken,
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.payload.result).toMatchObject({ uid: registrationResult.uid });
+    const maskedEmail = (preview.payload.result as { maskedEmail: string }).maskedEmail;
+    expect(maskedEmail).toMatch(/^in•{3,6}@bring\.test$/u);
+    expect(maskedEmail).not.toBe(invitedEmail);
+
+    const password = "FirstPassword-OnlyInEmulator-2026!";
+    const completed = await callFunction("completeCrmAccountSetup", {
+      uid: registrationResult.uid,
+      setupToken,
+      // A malicious email field is ignored; the recipient comes from Auth UID.
+      email: `attacker-${unique}@bring.test`,
+      displayName: "초대 구성원",
+      password,
+      oobCode: actionCode,
+    });
+    expect(completed.status).toBe(200);
+    expect(completed.payload.result).toEqual({ ok: true });
+
+    const login = await authRequest("accounts:signInWithPassword", {
+      email: invitedEmail,
+      password,
+      returnSecureToken: true,
+    }) as unknown as AuthResponse;
+    const profile = await authRequest("accounts:lookup", { idToken: login.idToken }) as {
+      users?: Array<{ email?: unknown; emailVerified?: unknown; displayName?: unknown }>;
+    };
+    expect(profile.users?.[0]).toMatchObject({ email: invitedEmail, emailVerified: true, displayName: "초대 구성원" });
+
+    const accessUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(registrationResult.uid)}.json`);
+    accessUrl.searchParams.set("ns", PROJECT_ID);
+    accessUrl.searchParams.set("auth", "owner");
+    const access = await fetch(accessUrl).then(response => response.json()) as Record<string, unknown>;
+    expect(access).toMatchObject({ email: invitedEmail, enabled: true, role: "member", accountSetupPending: false, mustChangePassword: false, displayName: "초대 구성원" });
+    expect(access).not.toHaveProperty("password");
+
+    const inviteUrl = emulatorUrl(DATABASE_HOST, `/crmCompany/accountInvites/${encodeURIComponent(registrationResult.uid)}.json`);
+    inviteUrl.searchParams.set("ns", PROJECT_ID);
+    inviteUrl.searchParams.set("auth", "owner");
+    const invite = await fetch(inviteUrl).then(response => response.json()) as Record<string, unknown>;
+    expect(invite.status).toBe("complete");
+
+    const replayed = await callFunction("completeCrmAccountSetup", {
+      uid: registrationResult.uid,
+      setupToken,
+      displayName: "초대 구성원",
+      password: "SecondPassword-OnlyInEmulator-2026!",
+      oobCode: actionCode,
+    });
+    expect(replayed.payload.error).toBeDefined();
+
+    const legacyEmail = `legacy-${unique}@bring.test`;
+    const legacyRegistered = await callFunction("registerCrmAccount", { email: legacyEmail }, admin.idToken);
+    expect(legacyRegistered.status).toBe(200);
+    const legacyUid = (legacyRegistered.payload.result as { uid: string }).uid;
+    const legacyCodeResponse = await authEmulatorControlRequest(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`) as {
+      oobCodes?: Array<{ email: string; oobCode: string; requestType: string }>;
+    };
+    const legacyCode = legacyCodeResponse.oobCodes?.find(code =>
+      code.email === legacyEmail && code.requestType === "EMAIL_SIGNIN")?.oobCode;
+    expect(legacyCode).toBeTruthy();
+
+    const spoofedLegacyCompletion = await callFunction("completeCrmAccountSetup", {
+      email: `attacker-${unique}@bring.test`,
+      displayName: "초대 구성원",
+      password: "LegacyPassword-OnlyInEmulator-2026!",
+      oobCode: legacyCode,
+    });
+    expect(spoofedLegacyCompletion.payload.error).toBeDefined();
+    expect((spoofedLegacyCompletion.payload.error as { status?: string }).status).toBe("FAILED_PRECONDITION");
+
+    const legacyCompletion = await callFunction("completeCrmAccountSetup", {
+      email: legacyEmail,
+      displayName: "기존 화면 구성원",
+      password: "LegacyPassword-OnlyInEmulator-2026!",
+      oobCode: legacyCode,
+    });
+    expect(legacyCompletion.status).toBe(200);
+    const legacyAccess = await emulatorUrl(DATABASE_HOST, `/crmCompany/access/${encodeURIComponent(legacyUid)}.json`);
+    legacyAccess.searchParams.set("ns", PROJECT_ID);
+    legacyAccess.searchParams.set("auth", "owner");
+    expect(await fetch(legacyAccess).then(response => response.json())).toMatchObject({
+      email: legacyEmail,
+      role: "member",
+      accountSetupPending: false,
+      displayName: "기존 화면 구성원",
+    });
+  }, 30_000);
+});

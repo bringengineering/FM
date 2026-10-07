@@ -1,0 +1,57 @@
+name: Firebase Hosting Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/bring-field-platform
+    paths:
+      - "company-site/**"
+      - "firebase.json"
+      - ".firebaserc"
+      - ".github/workflows/firebase-hosting.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-hosting-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: company-site/pnpm-lock.yaml
+      - name: Install site dependencies
+        run: pnpm --dir company-site install --frozen-lockfile
+      - name: Build site
+        run: pnpm --dir company-site build
+      - name: Export Firebase static site
+        run: pnpm --dir company-site export:firebase
+      - name: Verify required public routes
+        shell: bash
+        run: |
+          test -s company-site/firebase-public/index.html
+          test -s company-site/firebase-public/building-care/index.html
+          test -s company-site/firebase-public/stair-cleaning/index.html
+          test -s company-site/firebase-public/move-in-cleaning/index.html
+          test -s company-site/firebase-public/crm-account-setup/index.html
+          test -s company-site/firebase-public/crm-account-setup/setup-core.js
+          test -s company-site/firebase-public/crm-account-setup/setup.js
+          test -s company-site/firebase-public/crm-account-setup/setup.css
+      - name: Deploy live Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@7c850a480ce753f4f06f010801fc5a43787740bb # v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: bring-fm

@@ -1,0 +1,281 @@
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const Reports = require("../src/building-report-core");
+
+// 다른 건물 사건과 다른 달 사건을 일부러 섞어 두었다. 건물주가 받는
+// 문서에 남의 건물 일이 들어가면 안 된다.
+const store = {
+  cases: [
+    { id: "c1", crmBuildingId: "b1", serviceType: "공용부 청소", workCompletedAt: "2026-08-05",
+      unitName: "", workSummary: "계단·복도 청소", statusValue: "완료", approvedAmount: "150000" },
+    { id: "c2", crmBuildingId: "b1", issueType: "누수", workCompletedAt: "2026-08-19",
+      unitName: "302호", workSummary: "욕실 배관 누수 보수", statusValue: "완료",
+      approvedAmount: "220000", vendorName: "믿음설비", vendorCost: "160000" },
+    { id: "c3", crmBuildingId: "b1", serviceType: "입주청소", workCompletedAt: "2026-08-28",
+      unitName: "201호", statusValue: "진행 중", approvedAmount: "" },
+    { id: "c4", crmBuildingId: "b2", serviceType: "공용부 청소", workCompletedAt: "2026-08-07" },
+    { id: "c5", crmBuildingId: "b1", serviceType: "예초", workCompletedAt: "2026-07-14" },
+    { id: "c6", crmBuildingId: "b1", serviceType: "폐기", workCompletedAt: "2026-08-02", archivedAt: "2026-08-03" },
+    { id: "c7", serviceType: "건물 미연결", workCompletedAt: "2026-08-09" },
+  ],
+  buildingUnits: [
+    { id: "u1", crmBuildingId: "b1", label: "101호", status: "occupied" },
+    { id: "u2", crmBuildingId: "b1", label: "201호", status: "vacant", availableFrom: "2026-09-01" },
+    { id: "u3", crmBuildingId: "b1", label: "302호", status: "move_out_scheduled" },
+    { id: "u4", crmBuildingId: "b1", label: "303호", status: "vacant" },
+    { id: "u5", crmBuildingId: "b2", label: "101호", status: "vacant" },
+  ],
+};
+
+const building = { id: "b1", name: "햇빛빌라", address: "원주시 이화3길 28-5" };
+
+function report(overrides) {
+  return Reports.buildBuildingMonthlyReport({
+    store, building, month: "2026-08", ownerName: "박서연", ...overrides,
+  });
+}
+
+test("보고 월은 현재 달까지 선택하고 미래 달만 막는다", () => {
+  const today = new Date("2026-09-30T00:00:00.000Z");
+  assert.equal(Reports.currentMonthKey(today), "2026-09");
+  assert.equal(Reports.isReportMonthSelectable("2026-08", today), true);
+  assert.equal(Reports.isReportMonthSelectable("2026-09", today), true);
+  assert.equal(Reports.isReportMonthSelectable("2026-10", today), false);
+  assert.equal(Reports.isReportMonthSelectable("2026-13", today), false);
+});
+
+test("그 건물, 그 달 사건만 담는다", () => {
+  const kinds = report().works.map(work => work.kind);
+  assert.deepEqual(kinds, ["공용부 청소", "누수", "입주청소"]);
+});
+
+test("보고서에서 제외한 업무는 집계에서만 빠지고 원본 캘린더 자료는 유지한다", () => {
+  const selected = report().works.find(work => work.kind === "누수");
+  const built = report({ excludedWorkKeys: [Reports.workRowKey(selected)] });
+
+  assert.deepEqual(built.works.map(work => work.kind), ["공용부 청소", "입주청소"]);
+  assert.equal(built.summary.workCount, 2);
+  assert.equal(built.summary.doneCount, 1);
+  assert.equal(built.summary.billedText, "150,000원");
+  assert.ok(store.cases.some(item => item.id === "c2"), "원본 CRM 사건은 삭제되지 않아야 함");
+});
+
+test("다른 건물·다른 달·보관·미연결 사건은 빠진다", () => {
+  const serialized = JSON.stringify(report());
+  assert.ok(!serialized.includes("예초"), "지난달 사건이 들어감");
+  assert.ok(!serialized.includes("폐기"), "보관된 사건이 들어감");
+  assert.ok(!serialized.includes("건물 미연결"), "건물 연결이 없는 사건이 들어감");
+});
+
+test("업체명과 업체 원가는 건물주 문서에 담지 않는다", () => {
+  const built = report();
+  const serialized = JSON.stringify(built);
+  assert.ok(!serialized.includes("믿음설비"));
+  assert.ok(!serialized.includes("160,000"));
+  assert.deepEqual(Reports.findLeakedFields(built, store), []);
+});
+
+test("findLeakedFields 는 실제로 샜을 때 잡아낸다", () => {
+  const leaked = { ...report(), note: "믿음설비 배정" };
+  assert.deepEqual(Reports.findLeakedFields(leaked, store), ["업체명"]);
+});
+
+test("작업은 날짜순으로 늘어놓는다", () => {
+  assert.deepEqual(report().works.map(work => work.dateText), ["8/5", "8/19", "8/28"]);
+});
+
+test("완료 여부와 청구 금액을 옮긴다", () => {
+  const works = report().works;
+  assert.deepEqual(works.map(work => work.done), [true, true, false]);
+  assert.equal(works[1].amountText, "220,000원");
+  assert.equal(works[2].amountText, "");
+});
+
+test("공실 현황과 공실률을 낸다", () => {
+  const summary = report().summary;
+  assert.equal(summary.unitCount, 4);
+  assert.equal(summary.vacantCount, 2);
+  assert.equal(summary.vacancyRateText, "50%");
+});
+
+test("호실이 없으면 공실률은 0%가 아니라 빈 값이다", () => {
+  const built = Reports.buildBuildingMonthlyReport({
+    store: { cases: [], buildingUnits: [] }, building, month: "2026-08",
+  });
+  assert.equal(built.summary.unitCount, 0);
+  assert.equal(built.summary.vacancyRateText, "");
+});
+
+test("호실 상태를 사람이 읽는 말로 바꾼다", () => {
+  const labels = report().units.map(unit => unit.statusLabel);
+  assert.deepEqual(labels, ["임대 중", "공실", "퇴실 예정", "공실"]);
+});
+
+test("그 달 청구 합계를 낸다", () => {
+  assert.equal(report().summary.billedText, "370,000원");
+});
+
+test("건물 정보와 기간을 사람이 읽는 형태로 만든다", () => {
+  const built = report();
+  assert.equal(built.buildingName, "햇빛빌라");
+  assert.equal(built.monthText, "2026년 8월");
+  assert.equal(built.documentTitle, "월간 관리 보고서");
+});
+
+test("검토한 Gemini 문장을 보고서에 안전하게 담는다", () => {
+  const built = report({ narrative: {
+    summary: "이번 달 주요 설비 조치를 완료했습니다.",
+    attention: "입주청소는 진행 중입니다.",
+    nextMonthPlan: "공용부 정기점검을 진행할 예정입니다.",
+  } });
+  assert.equal(built.narrative.summary, "이번 달 주요 설비 조치를 완료했습니다.");
+  assert.equal(built.narrative.attention, "입주청소는 진행 중입니다.");
+  assert.equal(built.narrative.nextMonthPlan, "공용부 정기점검을 진행할 예정입니다.");
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.match(doc, /이번 달 관리 요약/u);
+  assert.match(doc, /다음 달 예정 관리/u);
+});
+
+test("Gemini 문장도 HTML로 실행되지 않게 이스케이프한다", () => {
+  const built = report({ narrative: { summary: '<img src=x onerror=alert(1)>', attention: "", nextMonthPlan: "" } });
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.ok(!doc.includes("<img src=x"));
+  assert.match(doc, /&lt;img/u);
+});
+
+test("월간 요약은 내용과 소수점을 유지하면서 문장별 문단으로 나눈다", () => {
+  const sentences = [
+    "이번 달 관리를 보고드립니다.",
+    "공실률은 12.5%이며 업무 7건 중 6건을 완료했습니다.",
+    "공용부 청소와 점검을 마쳤습니다.",
+    "다음 달 방역 작업 예정",
+  ];
+  const doc = pdfHtml({ narrative: { summary: sentences.join(" ") } });
+  const section = doc.match(/<section class="monthly-summary">([\s\S]*?)<\/section>/u)[1];
+  assert.deepEqual([...section.matchAll(/<p class="greeting">(.*?)<\/p>/gu)].map(match => match[1]), sentences);
+  assert.match(doc, /\.monthly-summary h2\{font-size:12pt;color:#111;/u);
+  assert.match(doc, /\.monthly-summary \.greeting\{font-size:11\.5pt;line-height:1\.85;color:#111;/u);
+});
+
+test("월간 요약 문단은 직접 줄바꿈과 특수문자도 안전하게 표시한다", () => {
+  const built = report();
+  const doc = Pdf.createBuildingReportHtml({ ...built, narrative: {
+    summary: '첫 줄\r\n\r\n둘째 줄 <script>alert("x")</script> & 확인. 다음 문장입니다!',
+  } });
+  const section = doc.match(/<section class="monthly-summary">([\s\S]*?)<\/section>/u)[1];
+  assert.equal((section.match(/<p class="greeting">/gu) || []).length, 3);
+  assert.match(section, /<p class="greeting">첫 줄<\/p>/u);
+  assert.match(section, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; &amp; 확인\./u);
+  assert.doesNotMatch(section, /<script>/u);
+});
+
+test("현장 사진은 강제 새 페이지 없이 이어지고 사진 묶음은 잘리지 않는다", () => {
+  const doc = pdfHtml({ photos: [{
+    date: "2026-08-05", activityName: "공용부 청소", caption: "현장 기록",
+    dataUrl: "data:image/jpeg;base64,/9j/",
+  }] });
+  const photoSectionRules = [...doc.matchAll(/\.photo-section\{([^}]+)\}/gu)].map(match => match[1]);
+  assert.deepEqual(photoSectionRules, ["break-before:auto"]);
+  assert.match(doc, /\.photo-group\{break-inside:avoid;/u);
+  assert.ok(doc.indexOf("호실 현황</h2>") < doc.indexOf('<section class="photo-section">'));
+  assert.match(doc, /날짜별 현장 활동 사진/u);
+  assert.match(doc, /현장 기록/u);
+});
+
+test("건물이 비어 있어도 보고서 모양은 무너지지 않는다", () => {
+  const built = Reports.buildBuildingMonthlyReport({});
+  assert.equal(built.buildingName, "관리 건물");
+  assert.deepEqual(built.works, []);
+  assert.deepEqual(built.units, []);
+  assert.ok(Object.isFrozen(built));
+});
+
+test("건물 id 가 없으면 아무 사건도 끌어오지 않는다", () => {
+  // id 없는 건물에 모든 사건이 딸려오면 남의 건물 일이 새어 나간다.
+  const built = Reports.buildBuildingMonthlyReport({ store, building: { name: "이름만" }, month: "2026-08" });
+  assert.deepEqual(built.works, []);
+  assert.deepEqual(built.units, []);
+});
+
+// ── PDF 문서 ──────────────────────────────────────────────
+const Pdf = require("../src/building-report-pdf");
+
+function pdfHtml(overrides) {
+  return Pdf.createBuildingReportHtml(Reports.buildBuildingMonthlyReport({
+    store, building, month: "2026-08", ownerName: "박서연", ...overrides,
+  }));
+}
+
+test("PDF 는 data: 이미지 외에는 아무것도 불러오지 않는다", () => {
+  assert.match(pdfHtml(), /default-src 'none'; img-src data:/u);
+});
+
+test("PDF 에 업체명·업체 원가가 없다", () => {
+  const doc = pdfHtml();
+  assert.ok(!doc.includes("믿음설비"));
+  assert.ok(!doc.includes("160,000"));
+});
+
+test("PDF 에 다른 건물·다른 달 사건이 없다", () => {
+  const doc = pdfHtml();
+  assert.ok(!doc.includes("예초"));
+  assert.ok(!doc.includes("건물 미연결"));
+});
+
+test("공실 호실에는 눈에 띄는 표시가 붙는다", () => {
+  const doc = pdfHtml();
+  assert.match(doc, /class="unit vacant"/u);
+  assert.match(doc, /2026-09-01 입주 가능/u);
+});
+
+test("업무가 없는 달도 문서가 나온다", () => {
+  const doc = pdfHtml({ month: "2026-01" });
+  assert.match(doc, /이 기간에 처리한 업무가 없습니다/u);
+});
+
+test("HTML 특수문자가 문서를 깨뜨리지 않는다", () => {
+  const doc = Pdf.createBuildingReportHtml(Reports.buildBuildingMonthlyReport({
+    store, building: { id: "b1", name: '<img src=x onerror=alert(1)>' }, month: "2026-08",
+  }));
+  assert.ok(!doc.includes("<img src=x"));
+  assert.ok(doc.includes("&lt;img"));
+});
+
+test("파일명은 건물과 연월로 만든다", () => {
+  const name = Pdf.buildingReportFileName(Reports.buildBuildingMonthlyReport({ store, building, month: "2026-08" }));
+  assert.match(name, /월간관리보고서_202608\.pdf$/u);
+});
+
+test("캘린더 일정과 보고서 직접 추가 업무를 출처 표시 없이 합친다", () => {
+  const built = Reports.buildBuildingMonthlyReport({
+    store: {
+      ...store,
+      serviceRecords: [
+        { id: "s1", buildingId: "b1", scheduledDate: "2026-08-11", title: "공용부 점검", status: "completed", summary: "소화기 위치 확인" },
+        { id: "s2", buildingId: "b1", scheduledDate: "2026-08-12", title: "취소된 일정", status: "cancelled" },
+        { id: "s3", buildingId: "b2", scheduledDate: "2026-08-13", title: "다른 건물 일정", status: "completed" },
+      ],
+    },
+    building, month: "2026-08",
+    manualWorks: [{ id: "m1", date: "2026-08-21", kind: "필터 교체", summary: "에어컨 필터 세척", done: true }],
+  });
+  assert.ok(built.works.some(work => work.kind === "공용부 점검" && work.statusLabel === "완료"));
+  assert.ok(built.works.some(work => work.kind === "필터 교체"));
+  assert.ok(!JSON.stringify(built).includes("취소된 일정"));
+  assert.ok(!JSON.stringify(built).includes("다른 건물 일정"));
+  assert.ok(!JSON.stringify(built).includes("manual"));
+});
+
+test("보고서 사진은 제한된 data image만 PDF에 렌더링한다", () => {
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff]).toString("base64")}`;
+  const built = Reports.buildBuildingMonthlyReport({ store, building, month: "2026-08", photos: [
+    { name: "IMG_001.jpg", caption: "후드 필터 청소", dataUrl },
+    { name: "bad.jpg", caption: "외부 주소", dataUrl: "https://example.com/image.jpg" },
+  ] });
+  assert.equal(built.photos.length, 1);
+  const doc = Pdf.createBuildingReportHtml(built);
+  assert.match(doc, /현장 활동 사진/u);
+  assert.match(doc, /후드 필터 청소/u);
+  assert.doesNotMatch(doc, /https:\/\/example\.com/u);
+});
