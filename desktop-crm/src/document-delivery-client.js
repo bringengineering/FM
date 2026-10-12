@@ -46,7 +46,11 @@ async function requestDocumentDelivery(options = {}) {
     const response = await fetchImpl(url.href, init);
     const value = await response.json().catch(() => null);
     if (!response.ok || !value || value.ok !== true) fail("문서 발송 서버를 사용할 수 없습니다.", "DOCUMENT_DELIVERY_UNAVAILABLE");
-    if (action === "capabilities") return { ok: true, capabilities: { kakao: value.capabilities && value.capabilities.kakao === true, sms: value.capabilities && value.capabilities.sms === true } };
+    if (action === "capabilities") return { ok: true, capabilities: {
+      kakao: value.capabilities?.kakao === true,
+      monthlyReport: value.capabilities?.monthlyReport === true,
+      sms: value.capabilities?.sms === true,
+    } };
     return value;
   } catch (error) {
     if (error && error.code) throw error;
