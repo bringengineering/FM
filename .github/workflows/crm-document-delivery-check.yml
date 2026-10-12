@@ -2,6 +2,11 @@ name: CRM Document Delivery Configuration Check
 
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/bring-field-platform]
+    paths:
+      - .github/workflows/crm-document-delivery-check.yml
+      - crm-ai-worker/scripts/check-document-delivery.mjs
 
 permissions:
   contents: read
