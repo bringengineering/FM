@@ -15,8 +15,18 @@ function cleanId(value) { const text = String(value || ""); if (!/^[A-Za-z0-9_-]
 function bodyFor(action, input) {
   const value = input || {};
   if (action === "create") {
-    const bytes = Buffer.isBuffer(value.bytes) ? value.bytes : Buffer.from(value.bytes || []);
-    if (value.mimeType !== "application/pdf" || !bytes.length || bytes.length > MAX_PDF_BYTES) fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
+    // Electron IPC callers supply base64, while direct callers may supply bytes.
+    // Decode once before validation so the uploaded link serves the original PDF.
+    let bytes;
+    if (typeof value.bytes === "string") {
+      if (value.bytes.length > 4 * Math.ceil(MAX_PDF_BYTES / 3) || value.bytes.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value.bytes)) fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
+      bytes = Buffer.from(value.bytes, "base64");
+      if (bytes.toString("base64") !== value.bytes) fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
+    } else if (Buffer.isBuffer(value.bytes) || value.bytes instanceof Uint8Array || Array.isArray(value.bytes)) {
+      if (value.bytes.length > MAX_PDF_BYTES) fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
+      bytes = Buffer.from(value.bytes);
+    } else fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
+    if (value.mimeType !== "application/pdf" || bytes.length < 5 || bytes.length > MAX_PDF_BYTES || bytes.subarray(0, 5).toString("ascii") !== "%PDF-") fail("12MB 이하 PDF 문서만 전송할 수 있습니다.");
     return Object.assign({}, value, { bytes: bytes.toString("base64") });
   }
   if (action === "send") {

@@ -8,8 +8,10 @@ function clean(value, limit = 160) { return String(value == null ? "" : value).t
 function safeId(value) { const result = clean(value, 120); if (!/^[A-Za-z0-9_-]{1,120}$/.test(result)) fail(); return result; }
 function phone(value) { const result = clean(value, 30).replace(/\D/g, ""); if (!/^01\d{8,9}$/.test(result)) fail(); return result; }
 function decodeBase64(value) {
+  if (typeof value !== "string" || value.length > 4 * Math.ceil(MAX_PDF_BYTES / 3)) fail("INPUT_TOO_LARGE");
   let binary; try { binary = atob(String(value || "")); } catch { fail(); }
   if (!binary.length || binary.length > MAX_PDF_BYTES) fail("INPUT_TOO_LARGE");
+  if (!binary.startsWith("%PDF-")) fail("INVALID_INPUT");
   const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
