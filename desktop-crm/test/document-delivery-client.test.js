@@ -7,11 +7,36 @@ function response(status, value) { return { ok: status >= 200 && status < 300, s
 test("calls only the fixed HTTPS document-delivery gateway with authentication", async () => {
   const calls = [];
   const result = await requestDocumentDelivery({ endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery", idToken: "token", action: "capabilities", fetchImpl: async (url, options) => { calls.push([url, options]); return response(200, { ok: true, capabilities: { kakao: true, sms: false } }); } });
-  assert.deepEqual(result, { ok: true, capabilities: { kakao: true, sms: false } });
+  assert.deepEqual(result, { ok: true, capabilities: { kakao: true, monthlyReport: false, sms: false } });
   assert.equal(calls[0][0], "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery/capabilities");
   assert.equal(calls[0][1].headers.authorization, "Bearer token");
   await assert.rejects(requestDocumentDelivery({ endpoint: "http://gateway.example/v1/document-delivery", idToken: "token", action: "capabilities" }), /연결 주소/);
   await assert.rejects(requestDocumentDelivery({ endpoint: "https://gateway.example/v1/document-delivery", idToken: "token", action: "capabilities" }), /연결 주소/);
+});
+
+test("preserves monthly-report approval independently of other Kakao templates", async () => {
+  for (const kakao of [true, false]) {
+    for (const monthlyReport of [true, false]) {
+      const capabilities = { kakao, monthlyReport, sms: false };
+      const result = await requestDocumentDelivery({
+        endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery",
+        idToken: "token", action: "capabilities",
+        fetchImpl: async () => response(200, { ok: true, capabilities }),
+      });
+      assert.deepEqual(result.capabilities, capabilities);
+    }
+  }
+});
+
+test("missing or non-boolean approval values never enable document delivery", async () => {
+  for (const capabilities of [undefined, null, {}, { kakao: "true", monthlyReport: "true", sms: 1 }]) {
+    const result = await requestDocumentDelivery({
+      endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery",
+      idToken: "token", action: "capabilities",
+      fetchImpl: async () => response(200, { ok: true, capabilities }),
+    });
+    assert.deepEqual(result.capabilities, { kakao: false, monthlyReport: false, sms: false });
+  }
 });
 
 test("validates bounded PDF uploads and idempotent sends", async () => {
