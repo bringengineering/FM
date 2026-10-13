@@ -99,22 +99,23 @@ function createService(deps) {
       const reports = await deps.reports(); session.check();
       const customer = assertBinding(record, latest, reports.reports);
       const deliveryCustomerId = "wr_" + hash(record.id).slice(0,40);
-      const created = await deps.delivery("create", {documentId: record.id, customerId: deliveryCustomerId, documentType: "completion_report", documentName: record.title,
-        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: ready.bytes.toString("base64")});
-      session.check();
-      if (!created?.ok || !created.documentId) throw new Error("보고서 보안 링크를 준비하지 못했습니다.");
       const finalData = await deps.store(); session.check();
       const finalReports = await deps.reports(); session.check();
       Docs.resolve(finalData.buildingDocuments, finalData.customers, input);
       assertBinding(record, finalData, finalReports.reports);
       providerStarted = true;
-      const sent = await deps.delivery("send", {channel: "kakao", idempotencyKey: "wr_" + hash(record.id + input.sha256).slice(0,48),
-        documentId: created.documentId, customerId: deliveryCustomerId, customerName: customer.name || customer.company || "건물주", phone: Docs.phone(customer.phone)});
+      const sent = await deps.delivery("createAndSend", {documentId: record.id, customerId: deliveryCustomerId, documentType: "completion_report", documentName: record.title,
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: ready.bytes.toString("base64"),
+        delivery: {channel: "kakao", idempotencyKey: "wr_" + hash(record.id + input.sha256).slice(0,48), customerName: customer.name || customer.company || "건물주", phone: Docs.phone(customer.phone)}});
       session.check();
-      if (!sent?.ok) throw new Error("발송 접수 결과를 확인하지 못했습니다. 고객 알림에서 확인해 주세요. PDF는 보관되어 있습니다.");
-      const updated = await deps.mutate(record.id, row => ({...row, workReportDelivery: {status: "requested", requestedAt, messageId: String(sent.messageId || "").slice(0,120)}}), session);
+      if (!sent?.ok) {
+        if (/^DELIVERY_(?:PROVIDER_AUTH_FAILED|PROVIDER_SERVICE_NOT_FOUND|PROVIDER_LIMITED|PROVIDER_REJECTED|CONFIGURATION_ERROR)$/.test(sent?.code || "")) providerStarted = false;
+        throw new Error(sent?.error || "발송 접수 결과를 확인하지 못했습니다. 고객 알림에서 확인해 주세요. PDF는 보관되어 있습니다.");
+      }
+      const status = sent.status === "unknown" ? "unknown" : "requested";
+      const updated = await deps.mutate(record.id, row => ({...row, workReportDelivery: {status, requestedAt, messageId: String(sent.messageId || "").slice(0,120)}}), session);
       session.check();
-      return {ok: true, status: "requested", record: updated};
+      return {ok: true, status, messageId: String(sent.messageId || "").slice(0,120), record: updated};
     } catch (error) {
       if (claimed) {
         // Unknown send outcomes never auto-retry or revoke a link the customer may have received.

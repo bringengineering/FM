@@ -17,7 +17,7 @@ function fixture(options = {}) {
   let active = true;
   const session = {user:{uid:"user_fixture",role:options.role || "admin"},check:()=>{if(!active) throw Error("session changed");}};
   const deps = {
-    store:async()=>structuredClone(data), reports:async()=>({reports:[structuredClone(report)]}),
+    store:async()=>{if(options.changeOwner&&data.buildingDocuments[0]?.workReportDelivery?.status==="sending")data.customers[0].phone="010-0000-0001";return structuredClone(data);}, reports:async()=>({reports:[structuredClone(report)]}),
     pdf:async input=>{events.push(["pdf",input]); return {ok:true,bytes,photos:options.missingPhotos ? 1 : 2};},
     upload:async input=>{events.push(["upload",input]); if(options.uploadFailure) throw Error("upload failed"); if(options.expireUpload) active=false; return {id:"archived_drive_pdf"};},
     download:async(fileId, metadata)=>{events.push(["download",fileId]); const checked=Pdf.verifyPdf(bytes); assert.equal(metadata.sha256,checked.sha256); return bytes;},
@@ -27,6 +27,11 @@ function fixture(options = {}) {
       if(action==="capabilities")return {ok:true,capabilities:{kakao:!options.unconfigured}};
       if(action==="create") { if(options.changeOwner)data.customers[0].phone="010-0000-0001"; if(options.createFailure)throw Error("create failed"); return {ok:true,documentId:"delivery_fixture"}; }
       if(action==="send") { if(options.sendFailure)throw Error("unknown send outcome"); return {ok:true,messageId:"message_fixture"}; }
+      if(action==="createAndSend") {
+        if(options.createFailure)return {ok:false,code:"DELIVERY_PROVIDER_REJECTED",error:"업체가 요청을 거절했습니다."};
+        if(options.sendFailure)throw Error("unknown send outcome");
+        return {ok:true,documentId:"delivery_fixture",messageId:"message_fixture",status:"requested"};
+      }
     }
   };
   const service=Archive.createService(deps);
@@ -48,20 +53,20 @@ test("발송은 저장 PDF 그대로·현재 건물주에게만 한 번 접수�
   const h=fixture(); const {record}=await h.save(); const request=h.request(record);
   const sent=await h.service.send(request,h.session);
   assert.equal(sent.status,"requested");
-  assert.equal(h.events.find(e=>e[0]==="create")[1].bytes,bytes.toString("base64"));
-  assert.equal(h.events.find(e=>e[0]==="send")[1].phone,"01000000000");
+  assert.equal(h.events.find(e=>e[0]==="createAndSend")[1].bytes,bytes.toString("base64"));
+  assert.equal(h.events.find(e=>e[0]==="createAndSend")[1].delivery.phone,"01000000000");
   const claim=h.events.findIndex(e=>e[0]==="persist"&&e[1]==="sending");
-  assert.ok(claim<h.events.findIndex(e=>e[0]==="create"));
+  assert.ok(claim<h.events.findIndex(e=>e[0]==="createAndSend"));
   await assert.rejects(h.service.send(request,h.session),/이미 발송/);
   // A fresh process must honor the persisted claim too.
   await assert.rejects(Archive.createService(h.deps).send(request,h.session),/이미 발송/);
-  assert.equal(h.events.filter(e=>e[0]==="send").length,1);
+  assert.equal(h.events.filter(e=>e[0]==="createAndSend").length,1);
 });
 test("두 창의 동시 요청도 저장된 발송 선점으로 한 건만 보낸다",async()=>{
   const h=fixture(); const {record}=await h.save();
   const results=await Promise.allSettled([h.service.send(h.request(record),h.session),Archive.createService(h.deps).send(h.request(record),h.session)]);
   assert.equal(results.filter(r=>r.status==="fulfilled").length,1);
-  assert.equal(h.events.filter(e=>e[0]==="send").length,1);
+  assert.equal(h.events.filter(e=>e[0]==="createAndSend").length,1);
 });
 test("미등록 번호·건물주도 PDF 보관은 가능하나 발송은 불가능하다",async()=>{
   for(const noOwner of [false,true]) {const h=fixture(); if(noOwner)h.data.customers=[];else h.data.customers[0].phone="";
@@ -84,12 +89,12 @@ test("바뀐 보고서·수신자·해시·권한·삭제·설정 누락은 발�
     await assert.rejects(h.service.send(req,h.session));assert.equal(h.events.some(e=>e[0]==="send"),false,mode);
   }
 });
-test("링크 생성 중 번호 변경은 막고, 발송 결과 불명은 재발송하지 않는다",async()=>{
+test("발송 직전 번호 변경은 막고, 발송 결과 불명은 재발송하지 않는다",async()=>{
   for(const options of [{changeOwner:true},{sendFailure:true},{createFailure:true}]) {
     const h=fixture(options);const {record}=await h.save();await assert.rejects(h.service.send(h.request(record),h.session));
     const status=h.data.buildingDocuments[0].workReportDelivery.status;
     assert.equal(status,options.sendFailure?"unknown":"failed");
-    if(options.sendFailure) {await assert.rejects(h.service.send(h.request(record),h.session),/이미 발송/);assert.equal(h.events.filter(e=>e[0]==="send").length,1);}
+    if(options.sendFailure) {await assert.rejects(h.service.send(h.request(record),h.session),/이미 발송/);assert.equal(h.events.filter(e=>e[0]==="createAndSend").length,1);}
     else assert.equal(h.events.some(e=>e[0]==="send"),false);
     assert.ok(Docs.normalize(h.data.buildingDocuments[0]));
   }
@@ -97,5 +102,5 @@ test("링크 생성 중 번호 변경은 막고, 발송 결과 불명은 재발�
 test("발송 전 안전한 실패만 재시도할 수 있다",async()=>{
   const opts={createFailure:true};const h=fixture(opts);const {record}=await h.save();await assert.rejects(h.service.send(h.request(record),h.session));
   opts.createFailure=false;assert.equal((await h.service.send(h.request(record),h.session)).ok,true);
-  assert.equal(h.events.filter(e=>e[0]==="send").length,1);
+  assert.equal(h.events.filter(e=>e[0]==="createAndSend").length,2,"거절이 확인된 요청만 사용자가 재시도할 수 있다");
 });

@@ -99,6 +99,7 @@ function harness(options = {}) {
       if (action === "capabilities") return {ok: true, capabilities: {kakao: true, monthlyReport: true}};
       if (action === "create") return {ok: true, documentId: "delivery_fixture"};
       if (action === "send") return {ok: !options.sendFailure};
+      if (action === "createAndSend") return options.sendFailure ? {ok: false, code: "DELIVERY_PROVIDER_REJECTED", error: "업체가 요청을 거절했습니다."} : {ok: true, documentId: "delivery_fixture", messageId: "message_fixture", status: "requested"};
       return {ok: true};
     },
     createWorkReportPdfArtifact: async ({report}) => ({ok: true, bytes, photos: options.photoFailure ? 0 : report.items.reduce((n, item) => n + item.before.length + item.after.length, 0)}),
@@ -142,19 +143,20 @@ test("작업보고서 보관 채널은 익명·조회자·마케팅·비밀번�
     assert.equal(h.events.length,0);
   }
 });
-test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 실패 시 보안 링크를 폐기한다", async () => {
+test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 한 요청으로 PDF와 발송을 처리한다", async () => {
   const h = harness();
   assert.equal((await h.context.sendSavedCustomerDocument(request())).ok, true);
-  assert.equal(h.events.find(item => item[0] === "create")[1].bytes, bytes.toString("base64"));
-  assert.equal(h.events.find(item => item[0] === "send")[1].phone, Docs.phone(customer.phone));
+  assert.equal(h.events.find(item => item[0] === "createAndSend")[1].bytes, bytes.toString("base64"));
+  assert.equal(h.events.find(item => item[0] === "createAndSend")[1].delivery.phone, Docs.phone(customer.phone));
+  await assert.rejects(h.context.sendSavedCustomerDocument(request()), /이미 발송/);
   for (const options of [{role: "member"}, {role: "viewer"}, {marketing: true}, {changeSession: true}]) {
     const blocked = harness(options);
     await assert.rejects(blocked.context.sendSavedCustomerDocument(request()));
-    assert.equal(blocked.events.filter(item => item[0] === "send").length, 0);
+    assert.equal(blocked.events.filter(item => item[0] === "createAndSend").length, 0);
   }
   const failed = harness({sendFailure: true});
   await assert.rejects(failed.context.sendSavedCustomerDocument(request()));
-  assert.equal(failed.events.at(-1)[0], "revoke");
+  assert.equal(failed.events.at(-1)[0], "createAndSend");
   const anonymous = harness(); anonymous.state.user = null;
   await assert.rejects(anonymous.context.sendSavedCustomerDocument(request()));
 });
@@ -163,7 +165,7 @@ test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 �
   const input = {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt, report: {buildingName: "forged"}};
   const h = harness({reports: [report]});
   assert.equal((await h.context.sendSavedCustomerDocument(input)).ok, true);
-  assert.equal(h.events.find(item => item[0] === "create")[1].documentType, "completion_report");
+  assert.equal(h.events.find(item => item[0] === "createAndSend")[1].documentType, "completion_report");
   await assert.rejects(h.context.sendSavedCustomerDocument({...input, updatedAt: "old"}), /변경/);
   await assert.rejects(harness({reports: [report], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
 });

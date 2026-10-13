@@ -7,6 +7,32 @@ function json(value, status = 200) { return new Response(JSON.stringify(value), 
 function clean(value, limit = 160) { return String(value == null ? "" : value).trim().slice(0, limit); }
 function safeId(value) { const result = clean(value, 120); if (!/^[A-Za-z0-9_-]{1,120}$/.test(result)) fail(); return result; }
 function phone(value) { const result = clean(value, 30).replace(/\D/g, ""); if (!/^01\d{8,9}$/.test(result)) fail(); return result; }
+function serviceId(value) {
+  // Colons are valid path characters in NCP resource identifiers. Sign the same
+  // canonical URI that SENS documents and receives, not a percent-encoded ID.
+  const result = clean(value, 200);
+  if (!/^[A-Za-z0-9:_-]{1,200}$/.test(result)) fail("DELIVERY_CONFIGURATION_ERROR");
+  return result;
+}
+function providerCode(value) { const code = String(value || ""); return /^(?:[AB]\d{3}|\d{4})$/.test(code) ? code : ""; }
+async function readJson(request, maxBytes) {
+  if (Number(request.headers.get("content-length")) > maxBytes) fail("INPUT_TOO_LARGE");
+  const reader = request.body?.getReader();
+  if (!reader) fail();
+  let size = 0; const chunks = [];
+  try {
+    for (;;) {
+      const {done, value} = await reader.read(); if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) { await reader.cancel(); fail("INPUT_TOO_LARGE"); }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) { if (error?.code) throw error; fail(); }
+  finally { reader.releaseLock(); }
+}
 function decodeBase64(value) {
   if (typeof value !== "string" || value.length > 4 * Math.ceil(MAX_PDF_BYTES / 3)) fail("INPUT_TOO_LARGE");
   let binary; try { binary = atob(String(value || "")); } catch { fail(); }
@@ -71,31 +97,64 @@ function alimTalkContent(templateCode, variables) {
   return fail();
 }
 
-export async function sendNcpDocument(input, options = {}) {
-  const env = input.env || {}, fetchImpl = options.fetchImpl || globalThis.fetch;
+async function ncpJson(method, uri, body, env, options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
   const timestamp = String((options.now || Date.now)());
   const accessKey = clean(env.NCP_ACCESS_KEY, 200), secretKey = clean(env.NCP_SECRET_KEY, 300);
-  if (!accessKey || !secretKey) fail("DELIVERY_UNAVAILABLE");
+  if (!accessKey || !secretKey) fail("DELIVERY_CONFIGURATION_ERROR");
+  const signature = await ncpSignature(method, uri, timestamp, accessKey, secretKey);
+  let response;
+  try {
+    response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method, headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, ...(body ? {body: JSON.stringify(body)} : {}), redirect: "error", signal: AbortSignal.timeout(12000) });
+  } catch { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE"); }
+  if (!response.ok) {
+    await response.body?.cancel();
+    fail(response.status === 401 || response.status === 403 ? "DELIVERY_PROVIDER_AUTH_FAILED"
+      : response.status === 404 ? "DELIVERY_PROVIDER_SERVICE_NOT_FOUND"
+        : response.status === 429 ? "DELIVERY_PROVIDER_LIMITED"
+          : response.status >= 500 ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_PROVIDER_REJECTED");
+  }
+  let value;
+  try { value = await readJson(response, 256 * 1024); }
+  catch { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE"); }
+  return value;
+}
+
+export async function sendNcpDocument(input, options = {}) {
+  const env = input.env || {};
   let uri, body;
   if (input.channel === "kakao") {
-    uri = `/alimtalk/v2/services/${encodeURIComponent(clean(env.NCP_BIZ_MESSAGE_SERVICE_ID, 200))}/messages`;
+    uri = `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
     const link = `https://${input.variables.문서링크}`;
     const buttonName = input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인"
       : input.templateCode === "BRINGCOMPLETIONREPORTV1" ? "결과보고서 확인"
         : input.templateCode === "BRINGMONTHLYREPORTV1" ? "월간 보고서 확인" : fail();
     body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: buttonName, linkMobile: link, linkPc: link }] }] };
   } else if (input.channel === "sms") {
-    uri = `/sms/v2/services/${encodeURIComponent(clean(env.NCP_SENS_SERVICE_ID, 200))}/messages`;
+    uri = `/sms/v2/services/${serviceId(env.NCP_SENS_SERVICE_ID)}/messages`;
     const content = `[BRING CARE] ${input.variables.고객명}님, ${input.variables.문서명}\nhttps://${input.variables.문서링크}\n열람기한: ${input.variables.만료일}`;
     body = { type: new TextEncoder().encode(content).byteLength > 80 ? "LMS" : "SMS", from: clean(env.NCP_SENS_FROM, 20).replace(/\D/g, ""), content, messages: [{ to: input.phone }] };
   } else fail();
-  const signature = await ncpSignature("POST", uri, timestamp, accessKey, secretKey);
-  const response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method: "POST", headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, body: JSON.stringify(body), redirect: "error" });
-  let value; try { value = await response.json(); } catch { fail("DELIVERY_UNAVAILABLE"); }
-  if (!response.ok) fail("DELIVERY_UNAVAILABLE");
-  const providerMessageId = clean(value?.messages?.[0]?.messageId || value?.requestId, 120);
-  if (!providerMessageId) fail("DELIVERY_UNAVAILABLE");
+  const value = await ncpJson("POST", uri, body, env, options);
+  const first = value?.messages?.[0];
+  if (value?.statusName === "fail" || (value?.statusCode != null && String(value.statusCode) !== "202") || (input.channel === "kakao" && first?.requestStatusCode && first.requestStatusCode !== "A000")) fail("DELIVERY_PROVIDER_REJECTED");
+  if (String(value?.statusCode) !== "202" || (input.channel === "kakao" && first?.requestStatusCode !== "A000")) fail("DELIVERY_STATUS_UNKNOWN");
+  const providerMessageId = clean(input.channel === "kakao" ? first?.messageId : value?.requestId, 120);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(providerMessageId)) fail("DELIVERY_STATUS_UNKNOWN");
   return { providerMessageId };
+}
+
+export async function readNcpDocumentStatus(record, env, options = {}) {
+  if (record.channel !== "kakao") return {status: "requested"};
+  const id = safeId(record.providerMessageId);
+  const value = await ncpJson("GET", `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages/${id}`, null, env, options);
+  if (value?.messageId !== id) fail("DELIVERY_STATUS_UNAVAILABLE");
+  const code = providerCode(value.messageStatusCode || value.requestStatusCode);
+  if (value.requestStatusCode && value.requestStatusCode !== "A000") return {status: "failed", failureCode: code};
+  if (value.messageStatusCode === "0000" && value.messageStatusName === "success") return {status: "delivered"};
+  if (value.messageStatusCode === "3005") return {status: "unknown", failureCode: code};
+  if (value.messageStatusName === "fail") return {status: "failed", failureCode: code};
+  return {status: "requested"};
 }
 
 export function createDocumentDeliveryHandler(options = {}) {
@@ -103,6 +162,8 @@ export function createDocumentDeliveryHandler(options = {}) {
   const randomId = options.randomId || (() => crypto.randomUUID().replace(/-/g, ""));
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const sendProvider = options.sendProvider || (input => sendNcpDocument(input, { fetchImpl, now }));
+  const readProvider = options.readProvider || ((record, env) => readNcpDocumentStatus(record, env, {fetchImpl, now}));
+  const activeRequests = new Set();
   return async function handle(request, identity, env) {
     const url = new URL(request.url), capabilities = configured(env);
     const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})$/.exec(url.pathname);
@@ -119,8 +180,20 @@ export function createDocumentDeliveryHandler(options = {}) {
     if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport: capabilities.monthlyReport, sms: capabilities.sms } });
     if (!capabilities.storage) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
 
-    if (url.pathname === "/v1/document-delivery/documents" && request.method === "POST") {
-      let input; try { input = await request.json(); } catch { fail(); }
+    const combined = url.pathname === "/v1/document-delivery/documents-and-messages";
+    if ((url.pathname === "/v1/document-delivery/documents" || combined) && request.method === "POST") {
+      const input = await readJson(request, 4 * Math.ceil(MAX_PDF_BYTES / 3) + 16384);
+      let key;
+      if (combined) {
+        key = safeId(input.delivery?.idempotencyKey);
+        if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
+        const cached = await env.DOCUMENT_DELIVERY.get(`request:${key}`, "json");
+        if (cached && cached.status !== "failed") return json(cached, cached.ok === false ? 409 : 200);
+        // Validate the complete recipient request before storing a PDF.
+        phone(input.delivery.phone);
+        if (input.delivery.channel !== "kakao") fail();
+        if (!(input.documentType === "monthly_report" ? capabilities.monthlyReport : capabilities.kakao)) fail("DELIVERY_UNAVAILABLE");
+      }
       const documentType = clean(input.documentType, 40); documentTemplate(documentType);
       if (input.mimeType !== "application/pdf") fail();
       decodeBase64(input.bytes);
@@ -132,30 +205,68 @@ export function createDocumentDeliveryHandler(options = {}) {
       if (!record.documentName) fail();
       await env.DOCUMENT_DELIVERY.put(`doc:${id}`, JSON.stringify(record), { expirationTtl: expiration.ttl });
       await env.DOCUMENT_DELIVERY.put(`token:${token}`, id, { expirationTtl: expiration.ttl });
+      if (combined) return dispatch(record, {...input.delivery, customerId: record.customerId}, identity, env, key);
       return json({ ok: true, documentId: id, secureUrl: record.secureUrl, expiresAt: record.expiresAt });
     }
 
     if (url.pathname === "/v1/document-delivery/messages" && request.method === "POST") {
-      let input; try { input = await request.json(); } catch { fail(); }
+      const input = await readJson(request, 16384);
       const key = safeId(input.idempotencyKey), cached = await env.DOCUMENT_DELIVERY.get(`request:${key}`, "json");
       if (cached) return json(cached);
       const channel = input.channel === "sms" ? "sms" : input.channel === "kakao" ? "kakao" : fail();
       const document = await env.DOCUMENT_DELIVERY.get(`doc:${safeId(input.documentId)}`, "json");
       if (!document || document.customerId !== safeId(input.customerId)) return json({ ok: false, code: "DOCUMENT_NOT_FOUND" }, 404);
+      return dispatch(document, input, identity, env, key);
+    }
+    async function dispatch(document, input, sender, dispatchEnv, key) {
+      const expiresAt = new Date(document.expiresAt).getTime();
+      if (document.revokedAt || !Number.isFinite(expiresAt) || expiresAt <= now()) return json({ok: false, code: "DOCUMENT_EXPIRED"}, 410);
+      const channel = input.channel === "sms" ? "sms" : input.channel === "kakao" ? "kakao" : fail();
+      const recipientPhone = phone(input.phone);
       const channelReady = channel === "sms" ? capabilities.sms
         : document.documentType === "monthly_report" ? capabilities.monthlyReport : capabilities.kakao;
       if (!channelReady) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
+      if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
+      activeRequests.add(key);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
-      const provider = await sendProvider({ channel, phone: phone(input.phone), templateCode: documentTemplate(document.documentType), variables, document, env });
-      const result = { ok: true, messageId, status: "requested", channel, templateId: documentTemplate(document.documentType), providerMessageId: clean(provider.providerMessageId, 120) };
-      await env.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
-      await env.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
-      return json(result);
+      const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType)};
+      // No automatic retry after a possibly accepted POST. Preserve its link.
+      try {
+        await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
+        await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
+        const provider = await sendProvider({ channel, phone: recipientPhone, templateCode: documentTemplate(document.documentType), variables, document, env: dispatchEnv });
+        const result = {...pending, status: "requested", providerMessageId: clean(provider.providerMessageId, 120)};
+        await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
+        await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
+        return json(result);
+      } catch (error) {
+        const code = /^DELIVERY_(?:PROVIDER_AUTH_FAILED|PROVIDER_SERVICE_NOT_FOUND|PROVIDER_LIMITED|PROVIDER_REJECTED|CONFIGURATION_ERROR)$/.test(error?.code || "") ? error.code : "DELIVERY_STATUS_UNKNOWN";
+        if (code !== "DELIVERY_STATUS_UNKNOWN") {
+          const failed = {...pending, ok: false, code, status: "failed"};
+          await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(failed), {expirationTtl: MAX_TTL_SECONDS});
+          await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(failed), {expirationTtl: MAX_TTL_SECONDS});
+          document.revokedAt = new Date(now()).toISOString();
+          await dispatchEnv.DOCUMENT_DELIVERY.put(`doc:${document.id}`, JSON.stringify(document), {expirationTtl: MAX_TTL_SECONDS});
+          return json(failed, 502);
+        }
+        return json(pending);
+      } finally { activeRequests.delete(key); }
     }
     const messageMatch = /^\/v1\/document-delivery\/messages\/([A-Za-z0-9_-]{1,120})$/.exec(url.pathname);
     if (messageMatch && request.method === "GET") {
       const record = await env.DOCUMENT_DELIVERY.get(`message:${messageMatch[1]}`, "json");
-      return record ? json(record) : json({ ok: false, code: "MESSAGE_NOT_FOUND" }, 404);
+      if (!record) return json({ ok: false, code: "MESSAGE_NOT_FOUND" }, 404);
+      if (record.status === "requested" && record.providerMessageId) {
+        try {
+          const status = await readProvider(record, env);
+          if (["requested", "delivered", "failed", "unknown"].includes(status.status)) {
+            record.status = status.status;
+            if (providerCode(status.failureCode)) record.failureCode = providerCode(status.failureCode);
+            await env.DOCUMENT_DELIVERY.put(`message:${messageMatch[1]}`, JSON.stringify(record), {expirationTtl: MAX_TTL_SECONDS});
+          }
+        } catch { /* Receipt unavailability is not evidence of delivery failure. */ }
+      }
+      return json(record);
     }
     const revokeMatch = /^\/v1\/document-delivery\/documents\/([A-Za-z0-9_-]{1,120})\/revoke$/.exec(url.pathname);
     if (revokeMatch && request.method === "POST") {

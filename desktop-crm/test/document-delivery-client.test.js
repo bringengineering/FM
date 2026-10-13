@@ -69,3 +69,22 @@ test("rejects non-PDF, malformed base64 and oversized encoded input before sendi
     }), /PDF/);
   }
 });
+
+test("combined upload/send validates PDF and the stable request key before any request", async () => {
+  const endpoint = "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery";
+  const input = {mimeType:"application/pdf",bytes:Buffer.from("%PDF-test"),delivery:{idempotencyKey:"stable_request_123"}};
+  await requestDocumentDelivery({endpoint,idToken:"fixture",action:"createAndSend",input,fetchImpl:async(url,init)=>{
+    assert.match(url,/\/documents-and-messages$/);assert.equal(JSON.parse(init.body).bytes,Buffer.from("%PDF-test").toString("base64"));return response(200,{ok:true,status:"requested"});
+  }});
+  await assert.rejects(requestDocumentDelivery({endpoint,idToken:"fixture",action:"createAndSend",input:{...input,delivery:{}}}),/요청 키/);
+});
+test("safe server failure categories survive without returning response text or secret links",async()=>{
+  const endpoint="https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery";
+  for(const code of ["DELIVERY_PROVIDER_AUTH_FAILED","DELIVERY_PROVIDER_REJECTED","DOCUMENT_NOT_FOUND"]) {
+    await assert.rejects(requestDocumentDelivery({endpoint,idToken:"fixture",action:"status",input:{messageId:"fixture"},fetchImpl:async()=>response(502,{ok:false,code,error:"SECRET_SENTINEL",secureUrl:"https://secret.invalid/token"})}),error=>error.code===code&&!/SECRET_SENTINEL|secret.invalid/.test(error.message));
+  }
+  await assert.rejects(requestDocumentDelivery({endpoint,idToken:"fixture",action:"status",input:{messageId:"fixture"},fetchImpl:async()=>response(500,{ok:false,code:"SECRET_SENTINEL"})}),{code:"DOCUMENT_DELIVERY_UNAVAILABLE"});
+});
+test("a lost send response is unknown, not a confirmed failure suitable for automatic resend",async()=>{
+  await assert.rejects(requestDocumentDelivery({endpoint:"https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery",idToken:"fixture",action:"send",input:{idempotencyKey:"stable_request_123"},fetchImpl:async()=>{throw Error("network");}}),{code:"DELIVERY_STATUS_UNKNOWN"});
+});

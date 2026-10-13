@@ -82,7 +82,7 @@
   let selectedCleaningOrderDetailId = "";
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
-  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", savedDocumentId: "", busy: false, result: "", messageToolsOpen: false };
+  let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", savedDocumentId: "", busy: false, result: "", receipt: null, messageToolsOpen: false };
   let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
@@ -4598,6 +4598,9 @@
       adminCanSend: canAdministerSecurity(),
       busy: state.busy,
       result: state.result,
+      receipt: state.receipt && state.receipt.generation === authGeneration ? state.receipt : null,
+      receiptMatchesSelection: Boolean(state.receipt && state.receipt.generation === authGeneration && state.receipt.customerId === customer?.id && state.receipt.kind === state.category && state.receipt.documentId === (state.savedDocumentId || state.workReportId)
+        && state.receipt.updatedAt === (state.savedDocumentId ? savedDocuments.find(item => item.id === state.savedDocumentId)?.updatedAt : workReport?.updatedAt)),
       sourceTypeRequired: Boolean(template.requiresSource),
       noticeDecision: selectedDecision,
       selectedBuildingOwner,
@@ -4717,9 +4720,11 @@
         finally { if (request.kind === "workReport" && request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
         if (sendGeneration !== authGeneration) return;
         if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
-        state.result = title + " 알림톡 발송 요청 접수 · 실제 전달 상태는 발송 결과에서 확인해 주세요.";
+        state.receipt = {generation: sendGeneration, messageId: String(result.messageId || ""), status: result.status === "requested" ? "requested" : "unknown", label: request.title, kind: request.kind, documentId: request.documentId, updatedAt: request.updatedAt, customerId: customer.id};
+        state.result = state.receipt.status === "requested" ? title + " 알림톡 발송 요청 접수 · 실제 전달 상태는 별도로 확인합니다." : "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 상태와 업체 기록을 확인해 주세요.";
+        if (state.receipt.status === "requested" && state.receipt.messageId) await refreshCustomerAlimTalkDelivery(true);
         await refreshOperations({ silent: true, render: false });
-        showToast(state.result, "success");
+        showToast(state.result, ["unknown", "failed"].includes(state.receipt.status) ? "error" : "success");
       }
     } catch (error) {
       state.result = error && error.message || "알림톡 발송을 요청하지 못했습니다.";
@@ -4727,6 +4732,29 @@
     } finally {
       state.busy = false;
       if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
+    }
+  }
+
+  async function refreshCustomerAlimTalkDelivery(silent = false) {
+    const state = customerAlimTalkState, receipt = state.receipt;
+    if (!receipt?.messageId || receipt.generation !== authGeneration || !canAdministerSecurity()) return;
+    const generation = authGeneration;
+    if (!silent) { state.busy = true; renderCustomerAlimTalk(); }
+    try {
+      const result = await api.readCustomerDocumentDelivery({messageId: receipt.messageId});
+      if (generation !== authGeneration || state.receipt !== receipt) return;
+      if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error(result?.error || "전달 상태를 확인하지 못했습니다. 재발송하지 말고 잠시 후 상태를 다시 확인해 주세요.");
+      receipt.status = result.status;
+      receipt.failureCode = /^(?:[AB]\d{3}|\d{4})$/.test(String(result.failureCode || "")) ? result.failureCode : "";
+      state.result = result.status === "delivered" ? "카카오톡 전달이 완료됐습니다. 고객의 읽음 여부와는 다릅니다."
+        : result.status === "failed" ? "알림톡 전달에 실패했습니다. 업체 결과 코드: " + (receipt.failureCode || "확인 필요")
+          : result.status === "unknown" ? "전달 결과가 불확실합니다. 중복 발송하지 말고 업체 기록을 확인해 주세요."
+            : "알림톡 접수 완료 · 카카오톡 전달 확인 중입니다.";
+    } catch (error) {
+      if (!silent && generation === authGeneration) state.result = error.message || "전달 상태를 확인하지 못했습니다.";
+    } finally {
+      if (!silent) state.busy = false;
+      if (generation === authGeneration && currentView === "customerAlimTalk") renderCustomerAlimTalk();
     }
   }
 
@@ -14132,7 +14160,8 @@
   }, true);
 
   document.addEventListener("click", async event => {
-    if (currentView === "customerAlimTalk" && customerAlimTalkState.busy && event.target.closest("[data-alimtalk-category], [data-alimtalk-clear], [data-alimtalk-open-quote], [data-alimtalk-open-monthly], [data-alimtalk-send], [data-alimtalk-preview]")) return;
+    if (currentView === "customerAlimTalk" && customerAlimTalkState.busy && event.target.closest("[data-alimtalk-category], [data-alimtalk-clear], [data-alimtalk-open-quote], [data-alimtalk-open-monthly], [data-alimtalk-send], [data-alimtalk-preview], [data-alimtalk-status]")) return;
+    if (event.target.closest("[data-alimtalk-status]") && currentView === "customerAlimTalk") { void refreshCustomerAlimTalkDelivery(); return; }
     if (event.target.closest("[data-alimtalk-preview]") && currentView === "customerAlimTalk") {
       await previewCustomerDocument();
       return;
