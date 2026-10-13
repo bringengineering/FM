@@ -13867,10 +13867,6 @@
     }
     selectedCustomerId = customerId;
     selectedCustomerDrawerMode = "customer";
-    if (currentView === "customers" && buildingAtlasView?.selectCustomer) {
-      closeDrawer();
-      return buildingAtlasView.selectCustomer(customerId);
-    }
     drawer.classList.add("customer-centered");
     const buildings = customerBuildings(customer);
     const activities = customerActivities(customerId);

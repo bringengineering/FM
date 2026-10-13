@@ -71,6 +71,8 @@ test('quick detail keeps untrusted names as text and explicit consultation IDs w
  const s=await setup();s.input.customers[0].name='<img onerror=bad>';await s.handle.selectCustomer('c1');
  assert.match(text(s.host),/<img onerror=bad>/);assert.equal(visit(s.host).filter(node=>node.tag==='img').length,0);
  const control=visit(s.host).find(node=>node['data-action']==='new-consultation');assert.equal(control['data-customer-id'],'c1');assert.equal(control.disabled,true);
+ assert.equal(visit(s.host).find(node=>node['data-customer-open']==='c1').textContent,'전체 상세');
+ assert.equal(visit(s.host).find(node=>node['data-building-edit']==='a').disabled,true);
  assert.equal(s.mounts(),0);s.handle.dispose();
 });
 test('the 3D leave guard protects both customer changes and closing the quick detail',async()=>{

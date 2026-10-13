@@ -108,6 +108,10 @@ export async function mountCustomerOverview(options={}) {
     }
     recordBody.setAttribute('aria-labelledby',`customer-overview-${activeTab}-tab`);appendSections(recordBody,panels[activeTab]);
     const extras=sections.filter(section=>!consultation.includes(section)&&!documents.includes(section));appendSections(extraRows,extras);
+    const detailActions=el('div','','customer-overview-actions');
+    if(customer)detailActions.append(action('전체 상세','data-customer-open',customer.id));
+    if(building){const editBuilding=action('건물 정보 수정','data-building-edit',building.id);editBuilding.disabled=!canWrite();detailActions.append(editBuilding);}
+    extraRows.prepend(detailActions);
     for(const item of getSummary(selectedCustomerId,selectedBuildingId)||[]){const metric=el('div');metric.append(el('small',item.label),el('b',item.value),el('small',item.note));extraMetrics.append(metric);}
   }
   async function select(customerId,buildingId){
