@@ -16,7 +16,16 @@ test('Firebase enforces outcome bounds, review lock, preservation and owner scop
   const access = Object.fromEntries(['admin','member','viewer','other'].map(uid=>[uid,{email:`${uid}@example.test`,enabled:true,role:uid==='other'?'member':uid}]));
   assert.equal((await request('',{crmCompany:{access}})).status,200);
   const route='crmCompany/workOrders/one';
-  const order={id:'one',title:'Test',why:'Reason',what:'Task',doneWhen:'Proof',assigneeUid:'member',status:'doing',startDate:'',dueDate:'',updatedAt:'2026-09-14T00:00:00Z',updatedBy:'admin'};
+  const W=require('../src/work-order-core');
+  const assigned=W.normalizeOrder({id:'one',title:'Test',why:'Reason',what:'Task',doneWhen:'Proof',assigneeUid:'member',status:'assigned',startDate:'',dueDate:'2026-09-18',hours:1,deliverableKind:'none',deliverable:'Proof',createdAt:'2026-09-14T00:00:00Z',createdBy:'admin',updatedAt:'2026-09-14T00:00:00Z',updatedBy:'admin'});
+  delete assigned.latestProgressUpdateId;
+  delete assigned.progressUpdates;
+  delete assigned.results;
+  // Use the real publication schema, then transition to the report-writing state.
+  assert.equal((await request(route,{...assigned,status:'doing'},'admin')).status,401,'new work must start assigned');
+  assert.equal((await request(route,{...assigned,hours:0},'admin')).status,401,'new work requires estimated hours');
+  assert.equal((await request(route,assigned,'admin')).status,200);
+  const order={...assigned,status:'doing'};
   assert.equal((await request(route,order,'admin')).status,200);
   const withReport={...order,updatedBy:'member',outcomeReport:'{"summary":"test"}'};
   assert.equal((await request(route,withReport,'member')).status,200);
@@ -33,9 +42,12 @@ test('Firebase enforces outcome bounds, review lock, preservation and owner scop
   assert.equal((await request(route,returned,'admin')).status,200);
   assert.equal((await request(route,{...returned,updatedBy:'member',outcomeReport:'{"summary":"revised"}'},'member')).status,200);
   // Exercise the real authenticated remote writer and independent session read.
-  const W=require('../src/work-order-core');
   const {FirebaseRemoteClient}=require('../src/remote');
   const full=W.normalizeOrder({...order,status:'doing',createdAt:'2026-09-14T00:00:00Z',createdBy:'admin'});
+  // Empty progress metadata is omitted by the real writer, not stored as "".
+  delete full.latestProgressUpdateId;
+  delete full.progressUpdates;
+  delete full.results;
   assert.equal((await request(route,full)).status,200);
   function client(uid){
     const remote=new FirebaseRemoteClient({Core:require('../src/core'),fs:{},safeStorage:{},shell:{},sessionFile:'',pendingFile:'',firebaseConfig:{databaseUrl:base.origin},fetchImpl:(input,options)=>{const url=new URL(input);assert.equal(url.origin,base.origin);url.searchParams.set('ns',ns);return fetch(url,options);}});
