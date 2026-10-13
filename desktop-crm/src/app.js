@@ -5018,19 +5018,37 @@
     const generation = ++buildingAtlasGeneration;
     const identity = atlasIdentity(currentAuth.user);
     const initialCustomerIntent = selectedCustomerHubId;
-    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
+    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div id="customerOverviewMetrics"></div><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
     const host = main.querySelector("#crmBuildingAtlas");
     const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && ["customers", "buildingAtlas"].includes(currentView) && currentWorkspace === "operations" && host.isConnected;
     try {
       const { mountCrmAtlas } = await import("./building-atlas/crm-host.mjs");
-      const { mountCustomerWorkspace } = await import("./building-atlas/customer-workspace.mjs");
+      const { mountCustomerWorkspace: mountLegacyCustomerWorkspace } = await import("./building-atlas/customer-workspace.mjs");
+      const { mountCustomerOverview } = await import("./building-atlas/customer-overview.mjs");
+      const { buildCustomerOverview } = await import("./building-atlas/customer-overview-core.mjs");
+      const mountCustomerWorkspace = currentView === "customers" ? mountCustomerOverview : mountLegacyCustomerWorkspace;
       if (!stillCurrent()) return;
       const signal = buildingAtlasAbort.signal;
       const instance = await mountCustomerWorkspace({ host, signal, initialCustomerId:initialCustomerIntent, getCustomers: () => store.customers.map(customer => ({id:customer.id,name:customerDisplayName(customer),buildings:customerBuildings(customer).filter(building=>!building.archivedAt)})), getVisibleCustomerIds:()=>filteredCustomers().map(c=>c.id), getVisibleBuildings:()=>atlasBuildings().filter(b=>(customerManagementFilter==="전체"||managementStatusForBuilding(buildingById(b.id))===customerManagementFilter)&&Core.normalizeText(`${b.name} ${b.address}`).includes(Core.normalizeText(searchEl.value))), getBuildings: atlasBuildings,
+        metricsHost: main.querySelector("#customerOverviewMetrics"),
+        getOverview: () => stillCurrent() ? buildCustomerOverview({
+          customers: store.customers.map(customer => ({...customer,name:customerDisplayName(customer),phone:customerPhoneText(customer.phone),managementStatus:managementStatusForCustomer(customer),buildings:customerBuildings(customer).filter(building=>!building.archivedAt)})),
+          contracts: store.contracts || [], activities: store.activities || [], tasks: store.tasks || [],
+          serviceRecords: store.serviceRecords || [], workOrders: workOrderState.loaded ? workOrderState.orders : [],
+          cases: activeCases().map(item => ({...item,complete:Core.workflowProgress(item).done>=Core.WORKFLOW_STEPS.length})),
+        }) : {rows:[],totals:{contracts:0,work:0,prospects:0,customers:0}},
+        canWrite: () => stillCurrent() && canWriteCRM(),
+        onAddWork: (customerId, buildingId) => {
+          if (!stillCurrent() || !canWriteCRM()) return;
+          const customer = customerById(customerId);
+          if (!customer || !customerBuildings(customer).some(building=>building.id===buildingId&&!building.archivedAt)) return showToast("선택한 고객의 건물 정보를 다시 확인해 주세요.", "error");
+          selectedBuildingId = buildingId;
+          workRecordEditor("");
+        },
         getProfile: (customerId, buildingId) => {
           const customer = customerById(customerId), building = buildingById(buildingId);
           return [{title:building?.name || "건물 미연결",lines:[building?.address || building?.roadAddress || "주소 미등록"]}, {title:customer?customerDisplayName(customer):"고객 미연결",lines:customer?[customerPhoneText(customer.phone)||"연락처 미등록",customer.email||"이메일 미등록",`담당자: ${customer.owner||"미지정"}`,`다음 연락: ${dateText(customer.nextContactAt)}`,`관리 상태: ${managementStatusForCustomer(customer)}`]:[]}, {title:"개인 메모 · 고객 특징",lines:[customer?.notes||"등록된 메모 없음"]}];
-        }, getSections: customerAtlasSections, getSummary:(customerId,buildingId)=>customerAtlasSummary(customerId,buildingId), getReferenceTargets:id=>stillCurrent()?atlasReferenceTargets(id):[], initialBuildingId:buildingAtlasInitialId || selectedBuildingId || undefined,
+        }, getSections: customerAtlasSections, getSummary:(customerId,buildingId)=>customerAtlasSummary(customerId,buildingId), getReferenceTargets:id=>stillCurrent()?atlasReferenceTargets(id):[], initialBuildingId:buildingAtlasInitialId || (currentView === "buildingAtlas" ? selectedBuildingId : undefined),
         mountAtlas: options => mountCrmAtlas({...options,buildings:atlasBuildings(),api,confirm:async message=>window.confirm(message),signal}) });
       if (generation !== buildingAtlasGeneration || !stillCurrent()) { instance.dispose(); return; }
       buildingAtlasView = instance;
@@ -10903,7 +10921,7 @@
     const selectedChoice = buildingOptions.find(choice => choice.value === selectedBuildingId) || buildingOptions[0] || null;
     const item = existing || { id: `service_${crypto.randomUUID()}`, buildingId: selectedChoice && selectedChoice.value || "", title: "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", startTime: "", endTime: "", completedAt: "", amount: 0, vendorName: "", owner: store.settings && store.settings.owner || "김현진", summary: "", evidenceUrl: "" };
     const cancelled = item.status === "cancelled";
-    const returnView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "workManagement";
+    const returnView = currentView === "customers" ? "customers" : currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "workManagement";
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>고객·건물 관리 목록의 고객건물별 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("고객건물 *", "buildingId", buildingOptions.map(choice => choice.value), item.buildingId, value => customerManagedBuildingChoiceLabel(buildingOptions.find(choice => choice.value === value)) || value)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${scheduleOwnerField(item.owner || "")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
     openModal();
     const form = document.getElementById("workRecordForm");
