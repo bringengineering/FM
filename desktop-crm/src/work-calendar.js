@@ -1,8 +1,9 @@
 (function (root, factory) {
-  const api = factory();
+  const schedules = typeof module === "object" && module.exports ? require("./contract-schedule-core") : root.BringContractSchedule;
+  const api = factory(schedules);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BringWorkCalendar = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (ContractSchedule) {
   const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
   const MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
   const STATUS_ORDER = { planned: 0, in_progress: 1, completed: 2, cancelled: 3 };
@@ -237,13 +238,17 @@
       };
     }).sort((a, b) => Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, "ko-KR", { numeric: true }));
 
-    const normalizedRecords = safeList(store && store.serviceRecords).filter(record => String(record.id || "") && validDate(record.scheduledDate)).map(record => {
+    const contractRecords = ContractSchedule.contractWorkOccurrences(store).map(record => ({ ...record, contractDerived: true }));
+    const normalizedRecords = [...safeList(store && store.serviceRecords), ...contractRecords].filter(record => String(record.id || "") && validDate(record.scheduledDate)).map(record => {
       const linkedBuilding = buildingMap.get(String(record.buildingId || "")) || null;
       const archived = isArchived(linkedBuilding);
       const name = buildingName(linkedBuilding);
       const status = normalizeStatus(record.status);
       return {
         id: String(record.id),
+        contractId: record.contractDerived === true ? String(record.contractId) : "",
+        occurrenceIndex: record.contractDerived === true ? record.occurrenceIndex : 0,
+        occurrenceCount: record.contractDerived === true ? record.occurrenceCount : 0,
         buildingId: String(record.buildingId || ""),
         building: linkedBuilding,
         buildingName: name,
@@ -302,12 +307,19 @@
     const content = `<span class="work-calendar-event-title">${esc(event.title)}</span>${meta ? `<span class="work-calendar-event-meta">${esc(meta)}</span>` : ""}${archived}`;
     if (compact) {
       const accessibleLabel = [event.scheduledDate, time, event.buildingName, event.title, event.statusLabel].filter(Boolean).join(" · ");
+      if (event.contractId) return canWrite
+        ? `<button type="button" class="${classes}" data-contract-edit="${esc(event.contractId)}" aria-label="${esc(`${accessibleLabel} 연결 계약 상세`)}">${content}</button>`
+        : `<div class="${classes}">${content}</div>`;
       return canWrite
         ? `<button type="button" class="${classes}" data-work-calendar-edit="${esc(event.id)}" aria-label="${esc(`${accessibleLabel} 일정 수정`)}">${content}</button>`
         : `<div class="${classes}">${content}</div>`;
     }
     const details = [time, typeLabel(event.serviceType), event.owner, event.vendorName].filter(Boolean).join(" · ");
-    return `<article class="${classes}"><div class="work-calendar-agenda-copy"><div><strong>${esc(event.title)}</strong><span class="work-calendar-status">${esc(event.statusLabel)}</span>${archived}</div><p>${esc(event.buildingLabel)}</p>${details ? `<small>${esc(details)}</small>` : ""}${event.summary ? `<small>${esc(event.summary)}</small>` : ""}</div>${canWrite ? `<div class="work-calendar-agenda-actions"><button type="button" data-work-calendar-edit="${esc(event.id)}">수정</button>${event.status !== "completed" ? `<button type="button" data-work-calendar-complete="${esc(event.id)}">완료</button>` : ""}</div>` : ""}</article>`;
+    const actions = !canWrite ? "" : event.contractId
+      ? `<div class="work-calendar-agenda-actions"><button type="button" data-contract-edit="${esc(event.contractId)}">계약 상세·수정</button></div>`
+      : `<div class="work-calendar-agenda-actions"><button type="button" data-work-calendar-edit="${esc(event.id)}">수정</button>${event.status !== "completed" ? `<button type="button" data-work-calendar-complete="${esc(event.id)}">완료</button>` : ""}</div>`;
+    const linked = event.contractId ? `<small>계약에서 자동 연결 · ${event.occurrenceIndex}/${event.occurrenceCount}회</small>` : "";
+    return `<article class="${classes}"><div class="work-calendar-agenda-copy"><div><strong>${esc(event.title)}</strong><span class="work-calendar-status">${esc(event.statusLabel)}</span>${archived}</div><p>${esc(event.buildingLabel)}</p>${details ? `<small>${esc(details)}</small>` : ""}${event.summary ? `<small>${esc(event.summary)}</small>` : ""}${linked}</div>${actions}</article>`;
   }
 
   function render(model, options) {

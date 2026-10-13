@@ -8,6 +8,8 @@
   const DriveImportUI = window.BringDriveImportUI;
   const WorkManagement = window.BringWorkManagement;
   const WorkCalendar = window.BringWorkCalendar;
+  const ContractSchedule = window.BringContractSchedule;
+  const ContractScheduleUI = window.BringContractScheduleUI;
   const ServiceOperationsUI = window.BringServiceOperationsUI;
   const OperationsIntelligenceUI = window.OperationsIntelligenceUI;
   const AiOperationsCore = window.BringAiOperationsCore;
@@ -593,7 +595,9 @@
     const detail = (item.rows || []).map(row => `${row.building.name || "건물명 미입력"} · ${row.stage ? row.stage.label : row.ambiguous ? "연결 확인 필요" : "영업 미등록"}`).join("\n");
     return `<span class="customer-sales-stage ${item.stateId === "needs-review" ? "warning" : ["unregistered", "no-building"].includes(item.stateId) ? "unlinked" : item.stateId === "mixed" ? "mixed" : "linked"}" data-customer-sales-stage="${attr(item.stateId)}" title="${attr(detail || item.label)}">${esc(item.label)}</span>`;
   };
-  const customerIsRelationshipCustomer = customer => Boolean(customer && (customer.stage === "계약 확정" || customerSalesProgress(customer).filterIds.includes("paid_management")));
+  const customerIsRelationshipCustomer = customer => Boolean(customer && !customer.archivedAt && !customer.deletedAt
+    && (ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id).length
+      || customer.stage === "계약 확정" || customerSalesProgress(customer).filterIds.includes("paid_management")));
   const customerActivities = id => store.activities.filter(item => item.customerId === id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
   const dueKey = value => value ? Core.dayKey(value) : "";
   const todayKey = () => Core.dayKey();
@@ -10980,6 +10984,7 @@
     const types = contractTypes(contract);
     return [...new Set([
       contract.scope,
+      types.includes("청소") ? ContractSchedule.scheduleLabel(contract) : "",
       types.includes("청소") ? contract.serviceFrequency : "",
       types.includes("건물관리") && contract.unitCount ? `${Number(contract.unitCount).toLocaleString("ko-KR")}개 호실` : "",
       types.includes("부동산관리") ? contract.managementTarget : "",
@@ -11050,12 +11055,22 @@
   function relationshipState(customer) {
     const nextKey = dueKey(customer.relationshipNextContactAt);
     const today = todayKey();
-    if (!nextKey) return { label: "일정 미등록", tone: "unscheduled" };
+    if (!nextKey) return { label: "연락 계획 미등록", tone: "unscheduled" };
     if (nextKey < today) return { label: "연락 지연", tone: "overdue" };
     if (nextKey === today) return { label: "오늘 연락", tone: "today" };
     const remaining = Math.ceil((new Date(`${nextKey}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
     if (remaining <= 7) return { label: `${remaining}일 후 연락`, tone: "soon" };
     return { label: "관계 유지 중", tone: "active" };
+  }
+
+  function relationshipContractsHtml(customer) {
+    const contracts = ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id);
+    if (!contracts.length) return "";
+    return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건</b>${contracts.map(contract => {
+      const dates = ContractSchedule.contractDates(contract);
+      const building = buildingById(contract.buildingId);
+      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")}</strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>업무일정 ${dates.length}회 · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
+    }).join("")}</section>`;
   }
 
   function renderRelationships() {
@@ -11066,13 +11081,13 @@
     const dueToday = customers.filter(customer => dueKey(customer.relationshipNextContactAt) === today).length;
     const unplanned = customers.filter(customer => !customer.relationshipNextContactAt).length;
     main.innerHTML = `<section class="relationship-hero"><div><span>계약이 끝이 아니라 관계의 시작입니다</span><h2>계약 고객에게 잊지 않고 다시 연락합니다</h2><p>카드를 누르면 고객별 후속 연락 이력과 새 기록 입력 화면이 열립니다.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
-      <div class="relationship-kpi-grid">${kpi("관리 고객", customers.length, "유료관리 전환 고객", "#55aee8")}${kpi("오늘 연락", dueToday, "오늘 확인할 고객", "#efb84f")}${kpi("연락 지연", overdue, "예정일이 지난 고객", "#e66c78")}${kpi("일정 미등록", unplanned, "다음 연락일 필요", "#54b99c")}</div>
+      <div class="relationship-kpi-grid">${kpi("계약 고객", customers.length, "등록 계약·기존 관리 고객", "#55aee8")}${kpi("오늘 연락", dueToday, "오늘 확인할 고객", "#efb84f")}${kpi("연락 지연", overdue, "예정일이 지난 고객", "#e66c78")}${kpi("일정 미등록", unplanned, "다음 연락일 필요", "#54b99c")}</div>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
         const state = relationshipState(customer);
         const lastActivity = customerActivities(customer.id)[0];
         const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
-        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header>${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header><div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
-      }).join("")}</section>` : empty("유료관리 전환 고객이 없습니다", "영업 관리에서 연결 건물을 ‘유료관리 전환’ 단계로 진행하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-view="pipeline">영업 관리로 이동 →</button>`)}`;
+        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header>${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header>${relationshipContractsHtml(customer)}<div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
+      }).join("")}</section>` : empty("등록된 계약 고객이 없습니다", "캘린더나 계약 관리에서 고객에게 계약을 연결하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-action="new-contract">＋ 계약 등록</button>`)}`;
   }
 
   function partnerQuoteBadge(status) {
@@ -12935,19 +12950,22 @@
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 등록하거나 변경할 수 없습니다.", "error");
     const editing = store.contracts.find(item => item.id === contractId);
     const isOneOff = editing ? editing.billingCycle === "건별" : oneOff || contractPaymentModeFilter === "single";
-    const returnView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "contracts";
+    const returnView = currentView === "buildingCalendar" ? "buildingCalendar" : currentView === "relationships" ? "relationships" : "contracts";
     const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: isOneOff ? todayKey() : "" });
     const types = contractTypes(item);
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}" data-return-tab="${attr(unifiedCalendarTab)}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
       <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
       <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 캘린더의 계약일정 캘린더 탭에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
-      <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${field("청소 주기·작업 시점", "serviceFrequency", item.serviceFrequency, "text", "예: 주 2회 또는 공실 발생 시", "wide")}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
+      <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${ContractScheduleUI.renderFields(item, { isNew: !editing, oneOff: isOneOff })}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
       ${renderContractReadinessFields(item)}
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button><button type="button" class="secondary-button" data-billing-open="${attr(editing.id)}">청구·입금</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
     openModal();
     refreshContractPaymentFields(document.getElementById("contractForm"));
+    ContractScheduleUI.refresh(document.getElementById("contractForm"));
+    document.getElementById("contractForm").addEventListener("input", event => ContractScheduleUI.refresh(event.currentTarget));
+    document.getElementById("contractForm").addEventListener("change", event => ContractScheduleUI.refresh(event.currentTarget));
     document.getElementById("contractForm").dataset.initialFields = JSON.stringify([...new FormData(document.getElementById("contractForm"))]);
     setTimeout(() => document.querySelector('#contractForm [name="name"]')?.focus(), 30);
   }
@@ -13991,7 +14009,9 @@
 
   async function deleteContractRecord(contractId) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 삭제할 수 없습니다.", "error");
-    const returnView = document.getElementById("contractForm")?.dataset.returnView === "buildingCalendar" ? "buildingCalendar" : "contracts";
+    const form = document.getElementById("contractForm");
+    const returnView = form?.dataset.returnView === "buildingCalendar" ? "buildingCalendar" : form?.dataset.returnView === "relationships" ? "relationships" : "contracts";
+    const returnTab = form?.dataset.returnTab === "work" ? "work" : "contract";
     let contract = store.contracts.find(item => item.id === contractId);
     if (!contract) return showToast("삭제할 계약을 찾지 못했습니다.", "error");
     if (!await requestConfirmation({ title: "이 계약을 삭제할까요?", description: "계약명과 계약번호를 확인해 주세요.", target: `${contract.name || contractTypes(contract).join("·") || "계약"}\n${contract.contractNo || "계약번호 미발급"}`, warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다.", confirmLabel: "계약 삭제", tone: "danger" })) return;
@@ -14002,7 +14022,7 @@
     logAudit({ category: "삭제", targetType: "계약", targetId: contract.id, targetLabel: contract.name, action: `${contractTypes(contract).join("·")} 계약 삭제`, reason: "잘못 입력한 계약 정리" });
     scheduleSave();
     closeModal();
-    if (returnView === "buildingCalendar") unifiedCalendarTab = "contract";
+    if (returnView === "buildingCalendar") unifiedCalendarTab = returnTab;
     currentView = returnView;
     render();
     showToast("계약을 삭제했습니다.", "success");
@@ -19254,8 +19274,13 @@
         closeModal(); currentView = returnView; render(); requestDriveImportCandidatesRefresh(); showToast(existing ? `${name} 임대·공실 정보를 저장했습니다.` : `${name} 건물을 저장했습니다.`, "success");
       } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {
-      const beforeStore = cloneStore(store);
       if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 저장할 수 없습니다.", "error");
+      if (form.dataset.submitting === "true") return;
+      if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()) {
+        closeModal();
+        return showToast("로그인 사용자가 변경되어 계약을 저장하지 않았습니다.", "error");
+      }
+      const beforeStore = cloneStore(store);
       const formData = new FormData(form);
       const raw = Object.fromEntries(formData.entries());
       const types = formData.getAll("types").map(type => String(type)).filter(type => Core.CONTRACT_TYPES.includes(type));
@@ -19263,12 +19288,20 @@
       if (!raw.name.trim()) return showToast("계약명을 입력해 주세요.", "error");
       if (!raw.customerId || !raw.buildingId) return showToast("연결할 고객과 건물을 선택해 주세요.", "error");
       const existing = store.contracts.find(item => item.id === form.dataset.contractId);
+      if (form.dataset.contractId && !existing) return showToast("계약이 이미 변경되었거나 삭제되었습니다. 최신 화면을 확인해 주세요.", "error");
       const linkedCustomer = customerById(raw.customerId);
       const keepsExistingLink = existing && existing.customerId === raw.customerId && existing.buildingId === raw.buildingId;
       if (!keepsExistingLink && !customerBuildings(linkedCustomer).some(building => building.id === raw.buildingId)) return showToast("선택한 고객에게 연결된 건물을 선택해 주세요.", "error");
-      if (!raw.startDate) return showToast("계약 시작일을 입력해 주세요.", "error");
+      if (!WorkCalendar.isDateKey(raw.startDate)) return showToast("유효한 계약 시작일을 입력해 주세요.", "error");
+      if (raw.endDate && !WorkCalendar.isDateKey(raw.endDate)) return showToast("유효한 계약 종료일을 입력해 주세요.", "error");
       if (raw.endDate && raw.endDate < raw.startDate) return showToast("계약 종료일은 시작일보다 빠를 수 없습니다.", "error");
-      if (raw.billingCycle === "건별" && (!raw.workDate || !raw.paymentDueDate)) return showToast("단건 계약의 작업일과 입금 예정일을 입력해 주세요.", "error");
+      if (raw.billingCycle === "건별" && (!WorkCalendar.isDateKey(raw.workDate) || !WorkCalendar.isDateKey(raw.paymentDueDate))) return showToast("단건 계약의 작업일과 입금 예정일을 확인해 주세요.", "error");
+      if (!Core.CONTRACT_STATUSES.includes(raw.status)) return showToast("계약 상태를 다시 선택해 주세요.", "error");
+      let cleaningSchedule;
+      try { cleaningSchedule = ContractScheduleUI.fromValues(raw, types); }
+      catch (error) { return showToast(error.message, "error"); }
+      if (cleaningSchedule && cleaningSchedule.mode !== "manual" && raw.status === "진행 중"
+        && !ContractSchedule.contractDates({ ...raw, types, cleaningSchedule }).length) return showToast("계약 기간 안에 청소 작업일이 없습니다. 시작일·종료일·요일을 확인해 주세요.", "error");
       const item = existing || Core.createContract({ owner: store.settings.owner || "김현진" });
       const oneOffContract = raw.billingCycle === "건별";
       Object.assign(item, {
@@ -19278,6 +19311,8 @@
         serviceFrequency: String(raw.serviceFrequency || "").trim(), unitCount: Number(raw.unitCount) || 0,
         managementTarget: String(raw.managementTarget || "").trim(), feeMethod: String(raw.feeMethod || "").trim(), memo: String(raw.memo || "").trim(), updatedAt: new Date().toISOString()
       });
+      if (cleaningSchedule) item.cleaningSchedule = cleaningSchedule;
+      else delete item.cleaningSchedule;
       if (oneOffContract) Object.assign(item, {
         workDate: raw.workDate, paymentDueDate: raw.paymentDueDate, vendorCost: Core.money(raw.vendorCost),
         grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",
@@ -19300,17 +19335,30 @@
         if (checklist) Object.assign(checklist, nextChecklist); else { store.contractReadiness ||= []; store.contractReadiness.push(nextChecklist); checklist = nextChecklist; }
       }
       contractPaymentModeFilter = item.billingCycle === "건별" ? "single" : "recurring";
-      const returnToContractCalendar = oneOffContract && form.dataset.returnView === "buildingCalendar";
-      if (returnToContractCalendar) {
-        unifiedCalendarTab = "contract";
-        contractCalendarMonth = item.paymentDueDate.slice(0, 7);
-        contractCalendarBuildingId = "all";
-        contractCalendarQuery = "";
-      }
+      const returnToWorkCalendar = form.dataset.returnView === "buildingCalendar"
+        && (form.dataset.returnTab === "work" || !oneOffContract || cleaningSchedule && cleaningSchedule.mode === "weekly");
+      const returnToContractCalendar = oneOffContract && form.dataset.returnView === "buildingCalendar" && !returnToWorkCalendar;
       const customer = customerById(item.customerId);
       const building = buildingById(item.buildingId);
       logAudit({ category: existing ? "변경" : "등록", targetType: "계약", targetId: item.id, targetLabel: item.name, action: `${types.join("·")} · ${item.status} · ${building && building.name || "건물"}`, reason: "계약 관리" });
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = returnToContractCalendar ? "buildingCalendar" : "contracts"; render(); showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장했습니다.`, "success"); } });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+        if (returnToContractCalendar) {
+          unifiedCalendarTab = "contract";
+          contractCalendarMonth = item.paymentDueDate.slice(0, 7);
+          contractCalendarBuildingId = "all";
+          contractCalendarQuery = "";
+        } else if (returnToWorkCalendar) {
+          unifiedCalendarTab = "work";
+          workCalendarDate = ContractSchedule.contractDates(item)[0] || item.startDate;
+          workCalendarMonth = workCalendarDate.slice(0, 7);
+          workCalendarBuildingId = item.buildingId;
+          workCalendarQuery = "";
+        }
+        closeModal(); currentView = returnToContractCalendar || returnToWorkCalendar ? "buildingCalendar" : form.dataset.returnView === "relationships" ? "relationships" : "contracts";
+        render();
+        const scheduleCount = ContractSchedule.contractDates(item).length;
+        showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleCount ? `·업무일정 ${scheduleCount}회` : ""}에 연결했습니다.`, "success");
+      } });
     } else if (form.id === "customerForm") {
       const beforeStore = cloneStore(store);
       const wasExisting = !!form.dataset.customerId;

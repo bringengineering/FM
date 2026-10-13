@@ -102,7 +102,9 @@ test("one-off contract save and delete return to the unified contract calendar",
   const save = sourceBetween('form.id === "contractForm"', 'form.id === "customerForm"');
   const remove = functionSource("deleteContractRecord");
 
-  assert.match(editor, /const returnView\s*=\s*currentView\s*===\s*"buildingCalendar"\s*&&\s*unifiedCalendarTab\s*===\s*"contract"\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+  assert.match(editor, /const returnView\s*=\s*currentView\s*===\s*"buildingCalendar"\s*\?\s*"buildingCalendar"/);
+  assert.match(editor, /currentView === "relationships" \? "relationships" : "contracts"/);
+  assert.match(editor, /data-return-tab=/);
   assert.match(editor, /data-return-view="\$\{attr\(returnView\)\}"/);
 
   assert.match(save, /if \(!canWriteCRM\(\)\) return showToast\("조회 전용 계정은 계약을 저장할 수 없습니다\.", "error"\)/);
@@ -111,10 +113,12 @@ test("one-off contract save and delete return to the unified contract calendar",
   assert.match(save, /contractCalendarMonth\s*=\s*item\.paymentDueDate\.slice\(0,\s*7\)/);
   assert.match(save, /contractCalendarBuildingId\s*=\s*"all"/);
   assert.match(save, /contractCalendarQuery\s*=\s*""/);
-  assert.match(save, /currentView\s*=\s*returnToContractCalendar\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+  assert.match(save, /currentView\s*=\s*returnToContractCalendar\s*\|\|\s*returnToWorkCalendar\s*\?\s*"buildingCalendar"/);
+  assert.match(save, /dataset.returnView === "relationships" \? "relationships" : "contracts"/);
   assert.doesNotMatch(save, /store\.serviceRecords\.(?:push|splice)|commitBuildingScheduleRecord\(/);
 
-  assert.match(remove, /dataset\.returnView\s*===\s*"buildingCalendar"\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
-  assert.match(remove, /returnView\s*===\s*"buildingCalendar"\)\s*unifiedCalendarTab\s*=\s*"contract"/);
+  assert.match(remove, /dataset\.returnView\s*===\s*"buildingCalendar"\s*\?\s*"buildingCalendar"/);
+  assert.match(remove, /dataset.returnView === "relationships" \? "relationships" : "contracts"/);
+  assert.match(remove, /returnView\s*===\s*"buildingCalendar"\)\s*unifiedCalendarTab\s*=\s*returnTab/);
   assert.match(remove, /currentView\s*=\s*returnView/);
 });
