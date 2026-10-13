@@ -45,6 +45,10 @@ test('filters and sorts copy rows and obey the host search/management scope',asy
  assert.deepEqual(filterCustomerOverview(view.rows,{visibleIds:['c2']}).map(row=>row.id),['c2']);
  assert.equal(view.rows[0].id,'c1');assert.equal(filterCustomerOverview(view.rows,{visibleIds:[]}).length,0);
 });
+test('UTC consultation timestamps display the Korean business date without shifting date-only values',async()=>{
+ const {customerOverviewDate}=await core();assert.equal(customerOverviewDate('2026-10-12T17:00:00Z'),'2026.10.13');
+ assert.equal(customerOverviewDate('2026-10-12'),'2026.10.12');assert.equal(customerOverviewDate('invalid'),'날짜 확인 필요');assert.equal(customerOverviewDate(''),'기록 없음');
+});
 test('removed reminder/connection shortcuts have no code in the new production overview',()=>{
  const files=['customer-overview-core.mjs','customer-overview.mjs','customer-overview.css'];
  for(const file of files){const source=fs.readFileSync(path.join(__dirname,'../src/building-atlas',file),'utf8');assert.doesNotMatch(source,/오늘 연락|연락 지연|건물 미연결|nextContactAt|nextContactDate|overdue/);assert.doesNotMatch(source,/innerHTML|insertAdjacentHTML/);}

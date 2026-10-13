@@ -1,4 +1,4 @@
-import {filterCustomerOverview} from './customer-overview-core.mjs';
+import {filterCustomerOverview,customerOverviewDate} from './customer-overview-core.mjs';
 import {mountCustomerWorkspace} from './customer-workspace.mjs';
 
 // Independently implemented UI patterns; no third-party CRM code is embedded.
@@ -39,7 +39,7 @@ export async function mountCustomerOverview(options={}) {
   const data=()=>getOverview()||{rows:[],totals:{contracts:0,work:0,prospects:0,customers:0}};
   const row=()=>data().rows.find(item=>item.id===selectedCustomerId);
   const statusTag=text=>el('span',text,`customer-overview-status ${text==='관리 중'?'active':text==='관리 종료'?'closed':'preparing'}`);
-  const date=input=>{if(!input)return '기록 없음';const match=String(input).match(/^(\d{4})-(\d{2})-(\d{2})/);return match?`${match[1]}.${match[2]}.${match[3]}`:String(input);};
+  const date=customerOverviewDate;
   function appendSections(target, sections){
     target.replaceChildren();
     for(const section of sections||[]){
@@ -103,8 +103,10 @@ export async function mountCustomerOverview(options={}) {
     const documents=sections.filter(section=>/계약|사진|문서/.test(section.title));
     const basics=(getProfile(selectedCustomerId,selectedBuildingId)||[]).filter(section=>section.title!==building?.name).map(section=>({...section,lines:(section.lines||[]).filter(line=>!String(line).startsWith('다음 연락:'))}));
     const panels={summary:[{title:'현재 요청',lines:[customer?.request||'등록된 요청 없음']},...basics],consults:consultation,docs:documents};
-    for(const [id,label] of [['summary','요약'],['consults','상담 기록'],['docs','계약·자료']]){
+    const detailTabs=[['summary','요약'],['consults','상담 기록'],['docs','계약·자료']];
+    for(const [index,[id,label]] of detailTabs.entries()){
       const control=button(label,()=>{activeTab=id;renderDetail();},'customer-overview-record-tab');control.id=`customer-overview-${id}-tab`;control.setAttribute('role','tab');control.setAttribute('aria-controls',recordBody.id);control.setAttribute('aria-selected',String(activeTab===id));recordTabs.append(control);
+      control.tabIndex=activeTab===id?0:-1;control.onkeydown=event=>{const next={ArrowRight:(index+1)%detailTabs.length,ArrowLeft:(index+detailTabs.length-1)%detailTabs.length,Home:0,End:detailTabs.length-1}[event.key];if(next!==undefined){event.preventDefault();activeTab=detailTabs[next][0];renderDetail();doc.getElementById?.(`customer-overview-${activeTab}-tab`)?.focus();}};
     }
     recordBody.setAttribute('aria-labelledby',`customer-overview-${activeTab}-tab`);appendSections(recordBody,panels[activeTab]);
     const extras=sections.filter(section=>!consultation.includes(section)&&!documents.includes(section));appendSections(extraRows,extras);

@@ -8,6 +8,16 @@ const leadStage = new Set(['문의','상담','상담중','견적','견적중','�
 const records = input => (Array.isArray(input) ? input : []).filter(item => item && !item.archivedAt && !item.deletedAt && item.archived !== true && item.deleted !== true);
 const unique = input => [...new Map(input.filter(item => value(item.id)).map(item => [value(item.id), item])).values()];
 
+export function customerOverviewDate(input) {
+  const source=value(input);
+  if(!source)return '기록 없음';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(source))return source.replaceAll('-','.');
+  const timestamp=new Date(source);
+  if(!Number.isFinite(timestamp.getTime()))return '날짜 확인 필요';
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(timestamp);
+  return ['year','month','day'].map(type=>parts.find(part=>part.type===type).value).join('.');
+}
+
 export function belongsToCustomer(record, customer) {
   const customerId = value(record?.customerId);
   const buildingId = value(record?.crmBuildingId || record?.buildingId);
