@@ -1,6 +1,7 @@
 name: CRM Automatic Release
 
-# This workflow publishes only the signed desktop updater artifacts. Production
+# This workflow publishes desktop updater artifacts and ensures the additive
+# administrator-only account backend exists before publishing its UI. Production
 # Firebase Rules go up in crm-rules-deploy.yml, which gates every deploy on the
 # emulator rule tests and keeps a one-click rollback to any earlier commit.
 # Keeping the two apart matters: a rules change has to reach the server the
@@ -186,9 +187,73 @@ jobs:
             release-assets/BRING.CRM.Company.Setup.${{ steps.reserve.outputs.version }}.exe.blockmap
             release-assets/latest.yml
 
-  deploy-ai-worker:
+  ensure-account-management:
     if: needs.plan.outputs.stable_published != 'true'
     needs: [plan, reserve-build]
+    runs-on: ubuntu-latest
+    environment: firebase-production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.plan.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Check whether the reviewed management backend is already available
+        id: management
+        shell: bash
+        run: |
+          if node desktop-crm/scripts/release/check-account-management.js; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        if: steps.management.outputs.ready != 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        if: steps.management.outputs.ready != 'true'
+        with:
+          version: 10
+      - if: steps.management.outputs.ready != 'true'
+        run: pnpm --dir functions install --frozen-lockfile
+      - if: steps.management.outputs.ready != 'true'
+        run: pnpm --dir company-site install --frozen-lockfile
+      - if: steps.management.outputs.ready != 'true'
+        run: pnpm --dir functions test
+      - if: steps.management.outputs.ready != 'true'
+        run: pnpm --dir functions build
+      - if: steps.management.outputs.ready != 'true'
+        run: node --test release/crm-account-management-deployment.test.cjs
+      - name: Reverify account roles and deletion in isolated emulators after installer verification
+        if: steps.management.outputs.ready != 'true'
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
+          CRM_ACCOUNT_SETUP_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
+        run: pnpm --dir company-site exec firebase --config ../firebase.account-setup-emulators.json --project demo-bring-fm-account-setup emulators:exec --only auth,database,functions "pnpm --dir ../functions exec vitest run test/crm-account-invite-emulator.test.ts"
+      - name: Deploy only the three missing administrator-only management callables
+        if: steps.management.outputs.ready != 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node release/crm-account-management-deployment.cjs --apply
+      - run: node desktop-crm/scripts/release/check-account-management.js
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: crm-account-management-deploy-${{ github.run_id }}
+          path: ${{ runner.temp }}/crm-account-management-deploy/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  deploy-ai-worker:
+    if: needs.plan.outputs.stable_published != 'true'
+    needs: [plan, reserve-build, ensure-account-management]
     runs-on: ubuntu-latest
     permissions:
       contents: read
