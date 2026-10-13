@@ -81,8 +81,11 @@ test("실제 보고서 생성 함수를 거친 인감 없는 PDF가 CRM에 보�
     mutate: async (id, change) => {const index = data.buildingDocuments.findIndex(row => row.id === id); const next = change(index < 0 ? null : data.buildingDocuments[index]); if (index < 0) data.buildingDocuments.push(next); else data.buildingDocuments[index] = next; return next;},
     delivery: async (action, input) => {
       if (action === "capabilities") return {ok: true, capabilities: {kakao: true}};
-      if (action === "create") {sentBytes = Buffer.from(input.bytes, "base64"); return {ok: true, documentId: "delivery_fixture"};}
-      if (action === "send") {sends++; assert.equal(input.phone, "01000000000"); return {ok: true, messageId: "message_fixture"};}
+      if (action === "createAndSend") {
+        sentBytes = Buffer.from(input.bytes, "base64");
+        sends++; assert.equal(input.delivery.phone, "01000000000");
+        return {ok: true, documentId: "delivery_fixture", messageId: "message_fixture", status: "requested"};
+      }
     },
   });
   const {record} = await service.save({reportId: value.id, updatedAt: value.updatedAt}, h.session);

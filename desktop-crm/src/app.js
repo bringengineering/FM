@@ -4598,8 +4598,8 @@
       adminCanSend: canAdministerSecurity(),
       busy: state.busy,
       result: state.result,
-      receipt: state.receipt?.generation === authGeneration ? state.receipt : null,
-      receiptMatchesSelection: Boolean(state.receipt?.generation === authGeneration && state.receipt.customerId === customer?.id && state.receipt.kind === state.category && state.receipt.documentId === (state.savedDocumentId || state.workReportId)
+      receipt: state.receipt && state.receipt.generation === authGeneration ? state.receipt : null,
+      receiptMatchesSelection: Boolean(state.receipt && state.receipt.generation === authGeneration && state.receipt.customerId === customer?.id && state.receipt.kind === state.category && state.receipt.documentId === (state.savedDocumentId || state.workReportId)
         && state.receipt.updatedAt === (state.savedDocumentId ? savedDocuments.find(item => item.id === state.savedDocumentId)?.updatedAt : workReport?.updatedAt)),
       sourceTypeRequired: Boolean(template.requiresSource),
       noticeDecision: selectedDecision,
