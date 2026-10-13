@@ -1,26 +1,15 @@
 (function (root, factory) {
-  const api = factory();
+  const schedules = typeof module === "object" && module.exports ? require("./contract-schedule-core") : root.BringContractSchedule;
+  const api = factory(schedules);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BringWorkManagement = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (ContractSchedule) {
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const won = value => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("ko-KR")}원`;
   const typeLabel = value => ({ grounds_cutting: "예초 작업", stair_cleaning: "계단 청소", cleaning: "청소", repair: "수리", inspection: "점검", meeting: "방문·미팅" })[value] || "기타 작업";
   const statusLabel = value => ({ planned: "예정", in_progress: "진행 중", completed: "완료", cancelled: "취소" })[value] || "예정";
   const safeList = value => Array.isArray(value) ? value.filter(item => item && typeof item === "object") : [];
-  const contractStatus = value => value === "종료" ? "completed" : ["진행 중", "종료 예정"].includes(value) ? "in_progress" : "planned";
-
-  function contractServiceType(contract) {
-    const text = [contract && contract.name, contract && contract.scope, contract && contract.memo, ...(Array.isArray(contract && contract.types) ? contract.types : [contract && contract.type])]
-      .filter(Boolean).join(" ").toLocaleLowerCase("ko");
-    if (/예초|제초|잔디/.test(text)) return "grounds_cutting";
-    if (/계단[^\s]*\s*청소|계단청소/.test(text)) return "stair_cleaning";
-    if (/청소|미화|폐기물/.test(text)) return "cleaning";
-    if (/수리|보수|교체|설비/.test(text)) return "repair";
-    if (/점검|검사|관리/.test(text)) return "inspection";
-    if (/방문|미팅|상담/.test(text)) return "meeting";
-    return "other";
-  }
+  const contractServiceType = ContractSchedule.contractServiceType;
 
   function buildModel(store, options) {
     const settings = options || {};
@@ -39,16 +28,16 @@
       startDate: String(item.startDate || ""), monthlyAmount: Math.max(0, Number(item.monthlyAmount) || 0), summary: String(item.summary || ""),
       building: buildingMap.get(String(item.buildingId || "")) || null,
     }));
-    const crmContracts = safeList(store.contracts).filter(item => item.billingCycle === "건별").map(item => {
-      const status = contractStatus(String(item.status || ""));
-      const scheduledDate = String(item.workDate || item.startDate || "");
-      const types = Array.isArray(item.types) ? item.types : [item.type];
+    const crmContracts = ContractSchedule.contractWorkOccurrences(store).map(occurrence => {
+      const status = occurrence.status;
+      const scheduledDate = occurrence.scheduledDate;
       return {
-        kind: "crm_contract", id: String(item.id || ""), contractId: String(item.id || ""), buildingId: String(item.buildingId || ""),
-        serviceType: contractServiceType(item), title: String(item.name || types.filter(Boolean).join("·") || "계약 작업"), status, scheduledDate,
-        completedAt: status === "completed" ? String(item.workDate || item.endDate || "") : "", owner: String(item.owner || ""), vendorName: "",
-        amount: Math.max(0, Number(item.vendorCost) || 0), summary: String(item.scope || item.memo || ""), evidenceUrl: "",
-        building: buildingMap.get(String(item.buildingId || "")) || null,
+        kind: "crm_contract", id: occurrence.recurring ? occurrence.id : occurrence.contractId, contractId: occurrence.contractId, buildingId: occurrence.buildingId,
+        serviceType: occurrence.serviceType, title: occurrence.title, status, scheduledDate,
+        completedAt: occurrence.completedAt, owner: occurrence.owner, vendorName: "",
+        amount: occurrence.amount, summary: occurrence.summary, evidenceUrl: "",
+        building: buildingMap.get(occurrence.buildingId) || null,
+        ...(occurrence.recurring ? { occurrenceIndex: occurrence.occurrenceIndex, occurrenceCount: occurrence.occurrenceCount } : {}),
       };
     });
     const oneOffWork = [...records, ...crmContracts];
@@ -88,7 +77,7 @@
       const detail = item.kind === "record"
         ? `<button class="mini-button" data-work-edit="${esc(item.id)}">상세</button>`
         : item.kind === "crm_contract" ? `<button class="mini-button" data-contract-edit="${esc(item.contractId)}">계약 상세</button>` : "";
-      const source = item.kind === "crm_contract" ? `<small class="work-card-source">계약 일정에서 자동 연동</small>` : "";
+      const source = item.kind === "crm_contract" ? `<small class="work-card-source">계약 일정에서 자동 연동${item.occurrenceCount ? ` · ${item.occurrenceIndex}/${item.occurrenceCount}회` : ""}</small>` : "";
       const fallback = item.kind === "contract" ? "정기 작업 계약" : item.kind === "crm_contract" ? "계약 작업 내용 미입력" : "작업 내용 미입력";
       return `<article class="work-card" data-work-id="${esc(item.id)}" data-work-kind="${esc(item.kind)}"><div class="work-card-status status-${esc(item.status)}">${esc(statusLabel(item.status))}</div><div class="work-card-main"><span>${esc(item.building && (item.building.name || item.building.address) || "건물 미연결")}</span><h3>${esc(item.title)}</h3><p>${esc([date, cadence, item.vendorName, cost].filter(Boolean).join(" · "))}</p><small>${esc(item.summary || fallback)}</small>${source}${sync ? `<small class="work-sync-state sync-${esc(item.operationsSyncStatus)}">${esc(sync)}</small>` : ""}</div><div class="work-card-actions">${item.evidenceUrl ? `<button class="secondary-button" data-work-evidence="${esc(item.evidenceUrl)}">Drive 증빙 ↗</button>` : ""}${retry}${opts.canWrite ? detail : ""}</div></article>`;
     }).join("");
