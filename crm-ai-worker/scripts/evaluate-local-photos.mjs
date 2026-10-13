@@ -89,10 +89,17 @@ function contained(root, filename) {
   return resolved;
 }
 
+export function datasetOutsideRepository(repository, directory, paths = path) {
+  const relative = paths.relative(repository, directory);
+  // Windows returns an absolute path for another volume/UNC share. It is
+  // outside the repository, unlike a child whose name merely starts with '..'.
+  return relative === ".." || relative.startsWith(`..${paths.sep}`) || paths.isAbsolute(relative);
+}
+
 export function loadDataset(directory) {
   const root = fs.realpathSync(directory);
   // Originals/reference IDs remain outside source control, even in ignored paths.
-  if (!path.relative(repoRoot, root).startsWith("..")) throw fail("LOCAL_INPUT_INVALID");
+  if (!datasetOutsideRepository(fs.realpathSync(repoRoot), root)) throw fail("LOCAL_INPUT_INVALID");
   const referenceBytes = readBounded(contained(root, path.join(root, "selection-and-reference.json")), 256 * 1024);
   const preparedBytes = readBounded(contained(root, path.join(root, "prepared-manifest.json")), 256 * 1024);
   const reference = JSON.parse(referenceBytes), prepared = JSON.parse(preparedBytes);
