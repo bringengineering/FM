@@ -48,6 +48,15 @@
    methods.generateBuildingMonthlyReportDraft=async input=>{window.__monthlyQA.calls.push('draft');return {ok:true,narrative:{summary:`${input.month} 사진 ${input.photos.length}장과 CRM 기록을 바탕으로 작성한 가상 초안입니다.`,attention:'사진만으로 작업 완료를 단정하지 않습니다.',nextMonthPlan:''},model:'synthetic-only',generatedAt:new Date().toISOString()};};
    methods.loadWorkReportDriveThumbnail=async()=>({ok:true,dataUrl:''});
  }
+ if(new URLSearchParams(location.search).get('accountSeed')==='1') {
+   const accounts=[{uid:user.uid,email:user.email,displayName:'가상 관리자',role:'admin',status:'active',canChangeRole:false,canDelete:false},
+     {uid:'preview-member',email:'member@example.com',displayName:'가상 구성원',role:'member',status:'active',canChangeRole:true,canDelete:true},
+     {uid:'preview-pending',email:'pending@example.com',displayName:'가상 초대 대기',role:'member',status:'pending',canChangeRole:false,canDelete:true,canResend:true}];
+   window.__accountQA={calls:[],workRecords:{'preview-member':{retained:true}}};
+   methods.loadCrmAccounts=async()=>structuredClone(accounts);
+   methods.setCrmAccountRole=async input=>{if(user.role!=='admin')throw new Error('관리자 전용');const target=accounts.find(row=>row.uid===input.uid);if(!target||target.uid===user.uid||target.role!==input.expectedRole)throw new Error('변경 충돌');window.__accountQA.calls.push('role');target.role=input.role;return {uid:input.uid,role:input.role,updated:true};};
+   methods.deleteCrmAccount=async input=>{if(user.role!=='admin'||input.confirmDelete!==true)throw new Error('관리자 확인 필요');const index=accounts.findIndex(row=>row.uid===input.uid);if(index<0||accounts[index].uid===user.uid)throw new Error('삭제 대상 확인');window.__accountQA.calls.push('delete');accounts.splice(index,1);return {uid:input.uid,deleted:true};};
+ }
  window.bringCRM=new Proxy(methods,{get(target,key){if(key in target)return target[key];if(String(key).startsWith('on'))return callback=>{listeners[key]=callback;};if(/^(save|commit|delete|remove|create|send|login|logout|change|upload|import|restore|openExternal)/i.test(String(key)))return async()=>{blockedWrites++;throw new Error('테스트 실행: 쓰기/외부 작업 차단');};return async()=>({});}});
  // Do not let the catch-all proxy advertise desktop-only recovery capability.
  // Only the explicit synthetic recovery scenario below implements these methods.

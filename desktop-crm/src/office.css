@@ -155,6 +155,7 @@
 .crm-account-archive-dialog [data-archive-member] { color:var(--text,#191f28); font-weight:700; }
 .crm-account-archive-dialog button.crm-account-archive-confirm { background:#bd3444; color:#fff; border-color:#bd3444; }
 .crm-account-table .crm-account-archive-button { color:#bd3444; border-color:#efcbd0; box-shadow:none; }
+.crm-account-role-badge,.crm-account-self-badge{display:inline-block;padding:3px 7px;margin-left:5px;border-radius:12px;background:#e9f2ff;color:#246bd1;font-size:10px;font-weight:800}.crm-account-self-badge{background:#f0f3f7;color:#68788e}.crm-account-row-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px}.crm-account-table select{min-width:98px;padding:8px 10px;border:1px solid #dce3ea;border-radius:9px;background:#fff;color:#192a3a;font:inherit}.crm-account-table select:disabled{opacity:.55}.crm-account-delete-label{display:grid;gap:8px;font-size:12px}.crm-account-delete-label input{padding:10px 12px;border:1px solid #dce3ea;border-radius:9px;font:inherit}
 .work-outcome-dialog header h2 { margin:0 0 8px; }
 .work-outcome-dialog p { line-height:1.6; color:var(--soft,#4e5968); overflow-wrap:anywhere; }
 .work-outcome-dialog fieldset { border:0; padding:0; margin:0; min-width:0; }

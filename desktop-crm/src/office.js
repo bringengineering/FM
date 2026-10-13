@@ -309,15 +309,17 @@
 
   async function refreshCrmAccountInvites() {
     if (!isCrmAdmin() || state.crmAccountInvitesLoading) return;
+    const guard = captureContextGuard();
     state.crmAccountInvitesLoading = true;
     state.crmAccountInviteError = "";
     renderCurrent();
     try {
-      const result = await state.context.api.loadCrmAccountInvites();
+      const result = await state.context.api.loadCrmAccounts();
+      if (!contextGuardActive(guard) || !isCrmAdmin()) return;
       state.crmAccountInvites = Array.isArray(result) ? result : [];
       state.crmAccountInvitesLoaded = true;
     } catch (error) {
-      state.crmAccountInviteError = error && error.message || "계정 초대를 불러오지 못했습니다.";
+      state.crmAccountInviteError = error && error.message || "전체 계정을 불러오지 못했습니다.";
     } finally {
       state.crmAccountInvitesLoading = false;
       if (officeIsActive() && state.context?.view === "officeAccountSetup") renderCurrent();
@@ -414,6 +416,57 @@
     }
   }
 
+  function confirmCrmAccountManagement(account, kind, nextRole) {
+    return new Promise(resolve => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "work-outcome-dialog crm-account-archive-dialog";
+      dialog.setAttribute("aria-labelledby", "crm-account-manage-title");
+      dialog.innerHTML = `<h2 id="crm-account-manage-title"></h2><p data-account-label></p><p data-account-description></p>${kind === "delete" ? `<label class="crm-account-delete-label">확인을 위해 ‘삭제’를 입력하세요<input data-account-confirm-text type="text" autocomplete="off" maxlength="10"></label>` : ""}<footer><button type="button" data-account-cancel autofocus>취소</button><button type="button" data-account-confirm ${kind === "delete" ? `disabled class="crm-account-archive-confirm"` : ""}>${kind === "delete" ? "계정 삭제" : "변경 내용 저장"}</button></footer>`;
+      dialog.querySelector("h2").textContent = kind === "delete" ? "계정을 삭제할까요?" : "관리자 권한을 변경할까요?";
+      dialog.querySelector("[data-account-label]").textContent = `${account.displayName || account.email} · ${account.email}`;
+      dialog.querySelector("[data-account-description]").textContent = kind === "delete"
+        ? "로그인 계정과 CRM 접근 권한을 삭제합니다. 기존 업무·보고서·근태 기록은 유지됩니다."
+        : nextRole === "admin" ? "관리자로 변경하면 전체 계정 관리와 관리자 메뉴를 사용할 수 있습니다." : "일반 사원으로 변경하면 관리자 메뉴와 계정 관리 권한이 해제됩니다.";
+      const input = dialog.querySelector("[data-account-confirm-text]");
+      input?.addEventListener("input", () => { dialog.querySelector("[data-account-confirm]").disabled = input.value.trim() !== "삭제"; });
+      dialog.querySelector("[data-account-cancel]").addEventListener("click", () => dialog.close("cancel"));
+      dialog.querySelector("[data-account-confirm]").addEventListener("click", () => {
+        if (kind !== "delete" || input?.value.trim() === "삭제") dialog.close("confirm");
+      });
+      dialog.addEventListener("close", () => {
+        const confirmed = dialog.returnValue === "confirm" && (kind !== "delete" || input?.value.trim() === "삭제");
+        dialog.remove(); resolve(confirmed);
+      }, { once: true });
+      document.body.append(dialog); dialog.showModal();
+    });
+  }
+
+  async function manageCrmAccount(uid, kind, nextRole) {
+    if (!isCrmAdmin() || state.busy || state.crmAccountInvitesLoading) return;
+    const account = state.crmAccountInvites.find(row => row.uid === uid);
+    if (!account || uid === currentUserId() || (kind === "role" ? !account.canChangeRole || !["admin", "member"].includes(nextRole) : !account.canDelete)) return;
+    const guard = captureContextGuard();
+    if (!await confirmCrmAccountManagement(account, kind, nextRole)) return;
+    if (!contextGuardActive(guard) || !isCrmAdmin() || state.busy || state.crmAccountInvitesLoading) return;
+    const sessionActive = () => guard.generation === state.generation && guard.uid === currentUserId();
+    state.busy = true; renderCurrent();
+    try {
+      const input = { uid, expectedRole: account.role };
+      const result = kind === "role" ? await state.context.api.setCrmAccountRole({ ...input, role: nextRole })
+        : await state.context.api.deleteCrmAccount({ ...input, confirmDelete: true });
+      if (!sessionActive()) return;
+      if (!result || result.uid !== uid || (kind === "role" ? result.updated !== true || result.role !== nextRole : result.deleted !== true)) {
+        throw new Error("처리 결과를 확인하지 못했습니다. 새로고침해 주세요.");
+      }
+      if (kind === "delete") state.crmAccountInvites = state.crmAccountInvites.filter(row => row.uid !== uid);
+      else account.role = nextRole;
+      notify(kind === "delete" ? "로그인 계정을 삭제했습니다. 기존 업무·근태 기록은 유지됩니다." : "관리자 권한을 변경했습니다.", "success");
+      await refreshCrmAccountInvites();
+    } catch (error) {
+      if (sessionActive()) { notify(error && error.message || "계정 변경에 실패했습니다. 새로고침해 주세요.", "error"); await refreshCrmAccountInvites(); }
+    } finally { if (sessionActive()) { state.busy = false; renderCurrent(); } }
+  }
+
   function loadingPanel() {
     return `<section class="office-loading"><span class="office-loader"></span><b>BRING OFFICE를 준비하고 있습니다</b><p>기존 CRM 사용자와 업무 자료를 불러오는 중입니다.</p></section>`;
   }
@@ -428,20 +481,22 @@
     }
     const rows = state.crmAccountInvites.map(account => {
       const pending = account.status === "pending";
+      const own = account.uid === currentUserId();
+      const statusText = ({ active: "활성", pending: "인증 대기", disabled: "사용 중지", missing: "로그인 계정 없음", deletionPending: "삭제 재시도 필요" })[account.status] || "확인 필요";
+      const busy = state.busy || state.crmAccountInvitesLoading;
       const createdAt = account.createdAt ? new Date(account.createdAt).toLocaleString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
-      const expiresAt = account.expiresAt ? new Date(account.expiresAt).toLocaleDateString("ko-KR", { timeZone: Core.KOREA_TIME_ZONE }) : "—";
-      return `<tr><td><b>${esc(account.displayName || account.email)}</b>${account.displayName ? `<small>${esc(account.email)}</small>` : ""}</td><td><span class="crm-account-status ${pending ? "pending" : "complete"}">${pending ? "설정 대기" : "설정 완료"}</span></td><td>${esc(createdAt)}</td><td>${pending ? esc(expiresAt) : "—"}</td><td>${pending ? `<button type="button" class="secondary-button" data-crm-account-resend="${esc(account.uid)}" ${state.busy ? "disabled" : ""}>메일 다시 보내기</button>` : `<button type="button" class="secondary-button crm-account-archive-button" data-crm-account-archive="${esc(account.uid)}" ${state.busy || state.crmAccountInvitesLoading ? "disabled" : ""}>삭제</button>`}</td></tr>`;
+      return `<tr><td><b>${esc(account.displayName || account.email)}</b> ${account.role === "admin" ? `<span class="crm-account-role-badge">관리자</span>` : ""}${own ? `<span class="crm-account-self-badge">본인</span>` : ""}<small>${esc(account.email)}</small></td><td><span class="crm-account-status ${account.status === "active" ? "complete" : "pending"}">${esc(statusText)}</span></td><td><select data-crm-account-role="${esc(account.uid)}" aria-label="${esc(account.displayName || account.email)} 권한" ${busy || own || !account.canChangeRole ? "disabled" : ""}><option value="member" ${account.role === "member" ? "selected" : ""}>일반 사원</option><option value="admin" ${account.role === "admin" ? "selected" : ""}>관리자</option>${account.role === "viewer" ? `<option value="viewer" selected>조회 전용</option>` : ""}</select></td><td>${esc(createdAt)}</td><td><div class="crm-account-row-actions">${account.canResend && pending ? `<button type="button" class="secondary-button" data-crm-account-resend="${esc(account.uid)}" ${busy ? "disabled" : ""}>메일 재발송</button>` : ""}<button type="button" class="secondary-button crm-account-archive-button" data-crm-account-delete="${esc(account.uid)}" ${busy || own || !account.canDelete ? "disabled" : ""}>${account.status === "deletionPending" ? "삭제 재시도" : "삭제"}</button></div></td></tr>`;
     }).join("");
     const accountRows = state.crmAccountInvitesLoading && !state.crmAccountInvitesLoaded
       ? `<div class="office-loading"><span class="office-loader"></span><b>계정 현황을 불러오는 중입니다</b></div>`
-      : `<div class="crm-account-table-wrap"><table class="crm-account-table"><thead><tr><th>구성원</th><th>상태</th><th>등록일</th><th>초대 만료일</th><th>작업</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="crm-account-empty">아직 등록된 계정 초대가 없습니다.</td></tr>`}</tbody></table></div>`;
+      : `<div class="crm-account-table-wrap"><table class="crm-account-table"><thead><tr><th>구성원</th><th>상태</th><th>권한 설정</th><th>등록일</th><th>작업</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="crm-account-empty">등록된 CRM 계정이 없습니다.</td></tr>`}</tbody></table></div>`;
     return `<section class="office-hero crm-account-hero"><div><span>ACCOUNT SETUP</span><h2>계정 등록</h2><p>이메일만 등록하면 임시 비밀번호 없이 초대 링크에서 이메일 인증과 새 비밀번호 설정을 한 번에 진행합니다.</p></div></section>
       <section class="office-panel crm-account-panel"><header><div><span>NEW MEMBER</span><h3>이메일 인증 링크 보내기</h3><p>등록된 이메일 주소로 일회용 링크를 보냅니다. 새 구성원은 링크에서 직접 비밀번호를 정합니다.</p></div></header>
         <form class="crm-account-invite-form" data-crm-account-invite-form><label><span>회사 이메일</span><input data-crm-account-invite-email name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@company.com" value="${esc(state.crmAccountInviteEmailDraft)}" required ${state.busy ? "disabled" : ""}></label><button type="submit" class="primary-button" ${state.busy ? "disabled" : ""}>${state.busy ? "처리 중…" : "이메일 인증하기"}</button></form>
         <p class="crm-account-security-note"><b>초기 비밀번호를 만들거나 저장하지 않습니다.</b> 계정 설정 요청은 7일간 대기하며, 메일 링크가 만료되면 목록에서 새 링크를 보낼 수 있습니다. 이메일 인증이 끝나야 구성원 계정으로 활성화됩니다.</p>
       </section>
-      <section class="office-panel crm-account-panel"><header><div><span>INVITATIONS</span><h3>계정 설정 현황</h3><p>최근 등록 계정 최대 200개 · 설정 대기는 메일 재발송, 설정 완료는 목록에서 삭제할 수 있습니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading || state.busy ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
-        ${state.crmAccountInviteError ? `<div class="crm-account-error" role="alert">${esc(state.crmAccountInviteError)}</div>` : ""}${accountRows}
+      <section class="office-panel crm-account-panel"><header><div><span>ALL ACCOUNTS</span><h3>전체 등록 계정 ${state.crmAccountInvitesLoaded ? `${state.crmAccountInvites.length}명` : ""}</h3><p>초대 이력과 관계없이 기존 CRM 등록 계정과 인증 대기 계정을 함께 표시합니다.</p></div><button type="button" class="secondary-button" data-crm-account-refresh ${state.crmAccountInvitesLoading || state.busy ? "disabled" : ""}>${state.crmAccountInvitesLoading ? "불러오는 중…" : "새로고침"}</button></header>
+        ${state.crmAccountInviteError ? `<div class="crm-account-error" role="alert">${esc(state.crmAccountInviteError)}</div>` : ""}${accountRows}<p class="crm-account-security-note">관리자만 조회·변경할 수 있습니다. 본인 계정과 마지막 관리자는 보호되며, 계정을 삭제해도 기존 업무·보고서·근태 기록은 유지됩니다.</p>
       </section>`;
   }
 
@@ -1480,6 +1535,8 @@
     if (resendAccount) { void resendCrmAccountInvite(resendAccount.dataset.crmAccountResend); return; }
     const archiveAccount = event.target.closest("[data-crm-account-archive]");
     if (archiveAccount) { void archiveCrmAccountInvite(archiveAccount.dataset.crmAccountArchive); return; }
+    const deleteAccount = event.target.closest("[data-crm-account-delete]");
+    if (deleteAccount) { void manageCrmAccount(deleteAccount.dataset.crmAccountDelete, "delete"); return; }
     const displayNameEdit = event.target.closest("[data-office-display-name-edit]");
     if (displayNameEdit) {
       beginDisplayNameEdit(displayNameEdit.dataset.officeDisplayNameEdit, displayNameEdit.dataset.officeDisplayNameSurface);
@@ -1545,6 +1602,13 @@
   });
 
   document.addEventListener("change", event => {
+    const accountRole = event.target.closest("[data-crm-account-role]");
+    if (accountRole) {
+      const account = state.crmAccountInvites.find(row => row.uid === accountRole.dataset.crmAccountRole);
+      const nextRole = accountRole.value;
+      if (account) accountRole.value = account.role;
+      void manageCrmAccount(accountRole.dataset.crmAccountRole, "role", nextRole); return;
+    }
     if (event.target.matches("[data-rfid-user]")) {
       if (!state.busy && !state.rfidCapture) {
         state.selectedRfidUserId = Rfid ? Rfid.normalizeUserId(event.target.value) : "";
