@@ -161,6 +161,7 @@ export async function readNcpDocumentStatus(record, env, options = {}) {
 
 const DIAGNOSTIC_CODES = new Set(["SIGNATURE_FAILED", "PROVIDER_TIMEOUT", "PROVIDER_NETWORK_ERROR", "PROVIDER_RESPONSE_INVALID", "PROVIDER_ACK_INCOMPLETE", "STORAGE_WRITE_FAILED"]);
 function diagnosticCode(value) { return DIAGNOSTIC_CODES.has(value) ? value : ""; }
+const CONNECTION_CODES = new Set(["READY", "AUTH_REJECTED", "SERVICE_NOT_FOUND", "TEMPLATE_NOT_FOUND", "TEMPLATE_NOT_READY", "CONFIGURATION_ERROR", "SIGNATURE_FAILED", "PROVIDER_TIMEOUT", "PROVIDER_NETWORK_ERROR", "PROVIDER_RESPONSE_INVALID", "PROVIDER_LIMITED", "PROVIDER_REJECTED", "PROVIDER_UNAVAILABLE"]);
 
 // A signed GET checks the existing service without sending any message or
 // returning credentials, channel IDs, template bodies, or personal data.
@@ -314,7 +315,19 @@ export function createDocumentDeliveryHandler(options = {}) {
           }
         } catch { /* Receipt unavailability is not evidence of delivery failure. */ }
       }
-      if (record.status === "unknown" && record.channel === "kakao") record.connectionCode = await readConnection(record, env);
+      if (record.status === "unknown" && record.channel === "kakao") {
+        const previous = record.connectionCode, connection = await readConnection(record, env);
+        record.connectionCode = CONNECTION_CODES.has(connection) ? connection : "PROVIDER_RESPONSE_INVALID";
+        // Persist only a finite diagnostic category. Older desktop clients can
+        // trigger this safe GET while the new installer is still being applied.
+        if (record.connectionCode !== previous) {
+          try {
+            await waitForWriteSlot(record.stateUpdatedAt);
+            record.stateUpdatedAt = now();
+            await env.DOCUMENT_DELIVERY.put(`message:${messageMatch[1]}`, JSON.stringify(record), {expirationTtl: MAX_TTL_SECONDS});
+          } catch { /* A valid read-only diagnosis is still returned to this caller. */ }
+        }
+      }
       return json(record);
     }
     const revokeMatch = /^\/v1\/document-delivery\/documents\/([A-Za-z0-9_-]{1,120})\/revoke$/.exec(url.pathname);
