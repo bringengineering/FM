@@ -1,6 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
+const vm=require('node:vm');
 const core=()=>import('../src/building-atlas/customer-overview-core.mjs');
 
 function fixture(){return {
@@ -52,6 +53,18 @@ test('UTC consultation timestamps display the Korean business date without shift
 test('removed reminder/connection shortcuts have no code in the new production overview',()=>{
  const files=['customer-overview-core.mjs','customer-overview.mjs','customer-overview.css'];
  for(const file of files){const source=fs.readFileSync(path.join(__dirname,'../src/building-atlas',file),'utf8');assert.doesNotMatch(source,/오늘 연락|연락 지연|건물 미연결|nextContactAt|nextContactDate|overdue/);assert.doesNotMatch(source,/innerHTML|insertAdjacentHTML/);}
+});
+test('saving customer work returns to customers without changing existing calendar and work-management routes',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+ const helper=source.match(/  function returnFromWorkRecordEditor\(form\) \{[\s\S]*?\n  \}/)?.[0];
+ assert.ok(helper,'real work editor return handler is present');
+ for(const [returnView,expected] of [['customers','customers'],['buildingCalendar','buildingCalendar'],['workManagement','workManagement'],['unknown','workManagement'],[null,'workManagement']]){
+  const context=vm.createContext({currentView:'customers',unifiedCalendarTab:'schedule',contractWorkManagementExpanded:false,renderCount:0,form:returnView===null?null:{dataset:{returnView}}});
+  vm.runInContext('function render(){ renderCount++; }\n'+helper+'\nreturnFromWorkRecordEditor(form);',context);
+  assert.equal(context.currentView,expected);assert.equal(context.renderCount,1);
+  assert.equal(context.unifiedCalendarTab,returnView==='buildingCalendar'?'contract':'schedule');
+  assert.equal(context.contractWorkManagementExpanded,returnView==='buildingCalendar');
+ }
 });
 
 class Node {

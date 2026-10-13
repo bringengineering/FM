@@ -5584,8 +5584,9 @@
   }
 
   function returnFromWorkRecordEditor(form) {
+    const returnToCustomers = form && form.dataset.returnView === "customers";
     const returnToContractCalendar = form && form.dataset.returnView === "buildingCalendar";
-    currentView = returnToContractCalendar ? "buildingCalendar" : "workManagement";
+    currentView = returnToCustomers ? "customers" : returnToContractCalendar ? "buildingCalendar" : "workManagement";
     if (returnToContractCalendar) {
       unifiedCalendarTab = "contract";
       contractWorkManagementExpanded = true;
