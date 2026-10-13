@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { parseLocalKey, validateJpeg, boundedFetch, safeCode, loadDataset } from "../scripts/evaluate-local-photos.mjs";
+import { parseLocalKey, validateJpeg, boundedFetch, safeCode, loadDataset, datasetOutsideRepository } from "../scripts/evaluate-local-photos.mjs";
 
 const exampleKey = "example_test_key_not_real_12345";
 const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
@@ -74,6 +74,22 @@ test("provider diagnostics expose a closed category, not provider error text", a
   assert.equal(await result.text(), "");
   assert.deepEqual(audit.providerErrors, [{ status: 400, kind: "schema_complexity", diagnosticWords: ["schema"] }]);
   assert.equal(JSON.stringify(audit).includes(exampleKey), false);
+});
+
+test("dataset privacy boundary supports Windows volumes without allowing repository children", () => {
+  for (const [repository, directory, outside] of [
+    ["D:\\a\\FM\\FM", "C:\\Users\\runner\\Temp\\photos", true],
+    ["D:\\a\\FM\\FM", "D:\\a\\_temp\\photos", true],
+    ["D:\\a\\FM\\FM", "D:\\a\\FM\\FM", false],
+    ["D:\\a\\FM\\FM", "d:\\a\\fm\\fm\\photos", false],
+    ["D:\\a\\FM\\FM", "D:\\a\\FM\\FM\\..photos", false],
+    ["D:\\a\\FM\\FM", "D:\\a\\FM\\FM-backup", true],
+    ["\\\\server\\share\\repo", "\\\\server\\share\\repo\\photos", false],
+    ["\\\\server\\share\\repo", "\\\\other\\share\\photos", true],
+  ]) assert.equal(datasetOutsideRepository(repository, directory, path.win32), outside);
+  for (const [directory, outside] of [["/tmp/photos", true], ["/repo", false], ["/repo/photos", false], ["/repo/..photos", false], ["/repo-backup", true]]) {
+    assert.equal(datasetOutsideRepository("/repo", directory, path.posix), outside);
+  }
 });
 
 test("dataset strips private references and rejects changed bytes or traversal", () => {
