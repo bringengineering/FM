@@ -2857,7 +2857,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(member, at("w11")), report("w11", { updatedBy: "crm-admin" })));
     // 지우는 길은 없다. 나간 보고서의 근거가 사라지면 안 된다.
     await assertFails(remove(ref(member, at("w1"))));
-    // 공용부 작업 과정만 확장한다. 기존 접근권한·Drive 사진 검증은 유지한다.
+    // 공용부·입주청소 작업 과정만 확장한다. 기존 접근권한·Drive 사진 검증은 유지한다.
     const common = (id: string, patch: Record<string, unknown> = {}) => report(id, {
       kind: "common", items: [item("windows", "공용 창호", { status: "recorded", before: [], after: [], during: [shot("working")] })], ...patch,
     });
@@ -2880,7 +2880,16 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       await assertFails(set(ref(member, at("common-bad-photo")), common("common-bad-photo", { items: [item("windows", "창호", { status: "recorded", during })] })));
     }
     await assertFails(set(ref(member, at("common-unknown-column")), common("common-unknown-column", { items: [item("windows", "창호", { during: [shot("x")], extra: true })] })));
-    await assertFails(set(ref(member, at("noncommon-during")), common("noncommon-during", { kind: "moveIn" })));
+    await assertSucceeds(set(ref(member, at("move-in-during")), common("move-in-during", { kind: "moveIn" })));
+    await assertSucceeds(set(ref(admin, at("move-in-admin")), common("move-in-admin", { kind: "moveIn", updatedBy: "crm-admin" })));
+    await assertSucceeds(get(ref(viewer, at("move-in-during"))));
+    await assertFails(set(ref(environment.unauthenticatedContext().database(), at("move-in-anonymous")), common("move-in-anonymous", { kind: "moveIn" })));
+    for (const [uid, email] of [["crm-viewer", "viewer@bring.test"], ["crm-disabled", "disabled@bring.test"], ["crm-member", "member@bring.test"]] as const) {
+      const denied = environment.authenticatedContext(uid, crmPasswordClaims(email)).database();
+      await assertFails(set(ref(denied, at("move-in-denied")), common("move-in-denied", { kind: "moveIn", updatedBy: uid })));
+    }
+    await assertFails(set(ref(member, at("other-kind-during")), common("other-kind-during", { kind: "moveOut" })));
+    await assertFails(set(ref(member, at("move-in-unsafe-photo")), common("move-in-unsafe-photo", { kind: "moveIn", items: [item("aircon", "에어컨", { status: "recorded", during: [{ id: "bad", driveFileId: "bad", webViewLink: "https://evil.invalid" }] })] })));
   });
 
   it("keeps a delivery flow's stages in the shape the board can draw", async () => {

@@ -1,3 +1,4 @@
+import { SUBJECTS, ACTIONS, monthlyEvidence } from "./monthly-photo-evidence.js";
 import { maskSensitiveText } from "./privacy.js";
 
 const MAX_IMAGES = 24;
@@ -93,17 +94,17 @@ function normalizeSelection(raw, payload) {
   const selected = [];
   for (const row of value.selected) {
     if (!row || typeof row !== "object" || Array.isArray(row)
-      || Object.keys(row).some(key => !["id", "caption", "reason"].includes(key))
-      || typeof row.id !== "string" || typeof row.caption !== "string" || typeof row.reason !== "string"
-      || !expected.has(row.id) || !row.caption.trim()) throw failure("AI_INVALID_RESPONSE");
+      || Object.keys(row).some(key => !["id", "suitable", "quality", "relevance", "subject", "action", "actionVisible"].includes(key))
+      || typeof row.id !== "string" || typeof row.suitable !== "boolean"
+      || !expected.has(row.id)) throw failure("AI_INVALID_RESPONSE");
     const id = row.id;
     if (seen.has(id)) continue;
     seen.add(id);
-    const caption = safeText(row?.caption, 140);
-    const reason = safeText(row?.reason, 140);
-    selected.push(Object.freeze({ id, caption, reason }));
+    const evidence = monthlyEvidence(row);
+    if (evidence) selected.push(Object.freeze({ id, ...evidence }));
     if (selected.length >= MAX_SELECTED) break;
   }
+  if (seen.size !== expected.size) throw failure("AI_INVALID_RESPONSE");
   return Object.freeze(selected);
 }
 
@@ -121,8 +122,11 @@ function promptFor(payload) {
     `보고 월: ${payload.month}`,
     `업무 자료(JSON): ${JSON.stringify(payload.activities)}`,
     `이미지 순서와 ID:\n${images}`,
-    `최대 ${MAX_SELECTED}장까지 선택하고, 하나도 적절하지 않으면 빈 배열을 반환하세요.`,
-    'JSON만 반환: {"selected":[{"id":"입력한 이미지 ID","caption":"보고서 사진 설명","reason":"업무와 관련 있는 짧은 근거"}]}',
+    "메신저·결제 안내·견적서 등 문서나 앱 화면 캡처는 작업 현장 사진이 아니므로 suitable=false, relevance=unrelated로 제외하세요. 화면 속 작은 현장 사진도 대표 사진으로 선택하지 마세요. 실제 현장에 붙인 게시물과 구분하고, 문서의 개인정보는 전사하지 마세요.",
+    "모든 입력 사진을 selected 배열에서 한 번씩 평가하세요. suitable=false인 사진도 누락하지 마세요. 중복 판단은 같은 날짜·활동 안에서만 하고, 날짜가 다른 방문 증빙을 비슷하다는 이유로 제외하지 마세요.",
+    `subject 허용값: ${Object.keys(SUBJECTS).join(", ")}. action 허용값: ${Object.keys(ACTIONS).join(", ")}.`,
+    "quality=clear/blurred/obstructed/too_small, relevance=supported/unrelated/uncertain. 실제 작업 동작과 대상 접촉이 보일 때만 actionVisible=true입니다. 사람·도구의 존재만으로 작업을 추정하지 마세요. 개인정보가 주된 사진은 suitable=false입니다. 모델 문장 대신 확인된 항목으로 캡션을 만듭니다.",
+    'JSON만 반환: {"selected":[{"id":"입력 ID","suitable":true,"quality":"clear","relevance":"supported","subject":"stairs","action":"none","actionVisible":false}]}',
   ].join("\n");
 }
 
@@ -132,11 +136,12 @@ function selectionSchema(payload) {
     properties: { selected: {
       type: "array", minItems: 0, maxItems: Math.min(MAX_SELECTED, payload.images.length),
       items: {
-        type: "object", additionalProperties: false, required: ["id", "caption", "reason"],
+        type: "object", additionalProperties: false, required: ["id", "suitable", "quality", "relevance", "subject", "action", "actionVisible"],
         properties: {
           id: { type: "string", enum: payload.images.map(image => image.id) },
-          caption: { type: "string", description: "직접 보이는 대상과 상태, 한국어 60자 이내" },
-          reason: { type: "string", description: "보고서에 적합한 근거, 한국어 60자 이내" },
+          suitable: { type: "boolean" }, quality: { type: "string", enum: ["clear", "blurred", "obstructed", "too_small"] },
+          relevance: { type: "string", enum: ["supported", "unrelated", "uncertain"] },
+          subject: { type: "string", enum: Object.keys(SUBJECTS) }, action: { type: "string", enum: Object.keys(ACTIONS) }, actionVisible: { type: "boolean" },
         },
       },
     } },

@@ -55,6 +55,30 @@ test("capture display works inside sandbox renderer without Buffer or Node", () 
   assert.equal(context.BringPhotoCaptureTime.label(null), "원본 촬영시간 없음");
 });
 
+test("sub-minute visual pairs survive Worker rounding but exact equal/reversed times stay rejected in both report kinds", async () => {
+  const { normalizePairs } = await import("../../crm-ai-worker/src/photo-classify.js");
+  const P = require("../src/report-photo-plan");
+  const V = require("../src/photo-pair-review");
+  const response = { beforeId: "a", afterId: "b", matchConfidence: 95, phaseConfidence: 95,
+    evidence: "stain_reduced", anchors: ["frame_shape", "fixture_position"] };
+  for (const [end, expected] of [["09:00:40", 1], ["09:00:10", 0], ["09:00:00", 0]]) {
+    const files = ["a", "b"].map((id, i) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg",
+      captureTime: C.readOriginal(fixture({ date: `2026:10:02 ${i ? end : "09:00:10"}` })) }));
+    const times = C.relativeMinutes(files);
+    assert.deepEqual([...times.values()], [0, 0], "provider minutes cannot distinguish these original seconds");
+    const providerImages = files.map(file => ({ id: file.id, captureMinute: times.get(file.id) }));
+    const pairs = normalizePairs(JSON.stringify({ pairs: [response] }), providerImages);
+    assert.equal(pairs.length, 1);
+    assert.deepEqual(normalizePairs(JSON.stringify({ pairs: [{ ...response, evidence: "same_scene_time" }] }), providerImages), []);
+    const decisions = files.map(file => ({ id: file.id, category: "window", space: "other", target: "window", phase: "unknown", confidence: 95 }));
+    const moveIn = V.withCaptureTimes(V.decorate(P.planFromTree({ files }, { kind: "moveIn" }), decisions), files);
+    assert.equal(V.flatten(V.applyPairs(moveIn, pairs)).filter(row => row.phase === "before").length, expected);
+    const common = P.withCommonCaptureTimes(P.applyPhotoClassifications(P.planFromTree({ files }, { kind: "common" }),
+      decisions.map(row => ({ ...row, category: "windows" }))), files);
+    assert.equal(P.photoReviewRows(P.applyCommonPairs(common, pairs)).filter(row => row.phase === "before").length, expected);
+  }
+});
+
 test("main reads original EXIF before reencoding, reuses stripped JPEG and returns only bounded timing hints", async () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
   const functions = source.slice(source.indexOf("async function workReportClassificationSource("), source.indexOf("async function selectBuildingMonthlyReportPhotos("));
@@ -63,7 +87,7 @@ test("main reads original EXIF before reencoding, reuses stripped JPEG and retur
   const picker = { files, thumbnails: new Map([["a", "must-not-use-thumbnail"]]) };
   let downloads = 0; let providerInput;
   const context = vm.createContext({
-    Buffer, AbortSignal, PhotoCaptureTime: C, MAX_AI_CLASSIFICATION_PHOTOS: 30, CRM_AI_PHOTO_CLASSIFY_URL: "https://gateway.example/v1/photo-classify",
+    Buffer, AbortSignal, PhotoCaptureTime: C, PhotoReviewRefinement: require("../src/photo-review-refinement"), MAX_AI_CLASSIFICATION_PHOTOS: 30, CRM_AI_PHOTO_CLASSIFY_URL: "https://gateway.example/v1/photo-classify",
     authState: () => ({ user: {} }), isMarketingOnlySession: () => false,
     remoteClient: { captureSessionGuard: () => ({}), assertSessionGuardActive() {}, ensureIdToken: async () => "fixture" },
     reportDrivePickerId: value => value, reportDrivePickerReady: () => picker, ensureDriveAccessToken: async () => "fixture",
@@ -80,6 +104,10 @@ test("main reads original EXIF before reencoding, reuses stripped JPEG and retur
   assert.equal(downloads, 2, "comparison reuses session-owned stripped JPEGs");
   assert.equal(providerInput.images[1].captureMinute, 156);
   assert.doesNotMatch(JSON.stringify(providerInput), /2026|GPS|DateTimeOriginal|\.JPG/u);
+  files.get("b").captureTime = { ...capture("16:40:45"), local: "2026-10-09T16:40:45" };
+  providerInput = null;
+  await assert.rejects(() => context.classifySelectedWorkReportPhotos({ kind: "common", fileIds: ["a", "b"], mode: "compare" }), { code: "INVALID_INPUT" });
+  assert.equal(providerInput, null, "mixed visits never reach the provider");
   await assert.rejects(() => context.classifySelectedWorkReportPhotos({ kind: "moveIn", fileIds: ["a"], captureTime: capture("09:00:00") }), { code: "INVALID_INPUT" });
   await assert.rejects(() => context.classifySelectedWorkReportPhotos({ kind: "moveIn", fileIds: ["not-listed"] }), { code: "DRIVE_FILE_NOT_LISTED" });
 });

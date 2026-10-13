@@ -81,6 +81,7 @@ const {
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
+const PhotoReviewRefinement = require("./photo-review-refinement");
 const { classifyPhotosWithGateway, MAX_PHOTOS: MAX_AI_CLASSIFICATION_PHOTOS, MAX_JPEG_BYTES: MAX_AI_CLASSIFICATION_JPEG_BYTES } = require("./ai-photo-classifier-client");
 const WindowsKoreanInput = require("./windows-korean-input");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
@@ -4888,6 +4889,15 @@ function safeClassificationJpeg(sourceBuffer) {
   throw Object.assign(new Error("사진 축소본이 허용 크기를 넘습니다."), { code: "PHOTO_PREVIEW_TOO_LARGE" });
 }
 
+function classificationDetailJpeg(buffer) {
+  const image = nativeImage.createFromBuffer(buffer);
+  const size = image.getSize();
+  const width = Math.floor(size.width * 0.6), height = Math.floor(size.height * 0.6);
+  if (width < 256 || height < 256) return "";
+  const detail = image.crop({ x: Math.floor((size.width - width) / 2), y: Math.floor((size.height - height) / 2), width, height });
+  return safeClassificationJpeg(detail.toJPEG(90));
+}
+
 async function workReportClassificationSource(file, picker, accessToken, mode = "preview") {
   const workReview = mode === "classify" || mode === "compare";
   if (workReview && file.workReviewJpeg) return file.workReviewJpeg;
@@ -4920,7 +4930,10 @@ async function workReportClassificationSource(file, picker, accessToken, mode = 
   const viewable = isHeic ? await HeicJpegConverter.convertToJpeg(original) : original;
   const jpeg = safeClassificationJpeg(viewable);
   // Session-owned picker only: cache small stripped JPEGs, never original bytes.
-  if (workReview) file.workReviewJpeg = jpeg;
+  if (workReview) {
+    file.workReviewJpeg = jpeg;
+    try { file.workReviewDetailJpeg = classificationDetailJpeg(viewable); } catch (_) { file.workReviewDetailJpeg = ""; }
+  }
   return jpeg;
 }
 
@@ -4961,19 +4974,47 @@ async function classifySelectedWorkReportPhotos(input) {
   remoteClient.assertSessionGuardActive(guard);
   const prepared = images.filter(Boolean);
   if (options.mode === "compare") {
+    const captured = files.map(file => PhotoCaptureTime.normalize(file.captureTime)).filter(Boolean);
+    if (captured.some(time => !PhotoCaptureTime.comparable(captured[0], time))) {
+      throw Object.assign(new Error("서로 다른 촬영일의 사진은 전후로 비교하지 않습니다. 같은 방문 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
+    }
     const minutes = PhotoCaptureTime.relativeMinutes(files);
     prepared.forEach(image => { if (minutes.has(image.id)) image.captureMinute = minutes.get(image.id); });
   }
   if (!prepared.length) throw Object.assign(new Error("AI에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const idToken = await remoteClient.ensureIdToken(false);
   remoteClient.assertSessionGuardActive(guard);
-  const result = await classifyPhotosWithGateway({
+  let result = await classifyPhotosWithGateway({
     endpoint: CRM_AI_PHOTO_CLASSIFY_URL,
     idToken,
     input: { kind: options.kind, images: prepared, ...(options.mode ? { mode: options.mode } : {}) },
     fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
   });
   remoteClient.assertSessionGuardActive(guard);
+  // One bounded refinement request for uncertain photos and automatic action
+  // claims. Never retry quota/auth
+  // failures or loop until agreement. A failed refinement retains the first pass.
+  const reviewIds = options.mode === "compare" ? [] : PhotoReviewRefinement.reviewCandidates(result.classifications.filter(row => picker.files.get(row.id)?.workReviewDetailJpeg));
+  if (reviewIds.length) {
+    try {
+      const selected = new Set(reviewIds);
+      const reviewed = await classifyPhotosWithGateway({
+        endpoint: CRM_AI_PHOTO_CLASSIFY_URL, idToken, timeoutMs: 30_000,
+        input: { kind: options.kind, mode: "review", images: prepared.filter(image => selected.has(image.id)).map(image => ({
+          id: image.id, dataUrl: image.dataUrl,
+          ...(picker.files.get(image.id)?.workReviewDetailJpeg ? { detailDataUrl: picker.files.get(image.id).workReviewDetailJpeg } : {}),
+        })) },
+        fetchImpl: (url, fetchOptions) => net.fetch(url, fetchOptions),
+      });
+      remoteClient.assertSessionGuardActive(guard);
+      result = { ...result, classifications: PhotoReviewRefinement.mergeReview(result.classifications, reviewed.classifications),
+        usage: { inputTokens: result.usage.inputTokens + reviewed.usage.inputTokens, outputTokens: result.usage.outputTokens + reviewed.usage.outputTokens },
+        warnings: [...result.warnings, `애매한 사진 ${reviewIds.length}장을 전체·확대로 재검토했습니다. 판단이 다른 사진은 확인 대기로 남깁니다.`] };
+    } catch (_) {
+      remoteClient.assertSessionGuardActive(guard);
+      result = { ...result, warnings: [...result.warnings, "확대 재검토를 완료하지 못했습니다. 1차 분류와 수동 수정은 유지됩니다."] };
+    }
+  }
   return Object.assign({}, result, {
     captureTimes: files.map(file => ({ id: file.id, captureTime: PhotoCaptureTime.normalize(file.captureTime) })),
     classifications: result.classifications.concat(unavailable),
@@ -5020,7 +5061,7 @@ async function selectBuildingMonthlyReportPhotos(input) {
       const index = cursor++;
       const file = files[index];
       try {
-        const dataUrl = await workReportClassificationSource(file, picker, accessToken);
+        const dataUrl = await workReportClassificationSource(file, picker, accessToken, "monthly");
         file.monthlyReportFingerprint = MonthlyPhotoFingerprint.fingerprint(dataUrl, nativeImage);
         images[index] = {
           id: file.id,
@@ -5033,7 +5074,7 @@ async function selectBuildingMonthlyReportPhotos(input) {
   }
   await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => prepare()));
   const preparedImages = images.filter(Boolean).filter((image, index, all) => !all.slice(0, index).some(other =>
-    BuildingReportCore.similarPhoto(picker.files.get(image.id).monthlyReportFingerprint, picker.files.get(other.id).monthlyReportFingerprint)));
+    BuildingReportCore.duplicateEvidence({ ...image, ...picker.files.get(image.id).monthlyReportFingerprint }, { ...other, ...picker.files.get(other.id).monthlyReportFingerprint })));
   if (!preparedImages.length) throw Object.assign(new Error("Gemini에 보낼 수 있는 사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   remoteClient.assertSessionGuardActive(guard);
   const idToken = await remoteClient.ensureIdToken(false);

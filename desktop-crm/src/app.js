@@ -8910,7 +8910,7 @@
         ? `<span class="wr-ai-photo-thumb"><img src="${attr(thumbnail)}" alt=""></span>`
         : `<span class="wr-ai-photo-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span aria-hidden="true">▧</span></span>`;
       const selectedKey = reportItemKeys.has(row.itemKey) ? row.itemKey : "";
-      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span><label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ["before", "작업 전"], ...(plan.kind === "common" ? [["during", "작업 중"]] : []), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
+      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span>${reportPhotoEvidence(row)}<label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ["before", "작업 전"], ...(plan.kind === "common" ? [["during", "작업 중"]] : []), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
     };
     const needsReview = row => !reportItemKeys.has(row.itemKey) || row.phase === "unsorted";
     const classificationCards = photoRows.filter(needsReview).map(classificationCard).join("");
@@ -8972,11 +8972,18 @@
     return `<small class="wr-photo-capture-time">${esc(window.BringPhotoCaptureTime.label(row.file.captureTime))}</small>`;
   }
 
+  function reportPhotoEvidence(row) {
+    const file = row.file || {};
+    const labels = reportPhotoPlan()?.AI_CATEGORY_LABELS || {};
+    const candidates = (Array.isArray(file.aiCandidates) ? file.aiCandidates : []).filter(key => Object.hasOwn(labels, key)).slice(0, 2).map(key => labels[key]);
+    return `<small class="wr-photo-evidence">${esc(file.aiReason || "분류 근거를 확인해 주세요.")}${candidates.length ? `<br>확인할 후보: ${esc(candidates.join(" / "))}` : ""}${file.aiReviewState ? `<br>${file.aiReviewState === "disagreement" ? "재검토 의견 불일치 · 직접 확인" : "전체·확대 재검토됨"}` : ""}</small>`;
+  }
+
   function reportReviewFields(row) {
     const V = window.BringPhotoPairReview;
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     const select = (labels, selected, attrs) => `<select ${attrs}${disabled}>${Object.entries(labels).map(([key, label]) => `<option value="${key}"${key === selected ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
-    return `<label>구역${select(V.SPACES, row.file.reviewSpace || "unknown", `data-report-review-space="${attr(row.id)}"`)}</label><label>대상${select(V.TARGETS, row.file.reviewTarget || "unknown", `data-report-review-target="${attr(row.id)}"`)}</label><label>전·후${select({ unsorted: "확인 필요", before: "작업 전", after: "작업 후" }, row.phase, `data-report-photo-phase="${attr(row.id)}"`)}</label>`;
+    return `<label>구역${select(V.SPACES, row.file.reviewSpace || "unknown", `data-report-review-space="${attr(row.id)}"`)}</label><label>대상${select(V.TARGETS, row.file.reviewTarget || "unknown", `data-report-review-target="${attr(row.id)}"`)}</label><label>전·후${select({ unsorted: "확인 필요", before: "작업 전", during: "작업 중", after: "작업 후" }, row.phase, `data-report-photo-phase="${attr(row.id)}"`)}</label>${reportPhotoEvidence(row)}`;
   }
 
   function reportAreaPhoto(row) {
@@ -8995,16 +9002,16 @@
     const groups = areas.filter(group => filter === "all" || group.space === filter);
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     return `<section class="wr-pair-review">
-      <div class="wr-area-heading"><h4>구역별 전·후 사진 확인</h4><p>구역마다 작업 전·후 사진을 여러 장 넣을 수 있습니다. 장수가 달라도 괜찮아요.</p></div>
-      <div class="wr-ai-classify-bar"><div><b>Gemini 분석 → 사진 자동 배치 → 초안 작성</b><small>원본 촬영시간과 같은 장소를 비교해 추천합니다. 사진 축소본과 상대 시간 간격만 전송하며 파일명·Drive 링크·촬영 날짜·GPS는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
+      <div class="wr-area-heading"><h4>구역별 작업 사진 확인</h4><p>전·중·후를 구분합니다. 명확한 가전은 공간 미지정으로 둘 수 있고, 작업 중 사진만 있어도 기록할 수 있습니다.</p></div>
+      <div class="wr-ai-classify-bar"><div><b>Gemini 분석 → 사진 자동 배치 → 초안 작성</b><small>구역·대상·동작을 따로 확인하고 애매한 사진만 전체·확대로 재검토합니다. 전·후는 같은 장소의 실제 변화가 있을 때만 추천합니다. 사진 축소본과 상대 시간 간격만 전송하며 파일명·Drive 링크·촬영 날짜·GPS는 보내지 않습니다. 사진 속 정보는 포함될 수 있습니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${disabled}>${reportState.driveClassificationLoading ? esc(reportState.photoReviewStage || "분석 중…") : "다시 분석"}</button></div>
       ${!reportState.driveClassificationLoading && reportState.autoPhotoIds.size ? `<div class="wr-auto-draft-notice" role="status"><b>분석 결과가 초안에 자동 반영되었습니다</b><span>사진 ${reportState.autoPhotoIds.size}장 반영 · 확인 필요 ${unresolved}장 보관</span><small>AI 추천은 확정이 아닙니다. 초안은 먼저 만들고, 저장 전에 구역별 분류를 확인하세요.</small></div>` : ""}
       <header class="wr-pair-summary"><b>선택 ${rows.length}장</b><span>확인 완료 ${confirmed}장</span><button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}장</button></header>
       <p class="wr-pair-help">원본 촬영시간 ${rows.filter(row => window.BringPhotoCaptureTime.normalize(row.file.captureTime)).length}/${rows.length}장 확인. 중간에 찍은 전 사진도 같은 장면과 함께 비교합니다. AI 추천은 확정이 아닙니다.</p>
       <nav class="wr-pair-filters" aria-label="사진 구역 필터"><button type="button" class="mini-button${filter === "all" ? " is-active" : ""}" data-report-review-filter="all">전체 ${rows.length}</button>${areas.map(group => `<button type="button" class="mini-button${filter === group.space ? " is-active" : ""}" data-report-review-filter="${group.space}">${esc(V.SPACES[group.space])} ${group.rows.length}</button>`).join("")}<button type="button" class="mini-button" data-report-review-focus>확인 필요 ${unresolved}</button></nav>
       <div class="wr-pair-groups">${groups.map(group => {
         const collapsed = reportState.photoReviewCollapsed.has(group.space);
-        return `<article class="wr-area-card" data-report-area="${group.space}"><header><div><b>${esc(V.SPACES[group.space])}</b><span>작업 전 ${group.before.length}장 · 작업 후 ${group.after.length}장</span></div><label><input type="checkbox" data-report-review-confirm-area="${group.space}"${group.rows.every(row => row.file.reviewConfirmed) ? " checked" : ""}${disabled}> 이 구역 분류 확인</label><button type="button" class="mini-button" data-report-review-collapse="${group.space}" aria-expanded="${!collapsed}" aria-label="${esc(V.SPACES[group.space])} ${collapsed ? "펼치기" : "접기"}">${collapsed ? "펼치기" : "접기"}</button></header>
-          ${collapsed ? "" : `<div class="wr-area-columns">${["before", "after"].map(phase => `<section class="wr-area-phase is-${phase}" data-report-area-phase="${phase}"><h5>${phase === "before" ? "작업 전" : "작업 후"} · ${group[phase].length}장</h5><div class="wr-area-photo-grid">${group[phase].map(reportAreaPhoto).join("") || `<p class="wr-area-empty">등록된 사진이 없습니다.<br>반대쪽과 장수를 맞출 필요는 없습니다.</p>`}</div><button type="button" class="wr-area-add" data-report-review-add="${group.space}" data-report-review-add-phase="${phase}"${disabled}>+ 사진 추가</button></section>`).join("")}</div>`}</article>`;
+        return `<article class="wr-area-card" data-report-area="${group.space}"><header><div><b>${esc(V.SPACES[group.space])}</b><span>작업 전 ${group.before.length}장 · 작업 중 ${group.during.length}장 · 작업 후 ${group.after.length}장</span></div><label><input type="checkbox" data-report-review-confirm-area="${group.space}"${group.rows.every(row => row.file.reviewConfirmed) ? " checked" : ""}${disabled}> 이 구역 분류 확인</label><button type="button" class="mini-button" data-report-review-collapse="${group.space}" aria-expanded="${!collapsed}" aria-label="${esc(V.SPACES[group.space])} ${collapsed ? "펼치기" : "접기"}">${collapsed ? "펼치기" : "접기"}</button></header>
+          ${collapsed ? "" : `<div class="wr-area-columns">${["before", "during", "after"].map(phase => `<section class="wr-area-phase is-${phase}" data-report-area-phase="${phase}"><h5>${{ before: "작업 전", during: "작업 중", after: "작업 후" }[phase]} · ${group[phase].length}장</h5><div class="wr-area-photo-grid">${group[phase].map(reportAreaPhoto).join("") || `<p class="wr-area-empty">등록된 사진이 없습니다.<br>반대쪽과 장수를 맞출 필요는 없습니다.</p>`}</div><button type="button" class="wr-area-add" data-report-review-add="${group.space}" data-report-review-add-phase="${phase}"${disabled}>+ 사진 추가</button></section>`).join("")}</div>`}</article>`;
       }).join("") || `<p class="wr-pair-empty">${reportState.driveClassificationLoading ? "구역과 작업 전·후를 분석하고 있습니다." : "이 구역에 분류된 사진이 없습니다. 확인 필요 목록에서 구역·대상과 전·후를 지정해 주세요."}</p>`}</div>
       ${(plan.warnings || []).length ? `<details class="wr-pair-warnings"><summary>분석 안내</summary><ul>${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul></details>` : ""}
       <div class="wr-drive-actions"><button type="button" class="secondary-button" data-report-drive-apply${rows.length > unresolved && !disabled ? "" : " disabled"}>분류된 사진 초안에 반영 · ${rows.length - unresolved}장</button><small>사진은 자동 반영됩니다. 구역 분류 확인은 저장 전 절차이며 작업 완료 상태는 바꾸지 않습니다.</small></div>
@@ -9017,7 +9024,7 @@
     const rows = V.pendingRows(plan);
     const disabled = reportState.driveClassificationLoading ? " disabled" : "";
     const select = (labels, selected, attrs) => `<select ${attrs}${disabled}>${Object.entries(labels).map(([key, label]) => `<option value="${key}"${key === selected ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
-    const phases = { unsorted: "확인 필요", before: "작업 전", after: "작업 후" };
+    const phases = { unsorted: "확인 필요", before: "작업 전", during: "작업 중", after: "작업 후" };
     return `<section class="wr-ai-card wr-pair-pending" data-report-review-pending><header><div><span>PHOTO REVIEW</span><h4>확인 필요</h4></div><em>${rows.length}장</em></header><p>구역·대상 또는 전·후가 불확실한 사진은 여기 보관됩니다. 나머지 사진으로 초안을 먼저 만들 수 있습니다. 분류하면 해당 구역과 초안에 자동 반영됩니다.</p>
       ${rows.length ? `<details class="wr-pair-bulk"><summary>선택한 사진 일괄 지정</summary><label>구역${select({ "": "변경 안 함", ...V.SPACES }, reportState.photoReviewBulk?.space || "", 'data-report-review-bulk="space"')}</label><label>대상${select({ "": "변경 안 함", ...V.TARGETS }, reportState.photoReviewBulk?.target || "", 'data-report-review-bulk="target"')}</label><label>전·후${select({ "": "변경 안 함", ...phases }, reportState.photoReviewBulk?.phase || "", 'data-report-review-bulk="phase"')}</label><div><button type="button" class="mini-button" data-report-review-select-all${disabled}>목록 모두 선택·해제</button><button type="button" class="primary-button" data-report-review-bulk-apply${disabled}>선택한 사진에 적용</button></div></details>` : ""}
       <div class="wr-pair-pending-list">${rows.map(row => `<article class="wr-pair-single needs-review" data-report-review-row="${attr(row.id)}"><label class="wr-pair-select"><input type="checkbox" data-report-review-select="${attr(row.id)}"${reportState.photoReviewSelected?.has(row.id) ? " checked" : ""}${disabled}> ${esc(row.file.name || "선택한 사진")}</label>${reportPairThumbnail(row)}${reportReviewFields(row)}<small>${esc(row.file.phaseReason || "전·후 판단 근거가 부족합니다. 직접 확인해 주세요.")}</small></article>`).join("") || `<p>모든 사진의 구역·전후가 지정되었습니다. 왼쪽에서 구역별로 확인 후 적용해 주세요.</p>`}</div>
@@ -9055,7 +9062,7 @@
   function reportPhotoConfirmationCount(draft) {
     if (draft.kind === "common") return 0; // Completion remains a separate manual choice.
     const V = window.BringPhotoPairReview;
-    const ids = new Set(draft.items.flatMap(item => [...item.before, ...item.after]).map(photo => photo.driveFileId || photo.id));
+    const ids = new Set(draft.items.flatMap(item => [...item.before, ...item.during, ...item.after]).map(photo => photo.driveFileId || photo.id));
     const rows = new Map(V.flatten(reportState.drivePlan).map(row => [row.id, row]));
     return [...reportState.autoPhotoIds].filter(id => {
       const row = rows.get(id);
@@ -9370,7 +9377,7 @@
     const manual = new Map(reportState.driveClassifications.filter(row => row.manual).map(row => [String(row.id), row]));
     preserveReportDraft();
     reportState.driveClassificationLoading = true;
-    reportState.photoReviewStage = basePlan.kind === "common" ? "공용부 구역·청소 동작 분석 중…" : "원본 촬영시간·공간 분석 중…";
+    reportState.photoReviewStage = "구역·대상·동작 분석 및 애매한 사진 확대 재검토 중…";
     reportState.driveError = "";
     renderWorkReports();
     try {
@@ -9384,7 +9391,8 @@
         classifications.push(...result.classifications.map(row => manual.get(String(row.id)) || row));
         captureTimes.push(...(Array.isArray(result.captureTimes) ? result.captureTimes : []));
         reportState.driveClassifications = classifications.concat([...manual.values()].filter(row => !classifications.some(item => item.id === row.id)));
-        reportState.drivePlan = basePlan.kind === "common" ? P.applyPhotoClassifications(basePlan, reportState.driveClassifications) : window.BringPhotoPairReview.withCaptureTimes(window.BringPhotoPairReview.decorate(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), reportState.driveClassifications), captureTimes);
+          reportState.drivePlan = basePlan.kind === "common" ? P.withCommonCaptureTimes(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), captureTimes) : window.BringPhotoPairReview.withCaptureTimes(window.BringPhotoPairReview.decorate(P.applyPhotoClassifications(basePlan, reportState.driveClassifications), reportState.driveClassifications), captureTimes);
+        reportState.drivePlan.warnings = [...new Set([...(reportState.drivePlan.warnings || []), ...(result.warnings || []).filter(line => typeof line === "string")])].slice(0, 20);
       }
       const V = window.BringPhotoPairReview;
       const groups = basePlan.kind === "common" ? P.commonComparisonGroups(reportState.drivePlan) : V.comparisonGroups(reportState.drivePlan);
@@ -9633,7 +9641,7 @@
       : `<small>등록된 사진 없음</small>`;
     const rows = draft.items.map(item => `<article class="wr-readonly-item">
       <div class="wr-readonly-item-summary"><b>${esc(item.label)}</b><small>${esc(statusLabel(item.status))}${item.note ? ` · ${esc(item.note)}` : ""}</small></div>
-      <div class="wr-readonly-photos">${draft.kind === "common" ? `<section><b>작업 중 · ${item.during.length}장</b>${evidence(item.during, "작업 중")}</section>` : ""}<section><b>작업 전 · ${item.before.length}장</b>${evidence(item.before, "작업 전")}</section><section><b>작업 후 · ${item.after.length}장</b>${evidence(item.after, "작업 후")}</section></div>
+      <div class="wr-readonly-photos">${["moveIn", "common"].includes(draft.kind) ? `<section><b>작업 중 · ${item.during.length}장</b>${evidence(item.during, "작업 중")}</section>` : ""}<section><b>작업 전 · ${item.before.length}장</b>${evidence(item.before, "작업 전")}</section><section><b>작업 후 · ${item.after.length}장</b>${evidence(item.after, "작업 후")}</section></div>
     </article>`).join("");
     return `<section class="wr-readonly-panel" role="status" aria-label="결과보고서 읽기 전용">
       <header><div><span>REPORT · READ ONLY</span><h3>${esc(draft.title || "결과보고서")}</h3><p>${esc(draft.buildingName || "건물 미지정")} · ${esc(R.kindLabel(draft.kind))} · ${esc(draft.workDate || "작업일 미기재")}</p></div><button type="button" class="secondary-button" data-report-cancel>닫기</button></header>
@@ -9674,10 +9682,10 @@
       return `<article class="wr-item${issue ? " has-issue" : ""}" id="wr-item-${attr(item.key)}">
         <header>
           <div><b>${esc(item.label)}</b><small>${esc(item.detail)}</small></div>
-          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.filter(entry => draft.kind === "common" || entry.key !== "recorded").map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
+          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.filter(entry => ["moveIn", "common"].includes(draft.kind) || entry.key !== "recorded").map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
         </header>
-        <div class="wr-shots${draft.kind === "common" ? " is-common" : ""}">
-          ${draft.kind === "common" ? `<div><span>작업 중 <b>${item.during.length}</b></span><ul>${shots("during")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="during"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>` : ""}
+        <div class="wr-shots${["moveIn", "common"].includes(draft.kind) ? " is-common" : ""}">
+          ${["moveIn", "common"].includes(draft.kind) ? `<div><span>작업 중 <b>${item.during.length}</b></span><ul>${shots("during")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="during"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>` : ""}
           <div><span>작업 전 <b>${item.before.length}</b></span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
           <div><span>작업 후 <b>${item.after.length}</b></span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
         </div>
@@ -9688,7 +9696,7 @@
 
     const reviewRows = draft.items.map(item => {
       const issue = R.itemIssue(item, draft.kind);
-      return `<button type="button" class="wr-ai-review-row${issue ? " needs-review" : ""}" data-report-focus-item="${attr(item.key)}"><span><i></i><b>${esc(item.label)}</b></span><small>전 ${item.before.length}${draft.kind === "common" ? ` · 중 ${item.during.length}` : ""} · 후 ${item.after.length}</small><em>${issue ? "확인 필요" : "확인 완료"}</em></button>`;
+      return `<button type="button" class="wr-ai-review-row${issue ? " needs-review" : ""}" data-report-focus-item="${attr(item.key)}"><span><i></i><b>${esc(item.label)}</b></span><small>전 ${item.before.length}${["moveIn", "common"].includes(draft.kind) ? ` · 중 ${item.during.length}` : ""} · 후 ${item.after.length}</small><em>${issue ? "확인 필요" : "확인 완료"}</em></button>`;
     }).join("");
 
     return `<form class="wo-editor wr-editor wr-ai-editor" data-report-form>
@@ -9761,7 +9769,7 @@
           </section>
           <section class="wr-ai-card wr-ai-analysis">
             <header><div><span>PHOTO CHECK</span><h4>사진 분류 확인</h4></div><em>${issueCount ? `${issueCount}개 확인 필요` : "모두 확인"}</em></header>
-            <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div>${draft.kind === "common" ? `<div><span>작업 중</span><b>${draft.items.reduce((n, item) => n + item.during.length, 0)}</b></div>` : ""}<div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
+            <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div>${["moveIn", "common"].includes(draft.kind) ? `<div><span>작업 중</span><b>${draft.items.reduce((n, item) => n + item.during.length, 0)}</b></div>` : ""}<div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
             <div class="wr-ai-review-list">${reviewRows}</div>
           </section>
           <section class="wr-ai-card wr-ai-draft">
@@ -9776,7 +9784,7 @@
           <section class="wr-ai-card wr-ai-finish">
             <header><div><span>FINAL CHECK</span><h4>작업 항목 완료율</h4></div><strong>${sum.progress}%</strong></header>
             <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
-            <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${draft.kind === "common" ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
+            <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${["moveIn", "common"].includes(draft.kind) ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
             ${blockers.length
               ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
               : `<div class="wr-ai-ready">✓ 보고서를 저장할 준비가 됐습니다.</div>`}
@@ -9933,7 +9941,7 @@
     const R = reportCore();
     if (!R || reportState.busyKey) return;
     const draft = readReportForm();
-    if (!["before", "after", ...(draft.kind === "common" ? ["during"] : [])].includes(phase)) return;
+    if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
     if (!draft.buildingId) return showToast("건물을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
@@ -9980,7 +9988,7 @@
     const R = reportCore();
     if (!R || reportState.driveScanning || reportState.driveClassificationLoading) return;
     const draft = readReportForm();
-    if (!["before", "after", ...(draft.kind === "common" ? ["during"] : [])].includes(phase)) return;
+    if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
     // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.

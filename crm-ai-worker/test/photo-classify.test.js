@@ -13,10 +13,10 @@ test("촬영시각 상대 분은 서버에서도 제한하며 날짜·GPS를 받
   await assert.rejects(() => readPhotoClassificationPayload(request([photo])), { code: "INVALID_INPUT" });
   await assert.rejects(() => readPhotoClassificationPayload(request([{ ...photo, captureDate: "2026-10-02" }], "fixture", "compare")), { code: "INVALID_INPUT" });
 });
-test("같은 장면 시간 추천은 시간 근거와 높은 장면 일치 점수 둘 다 필요하다", () => {
+test("높은 점수와 긴 촬영 간격도 시각 변화 없는 전후 추천을 허용하지 않는다", () => {
   const good = { beforeId: "p1", afterId: "p2", matchConfidence: 95, phaseConfidence: 90, evidence: "same_scene_time" };
   const check = (times, overrides = {}) => normalizePairs(JSON.stringify({ pairs: [{ ...good, ...overrides }] }), times.map((captureMinute, i) => ({ id: `p${i + 1}`, captureMinute })));
-  assert.equal(check([0, 40]).length, 1);
+  assert.equal(check([0, 40]).length, 0);
   for (const times of [[undefined, 40], [0, undefined], [0, 39], [40, 0], [0, 0]]) assert.equal(check(times).length, 0);
   assert.equal(check([0, 60], { matchConfidence: 94 }).length, 0);
   assert.equal(check([60, 0], { evidence: "debris_removed" }).length, 0);
@@ -29,11 +29,23 @@ test("AI에는 실제 날짜 대신 원본 기준 상대 간격과 중간 전 �
     assert.doesNotMatch(options.body, /private_|2026-10-02|DateTimeOriginal|latitude/u);
     return responseForPair([{ beforeId: "p1", afterId: "p2", matchConfidence: 96, phaseConfidence: 90, evidence: "same_scene_time" }]);
   });
-  assert.deepEqual(result.pairs, [{ beforeId: "private_1", afterId: "private_2", evidence: "same_scene_time" }]);
+  assert.deepEqual(result.pairs, []);
+});
+
+test("rounded equal minutes do not prove equal captures; visual evidence is still required", () => {
+  const pair = { beforeId: "a", afterId: "b", matchConfidence: 95, phaseConfidence: 90,
+    evidence: "stain_reduced", anchors: ["frame_shape", "fixture_position"] };
+  const check = (minutes, changes = {}) => normalizePairs(JSON.stringify({ pairs: [{ ...pair, ...changes }] }),
+    minutes.map((captureMinute, i) => ({ id: i ? "b" : "a", captureMinute })));
+  assert.equal(check([0, 0]).length, 1, "exact original seconds are checked by the report plan");
+  assert.equal(check([1, 0]).length, 0, "rounded times still reject a provably reversed sequence");
+  for (const changes of [{ evidence: "same_scene_time" }, { evidence: "unknown" }, { anchors: [] }, { phaseConfidence: 84 }]) {
+    assert.equal(check([0, 0], changes).length, 0);
+  }
 });
 
 test("전후 비교는 같은 요청의 ID만 허용하고 중복·낮은 점수·근거 없음은 제외한다", () => {
-  const good = { beforeId: "p1", afterId: "p2", matchConfidence: 90, phaseConfidence: 90, evidence: "debris_removed" };
+  const good = { beforeId: "p1", afterId: "p2", matchConfidence: 90, phaseConfidence: 90, evidence: "debris_removed", anchors: ["tile_pattern", "fixture_position"] };
   const images = ["p1", "p2", "p3", "p4"].map(id => ({ id }));
   const pairs = normalizePairs(JSON.stringify({ pairs: [good, { ...good, afterId: "p3" }, { ...good, beforeId: "foreign", afterId: "p4" }, { ...good, beforeId: "p3", afterId: "p4", phaseConfidence: 30 }] }), images);
   assert.deepEqual(pairs, [{ beforeId: "p1", afterId: "p2", evidence: "debris_removed" }]);
@@ -52,7 +64,7 @@ test("전후 비교는 6장 분류 경계를 넘어 비교하고 사진 원본 �
   assert.equal(calls, 1);
   assert.deepEqual(result.pairs, [{ beforeId: "private_0", afterId: "private_7", evidence: "stain_reduced" }]);
 });
-const responseForPair = pairs => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs }) }] } }] });
+const responseForPair = pairs => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs: pairs.map(pair => ({ anchors: ["tile_pattern", "fixture_position"], ...pair })) }) }] } }] });
 
 test("공용부는 청소 동작이 명확할 때만 작업 중으로 분류한다", async () => {
   const images = ["working", "person", "clean", "low", "bad"].map(id => ({ id, dataUrl: jpeg() }));
@@ -84,6 +96,19 @@ test("확장된 공간·대상 분류도 닫힌 값으로 정규화한다", asyn
   const result = await classifyPhotos({ kind: "moveIn", images: [{ id: "one", dataUrl: jpeg() }] }, env(), async () => responseFor([{ id: "p1", category: "floor", space: "<script>", target: "floor", confidence: 90 }]));
   assert.equal(result.classifications[0].space, "unknown"); assert.equal(result.classifications[0].target, "floor");
 });
+test("청소 접촉 대상은 큰 배경 가전보다 우선하며 별도 유휴 도구는 동작을 취소하지 않는다", async () => {
+  const result = await classifyPhotos({ kind: "common", images: [{ id: "scene", dataUrl: jpeg() }] }, env(), async (_, options) => {
+    const prompt = JSON.parse(options.body).contents[0].parts[0].text;
+    assert.match(prompt, /손·도구·물줄기가 닿는 표면/);
+    assert.match(prompt, /별도 도구 때문에 물청소를 취소하지/);
+    assert.match(prompt, /호스 들기·도구 운반만으로는 during을 만들지/);
+    return responseFor([{ id: "p1", category: "review", confidence: 90, quality: "clear", space: "unknown", spaceConfidence: 0, target: "floor", targetConfidence: 95, phase: "during", phaseConfidence: 95, action: "washing", features: ["floor_surface", "aircon_body", "water_flow", "cleaning_contact"], candidates: [] }]);
+  });
+  assert.equal(result.classifications[0].target, "floor");
+  assert.equal(result.classifications[0].phase, "during");
+  assert.equal(result.classifications[0].category, "review");
+});
+
 const env = overrides => ({
   AI_ENABLED: "true",
   FIREBASE_WEB_API_KEY: "public-key",
@@ -120,7 +145,7 @@ test("사진 분류 route는 인증 뒤 Gemini에 6장씩 요청하고 낮은 �
       const body = JSON.parse(options.body);
       const ids = body.generationConfig.responseJsonSchema.properties.classifications.items.properties.id.enum;
       return Response.json({
-        candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: ids.map((id, index) => ({ id, category: index ? "hood" : "aircon", confidence: index ? 70 : 93, reason: "must not echo model text" })) }) }] } }],
+        candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: ids.map((id, index) => observed({ id, category: index ? "hood" : "aircon", confidence: index ? 70 : 93, reason: "must not echo model text" })) }) }] } }],
         usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3 },
       });
     },
@@ -173,7 +198,22 @@ test("전후 비교 route도 인증을 요구하고 검증된 짝만 클라이�
   assert.deepEqual(result.pairs, [{ beforeId: "before", afterId: "after", evidence: "debris_removed" }]);
   assert.equal(providers, 1);
 });
-const responseFor = rows => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: rows }) }] } }] });
+function observed(row) {
+  const values = ({
+    floor: ["living", "floor", ["room_fixtures", "floor_surface"]],
+    aircon: ["unknown", "aircon", ["aircon_body"]],
+    hood: ["unknown", "hood", ["hood_body"]],
+    windows: ["other", "window", ["window_frame"]],
+    stairs: ["other", "floor", ["steps"]],
+    corridor: ["other", "floor", ["continuous_corridor", "floor_surface"]],
+    handrail: ["other", "other", ["balustrade"]],
+  })[row.category];
+  const visible = Array.isArray(values) ? values : ["unknown", "unknown", []];
+  return { quality: "clear", spaceConfidence: 90, targetConfidence: 90, space: visible[0], target: visible[1],
+    contact: row.phase === "during" ? "driving_tool" : "none", water: row.action === "washing" ? "jet_to_target" : "none",
+    features: [...visible[2], ...(row.phase === "during" ? ["cleaning_contact", "active_hand_contact"] : [])], candidates: [], ...row };
+}
+const responseFor = rows => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: rows.map(observed) }) }] } }] });
 
 test("Gemini 누락·비정상 구역은 확인 대기이며 원본 ID는 제공자에 전송하지 않는다", async () => {
   for (const rows of [[], [{ id: "unknown", category: "floor", confidence: 90 }], [{ id: "p1", category: "invented", confidence: 90 }]]) {

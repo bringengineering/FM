@@ -18,7 +18,7 @@ test("촬영 정보는 비교 요청의 제한된 상대 분만 허용한다", (
 
 test("전후 비교 응답은 예상 ID와 허용된 근거만 받는다", async () => {
   const input = { kind: "moveIn", mode: "compare", images: [{ id: "a", dataUrl: jpeg() }, { id: "b", dataUrl: jpeg() }] };
-  const opts = { endpoint: "https://gateway.example/v1/photo-classify", idToken: "test", input };
+  const opts = { endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify", idToken: "test", input };
   const fetchImpl = pair => async () => Response.json({ ok: true, requestId: "r", classifications: [], pairs: [pair] });
   const pair = { beforeId: "a", afterId: "b", evidence: "debris_removed" };
   assert.deepEqual((await classifyPhotosWithGateway({ ...opts, fetchImpl: fetchImpl(pair) })).pairs, [pair]);
@@ -40,7 +40,7 @@ test("사진 분류 입력은 30장 이하의 작은 JPEG와 제한된 필드만
 test("사진 분류 client는 Firebase 토큰과 축소본만 보내고 결과를 제한한다", async () => {
   let captured;
   const result = await classifyPhotosWithGateway({
-    endpoint: "https://gateway.example/v1/photo-classify",
+    endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify",
     idToken: "firebase-token",
     input: { kind: "moveIn", images: [{ id: "drive_1", dataUrl: jpeg() }, { id: "drive_2", dataUrl: jpeg() }] },
     fetchImpl: async (url, options) => {
@@ -58,5 +58,22 @@ test("사진 분류 client는 Firebase 토큰과 축소본만 보내고 결과�
 
 test("사진 분류 client는 주소와 응답을 닫힌 형태로 검사한다", async () => {
   await assert.rejects(() => classifyPhotosWithGateway({ endpoint: "http://gateway.example/v1/photo-classify", idToken: "x", input: { kind: "moveIn", images: [{ id: "x", dataUrl: jpeg() }] } }), error => error?.code === "AI_CONFIGURATION_ERROR");
-  await assert.rejects(() => classifyPhotosWithGateway({ endpoint: "https://gateway.example/v1/photo-classify", idToken: "x", input: { kind: "moveIn", images: [{ id: "x", dataUrl: jpeg() }] }, fetchImpl: async () => Response.json({ ok: true, requestId: "r", classifications: [{ id: "x", category: "unknown" }] }) }), error => error?.code === "AI_INVALID_RESPONSE");
+  await assert.rejects(() => classifyPhotosWithGateway({ endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify", idToken: "x", input: { kind: "moveIn", images: [{ id: "x", dataUrl: jpeg() }] }, fetchImpl: async () => Response.json({ ok: true, requestId: "r", classifications: [{ id: "x", category: "unknown" }] }) }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("photo transport rejects credential-bearing/unapproved URLs before sending and bounds response bytes/time", async () => {
+  const endpoint = "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify";
+  const input = { kind: "moveIn", images: [{ id: "a", dataUrl: jpeg() }] };
+  for (const url of ["https://evil.invalid/v1/photo-classify", endpoint + "?key=synthetic", endpoint.replace("https://", "https://user:pass@"), endpoint + "#fragment"]) {
+    await assert.rejects(() => classifyPhotosWithGateway({ endpoint: url, idToken: "synthetic", input, fetchImpl: () => { throw new Error("must not call"); } }), { code: "AI_CONFIGURATION_ERROR" });
+  }
+  await assert.rejects(() => classifyPhotosWithGateway({ endpoint, idToken: "synthetic", input, fetchImpl: async (_, options) => {
+    assert.equal(options.redirect, "error"); return new Response("x".repeat(129 * 1024));
+  } }), { code: "AI_INVALID_RESPONSE" });
+  const keepAlive = setTimeout(() => {}, 1000);
+  try {
+    await assert.rejects(() => classifyPhotosWithGateway({ endpoint, idToken: "synthetic", input, timeoutMs: 20, fetchImpl: async (_, options) => new Response(new ReadableStream({
+      start(controller) { options.signal.addEventListener("abort", () => controller.error(new DOMException("timeout", "AbortError")), { once: true }); },
+    })) }), { code: "AI_TEMPORARY_FAILURE" });
+  } finally { clearTimeout(keepAlive); }
 });

@@ -8,7 +8,7 @@ const env = { GEMINI_API_KEY: "synthetic-key-only" };
 const image = index => ({ id: `drive_${index}_${"a".repeat(160)}`, date: `2026-09-${index % 2 ? "10" : "20"}`, dataUrl: `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, index]).toString("base64")}` });
 const input = (count = 2) => ({ month: "2026-09", activities: [], images: Array.from({ length: count }, (_, at) => image(at)) });
 const payload = async (count = 2) => readMonthlyReportPhotoSelectionPayload(new Request("https://test.invalid", { method: "POST", body: JSON.stringify(input(count)) }));
-const row = id => ({ id, caption: "바닥 표면 상태", reason: "실내 현장을 확인할 수 있음" });
+const row = id => ({ id, suitable: true, quality: "clear", relevance: "supported", subject: "floor", action: "none", actionVisible: false });
 const provider = (parts, finishReason = "STOP") => Response.json({ candidates: [{ content: { parts }, finishReason }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 } });
 const good = ids => provider([{ text: JSON.stringify({ selected: ids.map(row) }) }]);
 const idsFrom = options => JSON.parse(options.body).generationConfig.responseJsonSchema.properties.selected.items.properties.id.enum;
@@ -52,7 +52,7 @@ test("identical photographs are not reused for another date or activity", async 
 });
 
 test("multi-part JSON is joined and thought summaries are excluded", async () => {
-  const raw = JSON.stringify({ selected: [row("p2")] });
+  const raw = JSON.stringify({ selected: [{ ...row("p1"), suitable: false }, row("p2")] });
   let calls = 0;
   const result = await selectMonthlyReportPhotos(await payload(), env, async () => {
     calls++;
@@ -65,7 +65,7 @@ test("multi-part JSON is joined and thought summaries are excluded", async () =>
 
 test("a complete JSON fence is accepted, unrelated surrounding prose is not", async () => {
   const raw = JSON.stringify({ selected: [row("p1")] });
-  assert.equal((await selectMonthlyReportPhotos(await payload(), env, async () => provider([{ text: `\u0060\u0060\u0060json\n${raw}\n\u0060\u0060\u0060` }]))).selected.length, 1);
+  assert.equal((await selectMonthlyReportPhotos(await payload(1), env, async () => provider([{ text: `\u0060\u0060\u0060json\n${raw}\n\u0060\u0060\u0060` }]))).selected.length, 1);
   let calls = 0;
   await assert.rejects(() => selectMonthlyReportPhotos(input(), env, async () => {
     calls++;
@@ -155,7 +155,7 @@ test("empty and malformed responses recover without inventing captions", async (
 
 test("valid empty selection is success and is not retried", async () => {
   let calls = 0;
-  const result = await selectMonthlyReportPhotos(await payload(), env, async () => { calls++; return good([]); });
+  const result = await selectMonthlyReportPhotos(await payload(), env, async (_, options) => { calls++; return provider([{ text: JSON.stringify({ selected: idsFrom(options).map(id => ({ ...row(id), suitable: false })) }) }]); });
   assert.deepEqual(result.selected, []);
   assert.equal(calls, 1);
 });
@@ -214,5 +214,5 @@ test("client -> authenticated Worker -> Gemini recovery -> client preserves real
   });
   assert.equal(calls, 3);
   assert.deepEqual(result.selected.map(r => r.id), [image(0).id, image(1).id]);
-  assert.ok(result.selected.every(r => r.caption === "바닥 표면 상태"));
+  assert.ok(result.selected.every(r => r.caption === "바닥 · 현장 사진"));
 });

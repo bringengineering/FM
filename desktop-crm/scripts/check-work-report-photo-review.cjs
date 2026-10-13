@@ -39,6 +39,12 @@ function installFixture() {
       if (window.__photoQA.fail) throw new Error("가상 Gemini 연결 실패");
       // Deliberately provide no pairs: explicit phases still form multi-photo areas.
       if (input.mode === "compare") return { ok: true, classifications: [], pairs: [] };
+      if (window.__photoQA.v2 && input.kind === "moveIn") return { ok: true, classifications: input.fileIds.map((id, index) => ({ id, analysisVersion: 2,
+        category: index === 0 ? "aircon" : "review", space: "unknown", target: index === 0 ? "aircon" : "unknown",
+        confidence: 95, phase: index === 0 ? "during" : "unknown", phaseConfidence: 95,
+        candidates: index === 0 ? [] : ["hood", "aircon"], reviewState: index === 0 ? "checked" : "disagreement",
+        reason: index === 0 ? "에어컨 본체와 실제 닦는 동작 확인" : "전체·확대의 판단이 달라 직접 확인이 필요합니다.",
+      })) };
       if (input.kind === "common") return { ok: true, classifications: input.fileIds.map(id => ({ id, category: "windows", confidence: 93, phase: Number(id.split("_")[1]) < 18 ? "during" : "unknown", phaseConfidence: 95 })) };
       const captureTimes = input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, captureTime: phase(n) ? { local: `2026-10-02T${phase(n) === "작업 후" ? "16:40:45" : "14:04:14"}`, offset: "+09:00", source: "exif-original" } : null }; });
       return { ok: true, captureTimes, classifications: input.fileIds.map(id => { const n = Number(id.split("_")[1]); return { id, category: space(n) === "unknown" ? "review" : space(n), space: space(n), target: space(n) === "unknown" ? "unknown" : "sink", confidence: 90, reason: "가상 구역 추천" }; }) };
@@ -245,6 +251,29 @@ async function main() {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false);
     if (process.env.BRING_QA_COMMON_SCREENSHOT) { await page.locator('.wr-drive').scrollIntoViewIfNeeded(); await page.screenshot({ path: process.env.BRING_QA_COMMON_SCREENSHOT }); }
     console.log("PASS common-area: during-only draft, unresolved retained, recorded not completed, manual changes survive retry, removal survives drafting, narrow layout");
+    await page.locator('[data-report-cancel]').first().click();
+    await page.locator('[data-report-new]').click();
+    await page.locator('[data-report-kind]').selectOption('moveIn');
+    await page.locator('[data-report-building]').selectOption('b1');
+    await page.evaluate(() => { window.__photoQA.v2 = true; });
+    await selectPhotos();
+    await page.waitForFunction(() => document.querySelector('[name="summary"]')?.value.includes('검토용 초안'));
+    assert.equal(await phaseCount('unknown', 'during'), 1, '공간 미지정 에어컨 작업 중 사진도 배치된다');
+    assert.equal(await page.locator('[data-report-status="aircon"]').inputValue(), 'recorded');
+    assert.equal(await page.locator('.wr-pair-single.needs-review').count(), 19);
+    assert.match(await page.locator('.wr-pair-pending').textContent(), /확인할 후보: 주방 후드·필터 \/ 에어컨 필터·커버/);
+    await page.locator('[data-report-review-confirm-area="unknown"]').check();
+    assert.equal(await page.locator('[data-report-form] button[type="submit"]').isEnabled(), true);
+    await page.locator('[data-report-photo-phase="synthetic_1"]').selectOption('during');
+    await page.locator('[data-report-review-target="synthetic_1"]').selectOption('refrigerator');
+    await page.locator('[data-report-review-confirm-area="unknown"]').check();
+    await page.locator('[data-report-photo-classify]').click();
+    await page.waitForFunction(() => document.querySelector('[data-report-photo-classify]')?.disabled === false);
+    assert.equal(await page.locator('[data-report-drop-photo][data-report-item="refrigerator"][data-report-phase="during"]').count(), 1);
+    assert.equal(await page.locator('[data-report-drop-photo]').count(), 2);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false);
+    if (process.env.BRING_QA_ACCURACY_SCREENSHOT) { await page.locator('[data-report-area="unknown"]').scrollIntoViewIfNeeded(); await page.screenshot({ path: process.env.BRING_QA_ACCURACY_SCREENSHOT }); }
+    console.log("PASS v2: unknown-room appliance, during-only move-in report, competing candidates, manual refrigerator correction survives retry, no automatic completion");
     assert.deepEqual(errors, []);
     console.log("PASS real renderer: automatic 18-photo draft with 2 unresolved retained, no false confirmation, manual text/suggestion preservation, retry, late typing, removed-photo retention, unequal area groups, moves, addition, save review gate, escaping, duplicate prevention, provider failure, responsive layout, stale-kind guard");
   } finally { await browser?.close(); server.kill(); }
