@@ -191,7 +191,7 @@ test("항목은 코드가 깔고 사람은 사진만 붙인다", () => {
   const body = appSource.slice(start, appSource.indexOf("\n  function readReportForm(", start));
   // 표준 항목을 화면에서 다시 만들지 않는다. 만들면 코어와 어긋난다.
   assert.match(body, /draft\.items\.map\(item =>/u);
-  assert.match(body, /R\.ITEM_STATUSES\.filter\(entry => draft\.kind === "common" \|\| entry\.key !== "recorded"\)\.map/u);
+  assert.match(body, /R\.ITEM_STATUSES\.filter\(entry => \["moveIn", "common"\]\.includes\(draft\.kind\) \|\| entry\.key !== "recorded"\)\.map/u);
   assert.match(body, /R\.KINDS\.map/u);
   // 못 낼 이유를 저장 단추 누르기 전에 다 보여 준다.
   assert.match(body, /R\.blockers\(draft\)/u);

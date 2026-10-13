@@ -159,7 +159,7 @@ test("폴더 나무를 통째로 보고 계획을 짠다", () => {
   const plan = P.planFromTree({
     name: "입주청소(햇빛빌라)_블로그_20260831",
     folders: [
-      { name: "화장실", files: [jpg("20260831_172901.jpg"), jpg("20260901_101819.jpg")] },
+      { name: "화장실", files: [jpg("작업전_20260831_172901.jpg"), jpg("작업후_20260901_101819.jpg")] },
       { name: "주방", files: [jpg("20260831_180000.jpg"), jpg("20260901_102000.jpg")] },
       { name: "공간기획", files: [jpg("20260831_190000.jpg")] },
       { name: "영상 캡처 정리", files: [{ id: "v1", name: "20260831_182447.mp4", mimeType: "video/mp4" }] },
@@ -186,7 +186,7 @@ test("바깥에 그냥 놓인 사진도 버리지 않는다", () => {
 test("초안이 결과보고서 모양으로 나온다", () => {
   const plan = P.planFromTree({
     name: "입주청소(햇빛빌라)_블로그_20260831",
-    folders: [{ name: "화장실", files: [jpg("20260831_172901.jpg"), jpg("20260901_101819.jpg")] }],
+    folders: [{ name: "화장실", files: [jpg("작업전_20260831_172901.jpg"), jpg("작업후_20260901_101819.jpg")] }],
   });
   const made = P.toReportDraft(plan, { core: W });
   assert.equal(made.ok, true);
@@ -203,23 +203,19 @@ test("초안이 결과보고서 모양으로 나온다", () => {
   assert.equal(report.items.find(item => item.key === "bath").after.length, 1);
 });
 
-test("초안만으로는 내보낼 수 없다", () => {
-  // 자동으로 짠 초안이 그대로 나갈 수 있으면, 아무도 안 보고 내보내게 된다.
-  //
-  // 코어는 항목을 '완료' 로 깔아 두고, 전·후 사진이 없으면 blockers 가
-  // 막는다. 그 구조를 그대로 쓴다 — 여기서 상태를 따로 손대면 두 군데가
-  // 각자 판단하게 되고, 한쪽이 반드시 뒤처진다.
+test("사진 없는 초안은 내보낼 수 없고 작업 기록은 완료로 올리지 않는다", () => {
+  // 사진 배치는 완료 판정이 아니다. 입주청소도 작업 기록(0%)으로 시작한다.
   const plan = P.planFromTree({
     name: "입주청소(햇빛빌라)_블로그_20260831",
-    folders: [{ name: "화장실", files: [jpg("20260831_172901.jpg"), jpg("20260901_101819.jpg")] }],
+    folders: [{ name: "화장실", files: [jpg("작업전_20260831_172901.jpg"), jpg("작업후_20260901_101819.jpg")] }],
   });
   const made = P.toReportDraft(plan, { core: W });
   const report = W.normalizeReport(made.draft);
 
-  // 사진이 붙은 화장실은 통과하고, 안 붙은 나머지가 막는다.
-  assert.equal(W.itemIssue(report.items.find(item => item.key === "bath")), null);
-  const stops = W.blockers(report);
-  assert.ok(stops.length > 0, "증빙 없는 항목이 내보내기를 막아야 한다");
+  assert.equal(W.itemIssue(report.items.find(item => item.key === "bath"), "moveIn"), null);
+  assert.equal(W.progress(report), 0);
+  const empty = W.normalizeReport({ ...report, items: [] });
+  assert.ok(W.blockers(empty).some(row => row.key === "photos"), "분류된 사진 없는 보고서는 저장할 수 없다");
   assert.equal(W.ready(report), false);
 });
 
@@ -227,7 +223,7 @@ test("계획을 짜는 쪽은 상태를 손대지 않는다", () => {
   // 상태를 여기서 올리거나 내리면 코어의 판단과 두 벌이 된다.
   const plan = P.planFromTree({
     name: "입주청소(햇빛빌라)_블로그_20260831",
-    folders: [{ name: "화장실", files: [jpg("20260831_172901.jpg"), jpg("20260901_101819.jpg")] }],
+    folders: [{ name: "화장실", files: [jpg("작업전_20260831_172901.jpg"), jpg("작업후_20260901_101819.jpg")] }],
   });
   const made = P.toReportDraft(plan, { core: W });
   const base = W.itemsFor("moveIn", []);
@@ -276,7 +272,7 @@ test("모듈을 못 받으면 계산하지 않는다", () => {
 test("AI 사진 분류는 전후를 유지하고 에어컨·냉장고·후드를 따로 묶는다", () => {
   const plan = P.planFromTree({
     name: "입주청소(예초집)_20260921",
-    folders: [{ name: "활동 사진", files: [jpg("20260921_090000.jpg"), jpg("20260921_140000.jpg"), jpg("20260921_141000.jpg")] }],
+    folders: [{ name: "활동 사진", files: [jpg("작업전_20260921_090000.jpg"), jpg("작업후_20260921_140000.jpg"), jpg("작업후_20260921_141000.jpg")] }],
   });
   const files = plan.buckets[0].before.concat(plan.buckets[0].after);
   const classified = P.applyPhotoClassifications(plan, [

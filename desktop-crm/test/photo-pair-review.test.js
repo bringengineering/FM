@@ -10,19 +10,19 @@ const timed = (id, local) => ({ id, captureTime: { local: `2026-10-02T${local}`,
 test("원본 시간은 혼자서 전후를 나누지 않으며 중간 전 사진은 같은 장면의 늦은 사진과 묶는다", () => {
   const plan = V.withCaptureTimes(seed(), [timed("p0", "09:00:00"), timed("p1", "14:00:00"), timed("p2", "15:00:00"), timed("p3", "16:40:00")]);
   assert.ok(V.flatten(plan).every(row => row.phase === "unsorted"));
-  const result = V.applyPairs(plan, [{ beforeId: "p2", afterId: "p3", evidence: "same_scene_time" }]);
+  const result = V.applyPairs(plan, [{ beforeId: "p2", afterId: "p3", evidence: "stain_reduced" }]);
   assert.equal(V.flatten(result).find(row => row.id === "p2").phase, "before");
   assert.equal(V.flatten(result).find(row => row.id === "p1").phase, "unsorted");
   assert.equal(V.flatten(V.confirmedPlan(result)).length, 0);
   assert.equal(V.flatten(result).find(row => row.id === "p3").file.captureTime.local, "2026-10-02T16:40:00");
 });
-test("시간 추천은 40분 이상 같은 날만 허용하고 역순·시간 누락·수동 지정 충돌을 막는다", () => {
+test("시각만 있는 전후 추천은 간격과 관계없이 거부하고 역순·수동 지정 충돌도 막는다", () => {
   const timePair = { ...pair, evidence: "same_scene_time" };
   const pairs = plan => V.groups(V.applyPairs(plan, [timePair])).filter(group => group.paired).length;
   assert.equal(pairs(seed()), 0);
   assert.equal(pairs(V.withCaptureTimes(seed(), [timed("p0", "14:00:00"), timed("p1", "14:39:59")])), 0);
   const plan = V.withCaptureTimes(seed(), [timed("p0", "14:00:00"), timed("p1", "16:40:00")]);
-  assert.equal(pairs(plan), 1);
+  assert.equal(pairs(plan), 0);
   assert.equal(pairs(V.update(plan, ["p1"], { phase: "before" })), 0);
   assert.equal(V.groups(V.applyPairs(plan, [{ ...pair, beforeId: "p1", afterId: "p0" }])).filter(group => group.paired).length, 0);
   assert.equal(pairs(V.withCaptureTimes(plan, [{ id: "p1", captureTime: { ...timed("p1", "16:40:00").captureTime, local: "2026-10-03T16:40:00" } }])), 0);
@@ -34,6 +34,17 @@ test("58장 비교는 시간순 양 끝을 섞어 초반 전 사진과 마무리
   assert.equal(new Set(ids).size, 58);
   assert.ok(ids.slice(0, 30).some(id => Number(id.slice(1)) >= 29));
   assert.ok(ids.slice(30).some(id => Number(id.slice(1)) < 29));
+});
+
+test("같은 공간도 다른 방문일·시간대는 나누고 미기록 사진으로 방문 사이를 잇지 않는다", () => {
+  const second = id => ({ id, captureTime: { ...timed(id, "14:00:00").captureTime, local: "2026-10-09T14:00:00" } });
+  const plan = V.withCaptureTimes(seed(8), [timed("p0", "09:00:00"), timed("p1", "10:00:00"), second("p2"), second("p3"), { ...timed("p6", "11:00:00"), captureTime: { ...timed("p6", "11:00:00").captureTime, offset: "" } }, { ...timed("p7", "12:00:00"), captureTime: { ...timed("p7", "12:00:00").captureTime, offset: "" } }]);
+  assert.deepEqual(V.comparisonGroups(plan).map(ids => ids.slice().sort()).sort(), [["p0","p1"],["p2","p3"],["p4","p5"],["p6","p7"]]);
+  for (const afterId of ["p2", "p6"]) {
+    const result = V.applyPairs(plan, [{ beforeId: "p0", afterId, evidence: "stain_reduced" }]);
+    assert.ok(V.flatten(result).every(row => !row.file.reviewPair));
+  }
+  assert.equal(V.groups(V.applyPairs(plan, [pair])).filter(group => group.paired).length, 1);
 });
 
 test("공간·대상을 분리하고 같은 종류의 바닥을 다른 공간에 몰아넣지 않는다", () => {

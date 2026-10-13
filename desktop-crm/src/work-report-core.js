@@ -252,11 +252,11 @@
   function itemsFor(kindKey, existing) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
-    const saved = rows(existing).map(item => normalizeItem(kindKey === "common" && !item.status ? { ...item, status: "recorded" } : item));
+    const saved = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
     const savedKeys = new Set(saved.map(item => item.key));
     return kind.items.filter(standard => !standard.optional || savedKeys.has(standard.key)).map(standard => {
       const found = saved.find(item => item.key === standard.key);
-      return normalizeItem(found || { key: standard.key, status: kindKey === "common" ? "recorded" : "done" }, standard);
+      return normalizeItem(found || { key: standard.key, status: ["moveIn", "common"].includes(kindKey) ? "recorded" : "done" }, standard);
     });
   }
 
@@ -329,7 +329,7 @@
   // 둘을 가르지 못하면 그 사진은 아무것도 증명하지 않는다.
   function itemIssue(item, kind) {
     const row = normalizeItem(item);
-    if (row.status === "recorded") return kind === "common" ? null : "작업 상태를 확인해 주세요.";
+    if (row.status === "recorded") return ["moveIn", "common"].includes(kind) ? null : "작업 상태를 확인해 주세요.";
     if (row.status === "skipped") {
       return row.note ? null : "못 한 이유를 적어 주세요.";
     }
@@ -348,7 +348,7 @@
     if (!report.buildingId) return { ok: false, error: "어느 건물인지 정해 주세요.", code: "BUILDING_REQUIRED" };
     if (!report.workDate) return { ok: false, error: "작업한 날짜를 골라 주세요.", code: "DATE_REQUIRED" };
     const closed = report.items.filter(item => item.status !== "skipped");
-    if (report.kind === "common" && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
+    if (["moveIn", "common"].includes(report.kind) && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
     if (!closed.length) {
       return { ok: false, error: "한 항목도 하지 않은 것은 결과보고서가 아닙니다.", code: "NOTHING_DONE" };
     }
@@ -379,6 +379,7 @@
     const item = normalizeReport(report);
     const list = [];
     if (!item.workDate) list.push({ key: "workDate", text: "작업한 날짜를 골라 주세요." });
+    if (["moveIn", "common"].includes(item.kind) && !photoCount(item)) list.push({ key: "photos", text: "분류된 작업 사진을 한 장 이상 등록해 주세요." });
     item.items.forEach(row => {
       const issue = itemIssue(row, item.kind);
       if (issue) list.push({ key: row.key, text: `${row.label}: ${issue}` });

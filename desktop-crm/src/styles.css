@@ -1468,7 +1468,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-area-card>header span { color: #6B7684; font-size: 11px; }
 .wr-ai-editor .wr-area-card>header>label { display: flex; flex-direction: row; align-items: center; gap: 5px; font-size: 11px; }
 .wr-area-card input[type=checkbox] { width: 16px; height: 16px; min-height: 16px; }
-.wr-area-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; padding: 10px; }
+.wr-area-columns { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(210px,100%),1fr)); gap: 10px; padding: 10px; }
+.wr-photo-evidence { display: block; color: #526579; line-height: 1.5; margin: 8px 0; overflow-wrap: anywhere; }
 .wr-area-phase { min-width: 0; padding: 10px; border-radius: 9px; background: #F6F5F2; }
 .wr-area-phase.is-after { background: #EFF7FF; }
 .wr-area-phase h5 { color: #4E5968; font-size: 12px; margin: 0 0 10px; }

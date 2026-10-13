@@ -44,7 +44,7 @@ function itemRows(report, copyKey) {
 }
 
 function photoBoard(report, images) {
-  if (report.kind === "common") {
+  if (report.kind === "common" || report.items.some(item => item.during.length)) {
     return report.items.flatMap(item => ["during", "before", "after"].flatMap(phase => {
       const photos = item[phase];
       return Array.from({ length: Math.ceil(photos.length / 4) }, (_, index) => `<section class="board"><h3>${html(item.label)} · ${{ during: "작업 중", before: "작업 전", after: "작업 후" }[phase]}${photos.length > 4 ? ` · ${index + 1}/${Math.ceil(photos.length / 4)}` : ""}</h3><div class="common-photos">${photos.slice(index * 4, index * 4 + 4).map(photo => photoTag(photo, images)).join("")}</div></section>`);

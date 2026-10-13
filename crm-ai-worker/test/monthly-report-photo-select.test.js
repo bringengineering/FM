@@ -32,7 +32,7 @@ test("Gemini 응답은 요청된 ID만 최대 12장 선택하고 키는 헤더�
   let captured;
   const result = await selectMonthlyReportPhotos(payload, { GEMINI_API_KEY: "test-secret", GEMINI_VISION_MODEL: "gemini-3.8-flash" }, async (url, options) => {
     captured = { url: String(url), options, body: JSON.parse(options.body) };
-    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", caption: "에어컨 필터 상태", reason: "업무 내용과 일치" }] }) }] } }] });
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", suitable: true, quality: "clear", relevance: "supported", subject: "equipment", action: "none", actionVisible: false }] }) }] } }] });
   });
   assert.equal(result.selected.length, 1);
   assert.equal(result.selected[0].id, "photo_1");
@@ -69,7 +69,7 @@ test("월간 사진 선택 route는 인증 후 Gemini를 부르고 API 키가 �
     fetchImpl: async (url, options = {}) => {
       calls.push({ url: String(url), options });
       if (String(url).includes("accounts:lookup")) return Response.json({ users: [{ localId: "u1", email: "worker@example.com", emailVerified: true }] });
-      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", caption: "후드 필터 청소", reason: "정기 점검 업무와 일치" }] }) }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 8 } });
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ selected: [{ id: "p1", suitable: true, quality: "clear", relevance: "supported", subject: "equipment", action: "washing", actionVisible: true }] }) }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 8 } });
     },
   });
   const env = {
@@ -81,7 +81,7 @@ test("월간 사진 선택 route는 인증 후 Gemini를 부르고 API 키가 �
   const response = await worker.fetch(request(basePayload()), env);
   const value = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(value.selected[0].caption, "후드 필터 청소");
+  assert.equal(value.selected[0].caption, "설비·기기 · 세척 작업 모습");
   assert.ok(calls.some(call => call.url.startsWith("https://generativelanguage.googleapis.com/")));
 
   let providerCalls = 0;

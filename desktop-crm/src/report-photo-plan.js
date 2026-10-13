@@ -19,6 +19,8 @@
 // 파일 이름에 '전'·'후' 가 적혀 있지 않다. 대신 **시각이 뭉쳐 있다.**
 // 화장실 폴더를 보면 17:29 에 다섯 장, 17:53 에 두 장, 다음 날 10:18 에
 // 다섯 장이다. 사람은 작업 전에 한 번 찍고 끝나고 한 번 찍는다. 그래서
+// 아래 시간 휴리스틱은 기타 작업의 기존 폴더 초안에만 남긴다.
+// 입주·공용부 AI 분류는 시간만으로 전후를 배치하지 않는다.
 // 시각이 크게 벌어지는 자리에서 자르면 앞 무리가 작업 전, 뒤 무리가
 // 작업 후다.
 //
@@ -33,10 +35,10 @@
 // 3. HEIC 원본은 화면에서 직접 열지 않는다. 보고서 사진으로는 분류하고,
 //    PDF 를 만들 때 로컬 변환기가 JPG 사본을 만든다.
 (function attachReportPhotoPlan(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./photo-capture-time") : root.BringPhotoCaptureTime);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BringReportPhotoPlan = api;
-})(typeof globalThis === "object" ? globalThis : this, function createReportPhotoPlan() {
+})(typeof globalThis === "object" ? globalThis : this, function createReportPhotoPlan(Capture) {
   "use strict";
 
   const text = (value, limit = 300) => String(value == null ? "" : value).trim().slice(0, limit);
@@ -248,6 +250,7 @@
       confident: !named.unsorted.length && !split.unsorted.length,
       reason: named.before.length + named.after.length ? `파일·폴더 전·후 표기를 우선했습니다. ${split.reason}`.trim() : split.reason,
     });
+    if (settings.requireVisualEvidence) return finish({ before: [], after: [], unsorted: remaining, confident: false, reason: "촬영시각만으로 전·후를 나누지 않습니다. 같은 장면의 실제 변화 또는 직접 확인이 필요합니다." });
     const gapMs = (Number(settings.gapMinutes) > 0 ? Number(settings.gapMinutes) : GAP_MINUTES) * 60 * 1000;
     const list = remaining
       .map(photo => Object.assign({}, photo, takenAt(photo)))
@@ -309,12 +312,12 @@
       }
       const split = kind === "common"
         ? { before: [], after: [], unsorted: images.concat(heic), confident: false, reason: "공용부는 청소 동작과 같은 장소의 변화를 분석합니다. 촬영시각만으로 전·후를 나누지 않습니다." }
-        : splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name });
+        : splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name, requireVisualEvidence: kind === "moveIn" });
       buckets.push({
         folder: text(folder && folder.name, 120),
         itemKey: itemKeyForFolder(kind, folder && folder.name),
         before: split.before,
-        ...(kind === "common" ? { during: [] } : {}),
+        during: [],
         after: split.after,
         unsorted: split.unsorted,
         confident: split.confident,
@@ -390,7 +393,7 @@
         return;
       }
       target.before = target.before.concat(bucket.before.map(toPhoto));
-      if (kind === "common") target.during = target.during.concat(rows(bucket.during).map(toPhoto));
+      if (["moveIn", "common"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
       target.after = target.after.concat(bucket.after.map(toPhoto));
       // 못 가른 것은 작업 전에 몰아 두지 않는다. 몰아 두면 사람이
       // 옮겼는지 원래 그런지 알 수 없다. 메모로 남겨 눈에 띄게 한다.
@@ -438,7 +441,7 @@
   }
 
   function assignPhotoPhase(plan, fileId, phase) {
-    if (!["before", "after", "unsorted", ...(plan?.kind === "common" ? ["during"] : [])].includes(phase)) return plan;
+    if (!["before", "after", "unsorted", ...(["moveIn", "common"].includes(plan?.kind) ? ["during"] : [])].includes(phase)) return plan;
     return Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => {
       const copy = Object.assign({}, bucket);
       let moved;
@@ -488,7 +491,8 @@
     return { items: merged, added };
   }
 
-  // AI는 구역만 추천한다. 작업 전·후는 촬영시각 추천과 사용자 선택을 유지한다.
+  // 구역은 이 모듈에서 묶고 입주청소 단계·독립 근거는 photo-pair-review에서 검증한다.
+  // 수동 선택을 유지하며 공용부는 실제 동작/변화에 근거한 단계만 적용한다.
   // 원본 계획을 매번 다시 묶으므로 사용자가 한 사진의 분류를 바꿔도 다른
   // 사진의 단계나 메타데이터가 손실되지 않는다.
   function applyPhotoClassifications(plan, classifications) {
@@ -509,7 +513,7 @@
       if (!grouped.has(groupKey)) grouped.set(groupKey, {
         folder: AI_CATEGORY_LABELS[category] || "분류 확인 필요",
         itemKey,
-        before: [], after: [], unsorted: [], heic: [], skipped: 0,
+        before: [], during: [], after: [], unsorted: [], heic: [], skipped: 0,
         confident: category !== "review",
         reason: category === "review" ? "AI가 확정하지 않았습니다. 사진별 항목을 직접 골라 주세요." : "AI 사진 분류 추천입니다. 저장 전 확인해 주세요.",
         sourceBuckets: [],
@@ -526,7 +530,7 @@
       if (!target.sourceBuckets.includes(originalIndex)) target.sourceBuckets.push(originalIndex);
     };
     rows(source.buckets).forEach((bucket, bucketIndex) => {
-      ["before", "after", "unsorted"].forEach(phase => rows(bucket && bucket[phase]).forEach(file => add(file, phase, bucket, bucketIndex)));
+      ["before", "during", "after", "unsorted"].forEach(phase => rows(bucket && bucket[phase]).forEach(file => add(file, phase, bucket, bucketIndex)));
     });
     const buckets = [...grouped.values()];
     const warnings = rows(source.warnings).filter(line => !String(line).includes("AI 사진 분류"));
@@ -567,14 +571,32 @@
       ...Object.fromEntries(["before", "during", "after", "unsorted"].map(phase => [phase, rows(bucket[phase]).map(file => {
         const old = previous.get(file.id) || {};
         return { ...file, manualCategory: !!old.manualCategory, manualPhase: !!old.manualPhase,
-          aiReason: old.manualCategory ? "사용자가 직접 선택했습니다." : (bucket.itemKey ? "공용부 구역 추천" : "구역 확인 필요"),
+          aiReason: old.manualCategory ? "사용자가 직접 선택했습니다." : (decisions.get(file.id)?.reason || old.aiReason || (bucket.itemKey ? "공용부 구역 추천" : "구역 확인 필요")),
+          aiCandidates: decisions.get(file.id)?.candidates || old.aiCandidates || [], aiReviewState: decisions.get(file.id)?.reviewState || old.aiReviewState || "",
           phaseReason: old.manualPhase ? old.phaseReason : phase === "during" ? "청소 동작이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : "전·후 판단 근거가 부족해 확인이 필요합니다." };
       })])),
     })) };
   }
 
   function commonComparisonGroups(plan) {
-    return rows(plan?.buckets).filter(bucket => bucket.itemKey).map(bucket => rows(bucket.unsorted).filter(file => !file.manualPhase).map(file => file.id)).filter(ids => ids.length > 1);
+    const groups = new Map();
+    for (const bucket of rows(plan?.buckets).filter(bucket => bucket.itemKey)) {
+      for (const file of rows(bucket.unsorted).filter(file => !file.manualPhase)) {
+        const captured = Capture.normalize(file.captureTime);
+        const visit = captured ? `${captured.local.slice(0, 10)}:${captured.offset}` : "undated";
+        const group = `${visit}:${bucket.itemKey}`;
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(file.id);
+      }
+    }
+    return [...groups.values()].filter(ids => ids.length > 1);
+  }
+
+  function withCommonCaptureTimes(plan, times) {
+    const byId = new Map(rows(times).map(row => [String(row.id), Capture.normalize(row.captureTime)]));
+    return { ...plan, buckets: rows(plan?.buckets).map(bucket => ({ ...bucket,
+      ...Object.fromEntries(["before", "during", "after", "unsorted"].map(phase => [phase, rows(bucket[phase]).map(file => byId.has(file.id) ? { ...file, captureTime: byId.get(file.id) } : file)])),
+    })) };
   }
 
   function mergeCommonSelection(incoming, existing) {
@@ -606,6 +628,8 @@
       const before = byId.get(pair.beforeId), after = byId.get(pair.afterId);
       if (!["debris_removed", "stain_reduced", "items_removed"].includes(pair.evidence) || !before || !after || before.id === after.id || used.has(before.id) || used.has(after.id)) continue;
       if (!before.itemKey || before.itemKey !== after.itemKey || [before, after].some(row => row.phase !== "unsorted" || row.file.manualPhase)) continue;
+      const a = Capture.normalize(before.file.captureTime), b = Capture.normalize(after.file.captureTime);
+      if (a && b && (!Capture.comparable(a, b) || Capture.differenceMinutes(a, b) <= 0)) continue;
       used.add(before.id); used.add(after.id);
       result = assignPhotoPhase(assignPhotoPhase(result, before.id, "before"), after.id, "after");
     }
@@ -624,7 +648,7 @@
   }
 
   return Object.freeze({
-    commonComparisonGroups, applyCommonPairs, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
+    commonComparisonGroups, withCommonCaptureTimes, applyCommonPairs, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
     VIEWABLE,
     UNVIEWABLE,
     GAP_MINUTES,

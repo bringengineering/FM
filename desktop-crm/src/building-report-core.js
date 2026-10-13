@@ -5,6 +5,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function makeBringBuildingReportCore() {
   "use strict";
 
+  function duplicateEvidence(left, right) {
+    if (!left || !right) return false;
+    // Identical bytes/IDs are duplicates even if the folder was copied. Similar
+    // scenes on a different visit/activity are independent evidence.
+    if ((left.id && left.id === right.id) || (left.imageHash && left.imageHash === right.imageHash)
+      || (left.dataUrl && left.dataUrl === right.dataUrl)) return true;
+    return !!dateKey(left.date) && !!text(left.activityName || left.kind, 100)
+      && activityKey(left) === activityKey(right) && similarPhoto(left, right);
+  }
+
   // 건물주에게 매달 드리는 관리 보고서. 그 건물에서 한 달 동안 무슨 일을
   // 했는지만 담는다. 원가·이익률·업체명은 회사 내부 숫자라 옮기지 않는다.
   // 열쇠와 출입 비밀번호는 어떤 서류에도 넣지 않는다.
@@ -45,7 +55,7 @@
       || activityKey(a).localeCompare(activityKey(b), "ko"));
     for (const photo of ordered) {
       const key = activityKey(photo);
-      if ((counts.get(key) || 0) >= MAX_ACTIVITY_PHOTOS || selected.some(other => similarPhoto(photo, other))) continue;
+      if ((counts.get(key) || 0) >= MAX_ACTIVITY_PHOTOS || selected.some(other => duplicateEvidence(photo, other))) continue;
       selected.push(photo);
       counts.set(key, (counts.get(key) || 0) + 1);
       if (selected.length >= Math.min(MAX_REPORT_PHOTOS, Math.max(1, limit))) break;
@@ -352,6 +362,6 @@
     monthText,
     currentMonthKey,
     isReportMonthSelectable,
-    activityRows, activityKey, groupPhotos, representativePhotos, similarPhoto, MAX_REPORT_PHOTOS, MAX_ACTIVITY_PHOTOS,
+    activityRows, activityKey, groupPhotos, representativePhotos, similarPhoto, duplicateEvidence, MAX_REPORT_PHOTOS, MAX_ACTIVITY_PHOTOS,
   });
 });

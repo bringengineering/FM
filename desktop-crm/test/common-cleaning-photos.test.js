@@ -28,6 +28,20 @@ test('명확한 전후 쌍만 적용하고 작업 중·시간뿐인 쌍은 거�
   assert.equal(R.photoCount(report(paired)),3);
   assert.equal(P.photoReviewRows(paired).find(x=>x.id==='work').phase,'during');
 });
+
+test('공용부도 다른 방문일·시간대를 전후로 묶지 않고 역순을 거부한다',()=>{
+  const time = local => ({local,offset:'+09:00',source:'exif-original'});
+  const withDates = (a,b) => P.withCommonCaptureTimes(classified(),[{id:'before',captureTime:time(a)},{id:'after',captureTime:time(b)}]);
+  const pair = {beforeId:'before',afterId:'after',evidence:'stain_reduced'};
+  const different = withDates('2026-10-06T09:00:00','2026-10-12T10:00:00');
+  assert.deepEqual(P.commonComparisonGroups(different),[]);
+  assert.equal(P.photoReviewRows(P.applyCommonPairs(different,[pair])).filter(x=>x.phase==='before').length,0);
+  const reversed = withDates('2026-10-06T12:00:00','2026-10-06T10:00:00');
+  assert.equal(P.photoReviewRows(P.applyCommonPairs(reversed,[pair])).filter(x=>x.phase==='before').length,0);
+  const same = withDates('2026-10-06T09:00:00','2026-10-06T10:00:00');
+  assert.deepEqual(P.commonComparisonGroups(same),[['before','after']]);
+  assert.equal(P.photoReviewRows(P.applyCommonPairs(same,[pair])).filter(x=>x.phase==='before').length,1);
+});
 test('작업 중이지만 구역이 불명확한 사진은 미배치 목록에 남는다',()=>{
   const p=P.applyPhotoClassifications(plan(),files().map(file=>({id:file.id,category:'review',confidence:0,phase:'during',phaseConfidence:95})));
   const result=P.toReportDraft(p,{core:R,requireResolved:true});
@@ -62,7 +76,7 @@ test('공용부 PDF는 작업 중 사진을 따로 표시하며 모두 다운로
   assert.throws(()=>PDF.workReportPdfPhotos(r),{code:'REPORT_PHOTO_LIMIT'});
 });
 test('클라이언트는 공용부 구역을 허용하고 작업 중 동작 근거가 없으면 보류한다',async()=>{
-  const run=async(action)=>classifyPhotosWithGateway({endpoint:'https://ai.example/v1/photo-classify',idToken:'test-only',input:{kind:'common',images:[{id:'a',dataUrl:'data:image/jpeg;base64,/9j/4AAB'}]},fetchImpl:async()=>Response.json({ok:true,requestId:'r',classifications:[{id:'a',category:'windows',confidence:90,phase:'during',phaseConfidence:95,action}]})});
+  const run=async(action)=>classifyPhotosWithGateway({endpoint:'https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify',idToken:'test-only',input:{kind:'common',images:[{id:'a',dataUrl:'data:image/jpeg;base64,/9j/4AAB'}]},fetchImpl:async()=>Response.json({ok:true,requestId:'r',classifications:[{id:'a',category:'windows',confidence:90,phase:'during',phaseConfidence:95,action}]})});
   assert.equal((await run('wiping')).classifications[0].phase,'during');
   assert.equal((await run('unknown')).classifications[0].phase,'unknown');
 });

@@ -4,24 +4,24 @@
   else root.BringPhotoPairReview = api;
 })(typeof globalThis === "object" ? globalThis : this, function (Capture) {
   "use strict";
-  const SPACES = Object.freeze({ living: "거실", bedroom: "방", kitchen: "주방", bath: "욕실", veranda: "베란다", entrance: "현관", other: "기타 공간", unknown: "확인 필요" });
+  const SPACES = Object.freeze({ living: "거실", bedroom: "방", kitchen: "주방", bath: "욕실", veranda: "베란다", entrance: "현관", other: "기타 공간", unknown: "공간 미지정" });
   const TARGETS = Object.freeze({ floor: "바닥", window: "창호·새시", sink: "세면대·싱크대", cabinet: "수납장", hood: "후드·필터", toilet: "변기", wall: "벽면", aircon: "에어컨", refrigerator: "냉장고", other: "기타 대상", unknown: "확인 필요" });
   const EVIDENCE = Object.freeze({ debris_removed: "같은 장소의 먼지·쓰레기 감소를 비교한 AI 추천입니다.", stain_reduced: "같은 표면의 오염 변화를 비교한 AI 추천입니다.", items_removed: "같은 장소의 잔류물 변화를 비교한 AI 추천입니다.", same_scene_time: "같은 장면과 원본 촬영 순서로 추천했습니다. 실제 작업 전·후인지 확인해 주세요." });
   const list = value => Array.isArray(value) ? value.filter(Boolean) : [];
   const key = (value, labels) => Object.hasOwn(labels, value) ? value : "unknown";
-  const flatten = plan => list(plan?.buckets).flatMap(bucket => ["before", "after", "unsorted"].flatMap(phase => list(bucket[phase]).map(file => ({ id: String(file.id), file, phase, itemKey: bucket.itemKey || bucket.manualItemKey || "" }))));
+  const flatten = plan => list(plan?.buckets).flatMap(bucket => ["before", "during", "after", "unsorted"].flatMap(phase => list(bucket[phase]).map(file => ({ id: String(file.id), file, phase, itemKey: bucket.itemKey || bucket.manualItemKey || "" }))));
   function rebuild(plan, rows) {
     const buckets = new Map();
     rows.forEach(row => {
-      if (!buckets.has(row.itemKey)) buckets.set(row.itemKey, { itemKey: row.itemKey, folder: "사진 구역 추천", before: [], after: [], unsorted: [], heic: [], skipped: 0 });
+      if (!buckets.has(row.itemKey)) buckets.set(row.itemKey, { itemKey: row.itemKey, folder: "사진 구역 추천", before: [], during: [], after: [], unsorted: [], heic: [], skipped: 0 });
       const bucket = buckets.get(row.itemKey); bucket[row.phase].push(row.file);
       if (/^image\/hei[cf]$/u.test(row.file.mimeType || "")) bucket.heic.push(row.file);
     });
     return { ...plan, pairReview: true, buckets: [...buckets.values()] };
   }
   function categoryFor(space, target) {
-    if (key(space, SPACES) === "unknown" || key(target, TARGETS) === "unknown") return "";
     if (["hood", "aircon", "refrigerator"].includes(target)) return target;
+    if (key(space, SPACES) === "unknown" || key(target, TARGETS) === "unknown") return "";
     if (space === "bath" || space === "veranda") return space;
     if (target === "window") return "window";
     if (space === "kitchen" && ["sink", "cabinet"].includes(target)) return "kitchen";
@@ -29,7 +29,7 @@
     if (target === "floor") return "floor";
     return "finish";
   }
-  const resolved = row => !!row.itemKey && key(row.file.reviewSpace, SPACES) !== "unknown" && key(row.file.reviewTarget, TARGETS) !== "unknown" && ["before", "after"].includes(row.phase);
+  const resolved = row => !!row.itemKey && !!categoryFor(row.file.reviewSpace, row.file.reviewTarget) && ["before", "during", "after"].includes(row.phase);
   function withCaptureTimes(plan, times) {
     const byId = new Map(list(times).map(row => [String(row.id), Capture.normalize(row.captureTime)]));
     return rebuild(plan, flatten(plan).map(row => byId.has(row.id) ? { ...row, file: { ...row.file, captureTime: byId.get(row.id) } } : row));
@@ -45,13 +45,24 @@
       if (!decision) return row;
       if (row.file.reviewManual || row.file.reviewConfirmed) return { ...row, itemKey: categoryFor(row.file.reviewSpace, row.file.reviewTarget) };
       const space = key(decision.space, SPACES); const target = key(decision.target, TARGETS);
-      return { ...row, phase: row.file.reviewAutoPhase ? "unsorted" : row.phase, itemKey: categoryFor(space, target) || row.itemKey, file: { ...row.file, reviewSpace: space, reviewTarget: target, reviewConfirmed: false, reviewPair: "" } };
+      const phase = decision.phase === "during" && decision.phaseConfidence >= 85 ? "during"
+        : decision.analysisVersion === 2 && row.file.phaseReason !== "파일·폴더의 전·후 표기" ? "unsorted"
+        : row.file.reviewAutoPhase ? "unsorted" : row.phase;
+      const itemKey = decision.analysisVersion === 2 ? (decision.category === "review" ? "" : categoryFor(space, target)) : categoryFor(space, target) || row.itemKey;
+      return { ...row, phase, itemKey, file: { ...row.file, reviewSpace: space, reviewTarget: target, reviewConfirmed: false, reviewPair: "",
+        aiReason: decision.reason || row.file.aiReason, aiCandidates: decision.candidates || [], aiReviewState: decision.reviewState || "",
+        phaseReason: phase === "during" ? "실제 청소 동작과 대상의 접촉이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : row.file.phaseReason } };
     }));
   }
   function comparisonGroups(plan) {
     const groups = new Map();
-    flatten(plan).sort(byCaptureTime).filter(row => !row.file.reviewConfirmed && !row.file.reviewPair && key(row.file.reviewSpace, SPACES) !== "unknown" && key(row.file.reviewTarget, TARGETS) !== "unknown").forEach(row => {
-      const id = `${row.file.reviewSpace}:${row.file.reviewTarget}`;
+    flatten(plan).sort(byCaptureTime).filter(row => row.phase !== "during" && !row.file.reviewManual && !row.file.reviewConfirmed && !row.file.reviewPair && !!row.itemKey && !!categoryFor(row.file.reviewSpace, row.file.reviewTarget)).forEach(row => {
+      const captured = Capture.normalize(row.file.captureTime);
+      // Repeated visits can show the same fixtures without being one cleaning
+      // before/after sequence. Never merge dates/timezones or bridge them through
+      // an undated photo. Unknown originals remain a separate visual-only group.
+      const visit = captured ? `${captured.local.slice(0, 10)}:${captured.offset}` : "undated";
+      const id = `${visit}:${row.file.reviewSpace}:${row.file.reviewTarget}`;
       if (!groups.has(id)) groups.set(id, []); groups.get(id).push(row.id);
     });
     // A 30-photo boundary must not separate all early shots from all late shots.
@@ -69,9 +80,11 @@
     const rows = flatten(plan).map(row => ({ ...row, file: { ...row.file } })); const byId = new Map(rows.map(row => [row.id, row])); const used = new Set();
     for (const pair of list(pairs)) {
       const before = byId.get(pair.beforeId), after = byId.get(pair.afterId);
-      if (!before || !after || before === after || used.has(before.id) || used.has(after.id) || !Object.hasOwn(EVIDENCE, pair.evidence)) continue;
-      if (before.file.reviewSpace !== after.file.reviewSpace || before.file.reviewTarget !== after.file.reviewTarget || key(before.file.reviewSpace, SPACES) === "unknown" || key(before.file.reviewTarget, TARGETS) === "unknown") continue;
-      if ([before, after].some(row => row.file.reviewConfirmed || row.file.reviewPair || row.file.reviewUnpaired)) continue;
+      if (!before || !after || before === after || used.has(before.id) || used.has(after.id) || !Object.hasOwn(EVIDENCE, pair.evidence) || pair.evidence === "same_scene_time") continue;
+      if (before.file.reviewSpace !== after.file.reviewSpace || before.file.reviewTarget !== after.file.reviewTarget || !before.itemKey || !after.itemKey || !categoryFor(before.file.reviewSpace, before.file.reviewTarget)) continue;
+      if ([before, after].some(row => row.file.reviewManual || row.file.reviewConfirmed || row.file.reviewPair || row.file.reviewUnpaired)) continue;
+      const beforeCapture = Capture.normalize(before.file.captureTime), afterCapture = Capture.normalize(after.file.captureTime);
+      if (beforeCapture && afterCapture && !Capture.comparable(beforeCapture, afterCapture)) continue;
       const gap = Capture.differenceMinutes(before.file.captureTime, after.file.captureTime);
       if (Number.isFinite(gap) && gap <= 0) continue;
       if (pair.evidence === "same_scene_time" && (!Number.isFinite(gap) || gap < 40)) continue;
@@ -93,7 +106,7 @@
       if (changes.space !== undefined) file.reviewSpace = key(changes.space, SPACES);
       if (changes.target !== undefined) file.reviewTarget = key(changes.target, TARGETS);
       Object.assign(file, { reviewManual: true, reviewConfirmed: false });
-      const phase = ["before", "after", "unsorted"].includes(changes.phase) ? changes.phase : row.phase;
+      const phase = ["before", "during", "after", "unsorted"].includes(changes.phase) ? changes.phase : row.phase;
       if (changes.phase !== undefined) { file.phaseReason = "사용자가 직접 선택했습니다."; file.reviewAutoPhase = false; }
       return { ...row, file, phase, itemKey: categoryFor(file.reviewSpace, file.reviewTarget) };
     }));
@@ -107,7 +120,7 @@
   }
   function manualPair(plan, ids) {
     const selected = flatten(plan).filter(row => ids.includes(row.id));
-    if (selected.length !== 2 || selected.some(row => !resolved(row)) || selected[0].phase === selected[1].phase || selected[0].file.reviewSpace !== selected[1].file.reviewSpace || selected[0].file.reviewTarget !== selected[1].file.reviewTarget) return null;
+    if (selected.length !== 2 || selected.some(row => !resolved(row) || row.phase === "during") || selected[0].phase === selected[1].phase || selected[0].file.reviewSpace !== selected[1].file.reviewSpace || selected[0].file.reviewTarget !== selected[1].file.reviewTarget) return null;
     const clean = update(plan, ids, {}); const pairId = `manual:${ids.join(":")}`;
     return rebuild(clean, flatten(clean).map(row => ids.includes(row.id) ? { ...row, file: { ...row.file, reviewPair: pairId, phaseReason: "사용자가 같은 장소의 전·후 사진으로 묶었습니다." } } : row));
   }
@@ -126,7 +139,7 @@
     const result = new Map();
     for (const row of flatten(plan).filter(resolved).sort(byCaptureTime)) {
       const space = row.file.reviewSpace;
-      if (!result.has(space)) result.set(space, { space, rows: [], before: [], after: [] });
+      if (!result.has(space)) result.set(space, { space, rows: [], before: [], during: [], after: [] });
       const group = result.get(space);
       group.rows.push(row); group[row.phase].push(row);
     }
@@ -146,21 +159,21 @@
   function remove(plan, ids) { const removed = new Set(ids); return rebuild(plan, flatten(plan).filter(row => !removed.has(row.id))); }
   function syncDraftPhotos(existing, incoming, managedIds = []) {
     const identity = photo => photo.driveFileId || photo.id;
-    const previous = new Map(list(existing).flatMap(item => [...list(item.before), ...list(item.after)]).map(photo => [identity(photo), photo]));
+    const previous = new Map(list(existing).flatMap(item => [...list(item.before), ...list(item.during), ...list(item.after)]).map(photo => [identity(photo), photo]));
     const managed = new Set(managedIds);
-    const kept = list(existing).map(item => ({ ...item, before: list(item.before).filter(photo => !managed.has(identity(photo))), after: list(item.after).filter(photo => !managed.has(identity(photo))) }));
-    const enriched = list(incoming).map(item => ({ ...item, ...Object.fromEntries(["before", "after"].map(phase => [phase, list(item[phase]).map(photo => ({ ...photo, ...previous.get(identity(photo)) }))])) }));
+    const kept = list(existing).map(item => ({ ...item, before: list(item.before).filter(photo => !managed.has(identity(photo))), during: list(item.during).filter(photo => !managed.has(identity(photo))), after: list(item.after).filter(photo => !managed.has(identity(photo))) }));
+    const enriched = list(incoming).map(item => ({ ...item, ...Object.fromEntries(["before", "during", "after"].map(phase => [phase, list(item[phase]).map(photo => ({ ...photo, ...previous.get(identity(photo)) }))])) }));
     const merged = mergeReviewed(kept, enriched);
-    return { ...merged, ids: list(incoming).flatMap(item => [...list(item.before), ...list(item.after)]).map(identity) };
+    return { ...merged, ids: list(incoming).flatMap(item => [...list(item.before), ...list(item.during), ...list(item.after)]).map(identity) };
   }
   function mergeReviewed(existing, incoming) {
-    const oldPhotos = new Map(list(existing).flatMap(item => list(item.before).concat(list(item.after))).map(photo => [photo.driveFileId || photo.id, photo]));
-    const incomingIds = new Set(list(incoming).flatMap(item => list(item.before).concat(list(item.after))).map(photo => photo.driveFileId || photo.id));
-    const items = list(existing).map(item => ({ ...item, before: list(item.before).filter(photo => !incomingIds.has(photo.driveFileId || photo.id)), after: list(item.after).filter(photo => !incomingIds.has(photo.driveFileId || photo.id)) }));
+    const oldPhotos = new Map(list(existing).flatMap(item => list(item.before).concat(list(item.during), list(item.after))).map(photo => [photo.driveFileId || photo.id, photo]));
+    const incomingIds = new Set(list(incoming).flatMap(item => list(item.before).concat(list(item.during), list(item.after))).map(photo => photo.driveFileId || photo.id));
+    const items = list(existing).map(item => ({ ...item, before: list(item.before).filter(photo => !incomingIds.has(photo.driveFileId || photo.id)), during: list(item.during).filter(photo => !incomingIds.has(photo.driveFileId || photo.id)), after: list(item.after).filter(photo => !incomingIds.has(photo.driveFileId || photo.id)) }));
     for (const source of list(incoming)) {
       let target = items.find(item => item.key === source.key);
-      if (!target) { target = { ...source, before: [], after: [] }; items.push(target); }
-      for (const phase of ["before", "after"]) target[phase].push(...list(source[phase]).map(photo => ({ ...photo, ...oldPhotos.get(photo.driveFileId || photo.id) })));
+      if (!target) { target = { ...source, before: [], during: [], after: [] }; items.push(target); }
+      for (const phase of ["before", "during", "after"]) target[phase].push(...list(source[phase]).map(photo => ({ ...photo, ...oldPhotos.get(photo.driveFileId || photo.id) })));
     }
     return { items, added: [...incomingIds].filter(id => !oldPhotos.has(id)).length };
   }
