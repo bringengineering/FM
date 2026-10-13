@@ -11,6 +11,15 @@
   box-shadow: 0 9px 26px rgba(57, 112, 143, 0.06);
 }
 
+.relationship-contracts { display: grid; gap: 9px; padding: 14px; background: #f8fbff; border-top: 1px solid #e5e8eb; font-size: 13px; }
+.relationship-contracts > b { color: #191f28; font-size: 14px; }
+.relationship-contract-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.relationship-contract-row > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.relationship-contract-row strong { color: #191f28; font-size: 14px; }
+.relationship-contract-row span, .relationship-contract-row small { color: #4e5968; font-size: 12px; }
+.relationship-contract-row button { flex-shrink: 0; }
+@media (max-width: 700px) { .relationship-contract-row { align-items: flex-start; flex-direction: column; } }
+
 .relationship-hero span {
   color: #3182F6;
   font-size: 10px;
