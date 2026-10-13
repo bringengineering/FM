@@ -34,7 +34,8 @@ test("사이드바에서 여는 화면을 app.js 가 전부 알고 있다", () =
 test("사무 화면은 BringOffice 로 넘어간다", () => {
   // office.js 가 그리는 화면은 app.js 의 사무 목록에도 들어 있어야 한다.
   // 목록 셋 중 하나라도 빠지면 폴더가 안 열리거나 화면이 안 그려진다.
-  const officeViews = navViews.filter(view => view.startsWith("office"));
+  const officeViews = navViews.filter(view => view.startsWith("office") && view !== "officeLeave");
+  assert.match(indexSource, /data-view="officeLeave" hidden/);
   assert.ok(officeViews.length >= 5, officeViews.join(","));
   const lists = [...appSource.matchAll(/\["officeHome",[^\]]*\]/g)].map(match => match[0]);
   assert.equal(lists.length, 3, "사무 화면 목록이 세 곳이 아니다");

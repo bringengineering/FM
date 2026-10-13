@@ -69,7 +69,7 @@
     { workspace: "operations", navFolder: "customer-management", view: "customers", title: "CRM", description: "고객·건물·협력업체·공실·견적서" },
     { workspace: "operations", navFolder: "project", view: "workOrders", title: "프로젝트 관리", description: "로드맵·업무지시·민원" },
     { workspace: "operations", navFolder: "calendar", view: "buildingCalendar", title: "ERP·일정", description: "업무·계약 일정과 입금·매입" },
-    { workspace: "operations", navFolder: "office", view: "officeHome", title: "HRIS·그룹웨어", description: "근태·연차·인사·급여·결재" },
+    { workspace: "operations", navFolder: "office", view: "officeHome", title: "HRIS·그룹웨어", description: "근태·직원 카드·인사기록·계정" },
     { workspace: "operations", navFolder: "bi", view: "operationsIntelligence", title: "BI·대시보드", description: "운영 분석과 밸류스코프" },
     { workspace: "operations", navFolder: "documents", view: "buildingDocuments", title: "문서관리", description: "건물 문서함·서식·정보·열쇠" },
     { workspace: "operations", navFolder: "workflow", view: "aiAssistant", title: "워크플로·AI", description: "AI 비서" },

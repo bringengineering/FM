@@ -11,12 +11,10 @@ const indexSource = read("index.html");
 
 const viewBody = (from, to) => officeSource.slice(officeSource.indexOf(from), officeSource.indexOf(to));
 
-test("인사·결재·급여가 근태관리와 같은 뼈대를 쓴다", () => {
+test("인사기록이 근태관리와 같은 뼈대를 쓴다", () => {
   // 화면마다 제 나름의 껍데기를 쓰면 같은 프로그램으로 안 보인다.
   const views = [
     ["function membersView()", "function myRecordView("],
-    ["function approvalsView()", "function approvalRow("],
-    ["function payrollView()", "function paySlip("],
   ];
   for (const [from, to] of views) {
     const body = viewBody(from, to);
