@@ -60,17 +60,12 @@ const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
 const FormCore = require("./form-core");
-const PayrollCore = require("./payroll-core");
-const ApprovalCore = require("./approval-core");
-const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
 
 // Firebase wraps the canonical base64 body in a small JSON object. Bound the
 // decoded HTTP stream before concatenating it so a rules/configuration mistake
 // cannot turn an attachment read into an unbounded main-process allocation.
-const OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES = Math.ceil(OfficeAttachment.MAX_FILE_BYTES / 3) * 4 + 16 * 1024;
-const MAX_OFFICE_CONVERSATION_MESSAGES = 200;
 const OFFICE_POLL_INTERVAL_MS = 10000;
 const MAX_OFFICE_STREAM_BUFFER_CHARS = 1024 * 1024;
 const MAX_SHARED_STREAM_BUFFER_CHARS = 16 * 1024 * 1024;
@@ -3153,43 +3148,20 @@ class FirebaseRemoteClient {
     // 것만 본다. 연차 발생일수 제안이 여기 입사일을 재료로 쓴다.
     const memberAdmin = session.role === "admin";
     const memberLocation = memberAdmin ? "officeMembers" : `officeMembers/${session.uid}`;
-    // 급여도 같은 기준이다. 본인 명세서는 본인이 봐야 한다 — 교부가 법정
-    // 의무라 볼 수 없으면 교부한 것이 아니다. 남의 것은 관리자만 본다.
-    const payrollAdmin = session.role === "admin";
-    const payrollLocation = payrollAdmin ? "officePayroll" : `officePayroll/${session.uid}`;
-    // 결재도 같은 기준이다. 승인 권한이 있는 사람까지만 남의 것을 본다.
-    const approvalAdmin = session.role === "admin";
-    const approvalLocation = approvalAdmin ? "officeApprovals" : `officeApprovals/${session.uid}`;
     const rfidAdmin = session.officeAdmin === true;
-    const [users, teamProfiles, attendance, rfidAttendance, leave, leaveGrants, members, approvals, payroll, rfidCards] = await Promise.all([
+    const [users, teamProfiles, attendance, rfidAttendance, leave, leaveGrants, members, rfidCards] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
       this.dbRequest(rfidAttendanceLocation, { method: "GET" }),
-      // 규칙이 막으면 빈 값으로 둔다. 휴가를 못 읽는다고 근태·메신저까지
-      // 같이 죽으면 안 된다.
+      // Optional historical leave records must not block attendance.
       this.dbRequest(leaveLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(grantLocation, { method: "GET" }).catch(() => null),
       this.dbRequest(memberLocation, { method: "GET" }).catch(() => null),
-      this.dbRequest(approvalLocation, { method: "GET" }).catch(() => null),
-      this.dbRequest(payrollLocation, { method: "GET" }).catch(() => null),
       rfidAdmin ? this.dbRequest("officeRfidCards", { method: "GET" }) : Promise.resolve(null),
     ]);
     this.assertSessionGuardActive(guard);
     const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
-    const peerIds = Object.keys(mergedUsers)
-      .filter(userId => userId !== session.uid && OfficeCore.normalizeOfficeUserId(userId) === userId)
-      .sort();
-    const conversations = await mapWithConcurrency(peerIds, 8, async peerId => ({
-      peerId,
-      messages: await this.dbRequest(`officeMailbox/${session.uid}/${peerId}`, {
-        method: "GET",
-        query: `orderBy=%22%24key%22&limitToLast=${MAX_OFFICE_CONVERSATION_MESSAGES}`,
-      }),
-    }));
-    this.assertSessionGuardActive(guard);
-    const mailbox = Object.create(null);
-    conversations.forEach(({ peerId, messages }) => { mailbox[peerId] = messages; });
     return {
       requestSequence,
       data: {
@@ -3200,13 +3172,9 @@ class FirebaseRemoteClient {
         leaveAdmin,
         members: OfficeCore.flattenMembers(members, session.uid),
         memberAdmin,
-        approvals: OfficeCore.flattenApprovals(approvals, session.uid),
-        approvalAdmin,
-        payroll: OfficeCore.flattenPayroll(payroll, session.uid),
-        payrollAdmin,
         rfidCards: rfidAdmin ? OfficeRfidCore.summaries(rfidCards) : [],
         rfidAdmin,
-        messages: OfficeCore.flattenMailbox(mailbox),
+        messages: [],
         loadedAt: new Date().toISOString(),
       },
     };
@@ -3316,100 +3284,7 @@ class FirebaseRemoteClient {
     return record;
   }
 
-  // 결재 상신·취소. 본인 칸에만 쓴다.
-  async saveApprovalRequest(input) {
-    const session = this.requireOfficeSession();
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const checked = ApprovalCore.validateRequest(Object.assign({}, source, { userId: session.uid }));
-    if (!checked.ok) throw createError(checked.error, checked.code);
-    const record = checked.record;
-    // 승인·반려는 이 길로 오지 못한다. 여기가 열리면 결재 절차가 없는 것과 같다.
-    if (record.status !== "requested" && record.status !== "cancelled") {
-      throw createError("승인과 반려는 관리자만 할 수 있습니다.", "APPROVAL_DECISION_FORBIDDEN");
-    }
-    const location = `officeApprovals/${session.uid}/${record.id}`;
-    const existing = await this.dbRequest(location, { method: "GET" });
-    this.assertSessionGuardActive(guard);
-    if (existing) {
-      // 이미 정해진 건은 아무도 못 고친다. 고치려면 취소하고 다시 올린다 —
-      // 그래야 무엇이 바뀌었는지 두 건으로 남는다.
-      if (ApprovalCore.normalizeRequest(existing).status !== "requested") {
-        throw createError("이미 처리된 결재는 고칠 수 없습니다.", "APPROVAL_ALREADY_DECIDED");
-      }
-      // 취소하면서 금액을 슬쩍 바꾸는 길을 막는다. 서버 규칙도 같은 것을 막는다.
-      if (!ApprovalCore.sameContent(existing, record)) {
-        throw createError("올린 내용은 고칠 수 없습니다. 취소하고 다시 올려 주세요.", "APPROVAL_CONTENT_LOCKED");
-      }
-    } else if (record.status !== "requested") {
-      throw createError("없는 결재는 취소할 수 없습니다.", "APPROVAL_NOT_FOUND");
-    }
-    await this.dbRequest(location, { method: "PUT", body: record });
-    this.assertSessionGuardActive(guard);
-    return record;
-  }
-
-  // 승인·반려. 관리자만 한다.
-  async decideApprovalRequest(input) {
-    const session = this.requireOfficeSession();
-    if (session.role !== "admin") {
-      throw createError("승인과 반려는 관리자만 할 수 있습니다.", "APPROVAL_DECISION_FORBIDDEN");
-    }
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const userId = String(source.userId || "");
-    const requestId = String(source.id || "");
-    if (!userId || !requestId) throw createError("어떤 결재인지 정해 주세요.", "VALIDATION_ERROR");
-    const location = `officeApprovals/${userId}/${requestId}`;
-    // 서버에 있는 것을 다시 읽어 판단한다. 화면이 오래됐을 수 있고, 두 사람이
-    // 동시에 눌렀을 수도 있다.
-    const existing = await this.dbRequest(location, { method: "GET" });
-    this.assertSessionGuardActive(guard);
-    if (!existing) throw createError("없는 결재입니다.", "APPROVAL_NOT_FOUND");
-    const checked = ApprovalCore.decide({
-      request: existing,
-      decision: String(source.decision || ""),
-      decidedBy: String(session.displayName || session.email || "관리자"),
-      note: String(source.note || ""),
-    });
-    if (!checked.ok) throw createError(checked.error, checked.code);
-    await this.dbRequest(location, { method: "PUT", body: checked.record });
-    this.assertSessionGuardActive(guard);
-    return checked.record;
-  }
-
-  // 임금명세서 저장. 관리자만 쓴다. 본인은 자기 것을 읽을 수만 있다 —
-  // 자기 급여를 스스로 적을 수 있으면 명세서가 아니다.
-  async savePayrollSlip(input) {
-    const session = this.requireOfficeSession();
-    if (session.role !== "admin") {
-      throw createError("임금명세서는 관리자만 만들 수 있습니다.", "PAYROLL_FORBIDDEN");
-    }
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const now = new Date().toISOString();
-    const issuing = String(source.status || "") === "issued";
-    const checked = PayrollCore.validateRecord(Object.assign({}, source, {
-      issuedBy: issuing ? String(source.issuedBy || session.displayName || session.email || "관리자") : "",
-      issuedAt: issuing ? String(source.issuedAt || now) : "",
-      updatedAt: now,
-      updatedBy: session.uid,
-    }));
-    if (!checked.ok) throw createError(checked.error, checked.code);
-    const record = checked.record;
-    const location = `officePayroll/${record.userId}/${record.month}`;
-    // 서버에 있는 것을 다시 읽어 판단한다. 화면이 오래됐을 수 있다.
-    const existing = await this.dbRequest(location, { method: "GET" });
-    this.assertSessionGuardActive(guard);
-    if (existing && !PayrollCore.canEdit(existing)) {
-      // 이미 교부한 명세서가 나중에 바뀌면 교부한 의미가 없다.
-      throw createError("이미 교부한 명세서는 고칠 수 없습니다. 정정 명세서를 따로 내 주세요.", "PAYROLL_ISSUED");
-    }
-    await this.dbRequest(location, { method: "PUT", body: record });
-    this.assertSessionGuardActive(guard);
-    return record;
-  }
-
+  // 본인의 출퇴근 기록만 저장한다.
   async saveOfficeAttendance(input) {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
@@ -3830,109 +3705,6 @@ class FirebaseRemoteClient {
     });
     this.officeRfidQueue = running.catch(() => {});
     return running;
-  }
-
-  async sendOfficeMessage(input) {
-    const session = this.requireOfficeSession();
-    const guard = this.captureSessionGuard();
-    const receiverId = String(input && input.receiverId || "").trim();
-    const messageText = String(input && input.message || "").trim();
-    const attachmentPayload = input && input.attachment
-      ? OfficeAttachment.revalidateAttachmentPayload(input.attachment)
-      : null;
-    if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === session.uid) throw createError("메시지를 받을 사용자를 선택해 주세요.", "VALIDATION_ERROR");
-    if ((!messageText && !attachmentPayload) || messageText.length > 4000) throw createError("메시지 또는 첨부파일을 확인해 주세요.", "VALIDATION_ERROR");
-    const receiver = await this.dbRequest(`crmAccess/${receiverId}`, { method: "GET" });
-    this.assertSessionGuardActive(guard);
-    if (!receiver
-      || receiver.enabled !== true
-      || receiver.mustChangePassword === true
-      || !["admin", "member", "viewer"].includes(String(receiver.role || ""))) {
-      throw createError("현재 메시지를 받을 수 없는 사용자입니다.", "ACCESS_DENIED");
-    }
-    const id = `msg_${Date.now().toString(36)}_${crypto.randomBytes(7).toString("hex")}`;
-    const createdAt = new Date().toISOString();
-    const attachmentDetails = attachmentPayload ? {
-      fileName: attachmentPayload.fileName,
-      extension: attachmentPayload.extension,
-      mimeType: attachmentPayload.mimeType,
-      size: attachmentPayload.size,
-      sha256: attachmentPayload.sha256,
-    } : null;
-    const attachment = attachmentPayload
-      ? Object.assign({ fileId: id }, attachmentDetails)
-      : null;
-    const message = {
-      id,
-      senderId: session.uid,
-      receiverId,
-      message: messageText || `[파일] ${attachment.fileName}`,
-      readAt: "",
-      createdAt,
-    };
-    if (attachment) message.attachment = attachment;
-    const patch = {
-      [`officeMailbox/${session.uid}/${receiverId}/${id}`]: message,
-      [`officeMailbox/${receiverId}/${session.uid}/${id}`]: message,
-    };
-    if (attachmentPayload) {
-      patch[`officeMessageFiles/${id}`] = Object.assign({
-        id,
-        senderId: session.uid,
-        receiverId,
-        bodyBase64: attachmentPayload.fileBody,
-        createdAt,
-      }, attachmentDetails);
-    }
-    await this.dbRequest("", {
-      method: "PATCH",
-      body: patch,
-      query: "print=silent",
-    });
-    this.assertSessionGuardActive(guard);
-    return this.loadOffice();
-  }
-
-  async loadOfficeMessageFile(input) {
-    const session = this.requireOfficeSession();
-    const guard = this.captureSessionGuard();
-    const messageId = String(input && input.messageId || "").trim();
-    if (!/^msg_[A-Za-z0-9_]{8,80}$/.test(messageId)) throw createError("첨부파일 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
-    const record = await this.boundedDbGet(`officeMessageFiles/${messageId}`, OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES);
-    this.assertSessionGuardActive(guard);
-    if (!record || record.id !== messageId || (record.senderId !== session.uid && record.receiverId !== session.uid)) {
-      throw createError("첨부파일을 열 권한이 없습니다.", "ACCESS_DENIED");
-    }
-    return record;
-  }
-
-  async markOfficeMessagesRead(input) {
-    const session = this.requireOfficeSession();
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    if (Object.keys(source).some(key => !["peerId", "messageIds"].includes(key))) throw createError("읽음 처리 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
-    const peerId = String(source.peerId || "").trim();
-    const rawMessageIds = source.messageIds;
-    const messageIds = OfficeCore.normalizeOfficeMessageIds(rawMessageIds);
-    if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === session.uid
-      || !Array.isArray(rawMessageIds) || messageIds.length !== rawMessageIds.length) {
-      throw createError("읽음 처리할 대화를 확인해 주세요.", "VALIDATION_ERROR");
-    }
-    const records = await mapWithConcurrency(messageIds, 8, async id => ({
-      id,
-      message: await this.dbRequest(`officeMailbox/${session.uid}/${peerId}/${id}`, { method: "GET" }),
-    }));
-    this.assertSessionGuardActive(guard);
-    const readAt = new Date().toISOString();
-    const patch = {};
-    records.forEach(({ id, message }) => {
-      if (!message || message.id !== id || message.senderId !== peerId || message.receiverId !== session.uid || message.readAt) return;
-      patch[`${session.uid}/${peerId}/${id}/readAt`] = readAt;
-      patch[`${peerId}/${session.uid}/${id}/readAt`] = readAt;
-    });
-    if (Object.keys(patch).length) await this.dbRequest("officeMailbox", { method: "PATCH", body: patch, query: "print=silent" });
-    this.assertSessionGuardActive(guard);
-    return this.loadOffice();
   }
 
   async loadCanonicalBuildingUnits(guardValue) {
@@ -5199,32 +4971,7 @@ class FirebaseRemoteClient {
     return record;
   }
 
-  // 분기 평가. 레벨을 정하는 것은 관리자만 — 그건 회사가 하는 약속이다.
-  async saveGrowthReview(input) {
-    const session = this.requireOfficeSession();
-    if (session.role !== "admin") {
-      throw createError("분기 평가는 관리자만 남길 수 있습니다.", "GROWTH_FORBIDDEN");
-    }
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-    const checked = GrowthCore.validateReview(source);
-    if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `growthReviews/${checked.review.uid}/${checked.review.id}`;
-    const existing = await this.dbRequest(location, { method: "GET" });
-    this.assertSessionGuardActive(guard);
-    const now = new Date().toISOString();
-    const record = Object.assign({}, checked.review, {
-      leadUid: session.uid,
-      createdAt: (existing && existing.createdAt) || now,
-      updatedAt: now,
-      updatedBy: session.uid,
-    });
-    await this.dbRequest(location, { method: "PUT", body: record });
-    this.assertSessionGuardActive(guard);
-    return record;
-  }
-
-  // 프로젝트를 만들거나 고친다. 관리자만.
+  // 프로젝트 기본 설정은 기존 관리자 권한을 유지한다.
   async saveProject(input) {
     const session = this.requireOfficeSession();
     if (session.role !== "admin") {
@@ -7006,8 +6753,6 @@ module.exports = {
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,
   SHARED_COLLECTIONS,
-  OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES,
-  MAX_OFFICE_CONVERSATION_MESSAGES,
   OFFICE_POLL_INTERVAL_MS,
   MAX_OFFICE_STREAM_BUFFER_CHARS,
   MAX_SHARED_STREAM_BUFFER_CHARS,

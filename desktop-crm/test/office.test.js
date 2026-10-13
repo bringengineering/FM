@@ -195,15 +195,12 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(html, /data-view="officeHome"/);
   assert.match(html, /data-view="officeAttendance"/);
   assert.match(html, />근태관리</);
-  assert.match(html, /data-view="officeMessenger"/);
   assert.match(html, /id="navOfficeAdmin"/);
   assert.match(html, /id="navOfficeAccountSetup"[^>]*data-view="officeAccountSetup" hidden/);
   assert.match(app, /user\.officeAdmin !== true/);
   assert.match(app, /user\.role !== "admin"/);
   assert.match(app, /officeAccountSetup/);
   assert.match(app, /window\.BringOffice\.render/);
-  assert.match(app, /setMessengerPresence: syncOfficeMessengerPresence/);
-  assert.match(app, /\{ active: true, peerId \}/);
   assert.match(preload, /crm:office-load/);
   assert.match(preload, /crm:account-invites-load/);
   assert.match(preload, /crm:account-invite-register/);
@@ -211,24 +208,12 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(preload, /crm:office-attendance-save/);
   assert.match(preload, /crm:office-display-name-save/);
   assert.match(preload, /crm:office-attendance-export/);
-  assert.match(preload, /crm:office-message-send/);
-  assert.match(preload, /crm:office-attachment-pick/);
-  assert.match(preload, /webUtils\.getPathForFile\(file\)/);
-  assert.match(preload, /crm:office-attachment-drop/);
-  assert.match(preload, /crm:office-attachment-open/);
-  assert.match(preload, /crm:office-messenger-presence/);
+  assert.doesNotMatch(preload, /crm:office-messenger-presence/);
   assert.match(preload, /crm:office-data/);
-  assert.match(main, /secureCanonicalHandle\("crm:office-messages-read"/);
   assert.match(main, /secureCanonicalHandle\("crm:account-invites-load"/);
   assert.match(main, /secureCanonicalHandle\("crm:account-invite-register"/);
   assert.match(main, /secureCanonicalHandle\("crm:account-invite-resend"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-display-name-save"/);
-  assert.match(main, /secureCanonicalHandle\("crm:office-attachment-pick"/);
-  assert.match(main, /secureCanonicalHandle\("crm:office-attachment-drop"/);
-  assert.match(main, /secureCanonicalHandle\("crm:office-attachment-open"/);
-  assert.match(main, /new Notification\(/);
-  assert.match(main, /officeMessengerPeerId !== peerId/);
-  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke"/);
   assert.match(main, /actor\.officeAdmin !== true/);
   assert.doesNotMatch(main, /userId === actor\.uid/);
   assert.match(remote, /this\.dbRequest\("crmAccess"/);
@@ -238,22 +223,17 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(remote, /crmAccess\/\$\{userId\}\/displayName/);
   assert.match(remote, /sessionRef\.officeAdmin = access\.officeAdmin === true/);
   assert.match(remote, /session\.officeAdmin === true \? "officeAttendance" : `officeAttendance\/\$\{session\.uid\}`/);
-  assert.match(remote, /officeMailbox/);
   assert.match(remote, /startOfficePolling\(generation\)/);
   assert.match(remote, /OFFICE_POLL_INTERVAL_MS/);
   assert.doesNotMatch(remote, /officeInboxLatest/);
-  assert.match(remote, /officeMessageFiles/);
   assert.doesNotMatch(remote, /userId === session\.uid/);
   assert.match(ui, /브링의 업무를 한 곳에서/);
   assert.match(ui, /office-admin-calendar/);
   assert.match(ui, /근태 보기/);
   assert.match(ui, /퇴근 미기록/);
   assert.match(ui, /엑셀 다운로드/);
-  assert.match(ui, /Core\.shouldSendMessageKey\(event\)/);
-  assert.match(ui, /requestSubmit\(\)/);
   assert.match(ui, /data-office-display-name-form/);
   assert.match(ui, /data-office-display-name-surface="attendance"/);
-  assert.match(ui, /전체 근태관리와 모든 사용자의 메신저에 같은 이름/);
   assert.match(ui, /saveOfficeDisplayName/);
   assert.match(ui, /이메일 인증 링크 보내기/);
   assert.match(ui, /crmAccountInviteEmailDraft: ""/);
@@ -267,19 +247,6 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(ui, /role === "admin"/);
   assert.match(main, /미리보기에서는 이메일 초대를 발송하지 않습니다/);
   assert.match(main, /crm-account-setup-preview/);
-  assert.match(ui, /data-office-attachment-pick/);
-  assert.match(ui, /data-office-attachment-drop-zone/);
-  assert.match(ui, /dropOfficeAttachment\(file, \{ receiverId \}\)/);
-  assert.match(ui, /document\.addEventListener\("drop"/);
-  assert.match(ui, /state\.context\?\.view !== "officeMessenger"/);
-  assert.match(ui, /document\.addEventListener\("visibilitychange"/);
-  assert.match(ui, /window\.addEventListener\("focus", acknowledgeVisibleConversation\)/);
-  assert.match(ui, /Core\.shouldAcknowledgeConversation/);
-  assert.match(ui, /await syncMessengerPresence\(\)/);
-  assert.match(ui, /officeReadReceiptPeerIds = new Set\(\)/);
-  assert.match(ui, /Core\.mergeConfirmedOfficeReadReceipts/);
-  assert.match(ui, /unreadBadge\.textContent = "0"/);
-  assert.match(ui, /data-office-attachment-open/);
 });
 
 test("office display-name persistence writes only the validated target leaf", async () => {
@@ -339,21 +306,6 @@ test("office display-name persistence writes only the validated target leaf", as
   );
 });
 
-test("office message transport refuses enabled accounts with an unsupported role", async () => {
-  await assert.rejects(
-    FirebaseRemoteClient.prototype.sendOfficeMessage.call({
-      requireOfficeSession: () => ({ uid: "crm-member", role: "member" }),
-      captureSessionGuard: () => ({ generation: 1 }),
-      assertSessionGuardActive: () => true,
-      dbRequest: async (location, options) => {
-        assert.equal(location, "crmAccess/crm-owner");
-        assert.equal(options.method, "GET");
-        return { enabled: true, role: "owner" };
-      },
-    }, { receiverId: "crm-owner", message: "보내지면 안 됨" }),
-    /받을 수 없는 사용자/,
-  );
-});
 
 test("attendance Excel export is a styled XLSX with typed dates, formulas, and review status", () => {
   const user = { uid: "uid-1", displayName: "테스트 직원", department: "운영", title: "매니저" };

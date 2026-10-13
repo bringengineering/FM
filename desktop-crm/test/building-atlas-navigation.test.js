@@ -7,14 +7,13 @@ const html = fs.readFileSync(path.join(__dirname, '../src/index.html'), 'utf8');
 const vm = require('node:vm');
 test('customer drawer cross-navigation cannot discard unified workspace drafts',async()=>{for(const [start,end,dataset] of [['    const messageCustomerOpen =','    const consentEdit =',{messageCustomerOpen:'c'}],['    const buildingJump =','    const customerListOpen =',{buildingJump:'b'}]]){const source=app.slice(app.indexOf(start),app.indexOf(end,app.indexOf(start)));let closed=0;const context={event:{target:{closest:s=>s.includes(dataset.buildingJump?'data-building-jump':'data-message-customer-open')?{dataset}:null}},buildingAtlasView:{requestLeave:async()=>false},currentView:'customers',closeDrawer:()=>closed++,closeModal:()=>closed++,render:()=>closed++,requestDriveImportCandidatesRefresh(){},refreshOperations:async()=>{},selectedBuildingId:'old'};await vm.runInNewContext(`(async()=>{${source}})()`,context);assert.equal(closed,0);assert.equal(context.currentView,'customers');}});
 
-test('global search and messenger shortcut cannot discard an atlas draft', async () => {
+test('global search cannot discard an atlas draft and retired messenger has no shortcut', async () => {
   let handler, rendered=0, selected=0;
   const context={currentView:'buildingAtlas',buildingAtlasView:{requestLeave:async()=>false},render:()=>rendered++,searchEl:{addEventListener:(_event,fn)=>handler=fn},workspaceCoordinator:{select:async()=>selected++}};
   vm.runInNewContext(app.slice(app.indexOf('  searchEl.addEventListener("keydown"'),app.indexOf('  fieldOperatorSelect.addEventListener("change"')),context);
   await handler({key:'Enter'});
   assert.equal(context.currentView,'buildingAtlas');assert.equal(rendered,0);
-  vm.runInNewContext(app.slice(app.indexOf('  async function openOfficeMessengerShortcut('),app.indexOf('  api.onShortcut(async action')),context);
-  assert.equal(await context.openOfficeMessengerShortcut({peerId:'test-peer'}),false);
+  assert.doesNotMatch(app, /openOfficeMessengerShortcut/);
   assert.equal(selected,0);assert.equal(context.currentView,'buildingAtlas');
 });
 test('CRM exposes no standalone atlas navigation entry and retains building-context entry', () => {

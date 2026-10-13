@@ -12,7 +12,7 @@ const office = read("office.js");
 const workspaceShell = read("workspace-shell.js");
 
 const NAV_VIEWS = [
-  "dashboard", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin",
+  "dashboard", "officeHome", "officeAttendance", "officeAdmin",
   "customers", "partnerVendors", "vacancies", "customerAlimTalk",
   "buildingCalendar", "supplies", "valueScope", "aiAssistant",
   "relationships", "cases", "security", "settings"

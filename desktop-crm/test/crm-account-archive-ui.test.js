@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "../src/office.js"), "utf8");
-const controller = source.slice(source.indexOf("  function confirmCrmAccountInviteArchive("), source.indexOf("  function chooseDefaultUser("));
+const controller = source.slice(source.indexOf("  function confirmCrmAccountInviteArchive("), source.indexOf("  function loadingPanel("));
 
 function harness({ role = "admin", request } = {}) {
   const calls = [];

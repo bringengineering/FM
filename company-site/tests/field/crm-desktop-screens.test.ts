@@ -33,16 +33,12 @@ const SCREENS: Array<[string, string]> = [
   ["quotes", "견적"],
   ["deliveryFlow", "견적서에서 입금까지"],
   ["workOrders", "표의 한 줄이 곧 업무지시"],
-  ["growth", "다음 단계가 무엇인지 적어 둡니다"],
   ["cases", "민원"],
   ["buildingCalendar", "업무일정"],
   ["supplies", "우리 물품"],
   ["officeHome", "BRING"],
   ["officeAttendance", "근태"],
-  ["officeLeave", "연차"],
   ["officeMembers", "인사기록"],
-  ["officeApprovals", "결재"],
-  ["officePayroll", "급여"],
   ["operationsIntelligence", "운영"],
   ["buildingDocuments", "문서"],
   ["workReports", "작업 결과보고서 작성"],
@@ -845,68 +841,34 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 
-  it("성장 화면이 다음 단계와 이번 주 1on1 을 같이 보여 준다", async () => {
-    // 이 화면의 값어치는 레벨을 붙이는 데 있지 않고, **다음에 무엇을
-    // 배울지가 적혀 있게** 하는 데 있다.
+  it("제거한 업무 메뉴는 없고 연차는 실제로 숨겨져 있다", async () => {
     (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
     await sleep(100);
-    const navItem = booted.document.querySelector('.nav-item[data-view="growth"]') as HTMLElement;
-    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
-    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    (booted.document.querySelector('[data-workspace-enter-folder="office"]') as HTMLElement).click();
     await sleep(150);
-    navItem.click();
-    await sleep(250);
-
-    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
-    // 지금 레벨(L3 맡는 사람)과 다음 레벨(L4 넓히는 사람)이 같이 보여야 한다.
-    expect(shown()).toContain("맡는 사람");
-    expect(shown(), "다음 단계가 적혀 있어야 한다").toContain("넓히는 사람");
-    expect(shown()).toContain("하던 일을 서식·표준 항목으로 만들어 남긴다");
-    // 역량이 레벨을 다 받치지 못하면 말해 준다 (owner 가 L2 인데 레벨은 L3).
-    expect(shown()).toContain("건물주 응대");
-
-    // 매주 같은 네 가지를 묻는다.
-    const form = booted.document.querySelector("[data-growth-checkin-form]") as HTMLFormElement;
-    expect(form, "이번 주 기록 칸이 있어야 한다").toBeTruthy();
-    ["done", "stuck", "next", "grow"].forEach(key => {
-      expect(form.querySelector(`[name="${key}"]`), key).toBeTruthy();
-    });
-
-    // 팀 탭 — 이번 주에 아직 이야기 안 한 사람이 보여야 한다.
-    (booted.document.querySelector('[data-growth-tab="team"]') as HTMLElement).click();
-    await sleep(200);
-    expect(shown()).toContain("이번 주에 아직 이야기 안 한 사람");
-    // 두 주째 같은 곳에 막혀 있으면 드러나야 한다.
-    expect(shown(), "같은 곳에 계속 막힌 것이 보여야 한다").toContain("같은 곳에 계속 막힘");
-
-    // 레벨 기준 탭 — 다섯 단계가 다 적혀 있어야 한다.
-    (booted.document.querySelector('[data-growth-tab="ladder"]') as HTMLElement).click();
-    await sleep(200);
-    ["배우는 사람", "혼자 하는 사람", "맡는 사람", "넓히는 사람", "정하는 사람"].forEach(label => {
-      expect(shown(), label).toContain(label);
-    });
+    for (const view of ["officeMessenger", "growth", "officeApprovals", "officePayroll"]) {
+      expect(booted.document.querySelector(`.nav-item[data-view="${view}"]`), view).toBeNull();
+    }
+    const leave = booted.document.querySelector('.nav-item[data-view="officeLeave"]') as HTMLElement;
+    expect(leave.hidden).toBe(true);
+    expect(booted.window.getComputedStyle(leave).display).toBe("none");
+    for (const view of ["officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup"]) {
+      expect(booted.document.querySelector(`.nav-item[data-view="${view}"]`), view).toBeTruthy();
+    }
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
+  });
 
-  it("다음에 무엇을 배울지 없는 평가는 저장으로 안 나간다", async () => {
-    (booted.document.querySelector('[data-growth-tab="team"]') as HTMLElement).click();
-    await sleep(200);
-    const open = booted.document.querySelector("[data-growth-review]") as HTMLElement | null;
-    expect(open, "분기 평가를 여는 자리가 있어야 한다").toBeTruthy();
-    open!.click();
-    await sleep(200);
-
-    const form = booted.document.querySelector("[data-growth-review-form]") as HTMLFormElement;
-    expect(form, "평가 서식이 열려야 한다").toBeTruthy();
-    (form.querySelector('[name="nextStep"]') as HTMLTextAreaElement).value = "";
-
+  it("숨긴 연차 화면을 예전 경로로 열어도 홈으로 돌아간다", async () => {
     const before = booted.calls.length;
-    form.dispatchEvent(new booted.window.Event("submit", { bubbles: true, cancelable: true }));
-    await sleep(200);
-    expect(booted.calls.slice(before).some(call => call.name === "saveGrowthReview"),
-      "성적표는 저장하지 않는다").toBe(false);
+    (booted.document.querySelector('.nav-item[data-view="officeLeave"]') as HTMLElement).click();
+    await sleep(250);
+    const main = booted.document.getElementById("main") as HTMLElement;
+    expect(main.textContent).toContain("BRING OFFICE");
+    expect(main.querySelector('[data-office-go="officeMessenger"]')).toBeNull();
+    expect(main.querySelector("[data-leave-request-form]")).toBeNull();
+    expect(booted.calls.slice(before).some(call => ["saveLeaveRequest", "saveGrowthReview", "sendOfficeMessage", "savePayrollSlip", "saveApprovalRequest"].includes(call.name))).toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
-  }, 60000);
+  });
 
   it("텔레그램 방 번호를 앱이 찾아 준다", async () => {
     // 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고

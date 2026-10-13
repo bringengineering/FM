@@ -209,8 +209,8 @@ test("실제 CRM 화면에 주간업무보고서 탐색·렌더·저장 연결�
   assert.match(app, /weeklyReportState\.previewOpen = true;[\s\S]{0,220}renderWeeklyReports\(\)/u);
   assert.match(app, /data-weekly-preview-confirm[\s\S]{0,240}await saveWeeklyReport\(\)/u);
   assert.match(app, /startsWith\("weekly_report_"\)/u);
-  assert.match(app, /growthOneOnOneCheckins/u);
-  assert.match(app, /api\.saveGrowthCheckin\(checked\.checkin\)/u);
+  assert.doesNotMatch(app, /function renderGrowth/u);
+  assert.match(app, /api\.submitWeeklyReport\(\{checkin:checked\.checkin,snapshot\}\)/u);
   assert.match(styles, /\.weekly-report-layout/u);
   assert.match(styles, /\.weekly-preview-layer/u);
   assert.match(styles, /\.weekly-preview-card/u);

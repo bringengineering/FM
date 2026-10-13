@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 const fieldOperationsDisabled = () => Promise.resolve({
   ok: false,
@@ -37,22 +37,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
     ipcRenderer.on("crm:office-rfid-attendance-event", listener);
     return () => ipcRenderer.removeListener("crm:office-rfid-attendance-event", listener);
   },
-  pickOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-pick", input),
-  dropOfficeAttachment: (file, input) => {
-    let filePath = "";
-    try { filePath = webUtils.getPathForFile(file); } catch (_) {}
-    if (!filePath) return Promise.reject(new Error("드래그한 로컬 파일을 확인할 수 없습니다."));
-    return ipcRenderer.invoke("crm:office-attachment-drop", {
-      receiverId: String(input && input.receiverId || ""),
-      filePath,
-    });
-  },
-  openOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-open", input),
-  sendOfficeMessage: input => ipcRenderer.invoke("crm:office-message-send", input),
-  markOfficeMessagesRead: input => ipcRenderer.invoke("crm:office-messages-read", input),
   exportOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-export", input),
   exportWeeklyReport: input => ipcRenderer.invoke("crm:weekly-report-export", input),
-  setOfficeMessengerPresence: input => ipcRenderer.invoke("crm:office-messenger-presence", input),
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   assessWorkOrders: input => ipcRenderer.invoke("crm:work-assessment", input),
   generateBuildingMonthlyReportDraft: input => ipcRenderer.invoke("crm:building-monthly-report-draft", input),
@@ -151,7 +137,6 @@ contextBridge.exposeInMainWorld("bringCRM", {
   retryWeeklyReportDelivery: input => ipcRenderer.invoke("crm:weekly-report-delivery-retry", input),
   loadWeeklyReportDraft: input => ipcRenderer.invoke("crm:weekly-report-draft-load", input),
   saveWeeklyReportDraft: input => ipcRenderer.invoke("crm:weekly-report-draft-save", input),
-  saveGrowthReview: input => ipcRenderer.invoke("crm:growth-review-save", input),
   loadTelegramSettings: () => ipcRenderer.invoke("crm:telegram-settings-load"),
   findTelegramChats: input => ipcRenderer.invoke("crm:telegram-chats-find", input),
   saveTelegramSettings: input => ipcRenderer.invoke("crm:telegram-settings-save", input),
@@ -169,9 +154,6 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveFormTemplate: input => ipcRenderer.invoke("crm:form-template-save", input),
   saveFormEntry: input => ipcRenderer.invoke("crm:form-entry-save", input),
   loadForms: () => ipcRenderer.invoke("crm:forms-load"),
-  savePayrollSlip: input => ipcRenderer.invoke("crm:payroll-save", input),
-  saveApprovalRequest: input => ipcRenderer.invoke("crm:approval-save", input),
-  decideApprovalRequest: input => ipcRenderer.invoke("crm:approval-decide", input),
   loadQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-load"),
   selectQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-select"),
   loadOperationsIntelligence: () => ipcRenderer.invoke("crm:operations-intelligence-load"),
