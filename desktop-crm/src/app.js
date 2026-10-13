@@ -4750,6 +4750,19 @@
         : result.status === "failed" ? "알림톡 전달에 실패했습니다. 업체 결과 코드: " + (receipt.failureCode || "확인 필요")
           : result.status === "unknown" ? "전달 결과가 불확실합니다. 중복 발송하지 말고 업체 기록을 확인해 주세요."
             : "알림톡 접수 완료 · 카카오톡 전달 확인 중입니다.";
+      if (result.status === "unknown") {
+        const connectionHints = {READY: "서버 인증과 승인 템플릿 조회는 정상입니다. 기존 발송의 접수 여부는 별도 확인이 필요합니다.",
+          AUTH_REJECTED: "메시지를 보내지 않는 연결 진단에서 업체가 서버 인증·권한을 거절했습니다.", SERVICE_NOT_FOUND: "연결 진단에서 발신 서비스를 찾지 못했습니다.",
+          TEMPLATE_NOT_FOUND: "연결된 서비스·채널에서 보고서 템플릿을 찾지 못했습니다.", TEMPLATE_NOT_READY: "연결된 보고서 템플릿의 승인·사용 상태를 확인해야 합니다.",
+          CONFIGURATION_ERROR: "서버의 발신 서비스·채널 설정 형식을 확인해야 합니다.", SIGNATURE_FAILED: "서버에서 업체 인증 서명을 만들지 못했습니다.",
+          PROVIDER_TIMEOUT: "연결 진단에서 업체 응답이 제한 시간을 초과했습니다.", PROVIDER_NETWORK_ERROR: "연결 진단에서 업체 서버와 통신하지 못했습니다.",
+          PROVIDER_RESPONSE_INVALID: "업체 연결 응답의 형식을 확인하지 못했습니다.", PROVIDER_LIMITED: "업체 연결 진단이 이용 한도에 걸렸습니다.",
+          PROVIDER_REJECTED: "업체가 읽기 전용 연결 진단을 거절했습니다.", PROVIDER_UNAVAILABLE: "읽기 전용 연결 진단을 완료하지 못했습니다."};
+        const diagnosticHints = {SIGNATURE_FAILED: "인증 서명 생성 단계 확인 필요", PROVIDER_TIMEOUT: "업체 응답 시간 초과", PROVIDER_NETWORK_ERROR: "업체 통신 오류",
+          PROVIDER_RESPONSE_INVALID: "업체 응답 형식 확인 필요", PROVIDER_ACK_INCOMPLETE: "업체 접수 확인값 누락", STORAGE_WRITE_FAILED: "발송 상태 저장 오류"};
+        if (Object.hasOwn(connectionHints, String(result.connectionCode || ""))) state.result += " " + connectionHints[result.connectionCode];
+        if (Object.hasOwn(diagnosticHints, String(result.diagnosticCode || ""))) state.result += " 진단: " + diagnosticHints[result.diagnosticCode] + ".";
+      }
     } catch (error) {
       if (!silent && generation === authGeneration) state.result = error.message || "전달 상태를 확인하지 못했습니다.";
     } finally {

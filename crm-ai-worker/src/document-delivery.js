@@ -2,7 +2,7 @@ const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
 const PUBLIC_DOCUMENT_ORIGIN = "https://bring-crm-ai-gateway.bringengineering1008.workers.dev";
 
-function fail(code = "INVALID_INPUT") { throw Object.assign(new Error(code), { code }); }
+function fail(code = "INVALID_INPUT", diagnosticCode) { throw Object.assign(new Error(code), { code, ...(diagnosticCode ? {diagnosticCode} : {}) }); }
 function json(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }); }
 function clean(value, limit = 160) { return String(value == null ? "" : value).trim().slice(0, limit); }
 function safeId(value) { const result = clean(value, 120); if (!/^[A-Za-z0-9_-]{1,120}$/.test(result)) fail(); return result; }
@@ -102,11 +102,13 @@ async function ncpJson(method, uri, body, env, options = {}) {
   const timestamp = String((options.now || Date.now)());
   const accessKey = clean(env.NCP_ACCESS_KEY, 200), secretKey = clean(env.NCP_SECRET_KEY, 300);
   if (!accessKey || !secretKey) fail("DELIVERY_CONFIGURATION_ERROR");
-  const signature = await ncpSignature(method, uri, timestamp, accessKey, secretKey);
+  let signature;
+  try { signature = await ncpSignature(method, uri, timestamp, accessKey, secretKey); }
+  catch { fail("DELIVERY_CONFIGURATION_ERROR", "SIGNATURE_FAILED"); }
   let response;
   try {
     response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method, headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, ...(body ? {body: JSON.stringify(body)} : {}), redirect: "error", signal: AbortSignal.timeout(12000) });
-  } catch { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE"); }
+  } catch (error) { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE", error?.name === "TimeoutError" || error?.name === "AbortError" ? "PROVIDER_TIMEOUT" : "PROVIDER_NETWORK_ERROR"); }
   if (!response.ok) {
     await response.body?.cancel();
     fail(response.status === 401 || response.status === 403 ? "DELIVERY_PROVIDER_AUTH_FAILED"
@@ -116,7 +118,7 @@ async function ncpJson(method, uri, body, env, options = {}) {
   }
   let value;
   try { value = await readJson(response, 256 * 1024); }
-  catch { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE"); }
+  catch { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE", "PROVIDER_RESPONSE_INVALID"); }
   return value;
 }
 
@@ -138,9 +140,9 @@ export async function sendNcpDocument(input, options = {}) {
   const value = await ncpJson("POST", uri, body, env, options);
   const first = value?.messages?.[0];
   if (value?.statusName === "fail" || (value?.statusCode != null && String(value.statusCode) !== "202") || (input.channel === "kakao" && first?.requestStatusCode && first.requestStatusCode !== "A000")) fail("DELIVERY_PROVIDER_REJECTED");
-  if (String(value?.statusCode) !== "202" || (input.channel === "kakao" && first?.requestStatusCode !== "A000")) fail("DELIVERY_STATUS_UNKNOWN");
+  if (String(value?.statusCode) !== "202" || (input.channel === "kakao" && first?.requestStatusCode !== "A000")) fail("DELIVERY_STATUS_UNKNOWN", "PROVIDER_ACK_INCOMPLETE");
   const providerMessageId = clean(input.channel === "kakao" ? first?.messageId : value?.requestId, 120);
-  if (!/^[A-Za-z0-9_-]{1,120}$/.test(providerMessageId)) fail("DELIVERY_STATUS_UNKNOWN");
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(providerMessageId)) fail("DELIVERY_STATUS_UNKNOWN", "PROVIDER_ACK_INCOMPLETE");
   return { providerMessageId };
 }
 
@@ -157,12 +159,41 @@ export async function readNcpDocumentStatus(record, env, options = {}) {
   return {status: "requested"};
 }
 
+const DIAGNOSTIC_CODES = new Set(["SIGNATURE_FAILED", "PROVIDER_TIMEOUT", "PROVIDER_NETWORK_ERROR", "PROVIDER_RESPONSE_INVALID", "PROVIDER_ACK_INCOMPLETE", "STORAGE_WRITE_FAILED"]);
+function diagnosticCode(value) { return DIAGNOSTIC_CODES.has(value) ? value : ""; }
+
+// A signed GET checks the existing service without sending any message or
+// returning credentials, channel IDs, template bodies, or personal data.
+export async function readNcpDocumentConnection(templateCode, env, options = {}) {
+  if (!["BRINGCUSTOMERQUOTEV1", "BRINGCOMPLETIONREPORTV1", "BRINGMONTHLYREPORTV1"].includes(templateCode)) return "CONFIGURATION_ERROR";
+  const channel = clean(env.KAKAO_CHANNEL_ID, 80);
+  if (!/^@[^\s\x00-\x1f\x7f/?#&]{1,79}$/u.test(channel)) return "CONFIGURATION_ERROR";
+  try {
+    const query = new URLSearchParams({channelId: channel, templateCode, pageSize: "1"});
+    const rows = await ncpJson("GET", `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/templates?${query}`, null, env, options);
+    if (!Array.isArray(rows)) return "PROVIDER_RESPONSE_INVALID";
+    const row = rows.find(value => value?.templateCode === templateCode && value?.channelId === channel);
+    if (!row) return "TEMPLATE_NOT_FOUND";
+    return row.templateInspectionStatus === "COMPLETE" && ["ACTIVE", "READY"].includes(row.templateStatus) && row.isBlock === false && row.isDormant === false ? "READY" : "TEMPLATE_NOT_READY";
+  } catch (error) {
+    return diagnosticCode(error?.diagnosticCode) || ({DELIVERY_PROVIDER_AUTH_FAILED: "AUTH_REJECTED", DELIVERY_PROVIDER_SERVICE_NOT_FOUND: "SERVICE_NOT_FOUND", DELIVERY_PROVIDER_LIMITED: "PROVIDER_LIMITED", DELIVERY_CONFIGURATION_ERROR: "CONFIGURATION_ERROR", DELIVERY_PROVIDER_REJECTED: "PROVIDER_REJECTED"}[error?.code] || "PROVIDER_UNAVAILABLE");
+  }
+}
+
 export function createDocumentDeliveryHandler(options = {}) {
   const now = options.now || Date.now;
   const randomId = options.randomId || (() => crypto.randomUUID().replace(/-/g, ""));
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const sendProvider = options.sendProvider || (input => sendNcpDocument(input, { fetchImpl, now }));
   const readProvider = options.readProvider || ((record, env) => readNcpDocumentStatus(record, env, {fetchImpl, now}));
+  const readConnection = options.readConnection || ((record, env) => readNcpDocumentConnection(record.templateId, env, {fetchImpl, now}));
+  const wait = options.wait || (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
+  // KV allows only one write per key per second. Preserve the provisional claim,
+  // but do not overwrite it (or a fast provider response) inside that interval.
+  const waitForWriteSlot = async writtenAt => {
+    const age = now() - Number(writtenAt || 0);
+    if (age >= 0 && age < 1100) await wait(1100 - age);
+  };
   const activeRequests = new Set();
   return async function handle(request, identity, env) {
     const url = new URL(request.url), capabilities = configured(env);
@@ -189,6 +220,7 @@ export function createDocumentDeliveryHandler(options = {}) {
         if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
         const cached = await env.DOCUMENT_DELIVERY.get(`request:${key}`, "json");
         if (cached && cached.status !== "failed") return json(cached, cached.ok === false ? 409 : 200);
+        if (cached) await waitForWriteSlot(cached.stateUpdatedAt);
         // Validate the complete recipient request before storing a PDF.
         phone(input.delivery.phone);
         if (input.delivery.channel !== "kakao") fail();
@@ -229,27 +261,38 @@ export function createDocumentDeliveryHandler(options = {}) {
       if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
       activeRequests.add(key);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
-      const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType)};
+      const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType), stateUpdatedAt: now()};
+      let pendingWrittenAt = 0, providerAccepted = false;
       // No automatic retry after a possibly accepted POST. Preserve its link.
       try {
         await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
         await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
+        pendingWrittenAt = now();
         const provider = await sendProvider({ channel, phone: recipientPhone, templateCode: documentTemplate(document.documentType), variables, document, env: dispatchEnv });
-        const result = {...pending, status: "requested", providerMessageId: clean(provider.providerMessageId, 120)};
+        providerAccepted = true;
+        await waitForWriteSlot(pendingWrittenAt);
+        const result = {...pending, status: "requested", providerMessageId: clean(provider.providerMessageId, 120), stateUpdatedAt: now()};
         await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
         await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(result), { expirationTtl: MAX_TTL_SECONDS });
         return json(result);
       } catch (error) {
         const code = /^DELIVERY_(?:PROVIDER_AUTH_FAILED|PROVIDER_SERVICE_NOT_FOUND|PROVIDER_LIMITED|PROVIDER_REJECTED|CONFIGURATION_ERROR)$/.test(error?.code || "") ? error.code : "DELIVERY_STATUS_UNKNOWN";
         if (code !== "DELIVERY_STATUS_UNKNOWN") {
-          const failed = {...pending, ok: false, code, status: "failed"};
+          await waitForWriteSlot(pendingWrittenAt);
+          const failed = {...pending, ok: false, code, status: "failed", stateUpdatedAt: now(), ...(diagnosticCode(error?.diagnosticCode) ? {diagnosticCode: error.diagnosticCode} : {})};
           await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(failed), {expirationTtl: MAX_TTL_SECONDS});
           await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(failed), {expirationTtl: MAX_TTL_SECONDS});
           document.revokedAt = new Date(now()).toISOString();
           await dispatchEnv.DOCUMENT_DELIVERY.put(`doc:${document.id}`, JSON.stringify(document), {expirationTtl: MAX_TTL_SECONDS});
           return json(failed, 502);
         }
-        return json(pending);
+        const result = {...pending, diagnosticCode: diagnosticCode(error?.diagnosticCode) || (providerAccepted || !pendingWrittenAt ? "STORAGE_WRITE_FAILED" : "PROVIDER_RESPONSE_INVALID")};
+        // Only metadata is retried; the provider POST is never retried here.
+        if (pendingWrittenAt) {
+          await waitForWriteSlot(pendingWrittenAt);
+          try { await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify({...result, stateUpdatedAt: now()}), {expirationTtl: MAX_TTL_SECONDS}); } catch { /* Keep the existing claim and preserve the link. */ }
+        }
+        return json(result);
       } finally { activeRequests.delete(key); }
     }
     const messageMatch = /^\/v1\/document-delivery\/messages\/([A-Za-z0-9_-]{1,120})$/.exec(url.pathname);
@@ -260,12 +303,18 @@ export function createDocumentDeliveryHandler(options = {}) {
         try {
           const status = await readProvider(record, env);
           if (["requested", "delivered", "failed", "unknown"].includes(status.status)) {
+            const previousStatus = record.status;
             record.status = status.status;
             if (providerCode(status.failureCode)) record.failureCode = providerCode(status.failureCode);
-            await env.DOCUMENT_DELIVERY.put(`message:${messageMatch[1]}`, JSON.stringify(record), {expirationTtl: MAX_TTL_SECONDS});
+            if (previousStatus !== record.status) {
+              await waitForWriteSlot(record.stateUpdatedAt);
+              record.stateUpdatedAt = now();
+              await env.DOCUMENT_DELIVERY.put(`message:${messageMatch[1]}`, JSON.stringify(record), {expirationTtl: MAX_TTL_SECONDS});
+            }
           }
         } catch { /* Receipt unavailability is not evidence of delivery failure. */ }
       }
+      if (record.status === "unknown" && record.channel === "kakao") record.connectionCode = await readConnection(record, env);
       return json(record);
     }
     const revokeMatch = /^\/v1\/document-delivery\/documents\/([A-Za-z0-9_-]{1,120})\/revoke$/.exec(url.pathname);
