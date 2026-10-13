@@ -11,7 +11,7 @@ export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-13-approved-document-delivery-v1";
+const SERVICE_VERSION = "2026-10-13-document-delivery-reliability-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -42,6 +42,10 @@ const ERROR_STATUS = Object.freeze({
   AI_CONFIGURATION_ERROR: 503,
   GEMINI_NOT_CONFIGURED: 503,
   CONTRACT_DRIVE_UNAVAILABLE: 503,
+  DELIVERY_CONFIGURATION_ERROR: 503,
+  DELIVERY_UNAVAILABLE: 503,
+  DELIVERY_STATUS_UNKNOWN: 502,
+  DELIVERY_STATUS_UNAVAILABLE: 502,
   CONTRACT_SOURCE_NOT_FOUND: 404
 });
 
@@ -401,7 +405,10 @@ export function createWorker(options = {}) {
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
-        if (isDocumentDelivery) return await documentDeliveryHandler(request, identity, env);
+        if (isDocumentDelivery) {
+          await enforceBurstLimit(identity, env);
+          return await documentDeliveryHandler(request, identity, env);
+        }
         if (url.pathname === CONTRACTS_PATH) return await checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId);
         await enforceLimits(identity, env, now);
         if (url.pathname === PHOTO_CLASSIFY_PATH) {

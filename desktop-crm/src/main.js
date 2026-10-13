@@ -2676,7 +2676,7 @@ async function readSavedWorkReportPdf(input, session) {
   if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
   const expectedPhotos = report.items.reduce((count, item) => count + item.before.length + item.after.length, 0);
   if (artifact.photoFailures || artifact.photos < expectedPhotos) throw new Error("결과보고서 사진을 모두 읽지 못했습니다. Drive 연결과 사진 권한을 확인해 주세요.");
-  return {customer, bytes: artifact.bytes, record: {title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
+  return {customer, bytes: artifact.bytes, record: {id: report.id, updatedAt: report.updatedAt, title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
 }
 
 async function previewSavedCustomerDocument(input) {
@@ -2695,6 +2695,7 @@ async function previewSavedCustomerDocument(input) {
   return {ok: true};
 }
 
+const savedDocumentSendAttempts = new Map();
 async function sendSavedCustomerDocument(input) {
   const session = savedDocumentSession(true);
   if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
@@ -2704,20 +2705,32 @@ async function sendSavedCustomerDocument(input) {
   const monthly = record.savedCustomerDocument.kind === "buildingMonthlyReport";
   const capabilities = await runDocumentDelivery("capabilities"); session.check();
   if (!capabilities?.ok || capabilities.capabilities?.[monthly ? "monthlyReport" : "kakao"] !== true) throw new Error("문서 알림톡 발신 설정과 승인 템플릿을 확인해 주세요.");
+  const latest = await remoteClient.loadStore(); session.check();
+  if (input?.kind === "workReport") {
+    const reports = await remoteClient.loadWorkReports(); session.check();
+    const report = (reports.reports || []).find(row => row.id === input.documentId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+    const owner = (latest.customers || []).find(row => row.id === customer.id && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+    if (!report || !owner || String(report.updatedAt || "") !== input.updatedAt || SavedCustomerDocuments.phone(owner.phone) !== SavedCustomerDocuments.phone(customer.phone)
+      || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(owner.phone)) throw new Error("보고서 또는 수신 연락처가 변경되었습니다. 다시 선택해 주세요.");
+  } else SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, input);
+  // PDF creation timestamps vary on each export; deduplicate the immutable CRM
+  // revision rather than freshly rendered PDF bytes.
+  const attemptId = crypto.createHash("sha256").update([session.user.uid, record.savedCustomerDocument.kind, record.id, record.updatedAt, customer.id, SavedCustomerDocuments.phone(customer.phone), record.savedCustomerDocument.sha256 || ""].join("\n")).digest("hex");
+  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 저장본은 이미 발송 요청했습니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.");
+  savedDocumentSendAttempts.set(attemptId, "unknown");
   const customerId = "saved_" + crypto.randomBytes(16).toString("hex");
-  const created = await runDocumentDelivery("create", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
+  const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
     documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: record.title,
     ...(monthly ? {reportMonth: record.savedCustomerDocument.month} : {}),
-    expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64")});
-  if (!created?.ok || !created.documentId) throw new Error("문서 보안 링크를 준비하지 못했습니다.");
-  try {
-    session.check();
-    const sent = await runDocumentDelivery("send", {channel: "kakao", idempotencyKey: crypto.randomUUID(), documentId: created.documentId,
-      customerId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)});
-    session.check();
-    if (!sent?.ok) throw new Error("문서 알림톡 발송을 접수하지 못했습니다.");
-    return {ok: true, status: sent.status || "requested"};
-  } catch (error) { await runDocumentDelivery("revoke", {documentId: created.documentId}).catch(() => {}); throw error; }
+    expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
+    delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
+  session.check();
+  if (!sent?.ok) {
+    if (["DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_CONFIGURATION_ERROR", "DELIVERY_UNAVAILABLE", "AUTH_REQUIRED", "FORBIDDEN", "INVALID_INPUT", "INPUT_TOO_LARGE"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);
+    throw Object.assign(new Error(sent?.error || "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 업체 기록을 확인해 주세요."), {code: sent?.code || "DELIVERY_STATUS_UNKNOWN"});
+  }
+  savedDocumentSendAttempts.set(attemptId, sent.status || "unknown");
+  return {ok: true, status: sent.status || "unknown", messageId: String(sent.messageId || "").slice(0,120)};
 }
 
 async function sendQuoteToCustomerByKakao(input) {

@@ -111,7 +111,7 @@ test("builds the reviewed NCP AlimTalk payload without exposing credentials", as
     channel: "kakao", phone: "01091690478", templateCode: "BRINGCUSTOMERQUOTEV1",
     variables: { 고객명: "엄준식", 문서명: "입주청소 견적서", 만료일: "2026-09-11", 문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token" },
     env: { NCP_ACCESS_KEY: "access", NCP_SECRET_KEY: "secret", NCP_BIZ_MESSAGE_SERVICE_ID: "service", KAKAO_CHANNEL_ID: "@bringcare" }
-  }, { now: () => 1788512400000, fetchImpl: async (url, options) => { calls.push({ url, options }); return new Response(JSON.stringify({ requestId: "request-1", messages: [{ messageId: "message-1" }] }), { status: 202 }); } });
+  }, { now: () => 1788512400000, fetchImpl: async (url, options) => { calls.push({ url, options }); return new Response(JSON.stringify({ requestId: "request-1", statusCode: "202", statusName: "processing", messages: [{ messageId: "message-1", requestStatusCode: "A000" }] }), { status: 202 }); } });
   assert.equal(result.providerMessageId, "message-1");
   assert.match(calls[0].url, /\/alimtalk\/v2\/services\/service\/messages$/);
   assert.equal(calls[0].options.redirect, "error");
