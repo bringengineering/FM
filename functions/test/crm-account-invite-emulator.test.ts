@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cert, deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
+import { getDatabase as getAdminDatabase } from "firebase-admin/database";
 
 const PROJECT_ID = "demo-bring-fm-account-setup";
 const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "";
@@ -139,6 +140,7 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     });
     adminApp = initializeApp({
       projectId: PROJECT_ID,
+      databaseURL: `http://${DATABASE_HOST}?ns=${PROJECT_ID}`,
       credential: cert({
         projectId: PROJECT_ID,
         clientEmail: `firebase-adminsdk-emulator@${PROJECT_ID}.iam.gserviceaccount.com`,
@@ -176,6 +178,13 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
   });
 
   it("denies anonymous, non-admin, disabled, unverified, wrong-provider, and must-change-password callers", async () => {
+    for (const name of ["listCrmAccounts", "setCrmAccountRole", "deleteCrmAccount"]) {
+      for (const idToken of ["", member.idToken, viewer.idToken, disabledAdmin.idToken,
+        passwordChangeAdmin.idToken, unverifiedAdmin.idToken, customTokenAdmin]) {
+        const reply = await callFunction(name, { uid: member.uid, expectedRole: "member", role: "admin", confirmDelete: true }, idToken);
+        expect(["UNAUTHENTICATED", "PERMISSION_DENIED"]).toContain((reply.payload.error as { status?: string })?.status);
+      }
+    }
     for (const idToken of ["", member.idToken, viewer.idToken, disabledAdmin.idToken,
       passwordChangeAdmin.idToken, unverifiedAdmin.idToken, customTokenAdmin]) {
       const result = await callFunction("archiveCrmAccountInvite", { uid: "completed-invite" }, idToken);
@@ -267,6 +276,58 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     expect(authAfter.disabled).toBe(authBefore.disabled);
     const login = await authRequest("accounts:signInWithPassword", { email: user.email, password: TEST_PASSWORD, returnSecureToken: true });
     expect(login.localId).toBe(user.uid);
+  }, 30_000);
+
+  it("lists legacy accounts beyond the invite limit and manages roles/deletion without removing work records", async () => {
+    const auth = getAdminAuth(adminApp!);
+    const user = await createPasswordUser(`management-${unique}@bring.test`, auth);
+    await setCrmAccess(user, { role: "member" });
+    const db = getAdminDatabase(adminApp!);
+    const retainedWork = { checkInAt: "2026-10-13T00:00:00Z", workDate: "2026-10-13" };
+    await db.ref(`crmCompany/officeAttendance/${user.uid}/2026-10-13`).set(retainedWork);
+    const legacy = Object.fromEntries(Array.from({ length: 205 }, (_, i) => [`zz-management-${String(i).padStart(3, "0")}`, { email: `legacy-${i}@bring.test`, enabled: true, role: "member" }]));
+    await db.ref("crmCompany/access").update(legacy);
+    const listed = [] as Array<{ uid: string; canChangeRole: boolean }>;
+    let cursor = "";
+    do {
+      const reply = await callFunction("listCrmAccounts", cursor ? { cursor } : {}, admin.idToken);
+      expect(reply.status).toBe(200);
+      const result = reply.payload.result as { accounts: typeof listed; nextCursor: string };
+      listed.push(...result.accounts); cursor = result.nextCursor;
+    } while (cursor);
+    expect(listed.length).toBeGreaterThan(200);
+    expect(listed.find(row => row.uid === user.uid)?.canChangeRole).toBe(true);
+    const self = await callFunction("deleteCrmAccount", { uid: admin.uid, expectedRole: "admin", confirmDelete: true }, admin.idToken);
+    expect((self.payload.error as { message: string }).message).toBe("crm_account_management_self_protected");
+    const promoted = await callFunction("setCrmAccountRole", { uid: user.uid, expectedRole: "member", role: "admin" }, admin.idToken);
+    expect(promoted.payload.result).toEqual({ uid: user.uid, role: "admin", updated: true });
+    expect(await readCrmAccess(user)).toMatchObject({ role: "admin", officeAdmin: true });
+    const stale = await callFunction("setCrmAccountRole", { uid: user.uid, expectedRole: "member", role: "member" }, admin.idToken);
+    expect((stale.payload.error as { message: string }).message).toBe("crm_account_management_conflict");
+    const deleted = await callFunction("deleteCrmAccount", { uid: user.uid, expectedRole: "admin", confirmDelete: true }, admin.idToken);
+    expect(deleted.payload.result).toEqual({ uid: user.uid, deleted: true });
+    await expect(auth.getUser(user.uid)).rejects.toMatchObject({ code: "auth/user-not-found" });
+    expect(await readCrmAccess(user)).toMatchObject({ enabled: false, deletionPending: false, role: "viewer" });
+    expect((await db.ref(`crmCompany/accountDeletionBackups/${user.uid}/access/email`).get()).val()).toBe(user.email);
+    expect((await readCrmAccess(user)).email).toBe("");
+    expect((await db.ref(`crmCompany/officeAttendance/${user.uid}/2026-10-13`).get()).val()).toEqual(retainedWork);
+    const repeated = await callFunction("deleteCrmAccount", { uid: user.uid, expectedRole: "admin", confirmDelete: true }, admin.idToken);
+    expect(repeated.payload.result).toEqual({ uid: user.uid, deleted: true });
+    await db.ref("crmCompany/access").update(Object.fromEntries(Object.keys(legacy).map(uid => [uid, null])));
+  }, 60_000);
+
+  it("serializes concurrent administrator changes using the current actor role", async () => {
+    const auth = getAdminAuth(adminApp!);
+    const a = await createPasswordUser(`race-a-${unique}@bring.test`, auth);
+    const b = await createPasswordUser(`race-b-${unique}@bring.test`, auth);
+    await Promise.all([setCrmAccess(a, { role: "admin" }), setCrmAccess(b, { role: "admin" })]);
+    const replies = await Promise.all([
+      callFunction("setCrmAccountRole", { uid: b.uid, expectedRole: "admin", role: "member" }, a.idToken),
+      callFunction("setCrmAccountRole", { uid: a.uid, expectedRole: "admin", role: "member" }, b.idToken),
+    ]);
+    expect(replies.filter(reply => reply.payload.result).length).toBe(1);
+    const roles = await Promise.all([readCrmAccess(a), readCrmAccess(b)]);
+    expect(roles.filter(access => access.role === "admin").length).toBe(1);
   }, 30_000);
 
   it("lets only an admin send an email link that verifies the email and sets the first password", async () => {

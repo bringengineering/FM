@@ -2,6 +2,7 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
+  'crm:accounts-load',
   'crm:weekly-report-delivery-status',
   'crm:weekly-report-draft-load',
   'crm:customer-document-preview',
@@ -27,6 +28,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
+  'crm:account-role-save', 'crm:account-delete',
   'crm:account-invite-archive',
   'crm:weekly-report-submit','crm:weekly-report-delivery-retry',
   'crm:weekly-report-draft-save',

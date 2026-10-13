@@ -28,6 +28,9 @@ type FirebaseTargetManifest = {
     region: string;
     databaseRules: false;
   };
+  crmAccountManagementManualDeployment: {
+    projectId: string; functionNames: string[]; region: string; databaseRules: false;
+  };
   retiredLegacy: {
     projectId: string;
     status: "retired";
@@ -99,6 +102,7 @@ describe("Firebase function archival manifest", () => {
   it("archives every unapproved export and keeps the cleaning deployment allowlist exact", () => {
     expect(Object.keys(manifest).sort()).toEqual([
       "cleaningCenterManualDeployment",
+      "crmAccountManagementManualDeployment",
       "crmAccountSetupManualDeployment",
       "crmAutomaticRelease",
       "crmDriveOAuthManualDeployment",
@@ -151,15 +155,19 @@ describe("Firebase function archival manifest", () => {
     const primaryExports = new Set(manifest.primary.archivedFunctionNames);
     const cleaningExports = new Set(manifest.cleaningCenterManualDeployment.functionNames);
     const accountSetupExports = new Set(manifest.crmAccountSetupManualDeployment.functionNames);
+    const accountManagementExports = new Set(manifest.crmAccountManagementManualDeployment.functionNames);
+    expect(manifest.crmAccountManagementManualDeployment).toEqual({ projectId: "bring-fm", functionNames: ["deleteCrmAccount", "listCrmAccounts", "setCrmAccountRole"], region: "asia-northeast3", databaseRules: false });
     const retiredExports = new Set(manifest.retiredLegacy.archivedFunctionNames);
     expect([...primaryExports].filter((name) => retiredExports.has(name))).toEqual([]);
     expect([...primaryExports].filter((name) => cleaningExports.has(name))).toEqual([]);
     expect([...primaryExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
     expect([...cleaningExports].filter((name) => accountSetupExports.has(name))).toEqual([]);
-    expect(sortedUnique([...primaryExports, ...cleaningExports, ...accountSetupExports, ...retiredExports, ...manifest.crmDriveOAuthManualDeployment.functionNames]))
+    expect([...primaryExports].filter(name => accountManagementExports.has(name))).toEqual([]);
+    expect([...accountSetupExports].filter(name => accountManagementExports.has(name))).toEqual([]);
+    expect(sortedUnique([...primaryExports, ...cleaningExports, ...accountSetupExports, ...accountManagementExports, ...retiredExports, ...manifest.crmDriveOAuthManualDeployment.functionNames]))
       .toEqual(functionExports(indexSource));
 
-    for (const name of accountSetupExports) {
+    for (const name of [...accountSetupExports, ...accountManagementExports]) {
       const block = exportBlock(name);
       expect(block).toContain("onCall(");
       expect(block).toContain('region: "asia-northeast3"');
