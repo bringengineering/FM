@@ -308,6 +308,8 @@ describe.runIf(ENABLED)("CRM account setup callable flow in isolated Firebase em
     expect(deleted.payload.result).toEqual({ uid: user.uid, deleted: true });
     await expect(auth.getUser(user.uid)).rejects.toMatchObject({ code: "auth/user-not-found" });
     expect(await readCrmAccess(user)).toMatchObject({ enabled: false, deletionPending: false, role: "viewer" });
+    expect((await db.ref(`crmCompany/accountDeletionBackups/${user.uid}/access/email`).get()).val()).toBe(user.email);
+    expect((await readCrmAccess(user)).email).toBe("");
     expect((await db.ref(`crmCompany/officeAttendance/${user.uid}/2026-10-13`).get()).val()).toEqual(retainedWork);
     const repeated = await callFunction("deleteCrmAccount", { uid: user.uid, expectedRole: "admin", confirmDelete: true }, admin.idToken);
     expect(repeated.payload.result).toEqual({ uid: user.uid, deleted: true });

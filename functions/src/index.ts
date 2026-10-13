@@ -3777,8 +3777,7 @@ export const registerCrmAccount = onCall(
       const accessSnapshot = await adminDatabase.ref("crmCompany/access").get();
       let emailAlreadyAllowed = false;
       accessSnapshot.forEach((child) => {
-        const record = child.val() as { email?: unknown; deletedAt?: unknown; authDeletedAt?: unknown; deletionPending?: unknown } | null;
-        if (record?.deletedAt && record.authDeletedAt && record.deletionPending === false) return false;
+        const record = child.val() as { email?: unknown } | null;
         if (typeof record?.email === "string" && record.email.trim().toLowerCase() === email) {
           emailAlreadyAllowed = true;
           return true;
@@ -3968,6 +3967,8 @@ export const listCrmAccounts = onCall(
   async request => {
     const actor = await requireCrmAccountSetupAdmin(request);
     try {
+      const actorUser = await adminAuth.getUser(actor.uid);
+      if (actorUser.disabled || !actorUser.emailVerified || actorUser.email?.toLowerCase() !== actor.email) throw new Error("crm_account_management_admin_required");
       await consumeRateLimit(adminDatabase.ref(`crmCompany/accountSetupRateLimits/admin/listAccounts/${desktopRateKey(actor.uid)}`),
         { limit: 120, windowMs: CRM_ACCOUNT_SETUP_RATE_WINDOW_MS, nowMs: Date.now() });
       const input = isRecord(request.data) ? request.data : {};
@@ -4024,6 +4025,8 @@ async function mutateCrmAccount(request: CallableRequest<unknown>, kind: "role" 
     const audit = adminDatabase.ref("crmCompany/accountManagementAudit").push();
     await audit.set({ actorUid: actor.uid, targetUid: input.uid, action: kind, expectedRole: input.expectedRole,
       nextRole: input.role, createdAt: now, state: "requested" });
+    if (kind === "delete") await adminDatabase.ref(`crmCompany/accountDeletionBackups/${input.uid}`).transaction(raw =>
+      raw || { access: originalAccess, createdAt: now, createdBy: actor.uid }, undefined, false);
     let mutationError: unknown;
     const result = await adminDatabase.ref("crmCompany/access").transaction(raw => {
       if (raw === null) return raw;
@@ -4045,7 +4048,9 @@ async function mutateCrmAccount(request: CallableRequest<unknown>, kind: "role" 
     // visible as deletionPending for a retry; never silently re-enable it.
     try { await adminAuth.deleteUser(input.uid); }
     catch (error) { if (!(isRecord(error) && error.code === "auth/user-not-found")) throw error; }
-    await adminDatabase.ref(`crmCompany/access/${input.uid}`).update({ deletionPending: false, authDeletedAt: Date.now() });
+    // Keep the display name/UID for work attribution, but release the email so
+    // the existing registration service can invite it again under a new UID.
+    await adminDatabase.ref(`crmCompany/access/${input.uid}`).update({ deletionPending: false, authDeletedAt: Date.now(), email: "" });
     await audit.update({ state: "complete", completedAt: Date.now() });
     return { uid: input.uid, deleted: true };
   } catch (error) { throw crmAccountManagementError(error); }
