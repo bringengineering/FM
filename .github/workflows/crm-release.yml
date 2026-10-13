@@ -228,6 +228,10 @@ jobs:
           WEEKLY_REPORT_TELEGRAM_CHAT_ID: ${{ secrets.WEEKLY_REPORT_TELEGRAM_CHAT_ID }}
         run: node scripts/deploy-with-weekly-secrets.mjs
         working-directory: crm-ai-worker
+      - name: Require approved quote and completion delivery while monthly AlimTalk remains disabled
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node crm-ai-worker/scripts/check-document-delivery.mjs --require-approved-documents
       - name: Verify the deployed Worker health and source version
         run: |
           node --input-type=module <<'NODE'

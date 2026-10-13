@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { checkDocumentDelivery, summarizeBindings } from "../scripts/check-document-delivery.mjs";
+import { checkDocumentDelivery, requireApprovedDocumentDelivery, summarizeBindings } from "../scripts/check-document-delivery.mjs";
 
 test("configuration diagnostics expose only presence and explicit approval flags", () => {
   const bindings = [
@@ -45,4 +45,28 @@ test("manual diagnostic workflow runs only the reviewed release branch and never
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /persist-credentials: false/);
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|wrangler deploy|secret put/);
+});
+
+test("release readiness requires every binding, approved documents, and monthly delivery disabled", () => {
+  const ready = {
+    storagePresent: true, accessKeyPresent: true, secretKeyPresent: true, serviceIdPresent: true, channelIdPresent: true,
+    deliveryEnabled: true, documentTemplatesApprovedFlag: true, monthlyTemplateApprovedFlag: false,
+  };
+  assert.equal(requireApprovedDocumentDelivery(ready), ready);
+  for (const key of Object.keys(ready).filter(key => key !== "monthlyTemplateApprovedFlag")) {
+    for (const value of [false, null, undefined, "true"]) {
+      assert.throws(() => requireApprovedDocumentDelivery({ ...ready, [key]: value }), /NOT_READY/);
+    }
+  }
+  for (const value of [true, null, undefined, "false"]) {
+    assert.throws(() => requireApprovedDocumentDelivery({ ...ready, monthlyTemplateApprovedFlag: value }), /NOT_READY/);
+  }
+  assert.throws(() => requireApprovedDocumentDelivery(null), /NOT_READY/);
+});
+
+test("formal release checks actual document delivery settings before publication", () => {
+  const workflow = fs.readFileSync(new URL("../../.github/workflows/crm-release.yml", import.meta.url), "utf8");
+  const deployment = workflow.slice(workflow.indexOf("  deploy-ai-worker:"), workflow.indexOf("  stage-release:"));
+  assert.match(deployment, /node crm-ai-worker\/scripts\/check-document-delivery\.mjs --require-approved-documents/);
+  assert.ok(deployment.indexOf("scripts/deploy-with-weekly-secrets.mjs") < deployment.indexOf("--require-approved-documents"));
 });

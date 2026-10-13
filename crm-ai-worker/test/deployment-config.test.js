@@ -23,10 +23,10 @@ test("production gateway is enabled only through the reviewed deployment config"
   assert.match(config, /^AI_ENABLED\s*=\s*"true"$/m);
 });
 
-test("document delivery has dedicated storage and stays closed before Kakao approval", () => {
+test("approved quote and completion delivery is enabled while monthly AlimTalk stays closed", () => {
   const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
-  assert.match(config, /^DOCUMENT_DELIVERY_ENABLED\s*=\s*"false"$/m);
-  assert.match(config, /^KAKAO_DOCUMENT_TEMPLATES_APPROVED\s*=\s*"false"$/m);
+  assert.match(config, /^DOCUMENT_DELIVERY_ENABLED\s*=\s*"true"$/m);
+  assert.match(config, /^KAKAO_DOCUMENT_TEMPLATES_APPROVED\s*=\s*"true"$/m);
   assert.match(config, /^KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED\s*=\s*"false"$/m);
   assert.match(config, /binding\s*=\s*"DOCUMENT_DELIVERY"/);
   assert.match(config, /id\s*=\s*"e45a57c874534b76b90107d43ad4a759"/);

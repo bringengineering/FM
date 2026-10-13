@@ -48,9 +48,20 @@ export async function checkDocumentDelivery({ token, fetchImpl = fetch } = {}) {
   return summarizeBindings(value.result?.bindings);
 }
 
+export function requireApprovedDocumentDelivery(status) {
+  const required = ["storagePresent", "accessKeyPresent", "secretKeyPresent", "serviceIdPresent", "channelIdPresent", "deliveryEnabled", "documentTemplatesApprovedFlag"];
+  if (!status || required.some(name => status[name] !== true) || status.monthlyTemplateApprovedFlag !== false) {
+    throw new Error("APPROVED_DOCUMENT_DELIVERY_NOT_READY");
+  }
+  return status;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
+    const args = process.argv.slice(2);
+    if (args.length > 1 || (args.length === 1 && args[0] !== "--require-approved-documents")) throw new Error("INVALID_ARGUMENT");
     const status = await checkDocumentDelivery({ token: process.env.CLOUDFLARE_API_TOKEN });
+    if (args.length === 1) requireApprovedDocumentDelivery(status);
     console.log(JSON.stringify(status, null, 2));
     console.log("Read-only configuration check. Flags do not prove provider approval or message delivery.");
   } catch {

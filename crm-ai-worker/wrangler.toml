@@ -16,8 +16,10 @@ AI_COMPANY_DAILY_LIMIT = "1000"
 CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com,bringengineering1008@gmail.com"
 CRM_ADMIN_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
 ALLOWED_ORIGINS = "app://bring-crm,https://bring-fm.web.app"
-DOCUMENT_DELIVERY_ENABLED = "false"
-KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
+# Quote and completion-report templates were approved in SENS. Monthly AlimTalk
+# remains disabled; enabling delivery never triggers an automatic customer send.
+DOCUMENT_DELIVERY_ENABLED = "true"
+KAKAO_DOCUMENT_TEMPLATES_APPROVED = "true"
 KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED = "false"
 WALLBOARD_ENABLED = "true"
 WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"
