@@ -9720,6 +9720,22 @@ secureCanonicalHandle("crm:account-invite-register", input => {
   if (localTestMode) throw new Error("미리보기에서는 이메일 초대를 발송하지 않습니다.");
   return remoteClient.registerCrmAccount(input);
 });
+secureCanonicalHandle("crm:accounts-load", () => {
+  if (localTestMode) return [
+    { uid: "local-account-admin", email: "admin@example.com", displayName: "관리자 예시", role: "admin", status: "active", canChangeRole: false, canDelete: false, canResend: false },
+    { uid: "local-account-member", email: "member@example.com", displayName: "구성원 예시", role: "member", status: "active", canChangeRole: true, canDelete: true, canResend: false },
+    { uid: "local-account-pending", email: "pending@example.com", displayName: "초대 대기 구성원", role: "member", status: "pending", canChangeRole: false, canDelete: true, canResend: true },
+  ];
+  return remoteClient.loadCrmAccounts();
+});
+secureCanonicalHandle("crm:account-role-save", input => {
+  if (localTestMode) throw new Error("미리보기에서는 실제 관리자 권한을 변경하지 않습니다.");
+  return remoteClient.setCrmAccountRole(input);
+});
+secureCanonicalHandle("crm:account-delete", input => {
+  if (localTestMode) throw new Error("미리보기에서는 실제 로그인 계정을 삭제하지 않습니다.");
+  return remoteClient.deleteCrmAccount(input);
+});
 secureCanonicalHandle("crm:account-invite-resend", input => {
   if (localTestMode) throw new Error("미리보기에서는 이메일 초대를 발송하지 않습니다.");
   return remoteClient.resendCrmAccountInvite(input);

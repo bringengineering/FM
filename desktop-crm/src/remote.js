@@ -3041,7 +3041,7 @@ class FirebaseRemoteClient {
   async callCrmAccountSetupFunction(name, data) {
     const session = this.requireOfficeSession();
     if (session.role !== "admin") throw createError("CRM 계정 관리는 관리자만 사용할 수 있습니다.", "ACCESS_DENIED");
-    if (!["listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite", "archiveCrmAccountInvite"].includes(name)) {
+    if (!["listCrmAccountInvites", "registerCrmAccount", "resendCrmAccountInvite", "archiveCrmAccountInvite", "listCrmAccounts", "setCrmAccountRole", "deleteCrmAccount"].includes(name)) {
       throw createError("계정 관리 요청을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
     const guard = this.captureSessionGuard();
@@ -3052,7 +3052,7 @@ class FirebaseRemoteClient {
       response = await this.fetch(`${CRM_ACCOUNT_SETUP_FUNCTION_BASE}/${name}`, {
         method: "POST",
         redirect: "error",
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(name === "listCrmAccounts" ? 30_000 : 15_000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -3071,6 +3071,15 @@ class FirebaseRemoteClient {
         try { await cancelResponseBody(response); } catch {}
       }
       const serverCode = String(failurePayload && failurePayload.error && failurePayload.error.message || "");
+      const accountMessages = {
+        crm_account_management_self_protected: "본인 계정은 삭제하거나 권한을 변경할 수 없습니다.",
+        crm_account_management_last_admin: "마지막 관리자 계정은 삭제하거나 권한을 해제할 수 없습니다.",
+        crm_account_management_conflict: "계정 정보가 변경됐습니다. 새로고침 후 다시 시도해 주세요.",
+        crm_account_management_missing: "등록 계정을 확인할 수 없습니다. 새로고침해 주세요.",
+        crm_account_management_not_active: "이메일 인증과 비밀번호 설정이 완료된 활성 계정만 권한을 변경할 수 있습니다.",
+        crm_account_management_unavailable: "처리 결과를 확인하지 못했습니다. 새로고침 후 계정 상태를 확인해 주세요.",
+      };
+      if (Object.hasOwn(accountMessages, serverCode)) throw createError(accountMessages[serverCode], "ACCOUNT_MANAGEMENT_FAILED");
       if (status === 401 || status === 403) {
         throw createError("관리자 권한을 확인해 주세요.", "ACCESS_DENIED");
       }
@@ -3092,7 +3101,7 @@ class FirebaseRemoteClient {
       }
       throw createError("계정 관리 요청을 처리하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
     }
-    const payload = await readBoundedJsonResponse(response, 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED");
+    const payload = await readBoundedJsonResponse(response, name === "listCrmAccounts" ? 128 * 1024 : 16 * 1024, "ACCOUNT_SETUP_REQUEST_FAILED");
     this.assertSessionGuardActive(guard);
     if (!payload || typeof payload !== "object" || payload.error || !payload.result || typeof payload.result !== "object") {
       throw createError("계정 관리 응답을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
@@ -3104,6 +3113,55 @@ class FirebaseRemoteClient {
     const result = await this.callCrmAccountSetupFunction("listCrmAccountInvites", {});
     return Array.isArray(result.accounts) ? result.accounts : [];
   }
+
+  async loadCrmAccounts() {
+    const guard = this.captureSessionGuard();
+    const accounts = [];
+    const seen = new Set();
+    let cursor = "";
+    for (let page = 0; page < 100; page++) {
+      const result = await this.callCrmAccountSetupFunction("listCrmAccounts", cursor ? { cursor } : {});
+      this.assertSessionGuardActive(guard);
+      if (!Array.isArray(result.accounts) || result.accounts.length > 100 || typeof result.nextCursor !== "string") {
+        throw createError("전체 계정 목록을 확인하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+      }
+      for (const item of result.accounts) {
+        if (!item || !/^[A-Za-z0-9_-]{1,128}$/u.test(item.uid) || ["__proto__", "prototype", "constructor"].includes(item.uid)
+          || seen.has(item.uid) || !["admin", "member", "viewer"].includes(item.role)
+          || !["active", "pending", "disabled", "missing", "deletionPending"].includes(item.status)
+          || typeof item.email !== "string" || item.email.length > 254 || typeof item.displayName !== "string" || item.displayName.length > 80) {
+          throw createError("계정 목록의 형식을 확인하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+        }
+        seen.add(item.uid);
+        accounts.push({ uid: item.uid, email: item.email, displayName: item.displayName, role: item.role, status: item.status,
+          canChangeRole: item.canChangeRole === true, canDelete: item.canDelete === true, canResend: item.canResend === true,
+          createdAt: Number(item.createdAt) || 0, expiresAt: Number(item.expiresAt) || 0 });
+      }
+      if (!result.nextCursor) return accounts;
+      if (!/^[A-Za-z0-9_-]{1,128}$/u.test(result.nextCursor) || result.nextCursor === cursor || result.nextCursor < cursor) {
+        throw createError("전체 계정 목록을 이어서 확인하지 못했습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+      }
+      cursor = result.nextCursor;
+    }
+    throw createError("전체 계정 목록이 너무 큽니다. 관리자에게 문의해 주세요.", "ACCOUNT_SETUP_REQUEST_FAILED");
+  }
+
+  async manageCrmAccount(input, kind) {
+    const uid = typeof input?.uid === "string" ? input.uid : "";
+    if (!/^[A-Za-z0-9_-]{1,128}$/u.test(uid) || ["__proto__", "prototype", "constructor"].includes(uid)
+      || !["admin", "member", "viewer"].includes(input?.expectedRole)
+      || !["role", "delete"].includes(kind) || (kind === "role" && !["admin", "member"].includes(input?.role))
+      || (kind === "delete" && input?.confirmDelete !== true)) throw createError("계정 변경 요청을 확인할 수 없습니다.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    const data = { uid, expectedRole: input.expectedRole, ...(kind === "role" ? { role: input.role } : { confirmDelete: true }) };
+    const result = await this.callCrmAccountSetupFunction(kind === "role" ? "setCrmAccountRole" : "deleteCrmAccount", data);
+    if (result.uid !== uid || (kind === "role" ? result.updated !== true || result.role !== input.role : result.deleted !== true)) {
+      throw createError("변경 결과를 확인하지 못했습니다. 새로고침해 주세요.", "ACCOUNT_SETUP_REQUEST_FAILED");
+    }
+    return result;
+  }
+
+  async setCrmAccountRole(input) { return this.manageCrmAccount(input, "role"); }
+  async deleteCrmAccount(input) { return this.manageCrmAccount(input, "delete"); }
 
   async registerCrmAccount(input) {
     const email = String(input && input.email || "").trim().toLowerCase();

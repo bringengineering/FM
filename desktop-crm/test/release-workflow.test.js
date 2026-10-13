@@ -87,7 +87,7 @@ test("stages exactly three updater assets and publishes stable after validated W
   assert.ok(reserve.indexOf("reserve-version.js") < reserve.indexOf("run: npm test"));
   assert.ok(reserve.indexOf("run: npm test") < reserve.indexOf("Build installer"));
   const deploy = jobBlock("deploy-ai-worker");
-  assert.match(deploy, /needs: \[plan, reserve-build\]/);
+  assert.match(deploy, /needs: \[plan, reserve-build, ensure-account-management\]/);
   assert.match(deploy, /secrets\.CLOUDFLARE_API_TOKEN/);
   assert.match(deploy, /node scripts\/deploy-with-weekly-secrets\.mjs/);
   assert.match(deploy, /secrets\.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN/);
@@ -127,12 +127,24 @@ test("advances one dedicated bounded update pointer only after stable publicatio
   assert.match(channel, /CRM_UPDATE_CHANNEL_REF_CONFLICT/);
 });
 
-test("automatic desktop release never authenticates to or mutates live Firebase", () => {
+test("desktop release isolates the approved three-callable deployment and never deploys live Rules", () => {
+  const management = jobBlock("ensure-account-management");
+  const withoutManagement = releaseExecutable.replace(management.replace(/^\s*#.*$/gm, ""), "");
   assert.doesNotMatch(releaseExecutable, /preflight-rules:|preflight-wif:|deploy-rules:/);
   assert.doesNotMatch(releaseExecutable, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
   assert.doesNotMatch(releaseExecutable, /GCP_|bring-crm-production|read-firebase-targets\.js/i);
-  assert.doesNotMatch(releaseExecutable, /firebase(?:-tools)?|database:get|database\.rules|firebase\.json|crm-rules/i);
-  assert.doesNotMatch(releaseExecutable, /deploy --only|--only database|--only hosting|cloudfunctions|functions\//i);
+  assert.doesNotMatch(withoutManagement, /firebase(?:-tools)?|database:get|database\.rules|firebase\.json|crm-rules/i);
+  assert.doesNotMatch(withoutManagement, /deploy --only|--only database|--only hosting|cloudfunctions|functions\//i);
+  assert.match(management, /needs: \[plan, reserve-build\]/);
+  assert.match(management, /environment: firebase-production/);
+  assert.match(management, /FIREBASE_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_SERVICE_ACCOUNT \}\}/);
+  assert.match(management, /crm-account-management-deployment\.cjs --apply/);
+  assert.match(management, /--project demo-bring-fm-account-setup emulators:exec --only auth,database,functions/);
+  assert.doesNotMatch(management, /database:get|--only hosting|crm-rules-deploy|--only database\s+(?!emulators)/i);
+  const targets = JSON.parse(fs.readFileSync(path.join(root, "release/firebase-targets.json"), "utf8"));
+  assert.equal(targets.crmAccountManagementManualDeployment.projectId, "bring-fm");
+  assert.equal(targets.crmAccountManagementManualDeployment.databaseRules, false);
+  assert.deepEqual(targets.crmAccountManagementManualDeployment.functionNames, ["deleteCrmAccount", "listCrmAccounts", "setCrmAccountRole"]);
   assert.doesNotMatch(releaseExecutable, /git push --tags|--clobber|--force(?:\s|"|')/);
 });
 

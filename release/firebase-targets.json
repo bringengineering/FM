@@ -70,6 +70,12 @@
     "region": "asia-northeast3",
     "databaseRules": false
   },
+  "crmAccountManagementManualDeployment": {
+    "projectId": "bring-fm",
+    "functionNames": ["deleteCrmAccount", "listCrmAccounts", "setCrmAccountRole"],
+    "region": "asia-northeast3",
+    "databaseRules": false
+  },
   "cleaningCenterManualDeployment": {
     "projectId": "bring-fm",
     "functionNames": [

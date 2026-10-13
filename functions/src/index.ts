@@ -19,6 +19,7 @@ import {
 import * as logger from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { handleCrmDriveOAuth } from "./auth/crm-drive-oauth.js";
+import { isCrmAccountUid, normalizeCrmAccountMutation, planCrmAccountMutation } from "./auth/crm-account-management.js";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {
@@ -3948,6 +3949,120 @@ export const archiveCrmAccountInvite = onCall(
       throw crmAccountSetupError("crm_account_setup_unavailable");
     }
   },
+);
+
+function crmAccountManagementError(error: unknown): HttpsError {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "crm_account_management_admin_required") return new HttpsError("permission-denied", code);
+  if (code === "field_rate_limit_exceeded") return new HttpsError("resource-exhausted", "crm_account_setup_rate_limited");
+  if (["crm_account_management_invalid", "crm_account_management_missing", "crm_account_management_conflict",
+    "crm_account_management_self_protected", "crm_account_management_last_admin", "crm_account_management_not_active"].includes(code)) {
+    return new HttpsError("failed-precondition", code);
+  }
+  return new HttpsError("unavailable", "crm_account_management_unavailable");
+}
+
+export const listCrmAccounts = onCall(
+  { region: "asia-northeast3", timeoutSeconds: 30 },
+  async request => {
+    const actor = await requireCrmAccountSetupAdmin(request);
+    try {
+      const actorUser = await adminAuth.getUser(actor.uid);
+      if (actorUser.disabled || !actorUser.emailVerified || actorUser.email?.toLowerCase() !== actor.email) throw new Error("crm_account_management_admin_required");
+      await consumeRateLimit(adminDatabase.ref(`crmCompany/accountSetupRateLimits/admin/listAccounts/${desktopRateKey(actor.uid)}`),
+        { limit: 120, windowMs: CRM_ACCOUNT_SETUP_RATE_WINDOW_MS, nowMs: Date.now() });
+      const input = isRecord(request.data) ? request.data : {};
+      if (input.cursor != null && !isCrmAccountUid(input.cursor)) throw new Error("crm_account_management_invalid");
+      let query = adminDatabase.ref("crmCompany/access").orderByKey().limitToFirst(101);
+      if (input.cursor) query = query.startAfter(input.cursor as string);
+      const snapshot = await query.get();
+      const entries: Array<{ uid: string; access: UnknownRecord }> = [];
+      snapshot.forEach(child => { if (isCrmAccountUid(child.key) && isRecord(child.val())) entries.push({ uid: child.key, access: child.val() }); });
+      const page = entries.slice(0, 100);
+      const authRows = page.length ? await adminAuth.getUsers(page.map(item => ({ uid: item.uid }))) : { users: [] };
+      const identities = new Map(authRows.users.map(user => [user.uid, user]));
+      const accounts = await Promise.all(page.filter(item => !item.access.deletedAt || item.access.deletionPending === true).map(async ({ uid, access }) => {
+        const user = identities.get(uid);
+        const invite = (await adminDatabase.ref(`crmCompany/accountInvites/${uid}`).get()).val();
+        const pending = access.accountSetupPending === true || (isRecord(invite) && invite.status === "pending" && !user?.emailVerified);
+        const identityMatches = Boolean(user?.email && typeof access.email === "string" && user.email.toLowerCase() === access.email.trim().toLowerCase());
+        const active = identityMatches && user?.disabled === false && user.emailVerified && access.enabled === true
+          && access.mustChangePassword !== true && !pending && !access.deletedAt;
+        const role = ["admin", "member", "viewer"].includes(String(access.role)) ? String(access.role) : "viewer";
+        return { uid, email: typeof access.email === "string" ? access.email.slice(0, 254) : "",
+          displayName: (typeof access.displayName === "string" ? access.displayName : user?.displayName || "").slice(0, 80),
+          role, status: access.deletionPending === true ? "deletionPending" : pending ? "pending" : !user ? "missing" : active ? "active" : "disabled",
+          canChangeRole: active && uid !== actor.uid && user?.providerData.some(provider => provider.providerId === "password") === true,
+          canDelete: uid !== actor.uid,
+          canResend: pending && isRecord(invite) && invite.status === "pending" && access.enabled === true && !access.deletedAt,
+          createdAt: Number(access.createdAt) || Date.parse(user?.metadata.creationTime || "") || 0,
+          expiresAt: isRecord(invite) ? Number(invite.expiresAt) || 0 : 0 };
+      }));
+      return { accounts, nextCursor: entries.length > 100 ? page.at(-1)!.uid : "" };
+    } catch (error) { throw crmAccountManagementError(error); }
+  },
+);
+
+async function mutateCrmAccount(request: CallableRequest<unknown>, kind: "role" | "delete") {
+  const actor = await requireCrmAccountSetupAdmin(request);
+  try {
+    await consumeCrmAccountAdminRateLimit(actor.uid, "manage");
+    const actorUser = await adminAuth.getUser(actor.uid);
+    if (actorUser.disabled || !actorUser.emailVerified || actorUser.email?.toLowerCase() !== actor.email) {
+      throw new Error("crm_account_management_admin_required");
+    }
+    const input = normalizeCrmAccountMutation(request.data, kind);
+    let targetUser;
+    try { targetUser = await adminAuth.getUser(input.uid); }
+    catch (error) { if (!(isRecord(error) && error.code === "auth/user-not-found")) throw error; }
+    const originalAccess = (await adminDatabase.ref(`crmCompany/access/${input.uid}`).get()).val();
+    if (!isRecord(originalAccess) || (targetUser && targetUser.email?.toLowerCase() !== String(originalAccess.email).trim().toLowerCase())) {
+      throw new Error("crm_account_management_missing");
+    }
+    if (kind === "role" && (!targetUser || targetUser.disabled || !targetUser.emailVerified
+      || !targetUser.providerData.some(provider => provider.providerId === "password"))) throw new Error("crm_account_management_not_active");
+    const now = Date.now();
+    const audit = adminDatabase.ref("crmCompany/accountManagementAudit").push();
+    await audit.set({ actorUid: actor.uid, targetUid: input.uid, action: kind, expectedRole: input.expectedRole,
+      nextRole: input.role, createdAt: now, state: "requested" });
+    if (kind === "delete") await adminDatabase.ref(`crmCompany/accountDeletionBackups/${input.uid}`).transaction(raw =>
+      raw || { access: originalAccess, createdAt: now, createdBy: actor.uid }, undefined, false);
+    let mutationError: unknown;
+    const result = await adminDatabase.ref("crmCompany/access").transaction(raw => {
+      if (raw === null) return raw;
+      try { return planCrmAccountMutation(raw, actor, input, kind, now); }
+      catch (error) { mutationError = error; return undefined; }
+    }, undefined, false);
+    if (!result.committed || result.snapshot.child(`${input.uid}/accountManagementAt`).val() !== now
+      && !(kind === "delete" && Number(result.snapshot.child(`${input.uid}/deletedAt`).val()) > 0)) {
+      await audit.update({ state: "rejected" });
+      throw mutationError || new Error("crm_account_management_conflict");
+    }
+    if (kind === "role") {
+      // Role reads are server-backed; revocation also expires refresh sessions.
+      await adminAuth.revokeRefreshTokens(input.uid);
+      await audit.update({ state: "complete", completedAt: Date.now() });
+      return { uid: input.uid, role: input.role, updated: true };
+    }
+    // Deny access first. If Auth deletion fails, the account stays denied and
+    // visible as deletionPending for a retry; never silently re-enable it.
+    try { await adminAuth.deleteUser(input.uid); }
+    catch (error) { if (!(isRecord(error) && error.code === "auth/user-not-found")) throw error; }
+    // Keep the display name/UID for work attribution, but release the email so
+    // the existing registration service can invite it again under a new UID.
+    await adminDatabase.ref(`crmCompany/access/${input.uid}`).update({ deletionPending: false, authDeletedAt: Date.now(), email: "" });
+    await audit.update({ state: "complete", completedAt: Date.now() });
+    return { uid: input.uid, deleted: true };
+  } catch (error) { throw crmAccountManagementError(error); }
+}
+
+export const setCrmAccountRole = onCall(
+  { region: "asia-northeast3" },
+  request => mutateCrmAccount(request, "role"),
+);
+export const deleteCrmAccount = onCall(
+  { region: "asia-northeast3" },
+  request => mutateCrmAccount(request, "delete"),
 );
 
 export const resendCrmAccountInvite = onCall(
