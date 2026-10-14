@@ -92,6 +92,25 @@ test('quick detail keeps untrusted names as text and explicit consultation IDs w
  assert.equal(visit(s.host).find(node=>node['data-building-edit']==='a').disabled,true);
  assert.equal(s.mounts(),0);s.handle.dispose();
 });
+test('customer quick detail removes the work shortcut but preserves consultation and edit actions for both roles',async()=>{
+ for(const writable of [true,false]){
+  const s=await setup({canWrite:()=>writable});await s.handle.selectCustomer('c1');
+  const actions=visit(s.host).find(node=>node.className==='customer-overview-actions');
+  assert.deepEqual(actions.children.filter(node=>node.tag==='button').map(node=>node.textContent),['＋ 상담 기록','고객 정보 수정']);
+  assert.equal(actions.children.find(node=>node['data-action']==='new-consultation').disabled,!writable);
+  assert.equal(actions.children.find(node=>node['data-customer-hub-edit']==='c1').disabled,!writable);
+  assert.equal(visit(s.host).some(node=>node.tag==='button'&&/할 일/.test(node.textContent)),false);
+  assert.equal(s.input.serviceRecords.length,2);s.handle.dispose();
+ }
+});
+test('removed customer shortcut has no callback code while the shared work editor and save route remain',()=>{
+ const overview=fs.readFileSync(path.join(__dirname,'../src/building-atlas/customer-overview.mjs'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+ assert.doesNotMatch(overview,/onAddWork|＋ 할 일/);assert.doesNotMatch(app,/onAddWork/);
+ assert.match(app,/function workRecordEditor\(recordId\)/);
+ assert.match(app,/action === "new-work-record"\) workRecordEditor\(""\)/);
+ assert.match(app,/form\.id === "workRecordForm"/);
+});
 test('the 3D leave guard protects both customer changes and closing the quick detail',async()=>{
  const s=await setup();await s.handle.select('c1','a');const modelButton=visit(s.host).find(node=>node.textContent==='3D 설비지도 열기');assert.equal(modelButton.disabled,false);await modelButton.onclick();assert.equal(s.mounts(),1);
  s.setAllowed(false);assert.equal(await s.handle.selectCustomer('c2'),false);assert.equal(await visit(s.host).find(node=>node['aria-label']==='고객 상세 닫기').onclick(),false);

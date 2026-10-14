@@ -5083,13 +5083,6 @@
           cases: activeCases().map(item => ({...item,complete:Core.workflowProgress(item).done>=Core.WORKFLOW_STEPS.length})),
         }) : {rows:[],totals:{contracts:0,work:0,prospects:0,customers:0}},
         canWrite: () => stillCurrent() && canWriteCRM(),
-        onAddWork: (customerId, buildingId) => {
-          if (!stillCurrent() || !canWriteCRM()) return;
-          const customer = customerById(customerId);
-          if (!customer || !customerBuildings(customer).some(building=>building.id===buildingId&&!building.archivedAt)) return showToast("선택한 고객의 건물 정보를 다시 확인해 주세요.", "error");
-          selectedBuildingId = buildingId;
-          workRecordEditor("");
-        },
         getProfile: (customerId, buildingId) => {
           const customer = customerById(customerId), building = buildingById(buildingId);
           return [{title:building?.name || "건물 미연결",lines:[building?.address || building?.roadAddress || "주소 미등록"]}, {title:customer?customerDisplayName(customer):"고객 미연결",lines:customer?[customerPhoneText(customer.phone)||"연락처 미등록",customer.email||"이메일 미등록",`담당자: ${customer.owner||"미지정"}`,`다음 연락: ${dateText(customer.nextContactAt)}`,`관리 상태: ${managementStatusForCustomer(customer)}`]:[]}, {title:"개인 메모 · 고객 특징",lines:[customer?.notes||"등록된 메모 없음"]}];
