@@ -81,7 +81,11 @@
     const seen = new Set();
     const represented = new Set(list(store && store.serviceRecords).filter(record => !record.deletedAt && !record.deleted).map(record => {
       const contractId = text(record.sourceContractId || record.contractId);
-      return contractId && isDate(record.scheduledDate) ? `${contractId}\u0000${text(record.buildingId)}\u0000${record.scheduledDate}` : "";
+      // Keep the original occurrence suppressed after a one-day move, relink,
+      // cancellation or archival; current schedule fields are editable.
+      const date = text(record.sourceContractDate || record.scheduledDate);
+      const buildingId = text(record.sourceContractBuildingId || record.buildingId);
+      return contractId && isDate(date) ? `${contractId}\u0000${buildingId}\u0000${date}` : "";
     }).filter(Boolean));
     return list(store && store.contracts).flatMap(contract => {
       const id = text(contract.id), buildingId = text(contract.buildingId);
@@ -107,5 +111,11 @@
     });
   }
 
-  return { WEEKDAYS, isDate, normalizeCleaningSchedule, scheduleLabel, contractDates, registeredContractsForCustomer, contractWorkOccurrences, contractServiceType };
+  function occurrenceIdentity(contractId, date, buildingId) {
+    if (!validId(contractId) || contractId !== text(contractId)
+      || !validId(buildingId) || buildingId !== text(buildingId) || !isDate(date)) return "";
+    return JSON.stringify([contractId, date, buildingId]);
+  }
+
+  return { WEEKDAYS, isDate, normalizeCleaningSchedule, scheduleLabel, contractDates, registeredContractsForCustomer, contractWorkOccurrences, contractServiceType, occurrenceIdentity };
 });

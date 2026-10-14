@@ -103,14 +103,15 @@ test("a registered contract links exactly its existing CRM customer without prom
   assert.equal(input.customers.length, 1);
 });
 
-test("derived calendar controls edit the source contract, never a synthetic service record, and respect viewers", () => {
+test("derived calendar controls edit the selected occurrence, not the source contract, and respect viewers", () => {
   const model = Calendar.buildModel(store(), { month: "2026-10", selectedDate: mondays[0] });
   const writer = Calendar.render(model, { canWrite: true });
-  assert.match(writer, /data-contract-edit="contract_a"/);
+  assert.match(writer, /data-work-calendar-occurrence="crm-contract:contract_a:2026-10-19"/);
+  assert.doesNotMatch(writer, /data-contract-edit/);
   assert.match(writer, /계약에서 자동 연결 · 1\/4회/);
   assert.doesNotMatch(writer, /data-work-calendar-(?:edit|complete)="crm-contract/);
   const viewer = Calendar.render(model, { canWrite: false });
-  assert.doesNotMatch(viewer, /data-contract-edit|data-work-calendar-complete|data-work-calendar-edit/);
+  assert.doesNotMatch(viewer, /data-contract-edit|data-work-calendar-(?:complete|edit|occurrence)/);
   const filtered = Calendar.buildModel(store(), { month: "2026-10", query: "weekly cleaning", buildingId: "building_a" });
   assert.equal(filtered.events.length, 2);
 });

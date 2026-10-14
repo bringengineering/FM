@@ -5180,6 +5180,7 @@ async function commitLocalBuildingSchedule(inputValue) {
     const plan = planBuildingScheduleCommit(input, {
       existing,
       building,
+      contract: input.contractOccurrence && (data.contracts || []).find(item => item && item.id === input.contractOccurrence.contractId),
       actor,
       now: new Date(),
     });
