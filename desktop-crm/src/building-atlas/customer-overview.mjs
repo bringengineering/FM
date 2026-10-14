@@ -4,7 +4,7 @@ import {mountCustomerWorkspace} from './customer-workspace.mjs';
 // Independently implemented UI patterns; no third-party CRM code is embedded.
 export async function mountCustomerOverview(options={}) {
     const {host, metricsHost=host, getOverview, getCustomers, getBuildings, getVisibleCustomerIds,
-    getProfile, getSections, getSummary=()=>[], canWrite=()=>false, onAddWork=()=>{},
+    getProfile, getSections, getSummary=()=>[], canWrite=()=>false,
     initialCustomerId, initialBuildingId, signal} = options;
   const doc=host.ownerDocument;
   const el=(tag, text='', className='')=>{const node=doc.createElement(tag);node.textContent=String(text??'');if(className)node.className=className;return node;};
@@ -91,8 +91,7 @@ export async function mountCustomerOverview(options={}) {
     if(stale)return;
     if(customer){
       const consult=action('＋ 상담 기록','data-action','new-consultation');consult.setAttribute('data-customer-id',customer.id);consult.className='primary-button';consult.disabled=!canWrite();
-      const addWork=button('＋ 할 일',()=>onAddWork(customer.id,selectedBuildingId));addWork.disabled=!canWrite()||!building;
-      const edit=action('고객 정보 수정','data-customer-hub-edit',customer.id);edit.disabled=!canWrite();actions.append(consult,addWork,edit);
+      const edit=action('고객 정보 수정','data-customer-hub-edit',customer.id);edit.disabled=!canWrite();actions.append(consult,edit);
       const buildings=el('select');buildings.setAttribute('aria-label','상세 건물 선택');
       for(const b of customer.buildings){const option=el('option',b.name);option.value=b.id;buildings.append(option);}
       if(customer.buildings.length>1){buildings.value=selectedBuildingId;buildings.onchange=async()=>{const selected=await select(customer.id,buildings.value);if(!selected)buildings.value=selectedBuildingId;};actions.append(buildings);}
