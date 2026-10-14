@@ -114,7 +114,7 @@ test("builds the reviewed NCP AlimTalk payload without exposing credentials", as
   }, { now: () => 1788512400000, fetchImpl: async (url, options) => { calls.push({ url, options }); return new Response(JSON.stringify({ requestId: "request-1", statusCode: "202", statusName: "processing", messages: [{ messageId: "message-1", requestStatusCode: "A000" }] }), { status: 202 }); } });
   assert.equal(result.providerMessageId, "message-1");
   assert.match(calls[0].url, /\/alimtalk\/v2\/services\/service\/messages$/);
-  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.redirect, "manual");
   const payload = JSON.parse(calls[0].options.body);
   assert.equal(payload.plusFriendId, "@bringcare");
   assert.equal(payload.templateCode, "BRINGCUSTOMERQUOTEV1");
