@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const ContractSchedule = require("./contract-schedule-core");
 const BuildingAtlasService = require("./building-atlas-service");
 const OperationsCheck = require("./operations-check-core");
 const http = require("node:http");
@@ -212,7 +213,7 @@ const BUILDING_SCHEDULE_TYPES = Object.freeze(new Set([
   "inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"
 ]));
 const BUILDING_SCHEDULE_INPUT_FIELDS = Object.freeze(new Set([
-  "operation", "requestId", "recordId", "expectedUpdatedAt", "expectedCommitVersion", "values"
+  "operation", "requestId", "recordId", "expectedUpdatedAt", "expectedCommitVersion", "values", "contractOccurrence"
 ]));
 const BUILDING_SCHEDULE_VALUE_FIELDS = Object.freeze(new Set([
   "buildingId", "title", "scheduledDate", "startTime", "endTime", "status", "serviceType", "owner", "summary",
@@ -924,6 +925,16 @@ function validateBuildingScheduleCommitInput(input) {
   }
 
   const hasValues = Object.prototype.hasOwnProperty.call(source, "values");
+  let contractOccurrence;
+  if (Object.prototype.hasOwnProperty.call(source, "contractOccurrence")) {
+    const occurrence = assertClosedObject(source.contractOccurrence, new Set(["contractId", "date", "buildingId"]), "연결 일정을 확인해 주세요.");
+    const identity = ContractSchedule.occurrenceIdentity(occurrence.contractId, occurrence.date, occurrence.buildingId);
+    if (operation !== "create" || !identity
+      || recordId !== `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`) {
+      throw createError("연결 일정을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
+    }
+    contractOccurrence = Object.freeze({ contractId: occurrence.contractId, date: occurrence.date, buildingId: occurrence.buildingId });
+  }
   if (!["create", "update"].includes(operation)) {
     if (hasValues) throw createError("일정 상태 변경 요청을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
     return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion });
@@ -971,7 +982,7 @@ function validateBuildingScheduleCommitInput(input) {
     || (values.status !== "completed" && values.completedAt)) {
     throw createError("건물·일정명·날짜·시간을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
   }
-  return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion, values });
+  return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion, values, ...(contractOccurrence ? { contractOccurrence } : {}) });
 }
 
 function stableBuildingScheduleText(value) {
@@ -991,6 +1002,7 @@ function buildingScheduleIntentHash(input, actorUid) {
     expectedUpdatedAt: input.expectedUpdatedAt,
     expectedCommitVersion: input.expectedCommitVersion,
     values: input.values || null,
+    ...(input.contractOccurrence ? { contractOccurrence: input.contractOccurrence } : {}),
   })).digest("hex");
 }
 
@@ -1054,6 +1066,14 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
   }
   if (input.operation === "create") {
     if (existing) throw createError("같은 번호의 일정이 이미 있습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    if (input.contractOccurrence) {
+      const occurrence = input.contractOccurrence;
+      const contract = context.contract;
+      if (!contract || contract.id !== occurrence.contractId || contract.buildingId !== occurrence.buildingId
+        || !ContractSchedule.contractDates(contract).includes(occurrence.date)) {
+        throw createError("연결 계약의 일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "BUILDING_SCHEDULE_CONFLICT");
+      }
+    }
   } else {
     if (!existing) throw createError("변경할 일정을 찾지 못했습니다.", "BUILDING_SCHEDULE_NOT_FOUND");
     if (String(existing.updatedAt || "") !== input.expectedUpdatedAt
@@ -1081,6 +1101,11 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
 
   const record = Object.assign(Object.create(null), existing || {});
   record.id = input.recordId;
+  if (input.contractOccurrence) {
+    record.sourceContractId = input.contractOccurrence.contractId;
+    record.sourceContractDate = input.contractOccurrence.date;
+    record.sourceContractBuildingId = input.contractOccurrence.buildingId;
+  }
   if (input.values) {
     if (existing && String(existing.status || "") === "cancelled") {
       throw createError("취소된 일정은 수정할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
@@ -4659,9 +4684,14 @@ class FirebaseRemoteClient {
     this.assertSessionGuardActive(guard);
     const buildingSnapshot = await this.dbReadWithEtag(`crmShared/data/buildings/${candidateBuildingId}`, false, guard);
     this.assertSessionGuardActive(guard);
+    const contractSnapshot = input.contractOccurrence
+      ? await this.dbReadWithEtag(`crmShared/data/contracts/${input.contractOccurrence.contractId}`, false, guard)
+      : null;
+    this.assertSessionGuardActive(guard);
     const plan = planBuildingScheduleCommit(input, {
       existing: snapshot.value,
       building: buildingSnapshot.value,
+      contract: contractSnapshot && contractSnapshot.value,
       actor,
       now: new Date(),
     });

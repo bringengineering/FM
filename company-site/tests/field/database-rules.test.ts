@@ -667,6 +667,22 @@ async function exerciseServiceRecordRules(
     ref(member, "crmCompany/data/serviceRecords/schedule_member"),
     record("schedule_member", "building_1", commitMeta(2, "crm-member")),
   ));
+  // Occurrence edits add provenance, not permissions or a new write path.
+  // Exercise the existing deployed schema for both writers and denied roles.
+  for (const [database, actorUid, sequence] of [[admin, "crm-admin", 60], [member, "crm-member", 62]] as const) {
+    const id = `schedule_occurrence_${sequence}`;
+    const location = `crmCompany/data/serviceRecords/${id}`;
+    const original = record(id, "building_1", {
+      ...commitMeta(sequence, actorUid), sourceContractId: "contract_fixture",
+      sourceContractDate: "2026-08-20", sourceContractBuildingId: "building_1", scheduledDate: "2026-08-21",
+    });
+    await assertSucceeds(set(ref(database, location), original));
+    const changed = {...original, ...commitMeta(sequence + 1, actorUid, "2026-08-22T00:00:00.000Z", 2), status: "completed", completedAt: "2026-08-22"};
+    await assertSucceeds(set(ref(database, location), changed));
+    expect((await get(ref(database, location))).val().sourceContractDate).toBe("2026-08-20");
+    const denied = [...rejectedWriters, testEnvironment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database()];
+    for (const other of denied) await assertFails(set(ref(other, location), {...changed, ...commitMeta(sequence + 2, actorUid, "2026-08-23T00:00:00.000Z", 3)}));
+  }
   // The new schedule-delete action uses the existing role/CAS rules unchanged.
   // Archive completed facts instead of deleting or changing their outcome.
   for (const [database, actorUid, sequence] of [[admin, "crm-admin", 50], [member, "crm-member", 52]] as const) {

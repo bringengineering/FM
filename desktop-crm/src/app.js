@@ -10901,28 +10901,45 @@
     })();
   }
 
-  function buildingScheduleEditor(recordId, defaultDate) {
+  async function contractScheduleOccurrenceEditor(occurrenceId) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 변경할 수 없습니다.", "error");
+    const generation = authGeneration, uid = currentAuthUid();
+    const occurrence = ContractSchedule.contractWorkOccurrences(store).find(item => item.id === occurrenceId);
+    if (!occurrence) return showToast("일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "error");
+    const identity = ContractSchedule.occurrenceIdentity(occurrence.contractId, occurrence.scheduledDate, occurrence.buildingId);
+    let digest;
+    try { digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity)); }
+    catch (_) { return showToast("연결 일정을 열지 못했습니다. 다시 시도해 주세요.", "error"); }
+    if (generation !== authGeneration || uid !== currentAuthUid() || !canWriteCRM()) return;
+    const id = `service_contract_${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+    if (store.serviceRecords.some(item => item.id === id)) return buildingScheduleEditor(id);
+    const current = ContractSchedule.contractWorkOccurrences(store).find(item => item.id === occurrenceId);
+    if (!current || current.buildingId !== occurrence.buildingId) return showToast("일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "error");
+    buildingScheduleEditor("", current.scheduledDate, { ...current, id, occurrenceId });
+  }
+
+  function buildingScheduleEditor(recordId, defaultDate, contractOccurrence) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 등록하거나 변경할 수 없습니다.", "error");
     const existing = String(recordId || "") ? store.serviceRecords.find(record => record.id === recordId) : null;
     if (recordId && (!existing || existing.archivedAt)) return showToast("일정 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
-    const buildingOptions = customerManagedBuildingChoices(existing && existing.buildingId);
+    const buildingOptions = customerManagedBuildingChoices((existing || contractOccurrence || {}).buildingId);
     if (!existing && !buildingOptions.length) {
       showToast("일정을 등록하려면 고객·건물 관리에서 고객건물을 먼저 추가해 주세요.", "error");
       return;
     }
     const defaultBuildingId = existing && existing.buildingId
       || (workCalendarBuildingId !== "all" && buildingOptions.some(choice => choice.value === workCalendarBuildingId) ? workCalendarBuildingId : "");
-    const item = existing || {
+    const item = existing || contractOccurrence || {
       id: `service_${crypto.randomUUID()}`, buildingId: defaultBuildingId, title: "", serviceType: "inspection", status: "planned",
       scheduledDate: defaultDate || workCalendarDate || todayKey(), startTime: "", endTime: "", owner: store.settings && store.settings.owner || "김현진", summary: "",
     };
     const statusOptions = ["planned", "in_progress", "completed"];
     const typeOptions = ["inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"];
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>고객·건물 관리 목록에서 고객건물을 선택하고 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">등록한 일정은 캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시됩니다.</div><div class="form-grid work-calendar-form-grid">${selectField("고객건물 *", "buildingId", ["", ...buildingOptions.map(choice => choice.value)], item.buildingId || "", value => {
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing || contractOccurrence ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>고객·건물 관리 목록에서 고객건물을 선택하고 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-contract-occurrence-id="${attr(contractOccurrence && contractOccurrence.occurrenceId || "")}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">${contractOccurrence || existing && existing.sourceContractId ? "선택한 날짜의 업무 일정만 수정합니다. 계약 조건과 다른 날짜의 일정은 바뀌지 않습니다." : "등록한 일정은 캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시됩니다."}</div><div class="form-grid work-calendar-form-grid">${selectField("고객건물 *", "buildingId", ["", ...buildingOptions.map(choice => choice.value)], item.buildingId || "", value => {
       if (!value) return "고객건물을 선택해 주세요";
       const choice = buildingOptions.find(candidate => candidate.value === value);
       return choice ? customerManagedBuildingChoiceLabel(choice) : value;
-    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && existing.status !== "cancelled" ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-delete="${attr(existing.id)}">일정 삭제</button>` : ""}${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
+    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && existing.status !== "cancelled" ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-delete="${attr(existing.id)}">일정 삭제</button>` : ""}${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing || contractOccurrence ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
     openModal();
     const form = document.getElementById("buildingScheduleForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -16387,6 +16404,8 @@
       }
       return;
     }
+    const calendarOccurrence = event.target.closest("[data-work-calendar-occurrence]");
+    if (calendarOccurrence) { await contractScheduleOccurrenceEditor(calendarOccurrence.dataset.workCalendarOccurrence); return; }
     const calendarEdit = event.target.closest("[data-work-calendar-edit]");
     if (calendarEdit) { buildingScheduleEditor(calendarEdit.dataset.workCalendarEdit, workCalendarDate); return; }
     const calendarComplete = event.target.closest("[data-work-calendar-complete]");
@@ -18620,6 +18639,13 @@
       const raw = Object.fromEntries(new FormData(form).entries());
       const creating = form.dataset.scheduleCreate === "true";
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.scheduleId) || null;
+      const occurrence = creating && form.dataset.contractOccurrenceId
+        ? ContractSchedule.contractWorkOccurrences(store).find(item => item.id === form.dataset.contractOccurrenceId)
+        : null;
+      if (creating && form.dataset.contractOccurrenceId && !occurrence) {
+        closeModal(); render();
+        return showToast("연결 일정이 변경되었습니다. 최신 화면에서 다시 열어 주세요.", "error");
+      }
       if (!creating && (!existing || existing.archivedAt)) return showToast("일정이 이미 변경되었거나 삭제되었습니다. 최신 화면을 확인해 주세요.", "error");
       if (!raw.buildingId) return showToast("일정을 등록할 고객건물을 선택해 주세요.", "error");
       let building;
@@ -18644,7 +18670,7 @@
       if (startTime && endTime && endTime <= startTime) return showToast("종료 시간은 시작 시간보다 늦게 입력해 주세요.", "error");
       const statuses = ["planned", "in_progress", "completed"];
       const status = statuses.includes(raw.status) ? raw.status : "planned";
-      const values = buildingScheduleCommitValues(Object.assign({}, existing || {}, {
+      const values = buildingScheduleCommitValues(Object.assign({}, existing || occurrence || {}, {
         buildingId: String(raw.buildingId || ""),
         title,
         serviceType: ["inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"].includes(raw.serviceType) ? raw.serviceType : "other",
@@ -18665,6 +18691,7 @@
         expectedUpdatedAt: creating ? "" : String(form.dataset.openedUpdatedAt || ""),
         expectedCommitVersion: creating ? 0 : Number(form.dataset.openedCommitVersion) || 0,
         values,
+        ...(occurrence ? { contractOccurrence: { contractId: occurrence.contractId, date: occurrence.scheduledDate, buildingId: occurrence.buildingId } } : {}),
       }, form);
       if (!result || result.ok !== true) {
         if (["BUILDING_SCHEDULE_CONFLICT", "BUILDING_SCHEDULE_NOT_FOUND", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE"].includes(String(result && result.code || ""))) closeModal();
