@@ -12994,8 +12994,11 @@
     if (form.elements.paymentDueDate) form.elements.paymentDueDate.required = true;
     if (form.elements.collectionDueDate) {
       form.elements.collectionDueDate.readOnly = true;
-      if (resetPaymentDate || !form.elements.collectionDueDate.value) {
-        const anchor = form.elements.paymentDueDate?.value || "";
+      const anchor = form.elements.paymentDueDate?.value || "";
+      const selectedDate = form.elements.collectionDueDate.value || "";
+      const dueDate = Core.contractPaymentDate({paymentDueDate: anchor, billingCycle: form.elements.billingCycle?.value,
+        endDate: form.elements.endDate?.value || "", status: form.elements.status?.value || ""}, selectedDate.slice(0, 7));
+      if (resetPaymentDate || !selectedDate || dueDate !== selectedDate) {
         form.elements.collectionDueDate.value = anchor;
         const existing = store.contracts.find(item => item.id === form.dataset.contractId);
         if (form.elements.collectionStatus) form.elements.collectionStatus.value = Core.contractPaymentCollectionStatus(existing, anchor);
@@ -17795,6 +17798,7 @@
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
     if (event.target.matches('#contractForm [name="billingCycle"], #contractForm [name="paymentDueDate"]')) refreshContractPaymentFields(event.target.form, true);
+    if (event.target.matches('#contractForm [name="endDate"], #contractForm [name="status"]')) refreshContractPaymentFields(event.target.form);
     if (event.target.matches('#customerForm [name="type"]')) updateCustomerCustomTypeField(event.target.form);
     if (event.target.matches('#partnerQuoteForm [name="industry"]')) {
       const form = event.target.form;

@@ -151,4 +151,9 @@ test("the actual contract editor opens the clicked receipt date with date-scoped
   assert.equal(elements.collectionDueDate.value, "2026-10-31");
   assert.equal(elements.collectionStatus.value, "입금 예정");
   assert.equal(item.paymentDueDate, "2026-10-30");
+  elements.paymentDueDate.value = "2026-10-30";
+  elements.collectionDueDate.value = "2026-11-30";
+  elements.endDate.value = "2026-10-31";
+  ctx.refreshContractPaymentFields(form);
+  assert.equal(elements.collectionDueDate.value, "2026-10-30", "shortening a contract does not leave an uneditable invalid future receipt date");
 });
