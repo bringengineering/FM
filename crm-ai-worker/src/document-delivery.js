@@ -107,7 +107,9 @@ async function ncpJson(method, uri, body, env, options = {}) {
   catch { fail("DELIVERY_CONFIGURATION_ERROR", "SIGNATURE_FAILED"); }
   let response;
   try {
-    response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method, headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, ...(body ? {body: JSON.stringify(body)} : {}), redirect: "error", signal: AbortSignal.timeout(12000) });
+    // Workers rejects redirect:"error" before sending anything. Manual mode
+    // plus the non-2xx guard below rejects redirects without forwarding secrets.
+    response = await fetchImpl(`https://sens.apigw.ntruss.com${uri}`, { method, headers: { "content-type": "application/json; charset=utf-8", "x-ncp-apigw-timestamp": timestamp, "x-ncp-iam-access-key": accessKey, "x-ncp-apigw-signature-v2": signature }, ...(body ? {body: JSON.stringify(body)} : {}), redirect: "manual", signal: AbortSignal.timeout(12000) });
   } catch (error) { fail(method === "POST" ? "DELIVERY_STATUS_UNKNOWN" : "DELIVERY_STATUS_UNAVAILABLE", error?.name === "TimeoutError" || error?.name === "AbortError" ? "PROVIDER_TIMEOUT" : "PROVIDER_NETWORK_ERROR"); }
   if (!response.ok) {
     await response.body?.cancel();

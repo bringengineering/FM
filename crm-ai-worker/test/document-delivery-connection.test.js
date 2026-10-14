@@ -14,7 +14,7 @@ test("connection diagnosis signs one bounded GET and sends no message or custome
   const uri = "/alimtalk/v2/services/ncp:kkobizmsg:kr:fixture:service/templates?channelId=%40fixture&templateCode=BRINGCOMPLETIONREPORTV1&pageSize=1";
   assert.equal(request.url, "https://sens.apigw.ntruss.com" + uri);
   assert.equal(request.init.headers["x-ncp-apigw-signature-v2"], createHmac("sha256", "fixture-secret").update(`GET ${uri}\n1791849600000\nfixture-access`).digest("base64"));
-  assert.equal(request.init.redirect, "error"); assert.ok(request.init.signal);
+  assert.equal(request.init.redirect, "manual"); assert.ok(request.init.signal);
   assert.doesNotMatch(value, /SECRET_SENTINEL|fixture-access|fixture-secret/);
 });
 

@@ -16,7 +16,7 @@ test("NCP resource colons and HMAC use the exact documented request path", async
   const path = "/alimtalk/v2/services/ncp:kkobizmsg:kr:fixture:bring_care_kakao/messages";
   assert.equal(request.url, "https://sens.apigw.ntruss.com" + path);
   assert.equal(request.init.headers["x-ncp-apigw-signature-v2"], createHmac("sha256", "fixture-secret").update(`POST ${path}\n${time}\nfixture-access`).digest("base64"));
-  assert.equal(request.init.redirect, "error");
+  assert.equal(request.init.redirect, "manual");
   assert.ok(request.init.signal);
   assert.equal(JSON.parse(request.init.body).templateCode, "BRINGCOMPLETIONREPORTV1");
 });
