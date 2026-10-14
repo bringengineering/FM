@@ -18,6 +18,8 @@
 .relationship-contract-row strong { color: #191f28; font-size: 14px; }
 .relationship-contract-row span, .relationship-contract-row small { color: #4e5968; font-size: 12px; }
 .relationship-contract-row button { flex-shrink: 0; }
+.contract-customer-mode-badge { display: inline-block; padding: 3px 7px; border-radius: 6px; background: #e8f3ff; color: #1b64da; font-size: 11px; font-style: normal; font-weight: 600; vertical-align: middle; }
+.contract-customer-mode-tabs { flex-wrap: wrap; }
 @media (max-width: 700px) { .relationship-contract-row { align-items: flex-start; flex-direction: column; } }
 
 .relationship-hero span { color: #3182F6; font-size: 10px; font-weight: 950; }

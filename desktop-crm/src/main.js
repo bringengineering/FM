@@ -8353,6 +8353,30 @@ async function createWindow() {
         const pass = typeFilters.join('|') === '전체|청소|건물관리|부동산관리' && conditionalTypes === '건물관리|부동산관리' && optionalEndDateLabel === '계약 종료일 (선택)' && optionalEndDateDisplayed && saved?.endDate === '' && saved?.types?.join('|') === '건물관리|부동산관리' && saved?.buildingId === autoSelectedBuilding && saved?.status === '종료 예정' && saved?.unitCount === 12 && saved?.managementTarget === '임대 현황 관리' && saved?.memo === '갱신 여부 확인 필요' && !!deleteButton && removed && cards.length >= 1 && filteredCorrectly && state.view === 'contracts' && !state.modalOpen;
         return { pass, typeFilters, conditionalTypes, optionalEndDateLabel, optionalEndDateDisplayed, autoSelectedBuilding, saved, deleteButtonFound: !!deleteButton, removed, cardCount: cards.length, filteredCorrectly, state };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "contract-customer-tabs") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+        document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();
+        const seeded = window.__crmTest.getStore();
+        seeded.customers = ['mixed', 'single', 'unknown', 'empty'].map(id => ({id:'fixture_' + id, name:'화면 점검 ' + id, stage:'계약 확정'}));
+        const contract = (id, customer, cycle) => ({id:'fixture_' + id, customerId:'fixture_' + customer, name:'화면 점검 ' + id, billingCycle:cycle, status:'진행 중', startDate:'2026-10-01', types:['청소']});
+        seeded.contracts = [contract('oneoff', 'mixed', '건별'), contract('monthly', 'mixed', '월 정기'), contract('annual', 'mixed', '연간'), contract('single', 'single', '건별'), contract('other', 'unknown', '기타')];
+        window.__crmTest.replaceStoreForTest(seeded);
+        window.__crmSmokeNavigate('relationships');
+        const before = JSON.stringify(window.__crmTest.getStore());
+        const rows = () => [...document.querySelectorAll('.relationship-contract-row strong')].map(el => el.textContent);
+        const all = rows().length === 5 && document.querySelectorAll('.relationship-card').length === 4;
+        document.querySelector('[data-contract-customer-mode="single"]')?.querySelector('span')?.click();
+        const single = rows().length === 2 && rows().every(text => text.includes('단건 계약')) && document.querySelectorAll('.relationship-card').length === 2;
+        document.querySelector('[data-contract-customer-mode="recurring"]')?.click();
+        const recurring = rows().length === 2 && rows().every(text => text.includes('정기 계약')) && document.querySelectorAll('.relationship-card').length === 1;
+        const selected = document.querySelector('[data-contract-customer-mode="recurring"]')?.getAttribute('aria-pressed') === 'true';
+        const roleControls = ${JSON.stringify(localTestRole === "admin")} ? document.querySelectorAll('[data-contract-edit]').length === 2 : document.querySelectorAll('[data-contract-edit]').length === 0;
+        document.querySelector('[data-contract-customer-mode="all"]')?.click();
+        const unchanged = JSON.stringify(window.__crmTest.getStore()) === before;
+        return {pass:all && single && recurring && selected && roleControls && unchanged, all, single, recurring, selected, roleControls, unchanged, fixtureOnly:true};
+      })()`, true);
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult }, null, 2), "utf8");
+      if (!actionResult?.pass) throw new Error("Contract customer tab synthetic UI verification failed.");
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "relationship-management") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="relationships"]')?.click();

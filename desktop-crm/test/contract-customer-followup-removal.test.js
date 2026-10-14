@@ -24,7 +24,7 @@ function between(start, end) {
 test("contract customer cards show contracts and a native detail button without reminders, and never mutate stored history", () => {
   for (const writable of [true, false]) {
     const store = fixture(), before = JSON.stringify(store);
-    const ctx = vm.createContext({ store, ContractSchedule, main: { innerHTML: "" }, canWriteCRM: () => writable,
+    const ctx = vm.createContext({ store, ContractSchedule, contractCustomerModeFilter: "all", main: { innerHTML: "" }, canWriteCRM: () => writable,
       customerSalesProgress: () => ({ filterIds: [] }), customerDisplayName: c => c.name,
       customerAvatar: () => '<div class="avatar"></div>', buildingById: id => store.buildings.find(b => b.id === id),
       esc, attr: esc, empty: () => "Empty",
