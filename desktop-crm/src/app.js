@@ -115,6 +115,7 @@
   let salesBoardMode = "focus";
   let contractTypeFilter = "전체";
   let contractPaymentModeFilter = "recurring";
+  let contractCustomerModeFilter = "all";
   let contractStatusFilter = "전체";
   let partnerVendorIndustryFilter = "전체 업종";
   let selectedPartnerVendorDetailId = "";
@@ -11137,23 +11138,39 @@
     openModal();
   }
 
-  function relationshipContractsHtml(customer) {
-    const contracts = ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id);
+  function relationshipContractsHtml(customer, contracts = contractCustomerContracts(customer)) {
     if (!contracts.length) return "";
     return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건</b>${contracts.map(contract => {
       const dates = ContractSchedule.contractDates(contract);
       const building = buildingById(contract.buildingId);
-      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")}</strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>업무일정 ${dates.length}회 · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
+      const mode = contractCustomerMode(contract);
+      const label = mode === "single" ? "단건 계약" : mode === "recurring" ? "정기 계약" : "구분 확인 필요";
+      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>업무일정 ${dates.length}회 · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
     }).join("")}</section>`;
   }
 
+  function contractCustomerMode(contract) {
+    return contract.billingCycle === "건별" ? "single" : ["월 정기", "연간"].includes(contract.billingCycle) ? "recurring" : "unknown";
+  }
+
+  function contractCustomerContracts(customer) {
+    return ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id)
+      .filter(contract => contractCustomerModeFilter === "all" || contractCustomerMode(contract) === contractCustomerModeFilter);
+  }
+
   function renderRelationships() {
-    const customers = store.customers.filter(customerIsRelationshipCustomer)
+    const allCustomers = store.customers.filter(customerIsRelationshipCustomer);
+    const allContracts = allCustomers.flatMap(customer => ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id));
+    const modes = [["all", "전체"], ["single", "단건 계약"], ["recurring", "정기 계약"]];
+    const customers = allCustomers.filter(customer => contractCustomerModeFilter === "all" || contractCustomerContracts(customer).length)
       .sort((a, b) => customerDisplayName(a).localeCompare(customerDisplayName(b), "ko"));
-    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · 등록 계약과 고객 상세정보를 확인하세요.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
+    const contractCount = customers.reduce((sum, customer) => sum + contractCustomerContracts(customer).length, 0);
+    const modeLabel = modes.find(([mode]) => mode === contractCustomerModeFilter)?.[1] || "전체";
+    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 등록 계약과 고객 상세정보를 확인하세요.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
+      <nav class="contract-payment-mode-tabs contract-customer-mode-tabs" aria-label="계약 고객 계약 구분">${modes.map(([mode, label]) => `<button type="button" class="${contractCustomerModeFilter === mode ? "active" : ""}" data-contract-customer-mode="${mode}" aria-pressed="${contractCustomerModeFilter === mode}">${label} <span>${allContracts.filter(contract => mode === "all" || contractCustomerMode(contract) === mode).length}건</span></button>`).join("")}</nav>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
         return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button></footer></article>`;
-      }).join("")}</section>` : empty("등록된 계약 고객이 없습니다", "캘린더나 계약 관리에서 고객에게 계약을 연결하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-action="new-contract">＋ 계약 등록</button>`)}`;
+      }).join("")}</section>` : empty(contractCustomerModeFilter === "all" ? "등록된 계약 고객이 없습니다" : `등록된 ${modeLabel}이 없습니다`, contractCustomerModeFilter === "all" ? "캘린더나 계약 관리에서 고객에게 계약을 연결하면 이곳에 자동으로 나타납니다." : "다른 구분의 계약과 구분 확인이 필요한 계약은 전체 탭에서 확인하세요.", canWriteCRM() ? `<button class="primary-button" data-action="new-contract">＋ 계약 등록</button>` : "")}`;
   }
 
   function partnerQuoteBadge(status) {
@@ -17160,6 +17177,12 @@
       selectedCustomerHubId = customerHubOpen.dataset.customerHubOpen || "";
       renderCustomers();
       pageMeta();
+      return;
+    }
+    const contractCustomerModeControl = event.target.closest("[data-contract-customer-mode]");
+    if (contractCustomerModeControl) {
+      contractCustomerModeFilter = ["single", "recurring"].includes(contractCustomerModeControl.dataset.contractCustomerMode) ? contractCustomerModeControl.dataset.contractCustomerMode : "all";
+      renderRelationships();
       return;
     }
     const contractPaymentMode = event.target.closest("[data-contract-payment-mode-filter]");
