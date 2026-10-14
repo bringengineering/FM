@@ -667,6 +667,25 @@ async function exerciseServiceRecordRules(
     ref(member, "crmCompany/data/serviceRecords/schedule_member"),
     record("schedule_member", "building_1", commitMeta(2, "crm-member")),
   ));
+  // The new schedule-delete action uses the existing role/CAS rules unchanged.
+  // Archive completed facts instead of deleting or changing their outcome.
+  for (const [database, actorUid, sequence] of [[admin, "crm-admin", 50], [member, "crm-member", 52]] as const) {
+    const id = `schedule_archive_${sequence}`;
+    const location = `crmCompany/data/serviceRecords/${id}`;
+    const original = record(id, "building_1", {
+      ...commitMeta(sequence, actorUid), status: "completed", completedAt: "2026-08-21", reportId: "fixture_report_preserved",
+    });
+    await assertSucceeds(set(ref(database, location), original));
+    const archived = {...original, ...commitMeta(sequence + 1, actorUid, "2026-08-22T00:00:00.000Z", 2), archivedAt: "2026-08-22T00:00:00.000Z", archivedByAuthUid: actorUid};
+    await assertSucceeds(set(ref(database, location), archived));
+    const saved = (await get(ref(database, location))).val();
+    expect(saved.archivedAt).toBe(archived.archivedAt);
+    expect(saved.completedAt).toBe("2026-08-21");
+    expect(saved.reportId).toBe("fixture_report_preserved");
+    await assertFails(remove(ref(database, location)));
+    const denied = [...rejectedWriters, testEnvironment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database()];
+    for (const other of denied) await assertFails(set(ref(other, location), {...archived, ...commitMeta(sequence + 2, actorUid, "2026-08-23T00:00:00.000Z", 3)}));
+  }
   await assertFails(set(
     ref(member, "crmCompany/data/serviceRecords/schedule_without_commit_meta"),
     record("schedule_without_commit_meta", "building_1"),

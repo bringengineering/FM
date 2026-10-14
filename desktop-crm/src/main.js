@@ -9047,7 +9047,7 @@ async function createWindow() {
             await wait(160);
           }
 
-          const mutationSelectors = ['[data-action="new-building-schedule"]', '[data-work-calendar-edit]', '[data-work-calendar-complete]', '[data-work-calendar-cancel]'];
+          const mutationSelectors = ['[data-action="new-building-schedule"]', '[data-work-calendar-edit]', '[data-work-calendar-complete]', '[data-work-calendar-cancel]', '[data-work-calendar-delete]'];
           const mutationControls = mutationSelectors.flatMap(selector => [...document.querySelectorAll(selector)]);
           const mutationButtonCount = mutationControls.length;
           const visibleMutationButtonCount = mutationControls.filter(control => !control.hidden && getComputedStyle(control).display !== 'none' && getComputedStyle(control).visibility !== 'hidden').length;
@@ -9842,7 +9842,7 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
       return buildingScheduleErrorEnvelope(Object.assign(new Error("SESSION_CHANGED"), { code: "SESSION_CHANGED" }));
     }
     if (!result.repeated && !localTestMode) signalWallboardAfterSave();
-    const operationsSync = result.record.status === "completed"
+    const operationsSync = payload.operation !== "archive" && result.record.status === "completed"
       ? await trySyncCompletedWorkRecord(result.record)
       : { status: "not-required", sourceWorkRecordId: String(result.record.id || "") };
     return {
@@ -9881,7 +9881,7 @@ secureCanonicalHandle("crm:work-operations-sync-retry", async input => {
   assertMainMutationAllowed({});
   const shared = await readStore();
   const record = (shared.serviceRecords || []).find(item => item && String(item.id || "") === recordId);
-  if (!record || record.status !== "completed") return { status: "required", sourceWorkRecordId: recordId, error: "완료된 작업을 찾지 못했습니다." };
+  if (!record || record.archivedAt || record.status !== "completed") return { status: "required", sourceWorkRecordId: recordId, error: "완료된 작업을 찾지 못했습니다." };
   return trySyncCompletedWorkRecord(record);
 });
 secureCanonicalHandle("crm:canonical-building-units-configure", async input => {

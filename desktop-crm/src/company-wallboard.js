@@ -66,7 +66,7 @@ function orderedStrategyGoals(goals,dataDate){
   const serviceLabels={inspection:'점검',repair:'수리',cleaning:'청소',stair_cleaning:'계단 청소',grounds_cutting:'예초',meeting:'회의'};
   const teamNames=new Set((Array.isArray(members)?members:[]).map(member=>String(member?.displayName||'').trim()).filter(name=>name.length<=40&&/^[\p{L} .·-]{2,40}$/u.test(name)));
   const monday=weekStart(today),sunday=addDays(monday,6);
-  const safe=store.serviceRecords.filter(r=>r&&day(r.scheduledDate)&&r.scheduledDate>=monday&&r.scheduledDate<=sunday&&r.status!=='cancelled').map(r=>{
+  const safe=store.serviceRecords.filter(r=>r&&!r.archivedAt&&day(r.scheduledDate)&&r.scheduledDate>=monday&&r.scheduledDate<=sunday&&r.status!=='cancelled').map(r=>{
    const raw=r.startTime||r.scheduledTime||r.time;
    const time=typeof raw==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(raw)?raw:'시간 미정';
    const endTime=typeof r.endTime==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(r.endTime)?r.endTime:'';

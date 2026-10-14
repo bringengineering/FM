@@ -30,7 +30,7 @@
     const customers = new Set(can('customers') ? rows(store.customers).map(c => text(c.id)) : []);
     const contracts = can('contracts') ? rows(store.contracts) : [];
     const serviceContracts = can('serviceContracts') ? rows(store.serviceContracts) : [];
-    const records = can('serviceRecords') ? rows(store.serviceRecords) : [];
+    const records = can('serviceRecords') ? rows(store.serviceRecords).filter(record => !record.archivedAt) : [];
     const issues = [];
     const managed = new Set();
     const cleaning = new Set();
@@ -123,7 +123,7 @@
       customers:['id'],
       contracts:['id','name','title','buildingId','types','type','billingCycle','status','startDate','endDate','owner'],
       serviceContracts:['id','name','title','buildingId','serviceType','cadence','status','startDate','endDate','owner'],
-      serviceRecords:['id','title','name','buildingId','customerId','contractId','status','completedAt','evidenceUrl','driveFileId','owner']
+      serviceRecords:['id','title','name','buildingId','customerId','contractId','status','completedAt','evidenceUrl','driveFileId','owner','archivedAt']
     };
     return Object.fromEntries(Object.entries(fields).map(([key,keys])=>[key,rows((input||{})[key]).map(row=>Object.fromEntries(keys.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,JSON.parse(JSON.stringify(row[k]))])))]));
   }

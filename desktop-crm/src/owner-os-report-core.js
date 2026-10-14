@@ -50,7 +50,7 @@
       contracts: rows(store.contracts).length,
       salesActivities: rows(store.salesActivities).length,
       salesEvents: rows(store.salesEvents).length,
-      serviceRecordsInMonth: inMonth(store.serviceRecords, "scheduledDate"),
+      serviceRecordsInMonth: inMonth(rows(store.serviceRecords).filter(item => !item.archivedAt), "scheduledDate"),
     };
   }
 
