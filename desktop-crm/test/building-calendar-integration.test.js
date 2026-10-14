@@ -166,7 +166,7 @@ test("schedule editor lists customer-management entries and auto-links customers
   assert.match(choiceLabel, /customerPhoneText\(choice\.customer\.phone\)/);
   assert.match(choiceLabel, /managementStatusForCustomer\(choice\.customer\)/);
   assert.doesNotMatch(choiceLabel, /choice && choice\.address/);
-  assert.match(editor, /customerManagedBuildingChoices\(existing && existing\.buildingId\)/);
+  assert.match(editor, /customerManagedBuildingChoices\(\(existing \|\| contractOccurrence \|\| \{\}\)\.buildingId\)/);
   assert.ok(editor.indexOf('selectField("고객건물 *"') < editor.indexOf('field("일정명 *"'));
   assert.match(editor, /고객·건물 관리 목록에서 고객건물을 선택/);
   assert.match(editor, /form\.elements\.buildingId\.required\s*=\s*true/);

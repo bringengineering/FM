@@ -2,6 +2,9 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const crypto = require("node:crypto");
+const ContractSchedule = require("../src/contract-schedule-core");
+const Calendar = require("../src/work-calendar");
 
 const Core = require("../src/core");
 const {
@@ -103,7 +106,7 @@ function firebaseHarness(options = {}) {
   };
   const fetchImpl = async (url, request = {}) => {
     state.requests.push({ url, method: request.method, headers: request.headers, body: request.body });
-    if (url.includes("/data/serviceRecords/service_schedule_1.json")) {
+    if (url.includes(`/data/serviceRecords/${options.recordId || "service_schedule_1"}.json`)) {
       if (request.method === "GET") {
         state.scheduleGets += 1;
         return response(state.record, 200, state.record ? '"record-existing"' : '"null-etag"');
@@ -126,6 +129,9 @@ function firebaseHarness(options = {}) {
     if (url.includes("/data/buildings/building_1.json") && request.method === "GET") {
       return response(state.building, 200, '"building-etag"');
     }
+    if (url.includes("/data/contracts/contract_1.json") && request.method === "GET") {
+      return response(options.contract || null);
+    }
     if (url.includes("/data/auditLogs/audit_schedule_")) {
       if (request.method === "GET") return response(state.audit, 200, state.audit ? '"audit-existing"' : '"null-audit"');
       if (request.method === "PUT") {
@@ -137,6 +143,53 @@ function firebaseHarness(options = {}) {
   };
   return { state, client: makeClient(fetchImpl) };
 }
+
+function occurrenceInput(overrides = {}) {
+  const contractOccurrence = {contractId: "contract_1", date: "2026-10-15", buildingId: "building_1"};
+  const identity = ContractSchedule.occurrenceIdentity(contractOccurrence.contractId, contractOccurrence.date, contractOccurrence.buildingId);
+  return input({recordId: `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`, values: values({title: "공용부청소", scheduledDate: "2026-10-16"}), contractOccurrence, ...overrides});
+}
+const recurringContract = () => ({id: "contract_1", buildingId: "building_1", types: ["청소"], name: "공용부청소", status: "진행 중", startDate: "2026-10-08", billingCycle: "월 정기", amount: 50000, cleaningSchedule: {mode: "weekly", weekday: 4}});
+
+test("one contract occurrence is materialized through CAS without changing contracts or other dates", async () => {
+  const intent = occurrenceInput(), contract = recurringContract(), before = JSON.stringify(contract);
+  const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+  const first = await client.commitBuildingSchedule(intent);
+  assert.equal(first.record.sourceContractId, "contract_1");
+  assert.equal(first.record.sourceContractDate, "2026-10-15");
+  assert.equal(first.record.sourceContractBuildingId, "building_1");
+  assert.equal(first.record.scheduledDate, "2026-10-16");
+  assert.equal(first.record.calendarCommitVersion, 1);
+  assert.equal(state.requests.some(r => r.method !== "GET" && r.url.includes("/contracts/")), false);
+  assert.equal(JSON.stringify(contract), before);
+  const store = {contracts: [contract], serviceRecords: [first.record], buildings: [{id: "building_1"}]};
+  assert.deepEqual(Calendar.buildModel(store, {month: "2026-10"}).events.map(e => e.scheduledDate), ["2026-10-08", "2026-10-16", "2026-10-22", "2026-10-29"]);
+  const retry = await client.commitBuildingSchedule(intent);
+  assert.equal(retry.repeated, true);
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  const competing = {...intent, requestId: "550e8400-e29b-41d4-a716-446655440001"};
+  await assert.rejects(client.commitBuildingSchedule(competing), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+
+  const updated = planBuildingScheduleCommit(input({recordId: intent.recordId, operation: "update", expectedUpdatedAt: first.record.updatedAt, expectedCommitVersion: 1, requestId: competing.requestId, values: values({scheduledDate: "2026-10-20"})}), {existing: first.record, actor: session(), building: {id: "building_1"}}).record;
+  assert.equal(updated.sourceContractDate, "2026-10-15");
+  for (const operation of ["cancel", "archive"]) {
+    const hidden = planBuildingScheduleCommit({operation, recordId: updated.id, requestId: "550e8400-e29b-41d4-a716-446655440002", expectedUpdatedAt: updated.updatedAt, expectedCommitVersion: 2}, {existing: updated, actor: session(), building: {id: "building_1"}}).record;
+    assert.equal(Calendar.buildModel({...store, serviceRecords: [hidden]}, {month: "2026-10"}).events.length, 3);
+    assert.equal(ContractSchedule.contractWorkOccurrences({...store, serviceRecords: [{...hidden, buildingId: "another_building"}]}).length, 3, "original building/date stay suppressed after relinking");
+  }
+});
+
+test("occurrence intent rejects forged metadata, inactive/changed contracts and wrong hash IDs before writing", async () => {
+  const intent = occurrenceInput();
+  for (const changed of [null, {...recurringContract(), archivedAt: "2026-10-14"}, {...recurringContract(), buildingId: "different"}, {...recurringContract(), startDate: "2026-11-01"}]) {
+    const {client, state} = firebaseHarness({recordId: intent.recordId, contract: changed});
+    await assert.rejects(client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(state.requests.some(r => r.method === "PUT"), false);
+  }
+  for (const changed of [{...intent, recordId: "wrong"}, {...intent, contractOccurrence: {...intent.contractOccurrence, unexpected: true}}, {...intent, contractOccurrence: {...intent.contractOccurrence, contractId: "unsafe/id"}}, {...intent, operation: "update"}, {...intent, values: {...intent.values, sourceContractId: "forged"}}]) {
+    assert.throws(() => validateBuildingScheduleCommitInput(changed), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  }
+});
 
 test("schedule deletion archives planned, active and completed records through the existing CAS path", async () => {
   for (const status of ["planned", "in_progress", "completed"]) {
