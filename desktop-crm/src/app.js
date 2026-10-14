@@ -12998,7 +12998,7 @@
         const anchor = form.elements.paymentDueDate?.value || "";
         form.elements.collectionDueDate.value = anchor;
         const existing = store.contracts.find(item => item.id === form.dataset.contractId);
-        if (form.elements.collectionStatus) form.elements.collectionStatus.value = Core.contractPaymentCollectionStatus({...existing, paymentDueDate: anchor}, anchor);
+        if (form.elements.collectionStatus) form.elements.collectionStatus.value = Core.contractPaymentCollectionStatus(existing, anchor);
       }
     }
     const hint = form.querySelector("[data-contract-payment-hint]");

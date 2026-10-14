@@ -771,6 +771,7 @@
   }
 
   function contractPaymentCollectionStatus(contract, date) {
+    if (!isContractPaymentDate(date)) return "입금 예정";
     // Existing one-off settlement editors still update the flat status.
     if (contract && contract.billingCycle === "건별" && date === contract.paymentDueDate
       && ["입금 예정", "입금 완료"].includes(contract.collectionStatus)) return contract.collectionStatus;
@@ -827,7 +828,7 @@
     const date = raw.collectionDueDate || raw.paymentDueDate;
     const proposed = Object.assign({}, existing || {}, raw);
     if (!isContractPaymentDate(date) || contractPaymentDate(proposed, date.slice(0, 7)) !== date) throw new Error("입금 상태 적용일을 확인해 주세요.");
-    const status = raw.collectionStatus || contractPaymentCollectionStatus(proposed, date);
+    const status = raw.collectionStatus || contractPaymentCollectionStatus(existing, date);
     if (!["입금 예정", "입금 완료"].includes(status)) throw new Error("입금 상태를 확인해 주세요.");
     const paymentCollections = normalizeContractPaymentCollections(existing && existing.paymentCollections);
     // Preserve a first-payment receipt when opening a later month for the first time.
@@ -835,7 +836,7 @@
       && !Object.prototype.hasOwnProperty.call(paymentCollections, existing.paymentDueDate)) paymentCollections[existing.paymentDueDate] = "입금 완료";
     paymentCollections[date] = status;
     return {paymentDueDate: raw.paymentDueDate, paymentCollections,
-      collectionStatus: date === raw.paymentDueDate ? status : contractPaymentCollectionStatus({...proposed, paymentCollections}, raw.paymentDueDate)};
+      collectionStatus: date === raw.paymentDueDate ? status : contractPaymentCollectionStatus({...existing, paymentCollections}, raw.paymentDueDate)};
   }
 
   function oneOffContractRows(contracts, monthKey, buildingId) {
