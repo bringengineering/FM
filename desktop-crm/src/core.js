@@ -728,7 +728,7 @@
       contract.amount = nonNegativeInteger(contract.amount);
       contract.grossProfit = contract.amount - contract.vendorCost;
       contract.workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.workDate || "")) ? String(contract.workDate) : String(contract.startDate || "").slice(0, 10);
-      contract.paymentDueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.paymentDueDate || "")) ? String(contract.paymentDueDate) : contract.workDate;
+      contract.paymentDueDate = isContractPaymentDate(contract.paymentDueDate) ? contract.paymentDueDate : "";
       contract.collectionStatus = ["입금 예정", "입금 완료"].includes(contract.collectionStatus) ? contract.collectionStatus : "입금 예정";
       contract.vendorPaymentStatus = ["지급 예정", "지급 완료"].includes(contract.vendorPaymentStatus) ? contract.vendorPaymentStatus : "지급 예정";
     } else {

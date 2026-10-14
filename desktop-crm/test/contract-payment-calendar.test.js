@@ -55,6 +55,10 @@ test("missing legacy dates are explained without guessing from work dates; archi
   assert.equal(Core.normalizeContract(missing).paymentDueDate, "");
   assert.equal(Core.contractPaymentRows([missing], "2026-10").length, 0);
   assert.deepEqual(Core.contractPaymentMissingDates([missing, missing]).map(c => c.id), ["contract_a"]);
+  const legacyOneOff = Core.sanitizeSharedStore({contracts: [fixture({billingCycle: "건별", paymentDueDate: "", workDate: "2026-10-08"})]}).contracts[0];
+  assert.equal(legacyOneOff.paymentDueDate, "", "one-off contracts also require an agreed receipt date, never an inferred work date");
+  assert.equal(Core.contractPaymentRows([legacyOneOff], "2026-10").length, 0);
+  assert.equal(Core.contractPaymentMissingDates([legacyOneOff]).length, 1);
   for (const date of ["2026-02-30", "2026-10-00", "bad", "2026-10-30T00:00:00Z"]) {
     assert.equal(Core.contractPaymentRows([fixture({paymentDueDate: date})], "2026-10").length, 0);
     assert.equal(Core.contractPaymentMissingDates([fixture({paymentDueDate: date})]).length, 1);

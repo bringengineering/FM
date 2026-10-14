@@ -13033,7 +13033,7 @@
     const editing = store.contracts.find(item => item.id === contractId);
     const isOneOff = editing ? editing.billingCycle === "건별" : oneOff || contractPaymentModeFilter === "single";
     const returnView = currentView === "buildingCalendar" ? "buildingCalendar" : currentView === "relationships" ? "relationships" : "contracts";
-    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: isOneOff ? todayKey() : "" });
+    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: "" });
     const requestedPaymentDate = String(paymentDate || "");
     const selectedPaymentDate = Core.contractPaymentRows([item], requestedPaymentDate.slice(0, 7)).some(row => row.dueDate === requestedPaymentDate)
       ? requestedPaymentDate : item.paymentDueDate || "";
