@@ -728,11 +728,115 @@
       contract.amount = nonNegativeInteger(contract.amount);
       contract.grossProfit = contract.amount - contract.vendorCost;
       contract.workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.workDate || "")) ? String(contract.workDate) : String(contract.startDate || "").slice(0, 10);
-      contract.paymentDueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.paymentDueDate || "")) ? String(contract.paymentDueDate) : contract.workDate;
+      contract.paymentDueDate = isContractPaymentDate(contract.paymentDueDate) ? contract.paymentDueDate : "";
       contract.collectionStatus = ["입금 예정", "입금 완료"].includes(contract.collectionStatus) ? contract.collectionStatus : "입금 예정";
       contract.vendorPaymentStatus = ["지급 예정", "지급 완료"].includes(contract.vendorPaymentStatus) ? contract.vendorPaymentStatus : "지급 예정";
-    } else for (const field of ["vendorCost", "grossProfit", "workDate", "paymentDueDate", "collectionStatus", "vendorPaymentStatus"]) delete contract[field];
+    } else {
+      for (const field of ["vendorCost", "grossProfit", "workDate", "vendorPaymentStatus"]) delete contract[field];
+      // A receipt date is independent of the weekly work schedule. Never
+      // infer a legacy recurring contract's payment date from its start date.
+      contract.paymentDueDate = isContractPaymentDate(contract.paymentDueDate) ? contract.paymentDueDate : "";
+      contract.collectionStatus = contract.collectionStatus === "입금 완료" ? "입금 완료" : "입금 예정";
+    }
+    const collections = normalizeContractPaymentCollections(contract.paymentCollections);
+    if (Object.keys(collections).length) contract.paymentCollections = collections;
+    else delete contract.paymentCollections;
     return contract;
+  }
+
+  function isContractPaymentDate(value) {
+    if (typeof value !== "string" || !/^[1-9]\d{3}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+
+  function normalizeContractPaymentCollections(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([date, status]) =>
+      isContractPaymentDate(date) && ["입금 예정", "입금 완료"].includes(status)));
+  }
+
+  function contractPaymentDate(contract, month) {
+    const anchor = contract && contract.paymentDueDate;
+    if (!isContractPaymentDate(anchor) || !isContractPaymentDate(`${month}-01`) || month < anchor.slice(0, 7)) return "";
+    if (!["월 정기", "연간"].includes(contract.billingCycle)) return anchor.slice(0, 7) === month ? anchor : "";
+    if (month !== anchor.slice(0, 7)) {
+      if (isContractPaymentDate(contract.endDate) && month > contract.endDate.slice(0, 7)) return "";
+      if (contract.status === "종료" && !isContractPaymentDate(contract.endDate)) return "";
+    }
+    if (contract.billingCycle === "연간" && month.slice(5) !== anchor.slice(5, 7)) return "";
+    const [year, monthNumber] = month.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    return `${month}-${pad(Math.min(Number(anchor.slice(8)), lastDay))}`;
+  }
+
+  function contractPaymentCollectionStatus(contract, date) {
+    if (!isContractPaymentDate(date)) return "입금 예정";
+    // Existing one-off settlement editors still update the flat status.
+    if (contract && contract.billingCycle === "건별" && date === contract.paymentDueDate
+      && ["입금 예정", "입금 완료"].includes(contract.collectionStatus)) return contract.collectionStatus;
+    const collections = contract && contract.paymentCollections;
+    if (collections && Object.prototype.hasOwnProperty.call(collections, date)
+      && ["입금 예정", "입금 완료"].includes(collections[date])) return collections[date];
+    // Legacy one-off/first-payment status must never mark every future month paid.
+    return contract && date === contract.paymentDueDate && contract.collectionStatus === "입금 완료" ? "입금 완료" : "입금 예정";
+  }
+
+  function liveContractPayments(contract) {
+    return contract && typeof contract === "object" && !Array.isArray(contract) && String(contract.id || "")
+      && !contract.archivedAt && !contract.deletedAt && !contract.archived && !contract.deleted && !contract.isArchived
+      && !["archived", "deleted", "cancelled", "canceled", "취소", "무효"].includes(contract.status);
+  }
+
+  function contractPaymentRows(contracts, monthKey, buildingId, today = dayKey()) {
+    const month = String(monthKey || today).slice(0, 7), seen = new Set();
+    return (Array.isArray(contracts) ? contracts : []).filter(liveContractPayments).flatMap(value => {
+      if (seen.has(String(value.id))) return [];
+      seen.add(String(value.id));
+      const contract = normalizeContract(value);
+      if (buildingId && buildingId !== "all" && contract.buildingId !== buildingId) return [];
+      const dueDate = contractPaymentDate(contract, month);
+      if (!dueDate) return [];
+      const collectionStatus = contractPaymentCollectionStatus(contract, dueDate);
+      return [{ contract, dueDate, collectionStatus, amount: nonNegativeInteger(contract.amount),
+        status: collectionStatus === "입금 완료" ? "paid" : today > dueDate ? "overdue" : "scheduled" }];
+    }).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || String(a.contract.name || "").localeCompare(String(b.contract.name || ""), "ko"));
+  }
+
+  function contractPaymentMissingDates(contracts, buildingId) {
+    const seen = new Set();
+    return (Array.isArray(contracts) ? contracts : []).filter(liveContractPayments).filter(contract => {
+      if (seen.has(String(contract.id))) return false;
+      seen.add(String(contract.id));
+      return (!buildingId || buildingId === "all" || contract.buildingId === buildingId)
+        && !isContractPaymentDate(normalizeContract(contract).paymentDueDate);
+    });
+  }
+
+  function contractPaymentTotals(rows) {
+    return (Array.isArray(rows) ? rows : []).reduce((total, row) => {
+      const amount = nonNegativeInteger(row.amount);
+      total.count++; total.revenue += amount;
+      if (row.status === "paid") total.paid += amount; else total.unpaid += amount;
+      return total;
+    }, {count: 0, revenue: 0, paid: 0, unpaid: 0});
+  }
+
+  function contractPaymentFields(existing, raw) {
+    if (!isContractPaymentDate(raw.paymentDueDate)) throw new Error("입금 예정일을 정확히 입력해 주세요.");
+    if (!["월 정기", "연간", "건별", "기타"].includes(raw.billingCycle)) throw new Error("납부 방식을 확인해 주세요.");
+    const date = raw.collectionDueDate || raw.paymentDueDate;
+    const proposed = Object.assign({}, existing || {}, raw);
+    if (!isContractPaymentDate(date) || contractPaymentDate(proposed, date.slice(0, 7)) !== date) throw new Error("입금 상태 적용일을 확인해 주세요.");
+    const status = raw.collectionStatus || contractPaymentCollectionStatus(existing, date);
+    if (!["입금 예정", "입금 완료"].includes(status)) throw new Error("입금 상태를 확인해 주세요.");
+    const paymentCollections = normalizeContractPaymentCollections(existing && existing.paymentCollections);
+    // Preserve a first-payment receipt when opening a later month for the first time.
+    if (existing && isContractPaymentDate(existing.paymentDueDate) && existing.collectionStatus === "입금 완료"
+      && !Object.prototype.hasOwnProperty.call(paymentCollections, existing.paymentDueDate)) paymentCollections[existing.paymentDueDate] = "입금 완료";
+    paymentCollections[date] = status;
+    return {paymentDueDate: raw.paymentDueDate, paymentCollections,
+      collectionStatus: date === raw.paymentDueDate ? status : contractPaymentCollectionStatus({...existing, paymentCollections}, raw.paymentDueDate)};
   }
 
   function oneOffContractRows(contracts, monthKey, buildingId) {
@@ -970,7 +1074,9 @@
 
   return {
     PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, CLEANING_PARTNER_SERVICE_TYPES, CLEANING_PARTNER_ONBOARDING_STATUSES, CLEANING_PARTNER_AVAILABILITY_STATUSES, CLEANING_PARTNER_COMPLIANCE_STATUSES, normalizeCleaningPartnerProfile, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
-    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createSecurityAsset,
+    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals,
+    isContractPaymentDate, contractPaymentDate, contractPaymentCollectionStatus, contractPaymentRows, contractPaymentMissingDates, contractPaymentTotals, contractPaymentFields,
+    createPartnerVendor, createPartnerQuote, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeMarketingAttributionRecord, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,

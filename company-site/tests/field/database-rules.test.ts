@@ -4441,6 +4441,29 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await exerciseServiceRecordRules(environment);
   });
 
+  it("keeps dated contract receipts on the existing private administrator/member boundary", async () => {
+    for (const [uid, email] of [["crm-admin", "admin@bring.test"], ["crm-legacy-member", "legacy@bring.test"]] as const) {
+      const database = environment.authenticatedContext(uid, crmClaims(email)).database();
+      const id = `receipt_${uid}`;
+      const location = `crmCompany/data/contracts/${id}`;
+      const contract = {id, buildingId: "building_1", billingCycle: "월 정기", amount: 50000, paymentDueDate: "2026-10-30", collectionStatus: "입금 예정", paymentCollections: {"2026-10-30": "입금 예정"}};
+      await assertSucceeds(set(ref(database, location), contract));
+      await assertSucceeds(update(ref(database, `${location}/paymentCollections`), {"2026-11-30": "입금 완료"}));
+      const saved = (await assertSucceeds(get(ref(database, location)))).val();
+      expect(saved.paymentDueDate).toBe("2026-10-30");
+      expect(saved.paymentCollections).toEqual({"2026-10-30": "입금 예정", "2026-11-30": "입금 완료"});
+      const denied = [
+        environment.unauthenticatedContext().database(),
+        environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database(),
+        environment.authenticatedContext("crm-disabled", crmClaims("disabled@bring.test")).database(),
+        environment.authenticatedContext("crm-legacy-member", crmClaims("wrong@bring.test")).database(),
+        environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database(),
+      ];
+      for (const other of denied) await assertFails(update(ref(other, location), {paymentDueDate: "2026-10-15", "paymentCollections/2026-11-30": "입금 예정"}));
+      await assertFails(get(ref(environment.unauthenticatedContext().database(), location)));
+    }
+  });
+
   it("accepts an atomic canonical building create with its narrow customer backlink", async () => {
     await exerciseAtomicBuildingCreateWithCustomerLink(environment);
   });

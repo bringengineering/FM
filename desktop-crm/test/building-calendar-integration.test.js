@@ -103,7 +103,7 @@ test("unified calendar keeps search state while actions live inside each intro c
   assert.match(page, /searchEl\.value\s*=\s*contractCalendarView\s*\?\s*contractCalendarQuery\s*:\s*workCalendarView\s*\?\s*workCalendarQuery/);
   assert.doesNotMatch(indexSource, /id="primaryActionButton"/);
   assert.match(indexSource, /class="help-button"[^>]*data-action="open-guide"/);
-  assert.match(contractCalendar, /calendar-tab-intro-actions[\s\S]*?data-action="new-one-off-contract"/);
+  assert.match(contractCalendar, /calendar-tab-intro-actions[\s\S]*?data-action="new-calendar-contract"/);
   assert.match(workCalendar, /calendar-tab-intro-actions[\s\S]*?data-action="new-building-schedule"/);
 });
 

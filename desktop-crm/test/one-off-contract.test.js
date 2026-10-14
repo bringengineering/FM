@@ -58,17 +58,17 @@ test("customer editor exposes one visible private notes field under the request"
   assert.match(source, /notes:\s*raw\.notes\.trim\(\)/);
 });
 
-test("unified contract tab owns the one-off workspace and independent calendar state", () => {
+test("unified contract tab owns the receipt workspace and independent calendar state", () => {
   const calendar = functionSource("renderOneOffContractCalendar");
   const workPanel = functionSource("renderContractWorkManagementPanel");
   assert.match(source, /let contractCalendarMonth\s*=\s*Core\.dayKey\(\)\.slice\(0,\s*7\)/);
   assert.match(source, /let contractCalendarBuildingId\s*=\s*"all"/);
   assert.match(source, /let contractCalendarQuery\s*=\s*""/);
-  assert.match(calendar, /Core\.oneOffContractRows\(store\.contracts,\s*contractCalendarMonth,\s*contractCalendarBuildingId\)/);
+  assert.match(calendar, /Core\.contractPaymentRows\(store\.contracts,\s*contractCalendarMonth,\s*contractCalendarBuildingId/);
   assert.match(calendar, /data-contract-calendar-month="-1"/);
   assert.match(calendar, /data-contract-calendar-month="1"/);
   assert.match(calendar, /data-contract-calendar-building/);
-  assert.match(calendar, /data-action="new-one-off-contract"/);
+  assert.match(calendar, /data-action="new-calendar-contract"/);
   assert.equal((calendar.match(/＋ 계약 등록/g) || []).length, 2);
   assert.doesNotMatch(calendar, /＋ 단건 계약(?: 등록)?/);
   assert.match(calendar, /renderContractWorkManagementPanel\(\)/);
@@ -80,7 +80,8 @@ test("unified contract tab owns the one-off workspace and independent calendar s
   for (const name of ["workDate", "paymentDueDate", "vendorCost", "collectionStatus", "vendorPaymentStatus"]) {
     assert.match(source, new RegExp(`name=["']${name}["']|field\\([^\\n]+["']${name}["']`));
   }
-  assert.match(calendar, /예상 수익/);
+  assert.match(calendar, /단건 정산/);
+  assert.match(calendar, /입금 예정일/);
 });
 
 test("owner payment calendar remains recurring-only", () => {
@@ -108,9 +109,9 @@ test("one-off contract save and delete return to the unified contract calendar",
   assert.match(editor, /data-return-view="\$\{attr\(returnView\)\}"/);
 
   assert.match(save, /if \(!canWriteCRM\(\)\) return showToast\("조회 전용 계정은 계약을 저장할 수 없습니다\.", "error"\)/);
-  assert.match(save, /returnToContractCalendar\s*=\s*oneOffContract\s*&&\s*form\.dataset\.returnView\s*===\s*"buildingCalendar"/);
+  assert.match(save, /returnToContractCalendar\s*=\s*form\.dataset\.returnView\s*===\s*"buildingCalendar"/);
   assert.match(save, /unifiedCalendarTab\s*=\s*"contract"/);
-  assert.match(save, /contractCalendarMonth\s*=\s*item\.paymentDueDate\.slice\(0,\s*7\)/);
+  assert.match(save, /contractCalendarMonth\s*=\s*String\(raw\.collectionDueDate\s*\|\|\s*item\.paymentDueDate\)\.slice\(0,\s*7\)/);
   assert.match(save, /contractCalendarBuildingId\s*=\s*"all"/);
   assert.match(save, /contractCalendarQuery\s*=\s*""/);
   assert.match(save, /currentView\s*=\s*returnToContractCalendar\s*\|\|\s*returnToWorkCalendar\s*\?\s*"buildingCalendar"/);
