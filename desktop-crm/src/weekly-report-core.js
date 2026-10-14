@@ -197,6 +197,7 @@
     });
 
     list(store.serviceRecords).forEach(record => {
+      if (record.archivedAt) return;
       if (!matchesActor(record.owner, actor)) return;
       const changedAt = record.completedAt || record.updatedAt || record.scheduledDate;
       if (!inWeek(changedAt, range)) return;

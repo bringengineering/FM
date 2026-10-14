@@ -206,7 +206,7 @@ const SHARED_COLLECTIONS = Object.freeze([
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;
 const CANONICAL_PENDING_VERSION = 1;
-const BUILDING_SCHEDULE_OPERATIONS = Object.freeze(new Set(["create", "update", "complete", "cancel"]));
+const BUILDING_SCHEDULE_OPERATIONS = Object.freeze(new Set(["create", "update", "complete", "cancel", "archive"]));
 const BUILDING_SCHEDULE_STATUSES = Object.freeze(new Set(["planned", "in_progress", "completed"]));
 const BUILDING_SCHEDULE_TYPES = Object.freeze(new Set([
   "inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"
@@ -1061,6 +1061,9 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
       throw createError("다른 사용자가 먼저 일정을 변경했습니다.", "BUILDING_SCHEDULE_CONFLICT");
     }
   }
+  if (existing && existing.archivedAt) {
+    throw createError("삭제된 일정은 변경할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
+  }
 
   const targetBuildingId = input.values ? input.values.buildingId : safeDirectId(existing && existing.buildingId);
   const building = context.building && typeof context.building === "object" && !Array.isArray(context.building)
@@ -1103,6 +1106,14 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
     record.status = "cancelled";
     record.completedAt = "";
     record.cancelledAt = occurredAt;
+  } else if (input.operation === "archive") {
+    // Soft deletion preserves completion facts, evidence, report links and the
+    // previous schedule for audit/recovery. Never DELETE a service record.
+    if (String(existing.status || "") === "cancelled") {
+      throw createError("취소된 일정은 기록 보호를 위해 변경할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
+    }
+    record.archivedAt = occurredAt;
+    record.archivedByAuthUid = actorUid;
   }
   record.buildingId = targetBuildingId;
   record.source = String(record.source || "crm_calendar");
@@ -1128,7 +1139,7 @@ function buildingScheduleAuditRecord(plan, inputValue, contextValue) {
   const building = context.building && typeof context.building === "object" ? context.building : {};
   const record = plan && plan.record || {};
   const occurredAt = String(record.updatedAt || new Date().toISOString());
-  const action = ({ create: "일정 등록", update: "일정 수정", complete: "일정 완료 처리", cancel: "일정 취소" })[input.operation];
+  const action = ({ create: "일정 등록", update: "일정 수정", complete: "일정 완료 처리", cancel: "일정 취소", archive: "일정 삭제 (원본 보관)" })[input.operation];
   return {
     id: String(plan.auditId || buildingScheduleAuditId(input.requestId)),
     category: "작업관리",

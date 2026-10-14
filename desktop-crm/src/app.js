@@ -1266,7 +1266,7 @@
       if (commitGeneration !== authGeneration || commitUid !== currentAuthUid()) return { ok: false, code: "SESSION_CHANGED", stale: true };
       if (result && result.ok === true && result.record) {
         const committed = structuredClone(result.record);
-        if (result.operationsSync && result.operationsSync.status) committed.operationsSyncStatus = result.operationsSync.status;
+        if (input.operation !== "archive" && result.operationsSync && result.operationsSync.status) committed.operationsSyncStatus = result.operationsSync.status;
         alignCommittedServiceRecord(committed);
         return result;
       }
@@ -5483,7 +5483,7 @@
   }
 
   function workAutomationRows() {
-    return (store.serviceRecords || []).filter(item => item && item.status !== "cancelled").slice().sort((a, b) => String(b.updatedAt || b.scheduledDate || "").localeCompare(String(a.updatedAt || a.scheduledDate || ""))).slice(0, 12).map(record => Object.assign({ id: record.id, title: record.title || WorkManagement.typeLabel(record.serviceType), draft: workAutomationState.drafts.get(record.id)?.text || "" }, AiOperationsCore.classifyIssue(`${record.title || ""} ${record.summary || ""}`)));
+    return (store.serviceRecords || []).filter(item => item && !item.archivedAt && item.status !== "cancelled").slice().sort((a, b) => String(b.updatedAt || b.scheduledDate || "").localeCompare(String(a.updatedAt || a.scheduledDate || ""))).slice(0, 12).map(record => Object.assign({ id: record.id, title: record.title || WorkManagement.typeLabel(record.serviceType), draft: workAutomationState.drafts.get(record.id)?.text || "" }, AiOperationsCore.classifyIssue(`${record.title || ""} ${record.summary || ""}`)));
   }
 
   const currentManagementReport = () => ManagementReportCore.buildMonthlyReport(store, managementReportState.month);
@@ -5557,7 +5557,7 @@
   }
 
   async function requestWorkAutomationDraft(recordId, task) {
-    const record = (store.serviceRecords || []).find(item => item && item.id === recordId && item.status !== "cancelled");
+    const record = (store.serviceRecords || []).find(item => item && !item.archivedAt && item.id === recordId && item.status !== "cancelled");
     if (!record) return showToast("작업 기록을 찾지 못했습니다.", "error");
     const building = buildingById(record.buildingId);
     const payload = AiOperationsCore.buildWorkDraftPayload({ ...record, detail: record.summary, buildingLabel: building && building.name, requestedAt: record.scheduledDate || record.createdAt });
@@ -10928,7 +10928,7 @@
   function buildingScheduleEditor(recordId, defaultDate) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 등록하거나 변경할 수 없습니다.", "error");
     const existing = String(recordId || "") ? store.serviceRecords.find(record => record.id === recordId) : null;
-    if (recordId && !existing) return showToast("일정 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
+    if (recordId && (!existing || existing.archivedAt)) return showToast("일정 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
     const buildingOptions = customerManagedBuildingChoices(existing && existing.buildingId);
     if (!existing && !buildingOptions.length) {
       showToast("일정을 등록하려면 고객·건물 관리에서 고객건물을 먼저 추가해 주세요.", "error");
@@ -10946,7 +10946,7 @@
       if (!value) return "고객건물을 선택해 주세요";
       const choice = buildingOptions.find(candidate => candidate.value === value);
       return choice ? customerManagedBuildingChoiceLabel(choice) : value;
-    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
+    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && existing.status !== "cancelled" ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-delete="${attr(existing.id)}">일정 삭제</button>` : ""}${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
     openModal();
     const form = document.getElementById("buildingScheduleForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -10958,10 +10958,57 @@
     setTimeout(() => form && (form.elements.buildingId || form.elements.title)?.focus(), 30);
   }
 
+  async function deleteBuildingScheduleRecord(recordId, form) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 삭제할 수 없습니다.", "error");
+    if (!form || !form.isConnected || form.dataset.scheduleId !== recordId
+      || form.dataset.submitting === "true" || form.dataset.deleting === "true") return;
+    if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()) {
+      return showToast("로그인 사용자가 변경되어 일정을 삭제하지 않았습니다.", "error");
+    }
+    const item = store.serviceRecords.find(record => record.id === recordId && !record.archivedAt);
+    if (!item || item.status === "cancelled") return showToast("삭제할 일정을 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
+    const openedGeneration = Number(form.dataset.authGeneration);
+    const openedUid = String(form.dataset.authUid || "");
+    const button = form.querySelector("[data-work-calendar-delete]");
+    form.dataset.deleting = "true";
+    if (button) button.disabled = true;
+    try {
+      const building = buildingById(item.buildingId);
+      if (!await requestConfirmation({
+        title: "이 일정을 삭제할까요?",
+        description: "삭제한 일정은 업무일정 캘린더와 작업관리 목록에서 제외됩니다.",
+        target: item.title || "업무 일정",
+        message: [item.scheduledDate, building && building.name].filter(Boolean).join(" · "),
+        warning: "고객·건물 정보와 보고서는 삭제하지 않습니다. 일정 원본과 삭제 이력은 안전하게 보관합니다.",
+        confirmLabel: "일정 삭제", tone: "danger",
+      })) return;
+      if (!form.isConnected || !modal.classList.contains("open")) return;
+      if (openedGeneration !== authGeneration || openedUid !== currentAuthUid() || !canWriteCRM()) {
+        return showToast("로그인 사용자 또는 권한이 변경되어 일정을 삭제하지 않았습니다.", "error");
+      }
+      if (!form.dataset.deleteRequestId) form.dataset.deleteRequestId = crypto.randomUUID();
+      const result = await commitBuildingScheduleRecord({
+        operation: "archive", requestId: form.dataset.deleteRequestId, recordId,
+        expectedUpdatedAt: String(form.dataset.openedUpdatedAt || ""),
+        expectedCommitVersion: Number(form.dataset.openedCommitVersion) || 0,
+      }, form);
+      if (result && result.stale) return;
+      if (!result || result.ok !== true || result.record?.id !== recordId || !result.record.archivedAt) {
+        if (["BUILDING_SCHEDULE_CONFLICT", "BUILDING_SCHEDULE_NOT_FOUND"].includes(String(result && result.code || ""))) closeModal();
+        render();
+        return showToast(serviceRecordErrorText(result), "error");
+      }
+      closeModal(); renderBuildingCalendar(); pageMeta(); showToast("일정을 삭제했습니다.", "success");
+    } finally {
+      if (form.isConnected) form.dataset.deleting = "false";
+      if (button && button.isConnected) button.disabled = false;
+    }
+  }
+
   function workRecordEditor(recordId) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 작업을 기록할 수 없습니다.", "error");
     const existing = store.serviceRecords.find(record => record.id === recordId) || null;
-    if (recordId && !existing) return showToast("작업 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
+    if (recordId && (!existing || existing.archivedAt)) return showToast("작업 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
     const buildingOptions = customerManagedBuildingChoices(existing && existing.buildingId);
     if (!existing && !buildingOptions.length) return showToast("작업을 등록하려면 고객·건물 관리에서 고객건물을 먼저 추가해 주세요.", "error");
     const selectedChoice = buildingOptions.find(choice => choice.value === selectedBuildingId) || buildingOptions[0] || null;
@@ -16434,7 +16481,7 @@
     if (calendarComplete) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 일정 상태를 변경할 수 없습니다.", "error");
       const item = store.serviceRecords.find(record => record.id === calendarComplete.dataset.workCalendarComplete);
-      if (!item || item.status === "cancelled") return showToast("변경할 일정을 찾지 못했습니다.", "error");
+      if (!item || item.archivedAt || item.status === "cancelled") return showToast("변경할 일정을 찾지 못했습니다.", "error");
       const completed = item.status !== "completed";
       const input = {
         operation: completed ? "complete" : "update",
@@ -16450,6 +16497,11 @@
         return showToast(serviceRecordErrorText(result), "error");
       }
       renderBuildingCalendar(); pageMeta(); showToast(completed ? "일정을 완료 처리했습니다." : "일정을 예정 상태로 되돌렸습니다.", "success");
+      return;
+    }
+    const calendarDelete = event.target.closest("[data-work-calendar-delete]");
+    if (calendarDelete) {
+      await deleteBuildingScheduleRecord(calendarDelete.dataset.workCalendarDelete, calendarDelete.closest("#buildingScheduleForm"));
       return;
     }
     const calendarCancel = event.target.closest("[data-work-calendar-cancel]");
@@ -18655,7 +18707,7 @@
     }
     if (form.id === "buildingScheduleForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 저장할 수 없습니다.", "error");
-      if (form.dataset.submitting === "true") return;
+      if (form.dataset.submitting === "true" || form.dataset.deleting === "true") return;
       if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()) {
         closeModal();
         return showToast("로그인 사용자가 변경되어 일정을 저장하지 않았습니다.", "error");
@@ -18663,7 +18715,7 @@
       const raw = Object.fromEntries(new FormData(form).entries());
       const creating = form.dataset.scheduleCreate === "true";
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.scheduleId) || null;
-      if (!creating && !existing) return showToast("일정이 이미 변경되었거나 취소되었습니다. 최신 화면을 확인해 주세요.", "error");
+      if (!creating && (!existing || existing.archivedAt)) return showToast("일정이 이미 변경되었거나 삭제되었습니다. 최신 화면을 확인해 주세요.", "error");
       if (!raw.buildingId) return showToast("일정을 등록할 고객건물을 선택해 주세요.", "error");
       let building;
       try { building = await resolveCustomerManagedBuildingSelection(raw.buildingId); }
@@ -18728,7 +18780,7 @@
       const creating = form.dataset.workCreate === "true";
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.workId) || null;
       if (!creating && !existing) return showToast("작업이 이미 변경되었거나 취소되었습니다. 최신 화면을 확인해 주세요.", "error");
-      if (existing && existing.status === "cancelled") return showToast("취소된 작업은 변경할 수 없습니다.", "error");
+      if (existing && (existing.archivedAt || existing.status === "cancelled")) return showToast("삭제되거나 취소된 작업은 변경할 수 없습니다.", "error");
       if (!raw.buildingId) return showToast("작업을 등록할 고객건물을 선택해 주세요.", "error");
       let building;
       try { building = await resolveCustomerManagedBuildingSelection(raw.buildingId); }

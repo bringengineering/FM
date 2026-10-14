@@ -138,6 +138,49 @@ function firebaseHarness(options = {}) {
   return { state, client: makeClient(fetchImpl) };
 }
 
+test("schedule deletion archives planned, active and completed records through the existing CAS path", async () => {
+  for (const status of ["planned", "in_progress", "completed"]) {
+    const existing = {id: "service_schedule_1", ...values({status, completedAt: status === "completed" ? "2026-10-06" : ""}), updatedAt: "2026-10-06T00:00:00.000Z", calendarCommitVersion: 4, reportId: "report_preserved", driveFileId: "drive_preserved", operationsSyncStatus: "synced"};
+    const {client, state} = firebaseHarness({record: existing});
+    const archive = {operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: existing.id, expectedUpdatedAt: existing.updatedAt, expectedCommitVersion: 4};
+    const result = await client.commitBuildingSchedule(archive);
+    assert.ok(result.record.archivedAt);
+    assert.equal(result.record.archivedByAuthUid, "member_1");
+    assert.equal(result.record.calendarCommitVersion, 5);
+    for (const field of ["status", "completedAt", "amount", "summary", "evidenceUrl", "reportId", "driveFileId", "operationsSyncStatus"]) assert.equal(result.record[field], existing[field]);
+    assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+    assert.equal(state.requests.some(r => r.method === "DELETE" || r.method === "PATCH"), false);
+    assert.equal(state.audit.action, "일정 삭제 (원본 보관)");
+    const repeated = await client.commitBuildingSchedule(archive);
+    assert.equal(repeated.repeated, true);
+    assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  }
+});
+
+test("archive refuses fields, unauthorized roles, stale versions and later edits of deleted records", () => {
+  const archive = {operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: "service_schedule_1", expectedUpdatedAt: "opened", expectedCommitVersion: 0};
+  const existing = {id: archive.recordId, buildingId: "building_1", status: "completed", updatedAt: "opened", completedAt: "2026-10-06"};
+  const context = {existing, actor: session(), building: {id: "building_1"}, now: "2026-10-14T00:00:00.000Z"};
+  assert.throws(() => validateBuildingScheduleCommitInput({...archive, values: values()}), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  for (const role of ["viewer", "staff", "", "marketing"]) assert.throws(() => planBuildingScheduleCommit(archive, {...context, actor: session("fixture", role)}), e => e.code === "BUILDING_SCHEDULE_READ_ONLY");
+  assert.throws(() => planBuildingScheduleCommit({...archive, expectedUpdatedAt: "stale"}, context), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.throws(() => planBuildingScheduleCommit({...archive, expectedCommitVersion: 1}, context), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  const archived = planBuildingScheduleCommit(archive, context).record;
+  for (const operation of ["update", "complete", "cancel", "archive"]) {
+    const next = {...archive, operation, requestId: "550e8400-e29b-41d4-a716-446655440015", expectedUpdatedAt: archived.updatedAt, expectedCommitVersion: 1};
+    if (operation === "update") next.values = values();
+    assert.throws(() => planBuildingScheduleCommit(next, {...context, existing: archived}), e => e.code === "BUILDING_SCHEDULE_STATE_INVALID");
+  }
+});
+
+test("a conflicting archive never adopts or hides an unconfirmed record", async () => {
+  const existing = {id: "service_schedule_1", buildingId: "building_1", status: "completed", updatedAt: "opened", calendarCommitVersion: 4};
+  const {client, state} = firebaseHarness({record: existing, putStatus: 412});
+  await assert.rejects(client.commitBuildingSchedule({operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: existing.id, expectedUpdatedAt: "opened", expectedCommitVersion: 4}), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.equal(state.record.archivedAt, undefined);
+  assert.equal(state.audit, null);
+});
+
 test("create uses one record-level Firebase ETag conditional PUT and returns the committed record", async () => {
   const { client, state } = firebaseHarness();
   client.remotePayload = { serviceRecords: {} };

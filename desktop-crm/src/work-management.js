@@ -16,7 +16,7 @@
     if (!store || settings.available === false) return { available: false, items: [], buildings: [], kpis: { today: 0, planned: 0, inProgress: 0, completed: 0, completedCost: 0, recurringMonthlyCost: 0 } };
     const buildings = safeList(store.buildings);
     const buildingMap = new Map(buildings.map(item => [String(item.id || ""), item]));
-    const records = safeList(store.serviceRecords).map(item => ({
+    const records = safeList(store.serviceRecords).filter(item => !item.archivedAt).map(item => ({
       kind: "record", id: String(item.id || ""), buildingId: String(item.buildingId || ""), serviceType: String(item.serviceType || ""),
       title: String(item.title || typeLabel(item.serviceType)), status: String(item.status || "planned"), scheduledDate: String(item.scheduledDate || ""),
       completedAt: String(item.completedAt || ""), owner: String(item.owner || ""), vendorName: String(item.vendorName || ""), amount: Math.max(0, Number(item.amount) || 0),
