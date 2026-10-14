@@ -151,7 +151,7 @@ test("customer detail keeps essentials visible and moves consultation history in
 
 test("customer detail consultation action prefills the customer and returns to an expanded history", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
-  const submit = sourceBetween('form.id === "consultationForm"', 'form.id === "relationshipPlanForm"');
+  const submit = sourceBetween('form.id === "consultationForm"', 'form.id === "securityReturnForm"');
   assert.match(detail, /<button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="\$\{attr\(customer\.id\)\}">＋ 상담 기록<\/button>/);
   assert.match(appSource, /action === "new-consultation"\) consultationEditor\(actionControl\.dataset\.customerId \|\| selectedCustomerId, currentView\)/);
   assert.match(submit, /if \(returnView === "customers"\) selectedCustomerHubId = raw\.customerId/);
@@ -204,7 +204,7 @@ test("partner consultation history is vendor-scoped, collapsible, and returns to
   const partnerList = sourceBetween("function renderPartnerVendors", "function renderPartnerQuotes");
   const editor = sourceBetween("function partnerQuoteEditor", "function consultationEditor");
   const removeRecord = sourceBetween("async function deletePartnerQuoteRecord", "async function excludePartnerVendorRecord");
-  const submit = sourceBetween('form.id === "partnerQuoteForm"', 'form.id === "relationshipActivityForm"');
+  const submit = sourceBetween('form.id === "partnerQuoteForm"', 'form.id === "activityForm"');
 
   assert.match(partnerDetail, /const quoteRecords = quotes\.map\(quoteRecord\)\.join\(""\)/);
   assert.doesNotMatch(partnerDetail, /quotes\.slice\(/);

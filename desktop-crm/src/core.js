@@ -661,8 +661,6 @@
       name: "", company: "", phone: "", email: "", type: "건물주", address: "", roadAddress: "", jibunAddress: "", source: "대표 상담",
       interestServices: [], currentIssue: "", stage: "신규 고객", lastContactAt: "", nextContactAt: "",
       nextAction: "첫 연락", owner: "김현진", expectedValue: 0, lostReason: "", priority: "보통",
-      relationshipCycleDays: 30, relationshipStartedAt: "", relationshipLastContactAt: "", relationshipNextContactAt: "",
-      relationshipNextAction: "", relationshipNote: "",
       tags: [], notes: "", buildingIds: [], buildingIdLinks: {}, workflowCaseIds: [], createdAt: now, updatedAt: now
     }, values || {});
     customer.stage = normalizePipelineStage(customer.stage);

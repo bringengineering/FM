@@ -104,7 +104,7 @@ test("연락 방식 아이콘에는 사용자가 넣은 값이 섞이지 않는�
 test("상태 배지는 수식어까지 색을 다시 정한다", () => {
   // 기본 규칙만 덮어쓰면 .contract-status.active 처럼 수식어가 붙은 선택자가
   // 더 강해서 예전 색이 그대로 남는다.
-  const BADGES = ["contract-status", "relationship-state", "sales-state-label", "priority-badge"];
+  const BADGES = ["contract-status", "sales-state-label", "priority-badge"];
   const baseCss = fs.readdirSync(SRC)
     .filter(name => name.endsWith(".css") && name !== "toss.css")
     .map(name => read(name))

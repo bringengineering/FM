@@ -37,7 +37,7 @@ test("every shared-data form waits for confirmed server persistence", () => {
     "messageConsentForm", "salesProspectForm", "salesContactForm", "salesActivityForm",
     "salesEventForm", "salesEventArchiveForm", "salesResumeForm", "salesOpportunityForm",
     "contractForm", "partnerVendorForm", "partnerQuoteForm",
-    "relationshipActivityForm", "activityForm", "consultationForm", "relationshipPlanForm",
+    "activityForm", "consultationForm",
     "securityReturnForm", "securityDispositionForm", "securityAssetForm", "accessRoleForm",
     "auditForm", "incidentForm", "settingsForm",
   ];

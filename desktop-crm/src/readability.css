@@ -259,28 +259,14 @@ textarea {
 .quote-url-import-row button { font-size: 12px; }
 .quote-url-import > p { font-size: 11px; }
 
-/* Relationship follow-up */
+/* Contract customers */
 .relationship-hero span { font-size: 11px; }
 .relationship-hero h2 { font-size: 22px; }
 .relationship-hero p { font-size: 13px; }
 .relationship-card > header .avatar { font-size: 15px; }
 .relationship-card h3 { font-size: 16px; }
-.relationship-card header p,
-.relationship-state { font-size: 11px; }
-.relationship-facts span { font-size: 10px; }
-.relationship-facts b { font-size: 13px; }
-.relationship-note { font-size: 11px; }
-.relationship-card > footer .primary-button,
-.relationship-card > footer .secondary-button,
-.relationship-open-hint { font-size: 11px; }
-.relationship-customer-guide b { font-size: 13px; }
-.relationship-customer-guide span { font-size: 11px; }
-.relationship-detail-summary h3 { font-size: 19px; }
-.relationship-detail-summary p,
-.relationship-plan-cycle,
-.relationship-detail-note,
-.relationship-add-section .detail-section-head > div span,
-.relationship-history-section .detail-section-head > div span { font-size: 11px; }
+.relationship-card header p { font-size: 11px; }
+.relationship-card > footer .secondary-button { font-size: 11px; }
 .timeline-delete,
 .record-delete-button { font-size: 10px; }
 
@@ -575,9 +561,6 @@ textarea { font-size: 14px; }
 .contract-number,
 .contract-facts span,
 .contract-facts small { font-size: 11px; }
-.relationship-facts span,
-.relationship-note,
-.relationship-open-hint { font-size: 12px; }
 
 .security-table th,
 .permission-table th { font-size: 11px; }

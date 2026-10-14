@@ -7627,8 +7627,7 @@ async function createWindow() {
           const customer = (id, name, buildingIds, extra) => Object.assign({}, baseCustomer, {
             id, customerNo: 'QA-' + id.slice(prefix.length), name, company: '', phone: '010-7000-0000', email: '', type: '건물주', address: '', source: 'QA',
             interestServices: [], currentIssue: '영업 단계 자동 연결 점검', stage: '상담 중', lastContactAt: '', nextContactAt: '', nextAction: '영업 단계 확인', owner: 'QA 담당자',
-            expectedValue: 0, lostReason: '', priority: '보통', relationshipCycleDays: 30, relationshipStartedAt: '', relationshipLastContactAt: '', relationshipNextContactAt: '',
-            relationshipNextAction: '', relationshipNote: '', tags: [], notes: '', buildingIds: [...buildingIds], workflowCaseIds: [], createdAt: stamp, updatedAt: stamp
+            expectedValue: 0, lostReason: '', priority: '보통', tags: [], notes: '', buildingIds: [...buildingIds], workflowCaseIds: [], createdAt: stamp, updatedAt: stamp
           }, extra || {});
           const building = (id, name, address, ownerCustomerId, aliases) => Object.assign({}, baseBuilding, {
             id, buildingNo: 'QA-' + id.slice(prefix.length), name, address, type: '다가구', status: '영업후보', ownerCustomerId: ownerCustomerId || '', unitCount: 0,
@@ -7716,34 +7715,21 @@ async function createWindow() {
           const relationshipNavCount = Number(document.getElementById('navRelationshipCount')?.textContent || 0);
           document.querySelector('[data-view="relationships"]')?.click();
           await wait(100);
-          const relationshipCards = [...document.querySelectorAll('[data-relationship-open]')];
-          const relationshipIds = relationshipCards.map(card => card.dataset.relationshipOpen);
+          const relationshipCards = [...document.querySelectorAll('.relationship-card')];
+          const relationshipIds = relationshipCards.map(card => card.querySelector('[data-customer-open]')?.dataset.customerOpen);
           const paidRelationshipIncluded = relationshipIds.includes(ids.paidCustomer);
           const legacyContractStillIncluded = relationshipIds.includes(ids.explicitCustomer);
           const relationshipCountAndList = paidRelationshipIncluded && legacyContractStillIncluded && relationshipNavCount === relationshipCards.length;
-          const relationshipStoreBefore = JSON.stringify(window.__crmTest.getStore());
-          document.querySelector('[data-relationship-followup="' + ids.paidCustomer + '"]')?.click();
+          const retiredFollowupAbsent = !document.querySelector('[data-relationship-followup],[data-relationship-plan],[data-relationship-open],.relationship-state,.relationship-facts');
+          const customerBeforeDetail = JSON.stringify(window.__crmTest.getStore().customers.find(item => item.id === ids.paidCustomer));
+          const activityCountBeforeDetail = window.__crmTest.getStore().activities.length;
+          document.querySelector('.relationship-card [data-customer-open="' + ids.paidCustomer + '"]')?.click();
           await wait(80);
-          const relationshipForm = document.getElementById('consultationForm');
-          const relationshipSummary = 'QA 유료관리 관계 문맥 ' + Date.now().toString(36);
-          const relationshipContextUi = !!relationshipForm
-            && relationshipForm.dataset.returnView === 'relationships'
-            && relationshipForm.elements.customerId?.value === ids.paidCustomer
-            && !relationshipForm.elements.namedItem('buildingId')
-            && (document.querySelector('#modal')?.textContent || '').includes('후속 연락 기록');
-          if (relationshipForm) {
-            relationshipForm.elements.summary.value = relationshipSummary;
-            relationshipForm.elements.result.value = '유료관리 만족도 확인';
-            relationshipForm.elements.nextAction.value = '다음 정기 연락';
-            relationshipForm.requestSubmit();
-          }
-          await wait(420);
-          const relationshipActivity = window.__crmTest.getStore().activities.find(item => item.summary === relationshipSummary);
-          const relationshipSaveHealthy = isViewer || !document.querySelector('.toast.error.show');
-          const relationshipContextSaved = isViewer
-            ? !relationshipActivity && JSON.stringify(window.__crmTest.getStore()) === relationshipStoreBefore
-            : relationshipActivity?.customerId === ids.paidCustomer && relationshipActivity?.context === 'relationship';
-          const relationshipConsultationContext = relationshipContextUi && relationshipContextSaved && relationshipSaveHealthy;
+          const contractCustomerDetail = retiredFollowupAbsent
+            && window.__crmTest.snapshot().drawerOpen && !!document.getElementById('activityForm')
+            && JSON.stringify(window.__crmTest.getStore().customers.find(item => item.id === ids.paidCustomer)) === customerBeforeDetail
+            && window.__crmTest.getStore().activities.length === activityCountBeforeDetail
+            && !document.querySelector('#relationshipActivityForm,#relationshipPlanForm');
           if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
           if (document.getElementById('drawer')?.classList.contains('open')) document.querySelector('#drawer [data-action="close-drawer"]')?.click();
           await wait(60);
@@ -7851,7 +7837,7 @@ async function createWindow() {
           const viewport = { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, bodyWidth: document.body.scrollWidth, panel: panelRect && { left: panelRect.left, right: panelRect.right, width: panelRect.width } };
           const pass = explicitWins && addressFallback && nameAliasFallback && duplicateCrmNeedsReview && duplicateProspectNeedsReview
             && archivedExcluded && linkedElsewhereProtected && noBuilding && mixedStages && paidManagementDerived && pausedClosedDerived && mixedActivePaused
-            && relationshipCountAndList && relationshipConsultationContext && dashboardPausedExcluded && dashboardMixedActiveIncluded
+            && relationshipCountAndList && contractCustomerDetail && dashboardPausedExcluded && dashboardMixedActiveIncluded
             && tableUsesSalesStage && manualCustomerStageRemoved
             && filterAnyBuildingStage && drawerPerBuildingStages && drawerHasSalesLinks && salesLinkNavigates && manualFieldsAbsent
             && legacyFieldsPreserved && adminSaveWorks && viewerDrawerLocked && viewerNoMutation && noHorizontalOverflow;
@@ -7859,7 +7845,7 @@ async function createWindow() {
             pass, role: isViewer ? 'viewer' : 'writer', explicitWins, addressFallback, nameAliasFallback, duplicateCrmNeedsReview, duplicateProspectNeedsReview,
             archivedExcluded, linkedElsewhereProtected, noBuilding, mixedStages, paidManagementDerived, pausedClosedDerived, mixedActivePaused,
             relationshipCountAndList, relationshipNavCount, relationshipListCount: relationshipCards.length, paidRelationshipIncluded, legacyContractStillIncluded,
-            relationshipContextUi, relationshipContextSaved, relationshipSaveHealthy, relationshipConsultationContext,
+            retiredFollowupAbsent, contractCustomerDetail,
             dashboardPausedExcluded, pausedFocusExcluded, dashboardOverdueExcludesPaused, displayedOverdue, expectedOverdue,
             dashboardPipelineExcludesPaused, displayedPipeline, expectedPipeline: compactMoney(expectedPipelineValue) + '원', dashboardMixedActiveIncluded, mixedFocusIncluded,
             tableUsesSalesStage, manualCustomerStageRemoved, filterAnyBuildingStage,
@@ -8365,59 +8351,25 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "relationship-management") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="pipeline"]')?.click();
-        const moveTo = (card, stage) => {
-          const target = document.querySelector('[data-drop-stage="' + stage + '"]');
-          if (!card || !target) return false;
-          const transfer = new DataTransfer();
-          card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: transfer }));
-          target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
-          target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
-          return true;
-        };
-        const seededCustomerId = window.__crmTest.getStore().activities[0]?.customerId;
-        let card = seededCustomerId ? document.querySelector('[data-drag-customer="' + seededCustomerId + '"]') : null;
-        card = card || [...document.querySelectorAll('[data-drag-customer]')].find(item => item.closest('[data-drop-stage]')?.dataset.dropStage !== '계약 확정') || document.querySelector('[data-drag-customer]');
-        if (!card) return { pass: false, reason: 'customer card missing' };
-        const customerId = card.dataset.dragCustomer;
-        if (card.closest('[data-drop-stage]')?.dataset.dropStage === '계약 확정') {
-          moveTo(card, '상담 중');
-          card = document.querySelector('[data-drag-customer="' + customerId + '"]');
-        }
-        moveTo(card, '계약 확정');
         document.querySelector('[data-view="relationships"]')?.click();
-        document.querySelector('[data-relationship-open="' + customerId + '"]')?.click();
-        const drawerOpened = window.__crmTest.snapshot().drawerOpen && !!document.getElementById('relationshipActivityForm');
-        document.querySelector('#drawer [data-relationship-plan="' + customerId + '"]')?.click();
-        const planForm = document.getElementById('relationshipPlanForm');
-        if (!planForm) return { pass: false, reason: 'relationship plan form missing' };
-        planForm.elements.relationshipCycleDays.value = '60';
-        planForm.elements.relationshipNextAction.value = '분기별 운영 만족도 확인';
-        planForm.elements.relationshipNote.value = '추가 관리 서비스 제안 가능';
-        planForm.requestSubmit();
-        const followupForm = document.getElementById('relationshipActivityForm');
-        if (!followupForm) return { pass: false, reason: 'inline follow-up form missing', drawerOpened };
-        const countBefore = window.__crmTest.getStore().activities.filter(item => item.customerId === customerId).length;
-        followupForm.elements.summary.value = '삭제 동작 점검용 후속 연락';
-        followupForm.elements.result.value = '입력 후 삭제 확인';
-        followupForm.elements.nextAction.value = '분기별 운영 만족도 확인';
-        followupForm.requestSubmit();
-        const added = window.__crmTest.getStore().activities.find(item => item.customerId === customerId && item.summary === '삭제 동작 점검용 후속 연락');
-        const countAfterAdd = window.__crmTest.getStore().activities.filter(item => item.customerId === customerId).length;
-        const deleteButtonsBefore = document.querySelectorAll('#drawer [data-activity-delete]').length;
-        if (added) document.querySelector('[data-activity-delete="' + added.id + '"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 40));
-        window.__crmTest.confirmPending();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const countAfterDelete = window.__crmTest.getStore().activities.filter(item => item.customerId === customerId).length;
-        const saved = window.__crmTest.getStore().customers.find(item => item.id === customerId);
+        const customerButton = document.querySelector('.relationship-card [data-customer-open]');
+        if (!customerButton) return { pass: false, reason: 'contract customer missing' };
+        const customerId = customerButton.dataset.customerOpen;
+        const customerBefore = JSON.stringify(window.__crmTest.getStore().customers.find(item => item.id === customerId));
+        const activitiesBefore = JSON.stringify(window.__crmTest.getStore().activities);
+        const retiredFollowupAbsent = !document.querySelector('[data-relationship-followup],[data-relationship-plan],[data-relationship-open],.relationship-state,.relationship-facts');
+        const contractCount = document.querySelectorAll('.relationship-contract-row').length;
+        customerButton.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
         const state = window.__crmTest.snapshot();
+        const drawerOpened = state.drawerOpen && !!document.getElementById('activityForm');
+        const customerUnchanged = JSON.stringify(window.__crmTest.getStore().customers.find(item => item.id === customerId)) === customerBefore;
+        const activitiesUnchanged = JSON.stringify(window.__crmTest.getStore().activities) === activitiesBefore;
         const drawerText = document.getElementById('drawerContent')?.textContent || '';
-        const deleteButtons = document.querySelectorAll('#drawer [data-activity-delete]').length;
-        const pass = drawerOpened && saved?.stage === '계약 확정' && saved?.relationshipCycleDays === 60 && saved?.relationshipNextAction === '분기별 운영 만족도 확인' && countAfterAdd === countBefore + 1 && countAfterDelete === countBefore && !window.__crmTest.getStore().activities.some(item => item.id === added?.id) && state.view === 'relationships' && state.modalOpen === false && state.drawerOpen === true && drawerText.includes('추가 관리 서비스 제안 가능') && drawerText.includes('후속 연락 기록') && deleteButtonsBefore >= 1;
-        const drawerScroller = document.querySelector('.detail-drawer');
-        if (drawerScroller) drawerScroller.scrollTop = drawerScroller.scrollHeight;
-        return { pass, drawerOpened, countBefore, countAfterAdd, countAfterDelete, deleteButtonsBefore, deleteButtons, saved: saved && { stage: saved.stage, relationshipCycleDays: saved.relationshipCycleDays, relationshipLastContactAt: saved.relationshipLastContactAt, relationshipNextContactAt: saved.relationshipNextContactAt, relationshipNextAction: saved.relationshipNextAction, relationshipNote: saved.relationshipNote }, state };
+        const pass = retiredFollowupAbsent && drawerOpened && customerUnchanged && activitiesUnchanged
+          && state.view === 'relationships' && !state.modalOpen && drawerText.includes('상담 기록')
+          && !document.querySelector('#relationshipActivityForm,#relationshipPlanForm');
+        return { pass, retiredFollowupAbsent, drawerOpened, customerUnchanged, activitiesUnchanged, contractCount, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "operations-tabs") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

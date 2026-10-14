@@ -46,7 +46,7 @@ test("complaint party filtering keeps legacy records visible and labels them unc
 });
 
 test("contract tabs derive recurring versus single from billingCycle", () => {
-  const renderContracts = sourceBetween(appSource, "function renderContracts", "function relationshipState");
+  const renderContracts = sourceBetween(appSource, "function renderContracts", "function relationshipContractsHtml");
 
   assert.match(appSource, /let contractPaymentModeFilter\s*=/);
   assert.match(renderContracts, /contractPaymentModeFilter/);
