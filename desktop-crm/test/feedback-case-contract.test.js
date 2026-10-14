@@ -96,7 +96,7 @@ test("single-contract tab reuses the existing one-off settlement fields and flow
   assert.match(appSource, /action\s*===\s*["']new-one-off-contract["'][\s\S]{0,80}contractEditor\(["']["']\s*,\s*true\)/);
 });
 
-test("recurring contracts hide and discard one-off settlement values", () => {
+test("recurring contracts keep payment dates while discarding one-off work and settlement values", () => {
   const contractEditor = sourceBetween(appSource, "function contractEditor", "function industryChecklistFields");
   const contractSubmit = sourceBetween(appSource, 'form.id === "contractForm"', 'form.id === "customerForm"');
   const recurring = Core.normalizeContract({
@@ -114,9 +114,12 @@ test("recurring contracts hide and discard one-off settlement values", () => {
   assert.match(contractEditor, /isOneOff\s*\?\s*["']{2}\s*:\s*["']hidden["']/);
   assert.match(appSource, /function refreshContractPaymentFields[\s\S]*?section\.hidden\s*=\s*!oneOff/);
   assert.match(contractSubmit, /oneOffContract[\s\S]*?else for \(const fieldName of \[[^\]]*workDate[^\]]*vendorPaymentStatus/);
-  for (const field of ["workDate", "paymentDueDate", "vendorCost", "grossProfit", "collectionStatus", "vendorPaymentStatus"]) {
+  for (const field of ["workDate", "vendorCost", "grossProfit", "vendorPaymentStatus"]) {
     assert.equal(Object.hasOwn(recurring, field), false, `${field} must not remain on a recurring contract`);
   }
+  assert.equal(recurring.paymentDueDate, "2026-08-05");
+  assert.equal(recurring.collectionStatus, "입금 완료");
+  assert.match(contractEditor, /data-contract-payment-hint/);
 });
 
 test("automatic customer complaint intake is classified as building-owner authored", () => {

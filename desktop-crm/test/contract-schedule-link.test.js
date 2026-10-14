@@ -128,8 +128,8 @@ test("cleaning controls validate weekday input and escape legacy text in HTML at
 });
 
 function saveHarness(options = {}) {
-  const values = { types: "청소", name: "Fixture weekly cleaning", customerId: "customer_a", buildingId: "building_a", startDate: "2026-10-13", endDate: "", status: "진행 중", billingCycle: "월 정기", cleaningScheduleMode: "weekly", cleaningWeekday: "1", amount: "200000", owner: "Fixture owner", serviceFrequency: "Existing condition", ...options.values };
-  const form = { dataset: { contractId: "", returnView: "buildingCalendar", returnTab: "contract", authGeneration: "7", authUid: "fixture_uid", ...options.dataset }, values };
+  const values = { types: "청소", name: "Fixture weekly cleaning", customerId: "customer_a", buildingId: "building_a", startDate: "2026-10-13", endDate: "", status: "진행 중", billingCycle: "월 정기", paymentDueDate: "2026-10-30", collectionDueDate: "2026-10-30", collectionStatus: "입금 예정", cleaningScheduleMode: "weekly", cleaningWeekday: "1", amount: "200000", owner: "Fixture owner", serviceFrequency: "Existing condition", ...options.values };
+  const form = { dataset: { contractId: "", returnView: "buildingCalendar", returnTab: "work", authGeneration: "7", authUid: "fixture_uid", ...options.dataset }, values };
   const input = Core.blankSharedStore();
   input.settings.owner = "Fixture owner";
   input.customers = [{ id: "customer_a", name: "Fixture customer", stage: "상담 중", buildingIds: ["building_a"] }];
@@ -175,12 +175,32 @@ test("the real contract submit handler persists one contract and returns to four
 });
 
 test("the real handler rejects stale sessions, viewers and malformed recurrence before changing records", async () => {
-  for (const options of [{ canWrite: false }, { dataset: { authUid: "different_uid" } }, { values: { cleaningWeekday: "9" } }, { values: { startDate: "2026-02-30" } }]) {
+  for (const options of [{ canWrite: false }, { dataset: { authUid: "different_uid" } }, { values: { cleaningWeekday: "9" } }, { values: { startDate: "2026-02-30" } }, {values: {paymentDueDate: ""}}, {values: {paymentDueDate: "2026-02-30"}}, {values: {collectionDueDate: "2026-10-15"}}, {values: {collectionStatus: "forged"}}]) {
     const context = saveHarness(options);
     await context.saveContract(context.form);
     assert.equal(context.store.contracts.length, 0);
     assert.equal(context.saveCount, 0);
   }
+});
+
+test("a recurring contract entered from the receipt tab returns to one payment date, not its weekly work dates", async () => {
+  const context = saveHarness({dataset: {returnTab: "contract"}});
+  await context.saveContract(context.form);
+  assert.equal(context.unifiedCalendarTab, "contract");
+  assert.equal(context.contractCalendarMonth, "2026-10");
+  assert.equal(context.persisted.contracts[0].paymentDueDate, "2026-10-30");
+  assert.equal(Core.contractPaymentRows(context.persisted.contracts, "2026-10").length, 1);
+  assert.equal(Core.contractPaymentRows(context.persisted.contracts, "2026-10")[0].dueDate, "2026-10-30");
+  assert.equal(Schedule.contractWorkOccurrences(context.persisted).length, 4);
+  context.form.dataset.contractId = context.persisted.contracts[0].id;
+  context.form.values.collectionDueDate = "2026-11-30";
+  context.form.values.collectionStatus = "입금 완료";
+  await context.saveContract(context.form);
+  assert.equal(context.contractCalendarMonth, "2026-11");
+  assert.equal(Core.contractPaymentRows(context.persisted.contracts, "2026-11")[0].status, "paid");
+  assert.notEqual(Core.contractPaymentRows(context.persisted.contracts, "2026-10")[0].status, "paid");
+  assert.notEqual(Core.contractPaymentRows(context.persisted.contracts, "2026-12")[0].status, "paid");
+  assert.equal(Schedule.contractWorkOccurrences(context.persisted).length, 4);
 });
 
 test("contract customer edits remain in the originating CRM customer screen", async () => {

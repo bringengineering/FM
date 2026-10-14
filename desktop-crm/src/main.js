@@ -8305,6 +8305,8 @@ async function createWindow() {
         form.elements.endDate.value = '';
         form.elements.amount.value = '1200000';
         form.elements.billingCycle.value = '월 정기';
+        form.elements.paymentDueDate.value = '2026-08-05';
+        form.elements.collectionDueDate.value = '2026-08-05';
         form.elements.status.value = '진행 중';
         form.elements.scope.value = '시설점검·민원응대·업체관리';
         form.elements.unitCount.value = '12';
@@ -8332,6 +8334,8 @@ async function createWindow() {
         form.elements.customerId.dispatchEvent(new Event('change', { bubbles: true }));
         form.elements.startDate.value = '2026-08-01';
         form.elements.endDate.value = '2026-12-31';
+        form.elements.paymentDueDate.value = '2026-08-05';
+        form.elements.collectionDueDate.value = '2026-08-05';
         form.requestSubmit();
         await new Promise(resolve => setTimeout(resolve, 180));
         const temporary = window.__crmTest.getStore().contracts.find(item => item.name === deleteName);
@@ -8544,6 +8548,18 @@ async function createWindow() {
           { id: 'contract_calendar_smoke_a', contractNo: 'CT-CALENDAR-A', types: ['청소'], type: '청소', name: '계약일정 캘린더 정기청소', customerId: customers[0]?.id || '', buildingId: buildings[0].id, startDate: month + '-08', endDate: '', amount: 150000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '공용부 정기청소', workDate: month + '-08', paymentDueDate: month + '-08', vendorCost: 140000, grossProfit: 10000, collectionStatus: '입금 예정', vendorPaymentStatus: '지급 예정', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
           { id: 'contract_calendar_smoke_b', contractNo: 'CT-CALENDAR-B', types: ['건물관리'], type: '건물관리', name: '계약일정 캘린더 폐기물 처리', customerId: customers[1]?.id || customers[0]?.id || '', buildingId: buildings[1].id, startDate: month + '-18', endDate: '', amount: 35000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '폐기물 처리', workDate: month + '-18', paymentDueDate: month + '-18', vendorCost: 32000, grossProfit: 3000, collectionStatus: '입금 완료', vendorPaymentStatus: '지급 완료', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
         );
+        const receiptDate = month + '-' + String(Math.min(30, new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate())).padStart(2, '0');
+        seeded.contracts.push(
+          {id:'contract_calendar_monthly', name:'가상 월 정기 청소', customerId:customers[0]?.id || '', buildingId:buildings[0].id, types:['청소'], startDate:month+'-01', status:'진행 중', billingCycle:'월 정기', amount:50000, paymentDueDate:receiptDate, cleaningSchedule:{mode:'weekly', weekday:4}},
+          {id:'contract_calendar_missing', name:'가상 입금일 미설정', customerId:customers[0]?.id || '', buildingId:buildings[0].id, types:['청소'], startDate:month+'-01', status:'진행 중', billingCycle:'월 정기', amount:50000}
+        );
+        const recurringWorkCount = window.BringContractSchedule.contractWorkOccurrences(seeded).filter(item => item.contractId === 'contract_calendar_monthly').length;
+        const recurringReceipts = window.BringCore.contractPaymentRows(seeded.contracts, month).filter(row => row.contract.id === 'contract_calendar_monthly');
+        // The synthetic member fixture is intentionally marketing-only in main.
+        // Exercise writes only with the existing administrator fixture; never
+        // bypass the mutation policy for a screenshot test.
+        const fixtureWritesAllowed = ${JSON.stringify(localTestRole === "admin")};
+        if (fixtureWritesAllowed) await window.bringCRM.save(seeded);
         window.__crmTest.applyRemoteForTest(seeded);
         await wait(180);
         document.querySelector('[data-workspace-enter="operations"]')?.click();
@@ -8561,17 +8577,40 @@ async function createWindow() {
         const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
         const readOnly = document.body.classList.contains('crm-read-only');
-        const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-action="new-one-off-contract"]').length;
-        const contentAction = document.querySelector('.calendar-tab-intro [data-action="new-one-off-contract"]');
+        const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-action="new-calendar-contract"]').length;
+        const contentAction = document.querySelector('.calendar-tab-intro [data-action="new-calendar-contract"]');
         const roleSafe = readOnly
           ? mutationControlCount === 0 && !contentAction
           : mutationControlCount >= 2 && !!contentAction;
-        const pass = rows === 2 && events === 2 && text.includes('185,000원') && text.includes('13,000원')
+        let editorPrefilled = !fixtureWritesAllowed, scopedReceiptSaved = !fixtureWritesAllowed;
+        if (fixtureWritesAllowed) {
+          document.querySelector('.payment-event[data-contract-edit="contract_calendar_monthly"]')?.click();
+          await wait(100);
+          const form = document.getElementById('contractForm');
+          editorPrefilled = !!form && form.elements.paymentDueDate.value === receiptDate
+            && form.elements.collectionDueDate.value === receiptDate && form.elements.collectionDueDate.readOnly
+            && form.elements.collectionStatus.value === '입금 예정';
+          if (editorPrefilled) {
+            form.elements.collectionStatus.value = '입금 완료';
+            form.requestSubmit();
+            await wait(700);
+            const saved = window.__crmTest.getStore();
+            const current = window.BringCore.contractPaymentRows(saved.contracts, month).find(row => row.contract.id === 'contract_calendar_monthly');
+            const next = new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 1);
+            const nextMonth = String(next.getFullYear()) + '-' + String(next.getMonth() + 1).padStart(2, '0');
+            const following = window.BringCore.contractPaymentRows(saved.contracts, nextMonth).find(row => row.contract.id === 'contract_calendar_monthly');
+            scopedReceiptSaved = current?.status === 'paid' && following?.status !== 'paid'
+              && window.BringContractSchedule.contractWorkOccurrences(saved).filter(item => item.contractId === 'contract_calendar_monthly').length === 4
+              && window.__crmTest.snapshot().unifiedCalendarTab === 'contract' && !window.__crmTest.snapshot().modalOpen;
+          }
+        }
+        const pass = editorPrefilled && scopedReceiptSaved && rows === 3 && events === 3 && text.includes('235,000원') && text.includes('35,000원') && text.includes('200,000원')
+          && recurringWorkCount === 4 && recurringReceipts.length === 1 && recurringReceipts[0].dueDate === receiptDate && text.includes('입금 예정일 미설정')
           && text.includes('계약일정 캘린더 정기청소') && text.includes('계약일정 캘린더 폐기물 처리')
-          && contractTab?.classList.contains('active') && !workTab?.classList.contains('active') && pageTitle === '캘린더'
+          && contractTab?.getAttribute('aria-selected') === 'true' && workTab?.getAttribute('aria-selected') === 'false' && pageTitle === '캘린더'
           && oldPaymentModeAbsent && state.view === 'buildingCalendar' && state.unifiedCalendarTab === 'contract'
           && state.contractCalendarMonth === month && roleSafe;
-        return { pass, month, rows, events, pageTitle, contractTabActive: contractTab?.classList.contains('active'), oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
+        return { pass, writeCheckPerformed: fixtureWritesAllowed, editorPrefilled, scopedReceiptSaved, month, rows, events, recurringWorkCount, recurringReceiptCount: recurringReceipts.length, receiptDate, pageTitle, contractTabActive: contractTab?.getAttribute('aria-selected') === 'true', oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-building-calendar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

@@ -3153,34 +3153,38 @@
   }
 
   function contractCalendarBuildings() {
-    const referenced = new Set((store.contracts || []).filter(contract => contract && contract.billingCycle === "건별").map(contract => String(contract.buildingId || "")).filter(Boolean));
+    const referenced = new Set((store.contracts || []).filter(Boolean).map(contract => String(contract.buildingId || "")).filter(Boolean));
     return (store.buildings || [])
       .filter(building => building && (!building.archivedAt || referenced.has(String(building.id))))
       .map(building => ({ id: String(building.id), name: building.name || "건물명 미입력", address: building.address || "", archived: Boolean(building.archivedAt) }))
       .sort((left, right) => left.name.localeCompare(right.name, "ko"));
   }
 
+  // Retain the existing entry-point name; this is now the receipt calendar
+  // for recurring and one-off contracts, independent of work occurrences.
   function renderOneOffContractCalendar() {
     const buildings = contractCalendarBuildings();
     if (contractCalendarBuildingId !== "all" && !buildings.some(building => building.id === contractCalendarBuildingId)) contractCalendarBuildingId = "all";
     const query = contractCalendarQuery.trim().toLocaleLowerCase("ko");
-    const rows = Core.oneOffContractRows(store.contracts, contractCalendarMonth, contractCalendarBuildingId).filter(row => {
+    const matchesQuery = contract => {
       if (!query) return true;
-      const contract = row.contract || {};
       const customer = customerById(contract.customerId);
       const building = buildingById(contract.buildingId);
       return [contract.name, contract.contractNo, contract.memo, contract.scope, customer && customer.name, building && building.name, building && building.address]
         .some(value => String(value || "").toLocaleLowerCase("ko").includes(query));
-    });
-    const totals = Core.oneOffContractTotals(rows.map(row => row.contract));
+    };
+    const rows = Core.contractPaymentRows(store.contracts, contractCalendarMonth, contractCalendarBuildingId, todayKey()).filter(row => matchesQuery(row.contract));
+    const missingDates = Core.contractPaymentMissingDates(store.contracts, contractCalendarBuildingId).filter(matchesQuery);
+    const totals = Core.contractPaymentTotals(rows);
     const days = paymentCalendarDays(contractCalendarMonth);
     const editable = canWriteCRM();
-    const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-one-off-contract">＋ 계약 등록</button>` : "";
-    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금캘린더 탭에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 계약 등록</button></div>` : ""}</header>
-      <div class="operations-kpis"><div class="operations-kpi"><span>단건 계약</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>받을 금액</span><b>${esc(krw(totals.revenue))}</b><small>고객 청구액</small></div><div class="operations-kpi"><span>업체 지급액</span><b>${esc(krw(totals.cost))}</b><small>작업 원가</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>예상 수익</span><b>${esc(krw(totals.profit))}</b><small>받을 금액 - 지급액</small></div></div>
+    const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-calendar-contract">＋ 계약 등록</button>` : "";
+    return `<section class="one-off-contract-calendar" aria-label="계약 입금 캘린더"><header class="calendar-tab-intro"><div><span>계약 입금 일정</span><h2>계약 대금을 받는 날짜를 확인합니다</h2><p>정기·단건 계약의 입금 예정일과 금액을 표시합니다. 매주 작업하는 날짜는 업무일정에서, 세입자 납부는 건물주 입금에서 별도로 확인합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-calendar-contract">＋ 계약 등록</button></div>` : ""}</header>
+      <div class="operations-kpis"><div class="operations-kpi"><span>입금 일정</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>계약 금액</span><b>${esc(krw(totals.revenue))}</b><small>이번 달 입금 대상 합계</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${esc(krw(totals.paid))}</b><small>수동 확인 기준</small></div><div class="operations-kpi"><span>미입금 금액</span><b>${esc(krw(totals.unpaid))}</b><small>입금 예정·지연 합계</small></div></div>
+      ${missingDates.length ? `<div class="info-box" role="status"><strong>입금 예정일 미설정 ${missingDates.length}건</strong><p>작업일을 입금일로 추정하지 않습니다. 계약에서 실제 받을 날짜를 지정해 주세요.</p>${missingDates.slice(0, 5).map(contract => editable ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">${esc(contract.name || "계약명 미입력")} · 입금일 설정</button>` : `<span>${esc(contract.name || "계약명 미입력")} · 담당자 확인 필요</span>`).join(" ")}${missingDates.length > 5 ? `<p>외 ${missingDates.length - 5}건 · 검색으로 계약을 찾아 설정하세요.</p>` : ""}</div>` : ""}
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
-      <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.contract.amount))} · 수익 ${esc(krw(row.contract.grossProfit))}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
-      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>작업일</th><th>고객·건물</th><th>작업</th><th>받을 금액</th><th>업체 지급</th><th>예상 수익</th><th>입금·지급 상태</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-edit="${attr(contract.id)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "단건 계약"} 상세·수정`)}"` : ""; return `<tr${interactive}><td>${esc(contract.workDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(krw(contract.amount))}</td><td>${esc(krw(contract.vendorCost))}</td><td><strong>${esc(krw(contract.grossProfit))}</strong></td><td>${esc(contract.collectionStatus)} · ${esc(contract.vendorPaymentStatus)}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 단건 계약이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약을 등록하면 입금 예정일에 자동으로 표시됩니다.", emptyAction)}${renderContractWorkManagementPanel()}</section>`;
+      <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.amount))} · ${esc(row.collectionStatus)}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}" data-contract-payment-date="${attr(row.dueDate)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
+      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>입금 예정일</th><th>고객·건물</th><th>계약</th><th>납부 방식</th><th>받을 금액</th><th>입금 상태</th><th>단건 정산</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-edit="${attr(contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "계약"} · ${row.dueDate} 입금 일정 수정`)}"` : ""; return `<tr${interactive}><td>${esc(row.dueDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(contract.billingCycle === "건별" ? "단건" : contract.billingCycle)}</td><td>${esc(krw(row.amount))}</td><td>${esc(row.collectionStatus)}${row.status === "overdue" ? " · 입금일 경과" : ""}</td><td>${contract.billingCycle === "건별" ? `${esc(krw(contract.vendorCost))} 지급 · 수익 ${esc(krw(contract.grossProfit))}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 입금 일정이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약에 입금 예정일을 등록하면 해당 날짜에 표시됩니다.", emptyAction)}${renderContractWorkManagementPanel()}</section>`;
   }
 
   function renderPayments() {
@@ -10797,7 +10801,7 @@
     });
     return {
       work: Number(model.counts && model.counts.month || 0),
-      contract: Core.oneOffContractRows(store.contracts, contractCalendarMonth, "all").length,
+      contract: Core.contractPaymentRows(store.contracts, contractCalendarMonth, "all").length,
       payment: paymentRows("all").length,
     };
   }
@@ -12981,14 +12985,27 @@
     return buildings[0]?.id || "";
   }
 
-  function refreshContractPaymentFields(form) {
+  function refreshContractPaymentFields(form, resetPaymentDate = false) {
     if (!form) return false;
     const oneOff = form.elements.billingCycle?.value === "건별";
     const section = form.querySelector("[data-one-off-contract-fields]");
     if (section) section.hidden = !oneOff;
-    for (const fieldName of ["workDate", "paymentDueDate"]) {
-      if (form.elements[fieldName]) form.elements[fieldName].required = oneOff;
+    if (form.elements.workDate) form.elements.workDate.required = oneOff;
+    if (form.elements.paymentDueDate) form.elements.paymentDueDate.required = true;
+    if (form.elements.collectionDueDate) {
+      form.elements.collectionDueDate.readOnly = true;
+      if (resetPaymentDate || !form.elements.collectionDueDate.value) {
+        const anchor = form.elements.paymentDueDate?.value || "";
+        form.elements.collectionDueDate.value = anchor;
+        const existing = store.contracts.find(item => item.id === form.dataset.contractId);
+        if (form.elements.collectionStatus) form.elements.collectionStatus.value = Core.contractPaymentCollectionStatus({...existing, paymentDueDate: anchor}, anchor);
+      }
     }
+    const hint = form.querySelector("[data-contract-payment-hint]");
+    if (hint) hint.textContent = form.elements.billingCycle?.value === "월 정기"
+      ? "입금 예정일을 기준으로 매월 1회, 계약 종료월까지 표시합니다. 해당 날짜가 없는 달은 말일에 표시합니다. 작업 요일과는 별개입니다."
+      : form.elements.billingCycle?.value === "연간" ? "입금 예정일을 기준으로 매년 1회 표시합니다. 작업 날짜와는 별개입니다."
+      : "지정한 입금 예정일에 한 번 표시합니다. 작업 날짜와는 별개입니다.";
     return oneOff;
   }
 
@@ -13008,18 +13025,22 @@
     return `<section class="contract-type-fields contract-readiness-form"><header><b>계약 준비 도우미</b><span>회사 운영 참고용이며 법률 판단이 필요한 사항은 최종 확인이 필요합니다.</span></header><div class="form-grid"><label class="field wide"><span>승인된 기준 문서</span><select name="readinessSourceId"><option value="">기준 문서 선택</option>${sources.map(entry => `<option value="${attr(entry.id)}" ${entry.driveFileId === checklist?.sourceDriveFileId ? "selected" : ""}>${esc(`${entry.contractType} · ${entry.title || entry.driveFileId} · ${entry.approvedVersion.revisionId}`)}</option>`).join("")}</select></label>${field("준비 담당자", "readinessOwner", checklist?.owner || item.owner || store.settings.owner || "김현진")}${field("준비 기한", "readinessDueDate", checklist?.dueDate || item.startDate || todayKey(), "date")}</div><div class="contract-readiness-items">${items.map(entry => `<label><span><b>${esc(entry.party || "확인")}</b>${esc(entry.label)}<small>${esc(entry.evidence || "근거 위치 확인 필요")}</small></span><select name="readiness__${attr(entry.id)}"><option value="pending" ${entry.status === "pending" ? "selected" : ""}>미완료</option><option value="complete" ${entry.status === "complete" ? "selected" : ""}>완료</option><option value="not_applicable" ${entry.status === "not_applicable" ? "selected" : ""}>해당 없음</option></select><input name="readinessNote__${attr(entry.id)}" value="${attr(entry.note || "")}" placeholder="메모·증빙 링크"></label>`).join("")}</div></section>`;
   }
 
-  function contractEditor(contractId, oneOff = false) {
+  function contractEditor(contractId, oneOff = false, paymentDate = "") {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 등록하거나 변경할 수 없습니다.", "error");
     const editing = store.contracts.find(item => item.id === contractId);
     const isOneOff = editing ? editing.billingCycle === "건별" : oneOff || contractPaymentModeFilter === "single";
     const returnView = currentView === "buildingCalendar" ? "buildingCalendar" : currentView === "relationships" ? "relationships" : "contracts";
     const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: isOneOff ? todayKey() : "" });
+    const requestedPaymentDate = String(paymentDate || "");
+    const selectedPaymentDate = Core.contractPaymentRows([item], requestedPaymentDate.slice(0, 7)).some(row => row.dueDate === requestedPaymentDate)
+      ? requestedPaymentDate : item.paymentDueDate || "";
     const types = contractTypes(item);
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}" data-return-tab="${attr(unifiedCalendarTab)}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
       <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
-      <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 캘린더의 계약일정 캘린더 탭에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
+      <section class="contract-type-fields contract-payment-fields"><header><b>계약 입금 일정</b><span>작업 주기와 별도로 돈을 받기로 한 날짜를 입력하세요.</span></header><div class="form-grid">${field("입금 예정일 * (정기 계약은 첫 입금일)", "paymentDueDate", item.paymentDueDate || "", "date")}${field("입금 상태 적용일", "collectionDueDate", selectedPaymentDate, "date")}${selectField("고객 입금 상태 (수동 확인)", "collectionStatus", ["입금 예정", "입금 완료"], Core.contractPaymentCollectionStatus(item, selectedPaymentDate))}</div><p class="hint" data-contract-payment-hint></p><p class="hint">입금 완료는 적용일 한 건에만 저장됩니다. 은행 입금 내역을 자동 조회하거나 청구서를 발송하지 않습니다.</p></section>
+      <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>단건 계약의 작업 날짜와 업체 원가를 관리합니다. 입금 날짜는 위에서 별도로 설정합니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${ContractScheduleUI.renderFields(item, { isNew: !editing, oneOff: isOneOff })}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
       ${renderContractReadinessFields(item)}
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button><button type="button" class="secondary-button" data-billing-open="${attr(editing.id)}">청구·입금</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
@@ -16749,7 +16770,7 @@
       return;
     }
     const contractEdit = event.target.closest("[data-contract-edit]");
-    if (contractEdit) { contractEditor(contractEdit.dataset.contractEdit); return; }
+    if (contractEdit) { contractEditor(contractEdit.dataset.contractEdit, false, contractEdit.dataset.contractPaymentDate || ""); return; }
     const caseListModeButton = event.target.closest("[data-case-list-mode]");
     if (caseListModeButton) {
       caseListMode = caseListModeButton.dataset.caseListMode === "trash" ? "trash" : "active";
@@ -17263,6 +17284,7 @@
       vacancyConfigurationEditor(buildingId);
     }
     else if (action === "new-contract") contractEditor("");
+    else if (action === "new-calendar-contract") { contractPaymentModeFilter = "recurring"; contractEditor(""); }
     else if (action === "new-one-off-contract") contractEditor("", true);
     else if (action === "new-workflow-case") workflowCaseEditor();
     else if (action === "new-payment-schedule") paymentScheduleEditor("");
@@ -17772,7 +17794,7 @@
     }
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
-    if (event.target.matches('#contractForm [name="billingCycle"]')) refreshContractPaymentFields(event.target.form);
+    if (event.target.matches('#contractForm [name="billingCycle"], #contractForm [name="paymentDueDate"]')) refreshContractPaymentFields(event.target.form, true);
     if (event.target.matches('#customerForm [name="type"]')) updateCustomerCustomTypeField(event.target.form);
     if (event.target.matches('#partnerQuoteForm [name="industry"]')) {
       const form = event.target.form;
@@ -19322,6 +19344,9 @@
       if (raw.endDate && !WorkCalendar.isDateKey(raw.endDate)) return showToast("유효한 계약 종료일을 입력해 주세요.", "error");
       if (raw.endDate && raw.endDate < raw.startDate) return showToast("계약 종료일은 시작일보다 빠를 수 없습니다.", "error");
       if (raw.billingCycle === "건별" && (!WorkCalendar.isDateKey(raw.workDate) || !WorkCalendar.isDateKey(raw.paymentDueDate))) return showToast("단건 계약의 작업일과 입금 예정일을 확인해 주세요.", "error");
+      let paymentFields;
+      try { paymentFields = Core.contractPaymentFields(existing, raw); }
+      catch (error) { return showToast(error.message, "error"); }
       if (!Core.CONTRACT_STATUSES.includes(raw.status)) return showToast("계약 상태를 다시 선택해 주세요.", "error");
       let cleaningSchedule;
       try { cleaningSchedule = ContractScheduleUI.fromValues(raw, types); }
@@ -19344,7 +19369,8 @@
         grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",
         vendorPaymentStatus: raw.vendorPaymentStatus || "지급 예정"
       });
-      else for (const fieldName of ["workDate", "paymentDueDate", "vendorCost", "grossProfit", "collectionStatus", "vendorPaymentStatus"]) delete item[fieldName];
+      else for (const fieldName of ["workDate", "vendorCost", "grossProfit", "vendorPaymentStatus"]) delete item[fieldName];
+      Object.assign(item, paymentFields);
       if (!existing) store.contracts.push(item);
       const chosenSource = contractSources[String(raw.readinessSourceId || "")] || approvedContractSources().find(source => source.id === raw.readinessSourceId);
       let checklist = readinessForContract(item.id);
@@ -19362,15 +19388,15 @@
       }
       contractPaymentModeFilter = item.billingCycle === "건별" ? "single" : "recurring";
       const returnToWorkCalendar = form.dataset.returnView === "buildingCalendar"
-        && (form.dataset.returnTab === "work" || !oneOffContract || cleaningSchedule && cleaningSchedule.mode === "weekly");
-      const returnToContractCalendar = oneOffContract && form.dataset.returnView === "buildingCalendar" && !returnToWorkCalendar;
+        && form.dataset.returnTab === "work";
+      const returnToContractCalendar = form.dataset.returnView === "buildingCalendar" && !returnToWorkCalendar;
       const customer = customerById(item.customerId);
       const building = buildingById(item.buildingId);
       logAudit({ category: existing ? "변경" : "등록", targetType: "계약", targetId: item.id, targetLabel: item.name, action: `${types.join("·")} · ${item.status} · ${building && building.name || "건물"}`, reason: "계약 관리" });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
         if (returnToContractCalendar) {
           unifiedCalendarTab = "contract";
-          contractCalendarMonth = item.paymentDueDate.slice(0, 7);
+          contractCalendarMonth = String(raw.collectionDueDate || item.paymentDueDate).slice(0, 7);
           contractCalendarBuildingId = "all";
           contractCalendarQuery = "";
         } else if (returnToWorkCalendar) {
@@ -20161,7 +20187,7 @@ document.addEventListener("keydown", event => {
   }
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-contract-edit]")) {
     event.preventDefault();
-    contractEditor(event.target.dataset.contractEdit);
+    contractEditor(event.target.dataset.contractEdit, false, event.target.dataset.contractPaymentDate || "");
     return;
   }
   if (event.key === "Escape") { closeModal(); closeDrawer(); }
