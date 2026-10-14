@@ -225,7 +225,7 @@ label>span,.essential-label{ color:var(--soft); font-weight:600; }
 .building-form-section,.contract-type-fields,.case-summary-field{ border-color:var(--line); }
 
 /* ---- 상태 배지류 : 하늘색 계열을 중립·파랑으로 ---- */
-.contract-status,.relationship-state,.sales-state-label,.industry-badge,.priority-badge{
+.contract-status,.sales-state-label,.industry-badge,.priority-badge{
   border:0; background:var(--toss-fill); color:var(--soft);
   border-radius:999px; padding:5px 10px; font-size:12px; font-weight:700;
 }
@@ -364,22 +364,18 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
    뜨는 거의 모든 배지가 상태 수식어(.active/.overdue/.high …)를 달고 있어
    더 강한 선택자에 밀려 예전 색이 그대로 남아 있었다. 색을 없애는 게 아니라
    같은 뜻끼리 같은 색을 쓰도록 수식어까지 함께 맞춘다. */
-.contract-status.active,.relationship-state.active,
+.contract-status.active,
 .sales-state-label.vacant,.sales-state-label.success,.priority-badge.low{
   background:var(--tone-good-bg); color:var(--tone-good-ink);
 }
-.contract-status.ending,.relationship-state.today,
+.contract-status.ending,
 .sales-state-label.upcoming,.priority-badge.normal{
   background:var(--tone-warn-bg); color:var(--tone-warn-ink);
 }
-.relationship-state.overdue,.sales-state-label.danger,.priority-badge.high{
+.sales-state-label.danger,.priority-badge.high{
   background:var(--tone-bad-bg); color:var(--tone-bad-ink);
 }
-.relationship-state.soon{
-  background:var(--tone-info-bg); color:var(--tone-info-ink);
-}
-.contract-status.preparing,.contract-status.closed,
-.relationship-state.unscheduled{
+.contract-status.preparing,.contract-status.closed{
   background:var(--tone-idle-bg); color:var(--tone-idle-ink);
 }
 /* .industry-badge 는 원래 글자색에 !important 가 걸려 있어 같은 무기가 필요하다 */
@@ -717,7 +713,7 @@ input:focus,select:focus,textarea:focus{
 .data-table tbody tr{ transition:background .12s ease; }
 
 /* ---- 배지도 아주 살짝 ---- */
-.contract-status,.relationship-state,.sales-state-label,.industry-badge,
+.contract-status,.sales-state-label,.industry-badge,
 .priority-badge,.filter-chip{ box-shadow:var(--sheen); }
 
 /* ---- 더 또렷한 입체감 ----

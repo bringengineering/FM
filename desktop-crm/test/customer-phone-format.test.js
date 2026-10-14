@@ -217,7 +217,7 @@ test("customer and contact-vendor forms share scoped live formatting and safe pe
   }
   assert.match(functionSource("filteredCustomers"), /customerPhoneCandidateKey\(customer\.phone\)\.includes\(phoneQuery\)/);
   assert.match(functionSource("renderBuildings"), /customerPhoneCandidateKey\(customer\.phone\)\.includes\(phoneQuery\)/);
-  ["renderCustomerDrawer", "renderRelationshipDrawer", "customerPickerSummaryMarkup"].forEach(name => {
+  ["renderCustomerDrawer", "customerPickerSummaryMarkup"].forEach(name => {
     assert.match(functionSource(name), /customerPhoneText\(customer\.phone\)/, `${name} should show the same formatted customer phone`);
   });
   const customerSubmitStart = appSource.indexOf('} else if (form.id === "customerForm")');

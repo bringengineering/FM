@@ -106,7 +106,6 @@
   const vacancyUnitSaveLocks = new Set();
   const buildingScheduleCommitLocks = new Set();
   let selectedSalesProspectId = "";
-  let selectedCustomerDrawerMode = "customer";
   let saveTimer = null;
   let toastTimer = null;
   let activeConfirmation = null;
@@ -230,7 +229,7 @@
     quotes: ["고객에게 보낼 견적서", "견적서"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
-    relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
+    relationships: ["고객과 연결된 계약을 확인합니다", "계약 고객 관리"],
     partnerVendors: ["협력 업체 정보를 한곳에서", "협력 업체"],
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
     officeHome: ["브링의 업무를 한 곳에서", "BRING OFFICE"],
@@ -605,19 +604,6 @@
     const date = /^\d{4}-\d{2}-\d{2}$/u.test(String(value || "")) ? String(value) : todayKey();
     return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
   };
-  const addDaysIso = (value, days) => {
-    const date = value ? new Date(value) : new Date();
-    if (Number.isNaN(date.getTime())) return "";
-    date.setDate(date.getDate() + (Number(days) || 0));
-    return date.toISOString();
-  };
-  const beginRelationship = customer => {
-    if (!customerIsRelationshipCustomer(customer)) return;
-    customer.relationshipCycleDays = Number(customer.relationshipCycleDays) || 30;
-    customer.relationshipStartedAt = customer.relationshipStartedAt || new Date().toISOString();
-    customer.relationshipNextContactAt = customer.relationshipNextContactAt || addDaysIso(new Date(), customer.relationshipCycleDays);
-    customer.relationshipNextAction = customer.relationshipNextAction || "계약 후 만족도 확인";
-  };
   const priorityClass = priority => `<span class="priority-badge ${priority === "높음" ? "high" : priority === "낮음" ? "low" : "normal"}">${esc(priority || "보통")}</span>`;
   const empty = (title, detail, button) => `<div class="empty-state"><div><strong>${esc(title)}</strong><p>${esc(detail)}</p>${button || ""}</div></div>`;
 
@@ -784,8 +770,7 @@
     if (!renderAfter || !appInitialized) return customerPhotos;
     if (currentView !== "companyWallboard") render();
     if (selectedCustomerId && customerById(selectedCustomerId)) {
-      if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
-      else renderCustomerDrawer(selectedCustomerId);
+      renderCustomerDrawer(selectedCustomerId);
     }
     return customerPhotos;
   }
@@ -985,7 +970,6 @@
     if (currentView !== "companyWallboard") render();
     if (selectedCustomerId) {
       if (!customerById(selectedCustomerId)) closeDrawer();
-      else if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
       else renderCustomerDrawer(selectedCustomerId);
     }
     if (selectedSalesProspectId) {
@@ -1346,8 +1330,7 @@
         if (selectedCustomerId) {
           if (!customerById(selectedCustomerId)) closeDrawer();
           else if (!drawer.classList.contains("open")) {
-            if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
-            else renderCustomerDrawer(selectedCustomerId);
+            renderCustomerDrawer(selectedCustomerId);
           }
         }
       }
@@ -11133,17 +11116,6 @@
     openModal();
   }
 
-  function relationshipState(customer) {
-    const nextKey = dueKey(customer.relationshipNextContactAt);
-    const today = todayKey();
-    if (!nextKey) return { label: "연락 계획 미등록", tone: "unscheduled" };
-    if (nextKey < today) return { label: "연락 지연", tone: "overdue" };
-    if (nextKey === today) return { label: "오늘 연락", tone: "today" };
-    const remaining = Math.ceil((new Date(`${nextKey}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
-    if (remaining <= 7) return { label: `${remaining}일 후 연락`, tone: "soon" };
-    return { label: "관계 유지 중", tone: "active" };
-  }
-
   function relationshipContractsHtml(customer) {
     const contracts = ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id);
     if (!contracts.length) return "";
@@ -11156,18 +11128,10 @@
 
   function renderRelationships() {
     const customers = store.customers.filter(customerIsRelationshipCustomer)
-      .sort((a, b) => String(a.relationshipNextContactAt || "9999").localeCompare(String(b.relationshipNextContactAt || "9999")));
-    const today = todayKey();
-    const overdue = customers.filter(customer => dueKey(customer.relationshipNextContactAt) && dueKey(customer.relationshipNextContactAt) < today).length;
-    const dueToday = customers.filter(customer => dueKey(customer.relationshipNextContactAt) === today).length;
-    const unplanned = customers.filter(customer => !customer.relationshipNextContactAt).length;
-    main.innerHTML = `<section class="relationship-hero"><div><span>계약이 끝이 아니라 관계의 시작입니다</span><h2>계약 고객에게 잊지 않고 다시 연락합니다</h2><p>카드를 누르면 고객별 후속 연락 이력과 새 기록 입력 화면이 열립니다.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
-      <div class="relationship-kpi-grid">${kpi("계약 고객", customers.length, "등록 계약·기존 관리 고객", "#55aee8")}${kpi("오늘 연락", dueToday, "오늘 확인할 고객", "#efb84f")}${kpi("연락 지연", overdue, "예정일이 지난 고객", "#e66c78")}${kpi("일정 미등록", unplanned, "다음 연락일 필요", "#54b99c")}</div>
+      .sort((a, b) => customerDisplayName(a).localeCompare(customerDisplayName(b), "ko"));
+    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · 등록 계약과 고객 상세정보를 확인하세요.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
-        const state = relationshipState(customer);
-        const lastActivity = customerActivities(customer.id)[0];
-        const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
-        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header>${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header>${relationshipContractsHtml(customer)}<div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
+        return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button></footer></article>`;
       }).join("")}</section>` : empty("등록된 계약 고객이 없습니다", "캘린더나 계약 관리에서 고객에게 계약을 연결하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-action="new-contract">＋ 계약 등록</button>`)}`;
   }
 
@@ -12615,7 +12579,7 @@
     const canRestore = (!currentAuth.required && !currentAuth.enforceRoles) || user.role === "admin";
     main.innerHTML = `<div class="settings-grid">
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
-      <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담·후속 연락과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
+      <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
     </div>`;
     if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
     if (!telegramState.loaded && !telegramState.loading && canAdministerSecurity()) void loadTelegramSettings();
@@ -13479,11 +13443,7 @@
 
   function consultationEditor(customerId, returnView) {
     const customer = customerById(customerId);
-    const relationshipMode = returnView === "relationships";
-    const cycle = Number(customer && customer.relationshipCycleDays) || 30;
-    const nextContactAt = relationshipMode ? (customer && customer.relationshipNextContactAt || addDaysIso(new Date(), cycle)) : "";
-    const nextAction = relationshipMode ? (customer && customer.relationshipNextAction || "서비스 만족도 및 추가 요청 확인") : "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}" data-ai-loading="false"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><section class="consultation-ai-tools"><div><b>AI 상담 정리</b><span>입력한 원문은 그대로 두고 요약·현재 요청·결과·다음 행동을 제안합니다.</span></div><button type="button" class="secondary-button" data-consultation-ai-organize disabled>✦ AI로 정리</button></section><div data-consultation-ai-draft></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>상담 기록 추가</h2><p>고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}" data-ai-loading="false"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", "", "text", "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", "", "datetime-local")}</div><section class="consultation-ai-tools"><div><b>AI 상담 정리</b><span>입력한 원문은 그대로 두고 요약·현재 요청·결과·다음 행동을 제안합니다.</span></div><button type="button" class="secondary-button" data-consultation-ai-organize disabled>✦ AI로 정리</button></section><div data-consultation-ai-draft></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">상담 기록 저장</button></div></form>`;
     openModal();
     const form = document.getElementById("consultationForm");
     setupConsultationCustomerPicker(form, customer);
@@ -13537,15 +13497,6 @@
     delete form.dataset.aiDraft;
     renderConsultationAiDraft(form, null, "");
     showToast("AI 제안을 입력칸에 적용했습니다. 저장 전에 확인해 주세요.", "success");
-  }
-
-  function relationshipEditor(customerId) {
-    const customer = customerById(customerId);
-    if (!customer) return;
-    const cycle = Number(customer.relationshipCycleDays) || 30;
-    const nextContactAt = customer.relationshipNextContactAt || addDaysIso(new Date(), cycle);
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>연락 계획 설정</h2><p>${esc(customer.name)} 고객과 관계를 이어갈 다음 일정을 정합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="relationshipPlanForm" class="modal-body" data-customer-id="${attr(customer.id)}"><div class="info-box">계약 이후 만족도 확인, 불편사항 점검, 추가 서비스 안내 같은 연락을 잊지 않도록 관리합니다.</div><div class="form-grid" style="margin-top:14px">${selectField("연락 주기", "relationshipCycleDays", [7, 14, 30, 60, 90, 180], cycle, days => `${days}일마다`)}${field("다음 연락일 *", "relationshipNextContactAt", datetimeValue(nextContactAt), "datetime-local")}${field("다음 할 일", "relationshipNextAction", customer.relationshipNextAction || "계약 후 만족도 확인", "text", "예: 서비스 만족도와 추가 요청 확인", "wide")}${areaField("관계 메모", "relationshipNote", customer.relationshipNote || "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">연락 계획 저장</button></div></form>`;
-    openModal();
   }
 
   function workflowCaseEditor(buildingId) {
@@ -13946,7 +13897,6 @@
     }, 180);
     selectedCustomerId = "";
     selectedSalesProspectId = "";
-    selectedCustomerDrawerMode = "customer";
     setTimeout(flushPendingRemote, 180);
   }
 
@@ -13966,7 +13916,6 @@
       }
     }
     selectedCustomerId = customerId;
-    selectedCustomerDrawerMode = "customer";
     drawer.classList.add("customer-centered");
     const buildings = customerBuildings(customer);
     const activities = customerActivities(customerId);
@@ -13984,27 +13933,6 @@
     openDrawer();
   }
 
-  function renderRelationshipDrawer(customerId) {
-    const customer = customerById(customerId);
-    if (!customer) return closeDrawer();
-    beginRelationship(customer);
-    selectedCustomerId = customerId;
-    selectedCustomerDrawerMode = "relationship";
-    drawer.classList.remove("customer-centered");
-    const activities = customerActivities(customerId);
-    const state = relationshipState(customer);
-    const lastActivity = activities[0];
-    const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
-    const nextContactAt = customer.relationshipNextContactAt || addDaysIso(new Date(), Number(customer.relationshipCycleDays) || 30);
-    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>계약 고객 관리</h2><p>후속 연락 이력과 다음 계획</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body relationship-drawer-body">
-      <section class="relationship-detail-summary">${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></section>
-      <div class="inline-actions relationship-detail-actions"><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 수정</button><button class="text-button" data-action="show-selected-customer">전체 고객 정보 보기 →</button></div>
-      <section class="detail-section"><div class="detail-section-head"><h4>현재 연락 계획</h4><span class="relationship-plan-cycle">${Number(customer.relationshipCycleDays) || 30}일마다</span></div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>마지막 연락</b><span>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(nextContactAt ? dateText(nextContactAt) : "일정 미등록")}</span></div><div class="kv"><b>다음 할 일</b><span>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</span></div><div class="kv"><b>관계 시작</b><span>${esc(customer.relationshipStartedAt ? dateText(customer.relationshipStartedAt) : "미등록")}</span></div></div>${customer.relationshipNote ? `<p class="relationship-detail-note">${esc(customer.relationshipNote)}</p>` : ""}</div></section>
-      <section class="detail-section relationship-add-section"><div class="detail-section-head"><div><h4>후속 연락 추가</h4><span>통화·문자·방문 내용을 바로 기록하세요.</span></div></div><div class="detail-section-body"><form id="relationshipActivityForm" data-customer-id="${attr(customer.id)}"><div class="form-grid">${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", "예: 서비스에 만족, 추가 요청 없음")}${field("다음 할 일", "nextAction", customer.relationshipNextAction || "정기 안부 및 추가 요청 확인")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button class="primary-button">＋ 후속 연락 저장</button></div></form></div></section>
-      <section class="detail-section relationship-history-section"><div class="detail-section-head"><div><h4>후속 연락 기록</h4><span>잘못 입력한 기록은 오른쪽 삭제 버튼으로 정리할 수 있습니다.</span></div><b>${activities.length}건</b></div><div class="detail-section-body"><div class="timeline relationship-timeline">${activityTimelineHtml(activities, "아직 후속 연락 기록이 없습니다.")}</div></div></section>
-    </div>`;
-    openDrawer();
-  }
 
   // 연락 방식 아이콘. 예전에는 한글 옆에 S·K·M·V 같은 알파벳 머리글자를 붙여
   // '방문' 이 'V 방문' 으로 보였다. 글꼴을 타지 않도록 SVG 로 그린다.
@@ -14065,25 +13993,16 @@
       const latestPlan = remaining.find(item => item.nextAction || item.nextContactAt) || null;
       const previous = activity.previousCustomerState || {};
       const deletedWasLast = customer.lastContactAt === activity.occurredAt;
-      const deletedWasRelationshipLast = customer.relationshipLastContactAt === activity.occurredAt;
       if (deletedWasLast) customer.lastContactAt = previous.lastContactAt !== undefined ? previous.lastContactAt : latest && latest.occurredAt || "";
       if (activity.nextAction && customer.nextAction === activity.nextAction) customer.nextAction = previous.nextAction !== undefined ? previous.nextAction : latestPlan && latestPlan.nextAction || "";
       if (activity.nextContactAt && customer.nextContactAt === activity.nextContactAt) customer.nextContactAt = previous.nextContactAt !== undefined ? previous.nextContactAt : latestPlan && latestPlan.nextContactAt || "";
-      if (customerIsRelationshipCustomer(customer)) {
-        if (deletedWasRelationshipLast) customer.relationshipLastContactAt = previous.relationshipLastContactAt !== undefined ? previous.relationshipLastContactAt : latest && latest.occurredAt || "";
-        if (activity.nextAction && customer.relationshipNextAction === activity.nextAction) customer.relationshipNextAction = previous.relationshipNextAction !== undefined ? previous.relationshipNextAction : latestPlan && latestPlan.nextAction || "계약 후 만족도 확인";
-        if ((activity.nextContactAt && customer.relationshipNextContactAt === activity.nextContactAt) || (deletedWasRelationshipLast && !activity.nextContactAt)) {
-          customer.relationshipNextContactAt = previous.relationshipNextContactAt !== undefined ? previous.relationshipNextContactAt : latestPlan && latestPlan.nextContactAt || addDaysIso(latest && latest.occurredAt || new Date(), customer.relationshipCycleDays || 30);
-        }
-      }
       customer.updatedAt = new Date().toISOString();
       logAudit({ category: "삭제", targetType: "상담 기록", targetId: activity.id, targetLabel: customer.name, action: `${activity.type || "상담"} 기록 삭제`, reason: "잘못 입력한 기록 정정" });
     }
     scheduleSave();
     render();
     if (selectedCustomerId && customerById(selectedCustomerId)) {
-      if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
-      else renderCustomerDrawer(selectedCustomerId);
+      renderCustomerDrawer(selectedCustomerId);
     }
     showToast("기록을 삭제했습니다.", "success");
   }
@@ -17182,12 +17101,6 @@
       pageMeta();
       return;
     }
-    const relationshipFollowup = event.target.closest("[data-relationship-followup]");
-    if (relationshipFollowup) { consultationEditor(relationshipFollowup.dataset.relationshipFollowup, "relationships"); return; }
-    const relationshipPlan = event.target.closest("[data-relationship-plan]");
-    if (relationshipPlan) { relationshipEditor(relationshipPlan.dataset.relationshipPlan); return; }
-    const relationshipOpen = event.target.closest("[data-relationship-open]");
-    if (relationshipOpen) { renderRelationshipDrawer(relationshipOpen.dataset.relationshipOpen); return; }
     const customerHubEdit = event.target.closest("[data-customer-hub-edit]");
     if (customerHubEdit) { customerEditor(customerHubEdit.dataset.customerHubEdit); return; }
     const customerOpen = event.target.closest("[data-customer-open]");
@@ -17345,7 +17258,6 @@
     else if (action === "guide-new-customer") finishWelcomeGuide(true);
     else if (action === "close-modal") closeModal();
     else if (action === "close-drawer") closeDrawer();
-    else if (action === "show-selected-customer") renderCustomerDrawer(selectedCustomerId);
     else if (action === "edit-selected-customer") {
       const customerId = selectedCustomerId;
       closeDrawer();
@@ -19568,43 +19480,17 @@
       if (!existing) store.partnerQuotes.push(item);
       logAudit({ category: existing ? "변경" : "등록", targetType: "협력업체 상담", targetId: item.id, targetLabel: item.vendor, action: `${item.industry} · ${item.scenario} · ${item.status} · ${moneyRange(item.totalMin, item.totalMax, "가격 미확인")}`, reason: "업체 상담 관리" });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); if (returnView === "partnerVendors") showPartnerVendorDetailAfterQuoteMutation(selectedVendor.id); else { currentView = "partnerQuotes"; render(); } showToast(`${item.vendor} 상담 기록을 서버에 저장했습니다.`, "success"); } });
-    } else if (form.id === "relationshipActivityForm") {
-      const beforeStore = cloneStore(store);
-      const raw = Object.fromEntries(new FormData(form).entries());
-      const customer = customerById(form.dataset.customerId);
-      if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
-      if (!raw.summary.trim()) return showToast("후속 연락 내용을 입력해 주세요.", "error");
-      const activity = Core.createActivity({ customerId: customer.id, context: "relationship", previousCustomerState: { lastContactAt: customer.lastContactAt || "", nextAction: customer.nextAction || "", nextContactAt: customer.nextContactAt || "", relationshipLastContactAt: customer.relationshipLastContactAt || "", relationshipNextAction: customer.relationshipNextAction || "", relationshipNextContactAt: customer.relationshipNextContactAt || "" }, type: raw.type, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), summary: raw.summary.trim(), result: raw.result.trim(), nextAction: raw.nextAction.trim(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", owner: store.settings.owner || "김현진" });
-      store.activities.push(activity);
-      beginRelationship(customer);
-      customer.lastContactAt = activity.occurredAt;
-      customer.relationshipLastContactAt = activity.occurredAt;
-      if (activity.nextAction) {
-        customer.nextAction = activity.nextAction;
-        customer.relationshipNextAction = activity.nextAction;
-      }
-      customer.nextContactAt = activity.nextContactAt || customer.nextContactAt;
-      customer.relationshipNextContactAt = activity.nextContactAt || addDaysIso(activity.occurredAt, customer.relationshipCycleDays);
-      customer.updatedAt = new Date().toISOString();
-      logAudit({ category: "변경", targetType: "계약 고객", targetId: customer.id, targetLabel: customer.name, action: `${activity.type} 후속 연락 기록 추가`, reason: "계약 후 관계 관리" });
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { render(); renderRelationshipDrawer(customer.id); showToast("후속 연락을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "activityForm") {
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.summary.trim()) return showToast("상담 내용을 입력해 주세요.", "error");
       const customer = customerById(form.dataset.customerId);
-      const activity = Core.createActivity(Object.assign(raw, { customerId: form.dataset.customerId, context: customerIsRelationshipCustomer(customer) ? "relationship" : "consultation", owner: store.settings.owner || "김현진", occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "" }));
+      const activity = Core.createActivity(Object.assign(raw, { customerId: form.dataset.customerId, context: "consultation", owner: store.settings.owner || "김현진", occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "" }));
       store.activities.push(activity);
       if (customer) {
         customer.lastContactAt = activity.occurredAt;
         if (activity.nextAction) customer.nextAction = activity.nextAction;
         if (activity.nextContactAt) customer.nextContactAt = activity.nextContactAt;
-        if (customerIsRelationshipCustomer(customer)) {
-          beginRelationship(customer);
-          customer.relationshipLastContactAt = activity.occurredAt;
-          customer.relationshipNextContactAt = activity.nextContactAt || addDaysIso(activity.occurredAt, customer.relationshipCycleDays);
-          if (activity.nextAction) customer.relationshipNextAction = activity.nextAction;
-        }
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: form.dataset.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
@@ -19619,18 +19505,12 @@
       const customer = customerById(raw.customerId);
       const buildingId = returnView === "consultations" ? String(raw.buildingId || "").trim() : "";
       if (buildingId && (!customer || !customerBuildings(customer).some(building => String(building.id) === buildingId))) return showToast("선택한 고객과 연결된 건물을 선택해 주세요.", "error");
-      const activity = Core.createActivity({ customerId: raw.customerId, buildingId, context: returnView === "relationships" || customerIsRelationshipCustomer(customer) ? "relationship" : "consultation", type: raw.type, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), summary: raw.summary.trim(), result: raw.result.trim(), nextAction: raw.nextAction.trim(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", owner: raw.owner.trim() || store.settings.owner || "김현진" });
+      const activity = Core.createActivity({ customerId: raw.customerId, buildingId, context: "consultation", type: raw.type, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), summary: raw.summary.trim(), result: raw.result.trim(), nextAction: raw.nextAction.trim(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", owner: raw.owner.trim() || store.settings.owner || "김현진" });
       store.activities.push(activity);
       if (customer) {
         customer.lastContactAt = activity.occurredAt;
         if (activity.nextAction) customer.nextAction = activity.nextAction;
         if (activity.nextContactAt) customer.nextContactAt = activity.nextContactAt;
-        if (returnView === "relationships" || customerIsRelationshipCustomer(customer)) {
-          beginRelationship(customer);
-          customer.relationshipLastContactAt = activity.occurredAt;
-          customer.relationshipNextContactAt = activity.nextContactAt || addDaysIso(activity.occurredAt, customer.relationshipCycleDays);
-          customer.relationshipNextAction = activity.nextAction || customer.relationshipNextAction || "정기 안부 및 추가 요청 확인";
-        }
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: raw.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
@@ -19639,7 +19519,6 @@
         currentView = returnView;
         if (returnView === "customers") selectedCustomerHubId = raw.customerId;
         render();
-        if (returnView === "relationships") renderRelationshipDrawer(raw.customerId);
         if (returnView === "customers") {
           const consultationHistory = main.querySelector("[data-customer-consultations]");
           if (consultationHistory) {
@@ -19647,22 +19526,8 @@
             consultationHistory.scrollIntoView({ block: "nearest" });
           }
         }
-        showToast(returnView === "relationships" ? "후속 연락을 서버에 기록했습니다." : "상담 기록을 서버에 저장했습니다.", "success");
+        showToast("상담 기록을 서버에 저장했습니다.", "success");
       } });
-    } else if (form.id === "relationshipPlanForm") {
-      const beforeStore = cloneStore(store);
-      const raw = Object.fromEntries(new FormData(form).entries());
-      const customer = customerById(form.dataset.customerId);
-      if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
-      if (!raw.relationshipNextContactAt) return showToast("다음 연락일을 입력해 주세요.", "error");
-      customer.relationshipCycleDays = Number(raw.relationshipCycleDays) || 30;
-      customer.relationshipNextContactAt = new Date(raw.relationshipNextContactAt).toISOString();
-      customer.relationshipNextAction = raw.relationshipNextAction.trim() || "계약 후 만족도 확인";
-      customer.relationshipNote = raw.relationshipNote.trim();
-      customer.relationshipStartedAt = customer.relationshipStartedAt || new Date().toISOString();
-      customer.updatedAt = new Date().toISOString();
-      logAudit({ category: "변경", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: `계약 고객 연락 계획 설정 · ${customer.relationshipCycleDays}일 주기`, reason: "계약 후 관계 관리" });
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = "relationships"; render(); renderRelationshipDrawer(customer.id); showToast("다음 연락 계획을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "securityReturnForm") {
       const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
@@ -20265,11 +20130,6 @@ document.addEventListener("keydown", event => {
       const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? Math.min(options.length - 1, index + 1) : Math.max(0, index - 1);
       options[nextIndex]?.focus();
     }
-    return;
-  }
-  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-relationship-open]")) {
-    event.preventDefault();
-    renderRelationshipDrawer(event.target.dataset.relationshipOpen);
     return;
   }
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-contract-edit]")) {
