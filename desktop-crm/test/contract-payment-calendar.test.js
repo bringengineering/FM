@@ -175,7 +175,7 @@ test("the actual contract editor opens the clicked receipt date with date-scoped
   const field = (_label, name, value) => {values[name] = value; elements[name] = {value}; return "";};
   const ctx = vm.createContext({Core, store: {contracts: [item], customers: [], settings: {}}, contractPaymentModeFilter: "recurring", currentView: "buildingCalendar", unifiedCalendarTab: "contract", authGeneration: 1, currentAuthUid: () => "fixture", canWriteCRM: () => true,
     todayKey: () => "2026-10-14", contractTypes: c => c.types, customerById: () => null, modalContent: {}, field, areaField: field, selectField: (label, name, _options, value) => field(label, name, value),
-    contractTypeChecklist: () => "", contractBuildingField: () => "", renderContractReadinessFields: () => "", ContractScheduleUI: {renderFields: () => "", refresh() {}},
+    contractTypeChecklist: () => "", contractBuildingField: () => "", contractOwnerField: value => field("담당자", "owner", value), bindContractOwnerPicker() {}, renderContractReadinessFields: () => "", ContractScheduleUI: {renderFields: () => "", refresh() {}},
     esc, attr: esc, krw: v => v, openModal() {}, setTimeout() {}, document: {getElementById: () => form}, FormData: class { *[Symbol.iterator]() {} },
   });
   const refresh = app.match(/  function refreshContractPaymentFields\([\s\S]*?^  \}/m)[0];
