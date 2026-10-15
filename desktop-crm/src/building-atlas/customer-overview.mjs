@@ -33,9 +33,10 @@ export async function mountCustomerOverview(options={}) {
   const modelControls=el('div','','customer-overview-actions'), modelHost=el('div','','customer-overview-model');
   const modelOpen=button('3D 설비지도 열기',()=>openModel());modelControls.append(modelOpen);
   extra.append(extraSummary,extraMetrics,extraRows,modelControls,modelHost);
-  drawer.append(drawerHead,actions,current,profile,recordTabs,recordBody,extra);
+  const dangerZone=el('footer','','customer-overview-danger-zone');dangerZone.hidden=true;
+  drawer.append(drawerHead,actions,current,profile,recordTabs,recordBody,extra,dangerZone);
   shell.append(list,drawer);host.replaceChildren(css,shell);if(metricsHost===host)shell.prepend(metrics);else metricsHost.replaceChildren(metrics);
-  let disposed=false,busy=false,selectedCustomerId=null,selectedBuildingId=null,activeTab='summary',filter='all',model=null,modelAbort=null,modelLoading=null;
+  let disposed=false,busy=false,deleting=false,selectedCustomerId=null,selectedBuildingId=null,activeTab='summary',filter='all',model=null,modelAbort=null,modelLoading=null;
   const data=()=>getOverview()||{rows:[],totals:{contracts:0,work:0,prospects:0,customers:0}};
   const row=()=>data().rows.find(item=>item.id===selectedCustomerId);
   const statusTag=text=>el('span',text,`customer-overview-status ${text==='관리 중'?'active':text==='관리 종료'?'closed':'preparing'}`);
@@ -86,7 +87,7 @@ export async function mountCustomerOverview(options={}) {
     const stale=Boolean((selectedCustomerId&&!customer)||(selectedBuildingId&&!building)||(customer&&selectedBuildingId&&!customer.buildings.some(item=>item.id===selectedBuildingId)));
     title.textContent=customer?.name||building?.name||'선택 정보를 확인해 주세요';
     subtitle.textContent=stale?'고객·건물 연결이 변경되었습니다. 목록에서 다시 선택해 주세요.':[building?.name,customer?.owner,customer?.status].filter(Boolean).join(' · ');
-    actions.replaceChildren();current.replaceChildren();profile.replaceChildren();recordTabs.replaceChildren();recordBody.replaceChildren();extraRows.replaceChildren();extraMetrics.replaceChildren();
+    actions.replaceChildren();current.replaceChildren();profile.replaceChildren();recordTabs.replaceChildren();recordBody.replaceChildren();extraRows.replaceChildren();extraMetrics.replaceChildren();dangerZone.replaceChildren();dangerZone.hidden=true;
     extra.hidden=stale;modelOpen.disabled=busy||!building;
     if(stale)return;
     if(customer){
@@ -114,6 +115,25 @@ export async function mountCustomerOverview(options={}) {
     if(building){const editBuilding=action('건물 정보 수정','data-building-edit',building.id);editBuilding.disabled=!canWrite();detailActions.append(editBuilding);}
     extraRows.prepend(detailActions);
     for(const item of getSummary(selectedCustomerId,selectedBuildingId)||[]){const metric=el('div');metric.append(el('small',item.label),el('b',item.value),el('small',item.note));extraMetrics.append(metric);}
+    if(customer&&canWrite()&&typeof options.onDeleteCustomer==='function'){
+      const remove=button(deleting?'처리 중…':'고객 삭제',()=>deleteCustomer(),'danger-outline-button');
+      remove.setAttribute('data-customer-quick-delete',customer.id);remove.disabled=deleting;
+      dangerZone.append(el('small','연결된 업무 기록이 없는 고객만 삭제할 수 있습니다.'),remove);dangerZone.hidden=false;
+    }
+  }
+  async function deleteCustomer(){
+    if(disposed||busy||!canWrite()||!row()||typeof options.onDeleteCustomer!=='function')return false;
+    const customerId=selectedCustomerId;
+    busy=true;deleting=true;renderDetail();
+    try{
+      if(model&&!(await model.requestLeave()))return false;
+      if(disposed||selectedCustomerId!==customerId||!canWrite())return false;
+      const removed=await options.onDeleteCustomer(customerId);
+      if(disposed||removed!==true)return false;
+      modelAbort?.abort();model?.dispose();model=null;modelAbort=null;modelHost.replaceChildren();modelOpen.hidden=false;
+      selectedCustomerId=null;selectedBuildingId=null;drawer.hidden=true;renderList();return true;
+    }catch{return false;}
+    finally{busy=false;deleting=false;if(!disposed)renderDetail();}
   }
   async function select(customerId,buildingId){
     if(disposed||busy)return false;
