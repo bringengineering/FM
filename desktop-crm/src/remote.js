@@ -1071,7 +1071,7 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
       const occurrence = input.contractOccurrence;
       const contract = context.contract;
       if (!contract || contract.id !== occurrence.contractId || contract.buildingId !== occurrence.buildingId
-        || !ContractSchedule.contractDates(contract).includes(occurrence.date)) {
+        || !ContractSchedule.contractDates(contract, occurrence.date.slice(0, 7)).includes(occurrence.date)) {
         throw createError("연결 계약의 일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "BUILDING_SCHEDULE_CONFLICT");
       }
     }

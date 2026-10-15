@@ -79,3 +79,16 @@ test("viewers, changed sessions and stale source dates cannot open or submit a d
   stale.form.values = {}; stale.ctx.store.contracts = [];
   await stale.submit(); assert.equal(stale.calls.commits.length, 0);
 });
+
+test("future-month twice-monthly calendar clicks prefill the selected visit without changing the contract", async () => {
+  const h = harness();
+  h.ctx.store.contracts[0].startDate = "2026-10-01";
+  h.ctx.store.contracts[0].cleaningSchedule = { mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 2 };
+  const before = JSON.stringify(h.ctx.store);
+  await h.ctx.contractScheduleOccurrenceEditor("crm-contract:contract_1:2026-11-19");
+  assert.equal(h.calls.opened, 1);
+  assert.equal(h.calls.fieldValues.scheduledDate, "2026-11-19");
+  assert.equal(JSON.stringify(h.ctx.store), before);
+  await h.ctx.contractScheduleOccurrenceEditor("crm-contract:contract_1:2026-10-29");
+  assert.equal(h.calls.opened, 1, "the fifth weekday is not an editable projected occurrence");
+});

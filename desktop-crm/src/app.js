@@ -11041,7 +11041,7 @@
   async function contractScheduleOccurrenceEditor(occurrenceId) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 변경할 수 없습니다.", "error");
     const generation = authGeneration, uid = currentAuthUid();
-    const occurrence = ContractSchedule.contractWorkOccurrences(store).find(item => item.id === occurrenceId);
+    const occurrence = ContractSchedule.contractWorkOccurrence(store, occurrenceId);
     if (!occurrence) return showToast("일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "error");
     const identity = ContractSchedule.occurrenceIdentity(occurrence.contractId, occurrence.scheduledDate, occurrence.buildingId);
     let digest;
@@ -11050,7 +11050,7 @@
     if (generation !== authGeneration || uid !== currentAuthUid() || !canWriteCRM()) return;
     const id = `service_contract_${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")}`;
     if (store.serviceRecords.some(item => item.id === id)) return buildingScheduleEditor(id);
-    const current = ContractSchedule.contractWorkOccurrences(store).find(item => item.id === occurrenceId);
+    const current = ContractSchedule.contractWorkOccurrence(store, occurrenceId);
     if (!current || current.buildingId !== occurrence.buildingId) return showToast("일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "error");
     buildingScheduleEditor("", current.scheduledDate, { ...current, id, occurrenceId });
   }
@@ -11274,10 +11274,11 @@
     if (!contracts.length) return "";
     return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건</b>${contracts.map(contract => {
       const dates = ContractSchedule.contractDates(contract);
+      const monthlySchedule = ContractSchedule.normalizeCleaningSchedule(contract.cleaningSchedule)?.mode === "twice_monthly";
       const building = buildingById(contract.buildingId);
       const mode = contractCustomerMode(contract);
       const label = mode === "single" ? "단건 계약" : mode === "recurring" ? "정기 계약" : "구분 확인 필요";
-      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>업무일정 ${dates.length}회 · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
+      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>${monthlySchedule ? "첫 작업 월 미리보기" : `업무일정 ${dates.length}회`} · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
     }).join("")}</section>`;
   }
 
@@ -18858,7 +18859,7 @@
       const creating = form.dataset.scheduleCreate === "true";
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.scheduleId) || null;
       const occurrence = creating && form.dataset.contractOccurrenceId
-        ? ContractSchedule.contractWorkOccurrences(store).find(item => item.id === form.dataset.contractOccurrenceId)
+        ? ContractSchedule.contractWorkOccurrence(store, form.dataset.contractOccurrenceId)
         : null;
       if (creating && form.dataset.contractOccurrenceId && !occurrence) {
         closeModal(); render();
@@ -19605,7 +19606,8 @@
         closeModal(); currentView = returnToContractCalendar || returnToWorkCalendar ? "buildingCalendar" : form.dataset.returnView === "relationships" ? "relationships" : "contracts";
         render();
         const scheduleCount = ContractSchedule.contractDates(item).length;
-        showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleCount ? `·업무일정 ${scheduleCount}회` : ""}에 연결했습니다.`, "success");
+        const scheduleSummary = item.cleaningSchedule?.mode === "twice_monthly" ? "·업무일정 월 2회" : scheduleCount ? `·업무일정 ${scheduleCount}회` : "";
+        showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleSummary}에 연결했습니다.`, "success");
       } });
     } else if (form.id === "customerForm") {
       const beforeStore = cloneStore(store);

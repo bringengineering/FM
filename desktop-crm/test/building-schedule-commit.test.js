@@ -191,6 +191,30 @@ test("occurrence intent rejects forged metadata, inactive/changed contracts and 
   }
 });
 
+test("a future twice-monthly visit uses the existing CAS path; fifth weekdays and stale patterns are denied", async () => {
+  const contract = { ...recurringContract(), startDate: "2026-10-01", cleaningSchedule: { mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 2 } };
+  const makeIntent = date => {
+    const contractOccurrence = { contractId: "contract_1", buildingId: "building_1", date };
+    const identity = ContractSchedule.occurrenceIdentity(contractOccurrence.contractId, date, contractOccurrence.buildingId);
+    return occurrenceInput({ contractOccurrence, recordId: `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`, values: values({ title: "Fixture monthly visit", scheduledDate: date }) });
+  };
+  const intent = makeIntent("2026-11-19");
+  const { client, state } = firebaseHarness({ recordId: intent.recordId, contract });
+  const saved = await client.commitBuildingSchedule(intent);
+  assert.equal(saved.record.sourceContractDate, "2026-11-19");
+  assert.equal(state.requests.some(r => r.method !== "GET" && r.url.includes("/contracts/")), false);
+  const inputStore = { contracts: [contract], serviceRecords: [saved.record] };
+  assert.equal(ContractSchedule.contractWorkOccurrences(inputStore, "2026-10").length, 2);
+  assert.equal(ContractSchedule.contractWorkOccurrences(inputStore, "2026-11").length, 1);
+  for (const date of ["2026-10-29", "2026-11-12", "2026-09-17"]) {
+    const bad = makeIntent(date), h = firebaseHarness({ recordId: bad.recordId, contract });
+    await assert.rejects(h.client.commitBuildingSchedule(bad), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(h.state.requests.some(r => r.method === "PUT"), false);
+  }
+  const stale = firebaseHarness({ recordId: intent.recordId, contract: { ...contract, cleaningSchedule: { ...contract.cleaningSchedule, weekPattern: "second_fourth" } } });
+  await assert.rejects(stale.client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+});
+
 test("schedule deletion archives planned, active and completed records through the existing CAS path", async () => {
   for (const status of ["planned", "in_progress", "completed"]) {
     const existing = {id: "service_schedule_1", ...values({status, completedAt: status === "completed" ? "2026-10-06" : ""}), updatedAt: "2026-10-06T00:00:00.000Z", calendarCommitVersion: 4, reportId: "report_preserved", driveFileId: "drive_preserved", operationsSyncStatus: "synced"};
