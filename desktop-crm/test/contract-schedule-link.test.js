@@ -134,11 +134,25 @@ function saveHarness(options = {}) {
   input.settings.owner = "Fixture owner";
   input.customers = [{ id: "customer_a", name: "Fixture customer", stage: "상담 중", buildingIds: ["building_a"] }];
   input.buildings = [{ id: "building_a", name: "Fixture building", ownerCustomerId: "customer_a" }];
+  if (options.noBuilding) {
+    input.buildings = [];
+    input.customers[0].buildingIds = [];
+    input.customers[0].roadAddress = options.noAddress ? "" : "Fixture registered address";
+  }
   const context = vm.createContext({ Core, ContractSchedule: Schedule, ContractScheduleUI: UI, WorkCalendar: Calendar, form, store: input, canWriteCRM: () => options.canWrite !== false, authGeneration: 7, currentAuthUid: () => "fixture_uid", cloneStore: value => structuredClone(value), currentAuth: { user: { uid: "fixture_uid" } }, contractSources: {}, DEFAULT_CONTRACT_READINESS_ITEMS: [], contractPaymentModeFilter: "single", unifiedCalendarTab: "contract", workCalendarDate: "", workCalendarMonth: "", workCalendarBuildingId: "all", workCalendarQuery: "", contractCalendarMonth: "", contractCalendarBuildingId: "all", contractCalendarQuery: "", currentView: "buildingCalendar", messages: [], renders: 0, closed: false, saveCount: 0, queuedSave: null, saveTimer: null, clearTimeout, ensureSalesStore() {}, logAudit() {} });
   context.FormData = class { constructor(item) { this.values = item.values; } entries() { return Object.entries(this.values)[Symbol.iterator](); } getAll(key) { return key === "types" ? [this.values.types] : []; } };
   context.customerById = id => context.store.customers.find(item => item.id === id);
   context.buildingById = id => context.store.buildings.find(item => item.id === id);
-  context.customerBuildings = customer => context.store.buildings.filter(item => customer?.buildingIds.includes(item.id));
+  context.customerBuildings = customer => context.store.buildings.filter(item => customer && (customer.buildingIds.includes(item.id) || item.ownerCustomerId === customer.id));
+  context.customerManagedBuildingAddress = customer => customer?.roadAddress || "";
+  context.resolveCustomerManagedBuildingSelection = async value => {
+    context.resolvedSite = value;
+    if (options.resolve) await options.resolve(context);
+    const building = { id: "canonical_customer_site", name: "Fixture customer", ownerCustomerId: "customer_a" };
+    context.store = structuredClone(context.store);
+    context.store.buildings.push(building);
+    return building;
+  };
   context.approvedContractSources = () => [];
   context.readinessForContract = id => context.store.contractReadiness.find(item => item.contractId === id);
   context.showToast = message => context.messages.push(message);
@@ -153,6 +167,57 @@ function saveHarness(options = {}) {
   vm.runInContext(commit + `\nasync function saveContract(form) {${app.slice(start, end)}\n}`, context);
   return context;
 }
+
+test("customer-only contracts ignore hidden building input and resolve the registered address after a canonical reload", async () => {
+  const context = saveHarness({ noBuilding: true, values: { buildingId: "forged_other_site" } });
+  await context.saveContract(context.form);
+  assert.equal(context.resolvedSite, "customer:customer_a");
+  assert.equal(context.persisted.contracts[0].buildingId, "canonical_customer_site");
+  assert.equal(context.persisted.contracts[0].customerId, "customer_a");
+  assert.equal(context.persisted.customers.length, 1);
+  assert.equal(Schedule.contractWorkOccurrences(context.persisted).length, 4);
+  context.form.dataset.contractId = context.persisted.contracts[0].id;
+  await context.saveContract(context.form);
+  assert.equal(context.persisted.contracts.length, 1);
+  assert.equal(context.persisted.buildings.length, 1);
+});
+
+test("a customer without a separate building or address can still register a contract", async () => {
+  const context = saveHarness({ noBuilding: true, noAddress: true, values: { buildingId: "" } });
+  await context.saveContract(context.form);
+  assert.equal(context.persisted.contracts.length, 1);
+  assert.equal(context.persisted.contracts[0].buildingId, "");
+  assert.equal(context.resolvedSite, undefined);
+});
+
+test("customer-site resolution prevents duplicate submits and discards stale sessions or failures", async () => {
+  let release;
+  const wait = new Promise(resolve => { release = resolve; });
+  const context = saveHarness({ noBuilding: true, resolve: () => wait });
+  const first = context.saveContract(context.form);
+  await context.saveContract(context.form);
+  release();
+  await first;
+  assert.equal(context.saveCount, 1);
+  assert.equal(context.persisted.contracts.length, 1);
+  assert.equal(context.form.dataset.resolvingSite, undefined);
+  for (const resolve of [async c => { c.authGeneration++; }, async () => { throw Error("fixture resolution failure"); }]) {
+    const failed = saveHarness({ noBuilding: true, resolve });
+    await failed.saveContract(failed.form);
+    assert.equal(failed.saveCount, 0);
+    assert.equal(failed.store.contracts.length, 0);
+    assert.equal(failed.form.dataset.resolvingSite, undefined);
+  }
+});
+
+test("failed contract persistence keeps the already committed canonical customer site", async () => {
+  const context = saveHarness({ noBuilding: true, save: async () => { throw Error("fixture save failure"); } });
+  await context.saveContract(context.form);
+  assert.equal(context.store.contracts.length, 0);
+  assert.equal(context.store.buildings.length, 1);
+  assert.equal(context.store.buildings[0].id, "canonical_customer_site");
+  assert.equal(context.closed, false);
+});
 
 test("the real contract submit handler persists one contract and returns to four linked work dates without duplicating customers", async () => {
   const context = saveHarness();

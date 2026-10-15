@@ -3311,7 +3311,7 @@
       <div class="operations-kpis"><div class="operations-kpi"><span>입금 일정</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>계약 금액</span><b>${esc(krw(totals.revenue))}</b><small>이번 달 입금 대상 합계</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${esc(krw(totals.paid))}</b><small>수동 확인 기준</small></div><div class="operations-kpi"><span>미입금 금액</span><b>${esc(krw(totals.unpaid))}</b><small>입금 예정·지연 합계</small></div></div>
       ${missingDates.length ? `<div class="info-box" role="status"><strong>입금 예정일 미설정 ${missingDates.length}건</strong><p>작업일을 입금일로 추정하지 않습니다. 계약에서 실제 받을 날짜를 지정해 주세요.</p>${missingDates.slice(0, 5).map(contract => editable ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">${esc(contract.name || "계약명 미입력")} · 입금일 설정</button>` : `<span>${esc(contract.name || "계약명 미입력")} · 담당자 확인 필요</span>`).join(" ")}${missingDates.length > 5 ? `<p>외 ${missingDates.length - 5}건 · 검색으로 계약을 찾아 설정하세요.</p>` : ""}</div>` : ""}
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
-      <div class="contract-receipt-layout${quickPanel ? " has-panel" : ""}"><div class="contract-receipt-calendar-main"><section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.amount))} · ${esc(row.collectionStatus)}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-receipt-open="${attr(row.contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" aria-label="${attr(`${row.contract.name || "계약"} · ${row.dueDate} 입금 빠른 수정`)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
+      <div class="contract-receipt-layout${quickPanel ? " has-panel" : ""}"><div class="contract-receipt-calendar-main"><section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const buildingName = String(buildingById(row.contract.buildingId)?.name || "").trim() || "건물 미연결"; const content = `<b class="contract-calendar-building">${esc(buildingName)}</b><span class="contract-calendar-name">${esc(row.contract.name)}</span><span>${esc(krw(row.amount))} · ${esc(row.collectionStatus)}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-receipt-open="${attr(row.contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" aria-label="${attr(`${buildingName} · ${row.contract.name || "계약"} · ${row.dueDate} 입금 빠른 수정`)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
       ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>입금 예정일</th><th>고객·건물</th><th>계약</th><th>납부 방식</th><th>받을 금액</th><th>입금 상태</th><th>단건 정산</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-receipt-open="${attr(contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "계약"} · ${row.dueDate} 입금 빠른 수정`)}"` : ""; return `<tr${interactive}><td>${esc(row.dueDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(contract.billingCycle === "건별" ? "단건" : contract.billingCycle)}</td><td>${esc(krw(row.amount))}</td><td>${esc(row.collectionStatus)}${row.status === "overdue" ? " · 입금일 경과" : ""}</td><td>${contract.billingCycle === "건별" ? `${esc(krw(contract.vendorCost))} 지급 · 수익 ${esc(krw(contract.grossProfit))}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 입금 일정이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약에 입금 예정일을 등록하면 해당 날짜에 표시됩니다.", emptyAction)}</div>${quickPanel}</div>${renderContractWorkManagementPanel()}</section>`;
   }
 
@@ -9760,6 +9760,24 @@
     }
   }
 
+  function workReportBuildings(existingBuildingId = "") {
+    const choices = customerManagedBuildingChoices(existingBuildingId).map(choice => ({
+      ...(choice.building || {}), id: choice.value, name: choice.name,
+      address: choice.address,
+      roadAddress: String(choice.customer?.roadAddress || "").trim(),
+      jibunAddress: String(choice.customer?.jibunAddress || "").trim(),
+      ownerCustomerId: choice.customer?.id || choice.building?.ownerCustomerId || "",
+    }));
+    const ids = new Set(choices.map(item => item.id));
+    for (const building of store.buildings || []) {
+      if (building && !building.archivedAt && !ids.has(building.id)) {
+        choices.push(building);
+        ids.add(building.id);
+      }
+    }
+    return choices.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+  }
+
   function workReportBuildingAddress(building) {
     return String(building && (building.roadAddress || building.jibunAddress || building.address) || "").trim();
   }
@@ -9800,7 +9818,7 @@
   }
 
   function reportEditor(R, draft) {
-    const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const buildings = workReportBuildings(draft.buildingId);
     const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || null;
     const linkedOrders = cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId);
     const selectedOrderIsKnown = linkedOrders.some(item => item.id === draft.cleaningOrderId);
@@ -9856,10 +9874,10 @@
       <div class="wr-ai-layout">
         <div class="wr-ai-main">
           <section class="wr-ai-card">
-            <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>건물을 선택하면 저장된 현장 주소가 자동으로 연결됩니다.</p></div></header>
+            <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>고객을 선택하면 고객 등록 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>건물 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
+              <label><span>고객·현장 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
               <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
@@ -9954,7 +9972,7 @@
     if (!R || !form) return reportState.draft;
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = R.normalizeReport(reportState.draft);
-    const building = (store.buildings || []).find(item => String(item.id) === String(raw.buildingId || ""));
+    const building = workReportBuildings(raw.buildingId).find(item => String(item.id) === String(raw.buildingId || ""));
     const baseAddress = String(raw.siteAddress || workReportBuildingAddress(building) || "").trim();
     const detailAddress = String(raw.siteAddressDetail || "").trim();
     const items = previous.items.map(item => {
@@ -10023,6 +10041,13 @@
     renderWorkReports();
     let reportSaved = false, pdfSaved = false, archivedId = "";
     try {
+      if (checked.report.buildingId.startsWith("customer:")) {
+        const building = await resolveCustomerManagedBuildingSelection(checked.report.buildingId);
+        if (!active()) return;
+        if (!building) throw new Error("고객 등록 주소를 확인한 뒤 다시 저장해 주세요.");
+        checked.report.buildingId = building.id;
+        reportState.draft = checked.report;
+      }
       if (pdfOnly) {
         const result = await api.exportWorkReport({report: checked.report, copyType: "owner", company: store.settings?.quoteCompany || {}, secrets: reportSecrets(), strictPhotos: true});
         if (!active() || result?.canceled) return;
@@ -13105,13 +13130,8 @@
 
   function contractBuildingField(customerId, buildingId) {
     const customer = customerById(customerId);
-    const buildings = customerBuildings(customer);
-    const current = buildingById(buildingId);
-    const currentIsLegacyLink = Boolean(current && !buildings.some(building => building.id === current.id));
-    if (currentIsLegacyLink) buildings.push(current);
-    const selectedId = buildings.some(building => building.id === buildingId) ? buildingId : (buildings[0]?.id || "");
-    const help = !customer ? "고객을 선택하면 연결된 건물이 표시됩니다." : currentIsLegacyLink ? "현재 계약 건물이 고객의 연결 목록에 없어 함께 표시했습니다." : buildings.length ? (buildings.length === 1 ? "연결된 건물이 자동 선택되었습니다." : `${buildings.length}개 연결 건물 중 첫 건물이 자동 선택됩니다.`) : "선택한 고객에게 연결된 건물이 없습니다.";
-    return `<label class="field contract-building-field"><span>연결 건물 *</span><select name="buildingId" data-contract-building-select ${buildings.length ? "" : "disabled"}>${buildings.length ? buildings.map(building => `<option value="${attr(building.id)}" ${building.id === selectedId ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("") : `<option value="">연결된 건물 없음</option>`}</select><small data-contract-building-help>${esc(help)}</small></label>`;
+    const building = buildingById(buildingId) || customerBuildings(customer).find(item => !item.archivedAt);
+    return `<label class="field contract-building-field"><span>고객 등록 주소</span><input type="hidden" name="buildingId" value="${attr(building?.id || "")}"><input data-contract-customer-address value="${attr(customerManagedBuildingAddress(customer, building))}" placeholder="고객을 선택하면 등록 주소가 표시됩니다" readonly><small>선택한 고객의 등록 주소를 사용합니다.</small></label>`;
   }
 
   function refreshContractTypeFields(form) {
@@ -13126,14 +13146,11 @@
   function refreshContractBuildings(form) {
     if (!form) return "";
     const customer = customerById(form.elements.customerId?.value);
-    const buildings = customerBuildings(customer);
-    const select = form.querySelector("[data-contract-building-select]");
-    const help = form.querySelector("[data-contract-building-help]");
-    if (!select) return "";
-    select.innerHTML = buildings.length ? buildings.map((building, index) => `<option value="${attr(building.id)}" ${index === 0 ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("") : `<option value="">연결된 건물 없음</option>`;
-    select.disabled = !buildings.length;
-    if (help) help.textContent = !customer ? "고객을 선택하면 연결된 건물이 표시됩니다." : buildings.length === 1 ? "연결된 건물이 자동 선택되었습니다." : buildings.length > 1 ? `${buildings.length}개 연결 건물 중 첫 건물을 자동 선택했습니다. 필요하면 변경하세요.` : "선택한 고객에게 연결된 건물이 없습니다. 고객 관리에서 건물을 먼저 연결해 주세요.";
-    return buildings[0]?.id || "";
+    const building = customerBuildings(customer).find(item => !item.archivedAt);
+    if (form.elements.buildingId) form.elements.buildingId.value = building?.id || "";
+    const address = form.querySelector("[data-contract-customer-address]");
+    if (address) address.value = customerManagedBuildingAddress(customer, building);
+    return building?.id || "";
   }
 
   function refreshContractPaymentFields(form, resetPaymentDate = false) {
@@ -17673,7 +17690,7 @@
     if (event.target.matches("[data-report-building]")) {
       resetReportDriveSelection();
       const form = event.target.form;
-      const building = (store.buildings || []).find(item => String(item && item.id || "") === String(event.target.value || ""));
+      const building = workReportBuildings(event.target.value).find(item => String(item && item.id || "") === String(event.target.value || ""));
       if (form && form.elements.siteAddress) form.elements.siteAddress.value = workReportBuildingAddress(building);
       // 같은 호수가 다른 건물로 넘어가는 실수를 막는다.
       if (form && form.elements.siteAddressDetail) form.elements.siteAddressDetail.value = "";
@@ -19521,23 +19538,21 @@
       } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 저장할 수 없습니다.", "error");
-      if (form.dataset.submitting === "true") return;
+      if (form.dataset.submitting === "true" || form.dataset.resolvingSite === "true") return;
       if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()) {
         closeModal();
         return showToast("로그인 사용자가 변경되어 계약을 저장하지 않았습니다.", "error");
       }
-      const beforeStore = cloneStore(store);
       const formData = new FormData(form);
       const raw = Object.fromEntries(formData.entries());
       const types = formData.getAll("types").map(type => String(type)).filter(type => Core.CONTRACT_TYPES.includes(type));
       if (!types.length) return showToast("계약 유형을 하나 이상 선택해 주세요.", "error");
       if (!raw.name.trim()) return showToast("계약명을 입력해 주세요.", "error");
-      if (!raw.customerId || !raw.buildingId) return showToast("연결할 고객과 건물을 선택해 주세요.", "error");
-      const existing = store.contracts.find(item => item.id === form.dataset.contractId);
+      if (!raw.customerId) return showToast("계약 고객을 선택해 주세요.", "error");
+      let existing = store.contracts.find(item => item.id === form.dataset.contractId);
       if (form.dataset.contractId && !existing) return showToast("계약이 이미 변경되었거나 삭제되었습니다. 최신 화면을 확인해 주세요.", "error");
       const linkedCustomer = customerById(raw.customerId);
-      const keepsExistingLink = existing && existing.customerId === raw.customerId && existing.buildingId === raw.buildingId;
-      if (!keepsExistingLink && !customerBuildings(linkedCustomer).some(building => building.id === raw.buildingId)) return showToast("선택한 고객에게 연결된 건물을 선택해 주세요.", "error");
+      if (!linkedCustomer || linkedCustomer.archivedAt) return showToast("등록된 계약 고객을 다시 선택해 주세요.", "error");
       if (!WorkCalendar.isDateKey(raw.startDate)) return showToast("유효한 계약 시작일을 입력해 주세요.", "error");
       if (raw.endDate && !WorkCalendar.isDateKey(raw.endDate)) return showToast("유효한 계약 종료일을 입력해 주세요.", "error");
       if (raw.endDate && raw.endDate < raw.startDate) return showToast("계약 종료일은 시작일보다 빠를 수 없습니다.", "error");
@@ -19551,6 +19566,24 @@
       catch (error) { return showToast(error.message, "error"); }
       if (cleaningSchedule && cleaningSchedule.mode !== "manual" && raw.status === "진행 중"
         && !ContractSchedule.contractDates({ ...raw, types, cleaningSchedule }).length) return showToast("계약 기간 안에 청소 작업일이 없습니다. 시작일·종료일·요일을 확인해 주세요.", "error");
+      raw.buildingId = existing?.customerId === raw.customerId && buildingById(existing.buildingId) && !buildingById(existing.buildingId).archivedAt
+        ? existing.buildingId : customerBuildings(linkedCustomer).find(building => !building.archivedAt)?.id || "";
+      if (!raw.buildingId && customerManagedBuildingAddress(linkedCustomer, null)) {
+        form.dataset.resolvingSite = "true";
+        try {
+          const building = await resolveCustomerManagedBuildingSelection(`customer:${raw.customerId}`);
+          if (!building) return;
+          raw.buildingId = building.id;
+        } catch (error) {
+          return showToast(error.message || "고객 주소를 계약에 연결하지 못했습니다.", "error");
+        } finally { delete form.dataset.resolvingSite; }
+        if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()
+          || form.elements?.customerId && form.elements.customerId.value !== raw.customerId) return;
+        existing = store.contracts.find(item => item.id === form.dataset.contractId);
+        if (form.dataset.contractId && !existing) return showToast("계약이 변경되었거나 삭제되었습니다. 다시 열어 주세요.", "error");
+        if (!customerById(raw.customerId) || customerById(raw.customerId).archivedAt) return showToast("등록된 계약 고객을 다시 선택해 주세요.", "error");
+      }
+      const beforeStore = cloneStore(store);
       const item = existing || Core.createContract({ owner: store.settings.owner || "김현진" });
       const oneOffContract = raw.billingCycle === "건별";
       Object.assign(item, {
