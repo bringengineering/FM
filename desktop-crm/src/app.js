@@ -13125,6 +13125,47 @@
     setTimeout(() => document.querySelector('#buildingUnitForm [name="label"]')?.focus(), 30);
   }
 
+  function contractOwnerField(owner) {
+    return `<label class="field" data-contract-owner-picker for="contractOwnerSelect"><span>담당자</span><select id="contractOwnerSelect" name="owner" aria-label="담당자 선택"><option value=""${owner ? "" : " selected"}>담당자를 선택하세요</option>${owner ? `<option value="${attr(owner)}" selected>${esc(owner)} (기존 담당자)</option>` : ""}</select><small class="hint" role="status">직원 목록을 불러오는 중입니다.</small></label>`;
+  }
+
+  async function bindContractOwnerPicker(form) {
+    const picker = form?.querySelector("[data-contract-owner-picker]");
+    if (!picker) return;
+    const select = picker.querySelector("select"), hint = picker.querySelector("small");
+    const openedGeneration = authGeneration, openedUid = currentAuthUid();
+    const active = () => form.isConnected && modal.classList.contains("open") && openedGeneration === authGeneration
+      && openedUid === currentAuthUid() && canWriteCRM() && !select.disabled;
+    if (!active()) return;
+    try {
+      // Use the existing authorized employee directory. Keep names in the
+      // existing owner field; this does not grant a role or change account data.
+      const data = await api.loadWorkOrders();
+      if (!active()) return;
+      if (!Array.isArray(data?.members) || data.localOnly === true) throw new Error("unavailable");
+      const names = [...new Set(data.members.filter(member => member && typeof member.uid === "string" && member.uid
+        && member.enabled !== false && member.mustChangePassword !== true)
+        .map(member => typeof member.displayName === "string" ? member.displayName.trim() : "")
+        .filter(name => name && name.length <= 120))].sort((a, b) => a.localeCompare(b, "ko"));
+      names.forEach(name => {
+        const existing = [...select.options].find(option => option.value === name);
+        if (existing) existing.textContent = name;
+        else {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          select.appendChild(option);
+        }
+      });
+      // Appending options never changes a choice made while loading, nor clears
+      // an existing owner who is absent from the current employee directory.
+      hint.textContent = names.length ? "등록된 직원 중 담당자를 선택하세요."
+        : "선택 가능한 직원이 없습니다. 기존 담당자는 유지됩니다.";
+    } catch (_) {
+      if (active()) hint.textContent = "직원 목록을 불러오지 못했습니다. 기존 담당자는 유지됩니다. 창을 다시 열어 재시도해 주세요.";
+    }
+  }
+
   function contractTypeChecklist(selectedTypes) {
     const selected = new Set(Core.normalizeContractTypes(selectedTypes));
     return `<div class="field contract-type-field"><span>계약 유형 *</span><div class="contract-type-checklist">${Core.CONTRACT_TYPES.map(type => `<label><input type="checkbox" name="types" value="${attr(type)}" ${selected.has(type) ? "checked" : ""}><span>${esc(type)}</span></label>`).join("")}</div></div>`;
@@ -13211,7 +13252,7 @@
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}" data-return-tab="${attr(unifiedCalendarTab)}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
-      <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
+      <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${contractOwnerField(item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
       <section class="contract-type-fields contract-payment-fields"><header><b>계약 입금 일정</b><span>작업 주기와 별도로 돈을 받기로 한 날짜를 입력하세요.</span></header><div class="form-grid">${field("입금 예정일 * (정기 계약은 첫 입금일)", "paymentDueDate", item.paymentDueDate || "", "date")}${field("입금 상태 적용일", "collectionDueDate", selectedPaymentDate, "date")}${selectField("고객 입금 상태 (수동 확인)", "collectionStatus", ["입금 예정", "입금 완료"], Core.contractPaymentCollectionStatus(item, selectedPaymentDate))}</div><p class="hint" data-contract-payment-hint></p><p class="hint">입금 완료는 적용일 한 건에만 저장됩니다. 은행 입금 내역을 자동 조회하거나 청구서를 발송하지 않습니다.</p></section>
       <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>단건 계약의 작업 날짜와 업체 원가를 관리합니다. 입금 날짜는 위에서 별도로 설정합니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${ContractScheduleUI.renderFields(item, { isNew: !editing, oneOff: isOneOff })}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
@@ -13223,6 +13264,7 @@
     document.getElementById("contractForm").addEventListener("input", event => ContractScheduleUI.refresh(event.currentTarget));
     document.getElementById("contractForm").addEventListener("change", event => ContractScheduleUI.refresh(event.currentTarget));
     document.getElementById("contractForm").dataset.initialFields = JSON.stringify([...new FormData(document.getElementById("contractForm"))]);
+    void bindContractOwnerPicker(document.getElementById("contractForm"));
     setTimeout(() => document.querySelector('#contractForm [name="name"]')?.focus(), 30);
   }
 
