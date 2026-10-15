@@ -202,6 +202,7 @@
 
   function normalizeCustomer(value) {
     const customer = Object.assign({}, value || {});
+    customer.nickname = normalizeCustomerNickname(customer.nickname);
     customer.marketing = normalizeMarketingAttributionRecord(customer.marketing);
     delete customer.photoDataUrl;
     delete customer.avatarUrl;
@@ -219,6 +220,19 @@
         && !["__proto__", "prototype", "constructor"].includes(buildingId)
         && firebaseSafeKey(buildingId) === buildingId));
     return customer;
+  }
+
+  // Internal labels must never be used as a document recipient or building name.
+  function normalizeCustomerNickname(value) {
+    return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 80) : "";
+  }
+
+  function reportOwnerName(building) {
+    const source = building && typeof building === "object" && !Array.isArray(building) ? building : {};
+    const address = [source.roadAddress, source.address, source.jibunAddress]
+      .find(value => typeof value === "string" && value.trim());
+    const label = address ? address.replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 500) : "";
+    return label ? `${label} 건물주` : "건물주";
   }
 
   function normalizeMarketingAttribution(value) {
@@ -658,12 +672,13 @@
     const now = iso();
     const customer = Object.assign({
       id: random("cus"), customerNo: `C-${dayKey(now).replace(/-/g, "")}-${String(Date.now()).slice(-4)}`,
-      name: "", company: "", phone: "", email: "", type: "건물주", address: "", roadAddress: "", jibunAddress: "", source: "대표 상담",
+      name: "", nickname: "", company: "", phone: "", email: "", type: "건물주", address: "", roadAddress: "", jibunAddress: "", source: "대표 상담",
       interestServices: [], currentIssue: "", stage: "신규 고객", lastContactAt: "", nextContactAt: "",
       nextAction: "첫 연락", owner: "김현진", expectedValue: 0, lostReason: "", priority: "보통",
       tags: [], notes: "", buildingIds: [], buildingIdLinks: {}, workflowCaseIds: [], createdAt: now, updatedAt: now
     }, values || {});
     customer.stage = normalizePipelineStage(customer.stage);
+    customer.nickname = normalizeCustomerNickname(customer.nickname);
     return customer;
   }
 
@@ -1093,7 +1108,7 @@
     createPartnerVendor, createPartnerQuote, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeMarketingAttributionRecord, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeCustomerNickname, reportOwnerName, normalizeMarketingAttribution, normalizeMarketingAttributionRecord, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract

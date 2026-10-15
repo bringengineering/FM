@@ -1,8 +1,8 @@
 (function attachBringBuildingReportCore(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./core") : root.BringCore);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BringBuildingReportCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function makeBringBuildingReportCore() {
+})(typeof globalThis !== "undefined" ? globalThis : this, function makeBringBuildingReportCore(Core) {
   "use strict";
 
   function duplicateEvidence(left, right) {
@@ -312,8 +312,8 @@
       month,
       monthText: monthText(month),
       buildingName: text(building.name, 80) || "관리 건물",
-      address: text(building.address, 160),
-      ownerName: text(source.ownerName, 60),
+      address: text(building.roadAddress || building.address || building.jibunAddress, 500),
+      ownerName: Core.reportOwnerName(building),
       issuedAt: dateKey(source.issuedAt) || dateKey(new Date().toISOString()),
       works: Object.freeze(works),
       units: Object.freeze(units),

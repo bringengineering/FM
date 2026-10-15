@@ -1,4 +1,5 @@
 "use strict";
+const CustomerCore = require("./core");
 
 const Core = require("./work-report-core");
 const PHASES = { before: "작업 전", during: "작업 중", after: "작업 후" };
@@ -34,7 +35,8 @@ function createOwnerReportHtml(report, options = {}) {
   const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);
   const date = report.workDate || "날짜 미기재";
   const kind = Core.kindLabel(report.kind);
-  const footer = () => `<footer class="report-footer"><span><b>BRING CARE</b> · ${escape(company.businessName || "브링케어")}</span><span>수신(건물주) ${escape(report.ownerName || "건물주")}</span></footer>`;
+  const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
+  const footer = () => `<footer class="report-footer"><span><b>BRING CARE</b> · ${escape(company.businessName || "브링케어")}</span><span>수신(건물주) ${escape(recipient)}님</span></footer>`;
   const header = (title, continuation = "") => `<header class="head"><div><span class="brand">BRING CARE</span><h1>${escape(title)}</h1><p class="sub">${escape(report.buildingName || "건물 미기재")} · ${escape(kind)}</p></div><div class="meta"><b>건물주 제출용</b>작업일 ${escape(date)}${continuation ? `<small>${escape(continuation)}</small>` : ""}</div></header>`;
   const facts = [
     ["작업일", date], ["작업 구분", Core.categoryLabel(report.category) + (report.category === "etc" && report.categoryEtc ? ` · ${report.categoryEtc}` : "")],
@@ -78,7 +80,7 @@ body{width:186mm;font-size:9pt;line-height:1.65;overflow-wrap:anywhere}h1,h2,p{m
 .long-captions img,.long-captions .missing-photo{height:60mm}
 </style></head><body><main>
 <section class="overview">${header("작업 결과보고서")}
-<p class="greeting">${escape(report.ownerName || "건물주")}님, ${escape(date)} ${escape(report.buildingName || "현장")}의 ${escape(kind)} 기록을 안내드립니다.</p>
+<p class="greeting">${escape(recipient)}님, ${escape(date)} ${escape(report.buildingName || "현장")}의 ${escape(kind)} 기록을 안내드립니다.</p>
 <section class="monthly-summary"><h2>이번 작업 요약</h2><p class="greeting">${escape(report.summary || "구역별 현장 기록을 정리했습니다. 등록된 작업 내용과 사진은 아래에서 확인하실 수 있습니다.")}</p></section>
 <section><h2>작업 정보</h2><div class="facts">${facts}</div></section>
 <section><h2>사진 기록 요약</h2><div class="stats">${stats.map(([label, value]) => `<div class="stat"><span>${label}</span><b>${value}</b></div>`).join("")}</div></section>

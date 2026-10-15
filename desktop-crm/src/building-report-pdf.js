@@ -1,6 +1,7 @@
 "use strict";
 
 const BuildingReportCore = require("./building-report-core");
+const CustomerCore = require("./core");
 const { safeFileSegment } = require("./attendance-xlsx");
 
 function html(value) {
@@ -141,7 +142,7 @@ section>h2{color:#214d65;font-size:11pt;break-after:avoid}
 .total{background:#eaf6fd;color:#214d65;border:1px solid #d8eaf4}footer{border-color:#d8eaf4}footer b{color:#148cc1}
 </style></head><body><main class="doc">
 <header class="head"><div><span class="brand">BRING CARE</span><h1>${html(report.documentTitle)}</h1><p class="sub">${html(report.buildingName)} · ${html(report.monthText)}</p></div><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAt)}</div></header>
-<p class="greeting">${html(report.ownerName || "건물주")}님, ${html(report.monthText)} ${html(report.buildingName)} 관리 내역을 보고드립니다.${report.address ? ` (${html(report.address)})` : ""}</p>
+<p class="greeting">${html(CustomerCore.reportOwnerName({ address: report.address }))}님, ${html(report.monthText)} ${html(report.buildingName)} 관리 내역을 보고드립니다.${report.address ? ` (${html(report.address)})` : ""}</p>
 ${report.narrative && report.narrative.summary ? `<section class="monthly-summary"><h2>이번 달 관리 요약</h2>${summaryParagraphsHtml(report.narrative.summary)}</section>` : ""}
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
 <section><h2>날짜별 활동 내역</h2>${worksHtml(report.activities || report.works)}</section>
