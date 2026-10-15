@@ -3225,6 +3225,7 @@
         ${state.error ? `<p class="contract-receipt-error" role="alert">${esc(state.error)}</p>` : ""}
         <button type="submit" class="primary-button" ${stale && !state.request ? "disabled" : ""}>${state.submitting ? "저장 중…" : "변경 내용 저장"}</button>
         <button type="button" class="secondary-button" data-contract-receipt-reload>최신 내용 불러오기</button>
+        <div class="contract-receipt-full-edit"><button type="button" class="secondary-button" data-contract-edit="${attr(state.contractId)}" data-contract-payment-date="${attr(state.dueDate)}" ${contract ? "" : "disabled"}>계약 전체 수정</button><small>계약일·입금 예정일·금액 등은 기존 계약 수정창에서 변경할 수 있습니다.</small></div>
       </fieldset></form><small>다른 일정을 선택해도 작성 중인 내용은 유지됩니다.</small></aside>`;
   }
 
