@@ -28,7 +28,8 @@
       startDate: String(item.startDate || ""), monthlyAmount: Math.max(0, Number(item.monthlyAmount) || 0), summary: String(item.summary || ""),
       building: buildingMap.get(String(item.buildingId || "")) || null,
     }));
-    const crmContracts = ContractSchedule.contractWorkOccurrences(store).map(occurrence => {
+    const month = String(settings.month || new Date().toISOString().slice(0, 7));
+    const crmContracts = ContractSchedule.contractWorkOccurrences(store, month).map(occurrence => {
       const status = occurrence.status;
       const scheduledDate = occurrence.scheduledDate;
       return {
@@ -42,7 +43,6 @@
     });
     const oneOffWork = [...records, ...crmContracts];
     const items = [...oneOffWork, ...contracts];
-    const month = String(settings.month || new Date().toISOString().slice(0, 7));
     const today = String(settings.today || new Date().toISOString().slice(0, 10));
     return {
       available: true, buildings, items,

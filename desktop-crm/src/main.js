@@ -8395,6 +8395,71 @@ async function createWindow() {
         const pass = typeFilters.join('|') === '전체|청소|건물관리|부동산관리' && conditionalTypes === '건물관리|부동산관리' && optionalEndDateLabel === '계약 종료일 (선택)' && optionalEndDateDisplayed && saved?.endDate === '' && saved?.types?.join('|') === '건물관리|부동산관리' && saved?.buildingId === autoSelectedBuilding && saved?.status === '종료 예정' && saved?.unitCount === 12 && saved?.managementTarget === '임대 현황 관리' && saved?.memo === '갱신 여부 확인 필요' && !!deleteButton && removed && cards.length >= 1 && filteredCorrectly && state.view === 'contracts' && !state.modalOpen;
         return { pass, typeFilters, conditionalTypes, optionalEndDateLabel, optionalEndDateDisplayed, autoSelectedBuilding, saved, deleteButtonFound: !!deleteButton, removed, cardCount: cards.length, filteredCorrectly, state };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "twice-monthly-cleaning") {
+      if (!localTestMode || app.isPackaged) throw new Error("Twice-monthly QA requires isolated unpackaged local mode.");
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();
+        const seeded = window.BringCore.blankSharedStore();
+        const month = window.BringCore.dayKey().slice(0, 7);
+        const next = window.BringWorkCalendar.shiftMonth(month, 1);
+        seeded.settings.owner = '화면 점검';
+        seeded.customers = [{id:'fixture_monthly_customer', name:'화면 점검 고객', stage:'계약 확정', buildingIds:['fixture_monthly_building']}];
+        seeded.buildings = [{id:'fixture_monthly_building', name:'화면 점검 건물', address:'가상 현장', ownerCustomerId:'fixture_monthly_customer'}];
+        const contract = {id:'fixture_monthly_contract', customerId:'fixture_monthly_customer', buildingId:'fixture_monthly_building', name:'화면 점검 월 2회 청소', types:['청소'], type:'청소', status:'진행 중', startDate:month+'-01', amount:50000, billingCycle:'월 정기', paymentDueDate:month+'-25', cleaningSchedule:{mode:'twice_monthly', weekday:4, weekPattern:'first_third', count:2}};
+        seeded.contracts = [contract];
+        const writable = ${JSON.stringify(localTestRole === "admin")};
+        if (writable) await window.bringCRM.save(seeded);
+        window.__crmTest.replaceStoreForTest(seeded);
+        const calendar = key => window.BringWorkCalendar.buildModel(window.__crmTest.getStore(), {month:key});
+        const initial = calendar(month).events.length === 2 && calendar(next).events.length === 2;
+        const receiptsUnchanged = () => window.BringCore.contractPaymentRows(window.__crmTest.getStore().contracts,month).length === 1 && window.__crmTest.getStore().contracts[0]?.paymentDueDate === month+'-25';
+        if (!writable) {
+          window.__crmSmokeNavigate('buildingCalendar');
+          document.querySelector('[data-unified-calendar-tab="work"]')?.click();
+          const readonly = !document.querySelector('[data-work-calendar-occurrence], [data-work-calendar-edit], [data-action="new-building-schedule"]');
+          return {pass:initial && readonly && receiptsUnchanged(), initial, readonly, receiptsUnchanged:receiptsUnchanged(), fixtureOnly:true};
+        }
+        const openContract = () => {window.__crmSmokeNavigate('relationships');document.querySelector('[data-contract-edit="fixture_monthly_contract"]')?.click();return document.getElementById('contractForm');};
+        let form = openContract();
+        if (!form) return {pass:false, reason:'fixture editor missing'};
+        const set = (name,value) => {form.elements[name].value=value;form.elements[name].dispatchEvent(new Event('change',{bubbles:true}));};
+        const optionExists = [...form.elements.cleaningScheduleMode.options].some(option=>option.value==='twice_monthly' && option.textContent.includes('월 2회'));
+        set('cleaningScheduleMode','twice_monthly');set('cleaningWeekday','4');set('cleaningWeekPattern','first_third');
+        const previewCorrect = !form.querySelector('[data-cleaning-week-pattern-field]').hidden && form.querySelectorAll('.contract-cleaning-schedule-dates span').length === 2;
+        form.requestSubmit();
+        for(let i=0;i<30 && document.getElementById('modal').classList.contains('open');i++) await wait(100);
+        const saved = window.__crmTest.getStore().contracts[0];
+        const saveCorrect = !document.getElementById('modal').classList.contains('open') && saved?.cleaningSchedule?.mode==='twice_monthly' && saved.cleaningSchedule.weekPattern==='first_third';
+        form = openContract();
+        const reloadCorrect = form?.elements.cleaningScheduleMode.value==='twice_monthly' && form.elements.cleaningWeekday.value==='4' && form.elements.cleaningWeekPattern.value==='first_third';
+        set('cleaningWeekPattern','second_fourth');
+        form.requestSubmit();
+        for(let i=0;i<30 && document.getElementById('modal').classList.contains('open');i++) await wait(100);
+        const revised = window.__crmTest.getStore().contracts[0];
+        const patternSaved = revised?.cleaningSchedule?.weekPattern==='second_fourth' && calendar(month).events.length===2 && calendar(next).events.length===2;
+        window.__crmSmokeNavigate('buildingCalendar');
+        document.querySelector('[data-unified-calendar-tab="work"]')?.click();
+        await wait(80);
+        document.querySelector('[data-work-calendar-shift="1"]')?.click();
+        for(let i=0;i<20 && window.__crmTest.snapshot().workCalendarMonth!==next;i++) await wait(50);
+        const nextVisit = document.querySelector('[data-work-calendar-occurrence]');
+        const futureDate = calendar(next).events[0]?.scheduledDate;
+        nextVisit?.click();
+        for(let i=0;i<30 && !document.getElementById('buildingScheduleForm');i++) await wait(50);
+        const futureEditor = document.getElementById('buildingScheduleForm')?.elements.scheduledDate.value === futureDate;
+        const futureCheck = {expectedMonth:next, actualMonth:window.__crmTest.snapshot().workCalendarMonth, clicked:nextVisit?.dataset.workCalendarOccurrence || '', expectedDate:futureDate || '', editorDate:document.getElementById('buildingScheduleForm')?.elements.scheduledDate.value || ''};
+        document.querySelector('#modal [data-action="close-modal"]')?.click();
+        form = openContract();
+        // Let the normal initial-focus timer finish before scrolling to the
+        // cleaning controls through the same customer-card entry as staff.
+        await wait(100);
+        form?.querySelector('[data-contract-cleaning-schedule]')?.scrollIntoView({block:'center'});
+        const pass = initial && optionExists && previewCorrect && saveCorrect && reloadCorrect && patternSaved && futureEditor && receiptsUnchanged();
+        return {pass,initial,optionExists,previewCorrect,saveCorrect,reloadCorrect,patternSaved,futureEditor,futureCheck,receiptsUnchanged:receiptsUnchanged(),fixtureOnly:true};
+      })()`, true);
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult }, null, 2), "utf8");
+      if (!actionResult?.pass) throw new Error("Twice-monthly synthetic UI verification failed.");
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "contract-customer-tabs") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
         document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();

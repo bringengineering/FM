@@ -183,6 +183,34 @@ test("the real handler rejects stale sessions, viewers and malformed recurrence 
   }
 });
 
+test("the real contract submit handler saves twice-monthly rules, reloads them and keeps receipt dates separate", async () => {
+  const context = saveHarness({ values: { startDate: "2026-10-01", cleaningScheduleMode: "twice_monthly", cleaningWeekday: "4", cleaningWeekPattern: "first_third" } });
+  await context.saveContract(context.form);
+  const saved = context.persisted.contracts[0];
+  assert.deepEqual(saved.cleaningSchedule, { mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 2 });
+  assert.equal(context.persisted.serviceRecords.length, 0);
+  assert.equal(context.workCalendarDate, "2026-10-01");
+  assert.match(context.messages.at(-1), /업무일정 월 2회/);
+  assert.deepEqual(Calendar.buildModel(context.persisted, { month: "2026-10" }).events.map(e => e.scheduledDate), ["2026-10-01", "2026-10-15"]);
+  assert.deepEqual(Calendar.buildModel(context.persisted, { month: "2026-11" }).events.map(e => e.scheduledDate), ["2026-11-05", "2026-11-19"]);
+  assert.equal(Core.contractPaymentRows([saved], "2026-10").length, 1);
+  context.form.dataset.contractId = saved.id;
+  context.form.values.cleaningWeekPattern = "second_fourth";
+  await context.saveContract(context.form);
+  assert.equal(context.persisted.contracts.length, 1);
+  assert.deepEqual(Calendar.buildModel(context.persisted, { month: "2026-10" }).events.map(e => e.scheduledDate), ["2026-10-08", "2026-10-22"]);
+  assert.equal(context.persisted.contracts[0].paymentDueDate, "2026-10-30");
+});
+
+test("invalid monthly week patterns and contract periods with no eligible date do not save", async () => {
+  for (const values of [{ cleaningWeekPattern: "first_fifth" }, { cleaningWeekPattern: "" }, { startDate: "2026-10-29", endDate: "2026-10-31" }]) {
+    const context = saveHarness({ values: { cleaningScheduleMode: "twice_monthly", cleaningWeekday: "4", cleaningWeekPattern: "first_third", ...values } });
+    await context.saveContract(context.form);
+    assert.equal(context.saveCount, 0);
+    assert.equal(context.store.contracts.length, 0);
+  }
+});
+
 test("a recurring contract entered from the receipt tab returns to one payment date, not its weekly work dates", async () => {
   const context = saveHarness({dataset: {returnTab: "contract"}});
   await context.saveContract(context.form);

@@ -238,7 +238,7 @@
       };
     }).sort((a, b) => Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, "ko-KR", { numeric: true }));
 
-    const contractRecords = ContractSchedule.contractWorkOccurrences(store).map(record => ({ ...record, contractDerived: true }));
+    const contractRecords = ContractSchedule.contractWorkOccurrences(store, month).map(record => ({ ...record, contractDerived: true }));
     const normalizedRecords = [...safeList(store && store.serviceRecords), ...contractRecords].filter(record => !record.archivedAt && String(record.id || "") && validDate(record.scheduledDate)).map(record => {
       const linkedBuilding = buildingMap.get(String(record.buildingId || "")) || null;
       const archived = isArchived(linkedBuilding);
