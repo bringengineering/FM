@@ -7069,7 +7069,8 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "contract-form") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
-        document.querySelector('[data-view="contracts"]')?.click();
+        document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();
+        window.__crmSmokeNavigate('contracts');
         document.querySelector('[data-action="new-contract"]')?.click();
         const form = document.getElementById('contractForm');
         if (!form) return { pass: false, reason: 'contract form missing' };
@@ -7083,8 +7084,13 @@ async function createWindow() {
         const visible = [...document.querySelectorAll('[data-contract-specific]')].filter(item => getComputedStyle(item).display !== 'none').map(item => item.dataset.contractSpecific);
         const selectedTypes = [...form.querySelectorAll('input[name="types"]:checked')].map(input => input.value);
         const expectedBuilding = customer.buildingIds[0] || '';
-        return { pass: fields?.dataset.contractFields === '청소|부동산관리' && visible.join('|') === '청소|부동산관리' && selectedTypes.join('|') === '청소|부동산관리' && form.elements.buildingId.value === expectedBuilding, visible, selectedTypes, selectedBuilding: form.elements.buildingId.value, expectedBuilding, state: window.__crmTest.snapshot() };
+        const ownerSelect = form.querySelector('select[name="owner"]');
+        const ownerPickerSafe = !!ownerSelect && !form.querySelector('input[name="owner"]') && !!ownerSelect.value
+          && [...ownerSelect.options].some(option => option.value === ownerSelect.value);
+        return { pass: ownerPickerSafe && fields?.dataset.contractFields === '청소|부동산관리' && visible.join('|') === '청소|부동산관리' && selectedTypes.join('|') === '청소|부동산관리' && form.elements.buildingId.value === expectedBuilding, ownerPickerSafe, visible, selectedTypes, selectedBuilding: form.elements.buildingId.value, expectedBuilding, state: window.__crmTest.snapshot() };
       })()`, true);
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult }, null, 2), "utf8");
+      if (!actionResult?.pass) throw new Error("Contract form synthetic UI verification failed.");
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-hub") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -8330,7 +8336,8 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "contract-management") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="contracts"]')?.click();
+        document.querySelector('[data-workspace-enter-folder="customer-management"]')?.click();
+        window.__crmSmokeNavigate('contracts');
         await new Promise(resolve => setTimeout(resolve, 100));
         const typeFilters = [...document.querySelectorAll('[data-contract-type-filter]')].map(item => item.textContent.trim());
         document.querySelector('[data-action="new-contract"]')?.click();
@@ -8344,6 +8351,8 @@ async function createWindow() {
         const conditionalTypes = document.querySelector('[data-contract-fields]')?.dataset.contractFields;
         const optionalEndDateLabel = form.elements.endDate.closest('.field')?.querySelector('span')?.textContent.trim() || '';
         const contractName = 'UI 계약 점검 ' + Date.now().toString(36);
+        const originalOwner = form.elements.owner.value;
+        const ownerPickerSafe = form.elements.owner.tagName === 'SELECT' && !form.querySelector('input[name="owner"]');
         form.elements.name.value = contractName;
         form.elements.customerId.value = customer.id;
         form.elements.customerId.dispatchEvent(new Event('change', { bubbles: true }));
@@ -8397,9 +8406,12 @@ async function createWindow() {
         const filteredCorrectly = cards.every(card => [...card.querySelectorAll('.contract-type')].some(type => type.textContent.trim() === '건물관리'));
         const removed = !window.__crmTest.getStore().contracts.some(item => item.id === temporary?.id);
         const state = window.__crmTest.snapshot();
-        const pass = typeFilters.join('|') === '전체|청소|건물관리|부동산관리' && conditionalTypes === '건물관리|부동산관리' && optionalEndDateLabel === '계약 종료일 (선택)' && optionalEndDateDisplayed && saved?.endDate === '' && saved?.types?.join('|') === '건물관리|부동산관리' && saved?.buildingId === autoSelectedBuilding && saved?.status === '종료 예정' && saved?.unitCount === 12 && saved?.managementTarget === '임대 현황 관리' && saved?.memo === '갱신 여부 확인 필요' && !!deleteButton && removed && cards.length >= 1 && filteredCorrectly && state.view === 'contracts' && !state.modalOpen;
-        return { pass, typeFilters, conditionalTypes, optionalEndDateLabel, optionalEndDateDisplayed, autoSelectedBuilding, saved, deleteButtonFound: !!deleteButton, removed, cardCount: cards.length, filteredCorrectly, state };
+        const ownerPreserved = !!originalOwner && saved?.owner === originalOwner;
+        const pass = ownerPickerSafe && ownerPreserved && typeFilters.join('|') === '전체|청소|건물관리|부동산관리' && conditionalTypes === '건물관리|부동산관리' && optionalEndDateLabel === '계약 종료일 (선택)' && optionalEndDateDisplayed && saved?.endDate === '' && saved?.types?.join('|') === '건물관리|부동산관리' && saved?.buildingId === autoSelectedBuilding && saved?.status === '종료 예정' && saved?.unitCount === 12 && saved?.managementTarget === '임대 현황 관리' && saved?.memo === '갱신 여부 확인 필요' && !!deleteButton && removed && cards.length >= 1 && filteredCorrectly && state.view === 'contracts' && !state.modalOpen;
+        return { pass, ownerPickerSafe, ownerPreserved, typeFilters, conditionalTypes, optionalEndDateLabel, optionalEndDateDisplayed, autoSelectedBuilding, saved, deleteButtonFound: !!deleteButton, removed, cardCount: cards.length, filteredCorrectly, state };
       })()`, true);
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult }, null, 2), "utf8");
+      if (!actionResult?.pass) throw new Error("Contract management synthetic UI verification failed.");
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "twice-monthly-cleaning") {
       if (!localTestMode || app.isPackaged) throw new Error("Twice-monthly QA requires isolated unpackaged local mode.");
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
