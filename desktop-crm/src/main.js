@@ -8,6 +8,7 @@ const {
 } = require("./field-pending-readiness");
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
+const ContractReceiptCommit = require("./contract-receipt-commit");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const { createLocalWorkAssessor } = require("./local-gemini-assessment");
@@ -8601,20 +8602,27 @@ async function createWindow() {
         const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
         const readOnly = document.body.classList.contains('crm-read-only');
-        const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-action="new-calendar-contract"]').length;
+        const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-contract-receipt-open], [data-action="new-calendar-contract"]').length;
         const contentAction = document.querySelector('.calendar-tab-intro [data-action="new-calendar-contract"]');
         const roleSafe = readOnly
           ? mutationControlCount === 0 && !contentAction
           : mutationControlCount >= 2 && !!contentAction;
         let editorPrefilled = !fixtureWritesAllowed, scopedReceiptSaved = !fixtureWritesAllowed;
         if (fixtureWritesAllowed) {
-          document.querySelector('.payment-event[data-contract-edit="contract_calendar_monthly"]')?.click();
+          document.querySelector('.payment-event[data-contract-receipt-open="contract_calendar_monthly"]')?.click();
           await wait(100);
-          const form = document.getElementById('contractForm');
-          editorPrefilled = !!form && form.elements.paymentDueDate.value === receiptDate
-            && form.elements.collectionDueDate.value === receiptDate && form.elements.collectionDueDate.readOnly
-            && form.elements.collectionStatus.value === '입금 예정';
+          let form = document.getElementById('contractReceiptQuickForm');
+          editorPrefilled = !!form && form.elements.collectionStatus.value === '입금 예정'
+            && document.querySelectorAll('.contract-receipt-panel').length === 1
+            && document.querySelector('.contract-receipt-panel dl')?.textContent.includes(receiptDate)
+            && !window.__crmTest.snapshot().modalOpen;
           if (editorPrefilled) {
+            form.elements.memo.value = '가상 입금 확인 메모';
+            form.elements.memo.dispatchEvent(new Event('input', {bubbles:true}));
+            document.querySelector('.payment-event[data-contract-receipt-open="contract_calendar_smoke_a"]')?.click();
+            document.querySelector('.payment-event[data-contract-receipt-open="contract_calendar_monthly"]')?.click();
+            form = document.getElementById('contractReceiptQuickForm');
+            editorPrefilled = form?.elements.memo.value === '가상 입금 확인 메모' && document.querySelectorAll('.contract-receipt-panel').length === 1;
             form.elements.collectionStatus.value = '입금 완료';
             form.requestSubmit();
             await wait(700);
@@ -8624,6 +8632,7 @@ async function createWindow() {
             const nextMonth = String(next.getFullYear()) + '-' + String(next.getMonth() + 1).padStart(2, '0');
             const following = window.BringCore.contractPaymentRows(saved.contracts, nextMonth).find(row => row.contract.id === 'contract_calendar_monthly');
             scopedReceiptSaved = current?.status === 'paid' && following?.status !== 'paid'
+              && current?.contract.memo === '가상 입금 확인 메모'
               && window.BringContractSchedule.contractWorkOccurrences(saved).filter(item => item.contractId === 'contract_calendar_monthly').length === 4
               && window.__crmTest.snapshot().unifiedCalendarTab === 'contract' && !window.__crmTest.snapshot().modalOpen;
           }
@@ -9844,6 +9853,27 @@ secureCanonicalHandle("crm:canonical-entity-commit", async input => {
   if (localTestMode) return commitLocalCanonicalCrmEntity(payload);
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.commitCanonicalCrmEntity(payload);
+});
+secureCanonicalHandle("crm:contract-receipt-commit", async input => {
+  try {
+    const payload = ContractReceiptCommit.validate(input);
+    assertMainMutationAllowed(payload);
+    const result = localTestMode ? await enqueueLocalBuildingScheduleCommit(async () => {
+      const actor = assertMainMutationAllowed(payload);
+      const data = await readLocalStore();
+      const existing = (data.contracts || []).find(record => record && record.id === payload.contractId);
+      const plan = ContractReceiptCommit.plan(payload, { existing, actor });
+      Core.assertNoProhibitedSecrets(plan.record);
+      if (!plan.repeated) {
+        data.contracts = data.contracts.map(record => record.id === payload.contractId ? plan.record : record);
+        await writeLocalStore(data);
+      }
+      return plan;
+    }) : remoteClient && remoteClient.authState().user ? await remoteClient.commitContractReceipt(payload) : null;
+    if (!result || !result.record) return ContractReceiptCommit.envelope({ code: "SESSION_CHANGED" });
+    if (!result.repeated && !localTestMode) signalWallboardAfterSave();
+    return { ok: true, record: result.record, repeated: result.repeated === true };
+  } catch (error) { return ContractReceiptCommit.envelope(error); }
 });
 secureCanonicalHandle("crm:building-schedule-commit", async input => {
   try {

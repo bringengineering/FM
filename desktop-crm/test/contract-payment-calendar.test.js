@@ -103,6 +103,7 @@ test("closed receipt values reject unknown dates and statuses before changing th
 const esc = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 function renderer(contracts, options = {}) {
   const ctx = vm.createContext({Core, store: {contracts, buildings: [{id: "building_a", name: "Fixture building"}]},
+    contractReceiptDrafts: new Map(), contractReceiptSelection: "",
     contractCalendarMonth: "2026-10", contractCalendarBuildingId: options.buildingId || "all", contractCalendarQuery: options.query || "", canWriteCRM: () => options.canWrite !== false,
     customerById: () => ({name: "Fixture customer"}), buildingById: () => ({name: "Fixture building"}), todayKey: () => "2026-10-14", esc, attr: esc, krw: n => `${n}원`,
     paymentMonthLabel: v => v, paymentCalendarDays: () => Array.from({length: 31}, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`), empty: (a, b, c) => `<p>${a} ${b}</p>${c}`, renderContractWorkManagementPanel: () => "",

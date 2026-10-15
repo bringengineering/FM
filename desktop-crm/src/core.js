@@ -822,6 +822,20 @@
     }, {count: 0, revenue: 0, paid: 0, unpaid: 0});
   }
 
+  // Narrow optimistic base for receipt quick edits. Other contract fields are
+  // always taken from the authoritative record, never from a renderer patch.
+  function contractPaymentQuickBase(contract, date) {
+    const item = contract || {};
+    return {
+      updatedAt: String(item.updatedAt || ""), revision: item.receiptQuickVersion ?? 0,
+      paymentDueDate: String(item.paymentDueDate || ""), billingCycle: String(item.billingCycle || ""),
+      endDate: String(item.endDate || ""), status: String(item.status || ""),
+      customerId: String(item.customerId || ""), buildingId: String(item.buildingId || ""),
+      amount: money(item.amount), collectionStatus: contractPaymentCollectionStatus(item, date),
+      memo: String(item.memo || ""),
+    };
+  }
+
   function contractPaymentFields(existing, raw) {
     if (!isContractPaymentDate(raw.paymentDueDate)) throw new Error("입금 예정일을 정확히 입력해 주세요.");
     if (!["월 정기", "연간", "건별", "기타"].includes(raw.billingCycle)) throw new Error("납부 방식을 확인해 주세요.");
@@ -1075,7 +1089,7 @@
   return {
     PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, CLEANING_PARTNER_SERVICE_TYPES, CLEANING_PARTNER_ONBOARDING_STATUSES, CLEANING_PARTNER_AVAILABILITY_STATUSES, CLEANING_PARTNER_COMPLIANCE_STATUSES, normalizeCleaningPartnerProfile, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals,
-    isContractPaymentDate, contractPaymentDate, contractPaymentCollectionStatus, contractPaymentRows, contractPaymentMissingDates, contractPaymentTotals, contractPaymentFields,
+    isContractPaymentDate, contractPaymentDate, contractPaymentCollectionStatus, contractPaymentRows, contractPaymentMissingDates, contractPaymentTotals, contractPaymentFields, contractPaymentQuickBase,
     createPartnerVendor, createPartnerQuote, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
