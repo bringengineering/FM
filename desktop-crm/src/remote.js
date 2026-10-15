@@ -930,7 +930,8 @@ function validateBuildingScheduleCommitInput(input) {
   if (Object.prototype.hasOwnProperty.call(source, "contractOccurrence")) {
     const occurrence = assertClosedObject(source.contractOccurrence, new Set(["contractId", "date", "buildingId"]), "연결 일정을 확인해 주세요.");
     const identity = ContractSchedule.occurrenceIdentity(occurrence.contractId, occurrence.date, occurrence.buildingId);
-    if (operation !== "create" || !identity
+    if (!["create", "archive"].includes(operation) || !identity
+      || expectedUpdatedAt !== "" || expectedCommitVersion !== 0
       || recordId !== `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`) {
       throw createError("연결 일정을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
     }
@@ -938,7 +939,7 @@ function validateBuildingScheduleCommitInput(input) {
   }
   if (!["create", "update"].includes(operation)) {
     if (hasValues) throw createError("일정 상태 변경 요청을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
-    return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion });
+    return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion, ...(contractOccurrence ? { contractOccurrence } : {}) });
   }
   const valuesSource = assertClosedObject(source.values, BUILDING_SCHEDULE_VALUE_FIELDS, "일정 입력 내용을 확인해 주세요.");
   if (Object.keys(valuesSource).length !== BUILDING_SCHEDULE_VALUE_FIELDS.size) {
@@ -1041,6 +1042,8 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
   let occurredAt = now.toISOString();
   const intentHash = buildingScheduleIntentHash(input, actorUid);
   const auditId = buildingScheduleAuditId(input.requestId);
+  const archiveOccurrence = input.operation === "archive" && Boolean(input.contractOccurrence);
+  let occurrenceRecord = null;
   let previousCommitVersion = 0;
   if (existing && Object.prototype.hasOwnProperty.call(existing, "calendarCommitVersion")) {
     previousCommitVersion = existing.calendarCommitVersion;
@@ -1065,7 +1068,7 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
     }
     return { record: plainJsonClone(existing), repeated: true, auditId: String(existing.calendarAuditId || auditId) };
   }
-  if (input.operation === "create") {
+  if (input.operation === "create" || archiveOccurrence) {
     if (existing) throw createError("같은 번호의 일정이 이미 있습니다.", "BUILDING_SCHEDULE_CONFLICT");
     if (input.contractOccurrence) {
       const occurrence = input.contractOccurrence;
@@ -1073,6 +1076,15 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
       if (!contract || contract.id !== occurrence.contractId || contract.buildingId !== occurrence.buildingId
         || !ContractSchedule.contractDates(contract, occurrence.date.slice(0, 7)).includes(occurrence.date)) {
         throw createError("연결 계약의 일정이 변경되었습니다. 최신 화면을 확인해 주세요.", "BUILDING_SCHEDULE_CONFLICT");
+      }
+      if (archiveOccurrence) {
+        const projected = ContractSchedule.contractWorkOccurrences({ contracts: [contract], serviceRecords: [] }, occurrence.date.slice(0, 7))
+          .find(record => record.scheduledDate === occurrence.date);
+        if (!projected) throw createError("연결 일정을 찾지 못했습니다.", "BUILDING_SCHEDULE_CONFLICT");
+        // Save the archived occurrence in one conditional write; never create a
+        // temporarily visible schedule or change the recurring contract.
+        occurrenceRecord = Object.fromEntries(["buildingId", "title", "scheduledDate", "status", "serviceType", "owner", "summary", "amount", "completedAt"]
+          .map(key => [key, projected[key]]));
       }
     }
   } else {
@@ -1086,7 +1098,7 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
     throw createError("삭제된 일정은 변경할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
   }
 
-  const targetBuildingId = input.values ? input.values.buildingId : safeDirectId(existing && existing.buildingId);
+  const targetBuildingId = input.values ? input.values.buildingId : safeDirectId(existing && existing.buildingId || input.contractOccurrence?.buildingId);
   const building = context.building && typeof context.building === "object" && !Array.isArray(context.building)
     ? context.building
     : null;
@@ -1100,7 +1112,7 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
     throw createError("보관된 건물에는 새 일정을 연결할 수 없습니다.", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE");
   }
 
-  const record = Object.assign(Object.create(null), existing || {});
+  const record = Object.assign(Object.create(null), existing || occurrenceRecord || {});
   record.id = input.recordId;
   if (input.contractOccurrence) {
     record.sourceContractId = input.contractOccurrence.contractId;
@@ -1135,7 +1147,7 @@ function planBuildingScheduleCommit(inputValue, contextValue) {
   } else if (input.operation === "archive") {
     // Soft deletion preserves completion facts, evidence, report links and the
     // previous schedule for audit/recovery. Never DELETE a service record.
-    if (String(existing.status || "") === "cancelled") {
+    if (String(existing && existing.status || "") === "cancelled") {
       throw createError("취소된 일정은 기록 보호를 위해 변경할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
     }
     record.archivedAt = occurredAt;
@@ -4716,7 +4728,7 @@ class FirebaseRemoteClient {
 
     const candidateBuildingId = input.values
       ? input.values.buildingId
-      : safeDirectId(snapshot.value && snapshot.value.buildingId);
+      : safeDirectId(snapshot.value && snapshot.value.buildingId || input.contractOccurrence?.buildingId);
     if (!candidateBuildingId) {
       throw createError("연결된 건물을 확인해 주세요.", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE");
     }

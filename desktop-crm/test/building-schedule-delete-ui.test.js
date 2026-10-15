@@ -4,6 +4,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const crypto = require("node:crypto");
+const ContractSchedule = require("../src/contract-schedule-core");
+const {planBuildingScheduleCommit} = require("../src/remote");
 const source = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
 const deleteSource = source.slice(source.indexOf("  async function deleteBuildingScheduleRecord("), source.indexOf("  function workRecordEditor("));
 const editorSource = source.slice(source.indexOf("  function buildingScheduleEditor("), source.indexOf("  async function deleteBuildingScheduleRecord("));
@@ -27,6 +30,53 @@ function harness(options = {}) {
   vm.runInContext(deleteSource, ctx);
   return {ctx, calls, form, item, button, run: () => ctx.deleteBuildingScheduleRecord(item.id, form)};
 }
+
+function projectedHarness(options = {}) {
+  const h = harness(options);
+  const contract = {id:"fixture_contract",buildingId:"building_fixture",name:"Fixture weekly cleaning",types:["청소"],status:"진행 중",startDate:"2026-10-01",billingCycle:"월 정기",cleaningSchedule:{mode:"weekly",weekday:4}};
+  h.ctx.ContractSchedule = ContractSchedule;
+  h.ctx.store = {contracts:[contract],serviceRecords:[]};
+  const occurrence = ContractSchedule.contractWorkOccurrences(h.ctx.store)[1];
+  const identity = ContractSchedule.occurrenceIdentity(contract.id,occurrence.scheduledDate,occurrence.buildingId);
+  h.item.id = `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`;
+  Object.assign(h.form.dataset,{scheduleId:h.item.id,contractOccurrenceId:occurrence.id,openedUpdatedAt:"",openedCommitVersion:"0"});
+  h.ctx.commitBuildingScheduleRecord = async input => {
+    h.calls.commits.push(JSON.parse(JSON.stringify(input)));
+    if(options.fail)return {ok:false,code:"BUILDING_SCHEDULE_WRITE_FAILED"};
+    const planned=planBuildingScheduleCommit(input,{contract,building:{id:contract.buildingId},actor:{uid:"fixture",role:"member"}});
+    h.ctx.store.serviceRecords.push(planned.record);
+    return {ok:true,record:planned.record};
+  };
+  return {...h,contract,occurrence};
+}
+
+test("the actual delete handler archives exactly the selected projected date without saving form edits or the contract",async()=>{
+  const h=projectedHarness(),before=JSON.stringify(h.contract);
+  await h.run();
+  assert.equal(h.calls.commits.length,1);
+  assert.equal(h.calls.commits[0].operation,"archive");
+  assert.deepEqual(h.calls.commits[0].contractOccurrence,{contractId:h.contract.id,date:"2026-10-08",buildingId:"building_fixture"});
+  assert.equal("values" in h.calls.commits[0],false);
+  assert.match(h.calls.confirmations[0].description,/원래 계약과 다른 날짜/);
+  assert.match(h.calls.confirmations[0].message,/2026-10-08/);
+  assert.equal(JSON.stringify(h.contract),before);
+  assert.deepEqual(ContractSchedule.contractWorkOccurrences(h.ctx.store).map(r=>r.scheduledDate),["2026-10-01","2026-10-15","2026-10-22"]);
+  assert.equal(h.calls.closed,1);
+});
+
+test("projected deletion cancellation, concurrent edits, changed roles, failures and repeated clicks never remove other visits",async()=>{
+  for(const options of [{confirm:()=>false},{confirm:c=>{c.store.contracts[0].startDate="2026-11-01";return true;}},{confirm:c=>{c.writable=false;return true;}},{fail:true}]){
+    const h=projectedHarness(options);await h.run();
+    assert.equal(h.ctx.store.serviceRecords.length,0);
+    assert.equal(h.calls.toasts.some(t=>t.tone==="success"),false);
+    assert.equal(h.button.disabled,false);
+  }
+  let accept;const h=projectedHarness({confirm:()=>new Promise(r=>{accept=r;})});
+  const first=h.run();await h.run();accept(true);await first;
+  assert.equal(h.calls.confirmations.length,1);assert.equal(h.calls.commits.length,1);
+  const stale=projectedHarness({confirm:c=>{c.store.serviceRecords.push({id:stale.item.id});return true;}});
+  await stale.run();assert.equal(stale.calls.commits.length,0);
+});
 
 test("completed schedule deletion asks about the exact saved title and date then sends a closed archive intent", async () => {
   const h = harness(); await h.run();

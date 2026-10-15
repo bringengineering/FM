@@ -151,6 +151,44 @@ function occurrenceInput(overrides = {}) {
 }
 const recurringContract = () => ({id: "contract_1", buildingId: "building_1", types: ["청소"], name: "공용부청소", status: "진행 중", startDate: "2026-10-08", billingCycle: "월 정기", amount: 50000, cleaningSchedule: {mode: "weekly", weekday: 4}});
 
+test("a projected contract visit is deleted in one archive CAS and remains absent after reload and retry", async () => {
+  const intent = {...occurrenceInput(), operation: "archive"}; delete intent.values;
+  const contract = recurringContract(), before = JSON.stringify(contract);
+  const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+  const result = await client.commitBuildingSchedule(intent);
+  assert.ok(result.record.archivedAt);
+  assert.equal(result.record.sourceContractId, contract.id);
+  assert.equal(result.record.sourceContractDate, "2026-10-15");
+  assert.equal(result.record.scheduledDate, "2026-10-15");
+  assert.equal(result.record.amount, 0);
+  assert.equal(result.record.calendarCommitVersion, 1);
+  assert.equal(result.record.archivedByAuthUid, "member_1");
+  assert.equal(state.audit.action, "일정 삭제 (원본 보관)");
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  assert.equal(state.requests.some(r => r.method === "DELETE" || r.method === "PATCH" || r.method === "PUT" && r.url.includes("/contracts/")), false);
+  const reloaded = JSON.parse(JSON.stringify({contracts: [contract], serviceRecords: [result.record]}));
+  assert.deepEqual(ContractSchedule.contractWorkOccurrences(reloaded).map(r => r.scheduledDate), ["2026-10-08", "2026-10-22", "2026-10-29"]);
+  assert.equal(JSON.stringify(contract), before);
+  assert.equal((await client.commitBuildingSchedule(intent)).repeated, true);
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+});
+
+test("projected archive denies forged values, stale contracts, concurrent materialization and viewers", async () => {
+  const intent = {...occurrenceInput(), operation: "archive"}; delete intent.values;
+  for (const changed of [{...intent, values: values()}, {...intent, expectedUpdatedAt: "forged"}, {...intent, expectedCommitVersion: 1}, {...intent, recordId: "forged"}]) {
+    assert.throws(() => validateBuildingScheduleCommitInput(changed), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  }
+  for (const contract of [null, {...recurringContract(), archivedAt: "fixture"}, {...recurringContract(), startDate: "2026-11-01"}, {...recurringContract(), buildingId: "other"}]) {
+    const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+    await assert.rejects(client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(state.requests.some(r => r.method === "PUT"), false);
+  }
+  const context = {actor: session(), contract: recurringContract(), building: {id: "building_1"}};
+  const existing = planBuildingScheduleCommit(occurrenceInput(), context).record;
+  assert.throws(() => planBuildingScheduleCommit(intent, {...context, existing}), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.throws(() => planBuildingScheduleCommit(intent, {...context, actor: {...session(), role: "viewer"}}), e => e.code === "BUILDING_SCHEDULE_READ_ONLY");
+});
+
 test("one contract occurrence is materialized through CAS without changing contracts or other dates", async () => {
   const intent = occurrenceInput(), contract = recurringContract(), before = JSON.stringify(contract);
   const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
