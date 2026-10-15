@@ -1,8 +1,8 @@
 (function attachBringServiceReportCore(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./core") : root.BringCore);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BringServiceReportCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function makeBringServiceReportCore() {
+})(typeof globalThis !== "undefined" ? globalThis : this, function makeBringServiceReportCore(Core) {
   "use strict";
 
   // 이 보고서는 건물주에게 나간다. 업체명·업체 견적·원가처럼 브링의 중개
@@ -141,7 +141,6 @@
     const source = input && typeof input === "object" ? input : {};
     const caseItem = source.case && typeof source.case === "object" ? source.case : {};
     const building = source.building && typeof source.building === "object" ? source.building : {};
-    const customer = source.customer && typeof source.customer === "object" ? source.customer : {};
     const company = source.company && typeof source.company === "object" ? source.company : {};
 
     const photos = photoList(caseItem, source.attachments);
@@ -157,8 +156,8 @@
       ticketNo: first(caseItem.ticketNo, caseItem.id),
       service: serviceLabel(caseItem),
       site: siteLabel(caseItem, building),
-      address: first(building.address, caseItem.address),
-      ownerName: first(customer.name, caseItem.name),
+      address: first(building.roadAddress, building.address, building.jibunAddress, caseItem.address),
+      ownerName: Core.reportOwnerName({ address: first(building.roadAddress, building.address, building.jibunAddress, caseItem.address) }),
       workedAt,
       workedAtText: dateText(workedAt),
       issuedAt: dateKey(source.issuedAt) || dateKey(new Date().toISOString()),

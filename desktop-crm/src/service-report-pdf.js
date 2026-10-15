@@ -1,6 +1,7 @@
 "use strict";
 
 const ServiceReportCore = require("./service-report-core");
+const CustomerCore = require("./core");
 const { safeFileSegment } = require("./attendance-xlsx");
 
 function html(value) {
@@ -106,7 +107,7 @@ footer{margin-top:2mm;padding-top:3mm;border-top:1px solid #E5E8EB;display:flex;
 footer b{color:#191F28;font-size:9pt}
 </style></head><body><main class="doc">
 <header class="head"><h1>${html(report.documentTitle)}</h1><div class="meta"><b>${html(report.company.name)}</b>발행일 ${html(report.issuedAtText)}</div></header>
-<p class="greeting">${html(report.ownerName || "건물주")}님, 요청하신 ${html(report.service)} 작업을 완료하여 그 결과를 아래와 같이 보고드립니다.</p>
+<p class="greeting">${html(CustomerCore.reportOwnerName({ address: report.address }))}님, 요청하신 ${html(report.service)} 작업을 완료하여 그 결과를 아래와 같이 보고드립니다.</p>
 <section><h2>작업 개요</h2><div class="info">${infoRows}</div></section>
 ${report.summary ? `<section><h2>작업 내용</h2><p class="summary">${html(report.summary)}</p></section>` : ""}
 <section><h2>작업 항목</h2>${itemsHtml(report.items)}</section>
