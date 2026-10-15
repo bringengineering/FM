@@ -9,6 +9,7 @@ function functionSource(name) {
 }
 function harness(options={}) {
   const draft=R.normalizeReport({id:"wr_example",buildingId:"b1",workDate:"2026-10-06",summary:"예시 보고서"});
+  if(options.customerSite)draft.buildingId="customer:owner1";
   for(const item of draft.items) {item.status="skipped";item.note="대상 제외";}
   Object.assign(draft.items[0],{status:"done",before:[{id:"before"}],after:[{id:"after"}]});
   const state={draft,canWork:true};const events=[];
@@ -29,10 +30,33 @@ function harness(options={}) {
       load:async()=>({buildingDocuments:[{...record,workReportDelivery:{status:"unknown"}}]})
     }
   });
+  context.resolveCustomerManagedBuildingSelection=async value=>{
+    events.push(["resolveSite",value]);
+    if(options.siteFailure)throw Error("fixture site failure");
+    if(options.siteAuthChange)context.authGeneration++;
+    return context.store.buildings[0];
+  };
   for(const name of ["rememberWorkReportPdf","refreshWorkReportPdfRecord","saveWorkReportFromForm"])vm.runInContext(functionSource(name),context);
   return {context,state,events,record,draft};
 }
 const operations=h=>h.events.filter(e=>e[0]!=="toast").map(e=>e[0]);
+
+test("customer-only report selections resolve before PDF export or CRM persistence",async()=>{
+  for(const pdfOnly of [false,true]){
+    const h=harness({customerSite:true});await h.context.saveWorkReportFromForm({pdfOnly});
+    assert.equal(h.events[0][0],"resolveSite");assert.equal(h.events[0][1],"customer:owner1");
+    const output=h.events.find(e=>e[0]===(pdfOnly?"pdfOnly":"save"))[1];
+    assert.equal((pdfOnly?output.report:output).buildingId,"b1");
+    assert.equal(h.state.saveBusy,false);assert.equal(h.events.some(e=>e[0]==="send"),false);
+  }
+});
+
+test("failed or stale customer-site resolution never saves, exports or sends a report",async()=>{
+  for(const options of [{siteFailure:true},{siteAuthChange:true}]){
+    const h=harness({customerSite:true,...options});await h.context.saveWorkReportFromForm();
+    assert.deepEqual(operations(h),["resolveSite"]);assert.equal(h.state.saveBusy,false);
+  }
+});
 test("PDF로 저장은 현재 초안만 내보내며 CRM 저장·알림톡·질문을 호출하지 않는다",async()=>{
   for(const cancelPdf of [false,true]){const h=harness({cancelPdf});await h.context.saveWorkReportFromForm({pdfOnly:true});assert.deepEqual(operations(h),["pdfOnly"]);assert.equal(h.state.saveBusy,false);assert.equal(h.state.draft.id,h.draft.id);assert.equal(h.events[0][1].strictPhotos,true);}
 });
