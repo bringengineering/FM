@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const R = require("./work-report-core");
 const Docs = require("./saved-customer-documents");
 const Pdf = require("./saved-customer-document-pdf");
+const Message = require("./work-report-message");
 const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
 const id = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,120}$/.test(value);
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -103,8 +104,10 @@ function createService(deps) {
       const finalReports = await deps.reports(); session.check();
       Docs.resolve(finalData.buildingDocuments, finalData.customers, input);
       assertBinding(record, finalData, finalReports.reports);
+      const report = finalReports.reports.find(row => live(row) && row.id === record.savedCustomerDocument.reportId);
+      const completionReport = Message.details(report, ownerFor(finalData, record.buildingId).building);
       providerStarted = true;
-      const sent = await deps.delivery("createAndSend", {documentId: record.id, customerId: deliveryCustomerId, documentType: "completion_report", documentName: record.title,
+      const sent = await deps.delivery("createAndSend", {documentId: record.id, customerId: deliveryCustomerId, documentType: "completion_report", documentName: Message.documentName(completionReport), completionReport,
         expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: ready.bytes.toString("base64"),
         delivery: {channel: "kakao", idempotencyKey: "wr_" + hash(record.id + input.sha256).slice(0,48), customerName: customer.name || customer.company || "건물주", phone: Docs.phone(customer.phone)}});
       session.check();

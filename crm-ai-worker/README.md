@@ -39,7 +39,15 @@ CRM은 사진 가져오기 후 자동분류하며 최대 100장을 30장 이하 
 
 견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`, `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
 
-검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 견적서와 작업 결과보고서 템플릿 승인이 확인된 뒤 `KAKAO_DOCUMENT_TEMPLATES_APPROVED=true`, 월간보고서 템플릿 승인이 확인된 뒤 `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=true`로 각각 설정합니다. 각 전용 템플릿이 승인되기 전에는 해당 문서 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 결과보고서는 `BRINGCOMPLETIONREPORTV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`만 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 견적서와 작업 결과보고서 템플릿 승인이 확인된 뒤 `KAKAO_DOCUMENT_TEMPLATES_APPROVED=true`, 월간보고서 템플릿 승인이 확인된 뒤 `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=true`로 각각 설정합니다. 각 전용 템플릿이 승인되기 전에는 해당 문서 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`을 사용합니다. 결과보고서는 주소·작업명 메타데이터가 있는 새 CRM 요청에 `BRINGCOMPLETIONREPORTV2`, 이전 CRM 요청에 `BRINGCOMPLETIONREPORTV1`을 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+
+### 결과보고서 주소 안내 템플릿 등록
+
+NCP 등록용 본문과 버튼은 [`templates/BRINGCOMPLETIONREPORTV2.json`](templates/BRINGCOMPLETIONREPORTV2.json)에 있습니다. 기존 V1을 수정하지 않고 코드 `BRINGCOMPLETIONREPORTV2`로 새 템플릿을 등록하고 검수를 요청합니다. `content`의 줄바꿈과 변수명, 버튼의 이름·유형·모바일/PC 링크를 그대로 등록해야 합니다. 이 파일은 등록할 문구를 담은 자료이며, 등록이나 승인이 완료됐다는 뜻은 아닙니다.
+
+새 문구는 고객명 대신 짧은 건물주소와 작업명을 표시하고 문의 번호 `1511-3873`을 사용합니다. `#{문서명}`에는 `{짧은 건물주소} {작업명} 결과보고서`가 들어갑니다. 열람기한, 안내 문장, `결과보고서 확인` 버튼은 유지합니다. 주소 축약은 알림톡에만 적용하며 저장된 보고서의 주소는 변경하지 않습니다.
+
+Worker는 V2 발송 직전에 NCP에서 검수 완료·사용 가능 상태와 본문·버튼의 정확한 일치를 확인합니다. 등록 전이거나 검수 중이거나 문구가 다르면 메시지를 보내지 않습니다. V2 승인과 기존 발송 설정을 확인한 후 CRM 정식 릴리스 절차로 Worker와 데스크톱을 함께 배포합니다. 테스트는 합성 수신자와 모의 NCP 응답을 사용하며 실고객 발송을 수행하지 않습니다.
 
 월간보고서 템플릿 승인 요청 본문은 Worker의 `alimTalkContent()`가 만드는 문구와 버튼명(`월간 보고서 확인`)을 그대로 사용해야 합니다. NCP 콘솔에서 승인 상태를 확인하기 전에는 승인 플래그를 켜지 마세요.
 
