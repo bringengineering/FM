@@ -42,7 +42,8 @@ test("clicking a derived date opens the real schedule editor prefilled, without 
   assert.match(h.ctx.modalContent.innerHTML, /<h2>업무 일정 수정<\/h2>/);
   assert.match(h.ctx.modalContent.innerHTML, /일정 수정 저장/);
   assert.match(h.ctx.modalContent.innerHTML, /선택한 날짜의 업무 일정만 수정/);
-  assert.doesNotMatch(h.ctx.modalContent.innerHTML, /계약 상세·수정|<img|data-work-calendar-delete=/);
+  assert.doesNotMatch(h.ctx.modalContent.innerHTML, /계약 상세·수정|<img/);
+  assert.match(h.ctx.modalContent.innerHTML, /data-work-calendar-delete="service_contract_[a-f0-9]{64}"/);
   assert.equal(h.calls.fieldValues.scheduledDate, "2026-10-15");
   assert.equal(h.calls.fieldValues.buildingId, "building_1");
   assert.equal(h.calls.fieldValues.owner, "Fixture owner");

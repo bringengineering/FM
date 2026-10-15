@@ -5177,7 +5177,7 @@ async function commitLocalBuildingSchedule(inputValue) {
     const actor = assertMainMutationAllowed(input);
     const data = await readLocalStore();
     const existing = (data.serviceRecords || []).find(record => record && String(record.id || "") === input.recordId) || null;
-    const candidateBuildingId = input.values ? input.values.buildingId : String(existing && existing.buildingId || "");
+    const candidateBuildingId = input.values ? input.values.buildingId : String(existing && existing.buildingId || input.contractOccurrence?.buildingId || "");
     const building = (data.buildings || []).find(item => item && String(item.id || "") === candidateBuildingId) || null;
     const plan = planBuildingScheduleCommit(input, {
       existing,

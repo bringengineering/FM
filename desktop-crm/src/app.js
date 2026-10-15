@@ -11103,7 +11103,7 @@
       if (!value) return "고객건물을 선택해 주세요";
       const choice = buildingOptions.find(candidate => candidate.value === value);
       return choice ? customerManagedBuildingChoiceLabel(choice) : value;
-    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && existing.status !== "cancelled" ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-delete="${attr(existing.id)}">일정 삭제</button>` : ""}${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing || contractOccurrence ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
+    })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${scheduleOwnerField(item.owner || "")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${contractOccurrence || existing && existing.status !== "cancelled" ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-delete="${attr(item.id)}">일정 삭제</button>` : ""}${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing || contractOccurrence ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
     openModal();
     const form = document.getElementById("buildingScheduleForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -11122,7 +11122,10 @@
     if (Number(form.dataset.authGeneration) !== authGeneration || String(form.dataset.authUid || "") !== currentAuthUid()) {
       return showToast("로그인 사용자가 변경되어 일정을 삭제하지 않았습니다.", "error");
     }
-    const item = store.serviceRecords.find(record => record.id === recordId && !record.archivedAt);
+    const savedItem = store.serviceRecords.find(record => record.id === recordId && !record.archivedAt);
+    const occurrence = !savedItem && form.dataset.contractOccurrenceId
+      ? ContractSchedule.contractWorkOccurrence(store, form.dataset.contractOccurrenceId) : null;
+    const item = savedItem || occurrence && { ...occurrence, id: recordId };
     if (!item || item.status === "cancelled") return showToast("삭제할 일정을 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
     const openedGeneration = Number(form.dataset.authGeneration);
     const openedUid = String(form.dataset.authUid || "");
@@ -11133,7 +11136,7 @@
       const building = buildingById(item.buildingId);
       if (!await requestConfirmation({
         title: "이 일정을 삭제할까요?",
-        description: "삭제한 일정은 업무일정 캘린더와 작업관리 목록에서 제외됩니다.",
+        description: occurrence || item.sourceContractId ? "선택한 날짜의 일정 한 건만 삭제합니다. 원래 계약과 다른 날짜의 일정은 유지됩니다." : "삭제한 일정은 업무일정 캘린더와 작업관리 목록에서 제외됩니다.",
         target: item.title || "업무 일정",
         message: [item.scheduledDate, building && building.name].filter(Boolean).join(" · "),
         warning: "고객·건물 정보와 보고서는 삭제하지 않습니다. 일정 원본과 삭제 이력은 안전하게 보관합니다.",
@@ -11143,11 +11146,19 @@
       if (openedGeneration !== authGeneration || openedUid !== currentAuthUid() || !canWriteCRM()) {
         return showToast("로그인 사용자 또는 권한이 변경되어 일정을 삭제하지 않았습니다.", "error");
       }
+      if (occurrence) {
+        const current = ContractSchedule.contractWorkOccurrence(store, form.dataset.contractOccurrenceId);
+        if (!current || current.contractId !== occurrence.contractId || current.buildingId !== occurrence.buildingId
+          || current.scheduledDate !== occurrence.scheduledDate || store.serviceRecords.some(record => record.id === recordId)) {
+          return showToast("일정이 변경되었습니다. 최신 화면에서 다시 선택해 주세요.", "error");
+        }
+      }
       if (!form.dataset.deleteRequestId) form.dataset.deleteRequestId = crypto.randomUUID();
       const result = await commitBuildingScheduleRecord({
         operation: "archive", requestId: form.dataset.deleteRequestId, recordId,
         expectedUpdatedAt: String(form.dataset.openedUpdatedAt || ""),
         expectedCommitVersion: Number(form.dataset.openedCommitVersion) || 0,
+        ...(occurrence ? { contractOccurrence: { contractId: occurrence.contractId, date: occurrence.scheduledDate, buildingId: occurrence.buildingId } } : {}),
       }, form);
       if (result && result.stale) return;
       if (!result || result.ok !== true || result.record?.id !== recordId || !result.record.archivedAt) {
