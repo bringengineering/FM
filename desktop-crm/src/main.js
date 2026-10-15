@@ -15,6 +15,7 @@ const { createLocalWorkAssessor } = require("./local-gemini-assessment");
 const { createBuildingReportWriter } = require("./local-gemini-building-report");
 const { selectMonthlyReportPhotosWithGateway, MAX_IMAGES: MAX_MONTHLY_REPORT_PHOTOS } = require("./ai-monthly-report-photo-client");
 const Core = require("./core");
+const { createService: createContractBuildingMapService } = require("./contract-building-map-service");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
 const OfficeRfidAttendanceCore = require("./office-rfid-attendance-core");
@@ -5726,6 +5727,46 @@ function secureHandle(channel, handler) {
   });
 }
 
+let contractBuildingMapService = null;
+function contractBuildingMap() {
+  if (contractBuildingMapService) return contractBuildingMapService;
+  const target = () => path.join(path.dirname(dataFile()), "bring-crm-contract-map-settings.json");
+  contractBuildingMapService = createContractBuildingMapService({
+    context: () => {
+      const user = authState().user;
+      if (!user || isMarketingOnlySession(user)) throw 'AUTH';
+      if (localTestMode) return { user, assertActive: () => { if (authState().user?.uid !== user.uid) throw 'AUTH'; } };
+      if (!remoteClient) throw 'AUTH';
+      remoteClient.requireOfficeSession();
+      const guard = remoteClient.captureSessionGuard();
+      return { user, assertActive: () => { if (!remoteClient.sessionGuardActive(guard)) throw 'AUTH'; } };
+    },
+    store: () => readStore(),
+    fetch: (url, options) => net.fetch(url, options),
+    load: async () => {
+      try {
+        const info = await fs.stat(target()); if (info.size > 16384) throw 'STORAGE';
+        const raw = await fs.readFile(target(), 'utf8'); if (raw.length > 16384) throw 'STORAGE';
+        const decoded = decodeProtectedJson(safeStorage, raw);
+        if (!decoded.encrypted) throw 'STORAGE';
+        return decoded.value;
+      } catch (error) { if (error?.code === 'ENOENT') return null; throw 'STORAGE'; }
+    },
+    save: async (value, assertActive) => {
+      const destination = target(), temporary = destination + '.' + crypto.randomUUID() + '.tmp';
+      try {
+        assertActive();
+        const encoded = encodeProtectedJson(safeStorage, value);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.writeFile(temporary, encoded, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+        assertActive(); await fs.rename(temporary, destination);
+      } catch { throw 'STORAGE'; }
+      finally { await fs.unlink(temporary).catch(() => {}); }
+    },
+  });
+  return contractBuildingMapService;
+}
+
 function secureCanonicalHandle(channel, handler) {
   MutationPolicy.assertRegistered(channel);
   ipcMain.handle(channel, (event, ...args) => {
@@ -9251,6 +9292,10 @@ async function createWindow() {
 
 secureHandle("crm:auth-state", () => authState());
 secureCanonicalHandle("crm:input-language-korean", () => WindowsKoreanInput.requestKoreanInput(mainWindow));
+secureCanonicalHandle("crm:contract-map-status", () => contractBuildingMap().status());
+secureCanonicalHandle("crm:contract-map-settings-save", input => contractBuildingMap().save(input));
+secureCanonicalHandle("crm:contract-map-locate", input => contractBuildingMap().locate(input));
+secureCanonicalHandle("crm:contract-map-tile", input => contractBuildingMap().tile(input));
 secureCanonicalHandle("crm:wallboard-admin", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("다시 로그인해 주세요.");
   if (input?.action === "live-status") return {...ensureWallboardLiveSync().status(), ...wallboardRefreshStatus.status()};

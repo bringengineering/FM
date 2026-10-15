@@ -34,9 +34,12 @@ test("기존 고객 알림·메시지 주소는 통합 화면으로 전환하고
   const body = appSource.slice(start + "function renderOperationsWorkspace() {".length, appSource.indexOf('    if (!["customers", "buildingAtlas"]', start));
   assert.ok(body.trim());
   for (const oldView of ["customerMessages", "customerNotices", "customerAlimTalk"]) {
-    const context = {currentView: oldView, customerAlimTalkState: {}, selectedMessageCustomerId: "sample-customer", selectedMessageTemplateId: "cleaning_schedule", selectedMessageSourceType: "cleaningOrder", selectedMessageSourceId: "sample-order"};
+    let mapDisposed = 0;
+    const context = {disposeContractBuildingMap: () => { mapDisposed++; }, currentView: oldView, customerAlimTalkState: {}, selectedMessageCustomerId: "sample-customer", selectedMessageTemplateId: "cleaning_schedule", selectedMessageSourceType: "cleaningOrder", selectedMessageSourceId: "sample-order"};
     context.window = {BringOfficeFeaturePolicy: require('../src/office-feature-policy')};
     vm.runInNewContext(body, context);
+    assert.equal(mapDisposed, 1);
+    assert.equal(context.disposeContractBuildingMap, null);
     assert.equal(context.currentView, "customerAlimTalk");
     if (oldView === "customerMessages") {
       assert.equal(context.customerAlimTalkState.selectedCustomerIds[0], "sample-customer");
