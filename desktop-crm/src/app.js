@@ -68,6 +68,7 @@
   let currentView = "dashboard";
   let currentWorkspace = null;
   let disposeCompanyWallboard = null;
+  let disposeContractBuildingMap = null;
   let currentMarketingView = "marketingOverview";
   let marketingLoaded = false;
   let marketingEntryDraft = null;
@@ -231,6 +232,7 @@
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
     relationships: ["고객과 연결된 계약을 확인합니다", "계약 고객 관리"],
+    contractBuildingMap: ["계약 상태와 건물 위치를 한눈에", "계약 건물 지도"],
     partnerVendors: ["협력 업체 정보를 한곳에서", "협력 업체"],
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
     officeHome: ["브링의 업무를 한 곳에서", "BRING OFFICE"],
@@ -711,6 +713,7 @@
   }
 
   function setCurrentAuth(value) {
+    if (disposeContractBuildingMap) { disposeContractBuildingMap(); disposeContractBuildingMap = null; }
     if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     const previousAtlasIdentity = atlasIdentity(currentAuth && currentAuth.user);
     const previousUid = currentAuthUid();
@@ -1562,6 +1565,7 @@
   }
 
   function renderOperationsWorkspace() {
+    if (disposeContractBuildingMap) { disposeContractBuildingMap(); disposeContractBuildingMap = null; }
     currentView = window.BringOfficeFeaturePolicy.resolveView(currentView);
     // Keep old bookmarks/customer shortcuts working, but expose only one CRM screen.
     if (currentView === "customerMessages") {
@@ -1636,6 +1640,13 @@
     else if (currentView === "pipeline") renderPipeline();
     else if (currentView === "contracts") renderContracts();
     else if (currentView === "relationships") renderRelationships();
+    else if (currentView === "contractBuildingMap") {
+      disposeContractBuildingMap = window.BringContractBuildingMapUI.mount(main, {
+        store, api, user: currentAuth.user, today: Core.dayKey(),
+        isActive: () => currentView === "contractBuildingMap" && currentWorkspace === "operations" && Boolean(currentAuth.user),
+        onCustomer: customerId => { currentView = "customers"; selectedCustomerHubId = customerId; render(); },
+      });
+    }
     else if (currentView === "partnerVendors") renderPartnerVendors();
     else if (currentView === "partnerQuotes") renderPartnerQuotes();
     else if (["officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup"].includes(currentView)) {
@@ -2373,6 +2384,7 @@
   }
 
   async function prepareWorkspaceTransition(workspace) {
+    if (disposeContractBuildingMap) { disposeContractBuildingMap(); disposeContractBuildingMap = null; }
     if (workspace === "marketing") marketingController.prepareLoad(currentAuth.user || {});
     else {
       marketingController.invalidate("workspace-transition");

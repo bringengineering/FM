@@ -7,6 +7,10 @@ const fieldOperationsDisabled = () => Promise.resolve({
 });
 
 contextBridge.exposeInMainWorld("bringCRM", {
+  contractMapStatus: () => ipcRenderer.invoke("crm:contract-map-status"),
+  saveContractMapSettings: input => ipcRenderer.invoke("crm:contract-map-settings-save", input),
+  locateContractBuildings: input => ipcRenderer.invoke("crm:contract-map-locate", input),
+  contractMapTile: input => ipcRenderer.invoke("crm:contract-map-tile", input),
   loadBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-load", input),
   saveBuildingAtlas: input => ipcRenderer.invoke("crm:building-atlas-save", input),
   authState: () => ipcRenderer.invoke("crm:auth-state"),
