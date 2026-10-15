@@ -8741,6 +8741,55 @@ async function createWindow() {
         const pass = sheetButton?.textContent.trim() === '세입자 관리대장' && bankButton?.textContent.trim() === '팝빌 계좌 연결' && /^https:\/\//.test(sheetUrl) && allBuildingsMessage.includes('건물을 먼저 선택') && !!buildingId && form?.dataset.buildingId === buildingId && accountOptions >= 1 && state.view === 'payments' && state.modalOpen;
         return { pass, sheetButton: sheetButton?.textContent.trim(), bankButton: bankButton?.textContent.trim(), sheetUrl, allBuildingsMessage, buildingId, formBuildingId: form?.dataset.buildingId, accountOptions, state };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-quick-delete") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const until = async check => { const deadline=Date.now()+5000;while(Date.now()<deadline){if(check())return true;await wait(50);}return false; };
+        const id = 'customer_quick_delete_fixture', name = '가상 삭제 확인 고객';
+        const seeded = window.__crmTest.getStore();
+        seeded.customers.push({id,name,type:'개인',stage:'신규 문의',managementStatus:'관리 예정',owner:'화면 점검',buildingIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+        const writable = ${JSON.stringify(localTestRole === "admin")};
+        if(writable)await window.bringCRM.saveNow(seeded);
+        window.__crmTest.applyRemoteForTest(seeded);
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);window.__crmSmokeNavigate('customers');
+        const findCustomer = () => [...document.querySelectorAll('.customer-overview-customer')].find(button=>button.textContent===name);
+        if(!await until(findCustomer))return {pass:false,reason:'fixture not visible'};
+        findCustomer().click();
+        if(!await until(()=>!document.querySelector('.customer-overview-drawer')?.hidden))return {pass:false,reason:'detail not visible'};
+        const detail = document.querySelector('.customer-overview-drawer');
+        const remove = () => document.querySelector('[data-customer-quick-delete="'+id+'"]');
+        const footerVisible = Boolean(remove()) && !detail.querySelector('.customer-overview-danger-zone').hidden && !detail.querySelector('.customer-overview-extra').open;
+        let cancelPreserved=true, serverDeleted=true, detailClosed=true, protectedLinked=true, headerUpdated=true, deletePrompt=false, deleteNotice='', firstPrompt='';
+        if(writable){
+          remove()?.click();await until(()=>window.__crmTest.snapshot().confirmationOpen);
+          const firstTitle=document.querySelector('#confirmationTitle')?.textContent;
+          firstPrompt=firstTitle==='이 고객 정보를 삭제할까요?'?'delete':firstTitle==='이 고객은 삭제할 수 없습니다'?'blocked':'absent';
+          document.querySelector('[data-confirm-choice="cancel"]')?.click();await wait(80);
+          cancelPreserved = window.__crmTest.getStore().customers.some(customer=>customer.id===id) && !detail.hidden;
+          remove()?.click();await until(()=>window.__crmTest.snapshot().confirmationOpen);
+          deletePrompt = document.querySelector('#confirmationTitle')?.textContent === '이 고객 정보를 삭제할까요?';
+          document.querySelector('[data-confirm-choice="confirm"]')?.click();
+          await until(()=>!window.__crmTest.getStore().customers.some(customer=>customer.id===id));await wait(250);
+          const saved = await window.bringCRM.load();serverDeleted = !saved.customers.some(customer=>customer.id===id);
+          headerUpdated = document.querySelector('[data-customer-count-summary]')?.textContent.includes('등록 고객 '+saved.customers.length+'명') === true;
+          const message = document.getElementById('toast')?.textContent || '';
+          deleteNotice = message.includes('다른 사용자의 최신 변경') ? 'remote-conflict' : message.includes('서버에서 확인하지') ? 'save-unconfirmed' : message.includes('고객 사진') ? 'photo-cleanup' : message.includes('삭제했습니다') ? 'confirmed' : 'other';
+          detailClosed = document.querySelector('.customer-overview-drawer')?.hidden === true;
+          const linked = window.__crmTest.getStore().customers.find(customer=>(window.BringCore.customerBuildingIds(customer)||[]).length);
+          if(linked){
+            const linkedButton = [...document.querySelectorAll('.customer-overview-customer')].find(button=>button.textContent===linked.name);
+            linkedButton?.click();await wait(80);
+            document.querySelector('[data-customer-quick-delete="'+linked.id+'"]')?.click();await until(()=>window.__crmTest.snapshot().confirmationOpen);
+            protectedLinked = document.querySelector('#confirmationTitle')?.textContent === '이 고객은 삭제할 수 없습니다' && window.__crmTest.getStore().customers.some(customer=>customer.id===linked.id);
+            document.querySelector('[data-confirm-choice="confirm"]')?.click();
+          }
+        }
+        const readOnlySafe = writable || !remove();
+        const noHorizontalOverflow = document.documentElement.scrollWidth <= window.innerWidth+1;
+        return {pass:(writable?footerVisible&&cancelPreserved&&serverDeleted&&detailClosed&&protectedLinked&&headerUpdated:readOnlySafe)&&noHorizontalOverflow,writable,footerVisible,cancelPreserved,serverDeleted,detailClosed,protectedLinked,headerUpdated,readOnlySafe,noHorizontalOverflow,deletePrompt,deleteNotice,firstPrompt};
+      })()`, true);
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult }, null, 2), "utf8");
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "delete-controls") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="customers"]')?.click();

@@ -124,3 +124,40 @@ test('live data updates retain the model mount and suppress a stale customer-bui
 test('initial intent may open a specific customer but never steals another customer building',async()=>{
  const s=await setup({initialCustomerId:'c2',initialBuildingId:'a'});assert.deepEqual(s.handle.selection(),{customerId:'c2',buildingId:null});s.handle.dispose();
 });
+
+test('quick detail exposes deletion outside collapsed extra information only for writers with a real callback',async()=>{
+ for(const writable of [true,false]){
+  const s=await setup({canWrite:()=>writable,onDeleteCustomer:async()=>false});await s.handle.selectCustomer('c2');
+  const zone=visit(s.host).find(node=>node.className==='customer-overview-danger-zone');
+  const drawer=visit(s.host).find(node=>node.className==='customer-overview-drawer');
+  assert.ok(drawer.children.includes(zone));assert.equal(zone.hidden,!writable);
+  assert.equal(visit(zone).some(node=>node['data-customer-quick-delete']==='c2'),writable);
+  if(writable)assert.equal(visit(zone).find(node=>node['data-customer-quick-delete']==='c2').disabled,false,'selection loading must not leave the delete button disabled');
+  assert.equal(visit(zone).some(node=>node['data-customer-delete']),false,'no duplicate delegated delete handler');
+  s.handle.dispose();
+ }
+});
+
+test('cancelled or failed customer deletion keeps the same quick detail open; confirmed deletion closes it',async()=>{
+ for(const accepted of [false,true]){
+  let calls=0;const s=await setup({canWrite:()=>true,onDeleteCustomer:async id=>{calls++;assert.equal(id,'c2');if(accepted)s.input.customers=s.input.customers.filter(row=>row.id!==id);return accepted;}});
+  await s.handle.selectCustomer('c2');await visit(s.host).find(node=>node['data-customer-quick-delete']==='c2').onclick();
+  assert.equal(calls,1);assert.equal(visit(s.host).find(node=>node.className==='customer-overview-drawer').hidden,accepted);
+  assert.equal(s.input.customers.some(row=>row.id==='c2'),!accepted);s.handle.dispose();
+ }
+});
+
+test('delete locks duplicate clicks and customer switching while awaiting confirmation',async()=>{
+ let finish,calls=0;const s=await setup({canWrite:()=>true,onDeleteCustomer:()=>{calls++;return new Promise(resolve=>{finish=resolve;});}});
+ await s.handle.selectCustomer('c2');const remove=visit(s.host).find(node=>node['data-customer-quick-delete']==='c2');const pending=remove.onclick();
+ await remove.onclick();assert.equal(calls,1);assert.equal(await s.handle.selectCustomer('c1'),false);
+ finish(false);await pending;assert.equal(visit(s.host).find(node=>node['data-customer-quick-delete']==='c2').disabled,false);s.handle.dispose();
+});
+
+test('3D unsaved work blocks the delete callback and live removal suppresses stale controls',async()=>{
+ let calls=0;const s=await setup({canWrite:()=>true,onDeleteCustomer:async()=>{calls++;return true;}});
+ await s.handle.select('c1','a');await visit(s.host).find(node=>node.textContent==='3D 설비지도 열기').onclick();s.setAllowed(false);
+ await visit(s.host).find(node=>node['data-customer-quick-delete']==='c1').onclick();assert.equal(calls,0);
+ s.input.customers=s.input.customers.filter(row=>row.id!=='c1');s.handle.updateBuildings();
+ assert.equal(visit(s.host).some(node=>node['data-customer-quick-delete']==='c1'),false);s.handle.dispose();
+});
