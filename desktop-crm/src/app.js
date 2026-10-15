@@ -5170,14 +5170,19 @@
   }
 
   async function renderBuildingAtlas() {
-    if (buildingAtlasView) { buildingAtlasView.updateBuildings(atlasBuildings()); return; }
+    if (buildingAtlasView) {
+      buildingAtlasView.updateBuildings(atlasBuildings());
+      const summary = main.querySelector("[data-customer-count-summary]");
+      if (summary) summary.textContent = `등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동`;
+      return;
+    }
     if (buildingAtlasLoading) return;
     buildingAtlasLoading = true;
     buildingAtlasAbort = new AbortController();
     const generation = ++buildingAtlasGeneration;
     const identity = atlasIdentity(currentAuth.user);
     const initialCustomerIntent = selectedCustomerHubId;
-    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div id="customerOverviewMetrics"></div><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
+    main.innerHTML = `<section class="section-head"><div><h2>고객·건물 관리</h2><p data-customer-count-summary>등록 고객 ${store.customers.length}명 · 관리 중 건물 ${(store.buildings||[]).filter(b=>!b.archivedAt&&managementStatusForBuilding(b)==="관리 중").length}동</p></div><div class="section-head-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section><div id="customerOverviewMetrics"></div><div class="customer-management-toolbar"><label>관리 상태 <select data-customer-management-filter>${managementFilterOptions(customerManagementFilter)}</select></label><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" aria-label="고객·건물 검색"></div><section id="crmBuildingAtlas"><p role="status">고객·건물 작업 화면을 준비하고 있습니다.</p></section>`;
     const host = main.querySelector("#crmBuildingAtlas");
     const stillCurrent = () => generation === buildingAtlasGeneration && identity === atlasIdentity(currentAuth.user) && ["customers", "buildingAtlas"].includes(currentView) && currentWorkspace === "operations" && host.isConnected;
     try {
@@ -5197,6 +5202,7 @@
           cases: activeCases().map(item => ({...item,complete:Core.workflowProgress(item).done>=Core.WORKFLOW_STEPS.length})),
         }) : {rows:[],totals:{contracts:0,work:0,prospects:0,customers:0}},
         canWrite: () => stillCurrent() && canWriteCRM(),
+        onDeleteCustomer: customerId => stillCurrent() ? deleteCustomerRecord(customerId) : Promise.resolve(false),
         getProfile: (customerId, buildingId) => {
           const customer = customerById(customerId), building = buildingById(buildingId);
           return [{title:building?.name || "건물 미연결",lines:[building?.address || building?.roadAddress || "주소 미등록"]}, {title:customer?customerDisplayName(customer):"고객 미연결",lines:customer?[customerPhoneText(customer.phone)||"연락처 미등록",customer.email||"이메일 미등록",`담당자: ${customer.owner||"미지정"}`,`다음 연락: ${dateText(customer.nextContactAt)}`,`관리 상태: ${managementStatusForCustomer(customer)}`]:[]}, {title:"개인 메모 · 고객 특징",lines:[customer?.notes||"등록된 메모 없음"]}];
@@ -14260,34 +14266,60 @@
   }
 
   async function deleteCustomerRecord(customerId) {
-    if (!canWriteCRM()) return showToast("조회 전용 계정은 고객을 삭제할 수 없습니다.", "error");
+    if (!canWriteCRM()) { showToast("조회 전용 계정은 고객을 삭제할 수 없습니다.", "error"); return false; }
+    const generation = authGeneration, uid = currentAuthUid();
+    const sessionActive = () => generation === authGeneration && uid === currentAuthUid() && canWriteCRM();
     let customer = customerById(customerId);
-    if (!customer) return showToast("삭제할 고객을 찾지 못했습니다.", "error");
+    if (!customer) { showToast("삭제할 고객을 찾지 못했습니다.", "error"); return false; }
+    const hasLinks = () => {
+      const current = customerById(customerId);
+      return !current || customerBuildings(current).length || customerActivities(customerId).length
+        || store.contracts.some(item => item.customerId === customerId)
+        || (operations.cases || []).some(item => item && (String(item.crmCustomerId || item.customerId || "") === String(customerId) || (!item.crmCustomerId && !item.customerId && Core.matchWorkflowCustomer(item, store.customers)?.id === customerId)));
+    };
     const buildings = customerBuildings(customer);
     const activities = customerActivities(customer.id);
     const contracts = store.contracts.filter(item => item.customerId === customer.id);
-    const linkedCases = (operations.cases || []).filter(item => item && (String(item.crmCustomerId || "") === String(customer.id) || (!item.crmCustomerId && Core.matchWorkflowCustomer(item, store.customers)?.id === customer.id)));
-    if (buildings.length || activities.length || contracts.length || linkedCases.length) {
+    const linkedCases = (operations.cases || []).filter(item => item && (String(item.crmCustomerId || item.customerId || "") === String(customer.id) || (!item.crmCustomerId && !item.customerId && Core.matchWorkflowCustomer(item, store.customers)?.id === customer.id)));
+    if (hasLinks()) {
       await showCRMNotice({ title: "이 고객은 삭제할 수 없습니다", description: "연결된 업무 기록을 먼저 정리해 주세요.", target: customer.name || "고객", message: `건물 ${buildings.length}곳 · 민원 ${linkedCases.length}건 · 상담 ${activities.length}건 · 계약 ${contracts.length}건`, warning: "연결 기록을 삭제하거나 다른 고객으로 옮긴 뒤 다시 시도해 주세요.", tone: "warning" });
-      return;
+      return false;
     }
-    if (!await requestConfirmation({ title: "이 고객 정보를 삭제할까요?", description: "삭제할 고객이 맞는지 확인해 주세요.", target: customer.name || "고객", warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다.", confirmLabel: "고객 삭제", tone: "danger" })) return;
+    if (!await requestConfirmation({ title: "이 고객 정보를 삭제할까요?", description: "삭제할 고객이 맞는지 확인해 주세요.", target: customer.name || "고객", warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다. 연결된 업무 기록은 함께 삭제하지 않습니다.", confirmLabel: "고객 삭제", tone: "danger" })) return false;
+    if (!sessionActive()) return false;
+    if (hasLinks()) { showToast("연결된 업무 정보가 변경되어 삭제하지 않았습니다. 최신 내용을 확인해 주세요.", "error"); return false; }
     customer = customerById(customerId);
-    if (!customer) return showToast("이미 삭제되었거나 변경된 고객입니다.", "error");
     try {
       const photoResult = await api.saveCustomerPhoto({ customerId: customer.id, dataUrl: "" });
-      if (!photoResult || photoResult.ok !== true) return showToast(photoResult && photoResult.error || "고객 사진을 먼저 삭제하지 못했습니다.", "error");
+      if (!sessionActive()) return false;
+      if (!photoResult || photoResult.ok !== true) { showToast("고객 사진을 정리하지 못했습니다. 연결과 권한을 확인해 주세요.", "error"); return false; }
       delete customerPhotos[customer.id];
-    } catch (error) {
-      showToast(error.message || "고객 사진을 먼저 삭제하지 못했습니다. 서버 연결을 확인해 주세요.", "error");
-      return;
+    } catch (_) {
+      if (sessionActive()) showToast("고객 사진을 정리하지 못했습니다. 서버 연결을 확인해 주세요.", "error");
+      return false;
     }
+    if (!sessionActive() || hasLinks()) return false;
+    const beforeStore = cloneStore(store);
     store.customers = store.customers.filter(item => item.id !== customer.id);
     logAudit({ category: "삭제", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "고객 정보 삭제", reason: "사용자 확인 후 삭제" });
-    scheduleSave();
+    try {
+      await saveStoreNow();
+      if (!sessionActive()) return false;
+      if (customerById(customerId)) throw new Error("CUSTOMER_DELETE_UNCONFIRMED");
+    } catch (_) {
+      if (sessionActive()) {
+        store = beforeStore;
+        queuedSave = null;clearTimeout(saveTimer);saveTimer = null;
+        showToast("고객 삭제를 서버에서 확인하지 못했습니다. 고객을 유지했습니다. 최신 내용을 확인해 주세요.", "error");
+        render();
+      }
+      return false;
+    }
+    if (selectedCustomerHubId === customerId) selectedCustomerHubId = "";
     closeDrawer();
     render();
     showToast(`${customer.name || "고객"} 고객을 삭제했습니다.`, "success");
+    return true;
   }
 
   async function deleteBuildingRecord(buildingId) {
