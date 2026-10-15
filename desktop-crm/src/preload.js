@@ -172,6 +172,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   decideDriveImport: input => ipcRenderer.invoke("crm:drive-import-decision", input),
   commitCanonicalCrmEntity: input => ipcRenderer.invoke("crm:canonical-entity-commit", input),
   commitBuildingSchedule: input => ipcRenderer.invoke("crm:building-schedule-commit", input),
+  commitContractReceipt: input => ipcRenderer.invoke("crm:contract-receipt-commit", input),
   readMarketingRecords: () => ipcRenderer.invoke("crm:marketing-read"),
   commitMarketingRecord: input => ipcRenderer.invoke("crm:marketing-commit", input),
   archiveMarketingRecord: input => ipcRenderer.invoke("crm:marketing-archive", input),

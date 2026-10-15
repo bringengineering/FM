@@ -132,6 +132,8 @@
   let contractCalendarMonth = Core.dayKey().slice(0, 7);
   let contractCalendarBuildingId = "all";
   let contractCalendarQuery = "";
+  let contractReceiptSelection = "";
+  const contractReceiptDrafts = new Map();
   let securityTab = "assets";
   let dataPath = "";
   let currentAuth = { required: true, user: null, error: "" };
@@ -714,12 +716,14 @@
     if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     const previousAtlasIdentity = atlasIdentity(currentAuth && currentAuth.user);
     const previousUid = currentAuthUid();
-    const marketingIdentityKey = auth => { const user = auth && auth.user || {}; return [user.uid, user.accessRole, user.marketingRole].map(item => String(item || "").slice(0, 160)).join("|"); };
+    const marketingIdentityKey = auth => { const user = auth && auth.user || {}; return [user.uid, user.accessRole, user.role, user.marketingRole].map(item => String(item || "").slice(0, 160)).join("|"); };
     const previousMarketingIdentity = marketingIdentityKey(currentAuth);
     currentAuth = value || { required: true, user: null, error: "" };
     if (previousAtlasIdentity !== atlasIdentity(currentAuth.user)) disposeBuildingAtlas();
     const nextMarketingIdentity = marketingIdentityKey(currentAuth);
     if (previousMarketingIdentity !== nextMarketingIdentity) {
+      contractReceiptSelection = "";
+      contractReceiptDrafts.clear();
       resetCompanyStrategyState();
       window.BringWorkOutcomeDownloadUI?.disposeAll();
       operationsCheckSnapshot = null;
@@ -3161,6 +3165,114 @@
       .sort((left, right) => left.name.localeCompare(right.name, "ko"));
   }
 
+  function openContractReceiptQuickPanel(contractId, dueDate) {
+    if (!canWriteCRM()) return;
+    const contract = (store.contracts || []).find(item => item && item.id === contractId);
+    if (!Core.contractPaymentRows(contract ? [contract] : [], String(dueDate).slice(0, 7)).some(row => row.dueDate === dueDate)) return;
+    const key = `${contractId}|${dueDate}`;
+    if (!contractReceiptDrafts.has(key)) {
+      if (contractReceiptDrafts.size >= 100) {
+        const clean = [...contractReceiptDrafts].find(([, draft]) => !draft.submitting && !draft.request && draft.memo === draft.base.memo && draft.collectionStatus === draft.base.collectionStatus);
+        if (clean) contractReceiptDrafts.delete(clean[0]);
+      }
+      if (contractReceiptDrafts.size >= 100) return showToast("작성 중인 입금 메모가 많습니다. 저장 후 다시 열어 주세요.", "error");
+      const base = Core.contractPaymentQuickBase(contract, dueDate);
+      contractReceiptDrafts.set(key, { contractId, dueDate, base, collectionStatus: base.collectionStatus, memo: base.memo,
+        generation: authGeneration, uid: currentAuthUid(), submitting: false, request: null, error: "" });
+    }
+    contractReceiptSelection = key;
+    renderBuildingCalendar();
+    main.querySelector("#contractReceiptQuickForm select")?.focus();
+  }
+
+  function captureContractReceiptDraft(form) {
+    const state = contractReceiptDrafts.get(form?.dataset.receiptKey);
+    if (!state || state.submitting || state.generation !== authGeneration || state.uid !== currentAuthUid()) return;
+    state.collectionStatus = form.elements.collectionStatus.value;
+    state.memo = form.elements.memo.value;
+    // An uncertain request can only be replayed with the same UUID and intent.
+    // Changed inputs intentionally get a fresh request and must pass the old base.
+    if (state.request && (state.request.collectionStatus !== state.collectionStatus || state.request.memo !== state.memo)) state.request = null;
+  }
+
+  function renderContractReceiptQuickPanel() {
+    const state = contractReceiptDrafts.get(contractReceiptSelection);
+    if (!canWriteCRM() || !state || state.generation !== authGeneration || state.uid !== currentAuthUid()
+      || state.dueDate.slice(0, 7) !== contractCalendarMonth) return "";
+    const contract = (store.contracts || []).find(item => item && item.id === state.contractId);
+    const available = Core.contractPaymentRows(contract ? [contract] : [], state.dueDate.slice(0, 7)).some(row => row.dueDate === state.dueDate);
+    const stale = !available || JSON.stringify(Core.contractPaymentQuickBase(contract, state.dueDate)) !== JSON.stringify(state.base);
+    return `<aside class="contract-receipt-panel" aria-labelledby="contractReceiptPanelTitle"><header><div><span>계약 입금 일정</span><h3 id="contractReceiptPanelTitle">빠른 수정</h3></div><button type="button" class="close-button" data-contract-receipt-close aria-label="빠른 수정 닫기">×</button></header>
+      <h4>${esc(contract?.name || "계약 확인 필요")}</h4><p>${esc(customerById(contract?.customerId)?.name || "고객 미연결")} · ${esc(buildingById(contract?.buildingId)?.name || "건물 미연결")}</p>
+      <dl><div><dt>입금 예정일</dt><dd>${esc(state.dueDate)}</dd></div><div><dt>받을 금액</dt><dd>${esc(krw(state.base.amount))}</dd></div></dl>
+      <form id="contractReceiptQuickForm" data-receipt-key="${attr(contractReceiptSelection)}"><fieldset ${state.submitting ? "disabled" : ""}>
+        <label for="contractReceiptStatus">입금 상태</label><select id="contractReceiptStatus" name="collectionStatus">${["입금 예정", "입금 완료"].map(status => `<option value="${attr(status)}" ${state.collectionStatus === status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select>
+        <label for="contractReceiptMemo">계약 메모</label><textarea id="contractReceiptMemo" name="memo" rows="4" maxlength="2000" placeholder="입금 확인 내용 등을 적어 주세요.">${esc(state.memo)}</textarea>
+        <small>선택한 날짜의 입금 상태와 계약 메모만 변경합니다. 저장 전에는 캘린더에 반영되지 않습니다.</small>
+        ${stale ? `<p class="contract-receipt-notice" role="status">계약이 변경되었습니다. 작성 내용은 보관 중입니다. 최신 내용을 불러온 후 다시 확인해 주세요.</p>` : ""}
+        ${state.error ? `<p class="contract-receipt-error" role="alert">${esc(state.error)}</p>` : ""}
+        <button type="submit" class="primary-button" ${stale && !state.request ? "disabled" : ""}>${state.submitting ? "저장 중…" : "변경 내용 저장"}</button>
+        <button type="button" class="secondary-button" data-contract-receipt-reload>최신 내용 불러오기</button>
+      </fieldset></form><small>다른 일정을 선택해도 작성 중인 내용은 유지됩니다.</small></aside>`;
+  }
+
+  async function saveContractReceiptQuickPanel(form) {
+    const state = contractReceiptDrafts.get(form.dataset.receiptKey);
+    if (!canWriteCRM() || !state || state.submitting || state.generation !== authGeneration || state.uid !== currentAuthUid()) return;
+    captureContractReceiptDraft(form);
+    if (saveInFlight || queuedSave || pendingRemoteStore) return showToast("다른 변경 사항을 저장 중입니다. 잠시 후 다시 시도해 주세요.", "error");
+    if (!state.request) state.request = { requestId: crypto.randomUUID(), contractId: state.contractId, dueDate: state.dueDate,
+      base: structuredClone(state.base), collectionStatus: state.collectionStatus, memo: state.memo };
+    state.submitting = true;
+    state.error = "";
+    renderBuildingCalendar();
+    let result;
+    try { result = await api.commitContractReceipt(state.request); }
+    catch (_) { result = { ok: false, error: "저장 결과를 확인할 수 없습니다. 같은 내용으로 다시 저장하거나 최신 내용을 불러와 주세요." }; }
+    if (state.generation !== authGeneration || state.uid !== currentAuthUid() || contractReceiptDrafts.get(form.dataset.receiptKey) !== state) return;
+    state.submitting = false;
+    if (result?.ok === true && result.record?.id === state.contractId) {
+      // Align every pending snapshot so an unrelated later save cannot revert a
+      // confirmed receipt. No optimistic status change is made before this ack.
+      [store, synchronizedStore, queuedSave, pendingRemoteStore].forEach(snapshot => {
+        if (snapshot && Array.isArray(snapshot.contracts)) snapshot.contracts = snapshot.contracts.map(item => item.id === state.contractId ? structuredClone(result.record) : item);
+      });
+      state.base = Core.contractPaymentQuickBase(result.record, state.dueDate);
+      state.collectionStatus = state.base.collectionStatus;
+      state.memo = state.base.memo;
+      state.request = null;
+      showToast("입금 상태와 메모를 저장했습니다.");
+    } else state.error = String(result?.error || "입금 정보를 저장하지 못했습니다. 연결과 권한을 확인해 주세요.");
+    if (currentView === "buildingCalendar" && unifiedCalendarTab === "contract") renderBuildingCalendar();
+  }
+
+  async function reloadContractReceiptQuickPanel() {
+    const key = contractReceiptSelection;
+    const state = contractReceiptDrafts.get(key);
+    if (!state || state.submitting) return;
+    if ((state.memo !== state.base.memo || state.collectionStatus !== state.base.collectionStatus) && !window.confirm("작성 중인 변경 내용을 버리고 최신 입금 정보를 불러올까요?")) return;
+    if (saveInFlight || queuedSave || pendingRemoteStore) return showToast("다른 변경 사항을 저장 중입니다. 잠시 후 다시 시도해 주세요.", "error");
+    state.submitting = true;
+    renderBuildingCalendar();
+    try {
+      const latest = await api.load();
+      if (state.generation !== authGeneration || state.uid !== currentAuthUid() || contractReceiptSelection !== key || contractReceiptDrafts.get(key) !== state) return;
+      if (saveInFlight || queuedSave || pendingRemoteStore) return showToast("다른 변경 사항을 저장 중입니다. 작성 내용을 유지했습니다. 잠시 후 다시 불러와 주세요.", "error");
+      const contract = (latest.contracts || []).find(item => item && item.id === state.contractId);
+      [store, synchronizedStore, queuedSave, pendingRemoteStore].forEach(snapshot => {
+        if (snapshot && Array.isArray(snapshot.contracts)) snapshot.contracts = snapshot.contracts.filter(item => item.id !== state.contractId).concat(contract ? [structuredClone(contract)] : []);
+      });
+      contractReceiptDrafts.delete(key);
+      contractReceiptSelection = "";
+      if (contract) openContractReceiptQuickPanel(state.contractId, state.dueDate);
+      renderBuildingCalendar();
+    } catch (_) { showToast("최신 입금 정보를 불러오지 못했습니다. 작성 내용은 유지됩니다.", "error"); }
+    finally {
+      state.submitting = false;
+      if (state.generation === authGeneration && state.uid === currentAuthUid() && currentView === "buildingCalendar" && unifiedCalendarTab === "contract") renderBuildingCalendar();
+    }
+  }
+
   // Retain the existing entry-point name; this is now the receipt calendar
   // for recurring and one-off contracts, independent of work occurrences.
   function renderOneOffContractCalendar() {
@@ -3180,12 +3292,13 @@
     const days = paymentCalendarDays(contractCalendarMonth);
     const editable = canWriteCRM();
     const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-calendar-contract">＋ 계약 등록</button>` : "";
+    const quickPanel = renderContractReceiptQuickPanel();
     return `<section class="one-off-contract-calendar" aria-label="계약 입금 캘린더"><header class="calendar-tab-intro"><div><span>계약 입금 일정</span><h2>계약 대금을 받는 날짜를 확인합니다</h2><p>정기·단건 계약의 입금 예정일과 금액을 표시합니다. 매주 작업하는 날짜는 업무일정에서, 세입자 납부는 건물주 입금에서 별도로 확인합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-calendar-contract">＋ 계약 등록</button></div>` : ""}</header>
       <div class="operations-kpis"><div class="operations-kpi"><span>입금 일정</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>계약 금액</span><b>${esc(krw(totals.revenue))}</b><small>이번 달 입금 대상 합계</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${esc(krw(totals.paid))}</b><small>수동 확인 기준</small></div><div class="operations-kpi"><span>미입금 금액</span><b>${esc(krw(totals.unpaid))}</b><small>입금 예정·지연 합계</small></div></div>
       ${missingDates.length ? `<div class="info-box" role="status"><strong>입금 예정일 미설정 ${missingDates.length}건</strong><p>작업일을 입금일로 추정하지 않습니다. 계약에서 실제 받을 날짜를 지정해 주세요.</p>${missingDates.slice(0, 5).map(contract => editable ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">${esc(contract.name || "계약명 미입력")} · 입금일 설정</button>` : `<span>${esc(contract.name || "계약명 미입력")} · 담당자 확인 필요</span>`).join(" ")}${missingDates.length > 5 ? `<p>외 ${missingDates.length - 5}건 · 검색으로 계약을 찾아 설정하세요.</p>` : ""}</div>` : ""}
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
-      <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.amount))} · ${esc(row.collectionStatus)}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}" data-contract-payment-date="${attr(row.dueDate)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
-      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>입금 예정일</th><th>고객·건물</th><th>계약</th><th>납부 방식</th><th>받을 금액</th><th>입금 상태</th><th>단건 정산</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-edit="${attr(contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "계약"} · ${row.dueDate} 입금 일정 수정`)}"` : ""; return `<tr${interactive}><td>${esc(row.dueDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(contract.billingCycle === "건별" ? "단건" : contract.billingCycle)}</td><td>${esc(krw(row.amount))}</td><td>${esc(row.collectionStatus)}${row.status === "overdue" ? " · 입금일 경과" : ""}</td><td>${contract.billingCycle === "건별" ? `${esc(krw(contract.vendorCost))} 지급 · 수익 ${esc(krw(contract.grossProfit))}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 입금 일정이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약에 입금 예정일을 등록하면 해당 날짜에 표시됩니다.", emptyAction)}${renderContractWorkManagementPanel()}</section>`;
+      <div class="contract-receipt-layout${quickPanel ? " has-panel" : ""}"><div class="contract-receipt-calendar-main"><section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.amount))} · ${esc(row.collectionStatus)}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-receipt-open="${attr(row.contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" aria-label="${attr(`${row.contract.name || "계약"} · ${row.dueDate} 입금 빠른 수정`)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
+      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>입금 예정일</th><th>고객·건물</th><th>계약</th><th>납부 방식</th><th>받을 금액</th><th>입금 상태</th><th>단건 정산</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-receipt-open="${attr(contract.id)}" data-contract-payment-date="${attr(row.dueDate)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "계약"} · ${row.dueDate} 입금 빠른 수정`)}"` : ""; return `<tr${interactive}><td>${esc(row.dueDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(contract.billingCycle === "건별" ? "단건" : contract.billingCycle)}</td><td>${esc(krw(row.amount))}</td><td>${esc(row.collectionStatus)}${row.status === "overdue" ? " · 입금일 경과" : ""}</td><td>${contract.billingCycle === "건별" ? `${esc(krw(contract.vendorCost))} 지급 · 수익 ${esc(krw(contract.grossProfit))}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 입금 일정이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약에 입금 예정일을 등록하면 해당 날짜에 표시됩니다.", emptyAction)}</div>${quickPanel}</div>${renderContractWorkManagementPanel()}</section>`;
   }
 
   function renderPayments() {
@@ -16789,6 +16902,14 @@
       if (record && record.status === "draft") void saveBillingRecord(kind, { ...record, status: "approved" }, record.revision);
       return;
     }
+    const receiptOpen = event.target.closest("[data-contract-receipt-open]");
+    if (receiptOpen) { openContractReceiptQuickPanel(receiptOpen.dataset.contractReceiptOpen, receiptOpen.dataset.contractPaymentDate); return; }
+    if (event.target.closest("[data-contract-receipt-close]")) {
+      contractReceiptSelection = "";
+      renderBuildingCalendar();
+      return;
+    }
+    if (event.target.closest("[data-contract-receipt-reload]")) { await reloadContractReceiptQuickPanel(); return; }
     const contractEdit = event.target.closest("[data-contract-edit]");
     if (contractEdit) { contractEditor(contractEdit.dataset.contractEdit, false, contractEdit.dataset.contractPaymentDate || ""); return; }
     const caseListModeButton = event.target.closest("[data-case-list-mode]");
@@ -17394,6 +17515,8 @@
   });
 
   document.addEventListener("change", async event => {
+    const receiptForm = event.target.closest?.("#contractReceiptQuickForm");
+    if (receiptForm) { captureContractReceiptDraft(receiptForm); return; }
     if (event.target.matches("[data-cleaning-quote-order-select]") && currentView === "cleaningQuoteCalculator") {
       selectedCleaningQuoteOrderId = event.target.value || "";
       renderCleaningCenter();
@@ -17998,6 +18121,7 @@
     event.preventDefault();
     if (buildingAtlasView && !await buildingAtlasView.requestLeave()) return;
     const form = event.target;
+    if (form.id === "contractReceiptQuickForm") { await saveContractReceiptQuickPanel(form); return; }
     if (form.id === "cleaningConsultationReservationForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 상담 예약을 등록할 수 없습니다.", "error");
       if (!form.reportValidity()) return;
@@ -19896,6 +20020,8 @@
   }
 
   document.addEventListener("input", event => {
+    const receiptForm = event.target.closest?.("#contractReceiptQuickForm");
+    if (receiptForm) { captureContractReceiptDraft(receiptForm); return; }
     const alimtalkSearch = event.target.closest?.("[data-alimtalk-search]");
     if (alimtalkSearch && currentView === "customerAlimTalk") {
       customerAlimTalkState.search = String(alimtalkSearch.value || "");
@@ -20210,6 +20336,11 @@ document.addEventListener("keydown", event => {
       const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? Math.min(options.length - 1, index + 1) : Math.max(0, index - 1);
       options[nextIndex]?.focus();
     }
+    return;
+  }
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches("tr[data-contract-receipt-open]")) {
+    event.preventDefault();
+    openContractReceiptQuickPanel(event.target.dataset.contractReceiptOpen, event.target.dataset.contractPaymentDate);
     return;
   }
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-contract-edit]")) {
