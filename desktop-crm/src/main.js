@@ -8701,6 +8701,9 @@ async function createWindow() {
         await wait(160);
         const rows = document.querySelectorAll('.one-off-table tbody tr').length;
         const events = document.querySelectorAll('.one-off-contract-calendar .payment-event').length;
+        const buildingLabels = [...document.querySelectorAll('.one-off-contract-calendar .payment-event .contract-calendar-building')].map(element => element.textContent.trim());
+        const calendarBuildingNamesVisible = buildingLabels.length === events && buildings.every(building => buildingLabels.includes(building.name));
+        const contractLabelsRetained = document.querySelectorAll('.one-off-contract-calendar .payment-event .contract-calendar-name').length === events;
         const text = document.getElementById('main')?.textContent || '';
         const state = window.__crmTest.snapshot();
         const contractTab = document.querySelector('[data-unified-calendar-tab="contract"]');
@@ -8743,13 +8746,13 @@ async function createWindow() {
               && window.__crmTest.snapshot().unifiedCalendarTab === 'contract' && !window.__crmTest.snapshot().modalOpen;
           }
         }
-        const pass = editorPrefilled && scopedReceiptSaved && rows === 3 && events === 3 && text.includes('235,000원') && text.includes('35,000원') && text.includes('200,000원')
+        const pass = calendarBuildingNamesVisible && contractLabelsRetained && editorPrefilled && scopedReceiptSaved && rows === 3 && events === 3 && text.includes('235,000원') && text.includes('35,000원') && text.includes('200,000원')
           && recurringWorkCount === 4 && recurringReceipts.length === 1 && recurringReceipts[0].dueDate === receiptDate && text.includes('입금 예정일 미설정')
           && text.includes('계약일정 캘린더 정기청소') && text.includes('계약일정 캘린더 폐기물 처리')
           && contractTab?.getAttribute('aria-selected') === 'true' && workTab?.getAttribute('aria-selected') === 'false' && pageTitle === '캘린더'
           && oldPaymentModeAbsent && state.view === 'buildingCalendar' && state.unifiedCalendarTab === 'contract'
           && state.contractCalendarMonth === month && roleSafe;
-        return { pass, writeCheckPerformed: fixtureWritesAllowed, editorPrefilled, scopedReceiptSaved, month, rows, events, recurringWorkCount, recurringReceiptCount: recurringReceipts.length, receiptDate, pageTitle, contractTabActive: contractTab?.getAttribute('aria-selected') === 'true', oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
+        return { pass, calendarBuildingNamesVisible, contractLabelsRetained, writeCheckPerformed: fixtureWritesAllowed, editorPrefilled, scopedReceiptSaved, month, rows, events, recurringWorkCount, recurringReceiptCount: recurringReceipts.length, receiptDate, pageTitle, contractTabActive: contractTab?.getAttribute('aria-selected') === 'true', oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-building-calendar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

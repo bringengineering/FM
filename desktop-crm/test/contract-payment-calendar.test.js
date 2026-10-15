@@ -102,10 +102,11 @@ test("closed receipt values reject unknown dates and statuses before changing th
 
 const esc = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 function renderer(contracts, options = {}) {
-  const ctx = vm.createContext({Core, store: {contracts, buildings: [{id: "building_a", name: "Fixture building"}]},
+  const buildings = options.buildings || [{id: "building_a", name: "Fixture building"}];
+  const ctx = vm.createContext({Core, store: {contracts, buildings},
     contractReceiptDrafts: new Map(), contractReceiptSelection: "",
     contractCalendarMonth: "2026-10", contractCalendarBuildingId: options.buildingId || "all", contractCalendarQuery: options.query || "", canWriteCRM: () => options.canWrite !== false,
-    customerById: () => ({name: "Fixture customer"}), buildingById: () => ({name: "Fixture building"}), todayKey: () => "2026-10-14", esc, attr: esc, krw: n => `${n}원`,
+    customerById: () => ({name: "Fixture customer"}), buildingById: id => buildings.find(building => building.id === id), todayKey: () => "2026-10-14", esc, attr: esc, krw: n => `${n}원`,
     paymentMonthLabel: v => v, paymentCalendarDays: () => Array.from({length: 31}, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`), empty: (a, b, c) => `<p>${a} ${b}</p>${c}`, renderContractWorkManagementPanel: () => "",
   });
   vm.runInContext(app.slice(app.indexOf("  function contractCalendarBuildings("), app.indexOf("  function renderPayments(")), ctx);
@@ -126,6 +127,44 @@ test("the real receipt renderer shows one date, amount/status and missing-date a
   assert.doesNotMatch(viewer, /data-contract-edit=|new-calendar-contract/);
   const unsafe = renderer([fixture({name: '<img src=x onerror="bad">'})]);
   assert.doesNotMatch(unsafe, /<img/); assert.match(unsafe, /&lt;img/);
+});
+
+test("receipt day cards distinguish linked buildings above contract and amount for recurring and one-off work", () => {
+  const html = renderer([fixture(), fixture({id: "oneoff", buildingId: "building_b", billingCycle: "건별"})], {
+    buildings: [{id: "building_a", name: "예시빌라"}, {id: "building_b", name: "예시타워", archivedAt: "2026-10-01"}],
+  });
+  const cards = html.match(/<button class="payment-event [\s\S]*?<\/button>/g) || [];
+  assert.equal(cards.length, 2);
+  for (const name of ["예시빌라", "예시타워"]) {
+    const card = cards.find(value => value.includes(`<b class="contract-calendar-building">${name}</b>`));
+    assert.ok(card);
+    assert.ok(card.includes(`aria-label="${name} · 공용부청소 · `));
+    assert.match(card, /<b class="contract-calendar-building">[^<]+<\/b><span class="contract-calendar-name">공용부청소<\/span><span>50000원 · 입금 예정<\/span>/);
+    assert.match(card, /data-contract-payment-date="2026-10-30"/);
+  }
+});
+
+test("receipt cards use an honest building fallback and never infer a building from customer or another record", () => {
+  for (const buildings of [[], [{id: "other", name: "다른 건물"}], [{id: "building_a", name: "  "}]]) {
+    const html = renderer([fixture()], {buildings});
+    const card = html.match(/<button class="payment-event [\s\S]*?<\/button>/)[0];
+    assert.match(card, /<b class="contract-calendar-building">건물 미연결<\/b>/);
+    assert.doesNotMatch(card, /Fixture customer|다른 건물/);
+  }
+});
+
+test("building labels are encoded in both day-card text and accessible labels while viewers remain read-only", () => {
+  const name = '<img src=x onerror="bad"> & 긴 건물명';
+  for (const canWrite of [true, false]) {
+    const html = renderer([fixture()], {buildings: [{id: "building_a", name}], canWrite});
+    const card = html.match(/<(?:button|div) class="payment-event [\s\S]*?<\/(?:button|div)>/)[0];
+    assert.match(card, /&lt;img src=x onerror=&quot;bad&quot;&gt; &amp; 긴 건물명/);
+    assert.doesNotMatch(card, /<img/);
+    if (canWrite) assert.match(card, /aria-label="&lt;img/);
+    else assert.doesNotMatch(card, /<button|data-contract-receipt-open=/);
+  }
+  const css = fs.readFileSync(path.join(__dirname, "../src/styles.css"), "utf8");
+  assert.match(css, /\.one-off-contract-calendar \.payment-event \.contract-calendar-building\{[^}]*white-space:normal;overflow-wrap:anywhere/);
 });
 
 test("the actual contract editor opens the clicked receipt date with date-scoped status and a readonly application date", () => {
