@@ -9762,7 +9762,9 @@
 
   function workReportBuildings(existingBuildingId = "") {
     const choices = customerManagedBuildingChoices(existingBuildingId).map(choice => ({
-      ...(choice.building || {}), id: choice.value, name: choice.name,
+      ...(choice.building || {}), id: choice.value,
+      name: String(choice.customer?.name || choice.building?.name || choice.address || "현장").trim(),
+      internalLabel: choice.name,
       address: choice.address,
       roadAddress: String(choice.customer?.roadAddress || "").trim(),
       jibunAddress: String(choice.customer?.jibunAddress || "").trim(),
@@ -9775,7 +9777,7 @@
         ids.add(building.id);
       }
     }
-    return choices.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    return choices.sort((a, b) => String(a.internalLabel || a.name || "").localeCompare(String(b.internalLabel || b.name || ""), "ko"));
   }
 
   function workReportBuildingAddress(building) {
@@ -9877,7 +9879,7 @@
             <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>고객을 선택하면 고객 등록 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>고객·현장 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
+              <label><span>고객·현장 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
               <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
