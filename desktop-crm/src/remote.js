@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const ContractReceiptCommit = require("./contract-receipt-commit");
 const ContractSchedule = require("./contract-schedule-core");
 const BuildingAtlasService = require("./building-atlas-service");
 const OperationsCheck = require("./operations-check-core");
@@ -4509,6 +4510,44 @@ class FirebaseRemoteClient {
       // the shared stream will refill this disposable cache.
       return false;
     }
+  }
+
+  async commitContractReceipt(inputValue) {
+    const guard = this.captureSessionGuard();
+    return this.enqueueSharedMutation(async () => {
+      this.assertSessionGuardActive(guard);
+      const input = ContractReceiptCommit.validate(inputValue);
+      this.requireMutationPermission(input);
+      await this.verifyAccess();
+      this.assertSessionGuardActive(guard);
+      const actor = this.requireMutationPermission(input);
+      const location = `crmShared/data/contracts/${input.contractId}`;
+      const snapshot = await this.dbReadWithEtag(location, false, guard);
+      this.assertSessionGuardActive(guard);
+      const plan = ContractReceiptCommit.plan(input, { existing: snapshot.value, actor });
+      this.Core.assertNoProhibitedSecrets(plan.record);
+      if (!plan.repeated) await this.putBuildingScheduleWithRecovery(location, plan.record, snapshot.etag, guard);
+      this.assertSessionGuardActive(guard);
+      if (this.remotePayload && typeof this.remotePayload === "object") {
+        const contracts = this.remotePayload.contracts && !Array.isArray(this.remotePayload.contracts) ? this.remotePayload.contracts : {};
+        contracts[plan.record.id] = plainJsonClone(plan.record);
+        this.remotePayload.contracts = contracts;
+      }
+      // A disposable cache failure cannot turn a confirmed server commit into a
+      // false failure. The shared stream will restore this cache on reconnect.
+      try {
+        const local = await this.readSessionLocalStore(guard);
+        this.assertSessionGuardActive(guard);
+        if (local) {
+          local.contracts = (local.contracts || []).map(record => record.id === input.contractId ? plainJsonClone(plan.record) : record);
+          await this.writeSessionLocalStore(local, guard);
+        }
+      } catch (error) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 상태가 변경되었습니다.", "SESSION_CHANGED", error);
+      }
+      this.assertSessionGuardActive(guard);
+      return { record: plan.record, repeated: plan.repeated };
+    });
   }
 
   async commitBuildingSchedule(input) {

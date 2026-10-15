@@ -4452,6 +4452,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       const saved = (await assertSucceeds(get(ref(database, location)))).val();
       expect(saved.paymentDueDate).toBe("2026-10-30");
       expect(saved.paymentCollections).toEqual({"2026-10-30": "입금 예정", "2026-11-30": "입금 완료"});
+      const quickSaved = {...saved, memo: "입금 확인 메모", updatedAt: "2026-10-15T01:00:00.000Z", receiptQuickVersion: 1,
+        receiptQuickRequestId: "550e8400-e29b-41d4-a716-446655440000", receiptQuickHash: "a".repeat(64), receiptQuickUpdatedBy: uid};
+      await assertSucceeds(set(ref(database, location), quickSaved));
+      expect((await assertSucceeds(get(ref(database, location)))).val()).toEqual(quickSaved);
       const denied = [
         environment.unauthenticatedContext().database(),
         environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database(),
@@ -4459,7 +4463,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
         environment.authenticatedContext("crm-legacy-member", crmClaims("wrong@bring.test")).database(),
         environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database(),
       ];
-      for (const other of denied) await assertFails(update(ref(other, location), {paymentDueDate: "2026-10-15", "paymentCollections/2026-11-30": "입금 예정"}));
+      for (const other of denied) {
+        await assertFails(update(ref(other, location), {paymentDueDate: "2026-10-15", "paymentCollections/2026-11-30": "입금 예정"}));
+        await assertFails(set(ref(other, location), quickSaved));
+      }
       await assertFails(get(ref(environment.unauthenticatedContext().database(), location)));
     }
   });
