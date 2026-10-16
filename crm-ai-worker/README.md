@@ -102,3 +102,11 @@ npm run deploy
 5. 대표 계정과 현진님 계정만 허용되고 미등록 계정은 거부되는지 확인합니다.
 
 Cloudflare Rate Limiting binding은 직원 UID별 분당 20회를 허용합니다. KV의 회사 일일 집계는 무료 한도 보호용이며 정확한 회계 원장으로 사용하지 않습니다.
+
+## Monthly report manual BrandMessage delivery
+
+Monthly reports use the existing registered `BRINGMONTHLYBRANDV1.json` TEXT template through NCP `/brandmessage/v2`; quote and completion-report AlimTalk paths remain separate. `KAKAO_MONTHLY_BRAND_ENABLED` and the exact registered `KAKAO_MONTHLY_BRAND_TEMPLATE_CODE` enable the monthly capability. The rejected monthly AlimTalk flag stays false. No monthly cron or automatic retry is created.
+
+The recipient must have a current CRM Kakao marketing consent (`messageConsents.kakao`: granted, consentedAt, evidenceRef, consentTextVersion; no withdrawnAt). The Worker re-reads canonical administrator access, linked active operator profile when present, current customer contact and consent using the caller's Firebase token before sending. Only friend-intersection targeting `I` is supported; the provider also enforces channel friendship. The registered template includes advertising and channel-block opt-out text. SMS fallback and reservation are disabled. Immediate sends are limited to 08:00–20:49 Asia/Seoul.
+
+The combined document-and-message endpoint retains one request claim on uncertain acknowledgements and never retries a provider POST automatically. Receipt records distinguish monthly BrandMessage from older AlimTalk records. Successful provider receipt `0000` means delivery, not customer read status. Links expire after seven days from the desktop. Rollback through the serialized release workflow by reverting this change; keep the monthly AlimTalk flag disabled. Never enable a template or synthesize consent for real customers solely to pass readiness checks.

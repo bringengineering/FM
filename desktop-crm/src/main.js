@@ -26,6 +26,7 @@ const { createWeeklyDeliveryService } = require("./weekly-report-delivery");
 const { weeklyReportPdfHtml } = require("./weekly-report-pdf");
 const QuoteCore = require("./quote-core");
 const SavedCustomerDocuments = require("./saved-customer-documents");
+const MessagePolicy = require("./message-policy");
 const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
 const WorkReportArchive = require("./work-report-archive");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
@@ -2709,6 +2710,14 @@ async function sendSavedCustomerDocument(input) {
   const capabilities = await runDocumentDelivery("capabilities"); session.check();
   if (!capabilities?.ok || capabilities.capabilities?.[monthly ? "monthlyReport" : "kakao"] !== true) throw new Error("문서 알림톡 발신 설정과 승인 템플릿을 확인해 주세요.");
   const latest = await remoteClient.loadStore(); session.check();
+  let monthlyBuilding;
+  if (monthly) {
+    const recipient = (latest.customers || []).find(row => row.id === customer.id && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+    const decision = MessagePolicy.evaluateKakaoMarketingConsent(recipient);
+    if (!decision.allowed) throw Object.assign(new Error(decision.message), {code: decision.code});
+    monthlyBuilding = (latest.buildings || []).find(row => row.id === record.buildingId && !row.archivedAt && String(row.ownerCustomerId) === String(customer.id));
+    if (!monthlyBuilding) throw new Error("월간보고서 건물과 수신 고객의 연결을 다시 확인해 주세요.");
+  }
   if (input?.kind === "workReport") {
     const reports = await remoteClient.loadWorkReports(); session.check();
     const report = (reports.reports || []).find(row => row.id === input.documentId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
@@ -2726,7 +2735,7 @@ async function sendSavedCustomerDocument(input) {
   const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
     documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: completionReport ? WorkReportMessage.documentName(completionReport) : record.title,
     ...(completionReport ? {completionReport} : {}),
-    ...(monthly ? {reportMonth: record.savedCustomerDocument.month} : {}),
+    ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
     expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
     delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
   session.check();
@@ -2950,8 +2959,16 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   }
   const capabilities = await runDocumentDelivery("capabilities");
   if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.monthlyReport !== true) {
-    return { ok: false, code: "KAKAO_MONTHLY_REPORT_NOT_READY", error: "월간보고서 발신 설정과 승인 템플릿 상태를 확인해 주세요." };
+    return { ok: false, code: "KAKAO_MONTHLY_REPORT_NOT_READY", error: "월간보고서 브랜드 메시지 발신 설정을 확인해 주세요." };
   }
+
+  const session = savedDocumentSession(true);
+  const current = await remoteClient.loadStore(); session.check();
+  const recipient = (current.customers || []).find(row => String(row.id) === ownerCustomerId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+  const building = (current.buildings || []).find(row => row.id === options.reportRequest?.building?.id && !row.archivedAt && String(row.ownerCustomerId) === ownerCustomerId);
+  if (!recipient || !building || SavedCustomerDocuments.phone(recipient.phone) !== phone) throw new Error("건물과 수신 고객의 최신 연결·연락처를 확인해 주세요.");
+  const consent = MessagePolicy.evaluateKakaoMarketingConsent(recipient);
+  if (!consent.allowed) throw Object.assign(new Error(consent.message), {code: consent.code});
 
   const artifact = await prepareBuildingMonthlyReportArtifact(options.reportRequest);
   if (!artifact.ok) return artifact;
@@ -2962,42 +2979,32 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   }
   if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
 
+  session.check();
+  const attemptId = "monthly_" + crypto.createHash("sha256").update(JSON.stringify([user.uid, building.id, ownerCustomerId, phone, options.reportRequest])).digest("hex");
+  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 월간보고서는 이미 발송 요청했습니다. 재발송하지 말고 전달 상태를 확인해 주세요.");
+  savedDocumentSendAttempts.set(attemptId, "unknown");
   const customerId = `monthly_${crypto.randomBytes(16).toString("hex")}`;
   const documentName = `${artifact.report.buildingName} ${artifact.report.monthText} 월간 관리 보고서`.slice(0, 160);
-  const created = await runDocumentDelivery("create", {
+  const sent = await runDocumentDelivery("createAndSend", {
     documentId: `report_${crypto.randomBytes(16).toString("hex")}`,
     customerId,
     documentType: "monthly_report",
     documentName,
     reportMonth: artifact.report.month,
+    crmCustomerId: ownerCustomerId,
+    buildingName: artifact.report.buildingName,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     mimeType: "application/pdf",
     bytes: bytes.toString("base64"),
+    delivery: {channel: "kakao", idempotencyKey: attemptId, customerName: artifact.report.ownerName, phone},
   });
-  if (!created || created.ok !== true || !created.documentId) {
-    return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "보안 월간보고서 링크를 만들지 못했습니다." };
-  }
-
-  let sent;
-  try {
-    if (artifact.sessionGuard) remoteClient.assertSessionGuardActive(artifact.sessionGuard);
-    sent = await runDocumentDelivery("send", {
-      channel: "kakao",
-      idempotencyKey: crypto.randomBytes(20).toString("hex"),
-      documentId: created.documentId,
-      customerId,
-      customerName: artifact.report.ownerName || String(options.ownerName || "건물주").slice(0, 80),
-      phone,
-    });
-  } catch (error) {
-    await runDocumentDelivery("revoke", { documentId: created.documentId });
-    throw error;
-  }
+  session.check();
   if (!sent || sent.ok !== true) {
-    await runDocumentDelivery("revoke", { documentId: created.documentId });
-    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "월간보고서 알림톡 발송을 요청하지 못했습니다." };
+    if (["MARKETING_CONSENT_REQUIRED", "MARKETING_CONSENT_WITHDRAWN", "CONSENT_EVIDENCE_REQUIRED", "RECIPIENT_MISMATCH", "DELIVERY_QUIET_HOURS", "DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_UNAVAILABLE", "FORBIDDEN"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "월간보고서 카카오톡 발송을 요청하지 못했습니다." };
   }
-  return { ok: true, status: sent.status || "requested", messageId: sent.messageId || "", month: artifact.report.month };
+  savedDocumentSendAttempts.set(attemptId, sent.status || "unknown");
+  return { ok: true, status: sent.status || "unknown", messageId: sent.messageId || "", month: artifact.report.month };
 }
 
 // 결과보고서와 월간 보고서가 같은 방식으로 문서를 그린다. 창을 따로 두면

@@ -65,17 +65,18 @@ test("sends the exact approved AlimTalk variables and deduplicates the request k
   assert.deepEqual(calls[0].variables, { 고객명: "엄준식", 문서명: "입주청소 견적서", 보고월: "", 만료일: "2026-09-11", 문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token" });
 });
 
-test("monthly AlimTalk is enabled only by its own approved-template flag", async () => {
+test("monthly uses its own brand switch and never the rejected AlimTalk approval flag", async () => {
   const storage = memory();
   await storage.put("doc:doc_month", JSON.stringify({
     id: "doc_month", token: "token", documentType: "monthly_report", documentName: "햇빛빌라 2026년 8월 월간 관리 보고서",
-    reportMonth: "2026-08", customerId: "c1", expiresAt: "2026-09-11T00:00:00Z",
+    buildingName: "TEST 건물", crmCustomerId: "customer_fixture", reportMonth: "2026-08", customerId: "c1", expiresAt: "2026-09-11T00:00:00Z",
     secureUrl: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
   }));
   const calls = [];
   const handler = createDocumentDeliveryHandler({
     now: () => Date.parse("2026-09-04T00:00:00Z"),
     randomId: () => "monthly_message_1",
+    resolveMonthlyRecipient: async () => ({customerName: "건물주"}),
     sendProvider: async input => { calls.push(input); return { providerMessageId: "ncp_month_1" }; }
   });
   const env = {
@@ -95,12 +96,15 @@ test("monthly AlimTalk is enabled only by its own approved-template flag", async
   assert.equal(calls.length, 0);
 
   env.KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED = "true";
+  assert.equal((await handler(request(), identity, env)).status, 503);
+  env.KAKAO_MONTHLY_BRAND_ENABLED = "true";
+  env.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE = "a".repeat(40);
   const sent = await handler(request(), identity, env);
   assert.equal((await sent.json()).ok, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].templateCode, "BRINGMONTHLYREPORTV1");
   assert.deepEqual(calls[0].variables, {
-    고객명: "건물주", 문서명: "햇빛빌라 2026년 8월 월간 관리 보고서", 보고월: "2026-08", 만료일: "2026-09-11",
+    건물명: "TEST 건물", 고객명: "건물주", 문서명: "햇빛빌라 2026년 8월 월간 관리 보고서", 보고월: "2026-08", 만료일: "2026-09-11",
     문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
   });
 });

@@ -25,6 +25,8 @@ export function summarizeBindings(bindings) {
     deliveryEnabled: flag("DOCUMENT_DELIVERY_ENABLED"),
     documentTemplatesApprovedFlag: flag("KAKAO_DOCUMENT_TEMPLATES_APPROVED"),
     monthlyTemplateApprovedFlag: flag("KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED"),
+    monthlyBrandEnabledFlag: flag("KAKAO_MONTHLY_BRAND_ENABLED"),
+    monthlyBrandTemplatePresent: /^[a-f0-9]{40}$/.test(find("KAKAO_MONTHLY_BRAND_TEMPLATE_CODE")?.text || ""),
   };
 }
 
@@ -49,7 +51,7 @@ export async function checkDocumentDelivery({ token, fetchImpl = fetch } = {}) {
 }
 
 export function requireApprovedDocumentDelivery(status) {
-  const required = ["storagePresent", "accessKeyPresent", "secretKeyPresent", "serviceIdPresent", "channelIdPresent", "deliveryEnabled", "documentTemplatesApprovedFlag"];
+  const required = ["storagePresent", "accessKeyPresent", "secretKeyPresent", "serviceIdPresent", "channelIdPresent", "deliveryEnabled", "documentTemplatesApprovedFlag", "monthlyBrandEnabledFlag", "monthlyBrandTemplatePresent"];
   if (!status || required.some(name => status[name] !== true) || status.monthlyTemplateApprovedFlag !== false) {
     throw new Error("APPROVED_DOCUMENT_DELIVERY_NOT_READY");
   }

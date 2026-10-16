@@ -39,7 +39,7 @@ test("월간보고서는 승인된 템플릿 준비 상태와 관리 권한이 �
   assert.match(view, /data-building-monthly-kakao-send/u);
   assert.match(view, /documentDeliveryCapabilities\.monthlyReport/u);
   assert.match(view, /canAdministerSecurity\(\)/u);
-  assert.match(app, /월간보고서 알림톡 발송 요청을 접수했습니다/u);
+  assert.match(app, /월간보고서 카카오톡 발송 요청 접수/u);
   assert.match(main, /async function sendBuildingMonthlyReportToCustomerByKakao/u);
   assert.match(main, /capabilities\.monthlyReport !== true/u);
   assert.match(main, /documentType: "monthly_report"/u);

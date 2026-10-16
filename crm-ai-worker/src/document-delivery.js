@@ -1,3 +1,5 @@
+import { monthlyBrandReady, monthlyBrandRecipient, assertMonthlyBrandTime } from './monthly-brand-delivery.js';
+
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
 const PUBLIC_DOCUMENT_ORIGIN = "https://bring-crm-ai-gateway.bringengineering1008.workers.dev";
@@ -56,7 +58,7 @@ function configured(env) {
   return {
     storage,
     kakao: Boolean(kakaoBase && env.KAKAO_DOCUMENT_TEMPLATES_APPROVED === "true"),
-    monthlyReport: Boolean(kakaoBase && env.KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED === "true"),
+    monthlyReport: Boolean(kakaoBase && monthlyBrandReady(env)),
     sms: Boolean(storage && ncp && env.DOCUMENT_DELIVERY_ENABLED === "true" && env.NCP_SENS_SERVICE_ID && env.NCP_SENS_FROM)
   };
 }
@@ -73,6 +75,7 @@ function linkVariables(document, customerName) {
     고객명: clean(customerName, 80),
     문서명: document.documentName,
     보고월: document.reportMonth || "",
+    ...(document.documentType === "monthly_report" ? {건물명: document.buildingName || ""} : {}),
     만료일: document.expiresAt.slice(0, 10),
     문서링크: `${url.host}${url.pathname}`,
     ...(document.completionReport ? {건물주소: document.completionReport.buildingAddress, 작업명: document.completionReport.workName} : {})
@@ -143,7 +146,14 @@ async function ncpJson(method, uri, body, env, options = {}) {
 export async function sendNcpDocument(input, options = {}) {
   const env = input.env || {};
   let uri, body;
-  if (input.channel === "kakao") {
+  if (input.channel === "kakao" && input.document?.documentType === "monthly_report") {
+    if (!monthlyBrandReady(env)) fail("DELIVERY_UNAVAILABLE");
+    assertMonthlyBrandTime((options.now || Date.now)());
+    uri = `/brandmessage/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
+    body = {plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), messageType: "TEXT", templateCode: env.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE,
+      targeting: "I", messages: [{to: input.phone, templateParameters: {고객명: input.variables.고객명, 건물명: input.variables.건물명,
+        보고월: input.variables.보고월, 만료일: input.variables.만료일, 문서링크: input.variables.문서링크}, useSmsFailover: false}]};
+  } else if (input.channel === "kakao") {
     if (input.templateCode === "BRINGCOMPLETIONREPORTV2" && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
     uri = `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
     const link = `https://${input.variables.문서링크}`;
@@ -168,7 +178,8 @@ export async function sendNcpDocument(input, options = {}) {
 export async function readNcpDocumentStatus(record, env, options = {}) {
   if (record.channel !== "kakao") return {status: "requested"};
   const id = safeId(record.providerMessageId);
-  const value = await ncpJson("GET", `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages/${id}`, null, env, options);
+  const kind = record.deliveryType === "monthly_brand" ? "brandmessage" : "alimtalk";
+  const value = await ncpJson("GET", `/${kind}/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages/${id}`, null, env, options);
   if (value?.messageId !== id) fail("DELIVERY_STATUS_UNAVAILABLE");
   const code = providerCode(value.messageStatusCode || value.requestStatusCode);
   if (value.requestStatusCode && value.requestStatusCode !== "A000") return {status: "failed", failureCode: code};
@@ -209,6 +220,7 @@ export function createDocumentDeliveryHandler(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const sendProvider = options.sendProvider || (input => sendNcpDocument(input, { fetchImpl, now }));
   const readProvider = options.readProvider || ((record, env) => readNcpDocumentStatus(record, env, {fetchImpl, now}));
+  const resolveMonthlyRecipient = options.resolveMonthlyRecipient || ((request, identity, document, input) => monthlyBrandRecipient(request, identity, document, input, fetchImpl));
   const readConnection = options.readConnection || ((record, env) => readNcpDocumentConnection(record.templateId, env, {fetchImpl, now}));
   const wait = options.wait || (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
   // KV allows only one write per key per second. Preserve the provisional claim,
@@ -256,14 +268,21 @@ export function createDocumentDeliveryHandler(options = {}) {
       decodeBase64(input.bytes);
       const reportMonth = documentType === "monthly_report" ? clean(input.reportMonth, 7) : "";
       if (documentType === "monthly_report" && !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(reportMonth)) fail();
+      const monthlyFields = documentType === "monthly_report" ? {crmCustomerId: safeId(input.crmCustomerId), buildingName: clean(input.buildingName, 160)} : {};
+      if (documentType === "monthly_report" && !monthlyFields.buildingName) fail();
       const expiration = expiry(input.expiresAt, now);
       const id = `doc_${randomId()}`, token = randomId();
       const record = { id, token, documentId: safeId(input.documentId), documentType, documentName: clean(input.documentName, 160), reportMonth, customerId: safeId(input.customerId), expiresAt: expiration.expiresAt, secureUrl: `${PUBLIC_DOCUMENT_ORIGIN}/d/${token}`, bytes: String(input.bytes), createdBy: identity.email, createdAt: new Date(now()).toISOString() };
+      Object.assign(record, monthlyFields);
       if (completionReport) {
         record.completionReport = completionReport;
         record.documentName = `${completionReport.buildingAddress} ${completionReport.workName} 결과보고서`;
       }
       if (!record.documentName) fail();
+      if (combined && documentType === "monthly_report") {
+        assertMonthlyBrandTime(now());
+        await resolveMonthlyRecipient(request, identity, record, input.delivery);
+      }
       await env.DOCUMENT_DELIVERY.put(`doc:${id}`, JSON.stringify(record), { expirationTtl: expiration.ttl });
       await env.DOCUMENT_DELIVERY.put(`token:${token}`, id, { expirationTtl: expiration.ttl });
       if (combined) return dispatch(record, {...input.delivery, customerId: record.customerId}, identity, env, key);
@@ -287,10 +306,19 @@ export function createDocumentDeliveryHandler(options = {}) {
       const channelReady = channel === "sms" ? capabilities.sms
         : document.documentType === "monthly_report" ? capabilities.monthlyReport : capabilities.kakao;
       if (!channelReady) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
+      const monthly = document.documentType === "monthly_report";
+      if (monthly && channel !== "kakao") fail("DELIVERY_UNAVAILABLE");
+      let monthlyRecipient;
+      if (monthly) {
+        assertMonthlyBrandTime(now());
+        monthlyRecipient = await resolveMonthlyRecipient(request, identity, document, input);
+      }
       if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
       activeRequests.add(key);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
+      if (monthlyRecipient) variables.고객명 = monthlyRecipient.customerName;
       const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType, document.completionReport), stateUpdatedAt: now()};
+      if (monthly) Object.assign(pending, {deliveryType: "monthly_brand", templateId: dispatchEnv.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE});
       let pendingWrittenAt = 0, providerAccepted = false;
       // No automatic retry after a possibly accepted POST. Preserve its link.
       try {
@@ -343,7 +371,7 @@ export function createDocumentDeliveryHandler(options = {}) {
           }
         } catch { /* Receipt unavailability is not evidence of delivery failure. */ }
       }
-      if (record.status === "unknown" && record.channel === "kakao") {
+      if (record.status === "unknown" && record.channel === "kakao" && record.deliveryType !== "monthly_brand") {
         const previous = record.connectionCode, connection = await readConnection(record, env);
         record.connectionCode = CONNECTION_CODES.has(connection) ? connection : "PROVIDER_RESPONSE_INVALID";
         // Persist only a finite diagnostic category. Older desktop clients can
