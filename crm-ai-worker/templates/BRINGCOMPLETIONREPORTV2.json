@@ -1,6 +1,6 @@
 {
   "templateCode": "BRINGCOMPLETIONREPORTV2",
-  "templateName": "BRING CARE 작업 결과보고서 주소 안내",
+  "templateName": "작업결과보고서주소안내",
   "content": "[BRING CARE 작업 결과보고서 안내]\n#{건물주소} 건물주님, #{작업명} 결과 보고서가 발행되었습니다.\n\n작업명: #{문서명}\n열람기한: #{만료일}\n\n아래 버튼에서 결과보고서를 확인해 주세요.\n문의: 1511-3873",
   "buttons": [
     {
