@@ -75,7 +75,7 @@ function harness(options = {}) {
   const data = {customers: [customer], company: {buildingDocsFolderId: "root_folder"}, buildingDocuments: [record()], buildings: [], partnerVendors: []};
   let active = true;
   const state = {user: {uid: "user_a", role: options.role || "admin"}};
-  const context = {Buffer, crypto, Object, Date, String, Error, SavedCustomerDocuments: Docs, SavedCustomerDocumentPdf: Pdf,
+  const context = {Buffer, crypto, Object, Date, String, Error, WorkReportMessage: require("../src/work-report-message"), SavedCustomerDocuments: Docs, SavedCustomerDocumentPdf: Pdf,
     WorkReportArchive: require("../src/work-report-archive"),
     authState: () => state, isMarketingOnlySession: () => Boolean(options.marketing),
     assertMainMutationAllowed: () => {if (!["member","admin"].includes(state.user?.role)) throw Error("denied");},
@@ -126,7 +126,7 @@ test("작업보고서 메인 저장은 원본 조회 후 개별 문서 노드 CA
   const R=require("../src/work-report-core");
   const report=R.normalizeReport({id:"wr_main",buildingId:"b1",workDate:"2026-10-06",updatedAt:"2026-10-06T00:00:00Z"});
   report.items.forEach((item,index)=>Object.assign(item,index===0?{before:[{id:"before"}],after:[{id:"after"}]}:{status:"skipped",note:"대상 제외"}));
-  const h=harness({reports:[report],conflictOnce:true});h.data.buildings=[{id:"b1",name:"예시 건물",ownerCustomerId:customer.id}];
+  const h=harness({reports:[report],conflictOnce:true});h.data.buildings=[{id:"b1",name:"예시 건물",address:"예시시 예시로 123",ownerCustomerId:customer.id}];
   const result=await h.context.saveCustomerDocument({kind:"workReport",reportId:report.id,updatedAt:report.updatedAt});
   assert.equal(result.ok,true);assert.ok(Docs.normalize(result.record));
   assert.equal(h.events.filter(e=>e[0]==="conditional-put").length,2);
@@ -161,11 +161,13 @@ test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 �
   await assert.rejects(anonymous.context.sendSavedCustomerDocument(request()));
 });
 test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 기록·누락 사진은 보내지 않는다", async () => {
-  const report = {id: "report_a", ownerContact: customer.phone, updatedAt: "revision_a", items: [{before: [{}], after: [{}]}]};
+  const report = {id: "report_a", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", ownerContact: customer.phone, updatedAt: "revision_a", items: [{before: [{}], after: [{}]}]};
   const input = {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt, report: {buildingName: "forged"}};
   const h = harness({reports: [report]});
   assert.equal((await h.context.sendSavedCustomerDocument(input)).ok, true);
   assert.equal(h.events.find(item => item[0] === "createAndSend")[1].documentType, "completion_report");
+  assert.equal(h.events.find(item => item[0] === "createAndSend")[1].completionReport.buildingAddress, "예시시 예시로 123");
+  assert.equal(h.events.find(item => item[0] === "createAndSend")[1].documentName, "예시시 예시로 123 공용부 청소 결과보고서");
   await assert.rejects(h.context.sendSavedCustomerDocument({...input, updatedAt: "old"}), /변경/);
   await assert.rejects(harness({reports: [report], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
 });

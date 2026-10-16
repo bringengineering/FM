@@ -33,6 +33,7 @@ const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const ReportPdfRenderer = require("./report-pdf-renderer");
 const WorkReportCore = require("./work-report-core");
+const WorkReportMessage = require("./work-report-message");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
 const ProjectWeeklyReportExport = require("./project-weekly-report-export");
@@ -2679,7 +2680,7 @@ async function readSavedWorkReportPdf(input, session) {
   if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
   const expectedPhotos = report.items.reduce((count, item) => count + item.before.length + item.after.length, 0);
   if (artifact.photoFailures || artifact.photos < expectedPhotos) throw new Error("결과보고서 사진을 모두 읽지 못했습니다. Drive 연결과 사진 권한을 확인해 주세요.");
-  return {customer, bytes: artifact.bytes, record: {id: report.id, updatedAt: report.updatedAt, title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
+  return {customer, bytes: artifact.bytes, report, record: {id: report.id, updatedAt: report.updatedAt, title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
 }
 
 async function previewSavedCustomerDocument(input) {
@@ -2703,7 +2704,7 @@ async function sendSavedCustomerDocument(input) {
   const session = savedDocumentSession(true);
   if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
   if (input?.kind === "workReport" && input.sha256) return archivedWorkReports().send(input, session);
-  const {record, customer, bytes} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
+  const {record, customer, bytes, report: workReport} = input?.kind === "workReport" ? await readSavedWorkReportPdf(input, session) : await readSavedCustomerPdf(input, session);
   SavedCustomerDocumentPdf.verifyPdf(bytes);
   const monthly = record.savedCustomerDocument.kind === "buildingMonthlyReport";
   const capabilities = await runDocumentDelivery("capabilities"); session.check();
@@ -2724,6 +2725,7 @@ async function sendSavedCustomerDocument(input) {
     if (!report || !owner || String(report.updatedAt || "") !== input.updatedAt || SavedCustomerDocuments.phone(owner.phone) !== SavedCustomerDocuments.phone(customer.phone)
       || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(owner.phone)) throw new Error("보고서 또는 수신 연락처가 변경되었습니다. 다시 선택해 주세요.");
   } else SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, input);
+  const completionReport = workReport ? WorkReportMessage.details(workReport, (latest.buildings || []).find(row => row.id === workReport.buildingId)) : null;
   // PDF creation timestamps vary on each export; deduplicate the immutable CRM
   // revision rather than freshly rendered PDF bytes.
   const attemptId = crypto.createHash("sha256").update([session.user.uid, record.savedCustomerDocument.kind, record.id, record.updatedAt, customer.id, SavedCustomerDocuments.phone(customer.phone), record.savedCustomerDocument.sha256 || ""].join("\n")).digest("hex");
@@ -2731,7 +2733,8 @@ async function sendSavedCustomerDocument(input) {
   savedDocumentSendAttempts.set(attemptId, "unknown");
   const customerId = "saved_" + crypto.randomBytes(16).toString("hex");
   const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
-    documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: record.title,
+    documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: completionReport ? WorkReportMessage.documentName(completionReport) : record.title,
+    ...(completionReport ? {completionReport} : {}),
     ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
     expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
     delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
@@ -4881,6 +4884,7 @@ async function sendWorkReportToCustomerByKakao(input) {
     }
   }
 
+  const completionReport = WorkReportMessage.details(report);
   // 서버 capability 는 승인 템플릿, 발신 프로필, NCP 발송 설정을 모두 확인한다.
   // 화면의 버튼 상태와 별개로 매 발송 때 서버에서 다시 확인한다.
   const capabilities = await runDocumentDelivery("capabilities");
@@ -4899,7 +4903,8 @@ async function sendWorkReportToCustomerByKakao(input) {
     documentId: `report_${crypto.randomBytes(16).toString("hex")}`,
     customerId,
     documentType: "completion_report",
-    documentName: `${report.buildingName || "건물"} 작업 결과보고서`,
+    documentName: WorkReportMessage.documentName(completionReport),
+    completionReport,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     mimeType: "application/pdf",
     bytes: artifact.bytes,
