@@ -4425,6 +4425,40 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(get(ref(disabled, "crmCompany/data")));
   });
 
+  it("saves validated consent for linked customers through verified CRM administrators and ordinary members", async () => {
+    const consent = { status: "granted", consentedAt: NOW, withdrawnAt: "", source: "manual", consentTextVersion: "fixture-v1", evidenceRef: "fixture-user-request", evidenceUrl: "", recordedBy: "crm-admin", recordedAt: NOW, updatedAt: NOW };
+    const location = "crmCompany/data/customers/customer_1/messageConsents";
+    for (const [uid, email] of [["crm-admin", "admin@bring.test"], ["crm-legacy-member", "legacy@bring.test"]] as const) {
+      const database = environment.authenticatedContext(uid, crmPasswordClaims(email)).database();
+      await assertSucceeds(set(ref(database, location), { kakao: consent, sms: { ...consent, status: "not_collected", consentedAt: "" } }));
+      await assertSucceeds(set(ref(database, `${location}/kakao`), { ...consent, status: "withdrawn", withdrawnAt: NOW }));
+      expect((await get(ref(database, `${location}/kakao/status`))).val()).toBe("withdrawn");
+      expect((await get(ref(database, "crmCompany/data/customers/customer_1/buildingIdLinks"))).val()).toEqual({ building_1: true });
+    }
+  });
+
+  it("denies unauthorized identities and malformed customer message consent", async () => {
+    const consent = { status: "granted", consentedAt: NOW, withdrawnAt: "", source: "manual", consentTextVersion: "fixture-v1", evidenceRef: "fixture-user-request", evidenceUrl: "", recordedBy: "crm-admin", recordedAt: NOW, updatedAt: NOW };
+    const location = "crmCompany/data/customers/customer_1/messageConsents/kakao";
+    const denied = [
+      environment.unauthenticatedContext().database(),
+      ...(["crm-viewer", "crm-disabled", "crm-marketing", "crm-member"] as const).map(uid => environment.authenticatedContext(uid, crmPasswordClaims(CRM_ACCESS[uid].email)).database()),
+      environment.authenticatedContext("crm-admin", crmPasswordClaims("wrong@bring.test")).database(),
+      environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test", false)).database(),
+      environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test", true, "google.com")).database(),
+    ];
+    for (const database of denied) await assertFails(set(ref(database, location), consent));
+    const admin = environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test")).database();
+    for (const invalid of [{ ...consent, extra: "forbidden" }, { ...consent, status: "approved" }, { ...consent, evidenceRef: "" }, { ...consent, consentedAt: 10 }, { ...consent, status: "withdrawn", withdrawnAt: "" }]) {
+      await assertFails(set(ref(admin, location), invalid));
+    }
+    await assertFails(set(ref(admin, "crmCompany/data/customers/customer_1/messageConsents/email"), consent));
+    await assertFails(set(ref(admin, "crmCompany/data/customers/missing/messageConsents/kakao"), consent));
+    await assertFails(update(ref(admin, "crmCompany/data/customers/customer_1"), { "messageConsents/kakao": consent, "buildingIdLinks/building_1": null }));
+    expect((await get(ref(admin, "crmCompany/data/customers/customer_1/buildingIdLinks"))).val()).toEqual({ building_1: true });
+    expect((await get(ref(admin, location))).exists()).toBe(false);
+  });
+
   it("keeps customer building links append-only while preserving ordinary and unlinked legacy customer writes", async () => {
     await exerciseCustomerBuildingLinkRules(environment);
   });
