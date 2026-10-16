@@ -72,7 +72,7 @@ test("인감 제거는 사진 확인·보고서 검증·민감정보·세션 검
 
 test("실제 보고서 생성 함수를 거친 인감 없는 PDF가 CRM에 보관되고 같은 저장본으로 발송된다", async () => {
   const h = harness(); const value = report("common");
-  const data = {company: {buildingDocsFolderId: "root_fixture"}, settings: {quoteCompany: {businessName: "예시 회사"}}, buildings: [{id: value.buildingId, name: "예시 건물", ownerCustomerId: "owner_fixture"}], customers: [{id: "owner_fixture", name: "예시 건물주", phone: "01000000000"}], buildingDocuments: []};
+  const data = {company: {buildingDocsFolderId: "root_fixture"}, settings: {quoteCompany: {businessName: "예시 회사"}}, buildings: [{id: value.buildingId, name: "예시 건물", address:"예시시 예시로 123", ownerCustomerId: "owner_fixture"}], customers: [{id: "owner_fixture", name: "예시 건물주", phone: "01000000000"}], buildingDocuments: []};
   let savedBytes, sentBytes, sends = 0;
   const service = Archive.createService({
     reports: async () => ({reports: [value]}), store: async () => structuredClone(data),

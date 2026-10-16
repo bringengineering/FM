@@ -7,7 +7,7 @@ const Pdf = require("../src/saved-customer-document-pdf");
 const Archive = require("../src/work-report-archive");
 const bytes = Buffer.from("%PDF-1.7\nsynthetic archived report");
 function fixture(options = {}) {
-  const report = R.normalizeReport({id:"wr_fixture", buildingId:"building_a", buildingName:"예시 건물", workDate:"2026-10-06", updatedAt:"2026-10-06T01:00:00.000Z"});
+  const report = R.normalizeReport({id:"wr_fixture", buildingId:"building_a", buildingName:"예시 건물", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", workDate:"2026-10-06", updatedAt:"2026-10-06T01:00:00.000Z"});
   for (const item of report.items) { item.status = "skipped"; item.note = "대상 제외"; }
   Object.assign(report.items[0], {status:"done", note:"확인 완료", before:[{id:"p_before",driveFileId:"photo_before"}], after:[{id:"p_after",driveFileId:"photo_after"}]});
   assert.equal(R.validateReport(report).ok, true);
@@ -55,6 +55,8 @@ test("발송은 저장 PDF 그대로·현재 건물주에게만 한 번 접수�
   assert.equal(sent.status,"requested");
   assert.equal(h.events.find(e=>e[0]==="createAndSend")[1].bytes,bytes.toString("base64"));
   assert.equal(h.events.find(e=>e[0]==="createAndSend")[1].delivery.phone,"01000000000");
+  assert.deepEqual(h.events.find(e=>e[0]==="createAndSend")[1].completionReport,{buildingAddress:"예시시 예시로 123",workName:"공용부 청소"});
+  assert.equal(h.events.find(e=>e[0]==="createAndSend")[1].documentName,"예시시 예시로 123 공용부 청소 결과보고서");
   const claim=h.events.findIndex(e=>e[0]==="persist"&&e[1]==="sending");
   assert.ok(claim<h.events.findIndex(e=>e[0]==="createAndSend"));
   await assert.rejects(h.service.send(request,h.session),/이미 발송/);
