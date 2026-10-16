@@ -4046,10 +4046,11 @@
     const ownerContact = String(owner && owner.phone || "");
     const ownerDigits = ownerContact.replace(/\D/gu, "");
     const monthlyKakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.monthlyReport === true;
-    const canSendMonthlyKakao = canAdministerSecurity() && monthlyKakaoReady && /^01\d{8,9}$/u.test(ownerDigits) && !buildingMonthlyReportState.kakaoSending;
+    const monthlyConsent = MessagePolicy.evaluateKakaoMarketingConsent(owner);
+    const canSendMonthlyKakao = canAdministerSecurity() && monthlyKakaoReady && monthlyConsent.allowed && /^01\d{8,9}$/u.test(ownerDigits) && !buildingMonthlyReportState.kakaoSending && !buildingMonthlyReportState.kakaoResult;
     const monthlyKakaoStatus = documentDeliveryCapabilities.loading || !documentDeliveryCapabilities.loaded
-      ? "알림톡 연결 상태 확인 중"
-      : monthlyKakaoReady ? "알림톡 발송 준비 완료" : "발신 설정 및 월간보고서 템플릿 승인 후 발송 가능";
+      ? "카카오톡 연결 상태 확인 중"
+      : !monthlyConsent.allowed ? monthlyConsent.message : monthlyKakaoReady ? "브랜드 메시지 발송 준비 완료 · 채널 친구 대상" : "월간보고서 브랜드 메시지 발신 설정 확인 필요";
     const contract = (store.contracts || []).find(item => item && String(item.buildingId || "") === String(building.id) && item.status !== "종료") || null;
     const request = buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, {
       nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
@@ -4116,7 +4117,7 @@
       </div>
       <div class="building-monthly-layout">
         <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>기억한 폴더에서 건물명·보고월에 맞는 사진을 찾아 Gemini가 검토합니다.</small></div>${monthlyDriveAction}</header>${monthlyDriveStatus}<p class="building-monthly-auto-status" role="status">${esc(buildingMonthlyReportState.autoProgress || (buildingMonthlyReportState.photoSource ? `자동 연결 폴더 · ${buildingMonthlyReportState.photoSource.name}` : "처음 한 번 활동사진 상위 폴더를 지정해 주세요. 다음부터는 자동으로 찾습니다."))}</p>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error" role="alert">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
-        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><header class="building-monthly-paper-cover"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(report.ownerName)}님</div></header><p class="building-monthly-paper-greeting">${esc(report.ownerName)}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>이번 달 관리 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label></div>${paperActivities}<div class="building-monthly-copy"><label>관리 결과 및 후속 확인<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos"><h5>날짜별 현장 활동 사진</h5>${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-crm-save ${customerDocumentSaving || !canWriteCRM() ? "disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 알림톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} 월간보고서 알림톡 발송 요청을 접수했습니다 · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} · 실제 전달 완료와는 별도로 표시됩니다.</p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
+        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><header class="building-monthly-paper-cover"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(report.ownerName)}님</div></header><p class="building-monthly-paper-greeting">${esc(report.ownerName)}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>이번 달 관리 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label></div>${paperActivities}<div class="building-monthly-copy"><label>관리 결과 및 후속 확인<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos"><h5>날짜별 현장 활동 사진</h5>${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-crm-save ${customerDocumentSaving || !canWriteCRM() ? "disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 카톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} · ${esc(monthlyKakaoResultText(buildingMonthlyReportState.kakaoResult))} · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} <button type="button" class="secondary-button" data-building-monthly-kakao-status>전달 상태 확인</button></p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
       </div>
       ${targetManager}
       ${photoPicker}
@@ -4326,6 +4327,7 @@
       });
     });
     main.querySelector("[data-building-monthly-kakao-send]")?.addEventListener("click", () => sendBuildingMonthlyReportByKakao(building, owner, planInput));
+    main.querySelector("[data-building-monthly-kakao-status]")?.addEventListener("click", () => refreshBuildingMonthlyKakaoStatus());
     if (buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy || buildingMonthlyReportState.loading) {
       main.querySelectorAll(".building-monthly-panel button, .building-monthly-panel input, .building-monthly-panel textarea, .building-monthly-panel select").forEach(control => { control.disabled = true; });
     }
@@ -4346,7 +4348,11 @@
   async function sendBuildingMonthlyReportByKakao(building, owner, planInput) {
     if (buildingMonthlyReportState.kakaoSending) return;
     if (!canAdministerSecurity()) return showToast("관리자만 고객에게 월간보고서를 보낼 수 있습니다.", "error");
-    if (!documentDeliveryCapabilities.monthlyReport) return showToast("월간보고서 알림톡 템플릿 승인과 발신 설정을 확인해 주세요.", "error");
+    if (!documentDeliveryCapabilities.monthlyReport) return showToast("월간보고서 브랜드 메시지 발신 설정을 확인해 주세요.", "error");
+    const consent = MessagePolicy.evaluateKakaoMarketingConsent(owner);
+    if (!consent.allowed) return showToast(consent.message, "error");
+    const state = buildingMonthlyReportState, generation = authGeneration;
+    if (state.kakaoResult) return showToast("이미 요청한 월간보고서입니다. 전달 상태를 확인해 주세요.", "error");
     const ownerContact = String(owner && owner.phone || "");
     const ownerDigits = ownerContact.replace(/\D/gu, "");
     if (!/^01\d{8,9}$/u.test(ownerDigits)) return showToast("연결된 건물주의 휴대전화 번호를 확인해 주세요.", "error");
@@ -4362,16 +4368,15 @@
     const confirmedContent = JSON.stringify(reportRequest);
     const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(reportRequest);
     const confirmed = await requestConfirmation({
-      title: "월간 관리 보고서를 알림톡으로 보낼까요?",
-      description: "건물주에게 7일 동안 열 수 있는 보안 PDF 링크를 보냅니다. 발송 뒤 실제 전달 상태는 카카오 발송 결과에 따라 달라질 수 있습니다.",
+      title: "월간 관리 보고서를 카카오톡으로 보낼까요?",
+      description: "카카오톡 수신동의가 확인된 채널 친구에게 브랜드 메시지로 보냅니다. (광고) 표시와 채널 차단 안내가 포함되며 PDF 링크는 7일 뒤 만료됩니다.",
       target: `${building.name || "건물 미지정"} · ${owner && owner.name || "건물주"} · ${ownerContact}`,
       message: `${reportRequest.month} 월간 관리 보고서 · 업무 ${reportPreview.summary.workCount}건 · 이 링크는 7일 동안 열립니다.`,
-      confirmLabel: "알림톡 발송",
+      confirmLabel: "카톡 발송",
     });
-    if (!confirmed) return;
+    if (!confirmed || state !== buildingMonthlyReportState || generation !== authGeneration) return;
     if (JSON.stringify(makeRequest()) !== confirmedContent) return showToast("보고서 내용이 바뀌어 발송을 취소했습니다. 다시 확인해 주세요.", "error");
 
-    const state = buildingMonthlyReportState;
     state.kakaoSending = true;
     state.kakaoResult = null;
     renderBuildingMonthlyReports();
@@ -4382,10 +4387,11 @@
         reportRequest,
       });
       if (!result || result.ok !== true) throw new Error(result && result.error || "월간보고서 알림톡을 발송하지 못했습니다.");
-      if (buildingMonthlyReportState === state) {
-        state.kakaoResult = { month: result.month || reportRequest.month, requestedAt: new Date().toLocaleString("ko-KR") };
+      if (generation === authGeneration && buildingMonthlyReportState === state) {
+        state.kakaoResult = { month: result.month || reportRequest.month, requestedAt: new Date().toLocaleString("ko-KR"), messageId: String(result.messageId || ""), status: result.status || "unknown" };
       }
-      showToast("월간보고서 알림톡 발송 요청을 접수했습니다. 실제 전달 완료와는 다를 수 있습니다.", "success");
+      showToast(monthlyKakaoResultText(state.kakaoResult), result.status === "unknown" ? "error" : "success");
+      if (result.messageId) await refreshBuildingMonthlyKakaoStatus();
     } catch (error) {
       showToast(error && error.message || "월간보고서 알림톡 발송에 실패했습니다.", "error");
     } finally {
@@ -4393,6 +4399,29 @@
         state.kakaoSending = false;
         if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
       }
+    }
+  }
+
+  function monthlyKakaoResultText(result) {
+    return result?.status === "delivered" ? "월간보고서 카카오톡 전달 완료 · 읽음 여부와는 다릅니다"
+      : result?.status === "failed" ? "월간보고서 전달 실패 · 결과 코드 " + (result.failureCode || "확인 필요")
+        : result?.status === "requested" ? "월간보고서 카카오톡 발송 요청 접수 · 전달 확인 중"
+          : "발송 결과 확인 필요 · 중복 발송하지 말고 상태를 확인해 주세요";
+  }
+
+  async function refreshBuildingMonthlyKakaoStatus() {
+    const state = buildingMonthlyReportState, receipt = state.kakaoResult, generation = authGeneration;
+    if (!receipt?.messageId || !canAdministerSecurity()) return;
+    try {
+      const result = await api.readCustomerDocumentDelivery({messageId: receipt.messageId});
+      if (state !== buildingMonthlyReportState || generation !== authGeneration || receipt !== state.kakaoResult) return;
+      if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error("전달 상태를 확인하지 못했습니다.");
+      receipt.status = result.status;
+      receipt.failureCode = /^(?:[AB]\d{3}|\d{4})$/.test(String(result.failureCode || "")) ? result.failureCode : "";
+    } catch (error) {
+      if (generation === authGeneration) showToast(error.message || "전달 상태 조회 실패", "error");
+    } finally {
+      if (state === buildingMonthlyReportState && generation === authGeneration && currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
     }
   }
 
@@ -4792,7 +4821,8 @@
     const customers = ids.map(customerById).filter(customer => customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true);
     if (!customers.length || customers.length !== ids.length) return showToast("선택한 고객을 다시 확인해 주세요.", "error");
     if (["quote", "buildingMonthlyReport", "workReport"].includes(state.category) && customers.length !== 1) return showToast("견적서와 보고서는 고객 한 명씩 발송해야 합니다.", "error");
-    const requestConfirmationFor = async (title, description, target, message) => requestConfirmation({ title, description, target, message, warning: "확인 후 실제 고객 휴대전화로 알림톡 발송 요청이 전달됩니다.", confirmLabel: "알림톡 발송" });
+    const deliveryLabel = state.category === "buildingMonthlyReport" ? "카톡" : "알림톡";
+    const requestConfirmationFor = async (title, description, target, message) => requestConfirmation({ title, description, target, message, warning: `확인 후 실제 고객 휴대전화로 ${deliveryLabel} 발송 요청이 전달됩니다.`, confirmLabel: `${deliveryLabel} 발송` });
     state.busy = true;
     state.result = "";
     renderCustomerAlimTalk();
@@ -4827,7 +4857,11 @@
         const customer = customers[0];
         const request = selectedCustomerDocumentRequest();
         const title = state.category === "workReport" ? "작업 결과보고서" : SavedCustomerDocuments.KINDS[state.category];
-        if (!await requestConfirmationFor(title + "를 알림톡으로 보낼까요?", "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
+        if (state.category === "buildingMonthlyReport") {
+          const consent = MessagePolicy.evaluateKakaoMarketingConsent(customer);
+          if (!consent.allowed) throw new Error(consent.message);
+        }
+        if (!await requestConfirmationFor(title + `를 ${deliveryLabel}으로 보낼까요?`, state.category === "buildingMonthlyReport" ? "수신동의가 확인된 채널 친구에게 브랜드 메시지로 보냅니다. 광고·수신거부 안내와 7일 만료 PDF 링크가 포함됩니다." : "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
         const sendGeneration = authGeneration;
         let result;
         try { result = await api.sendSavedCustomerDocument(request); }
@@ -4835,7 +4869,7 @@
         if (sendGeneration !== authGeneration) return;
         if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
         state.receipt = {generation: sendGeneration, messageId: String(result.messageId || ""), status: result.status === "requested" ? "requested" : "unknown", label: request.title, kind: request.kind, documentId: request.documentId, updatedAt: request.updatedAt, customerId: customer.id};
-        state.result = state.receipt.status === "requested" ? title + " 알림톡 발송 요청 접수 · 실제 전달 상태는 별도로 확인합니다." : "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 상태와 업체 기록을 확인해 주세요.";
+        state.result = state.receipt.status === "requested" ? title + ` ${deliveryLabel} 발송 요청 접수 · 실제 전달 상태는 별도로 확인합니다.` : "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 상태와 업체 기록을 확인해 주세요.";
         if (state.receipt.status === "requested" && state.receipt.messageId) await refreshCustomerAlimTalkDelivery(true);
         await refreshOperations({ silent: true, render: false });
         showToast(state.result, ["unknown", "failed"].includes(state.receipt.status) ? "error" : "success");

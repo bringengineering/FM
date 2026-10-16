@@ -10,6 +10,11 @@ const SAFE_ERRORS = Object.freeze({
   DOCUMENT_NOT_FOUND: "발송할 문서 저장을 확인하지 못했습니다. 문서를 다시 선택해 주세요.",
   DOCUMENT_EXPIRED: "문서가 만료되었거나 폐기되어 발송하지 않았습니다.",
   DELIVERY_UNAVAILABLE: "알림톡 발신 설정과 승인 템플릿을 확인해 주세요.",
+  DELIVERY_QUIET_HOURS: "브랜드 메시지는 오전 8시부터 오후 8시 50분 전까지 발송할 수 있습니다.",
+  RECIPIENT_MISMATCH: "수신 고객의 최신 연락처를 확인해 주세요.",
+  MARKETING_CONSENT_REQUIRED: "고객의 카카오톡 광고성 정보 수신 동의를 등록해 주세요.",
+  MARKETING_CONSENT_WITHDRAWN: "카카오톡 수신 동의를 철회한 고객에게는 발송할 수 없습니다.",
+  CONSENT_EVIDENCE_REQUIRED: "카카오톡 수신 동의 증빙과 문구 버전을 등록해 주세요.",
   DELIVERY_CONFIGURATION_ERROR: "알림톡 서버 설정 형식을 확인해 주세요.",
   DELIVERY_PROVIDER_AUTH_FAILED: "알림톡 업체가 서버 인증을 거절했습니다. 발신 서비스의 키와 권한을 확인해야 합니다.",
   DELIVERY_PROVIDER_SERVICE_NOT_FOUND: "알림톡 업체에서 연결된 발신 서비스를 찾지 못했습니다.",
@@ -71,7 +76,7 @@ async function requestDocumentDelivery(options = {}) {
   const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs || 15000));
   try {
     const fetchImpl = options.fetchImpl || globalThis.fetch;
-    const init = { method, headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" }, cache: "no-store", signal: controller.signal };
+    const init = { method, headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" }, redirect: "manual", cache: "no-store", signal: controller.signal };
     if (method !== "GET") init.body = JSON.stringify(bodyFor(action, options.input));
     const response = await fetchImpl(url.href, init);
     const value = await response.json().catch(() => null);

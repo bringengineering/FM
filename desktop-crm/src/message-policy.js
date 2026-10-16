@@ -58,13 +58,20 @@
     if (!text(request.customer.phone)) return result(false, "PHONE_REQUIRED", template);
     if (template.requiresSource && (!text(request.sourceType) || !text(request.sourceId))) return result(false, "SOURCE_REQUIRED", template);
     if (template.purpose === "marketing") {
-      const consent = effectiveConsent(request.customer, channel);
-      if (consent.status === "withdrawn") return result(false, "MARKETING_CONSENT_WITHDRAWN", template);
-      if (consent.status !== "granted" || !text(consent.consentedAt)) return result(false, "MARKETING_CONSENT_REQUIRED", template);
-      if (!text(consent.evidenceRef) || !text(consent.consentTextVersion)) return result(false, "CONSENT_EVIDENCE_REQUIRED", template);
+      const decision = evaluateMarketingConsent(request.customer, channel);
+      if (!decision.allowed) return result(false, decision.code, template);
     }
     return result(true, "ALLOWED", template);
   }
 
-  return Object.freeze({ TEMPLATES, effectiveConsent, evaluateMessageRequest });
+  function evaluateMarketingConsent(customer, channel) {
+    const consent = effectiveConsent(customer, channel);
+    if (consent.status === "withdrawn") return result(false, "MARKETING_CONSENT_WITHDRAWN");
+    if (consent.status !== "granted" || !text(consent.consentedAt)) return result(false, "MARKETING_CONSENT_REQUIRED");
+    if (!text(consent.evidenceRef) || !text(consent.consentTextVersion)) return result(false, "CONSENT_EVIDENCE_REQUIRED");
+    return result(true, "ALLOWED");
+  }
+
+  const evaluateKakaoMarketingConsent = customer => evaluateMarketingConsent(customer, "kakao");
+  return Object.freeze({ TEMPLATES, effectiveConsent, evaluateMessageRequest, evaluateKakaoMarketingConsent });
 });

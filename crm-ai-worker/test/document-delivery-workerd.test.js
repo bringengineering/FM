@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
+import {build} from "esbuild";
 import miniflare from "miniflare";
 const {Miniflare, convertV4MiniflareOptions} = miniflare;
 
@@ -22,7 +24,8 @@ async function runtime(script, method, uri, body, status = 200, headers = {}) {
     assert.equal(request.method, method);
     return new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json", ...headers}});
   };
-  const legacyOptions = {modules: true, host: "127.0.0.1", compatibilityDate: "2026-08-28", script: source + "\n" + script, bindings: fixture, outboundService};
+  const bundled = await build({stdin: {contents: source + "\n" + script, resolveDir: fileURLToPath(new URL('../src/', import.meta.url)), loader: 'js'}, bundle: true, write: false, platform: 'browser', format: 'esm', logLevel: 'silent'});
+  const legacyOptions = {modules: true, host: "127.0.0.1", compatibilityDate: "2026-08-28", script: bundled.outputFiles[0].text, bindings: fixture, outboundService};
   const mf = new Miniflare(convertV4MiniflareOptions ? convertV4MiniflareOptions(legacyOptions) : legacyOptions);
   try {
     const response = await mf.dispatchFetch("http://localhost/probe");
@@ -48,6 +51,13 @@ test("real workerd rejects the old error redirect mode before any outbound reque
   const script = `export default {async fetch() {try {await fetch("https://sens.apigw.ntruss.com/probe",{redirect:"error"});return Response.json({rejected:false});}catch(error){return Response.json({rejected:error.message.includes("Invalid redirect value")});}}};`;
   const {value, calls} = await runtime(script, "GET", "/probe", {});
   assert.equal(value.rejected, true); assert.equal(calls.length, 0);
+});
+
+test("real workerd sends one registered monthly brand template request", async () => {
+  const uri = "/brandmessage/v2/services/ncp:kkobizmsg:kr:fixture:service/messages";
+  const script = `export default {async fetch(request, env) {const result=await sendNcpDocument({channel:"kakao",phone:"01000000000",document:{documentType:"monthly_report"},env:{...env,KAKAO_MONTHLY_BRAND_ENABLED:"true",KAKAO_MONTHLY_BRAND_TEMPLATE_CODE:"${'a'.repeat(40)}"},variables:{고객명:"TEST",건물명:"TEST ONLY",보고월:"2026-09",만료일:"2026-10-23",문서링크:"example.invalid/fixture"}},{now:()=>Date.parse("2026-10-16T01:00:00Z")});return Response.json({ok:true,result});}};`;
+  const {value,calls}=await runtime(script,"POST",uri,{statusCode:"202",messages:[{messageId:"provider_fixture",requestStatusCode:"A000"}]},202);
+  assert.equal(value.ok,true);assert.equal(calls.length,1);
 });
 
 test("real workerd refuses provider redirects without following or forwarding signed headers", async () => {

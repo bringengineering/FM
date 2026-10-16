@@ -14,7 +14,7 @@ test("configuration diagnostics expose only presence and explicit approval flags
   ];
   assert.deepEqual(summarizeBindings(bindings), {
     storagePresent: true, accessKeyPresent: true, secretKeyPresent: true, serviceIdPresent: true, channelIdPresent: true,
-    deliveryEnabled: true, documentTemplatesApprovedFlag: false, monthlyTemplateApprovedFlag: null,
+    deliveryEnabled: true, documentTemplatesApprovedFlag: false, monthlyTemplateApprovedFlag: null, monthlyBrandEnabledFlag: false, monthlyBrandTemplatePresent: false,
   });
   assert.doesNotMatch(JSON.stringify(summarizeBindings(bindings)), /must-not-leak|private-account|private-storage/);
   assert.ok(Object.values(summarizeBindings([])).every(value => value === false));
@@ -47,10 +47,10 @@ test("manual diagnostic workflow runs only the reviewed release branch and never
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|wrangler deploy|secret put/);
 });
 
-test("release readiness requires every binding, approved documents, and monthly delivery disabled", () => {
+test("release readiness requires every binding, approved documents, and monthly AlimTalk disabled and brand enabled", () => {
   const ready = {
     storagePresent: true, accessKeyPresent: true, secretKeyPresent: true, serviceIdPresent: true, channelIdPresent: true,
-    deliveryEnabled: true, documentTemplatesApprovedFlag: true, monthlyTemplateApprovedFlag: false,
+    deliveryEnabled: true, documentTemplatesApprovedFlag: true, monthlyTemplateApprovedFlag: false, monthlyBrandEnabledFlag: true, monthlyBrandTemplatePresent: true,
   };
   assert.equal(requireApprovedDocumentDelivery(ready), ready);
   for (const key of Object.keys(ready).filter(key => key !== "monthlyTemplateApprovedFlag")) {
