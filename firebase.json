@@ -1,5 +1,12 @@
 {
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "hosting": {
+    "site": "bring-fm",
     "public": "company-site/firebase-public",
     "ignore": [
       "firebase.json",
@@ -8,9 +15,104 @@
     ],
     "cleanUrls": true,
     "trailingSlash": false,
+    "redirects": [
+      {
+        "source": "/turnover-care",
+        "destination": "/building-care#turnover-package",
+        "type": 301
+      }
+    ],
     "headers": [
       {
-        "source": "**/*.@(js|css)",
+        "source": "/crm-auth",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/crm-auth/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/crm-drive-auth",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/crm-drive-auth/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/crm-account-setup/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src https://asia-northeast3-bring-fm.cloudfunctions.net; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+          }
+        ]
+      },
+      {
+        "source": "/field-sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/field"
+          }
+        ]
+      },
+      {
+        "source": "/field",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/field/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/assets/*.@(js|css)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -28,5 +130,16 @@
         ]
       }
     ]
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "field-platform"
+    }
+  ],
+  "emulators": {
+    "functions": { "port": 5001 },
+    "database": { "port": 9000 },
+    "auth": { "port": 9099 }
   }
 }

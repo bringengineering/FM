@@ -1,0 +1,24 @@
+name = "wallboard-local-verification-only"
+main = "wallboard.fixture.js"
+# Matches the installed local workerd binary; production date is unchanged.
+compatibility_date = "2026-05-22"
+workers_dev = false
+
+[vars]
+WALLBOARD_ENABLED = "true"
+CRM_ADMIN_EMAILS = "admin@example.test"
+
+[[durable_objects.bindings]]
+name = "WALLBOARD_DEVICES"
+class_name = "WallboardDevices"
+
+[[migrations]]
+tag = "local-v1"
+new_sqlite_classes = ["WallboardDevices"]
+
+[[ratelimits]]
+name = "WALLBOARD_RATE_LIMITER"
+namespace_id = "99991"
+[ratelimits.simple]
+limit = 1000
+period = 60

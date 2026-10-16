@@ -1,0 +1,23 @@
+{
+  "database": {
+    "rules": "functions/test/fixtures/crm-account-setup-emulator.rules.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "field-platform"
+    }
+  ],
+  "emulators": {
+    "singleProjectMode": true,
+    "auth": {
+      "port": 9099
+    },
+    "database": {
+      "port": 9000
+    },
+    "functions": {
+      "port": 5001
+    }
+  }
+}

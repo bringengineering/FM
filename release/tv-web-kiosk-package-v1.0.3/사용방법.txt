@@ -1,0 +1,18 @@
+BRING TV 운영보드 설치
+
+1. 압축을 모두 풉니다.
+2. BRING-TV-설치.cmd를 더블클릭합니다.
+3. 설치 직후 열리는 TV 운영보드에서 8자리 코드를 확인합니다.
+4. BRING CRM에서 회사 기반 > TV 운영보드 > TV 기기 승인·관리를 엽니다.
+5. 코드와 기기 이름을 입력해 승인하고 운영보드를 게시합니다.
+6. 다음 Windows 로그인부터 TV 운영보드가 자동으로 실행됩니다.
+
+TV 주소
+https://bring-crm-ai-gateway.bringengineering1008.workers.dev/tv
+
+제거하려면 BRING-TV-삭제.cmd를 실행합니다.
+이 패키지는 Microsoft Edge 또는 Google Chrome의 전체화면 자동실행만 설정하며 다른 자료를 삭제하지 않습니다.
+
+설치에 실패하면 바탕화면의 BRING-TV-설치-오류.txt와
+BRING-TV-설치복구-프롬프트.txt를 함께 담당자 또는 AI에게 전달하세요.
+비밀번호, 인증코드, 쿠키, API 키는 공유하지 마세요.
