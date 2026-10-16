@@ -16,5 +16,9 @@ test("customer message consent has a closed channel schema", () => {
   for (const channel of ["kakao", "sms"]) {
     assert.match(node[channel][".validate"], /consentTextVersion/);
     assert.match(node[channel][".validate"], /evidenceRef/);
+    assert.equal(node[channel].$other[".validate"], false);
+    for (const field of ["status", "consentedAt", "withdrawnAt", "source", "consentTextVersion", "evidenceRef", "evidenceUrl", "recordedBy", "recordedAt", "updatedAt"]) {
+      assert.equal(node[channel][field][".validate"], "newData.isString()");
+    }
   }
 });
