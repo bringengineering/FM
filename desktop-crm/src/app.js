@@ -12571,192 +12571,30 @@
     }
   }
 
-  // --- 텔레그램 알림 ---
-  //
-  // 화면에 "지연 09.04" 라고 떠 있어도 그 화면을 열어야 보인다. 열지 않으면
-  // 이틀이 지나도 모른다. 그래서 사람이 하루 종일 보고 있는 곳으로 민다.
-  //
-  // 봇 토큰은 이 화면이 한 번도 받지 않는다. 넣을 때 위로 올려 보낼 뿐이고,
-  // 돌려받는 것은 "넣어 두었는가" 하나다.
-  let telegramState = {
-    loaded: false, loading: false, saving: false, sending: false,
-    configured: false, chatId: "", autoSend: false, includePhone: false,
-    lastSentDay: "", error: "", notice: "",
-    finding: false, chats: null, chatHint: "",
-    hours: [9], lastAutoSlot: "",
-  };
-  const telegramCore = () => window.BringTelegramCore;
+  // --- 텔레그램 서버 연결 상태 (읽기 전용) ---
+  let telegramState = { loaded: false, loading: false, status: "checking", checkedAt: 0 };
 
-  function telegramAlerts() {
-    const T = telegramCore();
-    if (!T) return [];
-    return T.contactAlerts(store.customers || [], todayKey());
-  }
-
-  async function loadTelegramSettings() {
+  async function loadTelegramServerStatus() {
     if (telegramState.loading) return;
     telegramState.loading = true;
+    telegramState.status = "checking";
     try {
-      const result = await api.loadTelegramSettings();
-      telegramState = Object.assign({}, telegramState, {
-        configured: result && result.configured === true,
-        chatId: String((result && result.chatId) || ""),
-        autoSend: !result || result.autoSend !== false,
-        includePhone: Boolean(result && result.includePhone),
-        hours: Array.isArray(result && result.hours) && result.hours.length ? result.hours : [9],
-        lastAutoSlot: String((result && result.lastAutoSlot) || ""),
-        lastSentDay: String((result && result.lastSentDay) || ""),
-        loaded: true, error: "",
-      });
-    } catch (error) {
-      telegramState.error = error && error.message || "텔레그램 설정을 불러오지 못했습니다.";
-      telegramState.loaded = true;
+      const result = await api.loadTelegramServerStatus();
+      telegramState.status = result && result.connected === true && result.status === "connected" ? "connected" : "unavailable";
+    } catch {
+      telegramState.status = "unavailable";
     } finally {
+      telegramState.loaded = true;
       telegramState.loading = false;
+      telegramState.checkedAt = Date.now();
       if (currentView === "settings") renderSettings();
     }
   }
 
   function telegramCard() {
     if (!canAdministerSecurity()) return "";
-    const T = telegramCore();
-    const alerts = telegramAlerts();
-    const preview = T ? T.composeMessage(alerts, { asOf: todayKey(), includePhone: telegramState.includePhone }) : "";
-    const late = alerts.filter(alert => alert.overdue).length;
-    return `<section class="setting-card tg-card">
-      <h3>텔레그램 알림</h3>
-      <p>오늘 업무일정과 계약 입금일을 매일 오전 6시(한국시간)에 회사 업무방으로 공유합니다. CRM을 닫아도 서버에서 발송합니다.</p>
-      <div class="info-box">서버 자동 공유 · 오늘 업무일정 + 오늘 계약 입금<br>있는 항목만 보내며, 둘 다 없으면 발송하지 않습니다. 서버 봇 토큰은 비밀 설정으로 관리합니다.</div>
-      <details><summary>수동 연락 알림 연결</summary><p>아래 연결은 연락할 고객을 직접 보낼 때 사용합니다. 수동 발송용 토큰은 이 PC에 암호화해 보관합니다.</p>
-      ${telegramState.error ? `<div class="tg-error" role="alert">${esc(telegramState.error)}</div>` : ""}
-      ${telegramState.notice ? `<div class="tg-notice">${esc(telegramState.notice)}</div>` : ""}
-      <form data-telegram-form>
-        <div class="form-grid">
-          <label class="field"><span>봇 토큰</span><input type="password" name="botToken" autocomplete="off" spellcheck="false" placeholder="${telegramState.configured ? "넣어 두었습니다 — 바꿀 때만 다시 입력" : "BotFather 가 준 값"}"></label>
-          <label class="field"><span>방 번호 (chat id)</span>
-            <div class="tg-chat-row">
-              <input type="text" name="chatId" value="${attr(telegramState.chatId)}" spellcheck="false" placeholder="아래 단추로 찾으세요">
-              <button type="button" class="secondary-button" data-telegram-find${telegramState.finding ? " disabled" : ""}>${telegramState.finding ? "찾는 중…" : "방 찾기"}</button>
-            </div>
-          </label>
-        </div>
-        <label class="tg-toggle"><input type="checkbox" name="includePhone"${telegramState.includePhone ? " checked" : ""}> 전화번호도 함께 보냅니다 <small>텔레그램 방은 사람이 나가도 글이 남습니다. 꼭 필요할 때만 켜 주세요.</small></label>
-        <div class="form-actions">
-          <button class="primary-button" type="submit"${telegramState.saving ? " disabled" : ""}>${telegramState.saving ? "저장 중…" : "저장"}</button>
-          <button class="secondary-button" type="button" data-telegram-send${telegramState.configured && alerts.length && !telegramState.sending ? "" : " disabled"}>${telegramState.sending ? "보내는 중…" : "지금 보내기"}</button>
-          ${telegramState.configured ? `<button class="secondary-button" type="button" data-telegram-forget>연결 끊기</button>` : ""}
-        </div>
-      </form>
-      ${telegramState.chats ? telegramChatList() : ""}
-      <div class="tg-preview">
-        <b>수동 연락 알림 미리보기</b>
-        <small>${alerts.length ? `${alerts.length}건${late ? ` · 늦음 ${late}건` : ""}` : "보낼 것이 없습니다"}${telegramState.lastSentDay ? ` · 마지막 발송 ${esc(telegramState.lastSentDay)}` : ""}</small>
-        ${preview ? `<pre>${esc(preview.replace(/<[^>]+>/gu, ""))}</pre>` : `<p class="office-muted">오늘 연락할 고객이 없습니다.</p>`}
-      </div></details>
-    </section>`;
-  }
-
-  // 찾은 방을 눌러서 고르게 한다. 번호를 손으로 옮겨 적게 두면 한 자리
-  // 틀리고, 틀리면 "방을 못 찾았습니다" 만 뜬다.
-  function telegramChatList() {
-    const chats = telegramState.chats || [];
-    if (!chats.length) {
-      return `<div class="tg-chats"><p class="tg-chats-none">${esc(telegramState.chatHint || "찾은 방이 없습니다.")}</p></div>`;
-    }
-    return `<div class="tg-chats">
-      <b>봇이 들어가 있는 방</b>
-      <div class="tg-chat-picks">${chats.map(chat => `<button type="button" class="tg-chat-pick${chat.id === telegramState.chatId ? " is-current" : ""}" data-telegram-pick="${esc(chat.id)}">
-        <b>${esc(chat.title)}</b><small>${esc(chat.group ? "그룹" : "1:1 대화")}</small>
-      </button>`).join("")}</div>
-      <small>고르면 위 칸에 번호가 들어갑니다. 그 다음 저장을 누르세요.</small>
-    </div>`;
-  }
-
-  async function findTelegramChats() {
-    if (telegramState.finding) return;
-    // 아직 저장 안 한 토큰으로도 찾을 수 있어야 한다 — 방 번호를 알아야
-    // 저장할 수 있는데 저장해야 찾을 수 있으면 아무 데도 못 간다.
-    const form = document.querySelector("[data-telegram-form]");
-    const typed = form ? String(new FormData(form).get("botToken") || "") : "";
-    telegramState.finding = true;
-    telegramState.error = "";
-    telegramState.notice = "";
-    renderSettings();
-    try {
-      const result = await api.findTelegramChats({ botToken: typed });
-      if (!result || result.ok !== true) throw new Error((result && result.error) || "방을 찾지 못했습니다.");
-      telegramState.chats = Array.isArray(result.chats) ? result.chats : [];
-      telegramState.chatHint = String(result.hint || "");
-    } catch (error) {
-      telegramState.chats = null;
-      telegramState.error = error && error.message || "방을 찾지 못했습니다.";
-    } finally {
-      telegramState.finding = false;
-      renderSettings();
-    }
-  }
-
-  async function saveTelegramFromForm(form) {
-    if (telegramState.saving) return;
-    const raw = Object.fromEntries(new FormData(form).entries());
-    telegramState.saving = true;
-    telegramState.error = "";
-    telegramState.notice = "";
-    renderSettings();
-    try {
-      const result = await api.saveTelegramSettings({
-        botToken: String(raw.botToken || ""),
-        chatId: String(raw.chatId || ""),
-        autoSend: false,
-        includePhone: raw.includePhone === "on",
-      });
-      telegramState = Object.assign({}, telegramState, {
-        configured: result && result.configured === true,
-        chatId: String((result && result.chatId) || ""),
-        autoSend: !result || result.autoSend !== false,
-        includePhone: Boolean(result && result.includePhone),
-        hours: Array.isArray(result && result.hours) && result.hours.length ? result.hours : [9],
-        notice: "저장했습니다.",
-      });
-    } catch (error) {
-      telegramState.error = error && error.message || "저장하지 못했습니다.";
-    } finally {
-      telegramState.saving = false;
-      renderSettings();
-    }
-  }
-
-  async function forgetTelegram() {
-    try {
-      await api.forgetTelegramSettings();
-      telegramState = Object.assign({}, telegramState, { configured: false, chatId: "", lastSentDay: "", notice: "연결을 끊었습니다.", error: "" });
-    } catch (error) {
-      telegramState.error = error && error.message || "연결을 끊지 못했습니다.";
-    }
-    renderSettings();
-  }
-
-  async function sendTelegramNow(force) {
-    if (telegramState.sending) return;
-    telegramState.sending = true;
-    telegramState.error = "";
-    telegramState.notice = "";
-    if (currentView === "settings") renderSettings();
-    try {
-      const result = await api.sendTelegramContactAlert({
-        customers: store.customers || [],
-        asOf: todayKey(),
-        force: force === true,
-      });
-      if (!result || result.ok !== true) throw new Error((result && result.error) || "보내지 못했습니다.");
-      telegramState.notice = result.sent ? `${result.count}건을 텔레그램으로 보냈습니다.` : result.reason || "보낼 것이 없습니다.";
-      if (result.sent) telegramState.lastSentDay = todayKey();
-    } catch (error) {
-      telegramState.error = error && error.message || "보내지 못했습니다.";
-    } finally {
-      telegramState.sending = false;
-      if (currentView === "settings") renderSettings();
-    }
+    const view = window.BringTelegramServerStatusView;
+    return view ? view.render(telegramState) : '<section class="setting-card"><h3>서버 자동발송</h3><p>서버 연결 확인 필요</p></section>';
   }
 
   function renderSettings() {
@@ -12767,7 +12605,7 @@
       <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
     </div>`;
     if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
-    if (!telegramState.loaded && !telegramState.loading && canAdministerSecurity()) void loadTelegramSettings();
+    if (!telegramState.loading && canAdministerSecurity() && (!telegramState.loaded || Date.now() - telegramState.checkedAt > 60000)) void loadTelegramServerStatus();
   }
 
   function aiConsultationIntakeEditor(reset = true) {
@@ -15149,16 +14987,6 @@
       await saveWeeklyReport();
       return;
     }
-    if (event.target.closest("[data-telegram-find]")) { void findTelegramChats(); return; }
-    const telegramPick = event.target.closest("[data-telegram-pick]");
-    if (telegramPick) {
-      telegramState.chatId = telegramPick.dataset.telegramPick;
-      telegramState.notice = "방을 골랐습니다. 저장을 눌러 주세요.";
-      renderSettings();
-      return;
-    }
-    if (event.target.closest("[data-telegram-send]")) { void sendTelegramNow(true); return; }
-    if (event.target.closest("[data-telegram-forget]")) { void forgetTelegram(); return; }
     if (event.target.closest("[data-report-drive-connect]")) { await connectReportDrive(); return; }
     if (event.target.closest("[data-report-drive-open]")) { await openReportDrivePicker(); return; }
     if (event.target.closest("[data-report-drive-close]")) {
@@ -19978,9 +19806,6 @@
       buildingDocsState.buildingId = record.buildingId;
       logAudit({ category: "문서", targetType: "건물 서류", targetId: record.id, targetLabel: record.title || record.driveFileId, action: "건물 문서함에 연결", reason: BuildingDocs.typeLabel(record.docType) });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderBuildingDocuments(); showToast("서류를 연결했습니다. ‘최신 확인’ 을 누르면 Drive 에서 제목을 가져옵니다.", "success"); } });
-    } else if (form.matches("[data-telegram-form]")) {
-      await saveTelegramFromForm(form);
-      return;
     } else if (form.id === "settingsForm") {
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());

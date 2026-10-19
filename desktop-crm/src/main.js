@@ -88,6 +88,8 @@ const WindowsKoreanInput = require("./windows-korean-input");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
 const { requestDocumentDelivery } = require("./document-delivery-client");
+const { createTelegramServerStatusClient } = require("./telegram-server-status-client");
+const readTelegramServerStatus = createTelegramServerStatusClient({ fetchImpl: (url, options) => net.fetch(url, options) });
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -3685,10 +3687,9 @@ async function uploadBuildingDocument(input) {
 // 찾는 일이 제일 흔하다.
 // --- 텔레그램 알림 ------------------------------------------------------
 //
-// 봇 토큰은 이 파일 밖으로 나가지 않는다. 화면도, 서버도, 저장소도 본 적이
-// 없다. 이 컴퓨터에만 OS 암호화로 눕혀 두고, 보낼 때만 여기서 꺼낸다.
-//
-// 그래서 load 는 토큰을 절대 돌려주지 않는다. "넣어 두었는가" 만 말한다.
+// 오전 6시 자동공유는 서버 비밀 설정을 사용한다. 설정 화면은 서버 상태만
+// 조회하며 로컬 토큰을 읽거나 저장하지 않는다. 아래 읽기는 기존 별도 수동
+// 업무지시/고객안내 기능의 보호 파일 호환용이다. 기존 파일을 삭제하지 않는다.
 
 async function readTelegramSettings() {
   try {
@@ -3701,11 +3702,6 @@ async function readTelegramSettings() {
     return {
       botToken: String(value.botToken || ""),
       chatId: String(value.chatId || ""),
-      autoSend: value.autoSend !== false,
-      includePhone: value.includePhone === true,
-      hours: TelegramCore.normalizeHours(value.hours),
-      lastAutoSlot: String(value.lastAutoSlot || ""),
-      lastSent: value.lastSent && typeof value.lastSent === "object" ? value.lastSent : null,
     };
   } catch (error) {
     if (error && error.code === "ENOENT") return null;
@@ -3713,107 +3709,16 @@ async function readTelegramSettings() {
   }
 }
 
-async function writeTelegramSettings(value) {
-  const target = telegramSettingsFile();
-  const temp = `${target}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  try {
-    await fs.writeFile(temp, encodeProtectedJson(safeStorage, value), { encoding: "utf8", flag: "wx", mode: 0o600 });
-    await fs.rename(temp, target);
-  } catch (error) {
-    try { await fs.unlink(temp); } catch (cleanupError) { if (cleanupError && cleanupError.code !== "ENOENT") console.warn("telegram temp cleanup failed"); }
-    throw error;
-  }
-}
-
 function requireTelegramAdmin() {
   const user = authState().user;
   if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
-  // 이 방으로 고객 이름이 나간다. 누가 보낼지는 관리자가 정한다.
-  if (user.role !== "admin") throw Object.assign(new Error("텔레그램 알림은 관리자만 설정할 수 있습니다."), { code: "ACCESS_DENIED" });
+  if (user.role !== "admin") throw Object.assign(new Error("텔레그램 연결 상태는 관리자만 확인할 수 있습니다."), { code: "ACCESS_DENIED" });
   return user;
 }
 
-async function loadTelegramSettings() {
+async function loadTelegramServerStatus() {
   requireTelegramAdmin();
-  const saved = await readTelegramSettings();
-  // 토큰은 돌려주지 않는다. 한 번 화면으로 나가면 그때부터 그 값은
-  // 이 컴퓨터 밖에도 있는 것이다.
-  return {
-    ok: true,
-    configured: Boolean(saved && saved.botToken && saved.chatId),
-    chatId: saved ? saved.chatId : "",
-    autoSend: false,
-    includePhone: saved ? saved.includePhone === true : false,
-    hours: TelegramCore.normalizeHours(saved ? saved.hours : null),
-    lastAutoSlot: saved ? String(saved.lastAutoSlot || "") : "",
-    lastSentDay: saved && saved.lastSent ? String(saved.lastSent.day || "") : "",
-  };
-}
-
-async function saveTelegramSettings(input) {
-  requireTelegramAdmin();
-  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const saved = await readTelegramSettings();
-  // 토큰을 비워서 보내면 "그대로 두라"는 뜻이다. 화면은 토큰을 받은 적이
-  // 없으므로, 그러지 않으면 설정을 한 번 고칠 때마다 다시 넣어야 한다.
-  const botToken = String(options.botToken || "") || (saved ? saved.botToken : "");
-  const checked = TelegramCore.validateSettings({
-    botToken,
-    chatId: options.chatId,
-    autoSend: false,
-    includePhone: options.includePhone,
-    hours: options.hours,
-  });
-  if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
-  await writeTelegramSettings(Object.assign({ botToken }, checked.settings, {
-    // 방을 바꿨으면 보낸 기록은 버린다. 새 방에는 아무것도 안 갔다.
-    lastSent: saved && saved.chatId === checked.settings.chatId ? saved.lastSent : null,
-  }));
-  return loadTelegramSettings();
-}
-
-async function forgetTelegramSettings() {
-  requireTelegramAdmin();
-  try {
-    await fs.unlink(telegramSettingsFile());
-  } catch (error) {
-    if (!error || error.code !== "ENOENT") throw error;
-  }
-  return loadTelegramSettings();
-}
-
-/**
- * 봇이 최근에 본 대화방을 찾아 준다.
- *
- * 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고
- * 시키던 자리다. 그건 앱이 할 일이다.
- *
- * 아직 저장 안 한 토큰으로도 찾을 수 있어야 한다 — 방 번호를 알아야
- * 저장할 수 있는데 저장해야 찾을 수 있으면 아무 데도 못 간다.
- */
-async function findTelegramChats(input) {
-  requireTelegramAdmin();
-  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const saved = await readTelegramSettings();
-  const botToken = String(options.botToken || "") || (saved ? saved.botToken : "");
-  if (!TelegramCore.looksLikeBotToken(botToken)) {
-    return { ok: false, code: "TELEGRAM_TOKEN_INVALID", error: "봇 토큰을 먼저 넣어 주세요. BotFather 가 준 값을 그대로요." };
-  }
-  let response;
-  try {
-    response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`, { method: "GET" });
-  } catch {
-    return { ok: false, code: "TELEGRAM_UNREACHABLE", error: "텔레그램에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요." };
-  }
-  let parsed = {};
-  try { parsed = await response.json(); } catch { parsed = {}; }
-  if (!response.ok) {
-    // 토큰은 주소에 들어 있다. 어떤 경우에도 그 주소를 오류에 싣지 않는다.
-    return { ok: false, code: "TELEGRAM_REJECTED", error: TelegramCore.describeFailure(response.status, parsed) };
-  }
-  const chats = TelegramCore.parseChats(parsed);
-  return { ok: true, chats, hint: chats.length ? "" : TelegramCore.noChatHint() };
+  return readTelegramServerStatus();
 }
 
 async function postToTelegram(botToken, chatId, body) {
@@ -3858,7 +3763,7 @@ async function sendCustomerNotice(input) {
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const saved = await readTelegramSettings();
   if (!saved || !saved.botToken || !saved.chatId) {
-    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
+    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "기존 수동 알림 연결을 사용할 수 없습니다. 오전 6시 자동공유는 서버에서 별도로 처리됩니다." };
   }
   const body = TelegramCore.composeCustomerNotice({
     buildingName: options.buildingName,
@@ -3877,7 +3782,7 @@ async function sendTelegramDirective(input) {
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const saved = await readTelegramSettings();
   if (!saved || !saved.botToken || !saved.chatId) {
-    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
+    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "기존 수동 알림 연결을 사용할 수 없습니다. 오전 6시 자동공유는 서버에서 별도로 처리됩니다." };
   }
   const body = TelegramCore.composeDirective({
     directive: options.directive,
@@ -3890,33 +3795,6 @@ async function sendTelegramDirective(input) {
   return { ok: true, sent: true, count: (Array.isArray(options.orders) ? options.orders : []).length };
 }
 
-/**
- * 연락할 고객을 회사 텔레그램 방으로 보낸다.
- *
- * 고객 자료는 화면이 들고 있으므로 화면에서 받는다. 여기서 다시 읽으면
- * 화면이 보고 있는 것과 다른 것을 보낼 수 있다.
- */
-async function sendTelegramContactAlert(input) {
-  requireTelegramAdmin();
-  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  if (options.slot) return { ok: true, sent: false, reason: "자동 공유는 오전 6시에 서버에서 처리합니다.", count: 0 };
-  const saved = await readTelegramSettings();
-  if (!saved || !saved.botToken || !saved.chatId) {
-    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
-  }
-  const asOf = String(options.asOf || "").slice(0, 10);
-  const alerts = TelegramCore.contactAlerts(Array.isArray(options.customers) ? options.customers : [], asOf);
-  const force = options.force === true;
-  const verdict = TelegramCore.shouldSend(alerts, saved.lastSent, asOf);
-  if (!verdict.send && !force) return { ok: true, sent: false, reason: verdict.reason, count: alerts.length };
-  if (!alerts.length) return { ok: true, sent: false, reason: "연락할 고객이 없습니다.", count: 0 };
-
-  const body = TelegramCore.composeMessage(alerts, { asOf, includePhone: saved.includePhone === true });
-  await postToTelegram(saved.botToken, saved.chatId, body);
-  const stamp = { lastSent: { day: verdict.day || asOf, fingerprint: verdict.fingerprint || TelegramCore.alertsFingerprint(alerts), at: new Date().toISOString() } };
-  await writeTelegramSettings(Object.assign({}, saved, stamp));
-  return { ok: true, sent: true, count: alerts.length, reason: "" };
-}
 
 /**
  * 결과보고서용 Drive 탐색기.
@@ -9705,11 +9583,7 @@ secureHandle("crm:growth-load", () => localTestMode
   ? { checkins: [], reviews: [], admin: localTestRole === "admin", canWork: ["admin", "member"].includes(localTestRole), uid: `local-${localTestRole}`, localOnly: true, loadedAt: new Date().toISOString() }
   : remoteClient.loadGrowth());
 secureCanonicalHandle("crm:growth-checkin-save", input => remoteClient.saveGrowthCheckin(input));
-secureHandle("crm:telegram-settings-load", () => loadTelegramSettings());
-secureCanonicalHandle("crm:telegram-chats-find", input => findTelegramChats(input));
-secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSettings(input));
-secureCanonicalHandle("crm:telegram-settings-forget", () => forgetTelegramSettings());
-secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContactAlert(input));
+secureHandle("crm:telegram-server-status", () => loadTelegramServerStatus());
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));

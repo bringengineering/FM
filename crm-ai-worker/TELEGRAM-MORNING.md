@@ -55,8 +55,11 @@ Only counts, a hash, part numbers and timestamps remain in receipts; message
 bodies and source rows are not retained or logged.
 
 The desktop no longer sends automatically on startup, render or a timer. Its
-old automatic-slot IPC is refused. Local encrypted settings remain available
-only for explicitly requested manual contact/directive notifications.
+settings card is read-only: a fixed HTTPS health GET reports checking, connected
+or unavailable. PC key input, settings writes, chat discovery and contact-send
+IPC are removed. The check never calls Telegram and never reads a local key.
+Existing protected files are not deleted; unrelated legacy manual directive/
+customer-notice actions retain read-only compatibility with those files.
 
 ## Activation and rollback
 
