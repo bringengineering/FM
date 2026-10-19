@@ -31,7 +31,7 @@
       const consent = Policy.effectiveConsent(customer || {}, channel);
       return `<div class="message-consent-row"><div><b>${channelLabel(channel)}</b><span>${esc(statusLabel(consent.status))}</span></div><small>${esc(consent.evidenceRef || "증빙 없음")} · ${esc(consent.consentedAt || consent.withdrawnAt || "일시 미등록")}</small></div>`;
     }).join("");
-    return `<section class="detail-section message-consent-card"><div class="detail-section-head"><h4>광고성 정보 수신 동의</h4>${writable ? `<button type="button" class="filter-chip" data-message-consent-edit="${esc(customer && customer.id)}">수신 동의 관리</button>` : ""}</div><div class="detail-section-body">${rows}</div></section>`;
+    return `<section class="detail-section message-consent-card"><div class="detail-section-head"><h4>광고 수신 동의·월간보고서 요청</h4>${writable ? `<button type="button" class="filter-chip" data-message-consent-edit="${esc(customer && customer.id)}">수신 동의 관리</button>` : ""}</div><div class="detail-section-body">${rows}<div class="message-consent-row"><div><b>월간보고서 · 월 1회</b><span>${esc(customer && customer.monthlyReportRequest && customer.monthlyReportRequest.status === "withdrawn" ? "철회됨" : Policy.evaluateMonthlyReportRequest(customer).allowed ? "요청 확인" : "미확인")}</span></div><small>${esc(customer && customer.monthlyReportRequest && customer.monthlyReportRequest.evidenceRef || "요청 근거 없음")}</small></div></div></section>`;
   }
 
   function renderHistory(input) {

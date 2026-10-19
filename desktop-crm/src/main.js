@@ -2713,7 +2713,7 @@ async function sendSavedCustomerDocument(input) {
   let monthlyBuilding;
   if (monthly) {
     const recipient = (latest.customers || []).find(row => row.id === customer.id && !row.archivedAt && !row.deletedAt && row.deleted !== true);
-    const decision = MessagePolicy.evaluateKakaoMarketingConsent(recipient);
+    const decision = MessagePolicy.evaluateMonthlyReportRequest(recipient);
     if (!decision.allowed) throw Object.assign(new Error(decision.message), {code: decision.code});
     monthlyBuilding = (latest.buildings || []).find(row => row.id === record.buildingId && !row.archivedAt && String(row.ownerCustomerId) === String(customer.id));
     if (!monthlyBuilding) throw new Error("월간보고서 건물과 수신 고객의 연결을 다시 확인해 주세요.");
@@ -2735,7 +2735,7 @@ async function sendSavedCustomerDocument(input) {
   const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
     documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: completionReport ? WorkReportMessage.documentName(completionReport) : record.title,
     ...(completionReport ? {completionReport} : {}),
-    ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
+    ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, crmBuildingId: monthlyBuilding.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
     expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
     delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
   session.check();
@@ -2959,7 +2959,7 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   }
   const capabilities = await runDocumentDelivery("capabilities");
   if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.monthlyReport !== true) {
-    return { ok: false, code: "KAKAO_MONTHLY_REPORT_NOT_READY", error: "월간보고서 브랜드 메시지 발신 설정을 확인해 주세요." };
+    return { ok: false, code: "KAKAO_MONTHLY_REPORT_NOT_READY", error: "월간보고서 알림톡의 승인 상태와 발신 설정을 확인해 주세요." };
   }
 
   const session = savedDocumentSession(true);
@@ -2967,7 +2967,7 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   const recipient = (current.customers || []).find(row => String(row.id) === ownerCustomerId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
   const building = (current.buildings || []).find(row => row.id === options.reportRequest?.building?.id && !row.archivedAt && String(row.ownerCustomerId) === ownerCustomerId);
   if (!recipient || !building || SavedCustomerDocuments.phone(recipient.phone) !== phone) throw new Error("건물과 수신 고객의 최신 연결·연락처를 확인해 주세요.");
-  const consent = MessagePolicy.evaluateKakaoMarketingConsent(recipient);
+  const consent = MessagePolicy.evaluateMonthlyReportRequest(recipient);
   if (!consent.allowed) throw Object.assign(new Error(consent.message), {code: consent.code});
 
   const artifact = await prepareBuildingMonthlyReportArtifact(options.reportRequest);
@@ -2992,6 +2992,7 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
     documentName,
     reportMonth: artifact.report.month,
     crmCustomerId: ownerCustomerId,
+    crmBuildingId: building.id,
     buildingName: artifact.report.buildingName,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     mimeType: "application/pdf",
@@ -3000,7 +3001,7 @@ async function sendBuildingMonthlyReportToCustomerByKakao(input) {
   });
   session.check();
   if (!sent || sent.ok !== true) {
-    if (["MARKETING_CONSENT_REQUIRED", "MARKETING_CONSENT_WITHDRAWN", "CONSENT_EVIDENCE_REQUIRED", "RECIPIENT_MISMATCH", "DELIVERY_QUIET_HOURS", "DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_UNAVAILABLE", "FORBIDDEN"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);
+    if (["MONTHLY_REPORT_REQUEST_REQUIRED", "MONTHLY_REPORT_REQUEST_WITHDRAWN", "MONTHLY_REPORT_ADDRESS_REQUIRED", "DELIVERY_CONFIGURATION_ERROR", "MARKETING_CONSENT_REQUIRED", "MARKETING_CONSENT_WITHDRAWN", "CONSENT_EVIDENCE_REQUIRED", "RECIPIENT_MISMATCH", "DELIVERY_QUIET_HOURS", "DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_UNAVAILABLE", "FORBIDDEN"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);
     return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "월간보고서 카카오톡 발송을 요청하지 못했습니다." };
   }
   savedDocumentSendAttempts.set(attemptId, sent.status || "unknown");

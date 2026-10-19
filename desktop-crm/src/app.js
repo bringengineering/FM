@@ -4046,11 +4046,11 @@
     const ownerContact = String(owner && owner.phone || "");
     const ownerDigits = ownerContact.replace(/\D/gu, "");
     const monthlyKakaoReady = documentDeliveryCapabilities.loaded && documentDeliveryCapabilities.monthlyReport === true;
-    const monthlyConsent = MessagePolicy.evaluateKakaoMarketingConsent(owner);
+    const monthlyConsent = MessagePolicy.evaluateMonthlyReportRequest(owner);
     const canSendMonthlyKakao = canAdministerSecurity() && monthlyKakaoReady && monthlyConsent.allowed && /^01\d{8,9}$/u.test(ownerDigits) && !buildingMonthlyReportState.kakaoSending && !buildingMonthlyReportState.kakaoResult;
     const monthlyKakaoStatus = documentDeliveryCapabilities.loading || !documentDeliveryCapabilities.loaded
       ? "카카오톡 연결 상태 확인 중"
-      : !monthlyConsent.allowed ? monthlyConsent.message : monthlyKakaoReady ? "브랜드 메시지 발송 준비 완료 · 채널 친구 대상" : "월간보고서 브랜드 메시지 발신 설정 확인 필요";
+      : !monthlyConsent.allowed ? monthlyConsent.message : monthlyKakaoReady ? "월 1회 요청 확인 · 알림톡 발송 준비 완료" : "월간보고서 알림톡 승인·발신 설정 확인 필요";
     const contract = (store.contracts || []).find(item => item && String(item.buildingId || "") === String(building.id) && item.status !== "종료") || null;
     const request = buildingMonthlyReportRequest(building, buildingMonthlyReportState.month, {
       nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
@@ -4348,8 +4348,8 @@
   async function sendBuildingMonthlyReportByKakao(building, owner, planInput) {
     if (buildingMonthlyReportState.kakaoSending) return;
     if (!canAdministerSecurity()) return showToast("관리자만 고객에게 월간보고서를 보낼 수 있습니다.", "error");
-    if (!documentDeliveryCapabilities.monthlyReport) return showToast("월간보고서 브랜드 메시지 발신 설정을 확인해 주세요.", "error");
-    const consent = MessagePolicy.evaluateKakaoMarketingConsent(owner);
+    if (!documentDeliveryCapabilities.monthlyReport) return showToast("월간보고서 알림톡 승인 상태와 발신 설정을 확인해 주세요.", "error");
+    const consent = MessagePolicy.evaluateMonthlyReportRequest(owner);
     if (!consent.allowed) return showToast(consent.message, "error");
     const state = buildingMonthlyReportState, generation = authGeneration;
     if (state.kakaoResult) return showToast("이미 요청한 월간보고서입니다. 전달 상태를 확인해 주세요.", "error");
@@ -4369,7 +4369,7 @@
     const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(reportRequest);
     const confirmed = await requestConfirmation({
       title: "월간 관리 보고서를 카카오톡으로 보낼까요?",
-      description: "카카오톡 수신동의가 확인된 채널 친구에게 브랜드 메시지로 보냅니다. (광고) 표시와 채널 차단 안내가 포함되며 PDF 링크는 7일 뒤 만료됩니다.",
+      description: "월 1회 수신 요청이 확인된 건물주에게 월간보고서 알림톡을 보냅니다. PDF 링크는 7일 뒤 만료됩니다.",
       target: `${building.name || "건물 미지정"} · ${owner && owner.name || "건물주"} · ${ownerContact}`,
       message: `${reportRequest.month} 월간 관리 보고서 · 업무 ${reportPreview.summary.workCount}건 · 이 링크는 7일 동안 열립니다.`,
       confirmLabel: "카톡 발송",
@@ -4858,10 +4858,10 @@
         const request = selectedCustomerDocumentRequest();
         const title = state.category === "workReport" ? "작업 결과보고서" : SavedCustomerDocuments.KINDS[state.category];
         if (state.category === "buildingMonthlyReport") {
-          const consent = MessagePolicy.evaluateKakaoMarketingConsent(customer);
+          const consent = MessagePolicy.evaluateMonthlyReportRequest(customer);
           if (!consent.allowed) throw new Error(consent.message);
         }
-        if (!await requestConfirmationFor(title + `를 ${deliveryLabel}으로 보낼까요?`, state.category === "buildingMonthlyReport" ? "수신동의가 확인된 채널 친구에게 브랜드 메시지로 보냅니다. 광고·수신거부 안내와 7일 만료 PDF 링크가 포함됩니다." : "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
+        if (!await requestConfirmationFor(title + `를 ${deliveryLabel}으로 보낼까요?`, state.category === "buildingMonthlyReport" ? "월 1회 수신 요청이 확인된 고객에게 선택한 월간보고서 알림톡을 보냅니다. PDF 링크는 7일 뒤 만료됩니다." : "문서관리의 선택한 저장본을 보안 링크로 발송합니다. 링크는 7일 뒤 만료됩니다.", customerDisplayName(customer) + " · " + customerPhoneText(customer.phone), request.title)) return;
         const sendGeneration = authGeneration;
         let result;
         try { result = await api.sendSavedCustomerDocument(request); }
@@ -4940,12 +4940,12 @@
   function openMessageConsentEditor(customerId) {
     const customer = customerById(customerId);
     if (!customer || !canWriteCRM()) return showToast("수신 동의를 변경할 권한이 없습니다.", "error");
-    const consents = customer.messageConsents || {};
+    const monthlyRequest = customer.monthlyReportRequest || {};
     const controls = channel => {
       const consent = MessagePolicy.effectiveConsent(customer, channel);
       return `<fieldset class="consent-editor-channel"><legend>${channel === "kakao" ? "카카오" : "SMS"}</legend><div class="form-grid">${selectField("상태", `${channel}Status`, ["not_collected", "granted", "withdrawn"], consent.status, value => ({ not_collected: "미수집", granted: "동의됨", withdrawn: "철회됨" })[value])}${field("동의일", `${channel}ConsentedAt`, consent.consentedAt ? String(consent.consentedAt).slice(0, 10) : "", "date")}${selectField("수집 경로", `${channel}Source`, ["", "contract", "form", "qr", "phone", "manual"], consent.source || "", value => ({ "": "선택", contract: "계약서", form: "동의서", qr: "QR", phone: "전화", manual: "직접 등록" })[value])}${field("동의 문구 버전", `${channel}ConsentTextVersion`, consent.consentTextVersion || "", "text", "예: marketing-v1")}${field("증빙 참조 *", `${channel}EvidenceRef`, consent.evidenceRef || "", "text", "계약·동의서·녹취 ID", "wide")}${field("증빙 링크", `${channel}EvidenceUrl`, consent.evidenceUrl || "", "url", "Drive 링크", "wide")}</div></fieldset>`;
     };
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>광고성 정보 수신 동의 관리</h2><p>${esc(customerDisplayName(customer))} 고객의 채널별 동의 증빙을 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="messageConsentForm" class="modal-body" data-customer-id="${attr(customer.id)}"><div class="info-box">과거 거래나 카카오 채널 친구 여부만으로 동의를 등록하지 마세요. 실제 동의 증빙이 있어야 합니다.</div>${controls("kakao")}${controls("sms")}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">동의 상태 저장</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>수신 동의·월간보고서 요청 관리</h2><p>${esc(customerDisplayName(customer))} 고객의 채널별 동의 증빙을 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="messageConsentForm" class="modal-body" data-customer-id="${attr(customer.id)}"><div class="info-box">과거 거래나 카카오 채널 친구 여부만으로 동의를 등록하지 마세요. 실제 동의 증빙이 있어야 합니다.</div>${controls("kakao")}${controls("sms")}<fieldset class="consent-editor-channel"><legend>월간보고서 월 1회 수신 요청</legend><p>계약·신청 등 실제 요청 근거를 확인한 경우에만 등록합니다.</p><div class="form-grid">${selectField("요청 상태", "monthlyReportStatus", ["not_collected", "requested", "withdrawn"], monthlyRequest.status || "not_collected", value => ({not_collected:"미확인",requested:"월 1회 요청 확인",withdrawn:"철회됨"})[value])}${field("요청일", "monthlyReportRequestedAt", String(monthlyRequest.requestedAt || "").slice(0,10), "date")}${selectField("요청 경로", "monthlyReportSource", ["", "contract", "form", "phone", "manual"], monthlyRequest.source || "", value => ({"":"선택",contract:"계약서",form:"신청서",phone:"전화",manual:"직접 확인"})[value])}${field("요청 근거", "monthlyReportEvidenceRef", monthlyRequest.evidenceRef || "", "text", "계약·신청서·녹취 참조 ID", "wide")}</div></fieldset><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">동의 상태 저장</button></div></form>`;
     openModal();
   }
 
@@ -18869,6 +18869,13 @@
           updatedAt: now
         };
       }
+      const monthlyReportRequest = {status: raw.monthlyReportStatus, frequency: "monthly_once",
+        requestedAt: raw.monthlyReportRequestedAt || "", source: raw.monthlyReportSource || "",
+        evidenceRef: String(raw.monthlyReportEvidenceRef || "").trim(), withdrawnAt: raw.monthlyReportStatus === "withdrawn" ? now : "",
+        recordedAt: now, recordedBy: currentAuth.user && currentAuth.user.uid || ""};
+      const requestDecision = MessagePolicy.evaluateMonthlyReportRequest({monthlyReportRequest});
+      if (monthlyReportRequest.status === "requested" && !requestDecision.allowed) return showToast(requestDecision.message, "error");
+      customer.monthlyReportRequest = monthlyReportRequest;
       customer.messageConsents = next;
       customer.updatedAt = now;
       logAudit({ category: "동의", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "메시지 수신 동의 상태 변경", reason: "증빙 확인 후 CRM 기록" });

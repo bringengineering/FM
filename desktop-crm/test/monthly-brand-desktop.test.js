@@ -7,10 +7,10 @@ const MessagePolicy = require('../src/message-policy');
 const SavedCustomerDocuments = require('../src/saved-customer-documents');
 const source = fs.readFileSync(require.resolve('../src/main'),'utf8');
 const sendSource = source.slice(source.indexOf('async function sendBuildingMonthlyReportToCustomerByKakao('),source.indexOf('// 결과보고서와 월간 보고서가 같은 방식'));
-const granted = {status:'granted',consentedAt:'2026-10-16',evidenceRef:'explicit test request',consentTextVersion:'test-v1'};
+const granted = {status:'requested',requestedAt:'2026-10-16',frequency:'monthly_once',source:'contract',evidenceRef:'explicit test request'};
 function harness(options={}) {
   let generated=0;const events=[];
-  const data={customers:[{id:'customer_fixture',phone:'01000000000',messageConsents:{kakao:options.consent===undefined?granted:options.consent}}],buildings:[{id:'building_fixture',ownerCustomerId:'customer_fixture',name:'TEST ONLY'}]};
+  const data={customers:[{id:'customer_fixture',phone:'01000000000',monthlyReportRequest:options.consent===undefined?granted:options.consent}],buildings:[{id:'building_fixture',ownerCustomerId:'customer_fixture',name:'TEST ONLY'}]};
   const context={crypto,Buffer,MessagePolicy,SavedCustomerDocuments,savedDocumentSendAttempts:new Map(),
     authState:()=>({user:{uid:'fixture_admin',role:options.role||'admin'}}),isMarketingOnlySession:()=>false,
     savedDocumentSession:()=>({check(){}}),remoteClient:{loadStore:async()=>data},
@@ -25,7 +25,7 @@ function harness(options={}) {
 test('monthly desktop sends one immutable PDF through the combined production endpoint',async()=>{
   const h=harness();const result=await h.send();assert.equal(result.status,'requested');
   assert.deepEqual(h.events.map(row=>row.action),['capabilities','createAndSend']);
-  const sent=h.events[1].input;assert.equal(sent.crmCustomerId,'customer_fixture');assert.equal(sent.buildingName,'TEST ONLY');
+  const sent=h.events[1].input;assert.equal(sent.crmCustomerId,'customer_fixture');assert.equal(sent.crmBuildingId,'building_fixture');assert.equal(sent.buildingName,'TEST ONLY');
   assert.equal(sent.documentType,'monthly_report');assert.equal(sent.delivery.channel,'kakao');assert.equal(sent.delivery.phone,'01000000000');
   await assert.rejects(h.send(),/이미 발송/);assert.equal(h.events.filter(row=>row.action==='createAndSend').length,1);
 });

@@ -1,4 +1,5 @@
-import { monthlyBrandReady, monthlyBrandRecipient, assertMonthlyBrandTime } from './monthly-brand-delivery.js';
+import { monthlyReportRecipient } from './monthly-report-delivery.js';
+import MonthlyTemplate from '../templates/BRINGMONTHLYREPORTV1.json' with {type: 'json'};
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
@@ -58,7 +59,7 @@ function configured(env) {
   return {
     storage,
     kakao: Boolean(kakaoBase && env.KAKAO_DOCUMENT_TEMPLATES_APPROVED === "true"),
-    monthlyReport: Boolean(kakaoBase && monthlyBrandReady(env)),
+    monthlyReport: Boolean(kakaoBase && env.KAKAO_MONTHLY_REPORT_ENABLED === 'true'),
     sms: Boolean(storage && ncp && env.DOCUMENT_DELIVERY_ENABLED === "true" && env.NCP_SENS_SERVICE_ID && env.NCP_SENS_FROM)
   };
 }
@@ -111,7 +112,7 @@ function alimTalkContent(templateCode, variables) {
     return `[BRING CARE 작업 결과보고서 안내]\n${variables.고객명}님, 요청하신 작업 결과보고서가 발행되었습니다.\n\n작업명: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 결과보고서를 확인해 주세요.\n문의: 033-748-8919`;
   }
   if (templateCode === "BRINGMONTHLYREPORTV1") {
-    return `[BRING CARE 월간 관리 보고서 안내]\n${variables.고객명}님, ${variables.보고월} 월간 관리 보고서가 준비되었습니다.\n\n건물·보고서: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 월간 관리 내역을 확인해 주세요.\n문의: 033-748-8919`;
+    return MonthlyTemplate.content.replace(/#\{(건물주소|보고월|문서명|만료일)\}/gu, (_, name) => String(variables[name] || ""));
   }
   return fail();
 }
@@ -146,20 +147,14 @@ async function ncpJson(method, uri, body, env, options = {}) {
 export async function sendNcpDocument(input, options = {}) {
   const env = input.env || {};
   let uri, body;
-  if (input.channel === "kakao" && input.document?.documentType === "monthly_report") {
-    if (!monthlyBrandReady(env)) fail("DELIVERY_UNAVAILABLE");
-    assertMonthlyBrandTime((options.now || Date.now)());
-    uri = `/brandmessage/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
-    body = {plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), messageType: "TEXT", templateCode: env.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE,
-      targeting: "I", messages: [{to: input.phone, templateParameters: {고객명: input.variables.고객명, 건물명: input.variables.건물명,
-        보고월: input.variables.보고월, 만료일: input.variables.만료일, 문서링크: input.variables.문서링크}, useSmsFailover: false}]};
-  } else if (input.channel === "kakao") {
-    if (input.templateCode === "BRINGCOMPLETIONREPORTV2" && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
+  if (input.channel === "kakao") {
+    if (input.document?.documentType === "monthly_report" && (env.KAKAO_MONTHLY_REPORT_ENABLED !== 'true' || input.templateCode !== MonthlyTemplate.templateCode)) fail("DELIVERY_UNAVAILABLE");
+    if (["BRINGCOMPLETIONREPORTV2", MonthlyTemplate.templateCode].includes(input.templateCode) && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
     uri = `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
     const link = `https://${input.variables.문서링크}`;
     const buttonName = input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인"
       : ["BRINGCOMPLETIONREPORTV1", "BRINGCOMPLETIONREPORTV2"].includes(input.templateCode) ? "결과보고서 확인"
-        : input.templateCode === "BRINGMONTHLYREPORTV1" ? "월간 보고서 확인" : fail();
+        : input.templateCode === MonthlyTemplate.templateCode ? MonthlyTemplate.buttons[0].name : fail();
     body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: buttonName, linkMobile: link, linkPc: link }] }] };
   } else if (input.channel === "sms") {
     uri = `/sms/v2/services/${serviceId(env.NCP_SENS_SERVICE_ID)}/messages`;
@@ -205,6 +200,8 @@ export async function readNcpDocumentConnection(templateCode, env, options = {})
     if (!Array.isArray(rows)) return "PROVIDER_RESPONSE_INVALID";
     const row = rows.find(value => value?.templateCode === templateCode && value?.channelId === channel);
     if (!row) return "TEMPLATE_NOT_FOUND";
+    if (templateCode === MonthlyTemplate.templateCode && (row.content !== MonthlyTemplate.content || !Array.isArray(row.buttons) || row.buttons.length !== 1
+      || Object.entries(MonthlyTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
     if (templateCode === "BRINGCOMPLETIONREPORTV2" && (row.content !== COMPLETION_REPORT_V2_CONTENT
       || !Array.isArray(row.buttons) || row.buttons.length !== 1 || row.buttons[0].type !== "WL" || row.buttons[0].name !== "결과보고서 확인"
       || row.buttons[0].linkMobile !== "https://#{문서링크}" || row.buttons[0].linkPc !== "https://#{문서링크}")) return "TEMPLATE_NOT_READY";
@@ -220,7 +217,7 @@ export function createDocumentDeliveryHandler(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const sendProvider = options.sendProvider || (input => sendNcpDocument(input, { fetchImpl, now }));
   const readProvider = options.readProvider || ((record, env) => readNcpDocumentStatus(record, env, {fetchImpl, now}));
-  const resolveMonthlyRecipient = options.resolveMonthlyRecipient || ((request, identity, document, input) => monthlyBrandRecipient(request, identity, document, input, fetchImpl));
+  const resolveMonthlyRecipient = options.resolveMonthlyRecipient || ((request, identity, document, input) => monthlyReportRecipient(request, identity, document, input, fetchImpl, now()));
   const readConnection = options.readConnection || ((record, env) => readNcpDocumentConnection(record.templateId, env, {fetchImpl, now}));
   const wait = options.wait || (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
   // KV allows only one write per key per second. Preserve the provisional claim,
@@ -243,7 +240,10 @@ export function createDocumentDeliveryHandler(options = {}) {
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
     const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
     if (!admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
-    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport: capabilities.monthlyReport, sms: capabilities.sms } });
+    if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") {
+      const monthlyReport = capabilities.monthlyReport && await readConnection({templateId: MonthlyTemplate.templateCode}, env) === "READY";
+      return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport, sms: capabilities.sms } });
+    }
     if (!capabilities.storage) return json({ ok: false, code: "DELIVERY_UNAVAILABLE" }, 503);
 
     const combined = url.pathname === "/v1/document-delivery/documents-and-messages";
@@ -268,7 +268,7 @@ export function createDocumentDeliveryHandler(options = {}) {
       decodeBase64(input.bytes);
       const reportMonth = documentType === "monthly_report" ? clean(input.reportMonth, 7) : "";
       if (documentType === "monthly_report" && !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(reportMonth)) fail();
-      const monthlyFields = documentType === "monthly_report" ? {crmCustomerId: safeId(input.crmCustomerId), buildingName: clean(input.buildingName, 160)} : {};
+      const monthlyFields = documentType === "monthly_report" ? {crmCustomerId: safeId(input.crmCustomerId), crmBuildingId: safeId(input.crmBuildingId), buildingName: clean(input.buildingName, 160)} : {};
       if (documentType === "monthly_report" && !monthlyFields.buildingName) fail();
       const expiration = expiry(input.expiresAt, now);
       const id = `doc_${randomId()}`, token = randomId();
@@ -280,7 +280,7 @@ export function createDocumentDeliveryHandler(options = {}) {
       }
       if (!record.documentName) fail();
       if (combined && documentType === "monthly_report") {
-        assertMonthlyBrandTime(now());
+        if (await readConnection({templateId: MonthlyTemplate.templateCode}, env) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
         await resolveMonthlyRecipient(request, identity, record, input.delivery);
       }
       await env.DOCUMENT_DELIVERY.put(`doc:${id}`, JSON.stringify(record), { expirationTtl: expiration.ttl });
@@ -310,15 +310,18 @@ export function createDocumentDeliveryHandler(options = {}) {
       if (monthly && channel !== "kakao") fail("DELIVERY_UNAVAILABLE");
       let monthlyRecipient;
       if (monthly) {
-        assertMonthlyBrandTime(now());
+        if (await readConnection({templateId: MonthlyTemplate.templateCode}, dispatchEnv) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
         monthlyRecipient = await resolveMonthlyRecipient(request, identity, document, input);
       }
       if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
       activeRequests.add(key);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
-      if (monthlyRecipient) variables.고객명 = monthlyRecipient.customerName;
+      if (monthlyRecipient) {
+        variables.건물주소 = monthlyRecipient.buildingAddress;
+        variables.문서명 = `${monthlyRecipient.buildingAddress} ${document.reportMonth} 월간 관리보고서`;
+      }
       const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType, document.completionReport), stateUpdatedAt: now()};
-      if (monthly) Object.assign(pending, {deliveryType: "monthly_brand", templateId: dispatchEnv.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE});
+      if (monthly) pending.deliveryType = "monthly_alimtalk";
       let pendingWrittenAt = 0, providerAccepted = false;
       // No automatic retry after a possibly accepted POST. Preserve its link.
       try {
