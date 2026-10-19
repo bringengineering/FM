@@ -49,6 +49,25 @@ test("CRM 저장은 서버 보고서·건물주로 PDF를 생성하고 발송 �
   assert.match(h.events[1][1].documentKey,new RegExp(a.record.savedCustomerDocument.sha256+"$"));
   assert.doesNotMatch(JSON.stringify(a.record),/base64|token|secret|secureUrl/);
 });
+test("결과보고서의 실제 보관 식별자로 업로드해도 Drive 속성 크기 제한을 지킨다", async () => {
+  const Drive = require("../src/building-docs-drive");
+  const h = fixture();
+  let uploaded = false;
+  h.deps.upload = input => Drive.uploadDocument({accessToken:"fixture", fetchImpl: async (url, options = {}) => {
+    if (!options.method) return Response.json({files: new URL(url).searchParams.get("q").includes("appProperties") ? [] : [{id:"folder_fixture"}]});
+    const metadata = JSON.parse(options.body.toString("utf8").split("\r\n\r\n")[1].split("\r\n--")[0]);
+    for (const [key, value] of Object.entries(metadata.appProperties)) {
+      if (Buffer.byteLength(key + value, "utf8") > 124) return Response.json({error:{errors:[{reason:"propertyLengthLimitExceeded"}]}}, {status:403});
+    }
+    uploaded = true;
+    return Response.json({id:"archived_drive_pdf"});
+  }}, input);
+  const result = await h.save();
+  assert.equal(uploaded, true);
+  assert.equal(result.record.driveFileId, "archived_drive_pdf");
+  assert.equal(h.events.some(event => event[0] === "createAndSend"), false);
+});
+
 test("발송은 저장 PDF 그대로·현재 건물주에게만 한 번 접수한다",async()=>{
   const h=fixture(); const {record}=await h.save(); const request=h.request(record);
   const sent=await h.service.send(request,h.session);
