@@ -4103,7 +4103,7 @@
 
     const targetManager = buildingMonthlyReportTargetManagerMarkup();
     main.innerHTML = `<section class="building-monthly-report-page">
-      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>이번 달도 보고월로 선택할 수 있습니다. 캘린더 작업이 없어도 월 선택은 가능하며, 등록된 작업이 없으면 0건으로 표시됩니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">${esc(monthlyKakaoStatus)}</em><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header>
+      <header class="building-monthly-report-hero"><div><span>OWNER MONTHLY REPORT</span><h2>건물 월간보고서</h2><p>이번 달도 보고월로 선택할 수 있습니다. 캘린더 작업이 없어도 월 선택은 가능하며, 등록된 작업이 없으면 0건으로 표시됩니다.</p></div><div class="building-monthly-hero-actions"><span class="building-monthly-gemini-state">Gemini API · Flash-Lite</span><em class="building-monthly-test-label">${esc(monthlyKakaoStatus)}</em><button type="button" class="secondary-button" data-document-capabilities-refresh ${documentDeliveryCapabilities.loading || buildingMonthlyReportState.kakaoSending ? "disabled" : ""}>승인 상태 새로 확인</button><button type="button" class="secondary-button" data-building-monthly-target-open ${canWriteCRM() ? "" : "disabled"}>대상 건물 관리</button></div></header>
       <section class="building-monthly-toolbar">
         <label class="building-monthly-field"><span>건물 선택</span><select data-building-monthly-building>${buildings.map(item => `<option value="${attr(item.id)}" ${item.id === building.id ? "selected" : ""}>${esc(item.name || "건물명 미입력")}</option>`).join("")}</select></label>
         <label class="building-monthly-field"><span>보고 월</span><input type="month" max="${attr(currentMonthKey())}" value="${attr(buildingMonthlyReportState.month)}" data-building-monthly-month></label>
@@ -14462,6 +14462,12 @@
       await previewCustomerDocument();
       return;
     }
+    if (event.target.closest("[data-document-capabilities-refresh]")) {
+      if (documentDeliveryCapabilities.loading || customerAlimTalkState.busy || buildingMonthlyReportState.kakaoSending) return;
+      await refreshDocumentDeliveryCapabilities();
+      showToast(documentDeliveryCapabilities.monthlyReport ? "월간보고서 알림톡 승인을 확인했습니다." : "월간보고서 검수 상태와 발신 설정을 확인해 주세요.");
+      return;
+    }
     const alimtalkCategory = event.target.closest("[data-alimtalk-category]");
     if (alimtalkCategory && currentView === "customerAlimTalk") {
       customerAlimTalkState.category = CustomerAlimTalkUI.categories.some(item => item.id === alimtalkCategory.dataset.alimtalkCategory) ? alimtalkCategory.dataset.alimtalkCategory : "notice";
@@ -18870,7 +18876,7 @@
         };
       }
       const monthlyReportRequest = {status: raw.monthlyReportStatus, frequency: "monthly_once",
-        requestedAt: raw.monthlyReportRequestedAt || "", source: raw.monthlyReportSource || "",
+        requestedAt: raw.monthlyReportRequestedAt ? `${raw.monthlyReportRequestedAt}T00:00:00+09:00` : "", source: raw.monthlyReportSource || "",
         evidenceRef: String(raw.monthlyReportEvidenceRef || "").trim(), withdrawnAt: raw.monthlyReportStatus === "withdrawn" ? now : "",
         recordedAt: now, recordedBy: currentAuth.user && currentAuth.user.uid || ""};
       const requestDecision = MessagePolicy.evaluateMonthlyReportRequest({monthlyReportRequest});

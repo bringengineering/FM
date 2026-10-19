@@ -20,6 +20,7 @@ test('monthly UI requires its request independently of marketing permission and 
   customer.messageConsents={kakao:{status:'granted',consentedAt:'2026-10-01',evidenceRef:'fixture',consentTextVersion:'v1'}};
   assert.match(UI.render(state),/월간보고서 월 1회 수신 요청일과 근거/);
   assert.match(UI.render(state),/data-alimtalk-send[^>]*disabled/);
+  assert.match(UI.render(state),/승인 상태 새로 확인/);
   customer.monthlyReportRequest={status:'requested',frequency:'monthly_once',source:'contract',requestedAt:'2026-10-01',evidenceRef:'fixture'};
   assert.match(UI.render(state),/data-alimtalk-send[^>]*>알림톡 보내기/);
   assert.match(UI.render({...state,kakaoMonthlyReady:false}),/data-alimtalk-send[^>]*disabled/);
