@@ -105,6 +105,80 @@
   // --- Drive 호출 ---------------------------------------------------------
   // fetch 를 밖에서 넣어 준다. 테스트에서 진짜 Drive 를 부르지 않기 위해서다.
 
+  // Google 오류 본문의 message/metadata에는 파일명·주소·계정이 들어갈 수 있다.
+  // 제한된 크기로 읽고 알려진 원인 코드만 IPC 오류에 남긴다.
+  const GOOGLE_REASONS = new Set([
+    "authError", "invalidCredentials", "insufficientPermissions", "insufficientFilePermissions",
+    "storageQuotaExceeded", "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded",
+    "accessNotConfigured", "domainPolicy", "teamDriveMembershipRequired", "fileNotDownloadable",
+    "notFound", "backendError", "internalError", "forbidden",
+    "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "ACCESS_TOKEN_EXPIRED", "SERVICE_DISABLED", "RATE_LIMIT_EXCEEDED",
+  ]);
+  const DRIVE_STAGES = new Set([
+    "폴더 확인", "폴더 생성", "파일 확인", "파일 다운로드", "폴더 읽기", "공유 드라이브 읽기",
+    "공유 문서함 읽기", "중복 확인", "업로드", "업로드 시작", "업로드 전송", "업로드 상태 확인",
+  ]);
+
+  async function googleReason(response) {
+    const limit = 8192;
+    const reader = response?.body?.getReader?.();
+    if (!reader) return "UNKNOWN";
+    let timer;
+    try {
+      if (Number(response.headers?.get?.("content-length")) > limit) return "UNKNOWN";
+      const read = async () => {
+        const chunks = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > limit) return "UNKNOWN";
+          chunks.push(value);
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        const candidates = [
+          ...(Array.isArray(body?.error?.errors) ? body.error.errors.map(item => item?.reason) : []),
+          ...(Array.isArray(body?.error?.details) ? body.error.details.map(item => item?.reason) : []),
+        ];
+        return candidates.find(reason => GOOGLE_REASONS.has(reason)) || "UNKNOWN";
+      };
+      return await Promise.race([
+        read(),
+        new Promise(resolve => { timer = setTimeout(() => resolve("UNKNOWN"), 1500); }),
+      ]);
+    } catch {
+      return "UNKNOWN";
+    } finally {
+      clearTimeout(timer);
+      try { void reader.cancel().catch(() => {}); } catch {}
+    }
+  }
+
+  async function driveFailure(response, what) {
+    const status = Number.isInteger(response?.status) && response.status >= 100 && response.status <= 599 ? response.status : 0;
+    const reason = await googleReason(response);
+    const stage = DRIVE_STAGES.has(what) ? what : "요청";
+    let code = "DRIVE_FAILED";
+    let hint = "잠시 후 다시 시도해 주세요.";
+    if (status === 401) {
+      code = "DRIVE_AUTH_REQUIRED";
+      hint = "회사 Drive를 다시 연결해 주세요.";
+    } else if (["storageQuotaExceeded", "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "RATE_LIMIT_EXCEEDED"].includes(reason) || status === 429) {
+      code = "DRIVE_QUOTA_EXCEEDED";
+      hint = reason === "storageQuotaExceeded" ? "Drive 저장공간을 확인해 주세요." : "Drive 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.";
+    } else if (["accessNotConfigured", "SERVICE_DISABLED"].includes(reason)) {
+      code = "DRIVE_SERVICE_UNAVAILABLE";
+      hint = "관리자에게 Google Drive API 설정 확인을 요청해 주세요.";
+    } else if (status === 403) {
+      code = "DRIVE_PERMISSION_DENIED";
+      hint = ["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"].includes(reason)
+        ? "연결된 앱의 Drive 접근 범위를 확인해 주세요."
+        : "해당 폴더·파일의 접근 권한이나 조직 정책을 확인해 주세요.";
+    }
+    return fail(`Drive ${stage} 실패 (HTTP ${status} · ${reason}). ${hint}`, code);
+  }
+
   async function driveJson(fetchImpl, url, options, what) {
     let response;
     try {
@@ -112,10 +186,7 @@
     } catch {
       throw fail("Drive 에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.", "DRIVE_UNREACHABLE");
     }
-    if (response.status === 401 || response.status === 403) {
-      throw fail("Drive 권한이 만료됐습니다. 다시 연결해 주세요.", "DRIVE_AUTH_REQUIRED");
-    }
-    if (!response.ok) throw fail(`Drive ${what} 에 실패했습니다. (HTTP ${response.status})`, "DRIVE_FAILED");
+    if (!response.ok) throw await driveFailure(response, what);
     try {
       return await response.json();
     } catch {
@@ -188,7 +259,7 @@
       `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
       { headers: authHeader(accessToken) },
     );
-    if (!response || !response.ok) throw fail("파일을 받지 못했습니다.", "DRIVE_FAILED");
+    if (!response || !response.ok) throw await driveFailure(response, "파일 다운로드");
     const buffer = Buffer.from(await response.arrayBuffer());
     if (buffer.length > limit) throw fail("파일이 너무 큽니다.", "DRIVE_FILE_TOO_LARGE");
     return { id: meta.id || fileId, name: meta.name || "", mimeType: meta.mimeType || "application/octet-stream", content: buffer };
@@ -379,10 +450,7 @@
     } catch {
       throw fail("Drive 에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.", "DRIVE_UNREACHABLE");
     }
-    if (start.status === 401 || start.status === 403) {
-      throw fail("Drive 권한이 만료됐습니다. 다시 연결해 주세요.", "DRIVE_AUTH_REQUIRED");
-    }
-    if (!start.ok) throw fail(`Drive 업로드를 시작하지 못했습니다. (HTTP ${start.status})`, "DRIVE_FAILED");
+    if (!start.ok) throw await driveFailure(start, "업로드 시작");
     const sessionUrl = start.headers && typeof start.headers.get === "function" ? start.headers.get("location") : "";
     if (!sessionUrl) throw fail("Drive 업로드 주소를 받지 못했습니다.", "DRIVE_FAILED");
 
@@ -409,7 +477,7 @@
         continue;
       }
       if (response.status === 401 || response.status === 403) {
-        throw fail("Drive 권한이 만료됐습니다. 다시 연결해 주세요.", "DRIVE_AUTH_REQUIRED");
+        throw await driveFailure(response, "업로드 전송");
       }
       if (response.status === 200 || response.status === 201) {
         if (onProgress) onProgress(total, total);
@@ -425,7 +493,7 @@
         continue;
       }
       attempts += 1;
-      if (attempts >= maxAttempts) throw fail(`Drive 업로드에 실패했습니다. (HTTP ${response.status})`, "DRIVE_FAILED");
+      if (attempts >= maxAttempts) throw await driveFailure(response, "업로드 전송");
       offset = await resumeOffset(fetchImpl, sessionUrl, total, offset);
     }
     throw fail("Drive 업로드가 끝나지 않았습니다.", "DRIVE_FAILED");
@@ -446,9 +514,11 @@
         method: "PUT",
         headers: { "content-range": `bytes */${total}` },
       });
+      if (probe.status === 401 || probe.status === 403) throw await driveFailure(probe, "업로드 상태 확인");
       if (probe.status === 308) return rangeEnd(probe, currentOffset);
       if (probe.status === 200 || probe.status === 201) return total;
-    } catch {
+    } catch (error) {
+      if (["DRIVE_AUTH_REQUIRED", "DRIVE_PERMISSION_DENIED", "DRIVE_QUOTA_EXCEEDED", "DRIVE_SERVICE_UNAVAILABLE"].includes(error?.code)) throw error;
       // 물어보는 것마저 실패하면 있던 자리에서 다시 시도한다.
     }
     return currentOffset;

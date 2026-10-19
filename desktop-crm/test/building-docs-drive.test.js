@@ -159,11 +159,10 @@ test("없으면 null 이지 오류가 아니다", async () => {
   assert.equal(await Drive.findExisting(deps(fake), "folder-1", "doc_abc"), null);
 });
 
-test("권한이 끊기면 다시 연결하라고 말한다", async () => {
-  // 401·403 을 그냥 실패로 뭉뚱그리면 사용자가 뭘 해야 할지 모른다.
+test("인증 만료와 접근 거부를 구분한다", async () => {
   for (const status of [401, 403]) {
     const fake = fakeDrive([{ status }]);
-    await rejectsCode(Drive.ensureFolder(deps(fake), "root", "가"), "DRIVE_AUTH_REQUIRED");
+    await rejectsCode(Drive.ensureFolder(deps(fake), "root", "가"), status === 401 ? "DRIVE_AUTH_REQUIRED" : "DRIVE_PERMISSION_DENIED");
   }
 });
 
