@@ -28,7 +28,7 @@ test("monthly AlimTalk uses dynamic provider approval and the legacy brand route
   assert.match(config, /^DOCUMENT_DELIVERY_ENABLED\s*=\s*"true"$/m);
   assert.match(config, /^KAKAO_DOCUMENT_TEMPLATES_APPROVED\s*=\s*"true"$/m);
   assert.match(config, /^KAKAO_MONTHLY_REPORT_ENABLED\s*=\s*"true"$/m);
-  assert.doesNotMatch(config, /^KAKAO_MONTHLY_BRAND_ENABLED\s*=\s*"true"$/m);
+  assert.match(config, /^KAKAO_MONTHLY_BRAND_ENABLED\s*=\s*"false"$/m);
   assert.match(config, /binding\s*=\s*"DOCUMENT_DELIVERY"/);
   assert.match(config, /id\s*=\s*"e45a57c874534b76b90107d43ad4a759"/);
 });
