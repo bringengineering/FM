@@ -29,7 +29,9 @@
     SOURCE_REQUIRED: "정보성 안내와 연결할 상담·작업·계약·입금·청소 주문 기록을 선택해 주세요.",
     MARKETING_CONSENT_REQUIRED: "선택한 채널의 광고성 정보 수신 동의가 없습니다.",
     MARKETING_CONSENT_WITHDRAWN: "고객이 선택한 채널의 광고성 수신 동의를 철회했습니다.",
-    CONSENT_EVIDENCE_REQUIRED: "수신 동의 증빙과 동의 문구 버전을 등록해 주세요."
+    CONSENT_EVIDENCE_REQUIRED: "수신 동의 증빙과 동의 문구 버전을 등록해 주세요.",
+    MONTHLY_REPORT_REQUEST_REQUIRED: "월간보고서 월 1회 수신 요청일과 근거를 등록해 주세요.",
+    MONTHLY_REPORT_REQUEST_WITHDRAWN: "고객이 월간보고서 정기 수신 요청을 철회했습니다."
   });
 
   function text(value) { return String(value == null ? "" : value).trim(); }
@@ -73,5 +75,14 @@
   }
 
   const evaluateKakaoMarketingConsent = customer => evaluateMarketingConsent(customer, "kakao");
-  return Object.freeze({ TEMPLATES, effectiveConsent, evaluateMessageRequest, evaluateKakaoMarketingConsent });
+  function evaluateMonthlyReportRequest(customer, now = Date.now()) {
+    const request = customer && customer.monthlyReportRequest;
+    if (request && (request.status === "withdrawn" || text(request.withdrawnAt))) return result(false, "MONTHLY_REPORT_REQUEST_WITHDRAWN");
+    const at = Date.parse(request && request.requestedAt);
+    if (!request || request.status !== "requested" || request.frequency !== "monthly_once"
+      || !Number.isFinite(at) || at > now || !text(request.evidenceRef) || text(request.evidenceRef).length > 200
+      || !["contract", "form", "phone", "manual"].includes(request.source)) return result(false, "MONTHLY_REPORT_REQUEST_REQUIRED");
+    return result(true, "ALLOWED");
+  }
+  return Object.freeze({ TEMPLATES, effectiveConsent, evaluateMessageRequest, evaluateKakaoMarketingConsent, evaluateMonthlyReportRequest });
 });

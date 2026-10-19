@@ -65,48 +65,17 @@ test("sends the exact approved AlimTalk variables and deduplicates the request k
   assert.deepEqual(calls[0].variables, { 고객명: "엄준식", 문서명: "입주청소 견적서", 보고월: "", 만료일: "2026-09-11", 문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token" });
 });
 
-test("monthly uses its own brand switch and never the rejected AlimTalk approval flag", async () => {
-  const storage = memory();
-  await storage.put("doc:doc_month", JSON.stringify({
-    id: "doc_month", token: "token", documentType: "monthly_report", documentName: "햇빛빌라 2026년 8월 월간 관리 보고서",
-    buildingName: "TEST 건물", crmCustomerId: "customer_fixture", reportMonth: "2026-08", customerId: "c1", expiresAt: "2026-09-11T00:00:00Z",
-    secureUrl: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
-  }));
-  const calls = [];
-  const handler = createDocumentDeliveryHandler({
-    now: () => Date.parse("2026-09-04T00:00:00Z"),
-    randomId: () => "monthly_message_1",
-    resolveMonthlyRecipient: async () => ({customerName: "건물주"}),
-    sendProvider: async input => { calls.push(input); return { providerMessageId: "ncp_month_1" }; }
-  });
-  const env = {
-    DOCUMENT_DELIVERY: storage, CRM_ADMIN_EMAILS: identity.email, DOCUMENT_DELIVERY_ENABLED: "true",
-    KAKAO_DOCUMENT_TEMPLATES_APPROVED: "true", KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED: "false",
-    NCP_ACCESS_KEY: "a", NCP_SECRET_KEY: "s", NCP_BIZ_MESSAGE_SERVICE_ID: "service", KAKAO_CHANNEL_ID: "@bringcare"
-  };
-  const capabilities = await handler(new Request("https://gateway.test/v1/document-delivery/capabilities"), identity, env);
-  assert.deepEqual((await capabilities.json()).capabilities, { kakao: true, monthlyReport: false, sms: false });
-  const request = () => new Request("https://gateway.test/v1/document-delivery/messages", {
-    method: "POST", body: JSON.stringify({
-      documentId: "doc_month", customerId: "c1", customerName: "건물주", phone: "01091690478",
-      channel: "kakao", idempotencyKey: "monthly_request_123"
-    })
-  });
-  assert.equal((await handler(request(), identity, env)).status, 503);
-  assert.equal(calls.length, 0);
-
-  env.KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED = "true";
-  assert.equal((await handler(request(), identity, env)).status, 503);
-  env.KAKAO_MONTHLY_BRAND_ENABLED = "true";
-  env.KAKAO_MONTHLY_BRAND_TEMPLATE_CODE = "a".repeat(40);
-  const sent = await handler(request(), identity, env);
-  assert.equal((await sent.json()).ok, true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].templateCode, "BRINGMONTHLYREPORTV1");
-  assert.deepEqual(calls[0].variables, {
-    건물명: "TEST 건물", 고객명: "건물주", 문서명: "햇빛빌라 2026년 8월 월간 관리 보고서", 보고월: "2026-08", 만료일: "2026-09-11",
-    문서링크: "bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"
-  });
+test("monthly requires both its enable switch and provider approval", async () => {
+  const storage=memory(),calls=[];let connection="TEMPLATE_NOT_READY";
+  await storage.put("doc:doc_month",JSON.stringify({id:"doc_month",documentType:"monthly_report",documentName:"TEST ONLY",reportMonth:"2026-08",buildingName:"TEST ONLY",crmCustomerId:"customer_fixture",crmBuildingId:"building_fixture",customerId:"c1",expiresAt:"2026-09-11T00:00:00Z",secureUrl:"https://bring-crm-ai-gateway.bringengineering1008.workers.dev/d/token"}));
+  const handler=createDocumentDeliveryHandler({now:()=>Date.parse("2026-09-04T00:00:00Z"),wait:async()=>{},randomId:()=>"monthly_message_1",readConnection:async()=>connection,resolveMonthlyRecipient:async()=>({buildingAddress:"테스트로 0"}),sendProvider:async input=>{calls.push(input);return{providerMessageId:"ncp_month_1"};}});
+  const env={DOCUMENT_DELIVERY:storage,CRM_ADMIN_EMAILS:identity.email,DOCUMENT_DELIVERY_ENABLED:"true",KAKAO_DOCUMENT_TEMPLATES_APPROVED:"true",NCP_ACCESS_KEY:"fixture",NCP_SECRET_KEY:"fixture",NCP_BIZ_MESSAGE_SERVICE_ID:"fixture",KAKAO_CHANNEL_ID:"@fixture"};
+  const request=()=>new Request("https://gateway.test/v1/document-delivery/messages",{method:"POST",body:JSON.stringify({documentId:"doc_month",customerId:"c1",phone:"01000000000",channel:"kakao",idempotencyKey:"monthly_request_123"})});
+  assert.equal((await handler(request(),identity,env)).status,503);assert.equal(calls.length,0);
+  env.KAKAO_MONTHLY_REPORT_ENABLED="true";
+  await assert.rejects(handler(request(),identity,env),/CONFIGURATION_ERROR/);assert.equal(calls.length,0);
+  connection="READY";assert.equal((await(await handler(request(),identity,env)).json()).ok,true);assert.equal(calls.length,1);
+  assert.equal(calls[0].templateCode,"BRINGMONTHLYREPORTV1");assert.equal(calls[0].variables.건물주소,"테스트로 0");
 });
 
 test("builds the reviewed NCP AlimTalk payload without exposing credentials", async () => {

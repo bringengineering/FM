@@ -37,9 +37,9 @@ CRM은 사진 가져오기 후 자동분류하며 최대 100장을 30장 이하 
 
 ## CRM 고객 문서 발송
 
-견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`, `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
+견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 전체 문서 발송은 `DOCUMENT_DELIVERY_ENABLED`, 견적서·결과보고서는 `KAKAO_DOCUMENT_TEMPLATES_APPROVED`, 월간보고서는 `KAKAO_MONTHLY_REPORT_ENABLED`로 제어합니다. 월간보고서와 결과보고서 V2는 NCP의 실제 승인 상태와 본문·버튼의 정확한 일치도 확인합니다.
 
-검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 견적서와 작업 결과보고서 템플릿 승인이 확인된 뒤 `KAKAO_DOCUMENT_TEMPLATES_APPROVED=true`, 월간보고서 템플릿 승인이 확인된 뒤 `KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED=true`로 각각 설정합니다. 각 전용 템플릿이 승인되기 전에는 해당 문서 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`을 사용합니다. 결과보고서는 주소·작업명 메타데이터가 있는 새 CRM 요청에 `BRINGCOMPLETIONREPORTV2`, 이전 CRM 요청에 `BRINGCOMPLETIONREPORTV1`을 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+발신 인증 정보는 Worker Secret에 보관합니다. 월간보고서는 사용 스위치가 켜져 있어도 검수가 완료되지 않았거나 등록 본문·버튼이 명세와 다르면 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`을 사용합니다. 결과보고서는 주소·작업명 메타데이터가 있는 새 CRM 요청에 `BRINGCOMPLETIONREPORTV2`, 이전 CRM 요청에 `BRINGCOMPLETIONREPORTV1`을 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
 
 ### 결과보고서 주소 안내 템플릿 등록
 
@@ -103,10 +103,10 @@ npm run deploy
 
 Cloudflare Rate Limiting binding은 직원 UID별 분당 20회를 허용합니다. KV의 회사 일일 집계는 무료 한도 보호용이며 정확한 회계 원장으로 사용하지 않습니다.
 
-## Monthly report manual BrandMessage delivery
+## Monthly report manual AlimTalk delivery
 
-Monthly reports use the existing registered `BRINGMONTHLYBRANDV1.json` TEXT template through NCP `/brandmessage/v2`; quote and completion-report AlimTalk paths remain separate. `KAKAO_MONTHLY_BRAND_ENABLED` and the exact registered `KAKAO_MONTHLY_BRAND_TEMPLATE_CODE` enable the monthly capability. The rejected monthly AlimTalk flag stays false. No monthly cron or automatic retry is created.
+Monthly reports use `BRINGMONTHLYREPORTV1.json` through NCP `/alimtalk/v2`. `KAKAO_MONTHLY_REPORT_ENABLED=true` enables the route, but both readiness and sending require a fresh NCP check: inspection COMPLETE, ACTIVE/READY status, no block/dormancy, and an exact match of the registered body and single Mobile/PC button. Pending or rejected templates remain unavailable. This check also fixes the inquiry number at 1511-3873. No monthly cron or automatic retry is created.
 
-The recipient must have a current CRM Kakao marketing consent (`messageConsents.kakao`: granted, consentedAt, evidenceRef, consentTextVersion; no withdrawnAt). The Worker re-reads canonical administrator access, linked active operator profile when present, current customer contact and consent using the caller's Firebase token before sending. Only friend-intersection targeting `I` is supported; the provider also enforces channel friendship. The registered template includes advertising and channel-block opt-out text. SMS fallback and reservation are disabled. Immediate sends are limited to 08:00–20:49 Asia/Seoul.
+The customer must have a separate `monthlyReportRequest` with status requested, frequency monthly_once, a valid non-future requestedAt, source contract/form/phone/manual, a nonempty bounded evidenceRef, and no withdrawnAt. CRM staff record the actual contract/application request in the customer consent/request editor. Existing advertising consents are preserved and never converted into report requests. The Worker re-reads canonical administrator access, active operator profile when present, customer contact/request, and the building's current owner link with the caller's Firebase identity. The greeting uses the linked building's shortened address. SMS fallback, BrandMessage fallback and reservation are disabled.
 
-The combined document-and-message endpoint retains one request claim on uncertain acknowledgements and never retries a provider POST automatically. Receipt records distinguish monthly BrandMessage from older AlimTalk records. Successful provider receipt `0000` means delivery, not customer read status. Links expire after seven days from the desktop. Rollback through the serialized release workflow by reverting this change; keep the monthly AlimTalk flag disabled. Never enable a template or synthesize consent for real customers solely to pass readiness checks.
+The combined endpoint validates approval and the request before storing the PDF, retains its claim on uncertain acknowledgements, and never retries a provider POST automatically. Historical monthly_brand receipts continue to use BrandMessage status lookup; new monthly_alimtalk receipts use AlimTalk. Successful provider receipt 0000 means delivery, not customer read status. Links expire after seven days from the desktop. Roll back through the serialized release workflow; disable KAKAO_MONTHLY_REPORT_ENABLED to close monthly delivery. No database rules or access changes are required. Never synthesize requests for real customers to pass readiness checks.

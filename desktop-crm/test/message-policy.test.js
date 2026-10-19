@@ -2,6 +2,16 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const Policy = require("../src/message-policy");
 
+test("monthly report request is separate from advertising consent and withdrawal takes precedence", () => {
+  const request = {status:"requested",requestedAt:"2026-10-01",frequency:"monthly_once",source:"contract",evidenceRef:"fixture-request"};
+  const now = Date.parse("2026-10-19T04:00:00Z");
+  assert.equal(Policy.evaluateMonthlyReportRequest({monthlyReportRequest:request}, now).allowed, true);
+  assert.equal(Policy.evaluateMonthlyReportRequest({messageConsents:{kakao:{status:"granted"}}}, now).allowed, false);
+  for (const changed of [{status:"withdrawn"},{withdrawnAt:"2026-10-02"},{frequency:"weekly"},{requestedAt:"2099-01-01"},{evidenceRef:""},{source:""}]) {
+    assert.equal(Policy.evaluateMonthlyReportRequest({monthlyReportRequest:{...request,...changed}}, now).allowed, false);
+  }
+});
+
 test("information message requires a linked CRM source", () => {
   const result = Policy.evaluateMessageRequest({
     templateId: "cleaning_schedule",

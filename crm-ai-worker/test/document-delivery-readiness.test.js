@@ -10,11 +10,11 @@ test("configuration diagnostics expose only presence and explicit approval flags
     { name: "CRM_ADMIN_EMAILS", type: "plain_text", text: "private-account" },
     { name: "DOCUMENT_DELIVERY_ENABLED", type: "plain_text", text: "true" },
     { name: "KAKAO_DOCUMENT_TEMPLATES_APPROVED", type: "plain_text", text: "false" },
-    { name: "KAKAO_MONTHLY_REPORT_TEMPLATE_APPROVED", type: "secret_text" },
+    { name: "KAKAO_MONTHLY_REPORT_ENABLED", type: "secret_text" },
   ];
   assert.deepEqual(summarizeBindings(bindings), {
     storagePresent: true, accessKeyPresent: true, secretKeyPresent: true, serviceIdPresent: true, channelIdPresent: true,
-    deliveryEnabled: true, documentTemplatesApprovedFlag: false, monthlyTemplateApprovedFlag: null, monthlyBrandEnabledFlag: false, monthlyBrandTemplatePresent: false,
+    deliveryEnabled: true, documentTemplatesApprovedFlag: false, monthlyReportEnabledFlag: null, monthlyBrandEnabledFlag: false,
   });
   assert.doesNotMatch(JSON.stringify(summarizeBindings(bindings)), /must-not-leak|private-account|private-storage/);
   assert.ok(Object.values(summarizeBindings([])).every(value => value === false));
@@ -47,19 +47,19 @@ test("manual diagnostic workflow runs only the reviewed release branch and never
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|wrangler deploy|secret put/);
 });
 
-test("release readiness requires every binding, approved documents, and monthly AlimTalk disabled and brand enabled", () => {
+test("release readiness requires every binding, approved documents, and monthly provider-checked AlimTalk enabled and brand disabled", () => {
   const ready = {
     storagePresent: true, accessKeyPresent: true, secretKeyPresent: true, serviceIdPresent: true, channelIdPresent: true,
-    deliveryEnabled: true, documentTemplatesApprovedFlag: true, monthlyTemplateApprovedFlag: false, monthlyBrandEnabledFlag: true, monthlyBrandTemplatePresent: true,
+    deliveryEnabled: true, documentTemplatesApprovedFlag: true, monthlyReportEnabledFlag: true, monthlyBrandEnabledFlag: false,
   };
   assert.equal(requireApprovedDocumentDelivery(ready), ready);
-  for (const key of Object.keys(ready).filter(key => key !== "monthlyTemplateApprovedFlag")) {
+  for (const key of Object.keys(ready).filter(key => key !== "monthlyBrandEnabledFlag")) {
     for (const value of [false, null, undefined, "true"]) {
       assert.throws(() => requireApprovedDocumentDelivery({ ...ready, [key]: value }), /NOT_READY/);
     }
   }
   for (const value of [true, null, undefined, "false"]) {
-    assert.throws(() => requireApprovedDocumentDelivery({ ...ready, monthlyTemplateApprovedFlag: value }), /NOT_READY/);
+    assert.throws(() => requireApprovedDocumentDelivery({ ...ready, monthlyBrandEnabledFlag: value }), /NOT_READY/);
   }
   assert.throws(() => requireApprovedDocumentDelivery(null), /NOT_READY/);
 });
