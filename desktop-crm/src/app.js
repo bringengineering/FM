@@ -18862,6 +18862,11 @@
         const status = raw[`${channel}Status`];
         const previous = customer.messageConsents && customer.messageConsents[channel] || {};
         if (status === "granted" && (!String(raw[`${channel}EvidenceRef`] || "").trim() || !String(raw[`${channel}ConsentTextVersion`] || "").trim() || !raw[`${channel}ConsentedAt`])) return showToast(`${channel === "kakao" ? "카카오" : "SMS"} 동의일·문구 버전·증빙을 모두 입력해 주세요.`, "error");
+        const unchanged = previous.status && status === MessagePolicy.effectiveConsent(customer, channel).status
+          && String(raw[`${channel}ConsentedAt`] || "") === String(previous.consentedAt || "").slice(0, 10)
+          && ["Source", "ConsentTextVersion", "EvidenceRef", "EvidenceUrl"].every((suffix, index) =>
+            String(raw[channel + suffix] || "").trim() === String(previous[["source", "consentTextVersion", "evidenceRef", "evidenceUrl"][index]] || "").trim());
+        if (unchanged) { next[channel] = previous; continue; }
         next[channel] = {
           status,
           consentedAt: status === "granted" ? new Date(`${raw[`${channel}ConsentedAt`]}T00:00:00`).toISOString() : previous.consentedAt || "",
@@ -18875,10 +18880,15 @@
           updatedAt: now
         };
       }
-      const monthlyReportRequest = {status: raw.monthlyReportStatus, frequency: "monthly_once",
+      let monthlyReportRequest = {status: raw.monthlyReportStatus, frequency: "monthly_once",
         requestedAt: raw.monthlyReportRequestedAt ? `${raw.monthlyReportRequestedAt}T00:00:00+09:00` : "", source: raw.monthlyReportSource || "",
         evidenceRef: String(raw.monthlyReportEvidenceRef || "").trim(), withdrawnAt: raw.monthlyReportStatus === "withdrawn" ? now : "",
         recordedAt: now, recordedBy: currentAuth.user && currentAuth.user.uid || ""};
+      const previousRequest = customer.monthlyReportRequest;
+      if (previousRequest && raw.monthlyReportStatus === previousRequest.status
+        && String(raw.monthlyReportRequestedAt || "") === String(previousRequest.requestedAt || "").slice(0, 10)
+        && String(raw.monthlyReportSource || "") === String(previousRequest.source || "")
+        && String(raw.monthlyReportEvidenceRef || "").trim() === String(previousRequest.evidenceRef || "").trim()) monthlyReportRequest = previousRequest;
       const requestDecision = MessagePolicy.evaluateMonthlyReportRequest({monthlyReportRequest});
       if (monthlyReportRequest.status === "requested" && !requestDecision.allowed) return showToast(requestDecision.message, "error");
       customer.monthlyReportRequest = monthlyReportRequest;
