@@ -1673,6 +1673,7 @@
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": false,
         "buildings": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('email').val() === auth.token.email",
           ".write": false,
           "$entityId": {
             ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
@@ -2209,6 +2210,7 @@
           ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
         },
         "contracts": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/wallboardReaders').child(auth.uid).child('email').val() === auth.token.email",
           ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
         },
         "contractReadiness": {

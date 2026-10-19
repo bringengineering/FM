@@ -2443,7 +2443,6 @@
     if (disposeCompanyWallboard) { disposeCompanyWallboard(); disposeCompanyWallboard = null; }
     // 오늘 연락할 고객을 회사 텔레그램으로 민다. 하루에 한 번만 간다 —
     // 여기가 몇 번 불리든 안에서 막는다.
-    void maybeAutoSendTelegram();
     workspaceCoordinator.render();
     watchNavOverflow();
     markNavOverflow();
@@ -12581,14 +12580,12 @@
   // 돌려받는 것은 "넣어 두었는가" 하나다.
   let telegramState = {
     loaded: false, loading: false, saving: false, sending: false,
-    configured: false, chatId: "", autoSend: true, includePhone: false,
+    configured: false, chatId: "", autoSend: false, includePhone: false,
     lastSentDay: "", error: "", notice: "",
     finding: false, chats: null, chatHint: "",
     hours: [9], lastAutoSlot: "",
   };
   const telegramCore = () => window.BringTelegramCore;
-  // 앱을 켜 둔 채로 자정을 넘겨도 하루에 한 번은 가게 한다.
-  let telegramAutoTriedSlot = "";
 
   function telegramAlerts() {
     const T = telegramCore();
@@ -12628,7 +12625,9 @@
     const late = alerts.filter(alert => alert.overdue).length;
     return `<section class="setting-card tg-card">
       <h3>텔레그램 알림</h3>
-      <p>오늘 연락할 고객과 늦어진 연락을 회사 텔레그램 방으로 보냅니다. 봇 토큰은 이 컴퓨터에만 암호화해 두고 서버·저장소 어디에도 올리지 않습니다.</p>
+      <p>오늘 업무일정과 계약 입금일을 매일 오전 6시(한국시간)에 회사 업무방으로 공유합니다. CRM을 닫아도 서버에서 발송합니다.</p>
+      <div class="info-box">서버 자동 공유 · 오늘 업무일정 + 오늘 계약 입금<br>있는 항목만 보내며, 둘 다 없으면 발송하지 않습니다. 서버 봇 토큰은 비밀 설정으로 관리합니다.</div>
+      <details><summary>수동 연락 알림 연결</summary><p>아래 연결은 연락할 고객을 직접 보낼 때 사용합니다. 수동 발송용 토큰은 이 PC에 암호화해 보관합니다.</p>
       ${telegramState.error ? `<div class="tg-error" role="alert">${esc(telegramState.error)}</div>` : ""}
       ${telegramState.notice ? `<div class="tg-notice">${esc(telegramState.notice)}</div>` : ""}
       <form data-telegram-form>
@@ -12641,12 +12640,6 @@
             </div>
           </label>
         </div>
-        <label class="tg-toggle"><input type="checkbox" name="autoSend"${telegramState.autoSend ? " checked" : ""}> 하루에 한 번 자동으로 보냅니다 <small>앱이 켜져 있는 동안 정한 시각에 알아서 나갑니다. 누르실 것 없습니다.</small></label>
-        <div class="tg-hours">
-          <span>보낼 시각</span>
-          <div class="tg-hour-picks">${(T.SEND_HOURS || []).map(hour => `<label class="tg-hour-pick${telegramState.hours.includes(hour) ? " is-on" : ""}"><input type="checkbox" name="hours" value="${hour}"${telegramState.hours.includes(hour) ? " checked" : ""}><b>${hour}시</b></label>`).join("")}</div>
-          <small>여러 개를 고르면 그때마다 갑니다. 아직 연락 안 한 것이 있으면 그 시각에 다시 찔러 줍니다.</small>
-        </div>
         <label class="tg-toggle"><input type="checkbox" name="includePhone"${telegramState.includePhone ? " checked" : ""}> 전화번호도 함께 보냅니다 <small>텔레그램 방은 사람이 나가도 글이 남습니다. 꼭 필요할 때만 켜 주세요.</small></label>
         <div class="form-actions">
           <button class="primary-button" type="submit"${telegramState.saving ? " disabled" : ""}>${telegramState.saving ? "저장 중…" : "저장"}</button>
@@ -12656,10 +12649,10 @@
       </form>
       ${telegramState.chats ? telegramChatList() : ""}
       <div class="tg-preview">
-        <b>지금 보내면 이렇게 갑니다</b>
+        <b>수동 연락 알림 미리보기</b>
         <small>${alerts.length ? `${alerts.length}건${late ? ` · 늦음 ${late}건` : ""}` : "보낼 것이 없습니다"}${telegramState.lastSentDay ? ` · 마지막 발송 ${esc(telegramState.lastSentDay)}` : ""}</small>
         ${preview ? `<pre>${esc(preview.replace(/<[^>]+>/gu, ""))}</pre>` : `<p class="office-muted">오늘 연락할 고객이 없습니다.</p>`}
-      </div>
+      </div></details>
     </section>`;
   }
 
@@ -12714,9 +12707,8 @@
       const result = await api.saveTelegramSettings({
         botToken: String(raw.botToken || ""),
         chatId: String(raw.chatId || ""),
-        autoSend: raw.autoSend === "on",
+        autoSend: false,
         includePhone: raw.includePhone === "on",
-        hours: [...form.querySelectorAll('[name="hours"]:checked')].map(box => Number(box.value)),
       });
       telegramState = Object.assign({}, telegramState, {
         configured: result && result.configured === true,
@@ -12766,56 +12758,6 @@
       if (currentView === "settings") renderSettings();
     }
   }
-
-  // 자동 발송. 설정 화면을 열지 않아도 돌아야 하므로 자료를 받은 뒤에 부른다.
-  //
-  // 조용히 실패해도 화면에 아무 말도 하지 않는다 — 사람이 다른 일을 하는
-  // 중에 오류창이 뜨면 방해만 된다. 설정 화면에 가면 그때 이유가 보인다.
-  /**
-   * 정한 시각이 지났으면 알아서 보낸다.
-   *
-   * 전에는 "앱을 켤 때 한 번" 이었다. 그래서 새벽에 켜면 새벽에 갔고,
-   * 하루 종일 켜 두면 자정을 넘겨도 안 갔다. 대표가 "내가 보내기만 하면
-   * 안 되잖아" 라고 한 것이 이 자리다.
-   *
-   * 이제 15분마다 확인한다. 정한 시각을 지나서 처음 확인하는 순간에
-   * 보낸다 — 지나갔다고 건너뛰면 늦게 켠 날은 영영 안 온다.
-   */
-  async function maybeAutoSendTelegram() {
-    if (!canAdministerSecurity()) return;
-    const T = telegramCore();
-    if (!T) return;
-    const today = todayKey();
-    if (!telegramState.loaded) await loadTelegramSettings();
-    if (!telegramState.configured) return;
-    const verdict = T.dueNow({
-      autoSend: telegramState.autoSend,
-      hours: telegramState.hours,
-      lastAutoSlot: telegramState.lastAutoSlot,
-    }, new Date());
-    if (!verdict.due) return;
-    if (!telegramAlerts().length) return;
-    // 같은 시각을 두 번 두드리지 않는다. 서버가 슬롯을 기억하지만,
-    // 15분마다 도는 동안 응답을 기다리는 사이에 또 부르는 것을 막는다.
-    if (telegramAutoTriedSlot === verdict.slot) return;
-    telegramAutoTriedSlot = verdict.slot;
-    try {
-      const result = await api.sendTelegramContactAlert({ customers: store.customers || [], asOf: today, slot: verdict.slot, force: true });
-      if (result && result.sent) {
-        telegramState.lastSentDay = today;
-        telegramState.lastAutoSlot = verdict.slot || "";
-      }
-    } catch (_error) {
-      // 다음에 다시 해 본다. 오늘은 이미 시도했다고 표시해 두었으므로
-      // 같은 오류로 계속 두드리지는 않는다.
-    }
-  }
-
-  // 켜 둔 채로 시각이 지나가는 것을 잡는다. 자정을 넘기면 어제 표시를
-  // 지워서 새 날 것이 나갈 수 있게 한다.
-  setInterval(() => {
-    void maybeAutoSendTelegram();
-  }, 15 * 60 * 1000);
 
   function renderSettings() {
     const user = currentAuth.user || {};

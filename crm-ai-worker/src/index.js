@@ -9,9 +9,12 @@ import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify
 import { readMonthlyReportPhotoSelectionPayload, selectMonthlyReportPhotos } from "./monthly-report-photo-select.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
+import { MORNING_CRON, morningReady, morningSourceReady } from "./telegram-morning-jobs.js";
+import { seoulDay } from "./telegram-morning-core.js";
+export { TelegramMorningJobs } from "./telegram-morning-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-14-schedule-archive-v5";
+const SERVICE_VERSION = "2026-10-19-telegram-morning-v1";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -369,7 +372,18 @@ export function createWorker(options = {}) {
   const signGoogleJwt = options.signGoogleJwt || defaultSignGoogleJwt;
   const documentDeliveryHandler = options.documentDeliveryHandler || createDocumentDeliveryHandler({ fetchImpl, now });
   return {
-    async scheduled(_controller, env) {
+    async scheduled(controller, env) {
+      if (controller.cron === MORNING_CRON) {
+        if (env.TELEGRAM_MORNING_ENABLED !== 'true') return;
+        if (!morningReady(env)) throw new Error('TELEGRAM_MORNING_UNAVAILABLE');
+        const day = seoulDay(new Date(controller.scheduledTime || now()));
+        const stub = env.TELEGRAM_MORNING_JOBS.get(env.TELEGRAM_MORNING_JOBS.idFromName('bring-company-telegram-morning'));
+        const result = await stub.fetch(new Request('https://telegram-morning-internal/run', {
+          method: 'POST', body: JSON.stringify({ day }),
+        }));
+        if (!result.ok) throw new Error('TELEGRAM_MORNING_UNAVAILABLE');
+        return;
+      }
       if (env.WALLBOARD_ENABLED !== 'true' || env.WALLBOARD_SCHEDULED_REFRESH_ENABLED !== 'true') return;
       if(options.scheduledWallboardRefresh){await options.scheduledWallboardRefresh({env});return;}
       if(!env.WALLBOARD_REFRESH_JOBS)throw new Error('WALLBOARD_UNAVAILABLE');
@@ -402,7 +416,8 @@ export function createWorker(options = {}) {
       if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true",
-          weeklyReportDelivery: Boolean(env.WEEKLY_REPORT_DELIVERIES && env.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN && env.WEEKLY_REPORT_TELEGRAM_CHAT_ID) });
+          weeklyReportDelivery: Boolean(env.WEEKLY_REPORT_DELIVERIES && env.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN && env.WEEKLY_REPORT_TELEGRAM_CHAT_ID),
+          morningTelegram: await morningSourceReady(env) });
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);

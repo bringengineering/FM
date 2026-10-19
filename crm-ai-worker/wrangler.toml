@@ -6,7 +6,7 @@ workers_dev = true
 preview_urls = false
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 21 * * *"]
 
 [vars]
 AI_ENABLED = "true"
@@ -24,6 +24,7 @@ KAKAO_MONTHLY_REPORT_ENABLED = "true"
 KAKAO_MONTHLY_BRAND_ENABLED = "false"
 WALLBOARD_ENABLED = "true"
 WALLBOARD_SCHEDULED_REFRESH_ENABLED = "false"
+TELEGRAM_MORNING_ENABLED = "true"
 WALLBOARD_FIREBASE_DATABASE_URL = "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 [[ratelimits]]
@@ -73,3 +74,11 @@ class_name = "WeeklyReportDeliveries"
 [[migrations]]
 tag = "weekly-report-delivery-sqlite-v1"
 new_sqlite_classes = ["WeeklyReportDeliveries"]
+
+[[durable_objects.bindings]]
+name = "TELEGRAM_MORNING_JOBS"
+class_name = "TelegramMorningJobs"
+
+[[migrations]]
+tag = "telegram-morning-sqlite-v1"
+new_sqlite_classes = ["TelegramMorningJobs"]

@@ -93,7 +93,9 @@ test("stages exactly three updater assets and publishes stable after validated W
   assert.match(deploy, /secrets\.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN/);
   assert.match(deploy, /secrets\.WEEKLY_REPORT_TELEGRAM_CHAT_ID/);
   const deployment=fs.readFileSync(path.join(root,'crm-ai-worker/scripts/deploy-with-weekly-secrets.mjs'),'utf8');
-  assert.match(deployment, /'deploy','--keep-vars','--var','WALLBOARD_SCHEDULED_REFRESH_ENABLED:true','--secrets-file'/);
+  assert.match(deployment, /'deploy','--keep-vars','--var',`WALLBOARD_SCHEDULED_REFRESH_ENABLED:\$\{tvRefreshEnabled\}`,'--secrets-file'/);
+  assert.match(deployment, /const tvRefreshEnabled=tvValue==='true'\?'true':'false'/);
+  assert.match(deployment, /WALLBOARD_READER_UID/);
   assert.match(deployment, /mode:0o600/);
   assert.match(deployment, /finally\{await rm\(directory/);
   assert.doesNotMatch(deployment, /console\.log\(values/);

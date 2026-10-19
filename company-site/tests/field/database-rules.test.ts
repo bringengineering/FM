@@ -1998,12 +1998,14 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
     "workOrders",
     "projects",
     "data/serviceRecords",
+    "data/contracts",
+    "data/buildings",
     "teamProfiles",
     "projectWeeklyReports",
     "projectWeeklyReportReviews",
   ];
 
-  it("allows only the enabled verified reader to read the eight TV source paths, never write them", async () => {
+  it("allows the verified reader's existing TV sources and two morning sources, never writes or unrelated reads", async () => {
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: true,
@@ -2021,6 +2023,11 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
     await assertFails(get(ref(reader, "crmCompany")));
     await assertFails(get(ref(reader, "crmCompany/data/customers")));
     await assertFails(get(ref(reader, "crmCompany/marketing")));
+    await assertFails(get(ref(reader, "crmCompany/data")));
+    await assertFails(get(ref(reader, "crmCompany/data/contractReadiness")));
+    await assertFails(get(ref(reader, "crmCompany/attendance")));
+    await assertFails(set(ref(reader, "crmCompany/data/contracts/probe"), { id: "probe" }));
+    await assertFails(set(ref(reader, "crmCompany/data/buildings/probe"), { id: "probe" }));
   });
 
   it("rejects an unmarked, disabled, mismatched-email, or unverified reader", async () => {
@@ -2031,6 +2038,7 @@ describe.runIf(databaseEmulatorAvailable)("wallboard recovery reader rules", () 
       }
     };
     await denyAllSources(reader);
+    await denyAllSources(environment.unauthenticatedContext().database());
     await environment.withSecurityRulesDisabled(async (context) => {
       await set(ref(context.database(), `crmCompany/wallboardReaders/${readerUid}`), {
         enabled: false,

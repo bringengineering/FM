@@ -3743,7 +3743,7 @@ async function loadTelegramSettings() {
     ok: true,
     configured: Boolean(saved && saved.botToken && saved.chatId),
     chatId: saved ? saved.chatId : "",
-    autoSend: saved ? saved.autoSend : true,
+    autoSend: false,
     includePhone: saved ? saved.includePhone === true : false,
     hours: TelegramCore.normalizeHours(saved ? saved.hours : null),
     lastAutoSlot: saved ? String(saved.lastAutoSlot || "") : "",
@@ -3761,7 +3761,7 @@ async function saveTelegramSettings(input) {
   const checked = TelegramCore.validateSettings({
     botToken,
     chatId: options.chatId,
-    autoSend: options.autoSend,
+    autoSend: false,
     includePhone: options.includePhone,
     hours: options.hours,
   });
@@ -3899,6 +3899,7 @@ async function sendTelegramDirective(input) {
 async function sendTelegramContactAlert(input) {
   requireTelegramAdmin();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (options.slot) return { ok: true, sent: false, reason: "자동 공유는 오전 6시에 서버에서 처리합니다.", count: 0 };
   const saved = await readTelegramSettings();
   if (!saved || !saved.botToken || !saved.chatId) {
     return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
@@ -3912,11 +3913,7 @@ async function sendTelegramContactAlert(input) {
 
   const body = TelegramCore.composeMessage(alerts, { asOf, includePhone: saved.includePhone === true });
   await postToTelegram(saved.botToken, saved.chatId, body);
-  // 자동으로 나간 것만 시각 칸을 채운다. 사람이 누른 것은 그 시각의
-  // 자동 발송을 대신하지 않는다 — 아침에 눌러 봤다고 9시 알림이
-  // 사라지면 그게 더 헷갈린다.
   const stamp = { lastSent: { day: verdict.day || asOf, fingerprint: verdict.fingerprint || TelegramCore.alertsFingerprint(alerts), at: new Date().toISOString() } };
-  if (TelegramCore.text(options.slot, 20)) stamp.lastAutoSlot = TelegramCore.text(options.slot, 20);
   await writeTelegramSettings(Object.assign({}, saved, stamp));
   return { ok: true, sent: true, count: alerts.length, reason: "" };
 }
