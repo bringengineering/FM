@@ -37,19 +37,19 @@ CRM은 사진 가져오기 후 자동분류하며 최대 100장을 30장 이하 
 
 ## CRM 고객 문서 발송
 
-견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 전체 문서 발송은 `DOCUMENT_DELIVERY_ENABLED`, 견적서·결과보고서는 `KAKAO_DOCUMENT_TEMPLATES_APPROVED`, 월간보고서는 `KAKAO_MONTHLY_REPORT_ENABLED`로 제어합니다. 월간보고서와 결과보고서 V2는 NCP의 실제 승인 상태와 본문·버튼의 정확한 일치도 확인합니다.
+견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 전체 문서 발송은 `DOCUMENT_DELIVERY_ENABLED`, 견적서·결과보고서는 `KAKAO_DOCUMENT_TEMPLATES_APPROVED`, 월간보고서는 `KAKAO_MONTHLY_REPORT_ENABLED`로 제어합니다. 월간보고서와 결과보고서 V3는 NCP의 실제 승인 상태와 본문·버튼의 정확한 일치도 확인합니다.
 
-발신 인증 정보는 Worker Secret에 보관합니다. 월간보고서는 사용 스위치가 켜져 있어도 검수가 완료되지 않았거나 등록 본문·버튼이 명세와 다르면 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 월간보고서는 `BRINGMONTHLYREPORTV1`을 사용합니다. 결과보고서는 주소·작업명 메타데이터가 있는 새 CRM 요청에 `BRINGCOMPLETIONREPORTV2`, 이전 CRM 요청에 `BRINGCOMPLETIONREPORTV1`을 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+발신 인증 정보는 Worker Secret에 보관합니다. 월간보고서는 사용 스위치가 켜져 있어도 검수가 완료되지 않았거나 등록 본문·버튼이 명세와 다르면 발송 capability가 비활성화되고 Worker가 발송을 거부합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 월간보고서는 `BRINGMONTHLYREPORTV2`을 사용합니다. 결과보고서는 주소·작업명 메타데이터가 있는 새 CRM 요청에 `BRINGCOMPLETIONREPORTV3`, 이전 CRM 요청에 `BRINGCOMPLETIONREPORTV1`을 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
 
 ### 결과보고서 주소 안내 템플릿 등록
 
-NCP 등록용 본문과 버튼은 [`templates/BRINGCOMPLETIONREPORTV2.json`](templates/BRINGCOMPLETIONREPORTV2.json)에 있습니다. 기존 V1을 수정하지 않고 코드 `BRINGCOMPLETIONREPORTV2`로 새 템플릿을 등록하고 검수를 요청합니다. `content`의 줄바꿈과 변수명, 버튼의 이름·유형·모바일/PC 링크를 그대로 등록해야 합니다. 이 파일은 등록할 문구를 담은 자료이며, 등록이나 승인이 완료됐다는 뜻은 아닙니다.
+NCP 등록용 본문과 버튼은 [`templates/BRINGCOMPLETIONREPORTV3.json`](templates/BRINGCOMPLETIONREPORTV3.json)에 있습니다. 발송에 사용한 기존 V1/V2를 수정하지 않고 코드 `BRINGCOMPLETIONREPORTV3`로 새 템플릿을 등록하고 검수를 요청합니다. `content`의 줄바꿈과 변수명, 버튼의 이름·유형·모바일/PC 링크를 그대로 등록해야 합니다. 이 파일은 등록할 문구를 담은 자료이며, 등록이나 승인이 완료됐다는 뜻은 아닙니다.
 
-등록 이름은 공백 없이 `작업결과보고서주소안내`, 카테고리는 `서비스이용 > 처리완료`를 사용합니다.
+등록 이름은 공백 없이 `작업결과보고서대표번호안내`, 카테고리는 기존 승인본과 같은 `리포팅 > 피드백`을 사용합니다. 월간보고서의 새 등록 이름은 `건물월간보고서대표번호안내`입니다.
 
-새 문구는 고객명 대신 짧은 건물주소와 작업명을 표시하고 문의 번호 `1511-3873`을 사용합니다. `#{문서명}`에는 `{짧은 건물주소} {작업명} 결과보고서`가 들어갑니다. 열람기한, 안내 문장, `결과보고서 확인` 버튼은 유지합니다. 주소 축약은 알림톡에만 적용하며 저장된 보고서의 주소는 변경하지 않습니다.
+새 문구는 고객명 대신 짧은 건물주소와 작업명을 표시하고 문의 번호 `1551-3873`을 사용합니다. `#{문서명}`에는 `{짧은 건물주소} {작업명} 결과보고서`가 들어갑니다. 열람기한, 안내 문장, `결과보고서 확인` 버튼은 유지합니다. 주소 축약은 알림톡에만 적용하며 저장된 보고서의 주소는 변경하지 않습니다.
 
-Worker는 V2 발송 직전에 NCP에서 검수 완료·사용 가능 상태와 본문·버튼의 정확한 일치를 확인합니다. 등록 전이거나 검수 중이거나 문구가 다르면 메시지를 보내지 않습니다. V2 승인과 기존 발송 설정을 확인한 후 CRM 정식 릴리스 절차로 Worker와 데스크톱을 함께 배포합니다. 테스트는 합성 수신자와 모의 NCP 응답을 사용하며 실고객 발송을 수행하지 않습니다.
+Worker는 V3 발송 직전에 NCP에서 검수 완료·사용 가능 상태와 본문·버튼의 정확한 일치를 확인합니다. 등록 전이거나 검수 중이거나 문구가 다르면 메시지를 보내지 않습니다. 새 승인본에 연결하는 변경은 CRM 정식 릴리스 절차로 배포하며, 검수 대기 중에는 새 보고서 알림톡 발송을 차단합니다. 테스트는 합성 수신자와 모의 NCP 응답을 사용하며 실고객 발송을 수행하지 않습니다.
 
 월간보고서 템플릿 승인 요청 본문은 Worker의 `alimTalkContent()`가 만드는 문구와 버튼명(`월간 보고서 확인`)을 그대로 사용해야 합니다. NCP 콘솔에서 승인 상태를 확인하기 전에는 승인 플래그를 켜지 마세요.
 
@@ -105,8 +105,10 @@ Cloudflare Rate Limiting binding은 직원 UID별 분당 20회를 허용합니�
 
 ## Monthly report manual AlimTalk delivery
 
-Monthly reports use `BRINGMONTHLYREPORTV1.json` through NCP `/alimtalk/v2`. `KAKAO_MONTHLY_REPORT_ENABLED=true` enables the route, but both readiness and sending require a fresh NCP check: inspection COMPLETE, ACTIVE/READY status, no block/dormancy, and an exact match of the registered body and single Mobile/PC button. Pending or rejected templates remain unavailable. This check also fixes the inquiry number at 1511-3873. No monthly cron or automatic retry is created.
+Monthly reports use `BRINGMONTHLYREPORTV2.json` through NCP `/alimtalk/v2`. `KAKAO_MONTHLY_REPORT_ENABLED=true` enables the route, but both readiness and sending require a fresh NCP check: inspection COMPLETE, ACTIVE/READY status, no block/dormancy, and an exact match of the registered body and single Mobile/PC button. Pending or rejected templates remain unavailable. This check also fixes the inquiry number at 1551-3873. No monthly cron or automatic retry is created.
 
 The customer must have a separate `monthlyReportRequest` with status requested, frequency monthly_once, a valid non-future requestedAt, source contract/form/phone/manual, a nonempty bounded evidenceRef, and no withdrawnAt. CRM staff record the actual contract/application request in the customer consent/request editor. Existing advertising consents are preserved and never converted into report requests. The Worker re-reads canonical administrator access, active operator profile when present, customer contact/request, and the building's current owner link with the caller's Firebase identity. The greeting uses the linked building's shortened address. SMS fallback, BrandMessage fallback and reservation are disabled.
 
 The combined endpoint validates approval and the request before storing the PDF, retains its claim on uncertain acknowledgements, and never retries a provider POST automatically. Historical monthly_brand receipts continue to use BrandMessage status lookup; new monthly_alimtalk receipts use AlimTalk. Successful provider receipt 0000 means delivery, not customer read status. Links expire after seven days from the desktop. Roll back through the serialized release workflow; disable KAKAO_MONTHLY_REPORT_ENABLED to close monthly delivery. No database rules or access changes are required. Never synthesize requests for real customers to pass readiness checks.
+
+The current support number is **1551-3873**. Register the new completion V3 and monthly V2 templates with unchanged wording/buttons except the inquiry number, then wait for approval. The older JSON specifications are retained as historical snapshots; they are not selected for new address-based completion or monthly sends. Existing delivered messages and archived PDFs are immutable and are not migrated or resent.

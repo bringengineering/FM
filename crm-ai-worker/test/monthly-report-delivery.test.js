@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDocumentDeliveryHandler, sendNcpDocument, readNcpDocumentStatus, readNcpDocumentConnection} from '../src/document-delivery.js';
 import {monthlyReportRecipient} from '../src/monthly-report-delivery.js';
-import template from '../templates/BRINGMONTHLYREPORTV1.json' with {type:'json'};
+import template from '../templates/BRINGMONTHLYREPORTV2.json' with {type:'json'};
 
 const now = () => Date.parse('2026-10-19T04:00:00Z');
 const requested = {status:'requested',requestedAt:'2026-10-16',frequency:'monthly_once',source:'contract',evidenceRef:'fixture-request'};
@@ -41,7 +41,7 @@ test('monthly request is checked from current canonical customer and linked buil
 });
 
 test('monthly approval requires exact body, inquiry number and single mobile/PC button',async()=>{
-  for(const change of [()=>{},r=>r.content=r.content.replace('1511-3873','0000-0000'),r=>r.buttons[0].linkPc='https://example.invalid',
+  for(const change of [()=>{},r=>r.content=r.content.replace('1551-3873','1511-3873'),r=>r.content=r.content.replace('1551-3873','0000-0000'),r=>r.buttons[0].linkPc='https://example.invalid',
     r=>r.buttons[0].name='다른 버튼',r=>r.templateInspectionStatus='INSPECTING',r=>r.isBlock=true,r=>r.buttons.push({...r.buttons[0]})]) {
     const row=approvedRow();change(row);
     const result=await readNcpDocumentConnection(template.templateCode,env,{now,fetchImpl:async()=>Response.json([row])});

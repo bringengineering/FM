@@ -15,7 +15,7 @@ const memory = () => {
 test("maps each CRM document to the approved fixed Kakao template", () => {
   assert.equal(documentTemplate("quote"), "BRINGCUSTOMERQUOTEV1");
   assert.equal(documentTemplate("completion_report"), "BRINGCOMPLETIONREPORTV1");
-  assert.equal(documentTemplate("monthly_report"), "BRINGMONTHLYREPORTV1");
+  assert.equal(documentTemplate("monthly_report"), "BRINGMONTHLYREPORTV2");
   assert.throws(() => documentTemplate("contract"), /INVALID_INPUT/);
 });
 
@@ -75,7 +75,7 @@ test("monthly requires both its enable switch and provider approval", async () =
   env.KAKAO_MONTHLY_REPORT_ENABLED="true";
   await assert.rejects(handler(request(),identity,env),/CONFIGURATION_ERROR/);assert.equal(calls.length,0);
   connection="READY";assert.equal((await(await handler(request(),identity,env)).json()).ok,true);assert.equal(calls.length,1);
-  assert.equal(calls[0].templateCode,"BRINGMONTHLYREPORTV1");assert.equal(calls[0].variables.건물주소,"테스트로 0");
+  assert.equal(calls[0].templateCode,"BRINGMONTHLYREPORTV2");assert.equal(calls[0].variables.건물주소,"테스트로 0");
 });
 
 test("builds the reviewed NCP AlimTalk payload without exposing credentials", async () => {

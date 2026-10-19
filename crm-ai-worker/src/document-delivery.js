@@ -1,5 +1,6 @@
 import { monthlyReportRecipient } from './monthly-report-delivery.js';
-import MonthlyTemplate from '../templates/BRINGMONTHLYREPORTV1.json' with {type: 'json'};
+import MonthlyTemplate from '../templates/BRINGMONTHLYREPORTV2.json' with {type: 'json'};
+import CompletionTemplate from '../templates/BRINGCOMPLETIONREPORTV3.json' with {type: 'json'};
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
@@ -47,8 +48,8 @@ function decodeBase64(value) {
 
 export function documentTemplate(type, completionReport) {
   if (type === "quote") return "BRINGCUSTOMERQUOTEV1";
-  if (type === "completion_report") return completionReport ? "BRINGCOMPLETIONREPORTV2" : "BRINGCOMPLETIONREPORTV1";
-  if (type === "monthly_report") return "BRINGMONTHLYREPORTV1";
+  if (type === "completion_report") return completionReport ? CompletionTemplate.templateCode : "BRINGCOMPLETIONREPORTV1";
+  if (type === "monthly_report") return MonthlyTemplate.templateCode;
   fail();
 }
 
@@ -83,8 +84,6 @@ function linkVariables(document, customerName) {
   };
 }
 
-const COMPLETION_REPORT_V2_CONTENT = "[BRING CARE 작업 결과보고서 안내]\n#{건물주소} 건물주님, #{작업명} 결과 보고서가 발행되었습니다.\n\n작업명: #{문서명}\n열람기한: #{만료일}\n\n아래 버튼에서 결과보고서를 확인해 주세요.\n문의: 1511-3873";
-
 function completionReportDetails(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !["buildingAddress", "workName"].includes(key))) fail();
   for (const [key, limit] of [["buildingAddress", 80], ["workName", 200]]) {
@@ -100,10 +99,10 @@ async function ncpSignature(method, uri, timestamp, accessKey, secretKey) {
 }
 
 function alimTalkContent(templateCode, variables) {
-  if (templateCode === "BRINGCOMPLETIONREPORTV2") {
+  if (templateCode === CompletionTemplate.templateCode) {
     const checked = completionReportDetails({buildingAddress: variables.건물주소, workName: variables.작업명});
     const values = {...variables, 건물주소: checked.buildingAddress, 작업명: checked.workName};
-    return COMPLETION_REPORT_V2_CONTENT.replace(/#\{(건물주소|작업명|문서명|만료일)\}/gu, (_, name) => String(values[name] || ""));
+    return CompletionTemplate.content.replace(/#\{(건물주소|작업명|문서명|만료일)\}/gu, (_, name) => String(values[name] || ""));
   }
   if (templateCode === "BRINGCUSTOMERQUOTEV1") {
     return `[BRING CARE 견적서 안내]\n${variables.고객명}님, 요청하신 견적서가 발행되었습니다.\n\n견적명: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 견적서를 확인해 주세요.\n문의: 033-748-8919`;
@@ -111,7 +110,7 @@ function alimTalkContent(templateCode, variables) {
   if (templateCode === "BRINGCOMPLETIONREPORTV1") {
     return `[BRING CARE 작업 결과보고서 안내]\n${variables.고객명}님, 요청하신 작업 결과보고서가 발행되었습니다.\n\n작업명: ${variables.문서명}\n열람기한: ${variables.만료일}\n\n아래 버튼에서 결과보고서를 확인해 주세요.\n문의: 033-748-8919`;
   }
-  if (templateCode === "BRINGMONTHLYREPORTV1") {
+  if (templateCode === MonthlyTemplate.templateCode) {
     return MonthlyTemplate.content.replace(/#\{(건물주소|보고월|문서명|만료일)\}/gu, (_, name) => String(variables[name] || ""));
   }
   return fail();
@@ -148,12 +147,14 @@ export async function sendNcpDocument(input, options = {}) {
   const env = input.env || {};
   let uri, body;
   if (input.channel === "kakao") {
+    // Superseded support-number templates remain registered only for history.
+    if (["BRINGCOMPLETIONREPORTV2", "BRINGMONTHLYREPORTV1"].includes(input.templateCode)) fail("DELIVERY_UNAVAILABLE");
     if (input.document?.documentType === "monthly_report" && (env.KAKAO_MONTHLY_REPORT_ENABLED !== 'true' || input.templateCode !== MonthlyTemplate.templateCode)) fail("DELIVERY_UNAVAILABLE");
-    if (["BRINGCOMPLETIONREPORTV2", MonthlyTemplate.templateCode].includes(input.templateCode) && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
+    if ([CompletionTemplate.templateCode, MonthlyTemplate.templateCode].includes(input.templateCode) && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
     uri = `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
     const link = `https://${input.variables.문서링크}`;
     const buttonName = input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인"
-      : ["BRINGCOMPLETIONREPORTV1", "BRINGCOMPLETIONREPORTV2"].includes(input.templateCode) ? "결과보고서 확인"
+      : ["BRINGCOMPLETIONREPORTV1", CompletionTemplate.templateCode].includes(input.templateCode) ? "결과보고서 확인"
         : input.templateCode === MonthlyTemplate.templateCode ? MonthlyTemplate.buttons[0].name : fail();
     body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: buttonName, linkMobile: link, linkPc: link }] }] };
   } else if (input.channel === "sms") {
@@ -191,7 +192,7 @@ const CONNECTION_CODES = new Set(["READY", "AUTH_REJECTED", "SERVICE_NOT_FOUND",
 // A signed GET checks the existing service without sending any message or
 // returning credentials, channel IDs, template bodies, or personal data.
 export async function readNcpDocumentConnection(templateCode, env, options = {}) {
-  if (!["BRINGCUSTOMERQUOTEV1", "BRINGCOMPLETIONREPORTV1", "BRINGCOMPLETIONREPORTV2", "BRINGMONTHLYREPORTV1"].includes(templateCode)) return "CONFIGURATION_ERROR";
+  if (!["BRINGCUSTOMERQUOTEV1", "BRINGCOMPLETIONREPORTV1", CompletionTemplate.templateCode, MonthlyTemplate.templateCode].includes(templateCode)) return "CONFIGURATION_ERROR";
   const channel = clean(env.KAKAO_CHANNEL_ID, 80);
   if (!/^@[^\s\x00-\x1f\x7f/?#&]{1,79}$/u.test(channel)) return "CONFIGURATION_ERROR";
   try {
@@ -202,9 +203,8 @@ export async function readNcpDocumentConnection(templateCode, env, options = {})
     if (!row) return "TEMPLATE_NOT_FOUND";
     if (templateCode === MonthlyTemplate.templateCode && (row.content !== MonthlyTemplate.content || !Array.isArray(row.buttons) || row.buttons.length !== 1
       || Object.entries(MonthlyTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
-    if (templateCode === "BRINGCOMPLETIONREPORTV2" && (row.content !== COMPLETION_REPORT_V2_CONTENT
-      || !Array.isArray(row.buttons) || row.buttons.length !== 1 || row.buttons[0].type !== "WL" || row.buttons[0].name !== "결과보고서 확인"
-      || row.buttons[0].linkMobile !== "https://#{문서링크}" || row.buttons[0].linkPc !== "https://#{문서링크}")) return "TEMPLATE_NOT_READY";
+    if (templateCode === CompletionTemplate.templateCode && (row.content !== CompletionTemplate.content || !Array.isArray(row.buttons) || row.buttons.length !== 1
+      || Object.entries(CompletionTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
     return row.templateInspectionStatus === "COMPLETE" && ["ACTIVE", "READY"].includes(row.templateStatus) && row.isBlock === false && row.isDormant === false ? "READY" : "TEMPLATE_NOT_READY";
   } catch (error) {
     return diagnosticCode(error?.diagnosticCode) || ({DELIVERY_PROVIDER_AUTH_FAILED: "AUTH_REJECTED", DELIVERY_PROVIDER_SERVICE_NOT_FOUND: "SERVICE_NOT_FOUND", DELIVERY_PROVIDER_LIMITED: "PROVIDER_LIMITED", DELIVERY_CONFIGURATION_ERROR: "CONFIGURATION_ERROR", DELIVERY_PROVIDER_REJECTED: "PROVIDER_REJECTED"}[error?.code] || "PROVIDER_UNAVAILABLE");

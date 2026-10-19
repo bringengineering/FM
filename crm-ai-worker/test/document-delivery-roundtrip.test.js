@@ -29,7 +29,7 @@ for (const documentType of ["completion_report", "monthly_report"]) {
     assert.equal((await request("send", send)).status, "requested");
     await request("send", send);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].templateCode, documentType === "monthly_report" ? "BRINGMONTHLYREPORTV1" : "BRINGCOMPLETIONREPORTV1");
+    assert.equal(calls[0].templateCode, documentType === "monthly_report" ? "BRINGMONTHLYREPORTV2" : "BRINGCOMPLETIONREPORTV1");
   });
 }
 

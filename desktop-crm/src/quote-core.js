@@ -11,7 +11,7 @@
     businessName: "브링엔지니어링",
     representative: "서창환",
     address: "강원특별자치도 원주시 상지대길 83, 벤처창업관동 3층 305호(우산동, 상지대학교)",
-    phone: "010-6566-3603",
+    phone: "1551-3873",
     fax: "033-746-8919",
     businessType: "전문, 과학 및 기술서비스업 / 서비스업",
     businessCategory: "기타 공학 연구개발업 / 건축물 일반 청소업"
