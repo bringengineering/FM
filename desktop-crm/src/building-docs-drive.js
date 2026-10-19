@@ -27,6 +27,16 @@
 
   // 파일에 남기는 표식. 같은 서류를 두 번 올렸는지 이걸로 안다.
   const APP_TAG = "bringBuildingDoc";
+  const MAX_PROPERTY_BYTES = 124;
+
+  // Drive counts the UTF-8 bytes of BOTH key and value. Archive report keys
+  // include a source revision and PDF hash, so they can exceed this limit.
+  // Keep existing short keys intact and hash long keys without truncating them.
+  function documentPropertyValue(value) {
+    const key = text(value);
+    if (Buffer.byteLength(APP_TAG + key, "utf8") <= MAX_PROPERTY_BYTES) return key;
+    return "sha256:" + require("node:crypto").createHash("sha256").update(key, "utf8").digest("hex");
+  }
 
   function text(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -111,7 +121,7 @@
     "authError", "invalidCredentials", "insufficientPermissions", "insufficientFilePermissions",
     "storageQuotaExceeded", "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded",
     "accessNotConfigured", "domainPolicy", "teamDriveMembershipRequired", "fileNotDownloadable",
-    "notFound", "backendError", "internalError", "forbidden",
+    "notFound", "backendError", "internalError", "forbidden", "propertyLengthLimitExceeded", "appNotAuthorizedToFile",
     "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "ACCESS_TOKEN_EXPIRED", "SERVICE_DISABLED", "RATE_LIMIT_EXCEEDED",
   ]);
   const DRIVE_STAGES = new Set([
@@ -170,6 +180,9 @@
     } else if (["accessNotConfigured", "SERVICE_DISABLED"].includes(reason)) {
       code = "DRIVE_SERVICE_UNAVAILABLE";
       hint = "관리자에게 Google Drive API 설정 확인을 요청해 주세요.";
+    } else if (reason === "propertyLengthLimitExceeded") {
+      code = "DRIVE_METADATA_INVALID";
+      hint = "문서 식별 정보가 Drive 길이 제한을 초과했습니다.";
     } else if (status === 403) {
       code = "DRIVE_PERMISSION_DENIED";
       hint = ["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"].includes(reason)
@@ -380,7 +393,7 @@
     const { fetchImpl, accessToken } = deps;
     const query = [
       `'${quote(folderId)}' in parents`,
-      `appProperties has { key='${APP_TAG}' and value='${quote(documentKey)}' }`,
+      `appProperties has { key='${APP_TAG}' and value='${quote(documentPropertyValue(documentKey))}' }`,
       "trashed = false",
     ].join(" and ");
     const found = await driveJson(
@@ -556,7 +569,7 @@
     const metadata = {
       name: text(source.fileName) || buildFileName(source),
       parents: [folderId],
-      appProperties: documentKey ? { [APP_TAG]: documentKey } : undefined,
+      appProperties: documentKey ? { [APP_TAG]: documentPropertyValue(documentKey) } : undefined,
     };
     const mimeType = text(source.mimeType) || "application/octet-stream";
     const uploaded = needsResumable(content.length)

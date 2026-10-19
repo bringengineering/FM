@@ -16,6 +16,7 @@ test("403 권한·용량·요청 한도·API 설정 오류의 원인과 단계�
     ["userRateLimitExceeded", "DRIVE_QUOTA_EXCEEDED"],
     ["accessNotConfigured", "DRIVE_SERVICE_UNAVAILABLE"],
     ["domainPolicy", "DRIVE_PERMISSION_DENIED"],
+    ["propertyLengthLimitExceeded", "DRIVE_METADATA_INVALID"],
   ]) {
     await assert.rejects(Drive.ensureFolder(deps(async () => response(403, reason)), "private-folder", "private-name"), error => {
       assert.equal(error.code, code);

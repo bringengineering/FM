@@ -88,6 +88,34 @@ test("이미 올린 서류면 다시 올리지 않고 있던 것을 준다", asy
   assert.equal(fake.calls.length, 4, "업로드 호출이 없어야 한다");
 });
 
+test("긴 서류 식별자는 Drive의 UTF-8 124바이트 제한 안에서 중복 조회와 업로드에 동일하게 사용한다", async () => {
+  for (const key of ["saved_wr_" + "a".repeat(40) + "_" + "b".repeat(64), "한".repeat(37)]) {
+    const fake = fakeDrive([...folderLookups, { body: { files: [] } }, { body: { id: "file-safe" } }]);
+    await Drive.uploadDocument(deps(fake), { ...baseInput, documentKey: key, content: Buffer.from("%PDF-test") });
+    const uploaded = fake.calls.at(-1).options.body.toString("utf8");
+    const metadata = JSON.parse(uploaded.split("\r\n\r\n")[1].split("\r\n--")[0]);
+    const marker = metadata.appProperties[Drive.APP_TAG];
+    assert.ok(Buffer.byteLength(Drive.APP_TAG + marker, "utf8") <= 124);
+    assert.equal(marker, "sha256:" + require("node:crypto").createHash("sha256").update(key).digest("hex"));
+    assert.ok(new URL(fake.calls[3].url).searchParams.get("q").includes("value='" + marker + "'"));
+    const retry = fakeDrive([{ body: { files: [{ id: "file-safe" }] } }]);
+    assert.equal((await Drive.findExisting(deps(retry), "f-year", key)).id, "file-safe");
+    assert.equal(new URL(retry.calls[0].url).searchParams.get("q"), new URL(fake.calls[3].url).searchParams.get("q"));
+  }
+});
+
+test("제한 이내의 기존 식별자를 보존하고 긴 식별자의 뒷부분도 구분한다", async () => {
+  const markers = [];
+  for (const key of ["x".repeat(108), "한".repeat(36), "x".repeat(108) + "a", "x".repeat(108) + "b"]) {
+    const fake = fakeDrive([...folderLookups, { body: { files: [] } }, { body: { id: "file-safe" } }]);
+    await Drive.uploadDocument(deps(fake), { ...baseInput, documentKey: key, content: Buffer.from("pdf") });
+    const marker = JSON.parse(fake.calls.at(-1).options.body.toString("utf8").split("\r\n\r\n")[1].split("\r\n--")[0]).appProperties[Drive.APP_TAG];
+    if (Buffer.byteLength(Drive.APP_TAG + key, "utf8") === 124) assert.equal(marker, key);
+    markers.push(marker);
+  }
+  assert.equal(new Set(markers).size, 4);
+});
+
 test("큰 파일은 조각으로 나눠 올린다", async () => {
   const size = Drive.RESUMABLE_THRESHOLD_BYTES + Drive.CHUNK_BYTES;
   const fake = fakeDrive([
