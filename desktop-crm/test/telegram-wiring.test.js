@@ -37,6 +37,7 @@ test("PC configuration, chat discovery and contact-send channels are removed rat
 
 test("the renderer checks the server instead of local keys, and fails closed", () => {
   assert.match(app, /await api\.loadTelegramServerStatus\(\)/);
+  assert.match(app, /telegramState\.status = "checking";\s+if \(currentView === "settings"\) renderSettings\(\);/);
   assert.match(app, /result\.connected === true && result\.status === "connected"/);
   assert.match(app, /telegramState\.status = "unavailable"/);
   assert.match(app, /Date\.now\(\) - telegramState\.checkedAt > 60000/);

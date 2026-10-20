@@ -12578,6 +12578,7 @@
     if (telegramState.loading) return;
     telegramState.loading = true;
     telegramState.status = "checking";
+    if (currentView === "settings") renderSettings();
     try {
       const result = await api.loadTelegramServerStatus();
       telegramState.status = result && result.connected === true && result.status === "connected" ? "connected" : "unavailable";

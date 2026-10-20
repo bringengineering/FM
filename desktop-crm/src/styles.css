@@ -1625,6 +1625,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 [hidden] { display: none !important; }
 
 /* 텔레그램 서버 상태: 키 입력/저장/발송 컨트롤 없음 */
+.tg-server-card { min-width:0; }
 .tg-server-heading { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:14px; }
 .tg-server-heading h3 { margin:0 0 7px; font-size:19px; }
 .tg-server-heading p { margin:0; font-size:13px; line-height:1.7; }
