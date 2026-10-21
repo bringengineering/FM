@@ -91,7 +91,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
   // preload 가 내주는 이름을 그대로 흉내 낸다. 화면이 없는 이름을 부르면
   // 그 자리에서 터지므로, 이 목록이 곧 검사다.
   const preload = fs.readFileSync(path.join(SRC, "preload.js"), "utf8");
-  const names = [...preload.matchAll(/^\s{2}([A-Za-z0-9_]+):/gmu)].map(match => match[1]);
+  const names = [...preload.matchAll(/^[ \t]{2,}([A-Za-z0-9_]+):/gmu)].map(match => match[1]);
   const empty = { admin: true, canWork: true, uid: "u-admin", loadedAt: "2026-09-06T00:00:00.000Z" };
   const payloads: Record<string, unknown> = {
     authState: { required: true, enforceRoles: true, user: { uid: 'u-admin', email: 'admin@bring.test', role: 'admin', displayName: '서창환' } },
@@ -115,15 +115,7 @@ async function boot(payloadOverrides: Record<string, unknown> = {}): Promise<Boo
         },
       ],
     },
-    loadTelegramSettings: { ok: true, configured: false, chatId: "", autoSend: true, includePhone: false, lastSentDay: "" },
-    findTelegramChats: {
-      ok: true,
-      chats: [
-        { id: "-1001234567890", type: "supergroup", title: "브링 알림", group: true },
-        { id: "987654321", type: "private", title: "서 창환", group: false },
-      ],
-      hint: "",
-    },
+    loadTelegramServerStatus: { connected: true, status: "connected" },
     loadGrowth: {
       ...empty,
       checkins: [
@@ -870,40 +862,43 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   });
 
-  it("텔레그램 방 번호를 앱이 찾아 준다", async () => {
-    // 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고
-    // 시키던 자리다. 그건 앱이 할 일이다.
+  it("텔레그램 설정은 PC 키 입력 없이 서버 자동발송 연결 상태만 보여 준다", async () => {
     (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
     await sleep(100);
     (booted.document.querySelector('[data-workspace-enter-folder="customer-management"]') as HTMLElement).click();
     await sleep(150);
+    const before = booted.calls.length;
     (booted.document.querySelector('.nav-item[data-view="settings"]') as HTMLElement).click();
     await sleep(250);
 
-    const form = booted.document.querySelector("[data-telegram-form]") as HTMLFormElement | null;
-    expect(form, "텔레그램 설정 칸이 있어야 한다").toBeTruthy();
-    // 아직 저장 안 한 토큰을 친 상태에서 찾을 수 있어야 한다.
-    (form!.querySelector('[name="botToken"]') as HTMLInputElement).value = "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345";
-
-    const before = booted.calls.length;
-    (booted.document.querySelector("[data-telegram-find]") as HTMLElement).click();
-    await sleep(250);
-    const asked = booted.calls.slice(before).find(call => call.name === "findTelegramChats");
-    expect(asked, "찾기 통로로 나가야 한다").toBeTruthy();
-    expect((asked!.input as { botToken: string }).botToken,
-      "화면이 방금 친 토큰을 실어 보내야 한다").toContain("123456789:");
-
-    // 찾은 방이 눌러서 고를 수 있게 나와야 한다.
-    const picks = [...booted.document.querySelectorAll("[data-telegram-pick]")] as HTMLElement[];
-    expect(picks.length).toBe(2);
-    expect(picks[0].textContent).toContain("브링 알림");
-    expect(picks[0].textContent).toContain("그룹");
-
-    picks[0].click();
-    await sleep(200);
-    const chatInput = booted.document.querySelector('[data-telegram-form] [name="chatId"]') as HTMLInputElement;
-    expect(chatInput.value, "고른 방 번호가 칸에 들어가야 한다").toBe("-1001234567890");
+    const card = booted.document.querySelector('.tg-server-card') as HTMLElement | null;
+    expect(card, "서버 연결 상태 카드가 있어야 한다").toBeTruthy();
+    for (const label of ["서버 연결 정상", "매일 오전 6시", "브링엔지니어링 업무방", "오늘 업무일정", "오늘 계약 입금일", "등록된 항목이 있는 날만 발송"]) {
+      expect(card!.textContent).toContain(label);
+    }
+    expect(card!.querySelector('input, form, button, select, textarea')).toBeNull();
+    expect(booted.document.querySelector('[data-telegram-form], [data-telegram-find], [data-telegram-pick]')).toBeNull();
+    const calls = booted.calls.slice(before);
+    expect(calls.find(call => call.name === 'loadTelegramServerStatus')).toBeTruthy();
+    expect(calls.some(call => ['loadTelegramSettings', 'saveTelegramSettings', 'findTelegramChats', 'sendTelegramContacts'].includes(call.name))).toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("텔레그램 서버 연결 실패는 정상으로 표시하지 않고 PC 입력 칸도 되살리지 않는다", async () => {
+    const screen = await boot({ loadTelegramServerStatus: { connected: false, status: 'unavailable' } });
+    try {
+      (screen.document.querySelector('[data-workspace-enter-folder="customer-management"]') as HTMLElement).click();
+      await sleep(150);
+      (screen.document.querySelector('.nav-item[data-view="settings"]') as HTMLElement).click();
+      await sleep(250);
+      const card = screen.document.querySelector('.tg-server-card') as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.textContent).toContain('서버 연결 확인 필요');
+      expect(card.textContent).not.toContain('서버 연결 정상');
+      expect(card.querySelector('input, form, button, select, textarea')).toBeNull();
+      expect(screen.document.querySelector('[data-telegram-form], [data-telegram-find]')).toBeNull();
+      expect(screen.errors).toEqual([]);
+    } finally { screen.window.close(); }
   }, 60000);
   it("가용시간 판이 건수가 아니라 시간으로 말하고, 시간표를 그 자리에서 고친다", async () => {
     // 지금까지 사람별 부하는 건수였다. "4건" 은 30분짜리인지 이틀짜리인지
