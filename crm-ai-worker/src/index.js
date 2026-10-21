@@ -14,7 +14,7 @@ import { seoulDay } from "./telegram-morning-core.js";
 export { TelegramMorningJobs } from "./telegram-morning-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-19-telegram-morning-v1";
+const SERVICE_VERSION = "2026-10-21-telegram-morning-layout-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";

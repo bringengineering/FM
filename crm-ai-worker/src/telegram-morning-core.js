@@ -49,22 +49,28 @@ export function projectMorningDigest(source, day) {
       building: text(byBuilding.get(row.contract.buildingId)?.name), dueDate: row.dueDate,
       amount: row.amount, status: row.collectionStatus,
     }));
-  const header = '<b>📅 ' + day + ' 업무·입금 안내</b>';
+  const [year, month, date] = day.split('-').map(Number);
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][new Date(Date.UTC(year, month - 1, date)).getUTCDay()];
+  const heading = schedules.length && payments.length ? '업무·입금 안내' : schedules.length ? '업무 안내' : '계약 입금 안내';
+  const header = '<b>📅 ' + month + '월 ' + date + '일(' + weekday + ') ' + heading + '</b>';
   const sections = [
-    { title: '<b>🛠 오늘 업무일정 ' + schedules.length + '건</b>', lines: schedules.map(row =>
-      (html(row.time) || '시간 미정') + ' · <b>' + html(row.title) + '</b>\n' + html(row.building) + ' · ' + html(row.owner) + ' · ' + row.status) },
-    { title: '<b>💰 오늘 계약 입금 ' + payments.length + '건</b>', lines: payments.map(row =>
-      '<b>' + html(row.title) + '</b>' + (row.building ? ' · ' + html(row.building) : '') + '\n' + day + ' · ' + row.amount.toLocaleString('ko-KR') + '원 · ' + row.status) },
+    { title: '', footer: '총 업무 <b>' + schedules.length + '건</b>', lines: schedules.map(row =>
+      '🏢 <b>' + html(row.building) + '</b>\n<b>' + html(row.title === '공용부청소' ? '공용부 청소' : row.title) + '</b>\n'
+      + (row.owner === '담당 미지정' ? row.owner : '담당 ' + html(row.owner)) + ' · ' + (html(row.time) || '시간 미정')) },
+    { title: schedules.length ? '<b>💰 계약 입금 안내</b>' : '', footer: '총 입금 <b>' + payments.length + '건</b>', lines: payments.map(row =>
+      '🏢 <b>' + html(row.building || '현장 미지정') + '</b>\n<b>' + html(row.title) + '</b>\n입금액 <b>'
+      + row.amount.toLocaleString('ko-KR') + '원</b> · ' + html(row.status)) },
   ].filter(section => section.lines.length);
   const messages = [];
   let message = header;
   for (const section of sections) {
     let started = false;
-    for (const line of section.lines) {
-      let addition = (started ? '\n\n' : '\n\n' + section.title + '\n') + line;
+    for (const [index, line] of section.lines.entries()) {
+      const footer = index === section.lines.length - 1 ? '\n\n' + section.footer : '';
+      let addition = '\n\n' + (!started && section.title ? section.title + '\n\n' : '') + line + footer;
       if (message.length + addition.length > MAX_MESSAGE) {
         messages.push(message); message = header; started = false;
-        addition = '\n\n' + section.title + '\n' + line;
+        addition = '\n\n' + (section.title ? section.title + '\n\n' : '') + line + footer;
       }
       message += addition; started = true;
     }

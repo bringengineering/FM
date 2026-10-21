@@ -30,8 +30,50 @@ test('empty sections are omitted; an entirely empty day has no message', () => {
   assert.match(workOnly.messages.join(''), /현장 점검/);
   assert.doesNotMatch(workOnly.messages.join(''), /계약 입금/);
   const paymentOnly = projectMorningDigest(source({ payment: { ...contract, cleaningSchedule: { mode: 'manual' } } }), DAY);
-  assert.match(paymentOnly.messages.join(''), /오늘 계약 입금/);
-  assert.doesNotMatch(paymentOnly.messages.join(''), /오늘 업무일정/);
+  assert.match(paymentOnly.messages.join(''), /계약 입금 안내/);
+  assert.doesNotMatch(paymentOnly.messages.join(''), /업무 안내|총 업무/);
+});
+
+test('work-only message matches the approved building-first layout without the planned status', () => {
+  const digest = projectMorningDigest(source({}, { task_1: {
+    title: '공용부청소', scheduledDate: '2026-10-20', buildingId: building.id, owner: '담당자', status: '예정',
+  } }), '2026-10-20');
+  assert.deepEqual(digest.messages, [
+    '<b>📅 10월 20일(화) 업무 안내</b>\n\n🏢 <b>예시 건물</b>\n<b>공용부 청소</b>\n담당 담당자 · 시간 미정\n\n총 업무 <b>1건</b>',
+  ]);
+  assert.doesNotMatch(digest.messages[0], /예정|2026-|계약 입금|🛠/);
+  assert.equal(digest.schedules[0].title, '공용부청소', 'presentation must not rewrite the CRM record');
+});
+
+test('timed work keeps its time, and missing ownership is not duplicated', () => {
+  const digest = projectMorningDigest(source({}, {
+    first: { title: '현장 점검', scheduledDate: DAY, startTime: '09:30', buildingId: building.id, owner: '담당자' },
+    second: { title: '설비 점검', scheduledDate: DAY },
+  }), DAY);
+  assert.match(digest.messages.join(''), /담당 담당자 · 09:30/);
+  assert.match(digest.messages.join(''), /🏢 <b>현장 미지정<\/b>\n<b>설비 점검<\/b>\n담당 미지정 · 시간 미정/);
+  assert.doesNotMatch(digest.messages.join(''), /담당 담당 미지정/);
+  assert.match(digest.messages.join(''), /총 업무 <b>2건<\/b>$/);
+});
+
+test('payment-only messages stay concise and mixed days separate payment details below work', () => {
+  const onlyPayment = source({ payment: { ...contract, cleaningSchedule: { mode: 'manual' } } });
+  const payment = projectMorningDigest(onlyPayment, DAY).messages.join('');
+  assert.match(payment, /^<b>📅 10월 19일\(월\) 계약 입금 안내<\/b>/);
+  assert.match(payment, /🏢 <b>예시 건물<\/b>\n<b>정기 청소<\/b>\n입금액 <b>300,000원<\/b>/);
+  assert.equal(payment.split('계약 입금 안내').length, 2, 'do not repeat the same payment heading');
+  assert.match(payment, /총 입금 <b>1건<\/b>$/);
+  const mixed = projectMorningDigest(source(), DAY).messages.join('');
+  assert.match(mixed, /^<b>📅 10월 19일\(월\) 업무·입금 안내<\/b>/);
+  assert.ok(mixed.indexOf('총 업무') < mixed.indexOf('💰 계약 입금 안내'));
+  assert.match(mixed, /총 입금 <b>1건<\/b>$/);
+});
+
+test('calendar heading computes Korean weekdays at year and month boundaries', () => {
+  for (const [day, expected] of [['2026-01-01', '1월 1일(목)'], ['2026-12-31', '12월 31일(목)'], ['2027-01-01', '1월 1일(금)']]) {
+    const digest = projectMorningDigest(source({}, { task: { title: '점검', scheduledDate: day } }), day);
+    assert.ok(digest.messages[0].startsWith('<b>📅 ' + expected + ' 업무 안내</b>'));
+  }
 });
 
 test('derived work agrees with the current CRM calendar including moved occurrences', () => {
@@ -81,6 +123,25 @@ test('untrusted text is escaped and long digests keep every row within Telegram 
     assert.doesNotMatch(message, /<b>& 확인/);
   }
   for (let index = 0; index < 80; index++) assert.equal(digest.messages.join('\n').split(`작업-${index}-&lt;b&gt;&amp; 확인`).length, 2);
+  assert.equal(digest.messages.join('\n').split('총 업무 <b>80건</b>').length, 2);
+  assert.ok(digest.messages.every(message => message.startsWith('<b>📅 10월 19일(월) 업무 안내</b>')));
+});
+
+test('mixed multi-part digests keep every payment and both totals without breaking escaped HTML', () => {
+  const contracts = Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`payment_${index}`, {
+    ...contract, name: `계약-${index}-<확인>&`, cleaningSchedule: { mode: 'manual' },
+  }]));
+  const digest = projectMorningDigest(source(contracts, { task: { title: '점검', scheduledDate: DAY } }), DAY);
+  assert.ok(digest.messages.length > 1);
+  for (const message of digest.messages) {
+    assert.ok(message.length <= 3500);
+    assert.equal(message.match(/<b>/gu)?.length, message.match(/<\/b>/gu)?.length);
+    assert.doesNotMatch(message, /<확인>/);
+  }
+  const all = digest.messages.join('\n');
+  for (let index = 0; index < 65; index++) assert.equal(all.split(`계약-${index}-&lt;확인&gt;&amp;`).length, 2);
+  assert.equal(all.split('총 업무 <b>1건</b>').length, 2);
+  assert.equal(all.split('총 입금 <b>65건</b>').length, 2);
 });
 
 function runtime(readSource = async () => source()) {
