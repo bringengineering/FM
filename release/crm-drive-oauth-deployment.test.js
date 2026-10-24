@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { plan, run, SELECTOR } = require("./crm-drive-oauth-deployment");
 const manifest = require("./firebase-targets.json");
-test("only reviewed Drive broker can deploy to bring-fm", () => {
+test("only the reviewed fleet Drive uploader can deploy to bring-fm", () => {
   assert.equal(plan(manifest, "bring-fm").selector, SELECTOR);
   assert.equal(plan(manifest, "bring-fm").databaseRules, false);
   assert.throws(() => plan(manifest, "bring-fm-hj"));

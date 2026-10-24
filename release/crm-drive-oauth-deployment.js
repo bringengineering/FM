@@ -4,7 +4,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { parseFunctionInventory } = require("./crm-account-setup-update.js");
 const ROOT = path.resolve(__dirname, "..");
-const SELECTOR = "functions:field-platform:crmDriveOAuth";
+const SELECTOR = "functions:field-platform:uploadFleetOdometerEvidence";
 const BRANCH = "codex/bring-field-platform";
 
 function fail(code) { throw Object.assign(new Error(code), { code }); }
@@ -25,7 +25,7 @@ function defaultRunCommand(command, args, cwd, { quiet = false } = {}) {
   return { status: result.status ?? 1, stdout: result.stdout || "" };
 }
 function plan(manifest, project) {
-  const expected = { projectId: "bring-fm", functionNames: ["crmDriveOAuth"], region: "asia-northeast3", databaseRules: false };
+  const expected = { projectId: "bring-fm", functionNames: ["crmDriveOAuth", "uploadFleetOdometerEvidence"], region: "asia-northeast3", databaseRules: false };
   if (project !== "bring-fm" || manifest.primary?.projectId !== project
     || manifest.primary?.functionsDeploymentAllowed !== false || manifest.retiredLegacy?.deploymentAllowed !== false
     || JSON.stringify(manifest.crmDriveOAuthManualDeployment) !== JSON.stringify(expected)) fail("DRIVE_DEPLOY_TARGET_INVALID");
@@ -47,15 +47,15 @@ function run({ manifest, project, apply = false, confirmProject = "", runCommand
   const before = invoke("firebase", ["functions:list", "--project", project, "--json", "--non-interactive"]);
   const rows = parseFunctionInventory(before.stdout);
   if (before.status !== 0 || !rows) fail("DRIVE_DEPLOY_INVENTORY_UNAVAILABLE");
-  // First deployment only: never implicitly overwrite an existing broker.
-  if (rows.some(row => row.name === "crmDriveOAuth")) fail("DRIVE_DEPLOY_BASELINE_CHANGED");
+  // First fleet uploader deployment only: never implicitly overwrite an existing uploader.
+  if (rows.some(row => row.name === "uploadFleetOdometerEvidence")) fail("DRIVE_DEPLOY_BASELINE_CHANGED");
   const deploy = runCommand("firebase", ["deploy", "--only", SELECTOR, "--project", project, "--non-interactive"], cwd);
   const after = invoke("firebase", ["functions:list", "--project", project, "--json", "--non-interactive"]);
   const afterRows = parseFunctionInventory(after.stdout);
-  const broker = afterRows?.find(row => row.name === "crmDriveOAuth");
-  if (deploy.status !== 0 || after.status !== 0 || broker?.region !== target.region || broker?.state !== "ACTIVE") fail("DRIVE_DEPLOY_NOT_VERIFIED");
+  const uploader = afterRows?.find(row => row.name === "uploadFleetOdometerEvidence");
+  if (deploy.status !== 0 || after.status !== 0 || uploader?.region !== target.region || uploader?.state !== "ACTIVE") fail("DRIVE_DEPLOY_NOT_VERIFIED");
   if (rows.some(row => !afterRows.some(afterRow => afterRow.name === row.name && afterRow.region === row.region && afterRow.codeHash === row.codeHash))) fail("DRIVE_DEPLOY_UNRELATED_FUNCTION_CHANGED");
-  return { status: "deployed", ...target, sourceSha: head.stdout.trim(), codeHash: broker.codeHash };
+  return { status: "deployed", ...target, sourceSha: head.stdout.trim(), codeHash: uploader.codeHash };
 }
 if (require.main === module) {
   try {
