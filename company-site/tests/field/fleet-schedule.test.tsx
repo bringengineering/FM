@@ -45,6 +45,16 @@ describe("FleetSchedule", () => {
     expect(screen.getByText("내 일정")).toBeInTheDocument();
   });
 
+  it("shows my rejected request only in the selected-day detail", () => {
+    render(<FleetSchedule reservations={[
+      reservation({ id: "mine-rejected", userUid: "mine", status: "rejected" }),
+      reservation({ id: "other-rejected", userUid: "other", driverName: "박대리", status: "rejected" }),
+    ]} userUid="mine" role="member" busy={false} initialDate="2026-10-31" onSubmit={vi.fn()} onDecide={vi.fn()}/>);
+    expect(screen.getByText("반려됨")).toBeInTheDocument();
+    expect(screen.getByText("내 일정")).toBeInTheDocument();
+    expect(screen.queryByText("박대리 · 고객 미팅")).not.toBeInTheDocument();
+  });
+
   it("validates the time range inline before submitting", () => {
     const submit = vi.fn();
     render(<FleetSchedule reservations={[]} userUid="mine" role="member" busy={false} initialDate="2026-10-31" now={new Date("2026-10-25T00:00:00.000Z")} onSubmit={submit} onDecide={vi.fn()}/>);

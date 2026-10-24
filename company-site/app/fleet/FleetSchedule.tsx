@@ -22,7 +22,14 @@ export default function FleetSchedule({reservations,userUid,role,busy,initialDat
   const[month,setMonth]=useState(()=>new Date(`${firstKey.slice(0,7)}-01T12:00:00+09:00`));
   const[formOpen,setFormOpen]=useState(false);
   const[error,setError]=useState("");
-  const dayReservations=useMemo(()=>reservationsForDay(reservations,selectedKey),[reservations,selectedKey]);
+  const dayReservations=useMemo(()=>{
+    const visible=reservationsForDay(reservations,selectedKey);
+    const dayStart=new Date(`${selectedKey}T00:00:00+09:00`);
+    const startAt=dayStart.toISOString();
+    const endAt=new Date(dayStart.getTime()+86_400_000).toISOString();
+    const myRejected=reservations.filter(item=>item.status==="rejected"&&item.userUid===userUid&&overlapsReservation(startAt,endAt,item));
+    return [...visible,...myRejected].sort((left,right)=>left.startAt.localeCompare(right.startAt));
+  },[reservations,selectedKey,userUid]);
   const select=(key:string)=>{setSelectedKey(key);setMonth(new Date(`${key.slice(0,7)}-01T12:00:00+09:00`));setFormOpen(false);setError("")};
   return <div className="fleet-schedule-layout">
     <FleetCalendar month={month} selectedKey={selectedKey} reservations={reservations} onMonthChange={direction=>{
@@ -34,7 +41,7 @@ export default function FleetSchedule({reservations,userUid,role,busy,initialDat
       <div className="fleet-agenda">
         {dayReservations.map(item=><article className={`fleet-agenda-item ${item.status}`} key={item.id}>
           <div className="fleet-agenda-time"><b>{time(item.startAt)}</b><span>{time(item.endAt)}</span></div>
-          <div className="fleet-agenda-copy"><div><span className={`fleet-reservation-status ${item.status}`}>{item.status==="approved"?"승인 완료":"승인 대기"}</span>{item.userUid===userUid&&<span className="fleet-mine">내 일정</span>}</div><b>{item.destination}</b><p>{item.driverName} · {item.purpose}</p></div>
+          <div className="fleet-agenda-copy"><div><span className={`fleet-reservation-status ${item.status}`}>{item.status==="approved"?"승인 완료":item.status==="pending"?"승인 대기":"반려됨"}</span>{item.userUid===userUid&&<span className="fleet-mine">내 일정</span>}</div><b>{item.destination}</b><p>{item.driverName} · {item.purpose}</p></div>
           {role==="admin"&&item.status==="pending"&&<div className="fleet-agenda-actions"><button type="button" onClick={()=>onDecide(item.id,"rejected")} aria-label={`${item.driverName} 예약 반려`}>반려</button><button type="button" className="approve" onClick={()=>onDecide(item.id,"approved")} aria-label={`${item.driverName} 예약 승인`}>승인</button></div>}
         </article>)}
         {dayReservations.length===0&&<div className="fleet-agenda-empty"><b>예약 가능</b><p>이 날짜에는 등록된 차량 일정이 없습니다.</p></div>}
