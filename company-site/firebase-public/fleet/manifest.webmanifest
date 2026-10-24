@@ -1,0 +1,11 @@
+{
+  "name": "브링 차량대장",
+  "short_name": "차량대장",
+  "description": "브링엔지니어링 공용차량 운영 앱",
+  "start_url": "/fleet",
+  "scope": "/fleet",
+  "display": "standalone",
+  "background_color": "#f3f5f7",
+  "theme_color": "#102f55",
+  "icons": [{"src":"/fleet/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

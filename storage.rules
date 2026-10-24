@@ -85,5 +85,15 @@ service firebase.storage {
     match /field-media-finalized/{allPaths=**} {
       allow read, write: if false;
     }
+
+    match /fleet-evidence/{uid}/{tripId}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == uid && request.auth.token.email_verified == true;
+      allow create: if request.auth != null && request.auth.uid == uid &&
+        tripId.matches('^[A-Za-z0-9_-]{1,150}$') &&
+        fileName.matches('^[0-9a-f-]{36}\\.(jpg|png|webp)$') &&
+        request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)') && resource == null;
+      allow update, delete: if false;
+    }
   }
 }
