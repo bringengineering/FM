@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60" role="img" aria-labelledby="title desc">
+  <title id="title">BR Engineering</title>
+  <desc id="desc">Solving Challenges. Engineered.</desc>
+  <text x="15" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF">BR</text>
+  <text x="65" y="40" font-family="Arial, sans-serif" font-size="20" font-weight="600" fill="#FFFFFF">ENGINEERING</text>
+  <text x="65" y="55" font-family="Arial, sans-serif" font-size="9" fill="#FFFFFF" opacity="0.8">Solving Challenges. Engineered.</text>
+</svg>
