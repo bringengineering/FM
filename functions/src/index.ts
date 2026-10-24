@@ -90,6 +90,7 @@ import {
   createGoogleDriveMediaAdapterFromOAuth,
   type FinalizedMediaBucketLike,
 } from "./drive/google-drive-adapter.js";
+import { ensureExactDriveFolder } from "./drive/folders.js";
 import { readDriveOAuthConfig } from "./drive/google-auth.js";
 import { driveRecoveryRange } from "./drive/recovery-key.js";
 import {
@@ -101,6 +102,10 @@ import {
   type RecoveryJobRecord,
 } from "./drive/runtime.js";
 import type { DriveMediaAdapter } from "./drive/sync-media.js";
+import {
+  uploadFleetOdometerEvidenceCore,
+  type FleetEvidenceDriveAdapter,
+} from "./fleet/upload-odometer-evidence.js";
 import {
   createAdPackageCore,
   reduceAdPackageCommit,
@@ -311,6 +316,90 @@ type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const FLEET_DRIVE_ROOT_FOLDER_ID = "1dS3FmjiCpk8v7hZoZIUkQOozulN6DXlq";
+
+async function requireFleetActor(request: CallableRequest<unknown>): Promise<{
+  uid: string;
+  displayName: string;
+}> {
+  const uid = request.auth?.uid;
+  const email = request.auth?.token.email;
+  if (!isPathSafeId(uid) || typeof email !== "string" || request.auth?.token.email_verified !== true) {
+    throw new HttpsError("unauthenticated", "fleet_auth_required");
+  }
+  const access = (await adminDatabase.ref(`crmCompany/access/${uid}`).get()).val();
+  if (!isRecord(access) || access.enabled !== true
+    || (access.role !== "admin" && access.role !== "member")
+    || typeof access.email !== "string"
+    || access.email.trim().toLowerCase() !== email.trim().toLowerCase()) {
+    throw new HttpsError("permission-denied", "fleet_access_denied");
+  }
+  const tokenName = request.auth.token.name;
+  const storedName = access.displayName;
+  const displayName = typeof storedName === "string" && storedName.trim()
+    ? storedName.trim()
+    : typeof tokenName === "string" && tokenName.trim()
+      ? tokenName.trim()
+      : email.split("@")[0];
+  return { uid, displayName };
+}
+
+function fleetDriveAdapter(): FleetEvidenceDriveAdapter {
+  const config = readDriveOAuthConfig({
+    DRIVE_CLIENT_ID: driveClientId.value(),
+    DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+    DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+    DRIVE_ROOT_FOLDER_ID: FLEET_DRIVE_ROOT_FOLDER_ID,
+    DRIVE_ROOT_MODE: "existingRoot",
+  });
+  const drive = createGoogleDriveMediaAdapterFromOAuth(config);
+  const escape = (value: string) => value.replace(/\\/gu, "\\\\").replace(/'/gu, "\\'");
+  return {
+    validateRoot: rootFolderId => drive.validateRootFolder({ rootFolderId, rootMode: "existingRoot" }),
+    ensureFolder: (parentId, name) => ensureExactDriveFolder(parentId, name, drive),
+    async findByTripId(_rootFolderId, tripId) {
+      const files = await drive.listExactMediaFiles({
+        parentId: FLEET_DRIVE_ROOT_FOLDER_ID,
+        mediaId: tripId,
+        objectGeneration: "fleet-v1",
+        query: `appProperties has { key = 'bringMediaId' and value = '${escape(tripId)}' } and appProperties has { key = 'bringObjectGeneration' and value = 'fleet-v1' } and trashed = false`,
+        pageSize: 3,
+        fields: "files(id,name,mimeType,parents,trashed,size,md5Checksum,appProperties)",
+      });
+      if (!Array.isArray(files) || files.length > 1) {
+        if (Array.isArray(files) && files.length === 0) return null;
+        throw new Error("fleet_evidence_drive_response_invalid");
+      }
+      const file = files[0];
+      if (!isRecord(file) || typeof file.id !== "string" || typeof file.name !== "string"
+        || file.mimeType !== "image/jpeg" || file.trashed !== false) {
+        throw new Error("fleet_evidence_drive_response_invalid");
+      }
+      return { id: file.id, name: file.name, mimeType: file.mimeType };
+    },
+    async uploadJpeg(input) {
+      const file = await drive.uploadMediaFile({
+        parentId: input.parentId,
+        name: input.name,
+        mimeType: "image/jpeg",
+        sizeBytes: input.bytes.byteLength,
+        body: Buffer.from(input.bytes),
+        appProperties: {
+          bringMediaId: input.appProperties.bringFleetTripId,
+          bringObjectGeneration: "fleet-v1",
+          ...input.appProperties,
+        },
+        fields: "id,name,mimeType,parents,trashed,size,md5Checksum,appProperties",
+      });
+      if (!isRecord(file) || typeof file.id !== "string" || typeof file.name !== "string"
+        || file.mimeType !== "image/jpeg") {
+        throw new Error("fleet_evidence_drive_response_invalid");
+      }
+      return { id: file.id, name: file.name, mimeType: file.mimeType };
+    },
+  };
 }
 
 function isFieldRole(value: unknown): value is FieldRole {
@@ -5702,6 +5791,46 @@ export const startFieldCaptureSession = onCall<StartCaptureSessionInput>(
       );
     } catch (error) {
       return rethrowCaptureSessionCallableError(error);
+    }
+  },
+);
+
+export const uploadFleetOdometerEvidence = onCall(
+  {
+    region: "asia-northeast3",
+    enforceAppCheck: true,
+    consumeAppCheckToken: true,
+    secrets: driveSecrets,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+  },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "fleet_auth_required");
+    rejectConsumedAppCheckToken(request);
+    try {
+      const actor = await requireFleetActor(request);
+      await consumeRateLimit(
+        adminDatabase.ref(`crmCompany/fleetManagement/uploadRateLimits/${desktopRateKey(actor.uid)}`),
+        { limit: 30, windowMs: 10 * 60 * 1000, nowMs: Date.now() },
+      );
+      const data = isRecord(request.data) ? { ...request.data, driverName: actor.displayName } : request.data;
+      return await uploadFleetOdometerEvidenceCore(data, {
+        rootFolderId: FLEET_DRIVE_ROOT_FOLDER_ID,
+        userUid: actor.uid,
+        drive: fleetDriveAdapter(),
+      });
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      const code = error instanceof Error ? error.message : "fleet_evidence_upload_failed";
+      if (code === "fleet_evidence_input_invalid") throw new HttpsError("invalid-argument", code);
+      if (code === "field_rate_limit_exceeded") throw new HttpsError("resource-exhausted", "fleet_evidence_rate_limited");
+      if (code === "drive_root_folder_invalid" || code === "drive_oauth_config_invalid") {
+        throw new HttpsError("failed-precondition", "fleet_drive_configuration_invalid");
+      }
+      if (code === "drive_api_failed" || code === "drive_upload_incomplete") {
+        throw new HttpsError("unavailable", "fleet_drive_temporarily_unavailable");
+      }
+      throw new HttpsError("internal", "fleet_evidence_upload_failed");
     }
   },
 );

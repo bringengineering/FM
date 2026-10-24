@@ -634,7 +634,7 @@ export interface DriveMediaUploadRequest {
   mimeType: string;
   sizeBytes: number;
   body: unknown;
-  appProperties: {
+  appProperties: Record<string, string> & {
     bringMediaId: string;
     bringObjectGeneration: string;
   };

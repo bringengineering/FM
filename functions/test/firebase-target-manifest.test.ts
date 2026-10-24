@@ -145,7 +145,7 @@ describe("Firebase function archival manifest", () => {
     });
     expect(manifest.retiredLegacy.archivedFunctionNames).toEqual(RETIRED_LEGACY_FUNCTION_NAMES);
     expect(manifest.crmDriveOAuthManualDeployment).toEqual({
-      projectId: "bring-fm", functionNames: ["crmDriveOAuth"], region: "asia-northeast3", databaseRules: false,
+      projectId: "bring-fm", functionNames: ["crmDriveOAuth", "uploadFleetOdometerEvidence"], region: "asia-northeast3", databaseRules: false,
     });
     expectCompleteFunctionArchive(manifest.retiredLegacy.archivedFunctionNames);
     expect(manifestSource).not.toContain("functions:");

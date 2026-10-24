@@ -3671,6 +3671,28 @@ describe("Firebase entrypoint metadata", () => {
     ]);
   });
 
+  it("protects fleet odometer uploads with App Check and the Drive secrets", () => {
+    expect(registration(entrypoints.uploadFleetOdometerEvidence)).toMatchObject({
+      kind: "callable",
+      options: {
+        region: "asia-northeast3",
+        enforceAppCheck: true,
+        consumeAppCheckToken: true,
+        timeoutSeconds: 120,
+        memory: "512MiB",
+      },
+    });
+    expect(
+      (registration(entrypoints.uploadFleetOdometerEvidence).options.secrets as Array<{ name: string }>).map((secret) => secret.name),
+    ).toEqual([
+      "DRIVE_CLIENT_ID",
+      "DRIVE_CLIENT_SECRET",
+      "DRIVE_REFRESH_TOKEN",
+      "DRIVE_ROOT_FOLDER_ID",
+      "DRIVE_ROOT_MODE",
+    ]);
+  });
+
   it("registers bounded five-minute Drive recovery with the same secrets", () => {
     expect(registration(entrypoints.recoverFieldMediaDriveSync)).toMatchObject({
       kind: "schedule",
@@ -4878,7 +4900,7 @@ describe("Firebase entrypoint metadata", () => {
     );
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
-    expect(registrations.onCall).toHaveBeenCalledTimes(30);
+    expect(registrations.onCall).toHaveBeenCalledTimes(31);
     expect(registrations.onRequest).toHaveBeenCalledTimes(7);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(4);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);

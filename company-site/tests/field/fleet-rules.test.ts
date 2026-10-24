@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 const available = Boolean(process.env.FIREBASE_DATABASE_EMULATOR_HOST);
 let env: RulesTestEnvironment;
 const access = (email: string, role: string, enabled = true) => ({ email, role, enabled });
-const trip = (uid: string) => ({ id: "trip-1", vehicleId: "ev4-001", userUid: uid, driverName: "홍길동", purpose: "현장 점검", destination: "원주", startOdometer: 1200, evidenceUrl: "data:image/jpeg;base64,AQ==", status: "active", startedAt: "2026-10-25T09:00:00.000Z", updatedAt: "2026-10-25T09:00:00.000Z" });
+const trip = (uid: string) => ({ id: "trip-1", vehicleId: "ev4-001", userUid: uid, driverName: "홍길동", purpose: "현장 점검", destination: "원주", startOdometer: 1200, evidenceDriveFileId: "drive_file_123456", evidenceDriveUrl: "https://drive.google.com/file/d/drive_file_123456/view", evidenceFileName: "20261025-1800_홍길동_1200km_trip-1.jpg", evidenceUploadState: "complete", status: "active", startedAt: "2026-10-25T09:00:00.000Z", updatedAt: "2026-10-25T09:00:00.000Z" });
 const reservation = (uid: string) => ({ id: "reservation-1", vehicleId: "ev4-001", userUid: uid, driverName: "홍길동", purpose: "주말 현장", destination: "서울", startAt: "2026-10-31T00:00:00.000Z", endAt: "2026-10-31T05:00:00.000Z", approvalType: "weekend", status: "pending", createdAt: "2026-10-25T09:00:00.000Z", updatedAt: "2026-10-25T09:00:00.000Z" });
 
 beforeAll(async () => {
@@ -44,13 +44,44 @@ describe.runIf(available)("fleet database rules", () => {
     await assertSucceeds(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/trip-1"), trip("member")));
     await assertFails(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/trip-2"), { ...trip("admin"), id: "trip-2" }));
   });
-  it("rejects trips without meaningful purpose, destination or mandatory evidence", async () => {
+  it("rejects trips without meaningful purpose, destination or completed Drive evidence", async () => {
     const member = db("member", "member@bring.kr");
     await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), purpose: " " }));
     await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), destination: " " }));
-    const { evidenceUrl: _evidenceUrl, ...withoutEvidence } = trip("member");
-    expect(_evidenceUrl).toBeTruthy();
+    const { evidenceDriveFileId: _evidenceDriveFileId, ...withoutEvidence } = trip("member");
+    expect(_evidenceDriveFileId).toBeTruthy();
     await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), withoutEvidence));
+    await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), evidenceUploadState: "pending" }));
+    await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), evidenceUrl: "data:image/jpeg;base64,AQ==" }));
+  });
+  it("lets an already-active legacy photo trip finish without weakening new trip validation", async () => {
+    const legacyTrip = {
+      id: "legacy-trip",
+      vehicleId: "ev4-001",
+      userUid: "member",
+      driverName: "홍길동",
+      purpose: "기존 운행",
+      destination: "원주",
+      startOdometer: 1100,
+      evidenceUrl: "data:image/jpeg;base64,AQ==",
+      status: "active",
+      startedAt: "2026-10-24T09:00:00.000Z",
+      updatedAt: "2026-10-24T09:00:00.000Z",
+    };
+    await env.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), "crmCompany/fleetManagement/trips/legacy-trip"), legacyTrip);
+    });
+    await assertSucceeds(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/legacy-trip"), {
+      ...legacyTrip,
+      endOdometer: 1125,
+      status: "completed",
+      endedAt: "2026-10-25T09:00:00.000Z",
+      updatedAt: "2026-10-25T09:00:00.000Z",
+    }));
+    await assertFails(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/new-legacy-trip"), {
+      ...legacyTrip,
+      id: "new-legacy-trip",
+    }));
   });
   it("allows member reservation creation but reserves decisions for admins", async () => {
     const member = db("member", "member@bring.kr");
