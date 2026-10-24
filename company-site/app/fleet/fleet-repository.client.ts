@@ -26,12 +26,12 @@ export async function initializeFleet(session:FieldV2Session) {
     "maintenance/initial-001": { id:"initial-001", vehicleId:"ev4-001", title:"신차 1,000km 점검", dueDate:"2026-11-25", status:"scheduled", updatedAt:stamp },
   });
 }
-export async function startTrip(session:FieldV2Session, input:{purpose:string;destination:string;startOdometer:number;file?:File}) {
+export async function startTrip(session:FieldV2Session, input:{purpose:string;destination:string;startOdometer:number;file:File}) {
   const node = push(ref(database,"crmCompany/fleetManagement/trips"));
   if (!node.key) throw new Error("운행번호 생성 실패");
-  const stamp=now(); let evidenceUrl="";
-  if (input.file) evidenceUrl = await uploadEvidence(session.uid,node.key,input.file);
-  const value:Trip = { id:node.key, vehicleId:"ev4-001", userUid:session.uid, driverName:session.displayName, purpose:input.purpose, destination:input.destination, startOdometer:input.startOdometer, status:"active", startedAt:stamp, updatedAt:stamp, ...(evidenceUrl?{evidenceUrl}:{}) };
+  const stamp=now();
+  const evidenceUrl = await uploadEvidence(session.uid,node.key,input.file);
+  const value:Trip = { id:node.key, vehicleId:"ev4-001", userUid:session.uid, driverName:session.displayName, purpose:input.purpose, destination:input.destination, startOdometer:input.startOdometer, evidenceUrl, status:"active", startedAt:stamp, updatedAt:stamp };
   await set(node,value); return node.key;
 }
 export async function endTrip(session:FieldV2Session, trip:Trip, endOdometer:number, file?:File) {
