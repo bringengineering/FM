@@ -1,6 +1,5 @@
 import { onValue, push, ref, set, update } from "firebase/database";
-import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { database, storage } from "../field/lib/firebase.client";
+import { database } from "../field/lib/firebase.client";
 import type { FieldV2Session } from "../field/lib/v2-auth.client";
 
 export type Vehicle = { id:string; name:string; plate:string; odometer:number; status:"available"|"in_use"|"maintenance"; updatedAt:string };
@@ -48,9 +47,14 @@ export async function decideReservation(id:string,status:"approved"|"rejected") 
 export async function reportIssue(session:FieldV2Session,description:string) { const node=push(ref(database,"crmCompany/fleetManagement/issues")); if(!node.key)return; const stamp=now(); await set(node,{id:node.key,vehicleId:"ev4-001",userUid:session.uid,reporterName:session.displayName,category:"vehicle",description,status:"open",createdAt:stamp,updatedAt:stamp}); }
 
 async function uploadEvidence(uid:string,tripId:string,file:File) {
-  if(file.size>5*1024*1024) throw new Error("사진은 5MB 이하만 가능합니다.");
+  void uid; void tripId;
+  if(file.size>10*1024*1024) throw new Error("원본 사진은 10MB 이하만 가능합니다.");
   const mime=file.type.toLowerCase(); const ext=mime==="image/png"?"png":mime==="image/webp"?"webp":mime==="image/jpeg"?"jpg":"";
   if(!ext) throw new Error("JPG, PNG, WEBP 사진만 가능합니다.");
-  const id=crypto.randomUUID(); const target=storageRef(storage,`fleet-evidence/${uid}/${tripId}/${id}.${ext}`);
-  await uploadBytes(target,file,{contentType:mime}); return getDownloadURL(target);
+  const bitmap=await createImageBitmap(file); const ratio=Math.min(1,1280/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement("canvas"); canvas.width=Math.max(1,Math.round(bitmap.width*ratio)); canvas.height=Math.max(1,Math.round(bitmap.height*ratio));
+  const context=canvas.getContext("2d"); if(!context) throw new Error("사진을 처리할 수 없습니다."); context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
+  const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/jpeg",.7));
+  if(!blob||blob.size>600*1024) throw new Error("사진 압축 후 용량이 큽니다. 해상도를 낮춰 다시 촬영해 주세요.");
+  return await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("사진을 읽지 못했습니다."));reader.readAsDataURL(blob)});
 }
