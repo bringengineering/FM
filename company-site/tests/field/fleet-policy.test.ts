@@ -9,8 +9,8 @@ import {
 describe("prepareTripStart", () => {
   const photo = new File([new Uint8Array([1])], "odometer.jpg", { type: "image/jpeg" });
 
-  it("trims free-text fields and uses current km when start km is blank", () => {
-    expect(prepareTripStart({ purpose: "  고객 미팅  ", destination: "  서울 본사 ", startKm: "", currentKm: 1234, photo })).toEqual({
+  it("trims free-text fields and accepts an explicit integer start km", () => {
+    expect(prepareTripStart({ purpose: "  고객 미팅  ", destination: "  서울 본사 ", startKm: "1234", currentKm: 1234, photo })).toEqual({
       ok: true,
       value: { purpose: "고객 미팅", destination: "서울 본사", startOdometer: 1234, photo },
     });
@@ -20,6 +20,9 @@ describe("prepareTripStart", () => {
     [{ purpose: "   ", destination: "원주", startKm: "1200", currentKm: 1200, photo }, "운행 목적을 입력해 주세요."],
     [{ purpose: "점검", destination: "   ", startKm: "1200", currentKm: 1200, photo }, "목적지를 입력해 주세요."],
     [{ purpose: "점검", destination: "원주", startKm: "1200", currentKm: 1200 }, "출발 계기판 사진을 촬영해 주세요."],
+    [{ purpose: "점검", destination: "원주", startKm: "", currentKm: 1200, photo }, "출발 km를 입력해 주세요."],
+    [{ purpose: "점검", destination: "원주", startKm: "1200.5", currentKm: 1200, photo }, "출발 km는 정수로 입력해 주세요."],
+    [{ purpose: "점검", destination: "원주", startKm: "천이백", currentKm: 1200, photo }, "출발 km는 정수로 입력해 주세요."],
     [{ purpose: "점검", destination: "원주", startKm: "1199", currentKm: 1200, photo }, "출발 km는 현재 km보다 작을 수 없습니다."],
   ])("rejects invalid trip input", (input, message) => {
     expect(prepareTripStart(input)).toEqual({ ok: false, message });
