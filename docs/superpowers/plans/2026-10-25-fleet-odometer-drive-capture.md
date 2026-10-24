@@ -4,7 +4,7 @@
 
 **Goal:** Make start odometer and camera evidence mandatory and store the captured image in the exact company Google Drive `브링 케어/BRING CAR` folder before creating a trip.
 
-**Architecture:** Reuse the field app's in-memory Google OAuth token manager and Drive API client. Add a fleet-specific upload service that validates the configured `BRING CAR` folder, creates `계기판 사진/YYYY-MM`, uploads an idempotently named JPEG, then persists only Drive receipt metadata in Realtime Database.
+**Architecture:** Reuse the server-side company Google Drive OAuth secrets and Drive adapter behind an App Check-protected callable function. The function validates the configured `BRING CAR` folder, creates `계기판 사진/YYYY-MM`, uploads an idempotently named JPEG, then the client persists only validated Drive receipt metadata in Realtime Database.
 
 **Tech Stack:** React, TypeScript, Firebase Realtime Database rules, Google Identity Services, Google Drive API, Vitest, Firebase Emulator Suite, Vinext PWA.
 
@@ -12,7 +12,8 @@
 
 ## File map
 
-- Create `company-site/app/fleet/fleet-drive-evidence.client.ts`: folder planning, filename planning, Drive upload and receipt validation.
+- Create `functions/src/fleet/upload-odometer-evidence.ts`: server-side input validation, folder planning, idempotent Drive upload and receipt validation.
+- Modify `functions/src/index.ts`: authenticated App Check-protected callable and company Drive adapter wiring.
 - Create `company-site/app/fleet/FleetPhotoCapture.tsx`: mobile camera input, preview and retake UI.
 - Modify `company-site/app/fleet/fleet-policy.ts`: require explicit integer start km and validate Drive receipt metadata.
 - Modify `company-site/app/fleet/fleet-repository.client.ts`: upload first, persist Drive metadata, never persist image data URLs.
@@ -57,11 +58,11 @@ Run the same test and expect all policy cases to pass.
 
 Commit as `test(fleet): require explicit start odometer`.
 
-### Task 3: Add deterministic Drive folder and filename planning
+### Task 3: Add deterministic server-side Drive upload planning
 
 - [ ] **Step 1: Write failing Drive evidence tests**
 
-Create `company-site/tests/field/fleet-drive-evidence.test.ts` covering:
+Create `functions/test/fleet-odometer-evidence.test.ts` covering:
 
 - `계기판 사진/2026-10` for a 2026-10-25 Korean timestamp.
 - sanitized `20261025-0930_김민욱_1280km_trip1234.jpg`.
@@ -70,11 +71,11 @@ Create `company-site/tests/field/fleet-drive-evidence.test.ts` covering:
 
 - [ ] **Step 2: Run and confirm RED**
 
-Run `pnpm vitest run tests/field/fleet-drive-evidence.test.ts`; expect module-not-found failure.
+Run `pnpm vitest run test/fleet-odometer-evidence.test.ts` from `functions`; expect module-not-found failure.
 
 - [ ] **Step 3: Implement the fleet Drive evidence module**
 
-Export focused pure helpers plus `uploadFleetOdometerEvidence`. It must call `validateWritableRoot`, `ensureFolderPath`, `findByAppProperty`, and `uploadSmallFile`, returning `{ driveFileId, driveUrl, fileName, uploadState: "complete" }` only after validating the Drive response.
+Export `uploadFleetOdometerEvidenceCore` and wire an App Check-protected callable using the server Drive OAuth secrets. It must validate the fixed root, ensure folders, find the trip idempotency property and upload JPEG bytes, returning `{ driveFileId, driveUrl, fileName, uploadState: "complete" }` only after validating the Drive response.
 
 - [ ] **Step 4: Run and confirm GREEN**
 

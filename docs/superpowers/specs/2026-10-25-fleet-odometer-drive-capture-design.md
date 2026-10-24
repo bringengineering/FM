@@ -18,18 +18,18 @@
 
 ## 선택한 접근 방식
 
-기존 현장 앱에서 운영 중인 Google Identity Services, `GoogleDriveClient`, 회사 Drive 인증 흐름을 재사용한다. PC의 `H:` 드라이브는 Google Drive 데스크톱 동기화 경로이므로 브라우저 앱이 직접 쓸 수 없다. 앱은 동일 폴더의 안정적인 Google Drive 폴더 ID를 확인해 Drive API로 업로드한다.
+기존 서버의 회사 Google Drive OAuth 비밀과 Drive 어댑터를 재사용한다. PC의 `H:` 드라이브는 Google Drive 데스크톱 동기화 경로이므로 휴대폰 브라우저가 직접 쓸 수 없다. 직원 휴대폰에는 Drive 권한이나 중앙 계정 비밀번호를 주지 않고, Firebase Auth와 App Check로 보호된 callable 함수가 확인된 `BRING CAR` 폴더 ID에 업로드한다.
 
 다른 선택지는 Firebase Storage에 먼저 올린 뒤 서버에서 Drive로 복사하는 방식과 PC 로컬 경로에 직접 저장하는 방식이다. 전자는 저장소 이중화와 서버 운영 범위가 불필요하게 커지고, 후자는 휴대폰에서 작동하지 않아 제외한다.
 
 ## 사용자 흐름
 
 1. 직원이 차량대장에 로그인하고 `운행 시작`을 연다.
-2. 앱은 회사 Google Drive 연결 상태와 `BRING CAR` 폴더 쓰기 권한을 확인한다.
+2. 앱은 Firebase 로그인과 App Check 보안 상태를 확인한다.
 3. 직원이 운행 목적, 목적지, 출발 km를 입력하고 `계기판 사진 촬영`을 누른다.
 4. 후면 카메라로 촬영한 사진의 미리보기, 파일 정보와 `다시 촬영` 버튼을 보여준다.
 5. `운행 시작`을 누르면 입력 검증 후 사진을 JPEG로 회전 보정·축소·압축한다.
-6. 앱이 월별 폴더를 찾거나 만들고 사진을 Drive에 업로드한다.
+6. 인증된 서버가 `BRING CAR` 쓰기 권한을 확인하고 월별 폴더를 찾거나 만든 뒤 사진을 Drive에 업로드한다.
 7. 업로드 응답의 파일 ID를 확인한 뒤 운행기록과 차량 상태를 저장한다.
 8. 업로드 실패 시 입력과 촬영본을 화면에 유지하고 재시도 안내를 표시한다.
 
@@ -45,11 +45,11 @@
 
 운행기록의 기존 `evidenceUrl` data URL은 새 기록에서 사용하지 않는다. 대신 `evidenceDriveFileId`, `evidenceDriveUrl`, `evidenceFileName`, `evidenceUploadState: "complete"`를 필수로 저장한다. Firebase 규칙은 새 필드의 형식과 업로드 완료 상태를 검증하며, 사진 원본 data URL 저장은 차단한다.
 
-Drive OAuth 토큰은 메모리에만 보관하고 DB·로컬 스토리지·로그에 기록하지 않는다. 기존 회사 Google 계정 로그인 힌트와 지정 루트 쓰기 권한 검증을 그대로 사용한다. 다른 폴더 ID로의 업로드는 허용하지 않는다.
+Drive OAuth 토큰과 갱신 토큰은 기존 Firebase Functions Secret에서만 사용하고 클라이언트·DB·로컬 스토리지·로그에 노출하지 않는다. callable 함수는 승인된 차량대장 사용자와 App Check 요청만 받고, 코드에 고정된 지정 루트 외의 폴더 ID는 입력으로 받지 않는다.
 
 ## 오류 처리
 
-- Drive 미연결: `Google Drive 연결` 버튼을 표시하고 운행 시작을 비활성화한다.
+- 서버 보안 연결 실패: 운행 시작을 차단하고 다시 시도 안내를 표시한다.
 - 폴더 권한 없음: `BRING CAR 폴더 편집 권한을 확인해 주세요.`를 표시한다.
 - 업로드 일시 실패: 입력과 사진 미리보기를 유지하고 같은 운행 ID로 재시도한다.
 - DB 저장 실패: Drive 파일 ID를 유지해 재시도 시 중복 파일을 만들지 않는다.
