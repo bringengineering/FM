@@ -282,6 +282,16 @@ describe.runIf(storageEmulatorAvailable)("field media storage rules", () => {
     }
   });
 
+  it("accepts a bounded fleet photo for its owner and denies other users", async () => {
+    const owner = environment.authenticatedContext("staff-1", claims()).storage();
+    const other = environment.authenticatedContext("staff-2", claims()).storage();
+    const path = `fleet-evidence/staff-1/trip-1/${PHOTO_ID}.jpg`;
+    await assertSucceeds(uploadBytes(ref(owner, path), new Uint8Array(1024), { contentType: "image/jpeg" }));
+    await assertSucceeds(getMetadata(ref(owner, path)));
+    await assertFails(getMetadata(ref(other, path)));
+    await assertFails(uploadBytes(ref(owner, `fleet-evidence/staff-1/trip-1/${PHOTO_ID}.svg`), new Uint8Array(8), { contentType: "image/svg+xml" }));
+  });
+
 });
 
 describe("field media storage rule source", () => {
@@ -302,6 +312,7 @@ describe("field media storage rule source", () => {
       expect(rules).toContain(mime);
     }
     expect(rules).toContain("match /field-media-finalized/{allPaths=**}");
+    expect(rules).toContain("match /fleet-evidence/{uid}/{tripId}/{fileName}");
     expect(rules).toMatch(/match \/field-media-finalized\/\{allPaths=\*\*\}\s*\{\s*allow read, write: if false;/u);
     expect(rules).not.toContain("allow create, update");
   });
