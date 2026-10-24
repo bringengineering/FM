@@ -1,0 +1,93 @@
+name: BRING TV Protected Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New unused TV semantic version
+        required: true
+        type: string
+      source_sha:
+        description: Exact reviewed source commit SHA
+        required: true
+        type: string
+
+concurrency:
+  group: bring-tv-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    environment: bring-tv-production
+    env:
+      BRING_TV_VERSION: ${{ inputs.version }}
+      TV_SOURCE_SHA: ${{ inputs.source_sha }}
+      TV_UPDATE_BRANCH: tv-update-channel
+      CSC_LINK: ${{ secrets.BRING_TV_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.BRING_TV_CSC_KEY_PASSWORD }}
+      BRING_TV_CERT_SUBJECT: ${{ secrets.BRING_TV_CERT_SUBJECT }}
+      BRING_TV_CERT_THUMBPRINT: ${{ secrets.BRING_TV_CERT_THUMBPRINT }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-crm/package-lock.json
+      - name: Verify reviewed source, operating branch ancestry, and unused release identity
+        shell: pwsh
+        run: |
+          if ($env:TV_SOURCE_SHA -notmatch '^[a-fA-F0-9]{40}$') { throw 'Invalid source SHA' }
+          if ((git rev-parse HEAD).Trim() -ne $env:TV_SOURCE_SHA) { throw 'Checkout does not match source SHA' }
+          git fetch origin codex/bring-field-platform --no-tags
+          git merge-base --is-ancestor $env:TV_SOURCE_SHA origin/codex/bring-field-platform
+          if ($LASTEXITCODE -ne 0) { throw 'Source is not on the operating branch' }
+          if ($env:BRING_TV_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          $tag = "tv-v$env:BRING_TV_VERSION"
+          git ls-remote --exit-code origin "refs/tags/$tag" | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'TV tag already exists and cannot be reused' }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'TV release already exists and cannot be reused' }
+      - run: npm ci
+        working-directory: desktop-crm
+      - run: npm test
+        working-directory: desktop-crm
+      - name: Build the separately signed TV installer without publishing
+        run: npm run build:tv
+        working-directory: desktop-crm
+      - name: Verify exact assets and the company Authenticode identity
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          Copy-Item -LiteralPath "desktop-crm/dist-tv/BRING.TV.Setup.$env:BRING_TV_VERSION.exe" -Destination release-assets
+          Copy-Item -LiteralPath "desktop-crm/dist-tv/BRING.TV.Setup.$env:BRING_TV_VERSION.exe.blockmap" -Destination release-assets
+          Copy-Item -LiteralPath "desktop-crm/dist-tv/latest-tv.yml" -Destination release-assets
+          node desktop-crm/scripts/tv-release/verify-assets.js --version $env:BRING_TV_VERSION --dist release-assets > verified.json
+          node desktop-crm/scripts/tv-release/verify-assets.js --version $env:BRING_TV_VERSION --dist release-assets | Out-Null
+          node desktop-crm/scripts/tv-release/write-channel-pointer.js --verified verified.json --output latest.json
+      - name: Create a new immutable tv-v release only
+        shell: pwsh
+        run: |
+          $tag = "tv-v$env:BRING_TV_VERSION"
+          gh release create $tag release-assets/* --repo $env:GITHUB_REPOSITORY --target $env:TV_SOURCE_SHA --title "BRING TV $env:BRING_TV_VERSION" --notes "Administrator-approved BRING TV release."
+      - name: Probe all public release assets before advancing the channel
+        shell: pwsh
+        run: |
+          $base = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/tv-v$env:BRING_TV_VERSION"
+          @("BRING.TV.Setup.$env:BRING_TV_VERSION.exe", "BRING.TV.Setup.$env:BRING_TV_VERSION.exe.blockmap", "latest-tv.yml") | ForEach-Object {
+            $response = Invoke-WebRequest -Method Head -Uri "$base/$_" -MaximumRedirection 5
+            if ($response.StatusCode -ne 200) { throw "Public TV asset unavailable: $_" }
+          }
+      - name: Atomically advance only the dedicated TV update channel
+        run: node desktop-crm/scripts/tv-release/publish-channel-pointer.js --pointer latest.json --source-sha $env:TV_SOURCE_SHA
+      - name: Probe the live TV update channel
+        run: node desktop-crm/scripts/tv-release/probe-channel.js --version $env:BRING_TV_VERSION
