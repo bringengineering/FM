@@ -54,6 +54,35 @@ describe.runIf(available)("fleet database rules", () => {
     await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), evidenceUploadState: "pending" }));
     await assertFails(set(ref(member, "crmCompany/fleetManagement/trips/trip-1"), { ...trip("member"), evidenceUrl: "data:image/jpeg;base64,AQ==" }));
   });
+  it("lets an already-active legacy photo trip finish without weakening new trip validation", async () => {
+    const legacyTrip = {
+      id: "legacy-trip",
+      vehicleId: "ev4-001",
+      userUid: "member",
+      driverName: "홍길동",
+      purpose: "기존 운행",
+      destination: "원주",
+      startOdometer: 1100,
+      evidenceUrl: "data:image/jpeg;base64,AQ==",
+      status: "active",
+      startedAt: "2026-10-24T09:00:00.000Z",
+      updatedAt: "2026-10-24T09:00:00.000Z",
+    };
+    await env.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), "crmCompany/fleetManagement/trips/legacy-trip"), legacyTrip);
+    });
+    await assertSucceeds(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/legacy-trip"), {
+      ...legacyTrip,
+      endOdometer: 1125,
+      status: "completed",
+      endedAt: "2026-10-25T09:00:00.000Z",
+      updatedAt: "2026-10-25T09:00:00.000Z",
+    }));
+    await assertFails(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/trips/new-legacy-trip"), {
+      ...legacyTrip,
+      id: "new-legacy-trip",
+    }));
+  });
   it("allows member reservation creation but reserves decisions for admins", async () => {
     const member = db("member", "member@bring.kr");
     await assertSucceeds(set(ref(member, "crmCompany/fleetManagement/reservations/reservation-1"), reservation("member")));

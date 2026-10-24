@@ -53,7 +53,7 @@
   },
   "crmDriveOAuthManualDeployment": {
     "projectId": "bring-fm",
-    "functionNames": ["crmDriveOAuth"],
+    "functionNames": ["crmDriveOAuth", "uploadFleetOdometerEvidence"],
     "region": "asia-northeast3",
     "databaseRules": false
   },
