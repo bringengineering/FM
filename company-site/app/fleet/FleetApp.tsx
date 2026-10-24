@@ -11,7 +11,7 @@ export default function FleetApp(){
   const [session,setSession]=useState<FieldV2Session|null>(null); const [authState,setAuthState]=useState<FieldV2AuthState>("checking"); const [state,setState]=useState<FleetState>(emptyFleet); const [screen,setScreen]=useState<Screen>("home"); const [message,setMessage]=useState(""); const [error,setError]=useState("");
   useEffect(()=>observeFieldV2Session((s,a)=>{setSession(s);if(a)setAuthState(a)},e=>setError(e.message)),[]);
   useEffect(()=>session?subscribeFleet(setState,e=>setError(e.message)):undefined,[session]);
-  useEffect(()=>{if("serviceWorker" in navigator)void navigator.serviceWorker.register("/fleet/sw.js")},[]);
+  useEffect(()=>{if("serviceWorker" in navigator)void navigator.serviceWorker.register("/fleet/sw.js?v=20261025-1")},[]);
   const trips=useMemo(()=>Object.values(state.trips).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)),[state.trips]); const active=trips.find(t=>t.status==="active"&&t.userUid===session?.uid); const vehicle=state.vehicles["ev4-001"]; const currentKm=Math.max(vehicle?.odometer??0,...trips.map(t=>t.endOdometer??t.startOdometer));
   const run=async(fn:()=>Promise<unknown>)=>{setError("");setMessage("");try{await fn();setMessage("저장되었습니다.");setScreen("home")}catch(e){setError(e instanceof Error?e.message:"처리하지 못했습니다.")}};
   if(authState==="checking")return <Centered title="보안 연결 확인 중" text="회사 계정과 권한을 확인하고 있습니다."/>;
