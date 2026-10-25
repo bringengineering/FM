@@ -5,6 +5,7 @@ import { executeFleetTripStart } from "../../app/fleet/fleet-start";
 describe("executeFleetTripStart", () => {
   const session = { uid: "user-1", displayName: "김민욱" };
   const input = {
+    vehicleId: "morning-001" as const,
     purpose: "현장 점검",
     destination: "원주",
     startOdometer: 1280,
@@ -26,6 +27,7 @@ describe("executeFleetTripStart", () => {
 
     expect(order).toEqual(["upload", "write"]);
     expect(write).toHaveBeenCalledWith("trip-1234", expect.objectContaining({
+      vehicleId: "morning-001",
       evidenceDriveFileId: "drive-file-1",
       evidenceUploadState: "complete",
     }));

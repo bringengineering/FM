@@ -91,7 +91,9 @@ describe.runIf(available)("fleet database rules", () => {
   });
   it("reserves vehicle and contract administration for admins", async () => {
     const vehicle = { id: "ev4-001", name: "EV4 공용차", plate: "12가3456", odometer: 1200, status: "available", updatedAt: "2026-10-25T09:00:00.000Z" };
+    const morning = { id: "morning-001", name: "기아 모닝", plate: "23모 0648", odometer: 0, odometerRegistered: false, status: "available", updatedAt: "2026-10-25T09:00:00.000Z" };
     await assertFails(set(ref(db("member", "member@bring.kr"), "crmCompany/fleetManagement/vehicles/ev4-001"), vehicle));
     await assertSucceeds(set(ref(db("admin", "admin@bring.kr"), "crmCompany/fleetManagement/vehicles/ev4-001"), vehicle));
+    await assertSucceeds(set(ref(db("admin", "admin@bring.kr"), "crmCompany/fleetManagement/vehicles/morning-001"), morning));
   });
 });

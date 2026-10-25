@@ -1,9 +1,11 @@
+import type { FleetVehicleId } from "./fleet-vehicles";
+
 export interface FleetStartSession {
   uid: string;
   displayName: string;
 }
-
 export interface FleetStartInput {
+  vehicleId: FleetVehicleId;
   purpose: string;
   destination: string;
   startOdometer: number;
@@ -19,7 +21,7 @@ export interface FleetDriveReceipt {
 
 export interface FleetTripStartRecord {
   id: string;
-  vehicleId: "ev4-001";
+  vehicleId: FleetVehicleId;
   userUid: string;
   driverName: string;
   purpose: string;
@@ -51,7 +53,7 @@ export async function executeFleetTripStart(
   const evidence = await dependencies.upload({ ...session, ...input, tripId, capturedAt });
   const record: FleetTripStartRecord = {
     id: tripId,
-    vehicleId: "ev4-001",
+    vehicleId: input.vehicleId,
     userUid: session.uid,
     driverName: session.displayName,
     purpose: input.purpose,
