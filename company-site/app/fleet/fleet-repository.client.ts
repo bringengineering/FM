@@ -5,7 +5,7 @@ import type { FieldV2Session } from "../field/lib/v2-auth.client";
 import { executeFleetTripStart, type FleetDriveReceipt } from "./fleet-start";
 import { FLEET_VEHICLES, isFleetVehicleId, type FleetVehicleId } from "./fleet-vehicles";
 
-export type Vehicle = { id:string; name:string; plate:string; odometer?:number; status:"available"|"in_use"|"maintenance"; updatedAt:string };
+export type Vehicle = { id:string; name:string; plate:string; odometer:number; odometerRegistered?:boolean; status:"available"|"in_use"|"maintenance"; updatedAt:string };
 export type Trip = { id:string; vehicleId:string; userUid:string; driverName:string; purpose:string; destination:string; startOdometer:number; endOdometer?:number; status:"active"|"completed"; startedAt:string; endedAt?:string; updatedAt:string; evidenceUrl?:string; evidenceDriveFileId?:string; evidenceDriveUrl?:string; evidenceFileName?:string; evidenceUploadState?:"complete" };
 export type Reservation = { id:string; vehicleId:string; userUid:string; driverName:string; purpose:string; destination:string; startAt:string; endAt:string; approvalType:"none"|"long_distance"|"weekend"|"external"; status:"pending"|"approved"|"rejected"; createdAt:string; updatedAt:string };
 export type Issue = { id:string; vehicleId:string; userUid:string; reporterName:string; category:string; description:string; status:"open"|"resolved"; createdAt:string; updatedAt:string };
@@ -26,8 +26,8 @@ export async function initializeFleet(session:FieldV2Session) {
   const root=ref(database,"crmCompany/fleetManagement");
   const current=clean<Partial<FleetState>>((await get(root)).val(),{});
   const patch:Record<string,unknown>={};
-  if(!current.vehicles?.["ev4-001"]){patch["vehicles/ev4-001"]={...FLEET_VEHICLES[0],odometer:0,status:"available",updatedAt:stamp};}
-  if(!current.vehicles?.["morning-001"]){patch["vehicles/morning-001"]={...FLEET_VEHICLES[1],status:"available",updatedAt:stamp};}
+  if(!current.vehicles?.["ev4-001"]){patch["vehicles/ev4-001"]={id:FLEET_VEHICLES[0].id,name:FLEET_VEHICLES[0].name,plate:FLEET_VEHICLES[0].plate,odometer:0,status:"available",updatedAt:stamp};}
+  if(!current.vehicles?.["morning-001"]){patch["vehicles/morning-001"]={id:FLEET_VEHICLES[1].id,name:FLEET_VEHICLES[1].name,plate:FLEET_VEHICLES[1].plate,odometer:0,odometerRegistered:false,status:"available",updatedAt:stamp};}
   if(!current.contracts?.["lease-001"]){patch["contracts/lease-001"]={id:"lease-001",vehicleId:"ev4-001",monthlyFee:497730,allowedKm:30000,startDate:"2026-10-25",endDate:"2029-10-24",updatedAt:stamp};}
   if(!current.maintenance?.["initial-001"]){patch["maintenance/initial-001"]={id:"initial-001",vehicleId:"ev4-001",title:"신차 1,000km 점검",dueDate:"2026-11-25",status:"scheduled",updatedAt:stamp};}
   if(Object.keys(patch).length)await update(root,patch);

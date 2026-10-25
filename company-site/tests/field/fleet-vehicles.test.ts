@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLEET_VEHICLES, currentOdometerForVehicle, recordsForVehicle } from "../../app/fleet/fleet-vehicles";
+import { FLEET_VEHICLES, currentOdometerForVehicle, recordsForVehicle, storedOdometerReading } from "../../app/fleet/fleet-vehicles";
 
 describe("fleet vehicle domain", () => {
   it("defines EV4 and the Morning with the requested plate", () => {
@@ -16,6 +16,7 @@ describe("fleet vehicle domain", () => {
   });
 
   it("returns no odometer until the Morning has trip evidence", () => {
+    expect(storedOdometerReading({ odometer: 0, odometerRegistered: false })).toBeUndefined();
     expect(currentOdometerForVehicle(undefined, [])).toBeUndefined();
     expect(currentOdometerForVehicle(undefined, [{ startOdometer: 38214 }])).toBe(38214);
     expect(currentOdometerForVehicle(38000, [{ startOdometer: 38214, endOdometer: 38248 }])).toBe(38248);

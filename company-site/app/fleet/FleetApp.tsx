@@ -7,7 +7,7 @@ import { hasApprovedWeekendReservation, isWeekendAt, overlapsReservation, prepar
 import FleetPhotoCapture from "./FleetPhotoCapture";
 import FleetSchedule from "./FleetSchedule";
 import FleetVehicleSwitcher from "./FleetVehicleSwitcher";
-import { FLEET_VEHICLES, currentOdometerForVehicle, recordsForVehicle, type FleetVehicleId } from "./fleet-vehicles";
+import { FLEET_VEHICLES, currentOdometerForVehicle, recordsForVehicle, storedOdometerReading, type FleetVehicleId } from "./fleet-vehicles";
 
 type Screen="home"|"start"|"end"|"schedule"|"history"|"admin"|"issues";
 const fmt=(n:number)=>n.toLocaleString("ko-KR");
@@ -22,7 +22,7 @@ export default function FleetApp(){
   const vehicleReservations=useMemo(()=>recordsForVehicle(Object.values(state.reservations),selectedVehicleId),[state.reservations,selectedVehicleId]);
   const vehicleIssues=useMemo(()=>recordsForVehicle(Object.values(state.issues),selectedVehicleId),[state.issues,selectedVehicleId]);
   const activeForVehicle=trips.find(t=>t.status==="active"); const active=activeForVehicle?.userUid===session?.uid?activeForVehicle:undefined;
-  const vehicle=state.vehicles[selectedVehicleId]??FLEET_VEHICLES.find(item=>item.id===selectedVehicleId); const storedVehicle=state.vehicles[selectedVehicleId]; const currentKm=currentOdometerForVehicle(storedVehicle?.odometer,trips);
+  const vehicle=state.vehicles[selectedVehicleId]??FLEET_VEHICLES.find(item=>item.id===selectedVehicleId); const storedVehicle=state.vehicles[selectedVehicleId]; const currentKm=currentOdometerForVehicle(storedOdometerReading(storedVehicle),trips);
   const run=async(fn:()=>Promise<unknown>,next:Screen="home")=>{setError("");setMessage("");setBusy(true);try{await fn();setMessage("저장되었습니다.");setScreen(next)}catch(e){setError(e instanceof Error?e.message:"처리하지 못했습니다.")}finally{setBusy(false)}};
   if(authState==="checking")return <Centered title="보안 연결 확인 중" text="회사 계정과 권한을 확인하고 있습니다."/>;
   if(!session)return <Centered title="브링 차량대장" text="승인된 브링 회사 계정으로 로그인하세요."><button className="fleet-primary" onClick={()=>void loginFieldV2User().catch(()=>setError("로그인 또는 권한 확인에 실패했습니다."))}>Google 회사 계정으로 로그인</button>{error&&<p className="fleet-error">{error}</p>}</Centered>;

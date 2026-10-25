@@ -13,6 +13,11 @@ export function recordsForVehicle<T extends { vehicleId: string }>(records: T[],
   return records.filter(record => record.vehicleId === vehicleId);
 }
 
+export function storedOdometerReading(vehicle: { odometer?: number; odometerRegistered?: boolean } | undefined): number | undefined {
+  if (!vehicle || vehicle.odometerRegistered === false) return undefined;
+  return vehicle.odometer;
+}
+
 export function currentOdometerForVehicle(
   storedOdometer: number | undefined,
   trips: Array<{ startOdometer: number; endOdometer?: number }>,
