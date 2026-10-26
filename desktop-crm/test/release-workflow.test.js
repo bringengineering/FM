@@ -132,7 +132,8 @@ test("advances one dedicated bounded update pointer only after stable publicatio
 test("desktop release isolates the approved backend deployments and never deploys live Rules", () => {
   const management = jobBlock("ensure-account-management");
   const cleaning = jobBlock("deploy-cleaning-report");
-  const withoutManagement = releaseExecutable.replace(management.replace(/^\s*#.*$/gm, ""), "").replace(cleaning.replace(/^\s*#.*$/gm, ""), "");
+  const preflight = jobBlock("cleaning-report-preflight");
+  const withoutManagement = releaseExecutable.replace(management.replace(/^\s*#.*$/gm, ""), "").replace(cleaning.replace(/^\s*#.*$/gm, ""), "").replace(preflight.replace(/^\s*#.*$/gm, ""), "");
   assert.doesNotMatch(releaseExecutable, /preflight-rules:|preflight-wif:|deploy-rules:/);
   assert.doesNotMatch(releaseExecutable, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
   assert.doesNotMatch(releaseExecutable, /GCP_|bring-crm-production|read-firebase-targets\.js/i);
@@ -144,6 +145,10 @@ test("desktop release isolates the approved backend deployments and never deploy
   assert.match(management, /crm-account-management-deployment\.cjs --apply/);
   assert.match(management, /--project demo-bring-fm-account-setup emulators:exec --only auth,database,functions/);
   assert.doesNotMatch(management, /database:get|--only hosting|crm-rules-deploy|--only database\s+(?!emulators)/i);
+  assert.match(jobBlock("plan"), /if: inputs\.cleaning_report_preflight != true/);
+  assert.match(preflight, /inputs\.cleaning_report_preflight == true/);
+  assert.match(preflight, /node release\/crm-cleaning-report-deployment\.cjs --preflight/);
+  assert.doesNotMatch(preflight, /--apply|firebase deploy|wrangler deploy|needs:/);
   assert.match(cleaning, /needs: \[plan, reserve-build\]/);
   assert.match(cleaning, /environment: firebase-production/);
   assert.match(cleaning, /FIREBASE_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_SERVICE_ACCOUNT \}\}/);
