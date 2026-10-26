@@ -251,9 +251,54 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  deploy-cleaning-report:
+    if: needs.plan.outputs.stable_published != 'true'
+    needs: [plan, reserve-build]
+    runs-on: ubuntu-latest
+    environment: firebase-production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.plan.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - run: pnpm --dir functions install --frozen-lockfile
+      - run: pnpm --dir company-site install --frozen-lockfile
+      - run: pnpm --dir functions test
+      - run: pnpm --dir functions build
+      - run: node --test release/crm-cleaning-report-deployment.test.cjs
+      - name: Reverify cleaning order authorization in isolated emulators
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
+          BRING_CLEANING_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-cleaning-functions emulators:exec --only auth,database,functions "pnpm exec vitest run tests/field/cleaning-orders-functions-emulator.test.ts"
+      - name: Back up and deploy only the cleaning report validation API
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node release/crm-cleaning-report-deployment.cjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: crm-cleaning-report-deploy-${{ github.run_id }}
+          path: ${{ runner.temp }}/crm-cleaning-report-deploy/
+          if-no-files-found: ignore
+          retention-days: 30
+
   deploy-ai-worker:
     if: needs.plan.outputs.stable_published != 'true'
-    needs: [plan, reserve-build, ensure-account-management]
+    needs: [plan, reserve-build, ensure-account-management, deploy-cleaning-report]
     runs-on: ubuntu-latest
     permissions:
       contents: read
