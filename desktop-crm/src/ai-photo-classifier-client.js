@@ -10,7 +10,7 @@ const CATEGORIES = new Set([
   "floor", "window", "kitchen", "hood", "bath", "veranda", "storage",
   "aircon", "refrigerator", "finish", "review",
 ]);
-const COMMON_CATEGORIES = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final", "review"]);
+const COMMON_CATEGORIES = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "lighting", "recycle", "final", "review"]);
 const ACTIONS = new Set(["wiping", "sweeping", "mopping", "scrubbing", "washing", "collecting"]);
 const ACTION_EVIDENCE = new Set(["cleaning_contact", "active_hand_contact", "water_flow", "inactive_tool", "cloth_display", "supporting_hand"]);
 
