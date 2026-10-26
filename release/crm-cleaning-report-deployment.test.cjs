@@ -1,8 +1,25 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics } = require("./crm-cleaning-report-deployment.cjs");
+const { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions } = require("./crm-cleaning-report-deployment.cjs");
+const path = require("node:path");
 const manifest = require("./firebase-targets.json");
 const row = (name = "cleaningOrdersApi", codeHash = "a".repeat(40)) => ({ name, codeHash, region: "asia-northeast3", state: "ACTIVE", codebase: "field-platform" });
+test("schema readiness requires both the exact capability and continued anonymous denial", async () => {
+  const reply = (status = 401, schema = "common-v2", code = "cleaning_order_auth_required") => async (url, options) => {
+    assert.equal(url, "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningOrdersApi");
+    assert.equal(options.redirect, "error");
+    assert.equal(options.headers, undefined);
+    return { status, headers: new Headers(schema ? { "x-bring-cleaning-report-schema": schema } : {}), json: async () => ({ error: { code } }) };
+  };
+  assert.equal(await reportSchemaReady(reply()), true);
+  for (const args of [[200], [401, ""], [401, "legacy"], [401, "common-v2", "other"]]) assert.equal(await reportSchemaReady(reply(...args)), false);
+  assert.equal(await reportSchemaReady(async () => { throw new Error("private"); }), false);
+});
+test("operator mode requires an explicit primary-project confirmation and absolute backup directory", () => {
+  const args = ["--operator", "--project", "bring-fm", "--confirm-project", "bring-fm", "--backup-dir", path.resolve("operator-backup")];
+  assert.deepEqual(operatorOptions(args), { operator: true, backupDir: args[6] });
+  for (const bad of [[], args.slice(0, 6), [...args, "--force"], args.map((v,i) => i === 4 ? "bring-fm-hj" : v), args.map((v,i) => i === 6 ? "relative" : v)]) assert.throws(() => operatorOptions(bad));
+});
 test("preflight diagnostics omit credentials, query strings, identities and arbitrary provider text", () => {
   const text = "Authorization: Bearer PRIVATE\n[apiv2][status] GET https://cloudfunctions.googleapis.com/v2/projects/private?key=PRIVATE 403\nPERMISSION_DENIED PRIVATE";
   assert.deepEqual(safeDiagnostics(text), { statuses: [{ service: "cloudfunctions.googleapis.com", status: 403 }], reasons: ["PERMISSION_DENIED"] });
