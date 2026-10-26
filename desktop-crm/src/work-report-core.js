@@ -99,6 +99,7 @@
         { key: "rooftop", label: "옥상·테라스", detail: "승인된 접근 범위의 옥상·테라스 바닥 및 잔여물 정리", optional: true },
         { key: "elevator", label: "승강기", detail: "승강기 문·내부·버튼의 접근 가능한 면 청소", optional: true },
         { key: "walls", label: "벽면·문", detail: "공용 벽면·문의 국소 오염 확인 및 닦기", optional: true },
+        { key: "fixtures", label: "공용 설비·게시판", detail: "소화기·공용 설비함·계량기함·게시판의 접근 가능한 외부 표면 확인 및 닦기", optional: true },
         { key: "lighting", label: "조명·천장", detail: "조명 주변 먼지·거미줄 및 이상 여부 확인" },
         { key: "recycle", label: "분리수거장", detail: "수거장 바닥·분리배출 상태·악취 확인 및 정리" },
         { key: "final", label: "마감·안전 확인", detail: "공용 통로 적치물·미끄럼·잔여 작업 여부 확인" },
