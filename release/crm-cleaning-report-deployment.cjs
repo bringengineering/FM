@@ -21,7 +21,9 @@ function runCommand(bin, args, options, exec = execFileSync) {
     const reason = /permission.denied|forbidden|does not have.*permission/iu.test(stderr) ? "PERMISSION_DENIED"
       : /unauthenticated|invalid.grant|invalid.credentials|failed to authenticate/iu.test(stderr) ? "AUTH_FAILED"
       : /not.found|no such file|cannot find module/iu.test(stderr) || error.code === "ENOENT" ? "NOT_FOUND" : "FAILED";
-    fail(`${tool}_${operation}_${reason}`);
+    const failure = new Error(`CLEANING_REPORT_${tool}_${operation}_${reason}`);
+    failure.diagnostics = safeDiagnostics(stderr);
+    throw failure;
   }
 }
 
@@ -63,9 +65,9 @@ async function preflight() {
         ["cloud_function_inventory", ["functions", "list", "--v2", "--project", PROJECT, "--format=json(name,state)"]],
       ]) {
         try { cloud(args); console.log(JSON.stringify({ stage, ok: true })); }
-        catch (error) { console.log(JSON.stringify({ stage, ok: false, code: error.message })); }
+        catch (error) { console.log(JSON.stringify({ stage, ok: false, code: error.message, ...error.diagnostics })); }
       }
-    } catch (error) { console.log(JSON.stringify({ stage: "cloud_auth", ok: false, code: error.message })); }
+    } catch (error) { console.log(JSON.stringify({ stage: "cloud_auth", ok: false, code: error.message, ...error.diagnostics })); }
     if (exitCode !== 0) process.exitCode = 1;
   } finally { fs.rmSync(dir, { recursive: true, force: true }); if (fs.existsSync(debug)) fs.unlinkSync(debug); }
 }
