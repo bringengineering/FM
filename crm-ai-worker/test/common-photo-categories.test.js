@@ -20,6 +20,9 @@ const cases = [
   ["elevator", "other", ["elevator_structure"]],
   ["walls", "wall", ["wall_surface"]],
   ["walls", "other", ["door_surface"]],
+  ["fixtures", "other", ["fire_extinguisher"]],
+  ["fixtures", "other", ["utility_panel"]],
+  ["fixtures", "other", ["notice_board"]],
 ];
 
 test("specific common areas require their own visible evidence, not just a high score", () => {
@@ -51,7 +54,7 @@ test("landing, handrail, window track and glass stay distinct even with shared b
 test("Gemini schema exposes every common category and keeps new area decisions through the real normalizer", async () => {
   const rows = cases.slice(0, 9);
   let calls = 0;
-  const result = await classifyPhotos({ kind: "common", images: rows.map((_, i) => ({ id: `local_${i}`, dataUrl: "data:image/jpeg;base64,/9j/AA==" })) }, { GEMINI_API_KEY: "synthetic" }, async (_url, options) => {
+  const result = await classifyPhotos({ kind: "common", categorySchema: "common-v2", images: rows.map((_, i) => ({ id: `local_${i}`, dataUrl: "data:image/jpeg;base64,/9j/AA==" })) }, { GEMINI_API_KEY: "synthetic" }, async (_url, options) => {
     const body = JSON.parse(options.body);
     const schema = body.generationConfig.responseJsonSchema.properties.classifications.items.properties;
     assert.deepEqual(schema.category.enum, Object.keys(COMMON_CATEGORIES));
