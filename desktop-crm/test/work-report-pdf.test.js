@@ -66,7 +66,7 @@ test("두 보고서는 인감 없이 생성되고 기존 인감 옵션도 표시
       assert.equal(createWorkReportHtml(report(), copy, options({sealImage})), expected);
     }
     assert.doesNotMatch(expected, /대표자 날인|서명 또는 인|class="sign"|class="stamp"|data:image\/png;base64/u);
-    assert.match(expected, /class="report-footer"/u);
+    assert.match(expected, copy === "owner" ? /@bottom-left\{content:"BRING CARE/ : /class="report-footer"/u);
     assert.match(expected, /수신\(건물주\)/u);
     assert.match(expected, /브링엔지니어링/u);
   }

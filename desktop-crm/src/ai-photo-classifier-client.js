@@ -10,7 +10,7 @@ const CATEGORIES = new Set([
   "floor", "window", "kitchen", "hood", "bath", "veranda", "storage",
   "aircon", "refrigerator", "finish", "review",
 ]);
-const COMMON_CATEGORIES = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final", "review"]);
+const COMMON_CATEGORIES = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final", "review"]);
 const ACTIONS = new Set(["wiping", "sweeping", "mopping", "scrubbing", "washing", "collecting"]);
 const ACTION_EVIDENCE = new Set(["cleaning_contact", "active_hand_contact", "water_flow", "inactive_tool", "cloth_display", "supporting_hand"]);
 
@@ -102,7 +102,7 @@ function normalizeSuccess(value, expectedIds, mode, kind) {
         spaceConfidence: Number.isFinite(row.spaceConfidence) ? Math.max(0, Math.min(100, row.spaceConfidence)) : 0,
         targetConfidence: Number.isFinite(row.targetConfidence) ? Math.max(0, Math.min(100, row.targetConfidence)) : 0,
         quality: ["clear", "blurred", "too_small", "obstructed", "unknown"].includes(row.quality) ? row.quality : "unknown",
-        issues: Array.isArray(row.issues) ? row.issues.filter(x => ["quality", "category_uncertain", "space_uncertain", "target_uncertain", "contradiction", "missing_result", "review_disagreement", "non_work"].includes(x)).slice(0, 8) : [],
+        issues: Array.isArray(row.issues) ? row.issues.filter(x => ["quality", "category_uncertain", "space_uncertain", "target_uncertain", "contradiction", "missing_result", "review_disagreement", "non_work", "category_score_low", "category_evidence_missing", "category_target_conflict", "target_score_low", "target_evidence_missing", "category_unknown"].includes(x)).slice(0, 8) : [],
         candidates: Array.isArray(row.candidates) ? row.candidates.filter(x => (kind === "common" ? COMMON_CATEGORIES : CATEGORIES).has(x) && x !== "review").slice(0, 2) : [],
       } : {}),
       reason: String(row.reason || "").trim().slice(0, 120),
@@ -171,7 +171,7 @@ async function classifyPhotosWithGateway(options) {
     const response = await fetchImpl(url.href, {
       method: "POST",
       headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, ...(input.kind === "common" ? { categorySchema: "common-v2" } : {}) }),
       cache: "no-store",
       redirect: "error",
       signal: controller.signal,

@@ -14,10 +14,10 @@ test("management release readiness checks all three exact anonymous denials with
 });
 test("the existing release workflow ensures management only after the installer and before Worker/publication", () => {
   const yaml=fs.readFileSync(path.join(__dirname,"../../.github/workflows/crm-release.yml"),"utf8");
-  const backend=yaml.slice(yaml.indexOf("  ensure-account-management:"),yaml.indexOf("  deploy-ai-worker:"));
+  const backend=yaml.slice(yaml.indexOf("  ensure-account-management:"),yaml.indexOf("  deploy-cleaning-report:"));
   assert.match(backend,/needs: \[plan, reserve-build\]/);
   assert.match(backend,/crm-account-management-deployment\.cjs --apply/);
   assert.match(backend,/steps\.management\.outputs\.ready != 'true'/);
   const worker=yaml.slice(yaml.indexOf("  deploy-ai-worker:"),yaml.indexOf("  stage-release:"));
-  assert.match(worker,/needs: \[plan, reserve-build, ensure-account-management\]/);
+  assert.match(worker,/needs: \[plan, reserve-build, ensure-account-management, deploy-cleaning-report\]/);
 });
