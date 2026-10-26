@@ -1,5 +1,5 @@
 import type { ExpoConfig } from 'expo/config';
-const { companyConfig } = require('./config/company.cjs');
+const { companyConfig, buildIdentity } = require('./config/company.cjs');
 
 // Only the local development application is available until native identity,
 // attestation and the server facade are enrolled and verified together.
@@ -7,13 +7,19 @@ if (process.env.FIELD_APP_ENV && process.env.FIELD_APP_ENV !== 'development') {
   throw new Error('FIELD_RELEASE_NOT_READY: native identity and server enrollment required');
 }
 const company = companyConfig(process.env, __dirname);
+const build = buildIdentity(process.env);
 const companyPlugins: NonNullable<ExpoConfig['plugins']> = company ? ['@react-native-firebase/app', '@react-native-firebase/auth', '@react-native-firebase/app-check', ['expo-build-properties', { ios: { useFrameworks: 'dynamic' } }]] : [];
 
 const config: ExpoConfig = {
   name: 'BRING CARE 현장노트 개발', slug: 'bring-care-field-notes',
+  ...(build.owner ? { owner: build.owner } : {}),
   version: '0.1.0', orientation: 'portrait', userInterfaceStyle: 'light',
   scheme: 'bring-field-dev',
-  ios: { bundleIdentifier: 'kr.co.bringengineering.fieldnotes.dev', supportsTablet: true, ...(company ? { googleServicesFile: company.ios } : {}) },
+  ios: { bundleIdentifier: 'kr.co.bringengineering.fieldnotes.dev', supportsTablet: true, ...(company ? {
+    googleServicesFile: company.ios,
+    // Firebase App Check accepts App Attest production tokens, including test builds.
+    entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' },
+  } : {}) },
   android: { package: 'kr.co.bringengineering.fieldnotes.dev', allowBackup: false,
     ...(company ? { googleServicesFile: company.android } : {}),
     blockedPermissions: ['android.permission.RECORD_AUDIO', 'android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'] },
@@ -28,6 +34,7 @@ const config: ExpoConfig = {
     './plugins/with-private-storage.cjs'
   ],
   extra: { fieldMode: 'development', fieldConnection: company ? 'company' : 'sample', companyPhone: '1551-3873',
+    ...(build.projectId ? { eas: { projectId: build.projectId } } : {}),
     ...(company ? { company: { projectId: company.projectId, nativeAppIds: company.nativeAppIds, apiBase: company.apiBase } } : {}),
   },
 };

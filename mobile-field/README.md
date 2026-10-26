@@ -4,6 +4,8 @@
 
 이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. 기본 실행은 가상 현장 미리보기다. 회사 연결은 기기 인증 설정·API 배포·실기기 시험 전이며, Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 로그인·조회 구현 결과](../docs/field-mobile/employee-login-2026-10-26.md)를 참고한다.
 
+Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 두 스토어 개발자 계정은 아직 없고 Expo도 로그인 전이다. [설치본 준비 상태와 계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며, 현재는 회사 Expo 프로젝트 미연결을 보고한다.
+
 ## 이번에 구현한 범위
 
 - Android/iPhone 공통 현장·촬영·사진 확인·보고서·보관함·연결 화면.
@@ -16,7 +18,7 @@
 
 ## 실행
 
-Node 24에서 검증했다. iOS/Android 빌드는 Expo Go 대신 SQLCipher가 포함된 Development Build를 사용한다.
+Node 24에서 검증했다. iOS/Android는 SQLCipher가 포함된 자체 네이티브 빌드를 사용한다. `company-preview`는 Metro 없이 실행하는 실기기 내부 배포용이며, `company-development`는 개발 서버에 연결하는 개발용이다. Expo Go는 지원하지 않는다.
 
 ```powershell
 cd mobile-field

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run test/wire-integration.test.ts",
+    "device:check": "node scripts/check-device-setup.cjs",
     "export:check": "expo export --platform all --clear"
   },
   "dependencies": {

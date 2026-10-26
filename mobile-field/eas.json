@@ -1,7 +1,17 @@
 {
-  "cli": { "appVersionSource": "local" },
+  "cli": { "version": ">=25.3.0", "appVersionSource": "local" },
   "build": {
     "development": { "developmentClient": true, "distribution": "internal", "env": { "FIELD_APP_ENV": "development" } },
+    "company-development": {
+      "developmentClient": true, "distribution": "internal", "environment": "preview",
+      "env": { "FIELD_APP_ENV": "development", "FIELD_CONNECTION": "company", "FIELD_REQUIRE_EAS_LINK": "true" },
+      "android": { "buildType": "apk" }, "ios": { "simulator": false }
+    },
+    "company-preview": {
+      "developmentClient": false, "distribution": "internal", "environment": "preview",
+      "env": { "FIELD_APP_ENV": "development", "FIELD_CONNECTION": "company", "FIELD_REQUIRE_EAS_LINK": "true" },
+      "android": { "buildType": "apk" }, "ios": { "simulator": false }
+    },
     "production": { "env": { "FIELD_APP_ENV": "production" } }
   }
 }
