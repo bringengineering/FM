@@ -4127,7 +4127,10 @@ describe("Firebase entrypoint metadata", () => {
       canonicalHttpRequest({}, { method: "GET", headers: { authorization: "" } }),
       missingToken.response,
     );
-    expect(missingToken.state).toMatchObject({ status: 401, body: { ok: false, error: { code: "cleaning_order_auth_required" } } });
+    expect(missingToken.state).toMatchObject({
+      status: 401, body: { ok: false, error: { code: "cleaning_order_auth_required" } },
+      headers: { "x-bring-cleaning-report-schema": "common-v2", "cache-control": "no-store" },
+    });
 
     registrations.adminVerifyIdToken.mockResolvedValueOnce({
       uid: "cleaning_member", email: "member@bring.test", email_verified: true,
