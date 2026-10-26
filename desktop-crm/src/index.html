@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="./company-wallboard-theme.css">
   <link rel="stylesheet" href="./cleaning-center.css">
   <link rel="stylesheet" href="./building-monthly-report.css">
+  <link rel="stylesheet" href="./life-service.css">
   <!-- 색·여백·모서리만 덮어쓰는 층. 항상 마지막에 온다. -->
   <link rel="stylesheet" href="./toss.css">
 </head>
@@ -133,6 +134,14 @@
           <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span class="nav-icon" aria-hidden="true">✦</span><b>클리닝센터</b><i class="nav-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5 12 15.5 18 9.5"/></svg></i></button>
           <div class="nav-folder-children cleaning-center-navigation" data-cleaning-pages-nav aria-label="클리닝센터 34개 화면"></div>
         </div>
+        <div class="nav-folder" data-nav-folder="life-service">
+          <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 9.5a11 11 0 0 1 15 0"/><path d="M7.5 12.8a6.6 6.6 0 0 1 9 0"/><path d="M10.6 16a2.2 2.2 0 0 1 2.8 0"/><circle cx="12" cy="19" r=".7"/></svg></span><b>생활서비스</b><i class="nav-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5 12 15.5 18 9.5"/></svg></i></button>
+          <div class="nav-folder-children">
+            <button class="nav-item nav-child" data-view="lifeToday"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/><path d="m9 15 2 2 4-4"/></svg></span><b>오늘 할 일</b><em id="navLifeTodayCount">0</em></button>
+            <button class="nav-item nav-child" data-view="lifeInbox"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4.5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9.5L5 20v-3.5a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/><path d="M8.5 9h7M8.5 12.5h4.5"/></svg></span><b>문의·상담</b></button>
+            <button class="nav-item nav-child" data-view="lifeBoard"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7.7 4.5v15M12 4.5v15M16.3 4.5v15"/></svg></span><b>가입 진행</b></button>
+          </div>
+        </div>
         <button class="nav-item" data-view="settings"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.1"/><path d="M19.6 14.4a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 0 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.7 13H3.4a2 2 0 0 1 0-4h.2a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V2a2 2 0 0 1 4 0v.2a1.6 1.6 0 0 0 2.8 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1.6z"/></svg></span><b>설정</b></button>
       </nav>
       <div class="sidebar-foot">
@@ -169,6 +178,8 @@
   <script src="./sales-core.js"></script>
   <script src="./sales-standards.js"></script>
   <script src="./sales-ui.js"></script>
+  <script src="./life-service-core.js"></script>
+  <script src="./life-service-ui.js"></script>
   <script src="./drive-import-ui.js"></script>
   <script src="./contract-schedule-core.js"></script>
   <script src="./contract-schedule-ui.js"></script>
