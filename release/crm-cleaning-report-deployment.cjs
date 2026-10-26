@@ -17,12 +17,41 @@ function runCommand(bin, args, options, exec = execFileSync) {
     const tool = bin === process.execPath ? "FIREBASE" : bin === "gcloud" ? "GCLOUD" : bin === "git" ? "GIT" : "COMMAND";
     const operations = { "--version": "VERSION", fetch: "FETCH", "rev-parse": "SOURCE", status: "STATUS", "ls-remote": "RESERVATION", auth: "AUTH", functions: "METADATA", storage: "BACKUP", "functions:list": "INVENTORY", deploy: "DEPLOY" };
     const operation = operations[args[bin === process.execPath ? 1 : 0]] || "UNKNOWN";
-    const stderr = String(error.stderr || "");
+    const stderr = String(error.stderr || "") + String(error.stdout || "");
     const reason = /permission.denied|forbidden|does not have.*permission/iu.test(stderr) ? "PERMISSION_DENIED"
       : /unauthenticated|invalid.grant|invalid.credentials|failed to authenticate/iu.test(stderr) ? "AUTH_FAILED"
       : /not.found|no such file|cannot find module/iu.test(stderr) || error.code === "ENOENT" ? "NOT_FOUND" : "FAILED";
     fail(`${tool}_${operation}_${reason}`);
   }
+}
+
+function safeDiagnostics(text) {
+  const services = new Set(["cloudfunctions.googleapis.com", "firebase.googleapis.com", "cloudresourcemanager.googleapis.com", "serviceusage.googleapis.com", "run.googleapis.com", "storage.googleapis.com", "oauth2.googleapis.com"]);
+  const statuses = [...String(text).matchAll(/\[status\]\s+\w+\s+https:\/\/([a-z0-9.-]+)\/[^\r\n]*?\s+(\d{3})\s*$/gmu)]
+    .filter(match => services.has(match[1])).map(match => ({ service: match[1], status: Number(match[2]) }));
+  const reasons = ["PERMISSION_DENIED", "UNAUTHENTICATED", "SERVICE_DISABLED", "IAM_PERMISSION_DENIED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "CONSUMER_INVALID", "BILLING_DISABLED"].filter(reason => String(text).includes(reason));
+  return { statuses, reasons };
+}
+
+async function preflight() {
+  if (process.env.GITHUB_ACTIONS !== "true" || !path.isAbsolute(process.env.RUNNER_TEMP || "")) fail("CI_REQUIRED");
+  planDeployment(require("./firebase-targets.json"), PROJECT);
+  const key = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+  if (key.type !== "service_account" || key.project_id !== PROJECT || !key.private_key || !key.client_email) fail("CREDENTIAL_INVALID");
+  const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, "cleaning-report-preflight-"));
+  const credential = path.join(dir, "credentials.json"), debug = path.join(ROOT, "firebase-debug.log");
+  if (fs.existsSync(debug)) fail("PREFLIGHT_FRESH_CHECKOUT_REQUIRED");
+  try {
+    fs.writeFileSync(credential, JSON.stringify(key), { mode: 0o600, flag: "wx" });
+    let stdout = "", stderr = "", exitCode = 0;
+    try { stdout = execFileSync(process.execPath, [path.join(ROOT, "company-site/node_modules/firebase-tools/lib/bin/firebase.js"), "functions:list", "--project", PROJECT, "--json"],
+      { cwd: ROOT, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: credential } }); }
+    catch (error) { stdout = String(error.stdout || ""); stderr = String(error.stderr || ""); exitCode = Number.isInteger(error.status) ? error.status : 1; }
+    const log = fs.existsSync(debug) ? fs.readFileSync(debug, "utf8") : "";
+    const diagnostics = safeDiagnostics(stdout + "\n" + stderr + "\n" + log);
+    console.log(JSON.stringify({ stage: "read_only_inventory_preflight", ok: exitCode === 0, exitCode, projectMatches: true, ...diagnostics }));
+    if (exitCode !== 0) process.exitCode = 1;
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); if (fs.existsSync(debug)) fs.unlinkSync(debug); }
 }
 
 function planDeployment(manifest, project) {
@@ -103,5 +132,5 @@ async function deploy() {
     fs.rmSync(privateDir, { recursive: true, force: true });
   }
 }
-if (require.main === module) deploy().catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
-module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand };
+if (require.main === module) (process.argv[2] === "--preflight" ? preflight() : deploy()).catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
+module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics };
