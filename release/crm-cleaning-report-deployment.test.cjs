@@ -7,6 +7,8 @@ test("preflight diagnostics omit credentials, query strings, identities and arbi
   const text = "Authorization: Bearer PRIVATE\n[apiv2][status] GET https://cloudfunctions.googleapis.com/v2/projects/private?key=PRIVATE 403\nPERMISSION_DENIED PRIVATE";
   assert.deepEqual(safeDiagnostics(text), { statuses: [{ service: "cloudfunctions.googleapis.com", status: 403 }], reasons: ["PERMISSION_DENIED"] });
   assert.deepEqual(safeDiagnostics("[status] GET https://untrusted.example/private 403\nPRIVATE"), { statuses: [], reasons: [] });
+  assert.deepEqual(safeDiagnostics("TypeError PRIVATE credential"), { statuses: [], reasons: ["RUNTIME_FAILED"] });
+  assert.deepEqual(safeDiagnostics("ERROR unrecognized arguments: private"), { statuses: [], reasons: ["INVALID_ARGUMENT"] });
   assert.throws(() => runCommand(process.execPath, ["firebase.js", "functions:list"], {}, () => { throw Object.assign(new Error("private"), { stdout: "PERMISSION_DENIED PRIVATE" }); }), /^Error: CLEANING_REPORT_FIREBASE_INVENTORY_PERMISSION_DENIED$/);
 });
 test("command failures reveal only closed operation and reason codes", () => {
