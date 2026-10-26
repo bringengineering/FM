@@ -463,6 +463,7 @@
       },
       customers: [], buildings: [], activities: [], contracts: [], contractReadiness: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [], buildingDocuments: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
+      lifeLeads: [], lifeContacts: [], lifeApplications: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
         createAccessRole({ name: "업무 담당자", canView: true, canEdit: true, canDownload: false, canManageSecurity: false }),
@@ -518,6 +519,10 @@
       salesActivities: Array.isArray(src.salesActivities) ? src.salesActivities.filter(Boolean) : [],
       salesEvents: Array.isArray(src.salesEvents) ? src.salesEvents.filter(Boolean) : [],
       salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
+      // 생활서비스(인터넷·TV·렌탈). 규칙은 life-service-core.js 가 읽을 때 다시 맞춘다.
+      lifeLeads: Array.isArray(src.lifeLeads) ? src.lifeLeads.filter(item => item && typeof item === "object" && item.id) : [],
+      lifeContacts: Array.isArray(src.lifeContacts) ? src.lifeContacts.filter(item => item && typeof item === "object" && item.id) : [],
+      lifeApplications: Array.isArray(src.lifeApplications) ? src.lifeApplications.filter(item => item && typeof item === "object" && item.id) : [],
       updatedAt: src.updatedAt || iso()
     };
   }

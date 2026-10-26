@@ -74,6 +74,7 @@
     { workspace: "operations", navFolder: "documents", view: "buildingDocuments", title: "문서관리", description: "건물 문서함·서식·정보·열쇠" },
     { workspace: "operations", navFolder: "workflow", view: "aiAssistant", title: "워크플로·AI", description: "AI 비서" },
     { workspace: "operations", navFolder: "cleaning-center", view: "cleaningCenter", title: "클리닝센터", description: "상담·견적·현장작업·고객관리 연결" },
+    { workspace: "operations", navFolder: "life-service", view: "lifeToday", title: "생활서비스", description: "인터넷·TV·렌탈 상담·가입·사은품" },
     { workspace: "marketing", navFolder: "", view: "", title: "마케팅", description: "마케팅 업무와 콘텐츠 관리" },
   ]);
 

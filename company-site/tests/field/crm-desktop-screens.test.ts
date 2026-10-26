@@ -28,6 +28,9 @@ const indexHtml = fs.readFileSync(path.join(SRC, "index.html"), "utf8");
 // **그 화면의 글자가 실제로 나왔는지**를 본다. 안 나왔으면 안 그려진 것이다.
 const SCREENS: Array<[string, string]> = [
   ["customers", "고객"],
+  ["lifeToday", "지금 연락할 고객"],
+  ["lifeInbox", "문의·상담"],
+  ["lifeBoard", "가입 1건마다"],
   ["partnerVendors", "협력"],
   ["vacancies", "공실"],
   ["quotes", "견적"],
@@ -575,12 +578,12 @@ describe("desktop CRM screens actually render", () => {
     booted = await boot();
   }, 60000);
 
-  it("처음 화면이 운영보드를 포함한 열 폴더를 다 내준다", () => {
+  it("처음 화면이 운영보드를 포함한 열한 폴더를 다 내준다", () => {
     const cards = [...booted.document.querySelectorAll("[data-workspace-enter]")];
-    expect(cards.length).toBe(10);
+    expect(cards.length).toBe(11);
     // 폴더를 고르는 자리는 여기뿐이다. 하나라도 빠지면 그 폴더는 갈 길이 없다.
     const folders = cards.map(card => (card as HTMLElement).dataset.workspaceEnterFolder || "");
-    for (const folder of ["company-wallboard", "customer-management", "project", "calendar", "office", "bi", "documents", "workflow", "cleaning-center"]) {
+    for (const folder of ["company-wallboard", "customer-management", "project", "calendar", "office", "bi", "documents", "workflow", "cleaning-center", "life-service"]) {
       expect(folders, folder).toContain(folder);
     }
   });

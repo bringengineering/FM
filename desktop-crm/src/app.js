@@ -4,6 +4,8 @@
   const Core = window.BringCore;
   const Sales = window.BringSalesCore;
   const SalesUI = window.BringSalesUI;
+  const LifeCore = window.BringLifeServiceCore;
+  const LifeUI = window.BringLifeServiceUI;
   const SalesStandards = window.BringSalesStandards;
   const DriveImportUI = window.BringDriveImportUI;
   const WorkManagement = window.BringWorkManagement;
@@ -216,6 +218,9 @@
     cleaningCenter: ["고객 응대부터 현장 완료까지", "클리닝센터"],
     cleaningCti: ["고객 전화 상담 및 후속 기록", "CTI 상담센터"],
     cleaningAnalytics: ["청소 주문과 장부를 기준으로 운영을 분석합니다", "청소 운영 분석"],
+    lifeToday: ["인터넷·TV·렌탈 · 오늘 연락할 고객과 막힌 가입 건", "생활서비스 · 오늘 할 일"],
+    lifeInbox: ["인터넷·TV·렌탈 · 문의부터 원큐 접수까지", "생활서비스 · 문의·상담"],
+    lifeBoard: ["인터넷·TV·렌탈 · 접수·설치·사은품·정산", "생활서비스 · 가입 진행"],
     cases: ["접수부터 사후관리까지", "민원 관리"],
     payments: ["업무·계약·건물주 입금 일정을 한눈에", "캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
@@ -863,7 +868,8 @@
     "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
     "serviceRecords", "serviceContracts", "serviceSchedules",
     "securityAssets", "auditLogs", "securityIncidents",
-    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
+    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+    "lifeLeads", "lifeContacts", "lifeApplications"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1486,7 +1492,33 @@
       Sales.createSalesOpportunity({ id: "sop_demo_01", prospectId: "spr_demo_01", unitId: "sun_demo_01", serviceType: "waterproofing", stage: "quote_requested", requirements: "데모 지하실 방수 견적", owner: "김현진", dueAt: date(3), quoteAmount: 850000 }, demoActor),
       Sales.createSalesOpportunity({ id: "sop_demo_02", prospectId: "spr_demo_03", serviceType: "common_cleaning", stage: "revenue_recorded", requirements: "데모 공용부 청소", owner: "황우중", revenueAmount: 70000, evidenceNote: "화면검증용 매출 기록" }, demoActor)
     ];
+    addLifeServiceDemo(data, date);
     return data;
+  }
+
+  // 화면 확인용(데모 모드)에서만 쓰는 가상 생활서비스 기록. 실제 저장소에는 들어가지 않는다.
+  function addLifeServiceDemo(data, date) {
+    const intern = { name: "데모 인턴", email: "", isAdmin: false };
+    const hours = offset => new Date(Date.now() + offset * 3600000);
+    try {
+      LifeCore.ensureStore(data);
+      const minji = LifeCore.createLead(data, { name: "김민지(데모)", phone: "010-0000-1001", customerType: "personal", source: "kakao", inquiryText: "인터넷이랑 TV 같이 바꾸고 싶어요" }, intern, hours(-30));
+      LifeCore.recordContact(data, minji.id, { result: "consulting", memo: "KT 사용 중, 11월 약정 만료" }, intern, hours(-29));
+      LifeCore.updateConsult(data, minji.id, { requestType: "change", installAddress: "원주시 단계동 (데모)", currentCarrier: "KT", currentProduct: "인터넷 500M + TV", currentMonthlyFee: "모름", contractEndMonth: "2026-11", familyBundle: "배우자 SKT 휴대폰 결합 검토" }, intern, hours(-29));
+      LifeCore.addCheck(data, minji.id, { owner: "oneq", text: "배우자 SKT 휴대폰 결합 할인 가능한지" }, intern, hours(-29));
+      const app = LifeCore.createApplication(data, minji.id, { carrier: "LG U+", product: "인터넷 500M + TV 기본", oneqNo: "DEMO-1028-07", agreedAt: date(-1), promisedGift: 400000, quoteSummary: "데모 견적", notice: "on", recording: "on", refundTerms: "on", happycallNotice: "on" }, intern, hours(-20));
+      LifeCore.setTrack(data, app.id, "intakeStatus", "happycall_wait", { note: "해피콜 부재 · 평일 18시 이후 전달" }, intern, hours(-18));
+      const cafe = LifeCore.createLead(data, { name: "○○카페(데모)", phone: "010-0000-1002", customerType: "store", source: "homepage", inquiryText: "가게 인터넷이 자주 끊겨요" }, intern, hours(-3));
+      LifeCore.recordContact(data, cafe.id, { result: "callback", nextContactAt: hours(2).toISOString(), memo: "점심 장사 끝나고" }, intern, hours(-2));
+      LifeCore.createLead(data, { name: "정우진(데모)", phone: "010-0000-1003", customerType: "personal", productLine: "rental", source: "oneq_mall", contactMethod: "customer_inquiry", inquiryText: "정수기 렌탈 문의" }, intern, hours(-1));
+      const subin = LifeCore.createLead(data, { name: "이수빈(데모)", phone: "010-0000-1004", source: "existing_customer", contactMethod: "staff_outbound" }, intern, hours(-200));
+      const done = LifeCore.createApplication(data, subin.id, { carrier: "SK브로드밴드", product: "인터넷 500M", oneqNo: "DEMO-1015-02", agreedAt: date(-9), promisedGift: 300000, notice: "on", recording: "on", refundTerms: "on", happycallNotice: "on" }, intern, hours(-199));
+      LifeCore.setTrack(data, done.id, "intakeStatus", "forwarded", {}, intern, hours(-190));
+      LifeCore.updateInstallPlan(data, done.id, { installConfirmedAt: hours(-30).toISOString() }, intern, hours(-180));
+      LifeCore.recordInstallReport(data, done.id, { verifyInstalled: "on", verifyWorking: "on", channel: "phone", requestGift: "1" }, intern, hours(-26));
+    } catch (_error) {
+      // 데모 기록이 규칙 변경으로 깨져도 데모 화면 전체를 막지 않는다.
+    }
   }
 
   function pageMeta() {
@@ -1546,12 +1578,14 @@
     document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
     document.getElementById("navRelationshipCount").textContent = store.customers.filter(customerIsRelationshipCustomer).length;
     document.getElementById("navPartnerVendorCount").textContent = partnerVendorRows().length;
+    const lifeTodayCount = document.getElementById("navLifeTodayCount");
+    if (lifeTodayCount) lifeTodayCount.textContent = LifeCore.todayQueue(store, new Date(), { isAdmin: canAdministerSecurity() }).counts.attention;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
     const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
     const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
     const paymentCalendarView = currentView === "payments";
-    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView)
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView) || LifeUI.isLifeView(currentView)
       || currentView === "buildingMonthlyReports";
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
@@ -1605,6 +1639,7 @@
     else if (window.BringCleaningCenterPages.screenByView(currentView) && currentView !== "cleaningCti" && currentView !== "cleaningAnalytics") renderCleaningCenter();
     else if (currentView === "cleaningCti") renderCleaningCtiCenter();
     else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
+    else if (LifeUI.isLifeView(currentView)) renderLifeService();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
@@ -1669,6 +1704,82 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
+  }
+
+  // 생활서비스(인터넷·TV·렌탈) 화면은 LifeUI 가 그리고 이벤트도 받는다. 바꾸는 일은
+  // commitLifeService 한 곳으로 돌아와 기존 공용 저장 경로를 탄다:
+  // 권한 확인 → 금지 정보 검사 → 감사 기록 → 서버 저장 → 실패하면 되돌림.
+  function lifeServiceActor() {
+    const user = currentAuth && currentAuth.user || {};
+    return { name: user.displayName || user.email || store.settings.owner || "담당자", email: user.email || "", uid: user.uid || "", isAdmin: canAdministerSecurity() };
+  }
+
+  function renderLifeService() {
+    LifeUI.render({
+      container: main,
+      view: currentView,
+      store,
+      Core: LifeCore,
+      customers: store.customers || [],
+      actor: lifeServiceActor(),
+      canWrite: canWriteCRM(),
+      isAdmin: canAdministerSecurity(),
+      now: () => new Date(),
+      toast: (message, type) => showToast(message, type),
+      go: view => {
+        if (!LifeUI.isLifeView(view)) return;
+        currentView = view;
+        render();
+      },
+      rerender: () => { if (LifeUI.isLifeView(currentView)) renderLifeService(); },
+      commit: commitLifeService,
+    });
+  }
+
+  async function commitLifeService(change) {
+    if (!canWriteCRM()) {
+      showToast("조회 전용 계정은 내용을 바꿀 수 없습니다.", "error");
+      return false;
+    }
+    try {
+      Core.assertNoProhibitedSecrets(change && change.raw || {});
+    } catch (error) {
+      showToast(error.message || "실제 비밀번호·주민등록번호·계좌번호는 저장할 수 없습니다.", "error");
+      return false;
+    }
+    const beforeStore = cloneStore(store);
+    let result;
+    try {
+      LifeCore.ensureStore(store);
+      result = change.mutate(store);
+      Core.assertNoProhibitedSecrets({ lifeLeads: store.lifeLeads, lifeContacts: store.lifeContacts, lifeApplications: store.lifeApplications });
+    } catch (error) {
+      store = beforeStore;
+      ensureSalesStore(store);
+      showToast(error.message || "내용을 확인해 주세요.", "error");
+      return false;
+    }
+    logAudit({
+      category: change.category || "변경", targetType: change.targetType || "생활서비스",
+      targetId: String(change.targetId || (result && result.id) || ""), targetLabel: String(change.targetLabel || ""),
+      action: String(change.label || "생활서비스 변경"), reason: "생활서비스 업무"
+    });
+    render();
+    try {
+      await saveStoreNow();
+      render();
+      if (change.success) showToast(change.success, "success");
+      return result || true;
+    } catch (error) {
+      store = cloneStore(beforeStore);
+      ensureSalesStore(store);
+      queuedSave = null;
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      render();
+      showToast(error.message || "회사 서버에 저장하지 못했습니다. 다시 시도해 주세요.", "error");
+      return false;
+    }
   }
 
   function isCleaningPageView(view = currentView) {
@@ -20458,7 +20569,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk"].includes(query.get("view"))) currentView = query.get("view");
+      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk", "lifeToday", "lifeInbox", "lifeBoard"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
