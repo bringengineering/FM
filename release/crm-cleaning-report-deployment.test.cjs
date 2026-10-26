@@ -1,8 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { planDeployment, selectedFunction, verifyAfter, backupUri } = require("./crm-cleaning-report-deployment.cjs");
+const { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand } = require("./crm-cleaning-report-deployment.cjs");
 const manifest = require("./firebase-targets.json");
 const row = (name = "cleaningOrdersApi", codeHash = "a".repeat(40)) => ({ name, codeHash, region: "asia-northeast3", state: "ACTIVE", codebase: "field-platform" });
+test("command failures reveal only closed operation and reason codes", () => {
+  const exec = stderr => () => { throw Object.assign(new Error("private message"), { stderr }); };
+  assert.throws(() => runCommand("gcloud", ["functions", "describe"], {}, exec("PERMISSION_DENIED private credential")), /^Error: CLEANING_REPORT_GCLOUD_METADATA_PERMISSION_DENIED$/);
+  assert.throws(() => runCommand(process.execPath, ["firebase.js", "functions:list"], {}, exec("Cannot find module private path")), /^Error: CLEANING_REPORT_FIREBASE_INVENTORY_NOT_FOUND$/);
+  assert.throws(() => runCommand("gcloud", ["auth"], {}, exec("invalid_grant private credential")), /^Error: CLEANING_REPORT_GCLOUD_AUTH_AUTH_FAILED$/);
+  assert.equal(runCommand("git", ["status"], {}, () => "clean"), "clean");
+});
 test("report deployment selects only the existing cleaning orders function", () => {
   assert.deepEqual(planDeployment(manifest, "bring-fm"), { project: "bring-fm", selectors: ["functions:field-platform:cleaningOrdersApi"] });
   assert.throws(() => planDeployment(manifest, "bring-fm-hj"));
