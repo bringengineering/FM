@@ -2,6 +2,8 @@
 
 2026-10-26 · API 설계 v1 · 아래 경로는 **신규 제안**이며 배포된 endpoint 목록이 아니다.
 
+후속 구현: F01 `/context`, F02 `/jobs` 및 현장 재확인용 `/jobs/{id}` 읽기 경로의 소스와 클라이언트를 구현했다. 아직 미배포다. 현재 capabilities는 `readJobs`만 true이고 촬영·PDF 보관·발송은 false다. 설계 예시의 준비 완료 값을 현재 상태로 해석하지 않는다. [실제 구현 응답과 남은 단계](employee-login-2026-10-26.md).
+
 ## 1. 공통 계약
 
 - 논리 base path: `/v1/field-app`. 실제 hostname·Firebase 프로젝트·region은 M0에서 확인한다.

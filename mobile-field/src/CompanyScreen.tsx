@@ -1,0 +1,80 @@
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { companyConnectionEnabled, createCompanySession } from './auth/runtime';
+import type { CompanySession } from './auth/session';
+
+const messages: Record<string, string> = {
+  AUTH_REQUIRED: '회사 계정 인증이나 앱 인증을 확인하지 못했습니다. 다시 로그인해 주세요.',
+  LOGIN_FAILED: '로그인하지 못했습니다. 계정·비밀번호와 회사 계정 활성 상태를 확인해 주세요.',
+  NATIVE_APP_NOT_CONFIGURED: '이 설치본의 회사 연결 설정이 준비되지 않았습니다.',
+  SERVER_UNAVAILABLE: '회사 서버 연결을 확인하지 못했습니다. 잠시 후 다시 로그인해 주세요.',
+  NETWORK_UNCERTAIN: '네트워크 연결을 확인한 뒤 다시 로그인해 주세요.',
+  RATE_LIMITED: '요청이 많습니다. 1분 후 다시 시도해 주세요.',
+  RESOURCE_NOT_FOUND: '현장의 배정이나 상태가 변경되었습니다. 다시 로그인해 목록을 확인해 주세요.',
+  SERVER_RESPONSE_INVALID: '서버와 앱의 연결 규격이 맞지 않습니다. 관리자에게 문의해 주세요.',
+};
+function Action({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={[styles.button, disabled && { opacity: 0.45 }]}><Text style={styles.buttonText}>{label}</Text></Pressable>;
+}
+export function CompanyScreen({ openSample }: { openSample: () => void }) {
+  const [session, setSession] = useState<CompanySession>(); const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!companyConnectionEnabled || Platform.OS === 'web') return;
+    let active = true; let created: CompanySession | undefined;
+    void createCompanySession().then(value => {
+      created = value; if (!active) { value.dispose(); return; } setSession(value); void value.restore();
+    }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; created?.dispose(); };
+  }, []);
+  return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <Text style={styles.brand}>BRING CARE · 현장노트</Text><Text style={styles.title}>내 현장, 내 작업 기록</Text>
+    <Text style={styles.copy}>직원 개인 CRM 계정으로 회사에 연결합니다.</Text>
+    {session ? <SessionScreen session={session} /> : <View style={styles.card}>
+      <Text style={styles.heading}>회사 계정 로그인</Text>
+      <Text style={styles.copy}>{failed ? messages.NATIVE_APP_NOT_CONFIGURED : companyConnectionEnabled && Platform.OS !== 'web' ? '회사 연결을 준비하고 있습니다.' : '직원 로그인과 현장 조회는 회사 연결 설정이 포함된 Android·iPhone 개발 앱에서 사용할 수 있습니다.'}</Text>
+      {companyConnectionEnabled && Platform.OS !== 'web' && !failed && <ActivityIndicator accessibilityLabel="회사 연결 준비 중" />}
+      <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
+    </View>}
+    {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
+    <Text style={styles.small}>개발 단계 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
+  </ScrollView></SafeAreaView>;
+}
+function SessionScreen({ session }: { session: CompanySession }) {
+  const state = useSyncExternalStore(session.subscribe, session.snapshot);
+  const [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [hidden, setHidden] = useState(AppState.currentState !== 'active');
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', next => {
+      if (next !== 'active') { setPassword(''); setHidden(true); }
+      else { void session.refresh().finally(() => setHidden(false)); }
+    }); return () => listener.remove();
+  }, [session]);
+  if (hidden) return <View style={styles.card}><Text style={styles.copy}>회사 정보를 보호하고 있습니다.</Text></View>;
+  if (state.phase === 'loading') return <View style={styles.card}><ActivityIndicator accessibilityLabel="회사 권한·현장 확인 중" /><Text style={styles.copy}>회사 권한과 현장을 확인하고 있습니다.</Text></View>;
+  if (state.phase !== 'ready') return <View style={styles.card}>
+    <Text style={styles.heading}>회사 계정 로그인</Text>
+    {state.error && <Text accessibilityRole="alert" style={styles.error}>{messages[state.error] ?? messages.LOGIN_FAILED}</Text>}
+    <Text style={styles.copy}>이메일</Text><TextInput accessibilityLabel="직원 계정 이메일" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" maxLength={254} style={styles.input} />
+    <Text style={styles.copy}>비밀번호</Text><TextInput accessibilityLabel="직원 계정 비밀번호" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" maxLength={1024} style={styles.input} />
+    <Action label="로그인" disabled={!email.trim() || !password} onPress={() => { const input = password; setPassword(''); void session.login(email, input); }} />
+    <Text style={styles.small}>CRM에서 초대·계정 설정을 완료한 직원만 이용할 수 있습니다.</Text>
+  </View>;
+  const selected = state.selected;
+  return <>
+    <View style={styles.card}><Text style={styles.heading}>{state.context?.actor.role === 'admin' ? '회사 진행 현장' : '내 배정 현장'}</Text><Text style={styles.copy}>현재 회사 권한을 확인했습니다.</Text><Action label="현장 새로고침" onPress={() => void session.refresh()} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
+    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.buildingName}</Text><Text style={styles.copy}>{selected.title}</Text><Text style={styles.copy}>{selected.address}</Text><Text style={styles.copy}>작업기한 {selected.dueDate || '미지정'}</Text><Text style={styles.small}>현장 배정과 최신 상태를 다시 확인했습니다. 이 화면의 촬영·저장 연결은 다음 단계에서 제공됩니다.</Text><Action label="현장 목록으로" onPress={() => void session.refresh()} /></View> : <>
+      {!state.page?.jobs.length && <View style={styles.card}><Text style={styles.copy}>이 페이지에 조회 가능한 현장이 없습니다. CRM에서 건물이 연결된 업무의 담당자와 진행 상태를 확인해 주세요.</Text></View>}
+      {state.page?.jobs.map(job => <View style={styles.card} key={job.id}><Text style={styles.heading}>{job.buildingName}</Text><Text style={styles.copy}>{job.title}</Text><Text style={styles.copy}>{job.address}</Text><Text style={styles.small}>{({ assigned: '배정됨', doing: '진행 중', returned: '보완 요청' })[job.status]} · 기한 {job.dueDate || '미지정'}</Text><Action label="현장 확인" onPress={() => void session.select(job.id)} /></View>)}
+      {state.page?.nextCursor && <Action label="다음 현장 보기" onPress={() => void session.refresh(state.page!.nextCursor)} />}
+    </>}
+  </>;
+}
+const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: '#f5f7fb' }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
+  brand: { fontSize: 13, fontWeight: '700', color: '#2367d1', marginTop: 20 }, title: { fontSize: 29, fontWeight: '800', color: '#182334' },
+  heading: { fontSize: 19, fontWeight: '700', color: '#182334' }, copy: { fontSize: 15, lineHeight: 23, color: '#435167' }, small: { fontSize: 12, lineHeight: 19, color: '#637086' },
+  card: { backgroundColor: '#fff', borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: '#e0e7f1' },
+  input: { borderWidth: 1, borderColor: '#c4cfdf', borderRadius: 10, padding: 13, fontSize: 16, color: '#182334', backgroundColor: '#fff' },
+  button: { backgroundColor: '#2367d1', borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' }, error: { color: '#b3293b', lineHeight: 22 },
+});

@@ -127,7 +127,7 @@ describe('local wire integration (not live company services)', () => {
     expect(report.buildingId).toBe('building-a');
     expect(report.items.find(i => i.key === 'entrance')?.before).toEqual([expect.objectContaining({ id: 'photo-a', caption: '합성 전송 시험' })]);
     expect(f.calls.filter(c => c.method === 'PUT')).toHaveLength(2);
-  });
+  }, 15_000); // Real sockets plus SQLite reopen may exceed 5s during native builds on Windows.
 
   it.each(['identity', 'appCheck', 'access', 'job'] as const)('blocks rejected %s across HTTP while retaining the original', async reject => {
     const f = await fixture({ reject }); await f.run();

@@ -11,6 +11,7 @@ import { catalog, reviewIssues } from './domain/report';
 import { persistCapture } from './capture';
 import { samplePhoto } from './sample-photo';
 import { safeMessage } from './errors';
+import { CompanyScreen } from './CompanyScreen';
 
 type Screen = 'jobs' | 'capture' | 'photos' | 'report' | 'pdf' | 'send' | 'sync' | 'settings';
 const empty: Workspace = { visits: [], photos: [] };
@@ -36,7 +37,10 @@ function PhotoImage({ vault, photo }: { vault: Vault; photo: Photo }) {
   if (loaded.id === photo.id && loaded.failed) return <Note>사진을 읽지 못했습니다. 원본을 보존했습니다. 다른 사진을 선택한 뒤 다시 확인해 주세요.</Note>;
   return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={s.photo} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
 }
-export default function App() { return <SafeAreaProvider><FieldApp /></SafeAreaProvider>; }
+export default function App() {
+  const [sample, setSample] = useState(false);
+  return <SafeAreaProvider>{sample ? <FieldApp /> : <CompanyScreen openSample={() => setSample(true)} />}</SafeAreaProvider>;
+}
 function FieldApp() {
   const [vault, setVault] = useState<Vault>();
   const [workspace, setWorkspace] = useState<Workspace>(empty);

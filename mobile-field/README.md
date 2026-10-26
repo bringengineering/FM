@@ -2,7 +2,7 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 현재 실행 화면은 가상 현장에 한정된다. 실제 로그인·CRM 현장 조회·Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다.
+이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. 기본 실행은 가상 현장 미리보기다. 회사 연결은 기기 인증 설정·API 배포·실기기 시험 전이며, Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 로그인·조회 구현 결과](../docs/field-mobile/employee-login-2026-10-26.md)를 참고한다.
 
 ## 이번에 구현한 범위
 
@@ -12,7 +12,7 @@
 - 보고서 본문·후속 조치·항목 상태·미실시 사유와 수동 검토 기록. PC의 순수 `work-report-core.js`를 직접 재사용한다. 사진 추가·분류·초안 수정 시 이전 검토 확인을 무효화한다.
 - 불러오기·내용 hash 검증·revision 충돌·계정 격리. 전송 상태 변화는 보고서 본문 revision을 바꾸지 않는다.
 - 서버 연동용 전송 어댑터와 단일 실행 큐. 예약/완료 키 유지, 서버 offset 조회, 응답 유실 후 재개, 인증 철회 중단, Drive+CRM 확인 전 ready 금지. **현재 UI에는 활성 연결하지 않았다.**
-- `functions/src/field-mobile/access.ts`에 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. 직원 본인 UID 할당과 관리자 발송 경계를 검사한다. **HTTP 함수 export나 배포는 하지 않았다.**
+- 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. `fieldMobileApi` 읽기 함수 export와 회사 로그인·현장 목록/상세 화면을 추가했다. 기존 `workOrders.assigneeUid`로 담당자를 확인한다. **운영 API 배포는 하지 않았다.**
 
 ## 실행
 
@@ -42,7 +42,8 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 ## 검증 결과
 
 - TypeScript 검사 통과.
-- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합 테스트 **57개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합·직원 로그인 테스트 **85개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- Functions 전체 테스트 **1,370개 통과, 기존 14개 제외**. TypeScript 서버 빌드 통과.
 - 기존 데스크톱 보고서 core 테스트 **24개 통과**.
 - Expo Doctor **20/20 통과**.
 - Android·iOS Hermes 번들과 웹 번들 생성 성공. APK/IPA 생성·실기기 시험과 구별한다.
@@ -56,9 +57,9 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 
 ## 실제 연결 전에 남은 것
 
-1. 현재 회사 프로젝트의 Android/iOS 앱 등록과 기기 attestation. 읽기 전용 CLI 확인에서는 `bring-fm`에 웹 앱 한 개만 있다. 실제 고객 데이터는 조회하지 않았다.
-2. CRM 업무 할당의 개별 Auth UID 연결 확인과 최소 현장 projection. 기존 field-v2의 `operatorId`는 공유 계정 안의 표시용 선택이므로 직원 권한으로 쓰지 않는다.
-3. 인증된 Field API 배포 경로, 방문 생성·revision 조정·사진 예약 계약 구현. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다.
+1. Android/iOS 개발 앱 등록은 완료했다. 회사 서명·개발자 설정에 맞는 기기 attestation과 설치본을 준비해야 한다. 다운로드한 플랫폼 설정은 `native-config/`에 있고 Git에서 제외한다.
+2. CRM 업무지시의 `assigneeUid`를 사용하는 최소 조회 projection을 구현했다. 기존 field-v2의 공유 `operatorId`는 사용하지 않는다. 실제 직원의 현장 조회는 아직 시험하지 않았다.
+3. 읽기 API 배포와 `assigneeUid` 인덱스 적용, 방문 생성·revision 조정·사진 예약 계약 구현. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다.
 4. 회사가 허용한 서버 Drive connector와 활동사진·문서함 mapping. 기존 PC의 개인 토큰을 공용 서버 토큰으로 전환하지 않는다.
 5. 서버 이미지 검증·Drive 보관·CRM 연결·PDF renderer와 복구 작업자, 관리자 검토/공통 발송 claim. 이 코드에 실제 NCP 메시지 API 호출은 없다.
 6. 실제 Android/iPhone에서 SQLCipher·키 유실·저장소 부족·재시작·사진 회전/HEIC·업데이트를 시험한다. 촬영 캐시 저장 실패 복구, 자동 백업(특히 iOS 제외 정책), 화면 가림·앱 종료, native SDK 동작 검증도 남아 있다.
@@ -68,6 +69,6 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 
 ## 의존성 상태
 
-lockfile을 포함한다. 2026-10-26 `npm audit`에서 Vitest 이슈는 4.1.12로 해소했다. 남은 high 5건은 Expo 개발 CLI의 `node-forge`/`zod` 전이 경로와 상위 패키지 집계다. 호환성을 깨는 강제 downgrade/major override는 적용하지 않았다. 실제 패치 또는 대체 도구 검증을 출시 조건에 포함하며, 이 개발 서버는 외부 네트워크에 공개하지 않는다.
+lockfile을 포함한다. Vitest 이슈는 4.1.12로 해소했다. RN Firebase 27.1.0 추가 시 포함된 Firebase 웹 패키지의 오래된 gRPC 전이 의존성은 같은 major의 `@grpc/grpc-js` 1.14.6으로 고정했다. 2026-10-26 최종 audit은 high 8건, critical 0건이며 근본 경고는 기존 Expo 개발 CLI의 `node-forge`/`zod` 2종이다. RN Firebase의 Expo peer 경로가 상위 패키지 집계에 추가됐다. 호환성을 깨는 Expo downgrade나 무검증 주요 버전 교체는 적용하지 않았다. 실제 패치 또는 대체 도구 검증을 출시 조건에 포함하며, 이 개발 서버는 외부 네트워크에 공개하지 않는다.
 
 공식 자료: [Expo SQLite/SQLCipher](https://docs.expo.dev/versions/latest/sdk/sqlite/), [Expo Camera](https://docs.expo.dev/versions/latest/sdk/camera/), [Native App Check](https://rnfirebase.io/app-check/usage).

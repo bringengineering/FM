@@ -35,7 +35,7 @@ export async function authorizeMobile(headers: { authorization: string; appCheck
   let access: unknown;
   try { access = await deps.readAccess(identity.uid); } catch { throw new MobileAccessError('MOBILE_ACCESS_DENIED'); }
   if (!object(access) || access.enabled !== true || access.mustChangePassword === true || access.accountSetupPending === true
-    || access.deletionPending === true || access.marketingRole === 'marketing'
+    || access.deletionPending === true || !!access.deletedAt || access.marketingRole === 'marketing'
     || typeof access.email !== 'string' || access.email.trim().toLowerCase() !== identity.email.trim().toLowerCase()
     || (access.role !== 'member' && access.role !== 'admin')) throw new MobileAccessError('MOBILE_ACCESS_DENIED');
   return { uid: identity.uid, role: access.role };

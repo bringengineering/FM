@@ -19,6 +19,7 @@
 | [implementation-plan.md](implementation-plan.md) | 개발 순서, 실기기 검증, 출시 준비와 진행 조건 |
 | [design-registry.json](design-registry.json) | 설계 상태·한도·API 목록의 기계 판독용 기준 |
 | [integration-verification-2026-10-26.md](integration-verification-2026-10-26.md) | 운영 준비 상태 읽기 확인, 로컬 통합 시험, 실제 연결에 남은 작업 |
+| [employee-login-2026-10-26.md](employee-login-2026-10-26.md) | 직원 로그인·현장 조회 구현, Android/iOS 개발 앱 등록, 설치 준비 |
 
 ## 확정한 구성
 

@@ -1,12 +1,14 @@
 node_modules/
 .expo/
 dist/
+dist-company/
 android/
 ios/
 .env*
 !.env.example
 google-services.json
 GoogleService-Info.plist
+native-config/
 *.jks
 *.keystore
 *.mobileprovision

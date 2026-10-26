@@ -43,11 +43,11 @@ export function assertUpload(value: unknown): UploadStatus {
   return v;
 }
 export class FieldApiClient implements UploadApi {
-  constructor(private base: string, private uid: string, private credentials: () => Promise<Credentials>, private fetcher: typeof fetch = fetch) {
+  constructor(private base: string, protected uid: string, private credentials: () => Promise<Credentials>, private fetcher: typeof fetch = fetch) {
     const url = new URL(base);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.pathname.endsWith('/v1/field-app')) throw new FieldError('API_CONFIGURATION_INVALID');
   }
-  private async request(path: string, method: string, body: string | Uint8Array | undefined, signal: AbortSignal, headers: Record<string, string> = {}): Promise<unknown> {
+  protected async request(path: string, method: string, body: string | Uint8Array | undefined, signal: AbortSignal, headers: Record<string, string> = {}): Promise<unknown> {
     if (signal.aborted) throw new FieldError('SYNC_CANCELLED');
     let credentials: Credentials;
     try { credentials = await this.credentials(); } catch { throw new FieldError('AUTH_REQUIRED'); }
@@ -65,7 +65,7 @@ export class FieldApiClient implements UploadApi {
       });
       if (!response.ok) {
         const code = response.status === 401 || response.status === 403 ? 'AUTH_REQUIRED'
-          : response.status === 409 ? 'REVISION_CONFLICT' : response.status === 429 ? 'RATE_LIMITED' : 'SERVER_UNAVAILABLE';
+          : response.status === 404 ? 'RESOURCE_NOT_FOUND' : response.status === 409 ? 'REVISION_CONFLICT' : response.status === 429 ? 'RATE_LIMITED' : 'SERVER_UNAVAILABLE';
         throw new FieldError(code);
       }
       // Do not log/reflect server bodies, which may contain sensitive URLs.
