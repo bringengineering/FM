@@ -42,7 +42,7 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 ## 검증 결과
 
 - TypeScript 검사 통과.
-- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패 테스트 **49개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합 테스트 **57개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
 - 기존 데스크톱 보고서 core 테스트 **24개 통과**.
 - Expo Doctor **20/20 통과**.
 - Android·iOS Hermes 번들과 웹 번들 생성 성공. APK/IPA 생성·실기기 시험과 구별한다.
@@ -51,6 +51,8 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 - 브라우저 UI: 가상 현장 열기, 합성 사진 추가·표시·전후 분류, 미저장 본문 이동 차단, 본문·후속 조치 저장, 검토 확인, 대표번호 1551-3873 표시 확인.
 
 사용자의 추가 검증 요청 후 SQLCipher 연결·예약 중 분류 변경·촬영 준비 상태·이미지 자원 해제·응답 크기 검사·저장 중 편집 문제를 수정했다. [검증 상세](../docs/field-mobile/verification-2026-10-26.md)를 참고한다.
+
+후속 연동 점검에서는 실제 loopback HTTP와 SQLite 파일을 함께 사용하는 시험 8개를 추가했다. `npm run test:integration`으로 재실행한다. 인증 검증기와 서버 업무 처리는 시험 대역이므로 실제 Firebase·Drive·CRM 연결 성공을 뜻하지 않는다. [운영 준비 상태와 연동 검증 결과](../docs/field-mobile/integration-verification-2026-10-26.md)를 참고한다.
 
 ## 실제 연결 전에 남은 것
 

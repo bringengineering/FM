@@ -18,6 +18,7 @@
 | [contracts.md](contracts.md) | 신규 API 제안, 요청·응답, 버전·멱등성·발송 계약 |
 | [implementation-plan.md](implementation-plan.md) | 개발 순서, 실기기 검증, 출시 준비와 진행 조건 |
 | [design-registry.json](design-registry.json) | 설계 상태·한도·API 목록의 기계 판독용 기준 |
+| [integration-verification-2026-10-26.md](integration-verification-2026-10-26.md) | 운영 준비 상태 읽기 확인, 로컬 통합 시험, 실제 연결에 남은 작업 |
 
 ## 확정한 구성
 

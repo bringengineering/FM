@@ -8,6 +8,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run test/wire-integration.test.ts",
     "export:check": "expo export --platform all"
   },
   "dependencies": {
