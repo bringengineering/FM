@@ -20,6 +20,7 @@ const checklists: Readonly<Record<CleaningOrderServiceType, ChecklistDefinition>
   common_cleaning: {
     reportKind: "common",
     requiredKeys: ["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final"],
+    optionalKeys: ["glass", "yard", "parking", "drain", "rooftop", "elevator", "walls"],
   },
   stair_cleaning: {
     reportKind: "stairs",
