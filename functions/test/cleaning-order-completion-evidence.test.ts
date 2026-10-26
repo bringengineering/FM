@@ -161,7 +161,7 @@ describe("validateCleaningOrderCompletionEvidence", () => {
     const requiredItems = items.filter(item => requiredKeys.has(item.key));
     expect(requiredItems).toHaveLength(8);
     expect(validate(commonOrder, [{ ...report, items: requiredItems }])).toMatchObject({ ok: true });
-    for (const key of ["glass", "yard", "parking", "drain", "rooftop", "elevator", "walls"]) {
+    for (const key of ["glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures"]) {
       const optionalItem = items.find(item => item.key === key);
       expect(optionalItem).toBeDefined();
       expect(validate(commonOrder, [{ ...report, items: [...requiredItems, optionalItem] }]))
