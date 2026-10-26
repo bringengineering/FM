@@ -13,9 +13,6 @@ export async function makeVault(path = ':memory:', uid = 'staff-a') {
     async getAllAsync<T>(sql: string, ...params: (string | number | Uint8Array | null)[]) { return db.prepare(sql).all(...params) as T[]; },
     async runAsync(sql, ...params) { return db.prepare(sql).run(...params); },
     async execAsync(sql) { db.exec(sql); },
-    async withExclusiveTransactionAsync(task) {
-      db.exec('BEGIN IMMEDIATE'); try { await task(adapter); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
-    },
     async closeAsync() { db.close(); },
   };
   const vault = new SqlVault(uid, adapter, hash); await vault.initialize(); return { vault, db };

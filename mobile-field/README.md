@@ -42,13 +42,15 @@ Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 �
 ## 검증 결과
 
 - TypeScript 검사 통과.
-- 모바일·서버 접근 경계 테스트 **33개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB는 SQLCipher 검증이 아니다.
+- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패 테스트 **49개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
 - 기존 데스크톱 보고서 core 테스트 **24개 통과**.
 - Expo Doctor **20/20 통과**.
 - Android·iOS Hermes 번들과 웹 번들 생성 성공. APK/IPA 생성·실기기 시험과 구별한다.
 - Android prebuild 설정: 카메라 허용, 음성/위치 권한 제외, `allowBackup=false`, `expo.sqlite.useSQLCipher=true` 확인.
 - production 환경 구성 차단 확인.
 - 브라우저 UI: 가상 현장 열기, 합성 사진 추가·표시·전후 분류, 미저장 본문 이동 차단, 본문·후속 조치 저장, 검토 확인, 대표번호 1551-3873 표시 확인.
+
+사용자의 추가 검증 요청 후 SQLCipher 연결·예약 중 분류 변경·촬영 준비 상태·이미지 자원 해제·응답 크기 검사·저장 중 편집 문제를 수정했다. [검증 상세](../docs/field-mobile/verification-2026-10-26.md)를 참고한다.
 
 ## 실제 연결 전에 남은 것
 

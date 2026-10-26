@@ -45,6 +45,26 @@ describe('resumable transfer', () => {
     api.reserve = vi.fn(() => new Promise<UploadStatus>(resolve => { resume = resolve; }));
     const runner = new SyncRunner(vault, api); const pending = runner.run();
     await vi.waitFor(() => expect(api.reserve).toHaveBeenCalledOnce()); runner.stop(); resume(get()); await pending;
-    expect(api.chunk).not.toHaveBeenCalled(); expect((await vault.load()).photos[0]?.state).toBe('queued'); await vault.close();
+    expect(api.chunk).not.toHaveBeenCalled(); expect((await vault.load()).photos[0]?.state).toBe('uploading'); await vault.close();
+  });
+  it('freezes photo metadata before a reservation leaves the device', async () => {
+    const { vault, api, get } = await setup(); let resume!: (value: UploadStatus) => void;
+    api.reserve = vi.fn(() => new Promise<UploadStatus>(resolve => { resume = resolve; }));
+    const runner = new SyncRunner(vault, api); const pending = runner.run();
+    await vi.waitFor(() => expect(api.reserve).toHaveBeenCalledOnce());
+    const workspace = await vault.load();
+    await expect(vault.editPhoto({ ...workspace.photos[0]!, phase: 'after' }, workspace.visits[0]!.revision)).rejects.toThrow('PHOTO_EDIT_REQUIRES_SERVER');
+    resume(get()); await pending; expect((await vault.load()).photos[0]?.phase).toBe('before'); await vault.close();
+  });
+  it('resumes several chunks from the last server acknowledgement', async () => {
+    const { vault } = await makeVault(); const bytes = new Uint8Array(2 * 1024 * 1024 + 20); bytes.set(jpeg); const p = await photo('staff-a', bytes);
+    await vault.saveVisit(visit(), null); await vault.savePhoto(p, bytes, 1);
+    let offset = 0;
+    const status = (): UploadStatus => ({ uploadId: 'u', photoId: p.id, sha256: p.sha256, totalBytes: p.bytes, receivedBytes: offset, state: 'uploading', driveVerified: false, crmLinked: false });
+    const api: UploadApi = { reserve: vi.fn(async () => status()), status: vi.fn(async () => status()),
+      chunk: vi.fn(async (_id, start, _total, data) => { expect(start).toBe(offset); offset += data.length; if (offset === 2 * 1024 * 1024) throw new Error('response lost'); return status(); }),
+      complete: vi.fn(async () => ({ ...status(), state: 'validating' as const })) };
+    await new SyncRunner(vault, api).run(); await new SyncRunner(vault, api).run();
+    expect(api.chunk).toHaveBeenCalledTimes(3); expect(api.complete).toHaveBeenCalledOnce(); expect(offset).toBe(p.bytes); await vault.close();
   });
 });

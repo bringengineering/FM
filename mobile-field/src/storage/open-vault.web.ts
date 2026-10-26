@@ -32,6 +32,7 @@ export async function openVault(uid: string): Promise<Vault> {
       data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
     },
     async updateTransfer() { throw new FieldError('SERVER_NOT_CONNECTED'); },
+    async prepareTransfer() { throw new FieldError('SERVER_NOT_CONNECTED'); },
     async readBytes(id) { check(); const bytes = files.get(id); if (!bytes) throw new FieldError('PHOTO_NOT_FOUND'); return bytes.slice(); },
     async close() { closed = true; data = { visits: [], photos: [] }; files.clear(); },
   };

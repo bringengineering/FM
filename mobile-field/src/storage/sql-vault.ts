@@ -9,7 +9,6 @@ export interface SqlConnection {
 }
 export interface SqlDatabase extends SqlConnection {
   execAsync(sql: string): Promise<void>;
-  withExclusiveTransactionAsync(task: (tx: SqlConnection) => Promise<void>): Promise<void>;
   closeAsync(): Promise<void>;
 }
 export const SCHEMA = `
@@ -24,10 +23,22 @@ export const SCHEMA = `
 export class SqlVault implements Vault {
   private chain: Promise<unknown> = Promise.resolve();
   private closed = false;
+  private closePromise?: Promise<void>;
   constructor(readonly uid: string, private db: SqlDatabase, private hash: (bytes: Uint8Array) => Promise<string>) {}
   private run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(new FieldError('VAULT_CLOSED'));
     const next = this.chain.then(fn); this.chain = next.catch(() => undefined); return next;
+  }
+  private async transaction(task: (tx: SqlConnection) => Promise<void>): Promise<void> {
+    // Expo's exclusive helper opens a second connection without the SQLCipher
+    // key. Every operation here is serialized by run(), so use the private,
+    // already-keyed connection for BEGIN, queries, COMMIT and ROLLBACK.
+    await this.db.execAsync('BEGIN IMMEDIATE');
+    try { await task(this.db); await this.db.execAsync('COMMIT'); }
+    catch (error) {
+      try { await this.db.execAsync('ROLLBACK'); } catch { /* preserve the original failure */ }
+      throw error;
+    }
   }
   async initialize(): Promise<void> {
     await this.db.execAsync('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
@@ -51,7 +62,7 @@ export class SqlVault implements Vault {
   saveVisit(visit: Visit, expected: number | null): Promise<void> { return this.run(async () => {
     assertOwner(visit.ownerUid, this.uid);
     if (visit.draft.summary.length > LIMITS.text || visit.draft.followUp.length > LIMITS.text) throw new FieldError('TEXT_TOO_LONG');
-    await this.db.withExclusiveTransactionAsync(async tx => {
+    await this.transaction(async tx => {
       if (expected === null) {
         if (visit.revision !== 1) throw new FieldError('REVISION_CONFLICT');
         if (await tx.getFirstAsync('SELECT id FROM visits WHERE id = ?', visit.id)) throw new FieldError('VISIT_EXISTS');
@@ -66,7 +77,7 @@ export class SqlVault implements Vault {
   savePhoto(photo: Photo, bytes: Uint8Array, expected: number): Promise<void> { return this.run(async () => {
     assertOwner(photo.ownerUid, this.uid); assertPhoto(photo, bytes);
     if (await this.hash(bytes) !== photo.sha256 || photo.state !== 'queued' || photo.receivedBytes !== 0 || photo.uploadId) throw new FieldError('PHOTO_INVALID');
-    await this.db.withExclusiveTransactionAsync(async tx => {
+    await this.transaction(async tx => {
       const visit = await this.visit(tx, photo.visitId, expected);
       if (!catalog(visit.job.kind).some(item => item.key === photo.itemKey)) throw new FieldError('PHOTO_INVALID');
       const count = await tx.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM photos WHERE visit_id = ?', visit.id);
@@ -77,7 +88,7 @@ export class SqlVault implements Vault {
   }); }
   editPhoto(photo: Photo, expected: number): Promise<void> { return this.run(async () => {
     assertOwner(photo.ownerUid, this.uid); assertPhoto(photo);
-    await this.db.withExclusiveTransactionAsync(async tx => {
+    await this.transaction(async tx => {
       const row = await tx.getFirstAsync<{ body: string }>('SELECT body FROM photos WHERE id = ?', photo.id);
       if (!row) throw new FieldError('PHOTO_NOT_FOUND');
       const previous: Photo = JSON.parse(row.body); assertOwner(previous.ownerUid, this.uid);
@@ -90,8 +101,21 @@ export class SqlVault implements Vault {
       await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
     });
   }); }
+  prepareTransfer(id: string): Promise<Photo> { return this.run(async () => {
+    let photo!: Photo;
+    await this.transaction(async tx => {
+      const row = await tx.getFirstAsync<{ body: string }>('SELECT body FROM photos WHERE id = ?', id);
+      if (!row) throw new FieldError('PHOTO_NOT_FOUND');
+      photo = JSON.parse(row.body); assertOwner(photo.ownerUid, this.uid);
+      if (photo.state === 'queued' || photo.state === 'failed') {
+        photo = { ...photo, state: 'uploading', errorCode: undefined };
+        await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?', JSON.stringify(photo), id);
+      }
+    });
+    return photo;
+  }); }
   updateTransfer(id: string, patch: Pick<Photo, 'state' | 'receivedBytes' | 'uploadId' | 'errorCode'>): Promise<void> { return this.run(async () => {
-    await this.db.withExclusiveTransactionAsync(async tx => {
+    await this.transaction(async tx => {
       const row = await tx.getFirstAsync<{ body: string }>('SELECT body FROM photos WHERE id = ?', id);
       if (!row) throw new FieldError('PHOTO_NOT_FOUND');
       const previous: Photo = JSON.parse(row.body); assertOwner(previous.ownerUid, this.uid);
@@ -109,5 +133,8 @@ export class SqlVault implements Vault {
     if (await this.hash(row.bytes) !== photo.sha256) throw new FieldError('PHOTO_INTEGRITY_FAILED');
     return row.bytes;
   }); }
-  close(): Promise<void> { this.closed = true; return this.chain.then(() => this.db.closeAsync()); }
+  close(): Promise<void> {
+    this.closed = true;
+    return this.closePromise ??= this.chain.then(() => this.db.closeAsync());
+  }
 }

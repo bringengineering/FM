@@ -19,10 +19,11 @@ export async function openVault(uid: string): Promise<SqlVault> {
     await SecureStore.setItemAsync(keyName, key, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
   }
   if (!/^[a-f0-9]{64}$/.test(key)) throw new FieldError('VAULT_KEY_INVALID');
-  const db = await SQLite.openDatabaseAsync(name);
+  const db = await SQLite.openDatabaseAsync(name, { useNewConnection: true });
   try {
     // SQLite silently ignores unsupported PRAGMAs. Verify the cipher first.
-    if (!(await db.getFirstAsync('PRAGMA cipher_version'))) throw new FieldError('ENCRYPTED_BUILD_REQUIRED');
+    const cipher = await db.getFirstAsync<{ cipher_version?: unknown }>('PRAGMA cipher_version');
+    if (typeof cipher?.cipher_version !== 'string' || !cipher.cipher_version.trim()) throw new FieldError('ENCRYPTED_BUILD_REQUIRED');
     await db.execAsync(`PRAGMA key = "x'${key}'";`);
     const vault = new SqlVault(uid, db, sha256); await vault.initialize(); return vault;
   } catch (error) { await db.closeAsync(); throw error; }

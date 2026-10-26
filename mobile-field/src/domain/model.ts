@@ -20,6 +20,7 @@ export interface Vault {
   saveVisit(visit: Visit, expectedRevision: number | null): Promise<void>;
   savePhoto(photo: Photo, bytes: Uint8Array, expectedVisitRevision: number): Promise<void>;
   editPhoto(photo: Photo, expectedVisitRevision: number): Promise<void>;
+  prepareTransfer(photoId: string): Promise<Photo>;
   updateTransfer(photoId: string, patch: Pick<Photo, 'state' | 'receivedBytes' | 'uploadId' | 'errorCode'>): Promise<void>;
   readBytes(photoId: string): Promise<Uint8Array>;
   close(): Promise<void>;
@@ -29,7 +30,7 @@ export class FieldError extends Error {
 }
 export function assertOwner(owner: string, uid: string): void { if (owner !== uid) throw new FieldError('OWNER_MISMATCH'); }
 export function assertPhoto(photo: Photo, bytes?: Uint8Array): void {
-  if (!/^[A-Za-z0-9_-]{1,120}$/.test(photo.id) || !/^[a-f0-9]{64}$/.test(photo.sha256)
+  if (typeof photo.id !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(photo.id) || typeof photo.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(photo.sha256)
     || !['before', 'during', 'after'].includes(photo.phase) || photo.mime !== 'image/jpeg'
     || !Number.isSafeInteger(photo.bytes) || photo.bytes < 4 || photo.bytes > LIMITS.photoBytes
     || !Number.isSafeInteger(photo.width) || !Number.isSafeInteger(photo.height)
@@ -48,7 +49,7 @@ export function confirmVisit(visit: Visit): Visit {
 }
 export function readyToArchive(visit: Visit, photos: Photo[]): boolean {
   const selected = photos.filter(p => p.visitId === visit.id && p.included);
-  return visit.draft.confirmedRevision === visit.revision && selected.length > 0 && selected.every(p => p.state === 'ready');
+  return visit.draft.confirmedRevision === visit.revision && selected.length > 0 && selected.every(p => p.ownerUid === visit.ownerUid && p.state === 'ready');
 }
 export const phaseLabel: Record<Phase, string> = { before: '작업 전', during: '작업 중', after: '작업 후' };
 export const stateLabel: Record<PhotoState, string> = { queued: '기기 보관 · 전송 대기', uploading: '전송 중', validating: '파일 확인 중', drive_pending: 'Drive 보관 중', crm_link_pending: 'CRM 연결 중', ready: 'Drive·CRM 보관 완료', failed: '확인 필요', auth_blocked: '회사 권한 확인 필요' };

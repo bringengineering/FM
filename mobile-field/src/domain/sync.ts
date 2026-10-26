@@ -24,8 +24,9 @@ export class SyncRunner {
     await this.vault.updateTransfer(photo.id, patch); return { ...photo, ...patch };
   }
   private async upload(initial: Photo): Promise<void> {
-    let photo = initial; const signal = this.controller.signal; this.live();
+    let photo = await this.vault.prepareTransfer(initial.id); const signal = this.controller.signal; this.live();
     if (photo.ownerUid !== this.vault.uid) throw new FieldError('OWNER_MISMATCH');
+    if (photo.state === 'ready' || photo.state === 'auth_blocked') return;
     try {
       // Reserve and complete keys survive process death; timeout never creates a
       // new photo/session. Chunk recovery starts with the server's offset.

@@ -28,12 +28,13 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 }
 function Note({ children }: { children: React.ReactNode }) { return <View style={s.note}><Text style={s.noteText}>{children}</Text></View>; }
 function PhotoImage({ vault, photo }: { vault: Vault; photo: Photo }) {
-  const [uri, setUri] = useState('');
+  const [loaded, setLoaded] = useState<{ id: string; uri: string; failed: boolean }>({ id: '', uri: '', failed: false });
   useEffect(() => { let current = true; void vault.readBytes(photo.id).then(bytes => {
     let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-    if (current) setUri(`data:image/jpeg;base64,${btoa(binary)}`);
-  }).catch(() => { if (current) setUri(''); }); return () => { current = false; }; }, [vault, photo.id]);
-  return uri ? <Image source={{ uri }} style={s.photo} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
+    if (current) setLoaded({ id: photo.id, uri: `data:image/jpeg;base64,${btoa(binary)}`, failed: false });
+  }).catch(() => { if (current) setLoaded({ id: photo.id, uri: '', failed: true }); }); return () => { current = false; }; }, [vault, photo.id]);
+  if (loaded.id === photo.id && loaded.failed) return <Note>사진을 읽지 못했습니다. 원본을 보존했습니다. 다른 사진을 선택한 뒤 다시 확인해 주세요.</Note>;
+  return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={s.photo} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
 }
 export default function App() { return <SafeAreaProvider><FieldApp /></SafeAreaProvider>; }
 function FieldApp() {
@@ -63,11 +64,14 @@ function FieldApp() {
   }
   async function refresh(store = vault) { if (store) { const next = await store.load(); setWorkspace(next); return next; } }
   function navigate(next: Screen) {
-    if (busyRef.current) return;
+    if (busyRef.current || next === screen) return;
     if (dirty || captionDirty) { notify('작성 중인 내용을 저장한 뒤 이동해 주세요.', true); return; }
     setNotice(''); setCameraReady(false); setScreen(next);
   }
-  useEffect(() => { const listener = AppState.addEventListener('change', next => setForeground(next === 'active')); return () => listener.remove(); }, []);
+  useEffect(() => { const listener = AppState.addEventListener('change', next => {
+    setForeground(next === 'active');
+    if (next !== 'active') setCameraReady(false);
+  }); return () => listener.remove(); }, []);
   useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [screen, selected]);
   useEffect(() => { if (!visit) return; setSummary(visit.draft.summary); setFollowUp(visit.draft.followUp); setNotes(visit.draft.notes); }, [selected, visit?.draft.summary, visit?.draft.followUp, visit?.draft.notes]);
   async function enterDevelopment() {
@@ -137,7 +141,7 @@ function FieldApp() {
           <Text style={s.label}>촬영 구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={area === item.key} onPress={() => setArea(item.key)} />)}</View>
           <View style={s.phaseRow}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={phase === p} onPress={() => setPhase(p)} />)}</View>
           {Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
-            : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => notify('카메라를 열 수 없습니다. 사진 선택으로 이어갈 수 있습니다.', true)} />
+            : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진 선택으로 이어갈 수 있습니다.', true); }} />
             : <View style={s.card}><Text style={s.body}>작업사진을 촬영하려면 카메라 접근이 필요합니다.</Text><Button label="카메라 권한 허용" onPress={() => void requestPermission()} /></View>}
           <Button label={Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`} disabled={busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady))} onPress={() => void perform(() => capture())} />
           {Platform.OS !== 'web' && <Button label="사진첩에서 한 장 선택" secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
@@ -151,19 +155,19 @@ function FieldApp() {
             <Text style={s.label}>구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={photo.itemKey === item.key} onPress={() => void perform(() => updatePhoto({ itemKey: item.key }))} />)}</View>
             <View style={s.wrap}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={photo.phase === p} onPress={() => void perform(() => updatePhoto({ phase: p }))} />)}</View>
             <View style={s.between}><Text style={s.label}>보고서에 포함</Text><Switch accessibilityLabel="보고서에 사진 포함" value={photo.included} onValueChange={included => void perform(() => updatePhoto({ included }))} /></View>
-            <TextInput accessibilityLabel="사진 설명" placeholder="고객에게 보여도 되는 사진 설명" value={caption} onChangeText={setCaption} maxLength={120} style={s.input} />
+            <TextInput accessibilityLabel="사진 설명" editable={!busy} placeholder="고객에게 보여도 되는 사진 설명" value={caption} onChangeText={setCaption} maxLength={120} style={s.input} />
             <Button label="사진 설명 저장" secondary disabled={busy} onPress={() => void perform(() => updatePhoto({ caption }))} />
           </View>}<Button label="촬영 계속하기" secondary onPress={() => navigate('capture')} />
         </>}
         {screen === 'report' && visit && <>
           <Note>작성한 내용은 기기에 보관됩니다. 고객 PDF·Drive 보관은 서버 연결 후 사용할 수 있습니다.</Note>
-          <Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
-          <Text style={s.label}>후속 조치</Text><TextInput accessibilityLabel="후속 조치" multiline maxLength={2000} value={followUp} onChangeText={setFollowUp} style={[s.input, s.textareaSmall]} placeholder="추가 작업이나 확인할 내용" />
+          <Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" editable={!busy} multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
+          <Text style={s.label}>후속 조치</Text><TextInput accessibilityLabel="후속 조치" editable={!busy} multiline maxLength={2000} value={followUp} onChangeText={setFollowUp} style={[s.input, s.textareaSmall]} placeholder="추가 작업이나 확인할 내용" />
           <Button label={dirty ? '작성 중인 초안 저장' : '초안 저장'} disabled={busy} onPress={() => void perform(() => saveDraft())} />
           <Text style={s.h2}>작업 항목 확인</Text>{catalog(visit.job.kind).map(item => <View key={item.key} style={s.card}>
             <Text style={s.cardTitle}>{item.label}</Text><Text style={s.muted}>{photos.filter(p => p.itemKey === item.key && p.included).length}장 포함</Text>
             <View style={s.wrap}>{([['recorded', '기록'], ['done', '완료'], ['partial', '일부'], ['skipped', '못 함']] as [ItemStatus, string][]).map(([status, label]) => <Chip key={status} label={label} active={(visit.draft.statuses[item.key] ?? 'recorded') === status} onPress={() => void perform(() => saveDraft({ statuses: { ...visit.draft.statuses, [item.key]: status } }))} />)}</View>
-            {visit.draft.statuses[item.key] === 'skipped' && <><TextInput accessibilityLabel={`${item.label} 못 한 이유`} value={notes[item.key] ?? ''} onChangeText={value => setNotes({ ...notes, [item.key]: value })} maxLength={500} style={s.input} placeholder="작업하지 못한 이유" /><Button secondary label="사유 저장" disabled={busy} onPress={() => void perform(() => saveDraft())} /></>}
+            {visit.draft.statuses[item.key] === 'skipped' && <><TextInput accessibilityLabel={`${item.label} 못 한 이유`} editable={!busy} value={notes[item.key] ?? ''} onChangeText={value => setNotes({ ...notes, [item.key]: value })} maxLength={500} style={s.input} placeholder="작업하지 못한 이유" /><Button secondary label="사유 저장" disabled={busy} onPress={() => void perform(() => saveDraft())} /></>}
           </View>)}
           {issues.length > 0 && <Note>{issues.join('\n')}</Note>}
           <Button label={visit.draft.confirmedRevision === visit.revision ? '내용 검토 완료' : '내용을 검토했습니다'} disabled={busy || dirty || issues.length > 0 || visit.draft.confirmedRevision === visit.revision} onPress={() => void perform(async () => { await vault.saveVisit(confirmVisit(visit), visit.revision); await refresh(); notify('현재 내용 검토를 기록했습니다.'); })} />
