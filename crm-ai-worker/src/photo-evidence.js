@@ -4,10 +4,10 @@ export const TARGETS = ["floor", "window", "sink", "cabinet", "hood", "toilet", 
 export const ACTIONS = ["wiping", "sweeping", "mopping", "scrubbing", "washing", "collecting", "unknown"];
 export const CONTACTS = ["wiping_surface", "driving_tool", "holding_object", "bracing", "none", "unknown"];
 export const WATER = ["jet_to_target", "droplets_only", "wet_surface", "none", "unknown"];
-export const FEATURES = ["room_fixtures", "floor_surface", "window_frame", "sink_bowl", "cabinet_interior", "toilet_bowl", "wall_surface", "hood_body", "metal_mesh", "grease_filter_frame", "aircon_body", "plastic_mesh", "aircon_filter_frame", "refrigerator_body", "shelf_rail", "transparent_drawer", "steps", "balustrade", "continuous_corridor", "doorway", "ceiling_fixture", "waste_bins", "cleaning_contact", "plumbing_fixture", "screen_capture", "document_layout", "kitchen_counter", "cooking_fixture", "bath_fixture", "inactive_tool", "supporting_hand", "cloth_display", "active_hand_contact", "water_flow", "open_walkway", "ceiling_surface", "stair_landing", "window_track", "glass_pane", "outdoor_yard", "parking_markings", "drain_grate", "rooftop_boundary", "elevator_structure", "door_surface"];
+export const FEATURES = ["room_fixtures", "floor_surface", "window_frame", "sink_bowl", "cabinet_interior", "toilet_bowl", "wall_surface", "hood_body", "metal_mesh", "grease_filter_frame", "aircon_body", "plastic_mesh", "aircon_filter_frame", "refrigerator_body", "shelf_rail", "transparent_drawer", "steps", "balustrade", "continuous_corridor", "doorway", "ceiling_fixture", "waste_bins", "cleaning_contact", "plumbing_fixture", "screen_capture", "document_layout", "kitchen_counter", "cooking_fixture", "bath_fixture", "inactive_tool", "supporting_hand", "cloth_display", "active_hand_contact", "water_flow", "open_walkway", "ceiling_surface", "stair_landing", "window_track", "glass_pane", "outdoor_yard", "parking_markings", "drain_grate", "rooftop_boundary", "elevator_structure", "door_surface", "fire_extinguisher", "utility_panel", "notice_board"];
 export const ANCHORS = ["tile_pattern", "fixture_position", "frame_shape", "surface_edge"];
 export const QUALITY = ["clear", "blurred", "too_small", "obstructed", "unknown"];
-export const ISSUES = ["quality", "category_uncertain", "space_uncertain", "target_uncertain", "contradiction", "missing_result", "review_disagreement", "non_work"];
+export const ISSUES = ["quality", "category_uncertain", "space_uncertain", "target_uncertain", "contradiction", "missing_result", "review_disagreement", "non_work", "category_score_low", "category_evidence_missing", "category_target_conflict", "target_score_low", "target_evidence_missing", "category_unknown"];
 const score = value => Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
 const oneOf = (value, values) => values.includes(value) ? value : "unknown";
 const any = (features, names) => names.some(name => features.includes(name));
@@ -28,7 +28,7 @@ function targetVisible(target, f) {
   if (target === "hood") return f.includes("hood_body") || ["metal_mesh", "grease_filter_frame"].every(x => f.includes(x));
   if (target === "aircon") return f.includes("aircon_body") || ["plastic_mesh", "aircon_filter_frame"].every(x => f.includes(x));
   if (target === "refrigerator") return f.includes("refrigerator_body") || ["shelf_rail", "transparent_drawer"].every(x => f.includes(x));
-  const evidence = { floor: ["floor_surface", "steps", "stair_landing", "continuous_corridor"], window: ["window_frame", "window_track", "glass_pane"], sink: ["sink_bowl"], cabinet: ["cabinet_interior"], toilet: ["toilet_bowl"], wall: ["wall_surface"], other: ["balustrade", "ceiling_fixture", "ceiling_surface", "waste_bins", "doorway", "plumbing_fixture", "drain_grate", "elevator_structure", "door_surface"] };
+  const evidence = { floor: ["floor_surface", "steps", "stair_landing", "continuous_corridor"], window: ["window_frame", "window_track", "glass_pane"], sink: ["sink_bowl"], cabinet: ["cabinet_interior"], toilet: ["toilet_bowl"], wall: ["wall_surface"], other: ["balustrade", "ceiling_fixture", "ceiling_surface", "waste_bins", "doorway", "plumbing_fixture", "drain_grate", "elevator_structure", "door_surface", "fire_extinguisher", "utility_panel", "notice_board"] };
   return any(f, evidence[target] || []);
 }
 
@@ -61,18 +61,25 @@ export function normalizeEvidence(row, kind, categories) {
   const phase = clear && row.phase === "during" && scores.phase >= 85 && action !== "unknown" && activeContact && features.includes("cleaning_contact") ? "during" : "unknown";
   let category = clear && scores.category >= 75 && Object.hasOwn(categories, row.category) ? row.category : "review";
   const issues = [];
+  if (clear && scores.category < 75) issues.push("category_score_low");
+  if (clear && scores.target < 75) issues.push("target_score_low");
+  if (clear && scores.target >= 75 && TARGETS.includes(row.target) && row.target !== "unknown" && !targetVisible(row.target, features)) issues.push("target_evidence_missing");
+  if (clear && !Object.hasOwn(categories, row.category)) issues.push("category_unknown");
   if (nonWork) issues.push("non_work");
   else if (!clear) issues.push("quality");
   if (kind === "common") {
-    const required = { entrance: ["doorway"], corridor: ["continuous_corridor"], stairs: ["steps", "stair_landing"], handrail: ["balustrade"], windows: ["window_frame", "window_track"], glass: ["glass_pane"], yard: ["outdoor_yard"], parking: ["parking_markings"], drain: ["drain_grate"], rooftop: ["rooftop_boundary"], elevator: ["elevator_structure"], walls: ["wall_surface", "door_surface"], lighting: ["ceiling_fixture", "ceiling_surface"], recycle: ["waste_bins"] };
-    const targets = { corridor: ["floor"], stairs: ["floor"], handrail: ["other"], windows: ["window"], glass: ["window"], yard: ["floor"], parking: ["floor"], drain: ["other"], rooftop: ["floor"], elevator: ["other"], walls: ["wall", "other"], lighting: ["other"], recycle: ["other"] };
+    const required = { entrance: ["doorway"], corridor: ["continuous_corridor"], stairs: ["steps", "stair_landing"], handrail: ["balustrade"], windows: ["window_frame", "window_track"], glass: ["glass_pane"], yard: ["outdoor_yard"], parking: ["parking_markings"], drain: ["drain_grate"], rooftop: ["rooftop_boundary"], elevator: ["elevator_structure"], walls: ["wall_surface", "door_surface"], fixtures: ["fire_extinguisher", "utility_panel", "notice_board"], lighting: ["ceiling_fixture", "ceiling_surface"], recycle: ["waste_bins"] };
+    const targets = { corridor: ["floor"], stairs: ["floor"], handrail: ["other"], windows: ["window"], glass: ["window"], yard: ["floor"], parking: ["floor"], drain: ["other"], rooftop: ["floor"], elevator: ["other"], walls: ["wall", "other"], fixtures: ["other"], lighting: ["other"], recycle: ["other"] };
     // The existing labels include common floors and ceilings, not only indoor
     // corridors and light fixtures. Preserve scene evidence instead of requiring
     // a fixture that is not part of the photographed work.
     const categoryVisible = (any(features, required[category] || [])
       || (category === "corridor" && ["open_walkway", "floor_surface"].every(x => features.includes(x))))
       && (!["yard", "parking", "rooftop"].includes(category) || features.includes("floor_surface"));
-    if (category !== "review" && (!categoryVisible || (targets[category] && target !== "unknown" && !targets[category].includes(target)))) {
+    const targetConflict = targets[category] && target !== "unknown" && !targets[category].includes(target);
+    if (category !== "review" && !categoryVisible) issues.push("category_evidence_missing");
+    if (category !== "review" && targetConflict) issues.push("category_target_conflict");
+    if (category !== "review" && (!categoryVisible || targetConflict)) {
       category = "review"; issues.push("contradiction");
     }
   } else {
@@ -85,8 +92,19 @@ export function normalizeEvidence(row, kind, categories) {
   if (target === "unknown") issues.push("target_uncertain");
   const needsReview = !clear || category === "review" || target === "unknown";
   const candidates = [...new Set(Array.isArray(row.candidates) ? row.candidates.filter(x => Object.hasOwn(categories, x) && x !== "review") : [])].slice(0, 2);
-  const extraLabels = { kitchen_counter: "주방 조리대 구조", cooking_fixture: "고정 조리 설비", bath_fixture: "욕실 고정 설비", active_hand_contact: "직접 닦는 손·도구", water_flow: "대상에 닿는 물줄기", open_walkway: "경계가 보이는 외부 통로", ceiling_surface: "위쪽 천장면", stair_landing: "계단과 연결된 계단참", window_track: "창틀 홈·레일", glass_pane: "유리 면", outdoor_yard: "경계가 보이는 마당", parking_markings: "주차선·주차 구획", drain_grate: "배수 홈·그레이팅", rooftop_boundary: "옥상·테라스 경계 구조", elevator_structure: "승강기 구조", door_surface: "문 표면" };
+  const extraLabels = { kitchen_counter: "주방 조리대 구조", cooking_fixture: "고정 조리 설비", bath_fixture: "욕실 고정 설비", active_hand_contact: "직접 닦는 손·도구", water_flow: "대상에 닿는 물줄기", open_walkway: "경계가 보이는 외부 통로", ceiling_surface: "위쪽 천장면", stair_landing: "계단과 연결된 계단참", window_track: "창틀 홈·레일", glass_pane: "유리 면", outdoor_yard: "경계가 보이는 마당", parking_markings: "주차선·주차 구획", drain_grate: "배수 홈·그레이팅", rooftop_boundary: "옥상·테라스 경계 구조", elevator_structure: "승강기 구조", door_surface: "문 표면", fire_extinguisher: "소화기 구조", utility_panel: "공용 설비함·계량기함 구조", notice_board: "벽 부착 게시판 구조" };
   const evidenceText = features.map(x => FEATURE_LABELS[x] || extraLabels[x]).filter(Boolean).slice(0, 3).join("·");
+  const reason = nonWork ? "문서·메신저 화면은 현장 작업 사진으로 분류하지 않습니다."
+    : !clear ? "화질·가림 때문에 대상을 명확히 확인하지 못했습니다."
+    : issues.includes("category_target_conflict") ? "추천 구역과 확인된 작업 대상이 서로 달라 보류했습니다."
+    : issues.includes("category_evidence_missing") ? `${categories[row.category]}로 추천했지만 해당 구역의 시각 근거가 없어 보류했습니다.`
+    : issues.includes("contradiction") ? "구역·대상 근거가 서로 달라 확인이 필요합니다."
+    : issues.includes("category_score_low") ? `구역 점수 ${scores.category}점이 자동분류 기준 75점보다 낮습니다. 확인된 대상은 유지합니다.`
+    : issues.includes("category_unknown") ? "현재 CRM에서 지원하지 않는 구역으로 응답해 배치를 보류했습니다."
+    : category === "review" ? "구역을 확정할 근거가 부족합니다. 확인된 대상은 유지합니다."
+    : issues.includes("target_score_low") ? `${categories[category]} 구역은 추천하지만 작업 대상 점수 ${scores.target}점이 기준 75점보다 낮아 확인이 필요합니다.`
+    : issues.includes("target_evidence_missing") ? `${categories[category]} 구역은 추천하지만 작업 대상의 구조를 확인할 근거가 부족합니다.`
+    : `${categories[category]} 추천 근거: ${evidenceText}. 저장 전 확인해 주세요.`;
   return { category, confidence: scores.category, space, target, spaceConfidence: scores.space, targetConfidence: scores.target, phase, phaseConfidence: scores.phase, action, contact, water, quality, features, issues, candidates, needsReview, analysisVersion: 2,
-    reason: nonWork ? "문서·메신저 화면은 현장 작업 사진으로 분류하지 않습니다." : issues.includes("contradiction") ? "구역·대상 근거가 서로 달라 확인이 필요합니다." : !clear ? "화질·가림 때문에 대상을 명확히 확인하지 못했습니다." : category === "review" ? "구역을 확정할 근거가 부족합니다. 확인된 대상은 유지합니다." : `${categories[category]} 추천 근거: ${evidenceText}. 저장 전 확인해 주세요.` };
+    reason: reason.slice(0, 120) };
 }
