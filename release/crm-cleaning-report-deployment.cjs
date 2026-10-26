@@ -50,6 +50,18 @@ async function preflight() {
     const log = fs.existsSync(debug) ? fs.readFileSync(debug, "utf8") : "";
     const diagnostics = safeDiagnostics(stdout + "\n" + stderr + "\n" + log);
     console.log(JSON.stringify({ stage: "read_only_inventory_preflight", ok: exitCode === 0, exitCode, projectMatches: true, ...diagnostics }));
+    const cloud = args => runCommand("gcloud", args, { cwd: ROOT, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CLOUDSDK_CONFIG: path.join(dir, "gcloud") } });
+    try {
+      cloud(["auth", "activate-service-account", "--key-file", credential, "--project", PROJECT, "--quiet"]);
+      for (const [stage, args] of [
+        ["selected_function_metadata", ["functions", "describe", NAME, "--gen2", "--region", REGION, "--project", PROJECT, "--format=json(name,state)"]],
+        ["cloud_function_inventory", ["functions", "list", "--gen2", "--project", PROJECT, "--format=json(name,state)"]],
+      ]) {
+        try { cloud(args); console.log(JSON.stringify({ stage, ok: true })); }
+        catch (error) { console.log(JSON.stringify({ stage, ok: false, code: error.message })); }
+      }
+    } catch (error) { console.log(JSON.stringify({ stage: "cloud_auth", ok: false, code: error.message })); }
     if (exitCode !== 0) process.exitCode = 1;
   } finally { fs.rmSync(dir, { recursive: true, force: true }); if (fs.existsSync(debug)) fs.unlinkSync(debug); }
 }
