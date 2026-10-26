@@ -9,7 +9,25 @@ const ROOT = path.resolve(__dirname, "..");
 const NAME = "cleaningOrdersApi";
 const REGION = "asia-northeast3";
 const PROJECT = "bring-fm";
+const ENDPOINT = `https://${REGION}-${PROJECT}.cloudfunctions.net/${NAME}`;
 const fail = code => { throw new Error(`CLEANING_REPORT_${code}`); };
+
+// The operator deploys the API with existing permissions. CI can verify its
+// additive schema without granting its Rules/backup identity Functions access.
+async function reportSchemaReady(fetcher = fetch) {
+  try {
+    const response = await fetcher(ENDPOINT, { redirect: "error", signal: AbortSignal.timeout(15000) });
+    return response.status === 401
+      && response.headers.get("x-bring-cleaning-report-schema") === "common-v2"
+      && (await response.json())?.error?.code === "cleaning_order_auth_required";
+  } catch { return false; }
+}
+
+function operatorOptions(args) {
+  if (args[0] !== "--operator" || args.length !== 7 || args[1] !== "--project" || args[3] !== "--confirm-project" || args[5] !== "--backup-dir"
+    || args[2] !== PROJECT || args[4] !== PROJECT || !path.isAbsolute(args[6])) fail("OPERATOR_ARGUMENTS_INVALID");
+  return { operator: true, backupDir: path.resolve(args[6]) };
+}
 
 function runCommand(bin, args, options, exec = execFileSync) {
   try { return exec(bin, args, options); }
@@ -98,8 +116,8 @@ function backupUri(metadata) {
     || source.object.split("/").includes("..") || !/^[0-9]+$/u.test(String(source.generation || ""))) fail("BACKUP_SOURCE_INVALID");
   return `gs://${source.bucket}/${source.object}#${source.generation}`;
 }
-async function deploy() {
-  if (process.env.GITHUB_ACTIONS !== "true" || !path.isAbsolute(process.env.RUNNER_TEMP || "")) fail("CI_REQUIRED");
+async function deploy({ operator = false, backupDir } = {}) {
+  if (!operator && (process.env.GITHUB_ACTIONS !== "true" || !path.isAbsolute(process.env.RUNNER_TEMP || ""))) fail("CI_REQUIRED");
   const plan = planDeployment(require("./firebase-targets.json"), PROJECT);
   const run = (bin, args, timeout = 30000) => runCommand(bin, args, { cwd: ROOT, encoding: "utf8", timeout,
     maxBuffer: 8 * 1024 * 1024, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -109,23 +127,32 @@ async function deploy() {
   git(["fetch", "origin", "codex/bring-field-platform"]);
   const source = git(["rev-parse", "HEAD"]);
   if (source !== git(["rev-parse", "FETCH_HEAD"]) || git(["status", "--porcelain"])) fail("LATEST_CLEAN_SOURCE_REQUIRED");
-  if (!git(["ls-remote", "origin", "refs/heads/crm-release-reservations/*"]).split(/\r?\n/u).some(line => line.startsWith(source + "\t"))) fail("VERSION_NOT_RESERVED");
-  const key = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
-  if (key.type !== "service_account" || key.project_id !== PROJECT || !key.private_key || !key.client_email) fail("CREDENTIAL_INVALID");
-  const privateDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, "cleaning-report-auth-"));
-  const keyFile = path.join(privateDir, "credentials.json");
+  if (!operator && !git(["ls-remote", "origin", "refs/heads/crm-release-reservations/*"]).split(/\r?\n/u).some(line => line.startsWith(source + "\t"))) fail("VERSION_NOT_RESERVED");
+  if (await reportSchemaReady()) {
+    console.log("Cleaning report common-v2 schema verified; anonymous requests remain denied; no backend deployment needed.");
+    return;
+  }
+  let privateDir;
   const oldGoogle = process.env.GOOGLE_APPLICATION_CREDENTIALS, oldCloud = process.env.CLOUDSDK_CONFIG;
-  fs.writeFileSync(keyFile, JSON.stringify(key), { mode: 0o600, flag: "wx" });
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFile;
-  process.env.CLOUDSDK_CONFIG = path.join(privateDir, "gcloud");
+  if (!operator) {
+    const key = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+    if (key.type !== "service_account" || key.project_id !== PROJECT || !key.private_key || !key.client_email) fail("CREDENTIAL_INVALID");
+    privateDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, "cleaning-report-auth-"));
+    const keyFile = path.join(privateDir, "credentials.json");
+    fs.writeFileSync(keyFile, JSON.stringify(key), { mode: 0o600, flag: "wx" });
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFile;
+    process.env.CLOUDSDK_CONFIG = path.join(privateDir, "gcloud");
+  }
   try {
-    run("gcloud", ["auth", "activate-service-account", "--key-file", keyFile, "--project", PROJECT, "--quiet"]);
+    if (!operator) run("gcloud", ["auth", "activate-service-account", "--key-file", process.env.GOOGLE_APPLICATION_CREDENTIALS, "--project", PROJECT, "--quiet"]);
     const inventory = () => parseFunctionInventory(firebase(["functions:list", "--project", PROJECT, "--json"]));
     const before = inventory(); selectedFunction(before);
     const metadata = JSON.parse(run("gcloud", ["functions", "describe", NAME, "--v2", "--region", REGION, "--project", PROJECT,
       "--format=json(name,updateTime,buildConfig.source.storageSource,buildConfig.sourceProvenance.resolvedStorageSource)"]));
     const uri = backupUri(metadata);
-    const dir = path.join(process.env.RUNNER_TEMP, "crm-cleaning-report-deploy"); fs.mkdirSync(dir, { recursive: true });
+    const dir = operator ? backupDir : path.join(process.env.RUNNER_TEMP, "crm-cleaning-report-deploy");
+    if (operator && (!path.isAbsolute(dir || "") || fs.existsSync(dir))) fail("FRESH_BACKUP_DIRECTORY_REQUIRED");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const archive = path.join(dir, "previous-function-source.zip");
     run("gcloud", ["storage", "cp", uri, archive, "--quiet"], 120000);
     if (!fs.statSync(archive).size || fs.statSync(archive).size > 64 * 1024 * 1024) fail("BACKUP_INVALID");
@@ -140,15 +167,15 @@ async function deploy() {
     fs.writeFileSync(path.join(dir, "after.json"), JSON.stringify({ project: PROJECT, source, after }, null, 2));
     if (!deployed) fail("DEPLOY_NOT_CONFIRMED");
     const selected = verifyAfter(before, after);
-    const response = await fetch(`https://${REGION}-${PROJECT}.cloudfunctions.net/${NAME}`, { redirect: "error", signal: AbortSignal.timeout(15000) });
-    if (response.status !== 401 || (await response.json())?.error?.code !== "cleaning_order_auth_required") fail("ANONYMOUS_DENIAL_FAILED");
+    if (!await reportSchemaReady()) fail("SCHEMA_OR_ANONYMOUS_DENIAL_FAILED");
     fs.writeFileSync(path.join(dir, "verification.json"), JSON.stringify({ project: PROJECT, source, selected, anonymousDenied: true }, null, 2));
     console.log("Cleaning report API deployed and verified; unrelated functions unchanged; credentials omitted.");
   } finally {
     if (oldGoogle === undefined) delete process.env.GOOGLE_APPLICATION_CREDENTIALS; else process.env.GOOGLE_APPLICATION_CREDENTIALS = oldGoogle;
     if (oldCloud === undefined) delete process.env.CLOUDSDK_CONFIG; else process.env.CLOUDSDK_CONFIG = oldCloud;
-    fs.rmSync(privateDir, { recursive: true, force: true });
+    if (privateDir) fs.rmSync(privateDir, { recursive: true, force: true });
   }
 }
-if (require.main === module) (process.argv[2] === "--preflight" ? preflight() : deploy()).catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
-module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics };
+if (require.main === module) Promise.resolve().then(() => process.argv[2] === "--preflight" ? preflight() : deploy(process.argv.length > 2 ? operatorOptions(process.argv.slice(2)) : {}))
+  .catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
+module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions };
