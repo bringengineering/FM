@@ -84,7 +84,7 @@ jobs:
       - run: pnpm --dir functions build
       - name: Verify narrowly scoped CRM Functions deploy contract
         # Account management is an additive, separately allowlisted target.
-        run: node --test release/crm-account-management-deployment.test.cjs release/crm-account-setup-deployment.test.js release/crm-account-setup-update.test.js release/cleaning-center-deployment.test.js release/crm-drive-oauth-deployment.test.js
+        run: node --test release/crm-account-management-deployment.test.cjs release/crm-account-setup-deployment.test.js release/crm-account-setup-update.test.js release/cleaning-center-deployment.test.js release/crm-drive-oauth-deployment.test.js release/crm-cleaning-report-deployment.test.cjs
       - name: Verify Firebase deployment isolation guards
         shell: pwsh
         run: ./release/test/bootstrap-bring-fm-wif.test.ps1
