@@ -17,6 +17,10 @@ test("command failures reveal only closed operation and reason codes", () => {
   assert.throws(() => runCommand(process.execPath, ["firebase.js", "functions:list"], {}, exec("Cannot find module private path")), /^Error: CLEANING_REPORT_FIREBASE_INVENTORY_NOT_FOUND$/);
   assert.throws(() => runCommand("gcloud", ["auth"], {}, exec("invalid_grant private credential")), /^Error: CLEANING_REPORT_GCLOUD_AUTH_AUTH_FAILED$/);
   assert.equal(runCommand("git", ["status"], {}, () => "clean"), "clean");
+  assert.throws(() => runCommand("gcloud", ["functions"], {}, exec("PERMISSION_DENIED SERVICE_DISABLED PRIVATE")), error => {
+    assert.deepEqual(error.diagnostics, { statuses: [], reasons: ["PERMISSION_DENIED", "SERVICE_DISABLED"] });
+    assert.equal(JSON.stringify(error).includes("PRIVATE"), false); return true;
+  });
 });
 test("report deployment selects only the existing cleaning orders function", () => {
   assert.deepEqual(planDeployment(manifest, "bring-fm"), { project: "bring-fm", selectors: ["functions:field-platform:cleaningOrdersApi"] });
