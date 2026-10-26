@@ -30,6 +30,10 @@ function safeDiagnostics(text) {
   const statuses = [...String(text).matchAll(/\[status\]\s+\w+\s+https:\/\/([a-z0-9.-]+)\/[^\r\n]*?\s+(\d{3})\s*$/gmu)]
     .filter(match => services.has(match[1])).map(match => ({ service: match[1], status: Number(match[2]) }));
   const reasons = ["PERMISSION_DENIED", "UNAUTHENTICATED", "SERVICE_DISABLED", "IAM_PERMISSION_DENIED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "CONSUMER_INVALID", "BILLING_DISABLED"].filter(reason => String(text).includes(reason));
+  for (const [code, pattern] of [["AUTH_FAILED", /failed to authenticate|invalid.grant|could not refresh|refresherror/iu],
+    ["INVALID_ARGUMENT", /unrecognized arguments|unknown option|invalid choice/iu],
+    ["NETWORK_FAILED", /ENOTFOUND|ECONNRESET|ETIMEDOUT|certificate|socket hang up/iu],
+    ["RUNTIME_FAILED", /TypeError|SyntaxError|ERR_REQUIRE_ESM/iu]]) if (pattern.test(String(text))) reasons.push(code);
   return { statuses, reasons };
 }
 
@@ -55,8 +59,8 @@ async function preflight() {
     try {
       cloud(["auth", "activate-service-account", "--key-file", credential, "--project", PROJECT, "--quiet"]);
       for (const [stage, args] of [
-        ["selected_function_metadata", ["functions", "describe", NAME, "--gen2", "--region", REGION, "--project", PROJECT, "--format=json(name,state)"]],
-        ["cloud_function_inventory", ["functions", "list", "--gen2", "--project", PROJECT, "--format=json(name,state)"]],
+        ["selected_function_metadata", ["functions", "describe", NAME, "--v2", "--region", REGION, "--project", PROJECT, "--format=json(name,state)"]],
+        ["cloud_function_inventory", ["functions", "list", "--v2", "--project", PROJECT, "--format=json(name,state)"]],
       ]) {
         try { cloud(args); console.log(JSON.stringify({ stage, ok: true })); }
         catch (error) { console.log(JSON.stringify({ stage, ok: false, code: error.message })); }
@@ -116,7 +120,7 @@ async function deploy() {
     run("gcloud", ["auth", "activate-service-account", "--key-file", keyFile, "--project", PROJECT, "--quiet"]);
     const inventory = () => parseFunctionInventory(firebase(["functions:list", "--project", PROJECT, "--json"]));
     const before = inventory(); selectedFunction(before);
-    const metadata = JSON.parse(run("gcloud", ["functions", "describe", NAME, "--gen2", "--region", REGION, "--project", PROJECT,
+    const metadata = JSON.parse(run("gcloud", ["functions", "describe", NAME, "--v2", "--region", REGION, "--project", PROJECT,
       "--format=json(name,updateTime,buildConfig.source.storageSource,buildConfig.sourceProvenance.resolvedStorageSource)"]));
     const uri = backupUri(metadata);
     const dir = path.join(process.env.RUNNER_TEMP, "crm-cleaning-report-deploy"); fs.mkdirSync(dir, { recursive: true });
