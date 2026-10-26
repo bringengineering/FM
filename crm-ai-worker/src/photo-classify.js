@@ -5,7 +5,7 @@ const MAX_REQUEST_BYTES = 5 * 1024 * 1024;
 const GEMINI_BATCH_SIZE = 6;
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const EVIDENCE = ["debris_removed", "stain_reduced", "items_removed", "unknown"];
-const COMMON_CATEGORIES = Object.freeze({ entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "공용 창호·창틀", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인", review: "분류 확인 필요" });
+const COMMON_CATEGORIES = Object.freeze({ entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "창틀·레일", glass: "공용 유리", yard: "마당·외부 바닥", parking: "주차장", drain: "배수구·트렌치", rooftop: "옥상·테라스", elevator: "승강기", walls: "벽면·문", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인", review: "분류 확인 필요" });
 
 
 async function readBoundedJson(message, limit, code) {
@@ -107,11 +107,13 @@ function promptFor(images, kind, review = false) {
     "room_fixtures는 공간을 실제로 식별할 때 넣으세요. 싱크볼+주방 상하부장이나 조리대 배치가 보이면 kitchen과 kitchen_counter, 고정 조리 설비는 cooking_fixture입니다. 욕조·욕실 수전의 배치가 명확하면 bath_fixture입니다. 수납장만 확대되어 어느 방인지 알 수 없으면 unknown을 유지하세요. 냉장고 본체는 일반 수납장(storage)이 아니라 refrigerator입니다.",
     "메신저·결제 안내·견적 문서·앱 화면 캡처는 현장 작업 사진이 아닙니다. 이런 화면이면 features에 screen_capture 또는 document_layout을 표시하고 category=review, action=unknown, phase=unknown으로 답하세요. 화면 안 작은 사진을 실제 현장 원본으로 분류하거나 개인정보를 읽어 적지 마세요. 현장 벽의 작은 안내문이 찍힌 실제 사진과 구분하세요.",
     "후드는 hood_body 또는 metal_mesh+grease_filter_frame, 에어컨은 aircon_body 또는 plastic_mesh+aircon_filter_frame, 냉장고는 refrigerator_body 또는 shelf_rail+transparent_drawer의 근거가 필요합니다. 물에 담긴 플라스틱만으로 냉장고라고 판단하지 마세요. 공간을 몰라도 대상이 명확하면 space=unknown으로 대상을 유지하세요. 후보가 경합하면 category=review, candidates에 최대 두 후보만 남기세요.",
-    common ? "공용부 청소 사진의 주된 구역과 실제 청소 동작을 각각 분류하세요. 계단·계단참·난간·복도·출입구·공용 창틀·분리수거장을 구분하고 모호한 클로즈업은 review로 남기세요." : "당신은 입주청소 작업 사진을 보고 사진의 주된 구역·대상을 분류합니다.",
+    common ? "공용부 청소 사진의 주된 구역과 실제 청소 동작을 각각 분류하세요. 계단·계단참·난간·복도·출입구·창틀·유리·마당·주차장·배수구·옥상·승강기·벽면·분리수거장을 구분하고 모호한 클로즈업은 review로 남기세요." : "당신은 입주청소 작업 사진을 보고 사진의 주된 구역·대상을 분류합니다.",
     `허용 category: ${labels}, review=애매하거나 여러 항목이 비슷함.`,
     `공간(space)과 대상(target)을 따로 분류하세요. space: ${SPACES.join(", ")}. target: ${TARGETS.join(", ")}.`,
     common ? "공용부 구역은 category로 구분합니다. space는 출입구가 명확하면 entrance, 다른 공용 공간이면 other, 공간이 보이지 않으면 unknown입니다. 입주청소의 거실·욕실·베란다 구역으로 분류하지 마세요." : "living=거실, bedroom=방, bath=욕실, veranda=베란다, entrance=현관, sink=세면대·싱크대, cabinet=수납장, wall=벽면. 보이는 바닥만 보고 공간까지 추측하지 마세요.",
-    common ? "계단 바닥은 category=stairs,target=floor, 공용 복도 바닥은 category=corridor,target=floor, 공용 창틀은 category=windows,target=window입니다. 계단인지 복도인지 알 수 없는 바닥 클로즈업은 category=review입니다." : "욕실 바닥은 space=bath,target=floor,category=bath. 베란다 바닥은 space=veranda,target=floor,category=veranda. 거실 바닥은 living,floor,floor. 공간이 안 보이는 클로즈업은 space=unknown.",
+    common ? "계단 바닥은 category=stairs,target=floor입니다. 계단과 직접 이어지는 평평한 계단참도 stairs이며 연결된 단차가 보이면 stair_landing을 기록하세요. 복도처럼 길게 이어지는 통로가 중심일 때만 category=corridor,target=floor입니다. 난간이 배경에 있다는 이유만으로 handrail로 바꾸지 마세요. 계단인지 복도인지 알 수 없는 바닥 클로즈업은 category=review입니다. 창틀 홈·레일이 중심이면 category=windows,target=window와 window_frame 또는 window_track, 유리 면이 중심이면 category=glass,target=window와 glass_pane입니다. 창틀이 가장자리에 보이는 유리 사진과 레일 먼지의 근접 사진을 구분하세요." : "욕실 바닥은 space=bath,target=floor,category=bath. 베란다 바닥은 space=veranda,target=floor,category=veranda. 거실 바닥은 living,floor,floor. 공간이 안 보이는 클로즈업은 space=unknown.",
+    common ? "마당·뜰·건물 앞의 넓은 외부 바닥과 주변 경계가 보이면 yard,target=floor,outdoor_yard와 floor_surface입니다. 좁게 이어지는 외부 보행 통로는 corridor이며 실외라는 이유만으로 마당을 추정하지 마세요. 주차선·주차 구획 등 주차장 구조가 보이면 parking,target=floor,parking_markings와 floor_surface입니다. 배경의 차 한 대만으로 주차장이라고 하지 마세요. 옥상·테라스의 바닥과 해당 공간임을 확인할 경계 구조가 함께 보이면 rooftop,target=floor,rooftop_boundary와 floor_surface입니다. 하늘·난간만으로 옥상이라고 추정하지 마세요. 바닥면 조각만 보이면 yard·parking·rooftop를 추정하지 말고 review로 남기세요." : "",
+    common ? "배수 홈·배수구·그레이팅 자체가 중심이면 drain,target=other,drain_grate입니다. 마당·주차장·옥상 바닥 청소가 중심이고 배수구가 작게 보이면 해당 바닥 구역을 유지하세요. 승강기 문·버튼·내부 구조가 명확하면 elevator,target=other,elevator_structure입니다. 문 전체와 현관 공간은 entrance, 문 표면의 국소 얼룩이 중심이면 walls,target=other,door_surface이고, 벽면 오염이 중심이면 walls,target=wall,wall_surface입니다. 조명·천장·벽을 구분하세요. final은 사람이 지정하는 마감 기록이며 사진이 깨끗하거나 마지막 순서라는 이유로 자동 선택하지 마세요." : "",
     common ? "corridor(복도·공용 바닥)는 실내 복도뿐 아니라 외부 공용 통로 바닥도 포함합니다. 건물의 출입문·벽·난간·파라펫과 연결된 보행면 및 그 경계가 함께 보이면 open_walkway와 floor_surface를 기록하고 corridor,floor,space=other로 분류할 수 있습니다. 실외라는 이유만으로 open_walkway를 만들지 마세요. 하늘·지붕 원경이나 바닥 조각만으로 통로를 추측하지 마세요. 계단 단차 자체가 작업 대상이면 stairs입니다. 위쪽 천장면이나 처마 아래 천장을 청소하는 사진은 조명 기구가 없어도 ceiling_surface와 lighting,target=other입니다. 옆의 수직 벽은 wall_surface이고 천장면과 다릅니다. 조명 설비 자체는 ceiling_fixture로 구분하세요." : "가전·필터의 종류는 본체나 고유 구조로 판단하고 배경의 통로·천장 때문에 작업 대상을 바꾸지 마세요.",
     common ? "난간·손잡이가 중심이면 category=handrail,target=other, 출입문 전체이면 entrance,other, 조명은 lighting,other, 분리수거 용기는 recycle,other입니다. 이런 대상은 target 허용 목록에 같은 이름이 없으므로 unknown이 아니라 other입니다. 중앙 확대가 배경 계단만 보여도 전체 사진에서 주된 난간 대상을 바꾸지 마세요." : "전체 장면의 주요 대상이 여러 개라면 애매한 대상만 unknown으로 남기고 확실한 공간은 유지하세요. 중앙 확대가 다른 배경을 크게 보여도 전체 사진의 주된 대상을 기준으로 판단하세요.",
     "phase는 during 또는 unknown만 허용합니다. 닦기(wiping), 쓸기(sweeping), 물걸레(mopping), 문지르기(scrubbing), 세척(washing), 수거(collecting) 동작과 대상의 접촉이 분명할 때만 during입니다. 사람이 서 있거나 도구만 놓인 사진, 깨끗해 보이는 표면, 촬영 순서만으로 작업 중·전·후 또는 완료를 추정하지 마세요. 모호하면 action=unknown,phase=unknown으로 남기세요. 구역 confidence와 단계 phaseConfidence는 독립 점수입니다. 인물·주소·연락처를 묘사하지 마세요.",
@@ -274,4 +276,4 @@ export async function classifyPhotos(payload, env, fetchImpl, timeoutMs = 60_000
   };
 }
 
-export { CATEGORIES, MAX_PHOTOS, MAX_JPEG_BYTES, MAX_REQUEST_BYTES };
+export { CATEGORIES, COMMON_CATEGORIES, MAX_PHOTOS, MAX_JPEG_BYTES, MAX_REQUEST_BYTES };
