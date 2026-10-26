@@ -11,6 +11,20 @@ const REGION = "asia-northeast3";
 const PROJECT = "bring-fm";
 const fail = code => { throw new Error(`CLEANING_REPORT_${code}`); };
 
+function runCommand(bin, args, options, exec = execFileSync) {
+  try { return exec(bin, args, options); }
+  catch (error) {
+    const tool = bin === process.execPath ? "FIREBASE" : bin === "gcloud" ? "GCLOUD" : bin === "git" ? "GIT" : "COMMAND";
+    const operations = { "--version": "VERSION", fetch: "FETCH", "rev-parse": "SOURCE", status: "STATUS", "ls-remote": "RESERVATION", auth: "AUTH", functions: "METADATA", storage: "BACKUP", "functions:list": "INVENTORY", deploy: "DEPLOY" };
+    const operation = operations[args[bin === process.execPath ? 1 : 0]] || "UNKNOWN";
+    const stderr = String(error.stderr || "");
+    const reason = /permission.denied|forbidden|does not have.*permission/iu.test(stderr) ? "PERMISSION_DENIED"
+      : /unauthenticated|invalid.grant|invalid.credentials|failed to authenticate/iu.test(stderr) ? "AUTH_FAILED"
+      : /not.found|no such file|cannot find module/iu.test(stderr) || error.code === "ENOENT" ? "NOT_FOUND" : "FAILED";
+    fail(`${tool}_${operation}_${reason}`);
+  }
+}
+
 function planDeployment(manifest, project) {
   const full = buildCleaningDeploymentPlan(manifest, project);
   if (!full.functionNames.includes(NAME)) fail("TARGET_INVALID");
@@ -40,7 +54,7 @@ function backupUri(metadata) {
 async function deploy() {
   if (process.env.GITHUB_ACTIONS !== "true" || !path.isAbsolute(process.env.RUNNER_TEMP || "")) fail("CI_REQUIRED");
   const plan = planDeployment(require("./firebase-targets.json"), PROJECT);
-  const run = (bin, args, timeout = 30000) => execFileSync(bin, args, { cwd: ROOT, encoding: "utf8", timeout,
+  const run = (bin, args, timeout = 30000) => runCommand(bin, args, { cwd: ROOT, encoding: "utf8", timeout,
     maxBuffer: 8 * 1024 * 1024, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   const git = args => run("git", args).trim();
   const firebase = args => run(process.execPath, [path.join(ROOT, "company-site/node_modules/firebase-tools/lib/bin/firebase.js"), ...args], 1200000);
@@ -90,4 +104,4 @@ async function deploy() {
   }
 }
 if (require.main === module) deploy().catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
-module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri };
+module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand };
