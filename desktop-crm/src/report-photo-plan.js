@@ -92,6 +92,7 @@
       옥상: "rooftop", 옥상바닥: "rooftop", 테라스: "rooftop", 테라스바닥: "rooftop",
       승강기: "elevator", 엘리베이터: "elevator",
       벽면: "walls", 외벽: "walls", 벽: "walls", 문: "walls",
+      소화기: "fixtures", 설비함: "fixtures", 전기함: "fixtures", 계량기함: "fixtures", 게시판: "fixtures",
       조명: "lighting", 천장: "lighting", 등: "lighting",
       분리수거장: "recycle", 수거장: "recycle", 재활용: "recycle",
       마감: "final", 안전: "final",
@@ -424,7 +425,7 @@
   }
 
   const AI_CATEGORY_LABELS = Object.freeze({
-    entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "창틀·레일", glass: "공용 유리", yard: "마당·외부 바닥", parking: "주차장", drain: "배수구·트렌치", rooftop: "옥상·테라스", elevator: "승강기", walls: "벽면·문", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인",
+    entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "창틀·레일", glass: "공용 유리", yard: "마당·외부 바닥", parking: "주차장", drain: "배수구·트렌치", rooftop: "옥상·테라스", elevator: "승강기", walls: "벽면·문", fixtures: "공용 설비·게시판", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인",
     floor: "바닥",
     window: "창호·새시",
     kitchen: "싱크대·상하부장",
@@ -557,7 +558,7 @@
   // Common-area evidence has two independent axes. Missing AI decisions never
   // erase a previous recommendation or a user's explicit correction.
   function applyCommonClassifications(plan, classifications) {
-    const allowed = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "lighting", "recycle", "final"]);
+    const allowed = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final"]);
     const decisions = new Map(rows(classifications).map(row => [text(row.id, 200), row]));
     let result = plan;
     for (const row of photoReviewRows(plan)) {
