@@ -4777,6 +4777,7 @@ export const cleaningOrdersApi = onRequest(
   async (request, response) => {
     response.set("Cache-Control", "no-store");
     response.set("X-Content-Type-Options", "nosniff");
+    response.set("X-Bring-Cleaning-Report-Schema", "common-v2");
     try {
       const actor = await authorizeCleaningOrderRequest(request);
       if (request.method === "GET") {
