@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { getApps, initializeApp } from "firebase-admin/app";
-export { fieldMobileApi } from './field-mobile/endpoint.js';
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase, ServerValue } from "firebase-admin/database";

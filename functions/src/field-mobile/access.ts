@@ -1,4 +1,4 @@
-/** Native field access boundary. Not exported as a deployed function yet.
+/** Native field access boundary, deployed only through the field-mobile codebase.
  * Identity/App Check verification must be supplied by Firebase Admin with
  * revocation checks. Operator labels from legacy shared-account field tools
  * must never be accepted as proof of an employee's identity.
