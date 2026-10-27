@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
 import { randomBytes } from 'node:crypto';
-import { renderRecordingPdf } from '../src/field-mobile/recording-pdf.js';
+import { photoRows,renderRecordingPdf } from '../src/field-mobile/recording-pdf.js';
 import { hash, type Recording, type RecordingPhoto } from '../src/field-mobile/recording-model.js';
 
 it('renders a Korean report with before/after images and stable customer metadata',async()=>{
@@ -14,6 +14,14 @@ it('renders a Korean report with before/after images and stable customer metadat
   const parsed=await PDFDocument.load(pdf);expect(parsed.getPageCount()).toBeGreaterThan(0);expect(parsed.getTitle()).toBe('BRING CARE 작업 결과보고서');expect(pdf.length).toBeLessThan(12*1024*1024);
   if(process.env.FIELD_PDF_QA==='1'){await mkdir('../.firebase/field-mobile-verification/pdf',{recursive:true});await writeFile('../.firebase/field-mobile-verification/pdf/recording-qa.pdf',pdf);}
 },60_000);
+
+it('pairs the same area before and after in capture order and shows missing counterparts',()=>{
+  const p={id:'sample',itemKey:'entrance',phase:'before',caption:'',included:true,capturedAt:'2026-10-27T01:00:00Z',mime:'image/jpeg',bytes:4,sha256:'a'.repeat(64),width:1,height:1} as RecordingPhoto;
+  const make=(id:string,phase:RecordingPhoto['phase'],time:string)=>({photo:{...p,id,phase,capturedAt:time},bytes:Buffer.from('test')});
+  const a=make('before-1','before','2026-10-27T01:00:00Z'),b=make('before-2','before','2026-10-27T02:00:00Z'),c=make('after-1','after','2026-10-27T03:00:00Z'),d=make('during-1','during','2026-10-27T02:30:00Z');
+  const rows=photoRows([c,b,d,a]);expect(rows.map(row=>row.slots.map(item=>item?.photo.id||null))).toEqual([['before-1','after-1'],['before-2',null],['during-1']]);
+  expect(rows[1].labels).toEqual(['작업 전','작업 후']);
+});
 
 it('fits 100 synthetic before/after photos in a bounded customer PDF',async()=>{
   const bytes=await sharp(randomBytes(500*500*3),{raw:{width:500,height:500,channels:3}}).jpeg({quality:95}).toBuffer();

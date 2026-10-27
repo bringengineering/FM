@@ -8,7 +8,15 @@ import { assert, type Recording, type RecordingPhoto } from './recording-model.j
 const blue=rgb(.12,.35,.65),ink=rgb(.12,.18,.25),muted=rgb(.36,.42,.49),line=rgb(.86,.9,.94);
 const phases={before:'작업 전',during:'작업 중',after:'작업 후'};
 const statuses:Record<string,string>={recorded:'작업 기록',done:'완료',partial:'일부 진행',skipped:'미실시'};
-export async function renderRecordingPdf(visit:Recording,photos:{photo:RecordingPhoto;bytes:Buffer}[]):Promise<Buffer>{
+type PdfPhoto={photo:RecordingPhoto;bytes:Buffer};
+export function photoRows(photos:PdfPhoto[]):{slots:(PdfPhoto|null)[];labels:string[]}[]{
+  const ordered=(phase:RecordingPhoto['phase'])=>photos.filter(p=>p.photo.phase===phase).sort((a,b)=>Date.parse(a.photo.capturedAt)-Date.parse(b.photo.capturedAt)||a.photo.id.localeCompare(b.photo.id));
+  const before=ordered('before'),after=ordered('after'),during=ordered('during'),rows:{slots:(PdfPhoto|null)[];labels:string[]}[]=[];
+  for(let i=0;i<Math.max(before.length,after.length);i++)rows.push({slots:[before[i]||null,after[i]||null],labels:[phases.before,phases.after]});
+  for(let i=0;i<during.length;i+=2)rows.push({slots:during.slice(i,i+2),labels:[phases.during,phases.during]});
+  return rows;
+}
+export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Promise<Buffer>{
   const pdf=await PDFDocument.create();pdf.registerFontkit(fontkit);
   pdf.setTitle('BRING CARE 작업 결과보고서');pdf.setAuthor('BRING CARE');pdf.setCreator('BRING CARE 현장노트');
   pdf.setCreationDate(new Date(visit.updatedAt));pdf.setModificationDate(new Date(visit.updatedAt));
@@ -43,10 +51,13 @@ export async function renderRecordingPdf(visit:Recording,photos:{photo:Recording
     room(selected.length?280:65);draw(page,`${item.label} · ${statuses[visit.draft.statuses[item.key]||'recorded']}`,42,y,12,blue);y-=24;
     if(visit.draft.notes[item.key]){for(const row of wrap(visit.draft.notes[item.key],510,10)){room(16);draw(page,row,42,y,10);y-=16;}y-=6;}
     if(!selected.length){draw(page,'첨부 사진 없음',42,y,10,muted);y-=27;continue;}
-    for(let i=0;i<selected.length;i+=2){const row=selected.slice(i,i+2),captions=row.map(p=>wrap(p.photo.caption||'',246,9));
-      const rowHeight=238+Math.max(...captions.map(c=>c.length))*12;room(rowHeight);
-      for(let j=0;j<row.length;j++){
-        const {photo,bytes}=row[j],x=42+j*264;draw(page,phases[photo.phase],x,y,10,blue);
+    for(const row of photoRows(selected)){const captions=row.slots.map(p=>p?wrap(p.photo.caption||'',246,9):[]);
+      const rowHeight=238+Math.max(1,...captions.map(c=>c.length))*12,previousPage=page;room(rowHeight+24);
+      if(page!==previousPage){draw(page,`${item.label} · 계속`,42,y,12,blue);y-=24;}
+      for(let j=0;j<row.slots.length;j++){
+        const entry=row.slots[j],x=42+j*264;draw(page,row.labels[j],x,y,10,blue);
+        if(!entry){page.drawRectangle({x,y:y-204,width:247,height:192,color:rgb(.96,.97,.98)});draw(page,'사진 없음',x+90,y-108,10,muted);continue;}
+        const {bytes}=entry;
         const img=await pdf.embedJpg(await pdfImage(bytes)),factor=Math.min(246/img.width,190/img.height);
         page.drawRectangle({x,y:y-204,width:247,height:192,color:rgb(.96,.97,.98)});
         page.drawImage(img,{x:x+(247-img.width*factor)/2,y:y-204+(192-img.height*factor)/2,width:img.width*factor,height:img.height*factor});
