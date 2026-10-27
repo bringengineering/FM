@@ -544,12 +544,15 @@ test("normalization-only serviceRecord differences never block or leak into an u
     customers: [{ id: "customer_1", name: "변경" }],
     serviceRecords: [sparse],
   });
+  const customerWrites = [];
+  client.dbReadWithEtag = async () => ({value:"이전",etag:'"fixture"'});
+  client.dbConditionalPut = async (location,value) => { customerWrites.push({location,value}); };
 
   await client.pushStore(desired);
 
   assert.equal(writes.length, 1);
   assert.equal(writes[0].method, "PATCH");
-  assert.equal(writes[0].body["customers/customer_1/name"], "변경");
+  assert.ok(customerWrites.some(write=>write.location.endsWith("/customers/customer_1/name")&&write.value==="변경"));
   assert.equal(Object.keys(writes[0].body).some(key => key.startsWith("serviceRecords/")), false);
   assert.deepEqual(client.remotePayload.serviceRecords.service_sparse_1, sparse);
 });
@@ -565,6 +568,8 @@ test("a CAS create followed by an unrelated generic save keeps the exact committ
     customers: [{ id: "customer_2", name: "새 고객" }],
     serviceRecords: [committed.record],
   });
+  client.dbReadWithEtag = async location => { assert.match(location,/\/customers\/customer_2$/);return {value:null,etag:'"fixture"'}; };
+  client.dbConditionalPut = async location => { assert.match(location,/\/customers\/customer_2$/);return true; };
 
   await client.pushStore(desired);
 
@@ -605,7 +610,7 @@ test("CAS refreshes the disposable local cache and cannot race a shared-stream r
 test("generic saves fetch latest server schedules while legacy pending schedule edits fail closed", async () => {
   const client = makeClient();
   const latest = { id: "service_schedule_1", buildingId: "building_1", title: "latest", status: "planned", updatedAt: "new" };
-  client.remotePayload = { serviceRecords: { service_schedule_1: { ...latest, title: "cached-old", updatedAt: "old" } } };
+  client.remotePayload = { customers: {customer_1:{id:"customer_1",name:"이전"}}, serviceRecords: { service_schedule_1: { ...latest, title: "cached-old", updatedAt: "old" } } };
   client.fetchRemotePayload = async () => ({
     customers: { customer_1: { id: "customer_1", name: "이전" } },
     serviceRecords: { service_schedule_1: structuredClone(latest) },
@@ -616,6 +621,8 @@ test("generic saves fetch latest server schedules while legacy pending schedule 
     customers: [{ id: "customer_1", name: "변경" }],
     serviceRecords: [{ ...latest, title: "stale-renderer", updatedAt: "old" }],
   });
+  client.dbReadWithEtag = async () => ({value:"이전",etag:'"fixture"'});
+  client.dbConditionalPut = async () => true;
 
   await client.pushStore(staleRendererSave);
 

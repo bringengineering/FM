@@ -511,19 +511,19 @@
     const linkedIds = new Set(Core.customerBuildingIds(customer));
     return store.buildings.filter(building => linkedIds.has(building.id) || building.ownerCustomerId === customer.id);
   };
-  const customerManagedBuildingAddress = (customer, building) => String(customer && (customer.roadAddress || customer.jibunAddress || customer.address)
-    || building && (building.roadAddress || building.jibunAddress || building.address)
+  const customerManagedBuildingAddress = (customer, building) => String(building ? (building.roadAddress || building.address || building.jibunAddress || "")
+    : customer && (customer.roadAddress || customer.address || customer.jibunAddress)
     || "").trim();
   function customerManagedBuildingChoices(existingBuildingId = "") {
-    const choices = (store.customers || []).filter(customer => customer && !customer.archivedAt).map(customer => {
-      const building = customerBuildings(customer).find(item => item && !item.archivedAt) || null;
-      return {
+    const choices = (store.customers || []).filter(customer => customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true).flatMap(customer => {
+      const linked = customerBuildings(customer).filter(item => item && !item.archivedAt);
+      return (linked.length ? linked : [null]).map(building => ({
         value: building && building.id || `customer:${customer.id}`,
         customer,
         building,
-        name: customerDisplayName(customer),
+        name: [...new Set([customerDisplayName(customer), building && (building.name || building.roadAddress || building.address), linked.length > 1 && customerManagedBuildingAddress(customer, building)])].filter(Boolean).join(" · "),
         address: customerManagedBuildingAddress(customer, building),
-      };
+      }));
     }).sort((left, right) => left.name.localeCompare(right.name, "ko-KR", { numeric: true }));
     if (existingBuildingId && !choices.some(choice => choice.value === existingBuildingId)) {
       const building = buildingById(existingBuildingId);
@@ -1155,8 +1155,12 @@
       showToast("고객·건물 관리 목록에서 고객건물을 다시 선택해 주세요.", "error");
       return null;
     }
-    const linkedBuilding = customerBuildings(customer).find(item => item && !item.archivedAt);
-    if (linkedBuilding) return linkedBuilding;
+    const linkedBuildings = customerBuildings(customer).filter(item => item && !item.archivedAt);
+    if (linkedBuildings.length > 1) {
+      showToast("연결된 건물이 여러 개입니다. 작업할 건물을 직접 선택해 주세요.", "error");
+      return null;
+    }
+    if (linkedBuildings.length === 1) return linkedBuildings[0];
     const address = customerManagedBuildingAddress(customer, null);
     if (!address) {
       showToast("고객·건물 관리에서 도로명 주소나 지번 주소를 먼저 입력해 주세요.", "error");
@@ -1319,6 +1323,7 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     let payload = queuedSave || cloneStore(store);
+    const saveBase = synchronizedStore && cloneStore(synchronizedStore);
     queuedSave = null;
     let rebasedRemote = false;
     if (pendingRemoteStore) {
@@ -1330,6 +1335,7 @@
       rebasedRemote = true;
     }
     payload.updatedAt = new Date().toISOString();
+    if (saveBase) payload.__crmSaveBase = saveBase;
     saveInFlight = true;
     let saveResult = null;
     try {
@@ -1368,6 +1374,7 @@
     saveTimer = null;
     queuedSave = null;
     const payload = cloneStore(store);
+    if (synchronizedStore) payload.__crmSaveBase = cloneStore(synchronizedStore);
     payload.updatedAt = new Date().toISOString();
     saveInFlight = true;
     try {
@@ -9907,12 +9914,12 @@
   function workReportBuildings(existingBuildingId = "") {
     const choices = customerManagedBuildingChoices(existingBuildingId).map(choice => ({
       ...(choice.building || {}), id: choice.value,
-      name: String(choice.customer?.name || choice.building?.name || choice.address || "현장").trim(),
+      name: String(choice.building?.name || choice.customer?.name || choice.address || "현장").trim(),
       internalLabel: choice.name,
       address: choice.address,
-      roadAddress: String(choice.customer?.roadAddress || "").trim(),
-      jibunAddress: String(choice.customer?.jibunAddress || "").trim(),
-      ownerCustomerId: choice.customer?.id || choice.building?.ownerCustomerId || "",
+      roadAddress: String(choice.building ? choice.building.roadAddress || "" : choice.customer?.roadAddress || "").trim(),
+      jibunAddress: String(choice.building ? choice.building.jibunAddress || "" : choice.customer?.jibunAddress || "").trim(),
+      ownerCustomerId: choice.building ? choice.building.ownerCustomerId || "" : choice.customer?.id || "",
     }));
     const ids = new Set(choices.map(item => item.id));
     for (const building of store.buildings || []) {
@@ -9925,7 +9932,7 @@
   }
 
   function workReportBuildingAddress(building) {
-    return String(building && (building.roadAddress || building.jibunAddress || building.address) || "").trim();
+    return String(building && (building.roadAddress || building.address || building.jibunAddress) || "").trim();
   }
 
   // 저장 형식은 기존 siteAddress 한 칸을 그대로 쓴다. 화면에서만 건물 주소와
@@ -12850,6 +12857,7 @@
       ${legacyAddressNotice}
       ${field("도로명 주소", "roadAddress", customer.roadAddress, "text", "예: 강원특별자치도 원주시 중앙로 1", "wide")}
       ${field("지번 주소", "jibunAddress", customer.jibunAddress, "text", "예: 강원특별자치도 원주시 중앙동 1-1", "wide")}
+      <div class="info-box wide">고객 등록 주소는 그대로 보관합니다. 연결된 건물의 계약·일정·새 보고서는 선택한 건물의 현장 주소를 사용합니다. 현장 주소 정정은 건물의 임대·공실 정보 수정에서 별도로 적용하세요.</div>
       ${selectField("고객 유형", "type", ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"], selectedCustomerType)}
       <label class="field" data-customer-custom-type ${selectedCustomerType === "직접 입력" ? "" : "hidden"}><span>고객 유형 직접 입력 *</span><input name="customType" value="${attr(customCustomerType)}" maxlength="40" placeholder="예: 상가 임차인, 관리업체"></label>
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
@@ -12930,7 +12938,8 @@
         ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
       </div></section>`;
     const returnView = ["customers", "vacancies", "payments"].includes(currentView) ? currentView : "buildings";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "임대·공실 정보 수정" : "새 건물 등록"}</h2><p>${editing ? `${esc(building.name || "건물")}의 임대 조건과 공실 정보를 수정합니다.` : "건물 고유 ID를 기준으로 고객·계약·민원·입금 자료가 연결됩니다."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">${buildingIdentityEditor}
+    const buildingAddressEditor = editing ? `<section class="building-form-section"><header><div><h3>현장 주소 확인·정정</h3><p>건물 ID와 기존 문서는 유지하고, 적용을 선택한 경우에만 현장 주소를 정정합니다.</p></div></header><div class="form-grid building-form-section-body"><label class="wide"><input type="checkbox" name="applySiteAddress" value="true"> 현장 주소 정정 적용 · 새 계약·일정·보고서에 반영</label>${field("현장 도로명 주소", "roadAddress", building.roadAddress, "text", "도로명 주소", "wide")}${field("현장 지번 주소", "jibunAddress", building.jibunAddress, "text", "지번 주소", "wide")}</div></section>` : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "임대·공실 정보 수정" : "새 건물 등록"}</h2><p>${editing ? `${esc(building.name || "건물")}의 임대 조건과 공실 정보를 수정합니다.` : "건물 고유 ID를 기준으로 고객·계약·민원·입금 자료가 연결됩니다."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">${buildingIdentityEditor}${buildingAddressEditor}
       <section class="building-form-section building-rental-form-section"><header><div><h3>임대·공실 정보</h3><p>대표 임대 조건과 현재 확인된 공실을 입력하세요.</p></div><span>금액은 원 단위</span></header><div class="form-grid building-form-section-body">
         ${buildingNumberField("보증금", "rentDeposit", building.rentDeposit, "원", "예: 3000000")}
         ${buildingNumberField("월세", "monthlyRent", building.monthlyRent, "원", "예: 330000")}
@@ -13110,8 +13119,13 @@
 
   function contractBuildingField(customerId, buildingId) {
     const customer = customerById(customerId);
-    const building = buildingById(buildingId) || customerBuildings(customer).find(item => !item.archivedAt);
-    return `<label class="field contract-building-field"><span>고객 등록 주소</span><input type="hidden" name="buildingId" value="${attr(building?.id || "")}"><input data-contract-customer-address value="${attr(customerManagedBuildingAddress(customer, building))}" placeholder="고객을 선택하면 등록 주소가 표시됩니다" readonly><small>선택한 고객의 등록 주소를 사용합니다.</small></label>`;
+    const buildings = customerBuildings(customer).filter(item => !item.archivedAt);
+    const current = buildingById(buildingId);
+    if (current && !buildings.some(item => item.id === current.id)) buildings.push(current);
+    const selectedId = buildings.some(item => item.id === buildingId) ? buildingId : buildings.length === 1 ? buildings[0].id : "";
+    const selected = buildings.find(item => item.id === selectedId);
+    const help = buildings.length > 1 ? "계약할 건물을 직접 선택하세요. 선택한 건물의 주소를 사용합니다." : buildings.length ? "연결된 건물의 현장 주소를 사용합니다." : "연결 건물이 없으면 고객 등록 주소로 현장을 연결합니다. 기존 주소는 자동 변경하지 않습니다.";
+    return `<label class="field contract-building-field"><span>계약 현장 · 건물</span><select name="buildingId" data-contract-building-select ${buildings.length > 1 ? "required" : ""}><option value="">${buildings.length > 1 ? "계약할 건물 선택" : buildings.length ? "건물 선택" : "고객 등록 주소 사용 · 건물 미연결"}</option>${buildings.map(item => `<option value="${attr(item.id)}" ${item.id === selectedId ? "selected" : ""}>${esc([item.name, customerManagedBuildingAddress(customer, item)].filter(Boolean).join(" · ") || "주소 미등록")}${item.archivedAt ? " · 기존 보관 건물" : ""}</option>`).join("")}</select><input data-contract-customer-address value="${attr(selectedId ? customerManagedBuildingAddress(customer, selected) : buildings.length ? "" : customerManagedBuildingAddress(customer, null))}" placeholder="건물을 선택하면 현장 주소가 표시됩니다" readonly><small>${esc(help)}</small></label>`;
   }
 
   function refreshContractTypeFields(form) {
@@ -13126,11 +13140,22 @@
   function refreshContractBuildings(form) {
     if (!form) return "";
     const customer = customerById(form.elements.customerId?.value);
-    const building = customerBuildings(customer).find(item => !item.archivedAt);
-    if (form.elements.buildingId) form.elements.buildingId.value = building?.id || "";
+    const buildings = customerBuildings(customer).filter(item => !item.archivedAt);
+    const selectedId = buildings.length === 1 ? buildings[0].id : "";
+    const field = form.querySelector(".contract-building-field");
+    if (field) field.outerHTML = contractBuildingField(customer?.id || "", selectedId);
+    else if (form.elements.buildingId) form.elements.buildingId.value = selectedId;
+    refreshContractBuildingAddress(form);
+    return selectedId;
+  }
+
+  function refreshContractBuildingAddress(form) {
+    if (!form) return;
+    const customer = customerById(form.elements.customerId?.value);
+    const building = buildingById(form.elements.buildingId?.value);
     const address = form.querySelector("[data-contract-customer-address]");
-    if (address) address.value = customerManagedBuildingAddress(customer, building);
-    return building?.id || "";
+    if (address) address.value = building ? customerManagedBuildingAddress(customer, building)
+      : customerBuildings(customer).some(item => !item.archivedAt) ? "" : customerManagedBuildingAddress(customer, null);
   }
 
   function refreshContractPaymentFields(form, resetPaymentDate = false) {
@@ -17984,6 +18009,7 @@
     }
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
+    if (event.target.matches('#contractForm [data-contract-building-select]')) refreshContractBuildingAddress(event.target.form);
     if (event.target.matches('#contractForm [name="billingCycle"], #contractForm [name="paymentDueDate"]')) refreshContractPaymentFields(event.target.form, true);
     if (event.target.matches('#contractForm [name="endDate"], #contractForm [name="status"]')) refreshContractPaymentFields(event.target.form);
     if (event.target.matches('#customerForm [name="type"]')) updateCustomerCustomTypeField(event.target.form);
@@ -19469,8 +19495,10 @@
       if (maintenanceIncludeOther && !maintenanceIncludes.includes("기타")) maintenanceIncludes.push("기타");
       if (roomTypeOther && !roomTypes.includes("기타")) roomTypes.push("기타");
       if (roomOptionOther && !roomOptions.includes("기타")) roomOptions.push("기타");
-      const roadAddress = String(existing ? existing.roadAddress : raw.roadAddress || "").trim();
-      const jibunAddress = String(existing ? existing.jibunAddress : raw.jibunAddress || "").trim();
+      const applySiteAddress = !existing || raw.applySiteAddress === "true";
+      const roadAddress = String(existing && !applySiteAddress ? existing.roadAddress || "" : raw.roadAddress || "").trim();
+      const jibunAddress = String(existing && !applySiteAddress ? existing.jibunAddress || "" : raw.jibunAddress || "").trim();
+      if (existing && applySiteAddress && !roadAddress && !jibunAddress) return showToast("정정할 현장 주소를 하나 이상 입력해 주세요.", "error");
       const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
         ? String(existing.address || "").trim()
         : "";
@@ -19560,8 +19588,11 @@
       catch (error) { return showToast(error.message, "error"); }
       if (cleaningSchedule && cleaningSchedule.mode !== "manual" && raw.status === "진행 중"
         && !ContractSchedule.contractDates({ ...raw, types, cleaningSchedule }).length) return showToast("계약 기간 안에 청소 작업일이 없습니다. 시작일·종료일·요일을 확인해 주세요.", "error");
-      raw.buildingId = existing?.customerId === raw.customerId && buildingById(existing.buildingId) && !buildingById(existing.buildingId).archivedAt
-        ? existing.buildingId : customerBuildings(linkedCustomer).find(building => !building.archivedAt)?.id || "";
+      const customerSites = customerBuildings(linkedCustomer).filter(building => !building.archivedAt);
+      const keepsExistingSite = existing?.customerId === raw.customerId && existing.buildingId === raw.buildingId;
+      if (raw.buildingId && !keepsExistingSite && !customerSites.some(building => building.id === raw.buildingId)) return showToast("선택한 고객의 계약 건물을 다시 확인해 주세요.", "error");
+      if (!raw.buildingId && customerSites.length > 1) return showToast("연결된 건물이 여러 개입니다. 계약할 건물을 직접 선택해 주세요.", "error");
+      if (!raw.buildingId && customerSites.length === 1) raw.buildingId = customerSites[0].id;
       if (!raw.buildingId && customerManagedBuildingAddress(linkedCustomer, null)) {
         form.dataset.resolvingSite = "true";
         try {

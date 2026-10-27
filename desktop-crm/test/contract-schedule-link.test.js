@@ -138,6 +138,7 @@ function saveHarness(options = {}) {
     input.buildings = [];
     input.customers[0].buildingIds = [];
     input.customers[0].roadAddress = options.noAddress ? "" : "Fixture registered address";
+    if (!Object.hasOwn(options.values || {}, "buildingId")) values.buildingId = "";
   }
   const context = vm.createContext({ Core, ContractSchedule: Schedule, ContractScheduleUI: UI, WorkCalendar: Calendar, form, store: input, canWriteCRM: () => options.canWrite !== false, authGeneration: 7, currentAuthUid: () => "fixture_uid", cloneStore: value => structuredClone(value), currentAuth: { user: { uid: "fixture_uid" } }, contractSources: {}, DEFAULT_CONTRACT_READINESS_ITEMS: [], contractPaymentModeFilter: "single", unifiedCalendarTab: "contract", workCalendarDate: "", workCalendarMonth: "", workCalendarBuildingId: "all", workCalendarQuery: "", contractCalendarMonth: "", contractCalendarBuildingId: "all", contractCalendarQuery: "", currentView: "buildingCalendar", messages: [], renders: 0, closed: false, saveCount: 0, queuedSave: null, saveTimer: null, clearTimeout, ensureSalesStore() {}, logAudit() {} });
   context.FormData = class { constructor(item) { this.values = item.values; } entries() { return Object.entries(this.values)[Symbol.iterator](); } getAll(key) { return key === "types" ? [this.values.types] : []; } };
@@ -168,8 +169,8 @@ function saveHarness(options = {}) {
   return context;
 }
 
-test("customer-only contracts ignore hidden building input and resolve the registered address after a canonical reload", async () => {
-  const context = saveHarness({ noBuilding: true, values: { buildingId: "forged_other_site" } });
+test("customer-only contracts resolve the registered address after a canonical reload", async () => {
+  const context = saveHarness({ noBuilding: true });
   await context.saveContract(context.form);
   assert.equal(context.resolvedSite, "customer:customer_a");
   assert.equal(context.persisted.contracts[0].buildingId, "canonical_customer_site");
@@ -180,6 +181,28 @@ test("customer-only contracts ignore hidden building input and resolve the regis
   await context.saveContract(context.form);
   assert.equal(context.persisted.contracts.length, 1);
   assert.equal(context.persisted.buildings.length, 1);
+});
+
+test("a forged selected contract site is rejected before resolving or saving", async () => {
+  const context = saveHarness({ noBuilding: true, values: { buildingId: "forged_other_site" } });
+  await context.saveContract(context.form);
+  assert.equal(context.resolvedSite, undefined);
+  assert.equal(context.saveCount, 0);
+  assert.ok(context.messages.some(message => message.includes("계약 건물")));
+});
+
+test("multiple sites require an explicit choice and preserve the selected second building on create and edit", async () => {
+  const context=saveHarness();
+  context.store.buildings.push({id:"building_b",name:"Fixture B",ownerCustomerId:"customer_a"});
+  context.store.customers[0].buildingIds.push("building_b");
+  context.form.values.buildingId="";
+  await context.saveContract(context.form);assert.equal(context.saveCount,0);assert.equal(context.store.contracts.length,0);
+  assert.ok(context.messages.some(message=>message.includes("직접 선택")));
+  context.form.values.buildingId="building_b";
+  await context.saveContract(context.form);assert.equal(context.persisted.contracts[0].buildingId,"building_b");
+  context.form.dataset.contractId=context.persisted.contracts[0].id;
+  context.form.values.buildingId="building_a";
+  await context.saveContract(context.form);assert.equal(context.persisted.contracts[0].buildingId,"building_a");assert.equal(context.persisted.contracts.length,1);
 });
 
 test("a customer without a separate building or address can still register a contract", async () => {

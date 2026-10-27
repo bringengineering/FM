@@ -175,7 +175,9 @@ test("schedule editor lists customer-management entries and auto-links customers
   assert.match(editor, /data-opened-commit-version/);
   assert.match(editor, /data-auth-generation/);
   assert.match(editor, /캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시/);
-  assert.match(resolver, /customerBuildings\(customer\)\.find\(item => item && !item\.archivedAt\)/);
+  assert.match(resolver, /customerBuildings\(customer\)\.filter\(item => item && !item\.archivedAt\)/);
+  assert.match(resolver, /linkedBuildings\.length > 1/);
+  assert.match(resolver, /건물을 직접 선택/);
   assert.match(resolver, /고객·건물 관리에서 도로명 주소나 지번 주소를 먼저 입력/);
   assert.match(resolver, /operation: "create"/);
   assert.match(resolver, /ownerCustomerId: customer\.id/);

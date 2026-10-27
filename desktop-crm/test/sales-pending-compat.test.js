@@ -102,9 +102,13 @@ test("legacy version 3 pending data cannot delete collections absent from its ra
   };
   client.clearPendingStore = async () => undefined;
   client.startStream = () => undefined;
+  const conditional = [];
+  client.dbReadWithEtag = async () => ({value:"Before",etag:'"fixture"'});
+  client.dbConditionalPut = async (location,value,etag) => {assert.equal(etag,'"fixture"');conditional.push({location,value});};
   await client.syncPending(pending);
 
-  assert.equal(patch["customers/customer_1/name"], "After");
+  assert.ok(conditional.some(write=>write.location.endsWith("/customers/customer_1/name")&&write.value==="After"));
+  assert.equal(patch["customers/customer_1/name"], undefined);
   assert.equal(Object.hasOwn(patch, "customers/customer_1"), false);
   assert.equal(Object.hasOwn(patch, "salesProspects/prospect_1"), false);
 });

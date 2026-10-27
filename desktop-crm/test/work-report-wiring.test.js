@@ -157,7 +157,7 @@ test("건물을 고르면 등록 주소를 쓰고 상세주소는 별도 빈칸�
 
   const addressStart = appSource.indexOf("function workReportBuildingAddress(");
   const addressHelpers = appSource.slice(addressStart, editorStart);
-  assert.match(addressHelpers, /building\.roadAddress \|\| building\.jibunAddress \|\| building\.address/u);
+  assert.match(addressHelpers, /building\.roadAddress \|\| building\.address \|\| building\.jibunAddress/u);
   assert.match(addressHelpers, /saved\.startsWith\(prefix\)/u, "기존 보고서의 상세주소를 다시 분리해야 한다");
 
   const readStart = appSource.indexOf("function readReportForm(");
