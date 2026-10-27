@@ -13,16 +13,38 @@ function harness() {
   vm.runInContext(buildings + address + ["customerManagedBuildingChoices", "workReportBuildings", "workReportBuildingAddress", "workReportAddressParts", "contractBuildingField", "refreshContractBuildings", "refreshContractBuildingAddress", "customerFromForm"].map(fn).join("\n"),ctx);
   return ctx;
 }
-test("work report sites preserve unlinked customer addresses and use canonical addresses for linked buildings",()=>{
+test("work report picker uses customer addresses even when multiple buildings are linked",()=>{
   const h=harness(), rows=h.workReportBuildings();
   const registered=rows.find(r=>r.id==="customer:registered");
   assert.equal(registered.name,"Fixture registered site");
   assert.equal(h.workReportBuildingAddress(registered),"Fixture road 1");
-  const linked=rows.find(r=>r.id==="site");
-  assert.equal(linked.name,"Old site label");assert.equal(h.workReportBuildingAddress(linked),"Old site address");
-  assert.equal(rows.filter(r=>r.id==="site").length,1);
-  assert(rows.some(r=>r.id==="legacy"));assert(!rows.some(r=>r.id==="archived_site"||r.id==="customer:archived"));
+  const linked=rows.find(r=>r.id==="customer:linked");
+  assert.equal(linked.name,"Fixture customer label");assert.equal(h.workReportBuildingAddress(linked),"Fixture customer road 2");
+  h.store.buildings.push({id:"another",ownerCustomerId:"linked"});
+  assert.equal(h.workReportBuildings().filter(r=>r.id==="customer:linked").length,1);
+  assert(!rows.some(r=>r.id==="site"||r.id==="legacy"||r.id==="customer:archived"));
+  assert(h.workReportBuildings("legacy").some(r=>r.id==="legacy"));
   assert(h.workReportBuildings("missing_historical_site").some(r=>r.id==="missing_historical_site"));
+});
+
+test("report form maps customer selection directly to customer ID and keeps old building reports",()=>{
+  const h=harness(), R=require("../src/work-report-core");
+  let raw={buildingId:"customer:linked",siteAddress:"Fixture customer road 2",siteAddressDetail:"301호",workDate:"2026-10-27"};
+  const form={elements:{buildingId:{type:"select-one"}},querySelector:()=>null};
+  h.document={querySelector:()=>form};h.FormData=class {entries(){return Object.entries(raw);}};
+  h.reportCore=()=>R;h.reportState={draft:R.normalizeReport({id:"wr_test",workDate:"2026-10-27"})};
+  vm.runInContext(fn("readReportForm"),h);
+  let draft=h.readReportForm();
+  assert.equal(draft.customerId,"linked");assert.equal(draft.buildingId,"");
+  assert.equal(draft.siteAddress,"Fixture customer road 2 301호");assert.equal(draft.buildingName,"Fixture customer label");
+  h.reportState.draft=draft;raw={...raw,buildingId:""};
+  draft=h.readReportForm();assert.equal(draft.customerId,undefined);assert.equal(draft.buildingId,"");
+  h.reportState.draft=R.normalizeReport({id:"wr_test",buildingId:"site",workDate:"2026-10-27"});
+  raw={...raw,buildingId:"site",siteAddress:"Old site address",siteAddressDetail:""};
+  draft=h.readReportForm();assert.equal(draft.buildingId,"site");assert.equal(draft.customerId,undefined);
+  h.reportState.draft=R.normalizeReport({id:"wr_test",customerId:"linked",updatedAt:"2026-10-27T00:00:00Z",workDate:"2026-10-27"});
+  form.elements.buildingId.type="hidden";raw={...raw,buildingId:"",siteAddress:"Fixture customer road 2"};
+  draft=h.readReportForm();assert.equal(draft.customerId,"linked");assert.equal(draft.buildingId,"");
 });
 
 test("multiple buildings are all offered and contracts never silently choose the first",()=>{
@@ -44,14 +66,14 @@ test("work and monthly report address policy agrees and historical report addres
   const h=harness(),Monthly=require("../src/building-report-core");
   const building=h.store.buildings.find(row=>row.id==="site"),original=JSON.stringify(building);
   h.store.customers.find(row=>row.id==="linked").roadAddress="Edited customer address only";
-  const site=h.workReportBuildings().find(row=>row.id==="site");
+  const site=h.workReportBuildings("site").find(row=>row.id==="site");
   assert.equal(h.workReportBuildingAddress(site),Monthly.buildBuildingMonthlyReport({building,month:"2026-10"}).address);
   assert.equal(site.ownerCustomerId,building.ownerCustomerId);
   assert.equal(JSON.stringify(building),original);
   const parts=h.workReportAddressParts({siteAddress:"Saved historical address 301"},building);
   assert.equal(parts.base,"Saved historical address 301");assert.equal(parts.detail,"");
   building.address="";building.roadAddress="";
-  assert.equal(h.workReportBuildingAddress(h.workReportBuildings().find(row=>row.id==="site")),"");
+  assert.equal(h.workReportBuildingAddress(h.workReportBuildings("site").find(row=>row.id==="site")),"");
 });
 test("contract address is readonly and escaped while linked buildings remain explicitly selectable",()=>{
   const h=harness();h.store.customers[0].roadAddress='"><img src=x onerror=bad>';

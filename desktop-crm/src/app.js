@@ -9580,7 +9580,7 @@
   async function openReportDrivePicker(destination = null) {
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) return;
     preserveReportDraft();
-    if (!reportState.draft || !reportState.draft.buildingId) {
+    if (!reportState.draft || (!reportState.draft.buildingId && !reportState.draft.customerId)) {
       showToast("건물을 먼저 골라 주세요.", "error");
       const building = document.querySelector("[data-report-building]");
       if (building) building.focus();
@@ -9932,7 +9932,7 @@
   }
 
   function workReportAiSignature(draft) {
-    return JSON.stringify([draft.id, draft.buildingId, draft.kind, draft.workDate, draft.category, draft.area, draft.followUp, draft.items]);
+    return JSON.stringify([draft.id, draft.buildingId, draft.customerId || "", draft.kind, draft.workDate, draft.category, draft.area, draft.followUp, draft.items]);
   }
 
   async function createWorkReportAiDraft({ automatic = false } = {}) {
@@ -9998,21 +9998,14 @@
   }
 
   function workReportBuildings(existingBuildingId = "") {
-    const choices = customerManagedBuildingChoices(existingBuildingId).map(choice => ({
-      ...(choice.building || {}), id: choice.value,
-      name: String(choice.building?.name || choice.customer?.name || choice.address || "현장").trim(),
-      internalLabel: choice.name,
-      address: choice.address,
-      roadAddress: String(choice.building ? choice.building.roadAddress || "" : choice.customer?.roadAddress || "").trim(),
-      jibunAddress: String(choice.building ? choice.building.jibunAddress || "" : choice.customer?.jibunAddress || "").trim(),
-      ownerCustomerId: choice.building ? choice.building.ownerCustomerId || "" : choice.customer?.id || "",
-    }));
-    const ids = new Set(choices.map(item => item.id));
-    for (const building of store.buildings || []) {
-      if (building && !building.archivedAt && !ids.has(building.id)) {
-        choices.push(building);
-        ids.add(building.id);
-      }
+    const choices = (store.customers || []).filter(customer => customer && /^[A-Za-z0-9_-]{1,120}$/.test(String(customer.id || "")) && !["__proto__", "prototype", "constructor"].includes(String(customer.id)) && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true)
+      .map(customer => ({id: "customer:" + customer.id, name: customer.name || customer.company || "고객", internalLabel: customerDisplayName(customer),
+        ownerCustomerId: customer.id, address: customerManagedBuildingAddress(customer, null), roadAddress: customer.roadAddress || "", jibunAddress: customer.jibunAddress || ""}));
+    // Historical reports and linked orders retain their existing building.
+    const existingId = String(existingBuildingId || "");
+    if (existingId && !existingId.startsWith("customer:")) {
+      const existing = (store.buildings || []).find(row => row && String(row.id || "") === existingId);
+      choices.push(existing || {id: existingId, name: "연결 기록이 남아 있는 고객건물", archivedAt: "missing"});
     }
     return choices.sort((a, b) => String(a.internalLabel || a.name || "").localeCompare(String(b.internalLabel || b.name || ""), "ko"));
   }
@@ -10059,8 +10052,9 @@
   function reportEditor(R, draft) {
     const buildings = workReportBuildings(draft.buildingId);
     const directCustomer = !draft.buildingId && draft.customerId ? customerById(draft.customerId) : null;
-    const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || (directCustomer ? {name: directCustomer.name, address: directCustomer.address, ownerCustomerId: directCustomer.id} : null);
-    const linkedOrders = cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId);
+    const selectionValue = draft.buildingId || (draft.customerId ? "customer:" + draft.customerId : "");
+    const selectedBuilding = buildings.find(item => String(item && item.id || "") === selectionValue) || (directCustomer ? {name: directCustomer.name, address: customerManagedBuildingAddress(directCustomer, null), ownerCustomerId: directCustomer.id} : null);
+    const linkedOrders = draft.buildingId ? cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId) : [];
     const selectedOrderIsKnown = linkedOrders.some(item => item.id === draft.cleaningOrderId);
     const addressParts = workReportAddressParts(draft, selectedBuilding);
     const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
@@ -10117,16 +10111,16 @@
             <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>고객을 선택하면 고객 등록 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>고객·현장 <em>필수</em></span>${draft.customerId && !draft.buildingId ? `<input type="hidden" name="buildingId" value=""><input value="${esc(directCustomer?.name || draft.buildingName)}" readonly><small>현장노트에서 선택한 고객입니다.</small>` : `<select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select>`}</label>
+              <label><span>고객·현장 <em>필수</em></span>${draft.customerId && !draft.buildingId && draft.updatedAt ? `<input type="hidden" name="buildingId" value=""><input value="${esc(directCustomer?.name || draft.buildingName)}" readonly><small>저장된 보고서의 고객입니다.</small>` : `<select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === selectionValue ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select>`}</label>
               <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
               <header><b>현장 위치</b><span>↗ 고객·건물 관리에서 자동입력</span></header>
               <div class="wr-ai-location-grid">
-                <label><span>현장 주소</span><div class="wr-ai-address-input"><i aria-hidden="true">⌖</i><input type="text" name="siteAddress" maxlength="300" value="${esc(addressParts.base)}" placeholder="건물을 선택하면 자동으로 입력됩니다" readonly></div></label>
+                <label><span>현장 주소</span><div class="wr-ai-address-input"><i aria-hidden="true">⌖</i><input type="text" name="siteAddress" maxlength="300" value="${esc(addressParts.base)}" placeholder="고객을 선택하면 등록 주소가 입력됩니다" readonly></div></label>
                 <label><span>상세주소 <em>직접 입력</em></span><input type="text" name="siteAddressDetail" data-report-site-detail maxlength="60" value="${esc(addressParts.detail)}" placeholder="예: 301호"></label>
               </div>
-              <p>ⓘ 건물을 바꾸면 현장 주소만 자동 변경되며, 상세주소는 비워 둡니다.</p>
+              <p>${selectionValue && !addressParts.base ? "ⓘ 고객·건물 관리에서 주소를 등록해 주세요. 주소가 없으면 고객 알림 발송이 제한됩니다." : "ⓘ 고객을 바꾸면 현장 주소가 자동 변경되며, 상세주소는 비워 둡니다."}</p>
             </section>
             <div class="wr-ai-section-divider"></div>
             <header class="wr-ai-subheading"><span class="wr-ai-card-icon">02</span><div><h4>작업 세부 정보</h4><p>일정과 인원, 작업 범위를 입력합니다.</p></div></header>
@@ -10212,7 +10206,9 @@
     if (!R || !form) return reportState.draft;
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = R.normalizeReport(reportState.draft);
-    const building = workReportBuildings(raw.buildingId).find(item => String(item.id) === String(raw.buildingId || ""));
+    const selection = String(raw.buildingId || (form.elements.buildingId?.type === "hidden" && previous.customerId ? "customer:" + previous.customerId : ""));
+    const building = workReportBuildings(selection).find(item => String(item.id) === selection);
+    const customerId = selection.startsWith("customer:") ? selection.slice("customer:".length) : "";
     const baseAddress = String(raw.siteAddress || workReportBuildingAddress(building) || "").trim();
     const detailAddress = String(raw.siteAddressDetail || "").trim();
     const items = previous.items.map(item => {
@@ -10225,7 +10221,8 @@
     });
     return R.normalizeReport(Object.assign({}, previous, {
       kind: String(raw.kind || previous.kind),
-      buildingId: String(raw.buildingId || ""),
+      buildingId: customerId ? "" : selection,
+      customerId: customerId || undefined,
       buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
       siteAddress: [baseAddress, detailAddress].filter(Boolean).join(" ").slice(0, 300),
       workDate: String(raw.workDate || ""),
@@ -10281,13 +10278,6 @@
     renderWorkReports();
     let reportSaved = false, pdfSaved = false, archivedId = "";
     try {
-      if (checked.report.buildingId.startsWith("customer:")) {
-        const building = await resolveCustomerManagedBuildingSelection(checked.report.buildingId);
-        if (!active()) return;
-        if (!building) throw new Error("고객 등록 주소를 확인한 뒤 다시 저장해 주세요.");
-        checked.report.buildingId = building.id;
-        reportState.draft = checked.report;
-      }
       if (pdfOnly) {
         const result = await api.exportWorkReport({report: checked.report, copyType: "owner", company: store.settings?.quoteCompany || {}, secrets: reportSecrets(), strictPhotos: true});
         if (!active() || result?.canceled) return;
@@ -10353,7 +10343,7 @@
     if (!R || reportState.busyKey) return;
     const draft = readReportForm();
     if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
-    if (!draft.buildingId) return showToast("건물을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
+    if (!draft.buildingId && !draft.customerId) return showToast("고객을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
     const picked = await api.pickBuildingDocuments();
