@@ -9,6 +9,7 @@ import { openVault } from './storage/open-vault';
 import { confirmVisit, editVisit, phaseLabel, stateLabel, type ItemStatus, type Job, type Phase, type Photo, type Vault, type Visit, type Workspace } from './domain/model';
 import { catalog, reviewIssues } from './domain/report';
 import { persistCapture } from './capture';
+import { saveGroupedReport } from './domain/save-report';
 import { samplePhoto } from './sample-photo';
 import { safeMessage } from './errors';
 import { SyncRunner } from './domain/sync';
@@ -105,14 +106,14 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
     void perform(async()=>{await company.api.recordingContext(controller.current.signal);opened=await openVault(company.uid);const loaded=await opened.load();if(!active){await opened.close();return;}setVault(opened);setWorkspace(loaded);setScreen('jobs');});
     return()=>{active=false;controller.current.abort();runner.current?.stop();void opened?.close();};
   },[company?.uid]);
-  async function syncCurrent(){
-    if(!company||!vault||!visit||!vault.linkRevision)return;
-    if(dirty||captionDirty)throw new FieldError('UNSAVED_CHANGES');
+  async function syncCurrent(current=visit, currentPhotos=photos, draftSaved=false){
+    if(!company||!vault||!current||!vault.linkRevision)throw new FieldError('SERVER_UNAVAILABLE');
+    if((dirty&&!draftSaved)||captionDirty)throw new FieldError('UNSAVED_CHANGES');
     await company.api.storageStatus(controller.current.signal);
-    const linked=await company.api.reconcile(visit,photos,controller.current.signal);
-    await vault.linkRevision(visit.id,linked.revision,linked.photoIds);
-    runner.current?.stop();runner.current=new SyncRunner(vault,company.api,visit.id);await runner.current.run();
-    const latest=await refresh();const failed=latest?.photos.find(p=>p.visitId===visit.id&&p.state!=='ready');
+    const linked=await company.api.reconcile(current,currentPhotos,controller.current.signal);
+    await vault.linkRevision(current.id,linked.revision,linked.photoIds);
+    runner.current?.stop();runner.current=new SyncRunner(vault,company.api,current.id);await runner.current.run();
+    const latest=await refresh();const failed=latest?.photos.find(p=>p.visitId===current.id&&p.state!=='ready');
     if(failed)throw new FieldError(failed.errorCode||'PHOTOS_NOT_READY');
     notify('현재 작업의 사진을 Drive 활동사진에 보관했습니다.');
   }
@@ -120,6 +121,14 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
     if(!company||!visit||dirty||captionDirty)return;
     if(visit.draft.confirmedRevision!==visit.revision)throw new FieldError('REPORT_REVIEW_REQUIRED');
     await syncCurrent();const result=await company.api.archive(visit,controller.current.signal);setReceipt(result);notify('작업 결과보고서 PDF를 Drive 문서함과 CRM에 보관했습니다.');
+  }
+  async function savePhotosAndReport(){
+    if(!company||!vault||!visit)return;
+    if(captionDirty)throw new FieldError('UNSAVED_CHANGES');
+    const result=await saveGroupedReport({vault,visit,photos,summary,followUp,notes,onLocalSave:async()=>{await refresh();},
+      sync:(current,currentPhotos)=>syncCurrent(current,currentPhotos,true),archive:current=>company.api.archive(current,controller.current.signal)});
+    if(!result.ok){notify(result.issues.join('\n'),true);return;}
+    setReceipt(result.receipt);setScreen('pdf');notify('구역별 사진과 작업 결과보고서 PDF를 Drive와 CRM에 보관했습니다.');
   }
   async function capture(gallery = false) {
     if (!vault || !visit) return;
@@ -151,7 +160,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   if(company&&!foreground)return <SafeAreaView style={s.safe}><Note>회사 정보를 보호하고 있습니다.</Note></SafeAreaView>;
   return <SafeAreaView style={s.safe}><StatusBar style="dark" /><View style={s.shell}>
     <View style={s.header}><View><Text style={s.brand}>BRING CARE</Text><Text style={s.headerTitle}>현장노트</Text></View><Pressable accessibilityRole="button" accessibilityLabel="설정 열기" onPress={() => navigate('settings')} style={s.icon}><Text style={s.iconText}>설정</Text></Pressable></View>
-    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.3':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
+    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.4':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
     {vault && <Pressable accessibilityRole="button" onPress={() => navigate('sync')} style={s.syncStrip}><Text style={s.syncText}>기기 보관 {workspace.photos.length}장  ·  전송 대기 {pending}장</Text><Text style={s.blue}>확인 →</Text></Pressable>}
     {notice !== '' && <View accessibilityRole="alert" style={[s.toast, problem && s.error]}><Text style={s.toastText}>{notice}</Text></View>}
     {busy && <ActivityIndicator style={s.loading} accessibilityLabel="기기 보관 처리 중" />}
@@ -174,12 +183,14 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
         {screen === 'capture' && visit && <>
           <Text style={s.label}>촬영 구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={area === item.key} onPress={() => setArea(item.key)} />)}</View>
           <View style={s.phaseRow}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={phase === p} onPress={() => setPhase(p)} />)}</View>
+          <Note>선택한 구역과 작업 전·중·후에 사진이 자동으로 분류됩니다. 현재: {catalog(visit.job.kind).find(item=>item.key===area)?.label} · {phaseLabel[phase]}</Note>
           {Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
             : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진 선택으로 이어갈 수 있습니다.', true); }} />
             : <View style={s.card}><Text style={s.body}>작업사진을 촬영하려면 카메라 접근이 필요합니다.</Text><Button label="카메라 권한 허용" onPress={() => void requestPermission()} /></View>}
           <Button label={Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`} disabled={busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady))} onPress={() => void perform(() => capture())} />
           {Platform.OS !== 'web' && <Button label="사진첩에서 한 장 선택" secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
           <Button label={`사진 ${photos.length}장 확인`} secondary onPress={() => navigate('photos')} />
+          <Button label="사진·보고서 저장하기" secondary disabled={!photos.length||busy} onPress={()=>navigate('report')} />
           <Note>사진을 찍어도 작업 완료로 처리하지 않습니다. 촬영 후 보고서에서 항목 상태를 확인해 주세요.</Note>
         </>}
         {screen === 'photos' && visit && <>
@@ -198,8 +209,9 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
           <Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" editable={!busy} multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
           <Text style={s.label}>후속 조치</Text><TextInput accessibilityLabel="후속 조치" editable={!busy} multiline maxLength={2000} value={followUp} onChangeText={setFollowUp} style={[s.input, s.textareaSmall]} placeholder="추가 작업이나 확인할 내용" />
           <Button label={dirty ? '작성 중인 초안 저장' : '초안 저장'} disabled={busy} onPress={() => void perform(() => saveDraft())} />
+          {company&&<><Note>현재 구역별 사진과 작성한 내용으로 PDF를 만들고 Drive와 CRM에 보관합니다.</Note><Button label="사진·보고서 저장" disabled={busy||photos.length===0} onPress={()=>void perform(savePhotosAndReport)} /></>}
           <Text style={s.h2}>작업 항목 확인</Text>{catalog(visit.job.kind).map(item => <View key={item.key} style={s.card}>
-            <Text style={s.cardTitle}>{item.label}</Text><Text style={s.muted}>{photos.filter(p => p.itemKey === item.key && p.included).length}장 포함</Text>
+            <Text style={s.cardTitle}>{item.label}</Text><Text style={s.muted}>전 {photos.filter(p=>p.itemKey===item.key&&p.phase==='before'&&p.included).length}장 · 중 {photos.filter(p=>p.itemKey===item.key&&p.phase==='during'&&p.included).length}장 · 후 {photos.filter(p=>p.itemKey===item.key&&p.phase==='after'&&p.included).length}장</Text>
             <View style={s.wrap}>{([['recorded', '기록'], ['done', '완료'], ['partial', '일부'], ['skipped', '못 함']] as [ItemStatus, string][]).map(([status, label]) => <Chip key={status} label={label} active={(visit.draft.statuses[item.key] ?? 'recorded') === status} onPress={() => void perform(() => saveDraft({ statuses: { ...visit.draft.statuses, [item.key]: status } }))} />)}</View>
             {visit.draft.statuses[item.key] === 'skipped' && <><TextInput accessibilityLabel={`${item.label} 못 한 이유`} editable={!busy} value={notes[item.key] ?? ''} onChangeText={value => setNotes({ ...notes, [item.key]: value })} maxLength={500} style={s.input} placeholder="작업하지 못한 이유" /><Button secondary label="사유 저장" disabled={busy} onPress={() => void perform(() => saveDraft())} /></>}
           </View>)}

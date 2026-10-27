@@ -5,10 +5,10 @@ import { jpeg, photo, visit } from './helpers';
 
 // Models Expo's connection contract, not the SQLCipher cipher itself. In Expo
 // 58 exclusive transactions open an independent, initially unkeyed connection.
-const native = vi.hoisted(() => ({ db: undefined as any, cipher: { cipher_version: '4-contract-test' } as unknown, keyPresent: true, filePresent: false }));
-vi.mock('expo-sqlite', () => ({ defaultDatabaseDirectory: 'test-vault', openDatabaseAsync: vi.fn(async () => native.db) }));
+const native = vi.hoisted(() => ({ db: undefined as any, cipher: { cipher_version: '4-contract-test' } as unknown, keyPresent: true, filePresent: false, checkedPath: '' }));
+vi.mock('expo-sqlite', () => ({ defaultDatabaseDirectory: '/data/user/0/test/files/SQLite', openDatabaseAsync: vi.fn(async () => native.db) }));
 vi.mock('expo-secure-store', () => ({ WHEN_UNLOCKED_THIS_DEVICE_ONLY: 1, getItemAsync: vi.fn(async () => native.keyPresent ? 'a'.repeat(64) : null), setItemAsync: vi.fn() }));
-vi.mock('expo-file-system', () => ({ File: class { get exists() { return native.filePresent; } } }));
+vi.mock('expo-file-system', () => ({ File: class { constructor(directory: string, name: string) { native.checkedPath=`${directory}/${name}`;if(!directory.startsWith('file:///'))throw Error('URI is not absolute'); } get exists() { return native.filePresent; } } }));
 vi.mock('expo-crypto', async () => {
   const crypto = await import('node:crypto');
   return { CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
@@ -20,7 +20,7 @@ import { openVault } from '../src/storage/open-vault';
 import { openDatabaseAsync } from 'expo-sqlite';
 import { setItemAsync } from 'expo-secure-store';
 
-beforeEach(() => { vi.clearAllMocks(); native.cipher = { cipher_version: '4-contract-test' }; native.keyPresent = true; native.filePresent = false; });
+beforeEach(() => { vi.clearAllMocks(); native.cipher = { cipher_version: '4-contract-test' }; native.keyPresent = true; native.filePresent = false; native.checkedPath=''; });
 function connection() {
   const raw = new DatabaseSync(':memory:'); let keyed = false;
   const checkKey = () => { if (!keyed) throw new Error('database connection has no key'); };
@@ -49,4 +49,9 @@ it('never replaces a lost key when a saved database exists', async () => {
   native.keyPresent = false; native.filePresent = true;
   await expect(openVault('staff-a')).rejects.toThrow('VAULT_KEY_MISSING');
   expect(setItemAsync).not.toHaveBeenCalled(); expect(openDatabaseAsync).not.toHaveBeenCalled();
+});
+it('initializes a first-run vault using a file URI for the native absolute database path',async()=>{
+  connection();native.keyPresent=false;const vault=await openVault('staff-a');
+  expect(native.checkedPath).toMatch(/^file:\/\/\/data\/user\/0\/test\/files\/SQLite\/field-v1-[a-f0-9]{64}\.db$/);
+  expect(setItemAsync).toHaveBeenCalledOnce();await vault.close();
 });

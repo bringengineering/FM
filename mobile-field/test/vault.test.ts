@@ -7,6 +7,15 @@ import { reviewIssues } from '../src/domain/report';
 import { makeVault, visit, photo, jpeg } from './helpers';
 
 describe('persistent vault and report integrity', () => {
+  it('fills a missing CRM address without changing the selected customer or replacing a recorded address',async()=>{
+    const {vault}=await makeVault();try{
+      const first=visit();first.job.customerId='customer-a';first.job.buildingId='';first.job.address='';await vault.saveVisit(first,null);
+      const updated={...first,revision:2,job:{...first.job,address:'새로 등록한 주소'}};await vault.saveVisit(updated,1);
+      await expect(vault.saveVisit({...updated,revision:3,job:{...updated.job,address:'다른 주소'}},2)).rejects.toThrow('REVISION_CONFLICT');
+      await expect(vault.saveVisit({...updated,revision:3,job:{...updated.job,customerId:'customer-b'}},2)).rejects.toThrow('REVISION_CONFLICT');
+      expect((await vault.load()).visits[0]?.job.address).toBe('새로 등록한 주소');
+    }finally{await vault.close();}
+  });
   it('pins only an acknowledged revision and permits captions after Drive upload',async()=>{
     const {vault}=await makeVault();try{
       await vault.saveVisit(visit(),null);await vault.savePhoto(await photo(),jpeg,1);

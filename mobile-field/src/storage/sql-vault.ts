@@ -69,7 +69,11 @@ export class SqlVault implements Vault {
         await tx.runAsync('INSERT INTO visits(id, body) VALUES (?, ?)', visit.id, JSON.stringify(visit));
       } else {
         const previous = await this.visit(tx, visit.id, expected);
-        if (visit.revision !== expected + 1 || JSON.stringify(visit.job) !== JSON.stringify(previous.job)) throw new FieldError('REVISION_CONFLICT');
+        // A customer address added in CRM may fill an empty snapshot, but no
+        // other job identity or an already recorded address can be changed.
+        const sameJob = JSON.stringify(visit.job) === JSON.stringify(previous.job);
+        const addressFilled = !previous.job.address && !!visit.job.address && JSON.stringify({...visit.job,address:''}) === JSON.stringify(previous.job);
+        if (visit.revision !== expected + 1 || (!sameJob && !addressFilled)) throw new FieldError('REVISION_CONFLICT');
         await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(visit), visit.id);
       }
     });

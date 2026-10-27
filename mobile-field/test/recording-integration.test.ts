@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { CompanyRecordingApi } from '../src/api/recording';
 import { SyncRunner } from '../src/domain/sync';
-import { confirmVisit } from '../src/domain/model';
+import { saveGroupedReport } from '../src/domain/save-report';
 import { handleRecording } from '../../functions/src/field-mobile/recording-http';
 import type { RecordingDependencies } from '../../functions/src/field-mobile/recording-service';
 import { makeVault, visit, photo, jpeg } from './helpers';
@@ -28,8 +28,9 @@ it('reconciles a customer visit, uploads, edits a caption and archives once thro
     await api.recordingContext(signal);await api.storageStatus(signal);
     async function sync(){const s=await vault.load(),v=s.visits[0]!;const link=await api.reconcile(v,s.photos,signal);await vault.linkRevision(v.id,link.revision,link.photoIds);await new SyncRunner(vault,api,v.id).run();}
     await sync();let state=await vault.load();expect(state.photos[0]?.state).toBe('ready');
-    await vault.editPhoto({...state.photos[0]!,caption:'Revised caption'},state.visits[0]!.revision);state=await vault.load();await vault.saveVisit(confirmVisit(state.visits[0]!),state.visits[0]!.revision);
-    await sync();const current=(await vault.load()).visits[0]!;const receipt=await api.archive(current,signal);expect(await api.archive(current,signal)).toEqual(receipt);
-    expect(files.size).toBe(2);expect(documents.size).toBe(1);const record=documents.get(receipt.documentId);expect(record.report.customerId).toBe('customer-a');expect(record.report.buildingId).toBe('');expect(record.report.items[0].before[0].caption).toBe('Revised caption');
+    await vault.editPhoto({...state.photos[0]!,caption:'Revised caption'},state.visits[0]!.revision);state=await vault.load();
+    const saved=await saveGroupedReport({vault,visit:state.visits[0]!,photos:state.photos,summary:'Synthetic report',followUp:'',notes:{},onLocalSave:async()=>{},sync,archive:current=>api.archive(current,signal)});
+    expect(saved.ok).toBe(true);if(!saved.ok)throw Error('unexpected invalid report');const receipt=saved.receipt;expect(await api.archive(saved.visit,signal)).toEqual(receipt);
+    expect(files.size).toBe(2);expect(documents.size).toBe(1);const record=documents.get(receipt.documentId);expect(record.report.customerId).toBe('customer-a');expect(record.report.buildingId).toBe('');expect(record.report.summary).toBe('Synthetic report');expect(record.report.items[0].before[0].caption).toBe('Revised caption');
   }finally{await vault.close();server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 });

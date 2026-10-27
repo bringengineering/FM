@@ -2,11 +2,11 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 React Native/Expo 직원용 앱 소스다. 직원 개인 CRM 계정으로 로그인하고 **CRM 고객을 선택해 고객정보의 건물주소를 사용한다. 별도 건물 연결이나 업무 배정은 필요하지 않다.** 2026-10-27 사용자가 Android 0.1.2의 로그인·고객 목록·주소가 정상이라고 확인했다. 0.1.3은 촬영·활동사진 업로드·보고서 작성·Drive PDF 및 CRM 보관을 연결한다. 고객 발송은 PC CRM에서 저장 PDF·수신자를 확인하는 기존 관리자 절차를 이용한다. [최신 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
+이 폴더는 React Native/Expo 직원용 앱 소스다. 직원 개인 CRM 계정으로 로그인하고 **CRM 고객을 선택해 고객정보의 건물주소를 사용한다. 별도 건물 연결이나 업무 배정은 필요하지 않다.** 2026-10-27 사용자가 Android 0.1.2의 로그인·고객 목록·주소가 정상이라고 확인했다. 0.1.4는 Android 보관함 초기화 문제를 수정하고 구역별 사진과 보고서를 한 번에 Drive 및 CRM에 보관한다. 고객 발송은 PC CRM에서 저장 PDF·수신자를 확인하는 기존 관리자 절차를 이용한다. [최신 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
-새 [Android 0.1.3 (4) 설치 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/74b7b528-1edf-4bfe-8475-ff5d5b13295a)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, 0.1.3의 실기기 촬영·Drive 권한·PDF 보관 확인은 별도로 구분해 기록한다.
+새 [Android 0.1.4 (5) 빌드 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/5d2cfb2e-2cf6-46d0-98e5-2da19e9b3311)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, 0.1.4의 실기기 보관함·촬영·Drive 권한·PDF 보관 확인은 별도로 구분해 기록한다.
 
 ## 이번에 구현한 범위
 
