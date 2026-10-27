@@ -107,6 +107,35 @@ test("호실이 없으면 공실률은 0%가 아니라 빈 값이다", () => {
   assert.equal(built.summary.vacancyRateText, "");
 });
 
+test("60개를 넘는 호실도 모두 집계하고 다른 건물과 보관된 호실은 제외한다", () => {
+  const units = Array.from({length: 70}, (_, index) => ({id: `u${index}`, crmBuildingId: "b1", label: `${index + 1}호`, status: index < 60 ? "occupied" : "vacant"}));
+  units.push({id:"archived",crmBuildingId:"b1",status:"vacant",archivedAt:"2026-01-01"}, {id:"other",crmBuildingId:"b2",status:"vacant"});
+  const built = report({store:{buildingUnits:units}, building:{...building,unitCount:70}, month:"2026-01"});
+  assert.equal(built.summary.unitCount,70);assert.equal(built.summary.vacantCount,10);assert.equal(built.summary.vacancyRateText,"14.3%");
+  assert.equal(built.units.length,70);
+  assert.match(Pdf.createBuildingReportHtml(built), /공실 확인 · 작성일 기준/u);
+});
+
+test("미확인, 이전 기록 불일치, 미등록 호실은 확정된 공실률을 표시하지 않는다", () => {
+  const unknown = report({store:{buildingUnits:[{crmBuildingId:"b1",label:"101",status:"vacant"},{crmBuildingId:"b1",label:"102",status:"unknown"}]}});
+  assert.equal(unknown.summary.vacantCount,1);assert.equal(unknown.summary.unknownUnitCount,1);
+  assert.equal(unknown.summary.vacancyRateText,"");assert.equal(unknown.summary.vacancyIncomplete,true);
+  assert.match(Pdf.createBuildingReportHtml(unknown),/미확인 1호실/u);
+  const legacy = report({store:{buildingUnits:[]},building:{...building,unitCount:10,vacantUnitCount:2}});
+  assert.equal(legacy.summary.vacancyIncomplete,true);
+  assert.match(Pdf.createBuildingReportHtml(legacy),/공실 확인 · 작성일 기준<\/span><b>확인 필요/u);
+  const mismatch = report({store:{buildingUnits:[{crmBuildingId:"b1",label:"101",status:"occupied"}]},building:{...building,unitCount:10,vacantUnitCount:1,vacantUnits:["102"]}});
+  assert.equal(mismatch.summary.vacancyIncomplete,true);assert.equal(mismatch.summary.vacancyRateText,"");
+});
+
+test("상세 목록을 제한해도 전체 집계는 유지하고 제한을 문서에 표시한다", () => {
+  const units = Array.from({length: 205}, (_, index) => ({crmBuildingId:"b1",label:`${index}호`,status:index >= 200 ? "vacant" : "occupied"}));
+  const built=report({store:{buildingUnits:units},building:{...building,unitCount:205}});
+  assert.equal(built.summary.unitCount,205);assert.equal(built.summary.vacantCount,5);
+  assert.equal(built.units.length,200);assert.equal(built.summary.unitDetailsTruncated,5);
+  assert.match(Pdf.createBuildingReportHtml(built),/위 집계는 전체 호실을 기준/u);
+});
+
 test("호실 상태를 사람이 읽는 말로 바꾼다", () => {
   const labels = report().units.map(unit => unit.statusLabel);
   assert.deepEqual(labels, ["임대 중", "공실", "퇴실 예정", "공실"]);

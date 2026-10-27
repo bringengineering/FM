@@ -28,6 +28,7 @@
 
   const DONE_STATUSES = new Set(["완료", "종결", "종료", "complete", "completed", "done", "closed"]);
   const MAX_ROWS = 60;
+  const MAX_UNIT_DETAIL_ROWS = 200;
   const MAX_REPORT_PHOTOS = 120;
   const MAX_ACTIVITY_PHOTOS = 3;
 
@@ -266,12 +267,15 @@
 
   function unitRows(store, buildingId) {
     return rows(store && store.buildingUnits)
-      .filter(unit => unit && belongsToBuilding(unit, buildingId))
-      .slice(0, MAX_ROWS)
+      .filter(unit => unit && !unit.archivedAt && belongsToBuilding(unit, buildingId));
+  }
+
+  function unitDetailRows(units) {
+    return units.slice(0, MAX_UNIT_DETAIL_ROWS)
       .map(unit => Object.freeze({
         label: text(unit.label, 40) || "호실",
         floorLabel: text(unit.floorLabel, 20),
-        status: text(unit.status, 30) || "unknown",
+        status: Object.hasOwn(UNIT_STATUS_LABEL, unit.status) ? unit.status : "unknown",
         statusLabel: UNIT_STATUS_LABEL[unit.status] || UNIT_STATUS_LABEL.unknown,
         availableFrom: dateKey(unit.availableFrom),
       }))
@@ -289,8 +293,17 @@
       : new Date().toISOString().slice(0, 7);
 
     const works = workRows(store, buildingId, month, source.manualWorks, source.excludedWorkKeys);
-    const units = unitRows(store, buildingId);
-    const vacant = units.filter(unit => unit.status === "vacant").length;
+    const allUnits = unitRows(store, buildingId);
+    const units = unitDetailRows(allUnits);
+    const vacant = allUnits.filter(unit => unit.status === "vacant").length;
+    const unknown = allUnits.filter(unit => !Object.hasOwn(UNIT_STATUS_LABEL, unit.status) || unit.status === "unknown").length;
+    const normalizeLabel = value => String(value || "").normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/g, "");
+    const formalVacantLabels = new Set(allUnits.filter(unit => unit.status === "vacant").map(unit => normalizeLabel(unit.label || unit.unitLabel)).filter(Boolean));
+    const legacyLabels = [...new Set(rows(building.vacantUnits).map(normalizeLabel).filter(Boolean))];
+    const legacyCount = Math.max(Core.nonNegativeInteger(building.vacantUnitCount), legacyLabels.length);
+    const unresolvedLegacy = legacyLabels.some(label => !formalVacantLabels.has(label)) || legacyCount > vacant;
+    const expectedUnits = Core.nonNegativeInteger(building.unitCount);
+    const incomplete = !allUnits.length || unknown > 0 || unresolvedLegacy || (expectedUnits > 0 && expectedUnits !== allUnits.length);
     const billed = works.reduce((total, item) => total + amount(item.amountText), 0);
     const inputNarrative = source.narrative && typeof source.narrative === "object" && !Array.isArray(source.narrative)
       ? source.narrative : {};
@@ -323,11 +336,14 @@
       summary: Object.freeze({
         workCount: works.length,
         doneCount: works.filter(item => item.done).length,
-        unitCount: units.length,
+        unitCount: allUnits.length,
         vacantCount: vacant,
-        // 호실이 하나도 없으면 공실률은 0%가 아니라 '알 수 없음'이다.
-        vacancyRateText: units.length
-          ? `${Math.round((vacant / units.length) * 1000) / 10}%`
+        unknownUnitCount: unknown,
+        vacancyIncomplete: incomplete,
+        unitDetailsTruncated: Math.max(0, allUnits.length - units.length),
+        // 미확인·미이관 호실이 있으면 확정된 공실률을 만들지 않는다.
+        vacancyRateText: !incomplete
+          ? `${Math.round((vacant / allUnits.length) * 1000) / 10}%`
           : "",
         billedText: moneyText(billed),
       }),
