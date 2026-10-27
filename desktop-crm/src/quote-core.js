@@ -92,15 +92,16 @@
     if (recipient.phone && !/^[0-9+()\-\s]{8,30}$/.test(recipient.phone)) {
       throw new Error("공급받는자 전화번호를 확인해 주세요.");
     }
+    if (options.requireName && !recipient.name) throw new Error("공급받는자 성명을 입력해 주세요.");
     if (options.requireComplete && (!recipient.name || !recipient.phone)) {
       throw new Error("공급받는자 성명과 전화번호를 입력해 주세요.");
     }
     return recipient;
   }
 
-  function recipientComplete(value) {
+  function recipientComplete(value, options = { requireComplete: true }) {
     try {
-      normalizeRecipient(value, { requireComplete: true });
+      normalizeRecipient(value, options);
       return true;
     } catch (_error) {
       return false;

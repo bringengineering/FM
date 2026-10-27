@@ -2544,7 +2544,7 @@ async function exportAiQuote(input) {
   if (!new Set(["xlsx", "pdf"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
   const quote = QuoteCore.normalizeDraft(input.quote);
   QuoteCore.normalizeSupplier(quote.company, { requireComplete: true });
-  QuoteCore.normalizeRecipient(quote, { requireComplete: true });
+  QuoteCore.normalizeRecipient(quote, { requireName: true });
   const seal = localTestMode && process.env.BRING_CRM_SCREENSHOT_SEAL
     ? normalizeQuoteSealPng(await fs.readFile(process.env.BRING_CRM_SCREENSHOT_SEAL))
     : await readLocalQuoteSeal();
