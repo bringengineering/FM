@@ -1033,6 +1033,13 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
     name: "Legacy compatible customer updated",
   }));
   await assertSucceeds(remove(ref(member, legacyPath)));
+  // A stale field write after another user deletes the customer must not
+  // recreate a partial customer. Whole-record creation remains supported.
+  for (const database of [member, admin, viewer, disabled, unauthenticated]) {
+    await assertFails(set(ref(database, `${legacyPath}/updatedAt`), NOW));
+    await assertFails(set(ref(database, `${legacyPath}/nickname`), "stale edit"));
+  }
+  expect((await get(ref(member, legacyPath))).exists()).toBe(false);
 
   await assertSucceeds(update(ref(member, "crmCompany/data"), {
     "customers/customer_field_patch/id": "customer_field_patch",
@@ -1570,6 +1577,8 @@ describe("field media database rule source", () => {
     expect(String(customer[".write"])).toContain("!data.child('buildingIdLinks').exists()");
     expect(String(customer[".write"])).toContain("newData.child('id').val() === $customerId");
     expect(customerFieldWrite).toContain("$field !== 'buildingIdLinks'");
+    expect(customerFieldWrite).toContain("data.parent().child('id').val() === $customerId");
+    expect(customerFieldWrite).toContain("newData.parent().child('id').val() === $customerId");
     expect(customerFieldWrite).toContain("$field !== 'id'");
     expect(customerFieldWrite).toContain("$field !== 'archivedAt'");
     expect(customerFieldWrite).toContain("data.parent().child('buildingIdLinks').exists()");

@@ -6374,12 +6374,17 @@ class FirebaseRemoteClient {
         if (error.code === "BUILDING_SCHEDULE_CONFLICT" || error.code === "SHARED_SAVE_CONFLICT") throw SharedSave.conflict(committed > 0);
         // Never replay an ambiguous partial form automatically with a new base.
         // A repeat with the original base is idempotent; changed values conflict.
-        throw createError("고객 저장 결과를 확인하지 못했습니다. 입력 내용을 유지했으니 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED");
+        throw Object.assign(createError("고객 저장 결과를 확인하지 못했습니다. 일부 항목이 저장되었을 수 있으니 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED"), { partial: committed > 0 });
       }
     }
     if (Object.keys(plan.patch).length) {
       this.assertSessionGuardActive(guard);
-      await this.dbRequest("crmShared/data", { method: "PATCH", body: plan.patch, query: "print=silent" });
+      try {
+        await this.dbRequest("crmShared/data", { method: "PATCH", body: plan.patch, query: "print=silent" });
+      } catch (error) {
+        if (!committed) throw error;
+        throw Object.assign(createError("일부 고객 정보는 저장되었지만 나머지 저장 결과를 확인하지 못했습니다. 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED"), { partial: true });
+      }
       this.assertSessionGuardActive(guard);
       merged = SharedSave.applySharedSavePatch(merged, plan.patch);
     }

@@ -40,9 +40,8 @@ function buildSharedSavePlan({ base = {}, desired = {}, current = {}, currentRaw
         continue;
       }
       if (!live) throw conflict(); // A stale form must never resurrect a deletion.
-      if (field === "updatedAt") { patch[path] = value; continue; }
       if (same(at(current, path), value)) continue;
-      if (!same(at(current, path), at(base, path))) throw conflict();
+      if (field !== "updatedAt" && !same(at(current, path), at(base, path))) throw conflict();
       customerWrites.push({ path, expected: at(currentRaw, path), value });
       continue;
     }
