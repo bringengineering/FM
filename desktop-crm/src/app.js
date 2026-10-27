@@ -1368,13 +1368,18 @@
     return saveResult;
   }
 
-  async function saveStoreNow() {
+  async function saveStoreNow(customerEdit) {
     await waitForSaveIdle();
     clearTimeout(saveTimer);
     saveTimer = null;
     queuedSave = null;
     const payload = cloneStore(store);
     if (synchronizedStore) payload.__crmSaveBase = cloneStore(synchronizedStore);
+    if (customerEdit && payload.__crmSaveBase) {
+      const baseCustomer = (payload.__crmSaveBase.customers || []).find(item => item.id === customerEdit.id);
+      if (!baseCustomer) throw new Error("고객 정보가 변경되었습니다. 최신 내용을 확인해 주세요.");
+      for (const key of customerEdit.fields) baseCustomer[key] = structuredClone(customerEdit.base[key]);
+    }
     payload.updatedAt = new Date().toISOString();
     saveInFlight = true;
     try {
@@ -1394,11 +1399,11 @@
     }
   }
 
-  async function commitSharedFormMutation({ form, beforeStore, onSaved }) {
+  async function commitSharedFormMutation({ form, beforeStore, onSaved, customerEdit }) {
     if (form.dataset.submitting === "true") return false;
     form.dataset.submitting = "true";
     try {
-      await saveStoreNow();
+      await saveStoreNow(customerEdit);
       if (typeof onSaved === "function") await onSaved();
       return true;
     } catch (error) {
@@ -12911,6 +12916,9 @@
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
+    const form = modalContent.querySelector("#customerForm");
+    form.customerEditBase = editing ? structuredClone(customer) : null;
+    form.customerEditValues = Object.fromEntries(new FormData(form).entries());
     openModal();
     setTimeout(() => document.querySelector(`#customerForm [name="name"]`)?.focus(), 30);
   }
@@ -14209,23 +14217,35 @@
     const raw = Object.fromEntries(new FormData(form).entries());
     const id = form.dataset.customerId;
     const existing = customerById(id);
+    if (id && !existing) throw new Error("고객이 삭제되었거나 변경되었습니다. 최신 내용을 확인해 주세요.");
     const customer = existing || Core.createCustomer({ owner: store.settings.owner || "김현진" });
+    const opening = form.customerEditBase || existing;
+    const initial = form.customerEditValues;
+    const changed = name => !existing || !initial || String(raw[name] ?? "") !== String(initial[name] ?? "");
     const roadAddress = String(raw.roadAddress || "").trim().slice(0, 500);
     const jibunAddress = String(raw.jibunAddress || "").trim().slice(0, 500);
-    const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
-      ? String(existing.address || "").trim().slice(0, 500)
+    const legacyAddress = opening && !String(opening.roadAddress || "").trim() && !String(opening.jibunAddress || "").trim()
+      ? String(opening.address || "").trim().slice(0, 500)
       : "";
     const address = roadAddress || jibunAddress || legacyAddress;
     const customerType = raw.type === "직접 입력" ? String(raw.customType || "").trim().slice(0, 40) : raw.type;
-    Object.assign(customer, {
+    const values = {
       name: raw.name.trim(), nickname: Core.normalizeCustomerNickname(raw.nickname), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: customerType,
       address, roadAddress, jibunAddress,
       owner: raw.owner, source: raw.source, priority: raw.priority, expectedValue: Core.money(raw.expectedValue),
       interestServices: raw.interestServices.split(",").map(item => item.trim()).filter(Boolean), tags: raw.tags.split(",").map(item => item.trim()).filter(Boolean),
       currentIssue: raw.currentIssue.trim(), lastContactAt: raw.lastContactAt ? new Date(raw.lastContactAt).toISOString() : "",
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
-      notes: raw.notes.trim(), updatedAt: new Date().toISOString()
-    });
+      notes: raw.notes.trim()
+    };
+    const fields = [];
+    for (const [key, value] of Object.entries(values)) {
+      const modified = key === "address" ? changed("roadAddress") || changed("jibunAddress")
+        : key === "type" ? changed("type") || changed("customType") : changed(key);
+      if (modified) { customer[key] = value; fields.push(key); }
+    }
+    customer.updatedAt = new Date().toISOString();
+    form.customerEdit = existing && form.customerEditBase ? { id, base: form.customerEditBase, fields } : null;
     if (!existing) store.customers.push(customer);
     return customer;
   }
@@ -19721,6 +19741,10 @@
         showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleSummary}에 연결했습니다.`, "success");
       } });
     } else if (form.id === "customerForm") {
+      if (form.dataset.preparing === "true") return;
+      form.dataset.preparing = "true";
+      try { await waitForSaveIdle(); } finally { delete form.dataset.preparing; }
+      if (!form.isConnected) return;
       const beforeStore = cloneStore(store);
       const wasExisting = !!form.dataset.customerId;
       const customerName = String(form.elements.name && form.elements.name.value || "").trim();
@@ -19730,10 +19754,11 @@
       }
       const photoChanged = wasExisting && form.dataset.photoChanged === "true";
       const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(form.elements.photoDataUrl && form.elements.photoDataUrl.value);
-      const customer = customerFromForm(form);
+      let customer;
+      try { customer = customerFromForm(form); } catch (error) { return showToast(error.message, "error"); }
       const customerLabel = customer.name || "고객명 미입력";
       logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${customer.address ? "주소 등록" : "주소 미입력"}` });
-      const saved = await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+      const saved = await commitSharedFormMutation({ form, beforeStore, customerEdit: form.customerEdit, onSaved: () => {
         selectedCustomerHubId = customer.id;
         closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customerLabel} 정보를 서버에 저장했습니다.`, "success");
       } });

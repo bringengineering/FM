@@ -102,3 +102,30 @@ test("protected marketing, photos and building links never become generic field 
   assert.equal(h.state.writes.some(row=>/marketing|photo|buildingIdLinks/.test(row.path)),false);
   assert.equal(same({b:1,a:2},{a:2,b:1}),true);
 });
+test("a final patch failure after customer writes reports a partial save",async()=>{
+  const h=harness(), input=h.input();input.customers[0].nickname="Committed alias";
+  h.client.dbRequest=async()=>{throw Object.assign(Error("offline"),{code:"NETWORK"});};
+  await assert.rejects(h.client.saveStoreNow(input),error=>error.code==="SHARED_SAVE_UNCONFIRMED"&&error.partial===true&&/일부/.test(error.message));
+  assert.equal(h.state.server.customers.fixture_a.nickname,"Committed alias");
+});
+test("customer timestamps are conditional fields, never an unconditional patch that can recreate a deleted customer",async()=>{
+  const h=harness(), input=h.input();input.customers[0].nickname="Edited";input.customers[0].updatedAt="2026-10-27T00:00:00.000Z";
+  await h.client.saveStoreNow(input);
+  assert.ok(h.state.writes.some(write=>write.path==="customers/fixture_a/updatedAt"));
+  assert.ok(h.state.patches.every(patch=>!Object.keys(patch).some(path=>path.startsWith("customers/fixture_a/"))));
+});
+test("deletion between field writes is rejected without recreating a partial customer",async()=>{
+  const h=harness(), input=h.input();
+  input.customers[0].nickname="Edited";input.customers[0].updatedAt="2026-10-27T00:00:00.000Z";
+  const put=h.client.dbConditionalPut;
+  h.client.dbConditionalPut=async(location,value,etag, retried, guard)=>{
+    const path=location.replace(/^crmShared\/data\//,"");
+    if(path.startsWith("customers/fixture_a/")&&!h.state.server.customers.fixture_a) throw Object.assign(Error("permission denied"),{code:"DATABASE_ERROR"});
+    const result=await put(location,value,etag,retried,guard);
+    if(path==="customers/fixture_a/nickname") delete h.state.server.customers.fixture_a;
+    return result;
+  };
+  await assert.rejects(h.client.saveStoreNow(input),error=>["SHARED_SAVE_CONFLICT","SHARED_SAVE_UNCONFIRMED"].includes(error.code));
+  assert.equal(h.state.server.customers.fixture_a,undefined);
+  assert.ok(h.state.patches.every(patch=>!Object.keys(patch).some(path=>path.startsWith("customers/fixture_a/"))));
+});
