@@ -879,7 +879,9 @@ describe("desktop CRM screens actually render", () => {
     for (const label of ["서버 연결 정상", "매일 오전 6시", "브링엔지니어링 업무방", "오늘 업무일정", "오늘 계약 입금일", "등록된 항목이 있는 날만 발송"]) {
       expect(card!.textContent).toContain(label);
     }
-    expect(card!.querySelector('input, form, button, select, textarea')).toBeNull();
+    expect(card!.querySelector('input, form, select, textarea')).toBeNull();
+    expect(card!.querySelectorAll('button')).toHaveLength(1);
+    expect(card!.querySelector('[data-action="telegram-status-retry"]')).toBeTruthy();
     expect(booted.document.querySelector('[data-telegram-form], [data-telegram-find], [data-telegram-pick]')).toBeNull();
     const calls = booted.calls.slice(before);
     expect(calls.find(call => call.name === 'loadTelegramServerStatus')).toBeTruthy();
@@ -898,7 +900,12 @@ describe("desktop CRM screens actually render", () => {
       expect(card).toBeTruthy();
       expect(card.textContent).toContain('서버 연결 확인 필요');
       expect(card.textContent).not.toContain('서버 연결 정상');
-      expect(card.querySelector('input, form, button, select, textarea')).toBeNull();
+      expect(card.querySelector('input, form, select, textarea')).toBeNull();
+      expect(card.querySelectorAll('button')).toHaveLength(1);
+      const callsBeforeRetry = screen.calls.filter(call => call.name === 'loadTelegramServerStatus').length;
+      (card.querySelector('[data-action="telegram-status-retry"]') as HTMLElement).click();
+      await sleep(100);
+      expect(screen.calls.filter(call => call.name === 'loadTelegramServerStatus').length).toBe(callsBeforeRetry + 1);
       expect(screen.document.querySelector('[data-telegram-form], [data-telegram-find]')).toBeNull();
       expect(screen.errors).toEqual([]);
     } finally { screen.window.close(); }
