@@ -10001,9 +10001,13 @@
     const choices = (store.customers || []).filter(customer => customer && /^[A-Za-z0-9_-]{1,120}$/.test(String(customer.id || "")) && !["__proto__", "prototype", "constructor"].includes(String(customer.id)) && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true)
       .map(customer => ({id: "customer:" + customer.id, name: customer.name || customer.company || "고객", internalLabel: customerDisplayName(customer),
         ownerCustomerId: customer.id, address: customerManagedBuildingAddress(customer, null), roadAddress: customer.roadAddress || "", jibunAddress: customer.jibunAddress || ""}));
+    // Older standalone sites remain available until they are linked to a customer.
+    for (const building of store.buildings || []) {
+      if (building && building.id && !building.ownerCustomerId && !building.archivedAt && !building.deletedAt && building.deleted !== true) choices.push(building);
+    }
     // Historical reports and linked orders retain their existing building.
     const existingId = String(existingBuildingId || "");
-    if (existingId && !existingId.startsWith("customer:")) {
+    if (existingId && !existingId.startsWith("customer:") && !choices.some(row => String(row.id) === existingId)) {
       const existing = (store.buildings || []).find(row => row && String(row.id || "") === existingId);
       choices.push(existing || {id: existingId, name: "연결 기록이 남아 있는 고객건물", archivedAt: "missing"});
     }

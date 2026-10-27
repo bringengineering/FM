@@ -22,7 +22,8 @@ test("work report picker uses customer addresses even when multiple buildings ar
   assert.equal(linked.name,"Fixture customer label");assert.equal(h.workReportBuildingAddress(linked),"Fixture customer road 2");
   h.store.buildings.push({id:"another",ownerCustomerId:"linked"});
   assert.equal(h.workReportBuildings().filter(r=>r.id==="customer:linked").length,1);
-  assert(!rows.some(r=>r.id==="site"||r.id==="legacy"||r.id==="customer:archived"));
+  assert(rows.some(r=>r.id==="legacy"));
+  assert(!rows.some(r=>r.id==="site"||r.id==="customer:archived"));
   assert(h.workReportBuildings("legacy").some(r=>r.id==="legacy"));
   assert(h.workReportBuildings("missing_historical_site").some(r=>r.id==="missing_historical_site"));
 });
