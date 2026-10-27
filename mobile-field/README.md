@@ -6,7 +6,7 @@
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
-새 [Android 0.1.5 (6) 설치 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/09ccd6ba-e0b2-4d5d-8df6-2514fc800dd9)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, 0.1.5의 실기기 안내 촬영·Drive 권한·PDF 보관 확인은 별도로 구분해 기록한다.
+새 [Android 0.1.6 (7) 설치 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/04e05568-1415-4dde-8eb9-8da643d1b863)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, Drive 권한·AI 초안·PDF 보관의 실기기 확인은 별도로 구분해 기록한다.
 
 ## 이번에 구현한 범위
 
