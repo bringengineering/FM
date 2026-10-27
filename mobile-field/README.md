@@ -2,11 +2,11 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. **2026-10-27 Android 0.1.1 실기기 로그인·회사 권한·빈 현장 목록 조회까지 확인했다.** Play Integrity 설정과 읽기 API 운영 배포도 완료했다. 현재 업무 32건 모두 건물 연결이 없어 현장 상세의 긍정 조회는 검증 전이다. 기본 실행은 가상 현장 미리보기다. Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 Android 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
+이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 개인 CRM 계정으로 로그인하고 **CRM 고객을 선택해 고객정보의 건물주소를 사용한다. 별도 건물 연결이나 업무 배정은 필요하지 않다.** 초기 담당 업무/건물 조회 방식은 사용자의 실제 CRM 운영 방식과 맞지 않아 2026-10-27 고객주소 방식으로 수정했다. Android 0.1.1 실기기 로그인·회사 권한은 확인됐고, 새 조회 API를 운영 배포했다. 실제 CRM 고객 21명에 대한 조회 결과 검증에서 주소 등록 12명·미입력 9명 모두 표시됨을 확인했다. 기본 실행은 가상 현장 미리보기다. Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 Android 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
-최신 Android 설치본은 **0.1.1 (2)**다. 실제 기기에서 발생한 로그인 오류를 구분하도록 비밀번호·이메일 인증·앱 등록·기기 attestation 안내를 나눴다. APK 생성과 동일 서명 확인을 완료했고 사용자가 업데이트 후 로그인 성공을 확인했다. 운영 서버의 `context`·`jobs` HTTP 200도 확인했다.
+고객주소 조회를 적용한 Android **0.1.2 (3)** APK가 완성됐다. [설치 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/e01e7050-2567-4e99-b07e-1603c1a3d509)에서 기존 앱 위에 업데이트한다. 같은 서명 인증서임을 확인했다. 0.1.1에서 비밀번호·이메일 인증·앱 등록·기기 attestation 안내를 구분했고 사용자가 로그인 성공을 확인했다. 새 버전의 고객 목록·상세는 사용자에게 실기기 확인을 요청한 상태다.
 
 ## 이번에 구현한 범위
 
@@ -16,7 +16,7 @@ Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-2
 - 보고서 본문·후속 조치·항목 상태·미실시 사유와 수동 검토 기록. PC의 순수 `work-report-core.js`를 직접 재사용한다. 사진 추가·분류·초안 수정 시 이전 검토 확인을 무효화한다.
 - 불러오기·내용 hash 검증·revision 충돌·계정 격리. 전송 상태 변화는 보고서 본문 revision을 바꾸지 않는다.
 - 서버 연동용 전송 어댑터와 단일 실행 큐. 예약/완료 키 유지, 서버 offset 조회, 응답 유실 후 재개, 인증 철회 중단, Drive+CRM 확인 전 ready 금지. **현재 UI에는 활성 연결하지 않았다.**
-- 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. `fieldMobileApi`와 회사 로그인·현장 목록/상세 화면을 추가했다. 기존 `workOrders.assigneeUid`로 담당자를 확인한다. **Android 앱 하나만 허용하는 별도 `field-mobile` 코드베이스로 읽기 API를 배포했고, 운영 인덱스도 적용했다.**
+- 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. 활성 사무직 CRM 계정이 `crmCompany/data/customers`의 고객 목록·상세를 조회한다. 고객 ID·표시명·주소만 전달하며 연락처·내부 메모는 제외한다. 주소가 없으면 `주소 미입력`으로 표시하고, 고객 선택 때 최신 고객정보를 다시 읽는다. **Android 앱 하나만 허용하는 별도 `field-mobile` 코드베이스로 읽기 API를 배포했다.**
 
 ## 실행
 
@@ -46,7 +46,7 @@ npx expo run:ios
 ## 검증 결과
 
 - TypeScript 검사 통과.
-- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합·직원 로그인 테스트 **87개 통과**(2026-10-27 재실행). Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합·직원 로그인·고객주소 테스트 **110개 통과**(2026-10-27 전체 109개 통과 후 응답 최소화/다른 고객 상세 거부 사례를 추가하고 해당 15개 재실행 통과). Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
 - 모바일 배포 범위 테스트 3개, 실제 Node 22에서 단일 함수 export 확인, 운영 API의 인증 없음/위조 토큰 거부·쓰기 차단·예상하지 않은 쿼리 거부를 확인했다. 기존 운영 함수 42개의 소스·상태는 동일하다.
 - Functions 전체 테스트 **1,370개 통과, 기존 14개 제외**. TypeScript 서버 빌드 통과.
 - 기존 데스크톱 보고서 core 테스트 **24개 통과**.
@@ -63,8 +63,8 @@ npx expo run:ios
 ## 실제 연결 전에 남은 것
 
 1. Android 개발 APK와 직접 설치용 Play Integrity 설정은 완료했다. iOS 기기 attestation·설치본은 준비가 남아 있다. 다운로드한 플랫폼 설정은 `native-config/`에 있고 Git에서 제외한다.
-2. CRM 업무지시의 `assigneeUid`를 사용하는 최소 조회 projection을 구현했다. 기존 field-v2의 공유 `operatorId`는 사용하지 않는다. 실제 직원의 현장 조회는 아직 시험하지 않았다.
-3. 읽기 API 배포와 `assigneeUid` 인덱스는 적용했다. 방문 생성·revision 조정·사진 예약 계약 구현이 남아 있다. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다.
+2. 고객정보의 건물주소를 사용하는 `/sites` 목록·상세 API는 배포·검증했다. 0.1.2 업데이트 후 실제 휴대폰의 고객 목록·주소·상세 조회 확인이 남아 있다. 이전 건물/업무 연결 안내를 다시 요구하지 않는다.
+3. 방문 생성·revision 조정·사진 예약 계약 구현이 남아 있다. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다. 기존 `/jobs` 경로는 이전 설치본 호환용이며 현재 앱의 현장 선택에는 사용하지 않는다.
 4. 회사가 허용한 서버 Drive connector와 활동사진·문서함 mapping. 기존 PC의 개인 토큰을 공용 서버 토큰으로 전환하지 않는다.
 5. 서버 이미지 검증·Drive 보관·CRM 연결·PDF renderer와 복구 작업자, 관리자 검토/공통 발송 claim. 이 코드에 실제 NCP 메시지 API 호출은 없다.
 6. 실제 Android/iPhone에서 SQLCipher·키 유실·저장소 부족·재시작·사진 회전/HEIC·업데이트를 시험한다. 촬영 캐시 저장 실패 복구, 자동 백업(특히 iOS 제외 정책), 화면 가림·앱 종료, native SDK 동작 검증도 남아 있다.
