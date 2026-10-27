@@ -1,9 +1,32 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions } = require("./crm-cleaning-report-deployment.cjs");
+const { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions, requireFederatedCredential } = require("./crm-cleaning-report-deployment.cjs");
 const path = require("node:path");
 const manifest = require("./firebase-targets.json");
+const identity = require("./crm-cleaning-report-identity.json");
 const row = (name = "cleaningOrdersApi", codeHash = "a".repeat(40)) => ({ name, codeHash, region: "asia-northeast3", state: "ACTIVE", codebase: "field-platform" });
+test("federated authentication rejects another repository, branch, account, audience or credential type", () => {
+  const file = path.resolve("gha-creds-test.json");
+  const env = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: identity.repository, GITHUB_REF: identity.sourceRef,
+    GOOGLE_APPLICATION_CREDENTIALS: file, CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: file };
+  const credential = { type: "external_account", audience: `//iam.googleapis.com/${identity.provider}`,
+    token_url: "https://sts.googleapis.com/v1/token",
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${identity.serviceAccount}:generateAccessToken` };
+  const read = () => JSON.stringify(credential);
+  assert.equal(requireFederatedCredential(env, read), file);
+  for (const patch of [{ GITHUB_REPOSITORY: "other/FM" }, { GITHUB_REF: "refs/heads/main" }, { GITHUB_ACTIONS: "false" },
+    { GOOGLE_APPLICATION_CREDENTIALS: "relative" }, { CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "other" }]) assert.throws(() => requireFederatedCredential({ ...env, ...patch }, read));
+  for (const patch of [{ type: "service_account" }, { audience: "other" }, { token_url: "https://untrusted.example" }, { service_account_impersonation_url: "other" }])
+    assert.throws(() => requireFederatedCredential(env, () => JSON.stringify({ ...credential, ...patch })));
+  assert.throws(() => requireFederatedCredential(env, () => { throw new Error("private"); }), /^Error: CLEANING_REPORT_FEDERATED_CREDENTIAL_INVALID$/);
+});
+test("OIDC trust is confined to numeric repository IDs, the production environment and exact operating workflow", () => {
+  for (const term of ["assertion.repository_id=='1276587874'", "assertion.repository_owner_id=='243367126'",
+    `assertion.ref=='${identity.sourceRef}'`, `assertion.environment=='${identity.environment}'`,
+    `assertion.sub=='${identity.subject}'`, `assertion.workflow_ref=='${identity.workflowRef}'`]) assert.ok(identity.attributeCondition.split("&&").includes(term));
+  assert.equal(identity.attributeCondition.split("&&").length, 6);
+  assert.equal(identity.serviceAccount, "bring-crm-report-deployer@bring-fm.iam.gserviceaccount.com");
+});
 test("schema readiness requires both the exact capability and continued anonymous denial", async () => {
   const reply = (status = 401, schema = "common-v2", code = "cleaning_order_auth_required") => async (url, options) => {
     assert.equal(url, "https://asia-northeast3-bring-fm.cloudfunctions.net/cleaningOrdersApi");
@@ -31,6 +54,7 @@ test("preflight diagnostics omit credentials, query strings, identities and arbi
 test("command failures reveal only closed operation and reason codes", () => {
   const exec = stderr => () => { throw Object.assign(new Error("private message"), { stderr }); };
   assert.throws(() => runCommand("gcloud", ["functions", "describe"], {}, exec("PERMISSION_DENIED private credential")), /^Error: CLEANING_REPORT_GCLOUD_METADATA_PERMISSION_DENIED$/);
+  assert.throws(() => runCommand("gcloud", ["functions", "describe"], {}, exec("Permission 'cloudfunctions.functions.get' denied on private")), /^Error: CLEANING_REPORT_GCLOUD_METADATA_PERMISSION_DENIED$/);
   assert.throws(() => runCommand(process.execPath, ["firebase.js", "functions:list"], {}, exec("Cannot find module private path")), /^Error: CLEANING_REPORT_FIREBASE_INVENTORY_NOT_FOUND$/);
   assert.throws(() => runCommand("gcloud", ["auth"], {}, exec("invalid_grant private credential")), /^Error: CLEANING_REPORT_GCLOUD_AUTH_AUTH_FAILED$/);
   assert.equal(runCommand("git", ["status"], {}, () => "clean"), "clean");
