@@ -22,7 +22,7 @@ export function pdfBytes(value) {
   if(raw.length<100||raw.length>MAX_PDF||!/^%PDF-1\.[0-9]/.test(raw)||!raw.slice(-1024).includes('%%EOF')||/\/(JavaScript|JS|Launch|EmbeddedFile|OpenAction|AA)\b/.test(raw))fail();
   return Uint8Array.from(raw,c=>c.charCodeAt(0));
 }
-async function readRecord(path,token,fetchImpl) {
+export async function readRecord(path,token,fetchImpl) {
   const url=new URL(`${DB}/crmCompany/${path}.json`);url.searchParams.set('auth',token);
   // Edge fetch supports follow/manual only; never follow a token-bearing URL.
   let response;try{response=await fetchImpl(url,{redirect:'manual',signal:AbortSignal.timeout(10000)});}catch{fail('DELIVERY_UNAVAILABLE');}
