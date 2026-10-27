@@ -8,7 +8,12 @@ const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== 
 const id = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,120}$/.test(value);
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 
-function ownerFor(data, buildingId) {
+function ownerFor(data, buildingId, customerId) {
+  if (!buildingId && id(customerId)) {
+    const customer = (data.customers || []).find(row => live(row) && row.id === customerId);
+    if (!customer) throw new Error("선택한 고객 정보를 다시 확인해 주세요.");
+    return {customer, building: {name: customer.name || customer.company || "", address: customer.address || ""}};
+  }
   const building = (data.buildings || []).find(row => live(row) && row.id === buildingId);
   if (!building) throw new Error("선택한 건물을 다시 확인해 주세요.");
   const customer = (data.customers || []).find(row => live(row) && row.id === building.ownerCustomerId);
@@ -16,9 +21,9 @@ function ownerFor(data, buildingId) {
 }
 function assertBinding(record, data, reports) {
   const doc = record.savedCustomerDocument;
-  const {customer} = ownerFor(data, record.buildingId);
+  const {customer} = ownerFor(data, record.buildingId, record.customerId);
   const report = reports.find(row => live(row) && row.id === doc.reportId);
-  if (!report || report.updatedAt !== doc.reportUpdatedAt || report.buildingId !== record.buildingId) throw new Error("보고서가 변경되었습니다. 현재 내용으로 다시 저장해 주세요.");
+  if (!report || report.updatedAt !== doc.reportUpdatedAt || report.buildingId !== record.buildingId || (!record.buildingId && report.customerId !== record.customerId)) throw new Error("보고서가 변경되었습니다. 현재 내용으로 다시 저장해 주세요.");
   if ((customer?.id || "") !== doc.customerId || (customer && /^01\d{8,9}$/.test(Docs.phone(customer.phone)) ? Docs.phone(customer.phone) : "") !== doc.recipientPhone) throw new Error("건물주 연결 또는 연락처가 변경되었습니다. 다시 저장해 주세요.");
   return customer;
 }
@@ -35,7 +40,7 @@ function createService(deps) {
     const checked = R.validateReport(report);
     if (!checked.ok) throw new Error(checked.error);
     const data = await deps.store(); session.check();
-    return {report: checked.report, data, ...ownerFor(data, report.buildingId)};
+    return {report: checked.report, data, ...ownerFor(data, report.buildingId, report.customerId)};
   }
   async function save(input, session) {
     if (!id(input.reportId) || typeof input.updatedAt !== "string" || input.updatedAt.length > 40) throw new Error("저장 보고서를 다시 확인해 주세요.");
@@ -64,6 +69,7 @@ function createService(deps) {
     session.check();
     const record = {id: recordId, title: `${building.name || report.buildingName} ${report.workDate} 작업 결과보고서`.slice(0,160),
       buildingId: report.buildingId, docType: "etc", driveFileId: uploaded.id, updatedAt: new Date().toISOString(), updatedBy: session.user.uid,
+      ...(!report.buildingId && report.customerId ? {customerId: report.customerId} : {}),
       savedCustomerDocument: {version: 1, kind: "workReport", customerId: customer?.id || "", recipientPhone: phone, reportId: report.id,
         reportUpdatedAt: report.updatedAt, sha256: checked.sha256, size: checked.size, month: ""}};
     if (!Docs.normalize(record)) throw new Error("PDF 보관 정보를 확인하지 못했습니다.");
@@ -105,7 +111,7 @@ function createService(deps) {
       Docs.resolve(finalData.buildingDocuments, finalData.customers, input);
       assertBinding(record, finalData, finalReports.reports);
       const report = finalReports.reports.find(row => live(row) && row.id === record.savedCustomerDocument.reportId);
-      const completionReport = Message.details(report, ownerFor(finalData, record.buildingId).building);
+      const completionReport = Message.details(report, ownerFor(finalData, record.buildingId, record.customerId).building);
       providerStarted = true;
       const sent = await deps.delivery("createAndSend", {documentId: record.id, customerId: deliveryCustomerId, documentType: "completion_report", documentName: Message.documentName(completionReport), completionReport,
         expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: ready.bytes.toString("base64"),

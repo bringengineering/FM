@@ -29,6 +29,19 @@ it("keeps raw cleaning quote revisions server-owned and unavailable to CRM or TV
 });
 
 describe.runIf(AVAILABLE)("cleaning orders and wallboard database access", () => {
+  it("allows customer-bound mobile reports without buildings and denies missing/deleted/rebound customers",async()=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await set(ref(context.database(),'crmCompany/data/customers/mobile-customer'),{id:'mobile-customer',name:'Synthetic'});
+      await set(ref(context.database(),'crmCompany/data/customers/other-customer'),{id:'other-customer',name:'Synthetic'});
+    });
+    const db=environment.authenticatedContext('admin',{email:COMPANY_EMAIL,email_verified:true}).database();
+    const report={id:'mobile-report',buildingId:'',customerId:'mobile-customer',kind:'common',workDate:'2026-10-27',updatedAt:'2026-10-27T01:00:00Z',updatedBy:'admin'};
+    const path=ref(db,'crmCompany/workReports/mobile-report');await assertSucceeds(set(path,report));
+    await assertFails(set(path,{...report,customerId:'missing'}));await assertFails(set(path,{...report,customerId:'other-customer'}));
+    const {customerId,...unbound}=report;await assertFails(set(path,unbound));
+    await environment.withSecurityRulesDisabled(async context=>{await set(ref(context.database(),'crmCompany/data/customers/mobile-customer/deleted'),true);});
+    await assertFails(set(path,report));
+  });
   beforeAll(async () => {
     environment = await initializeTestEnvironment({
       projectId: PROJECT_ID,

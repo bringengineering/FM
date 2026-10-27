@@ -15,9 +15,10 @@
       || !/^[A-Za-z0-9_-]{6,200}$/.test(row.driveFileId || "") || !/^[a-f0-9]{64}$/.test(doc.sha256 || "")
       || !Number.isSafeInteger(doc.size) || doc.size < 5 || doc.size > 12 * 1024 * 1024
       || !(/^01\d{8,9}$/.test(doc.recipientPhone || "") || (workReport && doc.recipientPhone === "")) || typeof row.updatedAt !== "string" || !Number.isFinite(Date.parse(row.updatedAt))
-      || (workReport && (!ID.test(row.buildingId || "") || !ID.test(doc.reportId || "") || typeof doc.reportUpdatedAt !== "string" || !Number.isFinite(Date.parse(doc.reportUpdatedAt))))
+      || (workReport && (!(ID.test(row.buildingId || "") || (!row.buildingId && ID.test(row.customerId || "") && row.customerId === doc.customerId)) || !ID.test(doc.reportId || "") || typeof doc.reportUpdatedAt !== "string" || !Number.isFinite(Date.parse(doc.reportUpdatedAt))))
       || (doc.kind === "buildingMonthlyReport" && (!ID.test(row.buildingId || "") || !/^\d{4}-(0[1-9]|1[0-2])$/.test(doc.month || "")))) return null;
     return {id: row.id, title: text(row.title, 160), buildingId: text(row.buildingId, 120), driveFileId: row.driveFileId,
+      ...(workReport && ID.test(row.customerId || "") ? {customerId: row.customerId} : {}),
       updatedAt: row.updatedAt, archivedAt: text(row.archivedAt, 40),
       savedCustomerDocument: {version: 1, kind: doc.kind, customerId: doc.customerId, recipientPhone: doc.recipientPhone,
         sha256: doc.sha256, size: doc.size, month: text(doc.month, 7),

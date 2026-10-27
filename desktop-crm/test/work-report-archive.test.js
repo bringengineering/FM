@@ -125,3 +125,13 @@ test("발송 전 안전한 실패만 재시도할 수 있다",async()=>{
   opts.createFailure=false;assert.equal((await h.service.send(h.request(record),h.session)).ok,true);
   assert.equal(h.events.filter(e=>e[0]==="createAndSend").length,2,"거절이 확인된 요청만 사용자가 재시도할 수 있다");
 });
+
+test("현장노트 고객 보고서는 건물 연결 없이 저장·조회하고 고객 바뀜을 차단한다",async()=>{
+  const h=fixture();h.report.buildingId="";h.report.customerId="owner_a";h.data.buildings=[];
+  const {record}=await h.save();assert.equal(record.customerId,"owner_a");assert.equal(Docs.list([record],h.data.customers[0],"workReport").length,1);
+  assert.equal((await h.service.read(h.request(record),h.session)).bytes,bytes);
+  h.report.customerId="other";await assert.rejects(h.service.read(h.request(record),h.session),/보고서가 변경/);h.report.customerId="owner_a";
+  h.data.customers[0].deleted=true;await assert.rejects(h.service.read(h.request(record),h.session));
+  assert.equal(Docs.normalize({...record,customerId:"other"}),null);
+  assert.equal(h.events.some(e=>e[0]==="createAndSend"),false);
+});
