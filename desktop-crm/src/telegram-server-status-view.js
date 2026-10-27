@@ -19,6 +19,7 @@
         <div><dt>발송 조건</dt><dd>등록된 항목이 있는 날만 발송</dd></div>
       </dl>
       <div class="tg-server-note">컴퓨터와 CRM을 꺼도 서버에서 자동으로 발송합니다.<br><small>봇 키는 서버에 보관하며, PC에서 입력하거나 저장하지 않습니다.</small></div>
+      <button type="button" class="secondary-button" data-action="telegram-status-retry" ${checking ? "disabled" : ""}>다시 확인</button><small>최근 확인 결과는 최대 30초간 유지됩니다.</small>
     </section>`;
   }
   return { render };

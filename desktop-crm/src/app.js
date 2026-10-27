@@ -12136,7 +12136,7 @@
 
   // 대표OS 연결 상태. 비밀키는 절대 여기 담기지 않는다 — 화면은 설정 여부와
   // 끝 네 자리만 안다(main.js 의 loadOwnerOsSettings 가 그것만 넘긴다).
-  let ownerOsState = { view: null, loaded: false, loading: false, saving: false, sending: false, error: "", notice: "" };
+  let ownerOsState = { view: null, loaded: false, loading: false, loadError: "", saving: false, sending: false, error: "", notice: "" };
 
   // 설정 화면과 월간 경영보고 화면이 같은 함수로 보낸다. 두 곳이 서로 다른
   // 내용을 보내게 되는 상황을 만들지 않으려는 것이다.
@@ -12168,13 +12168,15 @@
   async function loadOwnerOsSettingsView() {
     if (ownerOsState.loading) return;
     ownerOsState.loading = true;
+    ownerOsState.loadError = "";
     try {
       ownerOsState.view = await api.loadOwnerOsSettings();
-      ownerOsState.loaded = true;
       ownerOsState.error = "";
-    } catch (error) {
-      ownerOsState.error = error && error.message || "대표OS 연결 설정을 읽지 못했습니다.";
+    } catch (_error) {
+      ownerOsState.view = null;
+      ownerOsState.loadError = "대표OS 연결 설정을 읽지 못했습니다. 다시 확인해 주세요.";
     } finally {
+      ownerOsState.loaded = true;
       ownerOsState.loading = false;
       // 이 값은 설정 화면과 월간 경영보고 화면 양쪽이 쓴다. 열려 있는 쪽을 다시 그린다.
       if (currentView === "settings") renderSettings();
@@ -12186,10 +12188,12 @@
     if (!canAdministerSecurity()) {
       return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p>매달 현장 운영 실적을 대표OS 로 올립니다.</p><div class="info-box">대표OS 연결은 관리자만 설정할 수 있습니다.</div></section>`;
     }
+    if (ownerOsState.loading || !ownerOsState.loaded) return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p role="status">설정을 확인하고 있습니다…</p></section>`;
+    if (ownerOsState.loadError) return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p role="alert">${esc(ownerOsState.loadError)}</p><button type="button" class="secondary-button" data-action="owner-os-settings-retry">다시 확인</button></section>`;
     const view = ownerOsState.view;
     const configured = Boolean(view && view.configured);
     const status = configured
-      ? `<div class="info-box"><b>연결됨</b><br>${esc(view.endpoint)}<br>비밀키 ${esc(view.secretHint)}</div>`
+      ? `<div class="info-box"><b>이 PC에 설정 저장됨</b><br>실제 연결 상태는 별도 확인이 필요합니다.<br>${esc(view.endpoint)}<br>비밀키 ${esc(view.secretHint)}</div>`
       : `<div class="info-box">아직 연결하지 않았습니다. 대표OS 운영 주소와 비밀키를 넣어 주세요.</div>`;
     return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p>매달 현장 운영 실적(매출·원가·이익·영업)을 대표OS 로 올립니다. 총평은 사람이 확인해야 평가 근거로 쓰입니다.</p>
       ${status}
@@ -12814,10 +12818,30 @@
   function renderSettings() {
     const user = currentAuth.user || {};
     const canRestore = (!currentAuth.required && !currentAuth.enforceRoles) || user.role === "admin";
+    const identity = String(user.uid || user.email || "local");
+    const oldGrid = main.querySelector(".settings-grid");
+    const retainForms = oldGrid && oldGrid.dataset.settingsIdentity === identity
+      ? [...oldGrid.querySelectorAll('form[data-settings-dirty="true"]')].filter(form => form.id !== "ownerOsForm" || canAdministerSecurity())
+      : [];
+    const focused = retainForms.some(form => form.contains(document.activeElement)) ? document.activeElement : null;
+    const selection = focused && typeof focused.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
     main.innerHTML = `<div class="settings-grid">
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
       <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
     </div>`;
+    main.querySelector(".settings-grid").dataset.settingsIdentity = identity;
+    for (const form of retainForms) {
+      const replacement = main.querySelector(`#${form.id}`);
+      if (!replacement) continue;
+      const button = form.querySelector('button[type="submit"]');
+      const nextButton = replacement.querySelector('button[type="submit"]');
+      if (button && nextButton) { button.disabled = nextButton.disabled; button.textContent = nextButton.textContent; }
+      replacement.replaceWith(form);
+    }
+    if (focused && focused.isConnected) {
+      focused.focus({ preventScroll: true });
+      if (selection) focused.setSelectionRange(...selection);
+    }
     if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
     if (!telegramState.loading && canAdministerSecurity() && (!telegramState.loaded || Date.now() - telegramState.checkedAt > 60000)) void loadTelegramServerStatus();
   }
@@ -17692,8 +17716,15 @@
     else if (action === "new-incident") { if (requireSecurityPermission(false)) incidentEditor(""); }
     else if (action === "backup") {
       if (!canAdministerSecurity()) return showToast("백업 파일은 관리자만 저장할 수 있습니다.", "error");
-      const result = await api.backup(store);
-      if (result.ok) { logAudit({ category: "백업", targetType: "백업", targetLabel: Core.dayKey(), action: "CRM 전체 데이터 백업 생성", reason: "정기·수동 백업" }); scheduleSave(); showToast("CRM 백업을 저장했습니다.", "success"); }
+      try {
+        const result = await api.backup(store);
+        if (result.ok) { logAudit({ category: "백업", targetType: "백업", targetLabel: Core.dayKey(), action: "CRM 전체 데이터 백업 생성", reason: "정기·수동 백업" }); scheduleSave(); showToast("CRM 백업을 저장했습니다.", "success"); }
+        else if (!result.canceled) showToast(result.error || "백업 파일을 저장하지 못했습니다.", "error");
+      } catch (_error) { showToast("백업 파일을 저장하지 못했습니다. 저장 위치와 암호화 설정을 확인해 주세요.", "error"); }
+    } else if (action === "telegram-status-retry") {
+      if (canAdministerSecurity()) await loadTelegramServerStatus();
+    } else if (action === "owner-os-settings-retry") {
+      if (canAdministerSecurity()) { ownerOsState.loaded = false; renderSettings(); }
     } else if (action === "owner-os-send-from-settings") {
       ownerOsState.sending = true;
       ownerOsState.error = "";
@@ -20104,7 +20135,7 @@
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       store.company.workspace = raw.workspace.trim();
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { renderSettings(); showToast("설정을 서버에 저장했습니다.", "success"); } });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { delete form.dataset.settingsDirty; renderSettings(); showToast("설정을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "ownerOsForm") {
       if (!canAdministerSecurity()) return showToast("대표OS 연결은 관리자만 설정할 수 있습니다.", "error");
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -20127,6 +20158,8 @@
       try {
         ownerOsState.view = await api.saveOwnerOsSettings({ endpoint, secret });
         ownerOsState.loaded = true;
+        delete form.dataset.settingsDirty;
+        if (form.elements.secret) form.elements.secret.value = "";
         ownerOsState.notice = "대표OS 연결을 저장했습니다.";
         logAudit({ category: "설정", targetType: "대표OS", targetLabel: "보고 연결", action: "대표OS 보고 연결 설정", reason: "월간 보고 전송" });
         scheduleSave();
@@ -20274,6 +20307,8 @@
   }
 
   document.addEventListener("input", event => {
+    const settingsForm = event.target.closest?.("#settingsForm, #ownerOsForm");
+    if (settingsForm && currentView === "settings") settingsForm.dataset.settingsDirty = "true";
     const receiptForm = event.target.closest?.("#contractReceiptQuickForm");
     if (receiptForm) { captureContractReceiptDraft(receiptForm); return; }
     const alimtalkSearch = event.target.closest?.("[data-alimtalk-search]");
