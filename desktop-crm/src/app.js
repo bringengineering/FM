@@ -606,7 +606,7 @@
     const detail = (item.rows || []).map(row => `${row.building.name || "건물명 미입력"} · ${row.stage ? row.stage.label : row.ambiguous ? "연결 확인 필요" : "영업 미등록"}`).join("\n");
     return `<span class="customer-sales-stage ${item.stateId === "needs-review" ? "warning" : ["unregistered", "no-building"].includes(item.stateId) ? "unlinked" : item.stateId === "mixed" ? "mixed" : "linked"}" data-customer-sales-stage="${attr(item.stateId)}" title="${attr(detail || item.label)}">${esc(item.label)}</span>`;
   };
-  const customerIsRelationshipCustomer = customer => Boolean(customer && !customer.archivedAt && !customer.deletedAt
+  const customerIsRelationshipCustomer = customer => Boolean(customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true
     && (ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id).length
       || customer.stage === "계약 확정" || customerSalesProgress(customer).filterIds.includes("paid_management")));
   const customerActivities = id => store.activities.filter(item => item.customerId === id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
@@ -11546,15 +11546,24 @@
   }
 
   function relationshipContractsHtml(customer, contracts = contractCustomerContracts(customer)) {
-    if (!contracts.length) return "";
-    return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건</b>${contracts.map(contract => {
-      const dates = ContractSchedule.contractDates(contract);
-      const monthlySchedule = ContractSchedule.normalizeCleaningSchedule(contract.cleaningSchedule)?.mode === "twice_monthly";
+    const Summary = window.BringContractCustomerSummary;
+    if (!contracts.length) return `<section class="relationship-contracts"><small>${esc(Summary.relationshipReason(customer, 0, customerSalesProgress(customer).filterIds.includes("paid_management")))}</small></section>`;
+    const active = contracts.filter(contract => contract.status !== "종료");
+    const ended = contracts.filter(contract => contract.status === "종료");
+    const renderContract = contract => {
       const building = buildingById(contract.buildingId);
       const mode = contractCustomerMode(contract);
       const label = mode === "single" ? "단건 계약" : mode === "recurring" ? "정기 계약" : "구분 확인 필요";
-      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>${monthlySchedule ? "첫 작업 월 미리보기" : `업무일정 ${dates.length}회`} · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
-    }).join("")}</section>`;
+      const today = todayKey(), month = today.slice(0, 7);
+      const calendar = Summary.calendarSummary(contract, store, month);
+      const payment = Summary.paymentSummary(contract, month, today);
+      const statusLabels = {planned: "예정", in_progress: "진행 중", completed: "완료", cancelled: "취소"};
+      const dates = calendar.items.slice(0, 5).map(item => `${item.date} ${item.source === "contract" ? (item.status === "completed" ? "계약 종료 기준" : "예정 · 계약 기준") : statusLabels[item.status] || "상태 확인 필요"}`);
+      const datesLabel = dates.length ? dates.join(" · ") + (calendar.items.length > 5 ? ` 외 ${calendar.items.length - 5}건` : "") : "연결된 일정 없음";
+      const paymentLabel = payment.status === "missing" ? "입금 예정일 미등록" : payment.status === "none" ? "이번 달 입금 일정 없음" : `${payment.date} ${{paid: "입금 완료(등록 상태)", overdue: "입금 예정 · 확인 필요", scheduled: "입금 예정"}[payment.status] || "상태 확인 필요"}`;
+      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && (building.name || building.roadAddress || building.address), contract.status || "상태 확인 필요"].filter(Boolean).join(" · "))}</span><small>계약 주기 · ${esc(ContractSchedule.scheduleLabel(contract) || "별도 주기 없음 또는 확인 필요")}</small><small>업무일정 · ${esc(month)} · ${esc(datesLabel)}</small>${calendar.movedToOtherBuilding ? `<small>다른 건물이나 계약으로 변경된 연결 일정이 있습니다. 캘린더에서 확인해 주세요.</small>` : ""}<small>입금일정 · ${esc(paymentLabel)}</small></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
+    };
+    return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건 · 종료 ${ended.length}건 포함</b>${active.map(renderContract).join("")}${ended.length ? `<details class="relationship-ended"><summary>종료 계약 ${ended.length}건</summary>${ended.map(renderContract).join("")}</details>` : ""}</section>`;
   }
 
   function contractCustomerMode(contract) {
@@ -11574,7 +11583,7 @@
       .sort((a, b) => customerDisplayName(a).localeCompare(customerDisplayName(b), "ko"));
     const contractCount = customers.reduce((sum, customer) => sum + contractCustomerContracts(customer).length, 0);
     const modeLabel = modes.find(([mode]) => mode === contractCustomerModeFilter)?.[1] || "전체";
-    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 등록 계약과 고객 상세정보를 확인하세요.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
+    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 종료 계약 포함</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
       <nav class="contract-payment-mode-tabs contract-customer-mode-tabs" aria-label="계약 고객 계약 구분">${modes.map(([mode, label]) => `<button type="button" class="${contractCustomerModeFilter === mode ? "active" : ""}" data-contract-customer-mode="${mode}" aria-pressed="${contractCustomerModeFilter === mode}">${label} <span>${allContracts.filter(contract => mode === "all" || contractCustomerMode(contract) === mode).length}건</span></button>`).join("")}</nav>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
         return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button></footer></article>`;
