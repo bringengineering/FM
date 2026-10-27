@@ -282,6 +282,7 @@
     const recipient = normalizeRecipient(value);
     return {
       quoteDate,
+      customerId: text(value.customerId, 200),
       validUntil,
       recipient: recipient.name || "고객",
       recipientPhone: recipient.phone,
@@ -297,6 +298,30 @@
       notes: Array.isArray(value.notes) ? value.notes.map(item => text(item, 180)).filter(Boolean).slice(0, 4) : [],
       company: companyProfile(value.company)
     };
+  }
+
+  function selectedCustomer(customers, customerId) {
+    const matches = (customers || []).filter(row => row && String(row.id || "") === String(customerId || "") && customerId && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+    if (matches.length !== 1) throw new Error("견적서를 연결할 CRM 고객을 선택해 주세요.");
+    return matches[0];
+  }
+
+  function bindCustomer(draft, customers, customerId) {
+    const customer = selectedCustomer(customers, customerId);
+    return normalizeDraft(Object.assign({}, draft, {
+      customerId: String(customer.id),
+      recipient: customer.name || customer.company || "고객",
+      recipientPhone: customer.phone || "",
+      siteAddress: customer.roadAddress || customer.address || customer.jibunAddress || ""
+    }));
+  }
+
+  function resolveCustomer(draft, customers) {
+    const customer = selectedCustomer(customers, draft.customerId);
+    const phone = String(customer.phone || "").replace(/\D/g, "");
+    if (!/^01\d{8,9}$/.test(phone)) throw new Error("고객관리에서 선택한 고객의 휴대전화 번호를 등록한 후 고객을 다시 선택해 주세요.");
+    if (phone !== String(draft.recipientPhone || "").replace(/\D/g, "")) throw new Error("고객 연락처가 변경되었습니다. 고객을 다시 선택해 주세요.");
+    return customer;
   }
 
   function addDraftItem(value) {
@@ -330,5 +355,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, MOVE_IN_CLEANING_AMOUNTS, createDraftFromPrompt, createManualDraft, applyMoveInCleaningPreset, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase, dateAfter: addDays };
+  return { selectedCustomer, bindCustomer, resolveCustomer, COMPANY, MAX_ITEMS, MOVE_IN_CLEANING_AMOUNTS, createDraftFromPrompt, createManualDraft, applyMoveInCleaningPreset, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase, dateAfter: addDays };
 });
