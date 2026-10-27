@@ -7227,7 +7227,7 @@
     return `<section class="roadmap-detail">
       <header>
         <div><span>${project ? "선택한 프로젝트 · 진행 현황과 다음 일정을 확인하세요" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
-        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions"><button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}" data-roadmap-project-base-end="${esc(assignment.endDate || today)}">기간 연장</button><button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? `전체 연결 업무 ${orders.length}건 평균 진행률` : "프로젝트 진행률 · 연결된 업무지시 없음"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions"><button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}" data-roadmap-project-base-end="${esc(assignment.endDate || today)}">기간 연장</button><button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
       </header>
       ${extensionEditor}
       <div class="roadmap-detail-grid">
@@ -8677,7 +8677,7 @@
     }));
     if (!checked.ok) { showToast(checked.error, "error"); return; }
     try {
-      const saved = await api.saveProject(checked.project);
+      const saved = await api.saveProject(Object.assign({}, checked.project, { expectedProject: previous.id ? previous : null }));
       workOrderState.projectEditing = null;
       workOrderState.projectId = saved.id;
       workOrderState.loaded = false;
@@ -8708,7 +8708,7 @@
     }));
     if (!checked.ok) return showToast(checked.error, "error");
     try {
-      const saved = await api.saveProject(checked.project);
+      const saved = await api.saveProject(Object.assign({}, checked.project, { expectedProject: previous }));
       workOrderState.projectEditing = null;
       projectRoadmapState.extensionProjectId = "";
       workOrderState.projectId = saved.id;

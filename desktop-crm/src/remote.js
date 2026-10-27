@@ -5134,12 +5134,22 @@ class FirebaseRemoteClient {
     const checked = ProjectCore.validateProject(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     const location = `projects/${checked.project.id}`;
-    const [existing, users, teamProfiles] = await Promise.all([
-      this.dbRequest(location, { method: "GET" }),
+    const [snapshot, users, teamProfiles] = await Promise.all([
+      this.dbReadWithEtag(location, false, guard),
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
+    const existing = snapshot.value;
+    const expected = source.expectedProject;
+    const projectComparable = value => {
+      const normalized = ProjectCore.normalizeProject(Object.assign({}, value, { id: checked.project.id }));
+      normalized.assignees.sort((a, b) => a.uid.localeCompare(b.uid));
+      return JSON.stringify(normalized);
+    };
+    if (existing ? !expected || typeof expected !== "object" || Array.isArray(expected) || expected.id !== checked.project.id || projectComparable(expected) !== projectComparable(existing) : Boolean(expected)) {
+      throw createError("다른 사용자가 프로젝트를 변경했습니다. 최신 내용을 다시 불러온 뒤 수정해 주세요.", "PROJECT_CONFLICT");
+    }
     const merged = OfficeCore.mergeOfficeUsers(users, teamProfiles);
     const assignees = checked.project.assignees.map(item => {
       const user = merged[item.uid];
@@ -5161,7 +5171,7 @@ class FirebaseRemoteClient {
     const endDateExtended = Boolean(existing && checked.project.endDate
       && (!before.endDate || checked.project.endDate > before.endDate));
     const extensionBaseline = before.endDate || checked.project.previousEndDate;
-    const record = Object.assign({}, checked.project, {
+    const record = Object.assign({}, existing || {}, checked.project, {
       assignees: Object.fromEntries(assignees.map(item => [item.uid, item])),
       owner: assignees.length ? assignees.map(item => item.name).join(", ").slice(0, 80) : checked.project.owner,
       createdAt: (existing && existing.createdAt) || now,
@@ -5174,7 +5184,13 @@ class FirebaseRemoteClient {
       updatedAt: now,
       updatedBy: session.uid,
     });
-    await this.dbRequest(location, { method: "PUT", body: record });
+    try {
+      await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    } catch (error) {
+      if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") throw createError("다른 사용자가 프로젝트를 변경했습니다. 최신 내용을 다시 불러온 뒤 수정해 주세요.", "PROJECT_CONFLICT");
+      if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw createError("프로젝트 저장 결과를 확인하지 못했습니다. 새로고침으로 저장 여부를 확인해 주세요.", "PROJECT_WRITE_UNCONFIRMED");
+      throw error;
+    }
     this.assertSessionGuardActive(guard);
     return record;
   }
