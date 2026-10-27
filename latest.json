@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
-  "tag": "crm-v1.91.2",
-  "version": "1.91.2",
-  "publishedAt": "2026-10-27T11:46:49.000Z",
+  "tag": "crm-v1.91.3",
+  "version": "1.91.3",
+  "publishedAt": "2026-10-27T11:58:58.000Z",
   "installer": {
-    "name": "BRING.CRM.Company.Setup.1.91.2.exe",
-    "size": 99312770,
-    "sha512": "kHUiMbVwCZMr1LpNG5x7nP8v/kVwc+ORa0pw81vuGyjw/vo52reiof3M0n0PMQjv1qolC0rOOzTRVgGYYYxf/A=="
+    "name": "BRING.CRM.Company.Setup.1.91.3.exe",
+    "size": 99313179,
+    "sha512": "z7PEbw5PdFW5eEkx0LEllUYoHquWS6E5AqgPjFXvyw1fxi3JkBAErC8vNJC5GSm0ZZ3zcfpk3ocPbdl+VV01AQ=="
   },
   "manifest": {
     "name": "latest.yml",
     "size": 365,
-    "sha256": "efbeb54710750c89a05902dcbafd673c643a589e337f4a13eef7261098c81d51"
+    "sha256": "5c7d0a40032f8972d8acd6a4a69f872431b413c8c7e4b407bab7e268bd51dbd1"
   }
 }
