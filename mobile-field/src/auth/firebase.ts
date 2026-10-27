@@ -1,5 +1,6 @@
 import type { EmployeeIdentity } from './session';
 import { FieldError } from '../domain/model';
+import { safeLoginFailure } from './errors';
 
 let initialized: { key: string; promise: Promise<EmployeeIdentity> } | undefined;
 export function createEmployeeIdentity(expected: { projectId: string; nativeAppIds: string[] }): Promise<EmployeeIdentity> {
@@ -27,11 +28,9 @@ async function initializeIdentity(expected: { projectId: string; nativeAppIds: s
   return {
     ready: () => auth.authStateReady(), currentUid: () => auth.currentUser?.uid ?? null,
     async signIn(email, password) {
-      try {
-        const result = await authSdk.signInWithEmailAndPassword(auth, email, password);
-        if (!result.user.emailVerified) throw new FieldError('AUTH_REQUIRED');
-        return result.user.uid;
-      } catch { throw new FieldError('LOGIN_FAILED'); }
+      const result = await authSdk.signInWithEmailAndPassword(auth, email, password).catch(error => { throw safeLoginFailure(error); });
+      if (!result.user.emailVerified) throw new FieldError('EMAIL_VERIFICATION_REQUIRED');
+      return result.user.uid;
     },
     signOut: () => authSdk.signOut(auth),
     observe: listener => authSdk.onAuthStateChanged(auth, user => listener(user?.uid ?? null)),
@@ -39,10 +38,16 @@ async function initializeIdentity(expected: { projectId: string; nativeAppIds: s
       const user = auth.currentUser;
       if (!user || user.uid !== uid || !user.emailVerified) throw new FieldError('AUTH_REQUIRED');
       try {
-        const [idToken, checked] = await Promise.all([authSdk.getIdToken(user), appCheckSdk.getToken(check)]);
+        const [idToken, checked] = await Promise.all([
+          authSdk.getIdToken(user).catch(() => { throw new FieldError('AUTH_REQUIRED'); }),
+          appCheckSdk.getToken(check).catch(() => { throw new FieldError('APP_ATTESTATION_FAILED'); }),
+        ]);
         if (auth.currentUser?.uid !== uid) throw new FieldError('AUTH_REQUIRED');
         return { uid, idToken, appCheckToken: checked.token };
-      } catch { throw new FieldError('AUTH_REQUIRED'); }
+      } catch (error) {
+        if (error instanceof FieldError && error.code === 'APP_ATTESTATION_FAILED') throw error;
+        throw new FieldError('AUTH_REQUIRED');
+      }
     },
   };
 }

@@ -6,7 +6,13 @@ import type { CompanySession } from './auth/session';
 
 const messages: Record<string, string> = {
   AUTH_REQUIRED: '회사 계정 인증이나 앱 인증을 확인하지 못했습니다. 다시 로그인해 주세요.',
-  LOGIN_FAILED: '로그인하지 못했습니다. 계정·비밀번호와 회사 계정 활성 상태를 확인해 주세요.',
+  LOGIN_FAILED: '이메일 또는 비밀번호를 확인해 주세요. PC CRM에서 사용하는 이메일을 입력해 주세요.',
+  EMAIL_VERIFICATION_REQUIRED: '이메일 인증이 완료되지 않았습니다. CRM의 계정 설정과 이메일 인증을 완료해 주세요.',
+  LOGIN_ACCOUNT_DISABLED: '사용 중지된 계정입니다. 회사 관리자에게 계정 상태 확인을 요청해 주세요.',
+  LOGIN_PROVIDER_DISABLED: '회사 서버의 이메일 로그인 설정을 확인해야 합니다. 관리자에게 LOGIN_PROVIDER_DISABLED를 알려 주세요.',
+  LOGIN_APP_NOT_AUTHORIZED: '이 Android 설치본의 로그인 등록 설정을 확인해야 합니다. 관리자에게 LOGIN_APP_NOT_AUTHORIZED를 알려 주세요.',
+  LOGIN_PROVIDER_ERROR: '인증 서버에서 로그인을 처리하지 못했습니다. 관리자에게 LOGIN_PROVIDER_ERROR를 알려 주세요.',
+  APP_ATTESTATION_FAILED: 'Android 기기·앱 인증에 실패했습니다. 관리자에게 APP_ATTESTATION_FAILED를 알려 주세요.',
   NATIVE_APP_NOT_CONFIGURED: '이 설치본의 회사 연결 설정이 준비되지 않았습니다.',
   SERVER_UNAVAILABLE: '회사 서버 연결을 확인하지 못했습니다. 잠시 후 다시 로그인해 주세요.',
   NETWORK_UNCERTAIN: '네트워크 연결을 확인한 뒤 다시 로그인해 주세요.',
@@ -37,7 +43,7 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
       <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
     </View>}
     {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
-    <Text style={styles.small}>개발 단계 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
+    <Text style={styles.small}>개발 0.1.1 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
   </ScrollView></SafeAreaView>;
 }
 function SessionScreen({ session }: { session: CompanySession }) {

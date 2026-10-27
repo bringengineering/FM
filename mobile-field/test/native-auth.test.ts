@@ -3,7 +3,7 @@ const fixture = vi.hoisted(() => {
   const user = { uid: 'staff-a', emailVerified: true };
   return { calls: [] as string[], options: undefined as unknown, project: 'bring-fm', appId: 'native-a',
     auth: { currentUser: user as typeof user | null, authStateReady: async () => {} },
-    token: vi.fn(async () => 'synthetic-token'), check: vi.fn(async () => ({ token: 'synthetic-check' })),
+    token: vi.fn(async () => 'synthetic-token'), check: vi.fn(async () => ({ token: 'synthetic-check' })), signIn: vi.fn(),
   };
 });
 vi.mock('@react-native-firebase/app', () => ({ getApp: () => ({ options: { projectId: fixture.project, appId: fixture.appId } }) }));
@@ -13,10 +13,10 @@ vi.mock('@react-native-firebase/app-check', () => ({
 }));
 vi.mock('@react-native-firebase/auth', () => ({
   getAuth: () => { fixture.calls.push('auth'); return fixture.auth; }, getIdToken: fixture.token,
-  signInWithEmailAndPassword: async () => ({ user: fixture.auth.currentUser }), signOut: async () => { fixture.auth.currentUser = null; },
+  signInWithEmailAndPassword: fixture.signIn, signOut: async () => { fixture.auth.currentUser = null; },
   onAuthStateChanged: (_auth: unknown, fn: (user: unknown) => void) => { fn(fixture.auth.currentUser); return () => {}; },
 }));
-beforeEach(() => { vi.resetModules(); fixture.calls.length = 0; fixture.options = undefined; fixture.project = 'bring-fm'; fixture.appId = 'native-a'; fixture.auth.currentUser = { uid: 'staff-a', emailVerified: true }; fixture.token.mockReset().mockResolvedValue('synthetic-token'); fixture.check.mockReset().mockResolvedValue({ token: 'synthetic-check' }); });
+beforeEach(() => { vi.resetModules(); fixture.calls.length = 0; fixture.options = undefined; fixture.project = 'bring-fm'; fixture.appId = 'native-a'; fixture.auth.currentUser = { uid: 'staff-a', emailVerified: true }; fixture.token.mockReset().mockResolvedValue('synthetic-token'); fixture.check.mockReset().mockResolvedValue({ token: 'synthetic-check' }); fixture.signIn.mockReset().mockImplementation(async () => ({ user: fixture.auth.currentUser })); });
 const expected = { projectId: 'bring-fm', nativeAppIds: ['native-a', 'native-b'] };
 it('initializes native attestation before Auth, without debug providers, and reuses it across React remounts', async () => {
   const { createEmployeeIdentity } = await import('../src/auth/firebase');
@@ -36,7 +36,22 @@ it('does not return a previous account token after the SDK account changes durin
 });
 it('refuses unverified employees and suppresses raw SDK failures', async () => {
   const { createEmployeeIdentity } = await import('../src/auth/firebase'); const identity = await createEmployeeIdentity(expected);
-  fixture.auth.currentUser!.emailVerified = false; await expect(identity.signIn('synthetic@example.invalid', 'synthetic')).rejects.toThrow('LOGIN_FAILED');
+  fixture.auth.currentUser!.emailVerified = false; await expect(identity.signIn('synthetic@example.invalid', 'synthetic')).rejects.toThrow('EMAIL_VERIFICATION_REQUIRED');
   fixture.auth.currentUser!.emailVerified = true; fixture.check.mockRejectedValueOnce(Error('PRIVATE_PROVIDER_ERROR'));
-  await expect(identity.credentials('staff-a')).rejects.toThrow('AUTH_REQUIRED');
+  await expect(identity.credentials('staff-a')).rejects.toThrow('APP_ATTESTATION_FAILED');
+});
+it.each([
+  ['auth/invalid-credential', 'LOGIN_FAILED'],
+  ['auth/user-disabled', 'LOGIN_ACCOUNT_DISABLED'],
+  ['auth/network-request-failed', 'NETWORK_UNCERTAIN'],
+  ['auth/app-not-authorized', 'LOGIN_APP_NOT_AUTHORIZED'],
+  ['auth/too-many-requests', 'RATE_LIMITED'],
+  ['PRIVATE_TOKEN_OR_URL', 'LOGIN_PROVIDER_ERROR'],
+])('reports a fixed action for %s without reflecting provider data', async (sdkCode, expectedCode) => {
+  const { createEmployeeIdentity } = await import('../src/auth/firebase');
+  const identity = await createEmployeeIdentity(expected);
+  fixture.signIn.mockRejectedValueOnce(Object.assign(Error('PRIVATE_TOKEN_OR_URL'), { code: sdkCode, customData: { email: 'PRIVATE' } }));
+  const error = await identity.signIn('synthetic@example.invalid', 'synthetic').catch(error => error);
+  expect(error.code).toBe(expectedCode); expect(error.message).toBe(expectedCode);
+  expect(JSON.stringify(error)).not.toContain('PRIVATE');
 });

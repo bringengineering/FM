@@ -36,8 +36,8 @@ describe('resumable transfer', () => {
     const { vault, api, set } = await setup(); set({ photoId: 'another-photo' }); await new SyncRunner(vault, api).run();
     expect(api.chunk).not.toHaveBeenCalled(); expect((await vault.load()).photos[0]?.errorCode).toBe('UPLOAD_BINDING_INVALID'); await vault.close();
   });
-  it('stops after authentication loss and retains originals', async () => {
-    const { vault, api } = await setup(); api.reserve = vi.fn(async () => { throw new FieldError('AUTH_REQUIRED'); });
+  it.each(['AUTH_REQUIRED', 'APP_ATTESTATION_FAILED'])('stops after %s and retains originals', async code => {
+    const { vault, api } = await setup(); api.reserve = vi.fn(async () => { throw new FieldError(code); });
     const runner = new SyncRunner(vault, api); await runner.run(); expect((await vault.load()).photos[0]?.state).toBe('auth_blocked'); expect(await vault.readBytes('photo-a')).toEqual(jpeg); await expect(runner.run()).rejects.toThrow('SYNC_CANCELLED'); await vault.close();
   });
   it('ignores an in-flight result after account/session cancellation', async () => {

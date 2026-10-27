@@ -50,7 +50,10 @@ export class FieldApiClient implements UploadApi {
   protected async request(path: string, method: string, body: string | Uint8Array | undefined, signal: AbortSignal, headers: Record<string, string> = {}): Promise<unknown> {
     if (signal.aborted) throw new FieldError('SYNC_CANCELLED');
     let credentials: Credentials;
-    try { credentials = await this.credentials(); } catch { throw new FieldError('AUTH_REQUIRED'); }
+    try { credentials = await this.credentials(); } catch (error) {
+      if (error instanceof FieldError && error.code === 'APP_ATTESTATION_FAILED') throw error;
+      throw new FieldError('AUTH_REQUIRED');
+    }
     if (signal.aborted) throw new FieldError('SYNC_CANCELLED');
     if (credentials.uid !== this.uid || !credentials.idToken || !credentials.appCheckToken) throw new FieldError('AUTH_REQUIRED');
     const controller = new AbortController(); const abort = () => controller.abort();

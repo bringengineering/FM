@@ -31,7 +31,7 @@ it('drops the previous account immediately on an SDK account change', async () =
 it('signs out after server rejection and never exposes raw provider errors', async () => {
   const f = setup(); f.api.context = async () => { throw Error('PRIVATE_CREDENTIAL'); };
   await f.session.restore(); await f.session.login('staff@example.invalid', 'synthetic-password');
-  expect(f.identity.signOut).toHaveBeenCalledOnce(); expect(f.session.snapshot()).toEqual({ phase: 'error', error: 'LOGIN_FAILED' }); f.session.dispose();
+  expect(f.identity.signOut).toHaveBeenCalledOnce(); expect(f.session.snapshot()).toEqual({ phase: 'error', error: 'SERVER_RESPONSE_INVALID' }); f.session.dispose();
 });
 it('refreshes restored and foreground sessions against current company access', async () => {
   const f = setup(); f.change('staff-a'); await f.session.restore(); expect(f.session.snapshot().phase).toBe('ready');

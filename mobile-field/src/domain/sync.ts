@@ -44,8 +44,9 @@ export class SyncRunner {
     } catch (error) {
       if (signal.aborted) return;
       const code = error instanceof FieldError ? error.code : 'SYNC_FAILED';
-      await this.vault.updateTransfer(photo.id, { state: code === 'AUTH_REQUIRED' ? 'auth_blocked' : 'failed', receivedBytes: photo.receivedBytes, uploadId: photo.uploadId, errorCode: code });
-      if (code === 'AUTH_REQUIRED') this.stop();
+      const authBlocked = code === 'AUTH_REQUIRED' || code === 'APP_ATTESTATION_FAILED';
+      await this.vault.updateTransfer(photo.id, { state: authBlocked ? 'auth_blocked' : 'failed', receivedBytes: photo.receivedBytes, uploadId: photo.uploadId, errorCode: code });
+      if (authBlocked) this.stop();
     }
   }
   private async drain(): Promise<void> {

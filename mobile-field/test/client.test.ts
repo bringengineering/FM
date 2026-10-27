@@ -1,8 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FieldApiClient, assertUpload } from '../src/api/client';
 import { photo } from './helpers';
+import { FieldError } from '../src/domain/model';
 const credentials = async () => ({ uid: 'staff-a', idToken: 'test-id-token', appCheckToken: 'test-attestation' });
 describe('authenticated transport', () => {
+  it('preserves only the fixed attestation failure and sends no request', async () => {
+    const fetcher = vi.fn();
+    const api = new FieldApiClient('https://example.invalid/v1/field-app', 'staff-a', async () => { throw new FieldError('APP_ATTESTATION_FAILED'); }, fetcher);
+    await expect(api.status('upload-a', new AbortController().signal)).rejects.toThrow('APP_ATTESTATION_FAILED');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('refuses cleartext/embedded credentials and account changes', async () => {
     expect(() => new FieldApiClient('http://example.invalid/v1/field-app', 'staff-a', credentials)).toThrow('API_CONFIGURATION_INVALID');
     const fetcher = vi.fn(); const api = new FieldApiClient('https://example.invalid/v1/field-app', 'staff-b', credentials, fetcher);

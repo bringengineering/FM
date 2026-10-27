@@ -9,7 +9,7 @@ export interface EmployeeIdentity {
   observe(listener: (uid: string | null) => void): () => void;
 }
 export interface CompanyState { phase: 'signedOut' | 'loading' | 'ready' | 'error'; context?: CompanyContext; page?: MobileJobPage; selected?: MobileJob; error?: string }
-const safeCodes = new Set(['AUTH_REQUIRED', 'LOGIN_FAILED', 'NATIVE_APP_NOT_CONFIGURED', 'SERVER_UNAVAILABLE', 'NETWORK_UNCERTAIN', 'RATE_LIMITED', 'RESOURCE_NOT_FOUND', 'SERVER_RESPONSE_INVALID']);
+const safeCodes = new Set(['AUTH_REQUIRED', 'LOGIN_FAILED', 'EMAIL_VERIFICATION_REQUIRED', 'LOGIN_ACCOUNT_DISABLED', 'LOGIN_PROVIDER_DISABLED', 'LOGIN_APP_NOT_AUTHORIZED', 'LOGIN_PROVIDER_ERROR', 'APP_ATTESTATION_FAILED', 'NATIVE_APP_NOT_CONFIGURED', 'SERVER_UNAVAILABLE', 'NETWORK_UNCERTAIN', 'RATE_LIMITED', 'RESOURCE_NOT_FOUND', 'SERVER_RESPONSE_INVALID']);
 export class CompanySession {
   private state: CompanyState = { phase: 'signedOut' };
   private listeners = new Set<(state: CompanyState) => void>();
@@ -73,7 +73,7 @@ export class CompanySession {
   }
   private async fail(error: unknown, generation: number) {
     if (!this.current(generation)) return;
-    const code = error instanceof FieldError && safeCodes.has(error.code) ? error.code : 'LOGIN_FAILED';
+    const code = error instanceof FieldError && safeCodes.has(error.code) ? error.code : this.uid ? 'SERVER_RESPONSE_INVALID' : 'LOGIN_PROVIDER_ERROR';
     this.uid = null; this.begin(); const failureGeneration = this.generation;
     // Keep login disabled until sign-out settles, so it cannot erase a newer login.
     try { await this.identityTask(() => this.identity.signOut()); } catch { /* screen remains locked */ }
