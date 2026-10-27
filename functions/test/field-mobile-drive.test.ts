@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import { createRecordingDrive } from '../src/field-mobile/recording-drive.js';
 import { hash } from '../src/field-mobile/recording-model.js';
 import type { RecordingStore } from '../src/field-mobile/recording-service.js';
-function fixture(){
+function fixture(scope=''){
   const records=new Map<string,any>(),files=new Map<string,any>();let serial=0,uploads=0,readonly=false,denied=false,rootStatus=0;
   const store:RecordingStore={async get(p){return records.get(p)||null;},async change(p,f){const n=f(records.get(p)||null);records.set(p,n);return n;},async commit(){throw Error('not used');}};
   const fetcher:typeof fetch=async(url,init)=>{
     const u=new URL(String(url));expect(['oauth2.googleapis.com','www.googleapis.com']).toContain(u.hostname);expect(init?.redirect).toBe('error');
-    if(u.hostname==='oauth2.googleapis.com')return Response.json(denied?{error:'synthetic-private-provider-detail'}:{access_token:'synthetic',token_type:'Bearer',expires_in:3600},{status:denied?400:200});
+    if(u.hostname==='oauth2.googleapis.com')return Response.json(denied?{error:'synthetic-private-provider-detail'}:{access_token:'synthetic',token_type:'Bearer',expires_in:3600,scope},{status:denied?400:200});
     const id=u.pathname.split('/').at(-1)!;
     if(id==='generateIds')return Response.json({ids:[`generated-${++serial}`]});
     if(init?.method==='POST'){
@@ -29,10 +29,21 @@ it('logs only safe root access diagnostics without provider text or identifiers'
   const warn=vi.spyOn(console,'warn').mockImplementation(()=>{});
   try{
     const a=fixture();a.readonly();await expect(a.drive.checkRoots()).rejects.toThrow('DRIVE_FOLDER_ACCESS_REQUIRED');
-    expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({event:'field_drive_root_check',root:'photos',idMatches:true,isFolder:true,notTrashed:true,canAddChildren:false});
+    expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({event:'field_drive_root_check',root:'photos',scopeKind:'unknown',idMatches:true,isFolder:true,notTrashed:true,canAddChildren:false});
     warn.mockClear();const b=fixture();b.rejectRoot(403);await expect(b.drive.checkRoots()).rejects.toThrow('DRIVE_FOLDER_ACCESS_REQUIRED');
-    expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({event:'field_drive_root_check',root:'photos',httpStatus:403});
+    expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({event:'field_drive_root_check',root:'photos',httpStatus:403,scopeKind:'unknown'});
     expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic');
+  }finally{warn.mockRestore();}
+});
+it('checks both roots and reports only the Drive permission category',async()=>{
+  const warn=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  try{
+    const t=fixture('https://www.googleapis.com/auth/drive.file');t.rejectRoot(404);
+    await expect(t.drive.checkRoots()).rejects.toThrow('DRIVE_FOLDER_ACCESS_REQUIRED');
+    expect(warn.mock.calls.map(x=>JSON.parse(String(x[0])))).toEqual([
+      {event:'field_drive_root_check',root:'photos',httpStatus:404,scopeKind:'file'},
+      {event:'field_drive_root_check',root:'reports',httpStatus:404,scopeKind:'file'},
+    ]);
   }finally{warn.mockRestore();}
 });
 it('requires writable roots and never exposes Google refresh-token error details',async()=>{

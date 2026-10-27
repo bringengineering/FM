@@ -11,13 +11,15 @@ async function bytesBounded(r:Response,max:number):Promise<Buffer>{
   return Buffer.concat(parts);
 }
 export function createRecordingDrive(config:{clientId:string;clientSecret:string;refreshToken:string;photosRoot:string;reportsRoot:string},store:RecordingStore,fetcher:typeof fetch=fetch):RecordingDrive {
-  let token='',until=0;
+  let token='',until=0,scopeKind:'full'|'file'|'other'|'unknown'='unknown';
   async function access(){
     if(token&&Date.now()<until)return token;
     assert(config.clientId&&config.clientSecret&&config.refreshToken,'DRIVE_NOT_CONFIGURED',503);
     const r=await fetcher('https://oauth2.googleapis.com/token',{method:'POST',redirect:'error',signal:AbortSignal.timeout(20_000),headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',client_id:config.clientId,client_secret:config.clientSecret,refresh_token:config.refreshToken})});
     const p=JSON.parse((await bytesBounded(r,64*1024)).toString());
     assert(r.ok&&typeof p.access_token==='string'&&p.token_type==='Bearer','DRIVE_RECONNECT_REQUIRED',503);
+    const scopes=typeof p.scope==='string'?p.scope.split(/\s+/).filter(Boolean):[];
+    scopeKind=scopes.includes('https://www.googleapis.com/auth/drive')?'full':scopes.includes('https://www.googleapis.com/auth/drive.file')?'file':scopes.length?'other':'unknown';
     token=p.access_token;until=Date.now()+Math.min(Number(p.expires_in)||0,3600)*1000-60_000;return token;
   }
   async function request(url:string,init:RequestInit={},allow:number[]=[]){
@@ -35,11 +37,11 @@ export function createRecordingDrive(config:{clientId:string;clientSecret:string
     let m:any;
     try{m=await metadata(id);}catch(error){
       const status=(error as {driveHttpStatus?:unknown})?.driveHttpStatus;
-      if(status===403||status===404)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,httpStatus:status}));
+      if(status===403||status===404)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,httpStatus:status,scopeKind}));
       throw error;
     }
     const valid=m?.id===id&&m.mimeType===FOLDER&&m.trashed===false&&m.capabilities?.canAddChildren===true;
-    if(!valid)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,idMatches:m?.id===id,isFolder:m?.mimeType===FOLDER,notTrashed:m?.trashed===false,canAddChildren:m?.capabilities?.canAddChildren===true}));
+    if(!valid)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,scopeKind,idMatches:m?.id===id,isFolder:m?.mimeType===FOLDER,notTrashed:m?.trashed===false,canAddChildren:m?.capabilities?.canAddChildren===true}));
     assert(valid,'DRIVE_FOLDER_ACCESS_REQUIRED',503);return id;
   }
   async function generateId(){const r=await request(`${API}/generateIds?count=1&space=drive&type=files`),p=JSON.parse((await bytesBounded(r,8192)).toString());assert(Array.isArray(p.ids)&&p.ids.length===1&&ID.test(p.ids[0]),'DRIVE_UNAVAILABLE',503);return p.ids[0] as string;}
@@ -68,5 +70,12 @@ export function createRecordingDrive(config:{clientId:string;clientSecret:string
     assert(m?.id===id&&m.mimeType===mime&&!m.trashed&&m.parents?.includes(parent)&&Number(m.size)===bytes.length&&m.md5Checksum===md5&&m.appProperties?.fieldMobileBinding===hash(binding)&&m.appProperties?.sha256===expectedHash,'DRIVE_FILE_MISMATCH',409);
   }
   async function download(id:string,expected:{sha256:string;bytes:number}){assert(ID.test(id));const r=await request(`${API}/${id}?alt=media&supportsAllDrives=true`),bytes=await bytesBounded(r,expected.bytes);assert(bytes.length===expected.bytes&&hash(bytes)===expected.sha256,'PHOTO_INTEGRITY_FAILED',422);return bytes;}
-  return{generateId,folder,upload,download,checkRoots:async()=>{await root('photos');await root('reports');}};
+  return{generateId,folder,upload,download,checkRoots:async()=>{
+    // Check both independently so an inaccessible photo root does not hide a
+    // separate report-root permission problem. No data is created or changed.
+    let failure:unknown;
+    try{await root('photos');}catch(error){failure=error;}
+    try{await root('reports');}catch(error){failure??=error;}
+    if(failure)throw failure;
+  }};
 }

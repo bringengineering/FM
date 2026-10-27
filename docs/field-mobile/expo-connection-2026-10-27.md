@@ -173,3 +173,5 @@ Android 0.1.5 (6) build 09ccd6ba-e0b2-4d5d-8df6-2514fc800dd9는 2026-10-27 21:07
 PR #246은 모든 CI 통과 후 5c1c591b95bb72a3cb08299625691555ca12c8a8로 병합하고 AI Worker version 6e0de0f3-dc62-4eb0-bc16-6de8576c9dbd를 배포했다. 운영 health 200, 익명 AI 초안 요청 401을 확인했다. Worker 전체 297개, 모바일 전체 124개 테스트 통과. 활성 직원의 실기기 요청·Gemini 결과와 Drive/PDF 보관은 아직 확인하지 않았다.
 
 Android 0.1.6 (7)은 2026-10-27 21:37:26 KST에 빌드 완료됐다. APK 118,648,009 bytes, SHA-256 34b0e804623bafb5aba2e058f8d57092e55ef2ec2ae57b87e7eb4888042a9882. 기존 앱과 APK v2 인증서가 일치한다(인증서 비교이며 전체 apksigner 검증은 아님). 사용자에게 기존 앱 위에 설치하고 TEST 작업으로 AI 초안 및 Drive/PDF 보관 재확인을 요청했다.
+
+사용자가 0.1.6에서도 Drive 폴더 오류를 확인했다. 해당 서버 재시도는 사진 루트 Google Drive HTTP 404로 실패했다. 별도 Drive 연결에서는 활동사진과 보고서 폴더의 목록 조회가 가능했으나, 서버 OAuth 자격과 동일하다는 뜻은 아니며 404만으로 실제 폴더 삭제 여부나 권한 범위를 확정할 수 없다. 다음 재시도에서 두 루트를 각각 확인하고 서버의 토큰 권한 범주(full/file/other/unknown)만 기록하도록 fieldMobileApi를 재배포했다. 사용자 요청으로 휴대폰 재시도는 나중으로 미뤘다.
