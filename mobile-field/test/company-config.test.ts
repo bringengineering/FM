@@ -31,3 +31,10 @@ it('blocks company cloud builds without an explicit owner/project, but allows lo
   expect(buildIdentity({ FIELD_EXPO_OWNER: 'synthetic-team', FIELD_EAS_PROJECT_ID: '00000000-0000-0000-0000-000000000001', EAS_BUILD_PROFILE: 'company-preview' }))
     .toEqual({ owner: 'synthetic-team', projectId: '00000000-0000-0000-0000-000000000001' });
 });
+it('uses the linked company project and refuses environment variables that redirect a build', () => {
+  const linked = { owner: 'synthetic-team', projectId: '00000000-0000-0000-0000-000000000001' };
+  expect(buildIdentity({ EAS_BUILD_PROFILE: 'company-preview' }, linked)).toEqual(linked);
+  expect(buildIdentity({ FIELD_EXPO_OWNER: linked.owner, FIELD_EAS_PROJECT_ID: linked.projectId }, linked)).toEqual(linked);
+  expect(() => buildIdentity({ FIELD_EXPO_OWNER: 'another-team' }, linked)).toThrow('FIELD_EAS_LINK_MISMATCH');
+  expect(() => buildIdentity({ FIELD_EAS_PROJECT_ID: '00000000-0000-0000-0000-000000000002' }, linked)).toThrow('FIELD_EAS_LINK_MISMATCH');
+});

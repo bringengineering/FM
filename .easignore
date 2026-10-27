@@ -1,0 +1,29 @@
+# EAS archives the repository root. Include only the native app and its shared
+# pure report core; Firebase files are supplied as EAS secret file variables.
+*
+!mobile-field
+mobile-field/*
+!mobile-field/package.json
+!mobile-field/package-lock.json
+!mobile-field/index.ts
+!mobile-field/app.config.ts
+!mobile-field/eas.json
+!mobile-field/metro.config.cjs
+!mobile-field/tsconfig.json
+!mobile-field/src
+!mobile-field/src/**
+!mobile-field/config
+mobile-field/config/*
+!mobile-field/config/company.cjs
+!mobile-field/config/eas-project.json
+!mobile-field/plugins
+mobile-field/plugins/*
+!mobile-field/plugins/with-private-storage.cjs
+!mobile-field/scripts
+mobile-field/scripts/*
+!mobile-field/scripts/check-device-setup.cjs
+!desktop-crm
+desktop-crm/*
+!desktop-crm/src
+desktop-crm/src/*
+!desktop-crm/src/work-report-core.js

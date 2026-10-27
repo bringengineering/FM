@@ -7,7 +7,7 @@ if (process.env.FIELD_APP_ENV && process.env.FIELD_APP_ENV !== 'development') {
   throw new Error('FIELD_RELEASE_NOT_READY: native identity and server enrollment required');
 }
 const company = companyConfig(process.env, __dirname);
-const build = buildIdentity(process.env);
+const build = buildIdentity(process.env, require('./config/eas-project.json'));
 const companyPlugins: NonNullable<ExpoConfig['plugins']> = company ? ['@react-native-firebase/app', '@react-native-firebase/auth', '@react-native-firebase/app-check', ['expo-build-properties', { ios: { useFrameworks: 'dynamic' } }]] : [];
 
 const config: ExpoConfig = {

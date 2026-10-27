@@ -7,7 +7,7 @@ function inspect(env = process.env) {
   try { firebaseFilesMatch = !!companyConfig({ ...env, FIELD_CONNECTION: 'company' }, root); }
   catch { issues.push('FIREBASE_NATIVE_CONFIG_REQUIRED'); }
   try {
-    const identity = buildIdentity(env); expoOwnerConfigured = !!identity.owner; easProjectLinked = !!identity.projectId;
+    const identity = buildIdentity(env, require('../config/eas-project.json')); expoOwnerConfigured = !!identity.owner; easProjectLinked = !!identity.projectId;
     if (!expoOwnerConfigured || !easProjectLinked) issues.push('EXPO_COMPANY_PROJECT_REQUIRED');
   } catch { issues.push('EXPO_COMPANY_PROJECT_REQUIRED'); }
   return { firebaseFilesMatch, expoOwnerConfigured, easProjectLinked,

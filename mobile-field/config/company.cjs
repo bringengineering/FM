@@ -22,10 +22,11 @@ function companyConfig(env, root) {
     return { android, ios, projectId, nativeAppIds: [androidId, iosId], apiBase };
   } catch { throw Error('FIELD_NATIVE_CONFIG_REQUIRED: matching company Android/iOS configuration files required'); }
 }
-function buildIdentity(env) {
-  const owner = (env.FIELD_EXPO_OWNER || '').trim(), projectId = (env.FIELD_EAS_PROJECT_ID || '').trim();
+function buildIdentity(env, linked = {}) {
+  const owner = (env.FIELD_EXPO_OWNER || linked.owner || '').trim(), projectId = (env.FIELD_EAS_PROJECT_ID || linked.projectId || '').trim();
   if (owner && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$/.test(owner)) throw Error('FIELD_EXPO_OWNER_INVALID');
   if (projectId && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(projectId)) throw Error('FIELD_EAS_PROJECT_INVALID');
+  if ((linked.owner && owner !== linked.owner) || (linked.projectId && projectId !== linked.projectId)) throw Error('FIELD_EAS_LINK_MISMATCH: environment must match the linked company project');
   if ((env.FIELD_REQUIRE_EAS_LINK === 'true' || env.EAS_BUILD_PROFILE?.startsWith('company-')) && (!owner || !projectId)) throw Error('FIELD_EAS_LINK_REQUIRED: company Expo owner and project ID required');
   return { ...(owner ? { owner } : {}), ...(projectId ? { projectId } : {}) };
 }
