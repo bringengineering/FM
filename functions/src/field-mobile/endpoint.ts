@@ -35,7 +35,7 @@ export const fieldMobileApi = onRequest({ region: 'asia-northeast3', cors: false
   };
   const recording=/^\/v1\/field-app\/(recording|visits|uploads)(?:\/|$)/.test(req.path);
   const result=recording?await handleRecording({method:req.method,url:req.url,...headers,contentType:req.get('content-type')??'',range:req.get('content-range')??'',idempotencyKey:req.get('idempotency-key')??'',body:req.rawBody??Buffer.alloc(0)},
-    {auth,allowRequest:uid=>allowRequest('recording_'+uid,240),recording:()=>recordingRuntime({clientId:driveClientId.value(),clientSecret:driveClientSecret.value(),refreshToken:driveRefreshToken.value(),photosRoot:photosRoot.value(),reportsRoot:reportsRoot.value()},async()=>{await authorizeMobile(headers,auth);})})
+    {auth,allowRequest:uid=>allowRequest('recording_'+uid,480),recording:()=>recordingRuntime({clientId:driveClientId.value(),clientSecret:driveClientSecret.value(),refreshToken:driveRefreshToken.value(),photosRoot:photosRoot.value(),reportsRoot:reportsRoot.value()},async()=>{await authorizeMobile(headers,auth);})})
     :await handleMobileRead({method:req.method,url:req.url,...headers,bodyBytes:req.rawBody?.length??0},{auth,reads:firebaseWorkspaceReads(getDatabase()),sites:firebaseCustomerSiteReads(getDatabase()),allowRequest});
   if (result.status === 405) res.set('Allow', recording?'GET, PUT, POST':'GET');
   if (result.status === 429) res.set('Retry-After', '60');

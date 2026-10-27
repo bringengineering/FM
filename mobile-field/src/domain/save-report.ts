@@ -16,8 +16,8 @@ export async function saveGroupedReport<T>(options:{
   const issues=reviewIssues(current,photos);if(issues.length)return{ok:false,issues};
   if(!current.job.address)throw new FieldError('SITE_ADDRESS_REQUIRED');
   const included=photos.filter(p=>p.included);
-  if(included.length>24)throw new FieldError('REPORT_PHOTO_LIMIT');
-  if(included.reduce((sum,p)=>sum+p.bytes,0)>12*1024*1024)throw new FieldError('REPORT_PHOTO_BYTES_LIMIT');
+  if(included.length>100)throw new FieldError('REPORT_PHOTO_LIMIT');
+  if(included.reduce((sum,p)=>sum+p.bytes,0)>64*1024*1024)throw new FieldError('REPORT_PHOTO_BYTES_LIMIT');
   if(current.draft.confirmedRevision!==current.revision){const next=confirmVisit(current);await vault.saveVisit(next,current.revision);current=next;await options.onLocalSave();}
   await options.sync(current,photos);const receipt=await options.archive(current);return{ok:true,visit:current,receipt};
 }

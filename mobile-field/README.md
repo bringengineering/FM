@@ -2,11 +2,11 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 React Native/Expo 직원용 앱 소스다. 직원 개인 CRM 계정으로 로그인하고 **CRM 고객을 선택해 고객정보의 건물주소를 사용한다. 별도 건물 연결이나 업무 배정은 필요하지 않다.** 2026-10-27 사용자가 Android 0.1.2의 로그인·고객 목록·주소가 정상이라고 확인했다. 0.1.4는 Android 보관함 초기화 문제를 수정하고 구역별 사진과 보고서를 한 번에 Drive 및 CRM에 보관한다. 고객 발송은 PC CRM에서 저장 PDF·수신자를 확인하는 기존 관리자 절차를 이용한다. [최신 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
+이 폴더는 React Native/Expo 직원용 앱 소스다. 직원 개인 CRM 계정으로 로그인하고 **CRM 고객을 선택해 고객정보의 건물주소를 사용한다. 별도 건물 연결이나 업무 배정은 필요하지 않다.** 2026-10-27 사용자가 Android 0.1.2의 로그인·고객 목록·주소가 정상이라고 확인했다. 0.1.5는 촬영할 구역을 선택하고 작업 전·후를 각각 순서대로 촬영하며, 사진과 보고서를 Drive 및 CRM에 보관한다. 고객 발송은 PC CRM에서 저장 PDF·수신자를 확인하는 기존 관리자 절차를 이용한다. [최신 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
-새 [Android 0.1.4 (5) 설치 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/5d2cfb2e-2cf6-46d0-98e5-2da19e9b3311)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, 0.1.4의 실기기 보관함·촬영·Drive 권한·PDF 보관 확인은 별도로 구분해 기록한다.
+새 [Android 0.1.5 (6) 빌드 페이지](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/09ccd6ba-e0b2-4d5d-8df6-2514fc800dd9)에서 기존 앱 위에 업데이트한다. 0.1.2 고객 조회는 실기기 확인을 마쳤으며, 0.1.5의 실기기 안내 촬영·Drive 권한·PDF 보관 확인은 별도로 구분해 기록한다.
 
 ## 이번에 구현한 범위
 
@@ -16,8 +16,8 @@ Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-2
 - 보고서 본문·후속 조치·항목 상태·미실시 사유와 수동 검토 기록. PC의 순수 `work-report-core.js`를 직접 재사용한다. 사진 추가·분류·초안 수정 시 이전 검토 확인을 무효화한다.
 - 불러오기·내용 hash 검증·revision 충돌·계정 격리. 전송 상태 변화는 보고서 본문 revision을 바꾸지 않는다.
 - 회사 화면에서 고객 선택 → 작업 열기 → 촬영 → 사진 확인 → 보고서 검토 → PDF 보관. 기기 보관함에서 사진만 먼저 업로드할 수도 있다. 예약/완료 키 유지, 서버 offset 조회, 응답 유실 후 재개, 인증 철회 중단, Drive+CRM 확인 전 ready 금지.
-- 기존 회사 서버 Drive 연결을 사용한다. 사진은 활동사진/고객명·주소/작업일/전·중·후, PDF는 건물 문서함/현장노트 작업보고서/연도에 비공개 보관한다. 서버가 고객·직원·revision을 재확인하고 JPEG 해시·실제 형식·크기·메타데이터를 검증한다. 생성할 Drive ID를 먼저 고정해 재시도 시 중복을 방지한다.
-- 서버 한글 PDF는 선택 사진 최대 24장, 원본 선택 합계 12 MiB, 최종 PDF 12 MiB 이하로 제한한다. PDF 사본은 용량에 맞춰 축소하며 활동사진 원본은 유지한다. CRM 원본과 보관 PDF는 고객 ID로 연결된다. PC CRM 호환 변경은 PR #240 / v1.91.0으로 배포했다.
+- 기존 회사 서버 Drive 연결을 사용한다. 사진은 활동사진/고객명·주소/작업일/전·중·후/촬영 구역, PDF는 건물 문서함/현장노트 작업보고서/연도에 비공개 보관한다. 서버가 고객·직원·revision을 재확인하고 JPEG 해시·실제 형식·크기·메타데이터를 검증한다. 생성할 Drive ID를 먼저 고정해 재시도 시 중복을 방지한다.
+- 서버 한글 PDF는 선택 사진 최대 100장, 원본 선택 합계 64 MiB, 최종 PDF 12 MiB 이하로 제한한다. PDF 사본은 용량에 맞춰 축소하며 활동사진 원본은 유지한다. CRM 원본과 보관 PDF는 고객 ID로 연결된다. PC CRM 호환 변경은 PR #240 / v1.91.0으로 배포했다.
 - 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. 활성 사무직 CRM 계정이 `crmCompany/data/customers`의 고객 목록·상세를 조회한다. 고객 ID·표시명·주소만 전달하며 연락처·내부 메모는 제외한다. 주소가 없으면 `주소 미입력`으로 표시하고, 고객 선택 때 최신 고객정보를 다시 읽는다. **Android 앱 하나만 허용하는 별도 `field-mobile` 코드베이스로 읽기 API를 배포했다.**
 
 ## 실행

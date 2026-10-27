@@ -24,7 +24,7 @@ export async function renderRecordingPdf(visit:Recording,photos:{photo:Recording
   const imageBudget=Math.floor(8*1024*1024/Math.max(photos.length,1));
   async function pdfImage(bytes:Buffer){
     let result=bytes;
-    for(const [edge,quality] of [[1600,82],[1200,75],[800,65],[480,50]]){
+    for(const [edge,quality] of [[1600,82],[1200,75],[800,65],[480,50],[320,40],[240,35]]){
       if(result.length<=imageBudget)break;
       result=await sharp(bytes).resize({width:edge,height:edge,fit:'inside',withoutEnlargement:true}).jpeg({quality}).toBuffer();
     }

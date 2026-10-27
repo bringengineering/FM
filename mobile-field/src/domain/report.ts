@@ -3,7 +3,7 @@ import type { ItemStatus, Photo, Visit } from './model';
 interface Item { key: string; label: string; detail: string; status: ItemStatus; note: string; before: unknown[]; during: unknown[]; after: unknown[] }
 interface Report { id: string; items: Item[]; [key: string]: unknown }
 interface Core {
-  itemCatalogFor(kind: string): { key: string; label: string; detail: string }[];
+  itemCatalogFor(kind: string): { key: string; label: string; detail: string; optional?: boolean }[];
   normalizeReport(input: unknown): Report;
   blockers(input: unknown): { key: string; text: string }[];
   validateReport(input: unknown): { ok: boolean; error?: string };

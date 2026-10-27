@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { reportCore } from './report-core.js';
 import { siteId, type CustomerSite } from './sites.js';
 
-export const RECORD_LIMITS = {bytes: 20 * 1024 * 1024, chunk: 1024 * 1024, photos: 100, pdfBytes: 12 * 1024 * 1024, pdfPhotos: 24};
+export const RECORD_LIMITS = {bytes: 20 * 1024 * 1024, chunk: 1024 * 1024, photos: 100, pdfBytes: 12 * 1024 * 1024, pdfPhotos: 100, pdfSourceBytes: 64 * 1024 * 1024};
 export class RecordingError extends Error {
   constructor(readonly code: string, readonly status = 400) { super(code); }
 }

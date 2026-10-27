@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
+import { randomBytes } from 'node:crypto';
 import { renderRecordingPdf } from '../src/field-mobile/recording-pdf.js';
 import { hash, type Recording, type RecordingPhoto } from '../src/field-mobile/recording-model.js';
 
@@ -13,3 +14,11 @@ it('renders a Korean report with before/after images and stable customer metadat
   const parsed=await PDFDocument.load(pdf);expect(parsed.getPageCount()).toBeGreaterThan(0);expect(parsed.getTitle()).toBe('BRING CARE 작업 결과보고서');expect(pdf.length).toBeLessThan(12*1024*1024);
   if(process.env.FIELD_PDF_QA==='1'){await mkdir('../.firebase/field-mobile-verification/pdf',{recursive:true});await writeFile('../.firebase/field-mobile-verification/pdf/recording-qa.pdf',pdf);}
 },60_000);
+
+it('fits 100 synthetic before/after photos in a bounded customer PDF',async()=>{
+  const bytes=await sharp(randomBytes(500*500*3),{raw:{width:500,height:500,channels:3}}).jpeg({quality:95}).toBuffer();
+  const p:RecordingPhoto={id:'test-photo',itemKey:'entrance',phase:'before',caption:'합성 시험 사진',included:true,capturedAt:'2026-10-27T01:00:00Z',mime:'image/jpeg',bytes:bytes.length,sha256:hash(bytes),width:500,height:500};
+  const visit:Recording={id:'test-visit',ownerUid:'synthetic-user',customerId:'synthetic-customer',kind:'common',workDate:'2026-10-27',revision:3,draft:{summary:'합성 보고서',followUp:'',statuses:{},notes:{},confirmedRevision:3},photos:[],site:{id:'synthetic-customer',customerId:'synthetic-customer',name:'[TEST] 가상 고객',address:'가상 주소'},contentHash:'a'.repeat(64),createdAt:'2026-10-27T01:00:00Z',updatedAt:'2026-10-27T01:00:00Z'};
+  const photos=Array.from({length:100},(_,i)=>({photo:{...p,id:`test-${i}`,phase:(i%2?'after':'before') as 'after'|'before'},bytes}));
+  const pdf=await renderRecordingPdf(visit,photos);expect(pdf.length).toBeLessThanOrEqual(12*1024*1024);expect((await PDFDocument.load(pdf)).getPageCount()).toBeGreaterThan(10);
+},120_000);

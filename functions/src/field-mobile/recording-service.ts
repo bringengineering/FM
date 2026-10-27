@@ -76,10 +76,12 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     const chunks:Buffer[]=[];for(let offset=0;offset<u.photo.bytes;offset+=RECORD_LIMITS.chunk)chunks.push(await d.blobs.read(blobPath(u,offset)));
     const bytes=Buffer.concat(chunks);assert(bytes.length===u.photo.bytes&&hash(bytes)===u.photo.sha256,'PHOTO_INTEGRITY_FAILED',422);
     await d.validateJpeg(bytes,u.photo);const v=await visit(u.visitId);await d.recheck();
-    const folderId=u.folderId||await d.drive.folder('photos',[{key:v.customerId,name:[v.site.name.slice(0,50),v.site.address.slice(0,65)].filter(Boolean).join(' - ')},{key:v.workDate,name:v.workDate},{key:u.photo.phase,name:({before:'작업 전',during:'작업 중',after:'작업 후'})[u.photo.phase]}]);
+    const phaseName=({before:'작업 전',during:'작업 중',after:'작업 후'})[u.photo.phase];
+    const areaName=reportCore.itemCatalogFor(v.kind).find(item=>item.key===u.photo.itemKey)?.label;assert(areaName,'PHOTO_INVALID',422);
+    const folderId=u.folderId||await d.drive.folder('photos',[{key:v.customerId,name:[v.site.name.slice(0,50),v.site.address.slice(0,65)].filter(Boolean).join(' - ')},{key:v.workDate,name:v.workDate},{key:u.photo.phase,name:phaseName},{key:u.photo.itemKey,name:areaName}]);
     const candidate=u.driveFileId||await d.drive.generateId();
     u=await d.store.change<UploadRecord>(uploadPath(id),old=>{assert(old&&old.ownerUid===uid,'UPLOAD_NOT_FOUND',404);return{...old,driveFileId:old.driveFileId||candidate,folderId:old.folderId||folderId};});
-    await d.drive.upload(u.driveFileId!,u.folderId!,`${v.workDate}_${u.photo.itemKey}_${u.photo.phase}_${u.photo.id}.jpg`,'image/jpeg',bytes,u.id);
+    await d.drive.upload(u.driveFileId!,u.folderId!,`${v.workDate}_${areaName.replace(/[\u0000-\u001f/\\]/g,' ')}_${phaseName}_${u.photo.id.slice(0,8)}.jpg`,'image/jpeg',bytes,u.id);
     await d.recheck(); await visit(u.visitId);
     const ready=await d.store.change<UploadRecord>(uploadPath(id),old=>{assert(old&&old.driveFileId===u.driveFileId,'REVISION_CONFLICT',409);return{...old,state:'ready'};});
     for(let offset=0;offset<u.photo.bytes;offset+=RECORD_LIMITS.chunk)await d.blobs.remove?.(blobPath(u,offset)).catch(()=>undefined);
@@ -90,14 +92,14 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     const v=await visit(visitId);assert(v.revision===input.revision&&v.draft.confirmedRevision===v.revision,'REPORT_REVIEW_REQUIRED',409);
     assert(v.site.address.trim(),'SITE_ADDRESS_REQUIRED',422);
     const selected=v.photos.filter(p=>p.included);assert(selected.length>0&&selected.length<=RECORD_LIMITS.pdfPhotos,'REPORT_PHOTO_LIMIT',422);
-    assert(selected.reduce((n,p)=>n+p.bytes,0)<=RECORD_LIMITS.pdfBytes,'REPORT_PHOTO_BYTES_LIMIT',422);
+    assert(selected.reduce((n,p)=>n+p.bytes,0)<=RECORD_LIMITS.pdfSourceBytes,'REPORT_PHOTO_BYTES_LIMIT',422);
     const uploads:UploadRecord[]=[];for(const p of selected){const u=await upload(uploadKey(uid,v.id,p.id));assert(u.state==='ready'&&u.driveFileId,'PHOTOS_NOT_READY',409);uploads.push(u);}
     const recordId='saved_wr_'+hash(JSON.stringify([uid,v.id,v.revision])).slice(0,40),reportId='fm_'+hash(JSON.stringify([uid,v.id,v.revision])).slice(0,40),path=`${base}/archives/${uid}/${recordId}`;
     let a=await d.store.change<ArchiveRecord>(path,old=>{if(old){assert(old.contentHash===v.contentHash,'REVISION_CONFLICT',409);return old;}return{id:recordId,visitId:v.id,revision:v.revision,ownerUid:uid,contentHash:v.contentHash,reportId};});
     if(a.ready)return{documentId:a.id,revision:a.revision,archivedAt:a.archivedAt,driveVerified:true,crmLinked:true};
     const report=reportFor(v,uploads,reportId);assert(reportCore.validateReport(report).ok,'REPORT_INVALID',422);
     const imageBytes:{photo:RecordingPhoto;bytes:Buffer}[]=[];
-    for(const p of selected)imageBytes.push({photo:p,bytes:await d.drive.download(uploads.find(u=>u.photo.id===p.id)!.driveFileId!,p)});
+    for(let i=0;i<selected.length;i+=4){const batch=selected.slice(i,i+4);imageBytes.push(...await Promise.all(batch.map(async p=>({photo:p,bytes:await d.drive.download(uploads.find(u=>u.photo.id===p.id)!.driveFileId!,p)}))));}
     const pdf=await d.blobs.putOnce(`field-mobile-staging/${uid}/reports/${recordId}.pdf`,await d.pdf(v,imageBytes));
     assert(pdf.length<=RECORD_LIMITS.pdfBytes&&pdf.subarray(0,5).toString()==='%PDF-','REPORT_PDF_INVALID',422);
     const folderId=a.folderId||await d.drive.folder('reports',[{key:'field-work-reports',name:'현장노트 작업보고서'},{key:v.workDate.slice(0,4),name:v.workDate.slice(0,4)}]);

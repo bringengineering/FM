@@ -10,6 +10,7 @@ import { confirmVisit, editVisit, phaseLabel, stateLabel, type ItemStatus, type 
 import { catalog, reviewIssues } from './domain/report';
 import { persistCapture } from './capture';
 import { saveGroupedReport } from './domain/save-report';
+import { areaPhotoCount,captureProgress,changeCaptureAreas,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
 import { samplePhoto } from './sample-photo';
 import { safeMessage } from './errors';
 import { SyncRunner } from './domain/sync';
@@ -17,7 +18,7 @@ import { FieldError } from './domain/model';
 import type { CustomerSite } from './api/sites';
 import type { ArchiveReceipt, CompanyRecordingApi } from './api/recording';
 
-type Screen = 'jobs' | 'capture' | 'photos' | 'report' | 'pdf' | 'send' | 'sync' | 'settings';
+type Screen = 'jobs' | 'capture-setup' | 'capture' | 'photos' | 'report' | 'pdf' | 'send' | 'sync' | 'settings';
 const empty: Workspace = { visits: [], photos: [] };
 const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date());
 const sampleJobs: Job[] = [
@@ -28,18 +29,18 @@ function Button({ label, onPress, disabled = false, secondary = false }: { label
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [s.button, secondary && s.secondary, disabled && s.disabled, pressed && s.pressed]}><Text style={[s.buttonText, secondary && s.secondaryText]}>{label}</Text></Pressable>;
 }
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={[s.chip, active && s.chipActive]}><Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text></Pressable>;
+function Chip({ label, active, onPress, disabled=false }: { label: string; active: boolean; onPress: () => void; disabled?:boolean }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active,disabled }} disabled={disabled} onPress={onPress} style={[s.chip, active && s.chipActive,disabled&&s.disabled]}><Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text></Pressable>;
 }
 function Note({ children }: { children: React.ReactNode }) { return <View style={s.note}><Text style={s.noteText}>{children}</Text></View>; }
-function PhotoImage({ vault, photo }: { vault: Vault; photo: Photo }) {
+function PhotoImage({ vault, photo, compact=false }: { vault: Vault; photo: Photo; compact?:boolean }) {
   const [loaded, setLoaded] = useState<{ id: string; uri: string; failed: boolean }>({ id: '', uri: '', failed: false });
   useEffect(() => { let current = true; void vault.readBytes(photo.id).then(bytes => {
     let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     if (current) setLoaded({ id: photo.id, uri: `data:image/jpeg;base64,${btoa(binary)}`, failed: false });
   }).catch(() => { if (current) setLoaded({ id: photo.id, uri: '', failed: true }); }); return () => { current = false; }; }, [vault, photo.id]);
   if (loaded.id === photo.id && loaded.failed) return <Note>사진을 읽지 못했습니다. 원본을 보존했습니다. 다른 사진을 선택한 뒤 다시 확인해 주세요.</Note>;
-  return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={s.photo} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
+  return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={[s.photo,compact&&s.referencePhoto]} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
 }
 export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:CustomerSite;api:CompanyRecordingApi};onClose?:()=>void}) {
   const jobs:Job[]=company?(['common','moveIn'] as const).map(kind=>({id:`${company.site.id}_${kind}`,customerId:company.site.id,buildingId:'',title:company.site.name,address:company.site.address,kind,workDate:today()})):sampleJobs;
@@ -52,6 +53,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [notice, setNotice] = useState(''); const [problem, setProblem] = useState(false);
   const [area, setArea] = useState('entrance'); const [phase, setPhase] = useState<Phase>('before');
+  const [plannedAreas,setPlannedAreas]=useState<string[]>([]),[lastArea,setLastArea]=useState('');
   const [permission, requestPermission] = useCameraPermissions(); const camera = useRef<CameraView>(null);
   const [cameraReady, setCameraReady] = useState(false); const [foreground, setForeground] = useState(true);
   const [summary, setSummary] = useState(''); const [followUp, setFollowUp] = useState('');
@@ -60,6 +62,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   const visit = workspace.visits.find(v => v.id === selected);
   const photos = workspace.photos.filter(p => p.visitId === selected);
   const photo = photos.find(p => p.id === photoId);
+  const areas=visit?.captureAreas||[];
   const dirty = !!visit && (summary !== visit.draft.summary || followUp !== visit.draft.followUp || JSON.stringify(notes) !== JSON.stringify(visit.draft.notes));
   const captionDirty = screen === 'photos' && !!photo && caption !== photo.caption;
   const issues = visit ? reviewIssues(visit, photos) : [];
@@ -73,7 +76,9 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   function navigate(next: Screen) {
     if (busyRef.current || next === screen) return;
     if (dirty || captionDirty) { notify('작성 중인 내용을 저장한 뒤 이동해 주세요.', true); return; }
-    setNotice(''); setCameraReady(false); setScreen(next);
+    setNotice(''); setCameraReady(false);
+    if(next==='capture'&&visit&&!visit.captureAreas?.length){setPlannedAreas(initialCaptureAreas(visit,photos));setScreen('capture-setup');return;}
+    setScreen(next);
   }
   useEffect(() => { const listener = AppState.addEventListener('change', next => {
     setForeground(next === 'active');
@@ -97,8 +102,19 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
       target={...target,job:{...target.job,address:job.address},revision:previous+1,updatedAt:new Date().toISOString(),draft:{...target.draft,confirmedRevision:undefined}};
       await vault.saveVisit(target,previous);await refresh();
     }
-    setReceipt(undefined);setSelected(target.id); setArea(catalog(job.kind)[0]?.key ?? 'entrance'); setPhotoId(''); setScreen('capture');
+    const oldPhotos=workspace.photos.filter(p=>p.visitId===target!.id),plan=initialCaptureAreas(target,oldPhotos);
+    setReceipt(undefined);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(plan,oldPhotos,'before'));setPhotoId('');setScreen(target.captureAreas?.length?'capture':'capture-setup');
   }
+  async function saveCaptureAreas(){
+    if(!visit||!vault)return;
+    const ordered=catalog(visit.job.kind).map(item=>item.key).filter(key=>plannedAreas.includes(key));
+    if(!ordered.length)throw new FieldError('CAPTURE_AREAS_INVALID');
+    if(JSON.stringify(ordered)!==JSON.stringify(visit.captureAreas)){
+      const next=changeCaptureAreas(visit,photos,ordered,new Date().toISOString());await vault.saveVisit(next,visit.revision);await refresh();
+    }
+    setPhase('before');setLastArea('');setArea(firstUncapturedArea(ordered,photos,'before'));setScreen('capture');
+  }
+  function switchPhase(next:Phase){setPhase(next);setLastArea('');setArea(firstUncapturedArea(areas,photos,next));setNotice('');}
   useEffect(()=>{
     if(!company)return;
     controller.current=new AbortController();
@@ -144,7 +160,10 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
       if (!result) return;
       await persistCapture(vault, visit, result, area, phase);
     }
-    await refresh(); notify(Platform.OS === 'web' ? '합성 사진을 추가했습니다. 브라우저를 새로고침하면 초기화됩니다.' : '사진을 암호화된 기기 보관함에 저장했습니다.');
+    const updated=await refresh();setLastArea(area);
+    const next=nextUncapturedArea(areas,updated?.photos.filter(p=>p.visitId===visit.id)||photos,phase,area);
+    if(next)setArea(next);
+    notify(Platform.OS === 'web' ? '합성 사진을 추가했습니다. 브라우저를 새로고침하면 초기화됩니다.' : next?'사진을 저장하고 다음 구역으로 이동했습니다.':'사진을 기기에 저장했습니다.');
   }
   async function saveDraft(patch = {}) {
     if (!visit || !vault) return;
@@ -156,15 +175,16 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   }
   function choosePhoto(p: Photo) { if (captionDirty) { notify('사진 설명을 저장한 뒤 다른 사진을 선택해 주세요.', true); return; } setPhotoId(p.id); setCaption(p.caption); }
   const pending = workspace.photos.filter(p => p.state !== 'ready').length;
-  const title: Record<Screen, string> = { jobs: '오늘의 현장', capture: '작업사진 촬영', photos: '사진 확인', report: '작업 결과보고서', pdf: '보고서 내용 확인', send: '보고서 발송', sync: '기기 보관함', settings: '설정·연결' };
+  const title: Record<Screen, string> = { jobs: '오늘의 현장', 'capture-setup':'촬영할 구역 선택', capture: '작업사진 촬영', photos: '사진 확인', report: '작업 결과보고서', pdf: '보고서 내용 확인', send: '보고서 발송', sync: '기기 보관함', settings: '설정·연결' };
   if(company&&!foreground)return <SafeAreaView style={s.safe}><Note>회사 정보를 보호하고 있습니다.</Note></SafeAreaView>;
   return <SafeAreaView style={s.safe}><StatusBar style="dark" /><View style={s.shell}>
-    <View style={s.header}><View><Text style={s.brand}>BRING CARE</Text><Text style={s.headerTitle}>현장노트</Text></View><Pressable accessibilityRole="button" accessibilityLabel="설정 열기" onPress={() => navigate('settings')} style={s.icon}><Text style={s.iconText}>설정</Text></Pressable></View>
-    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.4':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
-    {vault && <Pressable accessibilityRole="button" onPress={() => navigate('sync')} style={s.syncStrip}><Text style={s.syncText}>기기 보관 {workspace.photos.length}장  ·  전송 대기 {pending}장</Text><Text style={s.blue}>확인 →</Text></Pressable>}
+    {screen!=='capture'&&<><View style={s.header}><View><Text style={s.brand}>BRING CARE</Text><Text style={s.headerTitle}>현장노트</Text></View><Pressable accessibilityRole="button" accessibilityLabel="설정 열기" onPress={() => navigate('settings')} style={s.icon}><Text style={s.iconText}>설정</Text></Pressable></View>
+    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.5':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
+    {vault && <Pressable accessibilityRole="button" onPress={() => navigate('sync')} style={s.syncStrip}><Text style={s.syncText}>기기 보관 {workspace.photos.length}장  ·  전송 대기 {pending}장</Text><Text style={s.blue}>확인 →</Text></Pressable>}</>}
+    {screen==='capture'&&visit&&<View style={s.captureHeader}><Text style={s.captureSite} numberOfLines={1}>{visit.job.title}</Text><Text style={s.captureSiteSmall}>구역별 사진 촬영</Text></View>}
     {notice !== '' && <View accessibilityRole="alert" style={[s.toast, problem && s.error]}><Text style={s.toastText}>{notice}</Text></View>}
     {busy && <ActivityIndicator style={s.loading} accessibilityLabel="기기 보관 처리 중" />}
-    <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={scroll} contentContainerStyle={[s.content,screen==='capture'&&s.captureContent]} keyboardShouldPersistTaps="handled">
       {!vault && company ? <Note>고객 작업 보관함을 준비하고 있습니다. 오류가 표시되면 고객 목록으로 돌아가 다시 열어 주세요.</Note> : !vault ? <>
         <Text style={s.eyebrow}>직원 전용 현장 업무</Text><Text style={s.hero}>사진을 찍고,{ '\n' }보고서까지 현장에서.</Text>
         <Text style={s.subtitle}>작업 전후 기록을 한곳에 모으고{ '\n' }고객에게 전달할 내용을 확인하세요.</Text>
@@ -172,22 +192,47 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
           <Button label="개발용 가상 현장 열기" onPress={() => void perform(enterDevelopment)} disabled={busy} />
         </View><Note>{Platform.OS === 'web' ? '웹에서는 합성 사진만 추가합니다. 새로고침하면 자료가 초기화됩니다.' : '실제 사진은 SQLCipher가 포함된 개발 앱에서 암호화해 보관합니다. 재실행하면 이어서 작성할 수 있습니다.'}</Note>
       </> : <>
-        <View style={s.sectionHead}><View><Text style={s.eyebrow}>{today()} · BRING FIELD</Text><Text style={s.h1}>{title[screen]}</Text></View></View>
-        {visit && screen !== 'jobs' && <View style={s.siteBar}><Text style={s.siteTitle}>{visit.job.title}</Text><Text style={s.muted}>{visit.job.address}</Text></View>}
+        {screen!=='capture'&&<View style={s.sectionHead}><View><Text style={s.eyebrow}>{today()} · BRING FIELD</Text><Text style={s.h1}>{title[screen]}</Text></View></View>}
+        {visit && screen !== 'jobs' && screen!=='capture' && <View style={s.siteBar}><Text style={s.siteTitle}>{visit.job.title}</Text><Text style={s.muted}>{visit.job.address}</Text></View>}
         {screen === 'jobs' && <><Text style={s.subtitle}>현장을 열고 작업 전 사진부터 남겨 주세요.</Text>{jobs.map(job => <View key={job.id} style={s.card}>
           <Text style={s.tag}>{job.kind === 'common' ? '공용부청소' : '입주청소'}</Text><Text style={s.cardTitle}>{job.title}</Text><Text style={s.muted}>{job.address}</Text>
           <Text style={s.body}>보관 사진 {workspace.photos.filter(p => workspace.visits.find(v => v.id === p.visitId)?.job.id === job.id).length}장</Text>
           <Button label={workspace.visits.some(v => v.job.id === job.id) ? '작업 이어하기' : '현장 열기'} onPress={() => void perform(() => openJob(job))} disabled={busy} />
         </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>{setSelected(v.id);setScreen('report');setReceipt(undefined);}}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
-        {['capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
+        {['capture-setup', 'capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
+        {screen === 'capture-setup' && visit && <>
+          <Text style={s.subtitle}>이 현장에서 촬영할 구역을 골라 주세요. 선택한 구역을 차례대로 작업 전과 후에 각각 촬영합니다.</Text>
+          <View style={s.card}><Text style={s.cardTitle}>촬영 구역 · {plannedAreas.length}곳</Text>
+            <View style={s.wrap}>{catalog(visit.job.kind).map(item=><Chip key={item.key} label={`${item.label}${photos.some(p=>p.itemKey===item.key)?' · 사진 있음':''}`} active={plannedAreas.includes(item.key)} disabled={busy} onPress={()=>{
+              if(plannedAreas.includes(item.key)&&photos.some(p=>p.itemKey===item.key)){notify('사진이 있는 구역은 촬영 목록에 남겨 둡니다.',true);return;}
+              setNotice('');setPlannedAreas(current=>current.includes(item.key)?current.filter(key=>key!==item.key):[...current,item.key]);
+            }}/>)}</View>
+          </View>
+          <Note>현장에 없는 구역은 선택 해제할 수 있습니다. 한 구역에서 여러 장을 찍을 수도 있습니다.</Note>
+          <Button label="작업 전 촬영 시작" disabled={busy||!plannedAreas.length} onPress={()=>void perform(saveCaptureAreas)} />
+          {visit.captureAreas?.length&&<Button label="촬영 화면으로 돌아가기" secondary disabled={busy} onPress={()=>setScreen('capture')} />}
+        </>}
         {screen === 'capture' && visit && <>
-          <Text style={s.label}>촬영 구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={area === item.key} onPress={() => setArea(item.key)} />)}</View>
-          <View style={s.phaseRow}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={phase === p} onPress={() => setPhase(p)} />)}</View>
-          <Note>선택한 구역과 작업 전·중·후에 사진이 자동으로 분류됩니다. 현재: {catalog(visit.job.kind).find(item=>item.key===area)?.label} · {phaseLabel[phase]}</Note>
-          {Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
+          <View style={s.wrap}>{(['before','after','during'] as Phase[]).map(p=>{
+            const progress=captureProgress(areas,photos,p);return <Chip key={p} label={`${phaseLabel[p]} ${progress.done}/${progress.total}`} active={phase===p} disabled={busy} onPress={()=>switchPhase(p)}/>;
+          })}</View>
+          <View style={s.guideCard}><Text style={s.guideStep}>{phaseLabel[phase]} · {Math.max(areas.indexOf(area)+1,1)} / {areas.length} 구역</Text>
+            <Text style={s.guideTitle}>{catalog(visit.job.kind).find(item=>item.key===area)?.label || '촬영 구역'}</Text>
+            <Text style={s.guideDetail}>{catalog(visit.job.kind).find(item=>item.key===area)?.detail}</Text>
+            <Text style={s.guideDetail}>이 구역 {phaseLabel[phase]} 사진 {areaPhotoCount(photos,area,phase)}장</Text>
+          </View>
+          <View style={s.cameraFrame}>{Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
             : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진 선택으로 이어갈 수 있습니다.', true); }} />
             : <View style={s.card}><Text style={s.body}>작업사진을 촬영하려면 카메라 접근이 필요합니다.</Text><Button label="카메라 권한 허용" onPress={() => void requestPermission()} /></View>}
+            {phase==='after'&&photos.find(p=>p.itemKey===area&&p.phase==='before')&&<View style={s.referenceOverlay} pointerEvents="none"><Text style={s.referenceLabel}>작업 전</Text><PhotoImage vault={vault} photo={photos.find(p=>p.itemKey===area&&p.phase==='before')!} compact/></View>}
+          </View>
           <Button label={Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`} disabled={busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady))} onPress={() => void perform(() => capture())} />
+          {lastArea&&lastArea!==area&&<Button label={`${catalog(visit.job.kind).find(item=>item.key===lastArea)?.label || '직전 구역'} 추가 촬영`} secondary disabled={busy} onPress={()=>{setArea(lastArea);setLastArea('');}} />}
+          <View style={s.wrap}>{areas.map((key,index)=><Chip key={key} label={`${index+1}. ${catalog(visit.job.kind).find(item=>item.key===key)?.label || key} · ${areaPhotoCount(photos,key,phase)}장`} active={area===key} disabled={busy} onPress={()=>{setArea(key);setLastArea('');}} />)}</View>
+          <Note>사진을 찍으면 다음 미촬영 구역으로 이동합니다. 구역을 다시 선택하면 여러 장을 찍을 수 있습니다. 미촬영 구역은 그대로 표시됩니다.</Note>
+          {phase==='after'&&!photos.some(p=>p.itemKey===area&&p.phase==='before')&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
+          {phase==='before'&&<Button label="작업 후 촬영 시작" secondary disabled={busy} onPress={()=>switchPhase('after')} />}
+          <Button label="촬영 구역 변경" secondary disabled={busy} onPress={()=>{setPlannedAreas(initialCaptureAreas(visit,photos));setCameraReady(false);setScreen('capture-setup');}} />
           {Platform.OS !== 'web' && <Button label="사진첩에서 한 장 선택" secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
           <Button label={`사진 ${photos.length}장 확인`} secondary onPress={() => navigate('photos')} />
           <Button label="사진·보고서 저장하기" secondary disabled={!photos.length||busy} onPress={()=>navigate('report')} />
@@ -206,6 +251,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
         </>}
         {screen === 'report' && visit && <>
           <Note>{company?'초안을 저장하고 내용을 검토한 뒤, PDF를 Drive와 CRM에 보관하세요.':'작성한 내용은 기기에 보관됩니다. 고객 PDF·Drive 보관은 서버 연결 후 사용할 수 있습니다.'}</Note>
+          {areas.length>0&&<Note>촬영 현황 · 작업 전 {captureProgress(areas,photos,'before').done}/{areas.length}구역 · 작업 후 {captureProgress(areas,photos,'after').done}/{areas.length}구역. 미촬영 구역은 사진이 없는 상태로 보고서에 남습니다.</Note>}
           <Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" editable={!busy} multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
           <Text style={s.label}>후속 조치</Text><TextInput accessibilityLabel="후속 조치" editable={!busy} multiline maxLength={2000} value={followUp} onChangeText={setFollowUp} style={[s.input, s.textareaSmall]} placeholder="추가 작업이나 확인할 내용" />
           <Button label={dirty ? '작성 중인 초안 저장' : '초안 저장'} disabled={busy} onPress={() => void perform(() => saveDraft())} />
@@ -246,12 +292,12 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#edf2f7' }, shell: { flex: 1, width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: '#f7f9fc' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 17, backgroundColor: '#fff' }, brand: { fontSize: 11, letterSpacing: 2, color: '#1f68dc', fontWeight: '800' }, headerTitle: { fontSize: 22, fontWeight: '800', color: '#172b42', marginTop: 4 }, icon: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#f0f5fc' }, iconText: { fontSize: 13, color: '#416184', fontWeight: '700' },
   devStrip: { backgroundColor: '#edf4ff', paddingHorizontal: 24, paddingVertical: 9 }, devText: { fontSize: 12, color: '#335c92', fontWeight: '600' }, syncStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, minHeight: 46, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e6edf5' }, syncText: { color: '#57718b', fontSize: 12 },
-  content: { padding: 24, paddingBottom: 42, gap: 16 }, eyebrow: { fontSize: 11, letterSpacing: 1.3, fontWeight: '700', color: '#64809d' }, hero: { fontSize: 33, lineHeight: 46, letterSpacing: -1, fontWeight: '800', color: '#152c44', marginTop: 20 }, subtitle: { fontSize: 15, lineHeight: 24, color: '#6b7e92' }, sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, h1: { fontSize: 26, color: '#192e46', fontWeight: '800', marginTop: 8 }, h2: { fontSize: 18, color: '#20354d', fontWeight: '700', marginTop: 12 },
+  content: { padding: 24, paddingBottom: 42, gap: 16 },captureContent:{paddingHorizontal:16,paddingTop:10,gap:9},captureHeader:{paddingHorizontal:18,paddingVertical:10,backgroundColor:'#fff',flexDirection:'row',justifyContent:'space-between',gap:8},captureSite:{fontSize:13,fontWeight:'700',color:'#223b55',flexShrink:1},captureSiteSmall:{fontSize:12,color:'#64809d'}, eyebrow: { fontSize: 11, letterSpacing: 1.3, fontWeight: '700', color: '#64809d' }, hero: { fontSize: 33, lineHeight: 46, letterSpacing: -1, fontWeight: '800', color: '#152c44', marginTop: 20 }, subtitle: { fontSize: 15, lineHeight: 24, color: '#6b7e92' }, sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, h1: { fontSize: 26, color: '#192e46', fontWeight: '800', marginTop: 8 }, h2: { fontSize: 18, color: '#20354d', fontWeight: '700', marginTop: 12 },
   card: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 14, borderWidth: 1, borderColor: '#e5ecf3' }, cardTitle: { fontSize: 17, fontWeight: '700', color: '#223b55' }, body: { fontSize: 14, lineHeight: 24, color: '#516a82' }, muted: { fontSize: 12, lineHeight: 19, color: '#74869a' }, small: { fontSize: 12, lineHeight: 22, color: '#587693' }, tag: { fontSize: 12, fontWeight: '700', color: '#167466' },
   button: { minHeight: 50, paddingVertical: 14, paddingHorizontal: 18, backgroundColor: '#276ce4', borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, secondary: { backgroundColor: '#edf3fb', borderWidth: 1, borderColor: '#dee8f4' }, buttonText: { fontSize: 14, fontWeight: '700', color: '#fff' }, secondaryText: { color: '#365c87' }, disabled: { opacity: 0.45 }, pressed: { opacity: 0.72 }, note: { borderRadius: 14, backgroundColor: '#eef3f9', padding: 16 }, noteText: { fontSize: 12, lineHeight: 21, color: '#5b738d' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { minHeight: 44, paddingHorizontal: 13, paddingVertical: 12, borderWidth: 1, borderColor: '#dce6f1', backgroundColor: '#fff', borderRadius: 12, justifyContent: 'center' }, chipActive: { backgroundColor: '#e9f1ff', borderColor: '#5c94ef' }, chipText: { fontSize: 12, color: '#667e94' }, chipTextActive: { color: '#245fb5', fontWeight: '700' }, phaseRow: { flexDirection: 'row', gap: 10 },
   label: { fontSize: 13, fontWeight: '700', color: '#36506b' }, input: { borderWidth: 1, borderColor: '#dbe4ee', borderRadius: 12, padding: 14, fontSize: 14, lineHeight: 22, backgroundColor: '#fff', color: '#263f59', minHeight: 48 }, textarea: { minHeight: 150, textAlignVertical: 'top' }, textareaSmall: { minHeight: 96, textAlignVertical: 'top' },
-  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, camera: { height: 300, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { height: 270, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },
+  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, guideCard:{backgroundColor:'#173657',borderRadius:14,padding:13,gap:3},guideStep:{color:'#a9d1ff',fontSize:12,fontWeight:'700'},guideTitle:{color:'#fff',fontSize:20,fontWeight:'800'},guideDetail:{color:'#d4e4f5',fontSize:12,lineHeight:17},cameraFrame:{position:'relative'}, camera: { height: 240, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { height: 240, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },referencePhoto:{height:80,width:100},referenceOverlay:{position:'absolute',right:10,top:10,backgroundColor:'#fff',borderRadius:10,padding:6,gap:3},referenceLabel:{color:'#36506b',fontSize:11,fontWeight:'700'},
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 }, flex: { flex: 1 }, row: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderColor: '#e0e8f0' }, rowTitle: { fontSize: 14, fontWeight: '700', color: '#34506c', marginBottom: 5 }, paper: { backgroundColor: '#fff', padding: 26, borderWidth: 1, borderColor: '#e1e8f0', gap: 12 }, paperTag: { fontSize: 11, color: '#b26b36', backgroundColor: '#fff7e8', padding: 10 }, footerText: { fontSize: 12, color: '#567697', paddingTop: 10, lineHeight: 23 }, metrics: { alignItems: 'center', padding: 22, backgroundColor: '#fff', borderRadius: 18 }, metric: { fontSize: 44, color: '#276ce4', fontWeight: '800' }, metricUnit: { fontSize: 17, fontWeight: '500' },
   tabs: { flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e0e8f1', paddingTop: 8, paddingBottom: 8 }, tab: { flex: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 4 }, tabIcon: { fontSize: 23, color: '#92a2b3' }, tabText: { fontSize: 11, color: '#8294a7', fontWeight: '700' }, blue: { color: '#276ce4' }, loading: { padding: 5 }, toast: { backgroundColor: '#e7f5ed', padding: 14 }, error: { backgroundColor: '#fff0e8' }, toastText: { fontSize: 13, lineHeight: 21, color: '#294c48' },
 });

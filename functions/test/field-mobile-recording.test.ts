@@ -22,12 +22,18 @@ async function setup(){
 }
 it('saves customer-only visits, verifies images, archives once, and binds CRM to the selected customer',async()=>{
   const t=await setup(),u=await t.uploaded();expect((await t.service.complete(u.uploadId,'complete_photo-a')).state).toBe('ready');
+  expect(t.deps.drive.folder).toHaveBeenCalledWith('photos',expect.arrayContaining([{key:'before',name:'작업 전'},{key:'entrance',name:'출입구·현관'}]));
   const a=await t.service.archive('visit-a',{revision:3}),again=await t.service.archive('visit-a',{revision:3});expect(again).toEqual(a);expect(t.files.size).toBe(2);expect(t.commits.size).toBe(2);
   const doc=t.commits.get(a.documentId);expect(doc.buildingId).toBe('');expect(doc.customerId).toBe('customer-a');expect(doc.savedCustomerDocument.customerId).toBe('customer-a');expect(t.deps.pdf).toHaveBeenCalledTimes(1);
 });
 it('recovers lost Drive and CRM responses with the same file and document identifiers',async()=>{
   const t=await setup(),u=await t.uploaded();t.loseUpload();await expect(t.service.complete(u.uploadId,'complete_photo-a')).rejects.toThrow();await t.service.complete(u.uploadId,'complete_photo-a');expect(t.files.size).toBe(1);
   t.loseCommit();await expect(t.service.archive('visit-a',{revision:3})).rejects.toThrow();await t.service.archive('visit-a',{revision:3});expect(t.files.size).toBe(2);expect(t.commits.size).toBe(2);
+});
+it('archives up to 100 classified photos without dropping any from the report',async()=>{
+  const t=await setup(),photos=Array.from({length:100},(_,i)=>({...t.photo,id:`photo-${i}`}));await t.service.save('visit-a',{...t.input,photos});
+  for(const p of photos){const u=await t.service.reserve('visit-a',{expectedRevision:t.input.revision,photoId:p.id,itemKey:p.itemKey,phase:p.phase,claimedCapturedAt:p.capturedAt,mime:p.mime,bytes:p.bytes,sha256:p.sha256,width:p.width,height:p.height,included:p.included,caption:p.caption},`photo_${p.id}`);await t.service.chunk(u.uploadId,`bytes 0-${t.bytes.length-1}/${t.bytes.length}`,t.bytes);await t.service.complete(u.uploadId,`complete_${p.id}`);}
+  await t.service.archive('visit-a',{revision:t.input.revision});expect(vi.mocked(t.deps.pdf).mock.calls[0][1]).toHaveLength(100);expect(t.files.size).toBe(101);
 });
 it('rejects a changed chunk without replacing the first accepted bytes',async()=>{
   const t=await setup(),u=await t.uploaded();const altered=Buffer.from(t.bytes);altered[5]^=1;await expect(t.service.chunk(u.uploadId,`bytes 0-${altered.length-1}/${altered.length}`,altered)).rejects.toThrow('UPLOAD_CHUNK_CONFLICT');
