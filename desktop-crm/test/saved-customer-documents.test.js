@@ -89,7 +89,7 @@ function harness(options = {}) {
         data.buildingDocuments=[...data.buildingDocuments.filter(row=>row.id!==value.id),value];return {ok:true};
       },
       saveStoreNow: async value => {events.push(["persist", value]); return {ok: true};}},
-    QuoteCore: {normalizeDraft: value => value, normalizeSupplier: () => {}, normalizeRecipient: () => {}},
+    QuoteCore: {normalizeDraft: value => value, normalizeSupplier: () => {}, normalizeRecipient: () => {}, resolveCustomer: require("../src/quote-core").resolveCustomer},
     readLocalQuoteSeal: async () => "fixture", createQuotePdfBytes: async () => bytes,
     BuildingDocsDrive: {uploadDocument: async (_deps, input) => {events.push(["upload", input]); return {id: "uploaded_pdf"};}},
     driveApiDeps: () => ({}),
@@ -109,7 +109,7 @@ function harness(options = {}) {
 }
 test("메인 저장은 수신자 PDF만 비공개 회사 Drive에 보관하고 실제 성공 후 CRM 메타데이터를 기록한다", async () => {
   const h = harness({role: "member"});
-  const result = await h.context.saveCustomerDocument({kind: "quote", quote: {projectName: "샘플", recipient: customer.name, recipientPhone: customer.phone, company: {}}});
+  const result = await h.context.saveCustomerDocument({kind: "quote", quote: {customerId: customer.id, projectName: "샘플", recipient: "문서용 성명", recipientPhone: customer.phone, company: {}}});
   assert.equal(result.ok, true);
   assert.ok(Docs.normalize(result.record));
   assert.deepEqual(h.events.map(item => item[0]), ["upload", "persist"]);

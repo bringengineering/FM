@@ -2615,10 +2615,7 @@ async function saveCustomerDocument(input) {
     const quote = QuoteCore.normalizeDraft(options.quote);
     QuoteCore.normalizeSupplier(quote.company, {requireComplete: true});
     QuoteCore.normalizeRecipient(quote, {requireComplete: true});
-    const matches = customers.filter(row => SavedCustomerDocuments.phone(row.phone) === SavedCustomerDocuments.phone(quote.recipientPhone)
-      && [row.name, row.company].some(value => String(value || "").trim() === quote.recipient));
-    if (matches.length !== 1) throw new Error("견적서 성명·전화번호와 일치하는 CRM 고객 한 명을 확인해 주세요.");
-    customer = matches[0];
+    customer = QuoteCore.resolveCustomer(quote, customers);
     const seal = await readLocalQuoteSeal(); session.check();
     if (!seal) throw new Error("회사 인감을 등록한 후 견적서를 저장해 주세요.");
     bytes = await createQuotePdfBytes(quote, "recipient", seal);
