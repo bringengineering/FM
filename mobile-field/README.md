@@ -6,6 +6,8 @@
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
+최신 Android 설치본은 **0.1.1 (2)**다. 실제 기기에서 발생한 로그인 오류를 구분하도록 비밀번호·이메일 인증·앱 등록·기기 attestation 안내를 나눴다. APK 생성과 동일 서명 확인을 완료했고 사용자의 업데이트 후 재시도 결과를 기다리고 있다. PC 로그인은 정상이라는 사용자 확인만 있으며 모바일 정상 로그인으로 간주하지 않는다.
+
 ## 이번에 구현한 범위
 
 - Android/iPhone 공통 현장·촬영·사진 확인·보고서·보관함·연결 화면.
