@@ -1,0 +1,68 @@
+# 회사 Expo 프로젝트 연결
+
+2026-10-27. 사용자가 직접 만든 프로젝트를 확인해 연결했고 **Android 내부 설치본 APK 생성에 성공했다**. 직원의 실제 로그인·현장 조회와 사진/보고서 전송 완료를 의미하지 않는다.
+
+## 연결 완료
+
+- 프로젝트: [bringengineerings-team / bring-care-field-notes](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes).
+- 표시명: `BRING CARE 현장노트 개발`.
+- 공개 프로젝트 ID: `574e39cc-26d0-4b2f-9dbb-22d273515ce3`.
+- 사용자의 브라우저 로그인 세션으로 EAS CLI 공식 OAuth 연결을 완료했다. 비밀번호·OTP·토큰을 소스나 문서에 저장하지 않는다. 공식 CLI가 자체 인증 상태를 관리한다.
+- `eas project:info`로 실제 서버의 프로젝트 이름과 ID 일치를 확인했다.
+- `mobile-field/config/eas-project.json`에 공개 소유자·프로젝트 ID를 고정했다. 다른 환경변수 값으로 빌드 대상을 변경하려 하면 구성 검사가 실패한다. 이 파일에는 인증정보가 없다.
+- EAS 프로젝트 `preview` 환경에 `FIELD_ANDROID_CONFIG_FILE`, `FIELD_IOS_CONFIG_FILE`을 **Secret / file**로 등록했다. 등록 목록에서 이름·유형·범위를 확인했으며 값을 출력하지 않았다. 설정 파일은 Git과 앱 소스 업로드에서 제외한다.
+
+## 업로드와 빌드
+
+회사 계정의 현재 플랜은 Free다. 첫 요청 전 사용량은 Android 0건·iOS 0건이며 플랜에 각 15건이 포함됨을 화면에서 확인했다. 플랜 변경·결제·스토어 제출은 하지 않았다.
+
+저장소 루트의 `.easignore`에 업로드 허용 범위를 명시했다. 앱 코드·빌드 설정·의존성 lockfile·공통 `desktop-crm/src/work-report-core.js`만 포함한다. 전체 CRM 소스, 고객 자료, 인증 파일, Git 이력, 로컬 native 산출물은 포함하지 않는다.
+
+`eas build:inspect --stage archive`의 실제 복사 결과는 **31개 파일, 440,356바이트**, 허용 범위 밖 파일 0개였다. 공유 보고서 core와 앱 진입 파일의 존재도 확인했다. Windows에서 디렉터리 예외를 평가하는 방식에 맞춰 `.easignore`의 디렉터리 예외에 끝 슬래시를 쓰지 않았다. 첫 빈 검사용 디렉터리는 서버에 올리지 않았다. [공식 archive 안내](https://docs.expo.dev/build-reference/easignore/).
+
+Android 서명 키는 EAS가 개발 앱 ID `kr.co.bringengineering.fieldnotes.dev`용으로 생성·관리한다. 서명 키나 비밀번호를 내려받거나 문서에 기록하지 않았다.
+
+EAS CLI의 공개 SHA-256 인증서 지문을 확인하고, 기존 등록 지문이 없는 Firebase Android 개발 앱 `1:864976295990:android:644a2b7d5242a0b5eb6097`에 추가했다. Firebase가 `SHA_256` 등록 성공을 반환했다. 이는 서명 지문 등록이며 Play Integrity 공급자·검증 설정을 완료했다는 뜻은 아니다. 기존 회사 웹 앱이나 다른 Android 앱은 변경하지 않았다.
+
+| 항목 | 값 |
+|---|---|
+| 첫 빌드 | [42c26703](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/42c26703-0d40-4f22-aa16-969350f27641) |
+| 플랫폼 / 프로필 | Android / `company-preview` |
+| 배포 / 버전 | Internal APK / 0.1.0 (1) |
+| 요청 소스 | `4f3c01e8` |
+| 상태 | 실패. Firebase Auth 25.0.0의 Kotlin 2.4 메타데이터와 기본 Kotlin 2.2 컴파일러가 호환되지 않음 |
+
+첫 실제 빌드에서 `:react-native-firebase_auth:compileReleaseKotlin` 실패를 확인했다. 최종 수정은 `expo-build-properties`의 공식 `android.kotlinVersion`을 **2.4.20**으로 고정하는 것이다. Firebase Auth의 메타데이터를 읽고 사용 중인 Gradle 9.4.1·AGP 9.2.1을 지원하며, Expo의 Pika/modules compiler도 이 버전으로 배포돼 있다. Kotlin 메타데이터 검사를 끄거나 Firebase 인증을 제거하지 않았다. 최종 수정 소스는 `e8e2e48d`다. [Expo 설정](https://docs.expo.dev/versions/latest/sdk/build-properties/), [Kotlin/Gradle/AGP 호환표](https://kotlinlang.org/docs/gradle-configure-project.html).
+
+중간 재빌드 [feec6282](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/feec6282-97a1-4a78-ab4a-1fa52a2b312b)는 Kotlin 2.4.21용 Expo compiler artifact가 없어 실패했다. Maven Central의 실제 버전 목록에서 Pika `1.1.0-2.4.20`과 modules compiler `0.2.5-2.4.20`의 제공을 확인해 수정했다. 저장소 fallback의 HTTP 401을 사용자 인증 문제로 취급하거나 별도 인증을 시도하지 않았다.
+
+최종 수정 빌드: [cc59a01d](https://expo.dev/accounts/bringengineerings-team/projects/bring-care-field-notes/builds/cc59a01d-59a1-405f-9e1a-fc6b53d45cc9). 기존 개발 서명을 재사용하며 `--freeze-credentials`로 서명 변경을 막았다. **한국시간 2026-10-27 09:53:48에 FINISHED / Succeeded로 완료**됐다. 총 소요 10분 23초였다. 요청 시 변경 중이던 문서는 업로드 대상에서 제외됐으며 앱 소스는 `e8e2e48d` 기준이다.
+
+설치 파일을 로컬로 내려받아 다음을 확인했다.
+
+- 파일: `C:/Users/dpvld/.codex/visualizations/2026/10/15/01a13ddf-321b-7df3-bfc1-72ce90737b84/bring-care-field-notes-dev-0.1.0-20261027.apk`.
+- 크기: **118,600,521바이트**.
+- SHA-256: `B5770B7D4C247FFFAFD6240374906F55C9AC8F7FB79064417F8A67E7B73D195F`.
+- APK ZIP을 열어 1,321개 항목, AndroidManifest.xml·classes.dex, arm64-v8a·armeabi-v7a·x86·x86_64 네이티브 라이브러리 포함을 확인했다.
+- Expo의 설치 QR 화면을 열어두었으며 별도 이미지를 저장했다. APK 구조와 다운로드 해시는 확인했지만 기기에 설치·실행하거나 로컬 apksigner로 서명을 검증한 것은 아니다.
+
+빌드 로그에는 Google Play Services Auth 21.5.0의 R8 stack-map 경고가 남지만 빌드는 성공했다. 관련 기기 로그인 동작은 실기기로 확인해야 한다. 경고를 숨기거나 R8 검사를 비활성화하지 않았다.
+
+## 설정 검증
+
+- TypeScript 통과.
+- 회사 설정 테스트 **4개 통과**. 연결 프로젝트 사용, 잘못된 소유자/프로젝트 덮어쓰기 거부 포함.
+- `npm run device:check`: Firebase 파일 일치·Expo 소유자·프로젝트 연결 모두 true, 로컬 설정 오류 없음.
+- 회사 모드의 Expo config에서 실제 소유자·프로젝트·slug와 양쪽 개발 package/bundle 확인.
+- 클라우드에서 의존성 설치·Expo Doctor·prebuild를 거쳐 JavaScript 번들 생성 단계까지 진입했다.
+- 수정 후 TypeScript 재검사 및 Expo introspection에서 Kotlin 2.4.20 적용을 확인했다. SQLCipher·Android 백업 차단·회사 프로젝트 설정은 유지한다.
+
+## 다음 단계
+
+1. Android 휴대폰에 개발 APK를 설치하고 실제 실행을 확인한다. 카메라·암호화 보관함·기기 재시작 검증도 별도로 진행한다. 현재 회사 모드의 현장 화면은 읽기 전용이다.
+2. Google Play Console 및 Android Play Integrity 공급자 설정을 준비한다. 개발 서명의 Firebase SHA-256 등록은 완료했으며 App Check 검증 조건을 우회하지 않는다.
+3. 최신 운영 기준으로 읽기 API와 필요한 조회 인덱스·native 앱 허용 목록을 적용하고 직원이 본인 계정으로 로그인·현장 조회를 시험한다. 현재 읽기 API는 아직 배포하지 않았다.
+4. iPhone EAS 내부 설치본·TestFlight·App Store 배포에는 활성 Apple Developer 멤버십과 기기/서명이 필요하다. 사용자는 비용 필요 여부를 문의했으며 가입 완료는 아직 확인하지 못했다. Mac의 Xcode Personal Team 무료 시험은 7일 재설치 제한이 있다. [Apple 개발자 계정 안내](https://developer.apple.com/help/account/basics/about-your-developer-account).
+5. 회사 현장의 방문 생성·사진 업로드·Drive 보관·PDF 생성·CRM 발송 구현을 이어간다. 현재 회사 화면은 읽기 전용이다.
+
+이 문서는 2026-10-26 준비 문서의 ‘Expo 미연결’ 상태를 대체한다. 계정 결제·운영 API 배포·고객 발송은 이번 프로젝트 연결 작업에서 수행하지 않았다.

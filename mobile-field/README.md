@@ -4,7 +4,7 @@
 
 이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. 기본 실행은 가상 현장 미리보기다. 회사 연결은 기기 인증 설정·API 배포·실기기 시험 전이며, Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 로그인·조회 구현 결과](../docs/field-mobile/employee-login-2026-10-26.md)를 참고한다.
 
-Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 두 스토어 개발자 계정은 아직 없고 Expo도 로그인 전이다. [설치본 준비 상태와 계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며, 현재는 회사 Expo 프로젝트 미연결을 보고한다.
+Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
 ## 이번에 구현한 범위
 
@@ -37,7 +37,7 @@ npx expo run:android
 npx expo run:ios
 ```
 
-Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 필요하다. 이 PC에서는 네이티브 설치 파일을 빌드하거나 실기기를 연결하지 않았다. 회사 개발자 계정과 EAS 프로젝트를 연결하거나 유료 빌드를 요청하지 않았다.
+로컬 빌드는 Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 필요하다. 이번에는 회사 Expo 프로젝트의 클라우드 빌드를 사용한다. 무료 플랜과 사용량을 확인했으며 유료 플랜 가입이나 결제는 실행하지 않았다. 실제 휴대폰 설치·시험은 아직 진행 전이다.
 
 앱 ID는 개발용 `kr.co.bringengineering.fieldnotes.dev`이며 CRM 데스크톱과 분리했다. EAS production profile은 의도적으로 구성 검사에서 실패한다. 운영 연결 검증 후 출시 구성을 별도로 완성해야 한다.
 
