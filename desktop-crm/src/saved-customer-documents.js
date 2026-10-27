@@ -35,18 +35,29 @@
       && /^01\d{8,9}$/.test(record.savedCustomerDocument.recipientPhone)
       && record.savedCustomerDocument.recipientPhone === phone(customer.phone));
   }
+  function historyMatches(row, customer, kind) {
+    const record = normalize(row);
+    return Boolean(record && !record.archivedAt && !row.deletedAt && row.deleted !== true && customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true
+      && record.savedCustomerDocument.kind === kind && record.savedCustomerDocument.customerId === String(customer.id));
+  }
+  function historyList(rows, customer, kind) {
+    return (Array.isArray(rows) ? rows : []).filter(row => historyMatches(row, customer, kind)).map(row => ({...normalize(row),
+      editable: kind === "quote" && row.quoteDraft?.version === 1 && Boolean(row.quoteDraft.quote) && /^[a-f0-9]{64}$/.test(row.quoteDraft.sha256 || ""),
+      isRevision: kind === "quote" && Boolean(row.quoteDraft?.parentDocumentId)}))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
   function list(rows, customer, kind) {
     return (Array.isArray(rows) ? rows : []).filter(row => matches(row, customer, kind)).map(normalize)
       .sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
   }
-  function resolve(rows, customers, request) {
+  function resolve(rows, customers, request, options = {}) {
     const input = request || {};
     const customer = (customers || []).find(item => String(item.id) === String(input.customerId));
     const row = (rows || []).find(item => item && item.id === input.documentId);
-    if (!matches(row, customer, input.kind)) throw new Error("선택 고객과 저장 문서가 일치하지 않습니다. 목록을 새로 확인해 주세요.");
+    if (!(options.history === true ? historyMatches(row, customer, input.kind) : matches(row, customer, input.kind))) throw new Error("선택 고객과 저장 문서가 일치하지 않습니다. 목록을 새로 확인해 주세요.");
     const record = normalize(row);
     if (record.updatedAt !== input.updatedAt || record.savedCustomerDocument.sha256 !== input.sha256) throw new Error("저장 문서가 변경되었습니다. 다시 선택하고 미리보기를 확인해 주세요.");
     return {record, customer};
   }
-  return Object.freeze({KINDS, normalize, matches, list, resolve, phone});
+  return Object.freeze({KINDS, normalize, matches, historyMatches, historyList, list, resolve, phone});
 });

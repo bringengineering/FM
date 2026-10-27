@@ -60,3 +60,23 @@ test('local export accepts absent phone but CRM recipient validation stays stric
   for(const format of ['pdf','xlsx']) assert.equal((await c.exportAiQuote({quote,copyType:'recipient',format})).ok,true);
   assert.equal(written,2);
 });
+
+test('history shows legacy PDF separately and escapes stored titles', () => {
+  const c=harness();
+  c.aiAssistantState.quoteCustomerId='customer';
+  c.store={customers:[{id:'customer'}],buildingDocuments:[]};
+  c.SavedCustomerDocuments={historyList:()=>[
+    {id:'one',title:'<script>bad</script>',updatedAt:'2026-10-27T12:00:00Z',editable:false,isRevision:false},
+    {id:'two',title:'수정 견적',updatedAt:'2026-10-27T12:00:00Z',editable:true,isRevision:true}
+  ]};
+  c.esc=c.attr=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+  const html=c.quoteHistoryMarkup();
+  assert.match(html,/PDF만 보관/);
+  assert.match(html,/&lt;script>/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/data-quote-history-preview="one"/);
+  assert.doesNotMatch(html,/data-quote-history-load="one"/);
+  assert.match(html,/data-quote-history-load="two"/);
+  c.cleaningQuoteContext.orderId='order';
+  assert.match(c.quoteHistoryMarkup(),/data-quote-history-load="two" disabled/);
+});

@@ -6,7 +6,7 @@ const READ_OR_CONTROL = [
   'crm:accounts-load',
   'crm:weekly-report-delivery-status',
   'crm:weekly-report-draft-load',
-  'crm:customer-document-preview',
+  'crm:customer-document-preview', 'crm:quote-draft-load',
   'crm:project-weekly-reports-load',
   'crm:company-strategy-load',
   'crm:billing-ledger-load',
