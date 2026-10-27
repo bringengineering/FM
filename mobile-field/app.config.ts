@@ -8,8 +8,9 @@ if (process.env.FIELD_APP_ENV && process.env.FIELD_APP_ENV !== 'development') {
 }
 const company = companyConfig(process.env, __dirname);
 const build = buildIdentity(process.env, require('./config/eas-project.json'));
-// Firebase Auth 25 uses Kotlin 2.4 metadata; 2.4.21 also supports this app's AGP 9.2.1.
-const companyPlugins: NonNullable<ExpoConfig['plugins']> = company ? ['@react-native-firebase/app', '@react-native-firebase/auth', '@react-native-firebase/app-check', ['expo-build-properties', { android: { kotlinVersion: '2.4.21' }, ios: { useFrameworks: 'dynamic' } }]] : [];
+// Firebase Auth 25 needs Kotlin 2.4. Expo's Pika/modules compiler artifacts exist
+// for 2.4.20 (not 2.4.21); 2.4.20 also supports this app's AGP 9.2.1.
+const companyPlugins: NonNullable<ExpoConfig['plugins']> = company ? ['@react-native-firebase/app', '@react-native-firebase/auth', '@react-native-firebase/app-check', ['expo-build-properties', { android: { kotlinVersion: '2.4.20' }, ios: { useFrameworks: 'dynamic' } }]] : [];
 
 const config: ExpoConfig = {
   name: 'BRING CARE 현장노트 개발', slug: 'bring-care-field-notes',
