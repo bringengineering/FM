@@ -26,6 +26,7 @@ const { createWeeklyDeliveryService } = require("./weekly-report-delivery");
 const { weeklyReportPdfHtml } = require("./weekly-report-pdf");
 const QuoteCore = require("./quote-core");
 const SavedCustomerDocuments = require("./saved-customer-documents");
+const SavedDocumentDelivery = require("./saved-document-delivery");
 const MessagePolicy = require("./message-policy");
 const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
 const WorkReportArchive = require("./work-report-archive");
@@ -2732,6 +2733,33 @@ async function previewSavedCustomerDocument(input) {
 }
 
 const savedDocumentSendAttempts = new Map();
+async function mutateCustomerDocumentDelivery(id, change, session) {
+  if (!/^saved_[0-9a-f-]{36}$/.test(id)) throw new Error("저장 문서 식별자를 확인해 주세요.");
+  const location = `crmShared/data/buildingDocuments/${id}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    session.check();
+    const snapshot = await remoteClient.dbReadWithEtag(location, false, session.guard); session.check();
+    const row = snapshot.value;
+    if (!row || typeof row !== "object" || Array.isArray(row) || row.id !== id || !SavedCustomerDocuments.normalize(row)) throw new Error("저장 문서를 다시 확인해 주세요.");
+    const next = change(row);
+    if (!next || next.id !== id || !SavedCustomerDocuments.normalize(next)) throw new Error("발송 이력을 저장하지 못했습니다.");
+    try { await remoteClient.dbConditionalPut(location, next, snapshot.etag, false, session.guard); session.check(); return next; }
+    catch (error) { if (error.code !== "BUILDING_SCHEDULE_CONFLICT" || attempt === 2) throw error; }
+  }
+}
+const savedDocumentDelivery = SavedDocumentDelivery.createService({
+  mutate: mutateCustomerDocumentDelivery,
+  verify: async (input, session) => {
+    const latest = await remoteClient.loadStore(); session.check();
+    const {record, customer} = SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, input);
+    if (input.kind === "buildingMonthlyReport") {
+      const decision = MessagePolicy.evaluateMonthlyReportRequest(customer);
+      if (!decision.allowed) throw Object.assign(new Error(decision.message), {code: decision.code});
+      if (!(latest.buildings || []).some(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true && row.id === record.buildingId && row.ownerCustomerId === customer.id)) throw new Error("월간보고서 건물과 수신 고객의 연결을 다시 확인해 주세요.");
+    }
+  },
+  deliver: payload => runDocumentDelivery("createAndSend", payload),
+});
 async function sendSavedCustomerDocument(input) {
   const session = savedDocumentSession(true);
   if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
@@ -2761,15 +2789,17 @@ async function sendSavedCustomerDocument(input) {
   // PDF creation timestamps vary on each export; deduplicate the immutable CRM
   // revision rather than freshly rendered PDF bytes.
   const attemptId = crypto.createHash("sha256").update([session.user.uid, record.savedCustomerDocument.kind, record.id, record.updatedAt, customer.id, SavedCustomerDocuments.phone(customer.phone), record.savedCustomerDocument.sha256 || ""].join("\n")).digest("hex");
-  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 저장본은 이미 발송 요청했습니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.");
-  savedDocumentSendAttempts.set(attemptId, "unknown");
   const customerId = "saved_" + crypto.randomBytes(16).toString("hex");
-  const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
+  const payload = {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
     documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: completionReport ? WorkReportMessage.documentName(completionReport) : record.title,
     ...(completionReport ? {completionReport} : {}),
     ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, crmBuildingId: monthlyBuilding.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
     expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
-    delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
+    delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}};
+  if (input.kind === "quote" || input.kind === "buildingMonthlyReport") return savedDocumentDelivery.send(input, session, payload);
+  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 저장본은 이미 발송 요청했습니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.");
+  savedDocumentSendAttempts.set(attemptId, "unknown");
+  const sent = await runDocumentDelivery("createAndSend", payload);
   session.check();
   if (!sent?.ok) {
     if (["DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_CONFIGURATION_ERROR", "DELIVERY_UNAVAILABLE", "AUTH_REQUIRED", "FORBIDDEN", "INVALID_INPUT", "INPUT_TOO_LARGE"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);

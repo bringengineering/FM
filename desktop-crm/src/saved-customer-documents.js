@@ -22,7 +22,8 @@
       savedCustomerDocument: {version: 1, kind: doc.kind, customerId: doc.customerId, recipientPhone: doc.recipientPhone,
         sha256: doc.sha256, size: doc.size, month: text(doc.month, 7),
         ...(workReport ? {reportId: doc.reportId, reportUpdatedAt: doc.reportUpdatedAt} : {})},
-      ...(workReport && row.workReportDelivery ? {workReportDelivery: delivery(row.workReportDelivery)} : {})};
+      ...(workReport && row.workReportDelivery ? {workReportDelivery: delivery(row.workReportDelivery)} : {}),
+      ...(!workReport && row.customerDocumentDelivery ? {customerDocumentDelivery: delivery(row.customerDocumentDelivery)} : {})};
   }
   function delivery(input) {
     const status = ["sending", "requested", "failed", "unknown"].includes(input.status) ? input.status : "unknown";
