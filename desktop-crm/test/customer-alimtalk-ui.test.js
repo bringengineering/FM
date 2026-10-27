@@ -15,7 +15,7 @@ test("통합 발송 화면은 숫자 단계 표시 없이 자료를 고르고 �
   assert.match(html, /<h3>고객 선택<\/h3>/);
   assert.match(html, /<h3>발송 종류<\/h3>/);
   const app = read("app.js");
-  assert.match(app, /MessageUI.renderHistory\(\{ deliveries: customerMessageDeliveries\(\) \}\)/);
+  assert.match(app, /MessageUI.renderHistory\(\{ deliveries: customerMessageDeliveries\(\)/);
   assert.match(app, /data-alimtalk-tools/);
   assert.match(app, /embedded: true/);
 });
@@ -38,7 +38,7 @@ test("통합 화면 렌더링은 자료가 없어도 동작하고 실패한 인�
     selectedMessageCustomerId: "", selectedMessageTemplateId: "", selectedMessageSourceType: "", selectedMessageSourceId: "",
     customerMessageDeliveries: () => [{customerName: "샘플", templateLabel: "안내", status: "requested"}],
     renderCustomerMessageTools: () => "<section>기존 안내 도구</section>", loadAiQuoteSeal: () => {sealCalls++;},
-    normalizedPhone: value => String(value).replace(/\D/g, "")};
+    normalizedPhone: value => String(value).replace(/\D/g, ""), customerBuildings: () => []};
   vm.runInNewContext(fn + "\nrenderCustomerAlimTalk();", context);
   assert.match(output.innerHTML, /알림톡 발송/);
   assert.match(output.extra, /발송 이력/);
@@ -56,6 +56,16 @@ test("알림톡 발송 화면은 네 가지 발송 종류와 고객 검색·선�
   assert.doesNotMatch(html, /고객 <김>/);
   assert.match(html, /010-\*\*\*\*-5678/);
   assert.doesNotMatch(html, /010-1234-5678/);
+});
+
+test("별명, 연결 건물, 공백 없는 전화번호 검색과 검색 해제를 지원한다", () => {
+  const c = {...customer("c1", "고객", "010-1234-5678"), nickname: "내부별명", searchBuildings: ["햇빛빌라", "테스트로 12"]};
+  for (const query of ["내부별명", "햇빛빌라", "테스트로", "01012345678", "5678"]) assert.equal(AlimTalkUI.matchesCustomer(c, query), true);
+  assert.equal(AlimTalkUI.matchesCustomer(c, "없는고객"), false);
+  const html = AlimTalkUI.render({customers: [c, customer("c2", "다른 고객", "010-2222-3333")], search: "내부별명"});
+  assert.match(html, /내부별명/);
+  assert.match(html, /data-alimtalk-recipient="c2"/); // The hidden row remains available when the search is cleared.
+  assert.match(html, /data-alimtalk-search-row="[^"]*" hidden><input[^>]*data-alimtalk-recipient="c2"/);
 });
 
 test("문서 자료는 고객별로 한 명만 고를 수 있고 완성 자료·관리자·발신 설정을 요구한다", () => {

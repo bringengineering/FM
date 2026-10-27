@@ -86,6 +86,7 @@
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
   let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", savedDocumentId: "", busy: false, result: "", receipt: null, messageToolsOpen: false };
+  const customerDocumentDeliveryStatus = new Map();
   let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
@@ -4765,12 +4766,16 @@
   function customerMessageDeliveries() {
     const value = operations && operations.messageDeliveries;
     const rows = Array.isArray(value) ? value : Object.values(value || {});
-    const reports = (store.buildingDocuments || []).filter(row => row.savedCustomerDocument?.kind === "workReport" && row.workReportDelivery).map(row => ({
+    const reports = (store.buildingDocuments || []).filter(row => row.savedCustomerDocument && (row.workReportDelivery || row.customerDocumentDelivery)).map(row => {
+      const delivery = row.workReportDelivery || row.customerDocumentDelivery;
+      const checked = customerDocumentDeliveryStatus.get(String(delivery.messageId || ""));
+      const status = checked?.generation === authGeneration ? checked.status : delivery.status;
+      return ({
       id: row.id, documentId: row.id, documentType: "completion_report", documentName: row.title,
-      customerId: row.savedCustomerDocument.customerId, customerName: customerById(row.savedCustomerDocument.customerId)?.name || "건물주",
-      channel: "kakao", templateLabel: "작업 결과보고서", requestedAt: row.workReportDelivery.requestedAt,
-      status: ({sending: "발송 처리 중", requested: "발송 요청 접수", failed: "발송 준비 실패", unknown: "발송 결과 확인 필요"})[row.workReportDelivery.status] || "확인 필요",
-    }));
+      customerId: row.savedCustomerDocument.customerId, customerName: customerDisplayName(customerById(row.savedCustomerDocument.customerId)) || "건물주",
+      channel: "kakao", templateLabel: SavedCustomerDocuments.KINDS[row.savedCustomerDocument.kind] || "문서", requestedAt: delivery.requestedAt,
+      messageId: delivery.messageId, status: ({sending: "발송 처리 중 · 결과 확인 필요", requested: "전달 확인 중", delivered: "전달 완료", failed: "전달 실패", unknown: "발송 결과 확인 필요"})[status] || "확인 필요",
+    }); });
     return [...rows, ...reports].sort((left, right) => String(right.requestedAt || "").localeCompare(String(left.requestedAt || "")));
   }
 
@@ -4844,7 +4849,7 @@
     const selectedDecision = customer ? MessagePolicy.evaluateMessageRequest({ customer, templateId: template.id, channel: "kakao", sourceType: state.sourceType, sourceId: state.sourceId }) : { allowed: false };
     const selectedBuildingOwner = building && customer && String(building.ownerCustomerId || "") === String(customer.id);
     main.innerHTML = CustomerAlimTalkUI.render({
-      customers,
+      customers: customers.map(item => ({...item, searchBuildings: customerBuildings(item).filter(building => !building.archivedAt && !building.deletedAt && building.deleted !== true).flatMap(building => [building.name, building.roadAddress, building.address, ...(Array.isArray(building.aliases) ? building.aliases : [])]).filter(Boolean)})),
       selectedCustomerIds: state.selectedCustomerIds,
       category: state.category,
       search: state.search,
@@ -4881,7 +4886,7 @@
       selectedMessageSourceId = state.sourceId;
       main.insertAdjacentHTML("beforeend", `<details class="alimtalk-legacy-tools" data-alimtalk-tools ${state.messageToolsOpen ? "open" : ""}><summary>안내 상세 작성·SMS·수신 동의 관리</summary>${renderCustomerMessageTools()}</details>`);
     }
-    main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries() }));
+    main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries(), adminCanSend: canAdministerSecurity(), busy: state.busy }));
     if (state.busy) main.querySelectorAll?.("input, select, textarea, button").forEach(control => { control.disabled = true; });
     if (!documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
     if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
@@ -4992,7 +4997,7 @@
         const sendGeneration = authGeneration;
         let result;
         try { result = await api.sendSavedCustomerDocument(request); }
-        finally { if (request.kind === "workReport" && request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
+        finally { if (request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
         if (sendGeneration !== authGeneration) return;
         if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
         state.receipt = {generation: sendGeneration, messageId: String(result.messageId || ""), status: result.status === "requested" ? "requested" : "unknown", label: request.title, kind: request.kind, documentId: request.documentId, updatedAt: request.updatedAt, customerId: customer.id};
@@ -14470,6 +14475,24 @@
 
   document.addEventListener("click", async event => {
     if (currentView === "customerAlimTalk" && customerAlimTalkState.busy && event.target.closest("[data-alimtalk-category], [data-alimtalk-clear], [data-alimtalk-open-quote], [data-alimtalk-open-monthly], [data-alimtalk-send], [data-alimtalk-preview], [data-alimtalk-status]")) return;
+    const historyStatus = event.target.closest("[data-alimtalk-history-status]");
+    if (historyStatus && currentView === "customerAlimTalk") {
+      if (customerAlimTalkState.busy || !canAdministerSecurity()) return;
+      const messageId = String(historyStatus.dataset.alimtalkHistoryStatus || "");
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(messageId)) return;
+      const generation = authGeneration;
+      customerAlimTalkState.busy = true;
+      renderCustomerAlimTalk();
+      try {
+        const result = await api.readCustomerDocumentDelivery({messageId});
+        if (generation !== authGeneration) return;
+        if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error("전달 상태를 확인하지 못했습니다. 재발송하지 말고 다시 확인해 주세요.");
+        customerDocumentDeliveryStatus.set(messageId, {generation, status: result.status});
+        showToast(result.status === "delivered" ? "전달 완료를 확인했습니다. 읽음 여부는 별도입니다." : result.status === "failed" ? "전달 실패를 확인했습니다." : "전달 상태를 확인했습니다. 결과가 불확실하면 재발송하지 마세요.");
+      } catch (error) { if (generation === authGeneration) showToast(error.message || "전달 상태를 확인하지 못했습니다.", "error"); }
+      finally { customerAlimTalkState.busy = false; if (generation === authGeneration && currentView === "customerAlimTalk") renderCustomerAlimTalk(); }
+      return;
+    }
     if (event.target.closest("[data-alimtalk-status]") && currentView === "customerAlimTalk") { void refreshCustomerAlimTalkDelivery(); return; }
     if (event.target.closest("[data-alimtalk-preview]") && currentView === "customerAlimTalk") {
       await previewCustomerDocument();
@@ -20251,9 +20274,11 @@
       main.querySelectorAll("[data-alimtalk-search-row]").forEach(row => {
         const id = row.querySelector("[data-alimtalk-recipient]")?.dataset.alimtalkRecipient;
         const customer = id && customerById(id);
-        const haystack = [row.dataset.alimtalkSearchRow, customer && customer.phone].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
-        row.hidden = Boolean(query) && !haystack.includes(query);
+        const searchBuildings = customer ? customerBuildings(customer).filter(building => !building.archivedAt && !building.deletedAt && building.deleted !== true).flatMap(building => [building.name, building.roadAddress, building.address, ...(Array.isArray(building.aliases) ? building.aliases : [])]).filter(Boolean) : [];
+        row.hidden = !customer || !CustomerAlimTalkUI.matchesCustomer({...customer, searchBuildings}, query);
       });
+      const noResults = main.querySelector("[data-alimtalk-no-results]");
+      if (noResults) noResults.hidden = [...main.querySelectorAll("[data-alimtalk-search-row]")].some(row => !row.hidden);
       return;
     }
     const refundForm = event.target.closest?.("#cleaningRefundForm");
