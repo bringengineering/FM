@@ -10058,7 +10058,8 @@
 
   function reportEditor(R, draft) {
     const buildings = workReportBuildings(draft.buildingId);
-    const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || null;
+    const directCustomer = !draft.buildingId && draft.customerId ? customerById(draft.customerId) : null;
+    const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || (directCustomer ? {name: directCustomer.name, address: directCustomer.address, ownerCustomerId: directCustomer.id} : null);
     const linkedOrders = cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId);
     const selectedOrderIsKnown = linkedOrders.some(item => item.id === draft.cleaningOrderId);
     const addressParts = workReportAddressParts(draft, selectedBuilding);
@@ -10069,7 +10070,7 @@
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) blockers.push({ key: "analysisBusy", text: "AI 분석·초안 작성을 마친 뒤 저장해 주세요." });
     const sum = R.summarizeItems(draft);
     const reportOwner = (store.customers || []).find(row => String(row.id) === String(selectedBuilding?.ownerCustomerId || "") && !row.archivedAt && !row.deletedAt && row.deleted !== true);
-    const basicReady = Boolean(draft.buildingId && draft.workDate);
+    const basicReady = Boolean((draft.buildingId || directCustomer) && draft.workDate);
     const photosReady = sum.photos > 0;
     const issueCount = draft.items.filter(item => R.itemIssue(item, draft.kind)).length;
     const aiReady = Boolean(draft.summary.trim());
@@ -10116,7 +10117,7 @@
             <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>고객을 선택하면 고객 등록 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>고객·현장 <em>필수</em></span><select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select></label>
+              <label><span>고객·현장 <em>필수</em></span>${draft.customerId && !draft.buildingId ? `<input type="hidden" name="buildingId" value=""><input value="${esc(directCustomer?.name || draft.buildingName)}" readonly><small>현장노트에서 선택한 고객입니다.</small>` : `<select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select>`}</label>
               <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
@@ -10317,13 +10318,13 @@
       const doc = archived.record.savedCustomerDocument;
       const owner = customerById(doc.customerId);
       const building = (store.buildings || []).find(row => row.id === archived.record.buildingId);
-      if (!owner || building?.ownerCustomerId !== owner.id || !SavedCustomerDocuments.matches(archived.record, owner, "workReport")) {
+      if (!owner || (building?.ownerCustomerId || archived.record.customerId) !== owner.id || !SavedCustomerDocuments.matches(archived.record, owner, "workReport")) {
         showToast("저장되었습니다. 건물주 연결·휴대전화 번호를 확인한 뒤 고객 알림에서 발송해 주세요.");
         return;
       }
       if (!canAdministerSecurity()) { showToast("저장되었습니다. 고객 알림 발송은 관리자에게 요청해 주세요."); return; }
       const accepted = await requestConfirmation({title: "저장되었습니다.", description: "고객 알림을 보내시겠습니까?",
-        target: `${building.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
+        target: `${building?.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
         message: "브링케어 카카오 알림톡으로 저장한 보고서 보기 링크를 보냅니다. 링크는 7일 뒤 만료됩니다.",
         warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success"});
       if (!accepted || !active()) return;

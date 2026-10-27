@@ -283,6 +283,7 @@
       flowId: text(value.flowId, 80),
       cleaningOrderId: text(value.cleaningOrderId, 80),
       buildingId: text(value.buildingId, 80),
+      ...(/^[A-Za-z0-9_-]{1,120}$/.test(value.customerId || "") ? {customerId: value.customerId} : {}),
       buildingName: text(value.buildingName, 200),
       kind: kindOf(kind) ? kind : "moveIn",
       title: text(value.title, 200),
@@ -353,7 +354,7 @@
   function validateReport(source) {
     const report = normalizeReport(source);
     if (!report.id) return { ok: false, error: "보고서 번호가 없습니다.", code: "VALIDATION_ERROR" };
-    if (!report.buildingId) return { ok: false, error: "어느 건물인지 정해 주세요.", code: "BUILDING_REQUIRED" };
+    if (!report.buildingId && !report.customerId) return { ok: false, error: "작업할 고객 또는 건물을 정해 주세요.", code: "BUILDING_REQUIRED" };
     if (!report.workDate) return { ok: false, error: "작업한 날짜를 골라 주세요.", code: "DATE_REQUIRED" };
     const closed = report.items.filter(item => item.status !== "skipped");
     if (["moveIn", "common"].includes(report.kind) && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
