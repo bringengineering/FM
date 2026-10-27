@@ -2,11 +2,11 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. **2026-10-27 Android APK 설치 확인 후 Play Integrity 설정과 읽기 API 운영 배포를 완료했다. 실기기 로그인 재시도 결과는 확인 중이다.** 기본 실행은 가상 현장 미리보기다. Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 Android 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
+이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. **2026-10-27 Android 0.1.1 실기기 로그인·회사 권한·빈 현장 목록 조회까지 확인했다.** Play Integrity 설정과 읽기 API 운영 배포도 완료했다. 현재 업무 32건 모두 건물 연결이 없어 현장 상세의 긍정 조회는 검증 전이다. 기본 실행은 가상 현장 미리보기다. Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 Android 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
-최신 Android 설치본은 **0.1.1 (2)**다. 실제 기기에서 발생한 로그인 오류를 구분하도록 비밀번호·이메일 인증·앱 등록·기기 attestation 안내를 나눴다. APK 생성과 동일 서명 확인을 완료했고 사용자의 업데이트 후 재시도 결과를 기다리고 있다. PC 로그인은 정상이라는 사용자 확인만 있으며 모바일 정상 로그인으로 간주하지 않는다.
+최신 Android 설치본은 **0.1.1 (2)**다. 실제 기기에서 발생한 로그인 오류를 구분하도록 비밀번호·이메일 인증·앱 등록·기기 attestation 안내를 나눴다. APK 생성과 동일 서명 확인을 완료했고 사용자가 업데이트 후 로그인 성공을 확인했다. 운영 서버의 `context`·`jobs` HTTP 200도 확인했다.
 
 ## 이번에 구현한 범위
 
