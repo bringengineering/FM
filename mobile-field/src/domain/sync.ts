@@ -6,7 +6,7 @@ import { FieldError, LIMITS, type Photo, type Vault } from './model';
 export class SyncRunner {
   private active?: Promise<void>;
   private controller = new AbortController();
-  constructor(private vault: Vault, private api: UploadApi) {}
+  constructor(private vault: Vault, private api: UploadApi, private visitId?:string) {}
   stop(): void { this.controller.abort(); }
   run(): Promise<void> {
     if (this.active) return this.active;
@@ -52,6 +52,6 @@ export class SyncRunner {
   private async drain(): Promise<void> {
     this.live(); const { photos } = await this.vault.load();
     // Sequential first release keeps memory bounded to one decoded photograph.
-    for (const photo of photos) { if (this.controller.signal.aborted) return; if (photo.state !== 'ready' && photo.state !== 'auth_blocked') await this.upload(photo); }
+    for (const photo of photos) { if (this.controller.signal.aborted) return; if(this.visitId&&photo.visitId!==this.visitId)continue;if (photo.state !== 'ready' && photo.state !== 'auth_blocked') await this.upload(photo); }
   }
 }

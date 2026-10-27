@@ -2,7 +2,7 @@ export const LIMITS = Object.freeze({ photoBytes: 20 * 1024 * 1024, pixels: 40_0
 export type Phase = 'before' | 'during' | 'after';
 export type PhotoState = 'queued' | 'uploading' | 'validating' | 'drive_pending' | 'crm_link_pending' | 'ready' | 'failed' | 'auth_blocked';
 export type ItemStatus = 'recorded' | 'done' | 'partial' | 'skipped';
-export interface Job { id: string; buildingId: string; title: string; address: string; kind: 'common' | 'moveIn'; workDate: string }
+export interface Job { id: string; buildingId: string; customerId?: string; title: string; address: string; kind: 'common' | 'moveIn'; workDate: string }
 export interface Photo {
   id: string; visitId: string; ownerUid: string; itemKey: string; phase: Phase; caption: string; included: boolean;
   capturedAt: string; mime: 'image/jpeg'; bytes: number; sha256: string; width: number; height: number;
@@ -21,6 +21,7 @@ export interface Vault {
   savePhoto(photo: Photo, bytes: Uint8Array, expectedVisitRevision: number): Promise<void>;
   editPhoto(photo: Photo, expectedVisitRevision: number): Promise<void>;
   prepareTransfer(photoId: string): Promise<Photo>;
+  linkRevision?(visitId: string, revision: number, photoIds: string[]): Promise<void>;
   updateTransfer(photoId: string, patch: Pick<Photo, 'state' | 'receivedBytes' | 'uploadId' | 'errorCode'>): Promise<void>;
   readBytes(photoId: string): Promise<Uint8Array>;
   close(): Promise<void>;

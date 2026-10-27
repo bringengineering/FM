@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { fetch as expoFetch } from 'expo/fetch';
 import { FieldError } from '../domain/model';
-import { CompanySiteApi } from '../api/sites';
+import { CompanyRecordingApi } from '../api/recording';
 import { CompanySession } from './session';
 import { createEmployeeIdentity } from './firebase';
 
@@ -13,5 +13,5 @@ export async function createCompanySession(): Promise<CompanySession> {
     || !Array.isArray(config.nativeAppIds) || config.nativeAppIds.length !== 2
     || !config.nativeAppIds.every((id: unknown) => typeof id === 'string' && /^1:\d+:(android|ios):[a-f0-9]+$/.test(id))) throw new FieldError('NATIVE_APP_NOT_CONFIGURED');
   const identity = await createEmployeeIdentity(config);
-  return new CompanySession(identity, uid => new CompanySiteApi(config.apiBase, uid, () => identity.credentials(uid), expoFetch as typeof fetch));
+  return new CompanySession(identity, uid => new CompanyRecordingApi(config.apiBase, uid, () => identity.credentials(uid), expoFetch as typeof fetch));
 }

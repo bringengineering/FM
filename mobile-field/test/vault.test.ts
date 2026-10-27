@@ -7,6 +7,18 @@ import { reviewIssues } from '../src/domain/report';
 import { makeVault, visit, photo, jpeg } from './helpers';
 
 describe('persistent vault and report integrity', () => {
+  it('pins only an acknowledged revision and permits captions after Drive upload',async()=>{
+    const {vault}=await makeVault();try{
+      await vault.saveVisit(visit(),null);await vault.savePhoto(await photo(),jpeg,1);
+      await expect(vault.linkRevision('visit-a',1,['photo-a'])).rejects.toThrow('REVISION_CONFLICT');
+      await expect(vault.linkRevision('visit-a',2,[])).rejects.toThrow('REVISION_CONFLICT');
+      await vault.linkRevision('visit-a',2,['photo-a']);
+      await vault.updateTransfer('photo-a',{state:'ready',receivedBytes:jpeg.length,uploadId:'upload-a'});
+      const p=(await vault.load()).photos[0]!;await vault.editPhoto({...p,caption:'수정한 설명',included:false},2);
+      const next=await vault.load();expect(next.photos[0]?.state).toBe('ready');expect(next.photos[0]?.included).toBe(false);expect(next.visits[0]?.revision).toBe(3);
+      await expect(vault.editPhoto({...next.photos[0]!,phase:'after'},3)).rejects.toThrow('PHOTO_EDIT_REQUIRES_SERVER');
+    }finally{await vault.close();}
+  });
   it('reopens the same committed photo bytes and draft after process restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'field-vault-')); const path = join(dir, 'test.db');
     try {

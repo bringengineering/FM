@@ -95,10 +95,19 @@ export class SqlVault implements Vault {
       const visit = await this.visit(tx, previous.visitId, expected);
       // Transfer metadata and original bytes cannot be edited through the UI.
       if (photo.visitId !== previous.visitId || !catalog(visit.job.kind).some(item => item.key === photo.itemKey)) throw new FieldError('PHOTO_INVALID');
-      if (previous.uploadId || previous.state !== 'queued') throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
+      if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && (photo.itemKey!==previous.itemKey||photo.phase!==previous.phase)) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
       const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption };
       await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?', JSON.stringify(updated), photo.id);
       await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
+    });
+  }); }
+  linkRevision(visitId: string, revision: number, photoIds: string[]): Promise<void> { return this.run(async () => {
+    await this.transaction(async tx => {
+      await this.visit(tx, visitId, revision);
+      const rows = await tx.getAllAsync<{body:string}>('SELECT body FROM photos WHERE visit_id = ?', visitId);
+      const photos=rows.map(row=>JSON.parse(row.body) as Photo);
+      if(photos.length!==photoIds.length||photos.some(p=>!photoIds.includes(p.id)))throw new FieldError('REVISION_CONFLICT');
+        for(const photo of photos){assertOwner(photo.ownerUid,this.uid);await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?',JSON.stringify({...photo,reservationRevision:revision,...(photo.state==='auth_blocked'?{state:'failed',errorCode:undefined}:{})}),photo.id);}
     });
   }); }
   prepareTransfer(id: string): Promise<Photo> { return this.run(async () => {

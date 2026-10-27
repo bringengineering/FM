@@ -14,7 +14,7 @@ export const catalog = (kind: string) => core.itemCatalogFor(kind);
 export function toReport(visit: Visit, photos: Photo[]): Report {
   const selected = photos.filter(p => p.visitId === visit.id && p.ownerUid === visit.ownerUid && p.included);
   return core.normalizeReport({
-    id: visit.id, buildingId: visit.job.buildingId, buildingName: visit.job.title,
+    id: visit.id, buildingId: visit.job.buildingId, customerId: visit.job.customerId, buildingName: visit.job.title,
     kind: visit.job.kind, siteAddress: visit.job.address, workDate: visit.job.workDate,
     summary: visit.draft.summary, followUp: visit.draft.followUp,
     items: catalog(visit.job.kind).map(item => ({ ...item,

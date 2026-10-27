@@ -1,6 +1,7 @@
 import type { Credentials } from '../api/client';
 import type { CompanySiteContext, CustomerSite, CustomerSitePage, SiteWorkspaceApi } from '../api/sites';
 import { FieldError } from '../domain/model';
+import { CompanyRecordingApi } from '../api/recording';
 
 export interface EmployeeIdentity {
   ready(): Promise<void>; currentUid(): string | null;
@@ -70,6 +71,21 @@ export class CompanySession {
         this.publish({ ...previous, phase: 'ready', context, selected });
       }
     } catch (error) { await this.fail(error, generation); }
+  }
+  recordingApi():CompanyRecordingApi {
+    if(!this.uid||this.state.phase!=='ready')throw new FieldError('AUTH_REQUIRED');
+    const api=this.apiFor(this.uid);if(!(api instanceof CompanyRecordingApi))throw new FieldError('SERVER_RESPONSE_INVALID');return api;
+  }
+  async revalidate():Promise<void>{
+    if(!this.uid||this.state.phase!=='ready'||this.disposed)return;
+    const generation=this.generation,uid=this.uid;
+    try{const context=await this.apiFor(uid).context(this.controller.signal);if(!this.current(generation))return;if(context.actor.uid!==uid||this.identity.currentUid()!==uid)throw new FieldError('AUTH_REQUIRED');this.publish({...this.state,context});}
+    catch(error){
+      // A temporary network loss must not discard an already-open local draft.
+      // Every company read/upload still verifies identity and role at the server.
+      if(this.current(generation)&&this.identity.currentUid()===uid&&error instanceof FieldError&&['NETWORK_UNCERTAIN','SERVER_UNAVAILABLE','RATE_LIMITED'].includes(error.code))return;
+      await this.fail(error,generation);
+    }
   }
   private async fail(error: unknown, generation: number) {
     if (!this.current(generation)) return;

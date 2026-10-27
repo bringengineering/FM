@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { companyConnectionEnabled, createCompanySession } from './auth/runtime';
 import type { CompanySession } from './auth/session';
+import { FieldWorkspace } from './FieldWorkspace';
+import type { CustomerSite } from './api/sites';
+import type { CompanyRecordingApi } from './api/recording';
 
 const messages: Record<string, string> = {
   AUTH_REQUIRED: '회사 계정 인증이나 앱 인증을 확인하지 못했습니다. 다시 로그인해 주세요.',
@@ -43,20 +46,22 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
       <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
     </View>}
     {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
-    <Text style={styles.small}>개발 0.1.2 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
+    <Text style={styles.small}>개발 0.1.3 · 직원 전용 · 활동사진·보고서 보관</Text>
   </ScrollView></SafeAreaView>;
 }
 function SessionScreen({ session }: { session: CompanySession }) {
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
   const [email, setEmail] = useState(''), [password, setPassword] = useState('');
   const [hidden, setHidden] = useState(AppState.currentState !== 'active');
+  const [recording,setRecording]=useState<{uid:string;site:CustomerSite;api:CompanyRecordingApi}>();
+  useEffect(()=>{if(state.phase==='signedOut'||state.phase==='error')setRecording(undefined);},[state.phase]);
   useEffect(() => {
     const listener = AppState.addEventListener('change', next => {
       if (next !== 'active') { setPassword(''); setHidden(true); }
-      else { void session.refresh().finally(() => setHidden(false)); }
+      else { void session.revalidate().finally(() => setHidden(false)); }
     }); return () => listener.remove();
   }, [session]);
-  if (hidden) return <View style={styles.card}><Text style={styles.copy}>회사 정보를 보호하고 있습니다.</Text></View>;
+  if (hidden&&!recording) return <View style={styles.card}><Text style={styles.copy}>회사 정보를 보호하고 있습니다.</Text></View>;
   if (state.phase === 'loading') return <View style={styles.card}><ActivityIndicator accessibilityLabel="회사 권한·현장 확인 중" /><Text style={styles.copy}>회사 권한과 현장을 확인하고 있습니다.</Text></View>;
   if (state.phase !== 'ready') return <View style={styles.card}>
     <Text style={styles.heading}>회사 계정 로그인</Text>
@@ -69,11 +74,12 @@ function SessionScreen({ session }: { session: CompanySession }) {
   const selected = state.selected;
   return <>
     <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text><Action label="목록 새로고침" onPress={() => void session.refresh()} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
-    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Text style={styles.small}>선택한 고객의 최신 정보를 확인했습니다. 이 화면의 촬영·저장 연결은 다음 단계에서 제공됩니다.</Text><Action label="고객 목록으로" onPress={() => void session.refresh()} /></View> : <>
+    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Action label="사진 촬영·보고서 작성" onPress={()=>setRecording({uid:state.context!.actor.uid,site:selected,api:session.recordingApi()})}/><Action label="고객 목록으로" onPress={() => void session.refresh()} /></View> : <>
       {!state.page?.sites.length && <View style={styles.card}><Text style={styles.copy}>이 페이지에 표시할 고객이 없습니다. CRM 고객정보에 등록된 고객을 확인해 주세요.</Text></View>}
       {state.page?.sites.map(site => <View style={styles.card} key={site.id}><Text style={styles.heading}>{site.name}</Text><Text style={styles.copy}>{site.address || '주소 미입력'}</Text><Action label="고객 선택" onPress={() => void session.select(site.id)} /></View>)}
       {state.page?.nextCursor && <Action label="다음 고객 보기" onPress={() => void session.refresh(state.page!.nextCursor)} />}
     </>}
+    {recording&&<Modal visible animationType="slide" onRequestClose={()=>undefined}><FieldWorkspace company={recording} onClose={()=>setRecording(undefined)}/></Modal>}
   </>;
 }
 const styles = StyleSheet.create({

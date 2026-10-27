@@ -18,6 +18,15 @@ it('does not expose company state before server context and sites are both valid
   await f.session.login('staff@example.invalid', 'synthetic-password'); expect(f.session.snapshot().phase).toBe('ready');
   expect(f.api.context).toHaveBeenCalledOnce(); expect(f.api.sites).toHaveBeenCalledWith(null, expect.any(AbortSignal)); f.session.dispose();
 });
+it('foreground revalidation preserves the customer workspace and does not reload the list',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  const previous=f.session.snapshot();await f.session.revalidate();expect(f.session.snapshot()).toEqual(previous);expect(f.api.sites).toHaveBeenCalledOnce();expect(f.api.context).toHaveBeenCalledTimes(2);f.session.dispose();
+});
+it('keeps an open local draft during temporary network loss but locks revoked identity',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  f.api.context=async()=>{throw new FieldError('NETWORK_UNCERTAIN');};await f.session.revalidate();expect(f.session.snapshot().phase).toBe('ready');
+  f.api.context=async()=>{throw new FieldError('AUTH_REQUIRED');};await f.session.revalidate();expect(f.session.snapshot().phase).toBe('error');f.session.dispose();
+});
 it('ignores delayed data after logout', async () => {
   const f = setup(); await f.session.restore(); let finish!: () => void;
   f.api.sites = () => new Promise(resolve => { finish = () => resolve({ sites: [], nextCursor: null }); });

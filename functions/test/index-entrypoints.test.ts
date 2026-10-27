@@ -4902,10 +4902,9 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(31);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(8);
-    expect(registration(entrypoints.fieldMobileApi)).toMatchObject({
-      kind: 'request', options: { region: 'asia-northeast3', cors: false, maxInstances: 2, concurrency: 20, timeoutSeconds: 30 },
-    });
+    expect(registrations.onRequest).toHaveBeenCalledTimes(7);
+    // Mobile is deployed through the separate allowlisted field-mobile codebase.
+    expect('fieldMobileApi' in entrypoints).toBe(false);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(4);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
