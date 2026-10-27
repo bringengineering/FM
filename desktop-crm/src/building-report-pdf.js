@@ -59,8 +59,8 @@ function createBuildingReportHtml(report) {
   const stats = [
     statCard("처리 업무", `${summary.workCount}건`),
     statCard("완료", `${summary.doneCount}건`, "good"),
-    statCard("공실", summary.unitCount ? `${summary.vacantCount} / ${summary.unitCount}호실` : "", summary.vacantCount ? "warn" : ""),
-    statCard("공실률", summary.vacancyRateText),
+    statCard("공실 확인 · 작성일 기준", summary.unitCount ? `${summary.vacantCount} / ${summary.unitCount}호실` : "확인 필요", summary.vacantCount ? "warn" : ""),
+    statCard("공실률", summary.vacancyRateText || "확인 필요"),
   ].join("");
   const contact = [report.company.phone, report.company.email].filter(Boolean).join(" · ");
 
@@ -147,7 +147,7 @@ ${report.narrative && report.narrative.summary ? `<section class="monthly-summar
 <section><h2>이 달 요약</h2><div class="stats">${stats}</div></section>
 <section><h2>날짜별 활동 내역</h2>${worksHtml(report.activities || report.works)}</section>
 ${report.narrative?.attention ? `<section><h2>관리 결과 및 후속 확인</h2><p class="greeting">${html(report.narrative.attention)}</p></section>` : ""}
-<section><h2>호실 현황</h2>${unitsHtml(report.units)}</section>
+<section><h2>호실 현황 · 작성일 기준</h2>${summary.vacancyIncomplete ? `<p class="greeting">호실 상태 또는 기존 공실 기록을 확인해 주세요.${summary.unknownUnitCount ? ` 미확인 ${html(summary.unknownUnitCount)}호실.` : ""}</p>` : ""}${summary.unitDetailsTruncated ? `<p class="greeting">호실 세부 목록은 ${html(report.units.length)}개까지 표시하며, 위 집계는 전체 호실을 기준으로 합니다.</p>` : ""}${unitsHtml(report.units)}</section>
 ${report.narrative && report.narrative.nextMonthPlan ? `<section><h2>다음 달 예정 관리</h2><p class="greeting">${html(report.narrative.nextMonthPlan)}</p></section>` : ""}
 ${summary.billedText ? `<div class="total"><span>${html(report.monthText)} 청구 합계</span><b>${html(summary.billedText)}</b></div>` : ""}
 ${photosHtml(report.photos)}

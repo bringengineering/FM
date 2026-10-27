@@ -42,6 +42,25 @@ test("vacancy all filter renders first while attention remains the default", () 
   assert.match(appSource, /filter === "attention"\s*\?\s*summary\.actionable/);
 });
 
+test("unknown units remain visible in the summary even when the default filter has no confirmed vacancies", () => {
+  const unit = {id:"u1",label:"101호",status:"unknown"};
+  const context = {
+    activeBuildingUnitsForBuilding:()=>[unit], sortedVacancyUnits:items=>items,
+    vacancySummaryForBuilding:()=>({formal:true,total:1,occupied:0,vacant:0,move_out_scheduled:0,maintenance:0,unknown:1,actionable:0}),
+    vacancyUnitStatus:item=>item.status, vacancyUnitSearchText:()=>"", vacancyStatusFilter:"attention", vacancyUnitQuery:"",
+    VACANCY_FILTER_ORDER:["all","attention","vacant","move_out_scheduled","occupied","maintenance","unknown"],
+    VACANCY_FILTER_LABELS:{all:"전체",attention:"공실·예정",vacant:"공실",move_out_scheduled:"공실 예정",occupied:"입주 중",maintenance:"정비 중",unknown:"확인 필요"},
+    buildingArray:()=>[], vacancyLegacyMigrationState:()=>({unresolvedCount:0}),
+    inferredVacancyFloorLabel:()=>"1층", vacancyFloorOrder:()=>1, renderVacancyUnitCard:()=>"", buildingNumberLabel:()=>"",
+    canWriteCRM:()=>false, attr:String, esc:String,
+  };
+  vm.runInNewContext(`${functionSource("renderVacancyDetail")}\nglobalThis.renderDetail=renderVacancyDetail;`,context);
+  const html=context.renderDetail({id:"b1",name:"가상 건물"},"");
+  assert.match(html,/등록된 공실과 공실 예정 호실이 없습니다/);
+  assert.match(html,/상태를 확인하지 않은 호실이 1개/);
+  assert.match(html,/data-vacancy-filter="unknown"/);
+});
+
 test("quick status updates are locked, versioned, and never send structure fields", () => {
   const source = functionSource("saveVacancyQuickStatus");
   assert.match(source, /vacancyUnitSaveLocks\.has\(unitId\)/);

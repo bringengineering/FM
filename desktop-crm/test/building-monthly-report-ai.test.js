@@ -37,6 +37,15 @@ test("다음 달 계획이 없으면 Gemini가 만들지 못하도록 지시한�
   assert.equal(source.confirmedNextMonthPlan, "");
 });
 
+test("호실 자료가 없거나 미확인이면 AI에 0으로 단정하지 않도록 전달한다", () => {
+  const none=Ai.publicReportSource({...report,summary:{unitCount:0,vacantCount:0,vacancyIncomplete:true}}, "");
+  assert.equal(none.metrics.unitCount,null);assert.equal(none.metrics.vacantCount,null);
+  assert.equal(none.metrics.vacancyIncomplete,true);assert.equal(none.metrics.vacancyAsOf,"작성일 기준");
+  assert.match(Ai.promptForBuildingMonthlyNarrative(none),/공실이 없다고 단정하지 마세요/u);
+  const partial=Ai.publicReportSource({...report,summary:{unitCount:10,vacantCount:2,unknownUnitCount:3,vacancyIncomplete:true}}, "");
+  assert.equal(partial.metrics.unknownUnitCount,3);assert.equal(partial.metrics.vacancyRate,"");
+});
+
 test("JSON 코드펜스를 제거해 보고서 문장을 읽는다", () => {
   const parsed = Ai.parseBuildingMonthlyNarrative('```json\n{"summary":"요약","attention":"확인","nextMonthPlan":"계획"}\n```');
   assert.deepEqual(parsed, { summary: "요약", attention: "확인", nextMonthPlan: "계획" });
