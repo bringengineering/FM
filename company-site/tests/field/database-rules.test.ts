@@ -2359,6 +2359,18 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 팀원은 읽지만 만들지는 못한다.
     await assertSucceeds(get(ref(member, at("p1"))));
     await assertFails(set(ref(member, at("p2")), { ...project("p2"), updatedBy: "crm-legacy-member" }));
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    await assertSucceeds(get(ref(viewer, at("p1"))));
+    await assertFails(set(ref(viewer, at("p1")), project("p1", { name: "조회자 수정" })));
+    for (const rejected of [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext("crm-disabled", crmClaims("disabled@bring.test")).database(),
+      environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database(),
+      environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test", false)).database(),
+    ]) {
+      await assertFails(get(ref(rejected, at("p1"))));
+      await assertFails(set(ref(rejected, at("p1")), project("p1", { name: "차단 대상 수정" })));
+    }
     // 이름이 없으면 목록에서 무엇인지 알 수 없다.
     await assertFails(set(ref(admin, at("p3")), project("p3", { name: "" })));
     // 시작일이 종료일보다 늦으면 간트에서 막대가 거꾸로 그려진다.

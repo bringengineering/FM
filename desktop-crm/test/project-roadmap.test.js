@@ -153,7 +153,7 @@ test("로드맵에서 프로젝트명·진행률·시작일·마감일을 추가
   assert.match(app, /<span>마감일<\/span><input type="date" name="endDate"[^>]*required/u);
   assert.match(app, /name="progressNote"[^>]*required/u);
   assert.match(app, /data-roadmap-project-progress/u);
-  assert.match(app, /api\.saveProject\(checked\.project\)/u);
+  assert.match(app, /api\.saveProject\(Object\.assign\(\{\}, checked\.project, \{ expectedProject:/u);
   assert.match(app, /raw\.startDate === undefined \? previous\.startDate/u);
   assert.match(app, /raw\.goal === undefined \? previous\.goal/u);
   assert.match(app, /프로젝트에 연결되지 않은 업무/u);
