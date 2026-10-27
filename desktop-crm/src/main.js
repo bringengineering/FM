@@ -2601,6 +2601,15 @@ function archivedWorkReports() {
   return workReportArchiveService;
 }
 
+function validateSavedQuoteDraft(row, customerId) {
+  const stored = row?.quoteDraft;
+  if (stored?.version !== 1 || !stored.quote || !/^[a-f0-9]{64}$/.test(stored.sha256 || "")) throw new Error("편집 원본이 없는 견적서입니다.");
+  const quote = QuoteCore.normalizeDraft(stored.quote);
+  const hash = crypto.createHash("sha256").update(JSON.stringify(quote)).digest("hex");
+  if (quote.customerId !== String(customerId) || hash !== stored.sha256) throw new Error("저장 견적 원본이 변경되어 불러올 수 없습니다.");
+  return quote;
+}
+
 async function saveCustomerDocument(input) {
   const session = savedDocumentSession(true);
   const options = input && typeof input === "object" ? input : {};
@@ -2610,12 +2619,20 @@ async function saveCustomerDocument(input) {
   const rootFolderId = String(data?.company?.buildingDocsFolderId || "");
   if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.");
   const customers = (data.customers || []).filter(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true);
-  let customer, building, bytes, title, month = "";
+  let customer, building, bytes, title, month = "", quoteSnapshot, quoteSource;
   if (options.kind === "quote") {
     const quote = QuoteCore.normalizeDraft(options.quote);
     QuoteCore.normalizeSupplier(quote.company, {requireComplete: true});
     QuoteCore.normalizeRecipient(quote, {requireComplete: true});
     customer = QuoteCore.resolveCustomer(quote, customers);
+    quoteSnapshot = quote;
+    if (options.quoteSource) {
+      const sourceRequest = {...options.quoteSource, kind: "quote", customerId: customer.id};
+      const source = SavedCustomerDocuments.resolve(data.buildingDocuments, customers, sourceRequest, {history: true});
+      const sourceRow = (data.buildingDocuments || []).find(row => row.id === source.record.id);
+      validateSavedQuoteDraft(sourceRow, customer.id);
+      quoteSource = sourceRequest;
+    }
     const seal = await readLocalQuoteSeal(); session.check();
     if (!seal) throw new Error("회사 인감을 등록한 후 견적서를 저장해 주세요.");
     bytes = await createQuotePdfBytes(quote, "recipient", seal);
@@ -2644,9 +2661,14 @@ async function saveCustomerDocument(input) {
   const record = {id, title: String(title).slice(0,160), buildingId: building?.id || "", docType: "etc", driveFileId: uploaded.id,
     updatedAt: now, updatedBy: session.user.uid, savedCustomerDocument: {version: 1, kind: options.kind, customerId: customer.id,
       recipientPhone: SavedCustomerDocuments.phone(customer.phone), sha256: checked.sha256, size: checked.size, month}};
+  if (quoteSnapshot) record.quoteDraft = {version: 1, quote: quoteSnapshot, sha256: crypto.createHash("sha256").update(JSON.stringify(quoteSnapshot)).digest("hex"), parentDocumentId: quoteSource?.documentId || ""};
   if (!SavedCustomerDocuments.normalize(record)) throw new Error("저장 문서 정보를 확인할 수 없습니다.");
   // Refresh after the upload so a concurrent CRM edit is not replaced by an old snapshot.
   const latest = await remoteClient.loadStore(); session.check();
+  if (quoteSource) {
+    SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, quoteSource, {history: true});
+    validateSavedQuoteDraft((latest.buildingDocuments || []).find(row => row.id === quoteSource.documentId), customer.id);
+  }
   if (!SavedCustomerDocuments.matches(record, (latest.customers || []).find(row => row.id === customer.id), options.kind)
     || (building && !(latest.buildings || []).some(row => row.id === building.id && row.ownerCustomerId === customer.id && !row.archivedAt))) throw new Error("고객·건물 정보가 변경되었습니다. 저장을 다시 시도해 주세요.");
   latest.buildingDocuments = [...(latest.buildingDocuments || []), record];
@@ -2655,14 +2677,25 @@ async function saveCustomerDocument(input) {
   return {ok: true, record};
 }
 
-async function readSavedCustomerPdf(input, session) {
+async function readSavedCustomerPdf(input, session, options = {}) {
   const data = await remoteClient.loadStore(); session.check();
-  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, input);
+  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, input, options);
   if (resolved.record.savedCustomerDocument.kind === "buildingMonthlyReport"
     && !(data.buildings || []).some(row => row && !row.archivedAt && row.id === resolved.record.buildingId && row.ownerCustomerId === resolved.customer.id)) throw new Error("저장 문서의 건물주 연결이 변경되었습니다.");
   const bytes = await SavedCustomerDocumentPdf.download(authenticatedDriveFetch, resolved.record.driveFileId, resolved.record.savedCustomerDocument);
   session.check();
   return {...resolved, bytes};
+}
+
+async function loadSavedQuoteDraft(input) {
+  const session = savedDocumentSession();
+  const data = await remoteClient.loadStore(); session.check();
+  const request = {...input, kind: "quote"};
+  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, request, {history: true});
+  const raw = (data.buildingDocuments || []).find(row => row.id === resolved.record.id);
+  const quote = validateSavedQuoteDraft(raw, resolved.customer.id);
+  quote.recipientPhone = String(resolved.customer.phone || "");
+  return {ok: true, quote, source: {documentId: resolved.record.id, updatedAt: resolved.record.updatedAt, sha256: resolved.record.savedCustomerDocument.sha256}};
 }
 
 async function readSavedWorkReportPdf(input, session) {
@@ -2684,7 +2717,7 @@ async function readSavedWorkReportPdf(input, session) {
 
 async function previewSavedCustomerDocument(input) {
   const session = savedDocumentSession();
-  const {bytes} = input?.kind === "workReport" ? await (input.sha256 ? archivedWorkReports().read(input, session) : readSavedWorkReportPdf(input, session)) : await readSavedCustomerPdf(input, session);
+  const {bytes} = input?.kind === "workReport" ? await (input.sha256 ? archivedWorkReports().read(input, session) : readSavedWorkReportPdf(input, session)) : await readSavedCustomerPdf(input, session, input?.kind === "quote" ? {history: true} : {});
   SavedCustomerDocumentPdf.verifyPdf(bytes); session.check();
   const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "bring-saved-pdf-"));
   const file = path.join(folder, "report.pdf");
@@ -9451,6 +9484,7 @@ secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBui
 secureCanonicalHandle("crm:quote-kakao-send", input => sendQuoteToCustomerByKakao(input));
 secureCanonicalHandle("crm:customer-document-save", input => saveCustomerDocument(input));
 secureCanonicalHandle("crm:customer-document-preview", input => previewSavedCustomerDocument(input));
+secureCanonicalHandle("crm:quote-draft-load", input => loadSavedQuoteDraft(input));
 secureCanonicalHandle("crm:customer-document-send", input => sendSavedCustomerDocument(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

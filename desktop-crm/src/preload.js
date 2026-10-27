@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
   saveCustomerDocument: input => ipcRenderer.invoke("crm:customer-document-save", input),
   previewSavedCustomerDocument: input => ipcRenderer.invoke("crm:customer-document-preview", input),
+  loadSavedQuoteDraft: input => ipcRenderer.invoke("crm:quote-draft-load", input),
   sendSavedCustomerDocument: input => ipcRenderer.invoke("crm:customer-document-send", input),
   sendQuoteToCustomerByKakao: input => ipcRenderer.invoke("crm:quote-kakao-send", input),
   exportServiceReport: input => ipcRenderer.invoke("crm:service-report-export", input),

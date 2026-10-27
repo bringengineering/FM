@@ -31,6 +31,15 @@ test("저장본 목록은 고객 ID·현재 연락처·종류를 확인하고 �
   assert.throws(() => Docs.resolve(rows, [customer], {...request(), sha256: "f".repeat(64)}), /변경/);
   assert.throws(() => Docs.resolve(rows, [customer], {...request(), updatedAt: ""}), /변경/);
 });
+test("연락처가 바뀌어도 고객별 과거 견적은 조회하되 발송 검증은 실패한다", () => {
+  const changed = {...customer, phone:"01011111111"}, rows = [record()];
+  assert.equal(Docs.historyList(rows, changed, "quote").length, 1);
+  assert.equal(Docs.historyList(rows, {...changed,id:"other"}, "quote").length, 0);
+  assert.equal(Docs.resolve(rows,[changed],request(),{history:true}).record.id,"saved_a");
+  assert.throws(() => Docs.resolve(rows,[changed],request()));
+  assert.throws(() => Docs.resolve(rows,[changed],{...request(),sha256:"0".repeat(64)},{history:true}));
+  assert.equal(Docs.historyList([record({deleted:true})],changed,"quote").length,0);
+});
 test("비정상 종류·경로·크기·보고월은 저장 메타데이터로 인정하지 않는다", () => {
   for (const kind of ["toString", "__proto__", "other"]) assert.equal(Docs.normalize(record({savedCustomerDocument: {...record().savedCustomerDocument, kind}})), null);
   for (const size of [0, Infinity, 1.5, Pdf.MAX_BYTES + 1]) assert.equal(Docs.normalize(record({savedCustomerDocument: {...record().savedCustomerDocument, size}})), null);
@@ -107,6 +116,37 @@ function harness(options = {}) {
   vm.createContext(context); vm.runInContext(service, context);
   return {context, data, events, state};
 }
+test("견적 원본을 저장하고 재조회 후 수정본을 별도로 저장하며 이전 문서를 보존한다", async () => {
+  const h = harness({role:"member"});
+  const quoteCore = require("../src/quote-core");
+  h.context.QuoteCore = quoteCore;
+  const quote = quoteCore.bindCustomer(quoteCore.createManualDraft({supplier:{businessName:"테스트",representative:"대표",registrationNumber:"000-00-00000"}}), [customer], customer.id);
+  const first = (await h.context.saveCustomerDocument({kind:"quote",quote})).record;
+  assert.deepEqual(first.quoteDraft.quote.items,quote.items);
+  const ref = {kind:"quote",customerId:customer.id,documentId:first.id,updatedAt:first.updatedAt,sha256:first.savedCustomerDocument.sha256};
+  const reorder = value => Array.isArray(value) ? value.map(reorder) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,val])=>[key,reorder(val)])) : value;
+  first.quoteDraft.quote = reorder(first.quoteDraft.quote);
+  assert.equal((await h.context.loadSavedQuoteDraft(ref)).quote.customerId, customer.id);
+  first.quoteDraft.quote.items[0].unitPrice = 9999;
+  await assert.rejects(h.context.loadSavedQuoteDraft(ref), /원본이 변경/);
+  first.quoteDraft.quote = quote;
+  h.data.customers = [{...customer,phone:"01011111111"}];
+  const loaded = await h.context.loadSavedQuoteDraft(ref);
+  assert.equal(loaded.quote.recipientPhone,"01011111111");
+  assert.deepEqual(loaded.quote.items,quote.items);
+  loaded.quote.projectName = "수정 견적";
+  const second = (await h.context.saveCustomerDocument({kind:"quote",quote:loaded.quote,quoteSource:loaded.source})).record;
+  assert.notEqual(first.id,second.id);
+  assert.equal(second.quoteDraft.parentDocumentId,first.id);
+  assert.equal(h.data.buildingDocuments.find(row=>row.id===first.id).quoteDraft.quote.projectName,quote.projectName);
+  assert.throws(() => Docs.resolve(h.data.buildingDocuments,h.data.customers,ref));
+  await assert.rejects(h.context.loadSavedQuoteDraft({...ref,sha256:"0".repeat(64)}));
+  await assert.rejects(h.context.loadSavedQuoteDraft({...ref,customerId:"other"}));
+  await assert.rejects(h.context.loadSavedQuoteDraft(request()));
+  await assert.rejects(h.context.saveCustomerDocument({kind:"quote",quote:loaded.quote,quoteSource:{...loaded.source,sha256:"0".repeat(64)}}));
+  h.state.user = null;
+  await assert.rejects(h.context.loadSavedQuoteDraft(ref));
+});
 test("메인 저장은 수신자 PDF만 비공개 회사 Drive에 보관하고 실제 성공 후 CRM 메타데이터를 기록한다", async () => {
   const h = harness({role: "member"});
   const result = await h.context.saveCustomerDocument({kind: "quote", quote: {customerId: customer.id, projectName: "샘플", recipient: "문서용 성명", recipientPhone: customer.phone, company: {}}});
@@ -174,6 +214,8 @@ test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 �
 test("저장·발송 IPC는 mutation이고 미리보기 또한 신뢰된 발신자·로그인 검증을 거친다", () => {
   for (const suffix of ["save", "send"]) assert.equal(Policy.classification("crm:customer-document-" + suffix), "mutation");
   assert.doesNotThrow(() => Policy.assertRegistered("crm:customer-document-preview"));
+  assert.equal(Policy.classification("crm:quote-draft-load"), "control");
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:quote-draft-load"'));
   for (const suffix of ["save","send","preview"]) assert.ok(mainSource.includes('secureCanonicalHandle("crm:customer-document-' + suffix + '"'));
   const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
   const send = app.slice(app.indexOf("  async function sendCustomerAlimTalk()"), app.indexOf("  async function refreshDocumentDeliveryCapabilities()"));

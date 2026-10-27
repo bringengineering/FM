@@ -2283,6 +2283,7 @@
       items: [{ name: service, detail: String(order.description || "작업 범위를 확인해 입력하세요.").slice(0, 240), quantity: 1, unit: "식", unitPrice: 1000, note: "초안 예시 금액 · 실제 견적 확인 필요" }],
     }));
     aiAssistantState.quoteCustomerId = customer?.id || "";
+    aiAssistantState.quoteSource = null;
     aiAssistantState.quoteMode = "manual";
     aiAssistantState.quoteContent = "";
     aiAssistantState.quoteError = "";
@@ -4932,6 +4933,7 @@
       if (!result || result.ok !== true || !result.record) throw new Error(result && result.error || "문서를 CRM에 저장하지 못했습니다.");
       store.buildingDocuments = [...(store.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
       if (synchronizedStore) synchronizedStore.buildingDocuments = [...(synchronizedStore.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
+      if (request.kind === "quote" && aiAssistantState.quote === request.quote && aiAssistantState.quoteCustomerId === request.quote.customerId) aiAssistantState.quoteSource = {documentId: result.record.id, updatedAt: result.record.updatedAt, sha256: result.record.savedCustomerDocument.sha256};
       showToast("CRM에 저장했습니다. CRM → 알림톡 발송에서 고객과 저장 문서를 선택해 주세요.", "success");
     } catch (error) {
       if (generation === authGeneration) showToast(error.message || "문서를 저장하지 못했습니다.", "error");
@@ -6075,6 +6077,39 @@
     return `<div class="ai-quote-editor-toolbar"><button type="button" data-quote-new${busy ? " disabled" : ""}>새 견적 시작</button>${cleaningQuoteContext.orderId ? `<button type="button" data-quote-detach${busy ? " disabled" : ""}>주문 연결 해제</button><small>연결을 해제해도 작성한 견적은 유지됩니다.</small>` : ""}</div>`;
   }
 
+  function quoteHistoryMarkup() {
+    const customer = (store.customers || []).find(row => String(row?.id || "") === String(aiAssistantState.quoteCustomerId || ""));
+    const rows = SavedCustomerDocuments.historyList(store.buildingDocuments, customer, "quote");
+    const busy = aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy;
+    return `<section class="ai-content-field"><span>저장된 견적서</span><small>${customer ? "고객별 저장본을 최신순으로 표시합니다. 수정본은 새 문서로 저장됩니다." : "고객을 선택하면 저장된 견적서가 표시됩니다."}</small>${rows.map(row => `<div class="ai-quote-editor-toolbar"><div><b>${esc(row.title || "견적서")}</b><small>${esc(row.updatedAt.slice(0, 16).replace("T", " "))} · ${row.isRevision ? "수정본" : "원본"}${row.editable ? "" : " · PDF만 보관"}</small></div><button type="button" data-quote-history-preview="${attr(row.id)}"${busy ? " disabled" : ""}>PDF 보기</button>${row.editable ? `<button type="button" data-quote-history-load="${attr(row.id)}"${busy || cleaningQuoteContext.orderId ? " disabled" : ""}>불러와 수정</button>` : ""}</div>`).join("") || (customer ? `<small>저장된 견적서가 없습니다.</small>` : "")}</section>`;
+  }
+
+  async function openQuoteHistory(id, edit) {
+    if (aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy || (edit && cleaningQuoteContext.orderId)) return;
+    const customer = (store.customers || []).find(row => String(row?.id || "") === String(aiAssistantState.quoteCustomerId || ""));
+    const row = SavedCustomerDocuments.historyList(store.buildingDocuments, customer, "quote").find(item => item.id === id);
+    if (!row) return showToast("저장 견적을 다시 선택해 주세요.", "error");
+    if (edit && aiAssistantState.quote && !window.confirm("현재 작성 중인 견적을 바꾸고 저장된 견적을 불러올까요? 저장하지 않은 내용은 사라집니다.")) return;
+    const request = {kind: "quote", customerId: String(customer.id), documentId: row.id, updatedAt: row.updatedAt, sha256: row.savedCustomerDocument.sha256};
+    const generation = authGeneration;
+    aiAssistantState.quoteLoading = true;
+    refreshQuotesView();
+    try {
+      const result = edit ? await api.loadSavedQuoteDraft(request) : await api.previewSavedCustomerDocument(request);
+      if (generation !== authGeneration) return;
+      if (!result?.ok) throw new Error(result?.error || "저장 견적을 불러오지 못했습니다.");
+      if (edit) {
+        aiAssistantState.quote = QuoteCore.normalizeDraft(result.quote);
+        aiAssistantState.quoteSource = result.source;
+        aiAssistantState.quoteMode = "manual";
+        aiAssistantState.quoteError = "";
+        aiAssistantState.quoteWarnings = [];
+        showToast("저장 견적을 불러왔습니다. 수정 후 CRM에 저장하면 새 문서가 만들어집니다.", "success");
+      } else showToast("저장 견적 PDF를 열었습니다.", "success");
+    } catch (error) { if (generation === authGeneration) showToast(error.message || "저장 견적을 불러오지 못했습니다.", "error"); }
+    finally { if (generation === authGeneration) { aiAssistantState.quoteLoading = false; refreshQuotesView(); } }
+  }
+
   function resetQuoteDraft(startNew) {
     if (aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy) return;
     if (startNew && (aiAssistantState.quote || aiAssistantState.quoteContent) && !window.confirm("작성 중인 견적을 비우고 새 견적을 시작할까요? 저장하지 않은 내용은 사라집니다.")) return;
@@ -6083,6 +6118,7 @@
       aiAssistantState.quote = null;
       aiAssistantState.quoteContent = "";
       aiAssistantState.quoteCustomerId = "";
+      aiAssistantState.quoteSource = null;
       aiAssistantState.quoteWarnings = [];
     }
     aiAssistantState.quoteError = "";
@@ -6172,7 +6208,7 @@
     const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote, { requireName: true }));
     const disabled = canExport ? "" : " disabled";
     const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button><button type="button" data-ai-quote-crm-save${disabled || !quoteCustomerReady(quote) || customerDocumentSaving || !canWriteCRM() ? " disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button></div></div>`;
-    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteDraftActions()}${quoteCustomerFields()}${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuotePricingMarkup()}${cleaningQuotePriceReviewMarkup(quote)}${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy || !cleaningQuotePricesConfirmed(quote) ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "회사 정보와 공급받는자 성명을 확인해 주세요. 파일 저장에는 전화번호가 필요하지 않습니다."}</footer></section></section>`;
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteDraftActions()}${quoteCustomerFields()}${quoteHistoryMarkup()}${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuotePricingMarkup()}${cleaningQuotePriceReviewMarkup(quote)}${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy || !cleaningQuotePricesConfirmed(quote) ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "회사 정보와 공급받는자 성명을 확인해 주세요. 파일 저장에는 전화번호가 필요하지 않습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {
@@ -16042,6 +16078,10 @@
       catch { showToast("초안을 복사하지 못했습니다.", "error"); }
       return;
     }
+    const quoteHistoryPreview = event.target.closest("[data-quote-history-preview]");
+    if (quoteHistoryPreview) { await openQuoteHistory(quoteHistoryPreview.dataset.quoteHistoryPreview, false); return; }
+    const quoteHistoryLoad = event.target.closest("[data-quote-history-load]");
+    if (quoteHistoryLoad) { await openQuoteHistory(quoteHistoryLoad.dataset.quoteHistoryLoad, true); return; }
     const aiQuoteExample = event.target.closest("[data-ai-quote-example]");
     if (aiQuoteExample) {
       aiAssistantState.quoteContent = aiQuoteExample.dataset.aiQuoteExample || "";
@@ -16121,7 +16161,7 @@
       return;
     }
     if (event.target.closest("[data-ai-quote-crm-save]")) {
-      await saveDocumentForCustomer({kind: "quote", quote: aiAssistantState.quote});
+      await saveDocumentForCustomer({kind: "quote", quote: aiAssistantState.quote, quoteSource: aiAssistantState.quoteSource});
       return;
     }
     const aiQuoteExport = event.target.closest("[data-ai-quote-export]");
@@ -17645,6 +17685,7 @@
     if (event.target.matches("[data-quote-customer]")) {
       if (aiAssistantState.quoteLoading || cleaningQuoteContext.orderId) return;
       aiAssistantState.quoteCustomerId = event.target.value;
+      aiAssistantState.quoteSource = null;
       if (aiAssistantState.quote) {
         try { aiAssistantState.quote = bindSelectedQuoteCustomer(aiAssistantState.quote); }
         catch (_) { aiAssistantState.quote = {...aiAssistantState.quote, customerId: "", recipient: "", recipientPhone: "", siteAddress: ""}; }
