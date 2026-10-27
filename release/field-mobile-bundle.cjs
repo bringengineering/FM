@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const APP_ID = "1:864976295990:android:644a2b7d5242a0b5eb6097";
-const MODULES = Object.freeze(["access.js", "endpoint.js", "firebase-reads.js", "http.js", "workspace.js"]);
+const MODULES = Object.freeze(["access.js", "endpoint.js", "firebase-reads.js", "http.js", "workspace.js", "sites.js"]);
 const ENTRY = `import { initializeApp } from 'firebase-admin/app';\ninitializeApp();\nexport { fieldMobileApi } from './field-mobile/endpoint.js';\n`;
 
 function createBundle(root = ROOT) {

@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { defineString } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
-import { firebaseWorkspaceReads } from './firebase-reads.js';
+import { firebaseCustomerSiteReads, firebaseWorkspaceReads } from './firebase-reads.js';
 import { handleMobileRead } from './http.js';
 
 // Explicit native app allowlist. Empty config disables all company reads.
@@ -26,7 +26,7 @@ export const fieldMobileApi = onRequest({ region: 'asia-northeast3', cors: false
       verifyIdentity: (token, revoked) => getAuth().verifyIdToken(token, revoked),
       verifyAppCheck: async token => ({ app_id: (await getAppCheck().verifyToken(token)).appId }),
       readAccess: async uid => (await getDatabase().ref(`crmCompany/access/${uid}`).get()).val(),
-    }, reads: firebaseWorkspaceReads(getDatabase()), allowRequest,
+    }, reads: firebaseWorkspaceReads(getDatabase()), sites: firebaseCustomerSiteReads(getDatabase()), allowRequest,
   });
   if (result.status === 405) res.set('Allow', 'GET');
   if (result.status === 429) res.set('Retry-After', '60');

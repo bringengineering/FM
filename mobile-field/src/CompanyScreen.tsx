@@ -17,7 +17,7 @@ const messages: Record<string, string> = {
   SERVER_UNAVAILABLE: '회사 서버 연결을 확인하지 못했습니다. 잠시 후 다시 로그인해 주세요.',
   NETWORK_UNCERTAIN: '네트워크 연결을 확인한 뒤 다시 로그인해 주세요.',
   RATE_LIMITED: '요청이 많습니다. 1분 후 다시 시도해 주세요.',
-  RESOURCE_NOT_FOUND: '현장의 배정이나 상태가 변경되었습니다. 다시 로그인해 목록을 확인해 주세요.',
+  RESOURCE_NOT_FOUND: '고객정보가 삭제되거나 보관되었습니다. 목록을 새로 확인해 주세요.',
   SERVER_RESPONSE_INVALID: '서버와 앱의 연결 규격이 맞지 않습니다. 관리자에게 문의해 주세요.',
 };
 function Action({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
@@ -43,7 +43,7 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
       <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
     </View>}
     {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
-    <Text style={styles.small}>개발 0.1.1 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
+    <Text style={styles.small}>개발 0.1.2 · 사진 업로드·보고서 보관·고객 발송 연결 준비 중</Text>
   </ScrollView></SafeAreaView>;
 }
 function SessionScreen({ session }: { session: CompanySession }) {
@@ -68,11 +68,11 @@ function SessionScreen({ session }: { session: CompanySession }) {
   </View>;
   const selected = state.selected;
   return <>
-    <View style={styles.card}><Text style={styles.heading}>{state.context?.actor.role === 'admin' ? '회사 진행 현장' : '내 배정 현장'}</Text><Text style={styles.copy}>현재 회사 권한을 확인했습니다.</Text><Action label="현장 새로고침" onPress={() => void session.refresh()} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
-    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.buildingName}</Text><Text style={styles.copy}>{selected.title}</Text><Text style={styles.copy}>{selected.address}</Text><Text style={styles.copy}>작업기한 {selected.dueDate || '미지정'}</Text><Text style={styles.small}>현장 배정과 최신 상태를 다시 확인했습니다. 이 화면의 촬영·저장 연결은 다음 단계에서 제공됩니다.</Text><Action label="현장 목록으로" onPress={() => void session.refresh()} /></View> : <>
-      {!state.page?.jobs.length && <View style={styles.card}><Text style={styles.copy}>이 페이지에 조회 가능한 현장이 없습니다. CRM에서 건물이 연결된 업무의 담당자와 진행 상태를 확인해 주세요.</Text></View>}
-      {state.page?.jobs.map(job => <View style={styles.card} key={job.id}><Text style={styles.heading}>{job.buildingName}</Text><Text style={styles.copy}>{job.title}</Text><Text style={styles.copy}>{job.address}</Text><Text style={styles.small}>{({ assigned: '배정됨', doing: '진행 중', returned: '보완 요청' })[job.status]} · 기한 {job.dueDate || '미지정'}</Text><Action label="현장 확인" onPress={() => void session.select(job.id)} /></View>)}
-      {state.page?.nextCursor && <Action label="다음 현장 보기" onPress={() => void session.refresh(state.page!.nextCursor)} />}
+    <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text><Action label="목록 새로고침" onPress={() => void session.refresh()} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
+    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Text style={styles.small}>선택한 고객의 최신 정보를 확인했습니다. 이 화면의 촬영·저장 연결은 다음 단계에서 제공됩니다.</Text><Action label="고객 목록으로" onPress={() => void session.refresh()} /></View> : <>
+      {!state.page?.sites.length && <View style={styles.card}><Text style={styles.copy}>이 페이지에 표시할 고객이 없습니다. CRM 고객정보에 등록된 고객을 확인해 주세요.</Text></View>}
+      {state.page?.sites.map(site => <View style={styles.card} key={site.id}><Text style={styles.heading}>{site.name}</Text><Text style={styles.copy}>{site.address || '주소 미입력'}</Text><Action label="고객 선택" onPress={() => void session.select(site.id)} /></View>)}
+      {state.page?.nextCursor && <Action label="다음 고객 보기" onPress={() => void session.refresh(state.page!.nextCursor)} />}
     </>}
   </>;
 }

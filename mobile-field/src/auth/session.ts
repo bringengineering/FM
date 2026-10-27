@@ -1,5 +1,5 @@
 import type { Credentials } from '../api/client';
-import type { CompanyContext, MobileJob, MobileJobPage, WorkspaceApi } from '../api/workspace';
+import type { CompanySiteContext, CustomerSite, CustomerSitePage, SiteWorkspaceApi } from '../api/sites';
 import { FieldError } from '../domain/model';
 
 export interface EmployeeIdentity {
@@ -8,7 +8,7 @@ export interface EmployeeIdentity {
   credentials(uid: string): Promise<Credentials>;
   observe(listener: (uid: string | null) => void): () => void;
 }
-export interface CompanyState { phase: 'signedOut' | 'loading' | 'ready' | 'error'; context?: CompanyContext; page?: MobileJobPage; selected?: MobileJob; error?: string }
+export interface CompanyState { phase: 'signedOut' | 'loading' | 'ready' | 'error'; context?: CompanySiteContext; page?: CustomerSitePage; selected?: CustomerSite; error?: string }
 const safeCodes = new Set(['AUTH_REQUIRED', 'LOGIN_FAILED', 'EMAIL_VERIFICATION_REQUIRED', 'LOGIN_ACCOUNT_DISABLED', 'LOGIN_PROVIDER_DISABLED', 'LOGIN_APP_NOT_AUTHORIZED', 'LOGIN_PROVIDER_ERROR', 'APP_ATTESTATION_FAILED', 'NATIVE_APP_NOT_CONFIGURED', 'SERVER_UNAVAILABLE', 'NETWORK_UNCERTAIN', 'RATE_LIMITED', 'RESOURCE_NOT_FOUND', 'SERVER_RESPONSE_INVALID']);
 export class CompanySession {
   private state: CompanyState = { phase: 'signedOut' };
@@ -16,7 +16,7 @@ export class CompanySession {
   private generation = 0; private controller = new AbortController(); private uid: string | null = null;
   private identityChain: Promise<unknown> = Promise.resolve();
   private stopObserving?: () => void; private disposed = false;
-  constructor(private identity: EmployeeIdentity, private apiFor: (uid: string) => WorkspaceApi) {}
+  constructor(private identity: EmployeeIdentity, private apiFor: (uid: string) => SiteWorkspaceApi) {}
   snapshot = (): CompanyState => this.state;
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(state: CompanyState) { if (!this.disposed) { this.state = state; for (const listener of this.listeners) listener(state); } }
@@ -49,7 +49,7 @@ export class CompanySession {
     if (!this.uid) throw new FieldError('AUTH_REQUIRED');
     const uid = this.uid, api = this.apiFor(uid), signal = this.controller.signal;
     const context = await api.context(signal); if (!this.current(generation)) return;
-    const page = await api.jobs(cursor, signal); if (!this.current(generation)) return;
+    const page = await api.sites(cursor, signal); if (!this.current(generation)) return;
     if (context.actor.uid !== uid || this.identity.currentUid() !== uid) throw new FieldError('AUTH_REQUIRED');
     this.publish({ phase: 'ready', context, page });
   }
@@ -64,7 +64,7 @@ export class CompanySession {
     try {
       const api = this.apiFor(uid), context = await api.context(this.controller.signal);
       if (!this.current(generation)) return;
-      const selected = await api.job(jobId, this.controller.signal);
+      const selected = await api.site(jobId, this.controller.signal);
       if (this.current(generation)) {
         if (context.actor.uid !== uid || this.identity.currentUid() !== uid) throw new FieldError('AUTH_REQUIRED');
         this.publish({ ...previous, phase: 'ready', context, selected });

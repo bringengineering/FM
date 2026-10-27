@@ -15,14 +15,14 @@ const companyPlugins: NonNullable<ExpoConfig['plugins']> = company ? ['@react-na
 const config: ExpoConfig = {
   name: 'BRING CARE 현장노트 개발', slug: 'bring-care-field-notes',
   ...(build.owner ? { owner: build.owner } : {}),
-  version: '0.1.1', orientation: 'portrait', userInterfaceStyle: 'light',
+  version: '0.1.2', orientation: 'portrait', userInterfaceStyle: 'light',
   scheme: 'bring-field-dev',
   ios: { bundleIdentifier: 'kr.co.bringengineering.fieldnotes.dev', supportsTablet: true, ...(company ? {
     googleServicesFile: company.ios,
     // Firebase App Check accepts App Attest production tokens, including test builds.
     entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' },
   } : {}) },
-  android: { package: 'kr.co.bringengineering.fieldnotes.dev', versionCode: 2, allowBackup: false,
+  android: { package: 'kr.co.bringengineering.fieldnotes.dev', versionCode: 3, allowBackup: false,
     ...(company ? { googleServicesFile: company.android } : {}),
     blockedPermissions: ['android.permission.RECORD_AUDIO', 'android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'] },
   web: { bundler: 'metro' },
