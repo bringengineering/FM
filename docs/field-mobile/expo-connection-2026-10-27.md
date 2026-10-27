@@ -66,3 +66,17 @@ EAS CLI의 공개 SHA-256 인증서 지문을 확인하고, 기존 등록 지문
 5. 회사 현장의 방문 생성·사진 업로드·Drive 보관·PDF 생성·CRM 발송 구현을 이어간다. 현재 회사 화면은 읽기 전용이다.
 
 이 문서는 2026-10-26 준비 문서의 ‘Expo 미연결’ 상태를 대체한다. 계정 결제·운영 API 배포·고객 발송은 이번 프로젝트 연결 작업에서 수행하지 않았다.
+
+## 후속 Android 서버 연결 — 2026-10-27 10:22 KST
+
+사용자는 APK 설치를 완료했고 회사 계정 또는 앱 인증 오류를 보고했다. 확인 당시 모바일 읽기 함수는 없었으며 Play Integrity API는 비활성화, 앱 검증은 Play 설치본용 기본 조건이었다. 아래 후속 작업은 앞의 빌드 시점 상태를 대체한다.
+
+- `playintegrity.googleapis.com` 활성화 후 `ENABLED`를 확인했다.
+- 개발 Android 앱에 직접 설치용 공식 권장 조건을 설정했다. `allowUnrecognizedVersion=true`, `requireLicensed=false`, `MEETS_DEVICE_INTEGRITY` 필수, TTL 3,600초. 등록한 APK SHA-256 지문 일치도 재확인했다. 전역 App Check 강제 적용이나 기존 앱 설정은 바꾸지 않았다. [Firebase의 배포 경로별 권장 설정](https://firebase.google.com/docs/app-check/android/play-integrity-provider).
+- `release/field-mobile-bundle.cjs`로 감사 대상 모듈 5개와 초기화 진입점만 묶고 `field-mobile` 코드베이스의 `fieldMobileApi` 하나를 `bring-fm / asia-northeast3 / Node.js 22`에 배포했다. 서버 허용 앱은 Android 개발 앱 하나다. 기존 `field-platform` 진입점에는 중복 export를 남기지 않았다.
+- `FIELD_MOBILE_NATIVE_APP_IDS` 실제 배포 값, 함수 `ACTIVE`, 코드 해시 `9faa008f8363e7022297ff7c575e6452c90ad3b7`를 확인했다. 기존 42개 함수의 이름·region·상태·코드 해시·소스 위치는 배포 전후 일치했다.
+- 운영 RTDB 규칙을 별도 백업하고 최신 내용이 그대로인지 다시 비교한 뒤 `crmCompany/workOrders/.indexOn`에 `assigneeUid`만 추가했다. 재조회에서 이 항목 외 전체 규칙이 동일함을 확인했다. 오래된 로컬 규칙 전체를 배포하지 않았다.
+- 검증: 모바일 87개, 배포 범위 3개 테스트 통과, Functions TypeScript 빌드 통과. Node 22.23.4에서 실제 배포 진입점의 export가 `fieldMobileApi` 하나임을 확인했다.
+- 실제 운영 URL 검증: 인증 없음과 임의 테스트 토큰 모두 401 `MOBILE_AUTH_REQUIRED`, POST 405 `METHOD_NOT_ALLOWED`, 임의 직원 쿼리 400 `REQUEST_INVALID`, 모든 응답 `Cache-Control: no-store`. 인증을 대신 만들어 정상 로그인 시험을 하지 않았다.
+
+운영 검증 기록과 규칙 백업은 Git 제외 경로 `.firebase/field-mobile-verification/`에 있다. 사용자에게 앱 완전 종료·재실행 후 본인의 CRM 계정으로 로그인을 요청했다. **실기기 정상 로그인·목록/상세 조회 결과는 아직 확인 중이다.** 비밀번호·토큰·개인정보를 기록하지 않는다. 회사 사진 업로드·보고서 보관·고객 발송은 이번 조회 API 배포 범위에 포함되지 않는다.

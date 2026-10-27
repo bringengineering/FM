@@ -2,7 +2,7 @@
 
 2026-10-26 · 직원 개별 CRM 계정 사용 확인 · 운영 연결 및 스토어 출시 전
 
-이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. 기본 실행은 가상 현장 미리보기다. 회사 연결은 기기 인증 설정·API 배포·실기기 시험 전이며, Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 로그인·조회 구현 결과](../docs/field-mobile/employee-login-2026-10-26.md)를 참고한다.
+이 폴더는 기존 HTML 화면 미리보기와 별개인 React Native/Expo 앱 소스다. 직원 로그인·담당 현장 조회 클라이언트와 읽기 API를 구현했고, 회사 Firebase에 Android/iOS 개발 앱을 등록했다. **2026-10-27 Android APK 설치 확인 후 Play Integrity 설정과 읽기 API 운영 배포를 완료했다. 실기기 로그인 재시도 결과는 확인 중이다.** 기본 실행은 가상 현장 미리보기다. Drive 업로드·서버 PDF·고객 발송은 아직 연결하지 않았다. [최신 Android 연결·배포 기록](../docs/field-mobile/expo-connection-2026-10-27.md)을 참고한다.
 
 Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-27 회사 Expo 프로젝트 연결·CLI 인증·두 플랫폼 Firebase 파일 환경변수 등록·Android 서명 지문 등록을 완료했고, **Android 개발 APK 0.1.0 (1) 생성에 성공했다**. [최신 연결 및 Android 빌드 기록](../docs/field-mobile/expo-connection-2026-10-27.md)과 [계정 준비 순서](../docs/field-mobile/device-setup-2026-10-26.md)를 참고한다. `npm run device:check`는 로컬 설정만 읽으며 회사 프로젝트 연결을 확인한다. 기기 인증·운영 API·직원 로그인 성공 판정은 별도로 해야 한다.
 
@@ -14,7 +14,7 @@ Android·iPhone 실기기용 EAS 내부 배포 설정을 추가했다. 2026-10-2
 - 보고서 본문·후속 조치·항목 상태·미실시 사유와 수동 검토 기록. PC의 순수 `work-report-core.js`를 직접 재사용한다. 사진 추가·분류·초안 수정 시 이전 검토 확인을 무효화한다.
 - 불러오기·내용 hash 검증·revision 충돌·계정 격리. 전송 상태 변화는 보고서 본문 revision을 바꾸지 않는다.
 - 서버 연동용 전송 어댑터와 단일 실행 큐. 예약/완료 키 유지, 서버 offset 조회, 응답 유실 후 재개, 인증 철회 중단, Drive+CRM 확인 전 ready 금지. **현재 UI에는 활성 연결하지 않았다.**
-- 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. `fieldMobileApi` 읽기 함수 export와 회사 로그인·현장 목록/상세 화면을 추가했다. 기존 `workOrders.assigneeUid`로 담당자를 확인한다. **운영 API 배포는 하지 않았다.**
+- 직원 토큰 issuer/audience·취소 확인·native App Check allowlist·현재 CRM access 검사. `fieldMobileApi`와 회사 로그인·현장 목록/상세 화면을 추가했다. 기존 `workOrders.assigneeUid`로 담당자를 확인한다. **Android 앱 하나만 허용하는 별도 `field-mobile` 코드베이스로 읽기 API를 배포했고, 운영 인덱스도 적용했다.**
 
 ## 실행
 
@@ -37,14 +37,15 @@ npx expo run:android
 npx expo run:ios
 ```
 
-로컬 빌드는 Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 필요하다. 이번에는 회사 Expo 프로젝트의 클라우드 빌드를 사용한다. 무료 플랜과 사용량을 확인했으며 유료 플랜 가입이나 결제는 실행하지 않았다. 실제 휴대폰 설치·시험은 아직 진행 전이다.
+로컬 빌드는 Android SDK/JDK와 연결 기기 또는 에뮬레이터, iOS는 macOS/Xcode가 필요하다. 이번에는 회사 Expo 프로젝트의 클라우드 빌드를 사용한다. 무료 플랜과 사용량을 확인했으며 유료 플랜 가입이나 결제는 실행하지 않았다. 사용자가 Android 설치를 완료했고 실기기 연결을 확인 중이다.
 
 앱 ID는 개발용 `kr.co.bringengineering.fieldnotes.dev`이며 CRM 데스크톱과 분리했다. EAS production profile은 의도적으로 구성 검사에서 실패한다. 운영 연결 검증 후 출시 구성을 별도로 완성해야 한다.
 
 ## 검증 결과
 
 - TypeScript 검사 통과.
-- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합·직원 로그인 테스트 **85개 통과**. Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- 모바일·서버 접근 경계·native 어댑터 계약·캡처 실패·로컬 통합·직원 로그인 테스트 **87개 통과**(2026-10-27 재실행). Node SQLite로 실제 쿼리·원자성·파일 재열기를 시험했다. Node 테스트 DB와 native mock은 SQLCipher 실기기 검증이 아니다.
+- 모바일 배포 범위 테스트 3개, 실제 Node 22에서 단일 함수 export 확인, 운영 API의 인증 없음/위조 토큰 거부·쓰기 차단·예상하지 않은 쿼리 거부를 확인했다. 기존 운영 함수 42개의 소스·상태는 동일하다.
 - Functions 전체 테스트 **1,370개 통과, 기존 14개 제외**. TypeScript 서버 빌드 통과.
 - 기존 데스크톱 보고서 core 테스트 **24개 통과**.
 - Expo Doctor **20/20 통과**.
@@ -59,9 +60,9 @@ npx expo run:ios
 
 ## 실제 연결 전에 남은 것
 
-1. Android/iOS 개발 앱 등록은 완료했다. 회사 서명·개발자 설정에 맞는 기기 attestation과 설치본을 준비해야 한다. 다운로드한 플랫폼 설정은 `native-config/`에 있고 Git에서 제외한다.
+1. Android 개발 APK와 직접 설치용 Play Integrity 설정은 완료했다. iOS 기기 attestation·설치본은 준비가 남아 있다. 다운로드한 플랫폼 설정은 `native-config/`에 있고 Git에서 제외한다.
 2. CRM 업무지시의 `assigneeUid`를 사용하는 최소 조회 projection을 구현했다. 기존 field-v2의 공유 `operatorId`는 사용하지 않는다. 실제 직원의 현장 조회는 아직 시험하지 않았다.
-3. 읽기 API 배포와 `assigneeUid` 인덱스 적용, 방문 생성·revision 조정·사진 예약 계약 구현. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다.
+3. 읽기 API 배포와 `assigneeUid` 인덱스는 적용했다. 방문 생성·revision 조정·사진 예약 계약 구현이 남아 있다. 현재 업로드 client는 `reservationRevision`이 없으면 요청을 거부한다. 로컬 revision을 대신 넣지 않는다.
 4. 회사가 허용한 서버 Drive connector와 활동사진·문서함 mapping. 기존 PC의 개인 토큰을 공용 서버 토큰으로 전환하지 않는다.
 5. 서버 이미지 검증·Drive 보관·CRM 연결·PDF renderer와 복구 작업자, 관리자 검토/공통 발송 claim. 이 코드에 실제 NCP 메시지 API 호출은 없다.
 6. 실제 Android/iPhone에서 SQLCipher·키 유실·저장소 부족·재시작·사진 회전/HEIC·업데이트를 시험한다. 촬영 캐시 저장 실패 복구, 자동 백업(특히 iOS 제외 정책), 화면 가림·앱 종료, native SDK 동작 검증도 남아 있다.
