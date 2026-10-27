@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const SharedSave = require("./shared-save-core");
 const ContractReceiptCommit = require("./contract-receipt-commit");
 const ContractSchedule = require("./contract-schedule-core");
 const BuildingAtlasService = require("./building-atlas-service");
@@ -6335,12 +6336,63 @@ class FirebaseRemoteClient {
     return this.enqueueSharedMutation(() => this.pushStoreLocked(input, guard));
   }
 
+  async sharedSaveBase(input, guard) {
+    if (Object.hasOwn(input || {}, "__crmSaveBase")) {
+      if (!input.__crmSaveBase || typeof input.__crmSaveBase !== "object" || Array.isArray(input.__crmSaveBase)) {
+        throw createError("편집 기준 자료를 다시 불러와 주세요.", "SHARED_SAVE_BASE_REQUIRED");
+      }
+      return sharedRemoteProjection(this.Core, input.__crmSaveBase);
+    }
+    // Compatibility for main-process callers. Renderer saves always supply
+    // their own last-synchronized snapshot, including while a modal is open.
+    if (this.remotePayload) return sharedRemoteProjection(this.Core, this.remotePayload);
+    const cached = await this.readSessionLocalStore(guard);
+    this.assertSessionGuardActive(guard);
+    return sharedRemoteProjection(this.Core, cached || {});
+  }
+
+  async commitSharedSaveIntent(base, desired, currentRaw, intent, guard) {
+    this.assertSessionGuardActive(guard);
+    const current = sharedRemoteProjection(this.Core, currentRaw);
+    const plan = SharedSave.buildSharedSavePlan({ base, desired, current, currentRaw, intent });
+    let committed = 0, merged = structuredClone(currentRaw);
+    for (const write of plan.customerWrites) {
+      this.assertSessionGuardActive(guard);
+      const location = `crmShared/data/${write.path}`;
+      try {
+        const snapshot = await this.dbReadWithEtag(location, false, guard);
+        this.assertSessionGuardActive(guard);
+        if (!SharedSave.same(snapshot.value, write.value)) {
+          if (!SharedSave.same(snapshot.value, write.expected)) throw SharedSave.conflict(committed > 0);
+          await this.dbConditionalPut(location, write.value, snapshot.etag, false, guard);
+          this.assertSessionGuardActive(guard);
+        }
+        merged = SharedSave.applySharedSavePatch(merged, { [write.path]: write.value });
+        committed += 1;
+      } catch (error) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+        if (error.code === "BUILDING_SCHEDULE_CONFLICT" || error.code === "SHARED_SAVE_CONFLICT") throw SharedSave.conflict(committed > 0);
+        // Never replay an ambiguous partial form automatically with a new base.
+        // A repeat with the original base is idempotent; changed values conflict.
+        throw createError("고객 저장 결과를 확인하지 못했습니다. 입력 내용을 유지했으니 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED");
+      }
+    }
+    if (Object.keys(plan.patch).length) {
+      this.assertSessionGuardActive(guard);
+      await this.dbRequest("crmShared/data", { method: "PATCH", body: plan.patch, query: "print=silent" });
+      this.assertSessionGuardActive(guard);
+      merged = SharedSave.applySharedSavePatch(merged, plan.patch);
+    }
+    return merged;
+  }
+
   async pushStoreLocked(input, guardValue, options = {}) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
     this.requireMutationPermission();
     const data = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(data);
+    const base = options.baseRemote || await this.sharedSaveBase(input, guard);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
     // A renderer save can have been prepared before a record-level calendar
@@ -6350,17 +6402,24 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) return null;
     preserveCanonicalSharedCollections(current, next);
     preserveGenericServiceRecords(this.Core, current, next, options.requireServiceRecordsMatch === true);
-    const patch = diffRemoteStores(current, next);
+    const patch = options.requireServiceRecordsMatch === true ? diffRemoteStores(current, next)
+      : pendingSyncPatch(this.Core, base, next, current, options.presentCollections);
+    if (options.requireServiceRecordsMatch !== true) for (const key of Object.keys(patch)) {
+      if ([...CANONICAL_SHARED_COLLECTIONS, "serviceRecords"].includes(key.split("/", 1)[0])) delete patch[key];
+    }
     assertNoCanonicalSharedPatch(patch);
     assertNoGenericServiceRecordPatch(patch);
-    if (Object.keys(patch).length) {
+    let committed;
+    if (options.requireServiceRecordsMatch !== true) {
+      committed = await this.commitSharedSaveIntent(base, next, current, patch, guard);
+    } else if (Object.keys(patch).length) {
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
       if (!this.sessionGuardActive(guard)) return null;
     }
-    this.remotePayload = next;
+    this.remotePayload = committed || next;
     const local = await this.readSessionLocalStore(guard);
     if (!local || !this.sessionGuardActive(guard)) return null;
-    const merged = mergeRemoteStore(this.Core, next, Object.assign({}, local, { settings: data.settings }), this.session);
+    const merged = mergeRemoteStore(this.Core, this.remotePayload, Object.assign({}, local, { settings: data.settings }), this.session);
     const written = await this.writeSessionLocalStore(merged, guard);
     if (!written || !this.sessionGuardActive(guard)) return null;
     await this.clearPendingStore();
@@ -6431,11 +6490,7 @@ class FirebaseRemoteClient {
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, replayCollections);
     assertNoCanonicalSharedPatch(patch);
     assertNoGenericServiceRecordPatch(patch);
-    if (Object.keys(patch).length) {
-      if (!this.sessionGuardActive(guard)) return null;
-      await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
-      if (!this.sessionGuardActive(guard)) return null;
-    }
+    await this.commitSharedSaveIntent(pending.baseRemote || {}, desired, currentRemote, patch, guard);
     const refreshedRemote = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
     this.remotePayload = refreshedRemote;
@@ -6542,8 +6597,9 @@ class FirebaseRemoteClient {
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(local);
+    const baseRemote = await this.sharedSaveBase(input, guard);
     local.updatedAt = new Date().toISOString();
-    const result = await this.pushStoreLocked(local, guard);
+    const result = await this.pushStoreLocked(local, guard, { baseRemote });
     if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
     this.startStream();
     return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
@@ -6556,9 +6612,10 @@ class FirebaseRemoteClient {
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(local);
+    const baseRemote = await this.sharedSaveBase(input, guard);
     local.updatedAt = new Date().toISOString();
     try {
-      const result = await this.pushStoreLocked(local, guard);
+      const result = await this.pushStoreLocked(local, guard, { baseRemote });
       if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.startStream();
       return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
@@ -6574,7 +6631,7 @@ class FirebaseRemoteClient {
       local.serviceRecords = this.Core.sanitizeSharedStore(cached).serviceRecords;
       const written = await this.writeSessionLocalStore(local, guard);
       if (!written || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-      await this.writePendingStore(local, this.remotePayload);
+      await this.writePendingStore(local, baseRemote);
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.emitSync("pending", "서버 연결 시 자동으로 저장됩니다.", { pending: true });
       this.schedulePendingRetry(guard);

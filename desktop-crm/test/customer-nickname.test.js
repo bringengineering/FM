@@ -132,7 +132,7 @@ test("customer-address report picker keeps an alias out of the public building n
       building: buildings[0], name: customer.nickname, address: buildings[0].roadAddress }],
   });
   assert.equal(rows[0].internalLabel, customer.nickname);
-  assert.equal(rows[0].name, customer.name);
+  assert.equal(rows[0].name, buildings[0].name);
   const report = Work.normalizeReport({ kind: "common", buildingName: rows[0].name, siteAddress: rows[0].address });
   assert.ok(!createWorkReportHtml(report).includes(customer.nickname));
   assert.match(source, /esc\(item\.internalLabel \|\| item\.name \|\| workReportBuildingAddress\(item\)/);

@@ -83,6 +83,13 @@ function makeClient(overrides = {}) {
     idToken: "crm-id-token",
     expiresAt: Date.now() + 60_000
   };
+  client.customerConditionalWrites = [];
+  client.dbReadWithEtag = async location => ({ value: require("../src/shared-save-core").at(await client.fetchRemotePayload(), location.replace("crmShared/data/", "")) ?? null, etag: '"fixture-etag"' });
+  client.dbConditionalPut = async (location, value, etag) => {
+    assert.equal(etag, '"fixture-etag"');
+    client.customerConditionalWrites.push({ location, value });
+    return true;
+  };
   return { client, writes, remoteStores };
 }
 
@@ -225,17 +232,19 @@ test("pushStore uses a collection PATCH and cannot overwrite unknown or overlay 
     buildingUnits: [{ id: "unit_malicious", label: "덮어쓰기" }],
     fieldSummaries: [{ fieldJobId: "job_malicious", workflowStatus: "approved" }]
   });
+  input.__crmSaveBase = { customers: [{ id: "customer_1", name: "이전" }] };
   await client.pushStore(input);
 
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].location, "crmShared/data");
   assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1/name"], "변경");
+  assert.ok(client.customerConditionalWrites.some(write => write.location === "crmShared/data/customers/customer_1/name" && write.value === "변경"));
+  assert.equal(mutations[0].body["customers/customer_1/name"], undefined);
   assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
   assert.equal(Object.keys(mutations[0].body).some(key => /buildingUnits|fieldSummaries|unknownFutureCollection/.test(key)), false);
 });
 
-test("pushStore fetches an unknown baseline before PATCH so omitted future data is never wiped", async () => {
+test("pushStore refuses an existing customer edit with an unknown baseline instead of guessing", async () => {
   const mutations = [];
   const { client } = makeClient();
   client.remotePayload = null;
@@ -248,13 +257,9 @@ test("pushStore fetches an unknown baseline before PATCH so omitted future data 
     return null;
   };
 
-  await client.pushStore(Core.sanitizeSharedStore({ customers: [{ id: "customer_1", name: "After" }] }));
-
-  assert.equal(mutations.length, 1);
-  assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
-  assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
-  assert.equal(Object.keys(mutations[0].body).some(key => key.startsWith("futureCollection")), false);
+  await assert.rejects(client.pushStore(Core.sanitizeSharedStore({ customers: [{ id: "customer_1", name: "After" }] })), error => error.code === "SHARED_SAVE_CONFLICT");
+  assert.equal(mutations.length, 0);
+  assert.equal(client.customerConditionalWrites.length, 0);
 });
 
 test("legacy direct building and sales-unit changes are discarded at the shared-store boundary", async () => {
@@ -296,11 +301,11 @@ test("an unrelated save succeeds when canonical buildings and sales units are un
 
   await client.pushStore(input);
 
-  assert.equal(mutations.length, 1);
-  assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
-  assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
-  assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
+  assert.ok(mutations.length <= 1, "a field-only CAS need not resend identical root metadata");
+  if (mutations.length) assert.equal(mutations[0].method, "PATCH");
+  assert.ok(client.customerConditionalWrites.some(write => write.location.endsWith("/customers/customer_1/name") && write.value === "After"));
+  assert.equal(Object.hasOwn(mutations[0]?.body || {}, "customers/customer_1"), false);
+  assert.equal(Object.keys(mutations[0]?.body || {}).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
 });
 
 test("an unrelated save rebases stale canonical collections onto the server source of truth", async () => {
@@ -334,7 +339,7 @@ test("an unrelated save rebases stale canonical collections onto the server sour
   const result = await client.pushStore(input);
 
   assert.equal(mutations.length, 1);
-  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
+  assert.ok(client.customerConditionalWrites.some(write => write.location.endsWith("/customers/customer_1/name") && write.value === "After"));
   assert.equal(mutations[0].body["activities/activity_new"].id, "activity_new");
   assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
   assert.equal(result.buildings[0].name, "Server");
