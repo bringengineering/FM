@@ -12,7 +12,7 @@ function harness(options={}) {
   if(options.customerSite){draft.buildingId="";draft.customerId="owner1";draft.siteAddress="예시시 예시로 12";}
   for(const item of draft.items) {item.status="skipped";item.note="대상 제외";}
   Object.assign(draft.items[0],{status:"done",before:[{id:"before"}],after:[{id:"after"}]});
-  const state={draft,canWork:true};const events=[];
+  const state={draft,canWork:true,photoSelectedIds:new Set(options.photoSelectedIds || [])};const events=[];
   const owner={id:"owner1",name:"예시 건물주",phone:options.noPhone?"":"01000000000"};
   const record={id:"saved_wr_example",title:"예시 PDF",buildingId:"b1",driveFileId:"drive_example",updatedAt:"2026-10-06T02:00:00Z",savedCustomerDocument:{version:1,kind:"workReport",customerId:owner.id,recipientPhone:owner.phone,reportId:draft.id,reportUpdatedAt:"2026-10-06T01:00:00Z",sha256:"a".repeat(64),size:123}};
   const context=vm.createContext({reportState:state,authGeneration:1,currentView:"workReports",SavedCustomerDocuments:Docs,
@@ -21,7 +21,7 @@ function harness(options={}) {
     renderWorkReports:()=>{},resetReportDriveSelection:()=>{},customerById:()=>owner,customerPhoneText:value=>value,canAdministerSecurity:()=>!options.member,
     showToast:(message,type)=>events.push(["toast",message,type]),
     loadWorkReports:async()=>{events.push(["loadReports"]);},
-    requestConfirmation:async input=>{events.push(["ask",input]);return Boolean(options.yes);},
+    requestConfirmation:async input=>{events.push(["ask",input]);return input.confirmLabel === "제외하고 저장" ? Boolean(options.excludeConfirmed) : Boolean(options.yes);},
     api:{
       exportWorkReport:async input=>{events.push(["pdfOnly",input]);return {ok:true,canceled:options.cancelPdf};},
       saveWorkReport:async input=>{events.push(["save",input]);if(options.hold)await options.hold;if(options.authChange)context.authGeneration++;if(options.navigate)context.currentView="customers";if(options.saveFailure)throw Error("save failed");return {...input,updatedAt:"2026-10-06T01:00:00Z"};},
@@ -36,10 +36,45 @@ function harness(options={}) {
     if(options.siteAuthChange)context.authGeneration++;
     return context.store.buildings[0];
   };
-  for(const name of ["rememberWorkReportPdf","refreshWorkReportPdfRecord","saveWorkReportFromForm"])vm.runInContext(functionSource(name),context);
+  for(const name of ["reportPhotoCounts","rememberWorkReportPdf","refreshWorkReportPdfRecord","saveWorkReportFromForm"])vm.runInContext(functionSource(name),context);
   return {context,state,events,record,draft};
 }
 const operations=h=>h.events.filter(e=>e[0]!=="toast").map(e=>e[0]);
+
+test("missing selected photos require explicit exclusion for PDF and CRM save",async()=>{
+  for(const pdfOnly of [false,true]){
+    const cancelled=harness({photoSelectedIds:["before","after","missing"]});
+    await cancelled.context.saveWorkReportFromForm({pdfOnly});
+    assert.deepEqual(operations(cancelled),["ask"]);assert.equal(cancelled.state.saveBusy,false);
+    assert.match(cancelled.events[0][1].description,/선택 3장 중 2장이 포함되고 1장이 빠집니다/);
+    assert.ok(cancelled.state.draft);
+    const confirmed=harness({photoSelectedIds:["before","after","missing"],excludeConfirmed:true});
+    await confirmed.context.saveWorkReportFromForm({pdfOnly});
+    assert.deepEqual(operations(confirmed).slice(0,2),["ask",pdfOnly?"pdfOnly":"save"]);
+    assert.equal(confirmed.events[0][1].cancelLabel,"분류 계속하기");
+  }
+});
+
+test("photo counts include manual and existing images and deduplicate file IDs",()=>{
+  const h=harness({photoSelectedIds:["before","missing","missing"]});
+  const counts=h.context.reportPhotoCounts(h.draft);
+  assert.equal(counts.selected,3);assert.equal(counts.included,2);assert.equal(counts.excluded,1);
+  h.state.photoSelectedIds=new Set();
+  assert.equal(h.context.reportPhotoCounts(h.draft).excluded,0);
+});
+
+test("a pending exclusion confirmation blocks concurrent saves and session changes",async()=>{
+  let finish;
+  const h=harness({photoSelectedIds:["before","after","missing"]});
+  h.context.requestConfirmation=()=>new Promise(resolve=>{finish=resolve;});
+  const first=h.context.saveWorkReportFromForm();
+  await h.context.saveWorkReportFromForm();
+  assert.equal(h.state.saveBusy,true);
+  h.context.authGeneration++;
+  finish(true);await first;
+  assert.equal(h.events.some(e=>e[0]==="save" || e[0]==="pdfOnly"),false);
+  assert.equal(h.state.saveBusy,false);
+});
 
 test("customer-only reports export or save directly without creating a building",async()=>{
   for(const pdfOnly of [false,true]){
