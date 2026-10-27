@@ -26,11 +26,22 @@ export function createRecordingDrive(config:{clientId:string;clientSecret:string
       let reason='';try{const p=JSON.parse((await bytesBounded(r,64*1024)).toString());reason=String(p.error?.errors?.[0]?.reason||'');}catch{/* never reflect provider text */}
       if(r.status===401){token='';throw new RecordingError('DRIVE_RECONNECT_REQUIRED',503);}
       if(r.status===403&&reason==='storageQuotaExceeded')throw new RecordingError('DRIVE_STORAGE_FULL',503);
-      throw new RecordingError(r.status===403||r.status===404?'DRIVE_FOLDER_ACCESS_REQUIRED':'DRIVE_UNAVAILABLE',503);
+      throw Object.assign(new RecordingError(r.status===403||r.status===404?'DRIVE_FOLDER_ACCESS_REQUIRED':'DRIVE_UNAVAILABLE',503),{driveHttpStatus:r.status});
     }return r;
   }
   async function metadata(id:string,allowMissing=false){assert(ID.test(id),'DRIVE_NOT_CONFIGURED',503);const r=await request(`${API}/${id}?supportsAllDrives=true&fields=id,mimeType,parents,trashed,size,md5Checksum,appProperties,capabilities(canAddChildren)`,{},allowMissing?[404]:[]);return r.status===404?null:JSON.parse((await bytesBounded(r,64*1024)).toString());}
-  async function root(kind:'photos'|'reports') {const id=kind==='photos'?config.photosRoot:config.reportsRoot;const m=await metadata(id);assert(m?.id===id&&m.mimeType===FOLDER&&m.trashed===false&&m.capabilities?.canAddChildren===true,'DRIVE_FOLDER_ACCESS_REQUIRED',503);return id;}
+  async function root(kind:'photos'|'reports') {
+    const id=kind==='photos'?config.photosRoot:config.reportsRoot;
+    let m:any;
+    try{m=await metadata(id);}catch(error){
+      const status=(error as {driveHttpStatus?:unknown})?.driveHttpStatus;
+      if(status===403||status===404)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,httpStatus:status}));
+      throw error;
+    }
+    const valid=m?.id===id&&m.mimeType===FOLDER&&m.trashed===false&&m.capabilities?.canAddChildren===true;
+    if(!valid)console.warn(JSON.stringify({event:'field_drive_root_check',root:kind,idMatches:m?.id===id,isFolder:m?.mimeType===FOLDER,notTrashed:m?.trashed===false,canAddChildren:m?.capabilities?.canAddChildren===true}));
+    assert(valid,'DRIVE_FOLDER_ACCESS_REQUIRED',503);return id;
+  }
   async function generateId(){const r=await request(`${API}/generateIds?count=1&space=drive&type=files`),p=JSON.parse((await bytesBounded(r,8192)).toString());assert(Array.isArray(p.ids)&&p.ids.length===1&&ID.test(p.ids[0]),'DRIVE_UNAVAILABLE',503);return p.ids[0] as string;}
   async function folder(kind:'photos'|'reports',segments:{key:string;name:string}[]) {
     let parent=await root(kind);

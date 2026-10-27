@@ -10,7 +10,7 @@ export interface UploadApi {
 }
 const isId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(value);
 const MAX_RESPONSE_BYTES = 128 * 1024;
-async function readJsonBounded(response: Response): Promise<unknown> {
+export async function readJsonBounded(response: Response): Promise<unknown> {
   if (!/^application\/json(?:\s*;.*)?$/i.test(response.headers.get('content-type') ?? '')) throw new FieldError('SERVER_RESPONSE_INVALID');
   const declared = response.headers.get('content-length');
   if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) throw new FieldError('SERVER_RESPONSE_INVALID');
@@ -43,7 +43,7 @@ export function assertUpload(value: unknown): UploadStatus {
   return v;
 }
 export class FieldApiClient implements UploadApi {
-  constructor(private base: string, protected uid: string, private credentials: () => Promise<Credentials>, private fetcher: typeof fetch = fetch) {
+  constructor(private base: string, protected uid: string, protected credentials: () => Promise<Credentials>, protected fetcher: typeof fetch = fetch) {
     const url = new URL(base);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.pathname.endsWith('/v1/field-app')) throw new FieldError('API_CONFIGURATION_INVALID');
   }

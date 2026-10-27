@@ -169,6 +169,18 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
     if (!visit || !vault) return;
     await vault.saveVisit(editVisit(visit, { summary, followUp, notes, ...patch }, new Date().toISOString()), visit.revision); await refresh(); notify('초안을 저장했습니다.');
   }
+  async function generateAiDraft(){
+    if(!company||!visit||!vault)return;
+    if(dirty||captionDirty||summary.trim()||visit.draft.summary.trim())throw new FieldError('UNSAVED_CHANGES');
+    const text=await company.api.aiReport(visit,photos,controller.current.signal);
+    await vault.saveVisit(editVisit(visit,{summary:text},new Date().toISOString()),visit.revision);
+    await refresh();notify('AI 초안을 만들었습니다. 사진은 AI에 전송되지 않았습니다. 내용을 확인하고 수정해 주세요.');
+  }
+  async function finishCapture(){
+    if(dirty||captionDirty)throw new FieldError('UNSAVED_CHANGES');
+    setCameraReady(false);setScreen('report');
+    if(company&&visit&&!visit.draft.summary.trim())await generateAiDraft();
+  }
   async function updatePhoto(patch: Partial<Photo>) {
     if (!vault || !visit || !photo) return;
     await vault.editPhoto({ ...photo, ...patch }, visit.revision); await refresh(); notify('사진 분류를 저장했습니다. 보고서 검토는 다시 확인해 주세요.');
@@ -179,7 +191,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   if(company&&!foreground)return <SafeAreaView style={s.safe}><Note>회사 정보를 보호하고 있습니다.</Note></SafeAreaView>;
   return <SafeAreaView style={s.safe}><StatusBar style="dark" /><View style={s.shell}>
     {screen!=='capture'&&<><View style={s.header}><View><Text style={s.brand}>BRING CARE</Text><Text style={s.headerTitle}>현장노트</Text></View><Pressable accessibilityRole="button" accessibilityLabel="설정 열기" onPress={() => navigate('settings')} style={s.icon}><Text style={s.iconText}>설정</Text></Pressable></View>
-    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.5':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
+    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.6':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
     {vault && <Pressable accessibilityRole="button" onPress={() => navigate('sync')} style={s.syncStrip}><Text style={s.syncText}>기기 보관 {workspace.photos.length}장  ·  전송 대기 {pending}장</Text><Text style={s.blue}>확인 →</Text></Pressable>}</>}
     {screen==='capture'&&visit&&<View style={s.captureHeader}><Text style={s.captureSite} numberOfLines={1}>{visit.job.title}</Text><Text style={s.captureSiteSmall}>구역별 사진 촬영</Text></View>}
     {notice !== '' && <View accessibilityRole="alert" style={[s.toast, problem && s.error]}><Text style={s.toastText}>{notice}</Text></View>}
@@ -235,7 +247,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
           <Button label="촬영 구역 변경" secondary disabled={busy} onPress={()=>{setPlannedAreas(initialCaptureAreas(visit,photos));setCameraReady(false);setScreen('capture-setup');}} />
           {Platform.OS !== 'web' && <Button label="사진첩에서 한 장 선택" secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
           <Button label={`사진 ${photos.length}장 확인`} secondary onPress={() => navigate('photos')} />
-          <Button label="사진·보고서 저장하기" secondary disabled={!photos.length||busy} onPress={()=>navigate('report')} />
+          <Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} secondary disabled={!photos.length||busy} onPress={()=>void perform(finishCapture)} />
           <Note>사진을 찍어도 작업 완료로 처리하지 않습니다. 촬영 후 보고서에서 항목 상태를 확인해 주세요.</Note>
         </>}
         {screen === 'photos' && visit && <>
@@ -253,6 +265,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
           <Note>{company?'초안을 저장하고 내용을 검토한 뒤, PDF를 Drive와 CRM에 보관하세요.':'작성한 내용은 기기에 보관됩니다. 고객 PDF·Drive 보관은 서버 연결 후 사용할 수 있습니다.'}</Note>
           {areas.length>0&&<Note>촬영 현황 · 작업 전 {captureProgress(areas,photos,'before').done}/{areas.length}구역 · 작업 후 {captureProgress(areas,photos,'after').done}/{areas.length}구역. 미촬영 구역은 사진이 없는 상태로 보고서에 남습니다.</Note>}
           <Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" editable={!busy} multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
+          {company&&<><Note>AI는 촬영 구역과 사진 수만 이용합니다. 사진과 고객 정보는 AI에 보내지 않습니다. 초안의 실제 작업 내용을 확인하고 필요한 내용을 수정해 주세요.</Note>{!summary.trim()&&<Button label="AI 보고서 초안 만들기" secondary disabled={busy||dirty||!photos.length} onPress={()=>void perform(generateAiDraft)} />}</>}
           <Text style={s.label}>후속 조치</Text><TextInput accessibilityLabel="후속 조치" editable={!busy} multiline maxLength={2000} value={followUp} onChangeText={setFollowUp} style={[s.input, s.textareaSmall]} placeholder="추가 작업이나 확인할 내용" />
           <Button label={dirty ? '작성 중인 초안 저장' : '초안 저장'} disabled={busy} onPress={() => void perform(() => saveDraft())} />
           {company&&<><Note>현재 구역별 사진과 작성한 내용으로 PDF를 만들고 Drive와 CRM에 보관합니다.</Note><Button label="사진·보고서 저장" disabled={busy||photos.length===0} onPress={()=>void perform(savePhotosAndReport)} /></>}
