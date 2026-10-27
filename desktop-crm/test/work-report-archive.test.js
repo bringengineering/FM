@@ -135,3 +135,14 @@ test("현장노트 고객 보고서는 건물 연결 없이 저장·조회하고
   assert.equal(Docs.normalize({...record,customerId:"other"}),null);
   assert.equal(h.events.some(e=>e[0]==="createAndSend"),false);
 });
+
+test("고객 주소 기반 보고서는 별도 건물 없이 저장한 PDF를 해당 고객에게 발송한다",async()=>{
+  const h=fixture();h.report.buildingId="";h.report.customerId="owner_a";h.data.buildings=[];
+  const {record}=await h.save();
+  const sent=await h.service.send(h.request(record),h.session);
+  assert.equal(sent.ok,true);
+  const payload=h.events.find(e=>e[0]==="createAndSend")[1];
+  assert.equal(payload.delivery.phone,"01000000000");
+  assert.equal(payload.completionReport.buildingAddress,"예시시 예시로 123");
+  assert.equal(record.savedCustomerDocument.customerId,"owner_a");
+});

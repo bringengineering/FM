@@ -205,8 +205,9 @@ test("사진 한 장 붙일 때마다 서버에 쓰지 않는다", () => {
   const body = appSource.slice(start, appSource.indexOf("\n  function dropWorkReportPhoto(", start));
   assert.match(body, /api\.uploadWorkReportPhoto/u);
   assert.doesNotMatch(body, /api\.saveWorkReport/u);
-  // 건물을 모르면 사진이 어느 현장 것인지 알 수 없다.
-  assert.match(body, /건물을 먼저 골라 주세요/u);
+  // 고객 또는 기존 건물로 현장을 식별해야 사진을 첨부할 수 있다.
+  assert.match(body, /!draft\.buildingId && !draft\.customerId/u);
+  assert.match(body, /고객을 먼저 골라 주세요/u);
 });
 
 test("사진을 빼도 Drive 에서는 지우지 않는다", () => {
