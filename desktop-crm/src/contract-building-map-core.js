@@ -17,7 +17,7 @@
   function project(store, today = '') {
     const buildings = new Map(list(store?.buildings).filter(item => live(item) && id(item.id)).map(item => [item.id, item]));
     const customers = new Map(list(store?.customers).filter(item => live(item) && id(item.id)).map(item => [item.id, item]));
-    const groups = new Map(), seen = new Set(); let unlinked = 0;
+    const groups = new Map(), seen = new Set(), activeContracts = []; let unlinked = 0;
     for (const contract of list(store?.contracts)) {
       if (!live(contract) || !id(contract.id) || seen.has(contract.id)) continue;
       seen.add(contract.id);
@@ -29,11 +29,21 @@
       row.contracts.push({ id: contract.id, name: text(contract.name) || '계약명 미입력', customerId: customer.id, status: text(contract.status), startDate: text(contract.startDate), endDate: text(contract.endDate) });
       if (!row.customerIds.includes(customer.id)) { row.customerIds.push(customer.id); row.customerNames.push(text(customer.name) || text(customer.company) || '고객명 미입력'); }
       if (states[state].rank < states[row.status].rank) row.status = state;
-      if (state === 'active' && Schedule) for (const date of Schedule.contractDates(contract)) if (date >= today && (!row.nextDate || date < row.nextDate)) row.nextDate = date;
+      if (state === 'active') activeContracts.push(contract);
     }
-    for (const record of list(store?.serviceRecords)) {
-      const row = groups.get(record?.buildingId);
-      if (row?.status === 'active' && live(record) && !['completed', 'done', '완료'].includes(record.status) && Schedule.isDate(record.scheduledDate) && record.scheduledDate >= today && (!row.nextDate || record.scheduledDate < row.nextDate)) row.nextDate = record.scheduledDate;
+    if (Schedule.isDate(today)) {
+      const start = new Date(today.slice(0, 7) + '-01T00:00:00Z');
+      const months = Array.from({length: 12}, (_, offset) => { const date = new Date(start); date.setUTCMonth(start.getUTCMonth() + offset); return date.toISOString().slice(0, 7); });
+      const end = new Date(start); end.setUTCMonth(start.getUTCMonth() + 12);
+      const limit = end.toISOString().slice(0, 10);
+      const eligible = record => live(record) && !['completed', 'done', '완료'].includes(record.status) && Schedule.isDate(record.scheduledDate) && record.scheduledDate >= today && record.scheduledDate < limit;
+      const consider = record => { const row = groups.get(record.buildingId); if (row?.status === 'active' && eligible(record) && (!row.nextDate || record.scheduledDate < row.nextDate)) row.nextDate = record.scheduledDate; };
+      for (const record of list(store?.serviceRecords)) consider(record);
+      const projectionStore = { contracts: activeContracts, serviceRecords: list(store?.serviceRecords) };
+      for (const month of months) for (const occurrence of Schedule.contractWorkOccurrences(projectionStore, month)) {
+        // Weekly schedules are bounded to four dates, and may cross months.
+        if (occurrence.scheduledDate.startsWith(month)) consider(occurrence);
+      }
     }
     const rows = [...groups.values()].sort((a, b) => states[a.status].rank - states[b.status].rank || a.name.localeCompare(b.name, 'ko'));
     return { rows, unlinked, counts: Object.fromEntries(Object.keys(states).map(state => [state, rows.filter(row => row.status === state).length])) };

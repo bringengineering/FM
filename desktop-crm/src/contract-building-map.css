@@ -28,6 +28,7 @@
 .cbm-map-tools { position:absolute; top:12px; right:12px; display:grid; gap:4px; }.cbm-map-tools button { background:white; border:1px solid #cdddea; padding:9px 12px; border-radius:7px; cursor:pointer; font-weight:800; color:#273d57; }
 .cbm-attribution { position:absolute; bottom:0; right:0; margin:0; padding:5px 8px; font-size:10px; color:#334155; background:#ffffffe8; }
 .cbm-detail { margin-top:14px; }.cbm-detail h3 { font-size:20px; margin:0 0 10px; overflow-wrap:anywhere; }.cbm-detail p { font-size:14px; line-height:1.7; overflow-wrap:anywhere; }.cbm-detail ul { list-style:none; padding:0; }.cbm-detail li { padding:12px 0; border-top:1px solid #e6edf4; display:grid; gap:6px; overflow-wrap:anywhere; }.cbm-detail li span { font-size:12px; color:#64748b; }
+.cbm-customer-links { display:flex; flex-wrap:wrap; gap:8px; }
 .cbm-settings { margin-top:20px; }.cbm-settings summary { cursor:pointer; font-weight:800; font-size:14px; }.cbm-settings form { max-width:760px; margin-top:18px; }.cbm-settings p { font-size:13px; line-height:1.7; }.cbm-settings .cbm-check { display:flex; gap:9px; align-items:flex-start; line-height:1.7; }.cbm-check input { margin-top:5px; flex-shrink:0; }
 .cbm-workspace button:focus-visible,.cbm-map:focus-visible { outline:3px solid #83b9fb; outline-offset:2px; }
 @media(max-width:1000px) { .cbm-layout { grid-template-columns:240px minmax(0,1fr); }.cbm-heading { align-items:flex-start; }.cbm-map { height:390px; } }
