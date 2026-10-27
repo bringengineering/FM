@@ -12,7 +12,7 @@ export interface Photo {
   reservationRevision?: number;
 }
 export interface Draft { summary: string; followUp: string; statuses: Record<string, ItemStatus>; notes: Record<string, string>; confirmedRevision?: number }
-export interface Visit { id: string; ownerUid: string; job: Job; revision: number; draft: Draft; updatedAt: string; captureAreas?: string[] }
+export interface Visit { id: string; ownerUid: string; job: Job; revision: number; draft: Draft; updatedAt: string; captureAreas?: string[]; aiDraft?: {summary:string;facts:string} }
 export interface Workspace { visits: Visit[]; photos: Photo[] }
 export interface Vault {
   readonly uid: string;

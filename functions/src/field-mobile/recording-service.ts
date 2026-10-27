@@ -88,19 +88,30 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     return uploadStatus(ready);
   }
   async function archive(visitId:string,input:unknown) {
-    assert(object(input)&&Object.keys(input).length===1&&Number.isSafeInteger(input.revision));
+    assert(object(input)&&Object.keys(input).every(k=>['revision','captureAreas'].includes(k))&&Number.isSafeInteger(input.revision));
     const v=await visit(visitId);assert(v.revision===input.revision&&v.draft.confirmedRevision===v.revision,'REPORT_REVIEW_REQUIRED',409);
     assert(v.site.address.trim(),'SITE_ADDRESS_REQUIRED',422);
     const selected=v.photos.filter(p=>p.included);assert(selected.length>0&&selected.length<=RECORD_LIMITS.pdfPhotos,'REPORT_PHOTO_LIMIT',422);
+    let plan:string[]|undefined;
+    if(input.captureAreas!==undefined){
+      const catalog=reportCore.itemCatalogFor(v.kind),keys=new Set(catalog.map(item=>item.key));
+      assert(Array.isArray(input.captureAreas)&&input.captureAreas.length>0&&input.captureAreas.length<=catalog.length&&input.captureAreas.every((key:unknown)=>typeof key==='string'&&keys.has(key))&&new Set(input.captureAreas).size===input.captureAreas.length);
+      assert(selected.every(p=>input.captureAreas.includes(p.itemKey)),'REPORT_INVALID',422);
+      const chosen=new Set<string>(input.captureAreas);
+      for(const item of catalog)if((v.draft.statuses[item.key]&&v.draft.statuses[item.key]!=='recorded')||v.draft.notes[item.key]?.trim())chosen.add(item.key);
+      plan=catalog.filter(item=>chosen.has(item.key)).map(item=>item.key);
+    }
     assert(selected.reduce((n,p)=>n+p.bytes,0)<=RECORD_LIMITS.pdfSourceBytes,'REPORT_PHOTO_BYTES_LIMIT',422);
     const uploads:UploadRecord[]=[];for(const p of selected){const u=await upload(uploadKey(uid,v.id,p.id));assert(u.state==='ready'&&u.driveFileId,'PHOTOS_NOT_READY',409);uploads.push(u);}
-    const recordId='saved_wr_'+hash(JSON.stringify([uid,v.id,v.revision])).slice(0,40),reportId='fm_'+hash(JSON.stringify([uid,v.id,v.revision])).slice(0,40),path=`${base}/archives/${uid}/${recordId}`;
+    const identity=plan?[uid,v.id,v.revision,plan]:[uid,v.id,v.revision];
+    const recordId='saved_wr_'+hash(JSON.stringify(identity)).slice(0,40),reportId='fm_'+hash(JSON.stringify(identity)).slice(0,40),path=`${base}/archives/${uid}/${recordId}`;
     let a=await d.store.change<ArchiveRecord>(path,old=>{if(old){assert(old.contentHash===v.contentHash,'REVISION_CONFLICT',409);return old;}return{id:recordId,visitId:v.id,revision:v.revision,ownerUid:uid,contentHash:v.contentHash,reportId};});
     if(a.ready)return{documentId:a.id,revision:a.revision,archivedAt:a.archivedAt,driveVerified:true,crmLinked:true};
-    const report=reportFor(v,uploads,reportId);assert(reportCore.validateReport(report).ok,'REPORT_INVALID',422);
+    const scoped=plan?{...v,captureAreas:plan}:v;
+    const report=reportFor(scoped,uploads,reportId);assert(reportCore.validateReport(report).ok,'REPORT_INVALID',422);
     const imageBytes:{photo:RecordingPhoto;bytes:Buffer}[]=[];
     for(let i=0;i<selected.length;i+=4){const batch=selected.slice(i,i+4);imageBytes.push(...await Promise.all(batch.map(async p=>({photo:p,bytes:await d.drive.download(uploads.find(u=>u.photo.id===p.id)!.driveFileId!,p)}))));}
-    const pdf=await d.blobs.putOnce(`field-mobile-staging/${uid}/reports/${recordId}.pdf`,await d.pdf(v,imageBytes));
+    const pdf=await d.blobs.putOnce(`field-mobile-staging/${uid}/reports/${recordId}.pdf`,await d.pdf(scoped,imageBytes));
     assert(pdf.length<=RECORD_LIMITS.pdfBytes&&pdf.subarray(0,5).toString()==='%PDF-','REPORT_PDF_INVALID',422);
     const folderId=a.folderId||await d.drive.folder('reports',[{key:'field-work-reports',name:'현장노트 작업보고서'},{key:v.workDate.slice(0,4),name:v.workDate.slice(0,4)}]);
     const candidate=a.driveFileId||await d.drive.generateId();

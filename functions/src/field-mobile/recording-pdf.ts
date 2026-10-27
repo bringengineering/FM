@@ -9,6 +9,9 @@ const blue=rgb(.12,.35,.65),ink=rgb(.12,.18,.25),muted=rgb(.36,.42,.49),line=rgb
 const phases={before:'작업 전',during:'작업 중',after:'작업 후'};
 const statuses:Record<string,string>={recorded:'작업 기록',done:'완료',partial:'일부 진행',skipped:'미실시'};
 type PdfPhoto={photo:RecordingPhoto;bytes:Buffer};
+export function reportItems(visit:Recording,photos:PdfPhoto[]){
+  return reportCore.itemCatalogFor(visit.kind).filter(item=>visit.captureAreas?visit.captureAreas.includes(item.key):!item.optional||photos.some(p=>p.photo.itemKey===item.key));
+}
 export function photoRows(photos:PdfPhoto[]):{slots:(PdfPhoto|null)[];labels:string[]}[]{
   const ordered=(phase:RecordingPhoto['phase'])=>photos.filter(p=>p.photo.phase===phase).sort((a,b)=>Date.parse(a.photo.capturedAt)-Date.parse(b.photo.capturedAt)||a.photo.id.localeCompare(b.photo.id));
   const before=ordered('before'),after=ordered('after'),during=ordered('during'),rows:{slots:(PdfPhoto|null)[];labels:string[]}[]=[];
@@ -46,7 +49,7 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
   function room(height:number){if(y-height<65)next();}
   function paragraph(label:string,value:string){const rows=wrap(value||'미기재',510,10);room(38);draw(page,label,42,y,12,blue);y-=23;for(const row of rows){room(16);draw(page,row,42,y,10);y-=16;}y-=14;}
   next();paragraph('고객 / 현장',visit.site.name);paragraph('건물주소',visit.site.address);paragraph('작업일 / 작업 종류',`${visit.workDate} / ${visit.kind==='common'?'공용부청소':'입주청소'}`);paragraph('작업 내용',visit.draft.summary);paragraph('후속 조치',visit.draft.followUp);
-  for(const item of reportCore.itemCatalogFor(visit.kind).filter(item=>!item.optional||photos.some(p=>p.photo.itemKey===item.key))){
+  for(const item of reportItems(visit,photos)){
     const selected=photos.filter(p=>p.photo.itemKey===item.key);
     room(selected.length?280:65);draw(page,`${item.label} · ${statuses[visit.draft.statuses[item.key]||'recorded']}`,42,y,12,blue);y-=24;
     if(visit.draft.notes[item.key]){for(const row of wrap(visit.draft.notes[item.key],510,10)){room(16);draw(page,row,42,y,10);y-=16;}y-=6;}

@@ -19,7 +19,7 @@ beforeEach(() => {
 it('keeps the captured source when durable storage fails and releases decoder resources', async () => {
   const vault = { uid: 'staff-a', savePhoto: vi.fn(async () => { throw new Error('storage full'); }) } as unknown as Vault;
   await expect(persistCapture(vault, visit(), source, 'entrance', 'before')).rejects.toThrow('storage full');
-  expect(capture.deleted).toEqual([]); expect(capture.image.release).toHaveBeenCalledOnce(); expect(capture.context.release).toHaveBeenCalledOnce();
+  expect(capture.deleted).toEqual(['file:///cache/converted.jpg']); expect(capture.image.release).toHaveBeenCalledOnce(); expect(capture.context.release).toHaveBeenCalledOnce();
 });
 it('releases the decoder when rendering or JPEG conversion fails', async () => {
   capture.context.renderAsync.mockRejectedValueOnce(new Error('decode'));
@@ -33,6 +33,7 @@ it('checks output size before allocating the photograph and never removes a non-
   capture.size = 21 * 1024 * 1024;
   const vault = { uid: 'staff-a', savePhoto: vi.fn(async () => undefined) } as unknown as Vault;
   await expect(persistCapture(vault, visit(), source, 'entrance', 'before')).rejects.toThrow('PHOTO_INVALID'); expect(capture.read).not.toHaveBeenCalled();
+  expect(capture.deleted).toEqual(['file:///cache/converted.jpg']);capture.deleted=[];
   capture.size = 8; await persistCapture(vault, visit(), { ...source, uri: 'file:///documents/original.jpg' }, 'entrance', 'before');
   expect(capture.deleted).toEqual(['file:///cache/converted.jpg']);
 });

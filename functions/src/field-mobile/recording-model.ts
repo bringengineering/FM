@@ -13,7 +13,7 @@ export const nowIso = () => new Date().toISOString();
 const bounded = (v: unknown, max: number, multiline = false): v is string => typeof v === 'string' && v.length <= max && !(multiline ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/).test(v);
 export interface RecordingPhoto {id: string; itemKey: string; phase: 'before'|'during'|'after'; caption: string; included: boolean; capturedAt: string; mime: 'image/jpeg'; bytes: number; sha256: string; width: number; height: number}
 export interface RecordingInput {customerId: string; kind: 'common'|'moveIn'; workDate: string; revision: number; draft: {summary: string; followUp: string; statuses: Record<string,string>; notes: Record<string,string>; confirmedRevision?: number}; photos: RecordingPhoto[]}
-export interface Recording extends RecordingInput {id: string; ownerUid: string; site: CustomerSite; contentHash: string; createdAt: string; updatedAt: string}
+export interface Recording extends RecordingInput {id: string; ownerUid: string; site: CustomerSite; contentHash: string; createdAt: string; updatedAt: string; captureAreas?:string[]}
 export interface UploadRecord {id: string; ownerUid: string; visitId: string; photo: RecordingPhoto; receivedBytes: number; state: 'uploading'|'ready'; driveFileId?: string; folderId?: string; createdAt: string}
 export interface ArchiveRecord {id: string; visitId: string; revision: number; ownerUid: string; contentHash: string; driveFileId?: string; folderId?: string; ready?: boolean; archivedAt?: string; reportId: string}
 export function photoInput(v: unknown, kind: string): RecordingPhoto {
@@ -45,6 +45,8 @@ export const uploadKey = (uid:string,visitId:string,photoId:string) => 'up_'+has
 export function photoBinding(p:RecordingPhoto){const {caption,included,...fixed}=p;return JSON.stringify(fixed);}
 export function uploadStatus(u:UploadRecord) { return {uploadId:u.id,photoId:u.photo.id,sha256:u.photo.sha256,totalBytes:u.photo.bytes,receivedBytes:u.receivedBytes,state:u.state,driveVerified:u.state==='ready',crmLinked:u.state==='ready'}; }
 export function reportFor(v:Recording, uploads:UploadRecord[], reportId:string) {
-  return reportCore.normalizeReport({id:reportId,customerId:v.customerId,buildingId:'',buildingName:v.site.name,siteAddress:v.site.address,kind:v.kind,workDate:v.workDate,summary:v.draft.summary,followUp:v.draft.followUp,createdAt:v.createdAt,updatedAt:v.updatedAt,updatedBy:v.ownerUid,
+  const report=reportCore.normalizeReport({id:reportId,customerId:v.customerId,buildingId:'',buildingName:v.site.name,siteAddress:v.site.address,kind:v.kind,workDate:v.workDate,summary:v.draft.summary,followUp:v.draft.followUp,createdAt:v.createdAt,updatedAt:v.updatedAt,updatedBy:v.ownerUid,
     items:reportCore.itemCatalogFor(v.kind).map(item=>({...item,status:v.draft.statuses[item.key]||'recorded',note:v.draft.notes[item.key]||'',...Object.fromEntries(['before','during','after'].map(phase=>[phase,v.photos.filter(p=>p.included&&p.itemKey===item.key&&p.phase===phase).map(p=>({id:p.id,caption:p.caption,driveFileId:uploads.find(u=>u.photo.id===p.id)?.driveFileId||''}))]))}))});
+  if(v.captureAreas)report.items=report.items.filter((item:{key:string})=>v.captureAreas!.includes(item.key));
+  return report;
 }

@@ -24,13 +24,13 @@ it('reconciles a customer visit, uploads, edits a caption and archives once thro
   server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as {port:number}).port;
   const api=new CompanyRecordingApi('https://field-test.invalid/v1/field-app','staff-a',async()=>({uid:'staff-a',idToken:'synthetic',appCheckToken:'synthetic'}),((url,options)=>fetch(String(url).replace('https://field-test.invalid',`http://127.0.0.1:${port}`),options)) as typeof fetch),signal=new AbortController().signal;
   try{
-    const v=visit();v.job.customerId='customer-a';v.job.buildingId='';await vault.saveVisit(v,null);await vault.savePhoto(await photo(),jpeg,1);
+    const v=visit();v.job.customerId='customer-a';v.job.buildingId='';v.captureAreas=['entrance'];await vault.saveVisit(v,null);await vault.savePhoto(await photo(),jpeg,1);
     await api.recordingContext(signal);await api.storageStatus(signal);
     async function sync(){const s=await vault.load(),v=s.visits[0]!;const link=await api.reconcile(v,s.photos,signal);await vault.linkRevision(v.id,link.revision,link.photoIds);await new SyncRunner(vault,api,v.id).run();}
     await sync();let state=await vault.load();expect(state.photos[0]?.state).toBe('ready');
     await vault.editPhoto({...state.photos[0]!,caption:'Revised caption'},state.visits[0]!.revision);state=await vault.load();
     const saved=await saveGroupedReport({vault,visit:state.visits[0]!,photos:state.photos,summary:'Synthetic report',followUp:'',notes:{},onLocalSave:async()=>{},sync,archive:current=>api.archive(current,signal)});
     expect(saved.ok).toBe(true);if(!saved.ok)throw Error('unexpected invalid report');const receipt=saved.receipt;expect(await api.archive(saved.visit,signal)).toEqual(receipt);
-    expect(files.size).toBe(2);expect(documents.size).toBe(1);const record=documents.get(receipt.documentId);expect(record.report.customerId).toBe('customer-a');expect(record.report.buildingId).toBe('');expect(record.report.summary).toBe('Synthetic report');expect(record.report.items[0].before[0].caption).toBe('Revised caption');
+    expect(files.size).toBe(2);expect(documents.size).toBe(1);const record=documents.get(receipt.documentId);expect(record.report.customerId).toBe('customer-a');expect(record.report.buildingId).toBe('');expect(record.report.summary).toBe('Synthetic report');expect(record.report.items.map((item:{key:string})=>item.key)).toEqual(['entrance']);expect(record.report.items[0].before[0].caption).toBe('Revised caption');
   }finally{await vault.close();server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 });

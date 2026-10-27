@@ -46,7 +46,7 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
       <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
     </View>}
     {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
-    <Text style={styles.small}>개발 0.1.6 · 직원 전용 · 활동사진·보고서 보관</Text>
+    <Text style={styles.small}>개발 0.1.7 · 직원 전용 · 활동사진·보고서 보관</Text>
   </ScrollView></SafeAreaView>;
 }
 function SessionScreen({ session }: { session: CompanySession }) {

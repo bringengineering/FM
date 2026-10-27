@@ -1,6 +1,6 @@
 import { expect,it,vi } from 'vitest';
 import { CompanyRecordingApi } from '../src/api/recording';
-import { reportFacts } from '../src/domain/ai-report';
+import { aiDraftState,reportFacts } from '../src/domain/ai-report';
 import { visit,photo } from './helpers';
 
 it('sends only fixed area labels and included photo counts to the existing AI gateway',async()=>{
@@ -24,4 +24,12 @@ it('does not send excluded photos or other employees records',async()=>{
 it('does not hide provider authorization failures as successful drafts',async()=>{
   const v=visit(),api=new CompanyRecordingApi('https://field-test.invalid/v1/field-app',v.ownerUid,async()=>({uid:v.ownerUid,idToken:'test-token',appCheckToken:'test-check'}),async()=>Response.json({error:'private detail'},{status:403}));
   await expect(api.aiReport(v,[await photo()],new AbortController().signal)).rejects.toThrow('AI_ACCESS_REQUIRED');
+});
+it('detects changed capture counts and distinguishes manually edited text',async()=>{
+  const v=visit(),p=await photo();v.draft.summary='AI 초안';v.aiDraft={summary:'AI 초안',facts:JSON.stringify(reportFacts(v,[p]))};
+  expect(aiDraftState(v,[p])).toBe('current');
+  const after={...p,id:'photo-b',phase:'after' as const};
+  expect(aiDraftState(v,[p,after])).toBe('stale');
+  v.draft.summary='직접 수정한 내용';expect(aiDraftState(v,[p,after])).toBe('edited_stale');
+  expect(aiDraftState(v,[p])).toBe('edited');
 });

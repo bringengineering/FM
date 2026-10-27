@@ -26,6 +26,16 @@ it('saves customer-only visits, verifies images, archives once, and binds CRM to
   const a=await t.service.archive('visit-a',{revision:3}),again=await t.service.archive('visit-a',{revision:3});expect(again).toEqual(a);expect(t.files.size).toBe(2);expect(t.commits.size).toBe(2);
   const doc=t.commits.get(a.documentId);expect(doc.buildingId).toBe('');expect(doc.customerId).toBe('customer-a');expect(doc.savedCustomerDocument.customerId).toBe('customer-a');expect(t.deps.pdf).toHaveBeenCalledTimes(1);
 });
+it('archives only the selected areas, reuses its identity, and retains legacy archives',async()=>{
+  const t=await setup(),u=await t.uploaded();await t.service.complete(u.uploadId,'complete_photo-a');
+  await expect(t.service.archive('visit-a',{revision:3,captureAreas:['corridor']})).rejects.toThrow('REPORT_INVALID');
+  const scoped=await t.service.archive('visit-a',{revision:3,captureAreas:['entrance']});
+  expect(await t.service.archive('visit-a',{revision:3,captureAreas:['entrance']})).toEqual(scoped);
+  expect(vi.mocked(t.deps.pdf).mock.calls[0][0].captureAreas).toEqual(['entrance']);
+  const document=t.commits.get(scoped.documentId),report=t.commits.get(document.savedCustomerDocument.reportId);
+  expect(report.items.map((item:{key:string})=>item.key)).toEqual(['entrance']);
+  const legacy=await t.service.archive('visit-a',{revision:3});expect(legacy.documentId).not.toBe(scoped.documentId);
+});
 it('recovers lost Drive and CRM responses with the same file and document identifiers',async()=>{
   const t=await setup(),u=await t.uploaded();t.loseUpload();await expect(t.service.complete(u.uploadId,'complete_photo-a')).rejects.toThrow();await t.service.complete(u.uploadId,'complete_photo-a');expect(t.files.size).toBe(1);
   t.loseCommit();await expect(t.service.archive('visit-a',{revision:3})).rejects.toThrow();await t.service.archive('visit-a',{revision:3});expect(t.files.size).toBe(2);expect(t.commits.size).toBe(2);

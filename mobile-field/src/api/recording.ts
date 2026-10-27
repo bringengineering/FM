@@ -36,7 +36,7 @@ export class CompanyRecordingApi extends CompanySiteApi {
     return{revision:v.revision,photoIds:v.photoIds};
   }
   async archive(visit:Visit,signal:AbortSignal):Promise<ArchiveReceipt>{
-    const v=await this.request(`/visits/${visit.id}/archive`,'POST',JSON.stringify({revision:visit.revision}),signal) as any;
+    const v=await this.request(`/visits/${visit.id}/archive`,'POST',JSON.stringify({revision:visit.revision,...(visit.captureAreas?.length?{captureAreas:visit.captureAreas}:{})}),signal) as any;
     if(!/^saved_wr_[a-f0-9]{40}$/.test(v?.documentId||'')||v?.revision!==visit.revision||typeof v.archivedAt!=='string'||!Number.isFinite(Date.parse(v.archivedAt))||v.driveVerified!==true||v.crmLinked!==true)throw new FieldError('SERVER_RESPONSE_INVALID');return v;
   }
 }

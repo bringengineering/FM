@@ -13,3 +13,9 @@ export function reportFacts(visit: Visit, photos: Photo[]): {kind:'common'|'move
   if(!lines.length)throw new FieldError('AI_PHOTOS_REQUIRED');
   return {kind:visit.job.kind,areas:lines};
 }
+export function aiDraftState(visit:Visit,photos:Photo[]):'missing'|'current'|'stale'|'edited'|'edited_stale'{
+  if(!visit.aiDraft)return 'missing';
+  let sameFacts=false;try{sameFacts=JSON.stringify(reportFacts(visit,photos))===visit.aiDraft.facts;}catch{/* no included photos */}
+  if(visit.draft.summary!==visit.aiDraft.summary)return sameFacts?'edited':'edited_stale';
+  return sameFacts?'current':'stale';
+}
