@@ -8970,7 +8970,7 @@
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "", readOnlyReason: "", saveBusy: false, saveError: "",
     driveScanning: false,
-    drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
+    drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "", photoSelectedIds: new Set(),
     driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
     photoReviewFilter: "all", photoReviewSelected: new Set(), photoReviewBulk: {}, photoReviewStage: "",
     photoReviewCollapsed: new Set(), photoReviewEditing: "", photoReviewAdd: null,
@@ -9000,6 +9000,7 @@
     reportState.driveScanning = false;
     reportState.drivePlan = null;
     reportState.driveBasePlan = null;
+    reportState.photoSelectedIds = new Set();
     reportState.driveClassificationLoading = false;
     reportState.driveClassifications = [];
     reportState.photoReviewFilter = "all";
@@ -9453,6 +9454,14 @@
     }).length;
   }
 
+  function reportPhotoCounts(draft) {
+    const included = new Set((draft?.items || []).flatMap(item => ["before", "during", "after"].flatMap(phase => item[phase] || []))
+      .map(photo => String(photo.driveFileId || photo.id || "")).filter(Boolean));
+    const selected = new Set(reportState.photoSelectedIds || []);
+    for (const id of included) selected.add(id);
+    return {selected: selected.size, included: included.size, excluded: [...selected].filter(id => !included.has(id)).length};
+  }
+
   function preserveReportDraft() {
     const current = readReportForm();
     if (current) reportState.draft = current;
@@ -9695,6 +9704,7 @@
     const generation = ++reportState.driveRequestGeneration;
     const previousPlan = reportState.drivePlan;
     const previousClassifications = reportState.driveClassifications;
+    const previousPhotoSelectedIds = new Set(reportState.photoSelectedIds || []);
     const destination = reportState.photoReviewAdd;
     const V = window.BringPhotoPairReview;
     const previousIds = new Set(V.flatten(previousPlan).map(row => row.id));
@@ -9712,6 +9722,7 @@
       if (generation !== reportState.driveRequestGeneration) return;
       preserveReportDraft();
       if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
+      reportState.photoSelectedIds = new Set([...(destination ? previousPhotoSelectedIds : []), ...reportState.driveSelected.keys()]);
       reportState.driveBasePlan = result.plan.kind === "moveIn" ? V.mergeSelection(result.plan, previousPlan, !!destination) : result.plan.kind === "common" ? reportPhotoPlan().mergeCommonSelection(result.plan, previousPlan) : result.plan;
       reportState.drivePlan = reportState.driveBasePlan;
       if (destination) for (const row of V.flatten(reportState.drivePlan)) reportState.driveSelected.set(row.id, row.file);
@@ -9736,6 +9747,7 @@
       reportState.drivePlan = previousPlan;
       reportState.driveBasePlan = previousPlan;
       reportState.driveClassifications = previousClassifications;
+      reportState.photoSelectedIds = previousPhotoSelectedIds;
       reportState.driveError = error && error.message || "선택한 사진을 분류하지 못했습니다.";
     } finally {
       if (generation === reportState.driveRequestGeneration) {
@@ -10064,6 +10076,7 @@
     const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
     const blockers = R.blockers(draft);
     const photoConfirmations = reportPhotoConfirmationCount(draft);
+    const photoCounts = reportPhotoCounts(draft);
     if (photoConfirmations) blockers.push({ key: "photoReview", text: `AI 추천 사진 ${photoConfirmations}장의 구역·전후를 확인해 주세요. 초안은 먼저 만들 수 있습니다.` });
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) blockers.push({ key: "analysisBusy", text: "AI 분석·초안 작성을 마친 뒤 저장해 주세요." });
     const sum = R.summarizeItems(draft);
@@ -10187,6 +10200,7 @@
             <header><div><span>FINAL CHECK</span><h4>작업 항목 완료율</h4></div><strong>${sum.progress}%</strong></header>
             <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
             <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${["moveIn", "common"].includes(draft.kind) ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
+            <p data-report-photo-counts aria-live="polite">선택 ${photoCounts.selected}장 · 보고서 포함 ${photoCounts.included}장 · 빠진 사진 ${photoCounts.excluded}장${photoCounts.excluded ? " — 분류하거나 제외 여부를 확인해 주세요." : ""}</p>
             ${blockers.length
               ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
               : `<div class="wr-ai-ready">✓ 보고서를 저장할 준비가 됐습니다.</div>`}
@@ -10282,6 +10296,13 @@
     renderWorkReports();
     let reportSaved = false, pdfSaved = false, archivedId = "";
     try {
+      const counts = reportPhotoCounts(checked.report);
+      if (counts.excluded) {
+        const accept = await requestConfirmation({title: "보고서에 빠진 사진이 있습니다", description: `선택 ${counts.selected}장 중 ${counts.included}장이 포함되고 ${counts.excluded}장이 빠집니다.`,
+          target: "빠진 사진은 이번 보고서와 PDF에 포함되지 않습니다.", message: "사진을 더 분류하려면 돌아가기를 누르고, 빠진 사진을 제외하려면 제외하고 저장을 누르세요.",
+          warning: "원본 사진은 삭제되지 않습니다.", confirmLabel: "제외하고 저장", cancelLabel: "분류 계속하기"});
+        if (!accept || !active() || currentView !== "workReports") return;
+      }
       if (pdfOnly) {
         const result = await api.exportWorkReport({report: checked.report, copyType: "owner", company: store.settings?.quoteCompany || {}, secrets: reportSecrets(), strictPhotos: true});
         if (!active() || result?.canceled) return;
