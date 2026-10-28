@@ -16,17 +16,18 @@ function harness(options={}) {
   const owner={id:"owner1",name:"예시 건물주",phone:options.noPhone?"":"01000000000"};
   const record={id:"saved_wr_example",title:"예시 PDF",buildingId:"b1",driveFileId:"drive_example",updatedAt:"2026-10-06T02:00:00Z",savedCustomerDocument:{version:1,kind:"workReport",customerId:owner.id,recipientPhone:owner.phone,reportId:draft.id,reportUpdatedAt:"2026-10-06T01:00:00Z",sha256:"a".repeat(64),size:123}};
   const context=vm.createContext({reportState:state,authGeneration:1,currentView:"workReports",SavedCustomerDocuments:Docs,
+    customerAlimTalkState:{},openCustomerAlimTalk:()=>{context.currentView="customerAlimTalk";events.push(["openAlimTalk"]);},
     store:{settings:{},buildings:[{id:"b1",name:"예시 건물",ownerCustomerId:owner.id}],buildingDocuments:[]},synchronizedStore:{buildingDocuments:[]},
     reportCore:()=>R,readReportForm:()=>state.draft,reportPhotoConfirmationCount:()=>options.unreviewed?1:0,reportSecrets:()=>({}),
     renderWorkReports:()=>{},resetReportDriveSelection:()=>{},customerById:()=>owner,customerPhoneText:value=>value,canAdministerSecurity:()=>!options.member,
     showToast:(message,type)=>events.push(["toast",message,type]),
     loadWorkReports:async()=>{events.push(["loadReports"]);},
-    requestConfirmation:async input=>{events.push(["ask",input]);return input.confirmLabel === "제외하고 저장" ? Boolean(options.excludeConfirmed) : Boolean(options.yes);},
+    requestConfirmation:async input=>{events.push(["ask",input]);return input.confirmLabel === "제외하고 저장" ? Boolean(options.excludeConfirmed) : input.confirmLabel === "고객 알림에서 확인" ? Boolean(options.openStatus) : Boolean(options.yes);},
     api:{
       exportWorkReport:async input=>{events.push(["pdfOnly",input]);return {ok:true,canceled:options.cancelPdf};},
       saveWorkReport:async input=>{events.push(["save",input]);if(options.hold)await options.hold;if(options.authChange)context.authGeneration++;if(options.navigate)context.currentView="customers";if(options.saveFailure)throw Error("save failed");return {...input,updatedAt:"2026-10-06T01:00:00Z"};},
       saveCustomerDocument:async input=>{events.push(["archive",input]);if(options.pdfFailure)throw Error("pdf failed");return {ok:true,record};},
-      sendSavedCustomerDocument:async input=>{events.push(["send",input]);if(options.sendFailure)throw Error("send unknown");return {ok:true,record:{...record,workReportDelivery:{status:"requested"}}};},
+      sendSavedCustomerDocument:async input=>{events.push(["send",input]);if(options.sendFailure)throw Error("send unknown");const status=options.sendStatus||"requested";return {ok:true,status,messageId:options.messageId||"",record:{...record,workReportDelivery:{status}}};},
       load:async()=>({buildingDocuments:[{...record,workReportDelivery:{status:"unknown"}}]})
     }
   });
@@ -36,7 +37,7 @@ function harness(options={}) {
     if(options.siteAuthChange)context.authGeneration++;
     return context.store.buildings[0];
   };
-  for(const name of ["reportPhotoCounts","rememberWorkReportPdf","refreshWorkReportPdfRecord","saveWorkReportFromForm"])vm.runInContext(functionSource(name),context);
+  for(const name of ["reportPhotoCounts","rememberWorkReportPdf","refreshWorkReportPdfRecord","offerWorkReportDeliveryResult","saveWorkReportFromForm"])vm.runInContext(functionSource(name),context);
   return {context,state,events,record,draft};
 }
 const operations=h=>h.events.filter(e=>e[0]!=="toast").map(e=>e[0]);
@@ -98,9 +99,25 @@ test("보고서와 PDF가 둘 다 저장된 뒤에만 예·아니요를 묻고 �
 });
 test("예는 선택 건물주와 저장한 PDF 해시를 전달하고 발송 접수를 기록한다",async()=>{
   const h=harness({yes:true});h.draft.ownerContact="01099999999";await h.context.saveWorkReportFromForm();
-  assert.deepEqual(operations(h),["save","archive","loadReports","ask","send"]);
+  assert.deepEqual(operations(h),["save","archive","loadReports","ask","send","ask"]);
   const req=h.events.find(e=>e[0]==="send")[1];assert.equal(req.customerId,"owner1");assert.equal(req.documentId,h.record.id);assert.equal(req.sha256,h.record.savedCustomerDocument.sha256);assert.equal("phone" in req,false);
   assert.equal(h.context.store.buildingDocuments[0].workReportDelivery.status,"requested");
+  assert.match(h.events.at(-1)[1].description,/전달됐는지는 확인이 필요/);
+});
+test("발송 접수 불확실은 접수 성공으로 표시하지 않고 해당 문서의 고객 알림으로 이동한다",async()=>{
+  for(const mode of [{sendStatus:"unknown",messageId:"msg_123"},{sendFailure:true}]) {
+    const h=harness({...mode,yes:true,openStatus:true});await h.context.saveWorkReportFromForm();
+    const prompt=h.events.find(e=>e[0]==="ask"&&e[1].confirmLabel==="고객 알림에서 확인")[1];
+    assert.match(prompt.description,/접수 여부가 불확실/);assert.match(prompt.description,/중복 발송하지 말고/);
+    assert.equal(h.context.currentView,"customerAlimTalk");assert.equal(h.context.customerAlimTalkState.receipt.status,"unknown");
+    assert.equal(h.context.customerAlimTalkState.savedDocumentId,h.record.id);assert.equal(h.context.customerAlimTalkState.receipt.customerId,"owner1");
+    assert.equal(h.events.some(e=>e[0]==="toast"&&/발송 요청이 접수됐습니다/.test(e[1])),false);
+  }
+});
+test("접수된 알림은 전달을 확정하지 않고 확인 화면으로 연결한다",async()=>{
+  const h=harness({yes:true,openStatus:true,messageId:"msg_123"});await h.context.saveWorkReportFromForm();
+  assert.equal(h.context.currentView,"customerAlimTalk");assert.equal(h.context.customerAlimTalkState.receipt.messageId,"msg_123");
+  assert.equal(h.context.customerAlimTalkState.receipt.status,"requested");assert.match(h.context.customerAlimTalkState.result,/전달됐는지는 확인이 필요/);
 });
 test("중복 클릭은 한 번만 저장하고 실패 시 초안·저장본을 유지한다",async()=>{
   let release;const h=harness({hold:new Promise(resolve=>{release=resolve;})});const first=h.context.saveWorkReportFromForm();await h.context.saveWorkReportFromForm();release();await first;assert.equal(h.events.filter(e=>e[0]==="save").length,1);
