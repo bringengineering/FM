@@ -25,6 +25,10 @@ export async function handleRecording(request:RecordingRequest,deps:{auth:Mobile
   }catch(error){
     const code=error instanceof RecordingError||error instanceof MobileAccessError||error instanceof SiteError?error.code:'SERVICE_UNAVAILABLE';
     const status=error instanceof RecordingError?error.status:error instanceof MobileAccessError?(error.code==='MOBILE_AUTH_REQUIRED'?401:error.code==='MOBILE_APP_NOT_REGISTERED'?503:403):error instanceof SiteError?(error.code==='SITE_NOT_FOUND'?404:400):503;
+    if(status===404){
+      const known=['NOT_FOUND','UPLOAD_NOT_FOUND','VISIT_NOT_FOUND','SITE_NOT_FOUND'];
+      console.warn(JSON.stringify({event:'field_recording_not_found',code:known.includes(code)?code:'OTHER'}));
+    }
     return{status,body:{error:{code}}};
   }
 }
