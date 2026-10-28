@@ -10297,6 +10297,27 @@
     } catch (_) { /* Keep the saved PDF; an uncertain send must not be retried automatically. */ }
   }
 
+  async function offerWorkReportDeliveryResult(record, owner, status, messageId, generation, active) {
+    if (!active() || currentView !== "workReports") return;
+    const requested = status === "requested";
+    const message = requested
+      ? "알림톡 발송 요청이 접수됐습니다. 고객에게 전달됐는지는 확인이 필요합니다."
+      : "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 고객 알림과 업체 기록을 확인해 주세요.";
+    const state = customerAlimTalkState;
+    state.category = "workReport";
+    state.selectedCustomerIds = [String(owner.id)];
+    state.savedDocumentId = record.id;
+    state.workReportId = "";
+    state.receipt = {generation, messageId: String(messageId || ""), status: requested ? "requested" : "unknown",
+      label: record.title, kind: "workReport", documentId: record.id, updatedAt: record.updatedAt, customerId: owner.id};
+    state.result = message;
+    showToast(message, requested ? "success" : "error");
+    const open = await requestConfirmation({title: requested ? "알림톡 발송 요청 접수" : "알림톡 접수 여부 확인 필요",
+      description: message, target: record.title, message: "고객 알림의 발송 이력에서 상태를 확인할 수 있습니다.",
+      confirmLabel: "고객 알림에서 확인", cancelLabel: "닫기", tone: requested ? "success" : "warning"});
+    if (open && active() && currentView === "workReports") openCustomerAlimTalk();
+  }
+
   async function saveWorkReportFromForm({ pdfOnly = false } = {}) {
     const R = reportCore();
     if (!R || reportState.saveBusy || reportState.busyKey || !reportState.canWork || reportState.readOnlyReason) return;
@@ -10361,18 +10382,25 @@
         target: `${building?.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
         message: "브링케어 카카오 알림톡으로 저장한 보고서 보기 링크를 보냅니다. 링크는 7일 뒤 만료됩니다.",
         warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success"});
-      if (!accepted || !active()) return;
+      if (!accepted || !active() || currentView !== "workReports") return;
       const result = await api.sendSavedCustomerDocument({kind: "workReport", documentId: archived.record.id, customerId: owner.id,
         updatedAt: archived.record.updatedAt, sha256: doc.sha256});
       if (!active()) return;
       if (!result?.ok) throw new Error("알림톡 발송 결과를 확인하지 못했습니다.");
       if (result.record) rememberWorkReportPdf(result.record);
-      showToast("알림톡 발송 요청을 접수했습니다. 고객 알림에서 결과를 확인해 주세요.", "success");
+      await offerWorkReportDeliveryResult(result.record || archived.record, owner, result.status, result.messageId, generation, active);
     } catch (error) {
       if (!active()) return;
       reportState.saveError = `${pdfSaved ? "CRM·PDF 저장은 완료됐습니다. " : reportSaved ? "보고서는 CRM에 저장됐습니다. PDF 보관을 다시 시도해 주세요. " : ""}${error?.message || "처리하지 못했습니다."}`;
       showToast(reportState.saveError, "error");
-      if (pdfSaved) await refreshWorkReportPdfRecord(archivedId, generation);
+      if (pdfSaved) {
+        await refreshWorkReportPdfRecord(archivedId, generation);
+        const record = (store.buildingDocuments || []).find(row => row.id === archivedId);
+        const owner = record && customerById(record.savedCustomerDocument?.customerId);
+        if (active() && owner && record?.workReportDelivery?.status === "unknown") {
+          await offerWorkReportDeliveryResult(record, owner, "unknown", record.workReportDelivery.messageId, generation, active);
+        }
+      }
     } finally {
       if (reportState.saveToken === saveToken) {
         reportState.saveBusy = false;
