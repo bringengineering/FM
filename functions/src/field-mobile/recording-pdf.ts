@@ -45,15 +45,28 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
   function draw(page:PDFPage,text:string,x:number,y:number,size=10,color=ink){for(const c of text){page.drawText(glyph(c),{x,y,size,font:fonts[0],color});x+=width(c,size);}}
   function wrap(text:string,maxWidth:number,size:number){const rows:string[]=[];for(const paragraph of text.split('\n')){let row='',used=0;for(const c of paragraph){const w=width(c,size);if(row&&used+w>maxWidth){rows.push(row);row='';used=0;}row+=c;used+=w;}rows.push(row);}return rows;}
   let page!:PDFPage;let y=0;
-  function next(){page=pdf.addPage([595.28,841.89]);draw(page,'BRING CARE',42,801,12,blue);draw(page,'작업 결과보고서',42,765,23);page.drawLine({start:{x:42,y:747},end:{x:553,y:747},color:line,thickness:1});y=724;}
+  function next(){page=pdf.addPage([595.28,841.89]);page.drawRectangle({x:42,y:751,width:511,height:65,color:rgb(.92,.97,.99)});page.drawRectangle({x:42,y:812,width:511,height:4,color:rgb(.5,.8,.92)});draw(page,'BRING CARE',53,798,9,blue);draw(page,'작업 결과보고서',53,772,19);draw(page,'건물주 제출용',442,792,9,muted);draw(page,visit.workDate,442,775,9,muted);y=731;}
   function room(height:number){if(y-height<65)next();}
   function paragraph(label:string,value:string){const rows=wrap(value||'미기재',510,10);room(38);draw(page,label,42,y,12,blue);y-=23;for(const row of rows){room(16);draw(page,row,42,y,10);y-=16;}y-=14;}
-  next();paragraph('고객 / 현장',visit.site.name);paragraph('건물주소',visit.site.address);paragraph('작업일 / 작업 종류',`${visit.workDate} / ${visit.kind==='common'?'공용부청소':'입주청소'}`);paragraph('작업 내용',visit.draft.summary);paragraph('후속 조치',visit.draft.followUp);
-  for(const item of reportItems(visit,photos)){
+  const items=reportItems(visit,photos);
+  const kind=visit.kind==='common'?'공용부청소':'입주청소';
+  next();paragraph('이번 작업 요약',visit.draft.summary||'구역별 현장 사진을 확인해 주세요.');
+  paragraph('작업 정보',`현장: ${visit.site.name}\n작업일: ${visit.workDate}    작업 종류: ${kind}\n현장 주소: ${visit.site.address}`);
+  room(85);draw(page,'사진 기록 요약',42,y,12,blue);y-=15;
+  const stats=[['작업 구역',`${items.length}곳`],...(['before','during','after'] as const).map(phase=>[phases[phase],`${photos.filter(p=>p.photo.phase===phase).length}장`])];
+  stats.forEach(([label,value],index)=>{const x=42+index*130;page.drawRectangle({x,y:y-48,width:121,height:45,color:rgb(.95,.98,1),borderColor:line,borderWidth:.5});draw(page,label,x+10,y-17,9,muted);draw(page,value,x+10,y-36,12,blue);});y-=64;
+  room(32);draw(page,'구역별 작업 기록',42,y,12,blue);y-=23;
+  for(const item of items){
     const selected=photos.filter(p=>p.photo.itemKey===item.key);
-    room(selected.length?280:65);draw(page,`${item.label} · ${statuses[visit.draft.statuses[item.key]||'recorded']}`,42,y,12,blue);y-=24;
+    const detail=[item.label,statuses[visit.draft.statuses[item.key]||'recorded'],`${selected.length}장`,visit.draft.notes[item.key]||''].filter(Boolean).join(' · ');
+    for(const row of wrap(detail,510,10)){room(16);draw(page,row,42,y,10);y-=16;}
+  }
+  y-=10;paragraph('추가 안내',visit.draft.followUp||'등록된 후속 조치 사항은 없습니다.');paragraph('안내',reportCore.NOTICES.join('\n'));
+  for(const item of items){
+    const selected=photos.filter(p=>p.photo.itemKey===item.key);
+    if(!selected.length)continue;
+    next();draw(page,`${item.label} · 구역별 현장 사진`,42,y,12,blue);y-=24;
     if(visit.draft.notes[item.key]){for(const row of wrap(visit.draft.notes[item.key],510,10)){room(16);draw(page,row,42,y,10);y-=16;}y-=6;}
-    if(!selected.length){draw(page,'첨부 사진 없음',42,y,10,muted);y-=27;continue;}
     for(const row of photoRows(selected)){const captions=row.slots.map(p=>p?wrap(p.photo.caption||'',246,9):[]);
       const rowHeight=238+Math.max(1,...captions.map(c=>c.length))*12,previousPage=page;room(rowHeight+24);
       if(page!==previousPage){draw(page,`${item.label} · 계속`,42,y,12,blue);y-=24;}
@@ -68,7 +81,6 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
       }y-=rowHeight;
     }y-=5;
   }
-  paragraph('안내',reportCore.NOTICES.join('\n'));
   pdf.getPages().forEach((p,i)=>{p.drawLine({start:{x:42,y:47},end:{x:553,y:47},color:line,thickness:.6});draw(p,'문의 1551-3873',42,29,9,muted);draw(p,`${i+1} / ${pdf.getPageCount()}`,510,29,9,muted);});
   return Buffer.from(await pdf.save());
 }
