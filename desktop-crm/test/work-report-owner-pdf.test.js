@@ -45,6 +45,17 @@ test("100장의 불균형한 전중후 사진을 중복·누락 없이 최대6�
   assert.equal((html.match(/<figure>/g) || []).length, 100);
 });
 
+test("현장노트 출력도 CRM 양식의 사진 카드를 쓰며 구역 사이를 강제로 나누지 않는다", () => {
+  const report=seed();
+  report.items[0].before=[photo("a")];report.items[0].after=[photo("b")];report.items[1].before=[photo("c")];
+  const images=Object.fromEntries(["a","b","c"].map(id=>[id,`data:image/jpeg;base64,${Buffer.from(id).toString("base64")}`]));
+  const html=createWorkReportHtml(report,"owner",{images,compactPhotos:true});
+  assert.equal((html.match(/<figure>/g)||[]).length,3);
+  assert.equal((html.match(/class="photo-flow"/g)||[]).length,1);
+  assert.doesNotMatch(html,/class="photo-page /);
+  for(const source of Object.values(images))assert.equal(html.split(`src="${source}"`).length-1,1);
+});
+
 test("기록·미실시·일부·완료와 긴 문구를 보존하며 사진에서 완료를 추측하지 않는다", () => {
   const report = seed();
   report.summary = "긴 작업 요약 ".repeat(150) + "요약끝";

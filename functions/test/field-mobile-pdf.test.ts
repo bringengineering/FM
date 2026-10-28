@@ -32,3 +32,14 @@ it('fits 100 synthetic before/after photos in a bounded customer PDF',async()=>{
   const photos=Array.from({length:100},(_,i)=>({photo:{...p,id:`test-${i}`,phase:(i%2?'after':'before') as 'after'|'before'},bytes}));
   const pdf=await renderRecordingPdf(visit,photos);expect(pdf.length).toBeLessThanOrEqual(12*1024*1024);expect((await PDFDocument.load(pdf)).getPageCount()).toBeGreaterThan(10);
 },120_000);
+
+it('flows photos across areas without forcing an almost empty page per area',async()=>{
+  const bytes=await sharp({create:{width:240,height:320,channels:3,background:'#91b3dd'}}).jpeg().toBuffer();
+  const keys=['entrance','corridor','stairs','handrail','yard'];
+  const template:RecordingPhoto={id:'test',itemKey:'entrance',phase:'before',caption:'',included:true,capturedAt:'2026-10-27T01:00:00Z',mime:'image/jpeg',bytes:bytes.length,sha256:hash(bytes),width:240,height:320};
+  const photos=Array.from({length:13},(_,i)=>({photo:{...template,id:`photo-${i}`,itemKey:keys[Math.min(Math.floor(i/2),4)],phase:(i%2?'after':'before') as 'after'|'before'},bytes}));
+  const visit:Recording={id:'test-visit',ownerUid:'synthetic-user',customerId:'synthetic-customer',kind:'common',workDate:'2026-10-27',revision:3,captureAreas:keys,draft:{summary:'[TEST] 작업 전후 사진을 정리한 가상 보고서입니다.\n실제 현장 작업이 아닙니다.',followUp:'테스트 안내',statuses:{},notes:{},confirmedRevision:3},photos:photos.map(p=>p.photo),site:{id:'synthetic-customer',name:'[TEST] 가상 고객',address:'가상 주소'},contentHash:'a'.repeat(64),createdAt:'2026-10-27T01:00:00Z',updatedAt:'2026-10-27T01:00:00Z'};
+  const pdf=await renderRecordingPdf(visit,photos);const parsed=await PDFDocument.load(pdf);
+  expect(parsed.getPageCount()).toBeLessThanOrEqual(4);
+  if(process.env.FIELD_PDF_QA==='1')await writeFile('../.firebase/field-mobile-verification/pdf/recording-13.pdf',pdf);
+},60000);

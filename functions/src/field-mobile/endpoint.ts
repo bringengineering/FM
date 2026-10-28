@@ -23,7 +23,7 @@ function allowRequest(uid: string, limit=60): boolean {
   if (buckets.size >= 4096) return false;
   buckets.set(uid, { until: now + 60_000, count: 1 }); return true;
 }
-export const fieldMobileApi = onRequest({ region: 'asia-northeast3', cors: false, maxInstances: 2, concurrency: 1, timeoutSeconds: 180, memory: '1GiB', secrets:[driveClientId,driveClientSecret,driveRefreshToken] }, async (req, res) => {
+export const fieldMobileApi = onRequest({ region: 'asia-northeast3', cors: false, maxInstances: 2, concurrency: 1, timeoutSeconds: 180, memory: '2GiB', secrets:[driveClientId,driveClientSecret,driveRefreshToken] }, async (req, res) => {
   res.set('Cache-Control', 'no-store'); res.set('X-Content-Type-Options', 'nosniff');
   const projectId = process.env.GCLOUD_PROJECT ?? '';
   const allowedNativeAppIds = projectId === 'bring-fm' ? appIds.value().split(',').map(id => id.trim()).filter(id => /^1:\d+:(android|ios):[a-f0-9]+$/.test(id)) : [];

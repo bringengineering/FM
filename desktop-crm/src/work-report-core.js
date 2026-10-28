@@ -257,12 +257,13 @@
 
   // 작업 종류를 고르면 그 종류의 표준 항목이 깔린다. 이미 적어 둔 것이 있으면
   // 그 위에 얹는다 — 종류를 잘못 골랐다 고쳤을 때 쓴 것이 날아가면 안 된다.
-  function itemsFor(kindKey, existing) {
+  function itemsFor(kindKey, existing, onlySaved = false) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
     const saved = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
     const savedKeys = new Set(saved.map(item => item.key));
-    return kind.items.filter(standard => !standard.optional || savedKeys.has(standard.key)).map(standard => {
+    const scoped = onlySaved && kind.items.some(item => savedKeys.has(item.key));
+    return kind.items.filter(standard => scoped ? savedKeys.has(standard.key) : !standard.optional || savedKeys.has(standard.key)).map(standard => {
       const found = saved.find(item => item.key === standard.key);
       return normalizeItem(found || { key: standard.key, status: ["moveIn", "common"].includes(kindKey) ? "recorded" : "done" }, standard);
     });
@@ -302,7 +303,9 @@
       // 청창사 제출용에만 쓰는 칸. 건물주용에는 안 나온다.
       contractFrom: isDate(value.contractFrom) ? text(value.contractFrom, 10) : "",
       contractTo: isDate(value.contractTo) ? text(value.contractTo, 10) : "",
-      items: itemsFor(kindOf(kind) ? kind : "moveIn", value.items),
+      // Field-mobile reports carry an explicit item list. Reintroducing every
+      // standard area here would make unselected areas appear in the report.
+      items: itemsFor(kindOf(kind) ? kind : "moveIn", value.items, /^fm_[a-f0-9]{40}$/.test(text(value.id, 80))),
       createdAt: text(value.createdAt, 40),
       updatedAt: text(value.updatedAt, 40),
       updatedBy: text(value.updatedBy, 80),
