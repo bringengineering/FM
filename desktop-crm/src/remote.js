@@ -6135,10 +6135,6 @@ class FirebaseRemoteClient {
         const stepStatus = String(source.stepStatus || "wait");
         if (!["wait", "doing", "done"].includes(stepStatus)) throw createError("단계 상태를 확인해 주세요.", "INVALID_CASE_STEP");
         patch[`status/${stepKey}`] = stepStatus === "wait" ? null : stepStatus;
-        const stepIndex = Number(stepKey.slice(1));
-        if (stepStatus === "done" && stepIndex < this.Core.WORKFLOW_STEPS.length && source.startNext !== false) {
-          patch[`status/c${stepIndex + 1}`] = "doing";
-        }
       }
       if (Object.prototype.hasOwnProperty.call(source, "stepNote")) {
         patch[`note/${stepKey}`] = String(source.stepNote || "").trim().slice(0, 4000) || null;
@@ -6181,7 +6177,54 @@ class FirebaseRemoteClient {
     patch.crmUpdatedBy = this.session.email || "CRM 사용자";
     if (!Object.keys(patch).length) throw createError("저장할 민원 내용이 없습니다.", "INVALID_CASE");
 
-    await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
+    const protectedEdit = !isNew && !trashAction && !vendorSelection && (Object.keys(fields).length > 0 || Boolean(stepKey));
+    if (protectedEdit) {
+      const guard = this.captureSessionGuard();
+      const location = `cases/${caseKey}`;
+      const snapshot = await this.dbReadWithEtag(location, false, guard);
+      this.assertSessionGuardActive(guard);
+      const existing = snapshot.value;
+      if (!existing || typeof existing !== "object" || Array.isArray(existing) || existing.deleted === true) {
+        throw createError("민원이 삭제되거나 휴지통으로 이동했습니다. 최신 목록을 확인해 주세요.", "CASE_CONFLICT");
+      }
+      if (Object.keys(fields).length) {
+        const expected = source.expectedFields;
+        if (!expected || typeof expected !== "object" || Array.isArray(expected)) throw createError("최신 민원 정보를 다시 열어 주세요.", "CASE_CONFLICT");
+        for (const field of Object.keys(fieldLimits)) {
+          if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
+          if (!Object.prototype.hasOwnProperty.call(expected, field) || String(expected[field] || "").trim() !== String(existing[field] || "").trim()) {
+            throw createError("다른 사용자가 민원 기본 정보를 변경했습니다. 입력 내용을 보관한 뒤 최신 정보를 확인해 주세요.", "CASE_CONFLICT");
+          }
+        }
+      }
+      if (stepKey && Object.prototype.hasOwnProperty.call(source, "stepStatus")) {
+        const before = existing.status && existing.status[stepKey] || "wait";
+        if (source.expectedStepStatus !== before) throw createError("다른 사용자가 단계 상태를 변경했습니다. 최신 상태를 확인해 주세요.", "CASE_CONFLICT");
+        const nextKey = `c${Number(stepKey.slice(1)) + 1}`;
+        if (source.stepStatus === "done" && Number(stepKey.slice(1)) < this.Core.WORKFLOW_STEPS.length && source.startNext !== false && [undefined, null, "", "wait"].includes(existing.status && existing.status[nextKey])) patch[`status/${nextKey}`] = "doing";
+      }
+      if (stepKey && Object.prototype.hasOwnProperty.call(source, "stepNote")) {
+        const before = String(existing.note && existing.note[stepKey] || "").trim();
+        if (typeof source.expectedStepNote !== "string" || source.expectedStepNote.trim() !== before) throw createError("다른 사용자가 단계 메모를 변경했습니다. 입력 내용을 보관한 뒤 최신 메모를 확인해 주세요.", "CASE_CONFLICT");
+      }
+      const record = structuredClone(existing);
+      for (const [path, value] of Object.entries(patch)) {
+        const parts = path.split("/");
+        if (parts.length === 1) { if (value === null) delete record[path]; else record[path] = value; continue; }
+        const [parent, key] = parts;
+        if (!record[parent] || typeof record[parent] !== "object" || Array.isArray(record[parent])) record[parent] = {};
+        if (value === null) delete record[parent][key]; else record[parent][key] = value;
+        if (!Object.keys(record[parent]).length) delete record[parent];
+      }
+      try { await this.dbConditionalPut(location, record, snapshot.etag, false, guard); }
+      catch (error) {
+        if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") throw createError("다른 사용자가 민원을 변경했습니다. 입력 내용을 보관한 뒤 최신 정보를 확인해 주세요.", "CASE_CONFLICT");
+        if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw createError("저장 결과를 확인하지 못했습니다. 다시 저장하기 전에 최신 민원을 확인해 주세요.", "CASE_WRITE_UNCONFIRMED");
+        throw error;
+      }
+    } else {
+      await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
+    }
     return { ok: true, caseKey, updatedAt: now, patch };
   }
 

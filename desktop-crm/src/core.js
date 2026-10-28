@@ -974,8 +974,10 @@
     const status = workflowCase && workflowCase.status || {};
     const done = WORKFLOW_STEPS.reduce((count, _, index) => count + (status[`c${index + 1}`] === "done" ? 1 : 0), 0);
     const doingIndex = WORKFLOW_STEPS.findIndex((_, index) => status[`c${index + 1}`] === "doing");
-    const currentIndex = doingIndex >= 0 ? doingIndex : Math.min(done, WORKFLOW_STEPS.length - 1);
-    return { done, total: WORKFLOW_STEPS.length, percent: Math.round(done / WORKFLOW_STEPS.length * 100), currentIndex, current: WORKFLOW_STEPS[currentIndex] };
+    const waitingIndex = WORKFLOW_STEPS.findIndex((_, index) => status[`c${index + 1}`] !== "done");
+    const currentIndex = doingIndex >= 0 ? doingIndex : waitingIndex;
+    const current = done === WORKFLOW_STEPS.length ? "민원 처리 완료" : doingIndex >= 0 ? WORKFLOW_STEPS[doingIndex] : "진행 중인 단계 없음";
+    return { done, total: WORKFLOW_STEPS.length, percent: Math.round(done / WORKFLOW_STEPS.length * 100), currentIndex, current };
   }
 
   function calculateDashboard(store, nowValue, workflowCases) {

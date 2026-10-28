@@ -3133,6 +3133,9 @@ async function saveWorkflowCase(input) {
       if (index >= 0) localOperationsData.cases.splice(index, 1);
       return { ok: true, caseKey, deleted: true };
     }
+    if (!source.create && source.fields && source.expectedFields && Object.keys(source.fields).some(key => Object.hasOwn(source.expectedFields, key) && String(source.expectedFields[key] || "").trim() !== String(item[key] || "").trim())) return { ok: false, error: "다른 사용자가 민원 기본 정보를 변경했습니다. 최신 정보를 확인해 주세요." };
+    if (source.stepKey && Object.hasOwn(source, "stepStatus") && source.expectedStepStatus !== undefined && source.expectedStepStatus !== (item.status?.[source.stepKey] || "wait")) return { ok: false, error: "다른 사용자가 단계 상태를 변경했습니다. 최신 상태를 확인해 주세요." };
+    if (source.stepKey && Object.hasOwn(source, "stepNote") && source.expectedStepNote !== undefined && String(source.expectedStepNote).trim() !== String(item.note?.[source.stepKey] || "").trim()) return { ok: false, error: "다른 사용자가 단계 메모를 변경했습니다. 최신 메모를 확인해 주세요." };
     Object.assign(item, source.fields || {});
     if (source.trashAction === "trash") {
       item.deleted = true;
@@ -3158,7 +3161,7 @@ async function saveWorkflowCase(input) {
         if (value === "wait") delete item.status[source.stepKey];
         else item.status[source.stepKey] = value;
         const index = Number(source.stepKey.slice(1));
-        if (value === "done" && index < Core.WORKFLOW_STEPS.length && source.startNext !== false) item.status[`c${index + 1}`] = "doing";
+        if (value === "done" && index < Core.WORKFLOW_STEPS.length && source.startNext !== false && [undefined, null, "", "wait"].includes(item.status[`c${index + 1}`])) item.status[`c${index + 1}`] = "doing";
       }
       if (Object.prototype.hasOwnProperty.call(source, "stepNote")) {
         if (String(source.stepNote || "").trim()) item.note[source.stepKey] = String(source.stepNote).trim();

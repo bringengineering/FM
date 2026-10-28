@@ -175,7 +175,9 @@ test("remote case creation requires a party while legacy unclassified edits may 
   );
   assert.equal(calls.length, 0);
 
-  const legacy = await client.saveWorkflowCase({ caseKey: "legacy_case_01", fields: { summary: "기존 미분류 민원 수정" } });
+  client.dbReadWithEtag = async () => ({ value: { id: "legacy_case_01", summary: "기존 내용" }, etag: '"v1"' });
+  client.dbConditionalPut = async (location, record, etag) => { calls.push({ location, record, etag }); };
+  const legacy = await client.saveWorkflowCase({ caseKey: "legacy_case_01", fields: { summary: "기존 미분류 민원 수정" }, expectedFields: { summary: "기존 내용" } });
   assert.equal(Object.prototype.hasOwnProperty.call(legacy.patch, "caseParty"), false);
   assert.equal(calls.length, 1);
 });

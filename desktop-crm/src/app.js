@@ -2882,12 +2882,25 @@
     });
   };
 
+  function caseHasUnsavedInput() {
+    return [...main.querySelectorAll('#workflowCaseBasicForm, .case-step-note-form')].some(form =>
+      [...form.elements].some(field => {
+        if (field.tagName === 'SELECT') {
+          const original = [...field.options].findIndex(option => option.defaultSelected);
+          return field.selectedIndex !== (original < 0 ? 0 : original);
+        }
+        if (field.type === 'checkbox' || field.type === 'radio') return field.checked !== field.defaultChecked;
+        return (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') && field.value !== field.defaultValue;
+      })
+    );
+  }
+
   async function refreshOperations(options) {
     const settings = options || {};
     if (operationsLoading) return;
     operationsLoading = true;
     operationsError = "";
-    if (!settings.silent && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) render();
+    if (!settings.silent && (currentView === "cases" || currentView === "payments" || currentView === "buildings") && !(currentView === "cases" && caseHasUnsavedInput())) render();
     try {
       const loaded = await api.loadOperations();
       operations = {
@@ -2911,7 +2924,7 @@
       operationsLoading = false;
     }
     pageMeta();
-    if ((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || isCleaningPageView()) render();
+    if (((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || isCleaningPageView()) && !(currentView === "cases" && caseHasUnsavedInput())) render();
   }
 
   const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
@@ -2945,6 +2958,9 @@
     return MarketingCrmBridge.normalizeCaseMarketing(fields);
   }
 
+  const caseBasicSnapshots = new WeakMap();
+  const caseBasicFields = Object.freeze(["name", "phone", "email", "building", "room", "address", "crmCustomerId", "crmBuildingId", "caseParty", "grade", "urgency", "issueType", "summary", "memo"]);
+
   function renderCases() {
     const query = Core.normalizeText(searchEl.value);
     const sourceCases = caseListMode === "trash" ? trashCases() : activeCases();
@@ -2971,6 +2987,8 @@
         const listNote = caseListMode === "trash" ? `이동 ${dateText(item.deletedAt)}${item.deletedBy ? ` · ${item.deletedBy}` : ""}` : progress.current;
         return `<article class="case-card case-list-card ${caseKey === selectedCaseKey ? "selected" : ""} ${caseListMode === "trash" ? "trash" : ""}" data-case-select="${attr(caseKey)}"><div class="case-list-title"><strong>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</strong><span class="case-list-badges"><em class="case-party ${casePartyLabel(item) === "미분류" ? "unclassified" : ""}">${esc(casePartyLabel(item))}</em><span class="case-urgency ${caseListMode === "trash" ? "trash" : urgencyClass}">${caseListMode === "trash" ? "휴지통" : esc(urgency)}</span></span></div><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "고객·건물 정보 미입력")}</p><div class="case-list-progress"><i><span style="width:${progress.percent}%"></span></i><b>${progress.done}/${progress.total}</b></div><small>${esc(listNote)}</small></article>`;
       }).join("") : `<div class="case-list-empty">표시할 민원이 없습니다.</div>`}</div></aside><section class="case-detail-panel">${detail}</section></section>`;
+    const basicForm = main.querySelector("#workflowCaseBasicForm");
+    if (basicForm && selected) caseBasicSnapshots.set(basicForm, Object.fromEntries(caseBasicFields.map(key => [key, String(selected[key] || "").trim()])));
   }
 
   function renderWorkflowCaseDetail(item) {
@@ -2999,7 +3017,8 @@
         const note = notes[stepKey] || "";
         const isOpen = openCaseStepKey === stepKey;
         const statusText = status === "done" ? "완료" : status === "doing" ? "진행 중" : "대기";
-        return `<article class="workflow-case-step ${attr(status)}"><div class="case-step-main"><i>${index + 1}</i><div><b>${esc(label)}</b>${note ? `<span>${esc(note)}</span>` : `<span>단계 메모 없음</span>`}</div><select data-case-step-status="${attr(stepKey)}" data-case-key="${attr(caseKey)}" aria-label="${esc(label)} 상태">${option("wait", status, "대기")}${option("doing", status, "진행 중")}${option("done", status, "완료")}</select><button class="case-note-button ${note ? "has" : ""}" data-case-note-toggle="${attr(stepKey)}" title="상세 내용 ${isOpen ? "숨기기" : "열기"}">${isOpen ? "숨기기" : "열기"}</button></div>${isOpen ? `<div class="case-step-expanded">${renderWorkflowCaseStepDetails(item, stepKey)}<form class="case-step-note-form" data-case-key="${attr(caseKey)}" data-step-key="${attr(stepKey)}"><div class="case-step-note-title"><b>단계 메모</b><span>처리 내용·업체·금액·일정·결과를 자유롭게 기록하세요.</span></div><textarea name="stepNote" placeholder="이 단계에서 처리한 내용을 기록하세요.">${esc(note)}</textarea><div><span>${esc(statusText)} · 모든 사용자에게 공유</span><button class="secondary-button">메모 저장</button></div></form></div>` : ""}</article>`;
+        const actual = stepKey === "c2" ? `문자 발송: ${caseFirst(item.sms?.statusText, item.sms?.status, item.complaintReceiptSms?.statusText, item.complaintReceiptSms?.status, item.automationState?.receiptSms?.status) || "발송 내역 확인 필요"}` : stepKey === "c5" ? `업체 견적 요청: ${caseFirst(item.vendorEstimateMms?.statusText, item.vendorEstimateMms?.status) || "발송 내역 확인 필요"}` : stepKey === "c8" ? `건물주 문자: ${caseFirst(item.ownerRecommendationMms?.statusText, item.ownerRecommendationMms?.status) || "발송 내역 확인 필요"}` : stepKey === "c10" ? `입금 확인: ${item.paymentStatus === "confirmed" ? "확인 완료" : "확인 필요"}` : "";
+        return `<article class="workflow-case-step ${attr(status)}"><div class="case-step-main"><i>${index + 1}</i><div><b>${esc(label)}</b>${note ? `<span>${esc(note)}</span>` : `<span>단계 메모 없음</span>`}${actual ? `<span>${esc(actual)} · 단계 상태 변경과 별도</span>` : ""}</div><select data-case-step-status="${attr(stepKey)}" data-case-original-status="${attr(status)}" data-case-key="${attr(caseKey)}" aria-label="${esc(label)} 상태">${option("wait", status, "대기")}${option("doing", status, "진행 중")}${option("done", status, "완료")}</select><button class="case-note-button ${note ? "has" : ""}" data-case-note-toggle="${attr(stepKey)}" title="상세 내용 ${isOpen ? "숨기기" : "열기"}">${isOpen ? "숨기기" : "열기"}</button></div>${isOpen ? `<div class="case-step-expanded">${renderWorkflowCaseStepDetails(item, stepKey)}<form class="case-step-note-form" data-case-key="${attr(caseKey)}" data-step-key="${attr(stepKey)}"><div class="case-step-note-title"><b>단계 메모</b><span>처리 내용·업체·금액·일정·결과를 자유롭게 기록하세요.</span></div><textarea name="stepNote" placeholder="이 단계에서 처리한 내용을 기록하세요.">${esc(note)}</textarea><div><span>${esc(statusText)} · 모든 사용자에게 공유</span><button class="secondary-button">메모 저장</button></div></form></div>` : ""}</article>`;
       }).join("")}</div></section></div>`;
   }
 
@@ -18149,11 +18168,9 @@
         renderCases();
         return showToast("조회 전용 계정은 단계 상태를 변경할 수 없습니다.", "error");
       }
-      const caseItem = workflowCaseByKey(caseStep.dataset.caseKey);
       const stepKey = caseStep.dataset.caseStepStatus;
-      const nextKey = `c${Number(stepKey.slice(1)) + 1}`;
-      const result = await api.saveWorkflowCase({ caseKey: caseStep.dataset.caseKey, stepKey, stepStatus: caseStep.value, startNext: !(caseItem && caseItem.status && caseItem.status[nextKey]) });
-      if (!result.ok) { showToast(result.error || "단계 상태를 저장하지 못했습니다.", "error"); await refreshOperations({ silent: true }); return; }
+      const result = await api.saveWorkflowCase({ caseKey: caseStep.dataset.caseKey, stepKey, stepStatus: caseStep.value, expectedStepStatus: caseStep.dataset.caseOriginalStatus || "wait" });
+      if (!result.ok) { caseStep.value = caseStep.dataset.caseOriginalStatus || "wait"; showToast(result.error || "단계 상태를 저장하지 못했습니다.", "error"); return; }
       await refreshOperations({ silent: true, render: false });
       renderCases();
       showToast(`${Core.WORKFLOW_STEPS[Number(stepKey.slice(1)) - 1]} · ${caseStep.options[caseStep.selectedIndex].text}`, "success");
@@ -19447,14 +19464,16 @@
         else return showToast("민원 작성 구분을 확인해 주세요.", "error");
       }
       const normalizedCaseFields = caseFieldsWithMarketing(raw);
-      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields });
+      const expectedFields = caseBasicSnapshots.get(form);
+      if (!expectedFields) return showToast("처음 열린 민원 정보를 확인하지 못했습니다. 화면을 다시 열어 주세요.", "error");
+      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields, expectedFields });
       if (!result.ok) return showToast(result.error || "기본 정보를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();
       showToast("민원 기본 정보를 저장했습니다.", "success");
     } else if (form.classList.contains("case-step-note-form")) {
       const raw = Object.fromEntries(new FormData(form).entries());
-      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, stepKey: form.dataset.stepKey, stepNote: raw.stepNote });
+      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, stepKey: form.dataset.stepKey, stepNote: raw.stepNote, expectedStepNote: form.elements.stepNote.defaultValue });
       if (!result.ok) return showToast(result.error || "단계 메모를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();

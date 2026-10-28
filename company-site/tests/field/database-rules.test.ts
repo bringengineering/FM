@@ -5451,6 +5451,32 @@ async function attributionRest(database: any, path: string, options: { method?: 
 }
 
 describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
+  it("allows authorized whole-case conditional edits without losing automation data", async () => {
+    const path = "cases/case_full_cas";
+    await environment.withSecurityRulesDisabled(async context => set(ref(context.database(), path), {
+      id: "case_full_cas", caseParty: "브링", status: { c1: "doing", c2: "done" },
+      marketing: { keyword: "existing" }, automationState: { receipt: "sent" },
+    }));
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const first = await attributionRest(member, path);
+    const stale = await attributionRest(admin, path);
+    expect(first.status).toBe(200);
+    const updated = { ...first.value, status: { c1: "done", c2: "done" } };
+    expect((await attributionRest(member, path, { method: "PUT", etag: first.etag, body: updated })).status).toBe(200);
+    expect((await attributionRest(admin, path, { method: "PUT", etag: stale.etag, body: stale.value })).status).toBe(412);
+    const latest = await attributionRest(admin, path);
+    expect(latest.value.automationState.receipt).toBe("sent");
+    expect(latest.value.marketing.keyword).toBe("existing");
+    expect((await attributionRest(admin, path, { method: "PUT", etag: latest.etag, body: latest.value })).status).toBe(200);
+    await assertFails(set(ref(viewer, path), updated));
+    await assertFails(set(ref(marketing, path), updated));
+    await assertFails(get(ref(environment.unauthenticatedContext().database(), path)));
+    await assertFails(set(ref(environment.unauthenticatedContext().database(), path), updated));
+  });
+
   it("accepts only paired, validated budget evidence and mirrors it in the immutable receipt", async () => {
     const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
