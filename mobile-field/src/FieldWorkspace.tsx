@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -17,7 +17,7 @@ import { safeMessage } from './errors';
 import { SyncRunner } from './domain/sync';
 import { FieldError } from './domain/model';
 import type { CustomerSite } from './api/sites';
-import type { ArchiveReceipt, CompanyRecordingApi } from './api/recording';
+import type { ArchiveReceipt, CompanyRecordingApi, DeliveryPreview } from './api/recording';
 
 type Screen = 'jobs' | 'capture-setup' | 'capture' | 'photos' | 'report' | 'pdf' | 'send' | 'sync' | 'settings';
 const empty: Workspace = { visits: [], photos: [] };
@@ -47,6 +47,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   const jobs:Job[]=company?(['common','moveIn'] as const).map(kind=>({id:`${company.site.id}_${kind}`,customerId:company.site.id,buildingId:'',title:company.site.name,address:company.site.address,kind,workDate:today()})):sampleJobs;
   const controller=useRef(new AbortController()),runner=useRef<SyncRunner|undefined>(undefined);
   const [receipt,setReceipt]=useState<ArchiveReceipt>();
+  const [delivery,setDelivery]=useState<DeliveryPreview>();
   const [vault, setVault] = useState<Vault>();
   const [workspace, setWorkspace] = useState<Workspace>(empty);
   const [selected, setSelected] = useState(''); const [screen, setScreen] = useState<Screen>('jobs');
@@ -104,7 +105,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
       await vault.saveVisit(target,previous);await refresh();
     }
     const oldPhotos=workspace.photos.filter(p=>p.visitId===target!.id),plan=initialCaptureAreas(target,oldPhotos);
-    setReceipt(undefined);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(plan,oldPhotos,'before'));setPhotoId('');setScreen(target.captureAreas?.length?'capture':'capture-setup');
+    setReceipt(undefined);setDelivery(undefined);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(plan,oldPhotos,'before'));setPhotoId('');setScreen(target.captureAreas?.length?'capture':'capture-setup');
   }
   async function saveCaptureAreas(){
     if(!visit||!vault)return;
@@ -145,7 +146,21 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
     const result=await saveGroupedReport({vault,visit,photos,summary,followUp,notes,onLocalSave:async()=>{await refresh();},
       sync:(current,currentPhotos)=>syncCurrent(current,currentPhotos,true),archive:current=>company.api.archive(current,controller.current.signal)});
     if(!result.ok){notify(result.issues.join('\n'),true);return;}
-    setReceipt(result.receipt);setScreen('pdf');notify('구역별 사진과 작업 결과보고서 PDF를 Drive와 CRM에 보관했습니다.');
+    setReceipt(result.receipt);setDelivery(undefined);setScreen('pdf');notify('구역별 사진과 작업 결과보고서 PDF를 Drive와 CRM에 보관했습니다.');
+  }
+  async function checkDelivery(){
+    if(!company||!visit||!receipt||receipt.revision!==visit.revision||dirty||captionDirty)throw new FieldError('REPORT_REVIEW_REQUIRED');
+    const value=await company.api.deliveryStatus(receipt.documentId,controller.current.signal);setDelivery(value);
+  }
+  function confirmDelivery(){
+    if(!delivery||!company||!visit||!receipt||receipt.revision!==visit.revision||dirty||captionDirty)return;
+    Alert.alert('고객에게 보고서 발송',`${delivery.customer}\n${delivery.address} · ${delivery.workName}\n수신 ${delivery.recipient}\n\n저장된 작업 결과보고서를 카카오 알림톡으로 보내시겠습니까?`,[
+      {text:'취소',style:'cancel'}, {text:'발송',onPress:()=>{void perform(async()=>{
+        setDelivery({...delivery,status:'sending'});
+        try{const result=await company.api.sendReport(delivery,controller.current.signal);setDelivery(result);notify(result.status==='delivered'?'고객에게 전달됐습니다.':'발송을 요청했습니다. 전달 상태를 확인해 주세요.');}
+        catch(error){setDelivery({...delivery,status:'unknown'});throw error instanceof FieldError && error.code!=='NETWORK_UNCERTAIN'?error:new FieldError('DELIVERY_STATUS_UNKNOWN');}
+      });}},
+    ]);
   }
   async function capture(gallery = false) {
     if (!vault || !visit) return;
@@ -194,7 +209,7 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
   if(company&&!foreground)return <SafeAreaView style={s.safe}><Note>회사 정보를 보호하고 있습니다.</Note></SafeAreaView>;
   return <SafeAreaView style={s.safe}><StatusBar style="dark" /><View style={s.shell}>
     {screen!=='capture'&&<><View style={s.header}><View><Text style={s.brand}>BRING CARE</Text><Text style={s.headerTitle}>현장노트</Text></View><Pressable accessibilityRole="button" accessibilityLabel="설정 열기" onPress={() => navigate('settings')} style={s.icon}><Text style={s.iconText}>설정</Text></Pressable></View>
-    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.8':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
+    <View style={s.devStrip}><Text style={s.devText}>{company?'회사 연결 · 고객주소 기준 · 개발 0.1.10':'개발 버전 · 가상 현장 · 고객 발송 없음'}</Text>{onClose&&<Button label="고객 목록으로" secondary disabled={busy} onPress={()=>{if(dirty||captionDirty){notify('작성 중인 내용을 저장한 뒤 이동해 주세요.',true);return;}onClose();}}/>}</View>
     {vault && <Pressable accessibilityRole="button" onPress={() => navigate('sync')} style={s.syncStrip}><Text style={s.syncText}>기기 보관 {workspace.photos.length}장  ·  전송 대기 {pending}장</Text><Text style={s.blue}>확인 →</Text></Pressable>}</>}
     {screen==='capture'&&visit&&<View style={s.captureHeader}><Text style={s.captureSite} numberOfLines={1}>{visit.job.title}</Text><Text style={s.captureSiteSmall}>구역별 사진 촬영</Text></View>}
     {notice !== '' && <View accessibilityRole="alert" style={[s.toast, problem && s.error]}><Text style={s.toastText}>{notice}</Text></View>}
@@ -292,8 +307,13 @@ export function FieldWorkspace({company,onClose}:{company?:{uid:string;site:Cust
             <Text style={s.footerText}>문의 1551-3873</Text></View>
           <Button label={company?'PDF 생성 · Drive·CRM 보관':'서버 연결 후 PDF 보관 가능'} disabled={!company||busy||dirty||issues.length>0||visit.draft.confirmedRevision!==visit.revision} onPress={()=>void perform(archiveCurrent)} /><Button label="보고서 편집으로 돌아가기" secondary onPress={() => navigate('report')} />
         </>}
-        {screen === 'send' && visit && <><View style={s.card}><Text style={s.cardTitle}>고객에게 보내기 전</Text><Text style={s.body}>사진의 Drive 보관, CRM 연결, 고객용 PDF 저장이 확인되면 관리자가 수신자와 문구를 확인할 수 있습니다.</Text><Text style={s.footerText}>문의 1551-3873</Text></View>
-          <Note>{company?'PDF 보관 후 PC CRM에서 수신자와 내용을 확인해 발송합니다. 앱의 고객 발송은 다음 단계에서 연결합니다.':'현재는 기기 작성 단계입니다. 수신 번호를 입력하거나 실제 발송을 요청하지 않습니다.'}</Note><Button label="보고서 보관 화면으로" disabled={!company} onPress={()=>navigate('pdf')} /></>}
+        {screen === 'send' && visit && <><View style={s.card}><Text style={s.cardTitle}>작업 결과보고서 발송</Text><Text style={s.body}>저장된 PDF와 CRM의 고객 연락처를 확인한 뒤 카카오 알림톡으로 보냅니다.</Text><Text style={s.footerText}>문의 1551-3873</Text></View>
+          {!company?<Note>가상 현장에서는 고객에게 발송하지 않습니다.</Note>:!receipt||receipt.revision!==visit.revision?<><Note>현재 보고서를 먼저 저장해 주세요. 앱을 다시 열었다면 같은 내용을 다시 저장하면 기존 보관본을 확인합니다.</Note><Button label="보고서 보관 화면으로" onPress={()=>navigate('pdf')} /></>:<>
+          <Button label={delivery?'수신자·전달 상태 새로 확인':'수신자와 보고서 확인'} secondary disabled={busy} onPress={()=>void perform(checkDelivery)}/>
+          {delivery&&delivery.documentId===receipt.documentId&&<View style={s.card}><Text style={s.cardTitle}>{delivery.customer}</Text><Text style={s.body}>{delivery.address} · {delivery.workName}</Text><Text style={s.body}>수신 {delivery.recipient}</Text><Text style={s.body}>상태: {({ready:'발송 가능',sending:'발송 처리 중',requested:'발송 요청됨',delivered:'전달 완료',failed:'발송 실패',unknown:'접수 여부 확인 필요'})[delivery.status]}</Text>
+            <Text style={s.body}>[BRING CARE 작업 결과보고서 안내]{'\n'}{delivery.address} 건물주님, {delivery.workName} 결과 보고서가 발행되었습니다.{'\n\n'}작업명: {delivery.address} {delivery.workName} 결과보고서{'\n'}열람기한: 발송일로부터 7일{'\n\n'}아래 버튼에서 결과보고서를 확인해 주세요.{'\n'}문의: 1551-3873</Text></View>}
+          <Button label="고객에게 카카오톡 발송" disabled={busy||!delivery||delivery.documentId!==receipt.documentId||!['ready','failed'].includes(delivery.status)} onPress={confirmDelivery} />
+          <Note>발송이 처리 중이거나 결과가 불확실하면 다시 보내지 않고 상태만 확인합니다.</Note></>}</>}
         {screen === 'sync' && <><View style={s.metrics}><Text style={s.metric}>{workspace.photos.length}<Text style={s.metricUnit}> 장</Text></Text><Text style={s.body}>{Platform.OS === 'web' ? '브라우저 임시 보관' : '암호화된 기기 보관'}</Text></View>
           <Note>{company?'전송 중단 시 기기 사진을 유지합니다. 현재 작업의 업로드를 다시 누르면 저장된 지점부터 이어집니다.':'회사 서버가 연결되면 여기에서 업로드를 이어갑니다. 지금은 Drive 업로드 완료로 표시하지 않습니다.'}</Note>{company&&<Button label="현재 작업 사진 Drive에 올리기" disabled={!visit||busy||dirty||captionDirty} onPress={()=>void perform(syncCurrent)}/>}
           {workspace.photos.map((p, i) => <View key={p.id} style={s.row}><View style={s.flex}><Text style={s.rowTitle}>사진 {i + 1} · {phaseLabel[p.phase]}</Text><Text style={s.muted}>{workspace.visits.find(v => v.id === p.visitId)?.job.title}</Text><Text style={s.small}>{stateLabel[p.state]}</Text></View><Text style={s.blue}>{Math.ceil(p.bytes / 1024)} KB</Text></View>)}

@@ -6,6 +6,7 @@ import { firebaseCustomerSiteReads } from './firebase-reads.js';
 import { createRecordingDrive } from './recording-drive.js';
 import { renderRecordingPdf } from './recording-pdf.js';
 import type { RecordingDependencies, RecordingStore } from './recording-service.js';
+import { deliveryBridge, type DeliveryDeps } from './delivery.js';
 
 export function recordingRuntime(config:{clientId:string;clientSecret:string;refreshToken:string;photosRoot:string;reportsRoot:string},recheck:()=>Promise<void>):RecordingDependencies{
   // This private Google Cloud Storage bucket is a transient upload buffer; the
@@ -31,6 +32,25 @@ async function loadedTransaction(ref:Reference,update:(old:any)=>any){
   ref.on('value',listener,failed);
   try{await loaded;return await ref.transaction(update,undefined,false);}
   finally{ref.off('value',listener);}
+}
+export function deliveryRuntime(config:{clientId:string;clientSecret:string;refreshToken:string;photosRoot:string;reportsRoot:string},secret:string,recheck:()=>Promise<void>):DeliveryDeps{
+  const db=getDatabase(),recording=recordingRuntime(config,recheck);
+  const raw=async(path:string)=>(await db.ref(path).get()).val()||null;
+  return {
+    archive:async(uid,id)=>{const v=await raw(`crmCompany/fieldMobile/archives/${uid}/${id}`);return v?.json?JSON.parse(v.json):null;},
+    visit:async(uid,id)=>{const v=await raw(`crmCompany/fieldMobile/visits/${uid}/${id}`);return v?.json?JSON.parse(v.json):null;},
+    document:id=>raw(`crmCompany/data/buildingDocuments/${id}`),report:id=>raw(`crmCompany/workReports/${id}`),sites:recording.sites,
+    async claim(id,expected,uid){const r=await loadedTransaction(db.ref(`crmCompany/data/buildingDocuments/${id}`),old=>{
+      assert(old && old.updatedAt===expected.updatedAt && old.savedCustomerDocument?.sha256===expected.sha256,'DELIVERY_CHANGED',409);
+      assert(!old.workReportDelivery || old.workReportDelivery.status==='failed','DELIVERY_ALREADY_REQUESTED',409);
+      return {...old,workReportDelivery:{status:'sending',requestedAt:new Date().toISOString(),requestedBy:uid,messageId:''}};
+    });assert(r.committed,'DELIVERY_CHANGED',409);},
+    async finish(id,uid,patch){await loadedTransaction(db.ref(`crmCompany/data/buildingDocuments/${id}`),old=>{
+      assert(old?.workReportDelivery?.requestedBy===uid,'DELIVERY_CHANGED',409);
+      return {...old,workReportDelivery:{...old.workReportDelivery,...patch}};
+    });},
+    download:(id,expected)=>recording.drive.download(id,expected),bridge:deliveryBridge(secret),recheck,
+  };
 }
 export function createRecordingStore(database:Database):RecordingStore{
   return {

@@ -58,7 +58,7 @@ export class FieldApiClient implements UploadApi {
     if (credentials.uid !== this.uid || !credentials.idToken || !credentials.appCheckToken) throw new FieldError('AUTH_REQUIRED');
     const controller = new AbortController(); const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
-    const timer = setTimeout(abort, /\/(complete|archive)$/.test(path) ? 175_000 : 25_000);
+    const timer = setTimeout(abort, /\/(complete|archive)$/.test(path) ? 175_000 : path.startsWith('/deliveries/') && method==='POST' ? 90_000 : 25_000);
     try {
       const response = await this.fetcher(this.base + path, {
         method, redirect: 'error', signal: controller.signal,
@@ -67,7 +67,7 @@ export class FieldApiClient implements UploadApi {
         body: body instanceof Uint8Array ? Uint8Array.from(body) : body,
       });
       if (!response.ok) {
-        const safeRemoteCodes = new Set(['DRIVE_NOT_CONFIGURED','DRIVE_RECONNECT_REQUIRED','DRIVE_STORAGE_FULL','DRIVE_FOLDER_ACCESS_REQUIRED','DRIVE_UNAVAILABLE','DRIVE_FILE_MISMATCH','SITE_ADDRESS_REQUIRED','REPORT_PHOTO_LIMIT','REPORT_PHOTO_BYTES_LIMIT','REPORT_REVIEW_REQUIRED','REPORT_INVALID','PHOTOS_NOT_READY','PHOTO_INTEGRITY_FAILED','PHOTO_ALREADY_LINKED','UPLOAD_STORAGE_UNAVAILABLE','UPLOAD_INCOMPLETE','CRM_RECORD_CHANGED']);
+        const safeRemoteCodes = new Set(['DRIVE_NOT_CONFIGURED','DRIVE_RECONNECT_REQUIRED','DRIVE_STORAGE_FULL','DRIVE_FOLDER_ACCESS_REQUIRED','DRIVE_UNAVAILABLE','DRIVE_FILE_MISMATCH','SITE_ADDRESS_REQUIRED','REPORT_PHOTO_LIMIT','REPORT_PHOTO_BYTES_LIMIT','REPORT_REVIEW_REQUIRED','REPORT_INVALID','PHOTOS_NOT_READY','PHOTO_INTEGRITY_FAILED','PHOTO_ALREADY_LINKED','UPLOAD_STORAGE_UNAVAILABLE','UPLOAD_INCOMPLETE','CRM_RECORD_CHANGED','DELIVERY_NOT_FOUND','DELIVERY_CHANGED','DELIVERY_RECIPIENT_CHANGED','DELIVERY_ALREADY_REQUESTED','DELIVERY_STATUS_UNKNOWN','DELIVERY_UNAVAILABLE','DELIVERY_REJECTED']);
         if(response.status!==401&&response.status!==403){try{const error=await readJsonBounded(response) as {error?:{code?:unknown}};if(typeof error?.error?.code==='string'&&safeRemoteCodes.has(error.error.code))throw new FieldError(error.error.code);}catch(error){if(error instanceof FieldError&&safeRemoteCodes.has(error.code))throw error;}}
         const code = response.status === 401 || response.status === 403 ? 'AUTH_REQUIRED'
           : response.status === 404 ? 'RESOURCE_NOT_FOUND' : response.status === 409 ? 'REVISION_CONFLICT' : response.status === 429 ? 'RATE_LIMITED' : 'SERVER_UNAVAILABLE';

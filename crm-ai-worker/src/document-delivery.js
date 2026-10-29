@@ -1,6 +1,7 @@
 import { monthlyReportRecipient } from './monthly-report-delivery.js';
 import MonthlyTemplate from '../templates/BRINGMONTHLYREPORTV2.json' with {type: 'json'};
 import CompletionTemplate from '../templates/BRINGCOMPLETIONREPORTV3.json' with {type: 'json'};
+import QuoteTemplate from '../templates/BRINGCUSTOMERQUOTEV2.json' with {type: 'json'};
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
@@ -99,6 +100,9 @@ async function ncpSignature(method, uri, timestamp, accessKey, secretKey) {
 }
 
 function alimTalkContent(templateCode, variables) {
+  if (templateCode === QuoteTemplate.templateCode) {
+    return QuoteTemplate.content.replace(/#\{(고객명|문서명|만료일)\}/gu, (_, name) => String(variables[name] || ""));
+  }
   if (templateCode === CompletionTemplate.templateCode) {
     const checked = completionReportDetails({buildingAddress: variables.건물주소, workName: variables.작업명});
     const values = {...variables, 건물주소: checked.buildingAddress, 작업명: checked.workName};
@@ -150,10 +154,10 @@ export async function sendNcpDocument(input, options = {}) {
     // Superseded support-number templates remain registered only for history.
     if (["BRINGCOMPLETIONREPORTV2", "BRINGMONTHLYREPORTV1"].includes(input.templateCode)) fail("DELIVERY_UNAVAILABLE");
     if (input.document?.documentType === "monthly_report" && (env.KAKAO_MONTHLY_REPORT_ENABLED !== 'true' || input.templateCode !== MonthlyTemplate.templateCode)) fail("DELIVERY_UNAVAILABLE");
-    if ([CompletionTemplate.templateCode, MonthlyTemplate.templateCode].includes(input.templateCode) && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
+    if ([CompletionTemplate.templateCode, MonthlyTemplate.templateCode, QuoteTemplate.templateCode].includes(input.templateCode) && await readNcpDocumentConnection(input.templateCode, env, options) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
     uri = `/alimtalk/v2/services/${serviceId(env.NCP_BIZ_MESSAGE_SERVICE_ID)}/messages`;
     const link = `https://${input.variables.문서링크}`;
-    const buttonName = input.templateCode === "BRINGCUSTOMERQUOTEV1" ? "견적서 확인"
+    const buttonName = ["BRINGCUSTOMERQUOTEV1", QuoteTemplate.templateCode].includes(input.templateCode) ? "견적서 확인"
       : ["BRINGCOMPLETIONREPORTV1", CompletionTemplate.templateCode].includes(input.templateCode) ? "결과보고서 확인"
         : input.templateCode === MonthlyTemplate.templateCode ? MonthlyTemplate.buttons[0].name : fail();
     body = { plusFriendId: clean(env.KAKAO_CHANNEL_ID, 80), templateCode: input.templateCode, messages: [{ to: input.phone, content: alimTalkContent(input.templateCode, input.variables), buttons: [{ type: "WL", name: buttonName, linkMobile: link, linkPc: link }] }] };
@@ -192,7 +196,7 @@ const CONNECTION_CODES = new Set(["READY", "AUTH_REJECTED", "SERVICE_NOT_FOUND",
 // A signed GET checks the existing service without sending any message or
 // returning credentials, channel IDs, template bodies, or personal data.
 export async function readNcpDocumentConnection(templateCode, env, options = {}) {
-  if (!["BRINGCUSTOMERQUOTEV1", "BRINGCOMPLETIONREPORTV1", CompletionTemplate.templateCode, MonthlyTemplate.templateCode].includes(templateCode)) return "CONFIGURATION_ERROR";
+  if (!["BRINGCUSTOMERQUOTEV1", QuoteTemplate.templateCode, "BRINGCOMPLETIONREPORTV1", CompletionTemplate.templateCode, MonthlyTemplate.templateCode].includes(templateCode)) return "CONFIGURATION_ERROR";
   const channel = clean(env.KAKAO_CHANNEL_ID, 80);
   if (!/^@[^\s\x00-\x1f\x7f/?#&]{1,79}$/u.test(channel)) return "CONFIGURATION_ERROR";
   try {
@@ -205,6 +209,8 @@ export async function readNcpDocumentConnection(templateCode, env, options = {})
       || Object.entries(MonthlyTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
     if (templateCode === CompletionTemplate.templateCode && (row.content !== CompletionTemplate.content || !Array.isArray(row.buttons) || row.buttons.length !== 1
       || Object.entries(CompletionTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
+    if (templateCode === QuoteTemplate.templateCode && (row.content !== QuoteTemplate.content || !Array.isArray(row.buttons) || row.buttons.length !== 1
+      || Object.entries(QuoteTemplate.buttons[0]).some(([key, value]) => row.buttons[0][key] !== value))) return "TEMPLATE_NOT_READY";
     return row.templateInspectionStatus === "COMPLETE" && ["ACTIVE", "READY"].includes(row.templateStatus) && row.isBlock === false && row.isDormant === false ? "READY" : "TEMPLATE_NOT_READY";
   } catch (error) {
     return diagnosticCode(error?.diagnosticCode) || ({DELIVERY_PROVIDER_AUTH_FAILED: "AUTH_REJECTED", DELIVERY_PROVIDER_SERVICE_NOT_FOUND: "SERVICE_NOT_FOUND", DELIVERY_PROVIDER_LIMITED: "PROVIDER_LIMITED", DELIVERY_CONFIGURATION_ERROR: "CONFIGURATION_ERROR", DELIVERY_PROVIDER_REJECTED: "PROVIDER_REJECTED"}[error?.code] || "PROVIDER_UNAVAILABLE");
@@ -227,7 +233,7 @@ export function createDocumentDeliveryHandler(options = {}) {
     if (age >= 0 && age < 1100) await wait(1100 - age);
   };
   const activeRequests = new Set();
-  return async function handle(request, identity, env) {
+  return async function handle(request, identity, env, trustedField = false) {
     const url = new URL(request.url), capabilities = configured(env);
     const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})$/.exec(url.pathname);
     if (publicMatch && request.method === "GET") {
@@ -239,7 +245,7 @@ export function createDocumentDeliveryHandler(options = {}) {
     }
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
     const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
-    if (!admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
+    if (!trustedField && !admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
     if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") {
       const monthlyReport = capabilities.monthlyReport && await readConnection({templateId: MonthlyTemplate.templateCode}, env) === "READY";
       return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport, sms: capabilities.sms } });
@@ -313,6 +319,8 @@ export function createDocumentDeliveryHandler(options = {}) {
         if (await readConnection({templateId: MonthlyTemplate.templateCode}, dispatchEnv) !== "READY") fail("DELIVERY_CONFIGURATION_ERROR");
         monthlyRecipient = await resolveMonthlyRecipient(request, identity, document, input);
       }
+      const quoteV2Ready = channel === "kakao" && document.documentType === "quote" && await readConnection({templateId: QuoteTemplate.templateCode}, dispatchEnv) === "READY";
+      const selectedTemplate = quoteV2Ready ? QuoteTemplate.templateCode : documentTemplate(document.documentType, document.completionReport);
       if (activeRequests.has(key)) return json({ok: false, code: "DELIVERY_IN_PROGRESS"}, 409);
       activeRequests.add(key);
       const messageId = randomId(), variables = linkVariables(document, input.customerName);
@@ -320,7 +328,7 @@ export function createDocumentDeliveryHandler(options = {}) {
         variables.건물주소 = monthlyRecipient.buildingAddress;
         variables.문서명 = `${monthlyRecipient.buildingAddress} ${document.reportMonth} 월간 관리보고서`;
       }
-      const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: documentTemplate(document.documentType, document.completionReport), stateUpdatedAt: now()};
+      const pending = {ok: true, messageId, documentId: document.id, status: "unknown", channel, templateId: selectedTemplate, stateUpdatedAt: now()};
       if (monthly) pending.deliveryType = "monthly_alimtalk";
       let pendingWrittenAt = 0, providerAccepted = false;
       // No automatic retry after a possibly accepted POST. Preserve its link.
@@ -328,7 +336,7 @@ export function createDocumentDeliveryHandler(options = {}) {
         await dispatchEnv.DOCUMENT_DELIVERY.put(`request:${key}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
         await dispatchEnv.DOCUMENT_DELIVERY.put(`message:${messageId}`, JSON.stringify(pending), {expirationTtl: MAX_TTL_SECONDS});
         pendingWrittenAt = now();
-        const provider = await sendProvider({ channel, phone: recipientPhone, templateCode: documentTemplate(document.documentType, document.completionReport), variables, document, env: dispatchEnv });
+        const provider = await sendProvider({ channel, phone: recipientPhone, templateCode: selectedTemplate, variables, document, env: dispatchEnv });
         providerAccepted = true;
         await waitForWriteSlot(pendingWrittenAt);
         const result = {...pending, status: "requested", providerMessageId: clean(provider.providerMessageId, 120), stateUpdatedAt: now()};

@@ -1,7 +1,9 @@
 import { MAX_BUILDING_REPORT_CHARS, maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
-import { weeklyDeliveryRequest, boundedJson } from "./weekly-report-delivery.js";
+import { fieldReportDelivery } from "./field-report-delivery.js";
+import { weeklyDeliveryRequest, boundedJson, readRecord } from "./weekly-report-delivery.js";
+import { fieldReportFacts, verifyFieldAppCheck, fieldPasswordToken } from "./field-report-draft.js";
 export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
@@ -14,7 +16,7 @@ import { seoulDay } from "./telegram-morning-core.js";
 export { TelegramMorningJobs } from "./telegram-morning-jobs.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
-const SERVICE_VERSION = "2026-10-21-telegram-morning-layout-v2";
+const SERVICE_VERSION = "2026-10-27-quote-template-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
@@ -178,7 +180,7 @@ async function verifyFirebaseIdentity(idToken, env, fetchImpl, canonicalAccess =
   const user = Array.isArray(payload.users) ? payload.users[0] : null;
   const email = String(user?.email || "").trim().toLowerCase();
   const uid = String(user?.localId || "").trim();
-  if (!email || !uid) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
+  if (!email || !uid || user?.disabled === true) throw Object.assign(new Error("AUTH_REQUIRED"), { code: "AUTH_REQUIRED" });
   const allowed = new Set(String(env.CRM_ALLOWED_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
   // Weekly delivery uses the canonical per-user CRM access record (checked by
   // its handler), not the narrower AI-provider email allowlist.
@@ -393,7 +395,24 @@ export function createWorker(options = {}) {
     },
     async fetch(request, env) {
       const url = new URL(request.url);
+      if (url.pathname.startsWith('/v1/field-report-delivery/')) return fieldReportDelivery(request, env, documentDeliveryHandler, now);
       const cors = corsHeaders(request, env);
+      if(url.pathname==='/v1/field-report-draft'){
+        if(request.method!=='POST')return json({ok:false,code:'METHOD_NOT_ALLOWED'},405,cors);
+        if(env.AI_ENABLED!=='true')return json({ok:false,code:'AI_DISABLED'},503,cors);
+        try{
+          const token=bearerToken(request);
+          await verifyFieldAppCheck(request.headers.get('x-firebase-appcheck')||'',fetchImpl,now());
+          const identity=await verifyFirebaseIdentity(token,env,fetchImpl,true);
+          if(!identity.emailVerified||!fieldPasswordToken(token)||!/^[A-Za-z0-9_-]{1,128}$/.test(identity.uid))throw Object.assign(new Error('FORBIDDEN'),{code:'FORBIDDEN'});
+          const access=await readRecord(`access/${identity.uid}`,token,fetchImpl);
+          if(access?.enabled!==true||access.mustChangePassword===true||access.accountSetupPending===true||access.deletionPending===true||!!access.deletedAt||access.marketingRole==='marketing'||!['admin','member'].includes(access.role)||String(access.email||'').trim().toLowerCase()!==identity.email)throw Object.assign(new Error('FORBIDDEN'),{code:'FORBIDDEN'});
+          const input=await boundedJson(request,8192),content=fieldReportFacts(input);
+          await enforceLimits(identity,env,now);
+          const response=await callGeminiReport({task:'completion_report',content,context:{}},env,fetchImpl,timeoutMs);
+          return json({ok:true,requestId:requestId(),result:response.result},200,cors);
+        }catch(error){const code=ERROR_STATUS[error?.code]?error.code:'AI_TEMPORARY_FAILURE';return json({ok:false,code},ERROR_STATUS[code],cors);}
+      }
       if (url.pathname === '/v1/weekly-report-delivery') {
         if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
         const result=await weeklyDeliveryRequest(request,env,{fetchImpl,verifyIdentity:token=>verifyFirebaseIdentity(token,env,fetchImpl,true),rateLimit:identity=>enforceBurstLimit(identity,env)});

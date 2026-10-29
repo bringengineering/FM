@@ -3,7 +3,14 @@ import { FieldError, type Photo, type Visit } from '../domain/model';
 import { readJsonBounded } from './client';
 import { reportFacts } from '../domain/ai-report';
 export interface ArchiveReceipt {documentId:string;revision:number;archivedAt:string;driveVerified:true;crmLinked:true}
+export interface DeliveryPreview {documentId:string;customer:string;address:string;workName:string;recipient:string;fingerprint:string;status:'ready'|'sending'|'requested'|'delivered'|'failed'|'unknown'}
 export class CompanyRecordingApi extends CompanySiteApi {
+  private deliveryResult(value:any,id:string):DeliveryPreview{
+    if(value?.documentId!==id || typeof value.customer!=='string' || typeof value.address!=='string' || typeof value.workName!=='string' || !/^01\d-\*\*\*\*-\d{4}$/.test(value.recipient||'') || !/^[a-f0-9]{64}$/.test(value.fingerprint||'') || !['ready','sending','requested','delivered','failed','unknown'].includes(value.status))throw new FieldError('SERVER_RESPONSE_INVALID');
+    return value as DeliveryPreview;
+  }
+  async deliveryStatus(id:string,signal:AbortSignal):Promise<DeliveryPreview>{if(!/^saved_wr_[a-f0-9]{40}$/.test(id))throw new FieldError('REQUEST_INVALID');return this.deliveryResult(await this.request(`/deliveries/${id}`,'GET',undefined,signal),id);}
+  async sendReport(preview:DeliveryPreview,signal:AbortSignal):Promise<DeliveryPreview>{if(preview.status!=='ready'&&preview.status!=='failed')throw new FieldError('DELIVERY_ALREADY_REQUESTED');return this.deliveryResult(await this.request(`/deliveries/${preview.documentId}`,'POST',JSON.stringify({fingerprint:preview.fingerprint}),signal),preview.documentId);}
   async aiReport(visit:Visit,photos:Photo[],signal:AbortSignal):Promise<string>{
     if(visit.ownerUid!==this.uid)throw new FieldError('OWNER_MISMATCH');
     const content=reportFacts(visit,photos),credentials=await this.credentials();

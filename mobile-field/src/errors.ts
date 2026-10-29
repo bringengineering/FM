@@ -40,6 +40,13 @@ const messages: Record<string, string> = {
   UPLOAD_STORAGE_UNAVAILABLE: '사진 전송 보관함에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   CRM_RECORD_CHANGED: 'CRM에서 보고서가 변경됐습니다. 기존 저장본을 확인해 주세요.',
   SERVER_UNAVAILABLE: '회사 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  DELIVERY_NOT_FOUND: '이 계정에서 저장한 보고서를 확인하지 못했습니다. 보고서를 다시 저장해 주세요.',
+  DELIVERY_CHANGED: '보고서나 고객 정보가 변경됐습니다. 내용을 확인한 뒤 다시 저장해 주세요.',
+  DELIVERY_RECIPIENT_CHANGED: 'CRM에 등록된 연락처가 없거나 보관 당시와 다릅니다. 고객 연락처를 확인하고 보고서를 다시 저장해 주세요.',
+  DELIVERY_ALREADY_REQUESTED: '이미 발송 요청한 보고서입니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.',
+  DELIVERY_STATUS_UNKNOWN: '발송 접수 여부를 확인하지 못했습니다. 다시 보내지 말고 전달 상태를 확인해 주세요.',
+  DELIVERY_UNAVAILABLE: '보고서 발송 연결을 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.',
+  DELIVERY_REJECTED: '알림톡 서버가 발송 요청을 접수하지 않았습니다. 발신 설정과 템플릿 상태를 확인해 주세요.',
 };
 export function safeMessage(error: unknown): string {
   return error instanceof FieldError && messages[error.code] ? messages[error.code]! : '저장하지 못했습니다. 기기 공간과 권한을 확인한 뒤 다시 시도해 주세요.';
