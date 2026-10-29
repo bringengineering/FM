@@ -1,6 +1,7 @@
 import { MAX_BUILDING_REPORT_CHARS, maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
 import { createDocumentDeliveryHandler } from "./document-delivery.js";
+import { fieldReportDelivery } from "./field-report-delivery.js";
 import { weeklyDeliveryRequest, boundedJson, readRecord } from "./weekly-report-delivery.js";
 import { fieldReportFacts, verifyFieldAppCheck, fieldPasswordToken } from "./field-report-draft.js";
 export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
@@ -394,6 +395,7 @@ export function createWorker(options = {}) {
     },
     async fetch(request, env) {
       const url = new URL(request.url);
+      if (url.pathname.startsWith('/v1/field-report-delivery/')) return fieldReportDelivery(request, env, documentDeliveryHandler, now, fetchImpl);
       const cors = corsHeaders(request, env);
       if(url.pathname==='/v1/field-report-draft'){
         if(request.method!=='POST')return json({ok:false,code:'METHOD_NOT_ALLOWED'},405,cors);

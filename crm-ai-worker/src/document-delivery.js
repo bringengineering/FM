@@ -233,7 +233,7 @@ export function createDocumentDeliveryHandler(options = {}) {
     if (age >= 0 && age < 1100) await wait(1100 - age);
   };
   const activeRequests = new Set();
-  return async function handle(request, identity, env) {
+  return async function handle(request, identity, env, trustedField = false) {
     const url = new URL(request.url), capabilities = configured(env);
     const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})$/.exec(url.pathname);
     if (publicMatch && request.method === "GET") {
@@ -245,7 +245,7 @@ export function createDocumentDeliveryHandler(options = {}) {
     }
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
     const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
-    if (!admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
+    if (!trustedField && !admins.has(String(identity.email || "").trim().toLowerCase())) return json({ ok: false, code: "FORBIDDEN" }, 403);
     if (url.pathname === "/v1/document-delivery/capabilities" && request.method === "GET") {
       const monthlyReport = capabilities.monthlyReport && await readConnection({templateId: MonthlyTemplate.templateCode}, env) === "READY";
       return json({ ok: true, capabilities: { kakao: capabilities.kakao, monthlyReport, sms: capabilities.sms } });
