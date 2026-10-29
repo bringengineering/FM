@@ -88,6 +88,8 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     return uploadStatus(ready);
   }
   async function archive(visitId:string,input:unknown) {
+    let stage='validate';
+    try{
     assert(object(input)&&Object.keys(input).every(k=>['revision','captureAreas'].includes(k))&&Number.isSafeInteger(input.revision));
     const v=await visit(visitId);assert(v.revision===input.revision&&v.draft.confirmedRevision===v.revision,'REPORT_REVIEW_REQUIRED',409);
     assert(v.site.address.trim(),'SITE_ADDRESS_REQUIRED',422);
@@ -109,23 +111,28 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     if(a.ready)return{documentId:a.id,revision:a.revision,archivedAt:a.archivedAt,driveVerified:true,crmLinked:true};
     const scoped=plan?{...v,captureAreas:plan}:v;
     const report=reportFor(scoped,uploads,reportId);assert(reportCore.validateReport(report).ok,'REPORT_INVALID',422);
-    const imageBytes:{photo:RecordingPhoto;bytes:Buffer}[]=[];
+    stage='download-photos';const imageBytes:{photo:RecordingPhoto;bytes:Buffer}[]=[];
     for(let i=0;i<selected.length;i+=4){const batch=selected.slice(i,i+4);imageBytes.push(...await Promise.all(batch.map(async p=>({photo:p,bytes:await d.drive.download(uploads.find(u=>u.photo.id===p.id)!.driveFileId!,p)}))));}
-    const pdf=await d.blobs.putOnce(`field-mobile-staging/${uid}/reports/${recordId}.pdf`,await d.pdf(scoped,imageBytes));
+    stage='render-pdf';const rendered=await d.pdf(scoped,imageBytes);
+    stage='stage-pdf';const pdf=await d.blobs.putOnce(`field-mobile-staging/${uid}/reports/${recordId}.pdf`,rendered);
     assert(pdf.length<=RECORD_LIMITS.pdfBytes&&pdf.subarray(0,5).toString()==='%PDF-','REPORT_PDF_INVALID',422);
-    const folderId=a.folderId||await d.drive.folder('reports',[{key:'field-work-reports',name:'현장노트 작업보고서'},{key:v.workDate.slice(0,4),name:v.workDate.slice(0,4)}]);
+    stage='drive-folder';const folderId=a.folderId||await d.drive.folder('reports',[{key:'field-work-reports',name:'현장노트 작업보고서'},{key:v.workDate.slice(0,4),name:v.workDate.slice(0,4)}]);
     const candidate=a.driveFileId||await d.drive.generateId();
     a=await d.store.change<ArchiveRecord>(path,old=>{assert(old&&old.contentHash===v.contentHash,'REVISION_CONFLICT',409);return{...old,driveFileId:old.driveFileId||candidate,folderId:old.folderId||folderId};});
-    await d.recheck();await d.drive.upload(a.driveFileId!,a.folderId!,`${recordId}.pdf`,'application/pdf',pdf,recordId);
+    stage='drive-upload';await d.recheck();await d.drive.upload(a.driveFileId!,a.folderId!,`${recordId}.pdf`,'application/pdf',pdf,recordId);
     await d.recheck();const latest=await visit(v.id);assert(latest.contentHash===v.contentHash,'REVISION_CONFLICT',409);
     const customer=await d.sites.readCustomer(v.customerId);assert(object(customer),'SITE_NOT_FOUND',404);
     const phone=String(customer.phone||'').replace(/\D/g,'');const recipientPhone=/^01\d{8,9}$/.test(phone)?phone:'';
     const document={id:recordId,title:`${v.site.name} ${v.workDate} 작업 결과보고서`.slice(0,160),buildingId:'',customerId:v.customerId,docType:'etc',driveFileId:a.driveFileId,updatedAt:v.updatedAt,updatedBy:uid,
       savedCustomerDocument:{version:1,kind:'workReport',customerId:v.customerId,recipientPhone,reportId,reportUpdatedAt:v.updatedAt,sha256:hash(pdf),size:pdf.length,month:''}};
-    await d.store.commit({...report,customerId:v.customerId},document);
+    stage='crm-link';await d.store.commit({...report,customerId:v.customerId},document);
     a=await d.store.change<ArchiveRecord>(path,old=>{assert(old&&old.contentHash===v.contentHash,'REVISION_CONFLICT',409);return{...old,ready:true,archivedAt:old.archivedAt||nowIso()};});
     await d.blobs.remove?.(`field-mobile-staging/${uid}/reports/${recordId}.pdf`).catch(()=>undefined);
     return{documentId:a.id,revision:a.revision,archivedAt:a.archivedAt,driveVerified:true,crmLinked:true};
+    }catch(error){
+      const e=error as {code?:unknown};const safeCodes=['DRIVE_NOT_CONFIGURED','DRIVE_RECONNECT_REQUIRED','DRIVE_STORAGE_FULL','DRIVE_FOLDER_ACCESS_REQUIRED','DRIVE_UNAVAILABLE','DRIVE_FILE_MISMATCH','PHOTO_INTEGRITY_FAILED','REPORT_PDF_INVALID','REPORT_PHOTO_BYTES_LIMIT','UPLOAD_STORAGE_UNAVAILABLE','CRM_RECORD_CHANGED'];
+      console.warn(JSON.stringify({event:'field_archive_failure',stage,...(typeof e?.code==='string'&&safeCodes.includes(e.code)?{code:e.code}:{})}));throw error;
+    }
   }
   return {save,reserve,chunk,complete,archive,status:async(id:string)=>uploadStatus(await upload(id)),storageStatus:async()=>{await d.drive.checkRoots();return{photos:true,reports:true};}};
 }

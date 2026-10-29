@@ -24,6 +24,8 @@ export function photoRows(photos:PdfPhoto[]):{slots:(PdfPhoto|null)[];labels:str
 }
 
 export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Promise<Buffer>{
+  let stage='images';
+  try{
   const imageBudget=Math.floor(8*1024*1024/Math.max(photos.length,1));
   const images:Record<string,string>={};
   for(const {photo,bytes} of photos){
@@ -35,6 +37,7 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
     assert(image.length<=imageBudget,'REPORT_PHOTO_BYTES_LIMIT',422);
     images[photo.id]=`data:image/jpeg;base64,${image.toString('base64')}`;
   }
+  stage='template';
   const identity=visit.captureAreas?[visit.ownerUid,visit.id,visit.revision,visit.captureAreas]:[visit.ownerUid,visit.id,visit.revision];
   const reportId='fm_'+hash(JSON.stringify(identity)).slice(0,40);
   const ordered=photos.map(entry=>entry.photo).sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
@@ -46,6 +49,7 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
     .replace('</style>',`@font-face{font-family:BringKorean;src:url(data:font/ttf;base64,${font}) format('truetype')}html,body{font-family:BringKorean,sans-serif}</style>`);
   // HTML and image bytes never leave this process. A fresh isolated browser is
   // closed after each render and all non-data network requests are blocked.
+  stage='libraries';
   const windows=process.platform==='win32';
   let browserEnv:NodeJS.ProcessEnv|undefined;
   if(!windows){
@@ -56,21 +60,29 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
     const libraries=join(await inflate(join(packageDir,'../../bin/al2023.tar.br')),'lib');
     browserEnv={...process.env,LD_LIBRARY_PATH:[libraries,process.env.LD_LIBRARY_PATH].filter(Boolean).join(':')};
   }
+  stage='browser-start';
   const browser=await puppeteer.launch({executablePath:windows?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':await chromium.executablePath(),args:windows?[]:chromium.args,env:browserEnv,headless:windows?true:'shell',timeout:30000,protocolTimeout:150000});
   try{
     const context=await browser.createBrowserContext();
     try{
-      const page=await context.newPage();
+      stage='page-setup';const page=await context.newPage();
       await page.setJavaScriptEnabled(false);
       await page.setRequestInterception(true);
       page.on('request',request=>{void (/^data:(?:image\/(?:jpeg|png|webp)|font\/ttf);base64,/i.test(request.url())?request.continue():request.abort());});
-      await page.setContent(html,{waitUntil:'load',timeout:60000});
+      stage='page-load';await page.setContent(html,{waitUntil:'load',timeout:60000});
       const ready=await page.evaluate(async()=>{await document.fonts.ready;return document.fonts.check('12px BringKorean')&&Array.from(document.images).every(image=>image.complete&&image.naturalWidth>0);});
       assert(ready,'REPORT_PDF_INVALID',422);
-      const bytes=await page.pdf({format:'A4',printBackground:true,preferCSSPageSize:true,timeout:120000});
+      stage='print';const bytes=await page.pdf({format:'A4',printBackground:true,preferCSSPageSize:true,timeout:120000});
       const pdf=await PDFDocument.load(bytes);pdf.setTitle('BRING CARE 작업 결과보고서');pdf.setAuthor('BRING CARE');pdf.setCreator('BRING CARE 현장노트');
       pdf.setCreationDate(new Date(visit.updatedAt));pdf.setModificationDate(new Date(visit.updatedAt));
       const output=Buffer.from(await pdf.save());assert(output.length<=12*1024*1024,'REPORT_PHOTO_BYTES_LIMIT',422);return output;
     }finally{await context.close();}
   }finally{await browser.close();}
+  }catch(error){
+    const e=error as {code?:unknown;message?:unknown};const code=typeof e?.code==='string'&&['ENOENT','EACCES','ENOMEM','ETIMEDOUT','REPORT_PDF_INVALID','REPORT_PHOTO_BYTES_LIMIT'].includes(e.code)?e.code:undefined;
+    const message=typeof e?.message==='string'?e.message:'';
+    const library=/error while loading shared libraries:\s*(lib[a-zA-Z0-9_.+-]{1,70}\.so(?:\.[0-9]+)*)/.exec(message)?.[1];
+    console.warn(JSON.stringify({event:'field_pdf_failure',stage,...(code?{code}:{}),...(library?{library}:{}),...(message.includes('Failed to launch the browser process')?{kind:'browser_launch'}:{})}));
+    throw error;
+  }
 }
