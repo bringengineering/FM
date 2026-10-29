@@ -1,0 +1,6 @@
+{
+  "templateCode": "BRINGCUSTOMERQUOTEV2",
+  "templateName": "고객견적서대표번호안내",
+  "content": "[BRING CARE 견적서 안내]\n#{고객명}님, 요청하신 견적서가 발행되었습니다.\n\n견적명: #{문서명}\n열람기한: #{만료일}\n\n아래 버튼에서 견적서를 확인해 주세요.\n문의: 1551-3873",
+  "buttons": [{"type": "WL", "name": "견적서 확인", "linkMobile": "https://#{문서링크}", "linkPc": "https://#{문서링크}"}]
+}

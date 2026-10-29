@@ -1,0 +1,6 @@
+body { margin: 0; padding: 20px; background: var(--bg); }
+.wb-controls { margin: 0 0 16px; font-size: 16px; }
+#pairing { padding: 48px; background: var(--panel); border-radius: var(--radius); text-align: center; }
+#pair-code { font-size: 64px; font-weight: 800; letter-spacing: 8px; color: var(--blue); }
+.wb-stage { min-height: calc(100vh - 116px); }
+[hidden] { display: none !important; }

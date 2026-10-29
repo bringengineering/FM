@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="./data/building-maintenance-companies.js?v=20260702-hvac-vendors-5"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260809-mode-switch-1"></script>
+  <script src="./data/field-map-model.js?v=20260809-managed-2"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
   <style>
     :root {
       --ink: #172033;
@@ -347,6 +351,105 @@
     .legend .electric-dot { background: #f59e0b; }
     .legend .leak-dot { background: #2563eb; }
     .legend .hvac-dot { background: #16a34a; }
+    .legend .managed-vacant-dot { background: #f79009; }
+    .legend .managed-full-dot { background: #12b76a; }
+
+    .map-mode-tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .map-mode-tabs label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 7px;
+      min-height: 38px;
+      border: 1px solid rgba(255,255,255,.42);
+      border-radius: 999px;
+      background: rgba(255,255,255,.12);
+      padding: 8px 11px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .map-mode-tabs label:has(input:checked) {
+      color: var(--brand);
+      background: #fff;
+    }
+
+    .map-mode-tabs input { accent-color: var(--brand); }
+
+    .mode-panel {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    [data-mode-panel][hidden] { display: none !important; }
+
+    body.embedded .standalone-only { display: none; }
+    body.embedded .topbar { padding-top: 12px; }
+    body.embedded .map-mode-tabs { margin-top: 0; }
+
+    .managed-section {
+      margin: 12px;
+      border: 1px solid #fedf89;
+      border-radius: 14px;
+      background: #fffaeb;
+      padding: 12px;
+    }
+
+    .managed-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .managed-section-head span {
+      color: #b54708;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .managed-login {
+      width: 100%;
+      margin-top: 10px;
+      border: 0;
+      border-radius: 10px;
+      background: #163b6d;
+      padding: 10px;
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .managed-list {
+      display: grid;
+      align-content: start;
+      flex: 1;
+      gap: 7px;
+      min-height: 0;
+      overflow: auto;
+      padding: 0 12px 18px;
+    }
+
+    .managed-card {
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+    }
+
+    .managed-card b { display: block; font-size: 13px; }
+    .managed-card span { display: block; margin-top: 3px; color: #667085; font-size: 11px; }
+    .managed-empty { color: #667085; font-size: 11px; line-height: 1.55; }
 
     .pin {
       display: grid;
@@ -440,68 +543,144 @@
   <main class="app">
     <section class="sidebar" aria-label="회사 목록">
       <div class="topbar">
-        <a href="./index.html">← 이루 대시보드</a>
-        <h1>BRING 원주 건물 유지보수 지도</h1>
-        <p class="subtitle">경쟁사 엑셀과 원주 유지보수 구글시트를 한 화면에서 비교합니다.</p>
-      </div>
-
-      <div class="stats" aria-label="요약">
-        <div class="stat"><b id="totalCount">0</b><span>전체</span></div>
-        <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
-        <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
-        <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
-        <div class="stat"><b id="leakCount">0</b><span>누수/하수구</span></div>
-        <div class="stat"><b id="hvacCount">0</b><span>냉난방</span></div>
-        <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
-      </div>
-
-      <div class="filters">
-        <input class="search" id="searchInput" type="search" placeholder="회사명, 서비스, 지역 검색" />
-        <div class="filter-row">
-          <select id="categoryFilter" aria-label="대분류 필터"></select>
-          <select id="sourceFilter" aria-label="출처 필터">
-            <option value="all">전체 출처</option>
-            <option value="excel">경쟁사</option>
-            <option value="google-sheet">원주업체</option>
-            <option value="electric-vendor">전기업체</option>
-            <option value="leak-vendor">누수,하수구업체</option>
-            <option value="hvac-vendor">냉난방업체</option>
-          </select>
-          <select id="locationFilter" aria-label="위치 필터">
-            <option value="all">전체</option>
-            <option value="mapped">지도 표시 가능</option>
-            <option value="missing">위치 미입력</option>
-          </select>
+        <div class="standalone-only">
+          <a href="./index.html">← 이루 대시보드</a>
+          <h1>BRING 원주 건물 유지보수 지도</h1>
+          <p class="subtitle">유지보수 업체와 BRING 관리 건물 업무를 분리해서 확인합니다.</p>
+        </div>
+        <div class="map-mode-tabs" role="radiogroup" aria-label="지도 업무 선택">
+          <label><input type="radio" name="mapMode" value="vendors" /> 유지보수 업체 지도</label>
+          <label><input type="radio" name="mapMode" value="managed" /> BRING 관리계약 건물</label>
         </div>
       </div>
 
-      <p class="notice">검은 핀은 경쟁사 엑셀, 컬러 핀은 원주 유지보수 구글시트입니다. 구글시트 업체는 주소의 동/읍/면 기준으로 우선 표시합니다.</p>
-      <div class="list" id="companyList"></div>
+      <section class="mode-panel" data-mode-panel="vendors">
+        <div class="stats" aria-label="유지보수 업체 요약">
+          <div class="stat"><b id="totalCount">0</b><span>전체</span></div>
+          <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
+          <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
+          <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
+          <div class="stat"><b id="leakCount">0</b><span>누수/하수구</span></div>
+          <div class="stat"><b id="hvacCount">0</b><span>냉난방</span></div>
+          <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
+        </div>
+
+        <div class="filters">
+          <input class="search" id="searchInput" type="search" placeholder="회사명, 서비스, 지역 검색" />
+          <div class="filter-row">
+            <select id="categoryFilter" aria-label="대분류 필터"></select>
+            <select id="sourceFilter" aria-label="출처 필터">
+              <option value="all">전체 출처</option>
+              <option value="excel">경쟁사</option>
+              <option value="google-sheet">원주업체</option>
+              <option value="electric-vendor">전기업체</option>
+              <option value="leak-vendor">누수,하수구업체</option>
+              <option value="hvac-vendor">냉난방업체</option>
+            </select>
+            <select id="locationFilter" aria-label="위치 필터">
+              <option value="all">전체</option>
+              <option value="mapped">지도 표시 가능</option>
+              <option value="missing">위치 미입력</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="notice">검은 핀은 경쟁사 엑셀, 컬러 핀은 원주 유지보수 구글시트입니다. 구글시트 업체는 주소의 동/읍/면 기준으로 우선 표시합니다.</p>
+        <div class="list" id="companyList"></div>
+      </section>
+
+      <section class="mode-panel" data-mode-panel="managed" hidden>
+        <div class="stats" aria-label="BRING 관리 건물 요약">
+          <div class="stat"><b id="managedCount">0</b><span>관리 건물</span></div>
+          <div class="stat"><b id="managedVacancyCount">0</b><span>공실 건물</span></div>
+          <div class="stat"><b id="managedVisibleCount">0</b><span>검색 결과</span></div>
+        </div>
+        <div class="filters">
+          <input class="search" id="managedSearchInput" type="search" placeholder="건물명, 주소 검색" />
+          <div class="filter-row">
+            <select id="managedVacancyFilter" aria-label="공실 필터">
+              <option value="all">전체 공실 상태</option>
+              <option value="hasVacancy">공실 있음</option>
+              <option value="full">공실 없음</option>
+            </select>
+            <select id="managedCaptureFilter" aria-label="촬영 필터">
+              <option value="all">전체 촬영 상태</option>
+              <option value="notStarted">촬영 전</option>
+              <option value="inProgress">촬영 중</option>
+              <option value="complete">촬영 완료</option>
+            </select>
+          </div>
+        </div>
+        <section class="managed-section" aria-label="관리 건물 동기화 상태">
+          <div class="managed-section-head">
+            <b>BRING 관리 건물</b>
+            <span id="managedSyncStatus">내부 로그인 확인 중</span>
+          </div>
+          <button class="managed-login" id="managedLogin" type="button" hidden>Google로 관리 지도 로그인</button>
+        </section>
+        <div class="managed-list" id="managedList"><div class="managed-empty">관리 건물 데이터를 불러오는 중입니다.</div></div>
+      </section>
     </section>
 
     <section class="map-wrap" aria-label="네이버 지도">
       <div id="map"></div>
       <div class="map-count" id="visibleMapCount">지도 표시 0개</div>
-      <div class="legend">
+      <div class="legend" data-mode-panel="vendors">
         <span><i></i>경쟁사 엑셀</span>
         <span><i class="sheet-dot"></i>원주 유지보수</span>
         <span><i class="electric-dot"></i>전기업체</span>
         <span><i class="leak-dot"></i>누수/하수구</span>
         <span><i class="hvac-dot"></i>냉난방</span>
       </div>
+      <div class="legend" data-mode-panel="managed" hidden>
+        <span><i class="managed-vacant-dot"></i>공실 있음</span>
+        <span><i class="managed-full-dot"></i>공실 없음</span>
+      </div>
       <div class="map-error" id="mapError">
         <div>
           <b>네이버 지도를 불러오지 못했습니다.</b>
-          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요. 공식 주소까지 쓰려면 https://bringengineering.github.io 도 같이 추가하면 됩니다.</p>
+          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 현재 운영 주소 https://bring-fm.web.app 을 추가해 주세요. 기존 GitHub 지도도 함께 쓰려면 https://bringengineering1008-pixel.github.io 와 https://bringengineering.github.io 도 유지해 주세요.</p>
         </div>
       </div>
     </section>
   </main>
 
   <script>
-    const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
+    const DEFAULT_NAVER_MAPS_KEY = "x8ss41zmo0";
     const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
+    const MAP_MODE_STORAGE = "bring_map_mode";
     const params = new URLSearchParams(window.location.search);
+    const REQUESTED_COMPANY_ID = String(params.get("company") || "").trim();
+    const FIELD_MODEL = window.BRING_FIELD_MAP_MODEL;
+    const VALID_FIELD_ROLES = new Set(["admin", "staff", "reviewer"]);
+    const CAPTURE_LABELS = Object.freeze({
+      notStarted: "촬영 전",
+      inProgress: "촬영 중",
+      complete: "촬영 완료"
+    });
+    const FIELD_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+      authDomain: "bring-fm.firebaseapp.com",
+      databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "bring-fm",
+      storageBucket: "bring-fm.firebasestorage.app",
+      messagingSenderId: "864976295990",
+      appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+    };
+
+    const embedded = params.get("embedded") === "field";
+    let storedMapMode = null;
+    try {
+      storedMapMode = localStorage.getItem(MAP_MODE_STORAGE);
+    } catch (error) {
+      storedMapMode = null;
+    }
+    let mapMode = FIELD_MODEL.resolveMapMode({
+      requestedMode: params.get("mode"),
+      storedMode: storedMapMode,
+      embedded
+    });
+    if (embedded) document.body.classList.add("embedded");
 
     function isValidNaverKey(value) {
       return /^[A-Za-z0-9_-]{8,40}$/.test(value || "");
@@ -554,7 +733,12 @@
 
     let map = null;
     let infoWindow = null;
+    let baseMarker = null;
     let markers = [];
+    let managedMarkers = [];
+    let managedRecords = [];
+    let fieldSubscriptions = [];
+    let authGeneration = 0;
     let activeCompanyId = "";
 
     const els = {
@@ -571,11 +755,22 @@
       hvac: document.getElementById("hvacCount"),
       mapped: document.getElementById("mapCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
-      mapError: document.getElementById("mapError")
+      mapError: document.getElementById("mapError"),
+      managedCount: document.getElementById("managedCount"),
+      managedVacancyCount: document.getElementById("managedVacancyCount"),
+      managedVisibleCount: document.getElementById("managedVisibleCount"),
+      managedSearch: document.getElementById("managedSearchInput"),
+      managedVacancy: document.getElementById("managedVacancyFilter"),
+      managedCapture: document.getElementById("managedCaptureFilter"),
+      managedList: document.getElementById("managedList"),
+      managedSyncStatus: document.getElementById("managedSyncStatus"),
+      managedLogin: document.getElementById("managedLogin"),
+      modeRadios: [...document.querySelectorAll('input[name="mapMode"]')],
+      modePanels: [...document.querySelectorAll("[data-mode-panel]")]
     };
 
     function esc(value) {
-      return String(value || "").replace(/[&<>"']/g, ch => ({
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
@@ -640,10 +835,19 @@
       els.category.innerHTML = `<option value="all">전체 대분류</option>` +
         DATA.categories.map(category => `<option value="${esc(category)}">${esc(optionLabel(category))}</option>`).join("");
 
-      els.search.addEventListener("input", render);
-      els.category.addEventListener("change", render);
-      els.source.addEventListener("change", render);
-      els.location.addEventListener("change", render);
+      const requestedCompany = DATA.companies.find(company => company.id === REQUESTED_COMPANY_ID);
+      if (requestedCompany) {
+        activeCompanyId = requestedCompany.id;
+        els.search.value = requestedCompany.name;
+        els.category.value = requestedCompany.category;
+        els.source.value = sourceKey(requestedCompany);
+        els.location.value = "all";
+      }
+
+      els.search.addEventListener("input", renderActiveMode);
+      els.category.addEventListener("change", renderActiveMode);
+      els.source.addEventListener("change", renderActiveMode);
+      els.location.addEventListener("change", renderActiveMode);
     }
 
     function getFilteredCompanies() {
@@ -679,7 +883,7 @@
       });
     }
 
-    function renderStats(filtered) {
+    function renderVendorStats(filtered) {
       const mappedAll = DATA.companies.filter(hasLocation).length;
       els.total.textContent = DATA.companies.length;
       els.excel.textContent = DATA.companies.filter(company => sourceKey(company) === "excel").length;
@@ -689,6 +893,209 @@
       els.hvac.textContent = DATA.companies.filter(company => sourceKey(company) === "hvac-vendor").length;
       els.mapped.textContent = mappedAll;
       els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
+    }
+
+    function getFilteredManagedBuildings() {
+      return FIELD_MODEL.filterManagedBuildings(managedRecords, {
+        query: els.managedSearch.value,
+        vacancy: els.managedVacancy.value,
+        capture: els.managedCapture.value
+      });
+    }
+
+    function captureLabel(status) {
+      return CAPTURE_LABELS[status] || CAPTURE_LABELS.notStarted;
+    }
+
+    function renderManagedStats(filtered) {
+      els.managedCount.textContent = managedRecords.length;
+      els.managedVacancyCount.textContent = managedRecords.filter(record => record.vacancyCount > 0).length;
+      els.managedVisibleCount.textContent = filtered.length;
+      els.visibleMapCount.textContent = `지도 표시 ${filtered.length}개`;
+    }
+
+    function setMarkerMapSafely(marker, nextMap) {
+      try {
+        marker.setMap(nextMap);
+      } catch (error) {
+        // A partially loaded map SDK must not interrupt mode rendering or other marker cleanup.
+      }
+    }
+
+    function clearManagedMarkers() {
+      const staleMarkers = managedMarkers;
+      managedMarkers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
+    }
+
+    function renderManagedList(records) {
+      if (!records.length) {
+        els.managedList.innerHTML = `<div class="managed-empty">조건에 맞는 관리 건물이 없습니다.</div>`;
+        return;
+      }
+      els.managedList.innerHTML = records.map(record => `
+        <article class="managed-card">
+          <b>${esc(record.name)}</b>
+          <span>${esc(record.managementNumber || "관리번호 확인 필요")}</span>
+          <span>${esc(record.roadAddress || "주소 확인 필요")}</span>
+          <span>공실 ${record.vacancyCount}건 · ${esc(record.approvedRentSummary)}</span>
+          <span>${esc(record.parkingSummary)} · ${esc(captureLabel(record.captureStatus))}</span>
+        </article>
+      `).join("");
+    }
+
+    function managedInfoContent(record) {
+      const safe = FIELD_MODEL.safePropertyPopupModel(record);
+      return `<div class="info">
+        <h2>${esc(safe.name)}</h2>
+        <p><b>관리번호</b> ${esc(safe.managementNumber)}</p>
+        <p><b>주소</b> ${esc(safe.roadAddress || "주소 확인 필요")}</p>
+        <p><b>공실</b> ${safe.vacancyCount}건</p>
+        <p><b>승인 광고조건</b> ${esc(safe.approvedRentSummary)}</p>
+        <p><b>주차</b> ${esc(safe.parkingSummary)}</p>
+        <p><b>촬영</b> ${esc(captureLabel(safe.captureStatus))}</p>
+      </div>`;
+    }
+
+    function renderManagedMarkers(records) {
+      clearManagedMarkers();
+      if (!map || !window.naver || !naver.maps || mapMode !== "managed") return;
+      const bounds = new naver.maps.LatLngBounds();
+      records.forEach(record => {
+        const position = new naver.maps.LatLng(record.latitude, record.longitude);
+        const color = FIELD_MODEL.propertyMarkerColor(record.markerStatus);
+        const marker = new naver.maps.Marker({
+          position,
+          map,
+          title: record.name,
+          icon: {
+            content: `<div class="pin" title="${esc(record.name)}" style="background:${color}"><span>집</span></div>`,
+            size: new naver.maps.Size(34, 34),
+            anchor: new naver.maps.Point(17, 17)
+          }
+        });
+        naver.maps.Event.addListener(marker, "click", () => {
+          infoWindow.setContent(managedInfoContent(record));
+          infoWindow.open(map, marker);
+        });
+        managedMarkers.push(marker);
+        bounds.extend(position);
+      });
+      if (managedMarkers.length) {
+        map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+      } else {
+        map.setCenter(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+        map.setZoom(12);
+      }
+    }
+
+    function renderManagedMode(records = getFilteredManagedBuildings()) {
+      renderManagedStats(records);
+      renderManagedList(records);
+      renderManagedMarkers(records);
+    }
+
+    function stopFieldSubscriptions() {
+      fieldSubscriptions.forEach(unsubscribe => unsubscribe());
+      fieldSubscriptions = [];
+    }
+
+    function resetManagedState() {
+      managedRecords = [];
+      clearManagedMarkers();
+      if (mapMode === "managed") renderManagedMode();
+    }
+
+    function startFieldManagedSync() {
+      if (!window.firebase || !FIELD_MODEL) {
+        els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+        resetManagedState();
+        return;
+      }
+      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIELD_FIREBASE_CONFIG);
+      const auth = app.auth();
+      const database = app.database();
+
+      els.managedLogin.addEventListener("click", async () => {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          await auth.signInWithPopup(provider);
+        } catch (error) {
+          els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+        }
+      });
+
+      auth.onAuthStateChanged(user => {
+        const generation = ++authGeneration;
+        stopFieldSubscriptions();
+        resetManagedState();
+        els.managedLogin.hidden = true;
+        if (!user) {
+          els.managedSyncStatus.textContent = "내부 로그인 필요";
+          els.managedLogin.hidden = embedded;
+          return;
+        }
+        els.managedSyncStatus.textContent = "Firebase 동기화 중";
+
+        void (async () => {
+          try {
+            const tokenResult = await user.getIdTokenResult();
+            if (
+              generation !== authGeneration ||
+              !auth.currentUser ||
+              auth.currentUser.uid !== user.uid
+            ) return;
+
+            const claims = tokenResult.claims || {};
+            const hasFieldClaim = claims.fieldPlatform === true;
+            if (!hasFieldClaim || !VALID_FIELD_ROLES.has(claims.fieldRole)) {
+              els.managedSyncStatus.textContent = "권한 등록 필요";
+              els.managedLogin.hidden = embedded;
+              return;
+            }
+
+            const enabledReference = database.ref(`fieldPlatform/users/${user.uid}/enabled`);
+            const enabledSnapshot = await enabledReference.once("value");
+            if (
+              generation !== authGeneration ||
+              !auth.currentUser ||
+              auth.currentUser.uid !== user.uid
+            ) return;
+
+            if (enabledSnapshot.val() !== true) {
+              els.managedSyncStatus.textContent = "비활성화된 계정";
+              els.managedLogin.hidden = embedded;
+              return;
+            }
+
+            const projectionReference = database.ref("fieldPlatform/mapProjections");
+            const onValue = snapshot => {
+              if (
+                generation !== authGeneration ||
+                !auth.currentUser ||
+                auth.currentUser.uid !== user.uid
+              ) return;
+              managedRecords = FIELD_MODEL.toManagedBuildingMarkers(snapshot.val() || {});
+              els.managedSyncStatus.textContent = "Firebase 실시간 연결됨";
+              if (mapMode === "managed") renderManagedMode();
+            };
+            const onError = () => {
+              if (generation !== authGeneration) return;
+              stopFieldSubscriptions();
+              resetManagedState();
+              els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+            };
+            projectionReference.on("value", onValue, onError);
+            fieldSubscriptions.push(() => projectionReference.off("value", onValue));
+          } catch (error) {
+            if (generation !== authGeneration) return;
+            stopFieldSubscriptions();
+            resetManagedState();
+            els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+          }
+        })();
+      });
     }
 
     function renderList(companies) {
@@ -733,8 +1140,9 @@
     }
 
     function clearMarkers() {
-      markers.forEach(marker => marker.setMap(null));
+      const staleMarkers = markers;
       markers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
     }
 
     function markerContent(company, label) {
@@ -828,26 +1236,74 @@
       const marker = markers.find(item => item.__companyId === id);
       activeCompanyId = id;
       renderList(getFilteredCompanies());
+      requestAnimationFrame(() => {
+        const activeItem = [...els.list.querySelectorAll(".company")]
+          .find(item => item.dataset.id === id);
+        activeItem?.scrollIntoView({ block: "nearest" });
+      });
       if (!marker || !map) return;
       const company = DATA.companies.find(item => item.id === id);
+      if (!company) return;
       map.setCenter(marker.getPosition());
       map.setZoom(Math.max(map.getZoom(), 12));
       infoWindow.setContent(infoContent(company, company.locations[0]));
       infoWindow.open(map, marker);
     }
 
-    function render() {
-      const filtered = getFilteredCompanies();
-      renderStats(filtered);
-      renderList(filtered);
-      renderMarkers(filtered);
+    function focusRequestedCompany() {
+      if (!REQUESTED_COMPANY_ID) return;
+      const company = DATA.companies.find(item => item.id === REQUESTED_COMPANY_ID);
+      if (company) focusCompany(company.id);
+    }
+
+    function renderVendorMode(companies) {
+      renderVendorStats(companies);
+      renderList(companies);
+      renderMarkers(companies);
+    }
+
+    function renderActiveMode() {
+      const filteredVendors = getFilteredCompanies();
+      const filteredManaged = getFilteredManagedBuildings();
+      const visible = FIELD_MODEL.filterMapItems({
+        vendors: filteredVendors,
+        managedBuildings: filteredManaged
+      }, mapMode);
+
+      if (mapMode === "managed") {
+        clearMarkers();
+        renderManagedMode(visible.managedBuildings);
+      } else {
+        clearManagedMarkers();
+        renderVendorMode(visible.vendors);
+      }
+      if (baseMarker) setMarkerMapSafely(baseMarker, mapMode === "vendors" ? map : null);
+    }
+
+    function setMapMode(mode, { persist }) {
+      mapMode = mode === "managed" ? "managed" : "vendors";
+      els.modeRadios.forEach(radio => {
+        radio.checked = radio.value === mapMode;
+      });
+      els.modePanels.forEach(panel => {
+        panel.hidden = panel.dataset.modePanel !== mapMode;
+      });
+      if (infoWindow) infoWindow.close();
+      if (persist) {
+        try {
+          localStorage.setItem(MAP_MODE_STORAGE, mapMode);
+        } catch (error) {
+          // The explicit in-memory selection remains usable when storage is unavailable.
+        }
+      }
+      renderActiveMode();
     }
 
     function initMap() {
       if (map) return;
       if (!window.naver || !naver.maps) {
-        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
-        render();
+        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 현재 사이트 주소가 네이버 클라우드 Web 서비스 URL에 등록됐는지 확인해 주세요.");
+        renderActiveMode();
         return;
       }
       hideMapError();
@@ -860,9 +1316,9 @@
       });
       infoWindow = new naver.maps.InfoWindow({ borderWidth: 0, backgroundColor: "#fff" });
 
-      const baseMarker = new naver.maps.Marker({
+      baseMarker = new naver.maps.Marker({
         position: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
-        map,
+        map: mapMode === "vendors" ? map : null,
         title: "BRING 원주 기준점",
         icon: {
           content: `<div class="pin base" title="BRING 원주 기준점"><span>B</span></div>`,
@@ -880,7 +1336,8 @@
         infoWindow.open(map, baseMarker);
       });
 
-      render();
+      renderActiveMode();
+      if (mapMode === "vendors") focusRequestedCompany();
     }
 
     function loadNaverMaps() {
@@ -890,8 +1347,8 @@
       }
 
       window.navermap_authFailure = () => {
-        showMapError("네이버 지도 Open API 인증에 실패했습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해야 합니다.");
-        render();
+        showMapError("네이버 지도 Open API 인증에 실패했습니다. 현재 사이트 주소를 네이버 클라우드 Web 서비스 URL에 등록해 주세요.");
+        renderActiveMode();
       };
       window.__bringNaverMapsReady = () => initMap();
 
@@ -904,17 +1361,17 @@
         }, 100);
       };
       script.onerror = () => {
-        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
-        render();
+        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 목록과 필터는 계속 사용할 수 있습니다.");
+        renderActiveMode();
       };
       document.head.appendChild(script);
 
       setTimeout(() => {
         if (!map && (!window.naver || !window.naver.maps)) {
-          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 새로고침 후에도 같으면 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 가 들어갔는지 확인해 주세요.");
-          render();
+          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 목록과 필터는 계속 사용할 수 있습니다.");
+          renderActiveMode();
         } else if (map && document.querySelector("#map")?.children.length === 0) {
-          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
+          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. 현재 사이트 주소 등록을 확인해 주세요.");
         }
       }, 5000);
     }
@@ -925,7 +1382,19 @@
       focusCompany(item.dataset.id);
     });
 
+    els.modeRadios.forEach(radio => {
+      radio.addEventListener("change", event => {
+        if (event.target.checked) setMapMode(event.target.value, { persist: true });
+      });
+    });
+    els.managedSearch.addEventListener("input", renderActiveMode);
+    els.managedVacancy.addEventListener("change", renderActiveMode);
+    els.managedCapture.addEventListener("change", renderActiveMode);
+
     setupFilters();
+    setMapMode(mapMode, { persist: false });
+    if (mapMode === "vendors") focusRequestedCompany();
+    startFieldManagedSync();
     loadNaverMaps();
   </script>
 </body>
