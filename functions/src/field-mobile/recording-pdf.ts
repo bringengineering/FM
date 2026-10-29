@@ -63,9 +63,11 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
   stage='browser-start';
   const browser=await puppeteer.launch({executablePath:windows?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':await chromium.executablePath(),args:windows?[]:chromium.args,env:browserEnv,headless:windows?true:'shell',timeout:30000,protocolTimeout:150000});
   try{
-    const context=await browser.createBrowserContext();
+    // Serverless Chromium runs in single-process mode and cannot reliably
+    // create an incognito context. Each render launches its own browser with
+    // a fresh temporary profile instead; it is destroyed on browser.close().
+    stage='page-setup';const page=await browser.newPage();
     try{
-      stage='page-setup';const page=await context.newPage();
       await page.setJavaScriptEnabled(false);
       await page.setRequestInterception(true);
       page.on('request',request=>{void (/^data:(?:image\/(?:jpeg|png|webp)|font\/ttf);base64,/i.test(request.url())?request.continue():request.abort());});
@@ -76,7 +78,7 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
       const pdf=await PDFDocument.load(bytes);pdf.setTitle('BRING CARE 작업 결과보고서');pdf.setAuthor('BRING CARE');pdf.setCreator('BRING CARE 현장노트');
       pdf.setCreationDate(new Date(visit.updatedAt));pdf.setModificationDate(new Date(visit.updatedAt));
       const output=Buffer.from(await pdf.save());assert(output.length<=12*1024*1024,'REPORT_PHOTO_BYTES_LIMIT',422);return output;
-    }finally{await context.close();}
+    }finally{await page.close();}
   }finally{await browser.close();}
   }catch(error){
     const e=error as {code?:unknown;message?:unknown};const code=typeof e?.code==='string'&&['ENOENT','EACCES','ENOMEM','ETIMEDOUT','REPORT_PDF_INVALID','REPORT_PHOTO_BYTES_LIMIT'].includes(e.code)?e.code:undefined;
