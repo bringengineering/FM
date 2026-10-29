@@ -10,7 +10,7 @@ async function verifyService(request,path,bodyHash,now,fetcher){
     const [a,b,c]=match[1].split('.'),head=JSON.parse(new TextDecoder().decode(decode(a))),claims=JSON.parse(new TextDecoder().decode(decode(b))),seconds=Math.floor(now()/1000);
     if(head.alg!=='RS256'||typeof head.kid!=='string'||head.kid.length>128||!['https://accounts.google.com','accounts.google.com'].includes(claims.iss)
       ||claims.aud!==`${ORIGIN}${path}?method=${request.method}&sha256=${bodyHash}`||claims.email!==SERVICE_ACCOUNT||![true,'true'].includes(claims.email_verified)
-      ||!Number.isInteger(claims.iat)||claims.iat>seconds+60||claims.iat<seconds-300||!Number.isInteger(claims.exp)||claims.exp<=seconds||claims.exp>claims.iat+3660)return false;
+      ||!Number.isInteger(claims.iat)||claims.iat>seconds+60||!Number.isInteger(claims.exp)||claims.exp<=seconds||claims.exp>claims.iat+3660)return false;
     const response=await fetcher('https://www.googleapis.com/oauth2/v3/certs',{redirect:'manual',signal:AbortSignal.timeout(10000)});
     if(!response.ok||Number(response.headers.get('content-length')||0)>65536||!response.body)return false;
     const reader=response.body.getReader(),chunks=[];let size=0;

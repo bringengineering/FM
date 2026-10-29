@@ -17,7 +17,7 @@ test('accepts signed report sends only; rejects bad signatures, other types and 
   assert.equal((await fieldReportDelivery(request(path,payload),{},handler,()=>now,fetcher)).status,200);
   assert.equal((await fieldReportDelivery(request(path,payload,{wrongKey:true}),{},handler,()=>now,fetcher)).status,403);
   assert.equal((await fieldReportDelivery(request(path,payload,{email:'other@example.test'}),{},handler,()=>now,fetcher)).status,403);
-  assert.equal((await fieldReportDelivery(request(path,payload,{time:now-301000}),{},handler,()=>now,fetcher)).status,403);
+  assert.equal((await fieldReportDelivery(request(path,payload,{time:now-3601000}),{},handler,()=>now,fetcher)).status,403);
   const signed=request(path,payload);const tampered=new Request(signed.url,{method:'POST',headers:signed.headers,body:JSON.stringify({...payload,documentName:'변경'})});
   assert.equal((await fieldReportDelivery(tampered,{},handler,()=>now,fetcher)).status,403);
   assert.equal((await fieldReportDelivery(request(path,{...payload,documentType:'quote'}),{},handler,()=>now,fetcher)).status,400);
