@@ -38,6 +38,12 @@ it('reports when a bounded search cannot examine the complete customer list',asy
   f.api.sites=async()=>({sites:[{id:`s${++n}`,customerId:`s${n}`,name:'일치 고객',address:'가상 주소'}],nextCursor:`s${n}`});
   const result=await f.session.searchSites('일치');expect(result.sites).toHaveLength(5);expect(result.incomplete).toBe(true);expect(result.nextCursor).toBe('s5');f.session.dispose();
 });
+it('continues searching beyond the first batch without skipping customers',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  f.api.sites=async cursor=>{const page=cursor?Number(cursor.slice(1))+1:1,id=`s${page}`;return{sites:[{id,customerId:id,name:page===7?'찾는 고객':'다른 고객',address:'가상 주소'}],nextCursor:page<7?id:null};};
+  const first=await f.session.searchSites('찾는');expect(first.sites).toEqual([]);expect(first.nextCursor).toBe('s5');
+  const next=await f.session.searchSites('찾는',first.nextCursor);expect(next.sites.map(s=>s.id)).toEqual(['s7']);expect(next.incomplete).toBe(false);f.session.dispose();
+});
 it('foreground revalidation preserves the customer workspace and does not reload the list',async()=>{
   const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
   const previous=f.session.snapshot();await f.session.revalidate();expect(f.session.snapshot()).toEqual(previous);expect(f.api.sites).toHaveBeenCalledOnce();expect(f.api.context).toHaveBeenCalledTimes(2);f.session.dispose();
