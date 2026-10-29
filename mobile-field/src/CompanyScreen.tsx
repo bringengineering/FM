@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {APP_VERSION} from './app-version';
 import { companyConnectionEnabled, createCompanySession } from './auth/runtime';
 import type { CompanySession } from './auth/session';
 import { FieldWorkspace } from './FieldWorkspace';
@@ -17,8 +18,8 @@ const messages: Record<string, string> = {
   LOGIN_PROVIDER_ERROR: '인증 서버에서 로그인을 처리하지 못했습니다. 관리자에게 LOGIN_PROVIDER_ERROR를 알려 주세요.',
   APP_ATTESTATION_FAILED: 'Android 기기·앱 인증에 실패했습니다. 관리자에게 APP_ATTESTATION_FAILED를 알려 주세요.',
   NATIVE_APP_NOT_CONFIGURED: '이 설치본의 회사 연결 설정이 준비되지 않았습니다.',
-  SERVER_UNAVAILABLE: '회사 서버 연결을 확인하지 못했습니다. 잠시 후 다시 로그인해 주세요.',
-  NETWORK_UNCERTAIN: '네트워크 연결을 확인한 뒤 다시 로그인해 주세요.',
+  SERVER_UNAVAILABLE: '회사 서버 연결을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  NETWORK_UNCERTAIN: '네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
   RATE_LIMITED: '요청이 많습니다. 1분 후 다시 시도해 주세요.',
   RESOURCE_NOT_FOUND: '고객정보가 삭제되거나 보관되었습니다. 목록을 새로 확인해 주세요.',
   SERVER_RESPONSE_INVALID: '서버와 앱의 연결 규격이 맞지 않습니다. 관리자에게 문의해 주세요.',
@@ -46,7 +47,7 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
       <Action label="직원 계정으로 로그인" disabled onPress={() => undefined} />
     </View>}
     {!companyConnectionEnabled && <View style={styles.card}><Text style={styles.heading}>기능 미리보기</Text><Text style={styles.copy}>가상 현장에서 촬영·분류·보고서 작성 흐름을 확인하세요.</Text><Action label="개발용 가상 현장 열기" onPress={openSample} /></View>}
-    <Text style={styles.small}>개발 0.1.7 · 직원 전용 · 활동사진·보고서 보관</Text>
+    <Text style={styles.small}>개발 {APP_VERSION} · 직원 전용 · 활동사진·보고서 보관</Text>
   </ScrollView></SafeAreaView>;
 }
 function SessionScreen({ session }: { session: CompanySession }) {
@@ -54,7 +55,18 @@ function SessionScreen({ session }: { session: CompanySession }) {
   const [email, setEmail] = useState(''), [password, setPassword] = useState('');
   const [hidden, setHidden] = useState(AppState.currentState !== 'active');
   const [recording,setRecording]=useState<{uid:string;site:CustomerSite;api:CompanyRecordingApi}>();
-  useEffect(()=>{if(state.phase==='signedOut'||state.phase==='error')setRecording(undefined);},[state.phase]);
+  const [backRequest,setBackRequest]=useState(0);
+  const [query,setQuery]=useState(''),[searchResult,setSearchResult]=useState<{sites:CustomerSite[];incomplete:boolean;nextCursor:string|null}>(),[searchBusy,setSearchBusy]=useState(false),[searchError,setSearchError]=useState('');
+  const searchLock=useRef(false);
+  const [pageHistory,setPageHistory]=useState<(string|null)[]>([null]);
+  const [searchHistory,setSearchHistory]=useState<(string|null)[]>([null]);
+  async function findCustomer(cursor:string|null=null,history:(string|null)[]=[null]){
+    if(searchLock.current||!query.trim())return;searchLock.current=true;setSearchBusy(true);setSearchError('');
+    try{const result=await session.searchSites(query,cursor);if(session.snapshot().phase==='ready'){setSearchResult(result);setSearchHistory(history);}}
+    catch{if(session.snapshot().phase==='ready')setSearchError('검색하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.');}
+    finally{searchLock.current=false;setSearchBusy(false);}
+  }
+  useEffect(()=>{if(state.phase==='signedOut'||state.phase==='error'){setRecording(undefined);setQuery('');setSearchResult(undefined);setPageHistory([null]);}},[state.phase]);
   useEffect(() => {
     const listener = AppState.addEventListener('change', next => {
       if (next !== 'active') { setPassword(''); setHidden(true); }
@@ -73,13 +85,21 @@ function SessionScreen({ session }: { session: CompanySession }) {
   </View>;
   const selected = state.selected;
   return <>
-    <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text><Action label="목록 새로고침" onPress={() => void session.refresh()} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
-    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Action label="사진 촬영·보고서 작성" onPress={()=>setRecording({uid:state.context!.actor.uid,site:selected,api:session.recordingApi()})}/><Action label="고객 목록으로" onPress={() => void session.refresh()} /></View> : <>
-      {!state.page?.sites.length && <View style={styles.card}><Text style={styles.copy}>이 페이지에 표시할 고객이 없습니다. CRM 고객정보에 등록된 고객을 확인해 주세요.</Text></View>}
-      {state.page?.sites.map(site => <View style={styles.card} key={site.id}><Text style={styles.heading}>{site.name}</Text><Text style={styles.copy}>{site.address || '주소 미입력'}</Text><Action label="고객 선택" onPress={() => void session.select(site.id)} /></View>)}
-      {state.page?.nextCursor && <Action label="다음 고객 보기" onPress={() => void session.refresh(state.page!.nextCursor)} />}
+    <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text>{state.error&&<Text accessibilityRole="alert" style={styles.error}>{messages[state.error]||messages.SERVER_UNAVAILABLE}</Text>}<Action label="목록 새로고침" disabled={searchBusy} onPress={() => {setSearchResult(undefined);setSearchError('');void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
+    {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Action label="사진 촬영·보고서 작성" onPress={()=>setRecording({uid:state.context!.actor.uid,site:selected,api:session.recordingApi()})}/><Action label="고객 목록으로" onPress={() => {void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /></View> : <>
+      <View style={styles.card}><Text style={styles.heading}>고객 찾기</Text><TextInput accessibilityLabel="고객명 또는 건물주소 검색" value={query} onChangeText={value=>{setQuery(value);setSearchResult(undefined);setSearchError('');}} editable={!searchBusy} placeholder="고객명 또는 건물주소" returnKeyType="search" maxLength={100} style={styles.input} onSubmitEditing={()=>void findCustomer()} />
+        <Action label={searchBusy?'고객 검색 중…':'전체 고객 검색'} disabled={searchBusy||!query.trim()} onPress={()=>void findCustomer()} />
+        {searchResult&&<Action label="전체 목록으로" disabled={searchBusy} onPress={()=>{setSearchResult(undefined);setQuery('');setSearchError('');}}/>}{!!searchError&&<Text accessibilityRole="alert" style={styles.error}>{searchError}</Text>}
+        {searchResult&&<Text style={styles.small}>현재 범위 검색 결과 {searchResult.sites.length}명{searchResult.incomplete?' · 검색할 고객이 더 있습니다. 아래에서 다음 범위를 확인해 주세요.':''}</Text>}
+      </View>
+      {!(searchResult?.sites||state.page?.sites)?.length && <View style={styles.card}><Text style={styles.copy}>{searchResult?(searchResult.incomplete?'이 범위에는 일치하는 고객이 없습니다. 다음 범위를 검색해 주세요.':'이 범위에 일치하는 고객이 없습니다. 이름이나 주소를 다시 확인해 주세요.'):'이 페이지에 표시할 고객이 없습니다. CRM 고객정보에 등록된 고객을 확인해 주세요.'}</Text></View>}
+      {(searchResult?.sites||state.page?.sites)?.map(site => <View style={styles.card} key={site.id}><Text style={styles.heading}>{site.name}</Text><Text style={styles.copy}>{site.address || '주소 미입력'}</Text><Action label="고객 선택" disabled={searchBusy} onPress={() => void session.select(site.id)} /></View>)}
+      {searchResult&&searchHistory.length>1&&<Action label="이전 검색 범위" disabled={searchBusy} onPress={()=>{const previous=searchHistory.slice(0,-1);void findCustomer(previous[previous.length-1]??null,previous);}}/>}
+      {searchResult?.nextCursor&&<Action label="다음 고객 범위 검색" disabled={searchBusy} onPress={()=>void findCustomer(searchResult.nextCursor,[...searchHistory,searchResult.nextCursor!])}/>}
+      {!searchResult&&pageHistory.length>1&&<Action label="이전 고객 보기" disabled={searchBusy} onPress={()=>{const next=pageHistory.slice(0,-1);void session.refresh(next[next.length-1]??null).then(ok=>{if(ok)setPageHistory(next);});}} />}
+      {!searchResult&&state.page?.nextCursor && <Action label="다음 고객 보기" disabled={searchBusy} onPress={() => {const next=state.page!.nextCursor!;void session.refresh(next).then(ok=>{if(ok)setPageHistory([...pageHistory,next]);});}} />}
     </>}
-    {recording&&<Modal visible animationType="slide" onRequestClose={()=>undefined}><FieldWorkspace company={recording} onClose={()=>setRecording(undefined)}/></Modal>}
+    {recording&&<Modal visible animationType="slide" onRequestClose={()=>setBackRequest(value=>value+1)}><FieldWorkspace company={recording} backRequest={backRequest} onClose={()=>setRecording(undefined)}/></Modal>}
   </>;
 }
 const styles = StyleSheet.create({

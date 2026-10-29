@@ -54,10 +54,30 @@ export class CompanySession {
     if (context.actor.uid !== uid || this.identity.currentUid() !== uid) throw new FieldError('AUTH_REQUIRED');
     this.publish({ phase: 'ready', context, page });
   }
-  async refresh(cursor: string | null = null): Promise<void> {
-    if (!this.uid || this.state.phase === 'loading' || this.disposed) return;
-    const generation = this.begin(); this.publish({ phase: 'loading' });
-    try { await this.load(generation, cursor); } catch (error) { await this.fail(error, generation); }
+  async refresh(cursor: string | null = null): Promise<boolean> {
+    if (!this.uid || this.state.phase === 'loading' || this.disposed) return false;
+    const previous=this.state,generation = this.begin(); this.publish({ phase: 'loading' });
+    try { await this.load(generation, cursor); return this.current(generation); } catch (error) { if(!this.recoverNetwork(error,generation,previous))await this.fail(error, generation);return false; }
+  }
+  async searchSites(query:string,startCursor:string|null=null):Promise<{sites:CustomerSite[];incomplete:boolean;nextCursor:string|null}> {
+    const needle=query.trim().replace(/\s+/g,' ').toLocaleLowerCase();
+    if(!needle||needle.length>100)throw new FieldError('REQUEST_INVALID');
+    if(!this.uid||this.state.phase!=='ready'||this.disposed)throw new FieldError('AUTH_REQUIRED');
+    const uid=this.uid,generation=this.generation,api=this.apiFor(uid),signal=this.controller.signal;
+    let cursor:string|null=startCursor,pages=0;const seen=new Set<string>(),found:CustomerSite[]=[];
+    try{
+      do{
+        const page=await api.sites(cursor,signal);
+        if(!this.current(generation)||this.identity.currentUid()!==uid)throw new FieldError('AUTH_REQUIRED');
+        for(const site of page.sites){
+          if(seen.has(site.id))throw new FieldError('SERVER_RESPONSE_INVALID');seen.add(site.id);
+          if(`${site.name} ${site.address}`.replace(/\s+/g,' ').toLocaleLowerCase().includes(needle))found.push(site);
+        }
+        cursor=page.nextCursor;pages++;
+        if(pages>=5)break;
+      }while(cursor);
+      return{sites:found,incomplete:!!cursor,nextCursor:cursor};
+    }catch(error){if(error instanceof FieldError&&['AUTH_REQUIRED','APP_ATTESTATION_FAILED','SERVER_RESPONSE_INVALID'].includes(error.code))await this.fail(error,generation);throw error;}
   }
   async select(jobId: string): Promise<void> {
     if (!this.uid || this.state.phase !== 'ready' || this.disposed) return;
@@ -68,9 +88,9 @@ export class CompanySession {
       const selected = await api.site(jobId, this.controller.signal);
       if (this.current(generation)) {
         if (context.actor.uid !== uid || this.identity.currentUid() !== uid) throw new FieldError('AUTH_REQUIRED');
-        this.publish({ ...previous, phase: 'ready', context, selected });
+        this.publish({ ...previous, phase: 'ready', context, selected, error:undefined });
       }
-    } catch (error) { await this.fail(error, generation); }
+    } catch (error) { if(!this.recoverNetwork(error,generation,previous))await this.fail(error, generation); }
   }
   recordingApi():CompanyRecordingApi {
     if(!this.uid||this.state.phase!=='ready')throw new FieldError('AUTH_REQUIRED');
@@ -86,6 +106,12 @@ export class CompanySession {
       if(this.current(generation)&&this.identity.currentUid()===uid&&error instanceof FieldError&&['NETWORK_UNCERTAIN','SERVER_UNAVAILABLE','RATE_LIMITED'].includes(error.code))return;
       await this.fail(error,generation);
     }
+  }
+  private recoverNetwork(error:unknown,generation:number,previous:CompanyState):boolean{
+    if(this.current(generation)&&this.uid&&this.identity.currentUid()===this.uid&&previous.phase==='ready'&&error instanceof FieldError&&['NETWORK_UNCERTAIN','SERVER_UNAVAILABLE','RATE_LIMITED'].includes(error.code)){
+      this.publish({...previous,phase:'ready',error:error.code});return true;
+    }
+    return false;
   }
   private async fail(error: unknown, generation: number) {
     if (!this.current(generation)) return;

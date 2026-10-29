@@ -14,6 +14,10 @@ async function setup() {
   return { vault, api, get: () => state, set: (s: Partial<UploadStatus>) => { state = { ...state, ...s }; } };
 }
 describe('resumable transfer', () => {
+  it('reports the number of verified photos without interrupting or changing the transfer',async()=>{
+    const {vault,api,get}=await setup(),progress=vi.fn();api.complete=vi.fn(async()=>({...get(),state:'ready' as const,driveVerified:true,crmLinked:true}));
+    await new SyncRunner(vault,api,'visit-a',progress).run();expect(progress.mock.calls).toEqual([[0,1],[1,1]]);expect((await vault.load()).photos[0]?.state).toBe('ready');await vault.close();
+  });
   it('coalesces simultaneous sync taps and never calls Drive completion ready prematurely', async () => {
     const { vault, api } = await setup(); const runner = new SyncRunner(vault, api); await Promise.all([runner.run(), runner.run()]);
     expect(api.reserve).toHaveBeenCalledTimes(1); expect(api.complete).toHaveBeenCalledTimes(1); expect((await vault.load()).photos[0]?.state).toBe('drive_pending'); await vault.close();

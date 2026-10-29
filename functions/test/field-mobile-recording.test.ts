@@ -3,6 +3,8 @@ import sharp from 'sharp';
 import {createRecordingService,type RecordingDependencies,type RecordingStore} from '../src/field-mobile/recording-service.js';
 import {hash,RecordingError,type RecordingPhoto} from '../src/field-mobile/recording-model.js';
 import {handleRecording,type RecordingRequest} from '../src/field-mobile/recording-http.js';
+import {archiveDocumentId} from '../../mobile-field/src/domain/archive-lookup.js';
+import type {Visit} from '../../mobile-field/src/domain/model.js';
 
 async function setup(){
   const data=new Map<string,any>(),blobs=new Map<string,Buffer>(),files=new Map<string,Buffer>(),commits=new Map<string,any>();
@@ -30,6 +32,8 @@ it('archives only the selected areas, reuses its identity, and retains legacy ar
   const t=await setup(),u=await t.uploaded();await t.service.complete(u.uploadId,'complete_photo-a');
   await expect(t.service.archive('visit-a',{revision:3,captureAreas:['corridor']})).rejects.toThrow('REPORT_INVALID');
   const scoped=await t.service.archive('visit-a',{revision:3,captureAreas:['entrance']});
+  const local:Visit={id:'visit-a',ownerUid:'staff-a',job:{id:'customer-a_common',customerId:'customer-a',buildingId:'',title:'합성 고객',address:'가상 주소',kind:'common',workDate:t.input.workDate},revision:3,draft:t.input.draft,updatedAt:'2026-10-27T02:00:00.000Z',captureAreas:['entrance']};
+  expect(await archiveDocumentId(local,'staff-a',async value=>hash(value))).toBe(scoped.documentId);
   expect(await t.service.archive('visit-a',{revision:3,captureAreas:['entrance']})).toEqual(scoped);
   expect(vi.mocked(t.deps.pdf).mock.calls[0][0].captureAreas).toEqual(['entrance']);
   const document=t.commits.get(scoped.documentId),report=t.commits.get(document.savedCustomerDocument.reportId);

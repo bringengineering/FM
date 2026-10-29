@@ -18,6 +18,26 @@ it('does not expose company state before server context and sites are both valid
   await f.session.login('staff@example.invalid', 'synthetic-password'); expect(f.session.snapshot().phase).toBe('ready');
   expect(f.api.context).toHaveBeenCalledOnce(); expect(f.api.sites).toHaveBeenCalledWith(null, expect.any(AbortSignal)); f.session.dispose();
 });
+it('searches customer names and addresses across pages without changing the selected page',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  f.api.sites=vi.fn(async cursor=>cursor===null?{sites:[{id:'a',customerId:'a',name:'가상 고객',address:'서울 테스트로 1'}],nextCursor:'a'}:{sites:[{id:'b',customerId:'b',name:'다른 고객',address:'부산 해운대로 2'}],nextCursor:null});
+  const before=f.session.snapshot(),result=await f.session.searchSites('해운대');
+  expect(result.sites.map(s=>s.id)).toEqual(['b']);expect(result.incomplete).toBe(false);expect(f.session.snapshot()).toEqual(before);f.session.dispose();
+});
+it('never returns a delayed search after the employee signs out',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');let finish!:(page:any)=>void;
+  f.api.sites=()=>new Promise(resolve=>{finish=resolve;});const search=f.session.searchSites('주소');await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
+  await f.session.logout();finish({sites:[{id:'a',customerId:'a',name:'고객',address:'주소'}],nextCursor:null});await expect(search).rejects.toThrow('AUTH_REQUIRED');f.session.dispose();
+});
+it('locks the session if customer search detects revoked access',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  f.api.sites=async()=>{throw new FieldError('AUTH_REQUIRED');};await expect(f.session.searchSites('고객')).rejects.toThrow('AUTH_REQUIRED');expect(f.session.snapshot()).toEqual({phase:'error',error:'AUTH_REQUIRED'});f.session.dispose();
+});
+it('reports when a bounded search cannot examine the complete customer list',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');let n=0;
+  f.api.sites=async()=>({sites:[{id:`s${++n}`,customerId:`s${n}`,name:'일치 고객',address:'가상 주소'}],nextCursor:`s${n}`});
+  const result=await f.session.searchSites('일치');expect(result.sites).toHaveLength(5);expect(result.incomplete).toBe(true);expect(result.nextCursor).toBe('s5');f.session.dispose();
+});
 it('foreground revalidation preserves the customer workspace and does not reload the list',async()=>{
   const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
   const previous=f.session.snapshot();await f.session.revalidate();expect(f.session.snapshot()).toEqual(previous);expect(f.api.sites).toHaveBeenCalledOnce();expect(f.api.context).toHaveBeenCalledTimes(2);f.session.dispose();
@@ -26,6 +46,12 @@ it('keeps an open local draft during temporary network loss but locks revoked id
   const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
   f.api.context=async()=>{throw new FieldError('NETWORK_UNCERTAIN');};await f.session.revalidate();expect(f.session.snapshot().phase).toBe('ready');
   f.api.context=async()=>{throw new FieldError('AUTH_REQUIRED');};await f.session.revalidate();expect(f.session.snapshot().phase).toBe('error');f.session.dispose();
+});
+it('keeps the customer list and login when a refresh or selection temporarily loses connection',async()=>{
+  const f=setup();await f.session.restore();await f.session.login('staff@example.invalid','synthetic-password');
+  const previous=f.session.snapshot();f.api.sites=async()=>{throw new FieldError('NETWORK_UNCERTAIN');};
+  expect(await f.session.refresh()).toBe(false);expect(f.session.snapshot()).toEqual({...previous,error:'NETWORK_UNCERTAIN'});expect(f.identity.signOut).not.toHaveBeenCalled();
+  f.api.site=async()=>{throw new FieldError('SERVER_UNAVAILABLE');};await f.session.select('customer-a');expect(f.session.snapshot().phase).toBe('ready');expect(f.session.snapshot().error).toBe('SERVER_UNAVAILABLE');expect(f.identity.signOut).not.toHaveBeenCalled();f.session.dispose();
 });
 it('ignores delayed data after logout', async () => {
   const f = setup(); await f.session.restore(); let finish!: () => void;

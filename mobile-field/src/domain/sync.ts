@@ -6,7 +6,7 @@ import { FieldError, LIMITS, type Photo, type Vault } from './model';
 export class SyncRunner {
   private active?: Promise<void>;
   private controller = new AbortController();
-  constructor(private vault: Vault, private api: UploadApi, private visitId?:string) {}
+  constructor(private vault: Vault, private api: UploadApi, private visitId?:string, private onProgress?:(ready:number,total:number)=>void) {}
   stop(): void { this.controller.abort(); }
   run(): Promise<void> {
     if (this.active) return this.active;
@@ -51,7 +51,10 @@ export class SyncRunner {
   }
   private async drain(): Promise<void> {
     this.live(); const { photos } = await this.vault.load();
+    const scoped=photos.filter(photo=>!this.visitId||photo.visitId===this.visitId),total=scoped.length;
+    const report=async()=>{if(!this.onProgress||this.controller.signal.aborted)return;const current=await this.vault.load();const ready=current.photos.filter(p=>(!this.visitId||p.visitId===this.visitId)&&p.state==='ready').length;try{this.onProgress(ready,total);}catch{/* UI reporting must not interrupt a transfer. */}};
+    await report();
     // Sequential first release keeps memory bounded to one decoded photograph.
-    for (const photo of photos) { if (this.controller.signal.aborted) return; if(this.visitId&&photo.visitId!==this.visitId)continue;if (photo.state !== 'ready' && photo.state !== 'auth_blocked') await this.upload(photo); }
+    for (const photo of scoped) { if (this.controller.signal.aborted) return;if (photo.state !== 'ready' && photo.state !== 'auth_blocked'){await this.upload(photo);await report();} }
   }
 }
