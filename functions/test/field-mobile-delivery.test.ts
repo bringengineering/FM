@@ -1,6 +1,7 @@
 import {expect,it,vi} from 'vitest';
 import {createDeliveryService,type DeliveryDeps} from '../src/field-mobile/delivery.js';
 import {hash,RecordingError} from '../src/field-mobile/recording-model.js';
+import {handleRecording,type RecordingRequest} from '../src/field-mobile/recording-http.js';
 
 function setup(){
   const id='saved_wr_'+ 'a'.repeat(40),bytes=Buffer.from('%PDF-1.7\nsynthetic only'),sha=hash(bytes),uid='staff-a';
@@ -47,4 +48,12 @@ it('allows a deliberate retry only when the provider definitively rejected the r
   await expect(t.service.send(t.id,{fingerprint:p.fingerprint})).rejects.toThrow('DELIVERY_REJECTED');
   expect(t.getDoc().workReportDelivery.status).toBe('failed');
   expect((await t.service.send(t.id,{fingerprint:p.fingerprint})).status).toBe('requested');
+});
+it('requires a verified active employee and registered app before exposing delivery',async()=>{
+  const t=setup(),auth={projectId:'test-project',allowedNativeAppIds:['native-app'],verifyIdentity:vi.fn(async()=>({uid:'staff-a',aud:'test-project',iss:'https://securetoken.google.com/test-project',email:'staff@example.test',email_verified:true,firebase:{sign_in_provider:'password'}})),verifyAppCheck:vi.fn(async()=>({app_id:'native-app'})),readAccess:vi.fn(async()=>({enabled:true,role:'member',email:'staff@example.test'}))};
+  const factory=vi.fn(()=>t.d),deps={auth,allowRequest:()=>true,recording:()=>({} as any),delivery:factory};
+  const req:RecordingRequest={method:'GET',url:`/v1/field-app/deliveries/${t.id}`,authorization:'Bearer token',appCheck:'attestation',contentType:'',range:'',idempotencyKey:'',body:Buffer.alloc(0)};
+  expect((await handleRecording({...req,appCheck:''},deps)).status).toBe(401);expect(factory).not.toHaveBeenCalled();
+  expect((await handleRecording(req,deps)).status).toBe(200);expect(factory).toHaveBeenCalledTimes(1);
+  auth.readAccess.mockResolvedValueOnce({enabled:false,role:'member',email:'staff@example.test'});expect((await handleRecording(req,deps)).status).toBe(403);expect(factory).toHaveBeenCalledTimes(1);
 });
