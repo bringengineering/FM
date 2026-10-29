@@ -7,7 +7,7 @@ const secret='synthetic-secret-for-bridge-tests-only-123456',now=1800000000000;
 function request(path,body,options={}){
   const method=body?'POST':'GET',raw=body?JSON.stringify(body):'',time=String(options.time||now),digest=createHash('sha256').update(raw).digest('hex');
   const signature=createHmac('sha256',options.secret||secret).update(`${method}\n${path}\n${time}\n${digest}`).digest('hex');
-  return new Request(`https://example.invalid${path}`,{method,headers:{'x-field-time':time,'x-field-signature':signature},...(body?{body:raw}:{})});
+  return new Request(`https://example.invalid${path}`,{method,headers:{'x-field-time':time,'x-field-signature':signature,'x-field-body-sha256':digest},...(body?{body:raw}:{})});
 }
 test('accepts signed report sends only; rejects bad signatures, other types and stale requests',async()=>{
   let calls=0;const handler=async(req,identity,env,trusted)=>{calls++;assert.equal(trusted,true);assert.equal(new URL(req.url).pathname,'/v1/document-delivery/documents-and-messages');return new Response('{}');};
@@ -15,6 +15,8 @@ test('accepts signed report sends only; rejects bad signatures, other types and 
   assert.equal((await fieldReportDelivery(request(path,payload),{FIELD_DELIVERY_BRIDGE_SECRET:secret},handler,()=>now)).status,200);
   assert.equal((await fieldReportDelivery(request(path,payload,{secret:'wrong'}),{FIELD_DELIVERY_BRIDGE_SECRET:secret},handler,()=>now)).status,403);
   assert.equal((await fieldReportDelivery(request(path,payload,{time:now-61000}),{FIELD_DELIVERY_BRIDGE_SECRET:secret},handler,()=>now)).status,403);
+  const signed=request(path,payload);const tampered=new Request(signed.url,{method:'POST',headers:signed.headers,body:JSON.stringify({...payload,documentName:'변경'})});
+  assert.equal((await fieldReportDelivery(tampered,{FIELD_DELIVERY_BRIDGE_SECRET:secret},handler,()=>now)).status,403);
   assert.equal((await fieldReportDelivery(request(path,{...payload,documentType:'quote'}),{FIELD_DELIVERY_BRIDGE_SECRET:secret},handler,()=>now)).status,400);
   assert.equal(calls,1);
 });

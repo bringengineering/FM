@@ -9,8 +9,13 @@ export async function fieldReportDelivery(request, env, handler, now = Date.now)
   if (!send && !((status || lookup) && request.method === 'GET')) return new Response(null, {status: 404});
   const timestamp = request.headers.get('x-field-time') || '';
   const signature = request.headers.get('x-field-signature') || '';
+  const bodyHash = request.headers.get('x-field-body-sha256') || '';
   const secret = env.FIELD_DELIVERY_BRIDGE_SECRET;
-  if (typeof secret !== 'string' || secret.length < 32 || !/^\d{13}$/.test(timestamp) || Math.abs(now() - Number(timestamp)) > 60000 || !/^[a-f0-9]{64}$/.test(signature)) return new Response(null, {status: 403});
+  if (typeof secret !== 'string' || secret.length < 32 || !/^\d{13}$/.test(timestamp) || Math.abs(now() - Number(timestamp)) > 60000 || !/^[a-f0-9]{64}$/.test(signature) || !/^[a-f0-9]{64}$/.test(bodyHash)) return new Response(null, {status: 403});
+  const material = `${request.method}\n${path}\n${timestamp}\n${bodyHash}`;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['verify']);
+  const signed = Uint8Array.from(signature.match(/../g), v => parseInt(v, 16));
+  if (!await crypto.subtle.verify('HMAC', key, signed, new TextEncoder().encode(material))) return new Response(null, {status: 403});
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > 17 * 1024 * 1024) return new Response(null, {status: 413});
   const chunks = []; let size = 0;
@@ -23,10 +28,7 @@ export async function fieldReportDelivery(request, env, handler, now = Date.now)
   if (!send && bytes.length) return new Response(null, {status: 413});
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   const hex = b => Array.from(b, v => v.toString(16).padStart(2, '0')).join('');
-  const material = `${request.method}\n${path}\n${timestamp}\n${hex(digest)}`;
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), {name: 'HMAC', hash: 'SHA-256'}, false, ['verify']);
-  const signed = Uint8Array.from(signature.match(/../g), v => parseInt(v, 16));
-  if (!await crypto.subtle.verify('HMAC', key, signed, new TextEncoder().encode(material))) return new Response(null, {status: 403});
+  if (hex(digest) !== bodyHash) return new Response(null, {status: 403});
   if (lookup) {
     const row = await env.DOCUMENT_DELIVERY.get(`request:${lookup[1]}`, 'json');
     if (!row || !/^[A-Za-z0-9_-]{1,120}$/.test(row.messageId || '')) return new Response(JSON.stringify({ok:false}), {status:404, headers:{'content-type':'application/json'}});
