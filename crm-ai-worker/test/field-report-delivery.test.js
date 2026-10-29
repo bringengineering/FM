@@ -28,6 +28,10 @@ test('authenticated recovery reads only the stable request key',async()=>{
   const env={DOCUMENT_DELIVERY:{get:async()=>({messageId:'test-msg',status:'requested',secret:'must not expose'})}};
   const result=await fieldReportDelivery(request(path),env,()=>{throw Error('unexpected');},()=>now,fetcher);assert.deepEqual(await result.json(),{ok:true,messageId:'test-msg',status:'requested'});
 });
+test('readiness check verifies the service without sending or reading a customer document',async()=>{
+  const response=await fieldReportDelivery(request('/v1/field-report-delivery/ready'),{},()=>{throw Error('unexpected');},()=>now,fetcher);
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),{ok:true});
+});
 test('signed bridge uses the real report delivery pipeline and a single mocked provider call',async()=>{
   const rows=new Map(),calls=[];
   const env={CRM_ADMIN_EMAILS:'admin@example.test',DOCUMENT_DELIVERY:{get:async(k,type)=>type==='json'&&rows.has(k)?JSON.parse(rows.get(k)):rows.get(k),put:async(k,v)=>rows.set(k,v)},NCP_ACCESS_KEY:'synthetic',NCP_SECRET_KEY:'synthetic',NCP_BIZ_MESSAGE_SERVICE_ID:'synthetic',KAKAO_CHANNEL_ID:'@synthetic',DOCUMENT_DELIVERY_ENABLED:'true',KAKAO_DOCUMENT_TEMPLATES_APPROVED:'true'};

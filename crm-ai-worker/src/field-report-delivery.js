@@ -24,9 +24,10 @@ async function verifyService(request,path,bodyHash,now,fetcher){
 export async function fieldReportDelivery(request, env, handler, now = Date.now, fetcher = fetch) {
   const path = new URL(request.url).pathname;
   const send = path === '/v1/field-report-delivery/send' && request.method === 'POST';
+  const ready = path === '/v1/field-report-delivery/ready' && request.method === 'GET';
   const status = /^\/v1\/field-report-delivery\/status\/([A-Za-z0-9_-]{1,120})$/.exec(path);
   const lookup = /^\/v1\/field-report-delivery\/lookup\/(wr_[a-f0-9]{48})$/.exec(path);
-  if (!send && !((status || lookup) && request.method === 'GET')) return new Response(null, {status: 404});
+  if (!send && !ready && !((status || lookup) && request.method === 'GET')) return new Response(null, {status: 404});
   const bodyHash = request.headers.get('x-field-body-sha256') || '';
   if(!/^[a-f0-9]{64}$/.test(bodyHash)||!await verifyService(request,path,bodyHash,now,fetcher))return new Response(null,{status:403});
   const declared = Number(request.headers.get('content-length') || 0);
@@ -42,6 +43,7 @@ export async function fieldReportDelivery(request, env, handler, now = Date.now,
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   const hex = b => Array.from(b, v => v.toString(16).padStart(2, '0')).join('');
   if (hex(digest) !== bodyHash) return new Response(null, {status: 403});
+  if(ready)return new Response(JSON.stringify({ok:true}),{headers:{'content-type':'application/json','cache-control':'no-store'}});
   if (lookup) {
     const row = await env.DOCUMENT_DELIVERY.get(`request:${lookup[1]}`, 'json');
     if (!row || !/^[A-Za-z0-9_-]{1,120}$/.test(row.messageId || '')) return new Response(JSON.stringify({ok:false}), {status:404, headers:{'content-type':'application/json'}});

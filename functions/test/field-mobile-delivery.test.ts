@@ -43,6 +43,11 @@ it('rejects corrupted PDF before claiming or sending',async()=>{
   const t=setup(),p=await t.service.preview(t.id);vi.mocked(t.d.download).mockResolvedValueOnce(Buffer.from('%PDF-wrong'));
   await expect(t.service.send(t.id,{fingerprint:p.fingerprint})).rejects.toThrow('DRIVE_FILE_MISMATCH');expect(t.d.claim).not.toHaveBeenCalled();expect(t.d.bridge).not.toHaveBeenCalled();
 });
+it('requires an authenticated read-only bridge check before showing a report as ready',async()=>{
+  const t=setup();expect((await t.service.status(t.id)).status).toBe('ready');
+  expect(vi.mocked(t.d.bridge).mock.calls[0].slice(0,2)).toEqual(['GET','/v1/field-report-delivery/ready']);
+  vi.mocked(t.d.bridge).mockRejectedValueOnce(Error('offline'));await expect(t.service.status(t.id)).rejects.toThrow('DELIVERY_UNAVAILABLE');expect(t.d.claim).not.toHaveBeenCalled();
+});
 it('allows a deliberate retry only when the provider definitively rejected the request',async()=>{
   const t=setup(),p=await t.service.preview(t.id);vi.mocked(t.d.bridge).mockRejectedValueOnce(new RecordingError('DELIVERY_REJECTED',409));
   await expect(t.service.send(t.id,{fingerprint:p.fingerprint})).rejects.toThrow('DELIVERY_REJECTED');

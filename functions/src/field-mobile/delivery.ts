@@ -54,6 +54,10 @@ export function createDeliveryService(uid:string,d:DeliveryDeps){
   }
   async function status(id:string){
     const b=await binding(id),existing=b.doc.workReportDelivery;
+    if(!existing||existing.status==='failed'){
+      try{const check=await d.bridge('GET',`${base}/ready`);assert(check.ok===true,'DELIVERY_UNAVAILABLE',503);}
+      catch{throw new RecordingError('DELIVERY_UNAVAILABLE',503);}
+    }
     if(existing && ['sending','requested','unknown'].includes(existing.status)){
       try{
         let messageId=existing.messageId;
