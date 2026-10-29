@@ -1,5 +1,5 @@
 import {expect,it,vi} from 'vitest';
-import {createDeliveryService,type DeliveryDeps} from '../src/field-mobile/delivery.js';
+import {createDeliveryService,deliveryBridge,type DeliveryDeps} from '../src/field-mobile/delivery.js';
 import {hash,RecordingError} from '../src/field-mobile/recording-model.js';
 import {handleRecording,type RecordingRequest} from '../src/field-mobile/recording-http.js';
 
@@ -56,4 +56,13 @@ it('requires a verified active employee and registered app before exposing deliv
   expect((await handleRecording({...req,appCheck:''},deps)).status).toBe(401);expect(factory).not.toHaveBeenCalled();
   expect((await handleRecording(req,deps)).status).toBe(200);expect(factory).toHaveBeenCalledTimes(1);
   auth.readAccess.mockResolvedValueOnce({enabled:false,role:'member',email:'staff@example.test'});expect((await handleRecording(req,deps)).status).toBe(403);expect(factory).toHaveBeenCalledTimes(1);
+});
+it('binds the service identity audience to the exact method, route and request body',async()=>{
+  const calls:{url:string;init:any}[]=[];
+  const fake=vi.fn(async(url:any,init:any)=>{calls.push({url:String(url),init});return calls.length===1?new Response('header.claims.signature',{status:200}):Response.json({ok:true,status:'requested',messageId:'test'});});
+  const bridge=deliveryBridge(fake as unknown as typeof fetch),input={documentId:'synthetic',content:'test'};
+  await bridge('POST','/v1/field-report-delivery/send',input);
+  const audience=new URL(calls[0].url).searchParams.get('audience');
+  expect(audience).toBe(`https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/field-report-delivery/send?method=POST&sha256=${hash(JSON.stringify(input))}`);
+  expect(calls[0].init.headers['Metadata-Flavor']).toBe('Google');expect(calls[1].init.headers['x-field-body-sha256']).toBe(hash(JSON.stringify(input)));
 });

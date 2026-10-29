@@ -1,4 +1,3 @@
-import {createHmac} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {assert, hash, object, RecordingError, type ArchiveRecord, type Recording} from './recording-model.js';
 import {getCustomerSite, siteId, type CustomerSiteReads} from './sites.js';
@@ -67,11 +66,15 @@ export function createDeliveryService(uid:string,d:DeliveryDeps){
   return {preview,send,status};
 }
 
-export function deliveryBridge(secret:string,fetcher:typeof fetch=fetch){
+export function deliveryBridge(fetcher:typeof fetch=fetch){
   return async(method:'GET'|'POST',path:string,input?:unknown):Promise<Row>=>{
-    assert(secret.length>=32,'DELIVERY_UNAVAILABLE',503);const body=method==='POST'?JSON.stringify(input):'';
-    const time=String(Date.now()),bodyHash=hash(body),signature=createHmac('sha256',secret).update(`${method}\n${path}\n${time}\n${bodyHash}`).digest('hex');
-    const response=await fetcher(`https://bring-crm-ai-gateway.bringengineering1008.workers.dev${path}`,{method,redirect:'error',signal:AbortSignal.timeout(60000),headers:{'content-type':'application/json','x-field-time':time,'x-field-signature':signature,'x-field-body-sha256':bodyHash},...(method==='POST'?{body}:{})});
+    const body=method==='POST'?JSON.stringify(input):'',bodyHash=hash(body);
+    const audience=`https://bring-crm-ai-gateway.bringengineering1008.workers.dev${path}?method=${method}&sha256=${bodyHash}`;
+    const metadata=new URL('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity');
+    metadata.searchParams.set('audience',audience);metadata.searchParams.set('format','full');
+    const credential=await fetcher(metadata.href,{headers:{'Metadata-Flavor':'Google'},redirect:'error',signal:AbortSignal.timeout(10000)});
+    assert(credential.ok,'DELIVERY_UNAVAILABLE',503);const token=await credential.text();assert(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)&&token.length<=12000,'DELIVERY_UNAVAILABLE',503);
+    const response=await fetcher(`https://bring-crm-ai-gateway.bringengineering1008.workers.dev${path}`,{method,redirect:'error',signal:AbortSignal.timeout(60000),headers:{'content-type':'application/json','authorization':`Bearer ${token}`,'x-field-body-sha256':bodyHash},...(method==='POST'?{body}:{})});
     const value=await response.json() as Row;
     if(!response.ok||!object(value)){
       const rejected=['DELIVERY_UNAVAILABLE','DELIVERY_CONFIGURATION_ERROR','DELIVERY_PROVIDER_AUTH_FAILED','DELIVERY_PROVIDER_SERVICE_NOT_FOUND','DELIVERY_PROVIDER_LIMITED','DELIVERY_PROVIDER_REJECTED'];

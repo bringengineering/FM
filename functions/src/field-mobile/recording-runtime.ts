@@ -33,7 +33,7 @@ async function loadedTransaction(ref:Reference,update:(old:any)=>any){
   try{await loaded;return await ref.transaction(update,undefined,false);}
   finally{ref.off('value',listener);}
 }
-export function deliveryRuntime(config:{clientId:string;clientSecret:string;refreshToken:string;photosRoot:string;reportsRoot:string},secret:string,recheck:()=>Promise<void>):DeliveryDeps{
+export function deliveryRuntime(config:{clientId:string;clientSecret:string;refreshToken:string;photosRoot:string;reportsRoot:string},recheck:()=>Promise<void>):DeliveryDeps{
   const db=getDatabase(),recording=recordingRuntime(config,recheck);
   const raw=async(path:string)=>(await db.ref(path).get()).val()||null;
   return {
@@ -49,7 +49,7 @@ export function deliveryRuntime(config:{clientId:string;clientSecret:string;refr
       assert(old?.workReportDelivery?.requestedBy===uid,'DELIVERY_CHANGED',409);
       return {...old,workReportDelivery:{...old.workReportDelivery,...patch}};
     });},
-    download:(id,expected)=>recording.drive.download(id,expected),bridge:deliveryBridge(secret),recheck,
+    download:(id,expected)=>recording.drive.download(id,expected),bridge:deliveryBridge(),recheck,
   };
 }
 export function createRecordingStore(database:Database):RecordingStore{

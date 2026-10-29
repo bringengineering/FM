@@ -395,7 +395,7 @@ export function createWorker(options = {}) {
     },
     async fetch(request, env) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith('/v1/field-report-delivery/')) return fieldReportDelivery(request, env, documentDeliveryHandler, now);
+      if (url.pathname.startsWith('/v1/field-report-delivery/')) return fieldReportDelivery(request, env, documentDeliveryHandler, now, fetchImpl);
       const cors = corsHeaders(request, env);
       if(url.pathname==='/v1/field-report-draft'){
         if(request.method!=='POST')return json({ok:false,code:'METHOD_NOT_ALLOWED'},405,cors);
