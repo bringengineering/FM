@@ -81,7 +81,7 @@ body{width:186mm;font-size:9pt;line-height:1.65;overflow-wrap:anywhere}h1,h2,p{m
 .evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4mm}.evidence-grid figure{margin:0;border:.25mm solid #d8eaf4;background:#fff;break-inside:avoid;min-width:0}.photo-bar{display:flex;justify-content:space-between;gap:2mm;padding:2mm 3mm;background:#eaf6fd;color:#456f87;font-size:7.5pt;break-after:avoid}.photo-bar b{color:#087fae;font-size:8pt}
 .evidence-grid img,.missing-photo{display:block;width:100%;height:72mm;object-fit:contain;background:#f4f9fc}.missing-photo{display:grid;place-items:center;color:#8b95a1;font-size:8pt}.evidence-grid figcaption{padding:2mm 3mm;color:#49697d;font-size:7.5pt;line-height:1.5;white-space:pre-wrap}.evidence-grid figcaption b{font-weight:600;display:block}.evidence-grid figcaption span{display:block;color:#6a8190;font-size:7pt;margin-top:1mm}.six .evidence-grid{gap:3mm}.six img,.six .missing-photo{height:42mm}
 .long-captions img,.long-captions .missing-photo{height:60mm}
-${options.compactPhotos ? '.photo-flow{margin-top:4mm}.photo-flow h2{break-after:avoid}.photo-flow .evidence-grid{gap:3mm}.photo-flow img,.photo-flow .missing-photo{height:42mm}' : ''}
+${options.compactPhotos ? '.photo-flow{margin-top:4mm}.photo-flow h2{break-after:avoid}.photo-flow .evidence-grid{gap:3mm}.photo-flow img,.photo-flow .missing-photo{height:34mm}' : ''}
 </style></head><body><main>
 <section class="overview">${header("작업 결과보고서")}
 <p class="greeting">수신(건물주) ${escape(recipient)}님, ${escape(date)} ${escape(report.buildingName || "현장")}의 ${escape(kind)} 기록을 안내드립니다.</p>

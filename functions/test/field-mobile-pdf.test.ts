@@ -38,8 +38,8 @@ it('flows photos across areas without forcing an almost empty page per area',asy
   const keys=['entrance','corridor','stairs','handrail','yard'];
   const template:RecordingPhoto={id:'test',itemKey:'entrance',phase:'before',caption:'',included:true,capturedAt:'2026-10-27T01:00:00Z',mime:'image/jpeg',bytes:bytes.length,sha256:hash(bytes),width:240,height:320};
   const photos=Array.from({length:13},(_,i)=>({photo:{...template,id:`photo-${i}`,itemKey:keys[Math.min(Math.floor(i/2),4)],phase:(i%2?'after':'before') as 'after'|'before'},bytes}));
-  const visit:Recording={id:'test-visit',ownerUid:'synthetic-user',customerId:'synthetic-customer',kind:'common',workDate:'2026-10-27',revision:3,captureAreas:keys,draft:{summary:'[TEST] 작업 전후 사진을 정리한 가상 보고서입니다.\n실제 현장 작업이 아닙니다.',followUp:'테스트 안내',statuses:{},notes:{},confirmedRevision:3},photos:photos.map(p=>p.photo),site:{id:'synthetic-customer',name:'[TEST] 가상 고객',address:'가상 주소'},contentHash:'a'.repeat(64),createdAt:'2026-10-27T01:00:00Z',updatedAt:'2026-10-27T01:00:00Z'};
+  const visit:Recording={id:'test-visit',ownerUid:'synthetic-user',customerId:'synthetic-customer',kind:'common',workDate:'2026-10-27',revision:3,captureAreas:keys,draft:{summary:'[TEST] 안녕하세요. 가상 보고서입니다.\n\n구역별 현장 사진을 정리하여 전달드립니다.\n\n- 출입구: 작업 전, 작업 후 사진\n- 복도: 작업 전, 작업 후 사진\n- 계단: 작업 전, 작업 후 사진\n- 난간: 작업 전, 작업 후 사진\n- 마당: 작업 전, 작업 후 사진\n\n실제 현장 작업이 아닙니다. 추가 내용이 있다면 확인해 주세요.\n\n테스트 담당자 드림\nPDF 재검증',followUp:'테스트 안내',statuses:{},notes:{},confirmedRevision:3},photos:photos.map(p=>p.photo),site:{id:'synthetic-customer',name:'[TEST] 가상 고객',address:'[TEST] 보고서 연동 검증용 가상 현장 (실제 주소 아님)'},contentHash:'a'.repeat(64),createdAt:'2026-10-27T01:00:00Z',updatedAt:'2026-10-27T01:00:00Z'};
   const pdf=await renderRecordingPdf(visit,photos);const parsed=await PDFDocument.load(pdf);
-  expect(parsed.getPageCount()).toBeLessThanOrEqual(4);
+  expect(parsed.getPageCount()).toBeLessThanOrEqual(3);
   if(process.env.FIELD_PDF_QA==='1')await writeFile('../.firebase/field-mobile-verification/pdf/recording-13.pdf',pdf);
 },60000);
