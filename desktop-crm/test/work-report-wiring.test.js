@@ -56,7 +56,9 @@ test("업체 정보가 섞인 보고서는 아예 만들지 않는다", () => {
   // 만들고 나서 지우는 것보다 안 만드는 편이 낫다. 한 번 나간 PDF 는
   // 되돌릴 수 없다.
   const body = functionBody(mainSource, "exportWorkReport");
-  assert.match(body, /WorkReportCore\.findLeakedFields\(report, options\.secrets\)/u);
+  // 검사 목록은 메인이 회사 자료로 만들고, 화면이 보낸 목록은 더하기만 한다.
+  assert.match(body, /WorkReportCore\.mergeSecrets\(WorkReportCore\.reportSecrets\(store, report\), options\.secrets\)/u);
+  assert.match(body, /WorkReportCore\.findLeakedFields\(report, secrets\)/u);
   assert.match(body, /REPORT_LEAK/u);
   assert.ok(body.indexOf("findLeakedFields") < body.indexOf("showSaveDialog"), "저장 창을 열기 전에 걸러야 한다");
   // 화면도 협력업체 이름을 실어 보낸다. 안 보내면 검사가 아무것도 못 잡는다.

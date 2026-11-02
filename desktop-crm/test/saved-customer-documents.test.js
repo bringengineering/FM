@@ -119,7 +119,8 @@ function harness(options = {}) {
       if (action === "createAndSend") return options.sendFailure ? {ok: false, code: "DELIVERY_PROVIDER_REJECTED", error: "업체가 요청을 거절했습니다."} : {ok: true, documentId: "delivery_fixture", messageId: "message_fixture", status: "requested"};
       return {ok: true};
     },
-    createWorkReportPdfArtifact: async ({report}) => ({ok: true, bytes, photos: options.photoFailure ? 0 : report.items.reduce((n, item) => n + item.before.length + item.after.length, 0)}),
+    createWorkReportPdfArtifact: async ({report}) => ({ok: true, bytes, photos: options.photoFailure ? 0 : report.items.reduce((n, item) => n + item.before.length + (item.during || []).length + item.after.length, 0)}),
+    WorkReportCore: require("../src/work-report-core"),
   };
   vm.createContext(context); vm.runInContext(service, context);
   return {context, data, events, state};
@@ -210,7 +211,7 @@ test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 �
   await assert.rejects(anonymous.context.sendSavedCustomerDocument(request()));
 });
 test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 기록·누락 사진은 보내지 않는다", async () => {
-  const report = {id: "report_a", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", ownerContact: customer.phone, updatedAt: "revision_a", items: [{before: [{}], after: [{}]}]};
+  const report = {id: "report_a", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", ownerContact: customer.phone, updatedAt: "revision_a", items: [{key: "floor", before: [{id: "before_a"}], after: [{id: "after_a"}]}]};
   const input = {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt, report: {buildingName: "forged"}};
   const h = harness({reports: [report]});
   assert.equal((await h.context.sendSavedCustomerDocument(input)).ok, true);
@@ -219,6 +220,9 @@ test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 �
   assert.equal(h.events.find(item => item[0] === "createAndSend")[1].documentName, "예시시 예시로 123 공용부 청소 결과보고서");
   await assert.rejects(h.context.sendSavedCustomerDocument({...input, updatedAt: "old"}), /변경/);
   await assert.rejects(harness({reports: [report], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
+  // 공용부처럼 작업 중 사진만 있는 보고서도 사진을 못 읽으면 보내지 않는다.
+  const duringOnly = {...report, items: [{key: "floor", before: [], during: [{id: "during_a"}], after: []}]};
+  await assert.rejects(harness({reports: [duringOnly], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
 });
 test("저장·발송 IPC는 mutation이고 미리보기 또한 신뢰된 발신자·로그인 검증을 거친다", () => {
   for (const suffix of ["save", "send"]) assert.equal(Policy.classification("crm:customer-document-" + suffix), "mutation");

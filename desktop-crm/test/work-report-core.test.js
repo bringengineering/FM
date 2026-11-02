@@ -223,6 +223,26 @@ test("건물주에게 나가는 문서에 업체 정보가 새면 잡는다", ()
   assert.deepEqual(R.findLeakedFields(noted, secrets), ["내부 메모"]);
 });
 
+test("검사 목록은 회사 자료에서 이 건물·고객 계약의 원가만 가져온다", () => {
+  const store = {
+    partnerVendors: [{ name: "한빛크린" }, { name: "" }], vendors: [{ name: "한빛크린" }, { name: "원주설비" }],
+    contracts: [
+      { buildingId: "b_main", vendorCost: 450000 }, { buildingId: "b_main", vendorCost: 0 },
+      { buildingId: "b_other", vendorCost: 777000 }, { customerId: "c_only", vendorCost: 120000 },
+    ],
+  };
+  const secrets = R.reportSecrets(store, { id: "wr_1", buildingId: "b_main" });
+  assert.deepEqual(secrets.vendorNames, ["한빛크린", "원주설비"]);
+  assert.deepEqual(secrets.vendorAmounts, ["450000", "450,000"]);
+  assert.deepEqual(R.reportSecrets(store, { id: "wr_2", customerId: "c_only" }).vendorAmounts, ["120000", "120,000"]);
+  assert.deepEqual(R.reportSecrets({}, null), { vendorNames: [], vendorAmounts: [], privateMemos: [] });
+  // 화면이 보낸 빈 목록이 회사 자료 목록을 지우지 못한다.
+  const merged = R.mergeSecrets(secrets, { vendorNames: [], vendorAmounts: undefined, privateMemos: ["마진 메모"] });
+  assert.deepEqual(merged.vendorNames, ["한빛크린", "원주설비"]);
+  assert.deepEqual(merged.privateMemos, ["마진 메모"]);
+  assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "원가 450,000원" }), merged), ["업체 단가"]);
+});
+
 test("너무 짧은 값으로는 막지 않는다", () => {
   // 두 글자 업체명까지 막으면 검사가 늘 걸려서 아무도 안 본다.
   assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "가나 청소 완료" }), { vendorNames: ["가나"] }), []);

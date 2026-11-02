@@ -458,6 +458,38 @@
     return leaks;
   }
 
+  // 검사할 값은 메인 프로세스가 회사 자료에서 직접 만든다. 화면이 보낸 목록만
+  // 믿으면 빈 목록 하나로 검사가 꺼진다. 업체 원가는 이 보고서의 건물(건물이
+  // 없으면 고객)에 걸린 계약에서만 가져온다 — 회사 전체 금액을 넣으면 우연히
+  // 같은 숫자가 든 보고서까지 막힌다.
+  function reportSecrets(store, report) {
+    const data = store && typeof store === "object" ? store : {};
+    const target = normalizeReport(report);
+    const vendorNames = [...rows(data.partnerVendors), ...rows(data.vendors)]
+      .map(row => text(row && row.name, 200)).filter(Boolean);
+    const vendorAmounts = [];
+    rows(data.contracts).forEach(contract => {
+      const linked = target.buildingId
+        ? text(contract.buildingId, 80) === target.buildingId
+        : !!target.customerId && text(contract.customerId, 120) === target.customerId;
+      const cost = Math.round(Number(contract.vendorCost));
+      if (!linked || !Number.isFinite(cost) || cost <= 0) return;
+      vendorAmounts.push(String(cost), cost.toLocaleString("en-US"));
+    });
+    return { vendorNames: [...new Set(vendorNames)], vendorAmounts: [...new Set(vendorAmounts)], privateMemos: [] };
+  }
+
+  // 화면이 보낸 목록과 메인이 만든 목록을 합친다. 어느 쪽도 다른 쪽을 지우지 못한다.
+  function mergeSecrets(...sources) {
+    const merged = { vendorNames: [], vendorAmounts: [], privateMemos: [] };
+    sources.forEach(source => {
+      const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+      Object.keys(merged).forEach(key => merged[key].push(...rows(value[key]).map(item => text(item, 200)).filter(Boolean)));
+    });
+    Object.keys(merged).forEach(key => { merged[key] = [...new Set(merged[key])]; });
+    return merged;
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(item => item.id).sort((a, b) => {
       if (a.workDate !== b.workDate) return a.workDate < b.workDate ? 1 : -1;
@@ -519,6 +551,8 @@
     summarizeItems,
     resultLine,
     findLeakedFields,
+    reportSecrets,
+    mergeSecrets,
     sortReports,
     forCleaningOrder,
     findReport,
