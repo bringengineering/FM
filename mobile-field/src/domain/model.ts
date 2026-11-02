@@ -10,6 +10,9 @@ export interface Photo {
   // Set by the server visit/revision reconciliation layer before enabling sync.
   // Local edit revisions must never be substituted for a CRM server revision.
   reservationRevision?: number;
+  // An "after" photo taken while a chosen "before" photo of the same area was
+  // overlaid on the camera. The report places the two side by side.
+  pairWith?: string;
 }
 export interface Draft { summary: string; followUp: string; statuses: Record<string, ItemStatus>; notes: Record<string, string>; confirmedRevision?: number }
 export interface Visit { id: string; ownerUid: string; job: Job; revision: number; draft: Draft; updatedAt: string; captureAreas?: string[]; aiDraft?: {summary:string;facts:string} }
@@ -37,7 +40,8 @@ export function assertPhoto(photo: Photo, bytes?: Uint8Array): void {
     || !Number.isSafeInteger(photo.bytes) || photo.bytes < 4 || photo.bytes > LIMITS.photoBytes
     || !Number.isSafeInteger(photo.width) || !Number.isSafeInteger(photo.height)
     || photo.width <= 0 || photo.height <= 0 || photo.width * photo.height > LIMITS.pixels
-    || photo.caption.length > 120 || photo.itemKey.length > 40) throw new FieldError('PHOTO_INVALID');
+    || photo.caption.length > 120 || photo.itemKey.length > 40
+    || (photo.pairWith !== undefined && (photo.phase !== 'after' || typeof photo.pairWith !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(photo.pairWith) || photo.pairWith === photo.id))) throw new FieldError('PHOTO_INVALID');
   if (bytes && (bytes.byteLength !== photo.bytes || bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255)) throw new FieldError('PHOTO_INVALID');
 }
 // Vault row ids are random UUIDs. Every screen, the upload queue and the

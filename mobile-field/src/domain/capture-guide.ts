@@ -1,4 +1,4 @@
-import { FieldError, type Phase, type Photo, type Visit } from './model';
+import { FieldError, orderPhotos, type Phase, type Photo, type Visit } from './model';
 import { catalog } from './report';
 
 // Keep the chosen order stable. Existing photos are always retained in the
@@ -20,6 +20,16 @@ export function firstUncapturedArea(areas:string[],photos:Photo[],phase:Phase):s
 }
 export function nextUncapturedArea(areas:string[],photos:Photo[],phase:Phase,current:string):string{
   const index=areas.indexOf(current);return index<0?'':areas.slice(index+1).find(area=>areaPhotoCount(photos,area,phase)===0)??'';
+}
+// "Before" photos of an area that an "after" shot can be lined up with, in
+// capture order. The default is the first one no "after" photo is paired with
+// yet, so walking the area photo by photo needs no extra taps.
+export function beforeChoices(photos:Photo[],area:string):Photo[]{
+  return orderPhotos(photos.filter(p=>p.itemKey===area&&p.phase==='before'));
+}
+export function defaultReference(photos:Photo[],area:string):string{
+  const choices=beforeChoices(photos,area),used=new Set(photos.filter(p=>p.phase==='after'&&p.itemKey===area&&p.pairWith).map(p=>p.pairWith));
+  return (choices.find(p=>!used.has(p.id))??choices[0])?.id??'';
 }
 export function changeCaptureAreas(visit:Visit,photos:Photo[],areas:string[],now:string):Visit{
   const valid=new Set(catalog(visit.job.kind).map(item=>item.key));

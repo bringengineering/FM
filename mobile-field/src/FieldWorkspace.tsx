@@ -13,7 +13,7 @@ import { persistCapture } from './capture';
 import { aiDraftState,reportFacts } from './domain/ai-report';
 import { saveGroupedReport } from './domain/save-report';
 import { archiveDocumentId } from './domain/archive-lookup';
-import { areaPhotoCount,captureProgress,changeCaptureAreas,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
+import { areaPhotoCount,beforeChoices,captureProgress,changeCaptureAreas,defaultReference,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
 import { samplePhoto } from './sample-photo';
 import { exifCapturedAt } from './domain/capture-time';
 const GALLERY_BATCH = 20;
@@ -38,12 +38,13 @@ function Chip({ label, active, onPress, disabled=false }: { label: string; activ
   return <Pressable accessibilityRole="button" accessibilityState={{ selected: active,disabled }} disabled={disabled} onPress={onPress} style={[s.chip, active && s.chipActive,disabled&&s.disabled]}><Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text></Pressable>;
 }
 function Note({ children }: { children: React.ReactNode }) { return <View style={s.note}><Text style={s.noteText}>{children}</Text></View>; }
-function PhotoImage({ vault, photo, compact=false }: { vault: Vault; photo: Photo; compact?:boolean }) {
+function PhotoImage({ vault, photo, compact=false, fill=false }: { vault: Vault; photo: Photo; compact?:boolean; fill?:boolean }) {
   const [loaded, setLoaded] = useState<{ id: string; uri: string; failed: boolean }>({ id: '', uri: '', failed: false });
   useEffect(() => { let current = true; void vault.readBytes(photo.id).then(bytes => {
     let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     if (current) setLoaded({ id: photo.id, uri: `data:image/jpeg;base64,${btoa(binary)}`, failed: false });
   }).catch(() => { if (current) setLoaded({ id: photo.id, uri: '', failed: true }); }); return () => { current = false; }; }, [vault, photo.id]);
+  if (fill) return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={s.ghostPhoto} accessible={false} /> : null;
   if (loaded.id === photo.id && loaded.failed) return <Note>사진을 읽지 못했습니다. 원본을 보존했습니다. 다른 사진을 선택한 뒤 다시 확인해 주세요.</Note>;
   return loaded.id === photo.id && loaded.uri ? <Image source={{ uri: loaded.uri }} style={[s.photo,compact&&s.referencePhoto]} accessibilityLabel={`${photo.caption || '작업사진'} ${phaseLabel[photo.phase]}`} /> : <Note>저장 사진을 확인하는 중입니다.</Note>;
 }
@@ -70,6 +71,8 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   const [showAllAreas,setShowAllAreas]=useState(false);
   const [photoId, setPhotoId] = useState(''); const [caption, setCaption] = useState('');
   const [lastShotId, setLastShotId] = useState('');
+  // The "before" photo overlaid while taking an "after" photo ('' = automatic).
+  const [referenceId, setReferenceId] = useState(''); const [overlayOn, setOverlayOn] = useState(true);
   const visit = workspace.visits.find(v => v.id === selected);
   const photos = workspace.photos.filter(p => p.visitId === selected);
   const photo = photos.find(p => p.id === photoId);
@@ -206,8 +209,10 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     const target=areas.includes(area)?area:firstUncapturedArea(areas,photos,phase);
     if(!target)throw new FieldError('CAPTURE_AREAS_INVALID');
     if(target!==area)setArea(target);
+    // Only a single camera shot is lined up with the overlaid before photo; gallery imports stay unpaired.
+    const pairWith=phase==='after'?(beforeChoices(photos,target).find(p=>p.id===referenceId)?.id??defaultReference(photos,target))||undefined:undefined;
     let savedId = '';
-    if (Platform.OS === 'web') { savedId = await persistCapture(vault, visit, samplePhoto(), target, phase); }
+    if (Platform.OS === 'web') { savedId = await persistCapture(vault, visit, samplePhoto(), target, phase, undefined, pairWith); setReferenceId(''); }
     else if (gallery) {
       // exif is read only for the original capture time; the stored JPEG is re-encoded without EXIF.
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: GALLERY_BATCH, orderedSelection: true, exif: true, quality: 1 });
@@ -238,7 +243,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
       if (!cameraReady || !camera.current) return;
       const result = await camera.current.takePictureAsync({ quality: 1, exif: false, shutterSound: true });
       if (!result) return;
-      savedId = await persistCapture(vault, visit, result, target, phase);
+      savedId = await persistCapture(vault, visit, result, target, phase, undefined, pairWith); setReferenceId('');
     }
     const updated=await refresh();setLastArea(target);setLastShotId(savedId);
     const next=nextUncapturedArea(areas,updated?.photos.filter(p=>p.visitId===visit.id)||photos,phase,target);
@@ -337,7 +342,8 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           const label=(key:string)=>catalog(visit.job.kind).find(item=>item.key===key)?.label||key;
           const before=captureProgress(areas,photos,'before'),after=captureProgress(areas,photos,'after');
           const beforeDone=areas.length>0&&before.done===before.total,afterDone=areas.length>0&&after.done===after.total;
-          const referencePhoto=phase==='after'?photos.find(p=>p.itemKey===area&&p.phase==='before'):undefined;
+          const choices=phase==='after'?beforeChoices(photos,area):[];
+          const referencePhoto=choices.find(p=>p.id===referenceId)??choices.find(p=>p.id===defaultReference(photos,area));
           const lastShot=photos.find(p=>p.id===lastShotId);
           const shutterOff=busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady));
           return <>
@@ -351,8 +357,14 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           <View style={s.cameraFrame}>{Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
             : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진첩에서 선택으로 이어갈 수 있습니다.', true); }} />
             : <View style={s.card}><Text style={s.body}>작업사진을 촬영하려면 카메라 접근이 필요합니다.</Text><Button label="카메라 권한 허용" onPress={() => void requestPermission()} /></View>}
+            {referencePhoto&&overlayOn&&<View style={s.ghost} pointerEvents="none"><PhotoImage vault={vault} photo={referencePhoto} fill/></View>}
             {referencePhoto&&<View style={s.referenceOverlay} pointerEvents="none"><Text style={s.referenceLabel}>작업 전</Text><PhotoImage vault={vault} photo={referencePhoto} compact/></View>}
           </View>
+          {referencePhoto&&<View style={s.wrap}>
+            {choices.length>1&&choices.map((p,index)=><Chip key={p.id} label={`작업 전 ${index+1}${photos.some(a=>a.phase==='after'&&a.pairWith===p.id)?' ✓':''}`} active={p.id===referencePhoto.id} disabled={busy} onPress={()=>setReferenceId(p.id)}/>)}
+            <Chip label={overlayOn?'겹쳐 보기 켬':'겹쳐 보기 끔'} active={overlayOn} disabled={busy} onPress={()=>setOverlayOn(!overlayOn)}/>
+          </View>}
+          {referencePhoto&&<Note>흐릿하게 보이는 작업 전 사진과 같은 자리·각도로 맞춰 찍으면 보고서에 전·후가 나란히 실립니다.</Note>}
           <Pressable accessibilityRole="button" accessibilityLabel={`${label(area)} ${phaseLabel[phase]} 촬영`} accessibilityState={{disabled:shutterOff}} disabled={shutterOff} onPress={() => void perform(() => capture())}
             style={({pressed})=>[s.shutter,shutterOff&&s.disabled,pressed&&s.pressed]}>
             <Text style={s.shutterText}>{Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`}</Text><Text style={s.shutterSub}>{label(area)}</Text>
@@ -454,7 +466,7 @@ const s = StyleSheet.create({
   progress:{flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:18,paddingVertical:10,backgroundColor:'#e9f2ff'},progressText:{color:'#234e81',fontSize:13,fontWeight:'600',flexShrink:1},
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { minHeight: 44, paddingHorizontal: 13, paddingVertical: 12, borderWidth: 1, borderColor: '#dce6f1', backgroundColor: '#fff', borderRadius: 12, justifyContent: 'center' }, chipActive: { backgroundColor: '#e9f1ff', borderColor: '#5c94ef' }, chipText: { fontSize: 12, color: '#667e94' }, chipTextActive: { color: '#245fb5', fontWeight: '700' }, phaseRow: { flexDirection: 'row', gap: 10 },
   label: { fontSize: 13, fontWeight: '700', color: '#36506b' }, input: { borderWidth: 1, borderColor: '#dbe4ee', borderRadius: 12, padding: 14, fontSize: 14, lineHeight: 22, backgroundColor: '#fff', color: '#263f59', minHeight: 48 }, textarea: { minHeight: 150, textAlignVertical: 'top' }, textareaSmall: { minHeight: 96, textAlignVertical: 'top' },
-  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, guideCard:{backgroundColor:'#173657',borderRadius:14,padding:13,gap:3},guideStep:{color:'#a9d1ff',fontSize:12,fontWeight:'700'},guideTitle:{color:'#fff',fontSize:20,fontWeight:'800'},guideDetail:{color:'#d4e4f5',fontSize:12,lineHeight:17},cameraFrame:{position:'relative'}, camera: { width: '100%', aspectRatio: 1, maxHeight: 460, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { width: '100%', aspectRatio: 1, maxHeight: 460, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },referencePhoto:{height:80,width:100},referenceOverlay:{position:'absolute',right:10,top:10,backgroundColor:'#fff',borderRadius:10,padding:6,gap:3},referenceLabel:{color:'#36506b',fontSize:11,fontWeight:'700'},
+  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, guideCard:{backgroundColor:'#173657',borderRadius:14,padding:13,gap:3},guideStep:{color:'#a9d1ff',fontSize:12,fontWeight:'700'},guideTitle:{color:'#fff',fontSize:20,fontWeight:'800'},guideDetail:{color:'#d4e4f5',fontSize:12,lineHeight:17},cameraFrame:{position:'relative'}, camera: { width: '100%', aspectRatio: 1, maxHeight: 460, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { width: '100%', aspectRatio: 1, maxHeight: 460, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },referencePhoto:{height:80,width:100},ghost:{position:'absolute',left:0,right:0,top:0,bottom:0,opacity:0.4,borderRadius:18,overflow:'hidden'},ghostPhoto:{width:'100%',height:'100%',resizeMode:'cover'},referenceOverlay:{position:'absolute',right:10,top:10,backgroundColor:'#fff',borderRadius:10,padding:6,gap:3},referenceLabel:{color:'#36506b',fontSize:11,fontWeight:'700'},
   shutter:{minHeight:68,borderRadius:18,backgroundColor:'#276ce4',alignItems:'center',justifyContent:'center',paddingVertical:10,gap:2},shutterText:{color:'#fff',fontSize:18,fontWeight:'800'},shutterSub:{color:'#d6e6ff',fontSize:12,fontWeight:'600'},
   lastShot:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'#fff',borderRadius:14,padding:10,borderWidth:1,borderColor:'#e0e8f1'},undo:{minHeight:44,minWidth:64,borderRadius:12,borderWidth:1,borderColor:'#f1c5b4',backgroundColor:'#fff6f2',alignItems:'center',justifyContent:'center',paddingHorizontal:10},undoText:{color:'#b2472a',fontWeight:'700',fontSize:13},link:{color:'#276ce4',fontSize:12,fontWeight:'700',paddingVertical:6},
   doneCard:{backgroundColor:'#e9f7ef',borderRadius:16,padding:16,gap:8,borderWidth:1,borderColor:'#bfe5cf'},doneTitle:{fontSize:15,fontWeight:'800',color:'#1d5b3a'},doneBody:{fontSize:12,lineHeight:19,color:'#3f6f55'},

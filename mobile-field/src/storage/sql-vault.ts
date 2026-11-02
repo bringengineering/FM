@@ -100,7 +100,8 @@ export class SqlVault implements Vault {
       // Transfer metadata and original bytes cannot be edited through the UI.
       if (photo.visitId !== previous.visitId || !catalog(visit.job.kind).some(item => item.key === photo.itemKey)) throw new FieldError('PHOTO_INVALID');
       if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && (photo.itemKey!==previous.itemKey||photo.phase!==previous.phase)) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
-      const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption };
+      const moved = photo.itemKey !== previous.itemKey || photo.phase !== previous.phase;
+      const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption, ...(moved ? { pairWith: undefined } : {}) };
       await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?', JSON.stringify(updated), photo.id);
       await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
     });

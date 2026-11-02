@@ -28,7 +28,7 @@ export async function openVault(uid: string): Promise<Vault> {
       data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
     },
     async editPhoto(photo, expected) { check(); assertOwner(photo.ownerUid, uid); const v = visitAt(photo.visitId, expected);
-      data.photos = data.photos.map(p => p.id === photo.id ? { ...p, itemKey: photo.itemKey, phase: photo.phase, caption: photo.caption, included: photo.included } : p);
+      data.photos = data.photos.map(p => p.id === photo.id ? { ...p, itemKey: photo.itemKey, phase: photo.phase, caption: photo.caption, included: photo.included, ...(photo.itemKey !== p.itemKey || photo.phase !== p.phase ? { pairWith: undefined } : {}) } : p);
       data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
     },
     async deletePhoto(id, expected) { check(); const p = data.photos.find(row => row.id === id); if (!p) throw new FieldError('PHOTO_NOT_FOUND');
