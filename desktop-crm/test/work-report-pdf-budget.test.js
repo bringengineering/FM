@@ -10,12 +10,12 @@ function harness({ width = 3000, height = 2000, empty = false, bytes = 2048 } = 
   vm.runInNewContext(source.slice(source.indexOf("function workReportPdfJpeg("), source.indexOf("async function createWorkReportPdfArtifact(")), context);
   return { run: context.workReportPdfJpeg, calls };
 }
-test("다중 사진 PDF는 최대 1280px JPEG로 정규화하고 사진당 1MB 이내로 제한한다", () => {
+test("다중 사진 PDF는 최대 1000px JPEG(품질 72)로 정규화하고 사진당 1MB 이내로 제한한다", () => {
   const h = harness();
   assert.equal(h.run(Buffer.alloc(10)).length, 2048);
-  assert.equal(h.calls[0].width, 1280); assert.equal(h.calls[1], 80);
+  assert.equal(h.calls[0].width, 1000); assert.equal(h.calls[1], 72);
   const portrait = harness({ width: 2000, height: 3000 }); portrait.run(Buffer.alloc(10));
-  assert.equal(portrait.calls[0].height, 1280);
+  assert.equal(portrait.calls[0].height, 1000);
   assert.throws(() => harness({ empty: true }).run(Buffer.alloc(10)));
   assert.throws(() => harness({ width: 50000, height: 50000 }).run(Buffer.alloc(10)));
   assert.throws(() => harness({ bytes: 1024 * 1024 + 1 }).run(Buffer.alloc(10)));

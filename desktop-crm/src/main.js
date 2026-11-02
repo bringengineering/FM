@@ -4693,8 +4693,10 @@ function workReportPdfJpeg(content) {
   let image = nativeImage.createFromBuffer(content);
   const { width, height } = image.getSize();
   if (image.isEmpty() || !width || !height || width * height > 40000000) throw new Error("보고서 사진을 확인해 주세요.");
-  if (Math.max(width, height) > 1280) image = image.resize(width >= height ? { width: 1280 } : { height: 1280 });
-  const jpeg = image.toJPEG(80);
+  // PDF 에서 사진은 가장 커도 폭 9cm 정도다. 긴 변 1000px·품질 72면 인쇄에도 충분하고,
+  // 33장 보고서가 13MB 를 넘어 카카오톡에서 늦게 열리던 것을 3분의 1 안팎으로 줄인다.
+  if (Math.max(width, height) > 1000) image = image.resize(width >= height ? { width: 1000 } : { height: 1000 });
+  const jpeg = image.toJPEG(72);
   if (!jpeg.length || jpeg.length > 1024 * 1024) throw new Error("보고서 사진 용량을 확인해 주세요.");
   return jpeg;
 }
