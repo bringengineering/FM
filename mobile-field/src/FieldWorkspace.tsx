@@ -69,6 +69,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [showAllAreas,setShowAllAreas]=useState(false);
   const [photoId, setPhotoId] = useState(''); const [caption, setCaption] = useState('');
+  const [lastShotId, setLastShotId] = useState('');
   const visit = workspace.visits.find(v => v.id === selected);
   const photos = workspace.photos.filter(p => p.visitId === selected);
   const photo = photos.find(p => p.id === photoId);
@@ -140,7 +141,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   // the vault and lose the shot.
   function beginVisit(target:Visit,visitPhotos:Photo[],next?:Screen){
     const plan=initialCaptureAreas(target,visitPhotos);
-    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(target.captureAreas?.length?target.captureAreas:plan,visitPhotos,'before'));setPhotoId('');setCaption('');
+    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(target.captureAreas?.length?target.captureAreas:plan,visitPhotos,'before'));setPhotoId('');setCaption('');setLastShotId('');
     setScreen(next??(target.draft.confirmedRevision===target.revision?'report':target.captureAreas?.length?'capture':'capture-setup'));
   }
   async function saveCaptureAreas(){
@@ -205,7 +206,8 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     const target=areas.includes(area)?area:firstUncapturedArea(areas,photos,phase);
     if(!target)throw new FieldError('CAPTURE_AREAS_INVALID');
     if(target!==area)setArea(target);
-    if (Platform.OS === 'web') { await persistCapture(vault, visit, samplePhoto(), target, phase); }
+    let savedId = '';
+    if (Platform.OS === 'web') { savedId = await persistCapture(vault, visit, samplePhoto(), target, phase); }
     else if (gallery) {
       // exif is read only for the original capture time; the stored JPEG is re-encoded without EXIF.
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: GALLERY_BATCH, orderedSelection: true, exif: true, quality: 1 });
@@ -217,8 +219,8 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
       try {
         for (const asset of assets) {
           setBusyLabel(`사진첩 사진을 저장하고 있습니다 ${saved + 1}/${assets.length}장`);
-          await persistCapture(vault, current, asset, target, phase, exifCapturedAt(asset.exif));
-          saved++;
+          savedId = await persistCapture(vault, current, asset, target, phase, exifCapturedAt(asset.exif));
+          saved++; setLastShotId(savedId);
           // Each saved photo advances the visit revision; the next save must expect it.
           current = (await vault.load()).visits.find(v => v.id === visit.id) ?? current;
         }
@@ -236,9 +238,9 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
       if (!cameraReady || !camera.current) return;
       const result = await camera.current.takePictureAsync({ quality: 1, exif: false, shutterSound: true });
       if (!result) return;
-      await persistCapture(vault, visit, result, target, phase);
+      savedId = await persistCapture(vault, visit, result, target, phase);
     }
-    const updated=await refresh();setLastArea(target);
+    const updated=await refresh();setLastArea(target);setLastShotId(savedId);
     const next=nextUncapturedArea(areas,updated?.photos.filter(p=>p.visitId===visit.id)||photos,phase,target);
     if(next)setArea(next);
     notify(Platform.OS === 'web' ? '합성 사진을 추가했습니다. 브라우저를 새로고침하면 초기화됩니다.' : next?'사진을 저장하고 다음 구역으로 이동했습니다.':'사진을 기기에 저장했습니다.');
@@ -276,6 +278,12 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if (!vault || !visit || !photo) return;
     await vault.editPhoto({ ...photo, ...patch }, visit.revision); await refresh(); notify('사진 분류를 저장했습니다. 보고서 검토는 다시 확인해 주세요.');
   }
+  async function undoLastShot() {
+    const target = photos.find(p => p.id === lastShotId);
+    if (!vault || !visit || !target || !canDeletePhoto(target)) return;
+    await vault.deletePhoto(target.id, visit.revision); setLastShotId(''); setLastArea('');
+    setArea(target.itemKey); await refresh(); notify('방금 찍은 사진을 지웠습니다. 같은 구역에서 다시 찍어 주세요.');
+  }
   function confirmDelete(target: Photo) {
     const run = () => void perform(async () => {
       if (!vault || !visit) return;
@@ -307,7 +315,9 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
         {visit && screen !== 'jobs' && screen!=='capture' && <View style={s.siteBar}><Text style={s.siteTitle}>{visit.job.title}</Text><Text style={s.muted}>{visit.job.address}</Text></View>}
         {screen === 'jobs' && <><Text style={s.subtitle}>현장을 열고 작업 전 사진부터 남겨 주세요.</Text>{jobs.map(job => <View key={job.id} style={s.card}>
           <Text style={s.tag}>{job.kind === 'common' ? '공용부청소' : '입주청소'}</Text><Text style={s.cardTitle}>{job.title}</Text><Text style={s.muted}>{job.address}</Text>
-          <Text style={s.body}>오늘 보관 사진 {workspace.photos.filter(p => workspace.visits.some(v => v.id === p.visitId && v.job.id === job.id && v.job.workDate===job.workDate)).length}장</Text>
+          {(()=>{const v=workspace.visits.find(row=>row.job.id===job.id&&row.job.workDate===job.workDate);if(!v)return <Text style={s.body}>아직 시작하지 않았습니다.</Text>;
+            const own=workspace.photos.filter(p=>p.visitId===v.id),planned=v.captureAreas||[],b=captureProgress(planned,own,'before'),a=captureProgress(planned,own,'after'),ready=own.filter(p=>p.state==='ready').length;
+            return <Text style={s.body}>{planned.length?`작업 전 ${b.done}/${b.total}구역 · 작업 후 ${a.done}/${a.total}구역`:'촬영 구역 선택 전'}{'\n'}사진 {own.length}장{company?` · 서버 보관 ${ready}/${own.length}장`:''}{v.draft.confirmedRevision===v.revision?' · 보고서 검토 완료':''}</Text>;})()}
           <Button label={workspace.visits.some(v => v.job.id === job.id && v.job.workDate===job.workDate) ? '오늘 작업 이어하기' : '오늘 작업 시작'} onPress={() => void perform(() => openJob(job))} disabled={busy} />
         </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>beginVisit(v,workspace.photos.filter(p=>p.visitId===v.id),'report')}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
         {['capture-setup', 'capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
@@ -321,38 +331,62 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           </View>
           <Note>현장에 없는 구역은 선택 해제할 수 있습니다. 한 구역에서 여러 장을 찍을 수도 있습니다.</Note>
           <Button label="작업 전 촬영 시작" disabled={busy||!plannedAreas.length} onPress={()=>void perform(saveCaptureAreas)} />
-          {visit.captureAreas?.length&&<Button label="촬영 화면으로 돌아가기" secondary disabled={busy} onPress={()=>setScreen('capture')} />}
+          {!!visit.captureAreas?.length&&<Button label="촬영 화면으로 돌아가기" secondary disabled={busy} onPress={()=>setScreen('capture')} />}
         </>}
-        {screen === 'capture' && visit && <>
+        {screen === 'capture' && visit && (()=>{
+          const label=(key:string)=>catalog(visit.job.kind).find(item=>item.key===key)?.label||key;
+          const before=captureProgress(areas,photos,'before'),after=captureProgress(areas,photos,'after');
+          const beforeDone=areas.length>0&&before.done===before.total,afterDone=areas.length>0&&after.done===after.total;
+          const referencePhoto=phase==='after'?photos.find(p=>p.itemKey===area&&p.phase==='before'):undefined;
+          const lastShot=photos.find(p=>p.id===lastShotId);
+          const shutterOff=busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady));
+          return <>
           <View style={s.wrap}>{(['before','after','during'] as Phase[]).map(p=>{
             const progress=captureProgress(areas,photos,p);return <Chip key={p} label={`${phaseLabel[p]} ${progress.done}/${progress.total}`} active={phase===p} disabled={busy} onPress={()=>switchPhase(p)}/>;
           })}</View>
-          <View style={s.guideCard}><Text style={s.guideStep}>{phaseLabel[phase]} · {Math.max(areas.indexOf(area)+1,1)} / {areas.length} 구역</Text>
-            <Text style={s.guideTitle}>{catalog(visit.job.kind).find(item=>item.key===area)?.label || '촬영 구역'}</Text>
+          <View style={s.guideCard}><Text style={s.guideStep}>{phaseLabel[phase]} · {Math.max(areas.indexOf(area)+1,1)} / {areas.length} 구역 · 이 구역 {areaPhotoCount(photos,area,phase)}장</Text>
+            <Text style={s.guideTitle}>{label(area) || '촬영 구역'}</Text>
             <Text style={s.guideDetail}>{catalog(visit.job.kind).find(item=>item.key===area)?.detail}</Text>
-            <Text style={s.guideDetail}>이 구역 {phaseLabel[phase]} 사진 {areaPhotoCount(photos,area,phase)}장</Text>
           </View>
           <View style={s.cameraFrame}>{Platform.OS === 'web' ? <View style={s.cameraPlaceholder}><Text style={s.cameraMark}>＋</Text><Text style={s.cameraText}>브라우저에서는 합성 사진으로 확인합니다</Text><Text style={s.cameraSmall}>실제 카메라는 Android·iPhone 개발 앱에서</Text></View>
-            : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진 선택으로 이어갈 수 있습니다.', true); }} />
+            : permission?.granted && foreground ? <CameraView ref={camera} style={s.camera} facing="back" mode="picture" onCameraReady={() => setCameraReady(true)} onMountError={() => { setCameraReady(false); notify('카메라를 열 수 없습니다. 사진첩에서 선택으로 이어갈 수 있습니다.', true); }} />
             : <View style={s.card}><Text style={s.body}>작업사진을 촬영하려면 카메라 접근이 필요합니다.</Text><Button label="카메라 권한 허용" onPress={() => void requestPermission()} /></View>}
-            {phase==='after'&&photos.find(p=>p.itemKey===area&&p.phase==='before')&&<View style={s.referenceOverlay} pointerEvents="none"><Text style={s.referenceLabel}>작업 전</Text><PhotoImage vault={vault} photo={photos.find(p=>p.itemKey===area&&p.phase==='before')!} compact/></View>}
+            {referencePhoto&&<View style={s.referenceOverlay} pointerEvents="none"><Text style={s.referenceLabel}>작업 전</Text><PhotoImage vault={vault} photo={referencePhoto} compact/></View>}
           </View>
-          <Button label={Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`} disabled={busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady))} onPress={() => void perform(() => capture())} />
-          {lastArea&&lastArea!==area&&<Button label={`${catalog(visit.job.kind).find(item=>item.key===lastArea)?.label || '직전 구역'} 추가 촬영`} secondary disabled={busy} onPress={()=>{setArea(lastArea);setLastArea('');}} />}
-          <View style={s.wrap}>{areas.map((key,index)=><Chip key={key} label={`${index+1}. ${catalog(visit.job.kind).find(item=>item.key===key)?.label || key} · ${areaPhotoCount(photos,key,phase)}장`} active={area===key} disabled={busy} onPress={()=>{setArea(key);setLastArea('');}} />)}</View>
-          <Note>사진을 찍으면 다음 미촬영 구역으로 이동합니다. 구역을 다시 선택하면 여러 장을 찍을 수 있습니다. 미촬영 구역은 그대로 표시됩니다.</Note>
-          {phase==='after'&&!photos.some(p=>p.itemKey===area&&p.phase==='before')&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
-          {phase==='before'&&<Button label="작업 후 촬영 시작" secondary disabled={busy} onPress={()=>switchPhase('after')} />}
-          <Button label="촬영 구역 변경" secondary disabled={busy} onPress={()=>{setPlannedAreas(initialCaptureAreas(visit,photos));setCameraReady(false);setScreen('capture-setup');}} />
-          {Platform.OS !== 'web' && <Button label={`사진첩에서 선택 (최대 ${GALLERY_BATCH}장)`} secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
-          <Button label={`사진 ${photos.length}장 확인`} secondary onPress={() => navigate('photos')} />
-          <Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} secondary disabled={!photos.length||busy} onPress={finishCaptureRequested} />
-          <Note>사진을 찍어도 작업 완료로 처리하지 않습니다. 촬영 후 보고서에서 항목 상태를 확인해 주세요.</Note>
-        </>}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${label(area)} ${phaseLabel[phase]} 촬영`} accessibilityState={{disabled:shutterOff}} disabled={shutterOff} onPress={() => void perform(() => capture())}
+            style={({pressed})=>[s.shutter,shutterOff&&s.disabled,pressed&&s.pressed]}>
+            <Text style={s.shutterText}>{Platform.OS === 'web' ? '합성 작업사진 추가' : `${phaseLabel[phase]} 촬영`}</Text><Text style={s.shutterSub}>{label(area)}</Text>
+          </Pressable>
+          {lastShot&&<View style={s.lastShot}><PhotoImage vault={vault} photo={lastShot} compact/><View style={s.flex}><Text style={s.rowTitle}>방금 찍은 사진</Text><Text style={s.muted}>{label(lastShot.itemKey)} · {phaseLabel[lastShot.phase]}</Text>
+            {!!lastArea&&lastArea!==area&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setArea(lastArea);setLastArea('');}}><Text style={s.link}>{label(lastArea)} 한 장 더 찍기</Text></Pressable>}</View>
+            {canDeletePhoto(lastShot)&&<Pressable accessibilityRole="button" accessibilityLabel="방금 찍은 사진 지우기" disabled={busy} onPress={()=>void perform(undoLastShot)} style={s.undo}><Text style={s.undoText}>지우기</Text></Pressable>}</View>}
+          {phase==='before'&&beforeDone&&<View style={s.doneCard}><Text style={s.doneTitle}>작업 전 사진을 모든 구역에서 찍었어요</Text><Text style={s.doneBody}>청소를 마친 뒤 같은 구역을 작업 후로 찍어 주세요.</Text><Button label="작업 후 촬영 시작" disabled={busy} onPress={()=>switchPhase('after')} /></View>}
+          {phase==='after'&&afterDone&&<View style={s.doneCard}><Text style={s.doneTitle}>작업 후 사진까지 모두 찍었어요</Text><Text style={s.doneBody}>이제 보고서를 확인하고 저장하면 됩니다.</Text><Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} disabled={busy} onPress={finishCaptureRequested} /></View>}
+          {phase==='after'&&!referencePhoto&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
+          <View style={s.wrap}>{areas.map((key,index)=>{const count=areaPhotoCount(photos,key,phase);return <Chip key={key} label={`${count?'✓ ':''}${index+1}. ${label(key)} · ${count}장`} active={area===key} disabled={busy} onPress={()=>{setArea(key);setLastArea('');}} />;})}</View>
+          <View style={s.grid}>
+            {phase==='before'&&!beforeDone&&<View style={s.gridItem}><Button label="작업 후로 넘어가기" secondary disabled={busy} onPress={()=>switchPhase('after')} /></View>}
+            {Platform.OS !== 'web' && <View style={s.gridItem}><Button label={`사진첩 (최대 ${GALLERY_BATCH}장)`} secondary disabled={busy} onPress={() => void perform(() => capture(true))} /></View>}
+            <View style={s.gridItem}><Button label={`사진 ${photos.length}장 보기`} secondary disabled={busy} onPress={() => navigate('photos')} /></View>
+            <View style={s.gridItem}><Button label="촬영 구역 변경" secondary disabled={busy} onPress={()=>{setPlannedAreas(initialCaptureAreas(visit,photos));setCameraReady(false);setScreen('capture-setup');}} /></View>
+          </View>
+          {!(phase==='after'&&afterDone)&&<Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} secondary disabled={!photos.length||busy} onPress={finishCaptureRequested} />}
+          <Note>사진을 찍으면 다음 미촬영 구역으로 넘어갑니다. 구역을 다시 누르면 여러 장을 찍을 수 있습니다.</Note>
+        </>;})()}
         {screen === 'photos' && visit && <>
           {!photos.length && <Note>아직 사진이 없습니다. 촬영 탭에서 사진을 추가해 주세요.</Note>}
-          <View style={s.wrap}>{photos.map((p, i) => <Chip key={p.id} label={`${i + 1} · ${catalog(visit.job.kind).find(item=>item.key===p.itemKey)?.label || p.itemKey} ${phaseLabel[p.phase]}${p.included?'':' · 제외'}`} active={photoId === p.id} onPress={() => choosePhoto(p)} />)}</View>
-          {photo && <View style={s.card}><PhotoImage vault={vault} photo={photo} /><Text style={s.tag}>{stateLabel[photo.state]}</Text>
+          {photos.length>0&&<Text style={s.muted}>보고서 포함 {photos.filter(p=>p.included).length}장 · 제외 {photos.filter(p=>!p.included).length}장 · 사진을 눌러 구역·전후·설명을 고칠 수 있습니다.</Text>}
+          {catalog(visit.job.kind).filter(item=>photos.some(p=>p.itemKey===item.key)).map(item=><View key={item.key} style={s.group}>
+            <Text style={s.label}>{item.label}</Text>
+            <View style={s.wrap}>{photos.filter(p=>p.itemKey===item.key).map(p => <Chip key={p.id} label={`${photos.indexOf(p) + 1} · ${phaseLabel[p.phase]}${p.included?'':' · 제외'}`} active={photoId === p.id} onPress={() => choosePhoto(p)} />)}</View>
+          </View>)}
+          {photo&&<View style={s.stepper}>
+            <View style={s.flex}><Button label="◀ 이전" secondary disabled={busy||photos.indexOf(photo)<=0} onPress={()=>choosePhoto(photos[photos.indexOf(photo)-1]!)} /></View>
+            <Text style={s.stepperText}>{photos.indexOf(photo)+1} / {photos.length}</Text>
+            <View style={s.flex}><Button label="다음 ▶" secondary disabled={busy||photos.indexOf(photo)>=photos.length-1} onPress={()=>choosePhoto(photos[photos.indexOf(photo)+1]!)} /></View>
+          </View>}
+          {!photo&&photos.length>0&&<Note>위에서 확인할 사진을 눌러 주세요.</Note>}
+          {photo && <View style={s.card}><PhotoImage vault={vault} photo={photo} /><Text style={s.tag}>{catalog(visit.job.kind).find(item=>item.key===photo.itemKey)?.label} · {phaseLabel[photo.phase]} · {stateLabel[photo.state]}</Text>
             <Text style={s.label}>구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={photo.itemKey === item.key} onPress={() => void perform(() => updatePhoto({ itemKey: item.key }))} />)}</View>
             <View style={s.wrap}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={photo.phase === p} onPress={() => void perform(() => updatePhoto({ phase: p }))} />)}</View>
             <View style={s.between}><Text style={s.label}>보고서에 포함</Text><Switch accessibilityLabel="보고서에 사진 포함" value={photo.included} onValueChange={included => void perform(() => updatePhoto({ included }))} /></View>
@@ -420,7 +454,11 @@ const s = StyleSheet.create({
   progress:{flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:18,paddingVertical:10,backgroundColor:'#e9f2ff'},progressText:{color:'#234e81',fontSize:13,fontWeight:'600',flexShrink:1},
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { minHeight: 44, paddingHorizontal: 13, paddingVertical: 12, borderWidth: 1, borderColor: '#dce6f1', backgroundColor: '#fff', borderRadius: 12, justifyContent: 'center' }, chipActive: { backgroundColor: '#e9f1ff', borderColor: '#5c94ef' }, chipText: { fontSize: 12, color: '#667e94' }, chipTextActive: { color: '#245fb5', fontWeight: '700' }, phaseRow: { flexDirection: 'row', gap: 10 },
   label: { fontSize: 13, fontWeight: '700', color: '#36506b' }, input: { borderWidth: 1, borderColor: '#dbe4ee', borderRadius: 12, padding: 14, fontSize: 14, lineHeight: 22, backgroundColor: '#fff', color: '#263f59', minHeight: 48 }, textarea: { minHeight: 150, textAlignVertical: 'top' }, textareaSmall: { minHeight: 96, textAlignVertical: 'top' },
-  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, guideCard:{backgroundColor:'#173657',borderRadius:14,padding:13,gap:3},guideStep:{color:'#a9d1ff',fontSize:12,fontWeight:'700'},guideTitle:{color:'#fff',fontSize:20,fontWeight:'800'},guideDetail:{color:'#d4e4f5',fontSize:12,lineHeight:17},cameraFrame:{position:'relative'}, camera: { height: 240, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { height: 240, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },referencePhoto:{height:80,width:100},referenceOverlay:{position:'absolute',right:10,top:10,backgroundColor:'#fff',borderRadius:10,padding:6,gap:3},referenceLabel:{color:'#36506b',fontSize:11,fontWeight:'700'},
+  siteBar: { padding: 15, backgroundColor: '#eaf0f7', borderRadius: 14, gap: 4 }, siteTitle: { fontSize: 13, fontWeight: '700', color: '#3c5874' }, guideCard:{backgroundColor:'#173657',borderRadius:14,padding:13,gap:3},guideStep:{color:'#a9d1ff',fontSize:12,fontWeight:'700'},guideTitle:{color:'#fff',fontSize:20,fontWeight:'800'},guideDetail:{color:'#d4e4f5',fontSize:12,lineHeight:17},cameraFrame:{position:'relative'}, camera: { width: '100%', aspectRatio: 1, maxHeight: 460, borderRadius: 18, overflow: 'hidden' }, cameraPlaceholder: { width: '100%', aspectRatio: 1, maxHeight: 460, backgroundColor: '#1b3249', borderRadius: 18, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 15 }, cameraMark: { fontSize: 55, color: '#8fb8ea', fontWeight: '200' }, cameraText: { fontSize: 13, color: '#dbe7f5' }, cameraSmall: { fontSize: 11, color: '#8daac7' }, photo: { height: 240, width: '100%', borderRadius: 12, resizeMode: 'contain', backgroundColor: '#e9f0f6' },referencePhoto:{height:80,width:100},referenceOverlay:{position:'absolute',right:10,top:10,backgroundColor:'#fff',borderRadius:10,padding:6,gap:3},referenceLabel:{color:'#36506b',fontSize:11,fontWeight:'700'},
+  shutter:{minHeight:68,borderRadius:18,backgroundColor:'#276ce4',alignItems:'center',justifyContent:'center',paddingVertical:10,gap:2},shutterText:{color:'#fff',fontSize:18,fontWeight:'800'},shutterSub:{color:'#d6e6ff',fontSize:12,fontWeight:'600'},
+  lastShot:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'#fff',borderRadius:14,padding:10,borderWidth:1,borderColor:'#e0e8f1'},undo:{minHeight:44,minWidth:64,borderRadius:12,borderWidth:1,borderColor:'#f1c5b4',backgroundColor:'#fff6f2',alignItems:'center',justifyContent:'center',paddingHorizontal:10},undoText:{color:'#b2472a',fontWeight:'700',fontSize:13},link:{color:'#276ce4',fontSize:12,fontWeight:'700',paddingVertical:6},
+  doneCard:{backgroundColor:'#e9f7ef',borderRadius:16,padding:16,gap:8,borderWidth:1,borderColor:'#bfe5cf'},doneTitle:{fontSize:15,fontWeight:'800',color:'#1d5b3a'},doneBody:{fontSize:12,lineHeight:19,color:'#3f6f55'},
+  grid:{flexDirection:'row',flexWrap:'wrap',gap:8},gridItem:{flexBasis:'48%',flexGrow:1},group:{gap:8},stepper:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},stepperText:{fontSize:13,fontWeight:'700',color:'#36506b'},
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 }, flex: { flex: 1 }, row: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderColor: '#e0e8f0' }, rowTitle: { fontSize: 14, fontWeight: '700', color: '#34506c', marginBottom: 5 }, paper: { backgroundColor: '#fff', padding: 26, borderWidth: 1, borderColor: '#e1e8f0', gap: 12 }, paperTag: { fontSize: 11, color: '#b26b36', backgroundColor: '#fff7e8', padding: 10 }, footerText: { fontSize: 12, color: '#567697', paddingTop: 10, lineHeight: 23 }, metrics: { alignItems: 'center', padding: 22, backgroundColor: '#fff', borderRadius: 18 }, metric: { fontSize: 44, color: '#276ce4', fontWeight: '800' }, metricUnit: { fontSize: 17, fontWeight: '500' },
   tabs: { flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e0e8f1', paddingTop: 8, paddingBottom: 8 }, tab: { flex: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 4 }, tabIcon: { fontSize: 23, color: '#92a2b3' }, tabText: { fontSize: 11, color: '#8294a7', fontWeight: '700' }, blue: { color: '#276ce4' }, loading: { padding: 5 }, toast: { backgroundColor: '#e7f5ed', padding: 14 }, error: { backgroundColor: '#fff0e8' }, toastText: { fontSize: 13, lineHeight: 21, color: '#294c48' },
 });

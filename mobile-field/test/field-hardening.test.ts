@@ -177,3 +177,30 @@ describe('현장 편의 기능 연결', () => {
     expect(source).toMatch(/if \(!vault \|\| !visit \|\| !dirty \|\| busyRef\.current\) return;/u);
   });
 });
+
+describe('촬영 화면 사용성', () => {
+  const source = readFileSync(new URL('../src/FieldWorkspace.tsx', import.meta.url), 'utf8');
+  it('방금 찍은 사진은 서버로 보내기 전이면 바로 지우고 같은 구역으로 돌아간다', () => {
+    expect(source).toMatch(/canDeletePhoto\(lastShot\)&&<Pressable accessibilityRole="button" accessibilityLabel="방금 찍은 사진 지우기"/u);
+    expect(source).toMatch(/await vault\.deletePhoto\(target\.id, visit\.revision\); setLastShotId\(''\); setLastArea\(''\);\s*setArea\(target\.itemKey\)/u);
+  });
+  it('모든 구역을 찍으면 다음 단계를 큰 버튼으로 안내한다', () => {
+    expect(source).toMatch(/phase==='before'&&beforeDone&&<View style=\{s\.doneCard\}>/u);
+    expect(source).toMatch(/phase==='after'&&afterDone&&<View style=\{s\.doneCard\}>/u);
+  });
+  it('다른 작업을 열면 방금 찍은 사진 표시를 지운다', () => {
+    expect(source).toMatch(/setPhotoId\(''\);setCaption\(''\);setLastShotId\(''\);/u);
+  });
+  it('사진 확인은 구역별로 묶고 이전·다음으로 넘긴다', () => {
+    expect(source).toMatch(/catalog\(visit\.job\.kind\)\.filter\(item=>photos\.some\(p=>p\.itemKey===item\.key\)\)/u);
+    expect(source).toMatch(/label="다음 ▶"/u);
+  });
+});
+
+describe('화면에 빈 글자가 새지 않는다', () => {
+  // React Native 는 View 안의 '' 나 0 을 그리면 오류를 낸다. 문자열·숫자 조건은 !! 로 바꾼다.
+  const source = readFileSync(new URL('../src/FieldWorkspace.tsx', import.meta.url), 'utf8');
+  it.each(['lastArea', 'visit.captureAreas?.length', 'documentId', 'notice', 'caption', 'summary'])('{%s&& 로 그리지 않는다', name => {
+    expect(source.includes(`{${name}&&`)).toBe(false);
+  });
+});
