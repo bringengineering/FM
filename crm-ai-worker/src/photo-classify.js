@@ -199,7 +199,10 @@ async function classifyBatch(images, env, model, fetchImpl, signal, mode = "clas
         responseMimeType: "application/json",
         responseJsonSchema: compare ? pairSchema : {
           type: "object", required: ["classifications"], additionalProperties: false,
-          properties: { classifications: { type: "array", maxItems: aliases.length, items: {
+          // No maxItems here either: with the closed feature/candidate enums it
+          // pushed the provider grammar past its budget at six images (HTTP 400,
+          // observed 2026-11-02). normalizeBatchResult drops unknown/duplicate ids.
+          properties: { classifications: { type: "array", items: {
             type: "object", required: ["id", "category", "space", "target", "confidence", "spaceConfidence", "targetConfidence", "contact", "water", "phase", "phaseConfidence", "action", "quality", "features", "candidates"], additionalProperties: false,
             // Bound nested evidence arrays in normalizeEvidence, not in the
             // provider grammar: nested bounded enum arrays may exceed its state
