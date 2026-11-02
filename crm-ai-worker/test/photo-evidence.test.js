@@ -148,3 +148,20 @@ test("monthly captions cannot echo model prose or claim unobserved completion/in
   assert.equal(monthlyEvidence({ ...row, actionVisible: false }).caption, "계단·계단참 · 현장 사진");
   for (const change of [{ quality: "blurred" }, { relevance: "uncertain" }, { subject: "personal_data" }, { action: "inspection_complete" }]) assert.equal(monthlyEvidence({ ...row, ...change }), null);
 });
+
+test("a six-image batch schema has no top-level maxItems (provider rejected it with HTTP 400)", async () => {
+  // Observed 2026-11-02 against gemini-3.5-flash-lite: with the expanded closed
+  // feature enums, classifications.maxItems=6 returned INVALID_ARGUMENT while
+  // five images passed. The Worker batches six, so every larger request failed.
+  const images = Array.from({ length: 6 }, (_, i) => ({ id: `local${i}`, dataUrl: "data:image/jpeg;base64,/9j/AA==" }));
+  for (const [kind, categorySchema] of [["moveIn"], ["common", "common-v2"]]) {
+    let seen = 0;
+    await classifyPhotos({ kind, images, ...(categorySchema ? { categorySchema } : {}) }, { GEMINI_API_KEY: "synthetic" }, async (_, init) => {
+      seen++;
+      const schema = JSON.parse(init.body).generationConfig.responseJsonSchema;
+      assert.equal(schema.properties.classifications.maxItems, undefined, kind);
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: [] }) }] } }] });
+    });
+    assert.equal(seen, 1, "six images are one provider batch");
+  }
+});
