@@ -294,3 +294,25 @@ test("확신 없는 AI 사진은 보고서 항목에 자동으로 붙이지 않�
   assert.equal(classified.buckets[0].itemKey, "");
   assert.equal(P.toReportDraft(classified, { core: W }).leftovers.length, 1);
 });
+
+test("'작업 전후'처럼 함께 적은 이름은 폴더 전체를 작업 전으로 확정하지 않는다", () => {
+  // 실제로 흔한 폴더 이름이다. 앞의 '전'만 읽으면 사진 전부가 작업 전으로
+  // 확정되고 AI 비교도 그 표기를 우선해 끝까지 바뀌지 않는다.
+  for (const folder of ["화장실 작업 전후", "작업전후", "청소 전후 비교", "작업 전·후", "전후사진", "Before & After"]) {
+    assert.equal(P.phaseHint({ name: "IMG_1.jpg" }, folder), "", folder);
+    const split = P.splitBeforeAfter([jpg("IMG_1.jpg"), jpg("IMG_2.jpg")], { folderName: folder, requireVisualEvidence: true });
+    assert.equal(split.before.length + split.after.length, 0, folder);
+    assert.equal(split.unsorted.length, 2, folder);
+    assert.equal(split.confident, false, folder);
+  }
+  // 단계가 아닌 낱말: 청소전문 업체, 작업전체, 블로그용 청소후기.
+  for (const folder of ["청소전문", "작업전체", "청소후기"]) assert.equal(P.phaseHint({ name: "IMG_1.jpg" }, folder), "", folder);
+  // 원래 읽던 표기는 그대로 읽는다.
+  assert.equal(P.phaseHint({ name: "작업전_20260831_172901.jpg" }, "화장실"), "before");
+  assert.equal(P.phaseHint({ name: "시공전_1.jpg" }, "주방"), "before");
+  assert.equal(P.phaseHint({ name: "작업전1.jpg" }, "주방"), "before");
+  assert.equal(P.phaseHint({ name: "청소후.jpg" }, "욕실"), "after");
+  assert.equal(P.phaseHint({ name: "IMG.jpg" }, "욕실 작업 전"), "before");
+  assert.equal(P.phaseHint({ name: "IMG.jpg" }, "작업 후 사진"), "after");
+  assert.equal(P.phaseHint({ name: "작업전.jpg" }, "작업 후"), "conflict");
+});

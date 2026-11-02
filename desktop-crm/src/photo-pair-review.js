@@ -21,8 +21,10 @@
   }
   function categoryFor(space, target) {
     if (["hood", "aircon", "refrigerator"].includes(target)) return target;
+    // Same rule as the Worker: bath/veranda items follow the verified room alone.
+    // An out-of-vocabulary target is still rejected rather than trusted.
+    if ((space === "bath" || space === "veranda") && Object.hasOwn(TARGETS, target)) return space;
     if (key(space, SPACES) === "unknown" || key(target, TARGETS) === "unknown") return "";
-    if (space === "bath" || space === "veranda") return space;
     if (target === "window") return "window";
     if (space === "kitchen" && ["sink", "cabinet"].includes(target)) return "kitchen";
     if (target === "cabinet") return "storage";

@@ -173,7 +173,9 @@ async function payload(api, value) {
   return api.readPhotoClassificationPayload(new Request("https://local.invalid/validation-only", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) }));
 }
 
-async function clientResult(response, input) {
+async function clientResult(response, value) {
+  // The desktop client adds categorySchema itself and rejects it as input.
+  const { categorySchema: _schema, ...input } = value;
   // Exercise the real desktop normalization without opening a server, bypassing
   // authentication, or contacting a gateway. The provider call already ran.
   return classifyPhotosWithGateway({
@@ -190,7 +192,10 @@ async function runVersion(api, dataset, env, fetchImpl, audit, refinement, onSta
     const selected = dataset.samples.filter(row => row.kind === kind);
     if (!selected.length) continue;
     const images = selected.map(({ id, dataUrl }) => ({ id, dataUrl }));
-    const input = { kind, images };
+    // Match the app: new CRM clients send the expanded common-area schema.
+    // Older baselines that do not export it keep their legacy category list.
+    const schema = kind === "common" && api.COMMON_CATEGORY_SCHEMA ? { categorySchema: api.COMMON_CATEGORY_SCHEMA } : {};
+    const input = { kind, images, ...schema };
     const response = await clientResult(await api.classifyPhotos(await payload(api, input), env, fetchImpl), input);
     result.firstPass.push(...response.classifications);
     for (const key of ["inputTokens", "outputTokens"]) result.usage[key] += response.usage[key];
@@ -199,7 +204,7 @@ async function runVersion(api, dataset, env, fetchImpl, audit, refinement, onSta
       const reviewIds = new Set(reviewCandidates(classifications));
       if (reviewIds.size) {
         try {
-          const reviewInput = { kind, mode: "review", images: selected.filter(row => reviewIds.has(row.id)).map(({ id, dataUrl, detailDataUrl }) => ({ id, dataUrl, detailDataUrl })) };
+          const reviewInput = { kind, ...schema, mode: "review", images: selected.filter(row => reviewIds.has(row.id)).map(({ id, dataUrl, detailDataUrl }) => ({ id, dataUrl, detailDataUrl })) };
           const reviewed = await clientResult(await api.classifyPhotos(await payload(api, reviewInput), env, fetchImpl, 30000), reviewInput);
           classifications = mergeReview(classifications, reviewed.classifications);
           for (const key of ["inputTokens", "outputTokens"]) result.usage[key] += reviewed.usage[key];
