@@ -7,7 +7,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { openVault } from './storage/open-vault';
-import { confirmVisit, editVisit, phaseLabel, stateLabel, type ItemStatus, type Job, type Phase, type Photo, type Vault, type Visit, type Workspace } from './domain/model';
+import { canDeletePhoto, confirmVisit, editVisit, LIMITS, phaseLabel, stateLabel, type ItemStatus, type Job, type Phase, type Photo, type Vault, type Visit, type Workspace } from './domain/model';
 import { catalog, reviewIssues } from './domain/report';
 import { persistCapture } from './capture';
 import { aiDraftState,reportFacts } from './domain/ai-report';
@@ -15,8 +15,10 @@ import { saveGroupedReport } from './domain/save-report';
 import { archiveDocumentId } from './domain/archive-lookup';
 import { areaPhotoCount,captureProgress,changeCaptureAreas,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
 import { samplePhoto } from './sample-photo';
+import { exifCapturedAt } from './domain/capture-time';
+const GALLERY_BATCH = 20;
 import { safeMessage } from './errors';
-import { SyncRunner } from './domain/sync';
+import { FIELD_RETRY, SyncRunner } from './domain/sync';
 import { FieldError } from './domain/model';
 import type { CustomerSite } from './api/sites';
 import type { ArchiveReceipt, CompanyRecordingApi, DeliveryPreview } from './api/recording';
@@ -98,7 +100,18 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     const previous:Record<Screen,Screen>={jobs:'jobs','capture-setup':'jobs',capture:'capture-setup',photos:'capture',report:'capture',pdf:'report',send:'pdf',sync:'jobs',settings:'jobs'};
     navigate(previous[screen]);
   },[backRequest]);
+  // Staff switch to KakaoTalk or the dialer mid-report; Android may then kill the
+  // app. Typed text lives only in memory until saved, so save it on the way out.
+  const autosave = useRef<() => Promise<void>>(async () => undefined);
+  autosave.current = async () => {
+    if (!vault || !visit || !dirty || busyRef.current) return;
+    busyRef.current = true;
+    try { await vault.saveVisit(editVisit(visit, { summary, followUp, notes }, new Date().toISOString()), visit.revision); await refresh(); notify('작성 중인 내용을 자동으로 저장했습니다.'); }
+    catch { /* keep the in-memory text; the explicit save button still works */ }
+    finally { busyRef.current = false; }
+  };
   useEffect(() => { const listener = AppState.addEventListener('change', next => {
+    if (next === 'background') void autosave.current();
     setForeground(next === 'active');
     if (next !== 'active') setCameraReady(false);
   }); return () => listener.remove(); }, []);
@@ -120,8 +133,15 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
       target={...target,job:{...target.job,address:job.address},revision:previous+1,updatedAt:new Date().toISOString(),draft:{...target.draft,confirmedRevision:undefined}};
       await vault.saveVisit(target,previous);await refresh();
     }
-    const oldPhotos=workspace.photos.filter(p=>p.visitId===target!.id),plan=initialCaptureAreas(target,oldPhotos);
-    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(plan,oldPhotos,'before'));setPhotoId('');setScreen(target.draft.confirmedRevision===target.revision?'report':target.captureAreas?.length?'capture':'capture-setup');
+    beginVisit(target,workspace.photos.filter(p=>p.visitId===target!.id));
+  }
+  // Every way into a visit resets the capture guide to that visit's own areas.
+  // A stale area from another visit (or another job kind) would be rejected by
+  // the vault and lose the shot.
+  function beginVisit(target:Visit,visitPhotos:Photo[],next?:Screen){
+    const plan=initialCaptureAreas(target,visitPhotos);
+    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(target.captureAreas?.length?target.captureAreas:plan,visitPhotos,'before'));setPhotoId('');setCaption('');
+    setScreen(next??(target.draft.confirmedRevision===target.revision?'report':target.captureAreas?.length?'capture':'capture-setup'));
   }
   async function saveCaptureAreas(){
     if(!visit||!vault)return;
@@ -132,6 +152,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     }
     setPhase('before');setLastArea('');setArea(firstUncapturedArea(ordered,photos,'before'));setScreen('capture');
   }
+  useEffect(()=>{if(screen==='capture'&&areas.length&&!areas.includes(area))setArea(firstUncapturedArea(areas,photos,phase));},[screen,selected,areas.join(','),area]);
   function switchPhase(next:Phase){setPhase(next);setLastArea('');setArea(firstUncapturedArea(areas,photos,next));setNotice('');}
   useEffect(()=>{
     if(!company)return;
@@ -146,7 +167,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     setBusyLabel('사진 보관을 준비하고 있습니다.');await company.api.storageStatus(controller.current.signal);
     const linked=await company.api.reconcile(current,currentPhotos,controller.current.signal);
     await vault.linkRevision(current.id,linked.revision,linked.photoIds);
-    runner.current?.stop();runner.current=new SyncRunner(vault,company.api,current.id,(ready,total)=>setBusyLabel(`사진 보관 ${ready}/${total}장 · 앱을 켜 두세요.`));await runner.current.run();
+    runner.current?.stop();runner.current=new SyncRunner(vault,company.api,current.id,(ready,total)=>setBusyLabel(`사진 보관 ${ready}/${total}장 · 앱을 켜 두세요.`),FIELD_RETRY,attempt=>setBusyLabel(`연결이 불안정해 다시 보내는 중입니다 (${attempt+1}/${FIELD_RETRY.attempts}회) · 앱을 켜 두세요.`));await runner.current.run();
     const latest=await refresh();const failed=latest?.photos.find(p=>p.visitId===current.id&&p.state!=='ready');
     if(failed)throw new FieldError(failed.errorCode||'PHOTOS_NOT_READY');
     notify('현재 작업의 사진을 Drive 활동사진에 보관했습니다.');
@@ -181,20 +202,44 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   }
   async function capture(gallery = false) {
     if (!vault || !visit) return;
-    if (Platform.OS === 'web') { await persistCapture(vault, visit, samplePhoto(), area, phase); }
+    const target=areas.includes(area)?area:firstUncapturedArea(areas,photos,phase);
+    if(!target)throw new FieldError('CAPTURE_AREAS_INVALID');
+    if(target!==area)setArea(target);
+    if (Platform.OS === 'web') { await persistCapture(vault, visit, samplePhoto(), target, phase); }
     else if (gallery) {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: false, exif: false, quality: 1 });
-      if (result.canceled) return;
-      const asset = result.assets[0]; if (!asset) return;
-      await persistCapture(vault, visit, asset, area, phase);
+      // exif is read only for the original capture time; the stored JPEG is re-encoded without EXIF.
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: GALLERY_BATCH, orderedSelection: true, exif: true, quality: 1 });
+      if (result.canceled || !result.assets.length) return;
+      const room = LIMITS.photos - photos.length;
+      if (room <= 0) throw new FieldError('PHOTO_LIMIT');
+      const assets = result.assets.slice(0, room);
+      let current = visit, saved = 0;
+      try {
+        for (const asset of assets) {
+          setBusyLabel(`사진첩 사진을 저장하고 있습니다 ${saved + 1}/${assets.length}장`);
+          await persistCapture(vault, current, asset, target, phase, exifCapturedAt(asset.exif));
+          saved++;
+          // Each saved photo advances the visit revision; the next save must expect it.
+          current = (await vault.load()).visits.find(v => v.id === visit.id) ?? current;
+        }
+      } catch (error) {
+        await refresh();
+        if (!saved) throw error;
+        notify(`${saved}장을 저장했고 ${assets.length - saved}장은 저장하지 못했습니다. ${safeMessage(error)}`, true); return;
+      }
+      if (assets.length > 1 || result.assets.length > assets.length) {
+        await refresh(); setLastArea(target);
+        notify(`사진첩 사진 ${saved}장을 ${catalog(visit.job.kind).find(item => item.key === target)?.label || '현재 구역'} ${phaseLabel[phase]}에 저장했습니다.${result.assets.length > assets.length ? ` 한 작업은 ${LIMITS.photos}장까지라 ${result.assets.length - assets.length}장은 넣지 않았습니다.` : ''}`, result.assets.length > assets.length);
+        return;
+      }
     } else {
       if (!cameraReady || !camera.current) return;
       const result = await camera.current.takePictureAsync({ quality: 1, exif: false, shutterSound: true });
       if (!result) return;
-      await persistCapture(vault, visit, result, area, phase);
+      await persistCapture(vault, visit, result, target, phase);
     }
-    const updated=await refresh();setLastArea(area);
-    const next=nextUncapturedArea(areas,updated?.photos.filter(p=>p.visitId===visit.id)||photos,phase,area);
+    const updated=await refresh();setLastArea(target);
+    const next=nextUncapturedArea(areas,updated?.photos.filter(p=>p.visitId===visit.id)||photos,phase,target);
     if(next)setArea(next);
     notify(Platform.OS === 'web' ? '합성 사진을 추가했습니다. 브라우저를 새로고침하면 초기화됩니다.' : next?'사진을 저장하고 다음 구역으로 이동했습니다.':'사진을 기기에 저장했습니다.');
   }
@@ -231,6 +276,14 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if (!vault || !visit || !photo) return;
     await vault.editPhoto({ ...photo, ...patch }, visit.revision); await refresh(); notify('사진 분류를 저장했습니다. 보고서 검토는 다시 확인해 주세요.');
   }
+  function confirmDelete(target: Photo) {
+    const run = () => void perform(async () => {
+      if (!vault || !visit) return;
+      await vault.deletePhoto(target.id, visit.revision); setPhotoId(''); setCaption(''); await refresh(); notify('사진을 기기에서 삭제했습니다. 보고서 검토는 다시 확인해 주세요.');
+    });
+    if (Platform.OS === 'web') { run(); return; }
+    Alert.alert('사진 삭제', '이 사진을 기기에서 지울까요? 아직 서버로 보내지 않은 사진이라 되돌릴 수 없습니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: run }]);
+  }
   function choosePhoto(p: Photo) { if (captionDirty) { notify('사진 설명을 저장한 뒤 다른 사진을 선택해 주세요.', true); return; } setPhotoId(p.id); setCaption(p.caption); }
   const pending = workspace.photos.filter(p => p.state !== 'ready').length;
   const title: Record<Screen, string> = { jobs: '오늘의 현장', 'capture-setup':'촬영할 구역 선택', capture: '작업사진 촬영', photos: '사진 확인', report: '작업 결과보고서', pdf: '보고서 내용 확인', send: '보고서 발송', sync: '기기 보관함', settings: '설정·연결' };
@@ -256,7 +309,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           <Text style={s.tag}>{job.kind === 'common' ? '공용부청소' : '입주청소'}</Text><Text style={s.cardTitle}>{job.title}</Text><Text style={s.muted}>{job.address}</Text>
           <Text style={s.body}>오늘 보관 사진 {workspace.photos.filter(p => workspace.visits.some(v => v.id === p.visitId && v.job.id === job.id && v.job.workDate===job.workDate)).length}장</Text>
           <Button label={workspace.visits.some(v => v.job.id === job.id && v.job.workDate===job.workDate) ? '오늘 작업 이어하기' : '오늘 작업 시작'} onPress={() => void perform(() => openJob(job))} disabled={busy} />
-        </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>{setSelected(v.id);setScreen('report');setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);}}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
+        </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>beginVisit(v,workspace.photos.filter(p=>p.visitId===v.id),'report')}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
         {['capture-setup', 'capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
         {screen === 'capture-setup' && visit && <>
           <Text style={s.subtitle}>이 현장에서 촬영할 구역을 골라 주세요. 선택한 구역을 차례대로 작업 전과 후에 각각 촬영합니다.</Text>
@@ -291,20 +344,21 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           {phase==='after'&&!photos.some(p=>p.itemKey===area&&p.phase==='before')&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
           {phase==='before'&&<Button label="작업 후 촬영 시작" secondary disabled={busy} onPress={()=>switchPhase('after')} />}
           <Button label="촬영 구역 변경" secondary disabled={busy} onPress={()=>{setPlannedAreas(initialCaptureAreas(visit,photos));setCameraReady(false);setScreen('capture-setup');}} />
-          {Platform.OS !== 'web' && <Button label="사진첩에서 한 장 선택" secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
+          {Platform.OS !== 'web' && <Button label={`사진첩에서 선택 (최대 ${GALLERY_BATCH}장)`} secondary disabled={busy} onPress={() => void perform(() => capture(true))} />}
           <Button label={`사진 ${photos.length}장 확인`} secondary onPress={() => navigate('photos')} />
           <Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} secondary disabled={!photos.length||busy} onPress={finishCaptureRequested} />
           <Note>사진을 찍어도 작업 완료로 처리하지 않습니다. 촬영 후 보고서에서 항목 상태를 확인해 주세요.</Note>
         </>}
         {screen === 'photos' && visit && <>
           {!photos.length && <Note>아직 사진이 없습니다. 촬영 탭에서 사진을 추가해 주세요.</Note>}
-          <View style={s.wrap}>{photos.map((p, i) => <Chip key={p.id} label={`${i + 1} · ${phaseLabel[p.phase]}`} active={photoId === p.id} onPress={() => choosePhoto(p)} />)}</View>
+          <View style={s.wrap}>{photos.map((p, i) => <Chip key={p.id} label={`${i + 1} · ${catalog(visit.job.kind).find(item=>item.key===p.itemKey)?.label || p.itemKey} ${phaseLabel[p.phase]}${p.included?'':' · 제외'}`} active={photoId === p.id} onPress={() => choosePhoto(p)} />)}</View>
           {photo && <View style={s.card}><PhotoImage vault={vault} photo={photo} /><Text style={s.tag}>{stateLabel[photo.state]}</Text>
             <Text style={s.label}>구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={photo.itemKey === item.key} onPress={() => void perform(() => updatePhoto({ itemKey: item.key }))} />)}</View>
             <View style={s.wrap}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={photo.phase === p} onPress={() => void perform(() => updatePhoto({ phase: p }))} />)}</View>
             <View style={s.between}><Text style={s.label}>보고서에 포함</Text><Switch accessibilityLabel="보고서에 사진 포함" value={photo.included} onValueChange={included => void perform(() => updatePhoto({ included }))} /></View>
             <TextInput accessibilityLabel="사진 설명" editable={!busy} placeholder="고객에게 보여도 되는 사진 설명" value={caption} onChangeText={setCaption} maxLength={120} style={s.input} />
             <Button label="사진 설명 저장" secondary disabled={busy} onPress={() => void perform(() => updatePhoto({ caption }))} />
+            {canDeletePhoto(photo) ? <Button label="이 사진 삭제" secondary disabled={busy} onPress={() => confirmDelete(photo)} /> : <Note>서버로 보내기 시작한 사진은 지울 수 없습니다. 필요 없으면 '보고서에 포함'을 끄세요.</Note>}
           </View>}<Button label="촬영 계속하기" secondary onPress={() => navigate('capture')} />
         </>}
         {screen === 'report' && visit && <>

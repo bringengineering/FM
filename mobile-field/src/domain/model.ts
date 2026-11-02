@@ -20,6 +20,7 @@ export interface Vault {
   saveVisit(visit: Visit, expectedRevision: number | null): Promise<void>;
   savePhoto(photo: Photo, bytes: Uint8Array, expectedVisitRevision: number): Promise<void>;
   editPhoto(photo: Photo, expectedVisitRevision: number): Promise<void>;
+  deletePhoto(photoId: string, expectedVisitRevision: number): Promise<void>;
   prepareTransfer(photoId: string): Promise<Photo>;
   linkRevision?(visitId: string, revision: number, photoIds: string[]): Promise<void>;
   updateTransfer(photoId: string, patch: Pick<Photo, 'state' | 'receivedBytes' | 'uploadId' | 'errorCode'>): Promise<void>;
@@ -38,6 +39,21 @@ export function assertPhoto(photo: Photo, bytes?: Uint8Array): void {
     || photo.width <= 0 || photo.height <= 0 || photo.width * photo.height > LIMITS.pixels
     || photo.caption.length > 120 || photo.itemKey.length > 40) throw new FieldError('PHOTO_INVALID');
   if (bytes && (bytes.byteLength !== photo.bytes || bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255)) throw new FieldError('PHOTO_INVALID');
+}
+// Vault row ids are random UUIDs. Every screen, the upload queue and the
+// reference "before" photo must follow capture order instead.
+export function orderPhotos(photos: Photo[]): Photo[] {
+  return [...photos].sort((a, b) => a.capturedAt < b.capturedAt ? -1 : a.capturedAt > b.capturedAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+// Latest work first, so "continue previous work" lists the most recent visit on top.
+export function orderVisits(visits: Visit[]): Visit[] {
+  return [...visits].sort((a, b) => a.job.workDate !== b.job.workDate ? (a.job.workDate < b.job.workDate ? 1 : -1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+// A photo may be removed only while it has never left the device. Once the
+// server has the visit's photo list, photos are append-only (the server
+// rejects a later list that drops one), so the UI offers "exclude" instead.
+export function canDeletePhoto(photo: Photo): boolean {
+  return photo.state === 'queued' && photo.receivedBytes === 0 && !photo.uploadId && photo.reservationRevision === undefined;
 }
 export function editVisit(visit: Visit, patch: Partial<Draft>, now: string): Visit {
   const draft = { ...visit.draft, ...patch, confirmedRevision: undefined };

@@ -1,4 +1,4 @@
-import { FieldError, assertOwner, assertPhoto, invalidateVisit, LIMITS, type Photo, type Vault, type Visit, type Workspace } from '../domain/model';
+import { FieldError, assertOwner, assertPhoto, canDeletePhoto, invalidateVisit, LIMITS, orderPhotos, orderVisits, type Photo, type Vault, type Visit, type Workspace } from '../domain/model';
 
 // Browser review uses ephemeral synthetic data only. It never writes company
 // photos to localStorage/IndexedDB or substitutes for encrypted native storage.
@@ -12,7 +12,7 @@ export async function openVault(uid: string): Promise<Vault> {
   const visitAt = (id: string, expected: number) => { const v = data.visits.find(v => v.id === id); if (!v || v.revision !== expected) throw new FieldError('REVISION_CONFLICT'); return v; };
   return {
     uid,
-    async load() { check(); return structuredClone(data); },
+    async load() { check(); const copy = structuredClone(data); return { visits: orderVisits(copy.visits), photos: orderPhotos(copy.photos) }; },
     async saveVisit(visit: Visit, expected: number | null) { check(); assertOwner(visit.ownerUid, uid);
       if (expected === null ? data.visits.some(v => v.id === visit.id) : !visitAt(visit.id, expected)) throw new FieldError('REVISION_CONFLICT');
       data.visits = [...data.visits.filter(v => v.id !== visit.id), structuredClone(visit)];
@@ -29,6 +29,11 @@ export async function openVault(uid: string): Promise<Vault> {
     },
     async editPhoto(photo, expected) { check(); assertOwner(photo.ownerUid, uid); const v = visitAt(photo.visitId, expected);
       data.photos = data.photos.map(p => p.id === photo.id ? { ...p, itemKey: photo.itemKey, phase: photo.phase, caption: photo.caption, included: photo.included } : p);
+      data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
+    },
+    async deletePhoto(id, expected) { check(); const p = data.photos.find(row => row.id === id); if (!p) throw new FieldError('PHOTO_NOT_FOUND');
+      assertOwner(p.ownerUid, uid); const v = visitAt(p.visitId, expected); if (!canDeletePhoto(p)) throw new FieldError('PHOTO_DELETE_REQUIRES_SERVER');
+      data.photos = data.photos.filter(row => row.id !== id); files.delete(id);
       data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
     },
     async updateTransfer() { throw new FieldError('SERVER_NOT_CONNECTED'); },

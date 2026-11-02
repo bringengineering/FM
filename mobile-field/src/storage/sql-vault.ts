@@ -1,4 +1,4 @@
-import { assertOwner, assertPhoto, FieldError, invalidateVisit, LIMITS, type Photo, type Vault, type Visit, type Workspace } from '../domain/model';
+import { assertOwner, assertPhoto, canDeletePhoto, FieldError, invalidateVisit, LIMITS, orderPhotos, orderVisits, type Photo, type Vault, type Visit, type Workspace } from '../domain/model';
 import { catalog } from '../domain/report';
 
 type Bind = string | number | Uint8Array | null;
@@ -57,7 +57,7 @@ export class SqlVault implements Vault {
     const visits = (await this.db.getAllAsync<{ body: string }>('SELECT body FROM visits ORDER BY id')).map(row => JSON.parse(row.body) as Visit);
     const photos = (await this.db.getAllAsync<{ body: string }>('SELECT body FROM photos ORDER BY id')).map(row => JSON.parse(row.body) as Photo);
     [...visits, ...photos].forEach(row => assertOwner(row.ownerUid, this.uid));
-    return { visits, photos };
+    return { visits: orderVisits(visits), photos: orderPhotos(photos) };
   }); }
   saveVisit(visit: Visit, expected: number | null): Promise<void> { return this.run(async () => {
     assertOwner(visit.ownerUid, this.uid);
@@ -102,6 +102,17 @@ export class SqlVault implements Vault {
       if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && (photo.itemKey!==previous.itemKey||photo.phase!==previous.phase)) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
       const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption };
       await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?', JSON.stringify(updated), photo.id);
+      await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
+    });
+  }); }
+  deletePhoto(id: string, expected: number): Promise<void> { return this.run(async () => {
+    await this.transaction(async tx => {
+      const row = await tx.getFirstAsync<{ body: string }>('SELECT body FROM photos WHERE id = ?', id);
+      if (!row) throw new FieldError('PHOTO_NOT_FOUND');
+      const previous: Photo = JSON.parse(row.body); assertOwner(previous.ownerUid, this.uid);
+      const visit = await this.visit(tx, previous.visitId, expected);
+      if (!canDeletePhoto(previous)) throw new FieldError('PHOTO_DELETE_REQUIRES_SERVER');
+      await tx.runAsync('DELETE FROM photos WHERE id = ?', id);
       await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
     });
   }); }
