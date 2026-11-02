@@ -342,3 +342,10 @@ test("건물 월간보고서에 그 달 격주 정기 관리 요약이 들어간
   assert.match(html, /격주 정기 관리/);
   assert.match(html, /2026년 10월 2차/);
 });
+
+test("발송·열람 시각은 한국 날짜로 센다 — 새벽에 보낸 것이 전날로 보이지 않는다", () => {
+  assert.equal(P.kstDay("2026-11-02T17:30:00Z"), "2026-11-03");
+  assert.equal(P.kstTime("2026-11-02T17:30:00Z"), "2026-11-03 02:30");
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-02T17:30:00Z", phoneTail: "3076" }, "2026-11-03").label, "미열람 · 오늘 발송");
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-02T17:30:00Z", phoneTail: "3076", firstViewedAt: "2026-11-02T18:00:00Z", viewCount: 1 }, "2026-11-03").label, "열람함 11. 3.(화)");
+});

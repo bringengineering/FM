@@ -252,7 +252,7 @@
         title: resend ? "이미 보낸 보고서입니다. 다시 보낼까요?" : "정기 관리보고서를 알림톡으로 보낼까요?",
         description: `${details.buildingAddress} 건물주님, ${details.workName} 결과 보고서가 발행되었습니다. (7일 열람 링크)`,
         target: `${recipient.name || "건물주"} · ${masked}`,
-        warning: resend ? `${(report.delivery.sentAt || "").slice(0, 10)}에 이미 보냈습니다. 다시 보내면 같은 분께 한 번 더 갑니다.` : "건물주에게 실제 알림톡이 발송됩니다.",
+        warning: resend ? `${P().kstDay(report.delivery.sentAt)}에 이미 보냈습니다. 다시 보내면 같은 분께 한 번 더 갑니다.` : "건물주에게 실제 알림톡이 발송됩니다.",
         confirmLabel: resend ? "다시 보내기" : "알림톡 발송",
       });
       if (!ok) return;
@@ -449,7 +449,7 @@
       return `<form class="office-panel pr-editor" data-pr-form onsubmit="return false">
         <header><div><span>BUILDING CARE REPORT</span><h3>${esc(draft.buildingName || targetName(draft))} · ${esc(core.periodLabel(draft.period))}</h3><small>${esc(period ? `${period.from} ~ ${period.to}` : "")} · 문서번호 ${esc(core.documentNo(draft))}</small></div>
           <div class="pr-actions"><button type="button" class="secondary-button" data-pr-close>목록으로</button><button type="button" class="secondary-button" data-pr-save${busy ? " disabled" : ""}>${state.busy === "save" ? "저장 중…" : "저장"}</button><button type="button" class="${state.admin ? "secondary-button" : "primary-button"}" data-pr-export${busy || blockers.length ? " disabled" : ""}>${state.busy === "export" ? "PDF 만드는 중…" : "건물주용 PDF"}</button>${state.admin ? `<button type="button" class="primary-button" data-pr-kakao${busy || blockers.length ? " disabled" : ""}>${state.busy === "kakao" ? "보내는 중…" : draft.delivery ? "알림톡 다시 보내기" : "알림톡 보내기"}</button>` : ""}</div></header>
-        ${draft.delivery ? `<div class="info-box pr-sent">${esc((draft.delivery.sentAt || "").slice(0, 16).replace("T", " "))} 건물주에게 알림톡을 보냈습니다 (끝자리 ${esc(draft.delivery.phoneTail)}).</div>` : ""}
+        ${draft.delivery ? `<div class="info-box pr-sent">${esc(P().kstTime(draft.delivery.sentAt))} 건물주에게 알림톡을 보냈습니다 (끝자리 ${esc(draft.delivery.phoneTail)}).</div>` : ""}
         ${blockers.length ? `<div class="info-box pr-blockers" role="status"><b>PDF 전에 할 일 ${blockers.length}가지</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>` : `<div class="info-box pr-ready">건물주에게 낼 준비가 됐습니다.</div>`}
         <section><h4>1. 공용부 청소 (자동으로 모음)</h4>
           ${allCleanings.length ? `<ul class="pr-cleanings">${allCleanings.map(row => `<li><label><input type="checkbox" data-pr-cleaning value="${esc(row.id)}"${chosen.has(row.id) ? " checked" : ""}> <b>${esc(core.dateLabel(row.workDate))}</b> · ${esc(core.weekOfMonth(row.workDate))} · 사진 ${root.BringWorkReportCore.photoCount(row)}장 ${row.workerName ? `· ${esc(row.workerName)}` : ""}</label></li>`).join("")}</ul>`

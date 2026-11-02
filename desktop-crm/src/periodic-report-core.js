@@ -192,14 +192,24 @@
     };
   }
 
+  // 저장 시각(UTC ISO)을 한국 날짜·시각으로. 새벽에 보낸 것이 전날로 보이지 않게 한다.
+  function kstDay(iso) {
+    const time = Date.parse(String(iso || ""));
+    return Number.isFinite(time) ? new Date(time + 9 * 3600000).toISOString().slice(0, 10) : "";
+  }
+  function kstTime(iso) {
+    const time = Date.parse(String(iso || ""));
+    return Number.isFinite(time) ? new Date(time + 9 * 3600000).toISOString().slice(0, 16).replace("T", " ") : "";
+  }
+
   // 열람 상태 한 줄. 7일 링크라 그 뒤에는 열 수 없다.
   function viewState(delivery, today) {
     const value = normalizeDelivery(delivery);
     if (!value) return null;
-    if (value.firstViewedAt) return { viewed: true, label: `열람함 ${dateLabel(value.firstViewedAt.slice(0, 10), false)}${value.viewCount > 1 ? ` · ${value.viewCount}회` : ""}` };
-    const sentDay = value.sentAt.slice(0, 10);
+    if (value.firstViewedAt) return { viewed: true, label: `열람함 ${dateLabel(kstDay(value.firstViewedAt), false)}${value.viewCount > 1 ? ` · ${value.viewCount}회` : ""}` };
+    const sentDay = kstDay(value.sentAt);
     const days = isDate(sentDay) && isDate(today) ? Math.round((Date.UTC(...today.split("-").map((n, i) => i === 1 ? n - 1 : +n)) - Date.UTC(...sentDay.split("-").map((n, i) => i === 1 ? n - 1 : +n))) / 86400000) : 0;
-    return { viewed: false, days, label: days >= 7 ? "미열람 · 링크 만료" : `미열람 · 발송 후 ${days}일`, followUp: days >= 2 };
+    return { viewed: false, days, label: days >= 7 ? "미열람 · 링크 만료" : days <= 0 ? "미열람 · 오늘 발송" : `미열람 · 발송 후 ${days}일`, followUp: days >= 2 };
   }
 
   const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
@@ -603,7 +613,7 @@
         buildingName: ordered.map(row => row.buildingName).filter(Boolean).pop() || "",
         reports: ordered.length,
         sent: sent.length,
-        lastSentAt: sent.length ? sent[sent.length - 1].delivery.sentAt.slice(0, 10) : "",
+        lastSentAt: sent.length ? kstDay(sent[sent.length - 1].delivery.sentAt) : "",
         openNow: ordered[ordered.length - 1].inspection.items.filter(item => ["watch", "fix"].includes(item.status)).length,
         repeated: repeated.sort((a, b) => b.count - a.count),
         avgFixDays: fixDays.length ? Math.round(fixDays.reduce((sum, value) => sum + value, 0) / fixDays.length) : null,
@@ -673,6 +683,8 @@
     normalizeDelivery,
     recipientFor,
     viewState,
+    kstDay,
+    kstTime,
     normalizeLinks,
     caseProgress,
     kakaoDetails,
