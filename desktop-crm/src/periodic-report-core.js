@@ -395,7 +395,13 @@
         date: value.inspection.date,
         dateLabel: dateLabel(value.inspection.date),
         inspectorName: value.inspection.inspectorName,
-        items: value.inspection.items.filter(item => item.status !== "na"),
+        // 관찰·조치 항목은 지난 점검의 같은 항목 사진을 같이 싣는다. 건물주가 변화(커졌는지,
+        // 고쳐졌는지)를 나란히 보게 하려는 것이다. 지난 보고서에 사진이 있을 때만.
+        items: value.inspection.items.filter(item => item.status !== "na").map(item => {
+          const before = previous && ["watch", "fix", "done"].includes(item.status)
+            ? normalizeReport(previous).inspection.items.find(row => row.key === item.key && row.photos.length && row.status !== "na") : null;
+          return before ? { ...item, previous: { date: normalizeReport(previous).inspection.date, dateLabel: dateLabel(normalizeReport(previous).inspection.date, false), status: before.status, note: before.note, photos: before.photos.slice(0, 1) } } : item;
+        }),
       },
       counts: counts(value),
       actions,
@@ -409,6 +415,50 @@
   // 건물·기간 하나에 보고서 하나. 같은 기간 것을 두 번 만들지 않게 찾는다.
   function findForPeriod(reports, target, periodKey) {
     return rows(reports).map(normalizeReport).find(row => row.period === periodKey && sameTarget(row, target)) || null;
+  }
+
+  // 청소 사진 중 점검 근거가 될 만한 후보. 점검 항목과 겹치는 구역(설비·분리수거장·배수·조명·
+  // 현관·창)을 먼저, 그다음 작업 후 사진을 고른다. 이미 점검에 붙은 사진은 빼고, 구역마다 한 장씩
+  // 돌려 가며 고른다 — 한 구역 사진만 몰리면 다른 항목 근거를 못 찾는다.
+  const EVIDENCE_AREAS = ["fixtures", "recycle", "drain", "lighting", "light", "entrance", "windows", "stairWindow", "glass", "walls", "rooftop", "parking", "handrail"];
+  function cleaningPhotoCandidates(cleanings, report) {
+    const used = new Set(normalizeReport(report).inspection.items.flatMap(item => item.photos.map(photo => photo.id)));
+    const groups = new Map();
+    rows(cleanings).forEach(row => rows(row.items).forEach(item => {
+      const photos = [...rows(item.after), ...rows(item.during), ...rows(item.before)].filter(photo => photo && photo.id && !used.has(photo.id));
+      if (!photos.length) return;
+      const rank = EVIDENCE_AREAS.indexOf(item.key);
+      const key = `${rank < 0 ? 99 : rank}:${item.key}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(...photos.map(photo => ({ id: photo.id, driveFileId: photo.driveFileId || photo.id, webViewLink: photo.webViewLink || "", caption: "", area: item.label || item.key })));
+    }));
+    const ordered = [...groups.entries()].sort((a, b) => Number(a[0].split(":")[0]) - Number(b[0].split(":")[0])).map(([, list]) => list);
+    const picked = [];
+    for (let round = 0; picked.length < 24 && ordered.some(list => list[round]); round += 1) {
+      ordered.forEach(list => { if (list[round] && picked.length < 24) picked.push(list[round]); });
+    }
+    const seen = new Set();
+    return picked.filter(photo => !seen.has(photo.id) && seen.add(photo.id));
+  }
+
+  // AI 제안을 화면이 쓸 모양으로. 모르는 항목·모르는 상태는 버리고, 청소 사진 제안은 확신이
+  // 낮으면 버린다(근거 사진 추천이 틀리면 엉뚱한 사진이 건물주 보고서에 실린다).
+  function normalizeSuggestions(reviews, photosById, mode) {
+    const keys = new Set(INSPECTION_ITEMS.map(item => item.key));
+    return rows(reviews).map(review => {
+      const photo = photosById.get(review && review.id);
+      if (!photo || !keys.has(review.itemKey)) return null;
+      const status = ["good", "watch", "fix"].includes(review.status) ? review.status : "";
+      const confidence = Number(review.confidence) || 0;
+      if (mode === "cleaning" && confidence < 0.6) return null;
+      if (mode === "inspection" && !status) return null;
+      return {
+        photo: { id: photo.id, driveFileId: photo.driveFileId || photo.id, webViewLink: photo.webViewLink || "", caption: "" },
+        itemKey: review.itemKey,
+        label: (INSPECTION_ITEMS.find(item => item.key === review.itemKey) || {}).label || "",
+        status, note: text(review.note, 60), confidence, area: text(photo.area, 60),
+      };
+    }).filter(Boolean);
   }
 
   // 이번에 낼 차례인 보고서들. 오늘 기준으로 막 끝난 기간(어제까지 끝난 기간)에 공용부
@@ -493,6 +543,8 @@
     buildView,
     findForPeriod,
     dueReports,
+    cleaningPhotoCandidates,
+    normalizeSuggestions,
     draftFor,
     sortReports,
     photoIds,

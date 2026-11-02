@@ -204,6 +204,7 @@ function aiGatewayUrlForTask(task) {
     : CRM_AI_GATEWAY_URL;
 }
 const CRM_AI_PHOTO_CLASSIFY_URL = new URL("/v1/photo-classify", CRM_AI_GATEWAY_URL).href;
+const CRM_AI_INSPECTION_REVIEW_URL = new URL("/v1/inspection-review", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_MONTHLY_REPORT_PHOTO_SELECT_URL = new URL("/v1/monthly-report-photo-select", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
@@ -4868,6 +4869,61 @@ async function buildPeriodicReportPdf(reportId, company, session) {
   const bytes = await createReportPdfBytes(html, "periodic-report");
   session.check();
   return { ok: true, saved, report, view, store, bytes, photos: Object.keys(images).length };
+}
+
+// 정기점검 AI 제안. 사람이 고르는 것을 돕기만 한다 — 제안을 보고 '적용' 을 눌러야 들어간다.
+//  inspection: 점검 항목에 붙인 사진을 보고 상태·한 줄 메모를 제안한다.
+//  cleaning:   그 기간 청소 사진 중 점검 근거로 쓸 만한 것(우편함·소화기·배수로 등)을 고른다.
+// 사진은 화면이 아니라 서버에 저장된 보고서·청소 기록에서 정한다. 축소본만 보낸다.
+async function reviewPeriodicInspectionPhotos(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) return { ok: false, code: "ACCESS_DENIED", error: "마케팅 담당자는 사용할 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const mode = options.mode === "cleaning" ? "cleaning" : "inspection";
+  if (!driveSessionView().connected) return { ok: false, code: "DRIVE_REQUIRED", error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요." };
+  const guard = remoteClient.captureSessionGuard();
+  const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]);
+  remoteClient.assertSessionGuardActive(guard);
+  const report = periodic.reports.find(row => row.id === String(options.reportId || ""));
+  if (!report) return { ok: false, code: "NOT_FOUND", error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요." };
+  const candidates = mode === "inspection"
+    ? report.inspection.items.flatMap(item => item.photos.map(photo => ({ ...photo, hint: item.key }))).slice(0, 12)
+    : PeriodicReportCore.cleaningPhotoCandidates(PeriodicReportCore.cleaningsFor(works.reports, report), report).slice(0, 12);
+  if (!candidates.length) return { ok: false, code: "NO_PHOTOS", error: mode === "inspection" ? "점검 항목에 붙인 사진이 없습니다." : "이 기간 청소 사진이 없습니다." };
+  const images = [];
+  for (const photo of candidates) {
+    try {
+      const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId || photo.id });
+      if (!fetched || !fetched.content) continue;
+      const original = Buffer.from(fetched.content);
+      const heic = HeicJpegConverter.looksLikeHeic(original) || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""));
+      images.push({ id: photo.id, dataUrl: safeClassificationJpeg(heic ? await HeicJpegConverter.convertToJpeg(original) : original), ...(photo.hint ? { hint: photo.hint } : {}) });
+    } catch (_error) { /* 못 읽은 사진은 제안에서 빠진다. */ }
+  }
+  remoteClient.assertSessionGuardActive(guard);
+  if (!images.length) return { ok: false, code: "PHOTO_PREVIEW_FAILED", error: "AI에 보낼 사진 축소본을 만들지 못했습니다." };
+  const idToken = await remoteClient.ensureIdToken(false);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  let value;
+  try {
+    const response = await net.fetch(CRM_AI_INSPECTION_REVIEW_URL, {
+      method: "POST", headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ images }), cache: "no-store", redirect: "error", signal: controller.signal,
+    });
+    const text = await response.text();
+    if (text.length > 256 * 1024) throw new Error("too large");
+    value = JSON.parse(text);
+    if (!response.ok || !value || value.ok !== true || !Array.isArray(value.reviews)) {
+      return { ok: false, code: value && value.code || "AI_TEMPORARY_FAILURE", error: value && value.code === "RATE_LIMITED" ? "AI 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요." : "AI 점검 제안을 받지 못했습니다." };
+    }
+  } catch (_error) {
+    return { ok: false, code: "AI_TEMPORARY_FAILURE", error: "AI 점검 제안을 받지 못했습니다." };
+  } finally { clearTimeout(timer); }
+  remoteClient.assertSessionGuardActive(guard);
+  const byId = new Map(candidates.map(photo => [photo.id, photo]));
+  const suggestions = PeriodicReportCore.normalizeSuggestions(value.reviews, byId, mode);
+  return { ok: true, mode, suggestions, reviewed: images.length };
 }
 
 async function exportPeriodicReport(input) {
@@ -9815,6 +9871,7 @@ secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input)
 secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));
+secureCanonicalHandle("crm:periodic-inspection-review", input => reviewPeriodicInspectionPhotos(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

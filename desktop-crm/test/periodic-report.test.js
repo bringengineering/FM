@@ -220,3 +220,60 @@ test("격주 차례: 막 끝난 기간에 청소 기록이 있는 곳마다 상�
   assert.equal(P.validateReport({ ...draft, inspection: { ...draft.inspection, confirmed: true } }, works2).ok, true);
   assert.equal(P.normalizeReport({ id: "pr_old01", buildingId: "b1", period: "2026-10-2", inspection: {} }).inspection.confirmed, true);
 });
+
+test("AI 점검: 청소 사진 후보는 점검과 겹치는 구역부터 고르고, 제안은 알려진 항목·확신 높은 것만 남긴다", () => {
+  const cleanings = [{ id: "w", items: [
+    { key: "stairs", label: "계단", after: [{ id: "s1" }, { id: "s2" }] },
+    { key: "fixtures", label: "공용 설비", after: [{ id: "f1" }], before: [{ id: "f0" }] },
+    { key: "recycle", label: "분리수거장", during: [{ id: "r1" }] },
+  ] }];
+  const report = { id: "pr_ai001", buildingId: "b1", period: "2026-10-2", inspection: { items: [{ key: "extinguisher", photos: [{ id: "f0" }] }] } };
+  const picked = P.cleaningPhotoCandidates(cleanings, report).map(photo => photo.id);
+  assert.deepEqual(picked.slice(0, 3), ["f1", "r1", "s1"]);
+  assert.ok(!picked.includes("f0"));
+  const byId = new Map([["f1", { id: "f1", area: "공용 설비" }], ["r1", { id: "r1" }], ["s1", { id: "s1" }]]);
+  const out = P.normalizeSuggestions([
+    { id: "f1", itemKey: "extinguisher", status: "good", note: "압력계 정상 범위", confidence: 0.9 },
+    { id: "r1", itemKey: "recycle", status: "fix", note: "혼합 배출", confidence: 0.4 },
+    { id: "s1", itemKey: "kitchen", status: "good", note: "", confidence: 0.9 },
+    { id: "nope", itemKey: "panel", status: "good", note: "", confidence: 0.9 },
+  ], byId, "cleaning");
+  assert.deepEqual(out.map(row => [row.photo.id, row.itemKey, row.label, row.area]), [["f1", "extinguisher", "소화기", "공용 설비"]]);
+  const insp = P.normalizeSuggestions([{ id: "f1", itemKey: "panel", status: "unknown", note: "", confidence: 0.9 }], byId, "inspection");
+  assert.equal(insp.length, 0);
+});
+
+test("AI 점검 제안은 서버 보고서 기준·축소본만 보내고 Drive 연결을 먼저 본다", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const body = main.slice(main.indexOf("async function reviewPeriodicInspectionPhotos"), main.indexOf("async function exportPeriodicReport"));
+  assert.ok(body.indexOf("DRIVE_REQUIRED") < body.indexOf("loadPeriodicReports"));
+  assert.match(body, /safeClassificationJpeg/);
+  assert.match(body, /CRM_AI_INSPECTION_REVIEW_URL/);
+  assert.match(main, /new URL\("\/v1\/inspection-review", CRM_AI_GATEWAY_URL\)/);
+  const MutationPolicy = require("../src/mutation-policy");
+  assert.equal(MutationPolicy.classification("crm:periodic-inspection-review"), "control");
+});
+
+test("관찰·조치 항목은 지난 점검의 같은 항목 사진과 나란히 싣는다", () => {
+  const works3 = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", label: "계단", status: "recorded", after: [{ id: "c1" }] }] }];
+  const previous = { id: "pr_prev9", buildingId: "b1", period: "2026-10-1", inspection: { date: "2026-10-12", items: [
+    { key: "wallCrack", status: "watch", note: "처음 확인", photos: [{ id: "old1" }] },
+    { key: "mailbox", status: "good", photos: [{ id: "old2" }] },
+  ] } };
+  const report = { id: "pr_cmp01", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28", items: [
+    { key: "wallCrack", status: "watch", note: "변화 없음", photos: [{ id: "new1" }] },
+    { key: "mailbox", status: "good", photos: [{ id: "new2" }] },
+  ] } };
+  const view = P.buildView(report, works3, { previousReport: previous });
+  const crack = view.inspection.items.find(item => item.key === "wallCrack");
+  assert.equal(crack.previous.photos[0].id, "old1");
+  assert.equal(crack.previous.dateLabel, "10. 12.(월)");
+  assert.equal(view.inspection.items.find(item => item.key === "mailbox").previous, undefined);
+  assert.deepEqual(periodicReportPdfPhotos(view).map(photo => photo.id).sort(), ["c1", "new1", "new2", "old1"]);
+  const images = Object.fromEntries(["c1", "new1", "new2", "old1"].map(id => [id, PIXEL]));
+  const html = createPeriodicReportHtml(view, { images });
+  assert.match(html, /지난 점검과 비교/);
+  assert.match(html, /지난번: 처음 확인 · 이번: 변화 없음/);
+});
