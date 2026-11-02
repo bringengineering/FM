@@ -7,6 +7,7 @@ import { fieldReportFacts, verifyFieldAppCheck, fieldPasswordToken } from "./fie
 export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
+import { MAP_PATH, mapConfigured, mapRequest } from "./vworld-map.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
 import { readMonthlyReportPhotoSelectionPayload, selectMonthlyReportPhotos } from "./monthly-report-photo-select.js";
 export { WallboardDevices } from "./wallboard-devices.js";
@@ -431,12 +432,13 @@ export function createWorker(options = {}) {
           return result;
         }),
       });
+      if (url.pathname === MAP_PATH) return mapRequest(request, env, { cors, fetchImpl, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl, true) });
       if (url.pathname.startsWith('/tv/api/')) return wallboardWebRequest(request, env);
       if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true",
           weeklyReportDelivery: Boolean(env.WEEKLY_REPORT_DELIVERIES && env.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN && env.WEEKLY_REPORT_TELEGRAM_CHAT_ID),
-          morningTelegram: await morningSourceReady(env) });
+          morningTelegram: await morningSourceReady(env), contractMap: mapConfigured(env) });
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);

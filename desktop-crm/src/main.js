@@ -16,6 +16,7 @@ const { createBuildingReportWriter } = require("./local-gemini-building-report")
 const { selectMonthlyReportPhotosWithGateway, MAX_IMAGES: MAX_MONTHLY_REPORT_PHOTOS } = require("./ai-monthly-report-photo-client");
 const Core = require("./core");
 const { createService: createContractBuildingMapService } = require("./contract-building-map-service");
+const { createMapGateway } = require("./contract-building-map-gateway");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
 const OfficeRfidAttendanceCore = require("./office-rfid-attendance-core");
@@ -205,6 +206,7 @@ const CRM_AI_MONTHLY_REPORT_PHOTO_SELECT_URL = new URL("/v1/monthly-report-photo
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
+const CRM_MAP_GATEWAY_URL = new URL("/v1/map", CRM_AI_GATEWAY_URL).href;
 // OAuth client IDs are public identifiers, not secrets. A Desktop-app client is
 // still supplied outside source so each installation can use the company Google
 // Cloud project without ever bundling a client secret.
@@ -5694,6 +5696,11 @@ function contractBuildingMap() {
     },
     store: () => readStore(),
     fetch: (url, options) => net.fetch(url, options),
+    // Company-wide key held by crm-ai-worker; used when this PC has no key of its own.
+    gateway: input => {
+      if (!remoteClient || localTestMode) throw 'CONFIG';
+      return createMapGateway({ endpoint: CRM_MAP_GATEWAY_URL, idToken: () => remoteClient.ensureIdToken(false), fetchImpl: (url, options) => net.fetch(url, options) })(input);
+    },
     load: async () => {
       try {
         const info = await fs.stat(target()); if (info.size > 16384) throw 'STORAGE';
