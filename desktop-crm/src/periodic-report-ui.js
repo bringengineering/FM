@@ -11,12 +11,26 @@
     const P = () => root.BringPeriodicReportCore;
     const state = {
       loading: false, loaded: false, error: "", reports: [], works: [], canWork: false,
-      draft: null, busy: "", newBuildingId: "", newPeriod: "",
+      draft: null, loadedAt: 0, busy: "", newTarget: "", newPeriod: "",
     };
 
     const buildings = () => (getStore().buildings || []).filter(item => item && item.id && !item.archivedAt && !item.deletedAt);
     const buildingName = id => (buildings().find(item => item.id === id) || {}).name || "건물 미지정";
     const buildingAddress = id => { const b = buildings().find(item => item.id === id) || {}; return b.roadAddress || b.address || b.jibunAddress || ""; };
+    // 건물로 묶이지 않은 고객 단위 청소 보고서도 있다. 그런 고객만 고를 수 있게 둔다 —
+    // 고객 전체를 늘어놓으면 청소 기록이 없는 고객을 골라 빈 보고서를 만든다.
+    const customers = () => {
+      const ids = new Set(state.works.filter(row => P().CLEANING_KINDS.includes(row.kind) && !row.buildingId && row.customerId).map(row => row.customerId));
+      return (getStore().customers || []).filter(item => item && ids.has(item.id) && !item.archivedAt && !item.deletedAt && item.deleted !== true);
+    };
+    const targetName = report => report.buildingId ? buildingName(report.buildingId) : ((customers().find(item => item.id === report.customerId) || {}).name || "고객");
+    const targetOf = value => {
+      const match = /^(b|c):(.+)$/.exec(String(value || ""));
+      if (!match) return null;
+      if (match[1] === "b") return { buildingId: match[2], buildingName: buildingName(match[2]), siteAddress: buildingAddress(match[2]) };
+      const customer = customers().find(item => item.id === match[2]);
+      return customer ? { buildingId: "", customerId: customer.id, buildingName: customer.name || "", siteAddress: customer.address || "" } : null;
+    };
 
     function periodChoices() {
       const core = P();
@@ -38,6 +52,7 @@
         state.works = Array.isArray(works && works.reports) ? works.reports : [];
         state.canWork = periodic && periodic.canWork === true;
         state.loaded = true;
+        state.loadedAt = Date.now();
       } catch (error) {
         state.error = (error && error.message) || "정기 관리보고서를 불러오지 못했습니다.";
       } finally {
@@ -54,16 +69,16 @@
 
     function openNew() {
       const core = P();
-      const buildingId = state.newBuildingId;
+      const target = targetOf(state.newTarget);
       const period = state.newPeriod || (periodChoices()[0] || {}).key;
-      if (!buildingId) return showToast("건물을 먼저 골라 주세요.", "error");
-      const existing = core.findForPeriod(state.reports, { buildingId }, period);
+      if (!target) return showToast("건물 또는 고객을 먼저 골라 주세요.", "error");
+      const existing = core.findForPeriod(state.reports, target, period);
       if (existing) { state.draft = existing; showToast("이 건물·기간 보고서가 이미 있어 그것을 열었습니다.", "info"); return render(); }
       const range = core.parsePeriod(period);
-      const cleanings = core.cleaningsFor(state.works, { buildingId, period });
+      const cleanings = core.cleaningsFor(state.works, { ...target, period });
       const lastCleaning = cleanings.length ? cleanings[cleanings.length - 1].workDate : "";
       state.draft = core.normalizeReport({
-        id: newId(), buildingId, buildingName: buildingName(buildingId), siteAddress: buildingAddress(buildingId), period,
+        id: newId(), ...target, period,
         // 점검은 보통 마지막 청소 날 같이 한다. 다르면 바꾸면 된다.
         inspection: { date: lastCleaning || (todayKey() <= range.to ? todayKey() : range.to), items: [] },
       });
@@ -202,7 +217,7 @@
         </tr>`;
       }).join("");
       return `<form class="office-panel pr-editor" data-pr-form onsubmit="return false">
-        <header><div><span>BUILDING CARE REPORT</span><h3>${esc(draft.buildingName || buildingName(draft.buildingId))} · ${esc(core.periodLabel(draft.period))}</h3><small>${esc(period ? `${period.from} ~ ${period.to}` : "")} · 문서번호 ${esc(core.documentNo(draft))}</small></div>
+        <header><div><span>BUILDING CARE REPORT</span><h3>${esc(draft.buildingName || targetName(draft))} · ${esc(core.periodLabel(draft.period))}</h3><small>${esc(period ? `${period.from} ~ ${period.to}` : "")} · 문서번호 ${esc(core.documentNo(draft))}</small></div>
           <div class="pr-actions"><button type="button" class="secondary-button" data-pr-close>목록으로</button><button type="button" class="secondary-button" data-pr-save${busy ? " disabled" : ""}>${state.busy === "save" ? "저장 중…" : "저장"}</button><button type="button" class="primary-button" data-pr-export${busy || blockers.length ? " disabled" : ""}>${state.busy === "export" ? "PDF 만드는 중…" : "건물주용 PDF"}</button></div></header>
         ${blockers.length ? `<div class="info-box pr-blockers" role="status"><b>PDF 전에 할 일 ${blockers.length}가지</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>` : `<div class="info-box pr-ready">건물주에게 낼 준비가 됐습니다.</div>`}
         <section><h4>1. 공용부 청소 (자동으로 모음)</h4>
@@ -230,14 +245,16 @@
       const core = P();
       const main = getMain();
       if (!core) { main.innerHTML = `<section class="operations-hero"><div><h2>정기 관리보고서</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-      if (!state.loaded && !state.loading && !state.error) { void load(); }
+      // 다른 PC·다른 화면에서 고친 보고서와 새로 저장된 청소 기록을 놓치지 않게,
+      // 목록을 볼 때 1분이 지났으면 다시 받는다. 작성 중에는 다시 받지 않는다.
+      if (!state.loading && !state.error && !state.draft && (!state.loaded || Date.now() - state.loadedAt > 60000)) { void load(); }
       const reports = core.sortReports(state.reports);
       const choices = periodChoices();
       const rows = reports.slice(0, 80).map(item => {
         const counts = core.counts(item);
         const cleanings = core.cleaningsFor(state.works, item).length;
         const ready = !core.blockers(item, state.works).length;
-        return `<tr><td><b>${esc(item.buildingName || buildingName(item.buildingId))}</b><small>${esc(item.siteAddress)}</small></td>
+        return `<tr><td><b>${esc(item.buildingName || targetName(item))}</b><small>${esc(item.siteAddress)}</small></td>
           <td><b>${esc(core.periodLabel(item.period))}</b><small>점검 ${esc(item.inspection.date || "미정")}</small></td>
           <td><b>${cleanings}회</b><small>공용부 청소</small></td>
           <td>${counts.fix ? `<span class="pr-badge pr-fix">조치 필요 ${counts.fix}</span>` : ""}${counts.watch ? ` <span class="pr-badge pr-watch">관찰 ${counts.watch}</span>` : ""}${!counts.fix && !counts.watch ? `<span class="pr-badge pr-good">이상 없음</span>` : ""}</td>
@@ -249,7 +266,7 @@
         </section>
         ${state.loading ? `<div class="info-box">불러오는 중…</div>` : state.error ? `<div class="info-box" style="color:#C6535F">${esc(state.error)}</div>` : ""}
         ${state.draft ? editor(core.normalizeReport(state.draft)) : state.canWork ? `<section class="office-panel pr-new"><header><div><span>NEW</span><h3>새 정기 관리보고서</h3></div></header>
-          <div class="pr-inline"><label>건물 <select data-pr-new-building><option value="">건물 선택</option>${buildings().map(b => `<option value="${esc(b.id)}"${b.id === state.newBuildingId ? " selected" : ""}>${esc(b.name || b.address || b.id)}</option>`).join("")}</select></label>
+          <div class="pr-inline"><label>건물·고객 <select data-pr-new-building><option value="">선택</option><optgroup label="건물">${buildings().map(b => `<option value="b:${esc(b.id)}"${`b:${b.id}` === state.newTarget ? " selected" : ""}>${esc(b.name || b.address || b.id)}</option>`).join("")}</optgroup>${customers().length ? `<optgroup label="건물 없는 고객 (청소 기록 있음)">${customers().map(c => `<option value="c:${esc(c.id)}"${`c:${c.id}` === state.newTarget ? " selected" : ""}>${esc(c.name || c.id)}</option>`).join("")}</optgroup>` : ""}</select></label>
           <label>기간 <select data-pr-new-period>${choices.map(p => `<option value="${p.key}"${p.key === state.newPeriod ? " selected" : ""}>${esc(core.periodLabel(p.key))} (${p.from.slice(5)} ~ ${p.to.slice(5)})</option>`).join("")}</select></label>
           <button type="button" class="primary-button" data-pr-new>작성 시작</button></div></section>` : ""}
         <section class="office-panel wr-history"><header><div><span>REPORTS</span><h3>정기 관리보고서</h3></div><small>최근 기간부터</small></header>
@@ -264,7 +281,7 @@
     function onChange(event) {
       if (!isActive()) return;
       const target = event.target;
-      if (target.matches("[data-pr-new-building]")) state.newBuildingId = target.value;
+      if (target.matches("[data-pr-new-building]")) state.newTarget = target.value;
       else if (target.matches("[data-pr-new-period]")) state.newPeriod = target.value;
       else if (target.closest("[data-pr-form]") && (target.type === "radio" || target.type === "checkbox" || target.name === "inspectionDate")) { readForm(); render(); }
     }
@@ -276,7 +293,7 @@
       event.preventDefault();
       if (el.hasAttribute("data-pr-new")) return openNew();
       if (el.hasAttribute("data-pr-edit")) { state.draft = state.reports.find(item => item.id === el.getAttribute("data-pr-edit")) || null; return render(); }
-      if (el.hasAttribute("data-pr-close")) { state.draft = null; return render(); }
+      if (el.hasAttribute("data-pr-close")) { state.draft = null; state.loadedAt = 0; return render(); }
       if (el.hasAttribute("data-pr-save")) return void save();
       if (el.hasAttribute("data-pr-export")) return void exportPdf("");
       if (el.hasAttribute("data-pr-export-id")) return void exportPdf(el.getAttribute("data-pr-export-id"));

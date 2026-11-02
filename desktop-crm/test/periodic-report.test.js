@@ -121,3 +121,30 @@ test("화면·IPC·권한 정책·DB 규칙에 연결돼 있다", () => {
   assert.equal(node[".write"], false);
   assert.match(node.$reportId[".validate"], /updatedBy'\)\.val\(\) === auth\.uid/);
 });
+
+test("Drive 가 없으면 서버 자료를 받기 전에 알리고, 건물 없는 고객도 대상으로 고를 수 있다", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const body = main.slice(main.indexOf("async function exportPeriodicReport"));
+  assert.ok(body.indexOf("DRIVE_REQUIRED") < body.indexOf("loadPeriodicReports"));
+  assert.match(body, /Promise\.all\(\[remoteClient\.loadPeriodicReports\(\)/);
+  const ui = fs.readFileSync(path.join(__dirname, "..", "src", "periodic-report-ui.js"), "utf8");
+  assert.match(ui, /건물 없는 고객/);
+  const customerReport = { id: "pr_cust01", customerId: "cus_a", period: "2026-10-2", inspection: { date: "2026-10-28" } };
+  const works = [
+    { id: "w1", buildingId: "", customerId: "cus_a", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", status: "recorded", after: [{ id: "x" }] }] },
+    { id: "w2", buildingId: "b9", customerId: "cus_a", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", status: "recorded", after: [{ id: "y" }] }] },
+  ];
+  assert.deepEqual(P.cleaningsFor(works, customerReport).map(row => row.id), ["w1"]);
+  assert.equal(P.validateDraft(customerReport).ok, true);
+});
+
+test("청소 내역의 수행 내용에는 안내문이 아니라 구역별 수행 범위가 들어간다", () => {
+  const letter = "안녕하십니까, 브링케어입니다.\n\n구역별 현장 사진을 정리하여 전달드립니다.\n\n브링케어 드림";
+  const works = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", summary: letter,
+    items: [{ key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소", status: "recorded", after: [{ id: "p" }] }] }];
+  const view = P.buildView({ id: "pr_x0001", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28" } }, works);
+  assert.equal(view.cleanings[0].work, "층별 계단·참의 오염 확인 및 청소");
+  assert.doesNotMatch(view.cleanings[0].work, /안녕하십니까/);
+});
