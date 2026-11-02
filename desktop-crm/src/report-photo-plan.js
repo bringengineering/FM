@@ -663,39 +663,63 @@
   // 사람이 누를 때만 하고, 결과는 화면에서 바로 고칠 수 있는 추천으로 둔다.
   // 사람이 이미 고른 단계, 원본 시각이 없는 사진, 간격이 작은 구역은 건드리지 않는다.
   const COMMON_SPLIT_GAP_MINUTES = 15;
+  // 공백 한쪽에 사진이 너무 적으면 그 공백은 '작업 전·후 사이' 가 아니라 따로 찍은
+  // 한두 장일 가능성이 크다. 양쪽 모두 2장 이상, 전체의 15% 이상일 때만 기준으로 쓴다.
+  function sessionCut(list, gap) {
+    const minimum = Math.max(2, Math.ceil(list.length * 0.15));
+    let cut = -1, widest = 0;
+    for (let index = 1; index < list.length; index += 1) {
+      const minutes = Capture.differenceMinutes(list[index - 1].captured, list[index].captured);
+      if (minutes >= gap && minutes > widest && index >= minimum && list.length - index >= minimum) { widest = minutes; cut = index; }
+    }
+    return cut < 0 ? null : { at: list[cut].captured.local, minutes: widest };
+  }
   function splitCommonByCaptureTime(plan, options) {
     const gap = Number(options && options.gapMinutes) > 0 ? Number(options.gapMinutes) : COMMON_SPLIT_GAP_MINUTES;
-    const groups = new Map();
+    const all = photoReviewRows(plan);
+    const visitOf = captured => `${captured.local.slice(0, 10)}|${captured.offset}`;
+    const byTime = (left, right) => left.captured.local.localeCompare(right.captured.local);
+    // 1) 같은 날 찍은 모든 사진(구역·단계 무관)의 흐름에서 작업 전 한 바퀴와 작업 후
+    //    한 바퀴 사이의 공백을 찾는다. 이미 짝이 정해진 사진도 흐름을 보는 데는 쓴다.
+    const visits = new Map();
+    for (const row of all) {
+      const captured = Capture.normalize(row.file.captureTime);
+      if (!captured) continue;
+      if (!visits.has(visitOf(captured))) visits.set(visitOf(captured), []);
+      visits.get(visitOf(captured)).push({ id: row.id, captured });
+    }
+    const cuts = new Map([...visits].map(([visit, list]) => [visit, sessionCut(list.sort(byTime), gap)]));
+    // 2) 나눌 대상: 구역이 정해졌고, 아직 미분류이며, 사람이 고르지 않은 사진.
+    const targets = new Map();
     let undated = 0;
-    for (const row of photoReviewRows(plan)) {
+    for (const row of all) {
       if (!row.itemKey || row.phase !== "unsorted" || row.file.manualPhase) continue;
       const captured = Capture.normalize(row.file.captureTime);
       if (!captured) { undated += 1; continue; }
-      const key = `${row.itemKey}|${captured.local.slice(0, 10)}|${captured.offset}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push({ id: row.id, captured });
+      const visit = visitOf(captured);
+      const key = cuts.get(visit) ? `visit|${visit}` : `${row.itemKey}|${visit}`;
+      if (!targets.has(key)) targets.set(key, []);
+      targets.get(key).push({ id: row.id, captured, visit });
     }
-    let result = plan, areas = 0, photos = 0, skipped = 0;
-    const reasons = new Map();
-    for (const list of groups.values()) {
-      list.sort((left, right) => left.captured.local.localeCompare(right.captured.local));
-      let cut = -1, widest = 0;
-      for (let index = 1; index < list.length; index += 1) {
-        const minutes = Capture.differenceMinutes(list[index - 1].captured, list[index].captured);
-        if (minutes >= gap && minutes > widest) { widest = minutes; cut = index; }
+    let result = plan, photos = 0, skipped = 0;
+    const areas = new Set(), reasons = new Map();
+    for (const [key, list] of targets) {
+      list.sort(byTime);
+      // 날짜 전체의 공백이 있으면 그것으로, 없으면 그 구역 사진만의 공백으로 나눈다.
+      const cut = key.startsWith("visit|") ? cuts.get(list[0].visit) : sessionCut(list, gap);
+      if (!cut) { skipped += list.length; continue; }
+      const reason = key.startsWith("visit|")
+        ? `같은 날 촬영 흐름의 ${Math.round(cut.minutes)}분 공백 기준 추천 · 확인 필요`
+        : `촬영 시각 순서로 나눈 추천(${Math.round(cut.minutes)}분 간격) · 확인 필요`;
+      for (const entry of list) {
+        result = assignPhotoPhase(result, entry.id, entry.captured.local < cut.at ? "before" : "after");
+        reasons.set(entry.id, reason); photos += 1;
+        areas.add(all.find(row => row.id === entry.id).itemKey);
       }
-      if (cut < 0) { skipped += list.length; continue; }
-      areas += 1;
-      list.forEach((entry, index) => {
-        const phase = index < cut ? "before" : "after";
-        result = assignPhotoPhase(result, entry.id, phase);
-        reasons.set(entry.id, `촬영 시각 순서로 나눈 추천(${Math.round(widest)}분 간격) · 확인 필요`);
-        photos += 1;
-      });
     }
     result = Object.assign({}, result, { buckets: rows(result.buckets).map(bucket => Object.assign({}, bucket,
       Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => reasons.has(file.id) ? Object.assign({}, file, { phaseReason: reasons.get(file.id) }) : file)])))) });
-    return { plan: result, areas, photos, skipped, undated };
+    return { plan: result, areas: areas.size, photos, skipped, undated };
   }
 
   function syncCommonDraftPhotos(existing, incoming, managedIds) {

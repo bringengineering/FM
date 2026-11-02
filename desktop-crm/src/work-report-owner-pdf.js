@@ -97,7 +97,11 @@ function createOwnerReportHtml(report, options = {}) {
   const photoItems = items.filter(count);
   const date = report.workDate || "날짜 미기재";
   const kind = Core.kindLabel(report.kind);
-  const building = report.buildingName || "현장";
+  // 고객 단위 보고서(건물 미연결)는 buildingName 에 CRM 고객 이름이 들어 있다.
+  // 실명·내부 별명이 건물주용 문서의 제목·현장 칸에 나가지 않게, 연결된 건물이
+  // 있을 때만 건물명을 쓰고 아니면 현장 주소를 쓴다.
+  const site = (report.buildingId && report.buildingName) || report.siteAddress || "";
+  const building = site || "현장";
   // 수신인은 실명이 아니라 "(주소) 건물주" 로 쓴다. CRM 이름·별명은 내부용이다.
   // '귀하' 하나로 높인다 — "건물주님 귀하" 는 높임이 겹친다.
   const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
@@ -107,7 +111,7 @@ function createOwnerReportHtml(report, options = {}) {
   // 값이 있는 칸만 싣는다. 빈칸이 남으면 받는 쪽은 안 적은 것인지 없는 것인지 모른다.
   const facts = [
     // 작업일·작업 종류는 위 '한눈에 보기' 에 이미 있다. 같은 값을 두 번 싣지 않는다.
-    ["현장", building], ["현장 주소", report.siteAddress],
+    ["현장", site !== report.siteAddress ? site : ""], ["현장 주소", report.siteAddress],
     ["작업 구분", Core.categoryLabel(report.category) + (report.category === "etc" && report.categoryEtc ? ` · ${report.categoryEtc}` : "")],
     ["작업 범위", report.area], ["담당자", report.workerName],
   ].filter(([, value]) => value);
@@ -163,7 +167,7 @@ figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;wh
 <tr><th>문서번호</th><td>${escape(documentNo)}</td></tr>
 <tr><th>수신(건물주)</th><td>${escape(recipient)} 귀하</td></tr>
 <tr><th>발신</th><td>${escape(senderLine)}</td></tr>
-<tr><th>제목</th><td>${escape(building)} ${escape(kind)} 작업 결과 보고 (작업일 ${escape(date)})</td></tr>
+<tr><th>제목</th><td>${site ? `${escape(site)} ` : ""}${escape(kind)} 작업 결과 보고 (작업일 ${escape(date)})</td></tr>
 </tbody></table>
 <section class="dear"><p class="dear-name"><b>${escape(recipient)}</b> 귀하</p><p class="greeting">항상 브링케어를 믿고 소중한 건물을 맡겨 주시는 ${escape(recipient)}님께 진심으로 감사드립니다.\n${escape(date)} 귀 건물의 ${escape(kind)} 작업을 아래와 같이 정성껏 수행하였기에 그 결과를 삼가 보고드립니다.</p></section>
 <div class="glance">${glance.map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("")}</div>
