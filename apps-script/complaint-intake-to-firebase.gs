@@ -11621,7 +11621,7 @@ function ownerNoticePlan_(input) {
     records.forEach(function (row) {
       if (!/^[A-Za-z0-9_-]{1,160}$/.test(String(row.id || ""))) return;
       if (row.archivedAt || ownerNoticeLine_(row.scheduledDate) !== today) return;
-      if (["cancelled", "canceled", "취소", "archived"].indexOf(ownerNoticeLine_(row.status)) !== -1) return;
+      if (["cancelled", "canceled", "취소", "archived", "completed", "done", "완료"].indexOf(ownerNoticeLine_(row.status)) !== -1) return;
       if (["cleaning", "stair_cleaning"].indexOf(ownerNoticeLine_(row.serviceType)) === -1) return;
       const contract = contractsById[ownerNoticeLine_(row.sourceContractId || row.contractId)] || null;
       push("cleaning", "owner_cleaning_schedule", "owner_clean_rec_" + row.id + "_" + today, contract, buildingsById[row.buildingId],

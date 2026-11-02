@@ -186,6 +186,8 @@ test("plan: a moved occurrence notifies on its new date, not the original", () =
   const moved = GS.ownerNoticePlan_({ ...data, today: "2026-11-04", hour: 8 });
   assert.deepEqual([...moved.notices.map(item => item.id)], ["owner_clean_rec_r1_2026-11-04"]);
   assert.equal(moved.notices[0].values["예정시간"], "오전 10:30");
+  data.serviceRecords.r1.status = "completed";
+  assert.equal(GS.ownerNoticePlan_({ ...data, today: "2026-11-04", hour: 8 }).notices.length, 0, "already finished work is not announced");
 });
 
 test("automation safety switches stay in the Apps Script runner", () => {
