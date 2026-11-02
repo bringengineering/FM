@@ -529,6 +529,76 @@
     });
   }
 
+  // 건물별 이력. 정기 관리보고서가 쌓이면 보이는 것들:
+  //  반복 문제   같은 항목이 연속 두 번 이상 관찰·조치 필요
+  //  조치 일수   처음 확인한 날부터 작업 건 '공사 진행' 이 끝난 날까지(연결된 것만)
+  //  청소 공백   최근 8주(일요일 시작 주) 중 공용부·계단청소 기록이 없는 주
+  // 숫자는 기록에서만 센다. 기록이 없으면 셀 수 없다고 둔다.
+  function addDays(date, days) {
+    const [y, m, d] = date.split("-").map(Number);
+    const value = new Date(Date.UTC(y, m - 1, d + days));
+    return value.toISOString().slice(0, 10);
+  }
+  function daysBetween(from, to) {
+    const parse = date => { const [y, m, d] = date.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((parse(to) - parse(from)) / 86400000);
+  }
+  function weekStart(date) {
+    const [y, m, d] = date.split("-").map(Number);
+    return addDays(date, -new Date(Date.UTC(y, m - 1, d)).getUTCDay());
+  }
+  function buildingHistory(reports, workReports, cases, today) {
+    const all = rows(reports).map(normalizeReport).filter(row => row.id && row.period);
+    const targets = new Map();
+    const keyOf = row => row.buildingId ? `b:${row.buildingId}` : row.customerId ? `c:${row.customerId}` : "";
+    all.forEach(row => { const key = keyOf(row); if (!key) return; if (!targets.has(key)) targets.set(key, []); targets.get(key).push(row); });
+    const caseList = rows(cases);
+    const thisWeek = isDate(today) ? weekStart(today) : "";
+    return [...targets.entries()].map(([key, list]) => {
+      const ordered = list.sort((a, b) => a.period.localeCompare(b.period));
+      const target = ordered[ordered.length - 1].buildingId ? { buildingId: ordered[ordered.length - 1].buildingId } : { buildingId: "", customerId: ordered[ordered.length - 1].customerId };
+      // 반복 문제
+      const streaks = new Map();
+      const repeated = [];
+      ordered.forEach(row => {
+        const open = new Set(row.inspection.items.filter(item => ["watch", "fix"].includes(item.status)).map(item => item.key));
+        INSPECTION_ITEMS.forEach(item => {
+          const next = open.has(item.key) ? (streaks.get(item.key) || 0) + 1 : 0;
+          streaks.set(item.key, next);
+        });
+      });
+      streaks.forEach((count, itemKey) => { if (count >= 2) repeated.push({ key: itemKey, label: (INSPECTION_ITEMS.find(item => item.key === itemKey) || {}).label || itemKey, count }); });
+      // 조치 일수: 처음 확인(그 항목이 처음 관찰·조치로 적힌 점검일) → 연결된 작업 건 완료일
+      const fixDays = [];
+      const links = Object.assign({}, ...ordered.map(row => row.links));
+      Object.entries(links).forEach(([itemKey, caseKey]) => {
+        const first = ordered.find(row => row.inspection.items.some(item => item.key === itemKey && ["watch", "fix"].includes(item.status)));
+        const progress = caseProgress(caseList.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey)));
+        if (first && first.inspection.date && progress && progress.done && progress.completedAt && progress.completedAt >= first.inspection.date) fixDays.push(daysBetween(first.inspection.date, progress.completedAt));
+      });
+      // 청소 공백
+      const cleaningWeeks = new Set(WorkReport.sortReports(workReports)
+        .filter(row => CLEANING_KINDS.includes(row.kind) && sameTarget(row, target)).map(row => weekStart(row.workDate)));
+      const weeks = thisWeek ? Array.from({ length: 8 }, (_, i) => addDays(thisWeek, -7 * (i + 1))).reverse() : [];
+      const firstCleaning = [...cleaningWeeks].sort()[0] || "";
+      const missedWeeks = weeks.filter(week => firstCleaning && week >= firstCleaning && !cleaningWeeks.has(week));
+      const sent = ordered.filter(row => row.delivery);
+      return {
+        key, target,
+        buildingName: ordered.map(row => row.buildingName).filter(Boolean).pop() || "",
+        reports: ordered.length,
+        sent: sent.length,
+        lastSentAt: sent.length ? sent[sent.length - 1].delivery.sentAt.slice(0, 10) : "",
+        openNow: ordered[ordered.length - 1].inspection.items.filter(item => ["watch", "fix"].includes(item.status)).length,
+        repeated: repeated.sort((a, b) => b.count - a.count),
+        avgFixDays: fixDays.length ? Math.round(fixDays.reduce((sum, value) => sum + value, 0) / fixDays.length) : null,
+        fixedCount: fixDays.length,
+        missedWeeks,
+        weeksChecked: weeks.filter(week => firstCleaning && week >= firstCleaning).length,
+      };
+    }).sort((a, b) => (b.repeated.length + b.missedWeeks.length) - (a.repeated.length + a.missedWeeks.length) || String(a.buildingName).localeCompare(String(b.buildingName), "ko"));
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(row => row.id)
       .sort((a, b) => b.period.localeCompare(a.period) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -575,6 +645,7 @@
     buildView,
     findForPeriod,
     dueReports,
+    buildingHistory,
     cleaningPhotoCandidates,
     normalizeSuggestions,
     draftFor,

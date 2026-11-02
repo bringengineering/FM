@@ -83,6 +83,22 @@
       }
     }
 
+    function historyPanel() {
+      const core = P();
+      const list = core.buildingHistory(state.reports, state.works, state.cases, todayKey());
+      if (!list.length) return "";
+      const weekLabel = week => core.dateLabel(week, false).replace(/\(.\)$/u, "") + " 주";
+      return `<section class="office-panel pr-history"><header><div><span>HISTORY</span><h3>건물별 이력</h3><small>반복 문제 · 조치까지 걸린 날 · 최근 8주 청소 공백</small></div></header>
+        <div class="office-table-wrap"><table class="office-table"><thead><tr><th>건물</th><th>보고서</th><th>지금 열린 항목</th><th>반복 문제</th><th>조치 평균</th><th>청소 빠진 주</th></tr></thead><tbody>${list.map(row => `<tr>
+          <td><b>${esc(row.target.buildingId ? buildingName(row.target.buildingId) : row.buildingName || "고객")}</b></td>
+          <td><b>${row.reports}건</b><small>발송 ${row.sent}건${row.lastSentAt ? ` · 최근 ${esc(row.lastSentAt)}` : ""}</small></td>
+          <td>${row.openNow ? `<span class="pr-badge pr-fix">${row.openNow}건</span>` : `<span class="pr-badge pr-good">없음</span>`}</td>
+          <td>${row.repeated.length ? row.repeated.map(item => `<span class="pr-badge pr-watch">${esc(item.label)} ${item.count}회 연속</span>`).join(" ") : "-"}</td>
+          <td>${row.avgFixDays === null ? "<small>연결된 완료 건 없음</small>" : `<b>${row.avgFixDays}일</b><small>${row.fixedCount}건 평균</small>`}</td>
+          <td>${!row.weeksChecked ? "<small>기록 없음</small>" : row.missedWeeks.length ? `<span class="pr-badge pr-fix">${row.missedWeeks.length}주</span><small>${row.missedWeeks.map(weekLabel).map(esc).join(", ")}</small>` : `<span class="pr-badge pr-good">빠짐 없음</span><small>${row.weeksChecked}주 확인</small>`}</td>
+        </tr>`).join("")}</tbody></table></div></section>`;
+    }
+
     function dueBanner() {
       const core = P();
       const due = core.dueReports(state.works, state.reports, todayKey());
@@ -466,6 +482,7 @@
           <div class="pr-inline"><label>건물·고객 <select data-pr-new-building><option value="">선택</option><optgroup label="건물">${buildings().map(b => `<option value="b:${esc(b.id)}"${`b:${b.id}` === state.newTarget ? " selected" : ""}>${esc(b.name || b.address || b.id)}</option>`).join("")}</optgroup>${customers().length ? `<optgroup label="건물 없는 고객 (청소 기록 있음)">${customers().map(c => `<option value="c:${esc(c.id)}"${`c:${c.id}` === state.newTarget ? " selected" : ""}>${esc(c.name || c.id)}</option>`).join("")}</optgroup>` : ""}</select></label>
           <label>기간 <select data-pr-new-period>${choices.map(p => `<option value="${p.key}"${p.key === state.newPeriod ? " selected" : ""}>${esc(core.periodLabel(p.key))} (${p.from.slice(5)} ~ ${p.to.slice(5)})</option>`).join("")}</select></label>
           <button type="button" class="primary-button" data-pr-new>작성 시작</button></div></section>` : ""}
+        ${state.draft ? "" : historyPanel()}
         <section class="office-panel wr-history"><header><div><span>REPORTS</span><h3>정기 관리보고서</h3></div><small>최근 기간부터</small></header>
           ${rows ? `<div class="office-table-wrap"><table class="office-table"><thead><tr><th>건물</th><th>기간</th><th>청소</th><th>점검</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
             : `<div class="office-empty"><b>아직 정기 관리보고서가 없습니다</b><span>건물과 기간을 고르고 ‘작성 시작’ 을 누르세요.</span></div>`}

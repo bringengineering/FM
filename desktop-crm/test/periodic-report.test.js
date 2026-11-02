@@ -290,3 +290,19 @@ test("조치 항목 ↔ 작업 건: 공사 진행이 끝나면 '수리 완료', 
   const trashed = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", deleted: true, status: { c12: "doing" } }] }).actions[0];
   assert.equal(trashed.plan, "10. 28.(수) 점검에서 정상 확인");
 });
+
+test("건물별 이력: 반복 문제·조치 평균 일수·최근 8주 청소 공백을 기록에서 센다", () => {
+  const w = ["2026-10-05", "2026-10-12", "2026-10-26", "2026-11-02"].map((date, i) => ({ id: `h${i}`, buildingId: "b1", kind: "common", workDate: date, items: [] }));
+  const r = [
+    { id: "pr_his01", buildingId: "b1", buildingName: "예초집", period: "2026-10-1", links: { recycle: "k1" }, inspection: { date: "2026-10-12", items: [{ key: "recycle", status: "fix" }, { key: "wallCrack", status: "watch" }] } },
+    { id: "pr_his02", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-26", items: [{ key: "recycle", status: "fix" }] }, delivery: { status: "sent", sentAt: "2026-11-01T00:00:00Z", phoneTail: "1234" } },
+  ];
+  const [row] = P.buildingHistory(r, w, [{ id: "k1", status: { c12: "done" }, workCompletedAt: "2026-10-30" }], "2026-11-03");
+  assert.equal(row.buildingName, "예초집");
+  assert.deepEqual(row.repeated.map(item => [item.key, item.count]), [["recycle", 2]]);
+  assert.equal(row.avgFixDays, 18);
+  assert.deepEqual(row.missedWeeks, ["2026-10-18"]);
+  assert.equal(row.weeksChecked, 4);
+  assert.equal(row.sent, 1);
+  assert.equal(row.openNow, 1);
+});
