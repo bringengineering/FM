@@ -184,3 +184,32 @@ test("a verified bathroom overview keeps the bath item even when no single targe
   const unproven = normalize({ category: "bath", space: "bath", spaceConfidence: 90, target: "unknown", targetConfidence: 40, features: ["floor_surface"] });
   assert.equal(unproven.category, "review");
 });
+
+test("match mode pairs only fixed before/after photos with two shared structures, using the stronger model", async () => {
+  const jpeg = "data:image/jpeg;base64,/9j/AA==";
+  const images = [{ id: "b1", dataUrl: jpeg, phase: "before" }, { id: "b2", dataUrl: jpeg, phase: "before" }, { id: "a1", dataUrl: jpeg, phase: "after" }];
+  const request = body => new Request("https://local.invalid", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await readPhotoClassificationPayload(request({ kind: "common", mode: "match", images }));
+  // phase is required in match mode and refused elsewhere; both phases must be present.
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", images })), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", mode: "match", images: images.map(({ phase, ...rest }) => rest) })), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", mode: "match", images: images.slice(0, 2) })), { code: "INVALID_INPUT" });
+  let url = "", schema;
+  const result = await classifyPhotos(payload, { GEMINI_API_KEY: "synthetic" }, async (u, init) => {
+    url = u; schema = JSON.parse(init.body).generationConfig.responseJsonSchema;
+    const pairs = [
+      { beforeId: "p1", afterId: "p3", matchConfidence: 92, anchors: ["frame_shape", "surface_edge"] },
+      { beforeId: "p2", afterId: "p3", matchConfidence: 99, anchors: ["frame_shape", "surface_edge"] }, // after reused
+      { beforeId: "p3", afterId: "p1", matchConfidence: 99, anchors: ["frame_shape", "surface_edge"] }, // phases swapped
+    ];
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs }) }] } }] });
+  });
+  assert.match(url, /gemini-3\.5-flash:generateContent/);
+  assert.deepEqual(schema.properties.pairs.items.properties.beforeId.enum, ["p1", "p2"]);
+  assert.deepEqual(schema.properties.pairs.items.properties.afterId.enum, ["p3"]);
+  assert.deepEqual(result.pairs, [{ beforeId: "b1", afterId: "a1", matchConfidence: 92, anchors: ["frame_shape", "surface_edge"] }]);
+  assert.deepEqual(result.classifications, []);
+  // A low score or a single shared structure is not a pair.
+  const weak = await classifyPhotos(payload, { GEMINI_API_KEY: "synthetic" }, async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs: [{ beforeId: "p1", afterId: "p3", matchConfidence: 80, anchors: ["frame_shape", "surface_edge"] }, { beforeId: "p2", afterId: "p3", matchConfidence: 95, anchors: ["frame_shape"] }] }) }] } }] }));
+  assert.deepEqual(weak.pairs, []);
+});

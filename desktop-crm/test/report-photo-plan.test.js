@@ -357,14 +357,18 @@ test("공용부 '촬영 시각으로 전·후 나누기'는 같은 날 전체 �
 test("보고서 전·후는 같은 장소로 묶인 짝을 같은 번호에, 나머지는 촬영 시각 순으로 싣는다", () => {
   const at = (id, hm, extra = {}) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" }, ...extra });
   // 들어온 순서는 뒤죽박죽: 짝(b2↔a1)이 서로 다른 번호에 있고 나머지도 시각 순서가 아니다.
-  const before = [at("b3", "09:20"), at("b1", "09:00"), at("b2", "09:10", { pairWith: "a1" })];
-  const after = [at("a3", "10:20"), at("a1", "10:10", { pairWith: "b2" }), at("a2", "10:00")];
+  const before = [at("b3", "09:20"), at("b1", "09:00"), at("b2", "09:10", { samePlaceWith: "a1" })];
+  const after = [at("a3", "10:20"), at("a1", "10:10", { samePlaceWith: "b2" }), at("a2", "10:00")];
   const ordered = P.orderPairs(before, after);
   assert.deepEqual(ordered.before.map(f => f.id), ["b2", "b1", "b3"]);
   assert.deepEqual(ordered.after.map(f => f.id), ["a1", "a2", "a3"]);
   assert.equal(ordered.paired, 1);
   // 입주청소 검토 화면의 짝(reviewPair)도 같은 번호로 맞춘다.
-  const moveIn = P.orderPairs([at("x", "09:00"), at("y", "09:05", { reviewPair: "pair:y:z" })], [at("w", "10:00"), at("z", "10:05", { reviewPair: "pair:y:z" })]);
+  const moveIn = P.orderPairs([at("x", "09:00"), at("y", "09:05", { reviewPair: "pair:y:z", reviewConfirmed: true })], [at("w", "10:00"), at("z", "10:05", { reviewPair: "pair:y:z", reviewConfirmed: true })]);
+  // 전·후 비교(compare)의 추천 짝과 확인 전 검토 짝은 나란히 싣는 근거가 아니다.
+  assert.equal(P.orderPairs([at("c1", "09:00", { pairWith: "c2" })], [at("c2", "10:00", { pairWith: "c1" })]).paired, 0);
+  assert.equal(P.orderPairs([at("r1", "09:00", { reviewPair: "pair:r1:r2" })], [at("r2", "10:00", { reviewPair: "pair:r1:r2" })]).paired, 0);
+  assert.equal(P.orderPairs([at("m1", "09:00", { reviewPair: "manual:m1:m2" })], [at("m2", "10:00", { reviewPair: "manual:m1:m2" })]).paired, 1);
   assert.deepEqual([moveIn.before[0].id, moveIn.after[0].id], ["y", "z"]);
   // 한쪽에만 남은 짝 표시는 짝으로 보지 않고, 사진은 하나도 버리지 않는다.
   const stale = P.orderPairs([at("s1", "09:00", { pairWith: "gone" })], [at("t1", "10:00")]);
@@ -386,3 +390,42 @@ test("공용부 AI 짝 추천은 서로의 사진을 짝으로 기록한다", ()
   assert.equal(rows.find(r => r.id === "p2").file.pairWith, "p1");
 });
 
+
+test("AI 같은 장소 짝(match)은 같은 구역의 작업 전·후끼리만 기록되고 보고서에 pairId 로 남는다", () => {
+  const at = (id, hm) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" } });
+  const plan = { kind: "common", buckets: [
+    { itemKey: "corridor", before: [at("b1", "09:00"), at("b2", "09:05"), at("b3", "09:10")], during: [], after: [at("a1", "10:00"), at("a2", "10:05")], unsorted: [], heic: [] },
+    { itemKey: "stairs", before: [at("s1", "09:20")], during: [], after: [at("t1", "10:20")], unsorted: [], heic: [] },
+    { itemKey: "walls", before: [at("w1", "09:30")], during: [], after: [], unsorted: [], heic: [] },
+  ] };
+  const requests = P.matchRequests(plan);
+  assert.deepEqual(requests.map(r => r.itemKey), ["corridor", "stairs"], "작업 전·후가 모두 있는 구역만 보낸다");
+  assert.deepEqual(requests[0].phases, { b1: "before", b2: "before", b3: "before", a1: "after", a2: "after" });
+  const matched = P.applyMatchedPairs(plan, [
+    { beforeId: "b3", afterId: "a1" },
+    { beforeId: "s1", afterId: "a2" },   // 다른 구역끼리는 짝짓지 않는다
+    { beforeId: "a2", afterId: "b1" },   // 단계가 뒤집힌 요청은 버린다
+    { beforeId: "b2", afterId: "a1" },   // 이미 쓴 사진은 다시 쓰지 않는다
+  ]);
+  assert.equal(matched.paired, 1);
+  const rows = P.photoReviewRows(matched.plan);
+  assert.equal(rows.find(r => r.id === "b3").file.samePlaceWith, "a1");
+  assert.equal(rows.find(r => r.id === "a1").file.samePlaceWith, "b3");
+  assert.equal(rows.find(r => r.id === "a1").phase, "after", "단계는 바꾸지 않는다");
+  // 짝이 생긴 사진은 다음 요청에서 빠진다.
+  assert.deepEqual(P.matchRequests(matched.plan)[0].phases, { b1: "before", b2: "before", a2: "after" });
+  // 초안: 짝은 같은 번호 + 같은 pairId, 나머지는 시각 순·pairId 없음.
+  const made = P.toReportDraft(matched.plan, { core: W, kind: "common" });
+  const corridor = made.draft.items.find(item => item.key === "corridor");
+  assert.deepEqual(corridor.before.map(p => p.id), ["b3", "b1", "b2"]);
+  assert.deepEqual(corridor.after.map(p => p.id), ["a1", "a2"]);
+  assert.equal(corridor.before[0].pairId, "a1|b3"); assert.equal(corridor.after[0].pairId, "a1|b3");
+  assert.equal(corridor.before[1].pairId, undefined);
+  // 다시 반영하면 새 짝 정보가 이전 값을 대신하고, 사람이 고친 설명은 남는다.
+  const existing = [{ ...corridor, before: corridor.before.map(p => ({ ...p, caption: "직접 쓴 설명", pairId: "old|stale" })) }];
+  const synced = P.syncCommonDraftPhotos(existing, made.draft.items, made.draft.items.flatMap(i => [...i.before, ...i.after]).map(p => p.id));
+  const syncedCorridor = synced.items.find(item => item.key === "corridor");
+  assert.equal(syncedCorridor.before.find(p => p.id === "b3").pairId, "a1|b3");
+  assert.equal(syncedCorridor.before.find(p => p.id === "b1").pairId, undefined, "짝이 없어진 사진에 예전 짝이 남지 않는다");
+  assert.equal(syncedCorridor.before.find(p => p.id === "b3").caption, "직접 쓴 설명");
+});

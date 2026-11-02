@@ -85,20 +85,40 @@ function photoGrid(item, entries, images) {
   }
   return grid.join("");
 }
+// 같은 장소로 확인된 짝(pairId 가 같은 작업 전·후)은 앞에 나란히 놓는다. 짝 표시가
+// 하나도 없는 예전 보고서만 장수가 같을 때 순서대로 짝짓는다. 나머지는 단계별로 싣는다.
+function areaPairs(item) {
+  const hasPairIds = [...item.before, ...item.after].some(photo => photo.pairId);
+  if (!hasPairIds) {
+    const equal = item.before.length > 0 && item.before.length === item.after.length;
+    return { pairs: equal ? item.before.map((photo, i) => [photo, item.after[i]]) : [], before: equal ? [] : item.before, after: equal ? [] : item.after };
+  }
+  const afterByPair = new Map(item.after.filter(photo => photo.pairId).map(photo => [photo.pairId, photo]));
+  const pairs = [], usedAfter = new Set();
+  for (const photo of item.before) {
+    const match = photo.pairId && afterByPair.get(photo.pairId);
+    if (match && !usedAfter.has(match)) { pairs.push([photo, match]); usedAfter.add(match); }
+  }
+  const pairedBefore = new Set(pairs.map(pair => pair[0]));
+  return { pairs, before: item.before.filter(photo => !pairedBefore.has(photo)), after: item.after.filter(photo => !usedAfter.has(photo)) };
+}
 function areaPhotos(item, index, images) {
-  const paired = item.before.length > 0 && item.before.length === item.after.length;
-  const rows = paired ? item.before.map((photo, i) => `<div class="pair-row"><span class="pair-no">${i + 1}</span>${figure(item, photo, "before", i + 1, images)}${figure(item, item.after[i], "after", i + 1, images)}</div>`) : [];
-  const numbered = phase => item[phase].map((photo, i) => ({ photo, phase, n: i + 1 }));
+  const { pairs, before, after } = areaPairs(item);
+  const rows = pairs.map(([b, a], i) => `<div class="pair-row"><span class="pair-no">${i + 1}</span>${figure(item, b, "before", i + 1, images)}${figure(item, a, "after", i + 1, images)}</div>`);
+  const rest = { before, after, during: item.during };
+  const numbered = phase => rest[phase].map((photo, i) => ({ photo, phase, n: (phase === "during" ? 0 : pairs.length) + i + 1 }));
   const notes = [];
   if (!item.before.length && item.after.length) notes.push("이 구역은 작업 후 사진으로 기록했습니다.");
   else if (item.before.length && !item.after.length) notes.push("이 구역은 작업 전 사진으로 기록했습니다.");
-  else if (!paired && item.before.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다.`);
-  const section = (phase, label) => item[phase].length ? `<div class="phase-head ${phase}"><span>${label}</span><small>${item[phase].length}장</small></div>${photoGrid(item, numbered(phase), images)}` : "";
+  else if (!pairs.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다.`);
+  else if (before.length || after.length) notes.push(`같은 장소로 확인된 ${pairs.length}쌍을 나란히 비교하고, 나머지 작업 전 ${before.length}장·작업 후 ${after.length}장은 아래에 단계별로 실었습니다.`);
+  const section = (phase, label) => rest[phase].length ? `<div class="phase-head ${phase}"><span>${label}</span><small>${rest[phase].length}장</small></div>${photoGrid(item, numbered(phase), images)}` : "";
   return `<section class="area-photos">
     <div class="area-head"><h3><span>${index}</span>${escape(item.label)}</h3><p>${escape(photoCounts(item, true))}</p></div>
     ${item.detail ? `<p class="area-scope">수행 범위 · ${escape(item.detail)}</p>` : ""}
     ${notes.map(line => `<p class="area-note">${escape(line)}</p>`).join("")}
-    ${paired ? `<div class="pair-head"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span></div>${rows.join("")}` : `${section("before", "작업 전 BEFORE")}${section("after", "작업 후 AFTER")}`}
+    ${pairs.length ? `<div class="pair-head"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span></div>${rows.join("")}` : ""}
+    ${section("before", "작업 전 BEFORE")}${section("after", "작업 후 AFTER")}
     ${section("during", "작업 중 DURING")}
   </section>`;
 }

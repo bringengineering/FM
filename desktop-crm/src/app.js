@@ -8990,7 +8990,7 @@
     selectedId: "", draft: null, busyKey: "", readOnlyReason: "", saveBusy: false, saveError: "",
     driveScanning: false,
     drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "", photoSelectedIds: new Set(),
-    driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
+    driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0, pairMatching: null,
     photoReviewFilter: "all", photoReviewSelected: new Set(), photoReviewBulk: {}, photoReviewStage: "",
     photoReviewCollapsed: new Set(), photoReviewEditing: "", photoReviewAdd: null,
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
@@ -9010,6 +9010,7 @@
       reportState.draft.items = window.BringPhotoPairReview.syncDraftPhotos(reportState.draft.items, [], reportState.autoPhotoIds).items;
     }
     reportState.driveRequestGeneration += 1;
+    reportState.pairMatching = null; // 진행 중인 짝 찾기 결과는 버린다.
     reportState.aiRequestGeneration += 1;
     reportState.aiLoading = false;
     reportState.aiSuggestion = "";
@@ -9354,7 +9355,7 @@
       ${plan && plan.kind === "moveIn" ? reportPairMain() : plan ? `
         ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         ${["moveIn", "common"].includes(plan.kind) ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
-        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span>${plan.kind === "common" && photoRows.some(row => reportItemKeys.has(row.itemKey) && row.phase === "unsorted" && !row.file.manualPhase) ? `<button type="button" class="secondary-button" data-report-time-split${reportState.driveClassificationLoading ? " disabled" : ""} title="구역별로 같은 날 찍은 사진을 촬영 시각 순으로 놓고, 가장 크게 벌어진 시점 앞을 작업 전·뒤를 작업 후로 추천합니다.">촬영 시각으로 전·후 나누기</button>` : ""}</header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
+        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span>${plan.kind === "common" && photoRows.some(row => reportItemKeys.has(row.itemKey) && row.phase === "unsorted" && !row.file.manualPhase) ? `<button type="button" class="secondary-button" data-report-time-split${reportState.driveClassificationLoading ? " disabled" : ""} title="구역별로 같은 날 찍은 사진을 촬영 시각 순으로 놓고, 가장 크게 벌어진 시점 앞을 작업 전·뒤를 작업 후로 추천합니다.">촬영 시각으로 전·후 나누기</button>` : ""}${plan.kind === "common" && typeof reportPhotoPlan().matchRequests === "function" && reportPhotoPlan().matchRequests(plan).length ? `<button type="button" class="secondary-button" data-report-pair-match${reportState.driveClassificationLoading || reportState.pairMatching ? " disabled" : ""} title="같은 구역의 작업 전·후 사진 중 같은 장소를 찍은 짝을 AI가 찾아 보고서에 나란히 싣습니다. 확신이 없는 사진은 짝짓지 않습니다.">${reportState.pairMatching ? "같은 장소 짝 찾는 중…" : "AI로 전·후 짝 맞추기"}</button>` : ""}</header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
           <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th>${plan.kind === "common" ? "<th>작업 중</th>" : ""}<th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -9899,6 +9900,52 @@
       return;
     }
     showToast(`${result.areas}개 구역 ${result.photos}장을 촬영 시각 순서로 전·후 추천했습니다.${left ? ` ${left}장은 시각 정보·간격이 부족해 그대로 두었습니다.` : ""} 사진을 확인해 주세요.`, "success");
+    // 전·후가 나뉘었으니 이어서 같은 장소끼리 짝을 찾는다.
+    void matchReportPairsWithAi();
+  }
+
+  // 작업 전·후로 나뉜 공용부 사진에서 AI가 같은 장소의 짝만 찾는다(구역마다 한 번).
+  // 단계는 바꾸지 않고 짝 표시만 남긴다. 실패해도 사진과 단계는 그대로다.
+  async function matchReportPairsWithAi() {
+    const P = reportPhotoPlan();
+    const plan = reportState.drivePlan;
+    if (!P || typeof P.matchRequests !== "function" || plan?.kind !== "common" || reportState.driveClassificationLoading || reportState.pairMatching) return;
+    const requests = P.matchRequests(plan);
+    if (!requests.length) { showToast("짝을 찾을 구역이 없습니다. 같은 구역에 작업 전·후 사진이 모두 있어야 합니다.", "error"); return; }
+    const token = {};
+    reportState.pairMatching = token;
+    renderWorkReports();
+    const pairs = [];
+    let failed = 0;
+    try {
+      for (const request of requests) {
+        // 신중한 모델이 가끔 일시 오류를 내므로 한 번만 다시 묻는다(사용 한도·권한 오류는 다시 묻지 않는다).
+        let result = null;
+        for (let attempt = 0; attempt < 2 && !result; attempt += 1) {
+          try {
+            const reply = await api.classifyWorkReportPhotos({ kind: "common", fileIds: request.fileIds, mode: "match", phases: request.phases });
+            if (reply && reply.ok === true && Array.isArray(reply.pairs)) result = reply;
+          } catch (error) {
+            if (!/TEMPORARY|TIMEOUT|INVALID_RESPONSE/.test(String(error && (error.code || error.message) || ""))) break;
+          }
+          if (reportState.pairMatching !== token) return;
+        }
+        if (result) pairs.push(...result.pairs); else failed += 1;
+      }
+      // 기다리는 사이 사람이 사진을 옮겼을 수 있으니 지금 계획에 다시 맞춰 반영한다.
+      if (reportState.drivePlan?.kind !== "common") return;
+      preserveReportDraft();
+      const matched = P.applyMatchedPairs(reportState.drivePlan, pairs);
+      reportState.drivePlan = matched.plan;
+      reportState.driveBasePlan = reportState.drivePlan;
+      syncReportAnalysisPhotos();
+      showToast(matched.paired
+        ? `AI가 같은 장소의 작업 전·후 ${matched.paired}쌍을 찾았습니다. 보고서에 나란히 실립니다.${failed ? ` ${failed}개 구역은 찾지 못했습니다.` : ""}`
+        : `같은 장소로 확신할 수 있는 짝을 찾지 못했습니다. 사진은 단계별로 실립니다.${failed ? ` (${failed}개 구역 실패)` : ""}`, matched.paired ? "success" : "error");
+    } finally {
+      if (reportState.pairMatching === token) reportState.pairMatching = null;
+      renderWorkReports();
+    }
   }
 
   function applyReportDrivePlan() {
@@ -15358,6 +15405,7 @@
       return;
     }
     if (event.target.closest("[data-report-time-split]")) { splitReportPhotosByCaptureTime(); return; }
+    if (event.target.closest("[data-report-pair-match]")) { await matchReportPairsWithAi(); return; }
     if (event.target.closest("[data-report-drive-connect]")) { await connectReportDrive(); return; }
     if (event.target.closest("[data-report-drive-open]")) { await openReportDrivePicker(); return; }
     if (event.target.closest("[data-report-drive-close]")) {

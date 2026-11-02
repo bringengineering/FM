@@ -229,12 +229,15 @@
         link = url.toString();
       }
     } catch { /* 링크가 불완전하거나 Drive 도메인이 아니면 열 수 없게 둔다. */ }
+    // 같은 장소의 작업 전·후 짝. 짝이 있을 때만 싣는다 — 없는 사진은 예전과 같은 모양이다.
+    const pairId = text(value.pairId, 250);
     return {
       id: text(value.id, 80),
       driveFileId: text(value.driveFileId, 120),
       // 결과보고 사진은 Google Drive 뷰 링크만 사람에게 연다.
       webViewLink: link,
       caption: text(value.caption, 120),
+      ...(/^[A-Za-z0-9_:|.-]{1,250}$/.test(pairId) ? { pairId } : {}),
     };
   }
 

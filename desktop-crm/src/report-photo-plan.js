@@ -380,9 +380,13 @@
   // 다른 장소가 짝지어진다. 1) AI·사람이 같은 장소로 묶은 짝을 앞에 같은 번호로 두고
   // 2) 나머지는 각각 촬영 시각 순으로 세운다 — 작업 전·후에 현장을 같은 순서로
   // 돌며 찍으므로 시각 순서가 장소 순서와 대개 같다. 사진을 버리거나 단계를 바꾸지 않는다.
+  // 보고서에 나란히 싣는 짝은 확인된 것만: 사람이 묶었거나 확인한 짝, 또는
+  // 같은 장소 짝 찾기(match)가 고정 구조로 확인한 짝. 전·후 비교(compare)의
+  // pairWith 는 단계 추천 근거일 뿐이라 실사진에서 다른 장소가 섞였다(2026-11-02).
   function pairKey(file) {
-    if (text(file && file.reviewPair, 300)) return text(file.reviewPair, 300);
-    const other = text(file && file.pairWith, 200);
+    const review = text(file && file.reviewPair, 300);
+    if (review && (review.startsWith("manual:") || file.reviewConfirmed === true)) return review;
+    const other = text(file && file.samePlaceWith, 200);
     return other ? [text(file.id, 200), other].sort().join("|") : "";
   }
   function orderPairs(before, after) {
@@ -422,6 +426,7 @@
       name: text(file && (file.name || file.title), 200),
       webViewLink: text(file && (file.webViewLink || file.viewUrl), 500),
       caption: "",
+      pairId: pairKey(file),
     });
 
     const selectedItems = rows(made.buckets).map(bucket => ({ key: text(bucket && bucket.itemKey, 40) })).filter(item => item.key);
@@ -749,17 +754,51 @@
     return { plan: result, areas: areas.size, photos, skipped, undated };
   }
 
+  // AI 같은 장소 짝 찾기 결과를 반영한다. 이미 작업 전·후로 나뉜 같은 구역 사진끼리만
+  // 짝짓고 단계는 바꾸지 않는다. 사람이 직접 고른 짝·단계는 건드리지 않는다.
+  function applyMatchedPairs(plan, pairs) {
+    const byId = new Map(photoReviewRows(plan).map(row => [row.id, row]));
+    const partner = new Map();
+    for (const pair of rows(pairs)) {
+      const before = byId.get(text(pair.beforeId, 200)), after = byId.get(text(pair.afterId, 200));
+      if (!before || !after || before.phase !== "before" || after.phase !== "after" || !before.itemKey || before.itemKey !== after.itemKey) continue;
+      if (partner.has(before.id) || partner.has(after.id) || text(before.file.samePlaceWith, 200) || text(after.file.samePlaceWith, 200)) continue;
+      partner.set(before.id, after.id); partner.set(after.id, before.id);
+    }
+    return { plan: Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => Object.assign({}, bucket,
+      Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => partner.has(file.id) ? Object.assign({}, file, { samePlaceWith: partner.get(file.id) }) : file)])))) }),
+      paired: partner.size / 2 };
+  }
+  // 짝 찾기를 보낼 구역: 작업 전·후가 모두 있고 아직 짝이 없는 사진이 남은 구역.
+  // 같은 장소 짝 찾기는 더 신중한 모델을 쓰므로 한 번에 16장까지만 보낸다(17장에 약 55초).
+  function matchRequests(plan, limit = 16) {
+    const requests = [];
+    for (const bucket of rows(plan && plan.buckets)) {
+      if (!bucket.itemKey) continue;
+      const unpaired = phase => rows(bucket[phase]).filter(file => !text(file.samePlaceWith, 200));
+      const before = unpaired("before"), after = unpaired("after");
+      if (!before.length || !after.length) continue;
+      // 한 번에 30장까지: 작업 후는 모두, 작업 전은 남는 자리만큼 촬영 시각 순으로.
+      const afterIds = after.slice(0, Math.min(after.length, limit - 1));
+      const beforeIds = before.slice(0, limit - afterIds.length);
+      const phases = Object.fromEntries([...beforeIds.map(file => [file.id, "before"]), ...afterIds.map(file => [file.id, "after"])]);
+      requests.push({ itemKey: bucket.itemKey, fileIds: Object.keys(phases), phases });
+    }
+    return requests;
+  }
+
   function syncCommonDraftPhotos(existing, incoming, managedIds) {
     const phases = ["before", "during", "after"], identity = photo => photo.driveFileId || photo.id;
     const previous = new Map(rows(existing).flatMap(item => phases.flatMap(phase => rows(item[phase]))).map(photo => [identity(photo), photo]));
     const managed = new Set(managedIds);
     const kept = rows(existing).map(item => ({ ...item, ...Object.fromEntries(phases.map(phase => [phase, rows(item[phase]).filter(photo => !managed.has(identity(photo)))])) }));
-    const enriched = rows(incoming).map(item => ({ ...item, ...Object.fromEntries(phases.map(phase => [phase, rows(item[phase]).map(photo => ({ ...photo, ...previous.get(identity(photo)) }))])) }));
+    const freshPair = photo => { const { pairId: _old, ...rest } = previous.get(identity(photo)) || {}; return { ...photo, ...rest, ...(photo.pairId ? { pairId: photo.pairId } : {}) }; };
+    const enriched = rows(incoming).map(item => ({ ...item, ...Object.fromEntries(phases.map(phase => [phase, rows(item[phase]).map(freshPair)])) }));
     return { ...mergeDraftPhotos(kept, enriched), ids: enriched.flatMap(item => phases.flatMap(phase => rows(item[phase]))).map(identity) };
   }
 
   return Object.freeze({
-    commonComparisonGroups, withCommonCaptureTimes, applyCommonPairs, splitCommonByCaptureTime, COMMON_SPLIT_GAP_MINUTES, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
+    commonComparisonGroups, withCommonCaptureTimes, applyCommonPairs, applyMatchedPairs, matchRequests, splitCommonByCaptureTime, COMMON_SPLIT_GAP_MINUTES, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
     VIEWABLE,
     UNVIEWABLE,
     GAP_MINUTES,
