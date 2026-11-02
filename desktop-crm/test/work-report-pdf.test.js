@@ -98,8 +98,10 @@ test("바깥에서 온 글자가 태그로 새지 않는다", () => {
 test("문서 안에서 바깥을 부르지 않는다", () => {
   // 인쇄본이 네트워크를 타면 인쇄가 멈추거나 빈 칸이 난다.
   const owner = createWorkReportHtml(report(), "owner", options());
-  assert.match(owner, /default-src 'none'; img-src data:; style-src 'unsafe-inline'/u);
+  assert.match(owner, /default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'/u);
   assert.doesNotMatch(owner, /<script/u);
+  // 글꼴도 문서 안에 박은 것만 쓴다. data: 가 아닌 url() 은 없다.
+  assert.deepEqual((owner.match(/url\((?!data:)[^)]*\)/gu) || []), []);
 });
 
 test("못 한 항목도 표에 남는다", () => {

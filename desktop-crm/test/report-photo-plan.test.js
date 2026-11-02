@@ -353,3 +353,36 @@ test("공용부 '촬영 시각으로 전·후 나누기'는 같은 날 전체 �
   const twoDays = { kind: "common", buckets: [bucket("stairs", [shot("d1", "09:00"), shot("d2", "09:01"), shot("d3", "09:00", {}, "2026-11-03"), shot("d4", "09:01", {}, "2026-11-03")])] };
   assert.equal(P.splitCommonByCaptureTime(twoDays).photos, 0);
 });
+
+test("보고서 전·후는 같은 장소로 묶인 짝을 같은 번호에, 나머지는 촬영 시각 순으로 싣는다", () => {
+  const at = (id, hm, extra = {}) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" }, ...extra });
+  // 들어온 순서는 뒤죽박죽: 짝(b2↔a1)이 서로 다른 번호에 있고 나머지도 시각 순서가 아니다.
+  const before = [at("b3", "09:20"), at("b1", "09:00"), at("b2", "09:10", { pairWith: "a1" })];
+  const after = [at("a3", "10:20"), at("a1", "10:10", { pairWith: "b2" }), at("a2", "10:00")];
+  const ordered = P.orderPairs(before, after);
+  assert.deepEqual(ordered.before.map(f => f.id), ["b2", "b1", "b3"]);
+  assert.deepEqual(ordered.after.map(f => f.id), ["a1", "a2", "a3"]);
+  assert.equal(ordered.paired, 1);
+  // 입주청소 검토 화면의 짝(reviewPair)도 같은 번호로 맞춘다.
+  const moveIn = P.orderPairs([at("x", "09:00"), at("y", "09:05", { reviewPair: "pair:y:z" })], [at("w", "10:00"), at("z", "10:05", { reviewPair: "pair:y:z" })]);
+  assert.deepEqual([moveIn.before[0].id, moveIn.after[0].id], ["y", "z"]);
+  // 한쪽에만 남은 짝 표시는 짝으로 보지 않고, 사진은 하나도 버리지 않는다.
+  const stale = P.orderPairs([at("s1", "09:00", { pairWith: "gone" })], [at("t1", "10:00")]);
+  assert.deepEqual([stale.before.length, stale.after.length, stale.paired], [1, 1, 0]);
+  // 실제 초안 경로도 이 순서를 쓴다.
+  const plan = { kind: "common", buckets: [{ itemKey: "stairs", before, during: [], after, unsorted: [], heic: [] }] };
+  const made = P.toReportDraft(plan, { core: W, kind: "common" });
+  const stairs = made.draft.items.find(item => item.key === "stairs");
+  assert.deepEqual(stairs.before.map(p => p.id), ["b2", "b1", "b3"]);
+  assert.deepEqual(stairs.after.map(p => p.id), ["a1", "a2", "a3"]);
+});
+
+test("공용부 AI 짝 추천은 서로의 사진을 짝으로 기록한다", () => {
+  const at = (id, hm) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" } });
+  const plan = { kind: "common", buckets: [{ itemKey: "stairs", before: [], during: [], after: [], heic: [], unsorted: [at("p1", "09:00"), at("p2", "10:00")] }] };
+  const paired = P.applyCommonPairs(plan, [{ beforeId: "p1", afterId: "p2", evidence: "debris_removed" }]);
+  const rows = P.photoReviewRows(paired);
+  assert.equal(rows.find(r => r.id === "p1").file.pairWith, "p2");
+  assert.equal(rows.find(r => r.id === "p2").file.pairWith, "p1");
+});
+
