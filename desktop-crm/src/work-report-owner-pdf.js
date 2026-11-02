@@ -103,37 +103,11 @@ function areaPhotos(item, index, images) {
   </section>`;
 }
 
-function createOwnerReportHtml(report, options = {}) {
-  const company = options.company && typeof options.company === "object" ? options.company : {};
-  const images = options.images && typeof options.images === "object" ? options.images : {};
-  const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);
-  const photoItems = items.filter(count);
-  const date = report.workDate || "날짜 미기재";
-  const kind = Core.kindLabel(report.kind);
-  // 고객 단위 보고서(건물 미연결)는 buildingName 에 CRM 고객 이름이 들어 있다.
-  // 실명·내부 별명이 건물주용 문서의 제목·현장 칸에 나가지 않게, 연결된 건물이
-  // 있을 때만 건물명을 쓰고 아니면 현장 주소를 쓴다.
-  const site = (report.buildingId && report.buildingName) || report.siteAddress || "";
-  const building = site || "현장";
-  // 수신인은 실명이 아니라 "(주소) 건물주" 로 쓴다. CRM 이름·별명은 내부용이다.
-  // '귀하' 하나로 높인다 — "건물주님 귀하" 는 높임이 겹친다.
-  const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
-  const sender = company.businessName || "브링케어";
-  const documentNo = Core.documentNo(report);
-  const totals = Object.fromEntries(Object.keys(PHASES).map(phase => [phase, items.reduce((n, item) => n + item[phase].length, 0)]));
-  // 값이 있는 칸만 싣는다. 빈칸이 남으면 받는 쪽은 안 적은 것인지 없는 것인지 모른다.
-  const facts = [
-    // 작업일·작업 종류는 위 '한눈에 보기' 에 이미 있다. 같은 값을 두 번 싣지 않는다.
-    ["현장", site !== report.siteAddress ? site : ""], ["현장 주소", report.siteAddress],
-    ["작업 구분", Core.categoryLabel(report.category) + (report.category === "etc" && report.categoryEtc ? ` · ${report.categoryEtc}` : "")],
-    ["작업 범위", report.area], ["담당자", report.workerName],
-  ].filter(([, value]) => value);
-  const stats = [["작업 구역", `${items.length}곳`], ...Object.entries(PHASES).filter(([phase]) => phase !== "during" || totals.during).map(([phase, label]) => [label, `${totals[phase]}장`])];
-  const glance = [["작업일", date], ["작업 종류", kind], ["작업 구역", `${items.length}곳`], ["사진 기록", `${totals.before + totals.during + totals.after}장`]];
-  const senderLine = [sender, company.representative ? `대표 ${company.representative}` : "", company.registrationNumber ? `사업자등록번호 ${company.registrationNumber}` : ""].filter(Boolean).join(" · ");
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>작업 결과 보고서</title><style>
-${PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : ""}
-@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"작업 결과보고서 · ${escape(documentNo)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
+// 건물주에게 나가는 보고서들이 같은 얼굴을 하도록 글꼴·색·사진 카드 양식을 한 곳에 둔다.
+// runningTitle 은 둘째 쪽부터 오른쪽 위에 찍히는 문서 이름·번호다.
+function ownerReportStyles(runningTitle) {
+  return `${PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : ""}
+@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"${escape(runningTitle)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
 @page:first{@top-right{content:none}}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#1d3b4f;font-family:${FONT_STACK};-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{width:186mm;font-size:9pt;line-height:1.65;overflow-wrap:anywhere}h1,h2,h3,p{margin:0}p{orphans:2;widows:2}
@@ -174,7 +148,38 @@ figure.before{border-top:1mm solid #e3a33b}figure.after{border-top:1mm solid #2f
 .photo-bar{display:flex;justify-content:space-between;align-items:center;padding:1.3mm 2.5mm;font-size:7.5pt}.photo-bar span{letter-spacing:.12em;font-size:6.5pt;font-weight:700}
 figure.before .photo-bar{background:#fff1dc;color:#8a5a12}figure.after .photo-bar{background:#e3effb;color:#1f5aa6}figure.during .photo-bar{background:#e3f4ec;color:#2b6e4f}
 figure img,.missing-photo{display:block;width:100%;height:58mm;object-fit:contain;background:#fff}.missing-photo{display:grid;place-items:center;color:#8b95a1;font-size:8pt;background:#f4f9fc}
-figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;white-space:pre-wrap;border-top:.2mm solid #eef4f8}figcaption b{font-weight:600;display:block}figcaption span{display:block;color:#5d7b8d}
+figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;white-space:pre-wrap;border-top:.2mm solid #eef4f8}figcaption b{font-weight:600;display:block}figcaption span{display:block;color:#5d7b8d}`;
+}
+function createOwnerReportHtml(report, options = {}) {
+  const company = options.company && typeof options.company === "object" ? options.company : {};
+  const images = options.images && typeof options.images === "object" ? options.images : {};
+  const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);
+  const photoItems = items.filter(count);
+  const date = report.workDate || "날짜 미기재";
+  const kind = Core.kindLabel(report.kind);
+  // 고객 단위 보고서(건물 미연결)는 buildingName 에 CRM 고객 이름이 들어 있다.
+  // 실명·내부 별명이 건물주용 문서의 제목·현장 칸에 나가지 않게, 연결된 건물이
+  // 있을 때만 건물명을 쓰고 아니면 현장 주소를 쓴다.
+  const site = (report.buildingId && report.buildingName) || report.siteAddress || "";
+  const building = site || "현장";
+  // 수신인은 실명이 아니라 "(주소) 건물주" 로 쓴다. CRM 이름·별명은 내부용이다.
+  // '귀하' 하나로 높인다 — "건물주님 귀하" 는 높임이 겹친다.
+  const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
+  const sender = company.businessName || "브링케어";
+  const documentNo = Core.documentNo(report);
+  const totals = Object.fromEntries(Object.keys(PHASES).map(phase => [phase, items.reduce((n, item) => n + item[phase].length, 0)]));
+  // 값이 있는 칸만 싣는다. 빈칸이 남으면 받는 쪽은 안 적은 것인지 없는 것인지 모른다.
+  const facts = [
+    // 작업일·작업 종류는 위 '한눈에 보기' 에 이미 있다. 같은 값을 두 번 싣지 않는다.
+    ["현장", site !== report.siteAddress ? site : ""], ["현장 주소", report.siteAddress],
+    ["작업 구분", Core.categoryLabel(report.category) + (report.category === "etc" && report.categoryEtc ? ` · ${report.categoryEtc}` : "")],
+    ["작업 범위", report.area], ["담당자", report.workerName],
+  ].filter(([, value]) => value);
+  const stats = [["작업 구역", `${items.length}곳`], ...Object.entries(PHASES).filter(([phase]) => phase !== "during" || totals.during).map(([phase, label]) => [label, `${totals[phase]}장`])];
+  const glance = [["작업일", date], ["작업 종류", kind], ["작업 구역", `${items.length}곳`], ["사진 기록", `${totals.before + totals.during + totals.after}장`]];
+  const senderLine = [sender, company.representative ? `대표 ${company.representative}` : "", company.registrationNumber ? `사업자등록번호 ${company.registrationNumber}` : ""].filter(Boolean).join(" · ");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>작업 결과 보고서</title><style>
+${ownerReportStyles(`작업 결과보고서 · ${documentNo}`)}
 </style></head><body><main>
 <section class="overview">
 <header class="doc-head">${LOGO ? `<img class="brand-logo" src="${LOGO}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>작업 결과보고서</h1><p>WORK COMPLETION REPORT</p></div></header>
@@ -205,4 +210,4 @@ ${photoItems.map((item, i) => areaPhotos(item, i + 1, images)).join("")}
 </main></body></html>`;
 }
 
-module.exports = { createOwnerReportHtml, photoPages };
+module.exports = { createOwnerReportHtml, photoPages, areaPhotos, ownerReportStyles, ownerLogo: () => LOGO, FONT_STACK, SAFE_IMAGE, escape };

@@ -259,6 +259,7 @@
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
     workReports: ["사진과 작업정보로 AI 초안을 만듭니다", "작업 결과보고서"],
     buildingMonthlyReports: ["계약 건물의 한 달 관리 내역을 건물주에게 보고합니다", "건물 월간보고서"],
+    periodicReports: ["격주로 공용부 청소 2회와 건물 정기점검을 건물주에게 보고합니다", "정기 관리보고서"],
     customerNotices: ["끝났다고 건물주에게 알립니다", "고객 알림"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],
     officeAccountSetup: ["이메일 인증과 비밀번호 설정을 초대 링크로 진행합니다", "계정 등록"],
@@ -507,6 +508,17 @@
   };
   const customerById = id => store.customers.find(item => item.id === id) || null;
   const buildingById = id => store.buildings.find(item => item.id === id) || null;
+  let periodicReportUi = null;
+  // 정기 관리보고서 화면은 periodic-report-ui.js 에 있다. 처음 열 때 만든다.
+  function periodicReportView() {
+    if (!periodicReportUi) periodicReportUi = window.BringPeriodicReportUI.create({
+      api, esc, showToast, todayKey,
+      getMain: () => main,
+      getStore: () => store,
+      isActive: () => currentView === "periodicReports",
+    });
+    return periodicReportUi;
+  }
   const customerBuildings = customer => {
     if (!customer) return [];
     const linkedIds = new Set(Core.customerBuildingIds(customer));
@@ -1678,6 +1690,7 @@
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "workReports") renderWorkReports();
     else if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+    else if (currentView === "periodicReports") periodicReportView().render();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
     else if (currentView === "buildings") renderBuildings();
@@ -20870,7 +20883,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk", "lifeToday", "lifeInbox", "lifeBoard"].includes(query.get("view"))) currentView = query.get("view");
+      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "periodicReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk", "lifeToday", "lifeInbox", "lifeBoard"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

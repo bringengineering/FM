@@ -62,6 +62,7 @@ const ProjectWeeklyReportCore = require("./project-weekly-report-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
+const PeriodicReportCore = require("./periodic-report-core");
 const FormCore = require("./form-core");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
@@ -5686,6 +5687,47 @@ class FirebaseRemoteClient {
     const checked = WorkReportCore.validateReport(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     const location = `workReports/${checked.report.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.report, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 정기 관리보고서(격주). 청소는 workReports 에 있고 여기에는 점검·조치·기간만 둔다.
+  async loadPeriodicReports() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("periodicReports", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const reports = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => PeriodicReportCore.normalizeReport(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      reports,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 저장은 작성 중에도 된다. 건물주에게 낼 수 있는지는 PDF 를 만들 때 따진다.
+  async savePeriodicReport(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 정기 관리보고서를 쓸 수 없습니다.", "PERIODIC_REPORT_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const checked = PeriodicReportCore.validateDraft(input);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `periodicReports/${checked.report.id}`;
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     const now = new Date().toISOString();
