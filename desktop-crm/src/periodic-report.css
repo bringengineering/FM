@@ -47,3 +47,9 @@
 .pr-due > header small { color: #6B7684; }
 .pr-due-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .pr-due-list small { color: #8A5A12; }
+.pr-ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+.pr-ai { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #C9DDF7; border-radius: 12px; background: #F4F9FF; }
+.pr-ai header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pr-ai header small { color: #6B7684; flex: 1; }
+.pr-ai ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pr-applied { color: #2B6E4F; font-weight: 800; font-size: 12px; }

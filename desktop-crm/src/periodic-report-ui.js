@@ -11,7 +11,7 @@
     const P = () => root.BringPeriodicReportCore;
     const state = {
       loading: false, loaded: false, error: "", reports: [], works: [], canWork: false, admin: false,
-      draft: null, loadedAt: 0, busy: "", newTarget: "", newPeriod: "",
+      draft: null, loadedAt: 0, busy: "", suggestions: null, newTarget: "", newPeriod: "",
     };
 
     const buildings = () => (getStore().buildings || []).filter(item => item && item.id && !item.archivedAt && !item.deletedAt);
@@ -256,6 +256,49 @@
       }
     }
 
+    // AI 점검 제안을 받는다. 저장된 보고서 기준이라 먼저 저장한다. 제안은 '적용' 해야 들어간다.
+    async function aiReview(mode) {
+      if (state.busy || !state.draft) return;
+      const saved = await save({ quiet: true });
+      if (!saved) return;
+      state.busy = `ai:${mode}`;
+      render();
+      try {
+        const result = await api.reviewPeriodicInspection({ reportId: saved.id, mode });
+        if (!result || !result.ok) return showToast((result && result.error) || "AI 점검 제안을 받지 못했습니다.", "error");
+        state.suggestions = { mode, list: result.suggestions, reviewed: result.reviewed };
+        if (!result.suggestions.length) showToast(mode === "cleaning" ? "점검 근거로 쓸 만한 청소 사진을 찾지 못했습니다." : "제안할 내용이 없습니다.", "info");
+      } catch (error) {
+        showToast((error && error.message) || "AI 점검 제안을 받지 못했습니다.", "error");
+      } finally {
+        state.busy = "";
+        render();
+      }
+    }
+
+    function applySuggestion(index) {
+      const draft = readForm();
+      const suggestion = state.suggestions && state.suggestions.list[index];
+      if (!draft || !suggestion) return;
+      const item = draft.inspection.items.find(row => row.key === suggestion.itemKey);
+      if (!item) return;
+      if (state.suggestions.mode === "cleaning" && !item.photos.some(photo => photo.id === suggestion.photo.id)) item.photos = [...item.photos, suggestion.photo];
+      if (suggestion.status && (state.suggestions.mode === "inspection" || item.status === "good")) {
+        item.status = suggestion.status;
+        if (suggestion.note && (!item.note || state.suggestions.mode === "inspection")) item.note = suggestion.status === "good" && suggestion.note === "이상 없음" ? "" : suggestion.note;
+      }
+      state.suggestions.list = state.suggestions.list.map((row, i) => i === index ? { ...row, applied: true } : row);
+      state.draft = P().normalizeReport(draft);
+      render();
+    }
+
+    function suggestionPanel() {
+      if (!state.suggestions || !state.suggestions.list.length) return "";
+      const label = { good: "양호", watch: "관찰", fix: "조치 필요" };
+      return `<div class="pr-ai"><header><b>AI 제안</b> <small>${state.suggestions.mode === "cleaning" ? "청소 사진 중 점검 근거로 쓸 만한 사진" : "점검 사진을 보고 한 제안"} · 사진 ${state.suggestions.reviewed}장 확인 · 사실과 다르면 적용하지 마세요</small><button type="button" class="mini-button" data-pr-ai-close>닫기</button></header>
+        <ul>${state.suggestions.list.map((row, i) => `<li><b>${esc(row.label)}</b>${row.area ? ` <small>(${esc(row.area)} 사진)</small>` : ""} ${row.status ? `<span class="pr-badge pr-${esc(row.status)}">${esc(label[row.status])}</span>` : ""} ${esc(row.note)} ${row.applied ? `<span class="pr-applied">적용함</span>` : `<button type="button" class="mini-button" data-pr-ai-apply="${i}">${state.suggestions.mode === "cleaning" ? "사진 추가" : "적용"}</button>`}</li>`).join("")}</ul></div>`;
+    }
+
     async function addPhoto(itemKey) {
       const draft = readForm();
       const item = draft && draft.inspection.items.find(row => row.key === itemKey);
@@ -333,6 +376,8 @@
         <section><h4>2. 건물 정기점검</h4>
           <div class="pr-inline"><label>점검일 <input type="date" name="inspectionDate" value="${esc(draft.inspection.date)}"${period ? ` min="${period.from}" max="${period.to}"` : ""}></label><label>점검자 <input name="inspectorName" maxlength="120" value="${esc(draft.inspection.inspectorName)}" placeholder="브링케어 현장팀"></label></div>
           <p class="pr-hint">기본값은 모두 ‘양호’ 입니다. 문제가 있는 항목만 상태를 바꾸고 사진과 한 줄을 붙이세요. 점검하지 않은 항목은 ‘해당 없음’ 으로 두면 보고서에서 빠집니다.</p>
+          <div class="pr-ai-actions"><button type="button" class="secondary-button" data-pr-ai="inspection"${busy ? " disabled" : ""}>${state.busy === "ai:inspection" ? "AI 확인 중…" : "AI로 점검 사진 확인"}</button><button type="button" class="secondary-button" data-pr-ai="cleaning"${busy || !allCleanings.length ? " disabled" : ""}>${state.busy === "ai:cleaning" ? "AI 확인 중…" : "청소 사진에서 점검 근거 찾기"}</button></div>
+          ${suggestionPanel()}
           <table class="office-table pr-items"><thead><tr><th>항목</th><th>상태</th><th>점검 내용</th><th>사진</th></tr></thead><tbody>${itemRows}</tbody></table>
         </section>
         <section><h4>3. 조치 및 건의 (자동)</h4>
@@ -395,13 +440,16 @@
 
     function onClick(event) {
       if (!isActive()) return;
-      const el = event.target.closest("[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
+      const el = event.target.closest("[data-pr-ai],[data-pr-ai-apply],[data-pr-ai-close],[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
       if (!el) return;
       event.preventDefault();
+      if (el.hasAttribute("data-pr-ai")) return void aiReview(el.getAttribute("data-pr-ai"));
+      if (el.hasAttribute("data-pr-ai-apply")) return applySuggestion(Number(el.getAttribute("data-pr-ai-apply")));
+      if (el.hasAttribute("data-pr-ai-close")) { state.suggestions = null; return render(); }
       if (el.hasAttribute("data-pr-drafts")) return void createDrafts();
       if (el.hasAttribute("data-pr-new")) return openNew();
-      if (el.hasAttribute("data-pr-edit")) { state.draft = state.reports.find(item => item.id === el.getAttribute("data-pr-edit")) || null; return render(); }
-      if (el.hasAttribute("data-pr-close")) { state.draft = null; state.loadedAt = 0; return render(); }
+      if (el.hasAttribute("data-pr-edit")) { state.suggestions = null; state.draft = state.reports.find(item => item.id === el.getAttribute("data-pr-edit")) || null; return render(); }
+      if (el.hasAttribute("data-pr-close")) { state.draft = null; state.suggestions = null; state.loadedAt = 0; return render(); }
       if (el.hasAttribute("data-pr-save")) return void save();
       if (el.hasAttribute("data-pr-export")) return void exportPdf("");
       if (el.hasAttribute("data-pr-export-id")) return void exportPdf(el.getAttribute("data-pr-export-id"));
