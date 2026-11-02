@@ -139,3 +139,12 @@ test("Drive 가 없으면 서버 자료를 받기 전에 알리고, 건물 없�
   assert.deepEqual(P.cleaningsFor(works, customerReport).map(row => row.id), ["w1"]);
   assert.equal(P.validateDraft(customerReport).ok, true);
 });
+
+test("청소 내역의 수행 내용에는 안내문이 아니라 구역별 수행 범위가 들어간다", () => {
+  const letter = "안녕하십니까, 브링케어입니다.\n\n구역별 현장 사진을 정리하여 전달드립니다.\n\n브링케어 드림";
+  const works = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", summary: letter,
+    items: [{ key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소", status: "recorded", after: [{ id: "p" }] }] }];
+  const view = P.buildView({ id: "pr_x0001", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28" } }, works);
+  assert.equal(view.cleanings[0].work, "층별 계단·참의 오염 확인 및 청소");
+  assert.doesNotMatch(view.cleanings[0].work, /안녕하십니까/);
+});

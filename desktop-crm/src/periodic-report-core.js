@@ -312,7 +312,10 @@
         week: weekOfMonth(row.workDate),
         workerName: row.workerName,
         areas: items.map(item => item.label).join(", "),
-        work: row.summary || items.map(item => item.detail).filter(Boolean).slice(0, 3).join(" / "),
+        // 청소 보고서의 요약은 건물주에게 보내는 안내문(인사·맺음말)인 경우가 많아 표 칸에
+        // 맞지 않는다. 구역별 수행 범위를 쓰고, 그것이 없을 때만 요약의 첫 줄을 짧게 쓴다.
+        work: items.map(item => item.detail).filter(Boolean).slice(0, 3).join(" / ")
+          || String(row.summary || "").split(/\n/u).map(line => line.trim()).find(line => line && !/^(안녕하|브링케어 드림)/u.test(line))?.slice(0, 80) || "",
         photoCount: WorkReport.photoCount(row),
         items,
       };
