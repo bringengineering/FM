@@ -127,3 +127,43 @@ test('production wiring keeps trusted canonical IPC, encrypted settings and tear
   for (const channel of ['status','locate','tile','settings-save']) assert.match(main,new RegExp(`secureCanonicalHandle\\("crm:contract-map-${channel}"`));
   assert.equal(policy.classification('crm:contract-map-settings-save'),'mutation'); assert.equal(policy.classification('crm:contract-map-locate'),'control'); assert.match(main,/encodeProtectedJson\(safeStorage, value\)/); assert.match(main,/if \(!decoded.encrypted\) throw 'STORAGE'/); assert.match(html,/data-view="contractBuildingMap"/); assert.ok(html.indexOf('data-view="relationships"') < html.indexOf('data-view="contractBuildingMap"')); assert.match(app,/window.BringContractBuildingMapUI.mount/); assert.match(app,/function setCurrentAuth\(value\) \{\s*if \(disposeContractBuildingMap\)/); assert.match(app,/function prepareWorkspaceTransition\(workspace\) \{\s*if \(disposeContractBuildingMap\)/); assert.doesNotMatch(read('contract-building-map-ui.js'),/localStorage|sessionStorage|fetch\(|https?:\/\//);
 });
+const { createMapGateway } = require('../src/contract-building-map-gateway');
+function serverHarness(reply = async input => input.action === 'status' ? { ok: true, configured: true } : input.action === 'geocode' ? { ok: true, status: 'OK', lon: 127.94, lat: 37.34 } : { ok: true, png: (() => { const png = Buffer.alloc(33); Buffer.from('89504e470d0a1a0a','hex').copy(png); png.write('IHDR',12); png.writeUInt32BE(256,16); png.writeUInt32BE(256,20); return png.toString('base64'); })() }) {
+  const sent = []; const h = harness({ gateway: async input => { sent.push(input); return reply(input); } }); h.setConfig(null); return { ...h, sent };
+}
+test('without a PC key the company relay serves every role and the PC never calls VWorld directly', async () => {
+  for (const role of ['admin', 'member', 'viewer']) {
+    const h = serverHarness(); h.setUser({ uid: 'x', role });
+    const status = await h.service.status(); assert.equal(status.enabled, true); assert.equal(status.source, 'server'); assert.equal(status.configured, false);
+    const located = await h.service.locate({ buildingIds: ['building'] }); assert.deepEqual(located.results, [{ id: 'building', status: 'located', lon: 127.94, lat: 37.34 }]);
+    const p = Core.point(127.94, 37.34, 13), tile = await h.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) }); assert.ok(tile.dataUrl.startsWith('data:image/png;base64,'));
+    assert.equal(h.calls.length, 0); assert.deepEqual(h.sent.find(input => input.action === 'geocode'), { action: 'geocode', address: '공개 도로명 시연 주소', type: 'ROAD' });
+    assert.equal(h.sent.filter(input => input.action === 'status').length, 1, 'relay status is cached');
+  }
+});
+test('relay not configured or unreachable keeps the map off without outbound geocoding', async () => {
+  for (const reply of [async () => ({ ok: true, configured: false }), async () => { throw 'NETWORK'; }]) {
+    const h = serverHarness(reply); assert.equal((await h.service.status()).enabled, false); assert.equal((await h.service.locate({ buildingIds: ['building'] })).code, 'CONFIG'); assert.equal(h.sent.every(input => input.action === 'status'), true);
+  }
+});
+test('relay tile payload is PNG-validated and relay errors map to safe codes', async () => {
+  const bad = serverHarness(async input => input.action === 'status' ? { ok: true, configured: true } : { ok: true, png: Buffer.from('<html>').toString('base64') });
+  const p = Core.point(127.94, 37.34, 13); assert.equal((await bad.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) })).code, 'NETWORK');
+  const limited = serverHarness(async input => { if (input.action === 'status') return { ok: true, configured: true }; throw 'LIMIT'; });
+  assert.equal((await limited.service.locate({ buildingIds: ['building'] })).code, 'LIMIT');
+});
+test('a key saved and enabled on this PC still takes precedence over the relay', async () => {
+  const h = harness({ gateway: async () => { throw new Error('relay must not be used'); } });
+  assert.equal((await h.service.status()).source, 'pc'); assert.equal((await h.service.locate({ buildingIds: ['building'] })).ok, true); assert.equal(h.calls.length, 1);
+});
+test('map gateway client sends only token + request to the fixed HTTPS endpoint and redacts failures', async () => {
+  assert.throws(() => createMapGateway({ endpoint: 'http://example.test/v1/map', idToken: async () => 't', fetchImpl: async () => {} }));
+  assert.throws(() => createMapGateway({ endpoint: 'https://example.test/v1/other', idToken: async () => 't', fetchImpl: async () => {} }));
+  const calls = []; const ok = createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => 'id-token', fetchImpl: async (url, options) => { calls.push({ url, options }); return Response.json({ ok: true, configured: true }); } });
+  assert.deepEqual(await ok({ action: 'status' }), { ok: true, configured: true }); assert.equal(calls[0].options.redirect, 'error'); assert.equal(calls[0].options.headers.authorization, 'Bearer id-token'); assert.equal(calls[0].options.body, '{"action":"status"}');
+  for (const [response, code] of [[Response.json({ ok: false, code: 'RATE_LIMITED' }, { status: 429 }), 'LIMIT'], [Response.json({ ok: false, code: 'FORBIDDEN' }, { status: 403 }), 'AUTH'], [Response.json({ ok: false, code: 'MAP_NOT_CONFIGURED' }, { status: 503 }), 'CONFIG'], [new Response('<html>', { headers: { 'content-type': 'text/html' } }), 'NETWORK'], [new Response('x'.repeat(800 * 1024), { headers: { 'content-type': 'application/json' } }), 'NETWORK']]) {
+    const call = createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => 't', fetchImpl: async () => response });
+    await assert.rejects(call({ action: 'status' }), error => error === code);
+  }
+  await assert.rejects(createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => '', fetchImpl: async () => { throw new Error('no'); } })({ action: 'status' }), error => error === 'AUTH');
+});
