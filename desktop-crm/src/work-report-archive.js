@@ -59,7 +59,7 @@ function createService(deps) {
     const rootFolderId = String(data.company?.buildingDocsFolderId || "");
     if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("건물 문서함에서 회사 Drive 보관 폴더를 먼저 지정해 주세요.");
     const artifact = await deps.pdf({report: {...report, ownerName: customer?.name || customer?.company || report.ownerName, ownerContact: phone || report.ownerContact},
-      company: data.settings?.quoteCompany || {}, secrets: {vendorNames: (data.partnerVendors || []).map(row => row.name).filter(Boolean), vendorAmounts: [], privateMemos: []}});
+      company: data.settings?.quoteCompany || {}, secrets: R.reportSecrets(data, report)});
     session.check();
     if (!artifact?.ok) throw new Error(artifact?.error || "보고서 PDF를 만들지 못했습니다.");
     if (artifact.photoFailures || !Number.isInteger(artifact.photos) || artifact.photos < R.photoCount(report)) throw new Error("보고서는 저장했지만 PDF 사진을 모두 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 저장해 주세요.");

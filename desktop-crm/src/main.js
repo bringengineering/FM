@@ -2708,10 +2708,11 @@ async function readSavedWorkReportPdf(input, session) {
     || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(customer.phone)) throw new Error("고객과 저장 결과보고서를 다시 선택해 주세요.");
   if (String(report.updatedAt || "") !== input.updatedAt) throw new Error("결과보고서가 변경되었습니다. 목록을 새로 확인해 주세요.");
   const artifact = await createWorkReportPdfArtifact({report, company: data.settings?.quoteCompany || {},
-    secrets: {vendorNames: (data.partnerVendors || []).map(row => row.name).filter(Boolean), vendorAmounts: [], privateMemos: []}}, "owner");
+    secrets: WorkReportCore.reportSecrets(data, report)}, "owner");
   session.check();
   if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
-  const expectedPhotos = report.items.reduce((count, item) => count + item.before.length + item.after.length, 0);
+  // 작업 중 사진도 센다. 공용부 보고서는 작업 중 사진만으로 설 수 있다.
+  const expectedPhotos = WorkReportCore.photoCount(report);
   if (artifact.photoFailures || artifact.photos < expectedPhotos) throw new Error("결과보고서 사진을 모두 읽지 못했습니다. Drive 연결과 사진 권한을 확인해 주세요.");
   return {customer, bytes: artifact.bytes, report, record: {id: report.id, updatedAt: report.updatedAt, title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
 }
@@ -4749,7 +4750,11 @@ async function exportWorkReport(input) {
 
   // 건물주와 청창사 양쪽에 나가는 문서다. 협력업체명·업체 단가가 섞였으면
   // 만들지 않는다. 만들고 나서 지우는 것보다 안 만드는 편이 낫다.
-  const leaks = WorkReportCore.findLeakedFields(report, options.secrets);
+  // 검사 목록은 회사 자료에서 직접 만들고, 화면이 보낸 목록은 더하기만 한다.
+  const store = await remoteClient.loadStore();
+  session.check();
+  const secrets = WorkReportCore.mergeSecrets(WorkReportCore.reportSecrets(store, report), options.secrets);
+  const leaks = WorkReportCore.findLeakedFields(report, secrets);
   if (leaks.length) {
     return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
   }
@@ -4781,6 +4786,9 @@ async function exportWorkReport(input) {
       }
     }
   }
+  // Drive 가 끊겨 아예 받지 않은 사진이나 빈 응답도 못 받은 사진이다. 0장이
+  // 실패로 안 잡히면 사진 없는 PDF 가 '저장했습니다' 로 끝난다.
+  photoFailures = Math.max(photoFailures, photos.length - Object.keys(images).length);
 
   session.check();
   if (options.strictPhotos === true && (photoFailures || Object.keys(images).length < photos.length)) return {ok: false, error: "PDF 사진을 모두 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요."};
