@@ -174,6 +174,40 @@ FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래
 
 NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Script의 스크립트 속성에만 저장합니다.
 
+## 건물주 안내 알림톡 (청소 일정 · 퇴실~입주 · 구독료)
+
+받는 사람은 항상 **건물주**(건물의 소유 고객 `ownerCustomerId`, 없으면 그 건물에 연결된 `건물주` 유형 고객이 한 명일 때)입니다. 등록 문구는 `crm-ai-worker/templates/`의 아래 8개 JSON을 그대로 NCP에 등록합니다(버튼 없음, 카테고리는 기존 정보성 안내와 동일).
+
+| 흐름 | 템플릿 | 보내는 방식 |
+|---|---|---|
+| 청소 일정 | `BRINGCLEANSCHEDULEV1` | 자동 · 청소 당일 08시 이후 첫 실행. 계약의 `청소 방문 시각`을 사용, 비어 있으면 "방문 전 연락드립니다" |
+| 작업 결과보고서 | `BRINGCOMPLETIONREPORTV3` (기존) | 기존 그대로 · 보고서 저장(사진 검사) 후 "고객 알림을 보내시겠습니까?"에서 예 |
+| 퇴실 일정 | `BRINGMOVEOUTNOTICEV1` | CRM 공실 현황 → 호실 `건물주 안내` → 미리보기 확인 후 발송 |
+| 중개 접수 | `BRINGBROKERLISTEDV1` | 〃 |
+| 방 보기 | `BRINGROOMVIEWINGV1` | 〃 (여러 번 가능) |
+| 신규 계약 | `BRINGLEASECONTRACTV1` | 〃 |
+| 입주청소 | `BRINGMOVEINCLEANV1` | 〃 |
+| 구독료 결제일 | `BRINGSUBSCRIPTIONDUEV1` | 자동 · 계약 `입금 예정일`(건물마다 다름) 당일 09시 이후, 아직 `입금 완료`가 아니면 |
+| 결제 확인 | `BRINGSUBSCRIPTIONPAIDV1` | 자동 · 계약 입금 상태가 `입금 완료`로 바뀌면 09~21시 사이 다음 실행(최근 14일 이내 결제분만) |
+
+스크립트 속성:
+
+- `OWNER_NOTICE_AUTOMATION_ENABLED`: `true`일 때만 자동 안내(청소 일정·결제일·결제 확인)가 돕니다. 기본은 꺼짐.
+- `OWNER_NOTICE_BANK_ACCOUNT`: 결제일 안내에 표시할 입금계좌(예: `농협 000-0000-0000-00 (주)브링엔지니어링`). 비어 있으면 결제일 안내는 보내지 않습니다.
+- 검수가 **완료된** 템플릿만 코드 속성을 넣습니다. 비어 있는 안내는 보내지 않습니다.
+  - `KAKAO_OWNER_TEMPLATE_CLEANING_SCHEDULE` = `BRINGCLEANSCHEDULEV1`
+  - `KAKAO_OWNER_TEMPLATE_MOVE_OUT` = `BRINGMOVEOUTNOTICEV1`
+  - `KAKAO_OWNER_TEMPLATE_BROKER_LISTED` = `BRINGBROKERLISTEDV1`
+  - `KAKAO_OWNER_TEMPLATE_ROOM_VIEWING` = `BRINGROOMVIEWINGV1`
+  - `KAKAO_OWNER_TEMPLATE_LEASE_CONTRACT` = `BRINGLEASECONTRACTV1`
+  - `KAKAO_OWNER_TEMPLATE_MOVE_IN_CLEANING` = `BRINGMOVEINCLEANV1`
+  - `KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE` = `BRINGSUBSCRIPTIONDUEV1`
+  - `KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_PAID` = `BRINGSUBSCRIPTIONPAIDV1`
+
+켜는 순서: 템플릿 검수 완료 → 코드 속성 입력 → `OWNER_NOTICE_BANK_ACCOUNT` 입력 → 편집기에서 `setupOwnerNoticeAutomation` 1회 실행(30분 트리거 생성, 결과 로그에 승인된 템플릿 목록 표시) → `OWNER_NOTICE_AUTOMATION_ENABLED=true`.
+
+안전장치: 알림톡이 꺼져 있으면 아무것도 보내지 않고(SMS 대체 없음), 21시~08시에는 보내지 않습니다. 같은 안내는 `crmCompany/messageDeliveries/{owner_…}` 기록이 있으면 다시 보내지 않으며, 발송 전에 `sending` 기록을 먼저 남겨 중복 발송을 막습니다. 자동화를 처음 켤 때 이미 `입금 완료`인 건은 `baseline_skipped`로만 기록하고 결제 확인 안내를 보내지 않습니다.
+
 ## 카카오 알림톡 테스트
 
 1. NCP SENS `bring_care_kakao` 프로젝트에 `@bringcare` 채널과 아래 템플릿이 모두 승인 상태인지 확인합니다.

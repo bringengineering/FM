@@ -1,0 +1,6 @@
+{
+  "templateCode": "BRINGMOVEINCLEANV1",
+  "templateName": "입주청소안내",
+  "content": "[BRING CARE 입주청소 안내]\n#{건물주소} 건물주님, #{호실}호 입주청소 일정을 안내드립니다.\n\n청소일: #{작업일}\n예정시간: #{예정시간}\n입주예정일: #{입주일}\n\n청소가 끝나면 결과보고서를 보내드리겠습니다.\n문의: 1551-3873",
+  "buttons": []
+}

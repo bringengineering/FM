@@ -15,7 +15,10 @@ function extractFunction(name) {
 
 const context = { String, Object, Array, Date };
 vm.createContext(context);
-vm.runInContext([extractFunction("customerMessageTemplateCatalog_"), extractFunction("customerMessagePolicy_")].join("\n"), context);
+const ownerTemplatesStart = source.indexOf("const OWNER_NOTICE_TEMPLATES_ =");
+const ownerTemplates = source.slice(ownerTemplatesStart, source.indexOf("};\n", ownerTemplatesStart) + 2);
+vm.runInContext(['const OWNER_NOTICE_CONTACT_ = "문의: 1551-3873";', ownerTemplates, extractFunction("ownerNoticeCatalogEntry_"),
+  extractFunction("customerMessageTemplateCatalog_"), extractFunction("customerMessagePolicy_")].join("\n"), context);
 
 let result = context.customerMessagePolicy_({ id: "c1", phone: "01012345678", messageConsents: {} }, { templateId: "building_management_offer", channel: "kakao" });
 assert.equal(result.allowed, false);
@@ -35,3 +38,13 @@ assert.equal(result.template.property, "KAKAO_CUSTOMER_TEMPLATE_CLEANING_EXTRA_C
 result = context.customerMessagePolicy_({ id: "c1", phone: "01012345678" }, { templateId: "unknown", channel: "kakao", sourceType: "work", sourceId: "w1" });
 assert.equal(result.code, "TEMPLATE_NOT_ALLOWED");
 console.log("PASS customer message policy fails closed");
+
+result = context.customerMessagePolicy_({ id: "owner1", phone: "01012345678" }, { templateId: "owner_move_out", channel: "kakao" });
+assert.equal(result.allowed, false);
+assert.equal(result.code, "SOURCE_REQUIRED");
+result = context.customerMessagePolicy_({ id: "owner1", phone: "01012345678" }, { templateId: "owner_move_out", channel: "kakao", sourceType: "buildingUnit", sourceId: "unit1" });
+assert.equal(result.allowed, true);
+assert.equal(result.template.ownerNotice, true);
+assert.equal(result.template.property, "KAKAO_OWNER_TEMPLATE_MOVE_OUT");
+assert.match(result.template.defaultBody, /#\{호실\}호 세입자 퇴실 일정/);
+console.log("PASS owner turnover notice policy");

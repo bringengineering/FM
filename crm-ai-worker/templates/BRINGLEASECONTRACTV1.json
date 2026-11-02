@@ -1,0 +1,6 @@
+{
+  "templateCode": "BRINGLEASECONTRACTV1",
+  "templateName": "신규계약안내",
+  "content": "[BRING CARE 신규 계약 안내]\n#{건물주소} 건물주님, #{호실}호 신규 계약 일정을 안내드립니다.\n\n계약일: #{계약일}\n입주예정일: #{입주일}\n계약조건: #{계약조건}\n\n입주 전 입주청소 일정도 이어서 안내드리겠습니다.\n문의: 1551-3873",
+  "buttons": []
+}

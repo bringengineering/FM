@@ -8136,6 +8136,11 @@ function customerMessageTemplateCatalog_() {
     work_completed: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_WORK_COMPLETED", bodyProperty: "KAKAO_CUSTOMER_BODY_WORK_COMPLETED" },
     cleaning_extra_charge_approval: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_EXTRA_CHARGE", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_EXTRA_CHARGE" },
     payment_reminder: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_PAYMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_PAYMENT" },
+    owner_move_out: ownerNoticeCatalogEntry_("owner_move_out"),
+    owner_broker_listed: ownerNoticeCatalogEntry_("owner_broker_listed"),
+    owner_room_viewing: ownerNoticeCatalogEntry_("owner_room_viewing"),
+    owner_lease_contract: ownerNoticeCatalogEntry_("owner_lease_contract"),
+    owner_move_in_cleaning: ownerNoticeCatalogEntry_("owner_move_in_cleaning"),
     cleaning_reengagement: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_REENGAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_REENGAGEMENT" },
     building_management_offer: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_BUILDING_MANAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_BUILDING_MANAGEMENT" },
     promotion: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_PROMOTION", bodyProperty: "KAKAO_CUSTOMER_BODY_PROMOTION" }
@@ -8175,7 +8180,7 @@ function firebaseCompanyServerUrl_(childPath) {
 }
 
 function customerMessageSourceCollection_(sourceType) {
-  return ({ activity: "activities", work: "serviceRecords", contract: "contracts", cleaningOrder: "cleaningOrders" })[String(sourceType || "")] || "";
+  return ({ activity: "activities", work: "serviceRecords", contract: "contracts", cleaningOrder: "cleaningOrders", buildingUnit: "buildingUnits" })[String(sourceType || "")] || "";
 }
 
 function customerMessageSourceMatches_(customer, sourceRecord) {
@@ -8196,10 +8201,10 @@ function customerMessageRequestHash_(payload) {
 
 function customerMessageContent_(template, customer, variables) {
   const props = PropertiesService.getScriptProperties();
-  const body = String(props.getProperty(template.bodyProperty) || "").trim();
+  const body = String(props.getProperty(template.bodyProperty) || template.defaultBody || "").trim();
   if (!body) throw new Error("승인된 고객 메시지 본문 설정이 없습니다.");
   const values = Object.assign({}, variables || {}, { customerName: customer.name || customer.company || "고객" });
-  return body.replace(/#\{([A-Za-z0-9_]+)\}/g, function (_all, key) {
+  return body.replace(/#\{([A-Za-z0-9_가-힣]+)\}/g, function (_all, key) {
     return safeAlimTalkVariable_(values[key] || "", 160);
   });
 }
@@ -8239,7 +8244,9 @@ function handleCustomerMessageSend_(payload) {
       ? collection + "/" + payload.sourceId
       : "data/" + collection + "/" + payload.sourceId;
     const sourceRecord = firebaseReadJson_(firebaseCompanyAuthorizedUrl_(sourcePath, payload.idToken), "연결 업무 조회 실패") || null;
-    if (!customerMessageSourceMatches_(customer, sourceRecord)) throw new Error("선택한 업무가 고객과 연결되어 있지 않습니다.");
+    if (policy.template.ownerNotice) {
+      payload.variables = ownerNoticeTurnoverVariables_(payload, customer, sourceRecord);
+    } else if (!customerMessageSourceMatches_(customer, sourceRecord)) throw new Error("선택한 업무가 고객과 연결되어 있지 않습니다.");
     if (payload.templateId === "cleaning_extra_charge_approval") {
       const extraChargeRequestId = String(payload.variables && payload.variables.extraChargeRequestId || "").trim();
       if (!/^[0-9a-f-]{36}$/i.test(extraChargeRequestId) || sourceRecord.id !== payload.sourceId) throw new Error("추가 서비스 요청 정보를 확인할 수 없습니다.");
@@ -11277,4 +11284,477 @@ function testAnalyzeSample() {
   const analysis = analyzeComplaint_(sample);
   const contractMatch = matchDriveOnboardingFile_(sample);
   Logger.log(JSON.stringify(buildCasePayload_("BR-TEST-0001", sample, analysis, contractMatch, 2, getResponseSheet_()), null, 2));
+}
+
+// ===== 건물주 안내 알림톡 =====
+// 본문은 NCP 등록 템플릿(crm-ai-worker/templates/*.json)과 글자 하나까지 같아야
+// 한다. CRM owner-notice-core.js 와 이 사본이 같은지 테스트가 확인한다.
+// 템플릿 코드 속성(KAKAO_OWNER_TEMPLATE_*)이 비어 있으면 = 아직 검수 전이므로
+// 그 안내는 보내지 않는다.
+const OWNER_NOTICE_CONTACT_ = "문의: 1551-3873";
+const OWNER_NOTICE_TEMPLATES_ = {
+  owner_cleaning_schedule: {
+    code: "BRINGCLEANSCHEDULEV1", property: "KAKAO_OWNER_TEMPLATE_CLEANING_SCHEDULE", label: "청소 일정 안내",
+    variables: ["건물주소", "작업명", "작업일", "예정시간"],
+    body: "[BRING CARE 청소 일정 안내]\n#{건물주소} 건물주님, 오늘 예정된 청소 일정을 안내드립니다.\n\n작업명: #{작업명}\n작업일: #{작업일}\n예정시간: #{예정시간}\n\n작업이 끝나면 결과보고서를 보내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_move_out: {
+    code: "BRINGMOVEOUTNOTICEV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_OUT", label: "퇴실 일정 안내",
+    variables: ["건물주소", "호실", "퇴실일"],
+    body: "[BRING CARE 퇴실 일정 안내]\n#{건물주소} 건물주님, #{호실}호 세입자 퇴실 일정을 안내드립니다.\n\n퇴실예정일: #{퇴실일}\n\n퇴실 전 공실 준비(중개 접수·입주청소)를 순서대로 진행하고 단계마다 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_broker_listed: {
+    code: "BRINGBROKERLISTEDV1", property: "KAKAO_OWNER_TEMPLATE_BROKER_LISTED", label: "중개 접수 안내",
+    variables: ["건물주소", "호실", "중개사무소", "접수일"],
+    body: "[BRING CARE 중개 접수 안내]\n#{건물주소} 건물주님, #{호실}호 공실을 중개사무소에 접수했습니다.\n\n중개사무소: #{중개사무소}\n접수일: #{접수일}\n\n방 보기 일정이 잡히면 다시 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_room_viewing: {
+    code: "BRINGROOMVIEWINGV1", property: "KAKAO_OWNER_TEMPLATE_ROOM_VIEWING", label: "방 보기 안내",
+    variables: ["건물주소", "호실", "방문일시", "중개사무소"],
+    body: "[BRING CARE 방 보기 안내]\n#{건물주소} 건물주님, #{호실}호 방 보기 일정을 안내드립니다.\n\n방문일시: #{방문일시}\n방문: #{중개사무소} 및 입주희망자\n\n방문 결과는 확인되는 대로 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_lease_contract: {
+    code: "BRINGLEASECONTRACTV1", property: "KAKAO_OWNER_TEMPLATE_LEASE_CONTRACT", label: "신규 계약 안내",
+    variables: ["건물주소", "호실", "계약일", "입주일", "계약조건"],
+    body: "[BRING CARE 신규 계약 안내]\n#{건물주소} 건물주님, #{호실}호 신규 계약 일정을 안내드립니다.\n\n계약일: #{계약일}\n입주예정일: #{입주일}\n계약조건: #{계약조건}\n\n입주 전 입주청소 일정도 이어서 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_move_in_cleaning: {
+    code: "BRINGMOVEINCLEANV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_IN_CLEANING", label: "입주청소 안내",
+    variables: ["건물주소", "호실", "작업일", "예정시간", "입주일"],
+    body: "[BRING CARE 입주청소 안내]\n#{건물주소} 건물주님, #{호실}호 입주청소 일정을 안내드립니다.\n\n청소일: #{작업일}\n예정시간: #{예정시간}\n입주예정일: #{입주일}\n\n청소가 끝나면 결과보고서를 보내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_subscription_due: {
+    code: "BRINGSUBSCRIPTIONDUEV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE", label: "구독료 결제일 안내",
+    variables: ["건물주소", "상품명", "결제금액", "결제일", "입금계좌"],
+    body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n입금계좌: #{입금계좌}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_subscription_paid: {
+    code: "BRINGSUBSCRIPTIONPAIDV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_PAID", label: "구독료 결제 확인 안내",
+    variables: ["건물주소", "상품명", "결제금액", "결제일"],
+    body: "[BRING CARE 결제 확인 안내]\n#{건물주소} 건물주님, 브링케어 구독료 결제가 확인되었습니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제확인일: #{결제일}\n\n영수증이 필요하시면 아래 번호로 말씀해 주세요.\n" + OWNER_NOTICE_CONTACT_
+  }
+};
+const OWNER_NOTICE_WEEKDAYS_ = ["일", "월", "화", "수", "목", "금", "토"];
+const OWNER_NOTICE_PAID_LOOKBACK_DAYS_ = 14;
+
+function ownerNoticeCatalogEntry_(templateId) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  return {
+    purpose: "information", requiresSource: true, ownerNotice: true,
+    property: template.property, bodyProperty: template.property.replace("_TEMPLATE_", "_BODY_"),
+    defaultBody: template.body, variables: template.variables
+  };
+}
+
+function ownerNoticeLine_(value) {
+  return String(value == null ? "" : value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function ownerNoticeShortAddress_(value) {
+  const raw = ownerNoticeLine_(value);
+  if (!raw || raw.length > 300) return "";
+  const base = raw.replace(/\([^)]*\)/g, " ").split(",")[0].trim();
+  const words = base.split(/\s+/);
+  const road = words.findIndex(function (word, index) { return /(?:대로|로|길)$/.test(word) && /^\d+(?:-\d+)?$/.test(words[index + 1] || ""); });
+  const lot = road < 0 ? words.findIndex(function (word, index) {
+    return /[^\d](?:동|읍|면|리)$/.test(word)
+      && (/^(?:산)?\d+(?:-\d+)?(?:번지)?$/.test(words[index + 1] || "") || words[index + 1] === "산" && /^\d+(?:-\d+)?$/.test(words[index + 2] || ""));
+  }) : -1;
+  const index = road >= 0 ? road : lot;
+  let result = base;
+  if (index >= 0) {
+    const admin = words.slice(0, index).filter(function (word) {
+      return /(?:시|군|구|읍|면)$/.test(word) && !/^\d/.test(word) || /^(?:서울|부산|대구|인천|광주|대전|울산|세종)$/.test(word);
+    }).map(function (word) { return word.replace(/특별자치시$/, "시").replace(/(?:특별시|광역시)$/, ""); });
+    const end = index + (words[index + 1] === "산" ? 3 : 2);
+    result = admin.concat(words.slice(index, end)).join(" ");
+  }
+  result = ownerNoticeLine_(result);
+  return result.length > 80 ? "" : result;
+}
+
+function ownerNoticeBuildingAddress_(building) {
+  const item = building || {};
+  return ownerNoticeShortAddress_(item.roadAddress || item.address || item.jibunAddress) || ownerNoticeLine_(item.name).slice(0, 80);
+}
+
+function ownerNoticeUnitLabel_(unit) {
+  return ownerNoticeLine_(unit && (unit.label || unit.unitLabel)).replace(/호$/, "").slice(0, 30);
+}
+
+function ownerNoticeIsOwner_(customer, building) {
+  if (!customer || !building || !customer.id) return false;
+  if (String(building.ownerCustomerId || "") === String(customer.id)) return true;
+  if (String(building.ownerCustomerId || "")) return false;
+  const links = customer.buildingIdLinks && customer.buildingIdLinks[building.id] === true;
+  const ids = Array.isArray(customer.buildingIds) && customer.buildingIds.indexOf(building.id) !== -1;
+  return customer.type === "건물주" && (links || ids);
+}
+
+function ownerNoticeRender_(templateId, values) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  if (!template) throw new Error("허용되지 않은 건물주 안내입니다.");
+  return template.body.replace(/#\{([^\u007D]+)\}/g, function (_all, key) {
+    return safeAlimTalkVariable_(values && values[key], "미입력");
+  });
+}
+
+function ownerNoticeMissing_(templateId, values) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  return template ? template.variables.filter(function (key) { return !ownerNoticeLine_(values && values[key]); }) : [];
+}
+
+// 퇴실 단계 안내: 건물주소·호실은 서버가 호실·건물 기록에서 다시 채운다.
+function ownerNoticeTurnoverVariables_(payload, customer, unit) {
+  const template = OWNER_NOTICE_TEMPLATES_[String(payload.templateId || "")];
+  if (!template) throw new Error("허용되지 않은 건물주 안내입니다.");
+  if (String(payload.sourceType || "") !== "buildingUnit") throw new Error("퇴실 안내는 호실 기록에서만 보낼 수 있습니다.");
+  const buildingId = String(unit && unit.crmBuildingId || "");
+  if (!unit || unit.archivedAt || !/^[A-Za-z0-9_-]{1,160}$/.test(buildingId)) throw new Error("호실 기록을 확인해 주세요.");
+  const building = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/buildings/" + buildingId, payload.idToken), "건물 조회 실패") || null;
+  if (!building || building.archivedAt) throw new Error("호실이 속한 건물을 찾지 못했습니다.");
+  if (!building.id) building.id = buildingId;
+  if (!ownerNoticeIsOwner_(customer, building)) throw new Error("이 건물의 건물주로 지정된 고객에게만 보낼 수 있습니다.");
+  const input = payload.variables && typeof payload.variables === "object" ? payload.variables : {};
+  const values = {};
+  template.variables.forEach(function (key) { values[key] = ownerNoticeLine_(input[key]).slice(0, 60); });
+  values["건물주소"] = ownerNoticeBuildingAddress_(building);
+  values["호실"] = ownerNoticeUnitLabel_(unit);
+  const missing = ownerNoticeMissing_(payload.templateId, values);
+  if (missing.length) throw new Error("안내에 필요한 항목을 입력해 주세요: " + missing.join(", "));
+  return values;
+}
+
+// --- 자동 안내 계획 (청소 일정 · 구독료 결제일 · 결제 확인) ---
+
+function ownerNoticeRows_(value) {
+  if (!value || typeof value !== "object") return [];
+  const rows = Array.isArray(value) ? value : Object.keys(value).map(function (key) {
+    const row = value[key];
+    return row && typeof row === "object" && !Array.isArray(row) ? Object.assign({ id: key }, row) : null;
+  });
+  return rows.filter(function (row) { return row && typeof row === "object" && !Array.isArray(row); });
+}
+
+function ownerNoticeIsDate_(value) {
+  if (!/^[1-9]\d{3}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+  const date = new Date(value + "T00:00:00Z");
+  return isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function ownerNoticeLive_(item) {
+  return Boolean(item && !item.archivedAt && !item.deletedAt && !item.archived && !item.deleted && !item.isArchived
+    && ["archived", "deleted", "cancelled", "canceled", "취소", "무효"].indexOf(ownerNoticeLine_(item.status)) === -1);
+}
+
+function ownerNoticeTypes_(contract) {
+  return Array.isArray(contract.types) && contract.types.length ? contract.types : [contract.type];
+}
+
+function ownerNoticeIsCleaningContract_(contract) {
+  const description = [contract.name, contract.scope, contract.memo].concat(ownerNoticeTypes_(contract)).filter(Boolean).join(" ").toLowerCase();
+  if (/예초|제초|잔디/.test(description)) return false;
+  return /청소|미화/.test(description);
+}
+
+function ownerNoticeCleaningSchedule_(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.mode === "manual" || value.mode === "once") return { mode: value.mode };
+  if (["weekly", "twice_monthly"].indexOf(value.mode) === -1 || !(value.weekday >= 0 && value.weekday <= 6 && value.weekday % 1 === 0)) return null;
+  if (value.mode === "twice_monthly") {
+    if (["first_third", "second_fourth"].indexOf(value.weekPattern) === -1) return null;
+    return { mode: "twice_monthly", weekday: value.weekday, weekPattern: value.weekPattern };
+  }
+  return { mode: "weekly", weekday: value.weekday };
+}
+
+function ownerNoticeTwiceMonthlyDates_(schedule, start, end, month) {
+  if (!ownerNoticeIsDate_(month + "-01") || month < start.slice(0, 7) || end && month > end.slice(0, 7)) return [];
+  const first = new Date(month + "-01T00:00:00Z");
+  const offset = (schedule.weekday - first.getUTCDay() + 7) % 7;
+  const weeks = schedule.weekPattern === "first_third" ? [1, 3] : [2, 4];
+  return weeks.map(function (week) {
+    const date = new Date(first.getTime());
+    date.setUTCDate(1 + offset + (week - 1) * 7);
+    return date.toISOString().slice(0, 10);
+  }).filter(function (date) { return date >= start && (!end || date <= end); });
+}
+
+// contract-schedule-core.js contractDates(contract, month) 의 사본.
+function ownerNoticeContractDates_(contract, month) {
+  if (!ownerNoticeLive_(contract)) return [];
+  const cleaning = ownerNoticeTypes_(contract).indexOf("청소") !== -1;
+  const schedule = ownerNoticeCleaningSchedule_(contract.cleaningSchedule);
+  if (cleaning && Object.prototype.hasOwnProperty.call(contract, "cleaningSchedule") && !schedule) return [];
+  if (cleaning && schedule && schedule.mode !== "manual") {
+    if (contract.status !== "진행 중") return [];
+    const start = schedule.mode === "once" && contract.billingCycle === "건별" ? ownerNoticeLine_(contract.workDate || contract.startDate) : ownerNoticeLine_(contract.startDate);
+    const end = ownerNoticeLine_(contract.endDate);
+    if (!ownerNoticeIsDate_(start) || end && (!ownerNoticeIsDate_(end) || end < start)) return [];
+    if (schedule.mode === "twice_monthly") return ownerNoticeTwiceMonthlyDates_(schedule, start, end, month);
+    const first = new Date(start + "T00:00:00Z");
+    if (schedule.mode === "weekly") first.setUTCDate(first.getUTCDate() + (schedule.weekday - first.getUTCDay() + 7) % 7);
+    const count = schedule.mode === "weekly" ? 4 : 1;
+    const dates = [];
+    for (let index = 0; index < count; index += 1) {
+      const date = new Date(first.getTime());
+      date.setUTCDate(date.getUTCDate() + index * 7);
+      const key = date.toISOString().slice(0, 10);
+      if (ownerNoticeIsDate_(key) && (!end || key <= end) && key.slice(0, 7) === month) dates.push(key);
+    }
+    return dates;
+  }
+  if (contract.billingCycle !== "건별") return [];
+  const date = ownerNoticeLine_(contract.workDate || contract.startDate);
+  return ownerNoticeIsDate_(date) && date.slice(0, 7) === month ? [date] : [];
+}
+
+// core.js contractPaymentDate(contract, month) 의 사본.
+function ownerNoticePaymentDate_(contract, month) {
+  const anchor = String(contract && contract.paymentDueDate || "");
+  if (!ownerNoticeIsDate_(anchor) || !ownerNoticeIsDate_(month + "-01") || month < anchor.slice(0, 7)) return "";
+  if (["월 정기", "연간"].indexOf(contract.billingCycle) === -1) return anchor.slice(0, 7) === month ? anchor : "";
+  if (month !== anchor.slice(0, 7)) {
+    if (ownerNoticeIsDate_(contract.endDate) && month > contract.endDate.slice(0, 7)) return "";
+    if (contract.status === "종료" && !ownerNoticeIsDate_(contract.endDate)) return "";
+  }
+  if (contract.billingCycle === "연간" && month.slice(5) !== anchor.slice(5, 7)) return "";
+  const parts = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate();
+  return month + "-" + String(Math.min(Number(anchor.slice(8)), lastDay)).padStart(2, "0");
+}
+
+// core.js contractPaymentCollectionStatus(contract, date) 의 사본.
+function ownerNoticeCollectionStatus_(contract, date) {
+  if (!ownerNoticeIsDate_(date)) return "입금 예정";
+  const collections = contract && contract.paymentCollections;
+  if (collections && Object.prototype.hasOwnProperty.call(collections, date)
+    && ["입금 예정", "입금 완료"].indexOf(collections[date]) !== -1) return collections[date];
+  return contract && date === contract.paymentDueDate && contract.collectionStatus === "입금 완료" ? "입금 완료" : "입금 예정";
+}
+
+function ownerNoticeDateLabel_(value) {
+  const key = String(value || "").slice(0, 10);
+  if (!ownerNoticeIsDate_(key)) return "";
+  const date = new Date(key + "T00:00:00Z");
+  return (date.getUTCMonth() + 1) + "월 " + date.getUTCDate() + "일(" + OWNER_NOTICE_WEEKDAYS_[date.getUTCDay()] + ")";
+}
+
+function ownerNoticeTimeLabel_(value) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || "").trim());
+  if (!match) return "";
+  const hour = Number(match[1]);
+  return (hour < 12 ? "오전 " : "오후 ") + (hour % 12 === 0 ? 12 : hour % 12) + ":" + match[2];
+}
+
+function ownerNoticeMoney_(value) {
+  const amount = Math.round(Number(value) || 0);
+  return amount > 0 ? String(amount).replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "";
+}
+
+function ownerNoticeAddDays_(dateKey, days) {
+  const date = new Date(dateKey + "T00:00:00Z");
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function ownerNoticeOwner_(store, building, contract) {
+  const customers = store.customersById || {};
+  const assigned = building && building.ownerCustomerId ? customers[building.ownerCustomerId] : null;
+  if (assigned && ownerNoticeLive_(assigned)) return assigned;
+  if (building && building.ownerCustomerId) return null;
+  const linked = contract ? customers[contract.customerId] : null;
+  return linked && ownerNoticeLive_(linked) && linked.type === "건물주" ? linked : null;
+}
+
+// 순수 함수: 오늘(서울 기준) 보낼 자동 안내 목록을 만든다. 발송·중복 확인은 하지 않는다.
+// input = { contracts, customers, buildings, serviceRecords, today: "YYYY-MM-DD", hour: 0~23, bankAccount }
+function ownerNoticePlan_(input) {
+  const data = input || {};
+  const today = String(data.today || "");
+  const hour = Number(data.hour);
+  const plan = { notices: [], skipped: [] };
+  if (!ownerNoticeIsDate_(today) || !(hour >= 0 && hour <= 23)) return plan;
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const contracts = ownerNoticeRows_(data.contracts).filter(function (row) { return /^[A-Za-z0-9_-]{1,120}$/.test(String(row.id || "")); });
+  const contractsById = {};
+  contracts.forEach(function (row) { contractsById[row.id] = row; });
+  const store = { customersById: customersById };
+  const quiet = hour >= 21;
+
+  function push(kind, templateId, id, contract, building, sourceType, sourceId, values) {
+    const owner = ownerNoticeOwner_(store, building, contract);
+    if (!building || !owner) { plan.skipped.push({ id: id, reason: "OWNER_NOT_LINKED" }); return; }
+    if (!isSendableSmsPhone_(normalizePhoneForSms_(owner.phone || ""))) { plan.skipped.push({ id: id, reason: "OWNER_PHONE_MISSING" }); return; }
+    values["건물주소"] = ownerNoticeBuildingAddress_(building);
+    const missing = ownerNoticeMissing_(templateId, values);
+    if (missing.length) { plan.skipped.push({ id: id, reason: "MISSING_" + missing.join("_") }); return; }
+    plan.notices.push({ id: id, kind: kind, templateId: templateId, customerId: String(owner.id), buildingId: String(building.id),
+      sourceType: sourceType, sourceId: sourceId, values: values });
+  }
+
+  // 1) 오늘 청소 일정 — 08시 이후 첫 실행에 보낸다.
+  if (hour >= 8 && !quiet) {
+    const month = today.slice(0, 7);
+    const records = ownerNoticeRows_(data.serviceRecords).filter(function (row) { return !row.deletedAt && !row.deleted; });
+    const represented = {};
+    records.forEach(function (row) {
+      const contractId = ownerNoticeLine_(row.sourceContractId || row.contractId);
+      const date = ownerNoticeLine_(row.sourceContractDate || row.scheduledDate);
+      if (contractId && ownerNoticeIsDate_(date)) represented[contractId + "|" + ownerNoticeLine_(row.sourceContractBuildingId || row.buildingId) + "|" + date] = true;
+    });
+    contracts.forEach(function (contract) {
+      if (!ownerNoticeIsCleaningContract_(contract)) return;
+      if (ownerNoticeContractDates_(contract, month).indexOf(today) === -1) return;
+      if (represented[contract.id + "|" + ownerNoticeLine_(contract.buildingId) + "|" + today]) return;
+      push("cleaning", "owner_cleaning_schedule", "owner_clean_" + contract.id + "_" + today, contract, buildingsById[contract.buildingId],
+        "contract", contract.id, {
+          "작업명": ownerNoticeLine_(contract.name).slice(0, 60) || "청소",
+          "작업일": ownerNoticeDateLabel_(today),
+          "예정시간": ownerNoticeTimeLabel_(contract.cleaningVisitTime) || "방문 전 연락드립니다"
+        });
+    });
+    // 날짜를 옮긴 회차·직접 등록한 청소 일정
+    records.forEach(function (row) {
+      if (!/^[A-Za-z0-9_-]{1,160}$/.test(String(row.id || ""))) return;
+      if (row.archivedAt || ownerNoticeLine_(row.scheduledDate) !== today) return;
+      if (["cancelled", "canceled", "취소", "archived"].indexOf(ownerNoticeLine_(row.status)) !== -1) return;
+      if (["cleaning", "stair_cleaning"].indexOf(ownerNoticeLine_(row.serviceType)) === -1) return;
+      const contract = contractsById[ownerNoticeLine_(row.sourceContractId || row.contractId)] || null;
+      push("cleaning", "owner_cleaning_schedule", "owner_clean_rec_" + row.id + "_" + today, contract, buildingsById[row.buildingId],
+        "work", row.id, {
+          "작업명": ownerNoticeLine_(row.title || contract && contract.name).slice(0, 60) || "청소",
+          "작업일": ownerNoticeDateLabel_(today),
+          "예정시간": ownerNoticeTimeLabel_(row.scheduledTime || contract && contract.cleaningVisitTime) || "방문 전 연락드립니다"
+        });
+    });
+  }
+
+  // 2) 구독료 결제일 · 3) 결제 확인 — 09시 이후.
+  if (hour >= 9 && !quiet) {
+    const bankAccount = ownerNoticeLine_(data.bankAccount).slice(0, 60);
+    const earliest = ownerNoticeAddDays_(today, -OWNER_NOTICE_PAID_LOOKBACK_DAYS_);
+    const months = [earliest.slice(0, 7), today.slice(0, 7)].filter(function (month, index, list) { return list.indexOf(month) === index; });
+    contracts.forEach(function (contract) {
+      if (["월 정기", "연간"].indexOf(contract.billingCycle) === -1 || !ownerNoticeLive_(contract)) return;
+      if (["진행 중", "종료 예정", "종료"].indexOf(contract.status) === -1) return;
+      const building = buildingsById[contract.buildingId];
+      const amount = ownerNoticeMoney_(contract.amount);
+      const product = ownerNoticeLine_(contract.name).slice(0, 60) || "브링케어 구독";
+      const dueToday = ownerNoticePaymentDate_(contract, today.slice(0, 7));
+      if (dueToday === today && contract.status !== "종료" && ownerNoticeCollectionStatus_(contract, today) !== "입금 완료") {
+        if (!bankAccount) plan.skipped.push({ id: "owner_due_" + contract.id + "_" + today, reason: "BANK_ACCOUNT_NOT_SET" });
+        else push("due", "owner_subscription_due", "owner_due_" + contract.id + "_" + today, contract, building, "contract", contract.id,
+          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(today), "입금계좌": bankAccount });
+      }
+      months.forEach(function (month) {
+        const date = ownerNoticePaymentDate_(contract, month);
+        if (!date || date < earliest || date > today || ownerNoticeCollectionStatus_(contract, date) !== "입금 완료") return;
+        push("paid", "owner_subscription_paid", "owner_paid_" + contract.id + "_" + date, contract, building, "contract", contract.id,
+          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(date) });
+      });
+    });
+  }
+  return plan;
+}
+
+function firebaseCompanyServerReadJson_(childPath, label) {
+  const response = UrlFetchApp.fetch(firebaseCompanyServerUrl_(childPath), {
+    method: "get", headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code);
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function ownerNoticeAutomationEnabled_() {
+  return String(PropertiesService.getScriptProperties().getProperty("OWNER_NOTICE_AUTOMATION_ENABLED") || "false").toLowerCase() === "true";
+}
+
+// 시간 트리거(30분마다)가 부르는 함수. 같은 안내는 messageDeliveries/{id}가
+// 있으면 다시 보내지 않는다(발송 전에 'sending' 기록을 먼저 남김 → 최대 1회).
+function processOwnerNoticeAutomation() {
+  if (!ownerNoticeAutomationEnabled_()) return { ok: true, skipped: "OWNER_NOTICE_AUTOMATION_DISABLED" };
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (!kakaoConfig.enabled) return { ok: true, skipped: "KAKAO_ALIMTALK_DISABLED" };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: true, skipped: "LOCKED" };
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const now = new Date();
+    const hour = Number(Utilities.formatDate(now, "Asia/Seoul", "H"));
+    const plan = ownerNoticePlan_({
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      serviceRecords: firebaseCompanyServerReadJson_("data/serviceRecords", "업무 일정 조회 실패"),
+      today: Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd"),
+      hour: hour,
+      bankAccount: props.getProperty("OWNER_NOTICE_BANK_ACCOUNT") || ""
+    });
+    // 처음 켰을 때 이미 '입금 완료'인 건은 결제 확인 안내를 보내지 않고 기준선으로만 남긴다.
+    // 결제 확인은 09시 이후에만 계획되므로, 그 시간대 실행에서만 기준선을 확정한다.
+    const baseline = !props.getProperty("OWNER_NOTICE_PAID_BASELINE_AT") && hour >= 9 && hour < 21;
+    const summary = { ok: true, planned: plan.notices.length, sent: 0, failed: 0, duplicate: 0, unapproved: 0, baseline: 0, skipped: plan.skipped.length };
+    plan.notices.forEach(function (notice) {
+      const template = OWNER_NOTICE_TEMPLATES_[notice.templateId];
+      const recordPath = "messageDeliveries/" + notice.id;
+      if (firebaseCompanyServerReadJson_(recordPath, "자동 안내 기록 조회 실패")) { summary.duplicate += 1; return; }
+      const stamp = new Date().toISOString();
+      const base = {
+        requestId: notice.id, customerId: notice.customerId, channel: "kakao", purpose: "information", category: notice.templateId,
+        templateLabel: "건물주 · " + template.label, sourceType: notice.sourceType, sourceId: notice.sourceId, buildingId: notice.buildingId,
+        automated: true, requestedBy: "automation", requestedAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
+      };
+      if (baseline && notice.kind === "paid") {
+        firebaseWriteRequest_(firebaseCompanyServerUrl_(recordPath), "put", Object.assign(base, { status: "baseline_skipped" }), "자동 안내 기준선 저장 실패");
+        summary.baseline += 1;
+        return;
+      }
+      const templateCode = String(props.getProperty(template.property) || "").trim();
+      if (!templateCode) { summary.unapproved += 1; return; }
+      const customer = firebaseCompanyServerReadJson_("data/customers/" + notice.customerId, "고객 조회 실패") || {};
+      const phone = normalizePhoneForSms_(customer.phone || "");
+      if (!isSendableSmsPhone_(phone)) { summary.skipped += 1; return; }
+      const recordUrl = firebaseCompanyServerUrl_(recordPath);
+      firebaseWriteRequest_(recordUrl, "put", Object.assign({}, base, { status: "sending", templateCode: templateCode, phoneMasked: maskPhone_(phone) }), "자동 안내 기록 저장 실패");
+      let result;
+      try {
+        result = sendKakaoAlimTalkOrSms_(phone, ownerNoticeRender_(notice.templateId, notice.values), "건물주 " + template.label,
+          { templateCode: templateCode, allowSmsFallback: false });
+      } catch (error) {
+        result = { ok: false, message: error.message };
+      }
+      const done = new Date().toISOString();
+      firebaseWriteRequest_(recordUrl, "patch", {
+        status: result.ok === true ? "accepted" : "failed", provider: String(result.provider || ""), providerMessageId: String(result.messageId || ""),
+        errorCode: result.ok === true ? "" : "PROVIDER_REJECTED", sentAt: result.ok === true ? done : "", updatedAt: done
+      }, "자동 안내 결과 저장 실패");
+      if (result.ok === true) summary.sent += 1; else summary.failed += 1;
+    });
+    if (baseline) props.setProperty("OWNER_NOTICE_PAID_BASELINE_AT", now.toISOString());
+    Logger.log(JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function setupOwnerNoticeAutomation() {
+  const handler = "processOwnerNoticeAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyMinutes(30).create();
+  const props = PropertiesService.getScriptProperties();
+  const output = {
+    ok: true, handler: handler, created: !exists, cadence: "every 30 minutes",
+    enabled: ownerNoticeAutomationEnabled_(),
+    bankAccountSet: Boolean(props.getProperty("OWNER_NOTICE_BANK_ACCOUNT")),
+    approvedTemplates: Object.keys(OWNER_NOTICE_TEMPLATES_).filter(function (id) { return Boolean(props.getProperty(OWNER_NOTICE_TEMPLATES_[id].property)); })
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
 }
