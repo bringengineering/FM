@@ -148,3 +148,16 @@ test("청소 내역의 수행 내용에는 안내문이 아니라 구역별 수�
   assert.equal(view.cleanings[0].work, "층별 계단·참의 오염 확인 및 청소");
   assert.doesNotMatch(view.cleanings[0].work, /안녕하십니까/);
 });
+
+test("정기점검 결과 표에 사진 칸이 있고, 점검 사진은 청소 사진보다 먼저 나온다", () => {
+  const works = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", label: "계단", status: "recorded", after: [{ id: "c1" }] }] }];
+  const report = { id: "pr_thumb1", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28", items: [
+    { key: "lightSensor", status: "fix", note: "미점등", photos: [{ id: "i1" }] },
+  ] } };
+  const view = P.buildView(report, works);
+  const html = createPeriodicReportHtml(view, { images: { i1: PIXEL, c1: PIXEL } });
+  assert.match(html, /<th>사진<\/th>/);
+  assert.match(html, /class="thumbs"><img src="data:image\/jpeg/);
+  assert.match(html, /육안 확인/);
+  assert.ok(html.indexOf("정기점검 사진</h2>") < html.indexOf("공용부 청소 사진</h2>"));
+});
