@@ -479,6 +479,21 @@
     return { vendorNames: [...new Set(vendorNames)], vendorAmounts: [...new Set(vendorAmounts)], privateMemos: [] };
   }
 
+  // 보고서에 현장 주소가 비어 있으면 CRM 의 건물 주소(건물이 없으면 고객 주소)로
+  // 채운 사본을 돌려준다. 수신인은 "(주소) 건물주" 로 쓰므로 주소가 없으면 그냥
+  // "건물주" 가 된다. 저장된 보고서는 바꾸지 않는다 — 출력할 때만 쓴다.
+  function withSiteAddress(report, store) {
+    const source = report && typeof report === "object" ? report : {};
+    if (text(source.siteAddress, 300)) return source;
+    const data = store && typeof store === "object" ? store : {};
+    const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
+    const building = text(source.buildingId, 80) ? rows(data.buildings).find(row => live(row) && row.id === source.buildingId) : null;
+    const customer = !building && text(source.customerId, 120) ? rows(data.customers).find(row => live(row) && row.id === source.customerId) : null;
+    const address = building ? [building.roadAddress, building.address, building.jibunAddress].map(value => text(value, 300)).find(Boolean)
+      : customer ? text(customer.address, 300) : "";
+    return address ? Object.assign({}, source, { siteAddress: address }) : source;
+  }
+
   // 화면이 보낸 목록과 메인이 만든 목록을 합친다. 어느 쪽도 다른 쪽을 지우지 못한다.
   function mergeSecrets(...sources) {
     const merged = { vendorNames: [], vendorAmounts: [], privateMemos: [] };
@@ -553,6 +568,7 @@
     findLeakedFields,
     reportSecrets,
     mergeSecrets,
+    withSiteAddress,
     sortReports,
     forCleaningOrder,
     findReport,

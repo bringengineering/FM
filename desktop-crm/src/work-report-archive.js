@@ -58,7 +58,7 @@ function createService(deps) {
     if (old && Docs.normalize(old)) return {ok: true, record: old};
     const rootFolderId = String(data.company?.buildingDocsFolderId || "");
     if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("건물 문서함에서 회사 Drive 보관 폴더를 먼저 지정해 주세요.");
-    const artifact = await deps.pdf({report: {...report, ownerName: customer?.name || customer?.company || report.ownerName, ownerContact: phone || report.ownerContact},
+    const artifact = await deps.pdf({report: {...R.withSiteAddress(report, data), ownerName: customer?.name || customer?.company || report.ownerName, ownerContact: phone || report.ownerContact},
       company: data.settings?.quoteCompany || {}, secrets: R.reportSecrets(data, report)});
     session.check();
     if (!artifact?.ok) throw new Error(artifact?.error || "보고서 PDF를 만들지 못했습니다.");

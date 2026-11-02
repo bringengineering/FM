@@ -9354,7 +9354,7 @@
       ${plan && plan.kind === "moveIn" ? reportPairMain() : plan ? `
         ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         ${["moveIn", "common"].includes(plan.kind) ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
-        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span></header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
+        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span>${plan.kind === "common" && photoRows.some(row => reportItemKeys.has(row.itemKey) && row.phase === "unsorted" && !row.file.manualPhase) ? `<button type="button" class="secondary-button" data-report-time-split${reportState.driveClassificationLoading ? " disabled" : ""} title="구역별로 같은 날 찍은 사진을 촬영 시각 순으로 놓고, 가장 크게 벌어진 시점 앞을 작업 전·뒤를 작업 후로 추천합니다.">촬영 시각으로 전·후 나누기</button>` : ""}</header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
           <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th>${plan.kind === "common" ? "<th>작업 중</th>" : ""}<th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -9881,6 +9881,24 @@
     reportState.drivePlan = P.assignPhotoPhase(reportState.drivePlan, fileId, phase);
     if (reportState.drivePlan.kind === "common") { reportState.driveBasePlan = reportState.drivePlan; syncReportAnalysisPhotos(); }
     renderWorkReports();
+  }
+
+  // 사람이 눌렀을 때만 공용부 사진을 촬영 시각 순서로 전·후 추천한다.
+  function splitReportPhotosByCaptureTime() {
+    const P = reportPhotoPlan();
+    if (!P || typeof P.splitCommonByCaptureTime !== "function" || reportState.drivePlan?.kind !== "common" || reportState.driveClassificationLoading) return;
+    preserveReportDraft();
+    const result = P.splitCommonByCaptureTime(reportState.drivePlan);
+    reportState.drivePlan = result.plan;
+    reportState.driveBasePlan = reportState.drivePlan;
+    syncReportAnalysisPhotos();
+    renderWorkReports();
+    const left = result.skipped + result.undated;
+    if (!result.photos) {
+      showToast(result.undated && !result.skipped ? "원본 촬영 시각이 있는 사진이 없어 나누지 못했습니다. 사진별로 작업 단계를 골라 주세요." : `구역마다 촬영 간격이 ${P.COMMON_SPLIT_GAP_MINUTES}분 이상 벌어진 곳이 없어 나누지 못했습니다. 사진별로 골라 주세요.`, "error");
+      return;
+    }
+    showToast(`${result.areas}개 구역 ${result.photos}장을 촬영 시각 순서로 전·후 추천했습니다.${left ? ` ${left}장은 시각 정보·간격이 부족해 그대로 두었습니다.` : ""} 사진을 확인해 주세요.`, "success");
   }
 
   function applyReportDrivePlan() {
@@ -15339,6 +15357,7 @@
       await saveWeeklyReport();
       return;
     }
+    if (event.target.closest("[data-report-time-split]")) { splitReportPhotosByCaptureTime(); return; }
     if (event.target.closest("[data-report-drive-connect]")) { await connectReportDrive(); return; }
     if (event.target.closest("[data-report-drive-open]")) { await openReportDrivePicker(); return; }
     if (event.target.closest("[data-report-drive-close]")) {

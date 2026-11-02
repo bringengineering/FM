@@ -2709,7 +2709,7 @@ async function readSavedWorkReportPdf(input, session) {
   if (!report || !customer || !/^01\d{8,9}$/.test(SavedCustomerDocuments.phone(customer.phone))
     || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(customer.phone)) throw new Error("고객과 저장 결과보고서를 다시 선택해 주세요.");
   if (String(report.updatedAt || "") !== input.updatedAt) throw new Error("결과보고서가 변경되었습니다. 목록을 새로 확인해 주세요.");
-  const artifact = await createWorkReportPdfArtifact({report, company: data.settings?.quoteCompany || {},
+  const artifact = await createWorkReportPdfArtifact({report: WorkReportCore.withSiteAddress(report, data), company: data.settings?.quoteCompany || {},
     secrets: WorkReportCore.reportSecrets(data, report)}, "owner");
   session.check();
   if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
@@ -4801,7 +4801,7 @@ async function exportWorkReport(input) {
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   session.check();
-  const documentHtml = createWorkReportHtml(report, copyType, {
+  const documentHtml = createWorkReportHtml(WorkReportCore.withSiteAddress(report, store), copyType, {
     company: options.company,
     images,
   });
