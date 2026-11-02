@@ -229,10 +229,19 @@
     return UNVIEWABLE.indexOf(text(mimeType, 60).toLowerCase()) >= 0;
   }
 
+  // '작업 전후'·'전·후 비교'처럼 둘을 함께 적은 이름은 어느 쪽의 근거도 아니다.
+  // 지우지 않으면 앞의 '전'만 읽혀 폴더 전체가 작업 전으로 확정된다.
+  const COMBINED_PHASE = /전\s*[·・/&,~-]?\s*후|before\s*[&/_+-]?\s*(?:and\s*)?after/giu;
+  // '전'·'후' 바로 뒤가 끝·구분자·숫자·'사진'일 때만 단계 표기로 본다.
+  // 청소전문·작업전체·청소후기 같은 낱말은 단계가 아니다.
+  const PHASE_END = "(?=$|[\\s_()\\[\\]/.,·・\\-\\d]|사진)";
+  const BEFORE_HINT = new RegExp(`(?:작업|청소|시공)\\s*전${PHASE_END}|(?:^|[\\s_()/.-])(?:전|before)${PHASE_END}`, "iu");
+  const AFTER_HINT = new RegExp(`(?:작업|청소|시공)\\s*후${PHASE_END}|(?:^|[\\s_()/.-])(?:후|after)${PHASE_END}`, "iu");
+
   function phaseHint(file, folderName) {
-    const value = [file && file.name, (file && file.parentName) || folderName].map(word => text(word, 300)).join(" / ");
-    const before = /(?:작업|청소|시공)\s*전|(?:^|[\s_()/.-])(?:전|before)(?=$|[\s_()/.-])/iu.test(value);
-    const after = /(?:작업|청소|시공)\s*후|(?:^|[\s_()/.-])(?:후|after)(?=$|[\s_()/.-])/iu.test(value);
+    const value = [file && file.name, (file && file.parentName) || folderName].map(word => text(word, 300).replace(COMBINED_PHASE, " ")).join(" / ");
+    const before = BEFORE_HINT.test(value);
+    const after = AFTER_HINT.test(value);
     return before && after ? "conflict" : before ? "before" : after ? "after" : "";
   }
 

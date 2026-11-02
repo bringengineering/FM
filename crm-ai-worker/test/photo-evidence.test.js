@@ -165,3 +165,22 @@ test("a six-image batch schema has no top-level maxItems (provider rejected it w
     assert.equal(seen, 1, "six images are one provider batch");
   }
 });
+
+test("a veranda is recognised from its sash/glass and floor, not from a lone window", () => {
+  // Real tuning photo: the model answered veranda with floor + window frame + glass,
+  // but the gate only accepted the generic room token and held the photo every run.
+  const overview = normalize({ category: "veranda", space: "veranda", spaceConfidence: 90, target: "window", features: ["floor_surface", "window_frame", "glass_pane", "balustrade"] });
+  assert.equal(overview.space, "veranda"); assert.equal(overview.category, "veranda");
+  // A window close-up without the floor does not prove the room.
+  const closeup = normalize({ category: "veranda", space: "veranda", spaceConfidence: 90, target: "window", features: ["window_frame"] });
+  assert.equal(closeup.space, "unknown"); assert.equal(closeup.category, "review");
+});
+
+test("a verified bathroom overview keeps the bath item even when no single target is chosen", () => {
+  const overview = normalize({ category: "bath", space: "bath", spaceConfidence: 90, target: "unknown", targetConfidence: 40, features: ["toilet_bowl", "sink_bowl", "floor_surface"] });
+  assert.equal(overview.category, "bath"); assert.equal(overview.space, "bath");
+  assert.ok(overview.needsReview, "the unresolved target still asks a person to check");
+  // Without visible bathroom structure the room is not accepted and the item is held.
+  const unproven = normalize({ category: "bath", space: "bath", spaceConfidence: 90, target: "unknown", targetConfidence: 40, features: ["floor_surface"] });
+  assert.equal(unproven.category, "review");
+});
