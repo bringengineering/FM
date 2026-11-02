@@ -4828,7 +4828,9 @@ async function exportPeriodicReport(input) {
   }
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const reportId = String(options.reportId || "");
-  const [periodic, works, store] = [await remoteClient.loadPeriodicReports(), await remoteClient.loadWorkReports(), await remoteClient.loadStore()];
+  // 사진은 Drive 에서만 읽는다. 연결이 없으면 서버 자료를 다 받기 전에 바로 알린다.
+  if (!driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
+  const [periodic, works, store] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore()]);
   session.check();
   const saved = periodic.reports.find(row => row.id === reportId);
   if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
