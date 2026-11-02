@@ -317,22 +317,39 @@ test("'작업 전후'처럼 함께 적은 이름은 폴더 전체를 작업 전�
   assert.equal(P.phaseHint({ name: "작업전.jpg" }, "작업 후"), "conflict");
 });
 
-test("공용부 '촬영 시각으로 전·후 나누기'는 구역·날짜별로 가장 큰 간격에서만 나누고 사람이 고른 것은 두지 않는다", () => {
-  const shot = (id, hm, extra = {}) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" }, ...extra });
+test("공용부 '촬영 시각으로 전·후 나누기'는 같은 날 전체 촬영 흐름의 공백으로 나누고 사람이 고른 것은 두지 않는다", () => {
+  const shot = (id, hm, extra = {}, day = "2026-11-02") => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `${day}T${hm}:00`, offset: "+09:00" }, ...extra });
+  const bucket = (itemKey, unsorted, extra = {}) => ({ itemKey, before: [], during: [], after: [], heic: [], unsorted, ...extra });
+  // 실사진 테스트와 같은 모양: 작업 전 한 바퀴(09:00~09:14) → 공백 27분 → 작업 후(09:41~10:00).
+  // 08:00 의 한 장은 공백 한쪽이 1장뿐이라 기준이 되지 못한다.
   const plan = { kind: "common", buckets: [
-    { itemKey: "stairs", before: [], during: [], after: [], heic: [], unsorted: [shot("s1", "09:00"), shot("s2", "09:03"), shot("s3", "09:41"), shot("s4", "09:42")] },
-    { itemKey: "corridor", before: [], during: [], after: [], heic: [], unsorted: [shot("c1", "09:10"), shot("c2", "09:14")] },
-    { itemKey: "windows", before: [], during: [], after: [shot("w0", "08:00", { manualPhase: true })], heic: [], unsorted: [{ id: "w1", name: "w1.heic" }, shot("w2", "09:00", { manualPhase: true })] },
-    { itemKey: "", before: [], during: [], after: [], heic: [], unsorted: [shot("x1", "09:00"), shot("x2", "10:00")] },
+    bucket("stairs", [shot("s1", "09:00"), shot("s2", "09:03"), shot("s3", "09:41"), shot("s4", "09:42")]),
+    bucket("corridor", [shot("c1", "09:10"), shot("c2", "09:14")]),
+    bucket("windows", [{ id: "w1", name: "w1.heic" }, shot("w2", "09:00", { manualPhase: true })], { after: [shot("w0", "08:00", { manualPhase: true })] }),
+    bucket("", [shot("x1", "09:00"), shot("x2", "10:00")]),
   ] };
   const result = P.splitCommonByCaptureTime(plan);
-  assert.deepEqual({ areas: result.areas, photos: result.photos, skipped: result.skipped, undated: result.undated }, { areas: 1, photos: 4, skipped: 2, undated: 1 });
+  assert.deepEqual({ areas: result.areas, photos: result.photos, skipped: result.skipped, undated: result.undated }, { areas: 2, photos: 6, skipped: 0, undated: 1 });
   const phase = id => P.photoReviewRows(result.plan).find(row => row.id === id).phase;
-  assert.deepEqual(["s1", "s2", "s3", "s4"].map(phase), ["before", "before", "after", "after"]);
-  // 간격이 작은 구역, 시각 없는 사진, 사람이 고른 사진, 구역 미정 사진은 그대로다.
-  assert.deepEqual(["c1", "c2", "w1", "w2", "x1", "x2"].map(phase), ["unsorted", "unsorted", "unsorted", "unsorted", "unsorted", "unsorted"]);
-  assert.match(P.photoReviewRows(result.plan).find(row => row.id === "s1").phaseReason, /촬영 시각 순서로 나눈 추천\(38분 간격\) · 확인 필요/);
+  // 구역 안에서는 간격이 4분뿐인 복도도 날짜 전체 흐름으로는 작업 전이다.
+  assert.deepEqual(["s1", "s2", "c1", "c2", "s3", "s4"].map(phase), ["before", "before", "before", "before", "after", "after"]);
+  // 시각 없는 사진, 사람이 고른 사진, 구역 미정 사진은 그대로다.
+  assert.deepEqual(["w1", "w2", "x1", "x2"].map(phase), ["unsorted", "unsorted", "unsorted", "unsorted"]);
+  assert.equal(phase("w0"), "after");
+  assert.match(P.photoReviewRows(result.plan).find(row => row.id === "c1").phaseReason, /같은 날 촬영 흐름의 27분 공백 기준 추천 · 확인 필요/);
+
+  // 날짜 전체로는 공백이 없으면(구역을 번갈아 찍음) 구역별 공백으로 나눈다.
+  const interleaved = { kind: "common", buckets: [
+    bucket("stairs", [shot("a1", "09:00"), shot("a2", "09:02"), shot("a3", "09:30"), shot("a4", "09:31")]),
+    bucket("corridor", [shot("b1", "09:10"), shot("b2", "09:12"), shot("b3", "09:20"), shot("b4", "09:22")]),
+  ] };
+  const fallback = P.splitCommonByCaptureTime(interleaved);
+  const p2 = id => P.photoReviewRows(fallback.plan).find(row => row.id === id).phase;
+  assert.deepEqual(["a1", "a2", "a3", "a4"].map(p2), ["before", "before", "after", "after"]);
+  assert.deepEqual(["b1", "b2", "b3", "b4"].map(p2), ["unsorted", "unsorted", "unsorted", "unsorted"], "8분 간격은 나누지 않는다");
+  assert.match(P.photoReviewRows(fallback.plan).find(row => row.id === "a1").phaseReason, /촬영 시각 순서로 나눈 추천\(28분 간격\)/);
+
   // 다른 날 찍은 사진끼리는 잇지 않는다.
-  const twoDays = { kind: "common", buckets: [{ itemKey: "stairs", before: [], during: [], after: [], heic: [], unsorted: [shot("d1", "09:00"), { ...shot("d2", "09:00"), captureTime: { source: "exif-original", local: "2026-11-03T09:00:00", offset: "+09:00" } }] }] };
+  const twoDays = { kind: "common", buckets: [bucket("stairs", [shot("d1", "09:00"), shot("d2", "09:01"), shot("d3", "09:00", {}, "2026-11-03"), shot("d4", "09:01", {}, "2026-11-03")])] };
   assert.equal(P.splitCommonByCaptureTime(twoDays).photos, 0);
 });
