@@ -5009,10 +5009,30 @@ async function sendPeriodicReportByKakao(input) {
     return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "알림톡 발송을 요청하지 못했습니다." };
   }
   // 보낸 사실을 보고서에 남긴다. 기록을 못 남겨도 발송은 이미 됐으므로 그 사실을 알린다.
-  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "" };
+  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "", documentId: String(created.documentId).slice(0, 120) };
   let recorded = true;
   try { await remoteClient.savePeriodicReport({ ...saved, delivery }); } catch (_error) { recorded = false; }
   return { ok: true, status: delivery.status, phoneTail: delivery.phoneTail, photos: built.photos, recorded };
+}
+
+// 보낸 정기 관리보고서를 건물주가 열어 봤는지 발송 서버에 묻고 보고서에 적어 둔다.
+async function checkPeriodicReportViews(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) return { ok: false, code: "ACCESS_DENIED", error: "마케팅 담당자는 사용할 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const periodic = await remoteClient.loadPeriodicReports();
+  const ids = new Set((Array.isArray(options.reportIds) ? options.reportIds : [options.reportId]).map(String).slice(0, 40));
+  const targets = periodic.reports.filter(row => ids.has(row.id) && row.delivery && row.delivery.documentId);
+  const results = [];
+  for (const report of targets) {
+    const status = await runDocumentDelivery("documentStatus", { documentId: report.delivery.documentId });
+    if (!status || status.ok !== true) { results.push({ id: report.id, ok: false }); continue; }
+    const delivery = { ...report.delivery, firstViewedAt: status.firstViewedAt || "", viewCount: Number(status.viewCount) || 0, checkedAt: new Date().toISOString() };
+    const changed = delivery.firstViewedAt !== report.delivery.firstViewedAt || delivery.viewCount !== report.delivery.viewCount;
+    if (changed) { try { await remoteClient.savePeriodicReport({ ...report, delivery }); } catch (_error) { /* 다음 확인 때 다시 적는다. */ } }
+    results.push({ id: report.id, ok: true, delivery });
+  }
+  return { ok: true, results };
 }
 
 async function sendWorkReportToCustomerByKakao(input) {
@@ -9874,6 +9894,7 @@ secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeri
 secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));
 secureCanonicalHandle("crm:periodic-inspection-review", input => reviewPeriodicInspectionPhotos(input));
+secureCanonicalHandle("crm:periodic-report-views", input => checkPeriodicReportViews(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

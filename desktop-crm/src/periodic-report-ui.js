@@ -128,6 +128,7 @@
         state.loaded = true;
         state.loadedAt = Date.now();
         updateBadge();
+        if (state.admin) void checkViews(false);
       } catch (error) {
         state.error = (error && error.message) || "정기 관리보고서를 불러오지 못했습니다.";
       } finally {
@@ -360,6 +361,26 @@
       return key ? P().findForPeriod(state.reports, draft, key.key) : null;
     }
 
+    // 발송한 보고서들의 열람 여부를 확인한다. 목록을 볼 때 한 번(10분 간격) 자동으로, 또는 버튼으로.
+    let viewsCheckedAt = 0;
+    async function checkViews(force) {
+      if (!api.checkPeriodicReportViews || (!force && Date.now() - viewsCheckedAt < 10 * 60 * 1000)) return;
+      const ids = state.reports.filter(item => item.delivery && item.delivery.documentId && !item.delivery.firstViewedAt).map(item => item.id).slice(0, 40);
+      viewsCheckedAt = Date.now();
+      if (!ids.length) { if (force) showToast("확인할 미열람 보고서가 없습니다.", "info"); return; }
+      try {
+        const result = await api.checkPeriodicReportViews({ reportIds: ids });
+        if (!result || !result.ok) return;
+        let viewed = 0;
+        result.results.filter(row => row.ok).forEach(row => {
+          state.reports = state.reports.map(item => item.id === row.id ? { ...item, delivery: row.delivery } : item);
+          if (row.delivery.firstViewedAt) viewed += 1;
+        });
+        if (force) showToast(`열람 확인: ${ids.length}건 중 ${viewed}건 열람`, "success");
+        render();
+      } catch (_error) { /* 열람 확인은 보조 기능이다. */ }
+    }
+
     async function addPhoto(itemKey) {
       const draft = readForm();
       const item = draft && draft.inspection.items.find(row => row.key === itemKey);
@@ -469,7 +490,7 @@
         return `<tr><td><b>${esc(item.buildingName || targetName(item))}</b><small>${esc(item.siteAddress)}</small></td>
           <td><b>${esc(core.periodLabel(item.period))}</b><small>점검 ${esc(item.inspection.date || "미정")}</small></td>
           <td><b>${cleanings}회</b><small>공용부 청소</small></td>
-          <td>${item.delivery ? `<span class="pr-badge pr-done">알림톡 발송</span> ` : ""}${counts.fix ? `<span class="pr-badge pr-fix">조치 필요 ${counts.fix}</span>` : ""}${counts.watch ? ` <span class="pr-badge pr-watch">관찰 ${counts.watch}</span>` : ""}${!counts.fix && !counts.watch ? `<span class="pr-badge pr-good">이상 없음</span>` : ""}</td>
+          <td>${item.delivery ? (() => { const view = P().viewState(item.delivery, todayKey()); return `<span class="pr-badge pr-done">알림톡 발송</span> ${view ? `<span class="pr-badge ${view.viewed ? "pr-good" : view.followUp ? "pr-fix" : "pr-watch"}">${esc(view.label)}</span>` : ""} `; })() : ""}${counts.fix ? `<span class="pr-badge pr-fix">조치 필요 ${counts.fix}</span>` : ""}${counts.watch ? ` <span class="pr-badge pr-watch">관찰 ${counts.watch}</span>` : ""}${!counts.fix && !counts.watch ? `<span class="pr-badge pr-good">이상 없음</span>` : ""}</td>
           <td class="wr-row-actions">${state.canWork ? `<button type="button" class="mini-button" data-pr-edit="${esc(item.id)}">열기</button>` : ""}<button type="button" class="mini-button" data-pr-export-id="${esc(item.id)}"${state.busy || !ready ? " disabled" : ""} title="${ready ? "" : "작성이 끝나지 않았습니다"}">건물주용 PDF</button>${state.admin ? `<button type="button" class="mini-button" data-pr-kakao-id="${esc(item.id)}"${state.busy || !ready ? " disabled" : ""}>${item.delivery ? "다시 보내기" : "알림톡"}</button>` : ""}</td></tr>`;
       }).join("");
       main.innerHTML = `<section class="ai-assistant-hero ai-work-report-hero">
@@ -483,7 +504,7 @@
           <label>기간 <select data-pr-new-period>${choices.map(p => `<option value="${p.key}"${p.key === state.newPeriod ? " selected" : ""}>${esc(core.periodLabel(p.key))} (${p.from.slice(5)} ~ ${p.to.slice(5)})</option>`).join("")}</select></label>
           <button type="button" class="primary-button" data-pr-new>작성 시작</button></div></section>` : ""}
         ${state.draft ? "" : historyPanel()}
-        <section class="office-panel wr-history"><header><div><span>REPORTS</span><h3>정기 관리보고서</h3></div><small>최근 기간부터</small></header>
+        <section class="office-panel wr-history"><header><div><span>REPORTS</span><h3>정기 관리보고서</h3></div><small>최근 기간부터${state.admin ? ` · <button type="button" class="mini-button" data-pr-views>열람 확인</button>` : ""}</small></header>
           ${rows ? `<div class="office-table-wrap"><table class="office-table"><thead><tr><th>건물</th><th>기간</th><th>청소</th><th>점검</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
             : `<div class="office-empty"><b>아직 정기 관리보고서가 없습니다</b><span>건물과 기간을 고르고 ‘작성 시작’ 을 누르세요.</span></div>`}
         </section>`;
@@ -502,9 +523,10 @@
 
     function onClick(event) {
       if (!isActive()) return;
-      const el = event.target.closest("[data-pr-case],[data-pr-ai],[data-pr-ai-apply],[data-pr-ai-close],[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
+      const el = event.target.closest("[data-pr-views],[data-pr-case],[data-pr-ai],[data-pr-ai-apply],[data-pr-ai-close],[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
       if (!el) return;
       event.preventDefault();
+      if (el.hasAttribute("data-pr-views")) return void checkViews(true);
       if (el.hasAttribute("data-pr-case")) return void createCase(el.getAttribute("data-pr-case"));
       if (el.hasAttribute("data-pr-ai")) return void aiReview(el.getAttribute("data-pr-ai"));
       if (el.hasAttribute("data-pr-ai-apply")) return applySuggestion(Number(el.getAttribute("data-pr-ai-apply")));

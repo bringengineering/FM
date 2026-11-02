@@ -177,9 +177,10 @@ test("알림톡: 받는 사람은 건물의 건물주 고객(건물 없으면 �
   assert.equal(P.kakaoDetails({ ...base, siteAddress: "가".repeat(120), buildingId: "b1" }).buildingAddress.length, 80);
 });
 
-test("발송 기록은 상태·시각·끝 4자리만 남는다", () => {
+test("발송 기록은 상태·시각·끝 4자리·열람 정보만 남고 전화번호는 남지 않는다", () => {
   const r = P.normalizeReport({ id: "pr_kakao2", buildingId: "b1", period: "2026-10-2", delivery: { status: "requested", sentAt: "2026-11-03T01:00:00Z", phoneTail: "3076", phone: "01020773076" } });
-  assert.deepEqual(Object.keys(r.delivery).sort(), ["messageId", "phoneTail", "sentAt", "sentBy", "status"]);
+  assert.deepEqual(Object.keys(r.delivery).sort(), ["checkedAt", "documentId", "firstViewedAt", "messageId", "phoneTail", "sentAt", "sentBy", "status", "viewCount"]);
+  assert.doesNotMatch(JSON.stringify(r.delivery), /01020773076/);
   assert.equal(P.normalizeReport({ id: "pr_kakao3", buildingId: "b1", period: "2026-10-2", delivery: { status: "weird" } }).delivery, null);
 });
 
@@ -305,4 +306,22 @@ test("건물별 이력: 반복 문제·조치 평균 일수·최근 8주 청소 
   assert.equal(row.weeksChecked, 4);
   assert.equal(row.sent, 1);
   assert.equal(row.openNow, 1);
+});
+
+test("열람 확인: 발송 서버의 문서 상태를 묻고, 목록에 열람함/미열람·경과일을 보인다", async () => {
+  assert.deepEqual(P.viewState({ status: "requested", sentAt: "2026-11-01T01:00:00Z", phoneTail: "1234", documentId: "doc_a" }, "2026-11-03"), { viewed: false, days: 2, label: "미열람 · 발송 후 2일", followUp: true });
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-10-20T01:00:00Z", phoneTail: "1234" }, "2026-11-03").label, "미열람 · 링크 만료");
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-01T01:00:00Z", phoneTail: "1234", firstViewedAt: "2026-11-02T03:00:00Z", viewCount: 3 }, "2026-11-03").label, "열람함 11. 2.(월) · 3회");
+  assert.equal(P.viewState(null, "2026-11-03"), null);
+  const { requestDocumentDelivery } = require("../src/document-delivery-client");
+  let called = "";
+  const value = await requestDocumentDelivery({ endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery", idToken: "t", action: "documentStatus", input: { documentId: "doc_abc" },
+    fetchImpl: async url => { called = url; return new Response(JSON.stringify({ ok: true, firstViewedAt: "x", viewCount: 1 })); } });
+  assert.match(called, /\/v1\/document-delivery\/documents\/doc_abc$/);
+  assert.equal(value.viewCount, 1);
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(main, /documentId: String\(created\.documentId\)/);
+  assert.ok(main.includes('secureCanonicalHandle("crm:periodic-report-views"'));
 });

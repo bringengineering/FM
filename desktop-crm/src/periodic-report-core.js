@@ -184,7 +184,22 @@
       messageId: text(value.messageId, 120),
       phoneTail: /^\d{4}$/.test(text(value.phoneTail, 4)) ? text(value.phoneTail, 4) : "",
       sentBy: text(value.sentBy, 80),
+      // 열람 확인용. 문서 id 는 발송 서버의 보안 링크 문서이고 내용·번호를 담지 않는다.
+      documentId: /^[A-Za-z0-9_-]{1,120}$/.test(text(value.documentId, 120)) ? text(value.documentId, 120) : "",
+      firstViewedAt: text(value.firstViewedAt, 40),
+      viewCount: Math.max(0, Math.min(9999, Math.round(Number(value.viewCount) || 0))),
+      checkedAt: text(value.checkedAt, 40),
     };
+  }
+
+  // 열람 상태 한 줄. 7일 링크라 그 뒤에는 열 수 없다.
+  function viewState(delivery, today) {
+    const value = normalizeDelivery(delivery);
+    if (!value) return null;
+    if (value.firstViewedAt) return { viewed: true, label: `열람함 ${dateLabel(value.firstViewedAt.slice(0, 10), false)}${value.viewCount > 1 ? ` · ${value.viewCount}회` : ""}` };
+    const sentDay = value.sentAt.slice(0, 10);
+    const days = isDate(sentDay) && isDate(today) ? Math.round((Date.UTC(...today.split("-").map((n, i) => i === 1 ? n - 1 : +n)) - Date.UTC(...sentDay.split("-").map((n, i) => i === 1 ? n - 1 : +n))) / 86400000) : 0;
+    return { viewed: false, days, label: days >= 7 ? "미열람 · 링크 만료" : `미열람 · 발송 후 ${days}일`, followUp: days >= 2 };
   }
 
   const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
@@ -637,6 +652,7 @@
     validateDraft,
     normalizeDelivery,
     recipientFor,
+    viewState,
     normalizeLinks,
     caseProgress,
     kakaoDetails,
