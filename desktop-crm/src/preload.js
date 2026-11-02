@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadPeriodicReports: () => ipcRenderer.invoke("crm:periodic-reports-load"),
   savePeriodicReport: input => ipcRenderer.invoke("crm:periodic-report-save", input),
   exportPeriodicReport: input => ipcRenderer.invoke("crm:periodic-report-export", input),
+  sendPeriodicReportByKakao: input => ipcRenderer.invoke("crm:periodic-report-kakao-send", input),
   uploadWorkReportPhoto: input => ipcRenderer.invoke("crm:work-report-photo-upload", input),
   browseWorkReportDrive: input => ipcRenderer.invoke("crm:work-report-drive-browse", input),
   loadWorkReportDriveThumbnail: input => ipcRenderer.invoke("crm:work-report-drive-thumbnail", input),

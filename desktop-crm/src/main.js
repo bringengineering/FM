@@ -4822,19 +4822,14 @@ async function exportWorkReport(input) {
 // 정기 관리보고서(격주) PDF. 화면이 보낸 보고서를 믿지 않고 회사 서버에서 그 보고서와
 // 그 기간의 청소 기록, 지난 기간 보고서를 다시 읽어 만든다. 건물주에게 나가는 문서라
 // 사진을 한 장이라도 못 읽으면 만들지 않는다 — '사진 없음' 칸이 있는 보고서를 내지 않는다.
-async function exportPeriodicReport(input) {
-  const session = savedDocumentSession();
-  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
-  if (isMarketingOnlySession()) {
-    return { ok: false, error: "마케팅 담당자는 정기 관리보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
-  }
-  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const reportId = String(options.reportId || "");
-  // 사진은 Drive 에서만 읽는다. 연결이 없으면 서버 자료를 다 받기 전에 바로 알린다.
+// 정기 관리보고서 PDF 를 만든다. 저장과 알림톡 발송이 같은 것을 쓴다. 화면이 보낸
+// 보고서를 믿지 않고 회사 서버에서 그 보고서·그 기간의 청소 기록·지난 기간 보고서를
+// 다시 읽는다. 건물주에게 나가는 문서라 사진을 한 장이라도 못 읽으면 만들지 않는다.
+async function buildPeriodicReportPdf(reportId, company, session) {
   if (!driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
   const [periodic, works, store] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore()]);
   session.check();
-  const saved = periodic.reports.find(row => row.id === reportId);
+  const saved = periodic.reports.find(row => row.id === String(reportId || ""));
   if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
   const report = WorkReportCore.withSiteAddress(saved, store);
   const checked = PeriodicReportCore.validateReport(report, works.reports);
@@ -4851,7 +4846,6 @@ async function exportPeriodicReport(input) {
   if (leaks.length) return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
 
   const photos = periodicReportPdfPhotos(view);
-  if (photos.length && !driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
   const images = {};
   let photoFailures = 0;
   for (const photo of photos) {
@@ -4870,7 +4864,22 @@ async function exportPeriodicReport(input) {
   }
   session.check();
   if (photoFailures) return { ok: false, error: `사진 ${photoFailures}장을 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요.`, code: "PHOTO_MISSING" };
+  const html = createPeriodicReportHtml(view, { company, images });
+  const bytes = await createReportPdfBytes(html, "periodic-report");
+  session.check();
+  return { ok: true, saved, report, view, store, bytes, photos: Object.keys(images).length };
+}
 
+async function exportPeriodicReport(input) {
+  const session = savedDocumentSession();
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 정기 관리보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const built = await buildPeriodicReportPdf(options.reportId, options.company, session);
+  if (!built.ok) return built;
+  const { report, view } = built;
   const period = PeriodicReportCore.parsePeriod(report.period);
   const place = String(report.buildingName || report.siteAddress || "건물").replace(/[\\/:*?"<>|\u0000-\u001f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 60);
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -4880,11 +4889,72 @@ async function exportPeriodicReport(input) {
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   session.check();
-  const html = createPeriodicReportHtml(view, { company: options.company, images });
-  const bytes = await createReportPdfBytes(html, "periodic-report");
+  await fs.writeFile(result.filePath, built.bytes, { mode: 0o600 });
+  return { ok: true, photos: built.photos, cleanings: view.cleanings.length, actions: view.actions.length };
+}
+
+// 정기 관리보고서를 건물주에게 카카오 알림톡(7일 보안 링크)으로 보낸다. 작업 결과보고서의
+// 승인 템플릿을 그대로 쓴다: "(주소) 건물주님, (기간) 정기 관리 결과 보고서가 발행되었습니다".
+// 받는 사람은 화면이 아니라 회사 자료에서 정한다 — 건물이면 그 건물의 건물주 고객, 건물이
+// 없으면 그 고객. 화면에서 확인한 번호와 다르면 보내지 않는다. 같은 보고서는 한 번만 보낸다.
+async function sendPeriodicReportByKakao(input) {
+  const session = savedDocumentSession();
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("관리자만 고객에게 알림톡을 보낼 수 있습니다."), { code: "ACCESS_DENIED" });
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 전용 계정은 보고서를 보낼 수 없습니다."), { code: "ACCESS_DENIED" });
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+
+  const capabilities = await runDocumentDelivery("capabilities");
+  if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.kakao !== true) {
+    return { ok: false, code: "KAKAO_DOCUMENT_DELIVERY_NOT_READY", error: "카카오 알림톡 발신 설정과 승인 템플릿 상태를 확인해 주세요." };
+  }
+  const built = await buildPeriodicReportPdf(options.reportId, options.company, session);
+  if (!built.ok) return built;
+  const { saved, report, store } = built;
+  if (saved.delivery && ["requested", "sent"].includes(saved.delivery.status) && options.resend !== true) {
+    return { ok: false, code: "ALREADY_SENT", error: "이미 보낸 보고서입니다. 다시 보내려면 재발송을 확인해 주세요." };
+  }
+  const recipient = PeriodicReportCore.recipientFor(report, store);
+  if (!recipient.phone) return { ok: false, code: "RECIPIENT_PHONE_REQUIRED", error: recipient.reason };
+  const expected = String(options.expectedPhone || "").replace(/\D/gu, "");
+  if (expected !== recipient.phone) return { ok: false, code: "RECIPIENT_MISMATCH", error: "받는 사람 번호가 바뀌었습니다. 화면을 새로 고친 뒤 다시 확인해 주세요." };
+  if (built.bytes.length > 12 * 1024 * 1024) return { ok: false, code: "DOCUMENT_TOO_LARGE", error: "사진을 줄여 PDF를 12MB 이하로 만들어 주세요." };
+  const completionReport = PeriodicReportCore.kakaoDetails(report);
+  if (!completionReport) return { ok: false, code: "ADDRESS_REQUIRED", error: "건물(또는 고객) 주소가 있어야 알림톡을 보낼 수 있습니다." };
+
+  const customerId = `notice_${crypto.randomBytes(16).toString("hex")}`;
+  const created = await runDocumentDelivery("create", {
+    documentId: `periodic_${crypto.randomBytes(16).toString("hex")}`,
+    customerId,
+    documentType: "completion_report",
+    documentName: `${completionReport.buildingAddress} ${completionReport.workName} 결과보고서`,
+    completionReport,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    mimeType: "application/pdf",
+    bytes: built.bytes,
+  });
   session.check();
-  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
-  return { ok: true, photos: Object.keys(images).length, cleanings: view.cleanings.length, actions: view.actions.length };
+  if (!created || created.ok !== true || !created.documentId) {
+    return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "보안 보고서 링크를 만들지 못했습니다." };
+  }
+  const sent = await runDocumentDelivery("send", {
+    channel: "kakao",
+    idempotencyKey: crypto.randomBytes(20).toString("hex"),
+    documentId: created.documentId,
+    customerId,
+    customerName: "건물주",
+    phone: recipient.phone,
+  });
+  if (!sent || sent.ok !== true) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "알림톡 발송을 요청하지 못했습니다." };
+  }
+  // 보낸 사실을 보고서에 남긴다. 기록을 못 남겨도 발송은 이미 됐으므로 그 사실을 알린다.
+  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "" };
+  let recorded = true;
+  try { await remoteClient.savePeriodicReport({ ...saved, delivery }); } catch (_error) { recorded = false; }
+  return { ok: true, status: delivery.status, phoneTail: delivery.phoneTail, photos: built.photos, recorded };
 }
 
 async function sendWorkReportToCustomerByKakao(input) {
@@ -9744,6 +9814,7 @@ secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(in
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
 secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
+secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

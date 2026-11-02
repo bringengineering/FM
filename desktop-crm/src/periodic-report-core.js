@@ -156,6 +156,50 @@
     };
   }
 
+  // 건물주에게 보낸 기록. 번호는 끝 4자리만 둔다 — 보고서 기록에 전화번호를 통째로 쌓지 않는다.
+  function normalizeDelivery(source) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : null;
+    if (!value || !["requested", "sent", "failed"].includes(value.status)) return null;
+    return {
+      status: value.status,
+      sentAt: text(value.sentAt, 40),
+      messageId: text(value.messageId, 120),
+      phoneTail: /^\d{4}$/.test(text(value.phoneTail, 4)) ? text(value.phoneTail, 4) : "",
+      sentBy: text(value.sentBy, 80),
+    };
+  }
+
+  const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
+  const mobile = value => { const digits = String(value || "").replace(/\D/gu, ""); return /^01\d{8,9}$/u.test(digits) ? digits : ""; };
+
+  // 받을 사람. 건물이면 그 건물의 건물주 고객, 건물이 없으면 그 고객. 휴대전화가 아니면 못 보낸다.
+  function recipientFor(report, store) {
+    const value = normalizeReport(report);
+    const data = store && typeof store === "object" ? store : {};
+    const customers = rows(data.customers).filter(live);
+    let customer = null;
+    if (value.buildingId) {
+      const building = rows(data.buildings).filter(live).find(row => row.id === value.buildingId);
+      if (!building) return { phone: "", name: "", reason: "건물을 찾지 못했습니다." };
+      customer = customers.find(row => row.id === text(building.ownerCustomerId, 120)) || null;
+      if (!customer) return { phone: "", name: "", reason: "건물에 건물주 고객이 연결되어 있지 않습니다. 건물 정보에서 건물주를 먼저 연결해 주세요." };
+    } else {
+      customer = customers.find(row => row.id === value.customerId) || null;
+      if (!customer) return { phone: "", name: "", reason: "고객을 찾지 못했습니다." };
+    }
+    const phone = mobile(customer.phone);
+    return phone ? { phone, name: text(customer.name, 80), customerId: customer.id, reason: "" }
+      : { phone: "", name: text(customer.name, 80), reason: "건물주 고객의 휴대전화 번호를 확인해 주세요." };
+  }
+
+  // 작업 결과보고서 알림톡 템플릿(V3)의 두 칸. 주소가 없으면 보낼 수 없다.
+  function kakaoDetails(report) {
+    const value = normalizeReport(report);
+    const address = text(value.siteAddress, 300).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 80);
+    if (!address || !value.period) return null;
+    return { buildingAddress: address, workName: `${periodLabel(value.period)} 정기 관리` };
+  }
+
   function normalizeReport(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
     const period = parsePeriod(value.period);
@@ -177,6 +221,7 @@
       actions: rows(value.actions).map(normalizeAction).filter(item => item.label).slice(0, 30),
       summary: text(value.summary, 2000),
       followUp: text(value.followUp, 2000),
+      delivery: normalizeDelivery(value.delivery),
       nextSchedule: rows(value.nextSchedule).map(item => ({ label: text(item && item.label, 60), date: isDate(item && item.date) ? item.date : "" })).filter(item => item.label && item.date).slice(0, 6),
       createdAt: text(value.createdAt, 40),
       updatedAt: text(value.updatedAt, 40),
@@ -396,6 +441,9 @@
     blockers,
     validateReport,
     validateDraft,
+    normalizeDelivery,
+    recipientFor,
+    kakaoDetails,
     documentNo,
     autoSummary,
     buildView,
