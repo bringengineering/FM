@@ -553,7 +553,8 @@
       void load();
     }
 
-    return Object.freeze({ render, refreshBadge, reload: () => { state.loaded = false; return load(); } });
+    const snapshot = () => (state.loaded ? { reports: state.reports, works: state.works } : null);
+    return Object.freeze({ render, refreshBadge, snapshot, reload: () => { state.loaded = false; return load(); } });
   }
 
   root.BringPeriodicReportUI = Object.freeze({ create });

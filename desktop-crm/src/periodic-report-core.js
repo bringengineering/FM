@@ -614,6 +614,26 @@
     }).sort((a, b) => (b.repeated.length + b.missedWeeks.length) - (a.repeated.length + a.missedWeeks.length) || String(a.buildingName).localeCompare(String(b.buildingName), "ko"));
   }
 
+  // 건물 월간보고서에 싣는 한 달 요약. 그 달 1차·2차 정기 관리보고서마다 청소일·점검 건수·남은 조치.
+  function monthSummary(reports, workReports, buildingId, month) {
+    if (!/^\d{4}-\d{2}$/.test(String(month || "")) || !text(buildingId, 120)) return [];
+    return [1, 2].map(half => {
+      const key = `${month}-${half}`;
+      const report = findForPeriod(reports, { buildingId: text(buildingId, 120) }, key);
+      if (!report) return null;
+      const view = buildView(report, workReports, {});
+      return {
+        period: key,
+        label: periodLabel(key),
+        cleaningDates: view.cleanings.map(row => dateLabel(row.workDate, false)),
+        inspectionDate: view.inspection.dateLabel,
+        counts: view.counts,
+        openActions: view.actions.filter(item => ["watch", "fix"].includes(item.status)).map(item => ({ label: item.label, status: item.status, finding: item.finding })),
+        sent: Boolean(report.delivery),
+      };
+    }).filter(Boolean);
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(row => row.id)
       .sort((a, b) => b.period.localeCompare(a.period) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -661,6 +681,7 @@
     buildView,
     findForPeriod,
     dueReports,
+    monthSummary,
     buildingHistory,
     cleaningPhotoCandidates,
     normalizeSuggestions,

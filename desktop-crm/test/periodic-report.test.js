@@ -325,3 +325,20 @@ test("열람 확인: 발송 서버의 문서 상태를 묻고, 목록에 열람�
   assert.match(main, /documentId: String\(created\.documentId\)/);
   assert.ok(main.includes('secureCanonicalHandle("crm:periodic-report-views"'));
 });
+
+test("건물 월간보고서에 그 달 격주 정기 관리 요약이 들어간다", () => {
+  const B = require("../src/building-report-core");
+  const { createBuildingReportHtml } = require("../src/building-report-pdf");
+  const works5 = ["2026-10-19", "2026-10-26"].map((date, i) => ({ id: `m${i}`, buildingId: "b1", kind: "common", workDate: date, items: [{ key: "stairs", status: "recorded", after: [{ id: `x${i}` }] }] }));
+  const report = B.buildBuildingMonthlyReport({ building: { id: "b1", name: "예초집" }, month: "2026-10", store: {},
+    periodicReports: [{ id: "pr_mon01", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-26", items: [{ key: "recycle", status: "fix", note: "혼합 배출", photos: [{ id: "p" }] }] } },
+      { id: "pr_mon02", buildingId: "b2", period: "2026-10-1", inspection: { date: "2026-10-05" } }],
+    workReports: works5 });
+  assert.equal(report.periodic.length, 1);
+  assert.deepEqual(report.periodic[0].cleaningDates, ["10. 19.(월)", "10. 26.(월)"]);
+  assert.deepEqual(report.periodic[0].openActions.map(item => item.label), ["분리수거장"]);
+  assert.equal(B.buildBuildingMonthlyReport({ building: { id: "b1" }, month: "2026-10", store: {} }).periodic.length, 0);
+  const html = createBuildingReportHtml(report);
+  assert.match(html, /격주 정기 관리/);
+  assert.match(html, /2026년 10월 2차/);
+});

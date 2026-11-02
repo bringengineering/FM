@@ -2990,7 +2990,11 @@ async function prepareBuildingMonthlyReportArtifact(input) {
     }
   }
   if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos });
+  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos, ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() });
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(
@@ -9718,7 +9722,11 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
     return { date: file.monthlyReportDate, caption: monthlyReportPhotoCaption(photo, file), kind: file.monthlyReportActivity };
   });
-  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input) }), photoEvidence };
+  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input), ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() }), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });

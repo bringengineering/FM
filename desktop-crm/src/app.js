@@ -3766,6 +3766,12 @@
     };
   }
 
+  // 미리보기에도 그 달 정기 관리보고서 요약을 싣는다(정기 관리보고서 화면이 받아 둔 자료).
+  function withPeriodicInputs(request) {
+    const data = periodicReportUi ? periodicReportUi.snapshot() : null;
+    return data ? { ...request, periodicReports: data.reports, workReports: data.works } : request;
+  }
+
   function buildingMonthlyReportRequestKey(state = buildingMonthlyReportState) {
     const excluded = Array.isArray(state.excludedWorkKeys)
       ? [...new Set(state.excludedWorkKeys.map(value => String(value || "").trim()).filter(Boolean))].sort()
@@ -4073,7 +4079,7 @@
         return;
       }
       state.photoSource = source;
-      const report = BuildingReportCore.buildBuildingMonthlyReport(originalRequest);
+      const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(originalRequest));
       const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
       const result = await window.BringMonthlyReportAutomation.run({
         isCurrent,
@@ -4114,7 +4120,7 @@
     renderBuildingMonthlyReports();
     try {
       const request = buildingMonthlyReportRequest(building, state.month, { manualWorks: state.manualWorks });
-      const report = BuildingReportCore.buildBuildingMonthlyReport(request);
+      const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(request));
       const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
       const selected = [];
       const warnings = [];
@@ -4215,11 +4221,11 @@
       nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
       narrative: buildingMonthlyReportState.narrative,
     });
-    const report = BuildingReportCore.buildBuildingMonthlyReport({ ...request,
+    const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs({ ...request,
       activityEvidence: buildingMonthlyReportState.photoCandidates.concat(buildingMonthlyReportState.photos),
-      photos: buildingMonthlyReportState.photos.map(photo => ({ ...photo, dataUrl: photo.thumbnail })) });
+      photos: buildingMonthlyReportState.photos.map(photo => ({ ...photo, dataUrl: photo.thumbnail })) }));
     const excludedWorkKeys = new Set(buildingMonthlyReportState.excludedWorkKeys);
-    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport({ ...request, manualWorks: [] }).works;
+    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs({ ...request, manualWorks: [] })).works;
     const automaticWorkKeys = new Set(automaticWorks.map(work => BuildingReportCore.workRowKey(work)));
     const narrative = report.narrative || { summary: "", attention: "", nextMonthPlan: "" };
     const missing = [
@@ -4525,7 +4531,7 @@
     });
     const reportRequest = makeRequest();
     const confirmedContent = JSON.stringify(reportRequest);
-    const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(reportRequest);
+    const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(reportRequest));
     const confirmed = await requestConfirmation({
       title: "월간 관리 보고서를 카카오톡으로 보낼까요?",
       description: "월 1회 수신 요청이 확인된 건물주에게 월간보고서 알림톡을 보냅니다. PDF 링크는 7일 뒤 만료됩니다.",
@@ -6689,7 +6695,7 @@
     }
     if (view === "cleaningCti" && !cleaningOrderState.loaded && !cleaningOrderState.loading) void loadCleaningOrders();
     // 첫 화면에서도 '보낼 정기 관리보고서' 숫자가 보이게 한다.
-    if (["dashboard", "periodicReports"].includes(view) && currentAuth.user && window.BringPeriodicReportUI) periodicReportView().refreshBadge();
+    if (["dashboard", "periodicReports", "buildingMonthlyReports"].includes(view) && currentAuth.user && window.BringPeriodicReportUI) periodicReportView().refreshBadge();
   }
   function refreshButton(state, action) {
     const when = freshLabel(state);
