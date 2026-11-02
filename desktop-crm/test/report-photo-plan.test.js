@@ -316,3 +316,23 @@ test("'작업 전후'처럼 함께 적은 이름은 폴더 전체를 작업 전�
   assert.equal(P.phaseHint({ name: "IMG.jpg" }, "작업 후 사진"), "after");
   assert.equal(P.phaseHint({ name: "작업전.jpg" }, "작업 후"), "conflict");
 });
+
+test("공용부 '촬영 시각으로 전·후 나누기'는 구역·날짜별로 가장 큰 간격에서만 나누고 사람이 고른 것은 두지 않는다", () => {
+  const shot = (id, hm, extra = {}) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-02T${hm}:00`, offset: "+09:00" }, ...extra });
+  const plan = { kind: "common", buckets: [
+    { itemKey: "stairs", before: [], during: [], after: [], heic: [], unsorted: [shot("s1", "09:00"), shot("s2", "09:03"), shot("s3", "09:41"), shot("s4", "09:42")] },
+    { itemKey: "corridor", before: [], during: [], after: [], heic: [], unsorted: [shot("c1", "09:10"), shot("c2", "09:14")] },
+    { itemKey: "windows", before: [], during: [], after: [shot("w0", "08:00", { manualPhase: true })], heic: [], unsorted: [{ id: "w1", name: "w1.heic" }, shot("w2", "09:00", { manualPhase: true })] },
+    { itemKey: "", before: [], during: [], after: [], heic: [], unsorted: [shot("x1", "09:00"), shot("x2", "10:00")] },
+  ] };
+  const result = P.splitCommonByCaptureTime(plan);
+  assert.deepEqual({ areas: result.areas, photos: result.photos, skipped: result.skipped, undated: result.undated }, { areas: 1, photos: 4, skipped: 2, undated: 1 });
+  const phase = id => P.photoReviewRows(result.plan).find(row => row.id === id).phase;
+  assert.deepEqual(["s1", "s2", "s3", "s4"].map(phase), ["before", "before", "after", "after"]);
+  // 간격이 작은 구역, 시각 없는 사진, 사람이 고른 사진, 구역 미정 사진은 그대로다.
+  assert.deepEqual(["c1", "c2", "w1", "w2", "x1", "x2"].map(phase), ["unsorted", "unsorted", "unsorted", "unsorted", "unsorted", "unsorted"]);
+  assert.match(P.photoReviewRows(result.plan).find(row => row.id === "s1").phaseReason, /촬영 시각 순서로 나눈 추천\(38분 간격\) · 확인 필요/);
+  // 다른 날 찍은 사진끼리는 잇지 않는다.
+  const twoDays = { kind: "common", buckets: [{ itemKey: "stairs", before: [], during: [], after: [], heic: [], unsorted: [shot("d1", "09:00"), { ...shot("d2", "09:00"), captureTime: { source: "exif-original", local: "2026-11-03T09:00:00", offset: "+09:00" } }] }] };
+  assert.equal(P.splitCommonByCaptureTime(twoDays).photos, 0);
+});

@@ -25,9 +25,11 @@ test("승인 시안의 3구역 14사진은 요약과 구역별 3개 사진 묶�
   }
   const html = createWorkReportHtml(report);
   assert.equal(workReportPdfPhotos(report).length, 14);
-  assert.equal((html.match(/class="photo-page /g) || []).length, 3);
-  assert.equal((html.match(/<figure>/g) || []).length, 14);
-  assert.equal((html.match(/photo-page six/g) || []).length, 1);
+  // 구역마다 새 쪽을 강제하지 않고 이어 싣는다. 전·후는 같은 번호끼리 한 줄에 짝짓는다.
+  assert.equal((html.match(/class="area-photos"/g) || []).length, 3);
+  assert.equal((html.match(/<figure class="(?:before|during|after)">/g) || []).length, 14);
+  assert.equal((html.match(/class="pair-row"/g) || []).length, 3);
+  assert.doesNotMatch(html, /break-before:page/);
 });
 
 test("100장의 불균형한 전중후 사진을 중복·누락 없이 최대6장 단위로 나눈다", () => {
@@ -42,7 +44,7 @@ test("100장의 불균형한 전중후 사진을 중복·누락 없이 최대6�
   const images = Object.fromEntries(photos.map(p => [p.id, `data:image/jpeg;base64,${Buffer.from(p.id).toString("base64")}`]));
   const html = createWorkReportHtml(report, "owner", {images});
   for (const source of Object.values(images)) assert.equal(html.split(`src="${source}"`).length - 1, 1);
-  assert.equal((html.match(/<figure>/g) || []).length, 100);
+  assert.equal((html.match(/<figure class="(?:before|during|after)">/g) || []).length, 100);
 });
 
 test("기록·미실시·일부·완료와 긴 문구를 보존하며 사진에서 완료를 추측하지 않는다", () => {
@@ -62,7 +64,9 @@ test("사진이 없어도 항목은 남고 외부·로컬·SVG 이미지는 출�
   const report = seed(); report.items[0].during = [photo("a")];
   for (const source of ["https://example.com/photo.jpg", "file:///private.jpg", "data:image/svg+xml;base64,AAAA", 'data:image/jpeg;base64,AAAA" onerror="bad']) {
     const html = createWorkReportHtml(report, "owner", {images: {a: source}});
-    assert.doesNotMatch(html, /<img/); assert.match(html, /사진 없음/);
+    // 로고 외에는 이미지가 없어야 한다. 위험한 원본은 '사진 없음' 으로 대신한다.
+    assert.doesNotMatch(html.replace(/<img class="brand-logo"[^>]*>|<div class="from"><img [^>]*>/g, ""), /<img/); assert.match(html, /사진 없음/);
+    assert.ok(!html.includes(source));
     assert.ok(html.includes(report.items[0].label));
   }
 });
@@ -73,4 +77,31 @@ test("긴 캡션과 구역명은 한 장의 사진 수를 줄여 제목과 설�
   assert.deepEqual(photoPages(item).map(page => page.length), [4, 4, 4, 4, 2]);
   item.label = "긴 구역 이름 ".repeat(5);
   assert.ok(photoPages(item).every(page => page.length <= 2));
+});
+
+test("공식 문서 형식: 로고·수신·발신·제목이 있고 빈 정보 칸을 만들지 않는다", () => {
+  const report = seed(); report.items[1].before = [photo("b")]; report.items[1].after = [photo("a")];
+  const html = createWorkReportHtml(report, "owner", {company: {businessName: "브링케어", representative: "대표자"}});
+  assert.match(html, /<img class="brand-logo" src="data:image\/jpeg;base64,/);
+  for (const label of ["<th>문서번호</th>", "<th>수신(건물주)</th>", "<th>발신</th>", "<th>제목</th>", "브링케어 · 대표 대표자", "브링케어 드림"]) assert.ok(html.includes(label), label);
+  // 주소·담당자·작업 범위가 없으면 그 칸은 아예 없다.
+  for (const label of ["<th>현장 주소</th>", "<th>담당자</th>", "<th>작업 범위</th>"]) assert.ok(!html.includes(label), label);
+  // 작업 중 사진이 없으면 0장 칸을 만들지 않는다.
+  assert.doesNotMatch(html, /<span>작업 중<\/span><b>0장<\/b>/);
+  // 구역별 기록은 반복 문구가 아니라 표준 수행범위를 쓴다.
+  assert.ok(html.includes(report.items[1].detail));
+  assert.doesNotMatch(html, /등록된 현장 사진을 안내드립니다/);
+});
+
+test("전·후는 색과 번호로 구분하고, 한쪽만 있는 구역은 그 사실을 적는다", () => {
+  const report = seed();
+  report.items[0].after = [photo("only-after")];
+  report.items[1].before = [photo("b1"), photo("b2")]; report.items[1].after = [photo("a1")];
+  const html = createWorkReportHtml(report);
+  assert.ok(html.includes("이 구역은 작업 후 사진으로 기록했습니다."));
+  assert.ok(html.includes("작업 전 2장과 작업 후 1장 중 1쌍을 비교하고 나머지는 아래에 실었습니다."));
+  assert.match(html, /<div class="pair-head"><span class="before">작업 전 BEFORE<\/span><span class="after">작업 후 AFTER<\/span><\/div>/);
+  assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 1<\/b>/);
+  assert.match(html, /<figure class="after"><div class="photo-bar"><b>작업 후 1<\/b>/);
+  assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 2<\/b>/);
 });

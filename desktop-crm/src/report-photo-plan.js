@@ -655,6 +655,49 @@
     })) };
   }
 
+  // 공용부 사진을 사람이 버튼으로 요청했을 때만 촬영 시각 순서로 나눈다.
+  //
+  // 작업자는 처음에 작업 전을 몰아 찍고 끝에 작업 후를 몰아 찍는다. 그래서
+  // 구역마다 같은 날 찍은 원본 시각을 늘어놓고 가장 크게 벌어진 자리에서 자른다.
+  // 자동으로 하지 않는 이유는 그대로다 — 시각만으로는 확실하지 않다. 그래서
+  // 사람이 누를 때만 하고, 결과는 화면에서 바로 고칠 수 있는 추천으로 둔다.
+  // 사람이 이미 고른 단계, 원본 시각이 없는 사진, 간격이 작은 구역은 건드리지 않는다.
+  const COMMON_SPLIT_GAP_MINUTES = 15;
+  function splitCommonByCaptureTime(plan, options) {
+    const gap = Number(options && options.gapMinutes) > 0 ? Number(options.gapMinutes) : COMMON_SPLIT_GAP_MINUTES;
+    const groups = new Map();
+    let undated = 0;
+    for (const row of photoReviewRows(plan)) {
+      if (!row.itemKey || row.phase !== "unsorted" || row.file.manualPhase) continue;
+      const captured = Capture.normalize(row.file.captureTime);
+      if (!captured) { undated += 1; continue; }
+      const key = `${row.itemKey}|${captured.local.slice(0, 10)}|${captured.offset}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ id: row.id, captured });
+    }
+    let result = plan, areas = 0, photos = 0, skipped = 0;
+    const reasons = new Map();
+    for (const list of groups.values()) {
+      list.sort((left, right) => left.captured.local.localeCompare(right.captured.local));
+      let cut = -1, widest = 0;
+      for (let index = 1; index < list.length; index += 1) {
+        const minutes = Capture.differenceMinutes(list[index - 1].captured, list[index].captured);
+        if (minutes >= gap && minutes > widest) { widest = minutes; cut = index; }
+      }
+      if (cut < 0) { skipped += list.length; continue; }
+      areas += 1;
+      list.forEach((entry, index) => {
+        const phase = index < cut ? "before" : "after";
+        result = assignPhotoPhase(result, entry.id, phase);
+        reasons.set(entry.id, `촬영 시각 순서로 나눈 추천(${Math.round(widest)}분 간격) · 확인 필요`);
+        photos += 1;
+      });
+    }
+    result = Object.assign({}, result, { buckets: rows(result.buckets).map(bucket => Object.assign({}, bucket,
+      Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => reasons.has(file.id) ? Object.assign({}, file, { phaseReason: reasons.get(file.id) }) : file)])))) });
+    return { plan: result, areas, photos, skipped, undated };
+  }
+
   function syncCommonDraftPhotos(existing, incoming, managedIds) {
     const phases = ["before", "during", "after"], identity = photo => photo.driveFileId || photo.id;
     const previous = new Map(rows(existing).flatMap(item => phases.flatMap(phase => rows(item[phase]))).map(photo => [identity(photo), photo]));
@@ -665,7 +708,7 @@
   }
 
   return Object.freeze({
-    commonComparisonGroups, withCommonCaptureTimes, applyCommonPairs, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
+    commonComparisonGroups, withCommonCaptureTimes, applyCommonPairs, splitCommonByCaptureTime, COMMON_SPLIT_GAP_MINUTES, syncCommonDraftPhotos, mergeCommonSelection, removeCommonPhotos,
     VIEWABLE,
     UNVIEWABLE,
     GAP_MINUTES,
