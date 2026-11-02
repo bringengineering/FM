@@ -16,7 +16,8 @@ const EXTRA_CSS = `
 .badge{display:inline-block;padding:.5mm 2.2mm;border-radius:1mm;font-size:7.3pt;font-weight:800;letter-spacing:.02em;white-space:nowrap}
 .badge.good{background:#e3f4ec;color:#2b6e4f}.badge.watch{background:#fff1dc;color:#8a5a12}.badge.fix{background:#fde4e1;color:#b03a2e}.badge.done{background:#e3effb;color:#1f5aa6}
 table.clean th:nth-child(1){width:18mm;text-align:center}table.clean td:first-child{text-align:center;font-weight:700;color:#1f4e8c}table.clean th:nth-child(2){width:25mm}table.clean th:nth-child(3){width:46mm}table.clean th:nth-child(4){width:auto}table.clean th:nth-child(5){width:14mm}table.clean td:nth-child(5){text-align:center}
-table.check th:nth-child(2){width:16mm}table.check th:nth-child(3){width:38mm}table.check th:nth-child(4){width:21mm}table.check th:nth-child(5){width:auto}table.check th:nth-child(6){width:36mm}.thumb-cell{vertical-align:middle!important}.thumbs{display:flex;gap:1mm;align-items:center}.thumbs img{width:14mm;height:11mm;object-fit:cover;border-radius:.8mm;border:.2mm solid #d8eaf4}.thumbs small{font-size:7pt;color:#6a8190;white-space:nowrap}.no-thumb{font-size:7.3pt;color:#8b9aa5}
+table.check th:nth-child(2){width:16mm}table.check th:nth-child(3){width:38mm}table.check th:nth-child(4){width:21mm}table.check th:nth-child(5){width:auto}table.check th:nth-child(6){width:36mm}.thumb-cell{vertical-align:middle!important}.thumbs{display:flex;gap:1mm;align-items:center}.compare{margin-bottom:6mm;break-inside:avoid}.compare .grid-row{grid-template-columns:1fr 1fr}.compare .grid-row figure:first-child{grid-column:auto}.compare-note{font-size:7.8pt;color:#4b6b7e;padding:1.5mm 1mm 0}
+.thumbs img{width:14mm;height:11mm;object-fit:cover;border-radius:.8mm;border:.2mm solid #d8eaf4}.thumbs small{font-size:7pt;color:#6a8190;white-space:nowrap}.no-thumb{font-size:7.3pt;color:#8b9aa5}
 table.check td:nth-child(2){color:#386f8a;font-weight:600}table.check tr.cat-start td{border-top:.35mm solid #b9d3e3}
 table.act th:nth-child(1){width:38mm;text-align:left}table.act td:first-child{text-align:left;color:#1d3b4f;font-weight:600}table.act th:nth-child(2){width:auto}table.act th:nth-child(4){width:21mm}
 .wk{display:block;white-space:nowrap;font-size:7.3pt;color:#6a8190;font-weight:500;margin-top:.5mm}.cdate{color:#16324a}
@@ -32,6 +33,19 @@ function inspectionFigure(item, photo, images) {
   const source = images[photo.id];
   const safe = typeof source === "string" && SAFE_IMAGE.test(source);
   return `<figure class="insp ${BADGE_CLASS[item.status] || "good"}"><div class="photo-bar"><b>${escape(item.category)} · ${escape(item.label)}</b>${badge(item.status)}</div>${safe ? `<img src="${escape(source)}" alt="${escape(item.label)}">` : '<div class="missing-photo">사진 없음</div>'}<figcaption>${item.note ? `<span>${escape(item.note)}</span>` : ""}${photo.caption ? `<span>${escape(photo.caption)}</span>` : ""}</figcaption></figure>`;
+}
+
+// 지난 점검과 이번 점검을 나란히. 같은 항목·같은 위치를 비교하는 자리다.
+function compareRow(item, images) {
+  const pic = (photo, cls, tag, sub) => {
+    const source = images[photo.id];
+    const safe = typeof source === "string" && SAFE_IMAGE.test(source);
+    return `<figure class="insp ${cls}"><div class="photo-bar"><b>${escape(tag)}</b>${sub}</div>${safe ? `<img src="${escape(source)}" alt="${escape(item.label)} ${escape(tag)}">` : '<div class="missing-photo">사진 없음</div>'}</figure>`;
+  };
+  const prev = item.previous;
+  return `<section class="compare"><div class="area-head"><h3>${escape(item.category)} · ${escape(item.label)}</h3><p>지난 점검 ${escape(prev.dateLabel)} → 이번 점검</p></div>
+    <div class="grid-row">${pic(prev.photos[0], BADGE_CLASS[prev.status] || "good", `지난 점검 · ${prev.dateLabel}`, badge(prev.status))}${pic(item.photos[0], BADGE_CLASS[item.status] || "good", "이번 점검", badge(item.status))}</div>
+    <p class="compare-note">${prev.note ? `지난번: ${escape(prev.note)} · ` : ""}이번: ${escape(item.note || Periodic.statusLabel(item.status))}</p></section>`;
 }
 
 function grid(figures) {
@@ -78,8 +92,10 @@ function createPeriodicReportHtml(view, options = {}) {
     return `<section class="round"><div class="round-head"><b>${row.no}회차 · ${escape(row.dateLabel)}</b><span>${escape(row.week)}${row.areas ? ` · ${escape(row.areas)}` : ""}</span></div>${areas.map((item, i) => Owner.areaPhotos(item, `${row.no}-${i + 1}`, images)).join("")}</section>`;
   }).join("");
   const photoTotal = cleanings.reduce((n, row) => n + row.photoCount, 0);
+  const compared = items.filter(item => item.previous && item.previous.photos.length && item.photos.length).sort((a, b) => ORDER[a.status] - ORDER[b.status]);
+  const compareHtml = compared.map(item => compareRow(item, images)).join("");
   const inspectionPhotos = items.filter(item => item.photos.length).sort((a, b) => ORDER[a.status] - ORDER[b.status])
-    .flatMap(item => item.photos.map(photo => inspectionFigure(item, photo, images)));
+    .flatMap(item => (compared.includes(item) ? item.photos.slice(1) : item.photos).map(photo => inspectionFigure(item, photo, images)));
 
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>정기 관리보고서</title><style>
 ${Owner.ownerReportStyles(`정기 관리보고서 · ${view.documentNo}`)}
@@ -101,7 +117,11 @@ ${EXTRA_CSS}
 <table class="areas check"><thead><tr><th>No.</th><th>구분</th><th>점검 항목</th><th>상태</th><th>점검 내용</th>${withPhotos ? "<th>사진</th>" : ""}</tr></thead><tbody>${checkRows}</tbody></table></section>
 ${actions.length ? `<section><h2>3. 조치 및 건의 사항</h2><table class="areas act"><thead><tr><th>항목</th><th>확인 내용</th><th>조치 · 건의</th><th>상태</th></tr></thead><tbody>${actions.map(item => `<tr><td>${escape(item.label)}${item.since ? `<small class="wk">${escape(Periodic.dateLabel(item.since, false))} 확인</small>` : ""}</td><td>${escape(item.finding)}</td><td>${escape(item.plan || (item.status === "done" ? "조치 완료" : item.status === "watch" ? "다음 점검 때 다시 확인" : "건물주 확인 후 진행"))}</td><td>${badge(item.status)}</td></tr>`).join("")}</tbody></table></section>` : ""}
 </section>
-${inspectionPhotos.length ? `<section class="photos part">
+${compareHtml ? `<section class="photos part">
+<div class="photos-head"><h2>지난 점검과 비교</h2><p>관찰·조치 항목의 같은 위치 · ${compared.length}건</p></div>
+${compareHtml}
+</section>` : ""}
+${inspectionPhotos.length ? `<section class="photos${compareHtml ? "" : " part"}">
 <div class="photos-head"><h2>정기점검 사진</h2><p>점검 항목별 현장 확인 · ${inspectionPhotos.length}장</p></div>
 <section class="insp-grid">${grid(inspectionPhotos)}</section>
 </section>` : ""}
@@ -124,7 +144,10 @@ ${view.nextSchedule && view.nextSchedule.length ? `<section><h2>다음 일정</h
 function periodicReportPdfPhotos(view) {
   const photos = [];
   (view.cleanings || []).forEach(row => row.items.forEach(item => ["before", "during", "after"].forEach(phase => item[phase].forEach(photo => photos.push(photo)))));
-  ((view.inspection && view.inspection.items) || []).forEach(item => item.photos.forEach(photo => photos.push(photo)));
+  ((view.inspection && view.inspection.items) || []).forEach(item => {
+    item.photos.forEach(photo => photos.push(photo));
+    if (item.previous) item.previous.photos.forEach(photo => photos.push(photo));
+  });
   const seen = new Set();
   return photos.filter(photo => photo.id && !seen.has(photo.id) && seen.add(photo.id)).slice(0, 100);
 }

@@ -395,7 +395,13 @@
         date: value.inspection.date,
         dateLabel: dateLabel(value.inspection.date),
         inspectorName: value.inspection.inspectorName,
-        items: value.inspection.items.filter(item => item.status !== "na"),
+        // 관찰·조치 항목은 지난 점검의 같은 항목 사진을 같이 싣는다. 건물주가 변화(커졌는지,
+        // 고쳐졌는지)를 나란히 보게 하려는 것이다. 지난 보고서에 사진이 있을 때만.
+        items: value.inspection.items.filter(item => item.status !== "na").map(item => {
+          const before = previous && ["watch", "fix", "done"].includes(item.status)
+            ? normalizeReport(previous).inspection.items.find(row => row.key === item.key && row.photos.length && row.status !== "na") : null;
+          return before ? { ...item, previous: { date: normalizeReport(previous).inspection.date, dateLabel: dateLabel(normalizeReport(previous).inspection.date, false), status: before.status, note: before.note, photos: before.photos.slice(0, 1) } } : item;
+        }),
       },
       counts: counts(value),
       actions,

@@ -255,3 +255,25 @@ test("AI 점검 제안은 서버 보고서 기준·축소본만 보내고 Drive 
   const MutationPolicy = require("../src/mutation-policy");
   assert.equal(MutationPolicy.classification("crm:periodic-inspection-review"), "control");
 });
+
+test("관찰·조치 항목은 지난 점검의 같은 항목 사진과 나란히 싣는다", () => {
+  const works3 = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", label: "계단", status: "recorded", after: [{ id: "c1" }] }] }];
+  const previous = { id: "pr_prev9", buildingId: "b1", period: "2026-10-1", inspection: { date: "2026-10-12", items: [
+    { key: "wallCrack", status: "watch", note: "처음 확인", photos: [{ id: "old1" }] },
+    { key: "mailbox", status: "good", photos: [{ id: "old2" }] },
+  ] } };
+  const report = { id: "pr_cmp01", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28", items: [
+    { key: "wallCrack", status: "watch", note: "변화 없음", photos: [{ id: "new1" }] },
+    { key: "mailbox", status: "good", photos: [{ id: "new2" }] },
+  ] } };
+  const view = P.buildView(report, works3, { previousReport: previous });
+  const crack = view.inspection.items.find(item => item.key === "wallCrack");
+  assert.equal(crack.previous.photos[0].id, "old1");
+  assert.equal(crack.previous.dateLabel, "10. 12.(월)");
+  assert.equal(view.inspection.items.find(item => item.key === "mailbox").previous, undefined);
+  assert.deepEqual(periodicReportPdfPhotos(view).map(photo => photo.id).sort(), ["c1", "new1", "new2", "old1"]);
+  const images = Object.fromEntries(["c1", "new1", "new2", "old1"].map(id => [id, PIXEL]));
+  const html = createPeriodicReportHtml(view, { images });
+  assert.match(html, /지난 점검과 비교/);
+  assert.match(html, /지난번: 처음 확인 · 이번: 변화 없음/);
+});
