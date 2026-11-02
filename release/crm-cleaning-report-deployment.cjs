@@ -10,7 +10,21 @@ const NAME = "cleaningOrdersApi";
 const REGION = "asia-northeast3";
 const PROJECT = "bring-fm";
 const ENDPOINT = `https://${REGION}-${PROJECT}.cloudfunctions.net/${NAME}`;
+const IDENTITY = require("./crm-cleaning-report-identity.json");
 const fail = code => { throw new Error(`CLEANING_REPORT_${code}`); };
+
+function requireFederatedCredential(env = process.env, read = file => fs.readFileSync(file, "utf8")) {
+  if (env.GITHUB_ACTIONS !== "true" || env.GITHUB_REPOSITORY !== IDENTITY.repository || env.GITHUB_REF !== IDENTITY.sourceRef) fail("FEDERATED_CONTEXT_INVALID");
+  const file = env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!path.isAbsolute(file || "") || env.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE !== file) fail("FEDERATED_CREDENTIAL_REQUIRED");
+  let credential;
+  try { credential = JSON.parse(read(file)); } catch { fail("FEDERATED_CREDENTIAL_INVALID"); }
+  if (credential.type !== "external_account" || credential.audience !== `//iam.googleapis.com/${IDENTITY.provider}`
+    || credential.token_url !== "https://sts.googleapis.com/v1/token"
+    || credential.service_account_impersonation_url !== `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${IDENTITY.serviceAccount}:generateAccessToken`) fail("FEDERATED_IDENTITY_MISMATCH");
+  // The action owns and removes this file. Never print, copy or archive it.
+  return file;
+}
 
 // The operator deploys the API with existing permissions. CI can verify its
 // additive schema without granting its Rules/backup identity Functions access.
@@ -36,7 +50,7 @@ function runCommand(bin, args, options, exec = execFileSync) {
     const operations = { "--version": "VERSION", fetch: "FETCH", "rev-parse": "SOURCE", status: "STATUS", "ls-remote": "RESERVATION", auth: "AUTH", functions: "METADATA", storage: "BACKUP", "functions:list": "INVENTORY", deploy: "DEPLOY" };
     const operation = operations[args[bin === process.execPath ? 1 : 0]] || "UNKNOWN";
     const stderr = String(error.stderr || "") + String(error.stdout || "");
-    const reason = /permission.denied|forbidden|does not have.*permission/iu.test(stderr) ? "PERMISSION_DENIED"
+    const reason = /permission[^\r\n]{0,200}denied|forbidden|does not have.*permission/iu.test(stderr) ? "PERMISSION_DENIED"
       : /unauthenticated|invalid.grant|invalid.credentials|failed to authenticate/iu.test(stderr) ? "AUTH_FAILED"
       : /not.found|no such file|cannot find module/iu.test(stderr) || error.code === "ENOENT" ? "NOT_FOUND" : "FAILED";
     const failure = new Error(`CLEANING_REPORT_${tool}_${operation}_${reason}`);
@@ -60,24 +74,20 @@ function safeDiagnostics(text) {
 async function preflight() {
   if (process.env.GITHUB_ACTIONS !== "true" || !path.isAbsolute(process.env.RUNNER_TEMP || "")) fail("CI_REQUIRED");
   planDeployment(require("./firebase-targets.json"), PROJECT);
-  const key = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
-  if (key.type !== "service_account" || key.project_id !== PROJECT || !key.private_key || !key.client_email) fail("CREDENTIAL_INVALID");
-  const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, "cleaning-report-preflight-"));
-  const credential = path.join(dir, "credentials.json"), debug = path.join(ROOT, "firebase-debug.log");
+  requireFederatedCredential();
+  const debug = path.join(ROOT, "firebase-debug.log");
   if (fs.existsSync(debug)) fail("PREFLIGHT_FRESH_CHECKOUT_REQUIRED");
   try {
-    fs.writeFileSync(credential, JSON.stringify(key), { mode: 0o600, flag: "wx" });
     let stdout = "", stderr = "", exitCode = 0;
     try { stdout = execFileSync(process.execPath, [path.join(ROOT, "company-site/node_modules/firebase-tools/lib/bin/firebase.js"), "functions:list", "--project", PROJECT, "--json"],
-      { cwd: ROOT, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: credential } }); }
+      { cwd: ROOT, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], env: process.env }); }
     catch (error) { stdout = String(error.stdout || ""); stderr = String(error.stderr || ""); exitCode = Number.isInteger(error.status) ? error.status : 1; }
     const log = fs.existsSync(debug) ? fs.readFileSync(debug, "utf8") : "";
     const diagnostics = safeDiagnostics(stdout + "\n" + stderr + "\n" + log);
     console.log(JSON.stringify({ stage: "read_only_inventory_preflight", ok: exitCode === 0, exitCode, projectMatches: true, ...diagnostics }));
     const cloud = args => runCommand("gcloud", args, { cwd: ROOT, encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CLOUDSDK_CONFIG: path.join(dir, "gcloud") } });
+      stdio: ["ignore", "pipe", "pipe"], env: process.env });
     try {
-      cloud(["auth", "activate-service-account", "--key-file", credential, "--project", PROJECT, "--quiet"]);
       for (const [stage, args] of [
         ["selected_function_metadata", ["functions", "describe", NAME, "--v2", "--region", REGION, "--project", PROJECT, "--format=json(name,state)"]],
         ["cloud_function_inventory", ["functions", "list", "--v2", "--project", PROJECT, "--format=json(name,state)"]],
@@ -87,7 +97,7 @@ async function preflight() {
       }
     } catch (error) { console.log(JSON.stringify({ stage: "cloud_auth", ok: false, code: error.message, ...error.diagnostics })); }
     if (exitCode !== 0) process.exitCode = 1;
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); if (fs.existsSync(debug)) fs.unlinkSync(debug); }
+  } finally { if (fs.existsSync(debug)) fs.unlinkSync(debug); }
 }
 
 function planDeployment(manifest, project) {
@@ -132,19 +142,8 @@ async function deploy({ operator = false, backupDir } = {}) {
     console.log("Cleaning report common-v2 schema verified; anonymous requests remain denied; no backend deployment needed.");
     return;
   }
-  let privateDir;
-  const oldGoogle = process.env.GOOGLE_APPLICATION_CREDENTIALS, oldCloud = process.env.CLOUDSDK_CONFIG;
-  if (!operator) {
-    const key = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
-    if (key.type !== "service_account" || key.project_id !== PROJECT || !key.private_key || !key.client_email) fail("CREDENTIAL_INVALID");
-    privateDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, "cleaning-report-auth-"));
-    const keyFile = path.join(privateDir, "credentials.json");
-    fs.writeFileSync(keyFile, JSON.stringify(key), { mode: 0o600, flag: "wx" });
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFile;
-    process.env.CLOUDSDK_CONFIG = path.join(privateDir, "gcloud");
-  }
+  if (!operator) requireFederatedCredential();
   try {
-    if (!operator) run("gcloud", ["auth", "activate-service-account", "--key-file", process.env.GOOGLE_APPLICATION_CREDENTIALS, "--project", PROJECT, "--quiet"]);
     const inventory = () => parseFunctionInventory(firebase(["functions:list", "--project", PROJECT, "--json"]));
     const before = inventory(); selectedFunction(before);
     const metadata = JSON.parse(run("gcloud", ["functions", "describe", NAME, "--v2", "--region", REGION, "--project", PROJECT,
@@ -171,11 +170,10 @@ async function deploy({ operator = false, backupDir } = {}) {
     fs.writeFileSync(path.join(dir, "verification.json"), JSON.stringify({ project: PROJECT, source, selected, anonymousDenied: true }, null, 2));
     console.log("Cleaning report API deployed and verified; unrelated functions unchanged; credentials omitted.");
   } finally {
-    if (oldGoogle === undefined) delete process.env.GOOGLE_APPLICATION_CREDENTIALS; else process.env.GOOGLE_APPLICATION_CREDENTIALS = oldGoogle;
-    if (oldCloud === undefined) delete process.env.CLOUDSDK_CONFIG; else process.env.CLOUDSDK_CONFIG = oldCloud;
-    if (privateDir) fs.rmSync(privateDir, { recursive: true, force: true });
+    const debug = path.join(ROOT, "firebase-debug.log");
+    if (fs.existsSync(debug)) fs.unlinkSync(debug);
   }
 }
 if (require.main === module) Promise.resolve().then(() => process.argv[2] === "--preflight" ? preflight() : deploy(process.argv.length > 2 ? operatorOptions(process.argv.slice(2)) : {}))
   .catch(error => { console.error(/^CLEANING_REPORT_[A-Z_]+$/u.test(error.message) ? error.message : "CLEANING_REPORT_DEPLOY_FAILED"); process.exitCode = 1; });
-module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions };
+module.exports = { planDeployment, selectedFunction, verifyAfter, backupUri, runCommand, safeDiagnostics, reportSchemaReady, operatorOptions, requireFederatedCredential };

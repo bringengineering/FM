@@ -1,0 +1,35 @@
+{
+  "projectId": "bring-fm",
+  "projectNumber": "864976295990",
+  "serviceAccount": "bring-crm-report-deployer@bring-fm.iam.gserviceaccount.com",
+  "poolId": "bring-crm-report-github",
+  "providerId": "github",
+  "provider": "projects/864976295990/locations/global/workloadIdentityPools/bring-crm-report-github/providers/github",
+  "repository": "bringengineering/FM",
+  "repositoryId": "1276587874",
+  "repositoryOwnerId": "243367126",
+  "sourceRef": "refs/heads/codex/bring-field-platform",
+  "environment": "firebase-production",
+  "workflowRef": "bringengineering/FM/.github/workflows/crm-release.yml@refs/heads/codex/bring-field-platform",
+  "subject": "repo:bringengineering/FM:environment:firebase-production",
+  "projectRoles": [
+    "roles/cloudfunctions.admin",
+    "roles/firebase.viewer",
+    "roles/secretmanager.viewer",
+    "roles/serviceusage.serviceUsageConsumer"
+  ],
+  "runtimeServiceAccount": "864976295990-compute@developer.gserviceaccount.com",
+  "runtimeRole": "roles/iam.serviceAccountUser",
+  "sourceBucket": "gcf-v2-sources-864976295990-asia-northeast3",
+  "sourceBucketRole": "roles/storage.objectViewer",
+  "federationRole": "roles/iam.workloadIdentityUser",
+  "attributeMapping": {
+    "google.subject": "assertion.sub",
+    "attribute.repository_id": "assertion.repository_id",
+    "attribute.repository_owner_id": "assertion.repository_owner_id",
+    "attribute.ref": "assertion.ref",
+    "attribute.environment": "assertion.environment",
+    "attribute.workflow_ref": "assertion.workflow_ref"
+  },
+  "attributeCondition": "assertion.repository_id=='1276587874'&&assertion.repository_owner_id=='243367126'&&assertion.ref=='refs/heads/codex/bring-field-platform'&&assertion.environment=='firebase-production'&&assertion.sub=='repo:bringengineering/FM:environment:firebase-production'&&assertion.workflow_ref=='bringengineering/FM/.github/workflows/crm-release.yml@refs/heads/codex/bring-field-platform'"
+}

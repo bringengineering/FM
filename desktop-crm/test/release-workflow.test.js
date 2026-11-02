@@ -135,7 +135,8 @@ test("desktop release isolates the approved backend deployments and never deploy
   const preflight = jobBlock("cleaning-report-preflight");
   const withoutManagement = releaseExecutable.replace(management.replace(/^\s*#.*$/gm, ""), "").replace(cleaning.replace(/^\s*#.*$/gm, ""), "").replace(preflight.replace(/^\s*#.*$/gm, ""), "");
   assert.doesNotMatch(releaseExecutable, /preflight-rules:|preflight-wif:|deploy-rules:/);
-  assert.doesNotMatch(releaseExecutable, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
+  assert.doesNotMatch(withoutManagement, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
+  assert.doesNotMatch(management, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
   assert.doesNotMatch(releaseExecutable, /GCP_|bring-crm-production|read-firebase-targets\.js/i);
   assert.doesNotMatch(withoutManagement, /firebase(?:-tools)?|database:get|database\.rules|firebase\.json|crm-rules/i);
   assert.doesNotMatch(withoutManagement, /deploy --only|--only database|--only hosting|cloudfunctions|functions\//i);
@@ -151,7 +152,14 @@ test("desktop release isolates the approved backend deployments and never deploy
   assert.doesNotMatch(preflight, /--apply|firebase deploy|wrangler deploy|needs:/);
   assert.match(cleaning, /needs: \[plan, reserve-build\]/);
   assert.match(cleaning, /environment: firebase-production/);
-  assert.match(cleaning, /FIREBASE_SERVICE_ACCOUNT: \$\{\{ secrets\.FIREBASE_SERVICE_ACCOUNT \}\}/);
+  for (const job of [cleaning, preflight]) {
+    assert.match(job, /permissions:\s*\n\s*contents: read\s*\n\s*id-token: write/);
+    assert.match(job, /google-github-actions\/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093/);
+    assert.match(job, /service_account: bring-crm-report-deployer@bring-fm\.iam\.gserviceaccount\.com/);
+    assert.match(job, /workload_identity_provider: projects\/864976295990\/locations\/global\/workloadIdentityPools\/bring-crm-report-github\/providers\/github/);
+    assert.match(job, /cleanup_credentials: true/);
+    assert.doesNotMatch(job, /FIREBASE_SERVICE_ACCOUNT|credentials_json|private_key/);
+  }
   assert.match(cleaning, /crm-cleaning-report-deployment\.cjs/);
   assert.match(cleaning, /--project demo-bring-cleaning-functions emulators:exec --only auth,database,functions/);
   assert.doesNotMatch(cleaning, /database:get|--only hosting|crm-rules-deploy|--only database\s+(?!emulators)/i);
@@ -191,7 +199,7 @@ test("pins every third-party Action to an immutable commit and scopes production
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
   ]) assert.ok(`${ci}\n${release}`.includes(expected));
-  assert.doesNotMatch(release, /google-github-actions\/auth|id-token:\s*write/);
+  assert.equal((release.match(/id-token: write/g) || []).length, 2);
   assert.match(release, /reserve-build:[\s\S]*?permissions:\s*\n\s*contents: write/);
   assert.match(release, /publish-stable:[\s\S]*?permissions:\s*\n\s*actions: read\s*\n\s*contents: write/);
 });

@@ -33,6 +33,9 @@ jobs:
     if: github.ref == 'refs/heads/codex/bring-field-platform' && inputs.cleaning_report_preflight == true
     runs-on: ubuntu-latest
     environment: firebase-production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -46,9 +49,16 @@ jobs:
           node-version: 22
       - run: pnpm --dir company-site install --frozen-lockfile
       - run: node --test release/crm-cleaning-report-deployment.test.cjs
+      - name: Authenticate the dedicated report deployer with GitHub OIDC
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: bring-fm
+          workload_identity_provider: projects/864976295990/locations/global/workloadIdentityPools/bring-crm-report-github/providers/github
+          service_account: bring-crm-report-deployer@bring-fm.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
+          cleanup_credentials: true
       - name: Read function API status without deploying or exposing credentials
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node release/crm-cleaning-report-deployment.cjs --preflight
 
   plan:
@@ -284,6 +294,9 @@ jobs:
     needs: [plan, reserve-build]
     runs-on: ubuntu-latest
     environment: firebase-production
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -312,9 +325,16 @@ jobs:
           FIREBASE_DATABASE_EMULATOR_HOST: 127.0.0.1:9000
           BRING_CLEANING_FUNCTIONS_EMULATOR_HOST: 127.0.0.1:5001
         run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-cleaning-functions emulators:exec --only auth,database,functions "pnpm exec vitest run tests/field/cleaning-orders-functions-emulator.test.ts"
+      - name: Authenticate the dedicated report deployer with GitHub OIDC
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: bring-fm
+          workload_identity_provider: projects/864976295990/locations/global/workloadIdentityPools/bring-crm-report-github/providers/github
+          service_account: bring-crm-report-deployer@bring-fm.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
+          cleanup_credentials: true
       - name: Back up and deploy only the cleaning report validation API
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node release/crm-cleaning-report-deployment.cjs
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

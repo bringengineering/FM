@@ -18,3 +18,5 @@ company-site/firebase-public/popbill-guide/
 desktop-crm/node_modules/
 desktop-crm/dist/
 desktop-crm/dist-tv/
+# Short-lived GitHub OIDC configuration; never include it in source/artifacts.
+gha-creds-*.json
