@@ -1,6 +1,6 @@
 "use strict";
 
-const PATHS = Object.freeze({ capabilities: ["GET", "capabilities"], create: ["POST", "documents"], createAndSend: ["POST", "documents-and-messages"], send: ["POST", "messages"], status: ["GET", "messages"], revoke: ["POST", "documents"] });
+const PATHS = Object.freeze({ capabilities: ["GET", "capabilities"], create: ["POST", "documents"], createAndSend: ["POST", "documents-and-messages"], send: ["POST", "messages"], status: ["GET", "messages"], revoke: ["POST", "documents"], documentStatus: ["GET", "documents"] });
 const DOCUMENT_GATEWAY_HOST = "bring-crm-ai-gateway.bringengineering1008.workers.dev";
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const SAFE_ERRORS = Object.freeze({
@@ -74,6 +74,7 @@ async function requestDocumentDelivery(options = {}) {
   let suffix = segment;
   if (action === "status") suffix += `/${cleanId(options.input && options.input.messageId)}`;
   if (action === "revoke") suffix += `/${cleanId(options.input && options.input.documentId)}/revoke`;
+  if (action === "documentStatus") suffix += `/${cleanId(options.input && options.input.documentId)}`;
   const url = new URL(`${endpoint.pathname.replace(/\/$/, "")}/${suffix}`, endpoint.origin);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs || 15000));

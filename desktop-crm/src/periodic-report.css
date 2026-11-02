@@ -53,3 +53,9 @@
 .pr-ai header small { color: #6B7684; flex: 1; }
 .pr-ai ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .pr-applied { color: #2B6E4F; font-weight: 800; font-size: 12px; }
+.pr-linked { color: #1F5AA6; font-weight: 700; }
+.pr-history { margin: 0 0 18px; padding: 20px; }
+.pr-history > header span { color: #3182F6; font-size: 9px; font-weight: 950; letter-spacing: .09em; }
+.pr-history > header h3 { margin: 4px 0 2px; color: #191F28; font-size: 17px; }
+.pr-history > header small, .pr-history td small { display: block; color: #6B7684; }
+.pr-history .pr-badge { margin: 0 4px 3px 0; }

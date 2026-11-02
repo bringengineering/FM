@@ -177,9 +177,10 @@ test("알림톡: 받는 사람은 건물의 건물주 고객(건물 없으면 �
   assert.equal(P.kakaoDetails({ ...base, siteAddress: "가".repeat(120), buildingId: "b1" }).buildingAddress.length, 80);
 });
 
-test("발송 기록은 상태·시각·끝 4자리만 남는다", () => {
+test("발송 기록은 상태·시각·끝 4자리·열람 정보만 남고 전화번호는 남지 않는다", () => {
   const r = P.normalizeReport({ id: "pr_kakao2", buildingId: "b1", period: "2026-10-2", delivery: { status: "requested", sentAt: "2026-11-03T01:00:00Z", phoneTail: "3076", phone: "01020773076" } });
-  assert.deepEqual(Object.keys(r.delivery).sort(), ["messageId", "phoneTail", "sentAt", "sentBy", "status"]);
+  assert.deepEqual(Object.keys(r.delivery).sort(), ["checkedAt", "documentId", "firstViewedAt", "messageId", "phoneTail", "sentAt", "sentBy", "status", "viewCount"]);
+  assert.doesNotMatch(JSON.stringify(r.delivery), /01020773076/);
   assert.equal(P.normalizeReport({ id: "pr_kakao3", buildingId: "b1", period: "2026-10-2", delivery: { status: "weird" } }).delivery, null);
 });
 
@@ -276,4 +277,68 @@ test("관찰·조치 항목은 지난 점검의 같은 항목 사진과 나란�
   const html = createPeriodicReportHtml(view, { images });
   assert.match(html, /지난 점검과 비교/);
   assert.match(html, /지난번: 처음 확인 · 이번: 변화 없음/);
+});
+
+test("조치 항목 ↔ 작업 건: 공사 진행이 끝나면 '수리 완료', 진행 중이면 단계 표시, 연결은 다음 보고서로 이어진다", () => {
+  const works4 = [{ id: "w", buildingId: "b1", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", status: "recorded", after: [{ id: "c" }] }] }];
+  const prev = { id: "pr_lnk01", buildingId: "b1", period: "2026-10-1", links: { lightSensor: "case_1", bogus: "x" }, inspection: { date: "2026-10-12", items: [{ key: "lightSensor", status: "fix", note: "미점등", photos: [{ id: "x" }] }] } };
+  assert.deepEqual(P.normalizeReport(prev).links, { lightSensor: "case_1" });
+  const cur = { id: "pr_lnk02", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28" } };
+  const doing = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", status: { c11: "done", c12: "doing" } }] }).actions[0];
+  assert.deepEqual([doing.status, doing.plan], ["fix", "작업 진행 중 (공사 진행)"]);
+  const done = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", status: { c12: "done" }, workCompletedAt: "2026-10-30" }] }).actions[0];
+  assert.deepEqual([done.status, done.plan], ["done", "10. 30.(금) 수리 완료"]);
+  const trashed = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", deleted: true, status: { c12: "doing" } }] }).actions[0];
+  assert.equal(trashed.plan, "10. 28.(수) 점검에서 정상 확인");
+});
+
+test("건물별 이력: 반복 문제·조치 평균 일수·최근 8주 청소 공백을 기록에서 센다", () => {
+  const w = ["2026-10-05", "2026-10-12", "2026-10-26", "2026-11-02"].map((date, i) => ({ id: `h${i}`, buildingId: "b1", kind: "common", workDate: date, items: [] }));
+  const r = [
+    { id: "pr_his01", buildingId: "b1", buildingName: "예초집", period: "2026-10-1", links: { recycle: "k1" }, inspection: { date: "2026-10-12", items: [{ key: "recycle", status: "fix" }, { key: "wallCrack", status: "watch" }] } },
+    { id: "pr_his02", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-26", items: [{ key: "recycle", status: "fix" }] }, delivery: { status: "sent", sentAt: "2026-11-01T00:00:00Z", phoneTail: "1234" } },
+  ];
+  const [row] = P.buildingHistory(r, w, [{ id: "k1", status: { c12: "done" }, workCompletedAt: "2026-10-30" }], "2026-11-03");
+  assert.equal(row.buildingName, "예초집");
+  assert.deepEqual(row.repeated.map(item => [item.key, item.count]), [["recycle", 2]]);
+  assert.equal(row.avgFixDays, 18);
+  assert.deepEqual(row.missedWeeks, ["2026-10-18"]);
+  assert.equal(row.weeksChecked, 4);
+  assert.equal(row.sent, 1);
+  assert.equal(row.openNow, 1);
+});
+
+test("열람 확인: 발송 서버의 문서 상태를 묻고, 목록에 열람함/미열람·경과일을 보인다", async () => {
+  assert.deepEqual(P.viewState({ status: "requested", sentAt: "2026-11-01T01:00:00Z", phoneTail: "1234", documentId: "doc_a" }, "2026-11-03"), { viewed: false, days: 2, label: "미열람 · 발송 후 2일", followUp: true });
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-10-20T01:00:00Z", phoneTail: "1234" }, "2026-11-03").label, "미열람 · 링크 만료");
+  assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-01T01:00:00Z", phoneTail: "1234", firstViewedAt: "2026-11-02T03:00:00Z", viewCount: 3 }, "2026-11-03").label, "열람함 11. 2.(월) · 3회");
+  assert.equal(P.viewState(null, "2026-11-03"), null);
+  const { requestDocumentDelivery } = require("../src/document-delivery-client");
+  let called = "";
+  const value = await requestDocumentDelivery({ endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/document-delivery", idToken: "t", action: "documentStatus", input: { documentId: "doc_abc" },
+    fetchImpl: async url => { called = url; return new Response(JSON.stringify({ ok: true, firstViewedAt: "x", viewCount: 1 })); } });
+  assert.match(called, /\/v1\/document-delivery\/documents\/doc_abc$/);
+  assert.equal(value.viewCount, 1);
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(main, /documentId: String\(created\.documentId\)/);
+  assert.ok(main.includes('secureCanonicalHandle("crm:periodic-report-views"'));
+});
+
+test("건물 월간보고서에 그 달 격주 정기 관리 요약이 들어간다", () => {
+  const B = require("../src/building-report-core");
+  const { createBuildingReportHtml } = require("../src/building-report-pdf");
+  const works5 = ["2026-10-19", "2026-10-26"].map((date, i) => ({ id: `m${i}`, buildingId: "b1", kind: "common", workDate: date, items: [{ key: "stairs", status: "recorded", after: [{ id: `x${i}` }] }] }));
+  const report = B.buildBuildingMonthlyReport({ building: { id: "b1", name: "예초집" }, month: "2026-10", store: {},
+    periodicReports: [{ id: "pr_mon01", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-26", items: [{ key: "recycle", status: "fix", note: "혼합 배출", photos: [{ id: "p" }] }] } },
+      { id: "pr_mon02", buildingId: "b2", period: "2026-10-1", inspection: { date: "2026-10-05" } }],
+    workReports: works5 });
+  assert.equal(report.periodic.length, 1);
+  assert.deepEqual(report.periodic[0].cleaningDates, ["10. 19.(월)", "10. 26.(월)"]);
+  assert.deepEqual(report.periodic[0].openActions.map(item => item.label), ["분리수거장"]);
+  assert.equal(B.buildBuildingMonthlyReport({ building: { id: "b1" }, month: "2026-10", store: {} }).periodic.length, 0);
+  const html = createBuildingReportHtml(report);
+  assert.match(html, /격주 정기 관리/);
+  assert.match(html, /2026년 10월 2차/);
 });

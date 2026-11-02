@@ -156,6 +156,24 @@
     };
   }
 
+  function normalizeLinks(source) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    const keys = new Set(INSPECTION_ITEMS.map(item => item.key));
+    return Object.fromEntries(Object.entries(value).filter(([key, caseKey]) => (keys.has(key) || /^custom_[A-Za-z0-9_-]{1,40}$/.test(key)) && /^[A-Za-z0-9_-]{1,120}$/.test(String(caseKey || ""))).slice(0, 30));
+  }
+
+  // 연결된 작업 건의 진행. '공사 진행'(c12) 이 끝나면 조치 완료로 본다. 삭제된 건은 연결이 없는 것으로 본다.
+  const CASE_STEPS = ["문의 접수", "접수확인", "상담", "분류", "견적 요청", "견적 비교", "추천", "건물주 추천", "승인·입금", "입금 확인", "업체·일정", "공사 진행", "작업 사진", "B/A 보고서", "정산", "월간 리포트", "사후관리"];
+  function caseProgress(caseRecord) {
+    if (!caseRecord || caseRecord.deleted === true) return null;
+    const status = caseRecord.status && typeof caseRecord.status === "object" ? caseRecord.status : {};
+    const done = status.c12 === "done" || status.c13 === "done" || status.c14 === "done";
+    let current = "";
+    for (let i = 1; i <= CASE_STEPS.length; i += 1) if (status[`c${i}`] === "doing") { current = CASE_STEPS[i - 1]; break; }
+    const completedAt = text(caseRecord.workCompletedAt, 10) || text(caseRecord.updatedAt, 10);
+    return { done, step: current, completedAt: isDate(completedAt) ? completedAt : "", ticketNo: text(caseRecord.ticketNo, 40) };
+  }
+
   // 건물주에게 보낸 기록. 번호는 끝 4자리만 둔다 — 보고서 기록에 전화번호를 통째로 쌓지 않는다.
   function normalizeDelivery(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : null;
@@ -166,7 +184,22 @@
       messageId: text(value.messageId, 120),
       phoneTail: /^\d{4}$/.test(text(value.phoneTail, 4)) ? text(value.phoneTail, 4) : "",
       sentBy: text(value.sentBy, 80),
+      // 열람 확인용. 문서 id 는 발송 서버의 보안 링크 문서이고 내용·번호를 담지 않는다.
+      documentId: /^[A-Za-z0-9_-]{1,120}$/.test(text(value.documentId, 120)) ? text(value.documentId, 120) : "",
+      firstViewedAt: text(value.firstViewedAt, 40),
+      viewCount: Math.max(0, Math.min(9999, Math.round(Number(value.viewCount) || 0))),
+      checkedAt: text(value.checkedAt, 40),
     };
+  }
+
+  // 열람 상태 한 줄. 7일 링크라 그 뒤에는 열 수 없다.
+  function viewState(delivery, today) {
+    const value = normalizeDelivery(delivery);
+    if (!value) return null;
+    if (value.firstViewedAt) return { viewed: true, label: `열람함 ${dateLabel(value.firstViewedAt.slice(0, 10), false)}${value.viewCount > 1 ? ` · ${value.viewCount}회` : ""}` };
+    const sentDay = value.sentAt.slice(0, 10);
+    const days = isDate(sentDay) && isDate(today) ? Math.round((Date.UTC(...today.split("-").map((n, i) => i === 1 ? n - 1 : +n)) - Date.UTC(...sentDay.split("-").map((n, i) => i === 1 ? n - 1 : +n))) / 86400000) : 0;
+    return { viewed: false, days, label: days >= 7 ? "미열람 · 링크 만료" : `미열람 · 발송 후 ${days}일`, followUp: days >= 2 };
   }
 
   const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
@@ -225,6 +258,8 @@
       summary: text(value.summary, 2000),
       followUp: text(value.followUp, 2000),
       delivery: normalizeDelivery(value.delivery),
+      // 점검 항목 → CRM 민원·작업 건. 수리가 끝나면 다음 보고서가 스스로 '조치 완료' 로 안다.
+      links: normalizeLinks(value.links),
       nextSchedule: rows(value.nextSchedule).map(item => ({ label: text(item && item.label, 60), date: isDate(item && item.date) ? item.date : "" })).filter(item => item.label && item.date).slice(0, 6),
       createdAt: text(value.createdAt, 40),
       updatedAt: text(value.updatedAt, 40),
@@ -375,13 +410,23 @@
     // 지난번에 넘어온 점검 항목을 이번 점검에서 다시 봤으면 이번 결과를 따른다.
     // 정상으로 확인됐으면 '조치 완료' 로 한 번 보여 주고 다음 보고서부터는 빠진다.
     const current = new Map(value.inspection.items.map(item => [`insp_${item.key}`, item]));
+    // 지난 보고서에서 이어진 작업 건 연결도 이어받는다(이번에 따로 정하지 않았으면).
+    const links = { ...(previous ? normalizeReport(previous).links : {}), ...value.links };
+    const cases = rows(options.cases);
     const withCarry = carryOverActions(previous, value).map(item => {
       const now = current.get(item.key);
       if (!now || now.status === "na" || value.actions.some(own => own.key === item.key)) return item;
       if (now.status === "good") return { ...item, status: "done", plan: item.plan || `${dateLabel(value.inspection.date, false)} 점검에서 정상 확인` };
       return { ...item, status: now.status, finding: now.note || item.finding };
     });
-    const actions = actionsFromInspection({ ...value, actions: withCarry });
+    const actions = actionsFromInspection({ ...value, actions: withCarry }).map(item => {
+      const caseKey = links[String(item.key || "").replace(/^insp_/u, "")];
+      const progress = caseKey ? caseProgress(cases.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey))) : null;
+      if (!progress) return item;
+      if (progress.done) return { ...item, status: "done", plan: `${progress.completedAt ? `${dateLabel(progress.completedAt, false)} ` : ""}수리 완료` };
+      // 작업 건이 아직 안 끝났으면 점검 기본값 '양호' 보다 작업 건이 맞다.
+      return { ...item, status: item.status === "done" ? "fix" : item.status, plan: `작업 진행 중${progress.step ? ` (${progress.step})` : ""}`, caseKey };
+    });
     const nextPeriodValue = nextPeriod(value.period);
     return {
       id: value.id,
@@ -499,6 +544,96 @@
     });
   }
 
+  // 건물별 이력. 정기 관리보고서가 쌓이면 보이는 것들:
+  //  반복 문제   같은 항목이 연속 두 번 이상 관찰·조치 필요
+  //  조치 일수   처음 확인한 날부터 작업 건 '공사 진행' 이 끝난 날까지(연결된 것만)
+  //  청소 공백   최근 8주(일요일 시작 주) 중 공용부·계단청소 기록이 없는 주
+  // 숫자는 기록에서만 센다. 기록이 없으면 셀 수 없다고 둔다.
+  function addDays(date, days) {
+    const [y, m, d] = date.split("-").map(Number);
+    const value = new Date(Date.UTC(y, m - 1, d + days));
+    return value.toISOString().slice(0, 10);
+  }
+  function daysBetween(from, to) {
+    const parse = date => { const [y, m, d] = date.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((parse(to) - parse(from)) / 86400000);
+  }
+  function weekStart(date) {
+    const [y, m, d] = date.split("-").map(Number);
+    return addDays(date, -new Date(Date.UTC(y, m - 1, d)).getUTCDay());
+  }
+  function buildingHistory(reports, workReports, cases, today) {
+    const all = rows(reports).map(normalizeReport).filter(row => row.id && row.period);
+    const targets = new Map();
+    const keyOf = row => row.buildingId ? `b:${row.buildingId}` : row.customerId ? `c:${row.customerId}` : "";
+    all.forEach(row => { const key = keyOf(row); if (!key) return; if (!targets.has(key)) targets.set(key, []); targets.get(key).push(row); });
+    const caseList = rows(cases);
+    const thisWeek = isDate(today) ? weekStart(today) : "";
+    return [...targets.entries()].map(([key, list]) => {
+      const ordered = list.sort((a, b) => a.period.localeCompare(b.period));
+      const target = ordered[ordered.length - 1].buildingId ? { buildingId: ordered[ordered.length - 1].buildingId } : { buildingId: "", customerId: ordered[ordered.length - 1].customerId };
+      // 반복 문제
+      const streaks = new Map();
+      const repeated = [];
+      ordered.forEach(row => {
+        const open = new Set(row.inspection.items.filter(item => ["watch", "fix"].includes(item.status)).map(item => item.key));
+        INSPECTION_ITEMS.forEach(item => {
+          const next = open.has(item.key) ? (streaks.get(item.key) || 0) + 1 : 0;
+          streaks.set(item.key, next);
+        });
+      });
+      streaks.forEach((count, itemKey) => { if (count >= 2) repeated.push({ key: itemKey, label: (INSPECTION_ITEMS.find(item => item.key === itemKey) || {}).label || itemKey, count }); });
+      // 조치 일수: 처음 확인(그 항목이 처음 관찰·조치로 적힌 점검일) → 연결된 작업 건 완료일
+      const fixDays = [];
+      const links = Object.assign({}, ...ordered.map(row => row.links));
+      Object.entries(links).forEach(([itemKey, caseKey]) => {
+        const first = ordered.find(row => row.inspection.items.some(item => item.key === itemKey && ["watch", "fix"].includes(item.status)));
+        const progress = caseProgress(caseList.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey)));
+        if (first && first.inspection.date && progress && progress.done && progress.completedAt && progress.completedAt >= first.inspection.date) fixDays.push(daysBetween(first.inspection.date, progress.completedAt));
+      });
+      // 청소 공백
+      const cleaningWeeks = new Set(WorkReport.sortReports(workReports)
+        .filter(row => CLEANING_KINDS.includes(row.kind) && sameTarget(row, target)).map(row => weekStart(row.workDate)));
+      const weeks = thisWeek ? Array.from({ length: 8 }, (_, i) => addDays(thisWeek, -7 * (i + 1))).reverse() : [];
+      const firstCleaning = [...cleaningWeeks].sort()[0] || "";
+      const missedWeeks = weeks.filter(week => firstCleaning && week >= firstCleaning && !cleaningWeeks.has(week));
+      const sent = ordered.filter(row => row.delivery);
+      return {
+        key, target,
+        buildingName: ordered.map(row => row.buildingName).filter(Boolean).pop() || "",
+        reports: ordered.length,
+        sent: sent.length,
+        lastSentAt: sent.length ? sent[sent.length - 1].delivery.sentAt.slice(0, 10) : "",
+        openNow: ordered[ordered.length - 1].inspection.items.filter(item => ["watch", "fix"].includes(item.status)).length,
+        repeated: repeated.sort((a, b) => b.count - a.count),
+        avgFixDays: fixDays.length ? Math.round(fixDays.reduce((sum, value) => sum + value, 0) / fixDays.length) : null,
+        fixedCount: fixDays.length,
+        missedWeeks,
+        weeksChecked: weeks.filter(week => firstCleaning && week >= firstCleaning).length,
+      };
+    }).sort((a, b) => (b.repeated.length + b.missedWeeks.length) - (a.repeated.length + a.missedWeeks.length) || String(a.buildingName).localeCompare(String(b.buildingName), "ko"));
+  }
+
+  // 건물 월간보고서에 싣는 한 달 요약. 그 달 1차·2차 정기 관리보고서마다 청소일·점검 건수·남은 조치.
+  function monthSummary(reports, workReports, buildingId, month) {
+    if (!/^\d{4}-\d{2}$/.test(String(month || "")) || !text(buildingId, 120)) return [];
+    return [1, 2].map(half => {
+      const key = `${month}-${half}`;
+      const report = findForPeriod(reports, { buildingId: text(buildingId, 120) }, key);
+      if (!report) return null;
+      const view = buildView(report, workReports, {});
+      return {
+        period: key,
+        label: periodLabel(key),
+        cleaningDates: view.cleanings.map(row => dateLabel(row.workDate, false)),
+        inspectionDate: view.inspection.dateLabel,
+        counts: view.counts,
+        openActions: view.actions.filter(item => ["watch", "fix"].includes(item.status)).map(item => ({ label: item.label, status: item.status, finding: item.finding })),
+        sent: Boolean(report.delivery),
+      };
+    }).filter(Boolean);
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(row => row.id)
       .sort((a, b) => b.period.localeCompare(a.period) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -537,12 +672,17 @@
     validateDraft,
     normalizeDelivery,
     recipientFor,
+    viewState,
+    normalizeLinks,
+    caseProgress,
     kakaoDetails,
     documentNo,
     autoSummary,
     buildView,
     findForPeriod,
     dueReports,
+    monthSummary,
+    buildingHistory,
     cleaningPhotoCandidates,
     normalizeSuggestions,
     draftFor,

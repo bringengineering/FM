@@ -319,6 +319,10 @@
         && String(photo.dataUrl).length <= 220000 ? String(photo.dataUrl) : "",
     })).filter(photo => photo.dataUrl);
     const activities = activityRows(works, rows(source.activityEvidence).concat(rows(source.photos)), month);
+    // 그 달의 격주 정기 관리보고서 요약. 정기 관리보고서 모듈이 있을 때만 만든다.
+    const Periodic = typeof module === "object" && module.exports ? (() => { try { return require("./periodic-report-core"); } catch { return null; } })() : globalThis.BringPeriodicReportCore;
+    const periodic = Periodic && Array.isArray(source.periodicReports)
+      ? Periodic.monthSummary(source.periodicReports, rows(source.workReports), buildingId, month).map(row => Object.freeze(row)) : [];
 
     return Object.freeze({
       documentTitle: "월간 관리 보고서",
@@ -333,6 +337,7 @@
       narrative,
       photos: Object.freeze(photos),
       activities: Object.freeze(activities),
+      periodic: Object.freeze(periodic),
       summary: Object.freeze({
         workCount: works.length,
         doneCount: works.filter(item => item.done).length,

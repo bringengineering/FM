@@ -2990,7 +2990,11 @@ async function prepareBuildingMonthlyReportArtifact(input) {
     }
   }
   if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos });
+  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos, ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() });
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(
@@ -4828,7 +4832,9 @@ async function exportWorkReport(input) {
 // 다시 읽는다. 건물주에게 나가는 문서라 사진을 한 장이라도 못 읽으면 만들지 않는다.
 async function buildPeriodicReportPdf(reportId, company, session) {
   if (!driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
-  const [periodic, works, store] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore()]);
+  const [periodic, works, store, operations] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore(),
+    // 조치 항목에 연결한 작업 건의 진행을 보려고 읽는다. 못 읽으면 연결 없이 만든다.
+    remoteClient.loadOperations().catch(() => ({ cases: [] }))]);
   session.check();
   const saved = periodic.reports.find(row => row.id === String(reportId || ""));
   if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
@@ -4837,7 +4843,7 @@ async function buildPeriodicReportPdf(reportId, company, session) {
   if (!checked.ok) return { ok: false, error: checked.error, code: checked.code };
   const previousPeriod = PeriodicReportCore.previousPeriod(report.period);
   const previousReport = previousPeriod ? PeriodicReportCore.findForPeriod(periodic.reports, report, previousPeriod.key) : null;
-  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport });
+  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport, cases: operations.cases });
 
   // 청소 보고서와 같은 기준으로 협력업체명·업체 원가가 섞였는지 본다.
   const secrets = WorkReportCore.reportSecrets(store, report);
@@ -5007,10 +5013,30 @@ async function sendPeriodicReportByKakao(input) {
     return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "알림톡 발송을 요청하지 못했습니다." };
   }
   // 보낸 사실을 보고서에 남긴다. 기록을 못 남겨도 발송은 이미 됐으므로 그 사실을 알린다.
-  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "" };
+  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "", documentId: String(created.documentId).slice(0, 120) };
   let recorded = true;
   try { await remoteClient.savePeriodicReport({ ...saved, delivery }); } catch (_error) { recorded = false; }
   return { ok: true, status: delivery.status, phoneTail: delivery.phoneTail, photos: built.photos, recorded };
+}
+
+// 보낸 정기 관리보고서를 건물주가 열어 봤는지 발송 서버에 묻고 보고서에 적어 둔다.
+async function checkPeriodicReportViews(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) return { ok: false, code: "ACCESS_DENIED", error: "마케팅 담당자는 사용할 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const periodic = await remoteClient.loadPeriodicReports();
+  const ids = new Set((Array.isArray(options.reportIds) ? options.reportIds : [options.reportId]).map(String).slice(0, 40));
+  const targets = periodic.reports.filter(row => ids.has(row.id) && row.delivery && row.delivery.documentId);
+  const results = [];
+  for (const report of targets) {
+    const status = await runDocumentDelivery("documentStatus", { documentId: report.delivery.documentId });
+    if (!status || status.ok !== true) { results.push({ id: report.id, ok: false }); continue; }
+    const delivery = { ...report.delivery, firstViewedAt: status.firstViewedAt || "", viewCount: Number(status.viewCount) || 0, checkedAt: new Date().toISOString() };
+    const changed = delivery.firstViewedAt !== report.delivery.firstViewedAt || delivery.viewCount !== report.delivery.viewCount;
+    if (changed) { try { await remoteClient.savePeriodicReport({ ...report, delivery }); } catch (_error) { /* 다음 확인 때 다시 적는다. */ } }
+    results.push({ id: report.id, ok: true, delivery });
+  }
+  return { ok: true, results };
 }
 
 async function sendWorkReportToCustomerByKakao(input) {
@@ -9696,7 +9722,11 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
     return { date: file.monthlyReportDate, caption: monthlyReportPhotoCaption(photo, file), kind: file.monthlyReportActivity };
   });
-  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input) }), photoEvidence };
+  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input), ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() }), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });
@@ -9872,6 +9902,7 @@ secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeri
 secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));
 secureCanonicalHandle("crm:periodic-inspection-review", input => reviewPeriodicInspectionPhotos(input));
+secureCanonicalHandle("crm:periodic-report-views", input => checkPeriodicReportViews(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
