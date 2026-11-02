@@ -152,3 +152,19 @@ test("본문 글꼴은 문서에 박은 Pretendard 이고 없으면 시스템 �
   assert.match(html, /font-src data:/);
 });
 
+
+test("pairId 로 묶인 사진만 나란히 짝짓고 나머지는 단계별로 싣는다", () => {
+  const report = seed();
+  const item = report.items[1];
+  item.before = [{ id: "b1", driveFileId: "b1", pairId: "a2|b1" }, { id: "b2", driveFileId: "b2" }, { id: "b3", driveFileId: "b3" }];
+  item.after = [{ id: "a1", driveFileId: "a1" }, { id: "a2", driveFileId: "a2", pairId: "a2|b1" }];
+  const normalized = Core.normalizeReport(report);
+  assert.equal(normalized.items[1].before[0].pairId, "a2|b1", "pairId 는 정규화 뒤에도 남는다");
+  assert.equal(normalized.items[1].before[1].pairId, undefined);
+  const html = createWorkReportHtml(normalized);
+  assert.equal((html.match(/class="pair-row"/g) || []).length, 1);
+  assert.match(html, /<div class="pair-row"><span class="pair-no">1<\/span><figure class="before"><div class="photo-bar"><b>작업 전 1<\/b>[\s\S]*?<\/figure><figure class="after"><div class="photo-bar"><b>작업 후 1<\/b>/);
+  assert.ok(html.includes("같은 장소로 확인된 1쌍을 나란히 비교하고, 나머지 작업 전 2장·작업 후 1장은 아래에 단계별로 실었습니다."));
+  // 잘못된 pairId 는 저장 모양에서 빠진다.
+  assert.equal(Core.normalizePhoto({ id: "x", driveFileId: "x", pairId: "bad id<" }).pairId, undefined);
+});

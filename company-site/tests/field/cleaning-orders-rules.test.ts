@@ -190,6 +190,38 @@ describe.runIf(AVAILABLE)("cleaning orders and wallboard database access", () =>
     }));
   });
 
+  it("accepts a same-place pairId on before/after photos and rejects malformed or unknown photo fields", async () => {
+    const admin = environment.authenticatedContext("admin", {
+      email: COMPANY_EMAIL,
+      email_verified: true,
+    }).database();
+    const report = {
+      id: "report-pair",
+      cleaningOrderId: "11111111-1111-4111-8111-111111111111",
+      buildingId: "building-1",
+      kind: "stairs",
+      workDate: "2026-09-26",
+      updatedAt: "2026-09-26T12:00:00.000Z",
+      updatedBy: "admin",
+      items: [{
+        key: "stairFloor", label: "계단실 바닥", status: "done",
+        before: [{ id: "before-1", driveFileId: "drive-file-1", pairId: "before-1|after-1" }],
+        after: [{ id: "after-1", driveFileId: "drive-file-2", pairId: "before-1|after-1" }],
+      }],
+    };
+    await assertSucceeds(set(ref(admin, "crmCompany/workReports/report-pair"), report));
+    for (const pairId of ["", "bad pair<script>", "x".repeat(251)]) {
+      await assertFails(set(ref(admin, "crmCompany/workReports/report-pair-bad"), {
+        ...report, id: "report-pair-bad",
+        items: [{ ...report.items[0], before: [{ ...report.items[0].before[0], pairId }] }],
+      }));
+    }
+    await assertFails(set(ref(admin, "crmCompany/workReports/report-pair-other"), {
+      ...report, id: "report-pair-other",
+      items: [{ ...report.items[0], before: [{ ...report.items[0].before[0], pairOf: "after-1" }] }],
+    }));
+  });
+
   it("freezes linked result reports during review and completion, then unlocks them for requested revisions", async () => {
     const admin = environment.authenticatedContext("admin", {
       email: COMPANY_EMAIL,

@@ -44,13 +44,13 @@ function decodedJpegBytes(dataUrl) {
 function validatePhotoClassificationInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw codedError("INVALID_INPUT");
   if (Object.keys(input).some(key => !["kind", "images", "mode"].includes(key))) throw codedError("INVALID_INPUT");
-  if (input.mode !== undefined && !["classify", "compare", "review"].includes(input.mode)) throw codedError("INVALID_INPUT");
+  if (input.mode !== undefined && !["classify", "compare", "review", "match"].includes(input.mode)) throw codedError("INVALID_INPUT");
   if (!["moveIn", "common"].includes(input.kind)) throw codedError("INVALID_INPUT");
   if (!Array.isArray(input.images) || !input.images.length || input.images.length > MAX_PHOTOS) throw codedError("INPUT_TOO_LARGE");
   if (input.mode === "review" && input.images.length > 6) throw codedError("INPUT_TOO_LARGE");
   const seen = new Set();
   const images = input.images.map(image => {
-    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl", "detailDataUrl", "captureMinute"].includes(key))) {
+    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl", "detailDataUrl", "captureMinute", "phase"].includes(key))) {
       throw codedError("INVALID_INPUT");
     }
     const id = String(image.id || "").trim();
@@ -63,12 +63,15 @@ function validatePhotoClassificationInput(input) {
       decodedJpegBytes(image.detailDataUrl);
     }
     if (image.captureMinute !== undefined && (input.mode !== "compare" || !Number.isInteger(image.captureMinute) || image.captureMinute < 0 || image.captureMinute > 1439)) throw codedError("INVALID_INPUT");
-    return { id, dataUrl, ...(image.detailDataUrl ? { detailDataUrl: image.detailDataUrl } : {}), ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}) };
+    // match: the photos are already split into before/after; only same-place pairs are asked.
+    if ((input.mode === "match") !== (image.phase !== undefined) || (image.phase !== undefined && !["before", "after"].includes(image.phase))) throw codedError("INVALID_INPUT");
+    return { id, dataUrl, ...(image.detailDataUrl ? { detailDataUrl: image.detailDataUrl } : {}), ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}), ...(image.phase ? { phase: image.phase } : {}) };
   });
+  if (input.mode === "match" && !(images.some(image => image.phase === "before") && images.some(image => image.phase === "after"))) throw codedError("INVALID_INPUT");
   return { kind: input.kind, images, ...(input.mode ? { mode: input.mode } : {}) };
 }
 
-function normalizeSuccess(value, expectedIds, mode, kind) {
+function normalizeSuccess(value, expectedIds, mode, kind, phases = new Map()) {
   if (!value || value.ok !== true || typeof value.requestId !== "string" || !value.requestId || !Array.isArray(value.classifications)) {
     throw codedError("AI_INVALID_RESPONSE");
   }
@@ -109,7 +112,7 @@ function normalizeSuccess(value, expectedIds, mode, kind) {
     };
   });
   expectedIds.forEach(id => {
-    if (mode !== "compare" && !seen.has(id)) classifications.push({ id, category: "review", confidence: 0, reason: "AI가 분류 결과를 주지 않아 확인이 필요합니다." });
+    if (mode !== "compare" && mode !== "match" && !seen.has(id)) classifications.push({ id, category: "review", confidence: 0, reason: "AI가 분류 결과를 주지 않아 확인이 필요합니다." });
   });
   const pairs = []; const paired = new Set();
   if (mode === "compare") {
@@ -122,11 +125,21 @@ function normalizeSuccess(value, expectedIds, mode, kind) {
       paired.add(pair.beforeId); paired.add(pair.afterId);
     }
   }
+  if (mode === "match") {
+    if (!Array.isArray(value.pairs)) throw codedError("AI_INVALID_RESPONSE");
+    for (const pair of value.pairs) {
+      // A pair joins exactly one before and one after photo of this request, once each.
+      if (!pair || phases.get(pair.beforeId) !== "before" || phases.get(pair.afterId) !== "after" || paired.has(pair.beforeId) || paired.has(pair.afterId)) throw codedError("AI_INVALID_RESPONSE");
+      if (!Number.isFinite(pair.matchConfidence) || pair.matchConfidence < 85) continue;
+      pairs.push({ beforeId: pair.beforeId, afterId: pair.afterId, matchConfidence: Math.round(pair.matchConfidence) });
+      paired.add(pair.beforeId); paired.add(pair.afterId);
+    }
+  }
   return {
     ok: true,
     requestId: value.requestId,
     classifications,
-    ...(mode === "compare" ? { pairs } : {}),
+    ...(mode === "compare" || mode === "match" ? { pairs } : {}),
     warnings: Array.isArray(value.warnings) ? value.warnings.filter(item => typeof item === "string").slice(0, 5) : [],
     usage: {
       inputTokens: Math.max(0, Number(value.usage?.inputTokens || 0)),
@@ -166,7 +179,9 @@ async function classifyPhotosWithGateway(options) {
   const input = validatePhotoClassificationInput(options?.input);
   const fetchImpl = options?.fetchImpl || globalThis.fetch;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(90_000, Number(options?.timeoutMs) || 90_000)));
+  // Same-place matching uses a slower model on the gateway (up to 110 s there).
+  const ceiling = input.mode === "match" ? 120_000 : 90_000;
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, Math.min(ceiling, Number(options?.timeoutMs) || ceiling)));
   try {
     const response = await fetchImpl(url.href, {
       method: "POST",
@@ -181,7 +196,7 @@ async function classifyPhotosWithGateway(options) {
       const code = Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, value?.code) ? value.code : "AI_TEMPORARY_FAILURE";
       throw codedError(code);
     }
-    return normalizeSuccess(value, input.images.map(image => image.id), input.mode, input.kind);
+    return normalizeSuccess(value, input.images.map(image => image.id), input.mode, input.kind, new Map(input.images.map(image => [image.id, image.phase])));
   } catch (error) {
     throw codedError(Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : "AI_TEMPORARY_FAILURE");
   } finally {

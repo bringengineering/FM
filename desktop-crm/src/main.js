@@ -4342,8 +4342,11 @@ async function classifySelectedWorkReportPhotos(input) {
   if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 결과보고서 사진을 분류할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
   const guard = remoteClient.captureSessionGuard();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  if (Object.keys(options).some(key => !["kind", "fileIds", "mode"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
-  if (options.mode !== undefined && !["classify", "compare"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (Object.keys(options).some(key => !["kind", "fileIds", "mode", "phases"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (options.mode !== undefined && !["classify", "compare", "match"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  // match: 화면이 이미 작업 전·후로 나눈 사진에서 같은 장소의 짝만 찾는다.
+  const phases = options.mode === "match" && options.phases && typeof options.phases === "object" && !Array.isArray(options.phases) ? options.phases : null;
+  if ((options.mode === "match") !== !!phases) throw Object.assign(new Error("사진 짝 찾기 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
   if (!["moveIn", "common"].includes(options.kind)) throw Object.assign(new Error("입주청소·공용부청소 사진을 AI로 분류할 수 있습니다."), { code: "INVALID_INPUT" });
   const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
   if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
@@ -4364,7 +4367,8 @@ async function classifySelectedWorkReportPhotos(input) {
       cursor += 1;
       const file = files[index];
       try {
-        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken, options.mode || "classify") };
+        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken, options.mode === "match" ? "classify" : options.mode || "classify"),
+          ...(phases ? { phase: phases[file.id] } : {}) };
       } catch (_) {
         unavailable.push({ id: file.id, category: "review", confidence: 0, reason: "사진 축소본을 만들지 못해 직접 확인이 필요합니다." });
       }
@@ -4394,7 +4398,7 @@ async function classifySelectedWorkReportPhotos(input) {
   // One bounded refinement request for uncertain photos and automatic action
   // claims. Never retry quota/auth
   // failures or loop until agreement. A failed refinement retains the first pass.
-  const reviewIds = options.mode === "compare" ? [] : PhotoReviewRefinement.reviewCandidates(result.classifications.filter(row => picker.files.get(row.id)?.workReviewDetailJpeg));
+  const reviewIds = options.mode === "compare" || options.mode === "match" ? [] : PhotoReviewRefinement.reviewCandidates(result.classifications.filter(row => picker.files.get(row.id)?.workReviewDetailJpeg));
   if (reviewIds.length) {
     try {
       const selected = new Set(reviewIds);

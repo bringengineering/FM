@@ -615,6 +615,7 @@
                 "driveFileId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
                 "webViewLink": { ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^https:\\/\\/(drive|docs)\\.google\\.com\\//))" },
                 "caption": { ".validate": "newData.isString() && newData.val().length <= 120" },
+                "pairId": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_:|.-]{1,250}$/)" },
                 "$other": { ".validate": false }
               } },
               "during": {
@@ -625,6 +626,7 @@
                   "driveFileId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
                   "webViewLink": { ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^https:\\/\\/(drive|docs)\\.google\\.com\\//))" },
                   "caption": { ".validate": "newData.isString() && newData.val().length <= 120" },
+                  "pairId": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_:|.-]{1,250}$/)" },
                   "$other": { ".validate": false }
                 }
               },
@@ -634,6 +636,7 @@
                 "driveFileId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
                 "webViewLink": { ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^https:\\/\\/(drive|docs)\\.google\\.com\\//))" },
                 "caption": { ".validate": "newData.isString() && newData.val().length <= 120" },
+                "pairId": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_:|.-]{1,250}$/)" },
                 "$other": { ".validate": false }
               } },
               "$other": { ".validate": false }
