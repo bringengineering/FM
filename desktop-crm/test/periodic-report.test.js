@@ -126,7 +126,7 @@ test("Drive 가 없으면 서버 자료를 받기 전에 알리고, 건물 없�
   const fs = require("node:fs");
   const path = require("node:path");
   const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
-  const body = main.slice(main.indexOf("async function exportPeriodicReport"));
+  const body = main.slice(main.indexOf("async function buildPeriodicReportPdf"));
   assert.ok(body.indexOf("DRIVE_REQUIRED") < body.indexOf("loadPeriodicReports"));
   assert.match(body, /Promise\.all\(\[remoteClient\.loadPeriodicReports\(\)/);
   const ui = fs.readFileSync(path.join(__dirname, "..", "src", "periodic-report-ui.js"), "utf8");
@@ -160,4 +160,41 @@ test("정기점검 결과 표에 사진 칸이 있고, 점검 사진은 청소 �
   assert.match(html, /class="thumbs"><img src="data:image\/jpeg/);
   assert.match(html, /육안 확인/);
   assert.ok(html.indexOf("정기점검 사진</h2>") < html.indexOf("공용부 청소 사진</h2>"));
+});
+
+test("알림톡: 받는 사람은 건물의 건물주 고객(건물 없으면 그 고객)의 휴대전화이고, 승인 템플릿 칸을 채운다", () => {
+  const store = {
+    buildings: [{ id: "b1", ownerCustomerId: "c1" }, { id: "b2" }],
+    customers: [{ id: "c1", name: "건물주", phone: "010-2077-3076" }, { id: "c2", name: "유선", phone: "033-748-8919" }, { id: "c3", phone: "01099998888", deleted: true }],
+  };
+  const base = { id: "pr_kakao1", period: "2026-10-2", siteAddress: "강원 원주시 테스트로 1" };
+  assert.equal(P.recipientFor({ ...base, buildingId: "b1" }, store).phone, "01020773076");
+  assert.match(P.recipientFor({ ...base, buildingId: "b2" }, store).reason, /건물주 고객이 연결/);
+  assert.match(P.recipientFor({ ...base, customerId: "c2" }, store).reason, /휴대전화/);
+  assert.match(P.recipientFor({ ...base, customerId: "c3" }, store).reason, /찾지 못했습니다/);
+  assert.deepEqual(P.kakaoDetails({ ...base, buildingId: "b1" }), { buildingAddress: "강원 원주시 테스트로 1", workName: "2026년 10월 2차 정기 관리" });
+  assert.equal(P.kakaoDetails({ ...base, buildingId: "b1", siteAddress: "" }), null);
+  assert.equal(P.kakaoDetails({ ...base, siteAddress: "가".repeat(120), buildingId: "b1" }).buildingAddress.length, 80);
+});
+
+test("발송 기록은 상태·시각·끝 4자리만 남는다", () => {
+  const r = P.normalizeReport({ id: "pr_kakao2", buildingId: "b1", period: "2026-10-2", delivery: { status: "requested", sentAt: "2026-11-03T01:00:00Z", phoneTail: "3076", phone: "01020773076" } });
+  assert.deepEqual(Object.keys(r.delivery).sort(), ["messageId", "phoneTail", "sentAt", "sentBy", "status"]);
+  assert.equal(P.normalizeReport({ id: "pr_kakao3", buildingId: "b1", period: "2026-10-2", delivery: { status: "weird" } }).delivery, null);
+});
+
+test("알림톡 발송은 관리자 전용·한 번만·번호 확인을 거치고, 작업 결과보고서 승인 템플릿을 쓴다", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  const body = main.slice(main.indexOf("async function sendPeriodicReportByKakao"), main.indexOf("async function sendWorkReportToCustomerByKakao"));
+  assert.match(body, /role !== "admin"/);
+  assert.match(body, /ALREADY_SENT/);
+  assert.match(body, /RECIPIENT_MISMATCH/);
+  assert.match(body, /documentType: "completion_report"/);
+  assert.match(body, /12 \* 1024 \* 1024/);
+  assert.match(body, /"revoke"/);
+  assert.ok(main.includes('secureCanonicalHandle("crm:periodic-report-kakao-send"'));
+  const MutationPolicy = require("../src/mutation-policy");
+  assert.notEqual(MutationPolicy.classification("crm:periodic-report-kakao-send"), "control");
 });

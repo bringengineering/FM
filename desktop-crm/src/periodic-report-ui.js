@@ -7,10 +7,10 @@
   "use strict";
 
   function create(deps) {
-    const { api, getMain, getStore, esc, showToast, todayKey, isActive } = deps;
+    const { api, getMain, getStore, esc, showToast, todayKey, isActive, requestConfirmation } = deps;
     const P = () => root.BringPeriodicReportCore;
     const state = {
-      loading: false, loaded: false, error: "", reports: [], works: [], canWork: false,
+      loading: false, loaded: false, error: "", reports: [], works: [], canWork: false, admin: false,
       draft: null, loadedAt: 0, busy: "", newTarget: "", newPeriod: "",
     };
 
@@ -51,6 +51,7 @@
         state.reports = Array.isArray(periodic && periodic.reports) ? periodic.reports : [];
         state.works = Array.isArray(works && works.reports) ? works.reports : [];
         state.canWork = periodic && periodic.canWork === true;
+        state.admin = periodic && periodic.admin === true;
         state.loaded = true;
         state.loadedAt = Date.now();
       } catch (error) {
@@ -151,6 +152,51 @@
       }
     }
 
+    // 건물주에게 알림톡으로 보낸다. 받는 사람과 번호를 보여 주고 확인을 받는다.
+    async function sendKakao(reportId) {
+      if (state.busy) return;
+      let id = reportId;
+      if (!id && state.draft) {
+        const blockers = P().blockers(readForm(), state.works);
+        if (blockers.length) return showToast(blockers[0].text, "error");
+        const saved = await save({ quiet: true });
+        if (!saved) return;
+        id = saved.id;
+      }
+      const report = state.reports.find(item => item.id === id);
+      if (!report) return showToast("저장된 보고서를 찾지 못했습니다.", "error");
+      const recipient = P().recipientFor(report, getStore());
+      if (!recipient.phone) return showToast(recipient.reason, "error");
+      const details = P().kakaoDetails({ ...report, siteAddress: report.siteAddress || buildingAddress(report.buildingId) });
+      if (!details) return showToast("건물(또는 고객) 주소가 있어야 알림톡을 보낼 수 있습니다.", "error");
+      const resend = Boolean(report.delivery && ["requested", "sent"].includes(report.delivery.status));
+      const masked = recipient.phone.replace(/^(\d{3})(\d{3,4})(\d{4})$/u, "$1-****-$3");
+      const ok = await requestConfirmation({
+        title: resend ? "이미 보낸 보고서입니다. 다시 보낼까요?" : "정기 관리보고서를 알림톡으로 보낼까요?",
+        description: `${details.buildingAddress} 건물주님, ${details.workName} 결과 보고서가 발행되었습니다. (7일 열람 링크)`,
+        target: `${recipient.name || "건물주"} · ${masked}`,
+        warning: resend ? `${(report.delivery.sentAt || "").slice(0, 10)}에 이미 보냈습니다. 다시 보내면 같은 분께 한 번 더 갑니다.` : "건물주에게 실제 알림톡이 발송됩니다.",
+        confirmLabel: resend ? "다시 보내기" : "알림톡 발송",
+      });
+      if (!ok) return;
+      state.busy = "kakao";
+      render();
+      try {
+        const result = await api.sendPeriodicReportByKakao({ reportId: id, expectedPhone: recipient.phone, resend, company: getStore().company || {} });
+        if (result && result.ok) {
+          showToast(`알림톡 발송을 요청했습니다. (끝자리 ${result.phoneTail})${result.recorded === false ? " 발송 기록을 남기지 못했습니다." : ""}`, "success");
+          state.loadedAt = 0;
+          if (!state.draft) void load();
+          else { const fresh = await api.loadPeriodicReports().catch(() => null); if (fresh && Array.isArray(fresh.reports)) { state.reports = fresh.reports; const mine = fresh.reports.find(item => item.id === id); if (mine) state.draft = P().normalizeReport(mine); } }
+        } else showToast((result && result.error) || "알림톡을 보내지 못했습니다.", "error");
+      } catch (error) {
+        showToast((error && error.message) || "알림톡을 보내지 못했습니다.", "error");
+      } finally {
+        state.busy = "";
+        render();
+      }
+    }
+
     async function addPhoto(itemKey) {
       const draft = readForm();
       const item = draft && draft.inspection.items.find(row => row.key === itemKey);
@@ -218,7 +264,8 @@
       }).join("");
       return `<form class="office-panel pr-editor" data-pr-form onsubmit="return false">
         <header><div><span>BUILDING CARE REPORT</span><h3>${esc(draft.buildingName || targetName(draft))} · ${esc(core.periodLabel(draft.period))}</h3><small>${esc(period ? `${period.from} ~ ${period.to}` : "")} · 문서번호 ${esc(core.documentNo(draft))}</small></div>
-          <div class="pr-actions"><button type="button" class="secondary-button" data-pr-close>목록으로</button><button type="button" class="secondary-button" data-pr-save${busy ? " disabled" : ""}>${state.busy === "save" ? "저장 중…" : "저장"}</button><button type="button" class="primary-button" data-pr-export${busy || blockers.length ? " disabled" : ""}>${state.busy === "export" ? "PDF 만드는 중…" : "건물주용 PDF"}</button></div></header>
+          <div class="pr-actions"><button type="button" class="secondary-button" data-pr-close>목록으로</button><button type="button" class="secondary-button" data-pr-save${busy ? " disabled" : ""}>${state.busy === "save" ? "저장 중…" : "저장"}</button><button type="button" class="${state.admin ? "secondary-button" : "primary-button"}" data-pr-export${busy || blockers.length ? " disabled" : ""}>${state.busy === "export" ? "PDF 만드는 중…" : "건물주용 PDF"}</button>${state.admin ? `<button type="button" class="primary-button" data-pr-kakao${busy || blockers.length ? " disabled" : ""}>${state.busy === "kakao" ? "보내는 중…" : draft.delivery ? "알림톡 다시 보내기" : "알림톡 보내기"}</button>` : ""}</div></header>
+        ${draft.delivery ? `<div class="info-box pr-sent">${esc((draft.delivery.sentAt || "").slice(0, 16).replace("T", " "))} 건물주에게 알림톡을 보냈습니다 (끝자리 ${esc(draft.delivery.phoneTail)}).</div>` : ""}
         ${blockers.length ? `<div class="info-box pr-blockers" role="status"><b>PDF 전에 할 일 ${blockers.length}가지</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>` : `<div class="info-box pr-ready">건물주에게 낼 준비가 됐습니다.</div>`}
         <section><h4>1. 공용부 청소 (자동으로 모음)</h4>
           ${allCleanings.length ? `<ul class="pr-cleanings">${allCleanings.map(row => `<li><label><input type="checkbox" data-pr-cleaning value="${esc(row.id)}"${chosen.has(row.id) ? " checked" : ""}> <b>${esc(core.dateLabel(row.workDate))}</b> · ${esc(core.weekOfMonth(row.workDate))} · 사진 ${root.BringWorkReportCore.photoCount(row)}장 ${row.workerName ? `· ${esc(row.workerName)}` : ""}</label></li>`).join("")}</ul>`
@@ -257,8 +304,8 @@
         return `<tr><td><b>${esc(item.buildingName || targetName(item))}</b><small>${esc(item.siteAddress)}</small></td>
           <td><b>${esc(core.periodLabel(item.period))}</b><small>점검 ${esc(item.inspection.date || "미정")}</small></td>
           <td><b>${cleanings}회</b><small>공용부 청소</small></td>
-          <td>${counts.fix ? `<span class="pr-badge pr-fix">조치 필요 ${counts.fix}</span>` : ""}${counts.watch ? ` <span class="pr-badge pr-watch">관찰 ${counts.watch}</span>` : ""}${!counts.fix && !counts.watch ? `<span class="pr-badge pr-good">이상 없음</span>` : ""}</td>
-          <td class="wr-row-actions">${state.canWork ? `<button type="button" class="mini-button" data-pr-edit="${esc(item.id)}">열기</button>` : ""}<button type="button" class="mini-button" data-pr-export-id="${esc(item.id)}"${state.busy || !ready ? " disabled" : ""} title="${ready ? "" : "작성이 끝나지 않았습니다"}">건물주용 PDF</button></td></tr>`;
+          <td>${item.delivery ? `<span class="pr-badge pr-done">알림톡 발송</span> ` : ""}${counts.fix ? `<span class="pr-badge pr-fix">조치 필요 ${counts.fix}</span>` : ""}${counts.watch ? ` <span class="pr-badge pr-watch">관찰 ${counts.watch}</span>` : ""}${!counts.fix && !counts.watch ? `<span class="pr-badge pr-good">이상 없음</span>` : ""}</td>
+          <td class="wr-row-actions">${state.canWork ? `<button type="button" class="mini-button" data-pr-edit="${esc(item.id)}">열기</button>` : ""}<button type="button" class="mini-button" data-pr-export-id="${esc(item.id)}"${state.busy || !ready ? " disabled" : ""} title="${ready ? "" : "작성이 끝나지 않았습니다"}">건물주용 PDF</button>${state.admin ? `<button type="button" class="mini-button" data-pr-kakao-id="${esc(item.id)}"${state.busy || !ready ? " disabled" : ""}>${item.delivery ? "다시 보내기" : "알림톡"}</button>` : ""}</td></tr>`;
       }).join("");
       main.innerHTML = `<section class="ai-assistant-hero ai-work-report-hero">
           <div><span>BRING CARE · BI-WEEKLY REPORT</span><h2>정기 관리보고서</h2><p>격주(1~15일 · 16일~말일)로 건물주에게 드리는 보고서입니다. 그 기간의 공용부 청소 결과보고서 2회를 자동으로 모으고, 건물 정기점검 결과만 입력하면 PDF가 만들어집니다.</p></div>
@@ -274,7 +321,7 @@
             : `<div class="office-empty"><b>아직 정기 관리보고서가 없습니다</b><span>건물과 기간을 고르고 ‘작성 시작’ 을 누르세요.</span></div>`}
         </section>`;
       const form = main.querySelector("[data-pr-form]");
-      if (form) form.inert = state.busy === "save" || state.busy === "export";
+      if (form) form.inert = ["save", "export", "kakao"].includes(state.busy);
     }
 
     // 상태를 바꾸면 사진·메모 요구가 바로 보이도록 다시 그린다.
@@ -288,7 +335,7 @@
 
     function onClick(event) {
       if (!isActive()) return;
-      const el = event.target.closest("[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-photo-add],[data-pr-photo-drop]");
+      const el = event.target.closest("[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
       if (!el) return;
       event.preventDefault();
       if (el.hasAttribute("data-pr-new")) return openNew();
@@ -297,6 +344,8 @@
       if (el.hasAttribute("data-pr-save")) return void save();
       if (el.hasAttribute("data-pr-export")) return void exportPdf("");
       if (el.hasAttribute("data-pr-export-id")) return void exportPdf(el.getAttribute("data-pr-export-id"));
+      if (el.hasAttribute("data-pr-kakao")) return void sendKakao("");
+      if (el.hasAttribute("data-pr-kakao-id")) return void sendKakao(el.getAttribute("data-pr-kakao-id"));
       if (el.hasAttribute("data-pr-photo-add")) return void addPhoto(el.getAttribute("data-pr-photo-add"));
       if (el.hasAttribute("data-pr-photo-drop")) return dropPhoto(el.getAttribute("data-pr-key"), el.getAttribute("data-pr-photo-drop"));
     }

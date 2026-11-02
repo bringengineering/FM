@@ -512,7 +512,7 @@
   // 정기 관리보고서 화면은 periodic-report-ui.js 에 있다. 처음 열 때 만든다.
   function periodicReportView() {
     if (!periodicReportUi) periodicReportUi = window.BringPeriodicReportUI.create({
-      api, esc, showToast, todayKey,
+      api, esc, showToast, todayKey, requestConfirmation,
       getMain: () => main,
       getStore: () => store,
       isActive: () => currentView === "periodicReports",

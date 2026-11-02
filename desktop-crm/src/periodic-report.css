@@ -39,3 +39,4 @@
 .pr-actions-list { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .pr-blockers ul { margin: 6px 0 0; padding-left: 18px; }
 .pr-ready { color: #2B6E4F; }
+.pr-sent { color: #1F5AA6; }
