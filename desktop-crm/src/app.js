@@ -6688,6 +6688,8 @@
       if (!operations.loadedAt && !operationsLoading) void refreshOperations({ silent: true, render: false });
     }
     if (view === "cleaningCti" && !cleaningOrderState.loaded && !cleaningOrderState.loading) void loadCleaningOrders();
+    // 첫 화면에서도 '보낼 정기 관리보고서' 숫자가 보이게 한다.
+    if (["dashboard", "periodicReports"].includes(view) && currentAuth.user && window.BringPeriodicReportUI) periodicReportView().refreshBadge();
   }
   function refreshButton(state, action) {
     const when = freshLabel(state);

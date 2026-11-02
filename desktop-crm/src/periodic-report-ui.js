@@ -41,6 +41,62 @@
       return list;
     }
 
+    // 사이드바 숫자: 막 끝난 기간에 아직 건물주에게 안 보낸 보고서 수(초안 없음 포함).
+    function updateBadge() {
+      const badge = root.document.getElementById("navPeriodicCount");
+      if (!badge || !P()) return;
+      const due = P().dueReports(state.works, state.reports, todayKey());
+      const count = due.items.filter(item => item.state !== "sent").length;
+      badge.textContent = String(count);
+      badge.hidden = count === 0;
+    }
+
+    // 초안을 한 번에 만든다. 이미 있는 것은 건드리지 않는다.
+    async function createDrafts() {
+      if (state.busy) return;
+      const core = P();
+      const due = core.dueReports(state.works, state.reports, todayKey());
+      const missing = due.items.filter(item => item.state === "missing");
+      if (!missing.length) return showToast("새로 만들 초안이 없습니다.", "info");
+      state.busy = "drafts";
+      render();
+      let made = 0;
+      try {
+        for (const entry of missing) {
+          const previousKey = core.previousPeriod(due.period.key);
+          const previous = previousKey ? core.findForPeriod(state.reports, entry.target, previousKey.key) : null;
+          const target = entry.target.buildingId ? entry.target : entry.target;
+          const draft = core.draftFor({ ...entry, period: due.period.key, target,
+            buildingName: entry.target.buildingId ? buildingName(entry.target.buildingId) : entry.buildingName,
+            siteAddress: entry.target.buildingId ? buildingAddress(entry.target.buildingId) || entry.siteAddress : entry.siteAddress }, newId(), previous);
+          const saved = await api.savePeriodicReport(draft);
+          state.reports = [saved, ...state.reports.filter(item => item.id !== saved.id)];
+          made += 1;
+        }
+        showToast(`초안 ${made}건을 만들었습니다. 점검 결과를 확인한 뒤 보내 주세요.`, "success");
+      } catch (error) {
+        showToast(`${made}건을 만든 뒤 멈췄습니다: ${(error && error.message) || "저장하지 못했습니다."}`, "error");
+      } finally {
+        state.busy = "";
+        updateBadge();
+        render();
+      }
+    }
+
+    function dueBanner() {
+      const core = P();
+      const due = core.dueReports(state.works, state.reports, todayKey());
+      if (!due.period || !due.items.length) return "";
+      const count = key => due.items.filter(item => item.state === key).length;
+      const label = { missing: "초안 없음", draft: "작성 중", ready: "발송 대기", sent: "발송 완료" };
+      const cls = { missing: "fix", draft: "watch", ready: "good", sent: "done" };
+      return `<section class="office-panel pr-due"><header><div><span>THIS ROUND</span><h3>${esc(core.periodLabel(due.period.key))} 보고 차례 · ${due.items.length}곳</h3><small>${esc(due.period.from)} ~ ${esc(due.period.to)}에 공용부 청소 기록이 있는 건물·고객</small></div>
+        ${state.canWork && count("missing") ? `<button type="button" class="primary-button" data-pr-drafts${state.busy ? " disabled" : ""}>${state.busy === "drafts" ? "만드는 중…" : `초안 ${count("missing")}건 한 번에 만들기`}</button>` : ""}</header>
+        <div class="tally">${["missing", "draft", "ready", "sent"].filter(count).map(key => `<span class="pr-badge pr-${cls[key]}">${label[key]} ${count(key)}</span>`).join(" ")}</div>
+        <ul class="pr-due-list">${due.items.map(item => `<li><span class="pr-badge pr-${cls[item.state]}">${label[item.state]}</span> <b>${esc(item.target.buildingId ? buildingName(item.target.buildingId) : item.buildingName || "고객")}</b> · 청소 ${item.cleanings.length}회 (${item.cleanings.map(row => esc(core.dateLabel(row.workDate, false))).join(", ")})${item.state === "draft" && item.blockers[0] ? ` · <small>${esc(item.blockers[0].text)}</small>` : ""}${item.report && state.canWork ? ` <button type="button" class="mini-button" data-pr-edit="${esc(item.report.id)}">열기</button>` : ""}</li>`).join("")}</ul>
+      </section>`;
+    }
+
     async function load() {
       if (state.loading) return;
       state.loading = true;
@@ -54,6 +110,7 @@
         state.admin = periodic && periodic.admin === true;
         state.loaded = true;
         state.loadedAt = Date.now();
+        updateBadge();
       } catch (error) {
         state.error = (error && error.message) || "정기 관리보고서를 불러오지 못했습니다.";
       } finally {
@@ -96,6 +153,8 @@
       draft.inspection.inspectorName = form.querySelector("[name=inspectorName]").value;
       draft.summary = form.querySelector("[name=summary]").value;
       draft.followUp = form.querySelector("[name=followUp]").value;
+      // 담당자가 편집 화면에서 저장하면 점검을 확인한 것으로 본다.
+      draft.inspection.confirmed = true;
       const picked = [...form.querySelectorAll("[data-pr-cleaning]")];
       draft.cleaningReportIds = picked.every(input => input.checked) ? [] : picked.filter(input => input.checked).map(input => input.value);
       draft.inspection.items = draft.inspection.items.map(item => {
@@ -312,6 +371,7 @@
           <div class="ai-work-report-hero-mark" aria-hidden="true">✓</div>
         </section>
         ${state.loading ? `<div class="info-box">불러오는 중…</div>` : state.error ? `<div class="info-box" style="color:#C6535F">${esc(state.error)}</div>` : ""}
+        ${state.draft ? "" : dueBanner()}
         ${state.draft ? editor(core.normalizeReport(state.draft)) : state.canWork ? `<section class="office-panel pr-new"><header><div><span>NEW</span><h3>새 정기 관리보고서</h3></div></header>
           <div class="pr-inline"><label>건물·고객 <select data-pr-new-building><option value="">선택</option><optgroup label="건물">${buildings().map(b => `<option value="b:${esc(b.id)}"${`b:${b.id}` === state.newTarget ? " selected" : ""}>${esc(b.name || b.address || b.id)}</option>`).join("")}</optgroup>${customers().length ? `<optgroup label="건물 없는 고객 (청소 기록 있음)">${customers().map(c => `<option value="c:${esc(c.id)}"${`c:${c.id}` === state.newTarget ? " selected" : ""}>${esc(c.name || c.id)}</option>`).join("")}</optgroup>` : ""}</select></label>
           <label>기간 <select data-pr-new-period>${choices.map(p => `<option value="${p.key}"${p.key === state.newPeriod ? " selected" : ""}>${esc(core.periodLabel(p.key))} (${p.from.slice(5)} ~ ${p.to.slice(5)})</option>`).join("")}</select></label>
@@ -335,9 +395,10 @@
 
     function onClick(event) {
       if (!isActive()) return;
-      const el = event.target.closest("[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
+      const el = event.target.closest("[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
       if (!el) return;
       event.preventDefault();
+      if (el.hasAttribute("data-pr-drafts")) return void createDrafts();
       if (el.hasAttribute("data-pr-new")) return openNew();
       if (el.hasAttribute("data-pr-edit")) { state.draft = state.reports.find(item => item.id === el.getAttribute("data-pr-edit")) || null; return render(); }
       if (el.hasAttribute("data-pr-close")) { state.draft = null; state.loadedAt = 0; return render(); }
@@ -352,7 +413,14 @@
 
     root.document.addEventListener("click", onClick);
     root.document.addEventListener("change", onChange);
-    return Object.freeze({ render, reload: () => { state.loaded = false; return load(); } });
+    // 다른 화면에 있을 때도 숫자를 맞춘다. 1분 안에 받았으면 다시 받지 않는다.
+    function refreshBadge() {
+      if (state.loading) return;
+      if (state.loaded && Date.now() - state.loadedAt < 60000) return updateBadge();
+      void load();
+    }
+
+    return Object.freeze({ render, refreshBadge, reload: () => { state.loaded = false; return load(); } });
   }
 
   root.BringPeriodicReportUI = Object.freeze({ create });

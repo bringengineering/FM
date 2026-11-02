@@ -40,3 +40,10 @@
 .pr-blockers ul { margin: 6px 0 0; padding-left: 18px; }
 .pr-ready { color: #2B6E4F; }
 .pr-sent { color: #1F5AA6; }
+.pr-due { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; padding: 20px; }
+.pr-due > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pr-due > header span { color: #3182F6; font-size: 9px; font-weight: 950; letter-spacing: .09em; }
+.pr-due > header h3 { margin: 4px 0 2px; color: #191F28; font-size: 17px; }
+.pr-due > header small { color: #6B7684; }
+.pr-due-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pr-due-list small { color: #8A5A12; }
