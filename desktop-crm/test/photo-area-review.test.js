@@ -63,8 +63,8 @@ test("58장도 초안과 두 종류 PDF에서 잘리지 않고 각각 한 번만
   for (const type of ["owner", "program"]) {
     const html = createWorkReportHtml(normalized, type, { images, sealImage });
     for (const value of Object.values(images)) assert.equal(html.split(`src="${value}"`).length - 1, 1);
-    assert.match(html, /작업 전 · 총 23장/);
-    assert.match(html, /작업 후 · 총 35장/);
+    assert.match(html, /작업 전 (?:· 총 )?23장/);
+    assert.match(html, /작업 후 (?:· 총 )?35장/);
     // 건물주용은 같은 번호끼리 전·후를 짝짓고 남는 사진을 숨기지 않고 알린다.
     assert.match(html, type === "owner" ? /작업 전 23장과 작업 후 35장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다/ : /사진 18\/18/);
   }

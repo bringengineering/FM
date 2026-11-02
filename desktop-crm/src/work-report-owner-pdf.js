@@ -62,28 +62,19 @@ function photoCounts(item, long = false) {
     .map(phase => long ? `${PHASES[phase]} · 총 ${item[phase].length}장` : `${PHASES[phase]} ${item[phase].length}장`).join(long ? " / " : " · ") || "사진 없음";
 }
 
+// 사진 한 장. 같은 크기의 회색 액자에 원본 비율 그대로(잘라내지 않고) 넣고,
+// 아래에 단계 꼬리표와 사람이 적은 설명만 단다. 구역 이름은 구역 머리에 한 번만 쓴다.
 function figure(item, photo, phase, number, images) {
   const source = images[photo.id];
   // Accept only embedded raster images. No remote URLs, SVG or file paths.
   const safe = typeof source === "string" && SAFE_IMAGE.test(source);
   const tag = number ? `${PHASES[phase]} ${number}` : PHASES[phase];
-  return `<figure class="${phase}"><div class="photo-bar"><b>${tag}</b><span>${PHASE_EN[phase]}</span></div>${safe ? `<img src="${escape(source)}" alt="${escape(`${item.label} · ${tag}`)}">` : '<div class="missing-photo">사진 없음</div>'}<figcaption><b>${escape(item.label)} · ${tag}</b>${photo.caption ? `<span>${escape(photo.caption)}</span>` : ""}</figcaption></figure>`;
+  return `<figure class="shot ${phase}"><div class="frame">${safe ? `<img src="${escape(source)}" alt="${escape(`${item.label} · ${tag}`)}">` : '<div class="missing-photo">사진 없음</div>'}</div><figcaption><b class="tag">${tag}</b>${photo.caption ? `<span>${escape(photo.caption)}</span>` : ""}</figcaption></figure>`;
 }
 
-// 한 구역의 사진. 전·후는 같은 번호끼리 좌우로 짝지어 비교하게 하고,
-// 짝이 없는 사진과 작업 중 사진은 그 아래에 단계 표시를 붙여 이어 싣는다.
-// 구역마다 새 쪽을 강제하지 않는다 — 사진 두 장에 한 쪽을 쓰면 빈 종이가 된다.
-// 한 구역의 사진. 작업 전·후 장수가 같으면 같은 번호끼리 나란히 짝짓는다
-// (초안이 같은 장소로 묶인 짝을 앞에, 나머지를 촬영 시각 순으로 세워 둔다).
-// 장수가 다르면 순서만으로는 같은 장소를 보장할 수 없으므로 억지로 짝짓지 않고
-// 작업 전·작업 후를 따로 모아 싣는다. 다른 장소가 나란히 붙는 것보다 낫다.
-// 구역마다 새 쪽을 강제하지 않는다 — 사진 두 장에 한 쪽을 쓰면 빈 종이가 된다.
+// 짝이 없는 사진과 작업 중 사진은 단계별로 세 칸씩 작게 모아 싣는다.
 function photoGrid(item, entries, images) {
-  const grid = [];
-  for (let i = 0; i < entries.length; i += 2) {
-    grid.push(`<div class="grid-row${i + 1 === entries.length ? " single" : ""}">${entries.slice(i, i + 2).map(entry => figure(item, entry.photo, entry.phase, entry.n, images)).join("")}</div>`);
-  }
-  return grid.join("");
+  return `<div class="shots">${entries.map(entry => figure(item, entry.photo, entry.phase, entry.n, images)).join("")}</div>`;
 }
 // 같은 장소로 확인된 짝(pairId 가 같은 작업 전·후)은 앞에 나란히 놓는다. 짝 표시가
 // 하나도 없는 예전 보고서만 장수가 같을 때 순서대로 짝짓는다. 나머지는 단계별로 싣는다.
@@ -104,22 +95,21 @@ function areaPairs(item) {
 }
 function areaPhotos(item, index, images) {
   const { pairs, before, after } = areaPairs(item);
-  const rows = pairs.map(([b, a], i) => `<div class="pair-row"><span class="pair-no">${i + 1}</span>${figure(item, b, "before", i + 1, images)}${figure(item, a, "after", i + 1, images)}</div>`);
+  const rows = pairs.map(([b, a], i) => `<div class="pair"><p class="pair-label">같은 위치 ${i + 1}</p><div class="pair-body">${figure(item, b, "before", 0, images)}<span class="arrow">→</span>${figure(item, a, "after", 0, images)}</div></div>`);
   const rest = { before, after, during: item.during };
-  const numbered = phase => rest[phase].map((photo, i) => ({ photo, phase, n: (phase === "during" ? 0 : pairs.length) + i + 1 }));
+  const numbered = phase => rest[phase].map((photo, i) => ({ photo, phase, n: i + 1 }));
   const notes = [];
   if (!item.before.length && item.after.length) notes.push("이 구역은 작업 후 사진으로 기록했습니다.");
   else if (item.before.length && !item.after.length) notes.push("이 구역은 작업 전 사진으로 기록했습니다.");
   else if (!pairs.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다.`);
   else if (before.length || after.length) notes.push(`같은 장소로 확인된 ${pairs.length}쌍을 나란히 비교하고, 나머지 작업 전 ${before.length}장·작업 후 ${after.length}장은 아래에 단계별로 실었습니다.`);
-  const section = (phase, label) => rest[phase].length ? `<div class="phase-head ${phase}"><span>${label}</span><small>${rest[phase].length}장</small></div>${photoGrid(item, numbered(phase), images)}` : "";
+  const section = phase => rest[phase].length ? `<div class="group"><p class="group-head ${phase}">${PHASES[phase]} 사진<small>${rest[phase].length}장</small></p>${photoGrid(item, numbered(phase), images)}</div>` : "";
   return `<section class="area-photos">
-    <div class="area-head"><h3><span>${index}</span>${escape(item.label)}</h3><p>${escape(photoCounts(item, true))}</p></div>
+    <div class="area-head"><span class="no">${String(index).padStart(2, "0")}</span><h3>${escape(item.label)}</h3><p>${escape(photoCounts(item))}</p></div>
     ${item.detail ? `<p class="area-scope">수행 범위 · ${escape(item.detail)}</p>` : ""}
     ${notes.map(line => `<p class="area-note">${escape(line)}</p>`).join("")}
-    ${pairs.length ? `<div class="pair-head"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span></div>${rows.join("")}` : ""}
-    ${section("before", "작업 전 BEFORE")}${section("after", "작업 후 AFTER")}
-    ${section("during", "작업 중 DURING")}
+    ${rows.join("")}
+    ${section("before")}${section("after")}${section("during")}
   </section>`;
 }
 
@@ -153,22 +143,23 @@ h2{font-size:11pt;color:#1f4e8c;margin:0 0 2mm;padding-left:2.5mm;border-left:1m
 .thanks{margin:2mm 0 4mm;padding:4mm 5mm;background:#f3faff;border-radius:1.5mm;color:#2f5164;font-size:9.3pt;line-height:1.8;text-align:center;break-inside:avoid}
 .closing{margin-top:4mm}.closing>section{margin-bottom:4mm}.closing .notices,.closing .sender{break-inside:avoid}
 .photos-head{display:flex;align-items:flex-end;justify-content:space-between;gap:4mm;margin-bottom:3mm;padding-bottom:2.5mm;border-bottom:.5mm solid #1f4e8c;break-after:avoid}.photos-head h2{border:0;padding:0;margin:0;font-size:13pt;color:#16324a}.photos-head p{font-size:8pt;color:#6a8190}
-.legend{display:flex;gap:2mm;margin-bottom:4mm}.legend span{padding:.8mm 2.5mm;border-radius:1mm;font-size:7.5pt;font-weight:700}
-.area-photos{margin-bottom:6mm}
-.area-head{display:flex;justify-content:space-between;align-items:center;gap:3mm;padding:2mm 3mm;background:#eaf6fd;border-top:.6mm solid #80cdec;break-after:avoid;break-inside:avoid}.area-head h3{font-size:10.5pt;color:#16324a}.area-head h3 span{display:inline-block;min-width:6mm;margin-right:2mm;color:#1f4e8c}.area-head p{font-size:7.8pt;color:#4b6b7e;white-space:nowrap}
-.area-scope,.area-note{font-size:7.8pt;color:#567486;padding:1.2mm 3mm 0;break-after:avoid}.area-note{color:#8a5a12}
-.pair-head{display:grid;grid-template-columns:7mm 1fr 1fr;gap:0 3mm;margin-top:2mm;break-after:avoid}.pair-head span{text-align:center;font-size:8pt;font-weight:800;letter-spacing:.06em;padding:1.2mm 0;border-radius:1mm}.pair-head span:first-child{grid-column:2}
-.pair-head .before,.legend .before{background:#fff1dc;color:#8a5a12}.pair-head .after,.legend .after{background:#e3effb;color:#1f5aa6}.legend .during{background:#e3f4ec;color:#2b6e4f}
-.pair-row{display:grid;grid-template-columns:7mm 1fr 1fr;gap:0 3mm;margin-top:2mm;break-inside:avoid;align-items:start}
-.pair-no{align-self:center;text-align:center;font-weight:800;color:#1f4e8c;font-size:10pt}
-.phase-head{display:flex;justify-content:space-between;align-items:center;margin:3mm 0 0 10mm;padding:1.2mm 3mm;border-radius:1mm;font-size:8pt;font-weight:800;letter-spacing:.06em;break-after:avoid}.phase-head small{font-size:7.5pt;font-weight:600;letter-spacing:0}.phase-head.before{background:#fff1dc;color:#8a5a12}.phase-head.after{background:#e3effb;color:#1f5aa6}.phase-head.during{background:#e3f4ec;color:#2b6e4f}
-.grid-row{display:grid;grid-template-columns:7mm 1fr 1fr;gap:0 3mm;margin-top:2mm;break-inside:avoid}.grid-row figure:first-child{grid-column:2}.grid-row.single figure{grid-column:2 / span 2;justify-self:center;width:calc(50% - 1.5mm)}
-figure{margin:0;border:.3mm solid #d8eaf4;background:#fff;min-width:0;break-inside:avoid}
-figure.before{border-top:1mm solid #e3a33b}figure.after{border-top:1mm solid #2f7fd0}figure.during{border-top:1mm solid #3c9a6c}
-.photo-bar{display:flex;justify-content:space-between;align-items:center;padding:1.3mm 2.5mm;font-size:7.5pt}.photo-bar span{letter-spacing:.12em;font-size:6.5pt;font-weight:700}
-figure.before .photo-bar{background:#fff1dc;color:#8a5a12}figure.after .photo-bar{background:#e3effb;color:#1f5aa6}figure.during .photo-bar{background:#e3f4ec;color:#2b6e4f}
-figure img,.missing-photo{display:block;width:100%;height:58mm;object-fit:contain;background:#fff}.missing-photo{display:grid;place-items:center;color:#8b95a1;font-size:8pt;background:#f4f9fc}
-figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;white-space:pre-wrap;border-top:.2mm solid #eef4f8}figcaption b{font-weight:600;display:block}figcaption span{display:block;color:#5d7b8d}`;
+.area-photos{margin-bottom:7mm}
+.area-head{display:flex;align-items:baseline;gap:2.5mm;padding-bottom:1.6mm;border-bottom:.35mm solid #16324a;break-after:avoid;break-inside:avoid}.area-head .no{font-size:10pt;font-weight:800;color:#8fb3cb;letter-spacing:.04em}.area-head h3{flex:1;font-size:11pt;font-weight:700;color:#16324a}.area-head p{font-size:7.8pt;color:#6a8190;white-space:nowrap}
+.area-scope{font-size:7.8pt;color:#567486;margin-top:1.6mm;break-after:avoid}.area-note{font-size:7.6pt;color:#7a8f9c;margin-top:.5mm;break-after:avoid}
+.pair{margin-top:4mm;break-inside:avoid}.pair-label{font-size:7.3pt;font-weight:700;color:#386f8a;letter-spacing:.06em;margin-bottom:1.3mm}
+.pair-body{display:grid;grid-template-columns:1fr 6mm 1fr;align-items:center}.arrow{text-align:center;color:#9fb6c6;font-size:11pt;margin-top:-5mm}
+.group{margin-top:4.5mm}.group-head{font-size:8pt;font-weight:700;color:#16324a;margin-bottom:1.6mm;padding-left:2mm;border-left:.7mm solid #16324a;line-height:1.3;break-after:avoid}.group-head.before{border-left-color:#9fb0bd}.group-head.during{border-left-color:#3c9a6c}.group-head small{font-weight:500;color:#7a8f9c;margin-left:1.8mm}
+.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:3.5mm 3mm}
+figure.shot{margin:0;border:0;background:none;min-width:0;break-inside:avoid}
+.shot .frame{height:64mm;background:#f2f5f8;border:.25mm solid #dde6ee}.shots .shot .frame{height:43mm}
+.shot img,.shot .missing-photo{display:block;width:100%;height:100%;object-fit:contain;background:none}
+.shot figcaption{display:flex;gap:2mm;align-items:baseline;padding:1.3mm 0 0;border:0;font-size:7.4pt;color:#4b6b7e;line-height:1.45;white-space:normal}
+.shot figcaption .tag{flex:none;font-weight:700;font-size:7pt;letter-spacing:.02em;padding:.2mm 1.8mm;border-radius:.6mm}.shot.before .tag{color:#4b6b7e;background:#eef2f5;box-shadow:inset 0 0 0 .2mm #cfd9e1}.shot.after .tag{color:#fff;background:#16324a}.shot.during .tag{color:#2b6e4f;background:#e9f4ee}
+.grid-row{display:grid;grid-template-columns:1fr 1fr;gap:0 3mm;margin-top:3mm;break-inside:avoid}.grid-row.single figure{grid-column:1 / span 2;justify-self:center;width:calc(50% - 1.5mm)}
+figure{margin:0;border:.25mm solid #dde6ee;background:#fff;min-width:0;break-inside:avoid}
+.photo-bar{display:flex;justify-content:space-between;align-items:center;gap:2mm;padding:1.3mm 2.5mm;font-size:7.5pt;background:#f2f5f8;color:#16324a}
+figure img,.missing-photo{display:block;width:100%;height:58mm;object-fit:contain;background:#f2f5f8}.missing-photo{display:grid;place-items:center;color:#8b95a1;font-size:8pt}
+figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;white-space:pre-wrap}figcaption b{font-weight:600}figcaption span{color:#5d7b8d}`;
 }
 function createOwnerReportHtml(report, options = {}) {
   const company = options.company && typeof options.company === "object" ? options.company : {};
@@ -218,7 +209,6 @@ ${ownerReportStyles(`작업 결과보고서 · ${documentNo}`)}
 </section>
 ${photoItems.length ? `<section class="photos">
 <div class="photos-head"><h2>구역별 작업 전·후 사진</h2><p>${escape(building)} · 작업일 ${escape(date)}</p></div>
-<div class="legend"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span>${totals.during ? '<span class="during">작업 중 DURING</span>' : ""}</div>
 ${photoItems.map((item, i) => areaPhotos(item, i + 1, images)).join("")}
 </section>` : ""}
 <section class="closing">

@@ -27,8 +27,8 @@ test("승인 시안의 3구역 14사진은 요약과 구역별 3개 사진 묶�
   assert.equal(workReportPdfPhotos(report).length, 14);
   // 구역마다 새 쪽을 강제하지 않고 이어 싣는다. 전·후는 같은 번호끼리 한 줄에 짝짓는다.
   assert.equal((html.match(/class="area-photos"/g) || []).length, 3);
-  assert.equal((html.match(/<figure class="(?:before|during|after)">/g) || []).length, 14);
-  assert.equal((html.match(/class="pair-row"/g) || []).length, 3);
+  assert.equal((html.match(/<figure class="shot (?:before|during|after)">/g) || []).length, 14);
+  assert.equal((html.match(/class="pair"/g) || []).length, 3);
   assert.doesNotMatch(html, /break-before:page/);
 });
 
@@ -44,7 +44,7 @@ test("100장의 불균형한 전중후 사진을 중복·누락 없이 최대6�
   const images = Object.fromEntries(photos.map(p => [p.id, `data:image/jpeg;base64,${Buffer.from(p.id).toString("base64")}`]));
   const html = createWorkReportHtml(report, "owner", {images});
   for (const source of Object.values(images)) assert.equal(html.split(`src="${source}"`).length - 1, 1);
-  assert.equal((html.match(/<figure class="(?:before|during|after)">/g) || []).length, 100);
+  assert.equal((html.match(/<figure class="shot (?:before|during|after)">/g) || []).length, 100);
 });
 
 test("기록·미실시·일부·완료와 긴 문구를 보존하며 사진에서 완료를 추측하지 않는다", () => {
@@ -101,14 +101,15 @@ test("전·후는 색과 번호로 구분하고, 한쪽만 있는 구역은 그 
   assert.ok(html.includes("이 구역은 작업 후 사진으로 기록했습니다."));
   // 장수가 다르면 다른 장소끼리 짝짓지 않고 단계별로 나눠 싣는다.
   assert.ok(html.includes("작업 전 2장과 작업 후 1장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다."));
-  assert.match(html, /<div class="phase-head before"><span>작업 전 BEFORE<\/span><small>2장<\/small><\/div>/);
-  assert.match(html, /<div class="phase-head after"><span>작업 후 AFTER<\/span><small>1장<\/small><\/div>/);
-  assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 2<\/b>/);
+  assert.match(html, /<p class="group-head before">작업 전 사진<small>2장<\/small><\/p>/);
+  assert.match(html, /<p class="group-head after">작업 후 사진<small>1장<\/small><\/p>/);
+  assert.match(html, /<figure class="shot before"><div class="frame">[\s\S]*?<\/div><figcaption><b class="tag">작업 전 2<\/b>/);
+  // 색 띠·영문 표기·구역명 반복 없이 단계 꼬리표만 단다.
+  assert.doesNotMatch(html, /BEFORE|AFTER|class="legend"|class="photo-bar"/);
   // 장수가 같으면 같은 번호끼리 나란히 짝짓는다.
   report.items[2].before = [photo("c1"), photo("c2")]; report.items[2].after = [photo("d1"), photo("d2")];
   const pairedHtml = createWorkReportHtml(report);
-  assert.match(pairedHtml, /<div class="pair-head"><span class="before">작업 전 BEFORE<\/span><span class="after">작업 후 AFTER<\/span><\/div>/);
-  assert.equal((pairedHtml.match(/class="pair-row"/g) || []).length, 2);
+  assert.equal((pairedHtml.match(/class="pair"/g) || []).length, 2);
 });
 
 test("수신인은 실명이 아니라 '(주소) 건물주 귀하' 로 쓰고 높임을 겹치지 않는다", () => {
@@ -162,8 +163,8 @@ test("pairId 로 묶인 사진만 나란히 짝짓고 나머지는 단계별로 
   assert.equal(normalized.items[1].before[0].pairId, "a2|b1", "pairId 는 정규화 뒤에도 남는다");
   assert.equal(normalized.items[1].before[1].pairId, undefined);
   const html = createWorkReportHtml(normalized);
-  assert.equal((html.match(/class="pair-row"/g) || []).length, 1);
-  assert.match(html, /<div class="pair-row"><span class="pair-no">1<\/span><figure class="before"><div class="photo-bar"><b>작업 전 1<\/b>[\s\S]*?<\/figure><figure class="after"><div class="photo-bar"><b>작업 후 1<\/b>/);
+  assert.equal((html.match(/class="pair"/g) || []).length, 1);
+  assert.match(html, /<div class="pair"><p class="pair-label">같은 위치 1<\/p><div class="pair-body"><figure class="shot before">[\s\S]*?<b class="tag">작업 전<\/b>[\s\S]*?<span class="arrow">→<\/span><figure class="shot after">[\s\S]*?<b class="tag">작업 후<\/b>/);
   assert.ok(html.includes("같은 장소로 확인된 1쌍을 나란히 비교하고, 나머지 작업 전 2장·작업 후 1장은 아래에 단계별로 실었습니다."));
   // 잘못된 pairId 는 저장 모양에서 빠진다.
   assert.equal(Core.normalizePhoto({ id: "x", driveFileId: "x", pairId: "bad id<" }).pairId, undefined);
