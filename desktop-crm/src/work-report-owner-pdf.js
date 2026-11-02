@@ -98,6 +98,8 @@ function createOwnerReportHtml(report, options = {}) {
   const date = report.workDate || "날짜 미기재";
   const kind = Core.kindLabel(report.kind);
   const building = report.buildingName || "현장";
+  // 수신인은 실명이 아니라 "(주소) 건물주" 로 쓴다. CRM 이름·별명은 내부용이다.
+  // '귀하' 하나로 높인다 — "건물주님 귀하" 는 높임이 겹친다.
   const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
   const sender = company.businessName || "브링케어";
   const documentNo = Core.documentNo(report);
@@ -159,11 +161,11 @@ figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;wh
 <header class="doc-head">${LOGO ? `<img class="brand-logo" src="${LOGO}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>작업 결과보고서</h1><p>WORK COMPLETION REPORT</p></div></header>
 <table class="letter"><tbody>
 <tr><th>문서번호</th><td>${escape(documentNo)}</td></tr>
-<tr><th>수신(건물주)</th><td>${escape(recipient)}님 귀하</td></tr>
+<tr><th>수신(건물주)</th><td>${escape(recipient)} 귀하</td></tr>
 <tr><th>발신</th><td>${escape(senderLine)}</td></tr>
 <tr><th>제목</th><td>${escape(building)} ${escape(kind)} 작업 결과 보고 (작업일 ${escape(date)})</td></tr>
 </tbody></table>
-<section class="dear"><p class="dear-name"><b>${escape(recipient)}님</b> 귀하</p><p class="greeting">항상 브링케어를 믿고 소중한 건물을 맡겨 주셔서 진심으로 감사드립니다.\n${escape(date)} 귀 건물의 ${escape(kind)} 작업을 아래와 같이 정성껏 수행하였기에 그 결과를 삼가 보고드립니다.</p></section>
+<section class="dear"><p class="dear-name"><b>${escape(recipient)}</b> 귀하</p><p class="greeting">항상 브링케어를 믿고 소중한 건물을 맡겨 주시는 ${escape(recipient)}님께 진심으로 감사드립니다.\n${escape(date)} 귀 건물의 ${escape(kind)} 작업을 아래와 같이 정성껏 수행하였기에 그 결과를 삼가 보고드립니다.</p></section>
 <div class="glance">${glance.map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("")}</div>
 <section class="monthly-summary"><h2>이번 작업 요약</h2><p class="greeting">${escape(report.summary || "구역별 현장 기록을 정리했습니다. 등록된 작업 내용과 사진은 아래에서 확인하실 수 있습니다.")}</p></section>
 <section><h2>작업 정보</h2><table class="facts"><tbody>${facts.map(([label, value]) => `<tr><th>${label}</th><td>${escape(value)}</td></tr>`).join("")}</tbody></table></section>

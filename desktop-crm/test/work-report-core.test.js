@@ -248,3 +248,17 @@ test("너무 짧은 값으로는 막지 않는다", () => {
   assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "가나 청소 완료" }), { vendorNames: ["가나"] }), []);
   assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "가나다 청소 완료" }), { vendorNames: ["가나다"] }), ["협력업체명"]);
 });
+
+test("현장 주소가 비면 CRM 건물 주소(없으면 고객 주소)로 채운 사본만 돌려준다", () => {
+  const store = {
+    buildings: [{ id: "b1", roadAddress: "예시시 도로명 1", address: "예시시 지번 1" }, { id: "b2", address: "예시시 지번 2", archivedAt: "x" }],
+    customers: [{ id: "c1", address: "예시시 고객로 3" }],
+  };
+  const saved = { id: "wr", buildingId: "b1", siteAddress: "" };
+  assert.equal(R.withSiteAddress(saved, store).siteAddress, "예시시 도로명 1");
+  assert.equal(saved.siteAddress, "", "저장된 보고서는 바꾸지 않는다");
+  assert.equal(R.withSiteAddress({ id: "wr", buildingId: "b1", siteAddress: "적어 둔 주소" }, store).siteAddress, "적어 둔 주소");
+  assert.equal(R.withSiteAddress({ id: "wr", buildingId: "b2" }, store).siteAddress, undefined, "보관된 건물은 쓰지 않는다");
+  assert.equal(R.withSiteAddress({ id: "wr", customerId: "c1" }, store).siteAddress, "예시시 고객로 3");
+  assert.equal(R.withSiteAddress({ id: "wr" }, {}).siteAddress, undefined);
+});

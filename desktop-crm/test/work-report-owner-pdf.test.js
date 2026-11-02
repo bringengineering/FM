@@ -105,3 +105,15 @@ test("전·후는 색과 번호로 구분하고, 한쪽만 있는 구역은 그 
   assert.match(html, /<figure class="after"><div class="photo-bar"><b>작업 후 1<\/b>/);
   assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 2<\/b>/);
 });
+
+test("수신인은 실명이 아니라 '(주소) 건물주 귀하' 로 쓰고 높임을 겹치지 않는다", () => {
+  const report = seed(); report.items[0].after = [photo("a")];
+  report.siteAddress = "예시시 예시로 12"; report.ownerName = "홍길동";
+  const html = createWorkReportHtml(report);
+  assert.ok(html.includes("<td>예시시 예시로 12 건물주 귀하</td>"));
+  assert.ok(html.includes("<b>예시시 예시로 12 건물주</b> 귀하"));
+  assert.ok(!html.includes("홍길동"));
+  assert.doesNotMatch(html, /님 귀하|님<\/b> 귀하/);
+  report.siteAddress = "";
+  assert.ok(createWorkReportHtml(report).includes("<td>건물주 귀하</td>"));
+});
