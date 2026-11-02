@@ -198,3 +198,25 @@ test("알림톡 발송은 관리자 전용·한 번만·번호 확인을 거치�
   const MutationPolicy = require("../src/mutation-policy");
   assert.notEqual(MutationPolicy.classification("crm:periodic-report-kakao-send"), "control");
 });
+
+test("격주 차례: 막 끝난 기간에 청소 기록이 있는 곳마다 상태를 보이고, 자동 초안은 점검 확인 전엔 못 보낸다", () => {
+  const works2 = [
+    { id: "a1", buildingId: "b1", buildingName: "예초집", kind: "common", workDate: "2026-10-19", items: [{ key: "stairs", status: "recorded", after: [{ id: "x" }] }] },
+    { id: "a2", buildingId: "b1", kind: "common", workDate: "2026-10-26", items: [{ key: "stairs", status: "recorded", after: [{ id: "y" }] }] },
+    { id: "a3", buildingId: "", customerId: "c1", kind: "stairs", workDate: "2026-10-28", items: [{ key: "stairFloor", status: "done", before: [{ id: "z1" }], after: [{ id: "z2" }] }] },
+    { id: "a4", buildingId: "b2", kind: "moveIn", workDate: "2026-10-20", items: [] },
+    { id: "a5", buildingId: "b3", kind: "common", workDate: "2026-11-02", items: [] },
+  ];
+  const sent = { id: "pr_sent01", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-26" }, delivery: { status: "requested", sentAt: "x", phoneTail: "3076" } };
+  const due = P.dueReports(works2, [sent], "2026-11-03");
+  assert.equal(due.period.key, "2026-10-2");
+  assert.deepEqual(due.items.map(item => [item.key, item.state]), [["c:c1", "missing"], ["b:b1", "sent"]]);
+  assert.equal(P.dueReports(works2, [], "2026-11-16").period.key, "2026-11-1");
+  const draft = P.draftFor({ ...due.items[0], period: due.period.key }, "pr_auto01");
+  assert.equal(draft.customerId, "c1");
+  assert.equal(draft.inspection.date, "2026-10-28");
+  assert.equal(draft.inspection.confirmed, false);
+  assert.match(P.validateReport(draft, works2).error, /자동으로 만든 초안/);
+  assert.equal(P.validateReport({ ...draft, inspection: { ...draft.inspection, confirmed: true } }, works2).ok, true);
+  assert.equal(P.normalizeReport({ id: "pr_old01", buildingId: "b1", period: "2026-10-2", inspection: {} }).inspection.confirmed, true);
+});

@@ -216,6 +216,9 @@
       inspection: {
         date: isDate(inspection.date) ? inspection.date : "",
         inspectorName: text(inspection.inspectorName, 120),
+        // 자동 초안은 false 로 만든다. 담당자가 열어 점검 결과를 저장해야 true 가 된다.
+        // 예전 기록(값 없음)은 사람이 쓴 것이므로 확인된 것으로 본다.
+        confirmed: inspection.confirmed !== false,
         items: inspectionItems(inspection.items),
       },
       actions: rows(value.actions).map(normalizeAction).filter(item => item.label).slice(0, 30),
@@ -291,6 +294,8 @@
     return result;
   }
 
+  function blockersFor(report, workReports) { return blockers(report, workReports); }
+
   function blockers(report, workReports) {
     const value = normalizeReport(report);
     const list = [];
@@ -299,6 +304,7 @@
     const period = parsePeriod(value.period);
     if (!value.inspection.date) list.push({ key: "inspectionDate", text: "정기점검한 날짜를 골라 주세요." });
     else if (period && (value.inspection.date < period.from || value.inspection.date > period.to)) list.push({ key: "inspectionDate", text: "정기점검 날짜가 보고 기간 밖에 있습니다." });
+    if (!value.inspection.confirmed) list.push({ key: "confirm", text: "자동으로 만든 초안입니다. 점검 결과를 확인하고 저장해 주세요." });
     if (period && !cleaningsFor(workReports, value).length) list.push({ key: "cleanings", text: "이 기간의 공용부 청소 결과보고서가 없습니다. 청소 보고서를 먼저 저장해 주세요." });
     value.inspection.items.forEach(item => {
       if (!["watch", "fix", "done"].includes(item.status)) return;
@@ -405,6 +411,44 @@
     return rows(reports).map(normalizeReport).find(row => row.period === periodKey && sameTarget(row, target)) || null;
   }
 
+  // 이번에 낼 차례인 보고서들. 오늘 기준으로 막 끝난 기간(어제까지 끝난 기간)에 공용부
+  // 청소 기록이 있는 건물·고객마다 하나. 보고서가 없으면 '초안 없음', 있으면 작성 상태를 본다.
+  // 사람이 대상 건물을 기억해 챙기지 않아도 빠진 곳이 보이게 하려는 것이다.
+  function dueReports(workReports, reports, today) {
+    const now = periodOf(today);
+    const period = now ? previousPeriod(now.key) : null;
+    if (!period) return { period: null, items: [] };
+    const targets = new Map();
+    WorkReport.sortReports(workReports)
+      .filter(row => CLEANING_KINDS.includes(row.kind) && row.workDate >= period.from && row.workDate <= period.to)
+      .forEach(row => {
+        const target = row.buildingId ? { buildingId: row.buildingId } : row.customerId ? { buildingId: "", customerId: row.customerId } : null;
+        if (!target) return;
+        const key = target.buildingId ? `b:${target.buildingId}` : `c:${target.customerId}`;
+        if (!targets.has(key)) targets.set(key, { key, target, buildingName: row.buildingName, siteAddress: row.siteAddress, cleanings: [] });
+        targets.get(key).cleanings.push(row);
+      });
+    const items = [...targets.values()].map(entry => {
+      const report = findForPeriod(reports, entry.target, period.key);
+      const blockers = report ? blockersFor(report, workReports) : [];
+      const state = !report ? "missing" : report.delivery ? "sent" : blockers.length ? "draft" : "ready";
+      return { ...entry, cleanings: entry.cleanings.sort((a, b) => a.workDate.localeCompare(b.workDate)), report, state, blockers };
+    }).sort((a, b) => ({ missing: 0, draft: 1, ready: 2, sent: 3 })[a.state] - ({ missing: 0, draft: 1, ready: 2, sent: 3 })[b.state]
+      || String(a.buildingName).localeCompare(String(b.buildingName), "ko"));
+    return { period, items };
+  }
+
+  // 대상 하나의 초안. 점검일은 마지막 청소일로 둔다 — 보통 마지막 청소 날 점검을 같이 한다.
+  function draftFor(entry, id, previousReport) {
+    const last = rows(entry.cleanings).map(row => row.workDate).sort().pop() || "";
+    const previous = previousReport ? normalizeReport(previousReport) : null;
+    return normalizeReport({
+      id, ...entry.target, buildingName: entry.buildingName, siteAddress: entry.siteAddress,
+      period: entry.period || "",
+      inspection: { date: last, inspectorName: previous ? previous.inspection.inspectorName : "", confirmed: false, items: [] },
+    });
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(row => row.id)
       .sort((a, b) => b.period.localeCompare(a.period) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -448,6 +492,8 @@
     autoSummary,
     buildView,
     findForPeriod,
+    dueReports,
+    draftFor,
     sortReports,
     photoIds,
   });
