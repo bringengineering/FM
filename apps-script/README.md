@@ -187,13 +187,12 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 | 방 보기 | `BRINGROOMVIEWINGV1` | 〃 (여러 번 가능) |
 | 신규 계약 | `BRINGLEASECONTRACTV1` | 〃 |
 | 입주청소 | `BRINGMOVEINCLEANV1` | 〃 |
-| 구독료 결제일 | `BRINGSUBSCRIPTIONDUEV1` | 자동 · 계약 `입금 예정일`(건물마다 다름) 당일 09시 이후, 아직 `입금 완료`가 아니면 |
+| 구독료 결제일 | `BRINGSUBSCRIPTIONDUEV1` | 자동 · 계약 `입금 예정일`(건물마다 다름) 당일 09시 이후, 아직 `입금 완료`가 아니면. 카카오 검수 기준(결제·송금 유도 금지)에 맞춰 계좌·결제 버튼 없이 날짜·금액만 안내 |
 | 결제 확인 | `BRINGSUBSCRIPTIONPAIDV1` | 자동 · 계약 입금 상태가 `입금 완료`로 바뀌면 09~21시 사이 다음 실행(최근 14일 이내 결제분만) |
 
 스크립트 속성:
 
 - `OWNER_NOTICE_AUTOMATION_ENABLED`: `true`일 때만 자동 안내(청소 일정·결제일·결제 확인)가 돕니다. 기본은 꺼짐.
-- `OWNER_NOTICE_BANK_ACCOUNT`: 결제일 안내에 표시할 입금계좌(예: `농협 000-0000-0000-00 (주)브링엔지니어링`). 비어 있으면 결제일 안내는 보내지 않습니다.
 - 검수가 **완료된** 템플릿만 코드 속성을 넣습니다. 비어 있는 안내는 보내지 않습니다.
   - `KAKAO_OWNER_TEMPLATE_CLEANING_SCHEDULE` = `BRINGCLEANSCHEDULEV1`
   - `KAKAO_OWNER_TEMPLATE_MOVE_OUT` = `BRINGMOVEOUTNOTICEV1`
@@ -204,7 +203,7 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
   - `KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE` = `BRINGSUBSCRIPTIONDUEV1`
   - `KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_PAID` = `BRINGSUBSCRIPTIONPAIDV1`
 
-켜는 순서: 템플릿 검수 완료 → 코드 속성 입력 → `OWNER_NOTICE_BANK_ACCOUNT` 입력 → 편집기에서 `setupOwnerNoticeAutomation` 1회 실행(30분 트리거 생성, 결과 로그에 승인된 템플릿 목록 표시) → `OWNER_NOTICE_AUTOMATION_ENABLED=true`.
+켜는 순서: 템플릿 검수 완료 → 코드 속성 입력 → 편집기에서 `setupOwnerNoticeAutomation` 1회 실행(30분 트리거 생성, 결과 로그에 승인된 템플릿 목록 표시) → `OWNER_NOTICE_AUTOMATION_ENABLED=true`.
 
 안전장치: 알림톡이 꺼져 있으면 아무것도 보내지 않고(SMS 대체 없음), 21시~08시에는 보내지 않습니다. 같은 안내는 `crmCompany/messageDeliveries/{owner_…}` 기록이 있으면 다시 보내지 않으며, 발송 전에 `sending` 기록을 먼저 남겨 중복 발송을 막습니다. 자동화를 처음 켤 때 이미 `입금 완료`인 건은 `baseline_skipped`로만 기록하고 결제 확인 안내를 보내지 않습니다.
 

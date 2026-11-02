@@ -42,8 +42,8 @@
     }),
     owner_subscription_due: Object.freeze({
       id: "owner_subscription_due", code: "BRINGSUBSCRIPTIONDUEV1", label: "구독료 결제일 안내", delivery: "auto",
-      variables: ["건물주소", "상품명", "결제금액", "결제일", "입금계좌"],
-      body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n입금계좌: #{입금계좌}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + CONTACT,
+      variables: ["건물주소", "상품명", "결제금액", "결제일"],
+      body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + CONTACT,
     }),
     owner_subscription_paid: Object.freeze({
       id: "owner_subscription_paid", code: "BRINGSUBSCRIPTIONPAIDV1", label: "구독료 결제 확인 안내", delivery: "auto",

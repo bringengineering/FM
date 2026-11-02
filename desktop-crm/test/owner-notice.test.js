@@ -165,7 +165,7 @@ test("plan: 08시 청소 안내, 09시 결제일·결제확인, 21시 이후 조
   assert.equal(notice.values["건물주소"], "원주시 단계로 123");
   assert.deepEqual([...morning.skipped.map(item => item.reason)], ["OWNER_NOT_LINKED"]);
 
-  const nine = GS.ownerNoticePlan_({ ...data, today: "2026-11-02", hour: 9, bankAccount: "농협 000-0000 브링" });
+  const nine = GS.ownerNoticePlan_({ ...data, today: "2026-11-02", hour: 9 });
   const ids = nine.notices.map(item => item.id);
   assert.ok(ids.includes("owner_due_clean_2026-11-02"));
   assert.ok(ids.includes("owner_paid_paid_2026-10-25"), "paid within 14 days");
@@ -174,8 +174,7 @@ test("plan: 08시 청소 안내, 09시 결제일·결제확인, 21시 이후 조
   assert.equal(due.values["결제금액"], "99,000");
   assert.equal(GS.ownerNoticeRender_("owner_subscription_due", due.values).includes("#{"), false);
 
-  const noBank = GS.ownerNoticePlan_({ ...data, today: "2026-11-02", hour: 9 });
-  assert.ok(noBank.skipped.some(item => item.reason === "BANK_ACCOUNT_NOT_SET"));
+  assert.doesNotMatch(GS.ownerNoticeRender_("owner_subscription_due", due.values), /계좌|결제하기/, "no payment-inducing content (Kakao review rule)");
   assert.equal(GS.ownerNoticePlan_({ ...data, today: "2026-11-02", hour: 21 }).notices.length, 0);
 });
 

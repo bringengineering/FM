@@ -11325,8 +11325,8 @@ const OWNER_NOTICE_TEMPLATES_ = {
   },
   owner_subscription_due: {
     code: "BRINGSUBSCRIPTIONDUEV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE", label: "구독료 결제일 안내",
-    variables: ["건물주소", "상품명", "결제금액", "결제일", "입금계좌"],
-    body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n입금계좌: #{입금계좌}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + OWNER_NOTICE_CONTACT_
+    variables: ["건물주소", "상품명", "결제금액", "결제일"],
+    body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_subscription_paid: {
     code: "BRINGSUBSCRIPTIONPAIDV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_PAID", label: "구독료 결제 확인 안내",
@@ -11568,7 +11568,7 @@ function ownerNoticeOwner_(store, building, contract) {
 }
 
 // 순수 함수: 오늘(서울 기준) 보낼 자동 안내 목록을 만든다. 발송·중복 확인은 하지 않는다.
-// input = { contracts, customers, buildings, serviceRecords, today: "YYYY-MM-DD", hour: 0~23, bankAccount }
+// input = { contracts, customers, buildings, serviceRecords, today: "YYYY-MM-DD", hour: 0~23 }
 function ownerNoticePlan_(input) {
   const data = input || {};
   const today = String(data.today || "");
@@ -11635,7 +11635,6 @@ function ownerNoticePlan_(input) {
 
   // 2) 구독료 결제일 · 3) 결제 확인 — 09시 이후.
   if (hour >= 9 && !quiet) {
-    const bankAccount = ownerNoticeLine_(data.bankAccount).slice(0, 60);
     const earliest = ownerNoticeAddDays_(today, -OWNER_NOTICE_PAID_LOOKBACK_DAYS_);
     const months = [earliest.slice(0, 7), today.slice(0, 7)].filter(function (month, index, list) { return list.indexOf(month) === index; });
     contracts.forEach(function (contract) {
@@ -11646,9 +11645,8 @@ function ownerNoticePlan_(input) {
       const product = ownerNoticeLine_(contract.name).slice(0, 60) || "브링케어 구독";
       const dueToday = ownerNoticePaymentDate_(contract, today.slice(0, 7));
       if (dueToday === today && contract.status !== "종료" && ownerNoticeCollectionStatus_(contract, today) !== "입금 완료") {
-        if (!bankAccount) plan.skipped.push({ id: "owner_due_" + contract.id + "_" + today, reason: "BANK_ACCOUNT_NOT_SET" });
-        else push("due", "owner_subscription_due", "owner_due_" + contract.id + "_" + today, contract, building, "contract", contract.id,
-          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(today), "입금계좌": bankAccount });
+        push("due", "owner_subscription_due", "owner_due_" + contract.id + "_" + today, contract, building, "contract", contract.id,
+          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(today) });
       }
       months.forEach(function (month) {
         const date = ownerNoticePaymentDate_(contract, month);
@@ -11693,8 +11691,7 @@ function processOwnerNoticeAutomation() {
       buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
       serviceRecords: firebaseCompanyServerReadJson_("data/serviceRecords", "업무 일정 조회 실패"),
       today: Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd"),
-      hour: hour,
-      bankAccount: props.getProperty("OWNER_NOTICE_BANK_ACCOUNT") || ""
+      hour: hour
     });
     // 처음 켰을 때 이미 '입금 완료'인 건은 결제 확인 안내를 보내지 않고 기준선으로만 남긴다.
     // 결제 확인은 09시 이후에만 계획되므로, 그 시간대 실행에서만 기준선을 확정한다.
@@ -11752,7 +11749,6 @@ function setupOwnerNoticeAutomation() {
   const output = {
     ok: true, handler: handler, created: !exists, cadence: "every 30 minutes",
     enabled: ownerNoticeAutomationEnabled_(),
-    bankAccountSet: Boolean(props.getProperty("OWNER_NOTICE_BANK_ACCOUNT")),
     approvedTemplates: Object.keys(OWNER_NOTICE_TEMPLATES_).filter(function (id) { return Boolean(props.getProperty(OWNER_NOTICE_TEMPLATES_[id].property)); })
   };
   Logger.log(JSON.stringify(output));
