@@ -567,6 +567,14 @@
           "$other": { ".validate": false }
         }
       },
+      "periodicReports": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$reportId": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists()",
+          ".validate": "newData.hasChildren(['id','period','updatedAt','updatedBy']) && newData.child('id').val() === $reportId && $reportId.matches(/^pr_[A-Za-z0-9_-]{4,76}$/) && newData.child('period').isString() && newData.child('period').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-[12]$/) && ((newData.child('buildingId').isString() && newData.child('buildingId').val() !== '') || newData.child('customerId').isString()) && newData.child('updatedBy').val() === auth.uid"
+        }
+      },
       "workReports": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": false,

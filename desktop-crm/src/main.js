@@ -35,6 +35,8 @@ const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const ReportPdfRenderer = require("./report-pdf-renderer");
 const WorkReportCore = require("./work-report-core");
+const PeriodicReportCore = require("./periodic-report-core");
+const { createPeriodicReportHtml, periodicReportPdfPhotos } = require("./periodic-report-owner-pdf");
 const WorkReportMessage = require("./work-report-message");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
@@ -4813,6 +4815,72 @@ async function exportWorkReport(input) {
   session.check();
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, copyType, photos: Object.keys(images).length, heicConverted, photoFailures };
+}
+
+// 정기 관리보고서(격주) PDF. 화면이 보낸 보고서를 믿지 않고 회사 서버에서 그 보고서와
+// 그 기간의 청소 기록, 지난 기간 보고서를 다시 읽어 만든다. 건물주에게 나가는 문서라
+// 사진을 한 장이라도 못 읽으면 만들지 않는다 — '사진 없음' 칸이 있는 보고서를 내지 않는다.
+async function exportPeriodicReport(input) {
+  const session = savedDocumentSession();
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 정기 관리보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const reportId = String(options.reportId || "");
+  const [periodic, works, store] = [await remoteClient.loadPeriodicReports(), await remoteClient.loadWorkReports(), await remoteClient.loadStore()];
+  session.check();
+  const saved = periodic.reports.find(row => row.id === reportId);
+  if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
+  const report = WorkReportCore.withSiteAddress(saved, store);
+  const checked = PeriodicReportCore.validateReport(report, works.reports);
+  if (!checked.ok) return { ok: false, error: checked.error, code: checked.code };
+  const previousPeriod = PeriodicReportCore.previousPeriod(report.period);
+  const previousReport = previousPeriod ? PeriodicReportCore.findForPeriod(periodic.reports, report, previousPeriod.key) : null;
+  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport });
+
+  // 청소 보고서와 같은 기준으로 협력업체명·업체 원가가 섞였는지 본다.
+  const secrets = WorkReportCore.reportSecrets(store, report);
+  const serialized = JSON.stringify(view);
+  const leaks = [["협력업체명", secrets.vendorNames], ["업체 단가", secrets.vendorAmounts]]
+    .filter(([, values]) => values.some(value => String(value).length >= 3 && serialized.includes(String(value)))).map(([label]) => label);
+  if (leaks.length) return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
+
+  const photos = periodicReportPdfPhotos(view);
+  if (photos.length && !driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
+  const images = {};
+  let photoFailures = 0;
+  for (const photo of photos) {
+    try {
+      const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId || photo.id });
+      if (!fetched || !fetched.content) { photoFailures += 1; continue; }
+      const original = Buffer.from(fetched.content);
+      const isHeic = HeicJpegConverter.looksLikeHeic(original)
+        || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
+        || /\.hei[cf]$/iu.test(String(fetched.name || ""));
+      const content = workReportPdfJpeg(isHeic ? await HeicJpegConverter.convertToJpeg(original) : original);
+      images[photo.id] = `data:image/jpeg;base64,${content.toString("base64")}`;
+    } catch (_error) {
+      photoFailures += 1;
+    }
+  }
+  session.check();
+  if (photoFailures) return { ok: false, error: `사진 ${photoFailures}장을 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요.`, code: "PHOTO_MISSING" };
+
+  const period = PeriodicReportCore.parsePeriod(report.period);
+  const place = String(report.buildingName || report.siteAddress || "건물").replace(/[\\/:*?"<>|\u0000-\u001f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 60);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "정기 관리보고서 PDF 저장",
+    defaultPath: `${period.year}${String(period.month).padStart(2, "0")}_${period.half}차_${place}_정기관리보고서.pdf`,
+    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  session.check();
+  const html = createPeriodicReportHtml(view, { company: options.company, images });
+  const bytes = await createReportPdfBytes(html, "periodic-report");
+  session.check();
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, photos: Object.keys(images).length, cleanings: view.cleanings.length, actions: view.actions.length };
 }
 
 async function sendWorkReportToCustomerByKakao(input) {
@@ -9670,6 +9738,8 @@ secureHandle("crm:telegram-server-status", () => loadTelegramServerStatus());
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
+secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeriodicReport(input));
+secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
@@ -10106,6 +10176,7 @@ function readWorkflowCollection(method) {
     loadSupplies: ["items", "moves", "costs"],
     loadDeliveryFlows: ["flows"],
     loadWorkReports: ["reports"],
+    loadPeriodicReports: ["reports"],
   };
   if (!Object.prototype.hasOwnProperty.call(collections, method)) throw new Error("지원하지 않는 조회입니다.");
   if (localTestMode) {
@@ -10175,6 +10246,7 @@ secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("lo
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
 secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));
+secureHandle("crm:periodic-reports-load", () => readWorkflowCollection("loadPeriodicReports"));
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
 secureHandle("crm:payment-schedule-save", input => savePaymentSchedule(input));

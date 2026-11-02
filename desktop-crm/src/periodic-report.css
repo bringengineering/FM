@@ -1,0 +1,41 @@
+/* 정기 관리보고서(격주) 화면 */
+.pr-editor, .pr-new { display: flex; flex-direction: column; gap: 18px; margin: 0 0 18px; padding: 20px; }
+.pr-editor > header, .pr-new > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pr-editor > header span, .pr-new > header span { color: #3182F6; font-size: 9px; font-weight: 950; letter-spacing: .09em; }
+.pr-editor > header h3, .pr-new > header h3 { margin: 4px 0 2px; color: #191F28; font-size: 18px; }
+.pr-editor > header small { color: #6B7684; }
+.pr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pr-editor h4 { margin: 0 0 8px; color: #1F4E8C; font-size: 14px; }
+.pr-inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.pr-inline label, .pr-block { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #4E5968; font-weight: 700; }
+.pr-block { margin-bottom: 10px; }
+.pr-block textarea, .pr-inline input, .pr-inline select { font: inherit; font-weight: 400; padding: 7px 9px; border: 1px solid #D1D6DB; border-radius: 8px; }
+.pr-hint { margin: 6px 0 8px; color: #6B7684; font-size: 12px; }
+.pr-empty { color: #8B95A1; font-size: 13px; }
+.pr-cleanings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pr-items td { vertical-align: middle; }
+.pr-items input[name=note] { width: 100%; min-width: 180px; padding: 6px 8px; border: 1px solid #D1D6DB; border-radius: 7px; font: inherit; }
+.pr-items tr.pr-cat th { background: #F2F4F6; color: #386F8A; font-size: 11px; text-align: left; padding: 5px 10px; }
+.pr-items tr.pr-attention { background: #FFF8F0; }
+.pr-statuses { white-space: nowrap; }
+.pr-status { display: inline-flex; margin-right: 3px; cursor: pointer; }
+.pr-status input { position: absolute; opacity: 0; pointer-events: none; }
+.pr-status span { padding: 4px 8px; border: 1px solid #E5E8EB; border-radius: 999px; font-size: 11px; color: #6B7684; }
+.pr-status input:checked + span { font-weight: 800; border-color: currentColor; }
+.pr-status input:focus-visible + span { outline: 2px solid #3182F6; outline-offset: 1px; }
+.pr-good input:checked + span { background: #E3F4EC; color: #2B6E4F; }
+.pr-watch input:checked + span { background: #FFF1DC; color: #8A5A12; }
+.pr-fix input:checked + span { background: #FDE4E1; color: #B03A2E; }
+.pr-done input:checked + span { background: #E3EFFB; color: #1F5AA6; }
+.pr-na input:checked + span { background: #F2F4F6; color: #4E5968; }
+.pr-photos { white-space: nowrap; }
+.pr-photo { display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; padding: 2px 6px; background: #E8F3FF; border-radius: 6px; font-size: 11px; color: #1F5AA6; }
+.pr-photo button { border: 0; background: none; color: #8B95A1; cursor: pointer; font-size: 13px; }
+.pr-badge { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+.pr-badge.pr-good { background: #E3F4EC; color: #2B6E4F; }
+.pr-badge.pr-watch { background: #FFF1DC; color: #8A5A12; }
+.pr-badge.pr-fix { background: #FDE4E1; color: #B03A2E; }
+.pr-badge.pr-done { background: #E3EFFB; color: #1F5AA6; }
+.pr-actions-list { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.pr-blockers ul { margin: 6px 0 0; padding-left: 18px; }
+.pr-ready { color: #2B6E4F; }
