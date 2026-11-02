@@ -155,3 +155,13 @@ test("main-process report exports are wired to the file renderer; quotation path
   assert.match(main, /createReportPdfBytes\(documentHtml, "work-report"\)/);
   assert.match(main, /createQuotePdfHtml\(quote, copyType, seal\)/);
 });
+
+test("PDF 렌더러는 문서에 박은 woff2 글꼴만 허용하고 파일·네트워크 글꼴은 막는다", () => {
+  const { allowedRequest } = require("../src/report-pdf-renderer");
+  const doc = "file:///tmp/report.html";
+  assert.equal(allowedRequest({ resourceType: "font", url: "data:font/woff2;base64,d09GMgABAAA" }, doc), true);
+  for (const url of ["https://cdn.example.com/Pretendard.woff2", "file:///Users/x/Pretendard.woff2", "data:font/ttf;base64,AAAA", "data:text/css;base64,AAAA"]) {
+    assert.equal(allowedRequest({ resourceType: "font", url }, doc), false, url);
+  }
+  assert.equal(allowedRequest({ resourceType: "stylesheet", url: "data:font/woff2;base64,AAAA" }, doc), false);
+});

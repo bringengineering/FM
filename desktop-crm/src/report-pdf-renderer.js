@@ -10,7 +10,7 @@ const {pathToFileURL} = require("node:url");
 // Keep this renderer isolated from CRM sessions and all other local files.
 const MAX_HTML_BYTES = 160 * 1024 * 1024;
 const PDF_TIMEOUT_MS = 120000;
-const POLICY = "default-src 'none'; script-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; connect-src 'none'";
+const POLICY = "default-src 'none'; script-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; connect-src 'none'";
 const READY_SCRIPT = `Promise.all([
   document.fonts.ready,
   ...Array.from(document.images, image => new Promise((resolve, reject) => {
@@ -30,7 +30,9 @@ function failure(code = "REPORT_PDF_FAILED") {
 
 function allowedRequest(details, documentUrl) {
   return (details.resourceType === "mainFrame" && details.url === documentUrl)
-    || (details.resourceType === "image" && /^data:image\/(?:jpeg|png|webp|gif);base64,/i.test(details.url));
+    || (details.resourceType === "image" && /^data:image\/(?:jpeg|png|webp|gif);base64,/i.test(details.url))
+    // Only fonts embedded in the document itself (e.g. bundled Pretendard). Never files or network.
+    || (details.resourceType === "font" && /^data:font\/woff2;base64,/i.test(details.url));
 }
 
 async function removeTemporaryDocument(io, directory, filePath) {

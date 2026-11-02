@@ -376,6 +376,32 @@
    * 상태는 올리지 않는다. 사진이 붙었다는 것과 다 했다는 것은 다른
    * 말이다. 사람이 보고 올린다.
    */
+  // 보고서는 작업 전 n번과 작업 후 n번을 나란히 싣는다. 들어온 순서대로 두면 서로
+  // 다른 장소가 짝지어진다. 1) AI·사람이 같은 장소로 묶은 짝을 앞에 같은 번호로 두고
+  // 2) 나머지는 각각 촬영 시각 순으로 세운다 — 작업 전·후에 현장을 같은 순서로
+  // 돌며 찍으므로 시각 순서가 장소 순서와 대개 같다. 사진을 버리거나 단계를 바꾸지 않는다.
+  function pairKey(file) {
+    if (text(file && file.reviewPair, 300)) return text(file.reviewPair, 300);
+    const other = text(file && file.pairWith, 200);
+    return other ? [text(file.id, 200), other].sort().join("|") : "";
+  }
+  function orderPairs(before, after) {
+    const afterByKey = new Map();
+    rows(after).forEach(file => { const key = pairKey(file); if (key && !afterByKey.has(key)) afterByKey.set(key, file); });
+    const pairedBefore = [], pairedAfter = [], usedAfter = new Set();
+    rows(before).forEach(file => {
+      const key = pairKey(file), match = key && afterByKey.get(key);
+      if (match && !usedAfter.has(match)) { pairedBefore.push(file); pairedAfter.push(match); usedAfter.add(match); }
+    });
+    const byTime = (left, right) => {
+      const a = Capture.normalize(left && left.captureTime), b = Capture.normalize(right && right.captureTime);
+      return a && b ? a.local.localeCompare(b.local) : a ? -1 : b ? 1 : 0;
+    };
+    const restBefore = rows(before).filter(file => !pairedBefore.includes(file)).sort(byTime);
+    const restAfter = rows(after).filter(file => !usedAfter.has(file)).sort(byTime);
+    return { before: pairedBefore.concat(restBefore), after: pairedAfter.concat(restAfter), paired: pairedBefore.length };
+  }
+
   function toReportDraft(plan, options) {
     const settings = options && typeof options === "object" ? options : {};
     const core = settings.core;
@@ -409,9 +435,10 @@
         if (bucket.before.length || rows(bucket.during).length || bucket.after.length || bucket.unsorted.length) leftovers.push(bucket);
         return;
       }
-      target.before = target.before.concat(bucket.before.map(toPhoto));
+      const ordered = orderPairs(bucket.before, bucket.after);
+      target.before = target.before.concat(ordered.before.map(toPhoto));
       if (["moveIn", "common"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
-      target.after = target.after.concat(bucket.after.map(toPhoto));
+      target.after = target.after.concat(ordered.after.map(toPhoto));
       // 못 가른 것은 작업 전에 몰아 두지 않는다. 몰아 두면 사람이
       // 옮겼는지 원래 그런지 알 수 없다. 메모로 남겨 눈에 띄게 한다.
       if (bucket.unsorted.length && kind !== "common") {
@@ -640,18 +667,18 @@
 
   function applyCommonPairs(plan, pairs) {
     const byId = new Map(photoReviewRows(plan).map(row => [row.id, row]));
-    const used = new Set(); let result = plan;
+    const used = new Set(), partner = new Map(); let result = plan;
     for (const pair of rows(pairs)) {
       const before = byId.get(pair.beforeId), after = byId.get(pair.afterId);
       if (!["debris_removed", "stain_reduced", "items_removed"].includes(pair.evidence) || !before || !after || before.id === after.id || used.has(before.id) || used.has(after.id)) continue;
       if (!before.itemKey || before.itemKey !== after.itemKey || [before, after].some(row => row.phase !== "unsorted" || row.file.manualPhase)) continue;
       const a = Capture.normalize(before.file.captureTime), b = Capture.normalize(after.file.captureTime);
       if (a && b && (!Capture.comparable(a, b) || Capture.differenceMinutes(a, b) <= 0)) continue;
-      used.add(before.id); used.add(after.id);
+      used.add(before.id); used.add(after.id); partner.set(before.id, after.id); partner.set(after.id, before.id);
       result = assignPhotoPhase(assignPhotoPhase(result, before.id, "before"), after.id, "after");
     }
     return { ...result, buckets: rows(result.buckets).map(bucket => ({ ...bucket,
-      ...Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => used.has(file.id) ? { ...file, manualPhase: false, phaseReason: "같은 장소의 명확한 변화로 전·후 추천 · 저장 전 확인" } : file)])),
+      ...Object.fromEntries(["before", "after"].map(phase => [phase, rows(bucket[phase]).map(file => used.has(file.id) ? { ...file, manualPhase: false, pairWith: partner.get(file.id), phaseReason: "같은 장소의 명확한 변화로 전·후 추천 · 저장 전 확인" } : file)])),
     })) };
   }
 
@@ -748,6 +775,7 @@
     unviewable,
     splitBeforeAfter,
     phaseHint,
+    orderPairs,
     photoReviewRows,
     assignPhotoPhase,
     assignPhotoCategory,

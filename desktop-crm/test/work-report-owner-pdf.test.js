@@ -99,11 +99,16 @@ test("전·후는 색과 번호로 구분하고, 한쪽만 있는 구역은 그 
   report.items[1].before = [photo("b1"), photo("b2")]; report.items[1].after = [photo("a1")];
   const html = createWorkReportHtml(report);
   assert.ok(html.includes("이 구역은 작업 후 사진으로 기록했습니다."));
-  assert.ok(html.includes("작업 전 2장과 작업 후 1장 중 1쌍을 비교하고 나머지는 아래에 실었습니다."));
-  assert.match(html, /<div class="pair-head"><span class="before">작업 전 BEFORE<\/span><span class="after">작업 후 AFTER<\/span><\/div>/);
-  assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 1<\/b>/);
-  assert.match(html, /<figure class="after"><div class="photo-bar"><b>작업 후 1<\/b>/);
+  // 장수가 다르면 다른 장소끼리 짝짓지 않고 단계별로 나눠 싣는다.
+  assert.ok(html.includes("작업 전 2장과 작업 후 1장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다."));
+  assert.match(html, /<div class="phase-head before"><span>작업 전 BEFORE<\/span><small>2장<\/small><\/div>/);
+  assert.match(html, /<div class="phase-head after"><span>작업 후 AFTER<\/span><small>1장<\/small><\/div>/);
   assert.match(html, /<figure class="before"><div class="photo-bar"><b>작업 전 2<\/b>/);
+  // 장수가 같으면 같은 번호끼리 나란히 짝짓는다.
+  report.items[2].before = [photo("c1"), photo("c2")]; report.items[2].after = [photo("d1"), photo("d2")];
+  const pairedHtml = createWorkReportHtml(report);
+  assert.match(pairedHtml, /<div class="pair-head"><span class="before">작업 전 BEFORE<\/span><span class="after">작업 후 AFTER<\/span><\/div>/);
+  assert.equal((pairedHtml.match(/class="pair-row"/g) || []).length, 2);
 });
 
 test("수신인은 실명이 아니라 '(주소) 건물주 귀하' 로 쓰고 높임을 겹치지 않는다", () => {
@@ -138,3 +143,12 @@ test("고객 단위 보고서는 고객 이름(buildingName) 대신 현장 주�
   linked.items[0].after = [photo("c")];
   assert.ok(createWorkReportHtml(linked).includes("<th>현장</th><td>예시 빌딩</td>"));
 });
+
+test("본문 글꼴은 문서에 박은 Pretendard 이고 없으면 시스템 글꼴로 대신한다", () => {
+  const report = seed(); report.items[0].after = [photo("a")];
+  const html = createWorkReportHtml(report);
+  assert.match(html, /@font-face\{font-family:"Pretendard";src:url\(data:font\/woff2;base64,/);
+  assert.match(html, /font-family:"Pretendard","Malgun Gothic"/);
+  assert.match(html, /font-src data:/);
+});
+

@@ -23,6 +23,17 @@ const LOGO = (() => {
   } catch { return ""; }
 })();
 
+// 본문 글꼴은 Pretendard(SIL OFL 1.1, assets/fonts/Pretendard-LICENSE.txt).
+// 렌더러는 외부 파일을 불러오지 않으므로 가변 글꼴 하나를 data: 로 박는다.
+// 파일이 없으면 기존 시스템 글꼴로 그대로 출력한다.
+const PRETENDARD = (() => {
+  try {
+    const bytes = fs.readFileSync(path.join(__dirname, "assets", "fonts", "PretendardVariable.woff2"));
+    return bytes.length && bytes.length < 4 * 1024 * 1024 ? `data:font/woff2;base64,${bytes.toString("base64")}` : "";
+  } catch { return ""; }
+})();
+const FONT_STACK = '"Pretendard","Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
+
 // Keep uneven before/after sets and every during photo. Six cards is a page
 // budget, not an evidence limit; long captions may flow onto another sheet.
 function photoPages(item) {
@@ -62,31 +73,33 @@ function figure(item, photo, phase, number, images) {
 // 한 구역의 사진. 전·후는 같은 번호끼리 좌우로 짝지어 비교하게 하고,
 // 짝이 없는 사진과 작업 중 사진은 그 아래에 단계 표시를 붙여 이어 싣는다.
 // 구역마다 새 쪽을 강제하지 않는다 — 사진 두 장에 한 쪽을 쓰면 빈 종이가 된다.
-function areaPhotos(item, index, images) {
-  const pairs = Math.min(item.before.length, item.after.length);
-  const rows = [];
-  for (let i = 0; i < pairs; i++) {
-    rows.push(`<div class="pair-row"><span class="pair-no">${i + 1}</span>${figure(item, item.before[i], "before", i + 1, images)}${figure(item, item.after[i], "after", i + 1, images)}</div>`);
+// 한 구역의 사진. 작업 전·후 장수가 같으면 같은 번호끼리 나란히 짝짓는다
+// (초안이 같은 장소로 묶인 짝을 앞에, 나머지를 촬영 시각 순으로 세워 둔다).
+// 장수가 다르면 순서만으로는 같은 장소를 보장할 수 없으므로 억지로 짝짓지 않고
+// 작업 전·작업 후를 따로 모아 싣는다. 다른 장소가 나란히 붙는 것보다 낫다.
+// 구역마다 새 쪽을 강제하지 않는다 — 사진 두 장에 한 쪽을 쓰면 빈 종이가 된다.
+function photoGrid(item, entries, images) {
+  const grid = [];
+  for (let i = 0; i < entries.length; i += 2) {
+    grid.push(`<div class="grid-row${i + 1 === entries.length ? " single" : ""}">${entries.slice(i, i + 2).map(entry => figure(item, entry.photo, entry.phase, entry.n, images)).join("")}</div>`);
   }
-  const extra = [
-    ...item.before.slice(pairs).map((photo, i) => ({ photo, phase: "before", n: pairs + i + 1 })),
-    ...item.after.slice(pairs).map((photo, i) => ({ photo, phase: "after", n: pairs + i + 1 })),
-    ...item.during.map((photo, i) => ({ photo, phase: "during", n: i + 1 })),
-  ];
+  return grid.join("");
+}
+function areaPhotos(item, index, images) {
+  const paired = item.before.length > 0 && item.before.length === item.after.length;
+  const rows = paired ? item.before.map((photo, i) => `<div class="pair-row"><span class="pair-no">${i + 1}</span>${figure(item, photo, "before", i + 1, images)}${figure(item, item.after[i], "after", i + 1, images)}</div>`) : [];
+  const numbered = phase => item[phase].map((photo, i) => ({ photo, phase, n: i + 1 }));
   const notes = [];
   if (!item.before.length && item.after.length) notes.push("이 구역은 작업 후 사진으로 기록했습니다.");
   else if (item.before.length && !item.after.length) notes.push("이 구역은 작업 전 사진으로 기록했습니다.");
-  else if (item.before.length !== item.after.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장 중 ${pairs}쌍을 비교하고 나머지는 아래에 실었습니다.`);
-  const grid = [];
-  for (let i = 0; i < extra.length; i += 2) {
-    grid.push(`<div class="grid-row${i + 1 === extra.length ? " single" : ""}">${extra.slice(i, i + 2).map(entry => figure(item, entry.photo, entry.phase, entry.n, images)).join("")}</div>`);
-  }
+  else if (!paired && item.before.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다.`);
+  const section = (phase, label) => item[phase].length ? `<div class="phase-head ${phase}"><span>${label}</span><small>${item[phase].length}장</small></div>${photoGrid(item, numbered(phase), images)}` : "";
   return `<section class="area-photos">
     <div class="area-head"><h3><span>${index}</span>${escape(item.label)}</h3><p>${escape(photoCounts(item, true))}</p></div>
     ${item.detail ? `<p class="area-scope">수행 범위 · ${escape(item.detail)}</p>` : ""}
     ${notes.map(line => `<p class="area-note">${escape(line)}</p>`).join("")}
-    ${pairs ? `<div class="pair-head"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span></div>${rows.join("")}` : ""}
-    ${grid.join("")}
+    ${paired ? `<div class="pair-head"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span></div>${rows.join("")}` : `${section("before", "작업 전 BEFORE")}${section("after", "작업 후 AFTER")}`}
+    ${section("during", "작업 중 DURING")}
   </section>`;
 }
 
@@ -118,10 +131,11 @@ function createOwnerReportHtml(report, options = {}) {
   const stats = [["작업 구역", `${items.length}곳`], ...Object.entries(PHASES).filter(([phase]) => phase !== "during" || totals.during).map(([phase, label]) => [label, `${totals[phase]}장`])];
   const glance = [["작업일", date], ["작업 종류", kind], ["작업 구역", `${items.length}곳`], ["사진 기록", `${totals.before + totals.during + totals.after}장`]];
   const senderLine = [sender, company.representative ? `대표 ${company.representative}` : "", company.registrationNumber ? `사업자등록번호 ${company.registrationNumber}` : ""].filter(Boolean).join(" · ");
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>작업 결과 보고서</title><style>
-@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"작업 결과보고서 · ${escape(documentNo)}";font-family:"Malgun Gothic","맑은 고딕",sans-serif;font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:"Malgun Gothic","맑은 고딕",sans-serif;font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:"Malgun Gothic","맑은 고딕",sans-serif;font-size:7pt;color:#6a8190;vertical-align:middle}}
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>작업 결과 보고서</title><style>
+${PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : ""}
+@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"작업 결과보고서 · ${escape(documentNo)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
 @page:first{@top-right{content:none}}
-*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#1d3b4f;font-family:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#1d3b4f;font-family:${FONT_STACK};-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{width:186mm;font-size:9pt;line-height:1.65;overflow-wrap:anywhere}h1,h2,h3,p{margin:0}p{orphans:2;widows:2}
 h2{font-size:11pt;color:#1f4e8c;margin:0 0 2mm;padding-left:2.5mm;border-left:1mm solid #80cdec;break-after:avoid}
 .overview>section,.overview>p,.overview>header,.overview>table{margin-bottom:4.5mm}
@@ -153,6 +167,7 @@ h2{font-size:11pt;color:#1f4e8c;margin:0 0 2mm;padding-left:2.5mm;border-left:1m
 .pair-head .before,.legend .before{background:#fff1dc;color:#8a5a12}.pair-head .after,.legend .after{background:#e3effb;color:#1f5aa6}.legend .during{background:#e3f4ec;color:#2b6e4f}
 .pair-row{display:grid;grid-template-columns:7mm 1fr 1fr;gap:0 3mm;margin-top:2mm;break-inside:avoid;align-items:start}
 .pair-no{align-self:center;text-align:center;font-weight:800;color:#1f4e8c;font-size:10pt}
+.phase-head{display:flex;justify-content:space-between;align-items:center;margin:3mm 0 0 10mm;padding:1.2mm 3mm;border-radius:1mm;font-size:8pt;font-weight:800;letter-spacing:.06em;break-after:avoid}.phase-head small{font-size:7.5pt;font-weight:600;letter-spacing:0}.phase-head.before{background:#fff1dc;color:#8a5a12}.phase-head.after{background:#e3effb;color:#1f5aa6}.phase-head.during{background:#e3f4ec;color:#2b6e4f}
 .grid-row{display:grid;grid-template-columns:7mm 1fr 1fr;gap:0 3mm;margin-top:2mm;break-inside:avoid}.grid-row figure:first-child{grid-column:2}.grid-row.single figure{grid-column:2 / span 2;justify-self:center;width:calc(50% - 1.5mm)}
 figure{margin:0;border:.3mm solid #d8eaf4;background:#fff;min-width:0;break-inside:avoid}
 figure.before{border-top:1mm solid #e3a33b}figure.after{border-top:1mm solid #2f7fd0}figure.during{border-top:1mm solid #3c9a6c}
