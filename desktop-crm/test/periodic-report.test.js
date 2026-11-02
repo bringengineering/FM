@@ -277,3 +277,16 @@ test("관찰·조치 항목은 지난 점검의 같은 항목 사진과 나란�
   assert.match(html, /지난 점검과 비교/);
   assert.match(html, /지난번: 처음 확인 · 이번: 변화 없음/);
 });
+
+test("조치 항목 ↔ 작업 건: 공사 진행이 끝나면 '수리 완료', 진행 중이면 단계 표시, 연결은 다음 보고서로 이어진다", () => {
+  const works4 = [{ id: "w", buildingId: "b1", kind: "common", workDate: "2026-10-28", items: [{ key: "stairs", status: "recorded", after: [{ id: "c" }] }] }];
+  const prev = { id: "pr_lnk01", buildingId: "b1", period: "2026-10-1", links: { lightSensor: "case_1", bogus: "x" }, inspection: { date: "2026-10-12", items: [{ key: "lightSensor", status: "fix", note: "미점등", photos: [{ id: "x" }] }] } };
+  assert.deepEqual(P.normalizeReport(prev).links, { lightSensor: "case_1" });
+  const cur = { id: "pr_lnk02", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28" } };
+  const doing = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", status: { c11: "done", c12: "doing" } }] }).actions[0];
+  assert.deepEqual([doing.status, doing.plan], ["fix", "작업 진행 중 (공사 진행)"]);
+  const done = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", status: { c12: "done" }, workCompletedAt: "2026-10-30" }] }).actions[0];
+  assert.deepEqual([done.status, done.plan], ["done", "10. 30.(금) 수리 완료"]);
+  const trashed = P.buildView(cur, works4, { previousReport: prev, cases: [{ id: "case_1", deleted: true, status: { c12: "doing" } }] }).actions[0];
+  assert.equal(trashed.plan, "10. 28.(수) 점검에서 정상 확인");
+});

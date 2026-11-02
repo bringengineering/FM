@@ -4828,7 +4828,9 @@ async function exportWorkReport(input) {
 // 다시 읽는다. 건물주에게 나가는 문서라 사진을 한 장이라도 못 읽으면 만들지 않는다.
 async function buildPeriodicReportPdf(reportId, company, session) {
   if (!driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
-  const [periodic, works, store] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore()]);
+  const [periodic, works, store, operations] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore(),
+    // 조치 항목에 연결한 작업 건의 진행을 보려고 읽는다. 못 읽으면 연결 없이 만든다.
+    remoteClient.loadOperations().catch(() => ({ cases: [] }))]);
   session.check();
   const saved = periodic.reports.find(row => row.id === String(reportId || ""));
   if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
@@ -4837,7 +4839,7 @@ async function buildPeriodicReportPdf(reportId, company, session) {
   if (!checked.ok) return { ok: false, error: checked.error, code: checked.code };
   const previousPeriod = PeriodicReportCore.previousPeriod(report.period);
   const previousReport = previousPeriod ? PeriodicReportCore.findForPeriod(periodic.reports, report, previousPeriod.key) : null;
-  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport });
+  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport, cases: operations.cases });
 
   // 청소 보고서와 같은 기준으로 협력업체명·업체 원가가 섞였는지 본다.
   const secrets = WorkReportCore.reportSecrets(store, report);

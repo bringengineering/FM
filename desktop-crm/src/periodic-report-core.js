@@ -156,6 +156,24 @@
     };
   }
 
+  function normalizeLinks(source) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    const keys = new Set(INSPECTION_ITEMS.map(item => item.key));
+    return Object.fromEntries(Object.entries(value).filter(([key, caseKey]) => (keys.has(key) || /^custom_[A-Za-z0-9_-]{1,40}$/.test(key)) && /^[A-Za-z0-9_-]{1,120}$/.test(String(caseKey || ""))).slice(0, 30));
+  }
+
+  // 연결된 작업 건의 진행. '공사 진행'(c12) 이 끝나면 조치 완료로 본다. 삭제된 건은 연결이 없는 것으로 본다.
+  const CASE_STEPS = ["문의 접수", "접수확인", "상담", "분류", "견적 요청", "견적 비교", "추천", "건물주 추천", "승인·입금", "입금 확인", "업체·일정", "공사 진행", "작업 사진", "B/A 보고서", "정산", "월간 리포트", "사후관리"];
+  function caseProgress(caseRecord) {
+    if (!caseRecord || caseRecord.deleted === true) return null;
+    const status = caseRecord.status && typeof caseRecord.status === "object" ? caseRecord.status : {};
+    const done = status.c12 === "done" || status.c13 === "done" || status.c14 === "done";
+    let current = "";
+    for (let i = 1; i <= CASE_STEPS.length; i += 1) if (status[`c${i}`] === "doing") { current = CASE_STEPS[i - 1]; break; }
+    const completedAt = text(caseRecord.workCompletedAt, 10) || text(caseRecord.updatedAt, 10);
+    return { done, step: current, completedAt: isDate(completedAt) ? completedAt : "", ticketNo: text(caseRecord.ticketNo, 40) };
+  }
+
   // 건물주에게 보낸 기록. 번호는 끝 4자리만 둔다 — 보고서 기록에 전화번호를 통째로 쌓지 않는다.
   function normalizeDelivery(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : null;
@@ -225,6 +243,8 @@
       summary: text(value.summary, 2000),
       followUp: text(value.followUp, 2000),
       delivery: normalizeDelivery(value.delivery),
+      // 점검 항목 → CRM 민원·작업 건. 수리가 끝나면 다음 보고서가 스스로 '조치 완료' 로 안다.
+      links: normalizeLinks(value.links),
       nextSchedule: rows(value.nextSchedule).map(item => ({ label: text(item && item.label, 60), date: isDate(item && item.date) ? item.date : "" })).filter(item => item.label && item.date).slice(0, 6),
       createdAt: text(value.createdAt, 40),
       updatedAt: text(value.updatedAt, 40),
@@ -375,13 +395,23 @@
     // 지난번에 넘어온 점검 항목을 이번 점검에서 다시 봤으면 이번 결과를 따른다.
     // 정상으로 확인됐으면 '조치 완료' 로 한 번 보여 주고 다음 보고서부터는 빠진다.
     const current = new Map(value.inspection.items.map(item => [`insp_${item.key}`, item]));
+    // 지난 보고서에서 이어진 작업 건 연결도 이어받는다(이번에 따로 정하지 않았으면).
+    const links = { ...(previous ? normalizeReport(previous).links : {}), ...value.links };
+    const cases = rows(options.cases);
     const withCarry = carryOverActions(previous, value).map(item => {
       const now = current.get(item.key);
       if (!now || now.status === "na" || value.actions.some(own => own.key === item.key)) return item;
       if (now.status === "good") return { ...item, status: "done", plan: item.plan || `${dateLabel(value.inspection.date, false)} 점검에서 정상 확인` };
       return { ...item, status: now.status, finding: now.note || item.finding };
     });
-    const actions = actionsFromInspection({ ...value, actions: withCarry });
+    const actions = actionsFromInspection({ ...value, actions: withCarry }).map(item => {
+      const caseKey = links[String(item.key || "").replace(/^insp_/u, "")];
+      const progress = caseKey ? caseProgress(cases.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey))) : null;
+      if (!progress) return item;
+      if (progress.done) return { ...item, status: "done", plan: `${progress.completedAt ? `${dateLabel(progress.completedAt, false)} ` : ""}수리 완료` };
+      // 작업 건이 아직 안 끝났으면 점검 기본값 '양호' 보다 작업 건이 맞다.
+      return { ...item, status: item.status === "done" ? "fix" : item.status, plan: `작업 진행 중${progress.step ? ` (${progress.step})` : ""}`, caseKey };
+    });
     const nextPeriodValue = nextPeriod(value.period);
     return {
       id: value.id,
@@ -537,6 +567,8 @@
     validateDraft,
     normalizeDelivery,
     recipientFor,
+    normalizeLinks,
+    caseProgress,
     kakaoDetails,
     documentNo,
     autoSummary,

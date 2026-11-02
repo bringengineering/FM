@@ -53,3 +53,4 @@
 .pr-ai header small { color: #6B7684; flex: 1; }
 .pr-ai ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .pr-applied { color: #2B6E4F; font-weight: 800; font-size: 12px; }
+.pr-linked { color: #1F5AA6; font-weight: 700; }
