@@ -4863,7 +4863,40 @@
 
   function normalizedPhone(value) { return String(value || "").replace(/\D/gu, ""); }
 
+  // 발송 이력을 열면 아직 '전달 확인 중' 인 최근 문서 발송(7일 안, 최대 10건)을 한 번씩 조용히 확인한다.
+  // 직원이 줄마다 '상태 확인' 을 눌러야 전달 완료가 보이던 것을 없앤다. 확인은 읽기만 하고 재발송하지 않는다.
+  const autoCheckedDeliveries = new Set();
+  let autoDeliveryCheckRunning = false;
+  async function autoRefreshPendingDeliveries() {
+    if (autoDeliveryCheckRunning || !canAdministerSecurity() || typeof api.readCustomerDocumentDelivery !== "function") return;
+    const generation = authGeneration;
+    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const pending = customerMessageDeliveries().filter(row => row.documentType === "completion_report" && row.status === "전달 확인 중"
+      && /^[A-Za-z0-9_-]{1,120}$/.test(String(row.messageId || "")) && !autoCheckedDeliveries.has(`${generation}|${row.messageId}`)
+      && Date.parse(row.requestedAt || "") >= since).slice(0, 10);
+    if (!pending.length) return;
+    autoDeliveryCheckRunning = true;
+    let changed = false;
+    try {
+      for (const row of pending) {
+        autoCheckedDeliveries.add(`${generation}|${row.messageId}`);
+        try {
+          const result = await api.readCustomerDocumentDelivery({messageId: row.messageId});
+          if (generation !== authGeneration) return;
+          if (result?.ok && ["requested", "delivered", "failed", "unknown"].includes(result.status)) {
+            customerDocumentDeliveryStatus.set(row.messageId, {generation, status: result.status});
+            changed = changed || result.status !== "requested";
+          }
+        } catch (_) { /* 다음에 '상태 확인' 으로 다시 볼 수 있다 */ }
+      }
+    } finally {
+      autoDeliveryCheckRunning = false;
+      if (changed && generation === authGeneration && currentView === "customerAlimTalk" && !customerAlimTalkState.busy) renderCustomerAlimTalk();
+    }
+  }
+
   function renderCustomerAlimTalk() {
+    setTimeout(() => { void autoRefreshPendingDeliveries(); }, 0);
     const state = customerAlimTalkState;
     const customers = (store.customers || []).filter(item => item && item.id && !item.archivedAt && !item.deletedAt && item.deleted !== true);
     state.selectedCustomerIds = state.selectedCustomerIds.filter(id => customers.some(customer => String(customer.id) === String(id)));
@@ -5063,6 +5096,8 @@
       if (generation !== authGeneration || state.receipt !== receipt) return;
       if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error(result?.error || "전달 상태를 확인하지 못했습니다. 재발송하지 말고 잠시 후 상태를 다시 확인해 주세요.");
       receipt.status = result.status;
+      // 아래 발송 이력도 같은 결과를 보여야 한다(전달 완료 알림 뒤에도 '전달 확인 중' 으로 남았다).
+      customerDocumentDeliveryStatus.set(receipt.messageId, {generation, status: result.status});
       receipt.failureCode = /^(?:[AB]\d{3}|\d{4})$/.test(String(result.failureCode || "")) ? result.failureCode : "";
       state.result = result.status === "delivered" ? "카카오톡 전달이 완료됐습니다. 고객의 읽음 여부와는 다릅니다."
         : result.status === "failed" ? "알림톡 전달에 실패했습니다. 업체 결과 코드: " + (receipt.failureCode || "확인 필요")
@@ -9917,7 +9952,7 @@
     renderWorkReports();
     const left = result.skipped + result.undated;
     if (!result.photos) {
-      showToast(result.undated && !result.skipped ? "원본 촬영 시각이 있는 사진이 없어 나누지 못했습니다. 사진별로 작업 단계를 골라 주세요." : `구역마다 촬영 간격이 ${P.COMMON_SPLIT_GAP_MINUTES}분 이상 벌어진 곳이 없어 나누지 못했습니다. 사진별로 골라 주세요.`, "error");
+      showToast(result.undated && !result.skipped ? "원본 촬영 시각이 있는 사진이 없어 나누지 못했습니다. 사진별로 작업 단계를 골라 주세요." : "작업 전·후 사이로 볼 만한 촬영 공백(15분 이상, 또는 다른 간격보다 뚜렷이 긴 5분 이상)을 찾지 못했습니다. 사진별로 골라 주세요.", "error");
       return;
     }
     showToast(`${result.areas}개 구역 ${result.photos}장을 촬영 시각 순서로 전·후 추천했습니다.${left ? ` ${left}장은 시각 정보·간격이 부족해 그대로 두었습니다.` : ""} 사진을 확인해 주세요.`, "success");
@@ -10108,6 +10143,7 @@
       reportState.draft = R.normalizeReport(Object.assign({}, latest, { summary: text }));
       reportState.aiDraftAt = new Date().toISOString();
       reportState.aiSummaryDate = { id: draft.id, date: draft.workDate };
+      reportState.aiSummaryText = text;
       showToast("AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
     } catch (error) {
       if (active()) {
@@ -10358,6 +10394,7 @@
     if (typeof R.retargetDate === "function" && writtenFor && raw.workDate && raw.workDate !== writtenFor) {
       const moved = R.retargetDate(String(raw.summary || ""), writtenFor, String(raw.workDate));
       if (moved !== String(raw.summary || "")) {
+        if (reportState.aiSummaryText && reportState.aiSummaryText === String(raw.summary || "")) reportState.aiSummaryText = moved;
         raw.summary = moved;
         if (form.elements.summary) form.elements.summary.value = moved;
       }
@@ -15520,6 +15557,7 @@
       }
       reportState.draft.summary = reportState.aiSuggestion;
       reportState.aiSummaryDate = { id: reportState.draft.id, date: reportState.aiSuggestionDate || reportState.draft.workDate };
+      reportState.aiSummaryText = reportState.draft.summary;
       reportState.aiSuggestion = "";
       reportState.aiDraftAt = new Date().toISOString();
       renderWorkReports(); return;
@@ -18057,6 +18095,13 @@
       const orderSelect = form && form.elements.cleaningOrderId;
       const linkedOrder = cleaningOrderState.orders.find(item => item.id === orderSelect?.value);
       if (linkedOrder && String(linkedOrder.buildingId || "") !== String(event.target.value || "")) orderSelect.value = "";
+      // 다른 건물 사진으로 쓴 AI 요약을 손대지 않은 채 남기면 엉뚱한 건물 내용이 나간다(2026-11-03 재현).
+      // 사람이 고친 문장은 지우지 않는다.
+      if (form?.elements.summary && reportState.aiSummaryText && form.elements.summary.value === reportState.aiSummaryText) {
+        form.elements.summary.value = "";
+        reportState.aiSummaryText = "";
+        reportState.aiSummaryDate = null;
+      }
       syncReportDraft();
       return;
     }

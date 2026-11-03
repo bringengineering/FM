@@ -697,14 +697,21 @@
   const COMMON_SPLIT_GAP_MINUTES = 15;
   // 공백 한쪽에 사진이 너무 적으면 그 공백은 '작업 전·후 사이' 가 아니라 따로 찍은
   // 한두 장일 가능성이 크다. 양쪽 모두 2장 이상, 전체의 15% 이상일 때만 기준으로 쓴다.
-  function sessionCut(list, gap) {
+  // 짧게 끝난 현장(2026-11-03 햇빛빌라: 전 16장 10:46~10:49 → 13분 공백 → 후 22장 11:02~11:04)은
+  // 15분에 못 미쳐도 전·후 사이가 분명하다. 그날 전체 흐름이 8장 이상이고, 가장 긴 공백이
+  // 5분 이상이면서 두 번째로 긴 공백의 5배 이상이면 그 자리를 경계로 본다(구역별 작은 묶음에는 쓰지 않는다).
+  const COMMON_SPLIT_ADAPTIVE_MINUTES = 5;
+  function sessionCut(list, gap, adaptive = false) {
     const minimum = Math.max(2, Math.ceil(list.length * 0.15));
-    let cut = -1, widest = 0;
-    for (let index = 1; index < list.length; index += 1) {
-      const minutes = Capture.differenceMinutes(list[index - 1].captured, list[index].captured);
-      if (minutes >= gap && minutes > widest && index >= minimum && list.length - index >= minimum) { widest = minutes; cut = index; }
-    }
-    return cut < 0 ? null : { at: list[cut].captured.local, minutes: widest };
+    const gaps = [];
+    for (let index = 1; index < list.length; index += 1) gaps.push({ index, minutes: Capture.differenceMinutes(list[index - 1].captured, list[index].captured) });
+    const eligible = gaps.filter(entry => entry.index >= minimum && list.length - entry.index >= minimum).sort((left, right) => right.minutes - left.minutes);
+    const best = eligible[0];
+    if (!best) return null;
+    if (best.minutes >= gap) return { at: list[best.index].captured.local, minutes: best.minutes };
+    if (!adaptive || list.length < 8 || best.minutes < COMMON_SPLIT_ADAPTIVE_MINUTES) return null;
+    const second = Math.max(0, ...gaps.filter(entry => entry !== best).map(entry => entry.minutes));
+    return best.minutes >= second * 5 ? { at: list[best.index].captured.local, minutes: best.minutes } : null;
   }
   function splitCommonByCaptureTime(plan, options) {
     const gap = Number(options && options.gapMinutes) > 0 ? Number(options.gapMinutes) : COMMON_SPLIT_GAP_MINUTES;
@@ -720,7 +727,7 @@
       if (!visits.has(visitOf(captured))) visits.set(visitOf(captured), []);
       visits.get(visitOf(captured)).push({ id: row.id, captured });
     }
-    const cuts = new Map([...visits].map(([visit, list]) => [visit, sessionCut(list.sort(byTime), gap)]));
+    const cuts = new Map([...visits].map(([visit, list]) => [visit, sessionCut(list.sort(byTime), gap, true)]));
     // 2) 나눌 대상: 구역이 정해졌고, 아직 미분류이며, 사람이 고르지 않은 사진.
     const targets = new Map();
     let undated = 0;
