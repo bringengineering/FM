@@ -59,7 +59,8 @@ test('administrator UI labels web auto updates and limits EXE controls to electr
 test('background CRM updates do not remount the company wallboard while an approval code is being entered',()=>{
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
  const section=(startText,endText)=>{const start=source.indexOf(startText),end=source.indexOf(endText,start);assert.ok(start>=0&&end>start,`${startText} implementation should exist`);return source.slice(start,end);};
- const guarded=/if \(currentView !== "companyWallboard"\) render\(\);/;
+ const guarded=/if \(!selfRefreshingView\(\)\) render\(\);/;
+ assert.match(section('function selfRefreshingView()', '}'),/currentView === "companyWallboard"/);
  assert.match(section('function applyCustomerPhotos(', 'async function refreshCustomerPhotos('),guarded);
  assert.match(section('async function refreshRendererOverlays(', 'async function refreshDriveImportCandidates('),guarded);
  assert.match(section('function applyRemoteStore(data) {', 'function flushPendingRemote()'),guarded);
