@@ -11296,32 +11296,32 @@ const OWNER_NOTICE_TEMPLATES_ = {
   owner_cleaning_schedule: {
     code: "BRINGCLEANSCHEDULEV1", property: "KAKAO_OWNER_TEMPLATE_CLEANING_SCHEDULE", label: "청소 일정 안내",
     variables: ["건물주소", "작업명", "작업일", "예정시간"],
-    body: "[BRING CARE 청소 일정 안내]\n#{건물주소} 건물주님, 오늘 예정된 청소 일정을 안내드립니다.\n\n작업명: #{작업명}\n작업일: #{작업일}\n예정시간: #{예정시간}\n\n작업이 끝나면 결과보고서를 보내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 청소 일정 안내]\n#{건물주소} 건물주님, 오늘 예정된 청소 일정을 안내드립니다.\n\n작업명: #{작업명}\n작업일: #{작업일}\n예정시간: #{예정시간}\n\n작업이 끝나면 결과보고서를 보내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_move_out: {
     code: "BRINGMOVEOUTNOTICEV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_OUT", label: "퇴실 일정 안내",
     variables: ["건물주소", "호실", "퇴실일"],
-    body: "[BRING CARE 퇴실 일정 안내]\n#{건물주소} 건물주님, #{호실}호 세입자 퇴실 일정을 안내드립니다.\n\n퇴실예정일: #{퇴실일}\n\n퇴실 전 공실 준비(중개 접수·입주청소)를 순서대로 진행하고 단계마다 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 퇴실 일정 안내]\n#{건물주소} 건물주님, #{호실}호 세입자 퇴실 일정을 안내드립니다.\n\n퇴실예정일: #{퇴실일}\n\n퇴실 전 공실 준비(중개 접수·입주청소)를 순서대로 진행하고 단계마다 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_broker_listed: {
     code: "BRINGBROKERLISTEDV1", property: "KAKAO_OWNER_TEMPLATE_BROKER_LISTED", label: "중개 접수 안내",
     variables: ["건물주소", "호실", "중개사무소", "접수일"],
-    body: "[BRING CARE 중개 접수 안내]\n#{건물주소} 건물주님, #{호실}호 공실을 중개사무소에 접수했습니다.\n\n중개사무소: #{중개사무소}\n접수일: #{접수일}\n\n방 보기 일정이 잡히면 다시 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 중개 접수 안내]\n#{건물주소} 건물주님, #{호실}호 공실을 중개사무소에 접수했습니다.\n\n중개사무소: #{중개사무소}\n접수일: #{접수일}\n\n방 보기 일정이 잡히면 다시 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_room_viewing: {
     code: "BRINGROOMVIEWINGV1", property: "KAKAO_OWNER_TEMPLATE_ROOM_VIEWING", label: "방 보기 안내",
     variables: ["건물주소", "호실", "방문일시", "중개사무소"],
-    body: "[BRING CARE 방 보기 안내]\n#{건물주소} 건물주님, #{호실}호 방 보기 일정을 안내드립니다.\n\n방문일시: #{방문일시}\n방문: #{중개사무소} 및 입주희망자\n\n방문 결과는 확인되는 대로 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 방 보기 안내]\n#{건물주소} 건물주님, #{호실}호 방 보기 일정을 안내드립니다.\n\n방문일시: #{방문일시}\n방문: #{중개사무소} 및 입주희망자\n\n방문 결과는 확인되는 대로 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_lease_contract: {
     code: "BRINGLEASECONTRACTV1", property: "KAKAO_OWNER_TEMPLATE_LEASE_CONTRACT", label: "신규 계약 안내",
     variables: ["건물주소", "호실", "계약일", "입주일", "계약조건"],
-    body: "[BRING CARE 신규 계약 안내]\n#{건물주소} 건물주님, #{호실}호 신규 계약 일정을 안내드립니다.\n\n계약일: #{계약일}\n입주예정일: #{입주일}\n계약조건: #{계약조건}\n\n입주 전 입주청소 일정도 이어서 안내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 신규 계약 안내]\n#{건물주소} 건물주님, #{호실}호 신규 계약 일정을 안내드립니다.\n\n계약일: #{계약일}\n입주예정일: #{입주일}\n계약조건: #{계약조건}\n\n입주 전 입주청소 일정도 이어서 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_move_in_cleaning: {
     code: "BRINGMOVEINCLEANV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_IN_CLEANING", label: "입주청소 안내",
     variables: ["건물주소", "호실", "작업일", "예정시간", "입주일"],
-    body: "[BRING CARE 입주청소 안내]\n#{건물주소} 건물주님, #{호실}호 입주청소 일정을 안내드립니다.\n\n청소일: #{작업일}\n예정시간: #{예정시간}\n입주예정일: #{입주일}\n\n청소가 끝나면 결과보고서를 보내드리겠습니다.\n" + OWNER_NOTICE_CONTACT_
+    body: "[BRING CARE 입주청소 안내]\n#{건물주소} 건물주님, #{호실}호 입주청소 일정을 안내드립니다.\n\n청소일: #{작업일}\n예정시간: #{예정시간}\n입주예정일: #{입주일}\n\n청소가 끝나면 결과보고서를 보내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
   },
   owner_subscription_due: {
     code: "BRINGSUBSCRIPTIONDUEV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE", label: "구독료 결제일 안내",
