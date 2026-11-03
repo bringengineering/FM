@@ -402,3 +402,9 @@ test("청소 사진: 작업 중 사진만 있는 구역에 '작업 전 0장과 �
   const view = P.buildView({ ...base, cleaningReportIds: [] }, works);
   assert.doesNotMatch(createPeriodicReportHtml(view, { images: {} }), /class="legend"/);
 });
+
+test("다음 정기 관리보고서는 보낼 날짜 대신 관리 기간을 적는다(늦게 만들어도 지난 날짜가 찍히지 않게)", () => {
+  const view = P.buildView({ id: "r1", buildingId: "b1", period: "2026-10-1", inspection: { date: "2026-10-13", items: [] } }, [], {});
+  assert.deepEqual(view.nextSchedule, [{ label: "다음 정기 관리보고서", date: "2026년 10월 2차 (10. 16. ~ 10. 31. 관리분)" }]);
+  assert.doesNotMatch(JSON.stringify(view.nextSchedule), /이후 발송/);
+});

@@ -467,7 +467,8 @@
       summary: value.summary || autoSummary(value, cleanings),
       followUp: value.followUp,
       nextSchedule: value.nextSchedule.length ? value.nextSchedule.map(item => ({ label: item.label, date: dateLabel(item.date) }))
-        : nextPeriodValue ? [{ label: "다음 정기 관리보고서", date: `${periodLabel(nextPeriodValue.key)} (${dateLabel(nextPeriodValue.to, false).replace(/\(.\)$/u, "")} 이후 발송)` }] : [],
+        // 보낼 날짜는 적지 않는다. 늦게 만들면 "10. 31. 이후 발송" 처럼 이미 지난 날이 찍힌다.
+        : nextPeriodValue ? [{ label: "다음 정기 관리보고서", date: `${periodLabel(nextPeriodValue.key)} (${[nextPeriodValue.from, nextPeriodValue.to].map(day => dateLabel(day, false).replace(/\(.\)$/u, "").trim()).join(" ~ ")} 관리분)` }] : [],
     };
   }
 
