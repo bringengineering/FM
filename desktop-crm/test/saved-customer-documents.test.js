@@ -14,7 +14,7 @@ const bytes = Buffer.from("%PDF-1.7\nfixture");
 const customer = {id: "customer_a", name: "샘플 고객", phone: "010-0000-0000"};
 const checked = Pdf.verifyPdf(bytes);
 function record(extra = {}) {
-  return {id: "saved_a", title: "샘플 견적서", driveFileId: "drive_pdf_a", updatedAt: "2026-10-02T00:00:00.000Z",
+  return {id: "saved_00000000-0000-4000-8000-000000000001", title: "샘플 견적서", driveFileId: "drive_pdf_a", updatedAt: "2026-10-02T00:00:00.000Z",
     savedCustomerDocument: {version: 1, kind: "quote", customerId: customer.id, recipientPhone: Docs.phone(customer.phone), sha256: checked.sha256, size: checked.size, month: ""}, ...extra};
 }
 function request(row = record()) {
@@ -22,14 +22,23 @@ function request(row = record()) {
 }
 test("저장본 목록은 고객 ID·현재 연락처·종류를 확인하고 삭제·변경 기록을 차단한다", () => {
   const rows = [record(), record({id: "archived", archivedAt: "2026-10-02"}), record({id: "deleted", deleted: true})];
-  assert.deepEqual(Docs.list(rows, customer, "quote").map(row => row.id), ["saved_a"]);
+  assert.deepEqual(Docs.list(rows, customer, "quote").map(row => row.id), [record().id]);
   assert.equal(Docs.list(rows, {...customer, phone: "01011111111"}, "quote").length, 0);
   assert.equal(Docs.list(rows, {...customer, id: "another"}, "quote").length, 0);
   assert.equal(Docs.list(rows, {...customer, deletedAt: "now"}, "quote").length, 0);
   assert.equal(Docs.list(rows, customer, "buildingMonthlyReport").length, 0);
-  assert.equal(Docs.resolve(rows, [customer], request()).record.id, "saved_a");
+  assert.equal(Docs.resolve(rows, [customer], request()).record.id, record().id);
   assert.throws(() => Docs.resolve(rows, [customer], {...request(), sha256: "f".repeat(64)}), /변경/);
   assert.throws(() => Docs.resolve(rows, [customer], {...request(), updatedAt: ""}), /변경/);
+});
+test("연락처가 바뀌어도 고객별 과거 견적은 조회하되 발송 검증은 실패한다", () => {
+  const changed = {...customer, phone:"01011111111"}, rows = [record()];
+  assert.equal(Docs.historyList(rows, changed, "quote").length, 1);
+  assert.equal(Docs.historyList(rows, {...changed,id:"other"}, "quote").length, 0);
+  assert.equal(Docs.resolve(rows,[changed],request(),{history:true}).record.id,record().id);
+  assert.throws(() => Docs.resolve(rows,[changed],request()));
+  assert.throws(() => Docs.resolve(rows,[changed],{...request(),sha256:"0".repeat(64)},{history:true}));
+  assert.equal(Docs.historyList([record({deleted:true})],changed,"quote").length,0);
 });
 test("비정상 종류·경로·크기·보고월은 저장 메타데이터로 인정하지 않는다", () => {
   for (const kind of ["toString", "__proto__", "other"]) assert.equal(Docs.normalize(record({savedCustomerDocument: {...record().savedCustomerDocument, kind}})), null);
@@ -68,6 +77,14 @@ test("견적·월간 UI는 현재 초안 대신 명시적으로 고른 저장본
     assert.doesNotMatch(html, /<script>/);
   }
 });
+test("저장된 견적서 발송 이력은 재실행 후에도 보이고 중복 발송을 차단한다", () => {
+  const row = record({customerDocumentDelivery: {status:"requested", requestedAt:"2026-10-02T01:00:00Z", messageId:"message_fixture"}});
+  const listed = Docs.list([row], customer, "quote");
+  assert.equal(listed[0].customerDocumentDelivery.messageId, "message_fixture");
+  const html = UI.render({customers:[customer],selectedCustomerIds:[customer.id],category:"quote",savedDocuments:listed,savedDocumentId:row.id,writable:true,adminCanSend:true,kakaoReady:true});
+  assert.match(html, /이미 발송 요청한 저장본/);
+  assert.match(html, /data-alimtalk-send[^>]*disabled/);
+});
 const mainSource = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
 const service = mainSource.slice(mainSource.indexOf("function savedDocumentSession("), mainSource.indexOf("async function sendQuoteToCustomerByKakao("));
 function harness(options = {}) {
@@ -76,20 +93,20 @@ function harness(options = {}) {
   let active = true;
   const state = {user: {uid: "user_a", role: options.role || "admin"}};
   const context = {Buffer, crypto, Object, Date, String, Error, WorkReportMessage: require("../src/work-report-message"), SavedCustomerDocuments: Docs, SavedCustomerDocumentPdf: Pdf,
-    WorkReportArchive: require("../src/work-report-archive"),
+    WorkReportArchive: require("../src/work-report-archive"), SavedDocumentDelivery: require("../src/saved-document-delivery"), MessagePolicy: require("../src/message-policy"),
     authState: () => state, isMarketingOnlySession: () => Boolean(options.marketing),
     assertMainMutationAllowed: () => {if (!["member","admin"].includes(state.user?.role)) throw Error("denied");},
     remoteClient: {captureSessionGuard: () => 1, assertSessionGuardActive: () => {if (!active) throw Error("session changed");},
       loadStore: async () => data, loadWorkReports: async () => ({reports: options.reports || []}),
       dbReadWithEtag: async location => {events.push(["etag-read",location]);return {value:data.buildingDocuments.find(row=>row.id===location.split("/").at(-1)) || null,etag:'"fixture"'};},
       dbConditionalPut: async (location,value,etag) => {
-        assert.match(location,/^crmShared\/data\/buildingDocuments\/saved_wr_[a-f0-9]{40}$/);
+        assert.match(location,/^crmShared\/data\/buildingDocuments\/(?:saved_wr_[a-f0-9]{40}|saved_[0-9a-f-]{36})$/);
         assert.equal(etag,'"fixture"');events.push(["conditional-put",location]);
         if(options.conflictOnce){options.conflictOnce=false;throw Object.assign(Error("conflict"),{code:"BUILDING_SCHEDULE_CONFLICT"});}
         data.buildingDocuments=[...data.buildingDocuments.filter(row=>row.id!==value.id),value];return {ok:true};
       },
       saveStoreNow: async value => {events.push(["persist", value]); return {ok: true};}},
-    QuoteCore: {normalizeDraft: value => value, normalizeSupplier: () => {}, normalizeRecipient: () => {}},
+    QuoteCore: {normalizeDraft: value => value, normalizeSupplier: () => {}, normalizeRecipient: () => {}, resolveCustomer: require("../src/quote-core").resolveCustomer},
     readLocalQuoteSeal: async () => "fixture", createQuotePdfBytes: async () => bytes,
     BuildingDocsDrive: {uploadDocument: async (_deps, input) => {events.push(["upload", input]); return {id: "uploaded_pdf"};}},
     driveApiDeps: () => ({}),
@@ -102,14 +119,46 @@ function harness(options = {}) {
       if (action === "createAndSend") return options.sendFailure ? {ok: false, code: "DELIVERY_PROVIDER_REJECTED", error: "업체가 요청을 거절했습니다."} : {ok: true, documentId: "delivery_fixture", messageId: "message_fixture", status: "requested"};
       return {ok: true};
     },
-    createWorkReportPdfArtifact: async ({report}) => ({ok: true, bytes, photos: options.photoFailure ? 0 : report.items.reduce((n, item) => n + item.before.length + item.after.length, 0)}),
+    createWorkReportPdfArtifact: async ({report}) => ({ok: true, bytes, photos: options.photoFailure ? 0 : report.items.reduce((n, item) => n + item.before.length + (item.during || []).length + item.after.length, 0)}),
+    WorkReportCore: require("../src/work-report-core"),
   };
   vm.createContext(context); vm.runInContext(service, context);
   return {context, data, events, state};
 }
+test("견적 원본을 저장하고 재조회 후 수정본을 별도로 저장하며 이전 문서를 보존한다", async () => {
+  const h = harness({role:"member"});
+  const quoteCore = require("../src/quote-core");
+  h.context.QuoteCore = quoteCore;
+  const quote = quoteCore.bindCustomer(quoteCore.createManualDraft({supplier:{businessName:"테스트",representative:"대표",registrationNumber:"000-00-00000"}}), [customer], customer.id);
+  const first = (await h.context.saveCustomerDocument({kind:"quote",quote})).record;
+  assert.deepEqual(first.quoteDraft.quote.items,quote.items);
+  const ref = {kind:"quote",customerId:customer.id,documentId:first.id,updatedAt:first.updatedAt,sha256:first.savedCustomerDocument.sha256};
+  const reorder = value => Array.isArray(value) ? value.map(reorder) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,val])=>[key,reorder(val)])) : value;
+  first.quoteDraft.quote = reorder(first.quoteDraft.quote);
+  assert.equal((await h.context.loadSavedQuoteDraft(ref)).quote.customerId, customer.id);
+  first.quoteDraft.quote.items[0].unitPrice = 9999;
+  await assert.rejects(h.context.loadSavedQuoteDraft(ref), /원본이 변경/);
+  first.quoteDraft.quote = quote;
+  h.data.customers = [{...customer,phone:"01011111111"}];
+  const loaded = await h.context.loadSavedQuoteDraft(ref);
+  assert.equal(loaded.quote.recipientPhone,"01011111111");
+  assert.deepEqual(loaded.quote.items,quote.items);
+  loaded.quote.projectName = "수정 견적";
+  const second = (await h.context.saveCustomerDocument({kind:"quote",quote:loaded.quote,quoteSource:loaded.source})).record;
+  assert.notEqual(first.id,second.id);
+  assert.equal(second.quoteDraft.parentDocumentId,first.id);
+  assert.equal(h.data.buildingDocuments.find(row=>row.id===first.id).quoteDraft.quote.projectName,quote.projectName);
+  assert.throws(() => Docs.resolve(h.data.buildingDocuments,h.data.customers,ref));
+  await assert.rejects(h.context.loadSavedQuoteDraft({...ref,sha256:"0".repeat(64)}));
+  await assert.rejects(h.context.loadSavedQuoteDraft({...ref,customerId:"other"}));
+  await assert.rejects(h.context.loadSavedQuoteDraft(request()));
+  await assert.rejects(h.context.saveCustomerDocument({kind:"quote",quote:loaded.quote,quoteSource:{...loaded.source,sha256:"0".repeat(64)}}));
+  h.state.user = null;
+  await assert.rejects(h.context.loadSavedQuoteDraft(ref));
+});
 test("메인 저장은 수신자 PDF만 비공개 회사 Drive에 보관하고 실제 성공 후 CRM 메타데이터를 기록한다", async () => {
   const h = harness({role: "member"});
-  const result = await h.context.saveCustomerDocument({kind: "quote", quote: {projectName: "샘플", recipient: customer.name, recipientPhone: customer.phone, company: {}}});
+  const result = await h.context.saveCustomerDocument({kind: "quote", quote: {customerId: customer.id, projectName: "샘플", recipient: "문서용 성명", recipientPhone: customer.phone, company: {}}});
   assert.equal(result.ok, true);
   assert.ok(Docs.normalize(result.record));
   assert.deepEqual(h.events.map(item => item[0]), ["upload", "persist"]);
@@ -156,12 +205,13 @@ test("저장본 발송은 관리자·최신 수신자·해시를 검증하고 �
   }
   const failed = harness({sendFailure: true});
   await assert.rejects(failed.context.sendSavedCustomerDocument(request()));
-  assert.equal(failed.events.at(-1)[0], "createAndSend");
+  assert.equal(failed.events.filter(item => item[0] === "createAndSend").length, 1);
+  assert.equal(failed.data.buildingDocuments[0].customerDocumentDelivery.status, "failed");
   const anonymous = harness(); anonymous.state.user = null;
   await assert.rejects(anonymous.context.sendSavedCustomerDocument(request()));
 });
 test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 기록·누락 사진은 보내지 않는다", async () => {
-  const report = {id: "report_a", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", ownerContact: customer.phone, updatedAt: "revision_a", items: [{before: [{}], after: [{}]}]};
+  const report = {id: "report_a", siteAddress:"강원특별자치도 예시시 예시로 123, 201호", title:"공용부 청소", ownerContact: customer.phone, updatedAt: "revision_a", items: [{key: "floor", before: [{id: "before_a"}], after: [{id: "after_a"}]}]};
   const input = {kind: "workReport", documentId: report.id, customerId: customer.id, updatedAt: report.updatedAt, report: {buildingName: "forged"}};
   const h = harness({reports: [report]});
   assert.equal((await h.context.sendSavedCustomerDocument(input)).ok, true);
@@ -170,10 +220,15 @@ test("저장 결과보고서는 서버 원본을 다시 조회하고 변경된 �
   assert.equal(h.events.find(item => item[0] === "createAndSend")[1].documentName, "예시시 예시로 123 공용부 청소 결과보고서");
   await assert.rejects(h.context.sendSavedCustomerDocument({...input, updatedAt: "old"}), /변경/);
   await assert.rejects(harness({reports: [report], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
+  // 공용부처럼 작업 중 사진만 있는 보고서도 사진을 못 읽으면 보내지 않는다.
+  const duringOnly = {...report, items: [{key: "floor", before: [], during: [{id: "during_a"}], after: []}]};
+  await assert.rejects(harness({reports: [duringOnly], photoFailure: true}).context.sendSavedCustomerDocument(input), /사진/);
 });
 test("저장·발송 IPC는 mutation이고 미리보기 또한 신뢰된 발신자·로그인 검증을 거친다", () => {
   for (const suffix of ["save", "send"]) assert.equal(Policy.classification("crm:customer-document-" + suffix), "mutation");
   assert.doesNotThrow(() => Policy.assertRegistered("crm:customer-document-preview"));
+  assert.equal(Policy.classification("crm:quote-draft-load"), "control");
+  assert.ok(mainSource.includes('secureCanonicalHandle("crm:quote-draft-load"'));
   for (const suffix of ["save","send","preview"]) assert.ok(mainSource.includes('secureCanonicalHandle("crm:customer-document-' + suffix + '"'));
   const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
   const send = app.slice(app.indexOf("  async function sendCustomerAlimTalk()"), app.indexOf("  async function refreshDocumentDeliveryCapabilities()"));

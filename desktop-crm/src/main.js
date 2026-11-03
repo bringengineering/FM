@@ -16,6 +16,7 @@ const { createBuildingReportWriter } = require("./local-gemini-building-report")
 const { selectMonthlyReportPhotosWithGateway, MAX_IMAGES: MAX_MONTHLY_REPORT_PHOTOS } = require("./ai-monthly-report-photo-client");
 const Core = require("./core");
 const { createService: createContractBuildingMapService } = require("./contract-building-map-service");
+const { createMapGateway } = require("./contract-building-map-gateway");
 const OfficeCore = require("./office-core");
 const OfficeRfidCore = require("./office-rfid-core");
 const OfficeRfidAttendanceCore = require("./office-rfid-attendance-core");
@@ -26,6 +27,7 @@ const { createWeeklyDeliveryService } = require("./weekly-report-delivery");
 const { weeklyReportPdfHtml } = require("./weekly-report-pdf");
 const QuoteCore = require("./quote-core");
 const SavedCustomerDocuments = require("./saved-customer-documents");
+const SavedDocumentDelivery = require("./saved-document-delivery");
 const MessagePolicy = require("./message-policy");
 const SavedCustomerDocumentPdf = require("./saved-customer-document-pdf");
 const WorkReportArchive = require("./work-report-archive");
@@ -33,6 +35,8 @@ const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const ReportPdfRenderer = require("./report-pdf-renderer");
 const WorkReportCore = require("./work-report-core");
+const PeriodicReportCore = require("./periodic-report-core");
+const { createPeriodicReportHtml, periodicReportPdfPhotos } = require("./periodic-report-owner-pdf");
 const WorkReportMessage = require("./work-report-message");
 const WorkOutcomeDocx = require("./work-outcome-docx");
 const WorkOutcomePptx = require("./work-outcome-pptx");
@@ -52,6 +56,7 @@ const DriveOAuth = require("./drive-oauth");
 const ReportPhotoPlan = require("./report-photo-plan");
 const PhotoCaptureTime = require("./photo-capture-time");
 const HeicJpegConverter = require("./heic-jpeg-converter");
+const JpegOrientation = require("./jpeg-orientation");
 const TelegramCore = require("./telegram-core");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
@@ -200,10 +205,12 @@ function aiGatewayUrlForTask(task) {
     : CRM_AI_GATEWAY_URL;
 }
 const CRM_AI_PHOTO_CLASSIFY_URL = new URL("/v1/photo-classify", CRM_AI_GATEWAY_URL).href;
+const CRM_AI_INSPECTION_REVIEW_URL = new URL("/v1/inspection-review", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_MONTHLY_REPORT_PHOTO_SELECT_URL = new URL("/v1/monthly-report-photo-select", CRM_AI_GATEWAY_URL).href;
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
+const CRM_MAP_GATEWAY_URL = new URL("/v1/map", CRM_AI_GATEWAY_URL).href;
 // OAuth client IDs are public identifiers, not secrets. A Desktop-app client is
 // still supplied outside source so each installation can use the company Google
 // Cloud project without ever bundling a client secret.
@@ -2544,7 +2551,7 @@ async function exportAiQuote(input) {
   if (!new Set(["xlsx", "pdf"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
   const quote = QuoteCore.normalizeDraft(input.quote);
   QuoteCore.normalizeSupplier(quote.company, { requireComplete: true });
-  QuoteCore.normalizeRecipient(quote, { requireComplete: true });
+  QuoteCore.normalizeRecipient(quote, { requireName: true });
   const seal = localTestMode && process.env.BRING_CRM_SCREENSHOT_SEAL
     ? normalizeQuoteSealPng(await fs.readFile(process.env.BRING_CRM_SCREENSHOT_SEAL))
     : await readLocalQuoteSeal();
@@ -2601,6 +2608,15 @@ function archivedWorkReports() {
   return workReportArchiveService;
 }
 
+function validateSavedQuoteDraft(row, customerId) {
+  const stored = row?.quoteDraft;
+  if (stored?.version !== 1 || !stored.quote || !/^[a-f0-9]{64}$/.test(stored.sha256 || "")) throw new Error("편집 원본이 없는 견적서입니다.");
+  const quote = QuoteCore.normalizeDraft(stored.quote);
+  const hash = crypto.createHash("sha256").update(JSON.stringify(quote)).digest("hex");
+  if (quote.customerId !== String(customerId) || hash !== stored.sha256) throw new Error("저장 견적 원본이 변경되어 불러올 수 없습니다.");
+  return quote;
+}
+
 async function saveCustomerDocument(input) {
   const session = savedDocumentSession(true);
   const options = input && typeof input === "object" ? input : {};
@@ -2610,15 +2626,20 @@ async function saveCustomerDocument(input) {
   const rootFolderId = String(data?.company?.buildingDocsFolderId || "");
   if (!/^[A-Za-z0-9_-]{6,200}$/.test(rootFolderId)) throw new Error("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.");
   const customers = (data.customers || []).filter(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true);
-  let customer, building, bytes, title, month = "";
+  let customer, building, bytes, title, month = "", quoteSnapshot, quoteSource;
   if (options.kind === "quote") {
     const quote = QuoteCore.normalizeDraft(options.quote);
     QuoteCore.normalizeSupplier(quote.company, {requireComplete: true});
     QuoteCore.normalizeRecipient(quote, {requireComplete: true});
-    const matches = customers.filter(row => SavedCustomerDocuments.phone(row.phone) === SavedCustomerDocuments.phone(quote.recipientPhone)
-      && [row.name, row.company].some(value => String(value || "").trim() === quote.recipient));
-    if (matches.length !== 1) throw new Error("견적서 성명·전화번호와 일치하는 CRM 고객 한 명을 확인해 주세요.");
-    customer = matches[0];
+    customer = QuoteCore.resolveCustomer(quote, customers);
+    quoteSnapshot = quote;
+    if (options.quoteSource) {
+      const sourceRequest = {...options.quoteSource, kind: "quote", customerId: customer.id};
+      const source = SavedCustomerDocuments.resolve(data.buildingDocuments, customers, sourceRequest, {history: true});
+      const sourceRow = (data.buildingDocuments || []).find(row => row.id === source.record.id);
+      validateSavedQuoteDraft(sourceRow, customer.id);
+      quoteSource = sourceRequest;
+    }
     const seal = await readLocalQuoteSeal(); session.check();
     if (!seal) throw new Error("회사 인감을 등록한 후 견적서를 저장해 주세요.");
     bytes = await createQuotePdfBytes(quote, "recipient", seal);
@@ -2647,9 +2668,14 @@ async function saveCustomerDocument(input) {
   const record = {id, title: String(title).slice(0,160), buildingId: building?.id || "", docType: "etc", driveFileId: uploaded.id,
     updatedAt: now, updatedBy: session.user.uid, savedCustomerDocument: {version: 1, kind: options.kind, customerId: customer.id,
       recipientPhone: SavedCustomerDocuments.phone(customer.phone), sha256: checked.sha256, size: checked.size, month}};
+  if (quoteSnapshot) record.quoteDraft = {version: 1, quote: quoteSnapshot, sha256: crypto.createHash("sha256").update(JSON.stringify(quoteSnapshot)).digest("hex"), parentDocumentId: quoteSource?.documentId || ""};
   if (!SavedCustomerDocuments.normalize(record)) throw new Error("저장 문서 정보를 확인할 수 없습니다.");
   // Refresh after the upload so a concurrent CRM edit is not replaced by an old snapshot.
   const latest = await remoteClient.loadStore(); session.check();
+  if (quoteSource) {
+    SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, quoteSource, {history: true});
+    validateSavedQuoteDraft((latest.buildingDocuments || []).find(row => row.id === quoteSource.documentId), customer.id);
+  }
   if (!SavedCustomerDocuments.matches(record, (latest.customers || []).find(row => row.id === customer.id), options.kind)
     || (building && !(latest.buildings || []).some(row => row.id === building.id && row.ownerCustomerId === customer.id && !row.archivedAt))) throw new Error("고객·건물 정보가 변경되었습니다. 저장을 다시 시도해 주세요.");
   latest.buildingDocuments = [...(latest.buildingDocuments || []), record];
@@ -2658,14 +2684,25 @@ async function saveCustomerDocument(input) {
   return {ok: true, record};
 }
 
-async function readSavedCustomerPdf(input, session) {
+async function readSavedCustomerPdf(input, session, options = {}) {
   const data = await remoteClient.loadStore(); session.check();
-  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, input);
+  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, input, options);
   if (resolved.record.savedCustomerDocument.kind === "buildingMonthlyReport"
     && !(data.buildings || []).some(row => row && !row.archivedAt && row.id === resolved.record.buildingId && row.ownerCustomerId === resolved.customer.id)) throw new Error("저장 문서의 건물주 연결이 변경되었습니다.");
   const bytes = await SavedCustomerDocumentPdf.download(authenticatedDriveFetch, resolved.record.driveFileId, resolved.record.savedCustomerDocument);
   session.check();
   return {...resolved, bytes};
+}
+
+async function loadSavedQuoteDraft(input) {
+  const session = savedDocumentSession();
+  const data = await remoteClient.loadStore(); session.check();
+  const request = {...input, kind: "quote"};
+  const resolved = SavedCustomerDocuments.resolve(data.buildingDocuments, data.customers, request, {history: true});
+  const raw = (data.buildingDocuments || []).find(row => row.id === resolved.record.id);
+  const quote = validateSavedQuoteDraft(raw, resolved.customer.id);
+  quote.recipientPhone = String(resolved.customer.phone || "");
+  return {ok: true, quote, source: {documentId: resolved.record.id, updatedAt: resolved.record.updatedAt, sha256: resolved.record.savedCustomerDocument.sha256}};
 }
 
 async function readSavedWorkReportPdf(input, session) {
@@ -2676,18 +2713,19 @@ async function readSavedWorkReportPdf(input, session) {
   if (!report || !customer || !/^01\d{8,9}$/.test(SavedCustomerDocuments.phone(customer.phone))
     || SavedCustomerDocuments.phone(report.ownerContact) !== SavedCustomerDocuments.phone(customer.phone)) throw new Error("고객과 저장 결과보고서를 다시 선택해 주세요.");
   if (String(report.updatedAt || "") !== input.updatedAt) throw new Error("결과보고서가 변경되었습니다. 목록을 새로 확인해 주세요.");
-  const artifact = await createWorkReportPdfArtifact({report, company: data.settings?.quoteCompany || {},
-    secrets: {vendorNames: (data.partnerVendors || []).map(row => row.name).filter(Boolean), vendorAmounts: [], privateMemos: []}}, "owner");
+  const artifact = await createWorkReportPdfArtifact({report: WorkReportCore.withSiteAddress(report, data), company: data.settings?.quoteCompany || {},
+    secrets: WorkReportCore.reportSecrets(data, report)}, "owner");
   session.check();
   if (!artifact.ok) throw new Error(artifact.error || "저장 결과보고서를 만들지 못했습니다.");
-  const expectedPhotos = report.items.reduce((count, item) => count + item.before.length + item.after.length, 0);
+  // 작업 중 사진도 센다. 공용부 보고서는 작업 중 사진만으로 설 수 있다.
+  const expectedPhotos = WorkReportCore.photoCount(report);
   if (artifact.photoFailures || artifact.photos < expectedPhotos) throw new Error("결과보고서 사진을 모두 읽지 못했습니다. Drive 연결과 사진 권한을 확인해 주세요.");
   return {customer, bytes: artifact.bytes, report, record: {id: report.id, updatedAt: report.updatedAt, title: (report.buildingName || "건물") + " 작업 결과보고서", savedCustomerDocument: {kind: "workReport"}}};
 }
 
 async function previewSavedCustomerDocument(input) {
   const session = savedDocumentSession();
-  const {bytes} = input?.kind === "workReport" ? await (input.sha256 ? archivedWorkReports().read(input, session) : readSavedWorkReportPdf(input, session)) : await readSavedCustomerPdf(input, session);
+  const {bytes} = input?.kind === "workReport" ? await (input.sha256 ? archivedWorkReports().read(input, session) : readSavedWorkReportPdf(input, session)) : await readSavedCustomerPdf(input, session, input?.kind === "quote" ? {history: true} : {});
   SavedCustomerDocumentPdf.verifyPdf(bytes); session.check();
   const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "bring-saved-pdf-"));
   const file = path.join(folder, "report.pdf");
@@ -2702,6 +2740,33 @@ async function previewSavedCustomerDocument(input) {
 }
 
 const savedDocumentSendAttempts = new Map();
+async function mutateCustomerDocumentDelivery(id, change, session) {
+  if (!/^saved_[0-9a-f-]{36}$/.test(id)) throw new Error("저장 문서 식별자를 확인해 주세요.");
+  const location = `crmShared/data/buildingDocuments/${id}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    session.check();
+    const snapshot = await remoteClient.dbReadWithEtag(location, false, session.guard); session.check();
+    const row = snapshot.value;
+    if (!row || typeof row !== "object" || Array.isArray(row) || row.id !== id || !SavedCustomerDocuments.normalize(row)) throw new Error("저장 문서를 다시 확인해 주세요.");
+    const next = change(row);
+    if (!next || next.id !== id || !SavedCustomerDocuments.normalize(next)) throw new Error("발송 이력을 저장하지 못했습니다.");
+    try { await remoteClient.dbConditionalPut(location, next, snapshot.etag, false, session.guard); session.check(); return next; }
+    catch (error) { if (error.code !== "BUILDING_SCHEDULE_CONFLICT" || attempt === 2) throw error; }
+  }
+}
+const savedDocumentDelivery = SavedDocumentDelivery.createService({
+  mutate: mutateCustomerDocumentDelivery,
+  verify: async (input, session) => {
+    const latest = await remoteClient.loadStore(); session.check();
+    const {record, customer} = SavedCustomerDocuments.resolve(latest.buildingDocuments, latest.customers, input);
+    if (input.kind === "buildingMonthlyReport") {
+      const decision = MessagePolicy.evaluateMonthlyReportRequest(customer);
+      if (!decision.allowed) throw Object.assign(new Error(decision.message), {code: decision.code});
+      if (!(latest.buildings || []).some(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true && row.id === record.buildingId && row.ownerCustomerId === customer.id)) throw new Error("월간보고서 건물과 수신 고객의 연결을 다시 확인해 주세요.");
+    }
+  },
+  deliver: payload => runDocumentDelivery("createAndSend", payload),
+});
 async function sendSavedCustomerDocument(input) {
   const session = savedDocumentSession(true);
   if (session.user.role !== "admin") throw new Error("관리자만 고객에게 문서를 보낼 수 있습니다.");
@@ -2731,15 +2796,17 @@ async function sendSavedCustomerDocument(input) {
   // PDF creation timestamps vary on each export; deduplicate the immutable CRM
   // revision rather than freshly rendered PDF bytes.
   const attemptId = crypto.createHash("sha256").update([session.user.uid, record.savedCustomerDocument.kind, record.id, record.updatedAt, customer.id, SavedCustomerDocuments.phone(customer.phone), record.savedCustomerDocument.sha256 || ""].join("\n")).digest("hex");
-  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 저장본은 이미 발송 요청했습니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.");
-  savedDocumentSendAttempts.set(attemptId, "unknown");
   const customerId = "saved_" + crypto.randomBytes(16).toString("hex");
-  const sent = await runDocumentDelivery("createAndSend", {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
+  const payload = {documentId: "saved_" + crypto.randomBytes(16).toString("hex"), customerId,
     documentType: monthly ? "monthly_report" : record.savedCustomerDocument.kind === "workReport" ? "completion_report" : "quote", documentName: completionReport ? WorkReportMessage.documentName(completionReport) : record.title,
     ...(completionReport ? {completionReport} : {}),
     ...(monthly ? {reportMonth: record.savedCustomerDocument.month, crmCustomerId: customer.id, crmBuildingId: monthlyBuilding.id, buildingName: monthlyBuilding.name || monthlyBuilding.roadAddress || monthlyBuilding.address} : {}),
     expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(), mimeType: "application/pdf", bytes: bytes.toString("base64"),
-    delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}});
+    delivery: {channel: "kakao", idempotencyKey: "saved_" + attemptId, customerName: customer.name || customer.company, phone: SavedCustomerDocuments.phone(customer.phone)}};
+  if (input.kind === "quote" || input.kind === "buildingMonthlyReport") return savedDocumentDelivery.send(input, session, payload);
+  if (savedDocumentSendAttempts.has(attemptId)) throw new Error("이 저장본은 이미 발송 요청했습니다. 중복 발송하지 말고 전달 상태를 확인해 주세요.");
+  savedDocumentSendAttempts.set(attemptId, "unknown");
+  const sent = await runDocumentDelivery("createAndSend", payload);
   session.check();
   if (!sent?.ok) {
     if (["DELIVERY_PROVIDER_AUTH_FAILED", "DELIVERY_PROVIDER_SERVICE_NOT_FOUND", "DELIVERY_PROVIDER_LIMITED", "DELIVERY_PROVIDER_REJECTED", "DELIVERY_CONFIGURATION_ERROR", "DELIVERY_UNAVAILABLE", "AUTH_REQUIRED", "FORBIDDEN", "INVALID_INPUT", "INPUT_TOO_LARGE"].includes(sent?.code)) savedDocumentSendAttempts.delete(attemptId);
@@ -2924,7 +2991,11 @@ async function prepareBuildingMonthlyReportArtifact(input) {
     }
   }
   if (sessionGuard) remoteClient.assertSessionGuardActive(sessionGuard);
-  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos });
+  const report = BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence, photos: reportPhotos, ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() });
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(
@@ -3073,6 +3144,9 @@ async function saveWorkflowCase(input) {
       if (index >= 0) localOperationsData.cases.splice(index, 1);
       return { ok: true, caseKey, deleted: true };
     }
+    if (!source.create && source.fields && source.expectedFields && Object.keys(source.fields).some(key => Object.hasOwn(source.expectedFields, key) && String(source.expectedFields[key] || "").trim() !== String(item[key] || "").trim())) return { ok: false, error: "다른 사용자가 민원 기본 정보를 변경했습니다. 최신 정보를 확인해 주세요." };
+    if (source.stepKey && Object.hasOwn(source, "stepStatus") && source.expectedStepStatus !== undefined && source.expectedStepStatus !== (item.status?.[source.stepKey] || "wait")) return { ok: false, error: "다른 사용자가 단계 상태를 변경했습니다. 최신 상태를 확인해 주세요." };
+    if (source.stepKey && Object.hasOwn(source, "stepNote") && source.expectedStepNote !== undefined && String(source.expectedStepNote).trim() !== String(item.note?.[source.stepKey] || "").trim()) return { ok: false, error: "다른 사용자가 단계 메모를 변경했습니다. 최신 메모를 확인해 주세요." };
     Object.assign(item, source.fields || {});
     if (source.trashAction === "trash") {
       item.deleted = true;
@@ -3098,7 +3172,7 @@ async function saveWorkflowCase(input) {
         if (value === "wait") delete item.status[source.stepKey];
         else item.status[source.stepKey] = value;
         const index = Number(source.stepKey.slice(1));
-        if (value === "done" && index < Core.WORKFLOW_STEPS.length && source.startNext !== false) item.status[`c${index + 1}`] = "doing";
+        if (value === "done" && index < Core.WORKFLOW_STEPS.length && source.startNext !== false && [undefined, null, "", "wait"].includes(item.status[`c${index + 1}`])) item.status[`c${index + 1}`] = "doing";
       }
       if (Object.prototype.hasOwnProperty.call(source, "stepNote")) {
         if (String(source.stepNote || "").trim()) item.note[source.stepKey] = String(source.stepNote).trim();
@@ -4200,6 +4274,7 @@ function safeClassificationJpeg(sourceBuffer) {
   const source = nativeImage.createFromBuffer(sourceBuffer);
   if (!source || source.isEmpty()) throw Object.assign(new Error("사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const size = source.getSize();
+  const orientation = JpegOrientation.readOrientation(sourceBuffer);
   const longest = Math.max(1, Number(size.width || 0), Number(size.height || 0));
   const attempts = [
     { edge: 1024, quality: 76 },
@@ -4210,11 +4285,12 @@ function safeClassificationJpeg(sourceBuffer) {
   ];
   for (const attempt of attempts) {
     const scale = Math.min(1, attempt.edge / longest);
-    const resized = source.resize({
+    // AI 도 세워진 사진을 봐야 구역·같은 장소를 제대로 본다(누운 사진은 다른 장소로 짝지어졌다).
+    const resized = JpegOrientation.uprightImage(nativeImage, source.resize({
       width: Math.max(1, Math.round(Number(size.width || 1) * scale)),
       height: Math.max(1, Math.round(Number(size.height || 1) * scale)),
       quality: "good",
-    });
+    }), orientation);
     const jpeg = resized.toJPEG(attempt.quality);
     if (jpeg.length && jpeg.length <= MAX_AI_CLASSIFICATION_JPEG_BYTES) {
       return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
@@ -4276,8 +4352,11 @@ async function classifySelectedWorkReportPhotos(input) {
   if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 결과보고서 사진을 분류할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
   const guard = remoteClient.captureSessionGuard();
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  if (Object.keys(options).some(key => !["kind", "fileIds", "mode"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
-  if (options.mode !== undefined && !["classify", "compare"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (Object.keys(options).some(key => !["kind", "fileIds", "mode", "phases"].includes(key))) throw Object.assign(new Error("사진 선택 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  if (options.mode !== undefined && !["classify", "compare", "match"].includes(options.mode)) throw Object.assign(new Error("사진 분석 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
+  // match: 화면이 이미 작업 전·후로 나눈 사진에서 같은 장소의 짝만 찾는다.
+  const phases = options.mode === "match" && options.phases && typeof options.phases === "object" && !Array.isArray(options.phases) ? options.phases : null;
+  if ((options.mode === "match") !== !!phases) throw Object.assign(new Error("사진 짝 찾기 요청을 확인해 주세요."), { code: "INVALID_INPUT" });
   if (!["moveIn", "common"].includes(options.kind)) throw Object.assign(new Error("입주청소·공용부청소 사진을 AI로 분류할 수 있습니다."), { code: "INVALID_INPUT" });
   const ids = [...new Set((Array.isArray(options.fileIds) ? options.fileIds : []).map(value => reportDrivePickerId(value)).filter(Boolean))];
   if (!ids.length) throw Object.assign(new Error("분류할 사진을 선택해 주세요."), { code: "INVALID_INPUT" });
@@ -4298,7 +4377,8 @@ async function classifySelectedWorkReportPhotos(input) {
       cursor += 1;
       const file = files[index];
       try {
-        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken, options.mode || "classify") };
+        images[index] = { id: file.id, dataUrl: await workReportClassificationSource(file, picker, accessToken, options.mode === "match" ? "classify" : options.mode || "classify"),
+          ...(phases ? { phase: phases[file.id] } : {}) };
       } catch (_) {
         unavailable.push({ id: file.id, category: "review", confidence: 0, reason: "사진 축소본을 만들지 못해 직접 확인이 필요합니다." });
       }
@@ -4328,7 +4408,7 @@ async function classifySelectedWorkReportPhotos(input) {
   // One bounded refinement request for uncertain photos and automatic action
   // claims. Never retry quota/auth
   // failures or loop until agreement. A failed refinement retains the first pass.
-  const reviewIds = options.mode === "compare" ? [] : PhotoReviewRefinement.reviewCandidates(result.classifications.filter(row => picker.files.get(row.id)?.workReviewDetailJpeg));
+  const reviewIds = options.mode === "compare" || options.mode === "match" ? [] : PhotoReviewRefinement.reviewCandidates(result.classifications.filter(row => picker.files.get(row.id)?.workReviewDetailJpeg));
   if (reviewIds.length) {
     try {
       const selected = new Set(reviewIds);
@@ -4621,8 +4701,12 @@ function workReportPdfJpeg(content) {
   let image = nativeImage.createFromBuffer(content);
   const { width, height } = image.getSize();
   if (image.isEmpty() || !width || !height || width * height > 40000000) throw new Error("보고서 사진을 확인해 주세요.");
-  if (Math.max(width, height) > 1280) image = image.resize(width >= height ? { width: 1280 } : { height: 1280 });
-  const jpeg = image.toJPEG(80);
+  // PDF 에서 사진은 가장 커도 폭 9cm 정도다. 긴 변 1000px·품질 72면 인쇄에도 충분하고,
+  // 33장 보고서가 13MB 를 넘어 카카오톡에서 늦게 열리던 것을 3분의 1 안팎으로 줄인다.
+  if (Math.max(width, height) > 1000) image = image.resize(width >= height ? { width: 1000 } : { height: 1000 });
+  // 세로로 찍은 휴대폰 사진이 PDF 에서 눕지 않게 EXIF 방향대로 세운다.
+  image = JpegOrientation.uprightImage(nativeImage, image, JpegOrientation.readOrientation(content));
+  const jpeg = image.toJPEG(72);
   if (!jpeg.length || jpeg.length > 1024 * 1024) throw new Error("보고서 사진 용량을 확인해 주세요.");
   return jpeg;
 }
@@ -4686,7 +4770,11 @@ async function exportWorkReport(input) {
 
   // 건물주와 청창사 양쪽에 나가는 문서다. 협력업체명·업체 단가가 섞였으면
   // 만들지 않는다. 만들고 나서 지우는 것보다 안 만드는 편이 낫다.
-  const leaks = WorkReportCore.findLeakedFields(report, options.secrets);
+  // 검사 목록은 회사 자료에서 직접 만들고, 화면이 보낸 목록은 더하기만 한다.
+  const store = await remoteClient.loadStore();
+  session.check();
+  const secrets = WorkReportCore.mergeSecrets(WorkReportCore.reportSecrets(store, report), options.secrets);
+  const leaks = WorkReportCore.findLeakedFields(report, secrets);
   if (leaks.length) {
     return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
   }
@@ -4718,6 +4806,9 @@ async function exportWorkReport(input) {
       }
     }
   }
+  // Drive 가 끊겨 아예 받지 않은 사진이나 빈 응답도 못 받은 사진이다. 0장이
+  // 실패로 안 잡히면 사진 없는 PDF 가 '저장했습니다' 로 끝난다.
+  photoFailures = Math.max(photoFailures, photos.length - Object.keys(images).length);
 
   session.check();
   if (options.strictPhotos === true && (photoFailures || Object.keys(images).length < photos.length)) return {ok: false, error: "PDF 사진을 모두 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요."};
@@ -4728,7 +4819,7 @@ async function exportWorkReport(input) {
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   session.check();
-  const documentHtml = createWorkReportHtml(report, copyType, {
+  const documentHtml = createWorkReportHtml(WorkReportCore.withSiteAddress(report, store), copyType, {
     company: options.company,
     images,
   });
@@ -4736,6 +4827,221 @@ async function exportWorkReport(input) {
   session.check();
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, copyType, photos: Object.keys(images).length, heicConverted, photoFailures };
+}
+
+// 정기 관리보고서(격주) PDF. 화면이 보낸 보고서를 믿지 않고 회사 서버에서 그 보고서와
+// 그 기간의 청소 기록, 지난 기간 보고서를 다시 읽어 만든다. 건물주에게 나가는 문서라
+// 사진을 한 장이라도 못 읽으면 만들지 않는다 — '사진 없음' 칸이 있는 보고서를 내지 않는다.
+// 정기 관리보고서 PDF 를 만든다. 저장과 알림톡 발송이 같은 것을 쓴다. 화면이 보낸
+// 보고서를 믿지 않고 회사 서버에서 그 보고서·그 기간의 청소 기록·지난 기간 보고서를
+// 다시 읽는다. 건물주에게 나가는 문서라 사진을 한 장이라도 못 읽으면 만들지 않는다.
+async function buildPeriodicReportPdf(reportId, company, session) {
+  if (!driveSessionView().connected) return { ok: false, error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요.", code: "DRIVE_REQUIRED" };
+  const [periodic, works, store, operations] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports(), remoteClient.loadStore(),
+    // 조치 항목에 연결한 작업 건의 진행을 보려고 읽는다. 못 읽으면 연결 없이 만든다.
+    remoteClient.loadOperations().catch(() => ({ cases: [] }))]);
+  session.check();
+  const saved = periodic.reports.find(row => row.id === String(reportId || ""));
+  if (!saved) return { ok: false, error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요.", code: "NOT_FOUND" };
+  const report = WorkReportCore.withSiteAddress(saved, store);
+  const checked = PeriodicReportCore.validateReport(report, works.reports);
+  if (!checked.ok) return { ok: false, error: checked.error, code: checked.code };
+  const previousPeriod = PeriodicReportCore.previousPeriod(report.period);
+  const previousReport = previousPeriod ? PeriodicReportCore.findForPeriod(periodic.reports, report, previousPeriod.key) : null;
+  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport, cases: operations.cases });
+
+  // 청소 보고서와 같은 기준으로 협력업체명·업체 원가가 섞였는지 본다.
+  const secrets = WorkReportCore.reportSecrets(store, report);
+  const serialized = JSON.stringify(view);
+  const leaks = [["협력업체명", secrets.vendorNames], ["업체 단가", secrets.vendorAmounts]]
+    .filter(([, values]) => values.some(value => String(value).length >= 3 && serialized.includes(String(value)))).map(([label]) => label);
+  if (leaks.length) return { ok: false, error: `보고서에 ${leaks.join(", ")} 가 섞여 있습니다. 지우고 다시 만들어 주세요.`, code: "REPORT_LEAK" };
+
+  const photos = periodicReportPdfPhotos(view);
+  const images = {};
+  let photoFailures = 0;
+  for (const photo of photos) {
+    try {
+      const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId || photo.id });
+      if (!fetched || !fetched.content) { photoFailures += 1; continue; }
+      const original = Buffer.from(fetched.content);
+      const isHeic = HeicJpegConverter.looksLikeHeic(original)
+        || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""))
+        || /\.hei[cf]$/iu.test(String(fetched.name || ""));
+      const content = workReportPdfJpeg(isHeic ? await HeicJpegConverter.convertToJpeg(original) : original);
+      images[photo.id] = `data:image/jpeg;base64,${content.toString("base64")}`;
+    } catch (_error) {
+      photoFailures += 1;
+    }
+  }
+  session.check();
+  if (photoFailures) return { ok: false, error: `사진 ${photoFailures}장을 읽지 못했습니다. Drive 연결을 확인한 뒤 다시 시도해 주세요.`, code: "PHOTO_MISSING" };
+  const html = createPeriodicReportHtml(view, { company, images });
+  const bytes = await createReportPdfBytes(html, "periodic-report");
+  session.check();
+  return { ok: true, saved, report, view, store, bytes, photos: Object.keys(images).length };
+}
+
+// 정기점검 AI 제안. 사람이 고르는 것을 돕기만 한다 — 제안을 보고 '적용' 을 눌러야 들어간다.
+//  inspection: 점검 항목에 붙인 사진을 보고 상태·한 줄 메모를 제안한다.
+//  cleaning:   그 기간 청소 사진 중 점검 근거로 쓸 만한 것(우편함·소화기·배수로 등)을 고른다.
+// 사진은 화면이 아니라 서버에 저장된 보고서·청소 기록에서 정한다. 축소본만 보낸다.
+async function reviewPeriodicInspectionPhotos(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) return { ok: false, code: "ACCESS_DENIED", error: "마케팅 담당자는 사용할 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const mode = options.mode === "cleaning" ? "cleaning" : "inspection";
+  if (!driveSessionView().connected) return { ok: false, code: "DRIVE_REQUIRED", error: "사진을 읽으려면 Google Drive 를 먼저 연결해 주세요." };
+  const guard = remoteClient.captureSessionGuard();
+  const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]);
+  remoteClient.assertSessionGuardActive(guard);
+  const report = periodic.reports.find(row => row.id === String(options.reportId || ""));
+  if (!report) return { ok: false, code: "NOT_FOUND", error: "저장된 정기 관리보고서를 찾지 못했습니다. 먼저 저장해 주세요." };
+  const candidates = mode === "inspection"
+    ? report.inspection.items.flatMap(item => item.photos.map(photo => ({ ...photo, hint: item.key }))).slice(0, 12)
+    : PeriodicReportCore.cleaningPhotoCandidates(PeriodicReportCore.cleaningsFor(works.reports, report), report).slice(0, 12);
+  if (!candidates.length) return { ok: false, code: "NO_PHOTOS", error: mode === "inspection" ? "점검 항목에 붙인 사진이 없습니다." : "이 기간 청소 사진이 없습니다." };
+  const images = [];
+  for (const photo of candidates) {
+    try {
+      const fetched = await BuildingDocsDrive.downloadFile(driveApiDeps(), { fileId: photo.driveFileId || photo.id });
+      if (!fetched || !fetched.content) continue;
+      const original = Buffer.from(fetched.content);
+      const heic = HeicJpegConverter.looksLikeHeic(original) || /^image\/hei[cf]$/iu.test(String(fetched.mimeType || ""));
+      images.push({ id: photo.id, dataUrl: safeClassificationJpeg(heic ? await HeicJpegConverter.convertToJpeg(original) : original), ...(photo.hint ? { hint: photo.hint } : {}) });
+    } catch (_error) { /* 못 읽은 사진은 제안에서 빠진다. */ }
+  }
+  remoteClient.assertSessionGuardActive(guard);
+  if (!images.length) return { ok: false, code: "PHOTO_PREVIEW_FAILED", error: "AI에 보낼 사진 축소본을 만들지 못했습니다." };
+  const idToken = await remoteClient.ensureIdToken(false);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  let value;
+  try {
+    const response = await net.fetch(CRM_AI_INSPECTION_REVIEW_URL, {
+      method: "POST", headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ images }), cache: "no-store", redirect: "error", signal: controller.signal,
+    });
+    const text = await response.text();
+    if (text.length > 256 * 1024) throw new Error("too large");
+    value = JSON.parse(text);
+    if (!response.ok || !value || value.ok !== true || !Array.isArray(value.reviews)) {
+      return { ok: false, code: value && value.code || "AI_TEMPORARY_FAILURE", error: value && value.code === "RATE_LIMITED" ? "AI 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요." : "AI 점검 제안을 받지 못했습니다." };
+    }
+  } catch (_error) {
+    return { ok: false, code: "AI_TEMPORARY_FAILURE", error: "AI 점검 제안을 받지 못했습니다." };
+  } finally { clearTimeout(timer); }
+  remoteClient.assertSessionGuardActive(guard);
+  const byId = new Map(candidates.map(photo => [photo.id, photo]));
+  const suggestions = PeriodicReportCore.normalizeSuggestions(value.reviews, byId, mode);
+  return { ok: true, mode, suggestions, reviewed: images.length };
+}
+
+async function exportPeriodicReport(input) {
+  const session = savedDocumentSession();
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 정기 관리보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const built = await buildPeriodicReportPdf(options.reportId, options.company, session);
+  if (!built.ok) return built;
+  const { report, view } = built;
+  const period = PeriodicReportCore.parsePeriod(report.period);
+  const place = String(report.buildingName || report.siteAddress || "건물").replace(/[\\/:*?"<>|\u0000-\u001f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 60);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "정기 관리보고서 PDF 저장",
+    defaultPath: `${period.year}${String(period.month).padStart(2, "0")}_${period.half}차_${place}_정기관리보고서.pdf`,
+    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  session.check();
+  await fs.writeFile(result.filePath, built.bytes, { mode: 0o600 });
+  return { ok: true, photos: built.photos, cleanings: view.cleanings.length, actions: view.actions.length };
+}
+
+// 정기 관리보고서를 건물주에게 카카오 알림톡(7일 보안 링크)으로 보낸다. 작업 결과보고서의
+// 승인 템플릿을 그대로 쓴다: "(주소) 건물주님, (기간) 정기 관리 결과 보고서가 발행되었습니다".
+// 받는 사람은 화면이 아니라 회사 자료에서 정한다 — 건물이면 그 건물의 건물주 고객, 건물이
+// 없으면 그 고객. 화면에서 확인한 번호와 다르면 보내지 않는다. 같은 보고서는 한 번만 보낸다.
+async function sendPeriodicReportByKakao(input) {
+  const session = savedDocumentSession();
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("관리자만 고객에게 알림톡을 보낼 수 있습니다."), { code: "ACCESS_DENIED" });
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 전용 계정은 보고서를 보낼 수 없습니다."), { code: "ACCESS_DENIED" });
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+
+  const capabilities = await runDocumentDelivery("capabilities");
+  if (!capabilities || capabilities.ok !== true || !capabilities.capabilities || capabilities.capabilities.kakao !== true) {
+    return { ok: false, code: "KAKAO_DOCUMENT_DELIVERY_NOT_READY", error: "카카오 알림톡 발신 설정과 승인 템플릿 상태를 확인해 주세요." };
+  }
+  const built = await buildPeriodicReportPdf(options.reportId, options.company, session);
+  if (!built.ok) return built;
+  const { saved, report, store } = built;
+  if (saved.delivery && ["requested", "sent"].includes(saved.delivery.status) && options.resend !== true) {
+    return { ok: false, code: "ALREADY_SENT", error: "이미 보낸 보고서입니다. 다시 보내려면 재발송을 확인해 주세요." };
+  }
+  const recipient = PeriodicReportCore.recipientFor(report, store);
+  if (!recipient.phone) return { ok: false, code: "RECIPIENT_PHONE_REQUIRED", error: recipient.reason };
+  const expected = String(options.expectedPhone || "").replace(/\D/gu, "");
+  if (expected !== recipient.phone) return { ok: false, code: "RECIPIENT_MISMATCH", error: "받는 사람 번호가 바뀌었습니다. 화면을 새로 고친 뒤 다시 확인해 주세요." };
+  if (built.bytes.length > 12 * 1024 * 1024) return { ok: false, code: "DOCUMENT_TOO_LARGE", error: "사진을 줄여 PDF를 12MB 이하로 만들어 주세요." };
+  const completionReport = PeriodicReportCore.kakaoDetails(report);
+  if (!completionReport) return { ok: false, code: "ADDRESS_REQUIRED", error: "건물(또는 고객) 주소가 있어야 알림톡을 보낼 수 있습니다." };
+
+  const customerId = `notice_${crypto.randomBytes(16).toString("hex")}`;
+  const created = await runDocumentDelivery("create", {
+    documentId: `periodic_${crypto.randomBytes(16).toString("hex")}`,
+    customerId,
+    documentType: "completion_report",
+    documentName: `${completionReport.buildingAddress} ${completionReport.workName} 결과보고서`,
+    completionReport,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    mimeType: "application/pdf",
+    bytes: built.bytes,
+  });
+  session.check();
+  if (!created || created.ok !== true || !created.documentId) {
+    return { ok: false, code: created && created.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: created && created.error || "보안 보고서 링크를 만들지 못했습니다." };
+  }
+  const sent = await runDocumentDelivery("send", {
+    channel: "kakao",
+    idempotencyKey: crypto.randomBytes(20).toString("hex"),
+    documentId: created.documentId,
+    customerId,
+    customerName: "건물주",
+    phone: recipient.phone,
+  });
+  if (!sent || sent.ok !== true) {
+    await runDocumentDelivery("revoke", { documentId: created.documentId });
+    return { ok: false, code: sent && sent.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: sent && sent.error || "알림톡 발송을 요청하지 못했습니다." };
+  }
+  // 보낸 사실을 보고서에 남긴다. 기록을 못 남겨도 발송은 이미 됐으므로 그 사실을 알린다.
+  const delivery = { status: sent.status === "sent" ? "sent" : "requested", sentAt: new Date().toISOString(), messageId: String(sent.messageId || "").slice(0, 120), phoneTail: recipient.phone.slice(-4), sentBy: user.uid || "", documentId: String(created.documentId).slice(0, 120) };
+  let recorded = true;
+  try { await remoteClient.savePeriodicReport({ ...saved, delivery }); } catch (_error) { recorded = false; }
+  return { ok: true, status: delivery.status, phoneTail: delivery.phoneTail, photos: built.photos, recorded };
+}
+
+// 보낸 정기 관리보고서를 건물주가 열어 봤는지 발송 서버에 묻고 보고서에 적어 둔다.
+async function checkPeriodicReportViews(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) return { ok: false, code: "ACCESS_DENIED", error: "마케팅 담당자는 사용할 수 없습니다." };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const periodic = await remoteClient.loadPeriodicReports();
+  const ids = new Set((Array.isArray(options.reportIds) ? options.reportIds : [options.reportId]).map(String).slice(0, 40));
+  const targets = periodic.reports.filter(row => ids.has(row.id) && row.delivery && row.delivery.documentId);
+  const results = [];
+  for (const report of targets) {
+    const status = await runDocumentDelivery("documentStatus", { documentId: report.delivery.documentId });
+    if (!status || status.ok !== true) { results.push({ id: report.id, ok: false }); continue; }
+    const delivery = { ...report.delivery, firstViewedAt: status.firstViewedAt || "", viewCount: Number(status.viewCount) || 0, checkedAt: new Date().toISOString() };
+    const changed = delivery.firstViewedAt !== report.delivery.firstViewedAt || delivery.viewCount !== report.delivery.viewCount;
+    if (changed) { try { await remoteClient.savePeriodicReport({ ...report, delivery }); } catch (_error) { /* 다음 확인 때 다시 적는다. */ } }
+    results.push({ id: report.id, ok: true, delivery });
+  }
+  return { ok: true, results };
 }
 
 async function sendWorkReportToCustomerByKakao(input) {
@@ -5631,6 +5937,11 @@ function contractBuildingMap() {
     },
     store: () => readStore(),
     fetch: (url, options) => net.fetch(url, options),
+    // Company-wide key held by crm-ai-worker; used when this PC has no key of its own.
+    gateway: input => {
+      if (!remoteClient || localTestMode) throw 'CONFIG';
+      return createMapGateway({ endpoint: CRM_MAP_GATEWAY_URL, idToken: () => remoteClient.ensureIdToken(false), fetchImpl: (url, options) => net.fetch(url, options) })(input);
+    },
     load: async () => {
       try {
         const info = await fs.stat(target()); if (info.size > 16384) throw 'STORAGE';
@@ -9416,7 +9727,11 @@ secureCanonicalHandle("crm:building-monthly-report-draft", async input => {
     if (!file || !file.monthlyReportCaption || file.monthlyReportDate?.slice(0, 7) !== input.month || file.monthlyReportBuilding !== identity) throw new Error("선택한 건물과 보고 월의 사진을 다시 찾아 주세요.");
     return { date: file.monthlyReportDate, caption: monthlyReportPhotoCaption(photo, file), kind: file.monthlyReportActivity };
   });
-  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input) }), photoEvidence };
+  const report = { ...BuildingReportCore.buildBuildingMonthlyReport({ ...input, activityEvidence: monthlyReportActivityEvidence(input), ...await (async () => {
+    // 그 달 정기 관리보고서 요약용 자료. 서버에서 읽고, 못 읽으면 요약 없이 만든다.
+    try { const [periodic, works] = await Promise.all([remoteClient.loadPeriodicReports(), remoteClient.loadWorkReports()]); return { periodicReports: periodic.reports, workReports: works.reports }; }
+    catch (_error) { return {}; }
+  })() }), photoEvidence };
   const leaks = BuildingReportCore.findLeakedFields(report, input.store);
   if (leaks.length) {
     throw Object.assign(new Error(`Gemini 전송 자료에 ${leaks.join(", ")}이(가) 있어 작성하지 않았습니다.`), { code: "BUILDING_REPORT_LEAK" });
@@ -9454,6 +9769,7 @@ secureCanonicalHandle("crm:building-monthly-report-kakao-send", input => sendBui
 secureCanonicalHandle("crm:quote-kakao-send", input => sendQuoteToCustomerByKakao(input));
 secureCanonicalHandle("crm:customer-document-save", input => saveCustomerDocument(input));
 secureCanonicalHandle("crm:customer-document-preview", input => previewSavedCustomerDocument(input));
+secureCanonicalHandle("crm:quote-draft-load", input => loadSavedQuoteDraft(input));
 secureCanonicalHandle("crm:customer-document-send", input => sendSavedCustomerDocument(input));
 secureCanonicalHandle("crm:consultation-audio-pick", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -9587,6 +9903,11 @@ secureHandle("crm:telegram-server-status", () => loadTelegramServerStatus());
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
+secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeriodicReport(input));
+secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
+secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));
+secureCanonicalHandle("crm:periodic-inspection-review", input => reviewPeriodicInspectionPhotos(input));
+secureCanonicalHandle("crm:periodic-report-views", input => checkPeriodicReportViews(input));
 secureCanonicalHandle("crm:work-report-kakao-send", input => sendWorkReportToCustomerByKakao(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
@@ -10023,6 +10344,7 @@ function readWorkflowCollection(method) {
     loadSupplies: ["items", "moves", "costs"],
     loadDeliveryFlows: ["flows"],
     loadWorkReports: ["reports"],
+    loadPeriodicReports: ["reports"],
   };
   if (!Object.prototype.hasOwnProperty.call(collections, method)) throw new Error("지원하지 않는 조회입니다.");
   if (localTestMode) {
@@ -10092,6 +10414,7 @@ secureHandle("crm:project-weekly-reports-load", () => readWorkflowCollection("lo
 secureHandle("crm:supplies-load", () => readWorkflowCollection("loadSupplies"));
 secureHandle("crm:delivery-flows-load", () => readWorkflowCollection("loadDeliveryFlows"));
 secureHandle("crm:work-reports-load", () => readWorkflowCollection("loadWorkReports"));
+secureHandle("crm:periodic-reports-load", () => readWorkflowCollection("loadPeriodicReports"));
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
 secureHandle("crm:payment-schedule-save", input => savePaymentSchedule(input));

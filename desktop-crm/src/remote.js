@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const SharedSave = require("./shared-save-core");
 const ContractReceiptCommit = require("./contract-receipt-commit");
 const ContractSchedule = require("./contract-schedule-core");
 const BuildingAtlasService = require("./building-atlas-service");
@@ -61,6 +62,7 @@ const ProjectWeeklyReportCore = require("./project-weekly-report-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
+const PeriodicReportCore = require("./periodic-report-core");
 const FormCore = require("./form-core");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
@@ -203,7 +205,8 @@ const WORKFLOW_ACTIONS = new Set([
 const SHARED_COLLECTIONS = Object.freeze([
   "customers", "buildings", "activities", "contracts", "contractReadiness", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
   "securityAssets", "auditLogs", "securityIncidents", "buildingDocuments",
-  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
+  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+  "lifeLeads", "lifeContacts", "lifeApplications"
 ]);
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;
@@ -5132,12 +5135,22 @@ class FirebaseRemoteClient {
     const checked = ProjectCore.validateProject(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
     const location = `projects/${checked.project.id}`;
-    const [existing, users, teamProfiles] = await Promise.all([
-      this.dbRequest(location, { method: "GET" }),
+    const [snapshot, users, teamProfiles] = await Promise.all([
+      this.dbReadWithEtag(location, false, guard),
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
+    const existing = snapshot.value;
+    const expected = source.expectedProject;
+    const projectComparable = value => {
+      const normalized = ProjectCore.normalizeProject(Object.assign({}, value, { id: checked.project.id }));
+      normalized.assignees.sort((a, b) => a.uid.localeCompare(b.uid));
+      return JSON.stringify(normalized);
+    };
+    if (existing ? !expected || typeof expected !== "object" || Array.isArray(expected) || expected.id !== checked.project.id || projectComparable(expected) !== projectComparable(existing) : Boolean(expected)) {
+      throw createError("다른 사용자가 프로젝트를 변경했습니다. 최신 내용을 다시 불러온 뒤 수정해 주세요.", "PROJECT_CONFLICT");
+    }
     const merged = OfficeCore.mergeOfficeUsers(users, teamProfiles);
     const assignees = checked.project.assignees.map(item => {
       const user = merged[item.uid];
@@ -5159,7 +5172,7 @@ class FirebaseRemoteClient {
     const endDateExtended = Boolean(existing && checked.project.endDate
       && (!before.endDate || checked.project.endDate > before.endDate));
     const extensionBaseline = before.endDate || checked.project.previousEndDate;
-    const record = Object.assign({}, checked.project, {
+    const record = Object.assign({}, existing || {}, checked.project, {
       assignees: Object.fromEntries(assignees.map(item => [item.uid, item])),
       owner: assignees.length ? assignees.map(item => item.name).join(", ").slice(0, 80) : checked.project.owner,
       createdAt: (existing && existing.createdAt) || now,
@@ -5172,7 +5185,13 @@ class FirebaseRemoteClient {
       updatedAt: now,
       updatedBy: session.uid,
     });
-    await this.dbRequest(location, { method: "PUT", body: record });
+    try {
+      await this.dbConditionalPut(location, record, snapshot.etag, false, guard);
+    } catch (error) {
+      if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") throw createError("다른 사용자가 프로젝트를 변경했습니다. 최신 내용을 다시 불러온 뒤 수정해 주세요.", "PROJECT_CONFLICT");
+      if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw createError("프로젝트 저장 결과를 확인하지 못했습니다. 새로고침으로 저장 여부를 확인해 주세요.", "PROJECT_WRITE_UNCONFIRMED");
+      throw error;
+    }
     this.assertSessionGuardActive(guard);
     return record;
   }
@@ -5681,6 +5700,47 @@ class FirebaseRemoteClient {
     return record;
   }
 
+  // 정기 관리보고서(격주). 청소는 workReports 에 있고 여기에는 점검·조치·기간만 둔다.
+  async loadPeriodicReports() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("periodicReports", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const reports = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => PeriodicReportCore.normalizeReport(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return {
+      reports,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 저장은 작성 중에도 된다. 건물주에게 낼 수 있는지는 PDF 를 만들 때 따진다.
+  async savePeriodicReport(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 정기 관리보고서를 쓸 수 없습니다.", "PERIODIC_REPORT_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const checked = PeriodicReportCore.validateDraft(input);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `periodicReports/${checked.report.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.report, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
   // 수주 진행. 건물마다 견적서에서 입금까지 어디쯤인지.
   async loadDeliveryFlows() {
     const session = this.requireOfficeSession();
@@ -6117,10 +6177,6 @@ class FirebaseRemoteClient {
         const stepStatus = String(source.stepStatus || "wait");
         if (!["wait", "doing", "done"].includes(stepStatus)) throw createError("단계 상태를 확인해 주세요.", "INVALID_CASE_STEP");
         patch[`status/${stepKey}`] = stepStatus === "wait" ? null : stepStatus;
-        const stepIndex = Number(stepKey.slice(1));
-        if (stepStatus === "done" && stepIndex < this.Core.WORKFLOW_STEPS.length && source.startNext !== false) {
-          patch[`status/c${stepIndex + 1}`] = "doing";
-        }
       }
       if (Object.prototype.hasOwnProperty.call(source, "stepNote")) {
         patch[`note/${stepKey}`] = String(source.stepNote || "").trim().slice(0, 4000) || null;
@@ -6163,7 +6219,54 @@ class FirebaseRemoteClient {
     patch.crmUpdatedBy = this.session.email || "CRM 사용자";
     if (!Object.keys(patch).length) throw createError("저장할 민원 내용이 없습니다.", "INVALID_CASE");
 
-    await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
+    const protectedEdit = !isNew && !trashAction && !vendorSelection && (Object.keys(fields).length > 0 || Boolean(stepKey));
+    if (protectedEdit) {
+      const guard = this.captureSessionGuard();
+      const location = `cases/${caseKey}`;
+      const snapshot = await this.dbReadWithEtag(location, false, guard);
+      this.assertSessionGuardActive(guard);
+      const existing = snapshot.value;
+      if (!existing || typeof existing !== "object" || Array.isArray(existing) || existing.deleted === true) {
+        throw createError("민원이 삭제되거나 휴지통으로 이동했습니다. 최신 목록을 확인해 주세요.", "CASE_CONFLICT");
+      }
+      if (Object.keys(fields).length) {
+        const expected = source.expectedFields;
+        if (!expected || typeof expected !== "object" || Array.isArray(expected)) throw createError("최신 민원 정보를 다시 열어 주세요.", "CASE_CONFLICT");
+        for (const field of Object.keys(fieldLimits)) {
+          if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
+          if (!Object.prototype.hasOwnProperty.call(expected, field) || String(expected[field] || "").trim() !== String(existing[field] || "").trim()) {
+            throw createError("다른 사용자가 민원 기본 정보를 변경했습니다. 입력 내용을 보관한 뒤 최신 정보를 확인해 주세요.", "CASE_CONFLICT");
+          }
+        }
+      }
+      if (stepKey && Object.prototype.hasOwnProperty.call(source, "stepStatus")) {
+        const before = existing.status && existing.status[stepKey] || "wait";
+        if (source.expectedStepStatus !== before) throw createError("다른 사용자가 단계 상태를 변경했습니다. 최신 상태를 확인해 주세요.", "CASE_CONFLICT");
+        const nextKey = `c${Number(stepKey.slice(1)) + 1}`;
+        if (source.stepStatus === "done" && Number(stepKey.slice(1)) < this.Core.WORKFLOW_STEPS.length && source.startNext !== false && [undefined, null, "", "wait"].includes(existing.status && existing.status[nextKey])) patch[`status/${nextKey}`] = "doing";
+      }
+      if (stepKey && Object.prototype.hasOwnProperty.call(source, "stepNote")) {
+        const before = String(existing.note && existing.note[stepKey] || "").trim();
+        if (typeof source.expectedStepNote !== "string" || source.expectedStepNote.trim() !== before) throw createError("다른 사용자가 단계 메모를 변경했습니다. 입력 내용을 보관한 뒤 최신 메모를 확인해 주세요.", "CASE_CONFLICT");
+      }
+      const record = structuredClone(existing);
+      for (const [path, value] of Object.entries(patch)) {
+        const parts = path.split("/");
+        if (parts.length === 1) { if (value === null) delete record[path]; else record[path] = value; continue; }
+        const [parent, key] = parts;
+        if (!record[parent] || typeof record[parent] !== "object" || Array.isArray(record[parent])) record[parent] = {};
+        if (value === null) delete record[parent][key]; else record[parent][key] = value;
+        if (!Object.keys(record[parent]).length) delete record[parent];
+      }
+      try { await this.dbConditionalPut(location, record, snapshot.etag, false, guard); }
+      catch (error) {
+        if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") throw createError("다른 사용자가 민원을 변경했습니다. 입력 내용을 보관한 뒤 최신 정보를 확인해 주세요.", "CASE_CONFLICT");
+        if (error && error.code === "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw createError("저장 결과를 확인하지 못했습니다. 다시 저장하기 전에 최신 민원을 확인해 주세요.", "CASE_WRITE_UNCONFIRMED");
+        throw error;
+      }
+    } else {
+      await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
+    }
     return { ok: true, caseKey, updatedAt: now, patch };
   }
 
@@ -6334,12 +6437,68 @@ class FirebaseRemoteClient {
     return this.enqueueSharedMutation(() => this.pushStoreLocked(input, guard));
   }
 
+  async sharedSaveBase(input, guard) {
+    if (Object.hasOwn(input || {}, "__crmSaveBase")) {
+      if (!input.__crmSaveBase || typeof input.__crmSaveBase !== "object" || Array.isArray(input.__crmSaveBase)) {
+        throw createError("편집 기준 자료를 다시 불러와 주세요.", "SHARED_SAVE_BASE_REQUIRED");
+      }
+      return sharedRemoteProjection(this.Core, input.__crmSaveBase);
+    }
+    // Compatibility for main-process callers. Renderer saves always supply
+    // their own last-synchronized snapshot, including while a modal is open.
+    if (this.remotePayload) return sharedRemoteProjection(this.Core, this.remotePayload);
+    const cached = await this.readSessionLocalStore(guard);
+    this.assertSessionGuardActive(guard);
+    return sharedRemoteProjection(this.Core, cached || {});
+  }
+
+  async commitSharedSaveIntent(base, desired, currentRaw, intent, guard) {
+    this.assertSessionGuardActive(guard);
+    const current = sharedRemoteProjection(this.Core, currentRaw);
+    const plan = SharedSave.buildSharedSavePlan({ base, desired, current, currentRaw, intent });
+    let committed = 0, merged = structuredClone(currentRaw);
+    for (const write of plan.customerWrites) {
+      this.assertSessionGuardActive(guard);
+      const location = `crmShared/data/${write.path}`;
+      try {
+        const snapshot = await this.dbReadWithEtag(location, false, guard);
+        this.assertSessionGuardActive(guard);
+        if (!SharedSave.same(snapshot.value, write.value)) {
+          if (!SharedSave.same(snapshot.value, write.expected)) throw SharedSave.conflict(committed > 0);
+          await this.dbConditionalPut(location, write.value, snapshot.etag, false, guard);
+          this.assertSessionGuardActive(guard);
+        }
+        merged = SharedSave.applySharedSavePatch(merged, { [write.path]: write.value });
+        committed += 1;
+      } catch (error) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+        if (error.code === "BUILDING_SCHEDULE_CONFLICT" || error.code === "SHARED_SAVE_CONFLICT") throw SharedSave.conflict(committed > 0);
+        // Never replay an ambiguous partial form automatically with a new base.
+        // A repeat with the original base is idempotent; changed values conflict.
+        throw Object.assign(createError("고객 저장 결과를 확인하지 못했습니다. 일부 항목이 저장되었을 수 있으니 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED"), { partial: committed > 0 });
+      }
+    }
+    if (Object.keys(plan.patch).length) {
+      this.assertSessionGuardActive(guard);
+      try {
+        await this.dbRequest("crmShared/data", { method: "PATCH", body: plan.patch, query: "print=silent" });
+      } catch (error) {
+        if (!committed) throw error;
+        throw Object.assign(createError("일부 고객 정보는 저장되었지만 나머지 저장 결과를 확인하지 못했습니다. 최신 자료를 확인해 주세요.", "SHARED_SAVE_UNCONFIRMED"), { partial: true });
+      }
+      this.assertSessionGuardActive(guard);
+      merged = SharedSave.applySharedSavePatch(merged, plan.patch);
+    }
+    return merged;
+  }
+
   async pushStoreLocked(input, guardValue, options = {}) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
     this.requireMutationPermission();
     const data = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(data);
+    const base = options.baseRemote || await this.sharedSaveBase(input, guard);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
     // A renderer save can have been prepared before a record-level calendar
@@ -6349,17 +6508,24 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) return null;
     preserveCanonicalSharedCollections(current, next);
     preserveGenericServiceRecords(this.Core, current, next, options.requireServiceRecordsMatch === true);
-    const patch = diffRemoteStores(current, next);
+    const patch = options.requireServiceRecordsMatch === true ? diffRemoteStores(current, next)
+      : pendingSyncPatch(this.Core, base, next, current, options.presentCollections);
+    if (options.requireServiceRecordsMatch !== true) for (const key of Object.keys(patch)) {
+      if ([...CANONICAL_SHARED_COLLECTIONS, "serviceRecords"].includes(key.split("/", 1)[0])) delete patch[key];
+    }
     assertNoCanonicalSharedPatch(patch);
     assertNoGenericServiceRecordPatch(patch);
-    if (Object.keys(patch).length) {
+    let committed;
+    if (options.requireServiceRecordsMatch !== true) {
+      committed = await this.commitSharedSaveIntent(base, next, current, patch, guard);
+    } else if (Object.keys(patch).length) {
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
       if (!this.sessionGuardActive(guard)) return null;
     }
-    this.remotePayload = next;
+    this.remotePayload = committed || next;
     const local = await this.readSessionLocalStore(guard);
     if (!local || !this.sessionGuardActive(guard)) return null;
-    const merged = mergeRemoteStore(this.Core, next, Object.assign({}, local, { settings: data.settings }), this.session);
+    const merged = mergeRemoteStore(this.Core, this.remotePayload, Object.assign({}, local, { settings: data.settings }), this.session);
     const written = await this.writeSessionLocalStore(merged, guard);
     if (!written || !this.sessionGuardActive(guard)) return null;
     await this.clearPendingStore();
@@ -6430,11 +6596,7 @@ class FirebaseRemoteClient {
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, replayCollections);
     assertNoCanonicalSharedPatch(patch);
     assertNoGenericServiceRecordPatch(patch);
-    if (Object.keys(patch).length) {
-      if (!this.sessionGuardActive(guard)) return null;
-      await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
-      if (!this.sessionGuardActive(guard)) return null;
-    }
+    await this.commitSharedSaveIntent(pending.baseRemote || {}, desired, currentRemote, patch, guard);
     const refreshedRemote = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
     this.remotePayload = refreshedRemote;
@@ -6541,8 +6703,9 @@ class FirebaseRemoteClient {
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(local);
+    const baseRemote = await this.sharedSaveBase(input, guard);
     local.updatedAt = new Date().toISOString();
-    const result = await this.pushStoreLocked(local, guard);
+    const result = await this.pushStoreLocked(local, guard, { baseRemote });
     if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
     this.startStream();
     return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
@@ -6555,9 +6718,10 @@ class FirebaseRemoteClient {
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
     this.Core.assertNoProhibitedSecrets(local);
+    const baseRemote = await this.sharedSaveBase(input, guard);
     local.updatedAt = new Date().toISOString();
     try {
-      const result = await this.pushStoreLocked(local, guard);
+      const result = await this.pushStoreLocked(local, guard, { baseRemote });
       if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.startStream();
       return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
@@ -6573,7 +6737,7 @@ class FirebaseRemoteClient {
       local.serviceRecords = this.Core.sanitizeSharedStore(cached).serviceRecords;
       const written = await this.writeSessionLocalStore(local, guard);
       if (!written || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-      await this.writePendingStore(local, this.remotePayload);
+      await this.writePendingStore(local, baseRemote);
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.emitSync("pending", "서버 연결 시 자동으로 저장됩니다.", { pending: true });
       this.schedulePendingRetry(guard);

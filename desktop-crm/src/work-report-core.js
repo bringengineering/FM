@@ -219,6 +219,31 @@
     return COPIES.find(item => item.key === text(key, 20)) || null;
   }
 
+  // AI 초안은 분류 직후 그때의 작업일로 쓰인다. 작업일을 나중에 고치면 본문 속 옛 날짜도
+  // 같이 바꾼다(2026-11-03 실제 발송 테스트에서 "11월 03일" 이 10월 29일 보고서에 남았다).
+  // 옛 날짜를 그대로 적은 표기만 바꾸고 다른 날짜는 건드리지 않는다.
+  function retargetDate(value, from, to) {
+    const source = String(value || "");
+    const parse = date => /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+    const a = parse(from), b = parse(to);
+    if (!source || !a || !b || from === to) return source;
+    const plain = n => String(Number(n));
+    const pairs = [
+      [`${a[1]}년 ${a[2]}월 ${a[3]}일`, `${b[1]}년 ${b[2]}월 ${b[3]}일`],
+      [`${a[1]}년 ${plain(a[2])}월 ${plain(a[3])}일`, `${b[1]}년 ${plain(b[2])}월 ${plain(b[3])}일`],
+      [`${a[1]}-${a[2]}-${a[3]}`, `${b[1]}-${b[2]}-${b[3]}`],
+      [`${a[1]}.${a[2]}.${a[3]}`, `${b[1]}.${b[2]}.${b[3]}`],
+      [`${a[1]}. ${plain(a[2])}. ${plain(a[3])}.`, `${b[1]}. ${plain(b[2])}. ${plain(b[3])}.`],
+    ];
+    let out = source;
+    for (const [old, next] of pairs) out = out.split(old).join(next);
+    // 연도 없이 "11월 3일"·"11월 03일" 로 적은 경우(앞이 숫자나 "년 " 이 아닐 때만).
+    for (const [old, next] of [[`${plain(a[2])}월 ${plain(a[3])}일`, `${plain(b[2])}월 ${plain(b[3])}일`], [`${a[2]}월 ${a[3]}일`, `${b[2]}월 ${b[3]}일`]]) {
+      out = out.replace(new RegExp(`(?<!\\d)(?<!년\\s?)${old}`, "gu"), next);
+    }
+    return out;
+  }
+
   function normalizePhoto(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
     let link = "";
@@ -229,12 +254,15 @@
         link = url.toString();
       }
     } catch { /* 링크가 불완전하거나 Drive 도메인이 아니면 열 수 없게 둔다. */ }
+    // 같은 장소의 작업 전·후 짝. 짝이 있을 때만 싣는다 — 없는 사진은 예전과 같은 모양이다.
+    const pairId = text(value.pairId, 250);
     return {
       id: text(value.id, 80),
       driveFileId: text(value.driveFileId, 120),
       // 결과보고 사진은 Google Drive 뷰 링크만 사람에게 연다.
       webViewLink: link,
       caption: text(value.caption, 120),
+      ...(/^[A-Za-z0-9_:|.-]{1,250}$/.test(pairId) ? { pairId } : {}),
     };
   }
 
@@ -458,6 +486,53 @@
     return leaks;
   }
 
+  // 검사할 값은 메인 프로세스가 회사 자료에서 직접 만든다. 화면이 보낸 목록만
+  // 믿으면 빈 목록 하나로 검사가 꺼진다. 업체 원가는 이 보고서의 건물(건물이
+  // 없으면 고객)에 걸린 계약에서만 가져온다 — 회사 전체 금액을 넣으면 우연히
+  // 같은 숫자가 든 보고서까지 막힌다.
+  function reportSecrets(store, report) {
+    const data = store && typeof store === "object" ? store : {};
+    const target = normalizeReport(report);
+    const vendorNames = [...rows(data.partnerVendors), ...rows(data.vendors)]
+      .map(row => text(row && row.name, 200)).filter(Boolean);
+    const vendorAmounts = [];
+    rows(data.contracts).forEach(contract => {
+      const linked = target.buildingId
+        ? text(contract.buildingId, 80) === target.buildingId
+        : !!target.customerId && text(contract.customerId, 120) === target.customerId;
+      const cost = Math.round(Number(contract.vendorCost));
+      if (!linked || !Number.isFinite(cost) || cost <= 0) return;
+      vendorAmounts.push(String(cost), cost.toLocaleString("en-US"));
+    });
+    return { vendorNames: [...new Set(vendorNames)], vendorAmounts: [...new Set(vendorAmounts)], privateMemos: [] };
+  }
+
+  // 보고서에 현장 주소가 비어 있으면 CRM 의 건물 주소(건물이 없으면 고객 주소)로
+  // 채운 사본을 돌려준다. 수신인은 "(주소) 건물주" 로 쓰므로 주소가 없으면 그냥
+  // "건물주" 가 된다. 저장된 보고서는 바꾸지 않는다 — 출력할 때만 쓴다.
+  function withSiteAddress(report, store) {
+    const source = report && typeof report === "object" ? report : {};
+    if (text(source.siteAddress, 300)) return source;
+    const data = store && typeof store === "object" ? store : {};
+    const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
+    const building = text(source.buildingId, 80) ? rows(data.buildings).find(row => live(row) && row.id === source.buildingId) : null;
+    const customer = !building && text(source.customerId, 120) ? rows(data.customers).find(row => live(row) && row.id === source.customerId) : null;
+    const address = building ? [building.roadAddress, building.address, building.jibunAddress].map(value => text(value, 300)).find(Boolean)
+      : customer ? text(customer.address, 300) : "";
+    return address ? Object.assign({}, source, { siteAddress: address }) : source;
+  }
+
+  // 화면이 보낸 목록과 메인이 만든 목록을 합친다. 어느 쪽도 다른 쪽을 지우지 못한다.
+  function mergeSecrets(...sources) {
+    const merged = { vendorNames: [], vendorAmounts: [], privateMemos: [] };
+    sources.forEach(source => {
+      const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+      Object.keys(merged).forEach(key => merged[key].push(...rows(value[key]).map(item => text(item, 200)).filter(Boolean)));
+    });
+    Object.keys(merged).forEach(key => { merged[key] = [...new Set(merged[key])]; });
+    return merged;
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(item => item.id).sort((a, b) => {
       if (a.workDate !== b.workDate) return a.workDate < b.workDate ? 1 : -1;
@@ -505,6 +580,7 @@
     statusOf,
     statusLabel,
     copyOf,
+    retargetDate,
     normalizePhoto,
     normalizeItem,
     normalizeReport,
@@ -519,6 +595,9 @@
     summarizeItems,
     resultLine,
     findLeakedFields,
+    reportSecrets,
+    mergeSecrets,
+    withSiteAddress,
     sortReports,
     forCleaningOrder,
     findReport,

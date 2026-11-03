@@ -18,6 +18,10 @@
 .relationship-contract-row strong { color: #191f28; font-size: 14px; }
 .relationship-contract-row span, .relationship-contract-row small { color: #4e5968; font-size: 12px; }
 .relationship-contract-row button { flex-shrink: 0; }
+.relationship-ended { display: grid; gap: 9px; padding-top: 8px; border-top: 1px solid #dce7f2; }
+.relationship-ended > summary { cursor: pointer; color: #52677d; font-weight: 700; }
+.relationship-ended[open] > summary { margin-bottom: 10px; }
+.relationship-ended .relationship-contract-row + .relationship-contract-row { margin-top: 12px; }
 .contract-customer-mode-badge { display: inline-block; padding: 3px 7px; border-radius: 6px; background: #e8f3ff; color: #1b64da; font-size: 11px; font-style: normal; font-weight: 600; vertical-align: middle; }
 .contract-customer-mode-tabs { flex-wrap: wrap; }
 @media (max-width: 700px) { .relationship-contract-row { align-items: flex-start; flex-direction: column; } }

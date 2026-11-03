@@ -148,3 +148,68 @@ test("monthly captions cannot echo model prose or claim unobserved completion/in
   assert.equal(monthlyEvidence({ ...row, actionVisible: false }).caption, "계단·계단참 · 현장 사진");
   for (const change of [{ quality: "blurred" }, { relevance: "uncertain" }, { subject: "personal_data" }, { action: "inspection_complete" }]) assert.equal(monthlyEvidence({ ...row, ...change }), null);
 });
+
+test("a six-image batch schema has no top-level maxItems (provider rejected it with HTTP 400)", async () => {
+  // Observed 2026-11-02 against gemini-3.5-flash-lite: with the expanded closed
+  // feature enums, classifications.maxItems=6 returned INVALID_ARGUMENT while
+  // five images passed. The Worker batches six, so every larger request failed.
+  const images = Array.from({ length: 6 }, (_, i) => ({ id: `local${i}`, dataUrl: "data:image/jpeg;base64,/9j/AA==" }));
+  for (const [kind, categorySchema] of [["moveIn"], ["common", "common-v2"]]) {
+    let seen = 0;
+    await classifyPhotos({ kind, images, ...(categorySchema ? { categorySchema } : {}) }, { GEMINI_API_KEY: "synthetic" }, async (_, init) => {
+      seen++;
+      const schema = JSON.parse(init.body).generationConfig.responseJsonSchema;
+      assert.equal(schema.properties.classifications.maxItems, undefined, kind);
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ classifications: [] }) }] } }] });
+    });
+    assert.equal(seen, 1, "six images are one provider batch");
+  }
+});
+
+test("a veranda is recognised from its sash/glass and floor, not from a lone window", () => {
+  // Real tuning photo: the model answered veranda with floor + window frame + glass,
+  // but the gate only accepted the generic room token and held the photo every run.
+  const overview = normalize({ category: "veranda", space: "veranda", spaceConfidence: 90, target: "window", features: ["floor_surface", "window_frame", "glass_pane", "balustrade"] });
+  assert.equal(overview.space, "veranda"); assert.equal(overview.category, "veranda");
+  // A window close-up without the floor does not prove the room.
+  const closeup = normalize({ category: "veranda", space: "veranda", spaceConfidence: 90, target: "window", features: ["window_frame"] });
+  assert.equal(closeup.space, "unknown"); assert.equal(closeup.category, "review");
+});
+
+test("a verified bathroom overview keeps the bath item even when no single target is chosen", () => {
+  const overview = normalize({ category: "bath", space: "bath", spaceConfidence: 90, target: "unknown", targetConfidence: 40, features: ["toilet_bowl", "sink_bowl", "floor_surface"] });
+  assert.equal(overview.category, "bath"); assert.equal(overview.space, "bath");
+  assert.ok(overview.needsReview, "the unresolved target still asks a person to check");
+  // Without visible bathroom structure the room is not accepted and the item is held.
+  const unproven = normalize({ category: "bath", space: "bath", spaceConfidence: 90, target: "unknown", targetConfidence: 40, features: ["floor_surface"] });
+  assert.equal(unproven.category, "review");
+});
+
+test("match mode pairs only fixed before/after photos with two shared structures, using the stronger model", async () => {
+  const jpeg = "data:image/jpeg;base64,/9j/AA==";
+  const images = [{ id: "b1", dataUrl: jpeg, phase: "before" }, { id: "b2", dataUrl: jpeg, phase: "before" }, { id: "a1", dataUrl: jpeg, phase: "after" }];
+  const request = body => new Request("https://local.invalid", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await readPhotoClassificationPayload(request({ kind: "common", mode: "match", images }));
+  // phase is required in match mode and refused elsewhere; both phases must be present.
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", images })), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", mode: "match", images: images.map(({ phase, ...rest }) => rest) })), { code: "INVALID_INPUT" });
+  await assert.rejects(() => readPhotoClassificationPayload(request({ kind: "common", mode: "match", images: images.slice(0, 2) })), { code: "INVALID_INPUT" });
+  let url = "", schema;
+  const result = await classifyPhotos(payload, { GEMINI_API_KEY: "synthetic" }, async (u, init) => {
+    url = u; schema = JSON.parse(init.body).generationConfig.responseJsonSchema;
+    const pairs = [
+      { beforeId: "p1", afterId: "p3", matchConfidence: 92, anchors: ["frame_shape", "surface_edge"] },
+      { beforeId: "p2", afterId: "p3", matchConfidence: 99, anchors: ["frame_shape", "surface_edge"] }, // after reused
+      { beforeId: "p3", afterId: "p1", matchConfidence: 99, anchors: ["frame_shape", "surface_edge"] }, // phases swapped
+    ];
+    return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs }) }] } }] });
+  });
+  assert.match(url, /gemini-3\.5-flash:generateContent/);
+  assert.deepEqual(schema.properties.pairs.items.properties.beforeId.enum, ["p1", "p2"]);
+  assert.deepEqual(schema.properties.pairs.items.properties.afterId.enum, ["p3"]);
+  assert.deepEqual(result.pairs, [{ beforeId: "b1", afterId: "a1", matchConfidence: 92, anchors: ["frame_shape", "surface_edge"] }]);
+  assert.deepEqual(result.classifications, []);
+  // A low score or a single shared structure is not a pair.
+  const weak = await classifyPhotos(payload, { GEMINI_API_KEY: "synthetic" }, async () => Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ pairs: [{ beforeId: "p1", afterId: "p3", matchConfidence: 80, anchors: ["frame_shape", "surface_edge"] }, { beforeId: "p2", afterId: "p3", matchConfidence: 95, anchors: ["frame_shape"] }] }) }] } }] }));
+  assert.deepEqual(weak.pairs, []);
+});

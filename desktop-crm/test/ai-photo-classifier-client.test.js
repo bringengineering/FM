@@ -77,3 +77,21 @@ test("photo transport rejects credential-bearing/unapproved URLs before sending 
     })) }), { code: "AI_TEMPORARY_FAILURE" });
   } finally { clearTimeout(keepAlive); }
 });
+
+test("같은 장소 짝 찾기(match)는 작업 전·후가 정해진 사진만 받고 응답 짝의 단계를 검증한다", async () => {
+  const images = [{ id: "b1", dataUrl: jpeg(), phase: "before" }, { id: "b2", dataUrl: jpeg(), phase: "before" }, { id: "a1", dataUrl: jpeg(), phase: "after" }];
+  const input = { kind: "common", mode: "match", images };
+  assert.equal(validatePhotoClassificationInput(input).images[2].phase, "after");
+  assert.throws(() => validatePhotoClassificationInput({ ...input, mode: "classify" }), { code: "INVALID_INPUT" }, "다른 모드에는 phase 를 보낼 수 없다");
+  assert.throws(() => validatePhotoClassificationInput({ ...input, images: images.slice(0, 2) }), { code: "INVALID_INPUT" }, "작업 후가 없으면 거부");
+  assert.throws(() => validatePhotoClassificationInput({ ...input, images: [{ ...images[0], phase: "during" }, images[2]] }), { code: "INVALID_INPUT" });
+  const opts = { endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify", idToken: "test", input };
+  const reply = pairs => async () => Response.json({ ok: true, requestId: "r", classifications: [], pairs });
+  const ok = await classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b2", afterId: "a1", matchConfidence: 96 }, ]) });
+  assert.deepEqual(ok.pairs, [{ beforeId: "b2", afterId: "a1", matchConfidence: 96 }]);
+  assert.deepEqual(ok.classifications, [], "짝 찾기는 분류 결과를 만들지 않는다");
+  // 낮은 점수는 짝이 아니고, 단계가 뒤집히거나 같은 사진을 두 번 쓰면 응답 전체를 거부한다.
+  assert.deepEqual((await classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b1", afterId: "a1", matchConfidence: 70 }]) })).pairs, []);
+  await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "a1", afterId: "b1", matchConfidence: 99 }]) }), { code: "AI_INVALID_RESPONSE" });
+  await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b1", afterId: "a1", matchConfidence: 99 }, { beforeId: "b2", afterId: "a1", matchConfidence: 99 }]) }), { code: "AI_INVALID_RESPONSE" });
+});

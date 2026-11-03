@@ -44,9 +44,9 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
   const report=reportFor({...visit,photos:ordered},[],reportId);
   const font=(await readFile(new URL('../../assets/NotoSansKR.ttf',import.meta.url))).toString('base64');
   const policy="default-src 'none'; script-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
-  const html=ownerPdf.createOwnerReportHtml(report,{images,compactPhotos:true,omitUnspecifiedCategory:true,includeEmptyAreas:Boolean(visit.captureAreas)})
+  const html=ownerPdf.createOwnerReportHtml(report,{images,omitUnspecifiedCategory:true,includeEmptyAreas:Boolean(visit.captureAreas)})
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,`<meta http-equiv="Content-Security-Policy" content="${policy}">`)
-    .replace('</style>',`@font-face{font-family:BringKorean;src:url(data:font/ttf;base64,${font}) format('truetype')}html,body{font-family:BringKorean,sans-serif}</style>`);
+    .replace('</style>',`@font-face{font-family:BringKorean;src:url(data:font/ttf;base64,${font}) format('truetype')}html,body{font-family:Pretendard,BringKorean,sans-serif}</style>`);
   // HTML and image bytes never leave this process. A fresh isolated browser is
   // closed after each render and all non-data network requests are blocked.
   stage='libraries';
@@ -72,7 +72,8 @@ export async function renderRecordingPdf(visit:Recording,photos:PdfPhoto[]):Prom
       await page.setRequestInterception(true);
       page.on('request',request=>{void (/^data:(?:image\/(?:jpeg|png|webp)|font\/ttf);base64,/i.test(request.url())?request.continue():request.abort());});
       stage='page-load';await page.setContent(html,{waitUntil:'load',timeout:60000});
-      const ready=await page.evaluate(async()=>{await document.fonts.ready;return document.fonts.check('12px BringKorean')&&Array.from(document.images).every(image=>image.complete&&image.naturalWidth>0);});
+      // The owner template embeds Pretendard; Noto Sans KR stays as the bundled fallback.
+      const ready=await page.evaluate(async()=>{await document.fonts.ready;return Array.from(document.fonts).some(face=>face.status==='loaded'&&/Pretendard|BringKorean/.test(face.family))&&Array.from(document.images).every(image=>image.complete&&image.naturalWidth>0);});
       assert(ready,'REPORT_PDF_INVALID',422);
       stage='print';const bytes=await page.pdf({format:'A4',printBackground:true,preferCSSPageSize:true,timeout:120000});
       const pdf=await PDFDocument.load(bytes);pdf.setTitle('BRING CARE 작업 결과보고서');pdf.setAuthor('BRING CARE');pdf.setCreator('BRING CARE 현장노트');

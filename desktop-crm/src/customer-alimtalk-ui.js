@@ -6,6 +6,13 @@
   "use strict";
 
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  function matchesCustomer(customer, query) {
+    const q = String(query || "").trim().toLocaleLowerCase("ko-KR");
+    if (!q) return true;
+    const fields = [customer.name, customer.nickname, customer.company, customer.phone, customer.type, customer.managementStatus, customer.status, ...(customer.searchBuildings || [])];
+    const digits = q.replace(/\D/gu, "");
+    return fields.some(value => String(value || "").toLocaleLowerCase("ko-KR").includes(q)) || (/^[\d\s()-]+$/u.test(q) && digits.length > 0 && String(customer.phone || "").replace(/\D/gu, "").includes(digits));
+  }
   const categories = Object.freeze([
     { id: "quote", label: "견적서", hint: "완성한 견적 PDF를 보안 링크로 전달합니다." },
     { id: "buildingMonthlyReport", label: "건물 월간보고서", hint: "고객의 연결 건물·보고월·사진을 확인해 발송합니다." },
@@ -18,15 +25,16 @@
     const allCustomers = (Array.isArray(state.customers) ? state.customers : []).filter(item => item && item.id && !item.archivedAt && !item.deletedAt && item.deleted !== true);
     const selected = new Set((Array.isArray(state.selectedCustomerIds) ? state.selectedCustomerIds : []).map(String));
     const search = String(state.search || "").trim().toLocaleLowerCase("ko-KR");
-    const customers = allCustomers.filter(customer => !search || [customer.name, customer.company, customer.phone, customer.type, customer.managementStatus, customer.status]
-      .some(value => String(value || "").toLocaleLowerCase("ko-KR").includes(search)));
+    const customers = allCustomers;
     const category = categories.find(item => item.id === state.category) || categories[0];
     const customerRows = customers.map(customer => {
       const checked = selected.has(String(customer.id));
       const digits = String(customer.phone || "").replace(/\D/gu, "");
       const phone = digits.length >= 7 ? `${digits.slice(0, 3)}-****-${digits.slice(-4)}` : "연락처 없음";
       const searchText = [customer.name, customer.company, digits.slice(-4), customer.type, customer.managementStatus, customer.status].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
-      return `<label class="alimtalk-recipient ${checked ? "is-selected" : ""}" data-alimtalk-search-row="${esc(searchText)}"><input type="checkbox" data-alimtalk-recipient="${esc(customer.id)}" ${checked ? "checked" : ""}><span class="alimtalk-recipient-avatar">${esc(String(customer.name || customer.company || "고객").slice(0, 1))}</span><span class="alimtalk-recipient-copy"><b>${esc(customer.name || customer.company || "고객")}</b><small>${esc(customer.company || customer.type || "고객")} · ${esc(phone)}</small></span><em>${esc(customer.managementStatus || customer.status || "고객")}</em></label>`;
+      const displayName = customer.nickname || customer.name || customer.company || "고객";
+      const detail = [customer.nickname && customer.name ? `고객명: ${customer.name}` : "", ...(customer.searchBuildings || []).slice(0, 1), phone].filter(Boolean).join(" · ");
+      return `<label class="alimtalk-recipient ${checked ? "is-selected" : ""}" data-alimtalk-search-row="${esc(searchText)}" ${matchesCustomer(customer, search) ? "" : "hidden"}><input type="checkbox" data-alimtalk-recipient="${esc(customer.id)}" ${checked ? "checked" : ""}><span class="alimtalk-recipient-avatar">${esc(String(displayName).slice(0, 1))}</span><span class="alimtalk-recipient-copy"><b>${esc(displayName)}</b><small>${esc(detail)}</small></span><em>${esc(customer.managementStatus || customer.status || "고객")}</em></label>`;
     }).join("");
     const templateOptions = Object.values(Policy.TEMPLATES).map(template => `<option value="${esc(template.id)}" ${template.id === state.templateId ? "selected" : ""}>${template.purpose === "marketing" ? "[광고성]" : "[정보성]"} ${esc(template.label)}</option>`).join("");
     const buildingOptions = (Array.isArray(state.buildings) ? state.buildings : []).map(building => `<option value="${esc(building.id)}" ${String(building.id) === String(state.buildingId || "") ? "selected" : ""}>${esc(building.name || building.roadAddress || building.address || "건물 미입력")}</option>`).join("");
@@ -51,9 +59,10 @@
       const capability = monthly ? state.kakaoMonthlyReady : state.kakaoReady;
       const monthlyConsent = monthly ? Policy.evaluateMonthlyReportRequest(allCustomers.find(customer => selected.has(String(customer.id)))) : {allowed: true};
       ready = Boolean(singleRecipient && picked && capability && monthlyConsent.allowed && state.writable && state.adminCanSend);
-      if (picked?.workReportDelivery && picked.workReportDelivery.status !== "failed") ready = false;
+      const priorDelivery = picked?.workReportDelivery || picked?.customerDocumentDelivery;
+      if (priorDelivery && priorDelivery.status !== "failed") ready = false;
       blockReason = !singleRecipient ? "고객별 문서라 한 명씩 발송해야 합니다." : !state.adminCanSend ? "문서 발송은 관리자만 가능합니다." : !picked ? "발송할 저장 문서를 선택해 주세요." : !monthlyConsent.allowed ? monthlyConsent.message : !capability ? "카카오 발신 설정과 템플릿을 확인해 주세요." : !state.writable ? "메시지를 발송할 쓰기 권한이 필요합니다." : "선택한 저장 PDF와 수신 고객을 확인한 뒤 발송할 수 있습니다.";
-      if (picked?.workReportDelivery && picked.workReportDelivery.status !== "failed") blockReason = "이미 발송 요청한 저장본입니다. 중복 발송을 막았습니다. 발송 기록을 확인해 주세요.";
+      if (priorDelivery && priorDelivery.status !== "failed") blockReason = "이미 발송 요청한 저장본입니다. 중복 발송을 막았습니다. 발송 기록을 확인해 주세요.";
     } else if (state.category === "workReport") {
       previewTitle = "작업 결과보고서";
       previewText = state.workReportLabel || "선택한 고객 연락처와 일치하는 작업 결과보고서를 고르세요.";
@@ -78,8 +87,8 @@
     const result = receipt && Object.hasOwn(receiptLabels, receipt.status)
       ? `<section class="alimtalk-source-card" aria-label="알림톡 발송 결과"><b>알림톡 발송 결과 · ${esc(receiptLabels[receipt.status])}</b><p>${esc(receipt.label || "저장 보고서")}</p><p>PDF 준비 완료 · ${receipt.status === "unknown" ? "접수 여부 확인 필요" : "알림톡 접수 완료"} · ${esc(receiptLabels[receipt.status])}</p><p role="status">${esc(state.result || "")}</p>${receipt.messageId && state.adminCanSend ? `<button type="button" class="secondary-button" data-alimtalk-status ${state.busy ? "disabled" : ""}>발송 상태 확인</button>` : ""}<p>결과가 불확실하면 자동 재발송하지 않습니다.</p></section>`
       : state.result ? `<p class="alimtalk-send-result" role="status">${esc(state.result)}</p>` : "";
-    return `<section class="customer-alimtalk-page"><header class="customer-alimtalk-hero"><div><span>CUSTOMER MESSAGES</span><h2>알림톡 발송</h2><p>고객을 직접 고르고, 견적서·건물 월간보고서·작업 결과보고서·안내 중 발송 종류를 선택합니다.</p></div><b class="alimtalk-selected-count">${selectedCount}명<small>선택</small></b></header><div class="customer-alimtalk-layout"><section class="alimtalk-recipient-panel"><header><div><h3>고객 선택</h3><p>연락처와 관리 상태를 확인하고 수신자를 고릅니다.</p></div><span>${allCustomers.length}명</span></header><label class="alimtalk-search"><span>고객 검색</span><input type="search" data-alimtalk-search value="${esc(state.search || "")}" placeholder="이름·건물·전화번호"></label><div class="alimtalk-recipient-list">${customerRows || `<div class="alimtalk-empty">검색 결과가 없습니다.</div>`}</div><footer><span>선택한 수신자</span><b>${selectedCount}명</b></footer></section><section class="alimtalk-compose-panel"><header><div><h3>발송 종류</h3><p>고객별 자료가 다른 보고서는 한 명씩 확인 후 보냅니다.</p></div></header><div class="alimtalk-category-grid">${categories.map(item => `<button type="button" data-alimtalk-category="${item.id}" class="${item.id === category.id ? "active" : ""}" aria-pressed="${item.id === category.id ? "true" : "false"}"><b>${esc(item.label)}</b><small>${esc(item.hint)}</small></button>`).join("")}</div>${sourcePanel}<section class="alimtalk-message-preview"><header><b>내용·발송 조건 확인</b><span class="${ready ? "is-ready" : "is-pending"}">${ready ? "발송 준비" : "확인 필요"}</span></header><div class="alimtalk-preview-copy"><b>${esc(previewTitle)}</b><p>${esc(previewText)}</p><small>${esc(blockReason)}</small></div></section><div class="alimtalk-actions"><button type="button" class="secondary-button" data-alimtalk-clear ${selectedCount ? "" : "disabled"}>선택 해제</button><button type="button" class="primary-button" data-alimtalk-send ${ready && !state.busy ? "" : "disabled"}>${state.busy ? "발송 요청 중…" : `알림톡 보내기${selectedCount ? ` · ${selectedCount}명` : ""}`}</button></div>${result}</section></div></section>`;
+    return `<section class="customer-alimtalk-page"><header class="customer-alimtalk-hero"><div><span>CUSTOMER MESSAGES</span><h2>알림톡 발송</h2><p>고객을 직접 고르고, 견적서·건물 월간보고서·작업 결과보고서·안내 중 발송 종류를 선택합니다.</p></div><b class="alimtalk-selected-count">${selectedCount}명<small>선택</small></b></header><div class="customer-alimtalk-layout"><section class="alimtalk-recipient-panel"><header><div><h3>고객 선택</h3><p>연락처와 관리 상태를 확인하고 수신자를 고릅니다.</p></div><span>${allCustomers.length}명</span></header><label class="alimtalk-search"><span>고객 검색</span><input type="search" data-alimtalk-search value="${esc(state.search || "")}" placeholder="이름·건물·전화번호"></label><div class="alimtalk-recipient-list">${customerRows}<div class="alimtalk-empty" data-alimtalk-no-results ${customers.some(customer => matchesCustomer(customer, search)) ? "hidden" : ""}>검색 결과가 없습니다.</div></div><footer><span>선택한 수신자</span><b>${selectedCount}명</b></footer></section><section class="alimtalk-compose-panel"><header><div><h3>발송 종류</h3><p>고객별 자료가 다른 보고서는 한 명씩 확인 후 보냅니다.</p></div></header><div class="alimtalk-category-grid">${categories.map(item => `<button type="button" data-alimtalk-category="${item.id}" class="${item.id === category.id ? "active" : ""}" aria-pressed="${item.id === category.id ? "true" : "false"}"><b>${esc(item.label)}</b><small>${esc(item.hint)}</small></button>`).join("")}</div>${sourcePanel}<section class="alimtalk-message-preview"><header><b>내용·발송 조건 확인</b><span class="${ready ? "is-ready" : "is-pending"}">${ready ? "발송 준비" : "확인 필요"}</span></header><div class="alimtalk-preview-copy"><b>${esc(previewTitle)}</b><p>${esc(previewText)}</p><small>${esc(blockReason)}</small></div></section><div class="alimtalk-actions"><button type="button" class="secondary-button" data-alimtalk-clear ${selectedCount ? "" : "disabled"}>선택 해제</button><button type="button" class="primary-button" data-alimtalk-send ${ready && !state.busy ? "" : "disabled"}>${state.busy ? "발송 요청 중…" : `알림톡 보내기${selectedCount ? ` · ${selectedCount}명` : ""}`}</button></div>${result}</section></div></section>`;
   }
 
-  return Object.freeze({ categories, render });
+  return Object.freeze({ categories, render, matchesCustomer });
 });

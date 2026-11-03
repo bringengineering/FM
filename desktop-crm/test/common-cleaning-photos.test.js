@@ -70,7 +70,7 @@ test('단계 이동·제외·반복 반영은 중복 없이 캡션과 수동 상
 test('공용부 PDF는 작업 중 사진을 따로 표시하며 모두 다운로드 대상에 포함한다',()=>{
   const r=report(classified());const options={sealImage:Buffer.from([137,80,78,71,13,10,26,10]),images:{work:'data:image/jpeg;base64,fixture'}};
   const html=PDF.createWorkReportHtml(r,'owner',options);
-  assert.match(html,/공용 창호 · 작업 중/);assert.match(html,/fixture/);assert.doesNotMatch(html,/class="pair"/);
+  assert.match(html,/창틀·레일 · 작업 중/);assert.match(html,/fixture/);assert.doesNotMatch(html,/class="pair"/);
   assert.equal(PDF.workReportPdfPhotos(r).length,1);
   r.items.find(x=>x.key==='windows').during=Array.from({length:101},(_,i)=>R.normalizePhoto({id:'p'+i,driveFileId:'p'+i}));
   assert.throws(()=>PDF.workReportPdfPhotos(r),{code:'REPORT_PHOTO_LIMIT'});

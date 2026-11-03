@@ -21,7 +21,7 @@ function setup(writable = true) {
     contract("other_a", "unknown", "기타"), contract("missing_a", "unknown", undefined),
     contract("archived_a", "archived", "월 정기"), contract("deleted_a", "mixed", "월 정기", { deletedAt: "2026-01-01" }),
   ] };
-  const ctx = vm.createContext({ store, ContractSchedule, contractCustomerModeFilter: "all", contractPaymentModeFilter: "single", main: { innerHTML: "" },
+  const ctx = vm.createContext({ store, ContractSchedule, window: {BringContractCustomerSummary: require("../src/contract-customer-summary")}, todayKey: () => "2026-10-01", contractCustomerModeFilter: "all", contractPaymentModeFilter: "single", main: { innerHTML: "" },
     canWriteCRM: () => writable, customerSalesProgress: () => ({ filterIds: [] }), customerDisplayName: c => c.name,
     customerAvatar: () => "", buildingById: () => null, esc, attr: esc, empty: (title, description, action) => `${title} ${description} ${action}`,
   });
@@ -92,4 +92,25 @@ test("untrusted customer, contract and schedule text remains escaped in every ca
     assert.match(ctx.main.innerHTML, /&lt;script/);
     assert.doesNotMatch(ctx.main.innerHTML, /<img|<script/);
   }
+});
+test("종료 계약은 구분하고 연결된 계약이 없는 이유를 표시한다", () => {
+  const ctx = setup();
+  ctx.store.contracts.find(c => c.id === "single_a").status = "종료";
+  ctx.renderRelationships();
+  assert.match(ctx.main.innerHTML, /종료 계약 1건/);
+  assert.match(ctx.main.innerHTML, /연결된 계약 없음 · 고객 상태가 계약 확정/);
+  assert.match(ctx.main.innerHTML, /종료 계약 포함/);
+  ctx.store.customers.find(c => c.id === "single").deleted = true;
+  ctx.renderRelationships();
+  assert.doesNotMatch(ctx.main.innerHTML, /Customer single/);
+});
+test("고객 카드에는 변경된 실제 일정과 입금 등록 상태를 각각 표시한다", () => {
+  const ctx = setup();
+  const row=ctx.store.contracts.find(c=>c.id === "single_a");
+  Object.assign(row,{buildingId:"b1",type:"청소",workDate:"2026-10-06",paymentDueDate:"2026-10-15",cleaningSchedule:{mode:"once"}});
+  ctx.store.serviceRecords=[{id:"r1",sourceContractId:row.id,sourceContractDate:"2026-10-06",sourceContractBuildingId:"b1",buildingId:"b1",scheduledDate:"2026-10-08",status:"planned"}];
+  ctx.clickMode("single");
+  assert.match(ctx.main.innerHTML,/업무일정 · 2026-10 · 2026-10-08 예정/);
+  assert.doesNotMatch(ctx.main.innerHTML,/업무일정 · 2026-10 · 2026-10-06/);
+  assert.match(ctx.main.innerHTML,/입금일정 · 2026-10-15 입금 예정/);
 });

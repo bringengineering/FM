@@ -56,7 +56,9 @@ test("업체 정보가 섞인 보고서는 아예 만들지 않는다", () => {
   // 만들고 나서 지우는 것보다 안 만드는 편이 낫다. 한 번 나간 PDF 는
   // 되돌릴 수 없다.
   const body = functionBody(mainSource, "exportWorkReport");
-  assert.match(body, /WorkReportCore\.findLeakedFields\(report, options\.secrets\)/u);
+  // 검사 목록은 메인이 회사 자료로 만들고, 화면이 보낸 목록은 더하기만 한다.
+  assert.match(body, /WorkReportCore\.mergeSecrets\(WorkReportCore\.reportSecrets\(store, report\), options\.secrets\)/u);
+  assert.match(body, /WorkReportCore\.findLeakedFields\(report, secrets\)/u);
   assert.match(body, /REPORT_LEAK/u);
   assert.ok(body.indexOf("findLeakedFields") < body.indexOf("showSaveDialog"), "저장 창을 열기 전에 걸러야 한다");
   // 화면도 협력업체 이름을 실어 보낸다. 안 보내면 검사가 아무것도 못 잡는다.
@@ -157,7 +159,7 @@ test("건물을 고르면 등록 주소를 쓰고 상세주소는 별도 빈칸�
 
   const addressStart = appSource.indexOf("function workReportBuildingAddress(");
   const addressHelpers = appSource.slice(addressStart, editorStart);
-  assert.match(addressHelpers, /building\.roadAddress \|\| building\.jibunAddress \|\| building\.address/u);
+  assert.match(addressHelpers, /building\.roadAddress \|\| building\.address \|\| building\.jibunAddress/u);
   assert.match(addressHelpers, /saved\.startsWith\(prefix\)/u, "기존 보고서의 상세주소를 다시 분리해야 한다");
 
   const readStart = appSource.indexOf("function readReportForm(");
@@ -205,8 +207,9 @@ test("사진 한 장 붙일 때마다 서버에 쓰지 않는다", () => {
   const body = appSource.slice(start, appSource.indexOf("\n  function dropWorkReportPhoto(", start));
   assert.match(body, /api\.uploadWorkReportPhoto/u);
   assert.doesNotMatch(body, /api\.saveWorkReport/u);
-  // 건물을 모르면 사진이 어느 현장 것인지 알 수 없다.
-  assert.match(body, /건물을 먼저 골라 주세요/u);
+  // 고객 또는 기존 건물로 현장을 식별해야 사진을 첨부할 수 있다.
+  assert.match(body, /!draft\.buildingId && !draft\.customerId/u);
+  assert.match(body, /고객을 먼저 골라 주세요/u);
 });
 
 test("사진을 빼도 Drive 에서는 지우지 않는다", () => {

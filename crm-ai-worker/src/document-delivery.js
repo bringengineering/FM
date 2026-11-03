@@ -241,6 +241,17 @@ export function createDocumentDeliveryHandler(options = {}) {
       const document = documentId && await env.DOCUMENT_DELIVERY.get(`doc:${documentId}`, "json");
       if (!document || document.revokedAt || new Date(document.expiresAt).getTime() <= now()) return new Response("문서가 만료되었거나 폐기되었습니다.", { status: 410 });
       const bytes = decodeBase64(document.bytes);
+      // 열람 기록. 카카오 미리보기·검색 봇 같은 자동 접속은 세지 않는다. 쓰기는 첫 열람과
+      // 그 뒤 한 시간에 한 번만 — 같은 사람이 새로고침할 때마다 KV 에 쓰지 않는다.
+      const agent = String(request.headers.get("user-agent") || "");
+      if (!/bot|crawl|spider|scrap|preview|facebookexternalhit|slack|kakaotalk-scrap|yeti|daum|curl|wget|python|headless/iu.test(agent)) {
+        const at = now(), last = new Date(document.lastViewedAt || 0).getTime();
+        if (!document.firstViewedAt || !Number.isFinite(last) || at - last > 60 * 60 * 1000) {
+          const updated = { ...document, firstViewedAt: document.firstViewedAt || new Date(at).toISOString(), lastViewedAt: new Date(at).toISOString(), viewCount: Math.min(9999, (Number(document.viewCount) || 0) + 1) };
+          const ttl = Math.max(60, Math.ceil((new Date(document.expiresAt).getTime() - at) / 1000));
+          try { await env.DOCUMENT_DELIVERY.put(`doc:${documentId}`, JSON.stringify(updated), { expirationTtl: ttl }); } catch { /* 열람 기록을 못 남겨도 문서는 보여 준다. */ }
+        }
+      }
       return new Response(bytes, { headers: { "content-type": "application/pdf", "content-disposition": "inline", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
     }
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
@@ -396,6 +407,13 @@ export function createDocumentDeliveryHandler(options = {}) {
         }
       }
       return json(record);
+    }
+    // 보낸 문서의 열람 상태. 문서 내용·받는 사람 정보는 돌려주지 않는다.
+    const viewMatch = /^\/v1\/document-delivery\/documents\/([A-Za-z0-9_-]{1,120})$/.exec(url.pathname);
+    if (viewMatch && request.method === "GET") {
+      const document = await env.DOCUMENT_DELIVERY.get(`doc:${viewMatch[1]}`, "json");
+      if (!document) return json({ ok: false, code: "DOCUMENT_NOT_FOUND" }, 404);
+      return json({ ok: true, documentId: viewMatch[1], firstViewedAt: document.firstViewedAt || "", lastViewedAt: document.lastViewedAt || "", viewCount: Number(document.viewCount) || 0, expiresAt: document.expiresAt, revoked: Boolean(document.revokedAt) });
     }
     const revokeMatch = /^\/v1\/document-delivery\/documents\/([A-Za-z0-9_-]{1,120})\/revoke$/.exec(url.pathname);
     if (revokeMatch && request.method === "POST") {

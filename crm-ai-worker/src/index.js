@@ -7,7 +7,9 @@ import { fieldReportFacts, verifyFieldAppCheck, fieldPasswordToken } from "./fie
 export { WeeklyReportDeliveries } from "./weekly-report-delivery.js";
 import { wallboardRequest, wallboardWebRequest } from "./wallboard-http.js";
 import { wallboardWebAssetResponse } from "./wallboard-web-assets.js";
+import { MAP_PATH, mapConfigured, mapRequest } from "./vworld-map.js";
 import { classifyPhotos, readPhotoClassificationPayload } from "./photo-classify.js";
+import { readInspectionReviewPayload, reviewInspectionPhotos } from "./inspection-review.js";
 import { readMonthlyReportPhotoSelectionPayload, selectMonthlyReportPhotos } from "./monthly-report-photo-select.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
@@ -19,6 +21,7 @@ const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-10-27-quote-template-v2";
 const ASSIST_PATH = "/v1/assist";
 const PHOTO_CLASSIFY_PATH = "/v1/photo-classify";
+const INSPECTION_REVIEW_PATH = "/v1/inspection-review";
 const MONTHLY_REPORT_PHOTO_SELECT_PATH = "/v1/monthly-report-photo-select";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
@@ -431,19 +434,20 @@ export function createWorker(options = {}) {
           return result;
         }),
       });
+      if (url.pathname === MAP_PATH) return mapRequest(request, env, { cors, fetchImpl, verifyIdentity: token => verifyFirebaseIdentity(token, env, fetchImpl, true) });
       if (url.pathname.startsWith('/tv/api/')) return wallboardWebRequest(request, env);
       if (url.pathname==='/tv'||url.pathname.startsWith('/tv/')) return wallboardWebAssetResponse(url.pathname);
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true",
           weeklyReportDelivery: Boolean(env.WEEKLY_REPORT_DELIVERIES && env.WEEKLY_REPORT_TELEGRAM_BOT_TOKEN && env.WEEKLY_REPORT_TELEGRAM_CHAT_ID),
-          morningTelegram: await morningSourceReady(env) });
+          morningTelegram: await morningSourceReady(env), contractMap: mapConfigured(env) });
       }
       if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
       const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
-      if (![ASSIST_PATH, PHOTO_CLASSIFY_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, PHOTO_CLASSIFY_PATH, INSPECTION_REVIEW_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
-      if ([ASSIST_PATH, PHOTO_CLASSIFY_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
+      if ([ASSIST_PATH, PHOTO_CLASSIFY_PATH, INSPECTION_REVIEW_PATH, MONTHLY_REPORT_PHOTO_SELECT_PATH, TRANSCRIBE_PATH].includes(url.pathname) && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
@@ -455,7 +459,7 @@ export function createWorker(options = {}) {
         await enforceLimits(identity, env, now);
         if (url.pathname === PHOTO_CLASSIFY_PATH) {
           const photos = await readPhotoClassificationPayload(request);
-          const classified = await classifyPhotos(photos, env, fetchImpl, Math.max(timeoutMs, 60_000));
+          const classified = await classifyPhotos(photos, env, fetchImpl, photos.mode === "match" ? 110_000 : Math.max(timeoutMs, 60_000));
           return json({
             ok: true,
             requestId: requestId(),
@@ -464,6 +468,11 @@ export function createWorker(options = {}) {
             warnings: ["사진 축소본은 분류에만 사용되며 이 서비스에 저장하지 않습니다."],
             usage: classified.usage,
           }, 200, cors);
+        }
+        if (url.pathname === INSPECTION_REVIEW_PATH) {
+          const images = await readInspectionReviewPayload(request);
+          const reviewed = await reviewInspectionPhotos(images, env, fetchImpl, Math.max(timeoutMs, 60_000));
+          return json({ ok: true, requestId: requestId(), reviews: reviewed.reviews, warnings: ["사진 축소본은 점검 제안에만 사용되며 이 서비스에 저장하지 않습니다."] }, 200, cors);
         }
         if (url.pathname === MONTHLY_REPORT_PHOTO_SELECT_PATH) {
           const payload = await readMonthlyReportPhotoSelectionPayload(request);

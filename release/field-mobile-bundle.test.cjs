@@ -35,6 +35,15 @@ test("deployment contains only the mobile API and no database/hosting targets", 
   assert.equal(fs.readFileSync(path.join(bundle.source,'shared/work-report-core.cjs'),'utf8'),'module.exports = {};');
   assert.deepEqual(fs.readdirSync(path.join(bundle.source, "field-mobile")).sort(), [...MODULES].sort());
 });
+test("ships the owner report logo and Pretendard next to the shared template", t => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root,'desktop-crm/src/assets/fonts'),{recursive:true});
+  for(const name of ['bring-care-logo.jpg','fonts/PretendardVariable.woff2','fonts/Pretendard-LICENSE.txt'])fs.writeFileSync(path.join(root,'desktop-crm/src/assets',name),'synthetic asset');
+  const bundle = createBundle(root);
+  for(const name of ['bring-care-logo.jpg','fonts/PretendardVariable.woff2','fonts/Pretendard-LICENSE.txt'])assert.equal(fs.readFileSync(path.join(bundle.source,'shared/assets',name),'utf8'),'synthetic asset');
+  fs.writeFileSync(path.join(bundle.source,'shared/assets/other.png'),'x');
+  assert.throws(() => createBundle(root), /UNEXPECTED_FILE/);
+});
 test("refuses an import outside the audited mobile modules", t => {
   const root = fixture(t);
   fs.writeFileSync(path.join(root, "functions/lib/field-mobile/endpoint.js"), "import '../index.js';");
