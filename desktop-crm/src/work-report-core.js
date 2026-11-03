@@ -219,6 +219,31 @@
     return COPIES.find(item => item.key === text(key, 20)) || null;
   }
 
+  // AI 초안은 분류 직후 그때의 작업일로 쓰인다. 작업일을 나중에 고치면 본문 속 옛 날짜도
+  // 같이 바꾼다(2026-11-03 실제 발송 테스트에서 "11월 03일" 이 10월 29일 보고서에 남았다).
+  // 옛 날짜를 그대로 적은 표기만 바꾸고 다른 날짜는 건드리지 않는다.
+  function retargetDate(value, from, to) {
+    const source = String(value || "");
+    const parse = date => /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+    const a = parse(from), b = parse(to);
+    if (!source || !a || !b || from === to) return source;
+    const plain = n => String(Number(n));
+    const pairs = [
+      [`${a[1]}년 ${a[2]}월 ${a[3]}일`, `${b[1]}년 ${b[2]}월 ${b[3]}일`],
+      [`${a[1]}년 ${plain(a[2])}월 ${plain(a[3])}일`, `${b[1]}년 ${plain(b[2])}월 ${plain(b[3])}일`],
+      [`${a[1]}-${a[2]}-${a[3]}`, `${b[1]}-${b[2]}-${b[3]}`],
+      [`${a[1]}.${a[2]}.${a[3]}`, `${b[1]}.${b[2]}.${b[3]}`],
+      [`${a[1]}. ${plain(a[2])}. ${plain(a[3])}.`, `${b[1]}. ${plain(b[2])}. ${plain(b[3])}.`],
+    ];
+    let out = source;
+    for (const [old, next] of pairs) out = out.split(old).join(next);
+    // 연도 없이 "11월 3일"·"11월 03일" 로 적은 경우(앞이 숫자나 "년 " 이 아닐 때만).
+    for (const [old, next] of [[`${plain(a[2])}월 ${plain(a[3])}일`, `${plain(b[2])}월 ${plain(b[3])}일`], [`${a[2]}월 ${a[3]}일`, `${b[2]}월 ${b[3]}일`]]) {
+      out = out.replace(new RegExp(`(?<!\\d)(?<!년\\s?)${old}`, "gu"), next);
+    }
+    return out;
+  }
+
   function normalizePhoto(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
     let link = "";
@@ -555,6 +580,7 @@
     statusOf,
     statusLabel,
     copyOf,
+    retargetDate,
     normalizePhoto,
     normalizeItem,
     normalizeReport,

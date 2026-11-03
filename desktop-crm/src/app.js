@@ -9939,7 +9939,9 @@
     const pairs = [];
     let failed = 0;
     try {
-      for (const request of requests) {
+      // 구역을 하나씩 물으면 25장에 9분 걸렸다(2026-11-03). 세 구역씩 함께 묻는다.
+      const queue = requests.slice();
+      const askOne = async request => {
         // 신중한 모델이 가끔 일시 오류를 내므로 한 번만 다시 묻는다(사용 한도·권한 오류는 다시 묻지 않는다).
         let result = null;
         for (let attempt = 0; attempt < 2 && !result; attempt += 1) {
@@ -9952,7 +9954,11 @@
           if (reportState.pairMatching !== token) return;
         }
         if (result) pairs.push(...result.pairs); else failed += 1;
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+        while (queue.length && reportState.pairMatching === token) await askOne(queue.shift());
+      }));
+      if (reportState.pairMatching !== token) return;
       // 기다리는 사이 사람이 사진을 옮겼을 수 있으니 지금 계획에 다시 맞춰 반영한다.
       if (reportState.drivePlan?.kind !== "common") return;
       preserveReportDraft();
@@ -10095,11 +10101,13 @@
       if (latest.summary.trim()) {
         reportState.aiSuggestion = text.slice(0, 2000);
         reportState.aiSuggestionSignature = signature;
+        reportState.aiSuggestionDate = draft.workDate;
         showToast("기존 문장은 유지했습니다. 새 AI 제안을 확인한 뒤 적용할 수 있습니다.");
         return;
       }
       reportState.draft = R.normalizeReport(Object.assign({}, latest, { summary: text }));
       reportState.aiDraftAt = new Date().toISOString();
+      reportState.aiSummaryDate = { id: draft.id, date: draft.workDate };
       showToast("AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
     } catch (error) {
       if (active()) {
@@ -10342,6 +10350,19 @@
         note: noteEl ? noteEl.value : item.note,
       });
     });
+    // 작업일을 고치면 초안 본문 속 옛 날짜도 함께 고친다. 화면 글상자도 바꿔야 다음 읽기에서 되돌아가지 않는다.
+    // AI 가 쓴 문장은 그때 넘긴 작업일을 기준으로 한다 — 사진 반영 중 초안의 작업일이 먼저
+    // 바뀌어도(실제 CRM 테스트에서 재현) 본문 날짜를 놓치지 않는다.
+    const aiDate = reportState.aiSummaryDate && reportState.aiSummaryDate.id === previous.id ? reportState.aiSummaryDate.date : "";
+    const writtenFor = aiDate || previous.workDate;
+    if (typeof R.retargetDate === "function" && writtenFor && raw.workDate && raw.workDate !== writtenFor) {
+      const moved = R.retargetDate(String(raw.summary || ""), writtenFor, String(raw.workDate));
+      if (moved !== String(raw.summary || "")) {
+        raw.summary = moved;
+        if (form.elements.summary) form.elements.summary.value = moved;
+      }
+      if (aiDate) reportState.aiSummaryDate = { id: previous.id, date: String(raw.workDate) };
+    }
     return R.normalizeReport(Object.assign({}, previous, {
       kind: String(raw.kind || previous.kind),
       buildingId: customerId ? "" : selection,
@@ -10467,7 +10488,10 @@
       const accepted = await requestConfirmation({title: "저장되었습니다.", description: "고객 알림을 보내시겠습니까?",
         target: `${building?.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
         message: "브링케어 카카오 알림톡으로 저장한 보고서 보기 링크를 보냅니다. 링크는 7일 뒤 만료됩니다.",
-        warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success"});
+        warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success",
+        // 방금 한 저장이 동기화로 되돌아오면서 이 창이 매번 취소됐다(2026-11-02·03 재현). 발송은
+        // 저장본 ID·수정시각·지문으로 메인에서 다시 검증하므로 다른 변경이 들어와도 안전하다.
+        remoteSafe: true});
       if (!accepted || !active() || currentView !== "workReports") return;
       const result = await api.sendSavedCustomerDocument({kind: "workReport", documentId: archived.record.id, customerId: owner.id,
         updatedAt: archived.record.updatedAt, sha256: doc.sha256});
@@ -14288,7 +14312,7 @@
     drawer.inert = false;
     confirmationContent.innerHTML = "";
     let remoteConflict = false;
-    if (confirmed && pendingRemoteStore) {
+    if (confirmed && pendingRemoteStore && !pending.remoteSafe) {
       if (!saveInFlight) {
         const remote = pendingRemoteStore;
         pendingRemoteStore = null;
@@ -14324,7 +14348,7 @@
     modal.inert = true;
     drawer.inert = true;
     return new Promise(resolve => {
-      activeConfirmation = { resolve, previousFocus };
+      activeConfirmation = { resolve, previousFocus, remoteSafe: config.remoteSafe === true };
       setTimeout(() => confirmationContent.querySelector('[data-confirm-choice="confirm"]')?.focus(), 20);
     });
   }
@@ -15495,6 +15519,7 @@
         renderWorkReports(); return;
       }
       reportState.draft.summary = reportState.aiSuggestion;
+      reportState.aiSummaryDate = { id: reportState.draft.id, date: reportState.aiSuggestionDate || reportState.draft.workDate };
       reportState.aiSuggestion = "";
       reportState.aiDraftAt = new Date().toISOString();
       renderWorkReports(); return;
@@ -18009,6 +18034,11 @@
       else if (field.matches("[data-operations-building]")) operationsCheckFilters.buildingId = field.value;
       else operationsCheckFilters.owner = field.value;
       refreshOperationsCheck();
+      return;
+    }
+    if (event.target.matches('[data-report-form] [name="workDate"]')) {
+      // 작업일을 고치면 초안 본문 속 옛 날짜가 그 자리에서 바뀌어 보여야 한다(readReportForm 이 바꾼다).
+      preserveReportDraft();
       return;
     }
     if (event.target.matches("[data-report-kind]")) {

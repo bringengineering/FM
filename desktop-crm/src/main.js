@@ -56,6 +56,7 @@ const DriveOAuth = require("./drive-oauth");
 const ReportPhotoPlan = require("./report-photo-plan");
 const PhotoCaptureTime = require("./photo-capture-time");
 const HeicJpegConverter = require("./heic-jpeg-converter");
+const JpegOrientation = require("./jpeg-orientation");
 const TelegramCore = require("./telegram-core");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
@@ -4273,6 +4274,7 @@ function safeClassificationJpeg(sourceBuffer) {
   const source = nativeImage.createFromBuffer(sourceBuffer);
   if (!source || source.isEmpty()) throw Object.assign(new Error("사진 축소본을 만들지 못했습니다."), { code: "PHOTO_PREVIEW_FAILED" });
   const size = source.getSize();
+  const orientation = JpegOrientation.readOrientation(sourceBuffer);
   const longest = Math.max(1, Number(size.width || 0), Number(size.height || 0));
   const attempts = [
     { edge: 1024, quality: 76 },
@@ -4283,11 +4285,12 @@ function safeClassificationJpeg(sourceBuffer) {
   ];
   for (const attempt of attempts) {
     const scale = Math.min(1, attempt.edge / longest);
-    const resized = source.resize({
+    // AI 도 세워진 사진을 봐야 구역·같은 장소를 제대로 본다(누운 사진은 다른 장소로 짝지어졌다).
+    const resized = JpegOrientation.uprightImage(nativeImage, source.resize({
       width: Math.max(1, Math.round(Number(size.width || 1) * scale)),
       height: Math.max(1, Math.round(Number(size.height || 1) * scale)),
       quality: "good",
-    });
+    }), orientation);
     const jpeg = resized.toJPEG(attempt.quality);
     if (jpeg.length && jpeg.length <= MAX_AI_CLASSIFICATION_JPEG_BYTES) {
       return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
@@ -4701,6 +4704,8 @@ function workReportPdfJpeg(content) {
   // PDF 에서 사진은 가장 커도 폭 9cm 정도다. 긴 변 1000px·품질 72면 인쇄에도 충분하고,
   // 33장 보고서가 13MB 를 넘어 카카오톡에서 늦게 열리던 것을 3분의 1 안팎으로 줄인다.
   if (Math.max(width, height) > 1000) image = image.resize(width >= height ? { width: 1000 } : { height: 1000 });
+  // 세로로 찍은 휴대폰 사진이 PDF 에서 눕지 않게 EXIF 방향대로 세운다.
+  image = JpegOrientation.uprightImage(nativeImage, image, JpegOrientation.readOrientation(content));
   const jpeg = image.toJPEG(72);
   if (!jpeg.length || jpeg.length > 1024 * 1024) throw new Error("보고서 사진 용량을 확인해 주세요.");
   return jpeg;
