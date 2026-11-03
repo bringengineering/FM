@@ -10565,6 +10565,8 @@
     if (!draft.buildingId && !draft.customerId) return showToast("고객을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
+    const rootFolderId = buildingDocsRootFolderId();
+    if (!rootFolderId) return showToast("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
     const picked = await api.pickBuildingDocuments();
     if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
     reportState.busyKey = `${itemKey}:${phase}`;
@@ -10574,6 +10576,7 @@
     try {
       for (const file of picked.files.slice(0, 4)) {
         const uploaded = await api.uploadWorkReportPhoto({
+          rootFolderId,
           reportId: draft.id,
           itemKey,
           itemLabel: item.label,
@@ -10581,7 +10584,7 @@
           buildingName: draft.buildingName,
           kindLabel: R.kindLabel(draft.kind),
           workDate: draft.workDate,
-          filePath: file.path,
+          filePath: file.filePath,
           mimeType: file.mimeType,
         });
         if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");

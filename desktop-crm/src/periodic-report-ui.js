@@ -20,10 +20,12 @@
     // 건물로 묶이지 않은 고객 단위 청소 보고서도 있다. 그런 고객만 고를 수 있게 둔다 —
     // 고객 전체를 늘어놓으면 청소 기록이 없는 고객을 골라 빈 보고서를 만든다.
     const customers = () => {
-      const ids = new Set(state.works.filter(row => P().CLEANING_KINDS.includes(row.kind) && !row.buildingId && row.customerId).map(row => row.customerId));
+      // 고객 id 와 같은 id 의 건물이 있으면 그 건물로 고른다(같은 현장이 두 번 보이지 않게).
+      const buildingIds = new Set(buildings().map(item => item.id));
+      const ids = new Set(state.works.filter(row => P().CLEANING_KINDS.includes(row.kind) && !row.buildingId && row.customerId && !buildingIds.has(row.customerId)).map(row => row.customerId));
       return (getStore().customers || []).filter(item => item && ids.has(item.id) && !item.archivedAt && !item.deletedAt && item.deleted !== true);
     };
-    const targetName = report => report.buildingId ? buildingName(report.buildingId) : ((customers().find(item => item.id === report.customerId) || {}).name || "고객");
+    const targetName = report => report.buildingId ? buildingName(report.buildingId) : ((getStore().customers || []).find(item => item && item.id === report.customerId) || {}).name || report.buildingName || "고객";
     const targetOf = value => {
       const match = /^(b|c):(.+)$/.exec(String(value || ""));
       if (!match) return null;
@@ -45,7 +47,7 @@
     function updateBadge() {
       const badge = root.document.getElementById("navPeriodicCount");
       if (!badge || !P()) return;
-      const due = P().dueReports(state.works, state.reports, todayKey());
+      const due = P().dueReports(state.works, state.reports, todayKey(), buildings().map(item => item.id));
       const count = due.items.filter(item => item.state !== "sent").length;
       badge.textContent = String(count);
       badge.hidden = count === 0;
@@ -55,7 +57,7 @@
     async function createDrafts() {
       if (state.busy) return;
       const core = P();
-      const due = core.dueReports(state.works, state.reports, todayKey());
+      const due = core.dueReports(state.works, state.reports, todayKey(), buildings().map(item => item.id));
       const missing = due.items.filter(item => item.state === "missing");
       if (!missing.length) return showToast("새로 만들 초안이 없습니다.", "info");
       state.busy = "drafts";
@@ -101,7 +103,7 @@
 
     function dueBanner() {
       const core = P();
-      const due = core.dueReports(state.works, state.reports, todayKey());
+      const due = core.dueReports(state.works, state.reports, todayKey(), buildings().map(item => item.id));
       if (!due.period || !due.items.length) return "";
       const count = key => due.items.filter(item => item.state === key).length;
       const label = { missing: "초안 없음", draft: "작성 중", ready: "발송 대기", sent: "발송 완료" };
@@ -162,7 +164,9 @@
     }
 
     // 화면의 입력값을 draft 에 옮긴다. 다시 그리기 전에 늘 부른다.
-    function readForm() {
+    // confirm: 담당자가 점검을 확인했다는 뜻. 저장·PDF·발송을 직접 눌렀을 때만 켠다 — AI 제안이나
+    // 작업 건 연결처럼 도우미 동작으로 저장될 때 자동 초안이 '확인됨' 이 되면 안 된다.
+    function readForm({ confirm = false } = {}) {
       const form = getMain().querySelector("[data-pr-form]");
       if (!form || !state.draft) return state.draft;
       const core = P();
@@ -171,8 +175,7 @@
       draft.inspection.inspectorName = form.querySelector("[name=inspectorName]").value;
       draft.summary = form.querySelector("[name=summary]").value;
       draft.followUp = form.querySelector("[name=followUp]").value;
-      // 담당자가 편집 화면에서 저장하면 점검을 확인한 것으로 본다.
-      draft.inspection.confirmed = true;
+      if (confirm) draft.inspection.confirmed = true;
       const picked = [...form.querySelectorAll("[data-pr-cleaning]")];
       draft.cleaningReportIds = picked.every(input => input.checked) ? [] : picked.filter(input => input.checked).map(input => input.value);
       draft.inspection.items = draft.inspection.items.map(item => {
@@ -185,8 +188,8 @@
       return state.draft;
     }
 
-    async function save({ quiet = false } = {}) {
-      const draft = readForm();
+    async function save({ quiet = false, confirm = true } = {}) {
+      const draft = readForm({ confirm });
       if (!draft || state.busy) return null;
       state.busy = "save";
       render();
@@ -209,7 +212,7 @@
       if (state.busy) return;
       let id = reportId;
       if (!id && state.draft) {
-        const blockers = P().blockers(readForm(), state.works);
+        const blockers = P().blockers(readForm({ confirm: true }), state.works);
         if (blockers.length) return showToast(blockers[0].text, "error");
         const saved = await save({ quiet: true });
         if (!saved) return;
@@ -234,7 +237,7 @@
       if (state.busy) return;
       let id = reportId;
       if (!id && state.draft) {
-        const blockers = P().blockers(readForm(), state.works);
+        const blockers = P().blockers(readForm({ confirm: true }), state.works);
         if (blockers.length) return showToast(blockers[0].text, "error");
         const saved = await save({ quiet: true });
         if (!saved) return;
@@ -277,7 +280,7 @@
     // AI 점검 제안을 받는다. 저장된 보고서 기준이라 먼저 저장한다. 제안은 '적용' 해야 들어간다.
     async function aiReview(mode) {
       if (state.busy || !state.draft) return;
-      const saved = await save({ quiet: true });
+      const saved = await save({ quiet: true, confirm: false });
       if (!saved) return;
       state.busy = `ai:${mode}`;
       render();
@@ -346,8 +349,11 @@
         if (!result || !result.ok || !result.caseKey) throw new Error((result && result.error) || "작업 건을 만들지 못했습니다.");
         state.draft = core.normalizeReport({ ...readForm() || draft, links: { ...draft.links, [itemKey]: result.caseKey } });
         state.cases = [...state.cases, { id: result.caseKey, firebaseKey: result.caseKey, status: { c1: "doing" } }];
-        await save({ quiet: true });
-        showToast("작업 건을 만들어 보고서에 연결했습니다.", "success");
+        // save() 는 다른 일이 진행 중이면 아무것도 안 한다. 이 작업의 busy 를 먼저 풀어야 연결이 저장된다.
+        state.busy = "";
+        const saved = await save({ quiet: true, confirm: false });
+        if (saved) showToast("작업 건을 만들어 보고서에 연결했습니다.", "success");
+        else showToast("작업 건은 만들었지만 보고서 연결을 저장하지 못했습니다. '저장' 을 눌러 주세요.", "error");
       } catch (error) {
         showToast((error && error.message) || "작업 건을 만들지 못했습니다.", "error");
       } finally {
@@ -385,17 +391,24 @@
       const draft = readForm();
       const item = draft && draft.inspection.items.find(row => row.key === itemKey);
       if (!item || state.busy) return;
+      // 사진은 회사 Drive 문서함 아래 '결과보고서/건물/날짜_정기점검' 에 올라간다.
+      const rootFolderId = String((getStore().company || {}).buildingDocsFolderId || "").trim();
+      if (!rootFolderId) return showToast("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
       const picked = await api.pickBuildingDocuments();
       if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+      // 같은 선택 창이 서류도 고를 수 있다. 사진이 아니면 PDF 에 못 싣는다.
+      const images = picked.files.filter(file => /^image\//u.test(String(file.mimeType || "")));
+      if (!images.length) return showToast("사진 파일(JPG·PNG·HEIC)을 골라 주세요.", "error");
+      if (images.length < picked.files.length) showToast("사진이 아닌 파일은 뺐습니다.", "info");
       state.busy = `photo:${itemKey}`;
       render();
       let added = 0;
       try {
-        for (const file of picked.files.slice(0, 4)) {
+        for (const file of images.slice(0, 4)) {
           const uploaded = await api.uploadWorkReportPhoto({
-            reportId: draft.id, itemKey, itemLabel: `정기점검 ${item.label}`, phase: "after",
+            rootFolderId, reportId: draft.id, itemKey, itemLabel: `정기점검 ${item.label}`, phase: "after",
             buildingName: draft.buildingName, kindLabel: "정기점검", workDate: draft.inspection.date || todayKey(),
-            filePath: file.path, mimeType: file.mimeType,
+            filePath: file.filePath, mimeType: file.mimeType,
           });
           if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
           item.photos = [...item.photos, { id: uploaded.driveFileId, driveFileId: uploaded.driveFileId, webViewLink: uploaded.webViewLink, caption: "" }];
