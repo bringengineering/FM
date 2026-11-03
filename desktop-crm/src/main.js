@@ -5924,6 +5924,7 @@ function secureHandle(channel, handler) {
 }
 
 let contractBuildingMapService = null;
+let contractMapStoreCache = null;
 function contractBuildingMap() {
   if (contractBuildingMapService) return contractBuildingMapService;
   const target = () => path.join(path.dirname(dataFile()), "bring-crm-contract-map-settings.json");
@@ -5937,7 +5938,17 @@ function contractBuildingMap() {
       const guard = remoteClient.captureSessionGuard();
       return { user, assertActive: () => { if (!remoteClient.sessionGuardActive(guard)) throw 'AUTH'; } };
     },
-    store: () => readStore(),
+    // A full readStore() syncs with the server and makes the renderer redraw;
+    // reuse one read per user for a minute across the map's lookup batches.
+    store: () => {
+      const uid = authState().user?.uid || "", now = Date.now();
+      if (!contractMapStoreCache || contractMapStoreCache.uid !== uid || now - contractMapStoreCache.at > 60000) {
+        const pending = readStore();
+        contractMapStoreCache = { uid, at: now, pending };
+        pending.catch(() => { if (contractMapStoreCache?.pending === pending) contractMapStoreCache = null; });
+      }
+      return contractMapStoreCache.pending;
+    },
     fetch: (url, options) => net.fetch(url, options),
     // Company-wide key held by crm-ai-worker; used when this PC has no key of its own.
     gateway: input => {

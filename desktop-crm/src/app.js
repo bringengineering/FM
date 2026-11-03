@@ -793,10 +793,17 @@
     return photos;
   }
 
+  // Views that load their own data. Background sync must not re-render (and so
+  // re-mount) them: the contract map's own address lookup triggers a sync, and a
+  // re-mount re-runs that lookup, which looped ~5 times a second (2026-11-03).
+  function selfRefreshingView() {
+    return currentView === "companyWallboard" || currentView === "contractBuildingMap";
+  }
+
   function applyCustomerPhotos(value, renderAfter = true) {
     customerPhotos = normalizeCustomerPhotoMap(value);
     if (!renderAfter || !appInitialized) return customerPhotos;
-    if (currentView !== "companyWallboard") render();
+    if (!selfRefreshingView()) render();
     if (selectedCustomerId && customerById(selectedCustomerId)) {
       renderCustomerDrawer(selectedCustomerId);
     }
@@ -830,7 +837,7 @@
       pendingRemoteStore = merge(pendingRemoteStore);
       queuedSave = merge(queuedSave);
       if (renderAfter && appInitialized) {
-        if (currentView !== "companyWallboard") render();
+        if (!selfRefreshingView()) render();
       }
       return overlays;
     }).finally(() => {
@@ -996,7 +1003,7 @@
     store = next;
     ensureSalesStore(store);
     synchronizedStore = cloneStore(next);
-    if (currentView !== "companyWallboard") render();
+    if (!selfRefreshingView()) render();
     if (selectedCustomerId) {
       if (!customerById(selectedCustomerId)) closeDrawer();
       else renderCustomerDrawer(selectedCustomerId);

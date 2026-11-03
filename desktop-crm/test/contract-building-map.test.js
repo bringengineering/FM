@@ -181,3 +181,12 @@ test('map gateway client sends only token + request to the fixed HTTPS endpoint 
   }
   await assert.rejects(createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => '', fetchImpl: async () => { throw new Error('no'); } })({ action: 'status' }), error => error === 'AUTH');
 });
+
+test('background sync does not re-mount the contract map and the map reuses one store read per minute', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8'), main = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+  const fn = app.slice(app.indexOf('function selfRefreshingView()'), app.indexOf('}', app.indexOf('function selfRefreshingView()')));
+  assert.match(fn, /currentView === "contractBuildingMap"/);
+  assert.doesNotMatch(app, /if \(currentView !== "companyWallboard"\) render\(\);/);
+  assert.equal((app.match(/if \(!selfRefreshingView\(\)\) render\(\);/g) || []).length, 3);
+  assert.match(main, /contractMapStoreCache\.uid !== uid \|\| now - contractMapStoreCache\.at > 60000/);
+});
