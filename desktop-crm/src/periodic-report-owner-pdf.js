@@ -127,7 +127,6 @@ ${inspectionPhotos.length ? `<section class="photos${compareHtml ? "" : " part"}
 </section>` : ""}
 ${cleaningPhotos ? `<section class="photos part">
 <div class="photos-head"><h2>공용부 청소 사진</h2><p>회차별 · 구역별 · 총 ${photoTotal}장</p></div>
-<div class="legend"><span class="before">작업 전 BEFORE</span><span class="after">작업 후 AFTER</span><span class="during">작업 중 DURING</span></div>
 ${cleaningPhotos}
 </section>` : ""}
 <section class="closing">

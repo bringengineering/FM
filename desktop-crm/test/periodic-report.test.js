@@ -349,3 +349,56 @@ test("발송·열람 시각은 한국 날짜로 센다 — 새벽에 보낸 것�
   assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-02T17:30:00Z", phoneTail: "3076" }, "2026-11-03").label, "미열람 · 오늘 발송");
   assert.equal(P.viewState({ status: "requested", sentAt: "2026-11-02T17:30:00Z", phoneTail: "3076", firstViewedAt: "2026-11-02T18:00:00Z", viewCount: 1 }, "2026-11-03").label, "열람함 11. 3.(화)");
 });
+
+test("고객 id 와 같은 id 의 건물은 고객 단위 청소 기록과 같은 현장이다 — 차례·청소 취합·기존 보고서가 하나로 묶인다", () => {
+  const rows = [
+    { ...cleaning("old1", "2026-10-19"), buildingId: "cus_x" },
+    { ...cleaning("new1", "2026-10-28"), buildingId: "", customerId: "cus_x" },
+    { ...cleaning("new2", "2026-10-29"), buildingId: "", customerId: "cus_x" },
+    { ...cleaning("solo", "2026-10-20"), buildingId: "", customerId: "cus_solo" },
+  ];
+  const due = P.dueReports(rows, [], "2026-11-03", ["cus_x", "b1"]);
+  assert.deepEqual(due.items.map(item => [item.key, item.cleanings.length]).sort(), [["b:cus_x", 3], ["c:cus_solo", 1]]);
+  // 건물 목록을 모르면(옛 호출) 건물 기록이 하나라도 있으면 건물로 묶는다.
+  assert.deepEqual(P.dueReports(rows.slice(1, 3).concat(rows[0]), [], "2026-11-03").items.find(item => item.key.endsWith("cus_x")).key, "b:cus_x");
+  assert.equal(P.cleaningsFor(rows, { buildingId: "cus_x", period: "2026-10-2" }).length, 3);
+  assert.equal(P.cleaningsFor(rows, { buildingId: "", customerId: "cus_x", period: "2026-10-2" }).length, 3);
+  // 고객 대상으로 이미 보낸 보고서는 건물 대상 차례에서 '발송 완료' 로 보인다.
+  const sent = P.normalizeReport({ id: "pr_sent_cus_x", buildingId: "", customerId: "cus_x", period: "2026-10-2", delivery: { status: "sent", sentAt: "2026-11-02T03:00:00Z", phoneTail: "3076" } });
+  assert.equal(P.dueReports(rows, [sent], "2026-11-03", ["cus_x"]).items.find(item => item.key === "b:cus_x").state, "sent");
+});
+
+test("AI 제안·작업 건 연결로 저장될 때는 자동 초안이 '점검 확인됨' 으로 바뀌지 않는다", () => {
+  const ui = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/periodic-report-ui.js"), "utf8");
+  assert.match(ui, /function readForm\(\{ confirm = false \} = \{\}\)/);
+  assert.match(ui, /if \(confirm\) draft\.inspection\.confirmed = true;/);
+  assert.doesNotMatch(ui, /^\s*draft\.inspection\.confirmed = true;/m);
+  assert.equal((ui.match(/save\(\{ quiet: true, confirm: false \}\)/g) || []).length, 2);
+  // 작업 건 연결 저장은 busy 를 푼 뒤에 해야 실제로 저장된다(save 는 busy 면 그냥 돌아간다).
+  assert.match(ui, /state\.busy = "";\s*const saved = await save\(\{ quiet: true, confirm: false \}\);\s*if \(saved\) showToast\("작업 건을 만들어/);
+  assert.equal((ui.match(/P\(\)\.blockers\(readForm\(\{ confirm: true \}\), state\.works\)/g) || []).length, 2);
+});
+
+test("점검 사진 올리기는 선택 창이 돌려준 filePath 를 넘기고 사진만 올린다 (작업 결과보고서도 같은 키)", () => {
+  const fs = require("node:fs"), path = require("node:path");
+  const ui = fs.readFileSync(path.join(__dirname, "../src/periodic-report-ui.js"), "utf8");
+  const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  assert.match(main, /files\.push\(\{\s*filePath,/);
+  assert.match(ui, /filePath: file\.filePath, mimeType: file\.mimeType/);
+  assert.match(ui, /images\.slice\(0, 4\)/);
+  assert.doesNotMatch(app, /uploadWorkReportPhoto\(\{[^}]*filePath: file\.path,/s);
+  // 올릴 Drive 폴더를 넘기지 않으면 main 이 '문서함 폴더를 먼저 설정' 으로 막는다.
+  assert.match(ui, /rootFolderId, reportId: draft\.id/);
+  assert.match(app, /uploadWorkReportPhoto\(\{\s*rootFolderId,/);
+});
+
+test("청소 사진: 작업 중 사진만 있는 구역에 '작업 전 0장과 작업 후 0장' 문장이 나오지 않고, 스타일 없는 범례를 싣지 않는다", () => {
+  const Owner = require("../src/work-report-owner-pdf");
+  const item = { key: "entrance", label: "출입구·현관", before: [], after: [], during: [{ id: "d1" }] };
+  const html = Owner.areaPhotos(item, 1, { d1: PIXEL });
+  assert.doesNotMatch(html, /0장과 작업 후 0장/);
+  assert.match(html, /작업 중 사진으로 기록했습니다/);
+  const view = P.buildView({ ...base, cleaningReportIds: [] }, works);
+  assert.doesNotMatch(createPeriodicReportHtml(view, { images: {} }), /class="legend"/);
+});

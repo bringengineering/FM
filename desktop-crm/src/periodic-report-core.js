@@ -278,9 +278,13 @@
   }
 
   // 같은 건물이면 건물로, 건물이 없는 고객 단위 기록이면 고객으로 맞춘다.
+  // CRM 은 건물주 고객 하나가 곧 현장인 경우 건물 id 를 고객 id 와 같게 만든다. 그래서 같은
+  // 현장의 청소 기록이 어떤 것은 buildingId, 어떤 것은 customerId 로만 남는다(현장 앱·고객 단위
+  // 작업 결과보고서). 둘을 다른 대상으로 보면 한 현장 보고서가 둘로 갈라진다 — 같은 id 면 같은 대상이다.
+  const targetKey = row => text(row && row.buildingId, 120) || text(row && row.customerId, 120);
   function sameTarget(row, target) {
-    if (target.buildingId) return text(row.buildingId, 80) === target.buildingId;
-    return !!target.customerId && !text(row.buildingId, 80) && text(row.customerId, 120) === target.customerId;
+    const key = targetKey(target);
+    return !!key && targetKey(row) === key;
   }
 
   // 그 기간·그 건물의 청소 기록. 날짜순.
@@ -519,7 +523,8 @@
   // 이번에 낼 차례인 보고서들. 오늘 기준으로 막 끝난 기간(어제까지 끝난 기간)에 공용부
   // 청소 기록이 있는 건물·고객마다 하나. 보고서가 없으면 '초안 없음', 있으면 작성 상태를 본다.
   // 사람이 대상 건물을 기억해 챙기지 않아도 빠진 곳이 보이게 하려는 것이다.
-  function dueReports(workReports, reports, today) {
+  function dueReports(workReports, reports, today, buildingIds) {
+    const known = new Set(rows(buildingIds).map(id => text(id, 120)).filter(Boolean));
     const now = periodOf(today);
     const period = now ? previousPeriod(now.key) : null;
     if (!period) return { period: null, items: [] };
@@ -527,13 +532,19 @@
     WorkReport.sortReports(workReports)
       .filter(row => CLEANING_KINDS.includes(row.kind) && row.workDate >= period.from && row.workDate <= period.to)
       .forEach(row => {
-        const target = row.buildingId ? { buildingId: row.buildingId } : row.customerId ? { buildingId: "", customerId: row.customerId } : null;
-        if (!target) return;
-        const key = target.buildingId ? `b:${target.buildingId}` : `c:${target.customerId}`;
-        if (!targets.has(key)) targets.set(key, { key, target, buildingName: row.buildingName, siteAddress: row.siteAddress, cleanings: [] });
-        targets.get(key).cleanings.push(row);
+        const id = targetKey(row);
+        if (!id) return;
+        if (!targets.has(id)) targets.set(id, { id, building: false, buildingName: "", siteAddress: "", cleanings: [] });
+        const entry = targets.get(id);
+        // 건물 기록과 고객 단위 기록이 섞이면 하나로 묶고 건물로 본다.
+        if (text(row.buildingId, 120) || known.has(id)) entry.building = true;
+        entry.buildingName = entry.buildingName || row.buildingName;
+        entry.siteAddress = entry.siteAddress || row.siteAddress;
+        entry.cleanings.push(row);
       });
-    const items = [...targets.values()].map(entry => {
+    const items = [...targets.values()].map(({ id, building, ...rest }) => ({
+      ...rest, key: building ? `b:${id}` : `c:${id}`, target: building ? { buildingId: id } : { buildingId: "", customerId: id },
+    })).map(entry => {
       const report = findForPeriod(reports, entry.target, period.key);
       const blockers = report ? blockersFor(report, workReports) : [];
       const state = !report ? "missing" : report.delivery ? "sent" : blockers.length ? "draft" : "ready";
@@ -575,7 +586,7 @@
   function buildingHistory(reports, workReports, cases, today) {
     const all = rows(reports).map(normalizeReport).filter(row => row.id && row.period);
     const targets = new Map();
-    const keyOf = row => row.buildingId ? `b:${row.buildingId}` : row.customerId ? `c:${row.customerId}` : "";
+    const keyOf = targetKey;
     all.forEach(row => { const key = keyOf(row); if (!key) return; if (!targets.has(key)) targets.set(key, []); targets.get(key).push(row); });
     const caseList = rows(cases);
     const thisWeek = isDate(today) ? weekStart(today) : "";
