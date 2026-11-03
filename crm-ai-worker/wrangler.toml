@@ -30,6 +30,12 @@ WALLBOARD_FIREBASE_DATABASE_URL = "https://bring-fm-default-rtdb.asia-southeast1
 # the relay stays off (MAP_NOT_CONFIGURED) until that secret exists.
 VWORLD_MAP_ENABLED = "true"
 
+# Workers Logs: AI 실패 사유(ai-upstream-failure / ai-gateway-limit)를 보관해 사후 확인한다.
+# 로그에는 사진·프롬프트·키·고객 정보를 남기지 않는다(src/upstream-log.js).
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[ratelimits]]
 name = "AI_RATE_LIMITER"
 namespace_id = "10081"

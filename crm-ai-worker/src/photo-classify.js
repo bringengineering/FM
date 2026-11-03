@@ -1,3 +1,4 @@
+import { logUpstreamFailure, logInvalidResponse } from "./upstream-log.js";
 import { SPACES, TARGETS, ACTIONS, CONTACTS, WATER, FEATURES, ANCHORS, QUALITY, normalizeEvidence } from "./photo-evidence.js";
 const MAX_PHOTOS = 30;
 const MATCH_MODEL = "gemini-3.5-flash";
@@ -260,12 +261,15 @@ async function classifyBatch(images, env, model, fetchImpl, signal, mode = "clas
   });
   const response = await sendWithRetry(send, signal);
   if (!response.ok) {
-    await response.body?.cancel().catch(() => {});
+    await logUpstreamFailure(match ? "photo-match" : "photo-classify", model, response);
     throw failure(response.status === 429 ? "RATE_LIMITED" : "AI_TEMPORARY_FAILURE");
   }
   const data = await readBoundedJson(response, MAX_RESPONSE_BYTES, "AI_INVALID_RESPONSE");
   const candidate = data?.candidates?.[0];
-  if (data?.promptFeedback?.blockReason || (candidate?.finishReason && candidate.finishReason !== "STOP")) throw failure("AI_INVALID_RESPONSE");
+  if (data?.promptFeedback?.blockReason || (candidate?.finishReason && candidate.finishReason !== "STOP")) {
+    logInvalidResponse(match ? "photo-match" : "photo-classify", model, data?.promptFeedback?.blockReason || candidate.finishReason);
+    throw failure("AI_INVALID_RESPONSE");
+  }
   const raw = candidate?.content?.parts?.filter(part => part?.thought !== true && typeof part?.text === "string").map(part => part.text).join("");
   if (typeof raw !== "string" || !raw.trim()) throw failure("AI_INVALID_RESPONSE");
   return {

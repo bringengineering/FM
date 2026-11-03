@@ -1,3 +1,4 @@
+import { logUpstreamFailure } from "./upstream-log.js";
 import { SUBJECTS, ACTIONS, monthlyEvidence } from "./monthly-photo-evidence.js";
 import { maskSensitiveText } from "./privacy.js";
 
@@ -207,7 +208,7 @@ async function selectAttempt(payload, env, model, fetchImpl, signal, usage) {
     });
   } catch { throw failure("AI_TEMPORARY_FAILURE"); }
   if (!response.ok) {
-    await response.body?.cancel().catch(() => {});
+    await logUpstreamFailure("monthly-photo-select", model, response);
     throw failure(response.status === 429 ? "RATE_LIMITED" : "AI_TEMPORARY_FAILURE");
   }
   const result = await readResponse(response);
