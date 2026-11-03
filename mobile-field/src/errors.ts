@@ -47,7 +47,22 @@ const messages: Record<string, string> = {
   DELIVERY_STATUS_UNKNOWN: '발송 접수 여부를 확인하지 못했습니다. 다시 보내지 말고 전달 상태를 확인해 주세요.',
   DELIVERY_UNAVAILABLE: '보고서 발송 연결을 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.',
   DELIVERY_REJECTED: '알림톡 서버가 발송 요청을 접수하지 않았습니다. 발신 설정과 템플릿 상태를 확인해 주세요.',
+  RESOURCE_NOT_FOUND: '서버에서 이 작업이나 사진 기록을 찾지 못했습니다. 고객 목록으로 돌아가 작업을 다시 연 뒤 업로드해 주세요. 기기 사진은 보존됩니다.',
+  SERVER_RESPONSE_INVALID: '서버 응답 형식이 앱과 맞지 않습니다. 앱을 최신 버전으로 업데이트해 주세요. 기기 사진과 초안은 보존됩니다.',
+  SYNC_FAILED: '사진을 보내지 못했습니다. 업로드를 다시 누르면 보낸 부분부터 이어집니다.',
+  SYNC_CANCELLED: '전송을 멈췄습니다. 기기 사진은 보존되며 업로드를 다시 누르면 이어집니다.',
+  VISIT_NOT_LINKED: '작업을 서버에 연결하지 못했습니다. 업로드를 다시 눌러 주세요.',
+  UPLOAD_INCOMPLETE: '사진 일부가 서버에 도착하지 않았습니다. 업로드를 다시 누르면 이어서 보냅니다.',
+  REPORT_PDF_INVALID: '보고서 PDF를 만들지 못했습니다. 잠시 후 다시 저장해 주세요. 사진과 내용은 보존됩니다.',
+  TEXT_TOO_LONG: '작업 내용과 후속 조치는 각각 2000자까지 쓸 수 있습니다.',
+  VAULT_CLOSED: '기기 보관함이 닫혔습니다. 고객 목록으로 돌아가 작업을 다시 열어 주세요.',
+  PHOTO_DELETE_REQUIRES_SERVER: '이미 서버로 보내기 시작한 사진은 지울 수 없습니다. 보고서에 포함 스위치를 끄면 PDF에서 빠집니다.',
+  PHOTO_NOT_FOUND: '사진을 찾지 못했습니다. 작업을 다시 열어 확인해 주세요.',
 };
+// Codes are fixed internal identifiers (never server text), so showing one is
+// safe and lets staff report the exact failure instead of a misleading hint.
+const FALLBACK = '처리하지 못했습니다. 기기 사진과 초안은 보존됩니다. 계속되면 관리자에게 오류 코드를 알려 주세요.';
 export function safeMessage(error: unknown): string {
-  return error instanceof FieldError && messages[error.code] ? messages[error.code]! : '저장하지 못했습니다. 기기 공간과 권한을 확인한 뒤 다시 시도해 주세요.';
+  if (error instanceof FieldError) return messages[error.code] ?? (/^[A-Z][A-Z0-9_]{1,60}$/.test(error.code) ? `${FALLBACK} (오류 코드 ${error.code})` : FALLBACK);
+  return '저장하지 못했습니다. 기기 공간과 권한을 확인한 뒤 다시 시도해 주세요.';
 }

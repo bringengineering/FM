@@ -11,7 +11,7 @@ export const object = (v: unknown): v is Record<string, any> => !!v && typeof v 
 export const hash = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
 export const nowIso = () => new Date().toISOString();
 const bounded = (v: unknown, max: number, multiline = false): v is string => typeof v === 'string' && v.length <= max && !(multiline ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/).test(v);
-export interface RecordingPhoto {id: string; itemKey: string; phase: 'before'|'during'|'after'; caption: string; included: boolean; capturedAt: string; mime: 'image/jpeg'; bytes: number; sha256: string; width: number; height: number}
+export interface RecordingPhoto {id: string; itemKey: string; phase: 'before'|'during'|'after'; caption: string; included: boolean; capturedAt: string; mime: 'image/jpeg'; bytes: number; sha256: string; width: number; height: number; pairWith?: string}
 export interface RecordingInput {customerId: string; kind: 'common'|'moveIn'; workDate: string; revision: number; draft: {summary: string; followUp: string; statuses: Record<string,string>; notes: Record<string,string>; confirmedRevision?: number}; photos: RecordingPhoto[]}
 export interface Recording extends RecordingInput {id: string; ownerUid: string; site: CustomerSite; contentHash: string; createdAt: string; updatedAt: string; captureAreas?:string[]}
 export interface UploadRecord {id: string; ownerUid: string; visitId: string; photo: RecordingPhoto; receivedBytes: number; state: 'uploading'|'ready'; driveFileId?: string; folderId?: string; createdAt: string}
@@ -24,7 +24,8 @@ export function photoInput(v: unknown, kind: string): RecordingPhoto {
   assert(v.mime === 'image/jpeg' && Number.isSafeInteger(v.bytes) && v.bytes >= 4 && v.bytes <= RECORD_LIMITS.bytes);
   assert(typeof v.sha256 === 'string' && /^[a-f0-9]{64}$/.test(v.sha256));
   assert(Number.isSafeInteger(v.width) && Number.isSafeInteger(v.height) && v.width > 0 && v.height > 0 && v.width <= 2400 && v.height <= 2400);
-  return {id:v.id,itemKey:v.itemKey,phase:v.phase,caption:v.caption,included:v.included,capturedAt:v.capturedAt,mime:v.mime,bytes:v.bytes,sha256:v.sha256,width:v.width,height:v.height};
+  assert(v.pairWith === undefined || (siteId(v.pairWith) && v.phase === 'after' && v.pairWith !== v.id));
+  return {id:v.id,itemKey:v.itemKey,phase:v.phase,caption:v.caption,included:v.included,capturedAt:v.capturedAt,mime:v.mime,bytes:v.bytes,sha256:v.sha256,width:v.width,height:v.height,...(v.pairWith===undefined?{}:{pairWith:v.pairWith})};
 }
 export function recordingInput(v: unknown): RecordingInput {
   assert(object(v) && siteId(v.customerId) && ['common','moveIn'].includes(v.kind));
@@ -42,11 +43,26 @@ export function recordingInput(v: unknown): RecordingInput {
   return {customerId:v.customerId,kind:v.kind,workDate:v.workDate,revision:v.revision,draft:{summary:d.summary,followUp:d.followUp,statuses:sorted(d.statuses),notes:sorted(d.notes),...(d.confirmedRevision===undefined?{}:{confirmedRevision:d.confirmedRevision})},photos};
 }
 export const uploadKey = (uid:string,visitId:string,photoId:string) => 'up_'+hash(JSON.stringify([uid,visitId,photoId])).slice(0,48);
-export function photoBinding(p:RecordingPhoto){const {caption,included,...fixed}=p;return JSON.stringify(fixed);}
+// Caption, inclusion and the before/after pairing stay editable after upload.
+export function photoBinding(p:RecordingPhoto){const {caption,included,pairWith,...fixed}=p;return JSON.stringify(fixed);}
+// Pairs captured on site: an included "after" photo lined up with an included
+// "before" photo of the same area. Each before photo pairs once (earliest after
+// wins); a pairing broken by a later area/phase edit is dropped.
+export function capturedPairIds(photos:RecordingPhoto[]):Map<string,string>{
+  const byId=new Map(photos.map(p=>[p.id,p])),ids=new Map<string,string>();
+  const afters=photos.filter(p=>p.included&&p.phase==='after'&&p.pairWith).sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
+  for(const after of afters){
+    const before=byId.get(after.pairWith!);
+    if(!before||!before.included||before.phase!=='before'||before.itemKey!==after.itemKey||ids.has(before.id))continue;
+    const id=`field:${before.id}|${after.id}`;ids.set(before.id,id);ids.set(after.id,id);
+  }
+  return ids;
+}
 export function uploadStatus(u:UploadRecord) { return {uploadId:u.id,photoId:u.photo.id,sha256:u.photo.sha256,totalBytes:u.photo.bytes,receivedBytes:u.receivedBytes,state:u.state,driveVerified:u.state==='ready',crmLinked:u.state==='ready'}; }
 export function reportFor(v:Recording, uploads:UploadRecord[], reportId:string) {
+  const pairIds=capturedPairIds(v.photos);
   const report=reportCore.normalizeReport({id:reportId,customerId:v.customerId,buildingId:'',buildingName:v.site.name,siteAddress:v.site.address,kind:v.kind,workDate:v.workDate,summary:v.draft.summary,followUp:v.draft.followUp,createdAt:v.createdAt,updatedAt:v.updatedAt,updatedBy:v.ownerUid,
-    items:reportCore.itemCatalogFor(v.kind).map(item=>({...item,status:v.draft.statuses[item.key]||'recorded',note:v.draft.notes[item.key]||'',...Object.fromEntries(['before','during','after'].map(phase=>[phase,v.photos.filter(p=>p.included&&p.itemKey===item.key&&p.phase===phase).map(p=>({id:p.id,caption:p.caption,driveFileId:uploads.find(u=>u.photo.id===p.id)?.driveFileId||''}))]))}))});
+    items:reportCore.itemCatalogFor(v.kind).map(item=>({...item,status:v.draft.statuses[item.key]||'recorded',note:v.draft.notes[item.key]||'',...Object.fromEntries(['before','during','after'].map(phase=>[phase,v.photos.filter(p=>p.included&&p.itemKey===item.key&&p.phase===phase).map(p=>({id:p.id,caption:p.caption,driveFileId:uploads.find(u=>u.photo.id===p.id)?.driveFileId||'',...(pairIds.has(p.id)?{pairId:pairIds.get(p.id)}:{})}))]))}))});
   if(v.captureAreas)report.items=report.items.filter((item:{key:string})=>v.captureAreas!.includes(item.key));
   return report;
 }
