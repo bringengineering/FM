@@ -25,6 +25,7 @@
   const MarketingCrmBridge = window.MarketingCrmBridge;
   const MarketingUI = window.MarketingUI;
   const MessagePolicy = window.BringMessagePolicy;
+  const OwnerNotice = window.BringOwnerNoticeCore;
   const DocumentDelivery = window.BringDocumentDeliveryCore;
   const MessageUI = window.BringMessageUI;
   const CustomerAlimTalkUI = window.BringCustomerAlimTalkUI;
@@ -2920,6 +2921,7 @@
         cases: Array.isArray(loaded && loaded.cases) ? loaded.cases : [],
         payments: loaded && loaded.payments && typeof loaded.payments === "object" ? loaded.payments : {},
         caseSettings: loaded && loaded.caseSettings && typeof loaded.caseSettings === "object" ? loaded.caseSettings : {},
+        messageDeliveries: loaded && loaded.messageDeliveries && typeof loaded.messageDeliveries === "object" ? loaded.messageDeliveries : {},
         loadedAt: loaded && loaded.loadedAt || new Date().toISOString()
       };
       if (currentView === "cases" && !workflowVendors.length) {
@@ -5640,7 +5642,7 @@
     const statusControl = canWriteCRM()
       ? `<select class="vacancy-quick-status ${attr(status)}" data-vacancy-status-select data-building-id="${attr(building.id)}" data-unit-id="${attr(unit.id)}" data-current-status="${attr(status)}" aria-label="${attr(`${label} 상태 변경`)}" ${saving ? "disabled aria-busy=\"true\"" : ""}>${["occupied", "vacant", "move_out_scheduled", "maintenance", "unknown"].map(value => `<option value="${attr(value)}" ${value === status ? "selected" : ""}>${esc(VACANCY_STATUS_LABELS[value])}</option>`).join("")}</select>`
       : vacancyStatusBadge(status);
-    return `<article class="vacancy-unit-card ${attr(status)} ${pastDue ? "date-warning" : ""} ${saving ? "saving" : ""}" data-vacancy-unit="${attr(unit.id)}" ${saving ? "aria-busy=\"true\"" : ""}><header><strong>${esc(label)}</strong>${statusControl}</header>${meta ? `<p>${esc(meta)}</p>` : ""}${status === "move_out_scheduled" && unit.memo ? `<small>${esc(unit.memo)}</small>` : ""}<footer><span>${esc(inferredVacancyFloorLabel(unit))}${saving ? " · 저장 중" : ""}</span>${canWriteCRM() ? `<button type="button" class="mini-button" data-vacancy-unit-edit="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>상세 수정</button>` : ""}</footer></article>`;
+    return `<article class="vacancy-unit-card ${attr(status)} ${pastDue ? "date-warning" : ""} ${saving ? "saving" : ""}" data-vacancy-unit="${attr(unit.id)}" ${saving ? "aria-busy=\"true\"" : ""}><header><strong>${esc(label)}</strong>${statusControl}</header>${meta ? `<p>${esc(meta)}</p>` : ""}${status === "move_out_scheduled" && unit.memo ? `<small>${esc(unit.memo)}</small>` : ""}<footer><span>${esc(inferredVacancyFloorLabel(unit))}${saving ? " · 저장 중" : ""}</span>${canWriteCRM() ? `<button type="button" class="mini-button" data-owner-notice-open="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>건물주 안내</button><button type="button" class="mini-button" data-vacancy-unit-edit="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>상세 수정</button>` : ""}</footer></article>`;
   }
 
   function renderVacancyDetail(building, query) {
@@ -13307,6 +13309,120 @@
       : "공실 예정일을 입력해야 저장할 수 있습니다. 날짜가 되어도 상태는 자동으로 바뀌지 않습니다.";
   }
 
+  // --- 건물주 퇴실·입주 안내 (단계별 미리보기 후 발송) ---
+  function ownerTurnoverContext(buildingId, unitId) {
+    const building = buildingById(buildingId);
+    const unit = (store.buildingUnits || []).find(item => item && !item.archivedAt && item.id === unitId
+      && String(item.crmBuildingId || item.buildingId || "") === String(buildingId));
+    if (!building || building.archivedAt || !unit) return null;
+    const owner = OwnerNotice.ownerForBuilding(building, store.customers);
+    const progress = OwnerNotice.turnoverProgress(customerMessageDeliveries(), unit.id);
+    return { building, unit, owner, progress };
+  }
+
+  function ownerTurnoverDefaults(templateId, unit) {
+    const moveOut = String(unit.availableFrom || unit.moveOutAt || "").slice(0, 10);
+    if (templateId === "owner_move_out") return { 퇴실일: moveOut };
+    if (templateId === "owner_broker_listed") return { 접수일: todayKey() };
+    return {};
+  }
+
+  function ownerTurnoverNoticeEditor(buildingId, unitId, templateId = "", carried = {}) {
+    const context = ownerTurnoverContext(buildingId, unitId);
+    if (!context) return showToast("호실을 찾지 못했습니다.", "error");
+    const { building, unit, owner, progress } = context;
+    const stageId = OwnerNotice.TURNOVER_FIELDS[templateId] ? templateId : OwnerNotice.nextTurnoverStage(progress);
+    const values = { ...ownerTurnoverDefaults(stageId, unit), ...carried };
+    const label = unit.label || unit.unitLabel || "호실";
+    const steps = progress.map(item => `<label class="owner-notice-step ${item.count ? "is-done" : ""} ${item.id === stageId ? "is-active" : ""}"><input type="radio" name="stage" value="${attr(item.id)}" ${item.id === stageId ? "checked" : ""}><b>${item.stage}. ${esc(item.label.replace(/ 안내$/u, ""))}</b><small>${item.count ? `${esc(shortDate(item.lastSentAt.slice(0, 10)))} 발송${item.count > 1 ? ` · ${item.count}회` : ""}` : "미발송"}</small></label>`).join("");
+    const inputs = OwnerNotice.TURNOVER_FIELDS[stageId].map(item => `<label class="field"><span>${esc(item.label)} *</span><input name="ov_${attr(item.key)}" type="${attr(item.type)}" value="${attr(values[item.key] || "")}" ${item.placeholder ? `placeholder="${attr(item.placeholder)}"` : ""} maxlength="60" required></label>`).join("");
+    const ownerLine = owner
+      ? `${esc(customerDisplayName(owner))} · ${esc(customerPhoneText(owner.phone))}`
+      : "건물주가 지정되지 않았습니다. 건물 상세에서 소유 고객(건물주)을 먼저 연결해 주세요.";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>건물주 안내 · 퇴실부터 입주까지</h2><p>${esc(building.name || "건물")} · ${esc(label)}</p></div><button class="close-button" data-action="close-modal">×</button></div>
+      <form id="ownerTurnoverNoticeForm" class="modal-body owner-notice-form" data-building-id="${attr(building.id)}" data-unit-id="${attr(unit.id)}" data-owner-id="${attr(owner ? owner.id : "")}" data-auth-generation="${authGeneration}">
+        <div class="info-box ${owner ? "" : "warning"}"><b>받는 사람</b> ${ownerLine}</div>
+        <fieldset class="owner-notice-steps"><legend>보낼 단계</legend>${steps}</fieldset>
+        <div class="form-grid">${inputs}</div>
+        <section class="owner-notice-preview"><b>알림톡 미리보기</b><pre data-owner-notice-preview></pre><small data-owner-notice-missing></small></section>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">닫기</button><button type="submit" class="primary-button" ${owner ? "" : "disabled"}>미리보기 확인 후 발송</button></div>
+      </form>`;
+    openModal();
+    const form = document.getElementById("ownerTurnoverNoticeForm");
+    form.addEventListener("input", () => updateOwnerTurnoverPreview(form));
+    form.addEventListener("change", event => {
+      if (event.target.name !== "stage") return;
+      ownerTurnoverNoticeEditor(buildingId, unitId, event.target.value, ownerTurnoverFormInput(form));
+    });
+    updateOwnerTurnoverPreview(form);
+  }
+
+  function ownerTurnoverFormInput(form) {
+    return Object.fromEntries([...form.querySelectorAll("input[name^='ov_']")].map(input => [input.name.slice(3), input.value]));
+  }
+
+  function ownerTurnoverPreviewValues(form) {
+    const context = ownerTurnoverContext(form.dataset.buildingId, form.dataset.unitId);
+    const templateId = form.elements.stage?.value || "";
+    if (!context || !OwnerNotice.TURNOVER_FIELDS[templateId]) return null;
+    const variables = OwnerNotice.formatTurnoverValues(templateId, ownerTurnoverFormInput(form));
+    const values = { ...variables, 건물주소: OwnerNotice.buildingAddress(context.building), 호실: OwnerNotice.unitLabel(context.unit) };
+    return { context, templateId, variables, values, missing: OwnerNotice.missingVariables(templateId, values) };
+  }
+
+  function updateOwnerTurnoverPreview(form) {
+    const result = ownerTurnoverPreviewValues(form);
+    const preview = form.querySelector("[data-owner-notice-preview]");
+    const missing = form.querySelector("[data-owner-notice-missing]");
+    if (!result || !preview) return;
+    preview.textContent = OwnerNotice.render(result.templateId, result.values);
+    if (missing) missing.textContent = result.missing.length ? `입력 필요: ${result.missing.join(", ")}` : "";
+  }
+
+  async function submitOwnerTurnoverNotice(form) {
+    if (form.dataset.submitting === "true") return;
+    if (Number(form.dataset.authGeneration) !== authGeneration) { closeModal(); return showToast("로그인 사용자가 변경되어 보내지 않았습니다.", "error"); }
+    const result = ownerTurnoverPreviewValues(form);
+    if (!result) return showToast("호실과 안내 단계를 다시 확인해 주세요.", "error");
+    const { context, templateId, variables, values, missing } = result;
+    if (!context.owner || String(context.owner.id) !== String(form.dataset.ownerId || "")) return showToast("건물주 연결이 바뀌었습니다. 창을 다시 열어 주세요.", "error");
+    if (missing.length) return showToast(`안내에 필요한 항목을 입력해 주세요: ${missing.join(", ")}`, "error");
+    const template = OwnerNotice.TEMPLATES[templateId];
+    const already = context.progress.find(item => item.id === templateId);
+    form.dataset.submitting = "true";
+    try {
+      const requestId = crypto.randomUUID();
+      const sent = await sendCustomerMessageWithConfirmation({
+        requestId, customerId: context.owner.id, templateId, channel: "kakao", sourceType: "buildingUnit", sourceId: context.unit.id,
+        variables, preview: OwnerNotice.render(templateId, values), title: `건물주에게 '${template.label}'을 보낼까요?`,
+        warning: already && already.count && !template.repeatable ? "이 단계는 이미 보낸 기록이 있습니다. 내용이 바뀐 경우에만 다시 보내 주세요." : "카카오 알림톡으로 실제 발송됩니다.",
+        confirmLabel: "알림톡 발송",
+      });
+      if (!sent) return;
+      const now = new Date().toISOString();
+      if (operations.messageDeliveries && typeof operations.messageDeliveries === "object" && !Array.isArray(operations.messageDeliveries)) {
+        operations.messageDeliveries[requestId] = { requestId, customerId: context.owner.id, category: templateId, templateLabel: `건물주 · ${template.label}`,
+          sourceType: "buildingUnit", sourceId: context.unit.id, channel: "kakao", status: "accepted", requestedAt: now };
+      }
+      closeModal();
+      showToast(`${context.unit.label || "호실"} 건물주에게 '${template.label}'을 보냈습니다.`, "success");
+      if (currentView === "vacancies") render();
+      void refreshOperations({ silent: true }).catch(() => undefined);
+    } catch (error) {
+      showToast(error.message || "건물주 안내를 보내지 못했습니다.", "error");
+    } finally {
+      if (form.isConnected) delete form.dataset.submitting;
+    }
+  }
+
+  async function offerOwnerMoveOutNotice(buildingId, unitId, availableFrom) {
+    const context = ownerTurnoverContext(buildingId, unitId);
+    if (!context || !context.owner || !canWriteCRM()) return;
+    const accepted = await requestConfirmation({ title: "건물주에게 퇴실 일정을 알릴까요?", description: "퇴실 일정 안내 알림톡을 미리보기로 확인한 뒤 보낼 수 있습니다.",
+      target: `${customerDisplayName(context.owner)} · ${context.unit.label || "호실"} · ${shortDate(availableFrom)} 퇴실`, confirmLabel: "미리보기 열기", cancelLabel: "나중에" });
+    if (accepted && currentView === "vacancies") ownerTurnoverNoticeEditor(buildingId, unitId, "owner_move_out", { 퇴실일: availableFrom });
+  }
+
   function vacancyScheduleEditor(buildingId, unitId) {
     if (deferCanonicalMutation("공실 예정")) return;
     const building = buildingById(buildingId);
@@ -17544,6 +17660,12 @@
       vacancyConfigurationEditor(vacancyConfigure.dataset.vacancyConfigure);
       return;
     }
+    const ownerNoticeOpen = event.target.closest("[data-owner-notice-open]");
+    if (ownerNoticeOpen) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 건물주 안내를 보낼 수 없습니다.", "error");
+      ownerTurnoverNoticeEditor(ownerNoticeOpen.dataset.buildingId, ownerNoticeOpen.dataset.ownerNoticeOpen);
+      return;
+    }
     const vacancyUnitEdit = event.target.closest("[data-vacancy-unit-edit]");
     if (vacancyUnitEdit) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 호실 상태를 변경할 수 없습니다.", "error");
@@ -19701,6 +19823,8 @@
       if (!result.ok) return showToast(result.error || "입금 상태를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       closeModal(); currentView = "payments"; render(); showToast("입금 상태를 건물주 입금캘린더에 반영했습니다.", "success");
+    } else if (form.id === "ownerTurnoverNoticeForm") {
+      await submitOwnerTurnoverNotice(form);
     } else if (form.id === "vacancyScheduleForm") {
       if (deferCanonicalMutation("공실 예정")) return;
       const building = buildingById(form.dataset.buildingId);
@@ -19735,6 +19859,7 @@
         currentView = "vacancies";
         render();
         showToast(`${item.label || item.unitLabel || "호실"}: ${VACANCY_STATUS_LABELS[previousStatus]} → 공실 예정 (${shortDate(availableFrom)})`, availableFrom < todayKey() ? "" : "success");
+        void offerOwnerMoveOutNotice(building.id, item.id, availableFrom);
       } catch (error) {
         if (isVacancyConfigurationConflict(error)) {
           await refreshRendererOverlays(false).catch(() => undefined);
@@ -20029,6 +20154,9 @@
       });
       if (cleaningSchedule) item.cleaningSchedule = cleaningSchedule;
       else delete item.cleaningSchedule;
+      const cleaningVisitTime = types.includes("청소") ? String(raw.cleaningVisitTime || "").trim() : "";
+      if (/^([01]\d|2[0-3]):[0-5]\d$/u.test(cleaningVisitTime)) item.cleaningVisitTime = cleaningVisitTime;
+      else delete item.cleaningVisitTime;
       if (oneOffContract) Object.assign(item, {
         workDate: raw.workDate, paymentDueDate: raw.paymentDueDate, vendorCost: Core.money(raw.vendorCost),
         grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",

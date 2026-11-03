@@ -1769,3 +1769,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .weekly-manual-save.is-error { color:#b42332; }
 .weekly-manual-save-note { margin:12px 0 0; color:#617b8e; font-size:12px; line-height:1.7; }
 .wr-photo-capture-time { display:block; margin:5px 0; color:#5d7792; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+
+/* 건물주 퇴실·입주 안내 */
+.owner-notice-form { display: grid; gap: 14px; }
+.owner-notice-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; border: 0; padding: 0; margin: 0; }
+.owner-notice-steps legend { font-weight: 700; margin-bottom: 6px; }
+.owner-notice-step { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line, #d9dee7); border-radius: 10px; cursor: pointer; }
+.owner-notice-step input { position: absolute; opacity: 0; pointer-events: none; }
+.owner-notice-step small { color: var(--muted, #6b7280); }
+.owner-notice-step.is-done { background: color-mix(in srgb, #16a34a 8%, transparent); border-color: color-mix(in srgb, #16a34a 40%, transparent); }
+.owner-notice-step.is-active { outline: 2px solid var(--primary, #2563eb); outline-offset: 1px; }
+.owner-notice-step:focus-within { outline: 2px solid var(--primary, #2563eb); }
+.owner-notice-preview pre { white-space: pre-wrap; margin: 6px 0 0; padding: 12px; border-radius: 10px; background: var(--surface-muted, #f4f6f9); font: inherit; line-height: 1.55; }
+.owner-notice-preview small { color: #b45309; }

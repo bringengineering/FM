@@ -12,6 +12,12 @@
     requested_followup: Object.freeze({ id: "requested_followup", label: "요청한 견적·상담 후속", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
     work_completed: Object.freeze({ id: "work_completed", label: "작업 완료 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
     payment_reminder: Object.freeze({ id: "payment_reminder", label: "입금·미납 안내", purpose: "information", channels: ["kakao"], fallbackChannels: ["sms"], requiresSource: true }),
+    // 건물주 퇴실·입주 안내. 호실 기록(buildingUnit)에 묶여 공실 화면에서만 보낸다.
+    owner_move_out: Object.freeze({ id: "owner_move_out", label: "건물주 · 퇴실 일정 안내", purpose: "information", channels: ["kakao"], requiresSource: true, ownerNotice: true }),
+    owner_broker_listed: Object.freeze({ id: "owner_broker_listed", label: "건물주 · 중개 접수 안내", purpose: "information", channels: ["kakao"], requiresSource: true, ownerNotice: true }),
+    owner_room_viewing: Object.freeze({ id: "owner_room_viewing", label: "건물주 · 방 보기 안내", purpose: "information", channels: ["kakao"], requiresSource: true, ownerNotice: true }),
+    owner_lease_contract: Object.freeze({ id: "owner_lease_contract", label: "건물주 · 신규 계약 안내", purpose: "information", channels: ["kakao"], requiresSource: true, ownerNotice: true }),
+    owner_move_in_cleaning: Object.freeze({ id: "owner_move_in_cleaning", label: "건물주 · 입주청소 안내", purpose: "information", channels: ["kakao"], requiresSource: true, ownerNotice: true }),
     cleaning_reengagement: Object.freeze({ id: "cleaning_reengagement", label: "청소 서비스 재이용 안내", purpose: "marketing", channels: ["kakao", "sms"] }),
     building_management_offer: Object.freeze({ id: "building_management_offer", label: "건물관리 추가 서비스 제안", purpose: "marketing", channels: ["kakao", "sms"] }),
     promotion: Object.freeze({ id: "promotion", label: "프로모션·혜택 안내", purpose: "marketing", channels: ["kakao", "sms"] })

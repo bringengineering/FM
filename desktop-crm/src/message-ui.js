@@ -50,7 +50,7 @@
     const decision = Policy.evaluateMessageRequest({ customer, templateId, channel, sourceType: state.sourceType, sourceId: state.sourceId });
     const template = Policy.TEMPLATES[templateId];
     const customerOptions = customers.map(item => `<option value="${esc(item.id)}"${customer && item.id === customer.id ? " selected" : ""}>${esc(item.name || item.company || item.id)} · ${esc(item.phone || "연락처 없음")}</option>`).join("");
-    const templateOptions = Object.values(Policy.TEMPLATES).map(item => `<option value="${esc(item.id)}"${item.id === templateId ? " selected" : ""}>${item.purpose === "marketing" ? "[광고성]" : "[정보성]"} ${esc(item.label)}</option>`).join("");
+    const templateOptions = Object.values(Policy.TEMPLATES).filter(item => !item.ownerNotice).map(item => `<option value="${esc(item.id)}"${item.id === templateId ? " selected" : ""}>${item.purpose === "marketing" ? "[광고성]" : "[정보성]"} ${esc(item.label)}</option>`).join("");
     const deliveries = (state.deliveries || []).map(item => `<tr><td>${esc(item.requestedAt || "-")}</td><td>${esc(item.customerName || item.customerId || "-")}</td><td>${esc(item.templateLabel || item.templateCode || "-")}</td><td>${esc(item.status || "-")}</td></tr>`).join("");
     const sourceOptions = [["", "선택 안 함"], ["activity", "상담"], ["work", "작업"], ["contract", "계약"], ["cleaningOrder", "청소 주문"]].map(([value, label]) => `<option value="${value}"${String(state.sourceType || "") === value ? " selected" : ""}>${label}</option>`).join("");
     const cleaningOrder = state.cleaningOrderContext;
