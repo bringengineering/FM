@@ -6,7 +6,7 @@ const source = fs.readFileSync(require.resolve("../src/main.js"), "utf8");
 function harness({ width = 3000, height = 2000, empty = false, bytes = 2048 } = {}) {
   const calls = [];
   const picture = { isEmpty: () => empty, getSize: () => ({ width, height }), resize: size => { calls.push(size); return picture; }, toJPEG: quality => { calls.push(quality); return Buffer.alloc(bytes); } };
-  const context = { Buffer, nativeImage: { createFromBuffer: () => picture } };
+  const context = { Buffer, nativeImage: { createFromBuffer: () => picture }, JpegOrientation: require("../src/jpeg-orientation") };
   vm.runInNewContext(source.slice(source.indexOf("function workReportPdfJpeg("), source.indexOf("async function createWorkReportPdfArtifact(")), context);
   return { run: context.workReportPdfJpeg, calls };
 }
