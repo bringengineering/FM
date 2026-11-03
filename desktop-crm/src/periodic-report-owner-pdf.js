@@ -1,7 +1,8 @@
 "use strict";
 // 정기 관리보고서(격주) 건물주 제출용. 작업 결과보고서와 같은 얼굴을 하도록 글꼴·색·
 // 사진 카드는 work-report-owner-pdf 의 것을 그대로 쓴다. 이 파일은 순서만 정한다:
-// 표지·요약 → 공용부 청소 내역 → 정기점검 결과 → 조치·건의 → 청소 사진 → 점검 사진 → 맺음.
+// (건물 사진이 있으면) 표지 → 요약 → 공용부 청소 내역 → 정기점검 결과 → 조치 사항 진행 →
+// 법정점검 현황 → 점검 사진 → 청소 사진 → 맺음. 쪽을 억지로 넘기지 않아 중간에 빈 쪽이 생기지 않는다.
 const CustomerCore = require("./core");
 const WorkReport = require("./work-report-core");
 const Periodic = require("./periodic-report-core");
@@ -23,10 +24,55 @@ table.act th:nth-child(1){width:38mm;text-align:left}table.act td:first-child{te
 .wk{display:block;white-space:nowrap;font-size:7.3pt;color:#6a8190;font-weight:500;margin-top:.5mm}.cdate{color:#16324a}
 .tally{display:flex;gap:2mm;margin:-.5mm 0 2.5mm;font-size:7.8pt;color:#567486;align-items:center}
 .next{width:100%;border-collapse:collapse}.next td{padding:2mm 3mm;border-bottom:.2mm solid #d8eaf4;font-size:8.7pt}.next td:first-child{width:45mm;color:#386f8a;font-weight:700}
-.part{break-before:page}.closing>section:first-child,.next{break-inside:avoid}
+.closing>section:first-child,.next{break-inside:avoid}
 .round{margin-bottom:5mm}.round-head{display:flex;gap:3mm;align-items:baseline;padding:2.2mm 3mm;background:#16324a;color:#fff;break-after:avoid;margin-bottom:2mm}.round-head b{font-size:11pt}.round-head span{font-size:8.3pt;color:#cfe6f3}
 .insp-grid .grid-row{grid-template-columns:1fr 1fr}.insp-grid .grid-row figure:first-child{grid-column:auto}.insp-grid .grid-row.single figure{grid-column:1 / span 2}
 figure.insp{border-top:1mm solid #3c9a6c}figure.insp .photo-bar{background:#eaf6fd;color:#16324a}figure.insp.fix{border-top-color:#d0594a}figure.insp.watch{border-top-color:#e3a33b}figure.insp.done{border-top-color:#2f7fd0}
+/* ---- 표지 (건물 사진이 있을 때 한 쪽) ---- */
+.cover{height:269mm;display:flex;flex-direction:column;break-after:page}
+.cover::before{content:"";display:block;height:2.4mm;border-top:.8mm solid #16324a;border-bottom:.25mm solid #16324a;margin-bottom:4mm}
+.cover-top{display:flex;justify-content:space-between;align-items:center;padding-bottom:3mm}.cover-top img{height:10mm}.cover-top span{font-size:7.5pt;letter-spacing:.3em;color:#6a8190}
+.cover-title{text-align:center;margin:16mm 0 9mm}.cover-title .eyebrow{font-size:8pt;letter-spacing:.42em;color:#6a8190;margin-bottom:3mm}
+.cover-title h1{font-size:26pt;letter-spacing:.16em;color:#16324a;line-height:1.25}.cover-title .bar{width:18mm;height:.5mm;background:#16324a;margin:5mm auto}
+.cover-title .site{font-size:13pt;font-weight:700;color:#16324a}.cover-title .period{font-size:10pt;color:#386f8a;margin-top:1.5mm}
+.cover-photo{height:104mm;border:.25mm solid #c9d3dc;padding:1.5mm;background:#fff}.cover-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.cover-facts{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:6mm;border-top:.7mm solid #16324a;border-bottom:.3mm solid #16324a}
+.cover-facts th,.cover-facts td{padding:2.2mm 3mm;font-size:9pt;text-align:left;border-bottom:.2mm solid #d5dde4}.cover-facts th{width:28mm;background:#f1f4f7;color:#16324a}
+.cover-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;padding-top:4mm;border-top:.8mm solid #16324a;box-shadow:0 -1.4mm 0 -1.15mm #16324a}
+.cover-foot b{font-size:12pt;color:#16324a}.cover-foot span{font-size:7.5pt;color:#6a8190;line-height:1.6}
+/* ---- 조치 진행 표 · 법정점검 표 ---- */
+.lead{font-size:7.8pt;color:#5b6f7d;margin:-.5mm 0 2.5mm}
+table.track th:nth-child(1){width:34mm}table.track th:nth-child(2){width:26mm}table.track th:nth-child(4){width:21mm}
+table.track td:first-child,table.legal td:first-child,table.track th:first-child,table.legal th:first-child{text-align:left}
+table.track td:first-child{font-weight:600;color:#1d3b4f}table.track td:first-child small{display:block;font-weight:400;color:#5b6f7d;font-size:7.3pt;margin-top:.5mm;white-space:normal}
+.steps{display:flex;flex-wrap:wrap;gap:.8mm 0;align-items:center;font-size:8pt;color:#34586e;white-space:normal}.steps i{font-style:normal;color:#9fb6c6;margin:0 1.4mm}.steps b{font-weight:600;color:#16324a}
+table.legal th:nth-child(1){width:46mm}table.legal th:nth-child(2){width:20mm}table.legal th:nth-child(3){width:26mm}table.legal th:nth-child(4){width:34mm}table.legal th:nth-child(5){width:auto}table.legal td:first-child{font-weight:600;color:#1d3b4f}
+table.legal tr.soon td{background:#fbf7ee}table.legal tr.late td{background:#fdf3f1}
+.due{display:block;font-size:7.3pt;color:#8a5a12;font-weight:700;margin-top:.4mm}.due.calm{color:#6a8190;font-weight:500}.due.late{color:#b03a2e}
+.foot-note{font-size:7.4pt;color:#7a8f9c;margin-top:1.8mm}
+/* ---- 격식: 남색·회색, 굵은 위 선 + 가는 아래 선 ---- */
+tr{break-inside:avoid}thead{display:table-header-group}
+h2{border-left:0;padding:0 0 1.4mm;margin:0 0 2.6mm;border-bottom:.3mm solid #16324a;font-size:11.5pt;letter-spacing:.04em;color:#16324a}
+.monthly-summary{background:#fff;border:.25mm solid #c9d3dc;border-top:.7mm solid #16324a}.monthly-summary h2{border:0;padding:0;margin-bottom:1.5mm}
+.glance{border:0;border-top:.7mm solid #16324a;border-bottom:.3mm solid #16324a;border-radius:0}.glance div{background:#fff;border-right:.2mm solid #c9d3dc}
+.letter{border-top:.7mm solid #16324a;border-bottom:.3mm solid #16324a}.letter th{background:#f1f4f7;color:#16324a}.letter th,.letter td{border-bottom:.2mm solid #d5dde4}
+.areas{border-top:.7mm solid #16324a;border-bottom:.3mm solid #16324a}.areas th{background:#f1f4f7;color:#16324a;font-weight:700;border-bottom:.3mm solid #16324a}.areas td{border-bottom:.2mm solid #d5dde4}
+.badge{background:#fff!important;border:.25mm solid currentColor;border-radius:.6mm;padding:.3mm 2mm;font-weight:700}
+.next{border-top:.7mm solid #16324a;border-bottom:.3mm solid #16324a}.next td:first-child{color:#16324a}
+.follow{background:#fff;border:.25mm solid #c9d3dc;border-top:.7mm solid #16324a}
+.thanks{background:#fff;border-top:.2mm solid #c9d3dc;border-bottom:.2mm solid #c9d3dc;border-radius:0}
+.photos{margin-top:5mm}.photos-head{border-bottom:.7mm solid #16324a}.photos-head h2{border:0;margin:0;padding:0}
+.round-head{background:#16324a}figure.insp .photo-bar{background:#f1f4f7}
+/* 구역 안의 단계 묶음은 장수만큼 폭을 나눠 한 줄을 채운다(1+1 → 반반, 1+2 → 1/3·2/3). */
+.area-photos{display:flex;flex-wrap:wrap;column-gap:3mm;margin-bottom:5mm}.area-photos>*{flex:0 0 100%;min-width:0}
+.area-photos>.group:has(.shots>figure:only-child){flex:1 1 0}.area-photos>.group:has(.shots>figure:nth-child(2):last-child){flex:2 1 0}
+.area-photos>.group:has(.shots>figure:only-child) .shots{grid-template-columns:1fr}.area-photos>.group:has(.shots>figure:nth-child(2):last-child) .shots{grid-template-columns:1fr 1fr}
+.area-photos>.group .shot .frame{height:44mm;background:#f7f9fb}
+/* 사진 한 장뿐인 구역은 한 줄을 다 쓰지 않는다(양옆이 빈 회색 칸이 된다). */
+.area-photos:not(:has(.group ~ .group))>.group:has(.shots>figure:only-child){flex:0 0 calc(50% - 1.5mm)}.pair .shot .frame{height:46mm}.pair{margin-top:2.5mm}.group{margin-top:3mm}
+/* 정기점검 사진은 3열 */
+.insp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;margin-top:3mm}.insp-grid .grid-row{display:contents}
+.insp-grid .grid-row.single figure{grid-column:auto;width:auto;justify-self:stretch}.insp-grid figure img,.insp-grid .missing-photo{height:38mm}
 `;
 
 function inspectionFigure(item, photo, images) {
@@ -86,6 +132,27 @@ function createPeriodicReportHtml(view, options = {}) {
   }).join("");
 
   const actions = (view.actions || []).slice().sort((a, b) => ORDER[a.status] - ORDER[b.status]);
+  const legal = view.legal || [];
+  // 표지는 건물 사진이 있을 때만 따로 한 쪽을 쓴다. 사진 없이 빈 액자를 두지 않는다.
+  const cover = view.cover || {};
+  const coverSource = cover.photo ? images[cover.photo.id] : "";
+  const hasCover = typeof coverSource === "string" && SAFE_IMAGE.test(coverSource);
+  const site = view.siteAddress || view.buildingName || "";
+  const coverFacts = [["건물", site], ["규모", cover.scale], ["관리 범위", cover.scope], ["관리 시작", cover.since]].filter(([, value]) => value);
+  const coverHtml = hasCover ? `<section class="cover">
+<div class="cover-top">${logo ? `<img src="${logo}" alt="BRING CARE">` : '<b class="brand-text">BRING CARE</b>'}<span>BUILDING CARE REPORT</span></div>
+<div class="cover-title"><p class="eyebrow">REGULAR CARE REPORT</p><h1>정기 관리보고서</h1><div class="bar"></div><p class="site">${escape(site)}</p><p class="period">${escape(period.label)} · ${escape(period.range)}</p></div>
+<div class="cover-photo"><img src="${escape(coverSource)}" alt="건물 전경"></div>
+<table class="cover-facts"><tbody>${coverFacts.map(([label, value]) => `<tr><th>${label}</th><td>${escape(value)}</td></tr>`).join("")}</tbody></table>
+<div class="cover-foot"><span>문서번호 ${escape(view.documentNo)}<br>제출일 ${escape(today)}</span><b>${escape(sender)} 드림</b></div>
+</section>` : "";
+  // 3·4장은 있을 때만 싣고, 번호는 실린 순서대로 붙인다.
+  let sectionNo = 2;
+  const doneCount = actions.filter(item => item.status === "done").length;
+  const trackHtml = actions.length ? `<section><h2>${++sectionNo}. 조치 사항 진행</h2><p class="lead">점검에서 확인한 사항은 끝날 때까지 매 보고서에 이어서 적습니다.${doneCount ? ` 이번 보고서에서 완료된 ${doneCount}건은 다음 보고서부터 빠집니다.` : ""}</p>
+<table class="areas track"><thead><tr><th>항목</th><th>처음 확인</th><th>진행 경과</th><th>현재</th></tr></thead><tbody>${actions.map(item => `<tr><td>${escape(item.label)}${item.finding ? `<small>${escape(item.finding)}</small>` : ""}</td><td>${escape(item.sinceLabel || "")}</td><td><div class="steps">${(item.steps || []).map(step => `<span>${step.date ? `<b>${escape(step.date)}</b> ` : ""}${escape(step.text)}</span>`).join("<i>→</i>")}</div></td><td>${`<span class="badge ${BADGE_CLASS[item.status] || "fix"}">${escape(item.stateLabel || Periodic.statusLabel(item.status))}</span>`}</td></tr>`).join("")}</tbody></table></section>` : "";
+  const legalHtml = legal.length ? `<section><h2>${++sectionNo}. 법정점검 현황</h2><p class="lead">법정점검은 전문 업체가 수행하고, 브링케어는 일정 관리·업체 예약·결과 보관·후속 조치를 챙깁니다. 다음 점검이 가까운 순서입니다.</p>
+<table class="areas legal"><thead><tr><th>점검</th><th>주기</th><th>최근 점검</th><th>결과</th><th>다음 예정</th></tr></thead><tbody>${legal.map(item => `<tr${item.tone === "soon" || item.tone === "late" ? ` class="${item.tone}"` : ""}><td>${escape(item.name)}</td><td>${escape(item.cycleLabel)}</td><td>${escape(item.lastLabel)}</td><td><span class="badge ${BADGE_CLASS[item.result] || "watch"}">${escape(item.resultLabel)}</span></td><td>${escape(item.nextLabel)}${item.due ? `<span class="due${item.tone === "soon" ? "" : ` ${item.tone}`}">${escape(item.due)}</span>` : ""}</td></tr>`).join("")}</tbody></table><p class="foot-note">· 업체 점검 보고서 원본은 브링케어가 보관하며, 요청하시면 바로 보내 드립니다.</p></section>` : "";
   const cleaningPhotos = cleanings.map(row => {
     const areas = row.items.filter(item => item.before.length + item.during.length + item.after.length);
     if (!areas.length) return "";
@@ -101,8 +168,8 @@ function createPeriodicReportHtml(view, options = {}) {
 ${Owner.ownerReportStyles(`정기 관리보고서 · ${view.documentNo}`)}
 ${EXTRA_CSS}
 </style></head><body><main>
-<section class="overview">
-<header class="doc-head">${logo ? `<img class="brand-logo" src="${logo}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>정기 관리보고서</h1><p>BUILDING CARE REPORT</p></div></header>
+${coverHtml}<section class="overview">
+${hasCover ? "" : `<header class="doc-head">${logo ? `<img class="brand-logo" src="${logo}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>정기 관리보고서</h1><p>BUILDING CARE REPORT</p></div></header>`}
 <table class="letter"><tbody>
 <tr><th>문서번호</th><td>${escape(view.documentNo)}</td></tr>
 <tr><th>수신(건물주)</th><td>${escape(recipient)} 귀하</td></tr>
@@ -115,7 +182,8 @@ ${EXTRA_CSS}
 <section><h2>1. 공용부 청소 내역</h2>${cleanings.length ? `<table class="areas clean"><thead><tr><th>회차</th><th>청소일</th><th>작업 구역</th><th>수행 내용</th><th>사진</th></tr></thead><tbody>${cleanings.map(row => `<tr><td>${row.no}회차<small class="wk">${escape(row.week)}</small></td><td><b class="cdate">${escape(row.shortDate)}</b>${row.workerName ? `<small class="wk">${escape(row.workerName)}</small>` : ""}</td><td>${escape(row.areas)}</td><td>${escape(row.work)}</td><td>${row.photoCount}장</td></tr>`).join("")}</tbody></table>` : '<p class="greeting">이 기간에 등록된 공용부 청소 기록이 없습니다.</p>'}</section>
 <section><h2>2. 건물 정기점검 결과</h2><div class="tally">${["good", "watch", "fix", "done"].filter(key => counts[key]).map(key => `${badge(key)} ${counts[key]}건`).join(" ")}${view.inspection.dateLabel ? ` <span>· 점검일 ${escape(view.inspection.dateLabel)}</span>` : ""}</div>
 <table class="areas check"><thead><tr><th>No.</th><th>구분</th><th>점검 항목</th><th>상태</th><th>점검 내용</th>${withPhotos ? "<th>사진</th>" : ""}</tr></thead><tbody>${checkRows}</tbody></table></section>
-${actions.length ? `<section><h2>3. 조치 및 건의 사항</h2><table class="areas act"><thead><tr><th>항목</th><th>확인 내용</th><th>조치 · 건의</th><th>상태</th></tr></thead><tbody>${actions.map(item => `<tr><td>${escape(item.label)}${item.since ? `<small class="wk">${escape(Periodic.dateLabel(item.since, false))} 확인</small>` : ""}</td><td>${escape(item.finding)}</td><td>${escape(item.plan || (item.status === "done" ? "조치 완료" : item.status === "watch" ? "다음 점검 때 다시 확인" : "건물주 확인 후 진행"))}</td><td>${badge(item.status)}</td></tr>`).join("")}</tbody></table></section>` : ""}
+${trackHtml}
+${legalHtml}
 </section>
 ${compareHtml ? `<section class="photos part">
 <div class="photos-head"><h2>지난 점검과 비교</h2><p>관찰·조치 항목의 같은 위치 · ${compared.length}건</p></div>
@@ -143,6 +211,7 @@ ${view.nextSchedule && view.nextSchedule.length ? `<section><h2>다음 일정</h
 function periodicReportPdfPhotos(view) {
   const photos = [];
   (view.cleanings || []).forEach(row => row.items.forEach(item => ["before", "during", "after"].forEach(phase => item[phase].forEach(photo => photos.push(photo)))));
+  if (view.cover && view.cover.photo) photos.push(view.cover.photo);
   ((view.inspection && view.inspection.items) || []).forEach(item => {
     item.photos.forEach(photo => photos.push(photo));
     if (item.previous) item.previous.photos.forEach(photo => photos.push(photo));

@@ -59,3 +59,12 @@
 .pr-history > header h3 { margin: 4px 0 2px; color: #191F28; font-size: 17px; }
 .pr-history > header small, .pr-history td small { display: block; color: #6B7684; }
 .pr-history .pr-badge { margin: 0 4px 3px 0; }
+/* 5. 표지 · 법정점검 */
+.pr-cover { align-items: center; margin-bottom: 6px; }
+.pr-cover-photo { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4E5968; font-weight: 700; }
+.pr-cover label input { min-width: 300px; }
+.pr-legal td { vertical-align: middle; }
+.pr-legal input, .pr-legal select { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid #D1D6DB; border-radius: 7px; font: inherit; font-size: 12px; }
+.pr-legal td:first-child input { min-width: 230px; }
+.pr-legal select { min-width: 150px; }
+.pr-legal input[type=date], .pr-legal input[type=month] { min-width: 120px; }

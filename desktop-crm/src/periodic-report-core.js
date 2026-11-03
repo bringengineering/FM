@@ -192,6 +192,108 @@
     };
   }
 
+  // ---- 표지 · 법정점검 -------------------------------------------------------
+  // 건물에 딸린 정보라 보고서마다 새로 적지 않는다. 한 번 적으면 다음 보고서로 그대로 넘어가고,
+  // 바뀐 것(새 점검을 받았다 등)만 그 보고서에서 고친다.
+  const LEGAL_CYCLES = Object.freeze([
+    { key: "month", label: "월 1회", months: 1 },
+    { key: "quarter", label: "분기 1회", months: 3 },
+    { key: "half", label: "반기 1회", months: 6 },
+    { key: "year", label: "연 1회", months: 12 },
+    { key: "biennial", label: "2년 1회", months: 24 },
+    { key: "other", label: "별도 주기", months: 0 },
+  ]);
+  const LEGAL_RESULTS = Object.freeze([
+    { key: "good", label: "적합" },
+    { key: "fix", label: "부적합" },
+    { key: "done", label: "부적합 → 조치 완료" },
+  ]);
+  // 자주 쓰는 법정점검. 고르면 이름·주기를 채운다. 건물마다 주기가 다를 수 있어 바꿀 수 있게 둔다.
+  const LEGAL_PRESETS = Object.freeze([
+    { name: "소방시설 작동점검", cycle: "year" },
+    { name: "소방시설 종합점검", cycle: "year" },
+    { name: "승강기 정기검사", cycle: "year" },
+    { name: "정보통신설비 성능점검", cycle: "year" },
+    { name: "정보통신설비 유지보수·관리점검", cycle: "half" },
+    { name: "저수조 청소·수질검사", cycle: "half" },
+    { name: "전기설비 정기검사", cycle: "other" },
+    { name: "건축물 정기점검", cycle: "other" },
+  ]);
+  const isMonth = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(text(value, 7));
+  const plain = source => (source && typeof source === "object" && !Array.isArray(source) ? source : {});
+
+  function normalizeCover(source) {
+    const value = plain(source);
+    const photo = value.photo ? WorkReport.normalizePhoto(value.photo) : null;
+    // 규모는 건물주가 아는 말로 짧게: "지상 5층 · 지하 1층 · 근린생활시설"
+    return { photo: photo && photo.id ? photo : null, scale: text(value.scale, 80) };
+  }
+
+  function normalizeLegal(source, index = 0) {
+    const value = plain(source);
+    const cycle = text(value.cycle, 12);
+    const result = text(value.result, 8);
+    const key = text(value.key, 43);
+    return {
+      key: /^lg_[A-Za-z0-9_-]{1,40}$/.test(key) ? key : `lg_${index + 1}`,
+      name: text(value.name, 60),
+      cycle: LEGAL_CYCLES.some(item => item.key === cycle) ? cycle : "year",
+      lastDate: isDate(value.lastDate) ? value.lastDate : "",
+      result: LEGAL_RESULTS.some(item => item.key === result) ? result : "",
+      // 결과를 업체 보고서 말 그대로 적고 싶을 때(합격·적합 11종 등). 비우면 위 결과 이름을 쓴다.
+      resultText: text(value.resultText, 40),
+      // 다음 점검 달. 비우면 마지막 점검일과 주기로 센다.
+      nextMonth: isMonth(value.nextMonth) ? value.nextMonth : "",
+      note: text(value.note, 60),
+    };
+  }
+
+  function normalizeLegalList(source) {
+    const seen = new Set();
+    return rows(source).map(normalizeLegal).filter(item => item.name).slice(0, 12).map((item, index) => {
+      const key = seen.has(item.key) ? `lg_${index + 1}_${seen.size}` : item.key;
+      seen.add(key);
+      return { ...item, key };
+    });
+  }
+
+  const monthIndex = month => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
+  const monthOf = index => `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+  const monthLabel = month => `${Number(month.slice(0, 4))}. ${Number(month.slice(5, 7))}.`;
+  const shortDate = date => dateLabel(date, false).replace(/\(.\)$/u, "").trim();
+
+  // 다음 점검 달: 적어 둔 달이 먼저, 없으면 마지막 점검일 + 주기.
+  function legalNextMonth(item) {
+    if (item.nextMonth) return item.nextMonth;
+    const cycle = LEGAL_CYCLES.find(row => row.key === item.cycle);
+    return item.lastDate && cycle && cycle.months ? monthOf(monthIndex(item.lastDate.slice(0, 7)) + cycle.months) : "";
+  }
+
+  // 건물주가 볼 법정점검 표. 다음 점검이 가까운 순. 날짜가 하나도 없는 줄은 싣지 않는다.
+  // 기준일은 보고서를 내는 날(없으면 보고 기간 끝날)이다 — "다음 달" 은 받는 날 기준이어야 맞다.
+  function legalView(list, reference) {
+    const refMonth = isDate(reference) ? reference.slice(0, 7) : "";
+    return normalizeLegalList(list).filter(item => item.lastDate || legalNextMonth(item)).map(item => {
+      const next = legalNextMonth(item);
+      const diff = next && refMonth ? monthIndex(next) - monthIndex(refMonth) : null;
+      const base = diff === null ? "" : diff < 0 ? "예정 시기 지남 · 일정 확인 중" : diff === 0 ? "이번 달" : diff === 1 ? "다음 달" : `약 ${diff}개월 뒤`;
+      const tone = diff === null ? "calm" : diff < 0 ? "late" : diff <= 2 ? "soon" : "calm";
+      const result = LEGAL_RESULTS.find(row => row.key === item.result);
+      return {
+        key: item.key,
+        name: item.name,
+        cycleLabel: (LEGAL_CYCLES.find(row => row.key === item.cycle) || LEGAL_CYCLES[3]).label,
+        lastLabel: item.lastDate ? dateLabel(item.lastDate).replace(/\(.\)$/u, "").trim() : "첫 점검 예정",
+        result: item.result || (item.lastDate ? "good" : "watch"),
+        resultLabel: item.resultText || (result ? result.label : item.lastDate ? "완료" : "예정"),
+        nextMonth: next,
+        nextLabel: next ? monthLabel(next) : "일정 확인 중",
+        due: [base, item.note].filter(Boolean).join(" · "),
+        tone,
+      };
+    }).sort((a, b) => (a.nextMonth || "9999-99").localeCompare(b.nextMonth || "9999-99"));
+  }
+
   // 저장 시각(UTC ISO)을 한국 날짜·시각으로. 새벽에 보낸 것이 전날로 보이지 않게 한다.
   function kstDay(iso) {
     const time = Date.parse(String(iso || ""));
@@ -271,6 +373,9 @@
       // 점검 항목 → CRM 민원·작업 건. 수리가 끝나면 다음 보고서가 스스로 '조치 완료' 로 안다.
       links: normalizeLinks(value.links),
       nextSchedule: rows(value.nextSchedule).map(item => ({ label: text(item && item.label, 60), date: isDate(item && item.date) ? item.date : "" })).filter(item => item.label && item.date).slice(0, 6),
+      // 표지(건물 사진·규모)와 법정점검 현황. 건물 정보라 다음 보고서로 이어진다.
+      cover: normalizeCover(value.cover),
+      legal: normalizeLegalList(value.legal),
       createdAt: text(value.createdAt, 40),
       updatedAt: text(value.updatedAt, 40),
       updatedBy: text(value.updatedBy, 80),
@@ -398,6 +503,27 @@
   }
 
   // PDF 가 읽는 모양. 출력할 때만 만든다 — 저장된 기록은 바꾸지 않는다.
+  // 조치 사항의 진행 경과. 기록에 있는 날짜만 쓴다: 처음 확인한 날 → 작업 건 접수 →
+  // 지금 단계 또는 수리 완료 → 다음 점검에서 정상 확인. 건물주가 "말한 게 어디까지 갔나" 를 본다.
+  function actionTrack(item, caseRecord, report) {
+    const steps = [];
+    if (isDate(item.since)) steps.push({ date: shortDate(item.since), text: (item.startStatus || item.status) === "watch" && !caseRecord ? "관찰 시작" : "확인" });
+    if (caseRecord) {
+      const created = text(caseRecord.createdAt || caseRecord.receivedAt, 10);
+      steps.push({ date: isDate(created) ? shortDate(created) : "", text: "작업 건 접수" });
+      const progress = caseProgress(caseRecord);
+      if (progress && progress.done) steps.push({ date: progress.completedAt ? shortDate(progress.completedAt) : "", text: "수리 완료" });
+      else if (progress && progress.step && progress.step !== "문의 접수") steps.push({ date: "", text: `${progress.step} 단계` });
+    }
+    if (item.recheck) steps.push({ date: isDate(report.inspection.date) ? shortDate(report.inspection.date) : "", text: "점검에서 정상 확인" });
+    else if (!caseRecord) steps.push({ date: "", text: item.status === "done" ? (item.plan || "조치 완료") : item.status === "watch" ? "다음 점검 때 다시 확인" : (item.plan || "건물주 확인 후 진행") });
+    const sincePeriod = isDate(item.since) ? periodOf(item.since) : null;
+    const sinceLabel = !isDate(item.since) ? "" : sincePeriod && sincePeriod.key === report.period ? `${shortDate(item.since)} 이번 점검`
+      : `${shortDate(item.since)}${sincePeriod ? ` (${periodLabel(sincePeriod.key).replace(/^\d{4}년 /u, "")})` : ""}`;
+    const stateLabel = item.status === "done" ? "조치 완료" : item.status === "watch" ? "관찰" : caseRecord ? "진행 중" : "조치 필요";
+    return { steps, sinceLabel, stateLabel };
+  }
+
   function buildView(report, workReports, options = {}) {
     const value = normalizeReport(report);
     const period = parsePeriod(value.period);
@@ -433,15 +559,34 @@
       if (now.status === "good") return { ...item, status: "done", plan: item.plan || `${dateLabel(value.inspection.date, false)} 점검에서 정상 확인` };
       return { ...item, status: now.status, finding: now.note || item.finding };
     });
+    // 진행 경과용: 지난 보고서에서 넘어온 항목의 처음 상태와, 이번 점검에서 정상으로 확인됐는지.
+    const origin = new Map(carryOverActions(previous, value).map(item => [item.key, item.status]));
+    const rechecked = new Set(withCarry.filter(item => item.status === "done" && origin.get(item.key) !== "done" && current.has(item.key) && current.get(item.key).status === "good").map(item => item.key));
     const actions = actionsFromInspection({ ...value, actions: withCarry }).map(item => {
       const caseKey = links[String(item.key || "").replace(/^insp_/u, "")];
-      const progress = caseKey ? caseProgress(cases.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey))) : null;
-      if (!progress) return item;
-      if (progress.done) return { ...item, status: "done", plan: `${progress.completedAt ? `${dateLabel(progress.completedAt, false)} ` : ""}수리 완료` };
+      const caseRecord = caseKey ? cases.find(row => row && (row.id === caseKey || row.firebaseKey === caseKey)) : null;
+      const progress = caseRecord ? caseProgress(caseRecord) : null;
+      let next = item;
+      if (progress && progress.done) next = { ...item, status: "done", plan: `${progress.completedAt ? `${dateLabel(progress.completedAt, false)} ` : ""}수리 완료` };
       // 작업 건이 아직 안 끝났으면 점검 기본값 '양호' 보다 작업 건이 맞다.
-      return { ...item, status: item.status === "done" ? "fix" : item.status, plan: `작업 진행 중${progress.step ? ` (${progress.step})` : ""}`, caseKey };
+      else if (progress) next = { ...item, status: item.status === "done" ? "fix" : item.status, plan: `작업 진행 중${progress.step ? ` (${progress.step})` : ""}`, caseKey };
+      return { ...next, ...actionTrack({ ...next, recheck: rechecked.has(item.key) && next.status === "done" && !(progress && !progress.done), startStatus: origin.get(item.key) || item.status }, progress ? caseRecord : null, value) };
     });
     const nextPeriodValue = nextPeriod(value.period);
+    const reference = isDate(options.today) ? options.today : period ? period.to : "";
+    const legal = legalView(value.legal, reference);
+    // 관리 시작: 이 현장의 첫 공용부·계단청소 기록. 기록에서만 센다.
+    const firstCleaning = rows(workReports).filter(row => CLEANING_KINDS.includes(row.kind) && sameTarget(row, value) && isDate(row.workDate)).map(row => row.workDate).sort()[0] || "";
+    const managedMonths = firstCleaning && period ? monthIndex(period.to.slice(0, 7)) - monthIndex(firstCleaning.slice(0, 7)) + 1 : 0;
+    const cover = {
+      photo: value.cover.photo,
+      scale: value.cover.scale,
+      scope: ["공용부 청소 주 1회", "건물 정기점검 격주", legal.length ? "법정점검 일정 관리" : ""].filter(Boolean).join(" · "),
+      since: firstCleaning ? `${Number(firstCleaning.slice(0, 4))}년 ${Number(firstCleaning.slice(5, 7))}월부터${managedMonths > 1 ? ` (${managedMonths}개월째)` : ""}` : "",
+    };
+    // 두 달 안에 다가온 법정점검은 다음 일정에도 적는다.
+    const legalSoon = legal.filter(item => item.tone === "soon" && item.nextMonth).slice(0, 3)
+      .map(item => ({ label: item.name, date: `${Number(item.nextMonth.slice(0, 4))}년 ${Number(item.nextMonth.slice(5, 7))}월${item.due.includes(" · ") ? ` (${item.due.split(" · ").slice(1).join(" · ")})` : ""}` }));
     return {
       id: value.id,
       documentNo: documentNo(value),
@@ -466,9 +611,11 @@
       actions,
       summary: value.summary || autoSummary(value, cleanings),
       followUp: value.followUp,
-      nextSchedule: value.nextSchedule.length ? value.nextSchedule.map(item => ({ label: item.label, date: dateLabel(item.date) }))
+      nextSchedule: [...(value.nextSchedule.length ? value.nextSchedule.map(item => ({ label: item.label, date: dateLabel(item.date) }))
         // 보낼 날짜는 적지 않는다. 늦게 만들면 "10. 31. 이후 발송" 처럼 이미 지난 날이 찍힌다.
-        : nextPeriodValue ? [{ label: "다음 정기 관리보고서", date: `${periodLabel(nextPeriodValue.key)} (${[nextPeriodValue.from, nextPeriodValue.to].map(day => dateLabel(day, false).replace(/\(.\)$/u, "").trim()).join(" ~ ")} 관리분)` }] : [],
+        : nextPeriodValue ? [{ label: "다음 정기 관리보고서", date: `${periodLabel(nextPeriodValue.key)} (${[nextPeriodValue.from, nextPeriodValue.to].map(day => dateLabel(day, false).replace(/\(.\)$/u, "").trim()).join(" ~ ")} 관리분)` }] : []), ...legalSoon],
+      cover,
+      legal,
     };
   }
 
@@ -556,11 +703,24 @@
   }
 
   // 대상 하나의 초안. 점검일은 마지막 청소일로 둔다 — 보통 마지막 청소 날 점검을 같이 한다.
+  // 표지·법정점검은 건물 정보라 다음 보고서로 그대로 넘긴다. 바뀌면 그 보고서에서 고친다.
+  function carriedBuilding(previousReport) {
+    if (!previousReport) return {};
+    const previous = normalizeReport(previousReport);
+    return { cover: previous.cover, legal: previous.legal };
+  }
+
+  // 이 기간보다 앞선 같은 건물 보고서 중 가장 최근 것. 한 기간을 걸렀어도 이어받게 한다.
+  function latestBefore(reports, target, periodKey) {
+    return sortReports(rows(reports)).find(row => sameTarget(row, target) && row.period && row.period < String(periodKey || "")) || null;
+  }
+
   function draftFor(entry, id, previousReport) {
     const last = rows(entry.cleanings).map(row => row.workDate).sort().pop() || "";
     const previous = previousReport ? normalizeReport(previousReport) : null;
     return normalizeReport({
       id, ...entry.target, buildingName: entry.buildingName, siteAddress: entry.siteAddress,
+      ...carriedBuilding(previous),
       period: entry.period || "",
       inspection: { date: last, inspectorName: previous ? previous.inspection.inspectorName : "", confirmed: false, items: [] },
     });
@@ -666,6 +826,7 @@
     const ids = [];
     rows(view && view.cleanings).forEach(row => rows(row.items).forEach(item => ["before", "during", "after"].forEach(phase => rows(item[phase]).forEach(photo => ids.push(photo.id)))));
     rows(view && view.inspection && view.inspection.items).forEach(item => rows(item.photos).forEach(photo => ids.push(photo.id)));
+    if (view && view.cover && view.cover.photo) ids.push(view.cover.photo.id);
     return [...new Set(ids.filter(Boolean))];
   }
 
@@ -712,5 +873,15 @@
     draftFor,
     sortReports,
     photoIds,
+    LEGAL_CYCLES,
+    LEGAL_RESULTS,
+    LEGAL_PRESETS,
+    normalizeCover,
+    normalizeLegal,
+    normalizeLegalList,
+    legalNextMonth,
+    legalView,
+    carriedBuilding,
+    latestBefore,
   });
 });
