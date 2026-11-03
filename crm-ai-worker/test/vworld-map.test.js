@@ -87,3 +87,25 @@ test('only POST/OPTIONS are accepted and CORS follows the allowlist', async () =
   const preflight = await worker.fetch(new Request(endpoint, { method: 'OPTIONS', headers: { origin: 'app://bring-crm' } }), { ALLOWED_ORIGINS: 'app://bring-crm' });
   assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-origin'), 'app://bring-crm');
 });
+test('action "key" hands the company key only to authorized CRM staff', async () => {
+  const h = harness(); const response = await h.send({ action: 'key' });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true, key: KEY }); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(h.provider().length, 0);
+  for (const options of [{ record: { ...access, marketingRole: 'marketing' } }, { record: { ...access, enabled: false } }, { user: { localId: 'uid1', email: 'staff@example.com', emailVerified: false } }]) {
+    const body = await (await harness(options).send({ action: 'key' })).text(); assert.equal(body.includes(KEY), false);
+  }
+  assert.equal((await (await harness().send({ action: 'key' }, '')).json()).code, 'AUTH_REQUIRED');
+  assert.equal((await (await harness().send({ action: 'key' }, 'firebase-token', { VWORLD_API_KEY: '' })).json()).code, 'MAP_NOT_CONFIGURED');
+  assert.equal((await (await harness({ limit: false }).send({ action: 'key' })).json()).code, 'RATE_LIMITED');
+  assert.equal((await harness().send({ action: 'key', extra: 1 })).status, 400);
+});
+test('provider failures carry only a short reason code, never bodies or the key', async () => {
+  for (const [provider, reason] of [
+    [() => new Response('<html>' + KEY, { status: 403, headers: { 'content-type': 'text/html' } }), 'http_403'],
+    [() => Response.json({ response: { status: 'ERROR', error: { code: 'INVALID_KEY', text: KEY } } }), 'vworld_INVALID_KEY'],
+    [() => Response.json({ response: { status: 'ERROR', error: { code: KEY + '/../x' } } }), undefined],
+    [() => { throw new Error(KEY); }, 'fetch_error'],
+  ]) {
+    const body = await (await harness({ provider }).send({ action: 'geocode', address: '주소', type: 'ROAD' })).json();
+    assert.equal(body.code, 'MAP_UNAVAILABLE'); assert.equal(body.reason, reason); assert.equal(JSON.stringify(body).includes(KEY), false);
+  }
+});

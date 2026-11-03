@@ -79,8 +79,8 @@ test('tile validates fixed PNG shape and returns no source URL or key', async ()
   for (const bad of [{...tile,z:99},{...tile,x:-1},{...tile,x:1},{...tile,url:'http://127.0.0.1'}, { ...tile,y:1.1 }]) assert.equal((await h.service.tile(bad)).code,'INPUT');
 });
 test('bounded concurrent HTTP requests prevent fan-out', async () => {
-  const finishes = []; const h = harness({ fetch: () => new Promise(resolve => finishes.push(resolve)) }); const jobs = Array.from({length:5}, () => h.service.locate({ buildingIds:['building'] }));
-  while (finishes.length < 4) await new Promise(resolve => setImmediate(resolve)); finishes.forEach(resolve => resolve(Response.json({response:{status:'OK',result:{point:{x:127.94,y:37.34}}}}))); const results = await Promise.all(jobs); assert.ok(results.some(result => result.code === 'LIMIT'));
+  const finishes = []; const h = harness({ fetch: () => new Promise(resolve => finishes.push(resolve)) }); const jobs = Array.from({length:7}, () => h.service.locate({ buildingIds:['building'] }));
+  while (finishes.length < 6) await new Promise(resolve => setImmediate(resolve)); finishes.forEach(resolve => resolve(Response.json({response:{status:'OK',result:{point:{x:127.94,y:37.34}}}}))); const results = await Promise.all(jobs); assert.ok(results.some(result => result.code === 'LIMIT'));
 });
 test('shell escapes data, uses actual statuses, exposes no key and keeps admin settings local', () => {
   const store = fixture(); store.buildings[0].name = '<img src=x onerror=alert(1)>'; const projection = Core.project(store), state = { filter:'all',query:'',points:new Map(),failed:new Set(),config:null };
@@ -128,29 +128,43 @@ test('production wiring keeps trusted canonical IPC, encrypted settings and tear
   assert.equal(policy.classification('crm:contract-map-settings-save'),'mutation'); assert.equal(policy.classification('crm:contract-map-locate'),'control'); assert.match(main,/encodeProtectedJson\(safeStorage, value\)/); assert.match(main,/if \(!decoded.encrypted\) throw 'STORAGE'/); assert.match(html,/data-view="contractBuildingMap"/); assert.ok(html.indexOf('data-view="relationships"') < html.indexOf('data-view="contractBuildingMap"')); assert.match(app,/window.BringContractBuildingMapUI.mount/); assert.match(app,/function setCurrentAuth\(value\) \{\s*if \(disposeContractBuildingMap\)/); assert.match(app,/function prepareWorkspaceTransition\(workspace\) \{\s*if \(disposeContractBuildingMap\)/); assert.doesNotMatch(read('contract-building-map-ui.js'),/localStorage|sessionStorage|fetch\(|https?:\/\//);
 });
 const { createMapGateway } = require('../src/contract-building-map-gateway');
-function serverHarness(reply = async input => input.action === 'status' ? { ok: true, configured: true } : input.action === 'geocode' ? { ok: true, status: 'OK', lon: 127.94, lat: 37.34 } : { ok: true, png: (() => { const png = Buffer.alloc(33); Buffer.from('89504e470d0a1a0a','hex').copy(png); png.write('IHDR',12); png.writeUInt32BE(256,16); png.writeUInt32BE(256,20); return png.toString('base64'); })() }) {
-  const sent = []; const h = harness({ gateway: async input => { sent.push(input); return reply(input); } }); h.setConfig(null); return { ...h, sent };
+const serverKeyValue = 'TEST_ONLY_SERVER_ISSUED_KEY';
+const pngBytes = () => { const png = Buffer.alloc(33); Buffer.from('89504e470d0a1a0a','hex').copy(png); png.write('IHDR',12); png.writeUInt32BE(256,16); png.writeUInt32BE(256,20); return png; };
+function serverHarness(reply = async () => ({ ok: true, key: serverKeyValue })) {
+  const sent = [];
+  const h = harness({ gateway: async input => { sent.push(input); return reply(input); },
+    fetch: async (url, options) => { h.calls.push({ url, options }); return String(url).includes('/wmts/') ? new Response(pngBytes(), { headers: { 'content-type': 'image/png' } }) : Response.json({ response: { status: 'OK', result: { point: { x: '127.94', y: '37.34' } } } }); } });
+  h.setConfig(null); return Object.assign(h, { sent });
 }
-test('without a PC key the company relay serves every role and the PC never calls VWorld directly', async () => {
+test('without a PC key every role gets the company key from the server and this PC calls VWorld directly', async () => {
   for (const role of ['admin', 'member', 'viewer']) {
-    const h = serverHarness(); h.setUser({ uid: 'x', role });
-    const status = await h.service.status(); assert.equal(status.enabled, true); assert.equal(status.source, 'server'); assert.equal(status.configured, false);
+    const h = serverHarness(); h.setUser({ uid: 'x-' + role, role });
+    const status = await h.service.status(); assert.equal(status.enabled, true); assert.equal(status.source, 'server'); assert.equal(status.configured, false); assert.equal(JSON.stringify(status).includes(serverKeyValue), false);
     const located = await h.service.locate({ buildingIds: ['building'] }); assert.deepEqual(located.results, [{ id: 'building', status: 'located', lon: 127.94, lat: 37.34 }]);
-    const p = Core.point(127.94, 37.34, 13), tile = await h.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) }); assert.ok(tile.dataUrl.startsWith('data:image/png;base64,'));
-    assert.equal(h.calls.length, 0); assert.deepEqual(h.sent.find(input => input.action === 'geocode'), { action: 'geocode', address: '공개 도로명 시연 주소', type: 'ROAD' });
-    assert.equal(h.sent.filter(input => input.action === 'status').length, 1, 'relay status is cached');
+    const p = Core.point(127.94, 37.34, 13), tile = await h.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) }); assert.ok(tile.dataUrl.startsWith('data:image/png;base64,')); assert.equal(JSON.stringify(tile).includes(serverKeyValue), false);
+    assert.deepEqual(h.sent, [{ action: 'key' }], 'key is fetched once and cached; no geocode/tile goes through the relay');
+    assert.equal(new URL(h.calls[0].url).searchParams.get('key'), serverKeyValue); assert.match(h.calls.at(-1).url, new RegExp('^https://api\\.vworld\\.kr/req/wmts/1\\.0\\.0/' + serverKeyValue + '/Base/13/'));
+    assert.equal(h.calls.every(call => call.options.redirect === 'error'), true);
   }
 });
-test('relay not configured or unreachable keeps the map off without outbound geocoding', async () => {
-  for (const reply of [async () => ({ ok: true, configured: false }), async () => { throw 'NETWORK'; }]) {
-    const h = serverHarness(reply); assert.equal((await h.service.status()).enabled, false); assert.equal((await h.service.locate({ buildingIds: ['building'] })).code, 'CONFIG'); assert.equal(h.sent.every(input => input.action === 'status'), true);
+test('server key is re-fetched for a different signed-in user', async () => {
+  const h = serverHarness(); await h.service.status(); h.setUser({ uid: 'other', role: 'viewer' }); await h.service.status();
+  assert.equal(h.sent.length, 2);
+});
+test('geocode results are reused instead of re-querying VWorld on every map open', async () => {
+  const h = serverHarness(); await h.service.locate({ buildingIds: ['building'] }); await h.service.locate({ buildingIds: ['building'] });
+  assert.equal(h.calls.length, 1);
+});
+test('server without a key, an invalid key or an unreachable server keeps the map off with no VWorld call', async () => {
+  for (const reply of [async () => { throw 'CONFIG'; }, async () => ({ ok: true, key: 'bad key!' }), async () => { throw 'NETWORK'; }]) {
+    const h = serverHarness(reply); assert.equal((await h.service.status()).enabled, false); assert.equal((await h.service.locate({ buildingIds: ['building'] })).code, 'CONFIG'); assert.equal(h.calls.length, 0);
   }
 });
-test('relay tile payload is PNG-validated and relay errors map to safe codes', async () => {
-  const bad = serverHarness(async input => input.action === 'status' ? { ok: true, configured: true } : { ok: true, png: Buffer.from('<html>').toString('base64') });
+test('VWorld responses fetched with the server key are still PNG/JSON validated', async () => {
+  const bad = harness({ gateway: async () => ({ ok: true, key: serverKeyValue }), fetch: async () => new Response('<html>', { headers: { 'content-type': 'image/png' } }) }); bad.setConfig(null);
   const p = Core.point(127.94, 37.34, 13); assert.equal((await bad.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) })).code, 'NETWORK');
-  const limited = serverHarness(async input => { if (input.action === 'status') return { ok: true, configured: true }; throw 'LIMIT'; });
-  assert.equal((await limited.service.locate({ buildingIds: ['building'] })).code, 'LIMIT');
+  const err = harness({ gateway: async () => ({ ok: true, key: serverKeyValue }), fetch: async () => Response.json({ response: { status: 'ERROR', error: { code: 'INVALID_KEY' } } }) }); err.setConfig(null);
+  assert.equal((await err.service.locate({ buildingIds: ['building'] })).code, 'NETWORK');
 });
 test('a key saved and enabled on this PC still takes precedence over the relay', async () => {
   const h = harness({ gateway: async () => { throw new Error('relay must not be used'); } });

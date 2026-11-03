@@ -34,6 +34,8 @@
     const projection = Core.project(options.store, options.today), admin = options.user?.role === 'admin';
     const state = { filter: 'all', query: '', selected: '', config: null, loading: true, saving: false, settingsOpen: false, notice: '', points: new Map(), failed: new Map(), center: [127.94, 37.34], zoom: 13 };
     let disposed = false, generation = 0, drag = null, userMoved = false, tileQueue = [], tileActive = 0, tileEpoch = 0;
+    // Tiles that failed stay blank until "연결 상태 새로 확인" instead of being re-requested on every repaint.
+    const tileFailed = new Set();
     const tileCache = new Map(), tilePending = new Set();
     const active = () => !disposed && root.isConnected && options.isActive();
     function fit() {
@@ -64,7 +66,7 @@
       for (let x = Math.floor(left / 256); x <= Math.floor((left + width) / 256); x++) for (let y = Math.floor(top / 256); y <= Math.floor((top + height) / 256); y++) {
         const key = `${state.zoom}/${x}/${y}`, image = doc.createElement('img'); image.alt = ''; image.draggable = false; image.width = 256; image.height = 256; image.dataset.cbmTile = key; image.style.left = `${x * 256 - left}px`; image.style.top = `${y * 256 - top}px`; tiles.append(image);
         if (tileCache.has(key)) image.src = tileCache.get(key);
-        else if (!tilePending.has(key)) tileQueue.push({ key, x, y, z: state.zoom, epoch: tileEpoch });
+        else if (!tilePending.has(key) && !tileFailed.has(key)) tileQueue.push({ key, x, y, z: state.zoom, epoch: tileEpoch });
       }
       const visibleRows = projection.rows.filter(row => state.filter === 'all' || row.status === state.filter).filter(row => [row.name, row.address, ...row.customerNames].join(' ').toLocaleLowerCase('ko').includes(state.query.toLocaleLowerCase('ko')));
       // Spread colocated markers without changing the geocoded source positions.
@@ -84,6 +86,7 @@
         Promise.resolve().then(() => options.api.contractMapTile({ x: item.x, y: item.y, z: item.z })).then(result => {
           if (!active() || token !== generation || !state.config?.enabled) return;
           if (!result?.ok || typeof result.dataUrl !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(result.dataUrl) || result.dataUrl.length > 700000) {
+            if (result?.code !== 'LIMIT') tileFailed.add(item.key);
             const notice = root.querySelector('[role="status"]'); if (notice) notice.textContent = '지도 일부를 불러오지 못했습니다. 키 권한·연결 상태를 확인한 뒤 새로 확인해 주세요.'; return;
           }
           if (tileCache.size >= 80) tileCache.delete(tileCache.keys().next().value); tileCache.set(item.key, result.dataUrl);
@@ -92,7 +95,7 @@
       }
     }
     async function load() {
-      const token = ++generation; state.loading = true; state.notice = ''; state.points.clear(); state.failed.clear(); tileCache.clear(); tileQueue = []; state.config = null; render();
+      const token = ++generation; state.loading = true; state.notice = ''; state.points.clear(); state.failed.clear(); tileCache.clear(); tileFailed.clear(); tileQueue = []; state.config = null; render();
       try {
         const config = await options.api.contractMapStatus(); if (!active() || token !== generation) return;
         if (!config?.ok) { state.notice = '지도 설정을 확인하지 못했습니다. CRM 로그인과 암호화 저장소를 확인해 주세요.'; return; }

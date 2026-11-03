@@ -1,7 +1,10 @@
 // Company-wide VWorld relay for the CRM contract building map.
 // The VWorld key lives only in the Worker secret VWORLD_API_KEY. CRM clients
-// send a Firebase ID token plus either one building address or one tile index;
-// the key, provider URL and provider error bodies are never returned.
+// send a Firebase ID token plus either one building address or one tile index.
+// VWorld rejects requests from Cloudflare egress IPs, so action "key" hands the
+// company key to signed-in CRM staff and the PC calls VWorld from Korea itself.
+// Provider URLs and error bodies are never returned; failures carry only a
+// short reason code (HTTP status or VWorld error code) for diagnosis.
 import { boundedJson, readRecord } from './weekly-report-delivery.js';
 
 export const MAP_PATH = '/v1/map';
@@ -9,7 +12,8 @@ const KEY = /^[A-Za-z0-9_-]{8,128}$/;
 const MAX_INPUT = 2048, MAX_GEOCODE = 65536, MAX_TILE = 524288;
 // Korea bounding box shared with desktop-crm/src/contract-building-map-core.js.
 const LON = [124, 132], LAT = [33, 39];
-const fail = code => { throw Object.assign(new Error(code), { code }); };
+const fail = (code, reason) => { throw Object.assign(new Error(code), { code, reason }); };
+const REASON = /^[A-Za-z0-9_]{1,40}$/;
 const STATUS = { AUTH_REQUIRED: 401, FORBIDDEN: 403, INVALID_INPUT: 400, INPUT_TOO_LARGE: 413, METHOD_NOT_ALLOWED: 405, RATE_LIMITED: 429, MAP_NOT_CONFIGURED: 503, MAP_UNAVAILABLE: 503 };
 
 export function mapConfigured(env) { return env.VWORLD_MAP_ENABLED === 'true' && KEY.test(String(env.VWORLD_API_KEY || '')); }
@@ -23,6 +27,7 @@ async function readInput(request) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('INVALID_INPUT');
   const keys = Object.keys(value), only = allowed => keys.every(key => allowed.includes(key));
   if (value.action === 'status' && only(['action'])) return { action: 'status' };
+  if (value.action === 'key' && only(['action'])) return { action: 'key' };
   if (value.action === 'geocode' && only(['action', 'address', 'type'])) {
     const address = typeof value.address === 'string' ? value.address.trim() : '';
     if (!address || address.length > 300 || /[\u0000-\u001f\u007f]/.test(address) || !['ROAD', 'PARCEL'].includes(value.type)) fail('INVALID_INPUT');
@@ -55,18 +60,19 @@ async function authorize(token, verifyIdentity, fetchImpl) {
 async function provider(url, fetchImpl) {
   // Workers rejects redirect:'error'; manual + ok check never follows a key-bearing URL.
   try { return await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { accept: url.includes('/wmts/') ? 'image/png' : 'application/json' } }); }
-  catch { fail('MAP_UNAVAILABLE'); }
+  catch (error) { fail('MAP_UNAVAILABLE', error?.name === 'TimeoutError' ? 'timeout' : 'fetch_error'); }
 }
 
 async function geocode(input, key, fetchImpl) {
   const url = new URL('https://api.vworld.kr/req/address');
   for (const [name, value] of Object.entries({ service: 'address', request: 'getcoord', version: '2.0', crs: 'epsg:4326', format: 'json', type: input.type, address: input.address, key })) url.searchParams.set(name, value);
   const response = await provider(url.href, fetchImpl);
-  if (!response.ok || !/^(application|text)\/json\b/i.test(response.headers.get('content-type') || '')) fail('MAP_UNAVAILABLE');
+  if (!response.ok) fail('MAP_UNAVAILABLE', 'http_' + response.status);
+  if (!/^(application|text)\/json\b/i.test(response.headers.get('content-type') || '')) fail('MAP_UNAVAILABLE', 'content_type');
   let json; try { json = await boundedJson(response, MAX_GEOCODE); } catch { fail('MAP_UNAVAILABLE'); }
   const status = json?.response?.status;
   if (status === 'NOT_FOUND') return { status: 'NOT_FOUND' };
-  if (status !== 'OK') fail('MAP_UNAVAILABLE');
+  if (status !== 'OK') fail('MAP_UNAVAILABLE', 'vworld_' + String(json?.response?.error?.code || status || 'unknown'));
   const point = json.response.result?.point, lon = Number(point?.x), lat = Number(point?.y);
   if (!point || point.x === '' || point.y === '' || !(lon >= LON[0] && lon <= LON[1] && lat >= LAT[0] && lat <= LAT[1])) return { status: 'NOT_FOUND' };
   return { status: 'OK', lon, lat };
@@ -74,7 +80,8 @@ async function geocode(input, key, fetchImpl) {
 
 async function tile(input, key, fetchImpl) {
   const response = await provider(`https://api.vworld.kr/req/wmts/1.0.0/${key}/Base/${input.z}/${input.y}/${input.x}.png`, fetchImpl);
-  if (!response.ok || !/^image\/png\b/i.test(response.headers.get('content-type') || '') || Number(response.headers.get('content-length')) > MAX_TILE) fail('MAP_UNAVAILABLE');
+  if (!response.ok) fail('MAP_UNAVAILABLE', 'http_' + response.status);
+  if (!/^image\/png\b/i.test(response.headers.get('content-type') || '') || Number(response.headers.get('content-length')) > MAX_TILE) fail('MAP_UNAVAILABLE', 'content_type');
   const reader = response.body?.getReader(); if (!reader) fail('MAP_UNAVAILABLE');
   const chunks = []; let size = 0;
   try { for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX_TILE) { await reader.cancel(); fail('MAP_UNAVAILABLE'); } chunks.push(value); } }
@@ -97,10 +104,12 @@ export async function mapRequest(request, env, { cors = {}, fetchImpl = fetch, v
     if (!mapConfigured(env)) fail('MAP_NOT_CONFIGURED');
     if (!env.MAP_RATE_LIMITER || typeof env.MAP_RATE_LIMITER.limit !== 'function') fail('MAP_UNAVAILABLE');
     if (!(await env.MAP_RATE_LIMITER.limit({ key: identity.uid }))?.success) fail('RATE_LIMITED');
+    if (input.action === 'key') return respond({ ok: true, key: env.VWORLD_API_KEY }, 200, cors);
     const result = input.action === 'geocode' ? await geocode(input, env.VWORLD_API_KEY, fetchImpl) : await tile(input, env.VWORLD_API_KEY, fetchImpl);
     return respond({ ok: true, ...result }, 200, cors);
   } catch (error) {
     const code = STATUS[error?.code] ? error.code : 'MAP_UNAVAILABLE';
-    return respond({ ok: false, code }, STATUS[code], cors);
+    const reason = code === 'MAP_UNAVAILABLE' && REASON.test(String(error?.reason || '')) && !(env.VWORLD_API_KEY && String(error.reason).includes(env.VWORLD_API_KEY)) ? error.reason : undefined;
+    return respond(reason ? { ok: false, code, reason } : { ok: false, code }, STATUS[code], cors);
   }
 }

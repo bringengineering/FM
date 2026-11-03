@@ -4,13 +4,15 @@ CRM → 계약 고객 관리 아래의 **계약 건물 지도**. 키가 없는 �
 
 ## 회사 공용 키 (모든 PC)
 
-키를 `crm-ai-worker` Cloudflare Secret `VWORLD_API_KEY`로 한 번만 등록하면 모든 CRM 설치본이 회사 지도 서버(`/v1/map`)를 통해 지도를 사용한다. 키는 서버에만 있고 PC·공용 DB·EXE로 전달되지 않는다.
+키를 `crm-ai-worker` Cloudflare Secret `VWORLD_API_KEY`로 한 번만 등록하면 모든 CRM 설치본이 지도를 사용한다. PC에 별도 키가 없으면 CRM은 로그인한 직원 토큰으로 회사 지도 서버(`/v1/map`, `action: "key"`)에서 키를 받아 메모리에만 두고(디스크·공용 DB에 저장하지 않음), **브이월드는 PC가 직접 호출**한다.
+
+서버가 브이월드를 대신 호출하지 않는 이유: 2026-11-03 실제 CRM으로 확인한 결과, 같은 키가 PC(한국 IP)에서는 동작했지만 Cloudflare Worker에서 호출하면 주소 조회·타일이 모두 실패했다(`MAP_UNAVAILABLE`, 약 3초). 브이월드가 Cloudflare 출구 IP를 받지 않는 것으로 보인다. Worker의 `geocode`/`tile` 동작은 진단용으로 남겨 두었고, 실패 시 `reason`(예: `http_403`, `vworld_INVALID_KEY`, `fetch_error`)만 돌려준다.
 
 1. `crm-ai-worker`에서 `npx wrangler secret put VWORLD_API_KEY` 실행 후 키 입력(채팅·소스·`.env`에 쓰지 않는다).
-2. `npx wrangler deploy`로 `/v1/map` 경로가 포함된 Worker 배포. `GET /health`의 `contractMap`이 `true`이면 준비 완료.
-3. 이 경로가 포함된 CRM 버전을 배포. PC에 별도 키가 없으면 자동으로 서버를 사용한다.
+2. `npx wrangler deploy`로 Worker 배포. `GET /health`의 `contractMap`이 `true`이면 준비 완료.
+3. 이 경로가 포함된 CRM 버전을 배포.
 
-서버는 Firebase ID 토큰과 `crmCompany/access/{uid}` 기록(활성 admin/member/viewer, 마케팅 전용·비밀번호 변경·설정/삭제 대기 제외)을 확인한 뒤에만 브이월드를 호출한다. 요청은 건물 주소 1건 또는 한국 범위 타일 1장으로 제한하고, 사용자별 분당 600회(`MAP_RATE_LIMITER`)로 제한한다. 응답에는 키·브이월드 URL·오류 본문을 포함하지 않는다. 서버 사용을 끄려면 `VWORLD_MAP_ENABLED`를 `"false"`로 바꿔 배포하거나 Secret을 삭제한다.
+`key` 요청은 Firebase ID 토큰과 `crmCompany/access/{uid}` 기록(활성 admin/member/viewer, 마케팅 전용·비밀번호 변경·설정/삭제 대기 제외)을 확인한 뒤에만 키를 돌려주며 사용자별 분당 600회(`MAP_RATE_LIMITER`)로 제한한다. 브이월드 키는 웹 지도 타일 URL에 노출되도록 설계된 키이므로, 권한 있는 직원 PC의 개발자 도구에서는 볼 수 있다. 키가 유출되면 브이월드에서 재발급 후 Secret만 교체한다(CRM 재배포 불필요, PC는 30분 안에 새 키를 받는다). 서버 사용을 끄려면 `VWORLD_MAP_ENABLED`를 `"false"`로 바꿔 배포하거나 Secret을 삭제한다.
 
 ## PC별 키 (선택)
 
