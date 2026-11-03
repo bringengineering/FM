@@ -413,8 +413,13 @@ test("AI 같은 장소 짝(match)은 같은 구역의 작업 전·후끼리만 �
     { itemKey: "walls", before: [at("w1", "09:30")], during: [], after: [], unsorted: [], heic: [] },
   ] };
   const requests = P.matchRequests(plan);
-  assert.deepEqual(requests.map(r => r.itemKey), ["corridor", "stairs"], "작업 전·후가 모두 있는 구역만 보낸다");
-  assert.deepEqual(requests[0].phases, { b1: "before", b2: "before", b3: "before", a1: "after", a2: "after" });
+  // 작업 전·후가 모두 있는 구역만, 작은 구역은 한 요청에 묶고 group 으로 구역을 표시한다.
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].itemKeys, ["corridor", "stairs"], "작업 전·후가 모두 있는 구역만 보낸다");
+  assert.deepEqual(requests[0].phases, { b1: "before", b2: "before", b3: "before", a1: "after", a2: "after", s1: "before", t1: "after" });
+  assert.deepEqual(requests[0].groups, { b1: "corridor", b2: "corridor", b3: "corridor", a1: "corridor", a2: "corridor", s1: "stairs", t1: "stairs" });
+  // 한 요청이 limit 장을 넘으면 나눈다.
+  assert.deepEqual(P.matchRequests(plan, 6).map(r => r.itemKeys), [["corridor"], ["stairs"]]);
   const matched = P.applyMatchedPairs(plan, [
     { beforeId: "b3", afterId: "a1" },
     { beforeId: "s1", afterId: "a2" },   // 다른 구역끼리는 짝짓지 않는다
@@ -427,7 +432,7 @@ test("AI 같은 장소 짝(match)은 같은 구역의 작업 전·후끼리만 �
   assert.equal(rows.find(r => r.id === "a1").file.samePlaceWith, "b3");
   assert.equal(rows.find(r => r.id === "a1").phase, "after", "단계는 바꾸지 않는다");
   // 짝이 생긴 사진은 다음 요청에서 빠진다.
-  assert.deepEqual(P.matchRequests(matched.plan)[0].phases, { b1: "before", b2: "before", a2: "after" });
+  assert.deepEqual(P.matchRequests(matched.plan)[0].phases, { b1: "before", b2: "before", a2: "after", s1: "before", t1: "after" });
   // 초안: 짝은 같은 번호 + 같은 pairId, 나머지는 시각 순·pairId 없음.
   const made = P.toReportDraft(matched.plan, { core: W, kind: "common" });
   const corridor = made.draft.items.find(item => item.key === "corridor");

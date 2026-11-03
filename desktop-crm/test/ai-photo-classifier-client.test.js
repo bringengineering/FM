@@ -95,3 +95,17 @@ test("같은 장소 짝 찾기(match)는 작업 전·후가 정해진 사진만 
   await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "a1", afterId: "b1", matchConfidence: 99 }]) }), { code: "AI_INVALID_RESPONSE" });
   await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b1", afterId: "a1", matchConfidence: 99 }, { beforeId: "b2", afterId: "a1", matchConfidence: 99 }]) }), { code: "AI_INVALID_RESPONSE" });
 });
+
+test("묶은 짝 찾기 요청은 group 을 넘기고, 다른 구역끼리 짝지은 응답은 거부한다", async () => {
+  const images = [{ id: "b1", dataUrl: jpeg(), phase: "before", group: "stairs" }, { id: "a1", dataUrl: jpeg(), phase: "after", group: "stairs" }, { id: "b2", dataUrl: jpeg(), phase: "before", group: "corridor" }, { id: "a2", dataUrl: jpeg(), phase: "after", group: "corridor" }];
+  const input = { kind: "common", mode: "match", images };
+  assert.equal(validatePhotoClassificationInput(input).images[2].group, "corridor");
+  assert.throws(() => validatePhotoClassificationInput({ kind: "common", images: [{ id: "x", dataUrl: jpeg(), group: "stairs" }] }), { code: "INVALID_INPUT" }, "다른 모드에는 group 을 보낼 수 없다");
+  const opts = { endpoint: "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/photo-classify", idToken: "test", input };
+  let sent;
+  const reply = pairs => async (_, options) => { sent = JSON.parse(options.body); return Response.json({ ok: true, requestId: "r", classifications: [], pairs }); };
+  const ok = await classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b2", afterId: "a2", matchConfidence: 95 }]) });
+  assert.equal(ok.pairs.length, 1);
+  assert.deepEqual(sent.images.map(image => image.group), ["stairs", "stairs", "corridor", "corridor"]);
+  await assert.rejects(() => classifyPhotosWithGateway({ ...opts, fetchImpl: reply([{ beforeId: "b1", afterId: "a2", matchConfidence: 99 }]) }), { code: "AI_INVALID_RESPONSE" });
+});

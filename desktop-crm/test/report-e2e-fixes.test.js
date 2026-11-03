@@ -35,10 +35,11 @@ test("저장 직후 발송 확인 창은 방금 저장한 동기화 변경으로
   assert.equal((app.match(/remoteSafe: true/g) || []).length, 1);
 });
 
-test("AI 짝 찾기는 구역 세 곳씩 함께 묻는다", () => {
+test("AI 짝 찾기는 구역 두 곳씩 함께 묻고 한도 초과는 쉬었다가 한 번 더 묻는다", () => {
   const start = app.indexOf("async function matchReportPairsWithAi(");
   const body = app.slice(start, app.indexOf("\n  function applyReportDrivePlan(", start));
-  assert.match(body, /Array\.from\(\{ length: Math\.min\(3, queue\.length\) \}/);
+  assert.match(body, /Array\.from\(\{ length: Math\.min\(2, queue\.length\) \}/);
+  assert.match(body, /if \(\/RATE_LIMITED\|한도\/\.test\(reason\) && attempt === 0\) \{ await new Promise\(resolve => setTimeout\(resolve, 20000\)\); continue; \}/);
   assert.doesNotMatch(body, /for \(const request of requests\)/);
 });
 

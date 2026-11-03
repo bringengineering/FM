@@ -50,7 +50,7 @@ function validatePhotoClassificationInput(input) {
   if (input.mode === "review" && input.images.length > 6) throw codedError("INPUT_TOO_LARGE");
   const seen = new Set();
   const images = input.images.map(image => {
-    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl", "detailDataUrl", "captureMinute", "phase"].includes(key))) {
+    if (!image || typeof image !== "object" || Array.isArray(image) || Object.keys(image).some(key => !["id", "dataUrl", "detailDataUrl", "captureMinute", "phase", "group"].includes(key))) {
       throw codedError("INVALID_INPUT");
     }
     const id = String(image.id || "").trim();
@@ -65,13 +65,14 @@ function validatePhotoClassificationInput(input) {
     if (image.captureMinute !== undefined && (input.mode !== "compare" || !Number.isInteger(image.captureMinute) || image.captureMinute < 0 || image.captureMinute > 1439)) throw codedError("INVALID_INPUT");
     // match: the photos are already split into before/after; only same-place pairs are asked.
     if ((input.mode === "match") !== (image.phase !== undefined) || (image.phase !== undefined && !["before", "after"].includes(image.phase))) throw codedError("INVALID_INPUT");
-    return { id, dataUrl, ...(image.detailDataUrl ? { detailDataUrl: image.detailDataUrl } : {}), ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}), ...(image.phase ? { phase: image.phase } : {}) };
+    if (image.group !== undefined && (input.mode !== "match" || !/^[a-z0-9_-]{1,40}$/u.test(String(image.group)))) throw codedError("INVALID_INPUT");
+    return { id, dataUrl, ...(image.detailDataUrl ? { detailDataUrl: image.detailDataUrl } : {}), ...(image.captureMinute !== undefined ? { captureMinute: image.captureMinute } : {}), ...(image.phase ? { phase: image.phase } : {}), ...(image.group ? { group: image.group } : {}) };
   });
   if (input.mode === "match" && !(images.some(image => image.phase === "before") && images.some(image => image.phase === "after"))) throw codedError("INVALID_INPUT");
   return { kind: input.kind, images, ...(input.mode ? { mode: input.mode } : {}) };
 }
 
-function normalizeSuccess(value, expectedIds, mode, kind, phases = new Map()) {
+function normalizeSuccess(value, expectedIds, mode, kind, phases = new Map(), groups = new Map()) {
   if (!value || value.ok !== true || typeof value.requestId !== "string" || !value.requestId || !Array.isArray(value.classifications)) {
     throw codedError("AI_INVALID_RESPONSE");
   }
@@ -130,6 +131,7 @@ function normalizeSuccess(value, expectedIds, mode, kind, phases = new Map()) {
     for (const pair of value.pairs) {
       // A pair joins exactly one before and one after photo of this request, once each.
       if (!pair || phases.get(pair.beforeId) !== "before" || phases.get(pair.afterId) !== "after" || paired.has(pair.beforeId) || paired.has(pair.afterId)) throw codedError("AI_INVALID_RESPONSE");
+      if ((groups.get(pair.beforeId) || "") !== (groups.get(pair.afterId) || "")) throw codedError("AI_INVALID_RESPONSE");
       if (!Number.isFinite(pair.matchConfidence) || pair.matchConfidence < 85) continue;
       pairs.push({ beforeId: pair.beforeId, afterId: pair.afterId, matchConfidence: Math.round(pair.matchConfidence) });
       paired.add(pair.beforeId); paired.add(pair.afterId);
@@ -196,7 +198,7 @@ async function classifyPhotosWithGateway(options) {
       const code = Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, value?.code) ? value.code : "AI_TEMPORARY_FAILURE";
       throw codedError(code);
     }
-    return normalizeSuccess(value, input.images.map(image => image.id), input.mode, input.kind, new Map(input.images.map(image => [image.id, image.phase])));
+    return normalizeSuccess(value, input.images.map(image => image.id), input.mode, input.kind, new Map(input.images.map(image => [image.id, image.phase])), new Map(input.images.map(image => [image.id, image.group || ""])));
   } catch (error) {
     throw codedError(Object.hasOwn(ERROR_MESSAGES, error?.code) ? error.code : "AI_TEMPORARY_FAILURE");
   } finally {

@@ -9974,23 +9974,26 @@
     const pairs = [];
     let failed = 0;
     try {
-      // 구역을 하나씩 물으면 25장에 9분 걸렸다(2026-11-03). 세 구역씩 함께 묻는다.
+      // 구역을 두 곳씩 함께 묻는다. 세 곳을 동시에 물으면 회사 Gemini 분당 한도에 먼저 걸렸다(2026-11-03 측정).
       const queue = requests.slice();
       const askOne = async request => {
         // 신중한 모델이 가끔 일시 오류를 내므로 한 번만 다시 묻는다(사용 한도·권한 오류는 다시 묻지 않는다).
         let result = null;
         for (let attempt = 0; attempt < 2 && !result; attempt += 1) {
           try {
-            const reply = await api.classifyWorkReportPhotos({ kind: "common", fileIds: request.fileIds, mode: "match", phases: request.phases });
+            const reply = await api.classifyWorkReportPhotos({ kind: "common", fileIds: request.fileIds, mode: "match", phases: request.phases, groups: request.groups });
             if (reply && reply.ok === true && Array.isArray(reply.pairs)) result = reply;
           } catch (error) {
-            if (!/TEMPORARY|TIMEOUT|INVALID_RESPONSE/.test(String(error && (error.code || error.message) || ""))) break;
+            const reason = String(error && (error.code || error.message) || "");
+            // 한도 초과는 잠시 쉬었다가 한 번 더 묻는다(서버도 짧게 다시 묻지만 분 단위 한도는 못 넘긴다).
+            if (/RATE_LIMITED|한도/.test(reason) && attempt === 0) { await new Promise(resolve => setTimeout(resolve, 20000)); continue; }
+            if (!/TEMPORARY|TIMEOUT|INVALID_RESPONSE/.test(reason)) break;
           }
           if (reportState.pairMatching !== token) return;
         }
         if (result) pairs.push(...result.pairs); else failed += 1;
       };
-      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+      await Promise.all(Array.from({ length: Math.min(2, queue.length) }, async () => {
         while (queue.length && reportState.pairMatching === token) await askOne(queue.shift());
       }));
       if (reportState.pairMatching !== token) return;
