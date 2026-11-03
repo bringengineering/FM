@@ -10,6 +10,9 @@ export interface Photo {
   // Set by the server visit/revision reconciliation layer before enabling sync.
   // Local edit revisions must never be substituted for a CRM server revision.
   reservationRevision?: number;
+  // Written before the photo list is sent. If the reply is lost the server may
+  // already hold the photo, so it must not be deleted locally after this point.
+  submitted?: boolean;
   // An "after" photo taken while a chosen "before" photo of the same area was
   // overlaid on the camera. The report places the two side by side.
   pairWith?: string;
@@ -26,6 +29,7 @@ export interface Vault {
   deletePhoto(photoId: string, expectedVisitRevision: number): Promise<void>;
   prepareTransfer(photoId: string): Promise<Photo>;
   linkRevision?(visitId: string, revision: number, photoIds: string[]): Promise<void>;
+  markSubmitted?(visitId: string, revision: number): Promise<void>;
   updateTransfer(photoId: string, patch: Pick<Photo, 'state' | 'receivedBytes' | 'uploadId' | 'errorCode'>): Promise<void>;
   readBytes(photoId: string): Promise<Uint8Array>;
   close(): Promise<void>;
@@ -57,7 +61,7 @@ export function orderVisits(visits: Visit[]): Visit[] {
 // server has the visit's photo list, photos are append-only (the server
 // rejects a later list that drops one), so the UI offers "exclude" instead.
 export function canDeletePhoto(photo: Photo): boolean {
-  return photo.state === 'queued' && photo.receivedBytes === 0 && !photo.uploadId && photo.reservationRevision === undefined;
+  return photo.state === 'queued' && photo.receivedBytes === 0 && !photo.uploadId && photo.reservationRevision === undefined && !photo.submitted;
 }
 export function editVisit(visit: Visit, patch: Partial<Draft>, now: string): Visit {
   const draft = { ...visit.draft, ...patch, confirmedRevision: undefined };
