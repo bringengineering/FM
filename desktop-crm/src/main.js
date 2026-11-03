@@ -4848,7 +4848,8 @@ async function buildPeriodicReportPdf(reportId, company, session) {
   if (!checked.ok) return { ok: false, error: checked.error, code: checked.code };
   const previousPeriod = PeriodicReportCore.previousPeriod(report.period);
   const previousReport = previousPeriod ? PeriodicReportCore.findForPeriod(periodic.reports, report, previousPeriod.key) : null;
-  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport, cases: operations.cases });
+  // 법정점검 '다음 달' 같은 말은 보고서를 내는 날(한국 날짜) 기준이다.
+  const view = PeriodicReportCore.buildView(report, works.reports, { previousReport, cases: operations.cases, today: PeriodicReportCore.kstDay(new Date().toISOString()) });
 
   // 청소 보고서와 같은 기준으로 협력업체명·업체 원가가 섞였는지 본다.
   const secrets = WorkReportCore.reportSecrets(store, report);

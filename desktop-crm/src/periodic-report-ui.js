@@ -65,8 +65,8 @@
       let made = 0;
       try {
         for (const entry of missing) {
-          const previousKey = core.previousPeriod(due.period.key);
-          const previous = previousKey ? core.findForPeriod(state.reports, entry.target, previousKey.key) : null;
+          // 표지·법정점검은 이 건물의 가장 최근 보고서에서 이어받는다(한 기간을 걸렀어도).
+          const previous = core.latestBefore(state.reports, entry.target, due.period.key);
           const target = entry.target.buildingId ? entry.target : entry.target;
           const draft = core.draftFor({ ...entry, period: due.period.key, target,
             buildingName: entry.target.buildingId ? buildingName(entry.target.buildingId) : entry.buildingName,
@@ -157,6 +157,8 @@
       const lastCleaning = cleanings.length ? cleanings[cleanings.length - 1].workDate : "";
       state.draft = core.normalizeReport({
         id: newId(), ...target, period,
+        // 표지 사진·규모·법정점검은 건물 정보라 지난 보고서에서 그대로 가져온다.
+        ...core.carriedBuilding(core.latestBefore(state.reports, target, period)),
         // 점검은 보통 마지막 청소 날 같이 한다. 다르면 바꾸면 된다.
         inspection: { date: lastCleaning || (todayKey() <= range.to ? todayKey() : range.to), items: [] },
       });
@@ -178,6 +180,13 @@
       if (confirm) draft.inspection.confirmed = true;
       const picked = [...form.querySelectorAll("[data-pr-cleaning]")];
       draft.cleaningReportIds = picked.every(input => input.checked) ? [] : picked.filter(input => input.checked).map(input => input.value);
+      const scale = form.querySelector("[name=coverScale]");
+      if (scale) draft.cover = { ...draft.cover, scale: scale.value };
+      draft.legal = [...form.querySelectorAll("[data-pr-legal]")].map(row => {
+        const field = name => (row.querySelector(`[name=${name}]`) || {}).value || "";
+        return { key: row.getAttribute("data-pr-legal"), name: field("legalName"), cycle: field("legalCycle"), lastDate: field("legalLast"),
+          result: field("legalResult"), resultText: field("legalResultText"), nextMonth: field("legalNext"), note: field("legalNote") };
+      });
       draft.inspection.items = draft.inspection.items.map(item => {
         const row = form.querySelector(`[data-pr-item="${CSS.escape(item.key)}"]`);
         if (!row) return item;
@@ -433,6 +442,94 @@
       render();
     }
 
+    // 표지 건물 사진. 정면 전경 한 장. 점검 사진과 같은 Drive 폴더에 올린다.
+    async function addCoverPhoto() {
+      const draft = readForm();
+      if (!draft || state.busy) return;
+      const rootFolderId = String((getStore().company || {}).buildingDocsFolderId || "").trim();
+      if (!rootFolderId) return showToast("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
+      const picked = await api.pickBuildingDocuments();
+      if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
+      const image = picked.files.find(file => /^image\//u.test(String(file.mimeType || "")));
+      if (!image) return showToast("사진 파일(JPG·PNG·HEIC)을 골라 주세요.", "error");
+      if (picked.files.length > 1) showToast("표지에는 사진 한 장만 씁니다. 첫 사진을 넣었습니다.", "info");
+      state.busy = "photo:cover";
+      render();
+      try {
+        const uploaded = await api.uploadWorkReportPhoto({
+          rootFolderId, reportId: draft.id, itemKey: "cover", itemLabel: "정기 관리보고서 표지 건물 사진", phase: "after",
+          buildingName: draft.buildingName, kindLabel: "정기점검", workDate: draft.inspection.date || todayKey(),
+          filePath: image.filePath, mimeType: image.mimeType,
+        });
+        if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
+        state.draft = P().normalizeReport({ ...draft, cover: { ...draft.cover, photo: { id: uploaded.driveFileId, driveFileId: uploaded.driveFileId, webViewLink: uploaded.webViewLink, caption: "" } } });
+        showToast("표지 건물 사진을 넣었습니다. 저장하면 다음 보고서에도 이어집니다.", "success");
+      } catch (error) {
+        showToast((error && error.message) || "사진을 넣지 못했습니다.", "error");
+      } finally {
+        state.busy = "";
+        render();
+      }
+    }
+
+    function dropCoverPhoto() {
+      const draft = readForm();
+      if (!draft) return;
+      state.draft = P().normalizeReport({ ...draft, cover: { ...draft.cover, photo: null } });
+      render();
+    }
+
+    // 빈 줄을 두지 않으려고, 아직 없는 자주 쓰는 점검 이름으로 한 줄을 더한다. 이름은 바꿀 수 있다.
+    function addLegal() {
+      const draft = readForm();
+      if (!draft) return;
+      const core = P();
+      if (draft.legal.length >= 12) return showToast("법정점검은 12개까지 적을 수 있습니다.", "info");
+      const used = new Set(draft.legal.map(item => item.name));
+      const preset = core.LEGAL_PRESETS.find(item => !used.has(item.name)) || { name: "법정점검", cycle: "year" };
+      const keys = new Set(draft.legal.map(item => item.key));
+      let n = draft.legal.length + 1;
+      while (keys.has(`lg_${n}`)) n += 1;
+      state.draft = core.normalizeReport({ ...draft, legal: [...draft.legal, { key: `lg_${n}`, name: preset.name, cycle: preset.cycle }] });
+      render();
+    }
+
+    function dropLegal(key) {
+      const draft = readForm();
+      if (!draft) return;
+      state.draft = P().normalizeReport({ ...draft, legal: draft.legal.filter(item => item.key !== key) });
+      render();
+    }
+
+    function buildingSection(draft, busy) {
+      const core = P();
+      const option = (list, current) => list.map(item => `<option value="${esc(item.key)}"${item.key === current ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+      const legalRows = draft.legal.map(item => {
+        const auto = core.legalNextMonth({ ...item, nextMonth: "" });
+        return `<tr data-pr-legal="${esc(item.key)}">
+          <td><input name="legalName" list="pr-legal-presets" maxlength="60" value="${esc(item.name)}"></td>
+          <td><select name="legalCycle">${option(core.LEGAL_CYCLES, item.cycle)}</select></td>
+          <td><input type="date" name="legalLast" value="${esc(item.lastDate)}"></td>
+          <td><select name="legalResult"><option value="">${item.lastDate ? "완료" : "예정"}</option>${option(core.LEGAL_RESULTS, item.result)}</select></td>
+          <td><input name="legalResultText" maxlength="40" value="${esc(item.resultText)}" placeholder="예: 합격"></td>
+          <td><input type="month" name="legalNext" value="${esc(item.nextMonth)}" title="${auto ? `비우면 ${esc(auto)}` : "최근 점검일과 주기로 계산"}"></td>
+          <td><input name="legalNote" maxlength="60" value="${esc(item.note)}" placeholder="예: 업체 예약 진행 중"></td>
+          <td><button type="button" class="mini-button" data-pr-legal-drop="${esc(item.key)}" aria-label="이 점검 빼기">빼기</button></td>
+        </tr>`;
+      }).join("");
+      return `<section><h4>5. 표지 · 법정점검 <small>(한 번 적으면 다음 보고서로 이어집니다)</small></h4>
+        <div class="pr-inline pr-cover">
+          <div class="pr-cover-photo"><span>표지 건물 사진</span>${draft.cover.photo ? `<span class="pr-photo">건물 사진<button type="button" data-pr-cover-drop aria-label="표지 사진 빼기">×</button></span>` : ""}<button type="button" class="mini-button" data-pr-cover-add${busy ? " disabled" : ""}>${state.busy === "photo:cover" ? "올리는 중…" : draft.cover.photo ? "사진 바꾸기" : "＋ 건물 사진"}</button></div>
+          <label>규모 <small>(선택)</small><input name="coverScale" maxlength="80" value="${esc(draft.cover.scale)}" placeholder="예: 지상 5층 · 지하 1층 · 근린생활시설"></label>
+        </div>
+        <p class="pr-hint">건물 사진을 넣으면 PDF 첫 쪽이 건물 사진 표지가 됩니다. 정면 전경 한 장을 권합니다. 사진이 없으면 지금처럼 바로 본문으로 시작합니다.</p>
+        ${legalRows ? `<div class="office-table-wrap"><table class="office-table pr-legal"><thead><tr><th>법정점검</th><th>주기</th><th>최근 점검일</th><th>결과</th><th>결과 표기</th><th>다음 점검 달</th><th>메모</th><th></th></tr></thead><tbody>${legalRows}</tbody></table></div>` : `<p class="pr-empty">적어 둔 법정점검이 없습니다. 없으면 보고서에 이 칸이 나오지 않습니다.</p>`}
+        <datalist id="pr-legal-presets">${core.LEGAL_PRESETS.map(item => `<option value="${esc(item.name)}"></option>`).join("")}</datalist>
+        <div class="pr-ai-actions"><button type="button" class="secondary-button" data-pr-legal-add${busy ? " disabled" : ""}>＋ 법정점검 추가</button></div>
+        <p class="pr-hint">다음 점검 달을 비우면 최근 점검일과 주기로 계산합니다. 두 달 안에 다가온 점검은 보고서의 '다음 일정' 에도 적힙니다. 업체 보고서 원본은 건물 문서함에 보관하세요.</p>
+      </section>`;
+    }
+
     function statusRadios(item) {
       return P().STATUSES.map(status => `<label class="pr-status pr-${status.key}"><input type="radio" name="status_${esc(item.key)}" value="${status.key}"${item.status === status.key ? " checked" : ""}><span>${esc(status.label)}</span></label>`).join("");
     }
@@ -483,6 +580,7 @@
           <label class="pr-block">이번 기간 요약 <small>(비워 두면 아래 문장이 들어갑니다)</small><textarea name="summary" rows="3" maxlength="2000" placeholder="${esc(core.autoSummary(draft, core.cleaningsFor(state.works, draft)))}">${esc(draft.summary)}</textarea></label>
           <label class="pr-block">추가 안내 <small>(선택)</small><textarea name="followUp" rows="2" maxlength="2000">${esc(draft.followUp)}</textarea></label>
         </section>
+        ${buildingSection(draft, busy)}
       </form>`;
     }
 
@@ -531,12 +629,17 @@
       const target = event.target;
       if (target.matches("[data-pr-new-building]")) state.newTarget = target.value;
       else if (target.matches("[data-pr-new-period]")) state.newPeriod = target.value;
-      else if (target.closest("[data-pr-form]") && (target.type === "radio" || target.type === "checkbox" || target.name === "inspectionDate")) { readForm(); render(); }
+      else if (target.matches("[name=legalName]")) {
+        const preset = P().LEGAL_PRESETS.find(item => item.name === target.value.trim());
+        const cycle = target.closest("[data-pr-legal]") && target.closest("[data-pr-legal]").querySelector("[name=legalCycle]");
+        if (preset && cycle) cycle.value = preset.cycle;
+      }
+      else if (target.closest("[data-pr-form]") && (target.type === "radio" || target.type === "checkbox" || target.name === "inspectionDate" || target.name === "legalLast")) { readForm(); render(); }
     }
 
     function onClick(event) {
       if (!isActive()) return;
-      const el = event.target.closest("[data-pr-views],[data-pr-case],[data-pr-ai],[data-pr-ai-apply],[data-pr-ai-close],[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop]");
+      const el = event.target.closest("[data-pr-views],[data-pr-case],[data-pr-ai],[data-pr-ai-apply],[data-pr-ai-close],[data-pr-drafts],[data-pr-new],[data-pr-edit],[data-pr-close],[data-pr-save],[data-pr-export],[data-pr-export-id],[data-pr-kakao],[data-pr-kakao-id],[data-pr-photo-add],[data-pr-photo-drop],[data-pr-cover-add],[data-pr-cover-drop],[data-pr-legal-add],[data-pr-legal-drop]");
       if (!el) return;
       event.preventDefault();
       if (el.hasAttribute("data-pr-views")) return void checkViews(true);
@@ -555,6 +658,10 @@
       if (el.hasAttribute("data-pr-kakao-id")) return void sendKakao(el.getAttribute("data-pr-kakao-id"));
       if (el.hasAttribute("data-pr-photo-add")) return void addPhoto(el.getAttribute("data-pr-photo-add"));
       if (el.hasAttribute("data-pr-photo-drop")) return dropPhoto(el.getAttribute("data-pr-key"), el.getAttribute("data-pr-photo-drop"));
+      if (el.hasAttribute("data-pr-cover-add")) return void addCoverPhoto();
+      if (el.hasAttribute("data-pr-cover-drop")) return dropCoverPhoto();
+      if (el.hasAttribute("data-pr-legal-add")) return addLegal();
+      if (el.hasAttribute("data-pr-legal-drop")) return dropLegal(el.getAttribute("data-pr-legal-drop"));
     }
 
     root.document.addEventListener("click", onClick);

@@ -408,3 +408,103 @@ test("다음 정기 관리보고서는 보낼 날짜 대신 관리 기간을 적
   assert.deepEqual(view.nextSchedule, [{ label: "다음 정기 관리보고서", date: "2026년 10월 2차 (10. 16. ~ 10. 31. 관리분)" }]);
   assert.doesNotMatch(JSON.stringify(view.nextSchedule), /이후 발송/);
 });
+
+test("표지·법정점검은 보고서에 저장되고, 같은 건물의 가장 최근 보고서에서 다음 보고서로 이어진다", () => {
+  const cover = { photo: { id: "cov1", driveFileId: "cov1" }, scale: "지상 5층 · 지하 1층" };
+  const legal = [{ name: "승강기 정기검사", cycle: "year", lastDate: "2026-08-20", resultText: "합격" }, { name: "", cycle: "year" }];
+  const saved = P.normalizeReport({ ...base, cover, legal });
+  assert.equal(saved.cover.photo.id, "cov1");
+  assert.equal(saved.cover.scale, "지상 5층 · 지하 1층");
+  assert.deepEqual(saved.legal.map(item => item.name), ["승강기 정기검사"]);
+  // 한 기간을 걸러도 가장 최근 것을 잇는다. 다른 건물·이후 기간 것은 잇지 않는다.
+  const reports = [
+    { ...saved, id: "pr_old01", period: "2026-09-1" },
+    { ...base, id: "pr_other1", buildingId: "b2", period: "2026-10-1", cover: { scale: "남의 건물" } },
+    { ...base, id: "pr_later1", period: "2026-11-1", cover: { scale: "나중 것" } },
+  ];
+  const previous = P.latestBefore(reports, { buildingId: "b1" }, "2026-10-2");
+  assert.equal(previous.id, "pr_old01");
+  const draft = P.draftFor({ target: { buildingId: "b1" }, buildingName: "", siteAddress: "", period: "2026-10-2", cleanings: [] }, "pr_new001", previous);
+  assert.equal(draft.cover.photo.id, "cov1");
+  assert.equal(draft.legal[0].name, "승강기 정기검사");
+});
+
+test("법정점검 현황: 다음 점검이 가까운 순, 다음 달은 주기로 계산, 두 달 안이면 다음 일정에도 적는다", () => {
+  const legal = [
+    { name: "승강기 정기검사", cycle: "year", lastDate: "2026-08-20", result: "good", resultText: "합격" },
+    { name: "정보통신설비 유지보수·관리점검", cycle: "half", lastDate: "2026-06-08", result: "good", note: "업체 예약 진행 중" },
+    { name: "소방시설 작동점검", cycle: "year", nextMonth: "2026-09" },
+    { name: "건축물 정기점검", cycle: "other" },
+  ];
+  const rows = P.legalView(legal, "2026-11-03");
+  assert.deepEqual(rows.map(row => row.name), ["소방시설 작동점검", "정보통신설비 유지보수·관리점검", "승강기 정기검사"]);
+  assert.deepEqual(rows.map(row => [row.nextLabel, row.tone]), [["2026. 9.", "late"], ["2026. 12.", "soon"], ["2027. 8.", "calm"]]);
+  assert.equal(rows[0].due, "예정 시기 지남 · 일정 확인 중");
+  assert.equal(rows[0].lastLabel, "첫 점검 예정");
+  assert.equal(rows[1].due, "다음 달 · 업체 예약 진행 중");
+  assert.equal(rows[2].resultLabel, "합격");
+  const view = P.buildView({ ...base, legal }, works, { today: "2026-11-03" });
+  assert.deepEqual(view.nextSchedule.at(-1), { label: "정보통신설비 유지보수·관리점검", date: "2026년 12월 (업체 예약 진행 중)" });
+  assert.equal(view.cover.scope, "공용부 청소 주 1회 · 건물 정기점검 격주 · 법정점검 일정 관리");
+  assert.equal(P.buildView(base, works).cover.scope, "공용부 청소 주 1회 · 건물 정기점검 격주");
+  assert.equal(view.cover.since, "2026년 10월부터");
+});
+
+test("조치 사항 진행: 처음 확인 → 작업 건 접수 → 단계·수리 완료, 지난 항목은 정상 확인으로 끝난다", () => {
+  const previous = { ...base, id: "pr_prev01", period: "2026-10-1", inspection: { date: "2026-10-12", items: [
+    { key: "lightSensor", status: "fix", note: "센서등 점멸", photos: [{ id: "p1" }] },
+    { key: "drainRoof", status: "watch", note: "낙엽 쌓임", photos: [{ id: "p2" }] },
+  ] }, links: { lightSensor: "case1" } };
+  const report = { ...base, inspection: { date: "2026-10-26", items: [{ key: "drainRoof", status: "good" }] } };
+  const cases = [{ id: "case1", createdAt: "2026-10-13T01:00:00Z", status: { c12: "done" }, workCompletedAt: "2026-10-20" }];
+  const view = P.buildView(report, works, { previousReport: previous, cases });
+  const sensor = view.actions.find(item => item.key === "insp_lightSensor");
+  // 수리 뒤 이번 점검(10. 26.)에서 양호로 봤으니 그것까지 적는다.
+  assert.deepEqual(sensor.steps, [{ date: "10. 12.", text: "확인" }, { date: "10. 13.", text: "작업 건 접수" }, { date: "10. 20.", text: "수리 완료" }, { date: "10. 26.", text: "점검에서 정상 확인" }]);
+  assert.equal(sensor.stateLabel, "조치 완료");
+  assert.equal(sensor.sinceLabel, "10. 12. (10월 1차)");
+  const drain = view.actions.find(item => item.key === "insp_drainRoof");
+  assert.deepEqual(drain.steps, [{ date: "10. 12.", text: "관찰 시작" }, { date: "10. 26.", text: "점검에서 정상 확인" }]);
+  const open = P.buildView(report, works, { previousReport: previous, cases: [{ id: "case1", createdAt: "2026-10-13T01:00:00Z", status: { c6: "doing" } }] })
+    .actions.find(item => item.key === "insp_lightSensor");
+  assert.equal(open.stateLabel, "진행 중");
+  assert.equal(open.steps.at(-1).text, "견적 비교 단계");
+  const own = P.buildView(base, works).actions[0];
+  assert.equal(own.sinceLabel, "10. 26. 이번 점검");
+  assert.deepEqual(own.steps.map(step => step.text), ["확인", "건물주 확인 후 진행"]);
+});
+
+test("건물주용 PDF: 건물 사진이 있으면 표지 한 쪽, 조치 진행·법정점검 표가 실리고 강제 쪽나눔이 없다", () => {
+  const legal = [{ name: "승강기 정기검사", cycle: "year", lastDate: "2026-08-20", resultText: "합격" }];
+  const report = { ...base, cover: { photo: { id: "cov1", driveFileId: "cov1" }, scale: "지상 5층" }, legal };
+  const view = P.buildView(report, works, { today: "2026-11-03" });
+  assert.ok(periodicReportPdfPhotos(view).some(photo => photo.id === "cov1"));
+  const images = { cov1: PIXEL, i1: PIXEL, wr1_b: PIXEL, wr1_a: PIXEL, wr2_b: PIXEL, wr2_a: PIXEL };
+  const html = createPeriodicReportHtml(view, { images, issuedAt: "2026-11-03" });
+  assert.match(html, /<section class="cover">/);
+  assert.match(html, /<th>규모<\/th><td>지상 5층<\/td>/);
+  assert.match(html, /제출일 2026\. 11\. 3\./);
+  assert.doesNotMatch(html, /<header class="doc-head">/);
+  assert.match(html, /<h2>3\. 조치 사항 진행<\/h2>/);
+  assert.match(html, /<h2>4\. 법정점검 현황<\/h2>/);
+  assert.match(html, /<td>승강기 정기검사<\/td><td>연 1회<\/td><td>2026\. 8\. 20\.<\/td>/);
+  assert.doesNotMatch(html, /break-before:page/);
+  // 사진이 없으면 표지 없이 지금 첫 쪽으로, 법정점검이 없으면 그 장이 빠진다.
+  const plain = createPeriodicReportHtml(P.buildView(base, works), { images });
+  assert.doesNotMatch(plain, /<section class="cover">/);
+  assert.match(plain, /<header class="doc-head">/);
+  assert.doesNotMatch(plain, /법정점검 현황/);
+  assert.doesNotMatch(plain, /<th>규모<\/th>/);
+});
+
+test("편집 화면: 표지 사진·규모·법정점검을 적고 저장하며, 새 보고서는 지난 보고서의 것을 이어받는다", () => {
+  const ui = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/periodic-report-ui.js"), "utf8");
+  assert.match(ui, /data-pr-cover-add/);
+  assert.match(ui, /name="coverScale"/);
+  assert.match(ui, /data-pr-legal-add/);
+  assert.match(ui, /core\.carriedBuilding\(core\.latestBefore\(state\.reports, target, period\)\)/);
+  assert.match(ui, /core\.latestBefore\(state\.reports, entry\.target, due\.period\.key\)/);
+  assert.match(ui, /itemKey: "cover"/);
+  const main = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/main.js"), "utf8");
+  assert.match(main, /today: PeriodicReportCore\.kstDay\(new Date\(\)\.toISOString\(\)\)/);
+});
