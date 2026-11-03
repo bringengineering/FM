@@ -109,10 +109,10 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   const autosave = useRef<() => Promise<void>>(async () => undefined);
   autosave.current = async () => {
     if (!vault || !visit || !dirty || busyRef.current) return;
-    busyRef.current = true;
+    busyRef.current = true; setBusy(true);
     try { await vault.saveVisit(editVisit(visit, { summary, followUp, notes }, new Date().toISOString()), visit.revision); await refresh(); notify('작성 중인 내용을 자동으로 저장했습니다.'); }
     catch { /* keep the in-memory text; the explicit save button still works */ }
-    finally { busyRef.current = false; }
+    finally { busyRef.current = false; setBusy(false); }
   };
   useEffect(() => { const listener = AppState.addEventListener('change', next => {
     if (next === 'background') void autosave.current();
@@ -169,6 +169,8 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if(!company||!vault||!current||!vault.linkRevision)throw new FieldError('SERVER_UNAVAILABLE');
     if((dirty&&!draftSaved)||captionDirty)throw new FieldError('UNSAVED_CHANGES');
     setBusyLabel('사진 보관을 준비하고 있습니다.');await company.api.storageStatus(controller.current.signal);
+    // Mark first: if the reply is lost the server may already hold these photos.
+    await vault.markSubmitted?.(current.id,current.revision);
     const linked=await company.api.reconcile(current,currentPhotos,controller.current.signal);
     await vault.linkRevision(current.id,linked.revision,linked.photoIds);
     runner.current?.stop();runner.current=new SyncRunner(vault,company.api,current.id,(ready,total)=>setBusyLabel(`사진 보관 ${ready}/${total}장 · 앱을 켜 두세요.`),FIELD_RETRY,attempt=>setBusyLabel(`연결이 불안정해 다시 보내는 중입니다 (${attempt+1}/${FIELD_RETRY.attempts}회) · 앱을 켜 두세요.`));await runner.current.run();
@@ -281,7 +283,10 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   }
   async function updatePhoto(patch: Partial<Photo>) {
     if (!vault || !visit || !photo) return;
-    await vault.editPhoto({ ...photo, ...patch }, visit.revision); await refresh(); notify('사진 분류를 저장했습니다. 보고서 검토는 다시 확인해 주세요.');
+    const next = { ...photo, ...patch };
+    // A pairing only means something for an "after" photo in the same area.
+    if (next.itemKey !== photo.itemKey || next.phase !== photo.phase) delete next.pairWith;
+    await vault.editPhoto(next, visit.revision); await refresh(); notify('사진 분류를 저장했습니다. 보고서 검토는 다시 확인해 주세요.');
   }
   async function undoLastShot() {
     const target = photos.find(p => p.id === lastShotId);

@@ -10,7 +10,7 @@ function harness(result) {
   let reads = 0;
   const state = {receipt: {messageId: "fixture_message", status: "unknown", generation: 1}};
   const context = {customerAlimTalkState: state, authGeneration: 1, currentView: "customerAlimTalk", canAdministerSecurity: () => true,
-    renderCustomerAlimTalk: () => {}, api: {readCustomerDocumentDelivery: async () => {reads++; return result;}}};
+    renderCustomerAlimTalk: () => {}, customerDocumentDeliveryStatus: new Map(), api: {readCustomerDocumentDelivery: async () => {reads++; return result;}}};
   vm.runInNewContext(functionSource, context);
   return {state, context, reads: () => reads};
 }

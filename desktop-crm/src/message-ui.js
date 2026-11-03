@@ -36,7 +36,7 @@
 
   function renderHistory(input) {
     const state = input || {};
-    const rows = (state.deliveries || []).map(item => `<tr><td>${esc(item.requestedAt || item.createdAt || "-")}</td><td>${esc(item.customerName || item.customerId || "-")}</td><td>${esc(item.documentName || item.templateLabel || item.templateCode || "-")}</td><td>${esc(channelLabel(item.channel))}</td><td>${esc(item.status || "-")}</td></tr>`).join("");
+    const rows = (state.deliveries || []).map(item => `<tr><td>${esc(item.requestedAt || item.createdAt || "-")}</td><td>${esc(item.customerName || item.customerId || "-")}</td><td>${esc(item.documentName || item.templateLabel || item.templateCode || "-")}</td><td>${esc(channelLabel(item.channel))}</td><td>${esc(item.status || "-")}${state.adminCanSend && /^[A-Za-z0-9_-]{1,120}$/.test(String(item.messageId || "")) ? ` <button type="button" class="secondary-button" data-alimtalk-history-status="${esc(item.messageId)}" ${state.busy ? "disabled" : ""}>상태 확인</button>` : ""}</td></tr>`).join("");
     return `<section class="message-history"><div class="panel-head"><div><h3>발송 이력</h3><p>기존 안내·문서 발송의 접수·전달·실패 상태를 함께 확인합니다.</p></div></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>요청 시각</th><th>고객</th><th>문서·안내</th><th>채널</th><th>상태</th></tr></thead><tbody>${rows || '<tr><td colspan="5">발송 이력이 없습니다.</td></tr>'}</tbody></table></div></section>`;
   }
 

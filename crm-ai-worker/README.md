@@ -35,6 +35,10 @@ CRM은 사진 가져오기 후 자동분류하며 최대 100장을 30장 이하 
 
 배포 검증: Worker/클라이언트 계약 및 순수 상태 테스트와 `desktop-crm/scripts/check-work-report-photo-review.cjs`의 실제 렌더러 합성 사진 시나리오를 실행합니다. 실고객 사진으로 정확도를 측정한 결과는 아닙니다. 기존 클라이언트는 `mode` 없이 기존 `category` 응답을 계속 사용합니다. 장애 시 기존 코드로 되돌리는 새 정식 버전을 예약해 배포하고, 사용자 저장 보고서나 Firebase 규칙은 변경하지 않습니다.
 
+## 계약 건물 지도 중계
+
+`POST /v1/map`은 CRM 계약 건물 지도용 브이월드 주소 조회(`geocode`)와 배경 타일(`tile`)을 회사 공용 키로 대신 호출합니다. 키는 Cloudflare Secret `VWORLD_API_KEY`로만 등록하고(`npx wrangler secret put VWORLD_API_KEY`), `VWORLD_MAP_ENABLED = "true"`와 Secret이 모두 있어야 동작합니다. Firebase 토큰과 CRM 접근 기록(활성 admin/member/viewer)을 확인하며 AI 허용 이메일 목록은 적용하지 않습니다. 사용자별 분당 600회 제한(`MAP_RATE_LIMITER`), 건물 주소 1건·한국 범위 타일 1장 단위 요청, 256×256 PNG 검증을 적용하고 키·브이월드 URL·오류 본문은 응답에 포함하지 않습니다. 자세한 내용은 `desktop-crm/docs/contract-building-map.md`를 참고하세요.
+
 ## CRM 고객 문서 발송
 
 견적서, 작업 결과보고서, 건물 월간보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 전송 및 상태 조회는 Firebase 인증에 더해 Worker의 `CRM_ADMIN_EMAILS` 관리자 허용 목록을 통과해야 합니다. 전체 문서 발송은 `DOCUMENT_DELIVERY_ENABLED`, 견적서·결과보고서는 `KAKAO_DOCUMENT_TEMPLATES_APPROVED`, 월간보고서는 `KAKAO_MONTHLY_REPORT_ENABLED`로 제어합니다. 월간보고서와 결과보고서 V3는 NCP의 실제 승인 상태와 본문·버튼의 정확한 일치도 확인합니다.

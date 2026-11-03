@@ -31,6 +31,9 @@ export async function openVault(uid: string): Promise<Vault> {
       data.photos = data.photos.map(p => p.id === photo.id ? { ...p, itemKey: photo.itemKey, phase: photo.phase, caption: photo.caption, included: photo.included, ...(photo.itemKey !== p.itemKey || photo.phase !== p.phase ? { pairWith: undefined } : {}) } : p);
       data.visits = data.visits.map(row => row.id === v.id ? invalidateVisit(row) : row);
     },
+    async markSubmitted(visitId, revision) { check(); visitAt(visitId, revision);
+      data.photos = data.photos.map(p => p.visitId === visitId ? { ...p, submitted: true } : p);
+    },
     async deletePhoto(id, expected) { check(); const p = data.photos.find(row => row.id === id); if (!p) throw new FieldError('PHOTO_NOT_FOUND');
       assertOwner(p.ownerUid, uid); const v = visitAt(p.visitId, expected); if (!canDeletePhoto(p)) throw new FieldError('PHOTO_DELETE_REQUIRES_SERVER');
       data.photos = data.photos.filter(row => row.id !== id); files.delete(id);

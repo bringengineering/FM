@@ -128,8 +128,8 @@ test("browser report modules use the same recipient policy as PDF generation", (
 test("customer-address report picker keeps an alias out of the public building name", () => {
   const picker = between("  function workReportBuildings", "  function workReportBuildingAddress");
   const rows = new vm.Script(`${picker}; workReportBuildings()`).runInNewContext({
-    store: { buildings: [] }, customerManagedBuildingChoices: () => [{ value: "customer:qa_customer", customer,
-      building: buildings[0], name: customer.nickname, address: buildings[0].roadAddress }],
+    store: { buildings: [], customers: [customer] }, customerDisplayName: () => customer.nickname,
+    customerManagedBuildingAddress: () => buildings[0].roadAddress,
   });
   assert.equal(rows[0].internalLabel, customer.nickname);
   assert.equal(rows[0].name, customer.name);

@@ -4,6 +4,8 @@
   const Core = window.BringCore;
   const Sales = window.BringSalesCore;
   const SalesUI = window.BringSalesUI;
+  const LifeCore = window.BringLifeServiceCore;
+  const LifeUI = window.BringLifeServiceUI;
   const SalesStandards = window.BringSalesStandards;
   const DriveImportUI = window.BringDriveImportUI;
   const WorkManagement = window.BringWorkManagement;
@@ -84,6 +86,7 @@
   let selectedCleaningCtiCustomerId = "";
   let selectedMessageCustomerId = "";
   let customerAlimTalkState = { selectedCustomerIds: [], category: "quote", search: "", templateId: "cleaning_schedule", sourceType: "", sourceId: "", buildingId: "", month: previousMonthKey(), workReportId: "", savedDocumentId: "", busy: false, result: "", receipt: null, messageToolsOpen: false };
+  const customerDocumentDeliveryStatus = new Map();
   let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
@@ -216,6 +219,9 @@
     cleaningCenter: ["고객 응대부터 현장 완료까지", "클리닝센터"],
     cleaningCti: ["고객 전화 상담 및 후속 기록", "CTI 상담센터"],
     cleaningAnalytics: ["청소 주문과 장부를 기준으로 운영을 분석합니다", "청소 운영 분석"],
+    lifeToday: ["인터넷·TV·렌탈 · 오늘 연락할 고객과 막힌 가입 건", "생활서비스 · 오늘 할 일"],
+    lifeInbox: ["인터넷·TV·렌탈 · 문의부터 원큐 접수까지", "생활서비스 · 문의·상담"],
+    lifeBoard: ["인터넷·TV·렌탈 · 접수·설치·사은품·정산", "생활서비스 · 가입 진행"],
     cases: ["접수부터 사후관리까지", "민원 관리"],
     payments: ["업무·계약·건물주 입금 일정을 한눈에", "캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
@@ -253,6 +259,7 @@
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
     workReports: ["사진과 작업정보로 AI 초안을 만듭니다", "작업 결과보고서"],
     buildingMonthlyReports: ["계약 건물의 한 달 관리 내역을 건물주에게 보고합니다", "건물 월간보고서"],
+    periodicReports: ["격주로 공용부 청소 2회와 건물 정기점검을 건물주에게 보고합니다", "정기 관리보고서"],
     customerNotices: ["끝났다고 건물주에게 알립니다", "고객 알림"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],
     officeAccountSetup: ["이메일 인증과 비밀번호 설정을 초대 링크로 진행합니다", "계정 등록"],
@@ -501,24 +508,35 @@
   };
   const customerById = id => store.customers.find(item => item.id === id) || null;
   const buildingById = id => store.buildings.find(item => item.id === id) || null;
+  let periodicReportUi = null;
+  // 정기 관리보고서 화면은 periodic-report-ui.js 에 있다. 처음 열 때 만든다.
+  function periodicReportView() {
+    if (!periodicReportUi) periodicReportUi = window.BringPeriodicReportUI.create({
+      api, esc, showToast, todayKey, requestConfirmation,
+      getMain: () => main,
+      getStore: () => store,
+      isActive: () => currentView === "periodicReports",
+    });
+    return periodicReportUi;
+  }
   const customerBuildings = customer => {
     if (!customer) return [];
     const linkedIds = new Set(Core.customerBuildingIds(customer));
     return store.buildings.filter(building => linkedIds.has(building.id) || building.ownerCustomerId === customer.id);
   };
-  const customerManagedBuildingAddress = (customer, building) => String(customer && (customer.roadAddress || customer.jibunAddress || customer.address)
-    || building && (building.roadAddress || building.jibunAddress || building.address)
+  const customerManagedBuildingAddress = (customer, building) => String(building ? (building.roadAddress || building.address || building.jibunAddress || "")
+    : customer && (customer.roadAddress || customer.address || customer.jibunAddress)
     || "").trim();
   function customerManagedBuildingChoices(existingBuildingId = "") {
-    const choices = (store.customers || []).filter(customer => customer && !customer.archivedAt).map(customer => {
-      const building = customerBuildings(customer).find(item => item && !item.archivedAt) || null;
-      return {
+    const choices = (store.customers || []).filter(customer => customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true).flatMap(customer => {
+      const linked = customerBuildings(customer).filter(item => item && !item.archivedAt);
+      return (linked.length ? linked : [null]).map(building => ({
         value: building && building.id || `customer:${customer.id}`,
         customer,
         building,
-        name: customerDisplayName(customer),
+        name: [...new Set([customerDisplayName(customer), building && (building.name || building.roadAddress || building.address), linked.length > 1 && customerManagedBuildingAddress(customer, building)])].filter(Boolean).join(" · "),
         address: customerManagedBuildingAddress(customer, building),
-      };
+      }));
     }).sort((left, right) => left.name.localeCompare(right.name, "ko-KR", { numeric: true }));
     if (existingBuildingId && !choices.some(choice => choice.value === existingBuildingId)) {
       const building = buildingById(existingBuildingId);
@@ -600,7 +618,7 @@
     const detail = (item.rows || []).map(row => `${row.building.name || "건물명 미입력"} · ${row.stage ? row.stage.label : row.ambiguous ? "연결 확인 필요" : "영업 미등록"}`).join("\n");
     return `<span class="customer-sales-stage ${item.stateId === "needs-review" ? "warning" : ["unregistered", "no-building"].includes(item.stateId) ? "unlinked" : item.stateId === "mixed" ? "mixed" : "linked"}" data-customer-sales-stage="${attr(item.stateId)}" title="${attr(detail || item.label)}">${esc(item.label)}</span>`;
   };
-  const customerIsRelationshipCustomer = customer => Boolean(customer && !customer.archivedAt && !customer.deletedAt
+  const customerIsRelationshipCustomer = customer => Boolean(customer && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true
     && (ContractSchedule.registeredContractsForCustomer(store.contracts, customer.id).length
       || customer.stage === "계약 확정" || customerSalesProgress(customer).filterIds.includes("paid_management")));
   const customerActivities = id => store.activities.filter(item => item.customerId === id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
@@ -863,7 +881,8 @@
     "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
     "serviceRecords", "serviceContracts", "serviceSchedules",
     "securityAssets", "auditLogs", "securityIncidents",
-    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
+    "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities",
+    "lifeLeads", "lifeContacts", "lifeApplications"
   ];
   const sameStoredValue = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const recordsById = items => new Map((Array.isArray(items) ? items : []).filter(item => item && item.id).map(item => [String(item.id), item]));
@@ -1149,8 +1168,12 @@
       showToast("고객·건물 관리 목록에서 고객건물을 다시 선택해 주세요.", "error");
       return null;
     }
-    const linkedBuilding = customerBuildings(customer).find(item => item && !item.archivedAt);
-    if (linkedBuilding) return linkedBuilding;
+    const linkedBuildings = customerBuildings(customer).filter(item => item && !item.archivedAt);
+    if (linkedBuildings.length > 1) {
+      showToast("연결된 건물이 여러 개입니다. 작업할 건물을 직접 선택해 주세요.", "error");
+      return null;
+    }
+    if (linkedBuildings.length === 1) return linkedBuildings[0];
     const address = customerManagedBuildingAddress(customer, null);
     if (!address) {
       showToast("고객·건물 관리에서 도로명 주소나 지번 주소를 먼저 입력해 주세요.", "error");
@@ -1313,6 +1336,7 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     let payload = queuedSave || cloneStore(store);
+    const saveBase = synchronizedStore && cloneStore(synchronizedStore);
     queuedSave = null;
     let rebasedRemote = false;
     if (pendingRemoteStore) {
@@ -1324,6 +1348,7 @@
       rebasedRemote = true;
     }
     payload.updatedAt = new Date().toISOString();
+    if (saveBase) payload.__crmSaveBase = saveBase;
     saveInFlight = true;
     let saveResult = null;
     try {
@@ -1356,12 +1381,18 @@
     return saveResult;
   }
 
-  async function saveStoreNow() {
+  async function saveStoreNow(customerEdit) {
     await waitForSaveIdle();
     clearTimeout(saveTimer);
     saveTimer = null;
     queuedSave = null;
     const payload = cloneStore(store);
+    if (synchronizedStore) payload.__crmSaveBase = cloneStore(synchronizedStore);
+    if (customerEdit && payload.__crmSaveBase) {
+      const baseCustomer = (payload.__crmSaveBase.customers || []).find(item => item.id === customerEdit.id);
+      if (!baseCustomer) throw new Error("고객 정보가 변경되었습니다. 최신 내용을 확인해 주세요.");
+      for (const key of customerEdit.fields) baseCustomer[key] = structuredClone(customerEdit.base[key]);
+    }
     payload.updatedAt = new Date().toISOString();
     saveInFlight = true;
     try {
@@ -1381,11 +1412,11 @@
     }
   }
 
-  async function commitSharedFormMutation({ form, beforeStore, onSaved }) {
+  async function commitSharedFormMutation({ form, beforeStore, onSaved, customerEdit }) {
     if (form.dataset.submitting === "true") return false;
     form.dataset.submitting = "true";
     try {
-      await saveStoreNow();
+      await saveStoreNow(customerEdit);
       if (typeof onSaved === "function") await onSaved();
       return true;
     } catch (error) {
@@ -1486,7 +1517,33 @@
       Sales.createSalesOpportunity({ id: "sop_demo_01", prospectId: "spr_demo_01", unitId: "sun_demo_01", serviceType: "waterproofing", stage: "quote_requested", requirements: "데모 지하실 방수 견적", owner: "김현진", dueAt: date(3), quoteAmount: 850000 }, demoActor),
       Sales.createSalesOpportunity({ id: "sop_demo_02", prospectId: "spr_demo_03", serviceType: "common_cleaning", stage: "revenue_recorded", requirements: "데모 공용부 청소", owner: "황우중", revenueAmount: 70000, evidenceNote: "화면검증용 매출 기록" }, demoActor)
     ];
+    addLifeServiceDemo(data, date);
     return data;
+  }
+
+  // 화면 확인용(데모 모드)에서만 쓰는 가상 생활서비스 기록. 실제 저장소에는 들어가지 않는다.
+  function addLifeServiceDemo(data, date) {
+    const intern = { name: "데모 인턴", email: "", isAdmin: false };
+    const hours = offset => new Date(Date.now() + offset * 3600000);
+    try {
+      LifeCore.ensureStore(data);
+      const minji = LifeCore.createLead(data, { name: "김민지(데모)", phone: "010-0000-1001", customerType: "personal", source: "kakao", inquiryText: "인터넷이랑 TV 같이 바꾸고 싶어요" }, intern, hours(-30));
+      LifeCore.recordContact(data, minji.id, { result: "consulting", memo: "KT 사용 중, 11월 약정 만료" }, intern, hours(-29));
+      LifeCore.updateConsult(data, minji.id, { requestType: "change", installAddress: "원주시 단계동 (데모)", currentCarrier: "KT", currentProduct: "인터넷 500M + TV", currentMonthlyFee: "모름", contractEndMonth: "2026-11", familyBundle: "배우자 SKT 휴대폰 결합 검토" }, intern, hours(-29));
+      LifeCore.addCheck(data, minji.id, { owner: "oneq", text: "배우자 SKT 휴대폰 결합 할인 가능한지" }, intern, hours(-29));
+      const app = LifeCore.createApplication(data, minji.id, { carrier: "LG U+", product: "인터넷 500M + TV 기본", oneqNo: "DEMO-1028-07", agreedAt: date(-1), promisedGift: 400000, quoteSummary: "데모 견적", notice: "on", recording: "on", refundTerms: "on", happycallNotice: "on" }, intern, hours(-20));
+      LifeCore.setTrack(data, app.id, "intakeStatus", "happycall_wait", { note: "해피콜 부재 · 평일 18시 이후 전달" }, intern, hours(-18));
+      const cafe = LifeCore.createLead(data, { name: "○○카페(데모)", phone: "010-0000-1002", customerType: "store", source: "homepage", inquiryText: "가게 인터넷이 자주 끊겨요" }, intern, hours(-3));
+      LifeCore.recordContact(data, cafe.id, { result: "callback", nextContactAt: hours(2).toISOString(), memo: "점심 장사 끝나고" }, intern, hours(-2));
+      LifeCore.createLead(data, { name: "정우진(데모)", phone: "010-0000-1003", customerType: "personal", productLine: "rental", source: "oneq_mall", contactMethod: "customer_inquiry", inquiryText: "정수기 렌탈 문의" }, intern, hours(-1));
+      const subin = LifeCore.createLead(data, { name: "이수빈(데모)", phone: "010-0000-1004", source: "existing_customer", contactMethod: "staff_outbound" }, intern, hours(-200));
+      const done = LifeCore.createApplication(data, subin.id, { carrier: "SK브로드밴드", product: "인터넷 500M", oneqNo: "DEMO-1015-02", agreedAt: date(-9), promisedGift: 300000, notice: "on", recording: "on", refundTerms: "on", happycallNotice: "on" }, intern, hours(-199));
+      LifeCore.setTrack(data, done.id, "intakeStatus", "forwarded", {}, intern, hours(-190));
+      LifeCore.updateInstallPlan(data, done.id, { installConfirmedAt: hours(-30).toISOString() }, intern, hours(-180));
+      LifeCore.recordInstallReport(data, done.id, { verifyInstalled: "on", verifyWorking: "on", channel: "phone", requestGift: "1" }, intern, hours(-26));
+    } catch (_error) {
+      // 데모 기록이 규칙 변경으로 깨져도 데모 화면 전체를 막지 않는다.
+    }
   }
 
   function pageMeta() {
@@ -1546,12 +1603,14 @@
     document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
     document.getElementById("navRelationshipCount").textContent = store.customers.filter(customerIsRelationshipCustomer).length;
     document.getElementById("navPartnerVendorCount").textContent = partnerVendorRows().length;
+    const lifeTodayCount = document.getElementById("navLifeTodayCount");
+    if (lifeTodayCount) lifeTodayCount.textContent = LifeCore.todayQueue(store, new Date(), { isAdmin: canAdministerSecurity() }).counts.attention;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
     const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
     const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
     const paymentCalendarView = currentView === "payments";
-    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView)
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView) || LifeUI.isLifeView(currentView)
       || currentView === "buildingMonthlyReports";
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
@@ -1605,6 +1664,7 @@
     else if (window.BringCleaningCenterPages.screenByView(currentView) && currentView !== "cleaningCti" && currentView !== "cleaningAnalytics") renderCleaningCenter();
     else if (currentView === "cleaningCti") renderCleaningCtiCenter();
     else if (currentView === "cleaningAnalytics") renderCleaningAnalytics();
+    else if (LifeUI.isLifeView(currentView)) renderLifeService();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
@@ -1630,6 +1690,7 @@
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
     else if (currentView === "workReports") renderWorkReports();
     else if (currentView === "buildingMonthlyReports") renderBuildingMonthlyReports();
+    else if (currentView === "periodicReports") periodicReportView().render();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerAlimTalk") renderCustomerAlimTalk();
     else if (currentView === "buildings") renderBuildings();
@@ -1669,6 +1730,82 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
+  }
+
+  // 생활서비스(인터넷·TV·렌탈) 화면은 LifeUI 가 그리고 이벤트도 받는다. 바꾸는 일은
+  // commitLifeService 한 곳으로 돌아와 기존 공용 저장 경로를 탄다:
+  // 권한 확인 → 금지 정보 검사 → 감사 기록 → 서버 저장 → 실패하면 되돌림.
+  function lifeServiceActor() {
+    const user = currentAuth && currentAuth.user || {};
+    return { name: user.displayName || user.email || store.settings.owner || "담당자", email: user.email || "", uid: user.uid || "", isAdmin: canAdministerSecurity() };
+  }
+
+  function renderLifeService() {
+    LifeUI.render({
+      container: main,
+      view: currentView,
+      store,
+      Core: LifeCore,
+      customers: store.customers || [],
+      actor: lifeServiceActor(),
+      canWrite: canWriteCRM(),
+      isAdmin: canAdministerSecurity(),
+      now: () => new Date(),
+      toast: (message, type) => showToast(message, type),
+      go: view => {
+        if (!LifeUI.isLifeView(view)) return;
+        currentView = view;
+        render();
+      },
+      rerender: () => { if (LifeUI.isLifeView(currentView)) renderLifeService(); },
+      commit: commitLifeService,
+    });
+  }
+
+  async function commitLifeService(change) {
+    if (!canWriteCRM()) {
+      showToast("조회 전용 계정은 내용을 바꿀 수 없습니다.", "error");
+      return false;
+    }
+    try {
+      Core.assertNoProhibitedSecrets(change && change.raw || {});
+    } catch (error) {
+      showToast(error.message || "실제 비밀번호·주민등록번호·계좌번호는 저장할 수 없습니다.", "error");
+      return false;
+    }
+    const beforeStore = cloneStore(store);
+    let result;
+    try {
+      LifeCore.ensureStore(store);
+      result = change.mutate(store);
+      Core.assertNoProhibitedSecrets({ lifeLeads: store.lifeLeads, lifeContacts: store.lifeContacts, lifeApplications: store.lifeApplications });
+    } catch (error) {
+      store = beforeStore;
+      ensureSalesStore(store);
+      showToast(error.message || "내용을 확인해 주세요.", "error");
+      return false;
+    }
+    logAudit({
+      category: change.category || "변경", targetType: change.targetType || "생활서비스",
+      targetId: String(change.targetId || (result && result.id) || ""), targetLabel: String(change.targetLabel || ""),
+      action: String(change.label || "생활서비스 변경"), reason: "생활서비스 업무"
+    });
+    render();
+    try {
+      await saveStoreNow();
+      render();
+      if (change.success) showToast(change.success, "success");
+      return result || true;
+    } catch (error) {
+      store = cloneStore(beforeStore);
+      ensureSalesStore(store);
+      queuedSave = null;
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      render();
+      showToast(error.message || "회사 서버에 저장하지 못했습니다. 다시 시도해 주세요.", "error");
+      return false;
+    }
   }
 
   function isCleaningPageView(view = currentView) {
@@ -2150,13 +2287,17 @@
     const service = services[order.serviceType] || "청소";
     const base = QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
     aiAssistantState.quote = QuoteCore.normalizeDraft(Object.assign({}, base, {
+      customerId: customer?.id || "",
+      recipientPhone: customer?.phone || "",
       recipient: customer?.name || customer?.company || "고객",
       projectName: String(order.title || `${service} 견적`).slice(0, 120),
-      siteAddress: String(building?.roadAddress || building?.address || building?.jibunAddress || "").slice(0, 180),
+      siteAddress: String(customer?.roadAddress || customer?.address || customer?.jibunAddress || "").slice(0, 180),
       service,
       summary: String(order.description || `${service} 요청 범위 확인 후 진행`).slice(0, 240),
       items: [{ name: service, detail: String(order.description || "작업 범위를 확인해 입력하세요.").slice(0, 240), quantity: 1, unit: "식", unitPrice: 1000, note: "초안 예시 금액 · 실제 견적 확인 필요" }],
     }));
+    aiAssistantState.quoteCustomerId = customer?.id || "";
+    aiAssistantState.quoteSource = null;
     aiAssistantState.quoteMode = "manual";
     aiAssistantState.quoteContent = "";
     aiAssistantState.quoteError = "";
@@ -2754,12 +2895,25 @@
     });
   };
 
+  function caseHasUnsavedInput() {
+    return [...main.querySelectorAll('#workflowCaseBasicForm, .case-step-note-form')].some(form =>
+      [...form.elements].some(field => {
+        if (field.tagName === 'SELECT') {
+          const original = [...field.options].findIndex(option => option.defaultSelected);
+          return field.selectedIndex !== (original < 0 ? 0 : original);
+        }
+        if (field.type === 'checkbox' || field.type === 'radio') return field.checked !== field.defaultChecked;
+        return (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA') && field.value !== field.defaultValue;
+      })
+    );
+  }
+
   async function refreshOperations(options) {
     const settings = options || {};
     if (operationsLoading) return;
     operationsLoading = true;
     operationsError = "";
-    if (!settings.silent && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) render();
+    if (!settings.silent && (currentView === "cases" || currentView === "payments" || currentView === "buildings") && !(currentView === "cases" && caseHasUnsavedInput())) render();
     try {
       const loaded = await api.loadOperations();
       operations = {
@@ -2783,7 +2937,7 @@
       operationsLoading = false;
     }
     pageMeta();
-    if ((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || isCleaningPageView()) render();
+    if (((settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) || isCleaningPageView()) && !(currentView === "cases" && caseHasUnsavedInput())) render();
   }
 
   const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
@@ -2817,6 +2971,9 @@
     return MarketingCrmBridge.normalizeCaseMarketing(fields);
   }
 
+  const caseBasicSnapshots = new WeakMap();
+  const caseBasicFields = Object.freeze(["name", "phone", "email", "building", "room", "address", "crmCustomerId", "crmBuildingId", "caseParty", "grade", "urgency", "issueType", "summary", "memo"]);
+
   function renderCases() {
     const query = Core.normalizeText(searchEl.value);
     const sourceCases = caseListMode === "trash" ? trashCases() : activeCases();
@@ -2843,6 +3000,8 @@
         const listNote = caseListMode === "trash" ? `이동 ${dateText(item.deletedAt)}${item.deletedBy ? ` · ${item.deletedBy}` : ""}` : progress.current;
         return `<article class="case-card case-list-card ${caseKey === selectedCaseKey ? "selected" : ""} ${caseListMode === "trash" ? "trash" : ""}" data-case-select="${attr(caseKey)}"><div class="case-list-title"><strong>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</strong><span class="case-list-badges"><em class="case-party ${casePartyLabel(item) === "미분류" ? "unclassified" : ""}">${esc(casePartyLabel(item))}</em><span class="case-urgency ${caseListMode === "trash" ? "trash" : urgencyClass}">${caseListMode === "trash" ? "휴지통" : esc(urgency)}</span></span></div><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "고객·건물 정보 미입력")}</p><div class="case-list-progress"><i><span style="width:${progress.percent}%"></span></i><b>${progress.done}/${progress.total}</b></div><small>${esc(listNote)}</small></article>`;
       }).join("") : `<div class="case-list-empty">표시할 민원이 없습니다.</div>`}</div></aside><section class="case-detail-panel">${detail}</section></section>`;
+    const basicForm = main.querySelector("#workflowCaseBasicForm");
+    if (basicForm && selected) caseBasicSnapshots.set(basicForm, Object.fromEntries(caseBasicFields.map(key => [key, String(selected[key] || "").trim()])));
   }
 
   function renderWorkflowCaseDetail(item) {
@@ -2871,7 +3030,8 @@
         const note = notes[stepKey] || "";
         const isOpen = openCaseStepKey === stepKey;
         const statusText = status === "done" ? "완료" : status === "doing" ? "진행 중" : "대기";
-        return `<article class="workflow-case-step ${attr(status)}"><div class="case-step-main"><i>${index + 1}</i><div><b>${esc(label)}</b>${note ? `<span>${esc(note)}</span>` : `<span>단계 메모 없음</span>`}</div><select data-case-step-status="${attr(stepKey)}" data-case-key="${attr(caseKey)}" aria-label="${esc(label)} 상태">${option("wait", status, "대기")}${option("doing", status, "진행 중")}${option("done", status, "완료")}</select><button class="case-note-button ${note ? "has" : ""}" data-case-note-toggle="${attr(stepKey)}" title="상세 내용 ${isOpen ? "숨기기" : "열기"}">${isOpen ? "숨기기" : "열기"}</button></div>${isOpen ? `<div class="case-step-expanded">${renderWorkflowCaseStepDetails(item, stepKey)}<form class="case-step-note-form" data-case-key="${attr(caseKey)}" data-step-key="${attr(stepKey)}"><div class="case-step-note-title"><b>단계 메모</b><span>처리 내용·업체·금액·일정·결과를 자유롭게 기록하세요.</span></div><textarea name="stepNote" placeholder="이 단계에서 처리한 내용을 기록하세요.">${esc(note)}</textarea><div><span>${esc(statusText)} · 모든 사용자에게 공유</span><button class="secondary-button">메모 저장</button></div></form></div>` : ""}</article>`;
+        const actual = stepKey === "c2" ? `문자 발송: ${caseFirst(item.sms?.statusText, item.sms?.status, item.complaintReceiptSms?.statusText, item.complaintReceiptSms?.status, item.automationState?.receiptSms?.status) || "발송 내역 확인 필요"}` : stepKey === "c5" ? `업체 견적 요청: ${caseFirst(item.vendorEstimateMms?.statusText, item.vendorEstimateMms?.status) || "발송 내역 확인 필요"}` : stepKey === "c8" ? `건물주 문자: ${caseFirst(item.ownerRecommendationMms?.statusText, item.ownerRecommendationMms?.status) || "발송 내역 확인 필요"}` : stepKey === "c10" ? `입금 확인: ${item.paymentStatus === "confirmed" ? "확인 완료" : "확인 필요"}` : "";
+        return `<article class="workflow-case-step ${attr(status)}"><div class="case-step-main"><i>${index + 1}</i><div><b>${esc(label)}</b>${note ? `<span>${esc(note)}</span>` : `<span>단계 메모 없음</span>`}${actual ? `<span>${esc(actual)} · 단계 상태 변경과 별도</span>` : ""}</div><select data-case-step-status="${attr(stepKey)}" data-case-original-status="${attr(status)}" data-case-key="${attr(caseKey)}" aria-label="${esc(label)} 상태">${option("wait", status, "대기")}${option("doing", status, "진행 중")}${option("done", status, "완료")}</select><button class="case-note-button ${note ? "has" : ""}" data-case-note-toggle="${attr(stepKey)}" title="상세 내용 ${isOpen ? "숨기기" : "열기"}">${isOpen ? "숨기기" : "열기"}</button></div>${isOpen ? `<div class="case-step-expanded">${renderWorkflowCaseStepDetails(item, stepKey)}<form class="case-step-note-form" data-case-key="${attr(caseKey)}" data-step-key="${attr(stepKey)}"><div class="case-step-note-title"><b>단계 메모</b><span>처리 내용·업체·금액·일정·결과를 자유롭게 기록하세요.</span></div><textarea name="stepNote" placeholder="이 단계에서 처리한 내용을 기록하세요.">${esc(note)}</textarea><div><span>${esc(statusText)} · 모든 사용자에게 공유</span><button class="secondary-button">메모 저장</button></div></form></div>` : ""}</article>`;
       }).join("")}</div></section></div>`;
   }
 
@@ -3606,6 +3766,12 @@
     };
   }
 
+  // 미리보기에도 그 달 정기 관리보고서 요약을 싣는다(정기 관리보고서 화면이 받아 둔 자료).
+  function withPeriodicInputs(request) {
+    const data = periodicReportUi ? periodicReportUi.snapshot() : null;
+    return data ? { ...request, periodicReports: data.reports, workReports: data.works } : request;
+  }
+
   function buildingMonthlyReportRequestKey(state = buildingMonthlyReportState) {
     const excluded = Array.isArray(state.excludedWorkKeys)
       ? [...new Set(state.excludedWorkKeys.map(value => String(value || "").trim()).filter(Boolean))].sort()
@@ -3913,7 +4079,7 @@
         return;
       }
       state.photoSource = source;
-      const report = BuildingReportCore.buildBuildingMonthlyReport(originalRequest);
+      const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(originalRequest));
       const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
       const result = await window.BringMonthlyReportAutomation.run({
         isCurrent,
@@ -3954,7 +4120,7 @@
     renderBuildingMonthlyReports();
     try {
       const request = buildingMonthlyReportRequest(building, state.month, { manualWorks: state.manualWorks });
-      const report = BuildingReportCore.buildBuildingMonthlyReport(request);
+      const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(request));
       const activities = report.works.map((work, index) => ({ id: `activity_${index}`, date: work.date, kind: work.kind }));
       const selected = [];
       const warnings = [];
@@ -4055,17 +4221,17 @@
       nextMonthPlan: buildingMonthlyReportState.nextMonthPlan,
       narrative: buildingMonthlyReportState.narrative,
     });
-    const report = BuildingReportCore.buildBuildingMonthlyReport({ ...request,
+    const report = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs({ ...request,
       activityEvidence: buildingMonthlyReportState.photoCandidates.concat(buildingMonthlyReportState.photos),
-      photos: buildingMonthlyReportState.photos.map(photo => ({ ...photo, dataUrl: photo.thumbnail })) });
+      photos: buildingMonthlyReportState.photos.map(photo => ({ ...photo, dataUrl: photo.thumbnail })) }));
     const excludedWorkKeys = new Set(buildingMonthlyReportState.excludedWorkKeys);
-    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport({ ...request, manualWorks: [] }).works;
+    const automaticWorks = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs({ ...request, manualWorks: [] })).works;
     const automaticWorkKeys = new Set(automaticWorks.map(work => BuildingReportCore.workRowKey(work)));
     const narrative = report.narrative || { summary: "", attention: "", nextMonthPlan: "" };
     const missing = [
       !owner && "건물주 연결 필요",
       !report.works.length && "처리 업무 없음",
-      !report.summary.unitCount && "호실 현황 없음",
+      report.summary.vacancyIncomplete && "호실 현황 확인 필요",
       !buildingMonthlyReportState.nextMonthPlan && "다음 달 계획 확인 필요",
     ].filter(Boolean);
     const workRows = automaticWorks.length ? automaticWorks.map((work, index) => `<article class="building-monthly-work"><time>${esc(work.dateText || "날짜 미정")}</time><div><b>${esc(`${work.unit || "공용부"} · ${work.kind || "관리 업무"}`)}</b><p>${esc(work.summary || "처리 내용 미입력")}</p></div><em class="${work.done ? "" : "open"}">${esc(work.statusLabel || (work.done ? "완료" : "진행 중"))}</em><button type="button" data-building-monthly-work-remove="${index}" aria-label="업무를 보고서에서 제외" title="보고서에서 제외">×</button></article>`).join("") : `<div class="building-monthly-empty">이 달 캘린더에 연결된 일정이 없습니다. 필요하면 보고서에만 직접 추가할 수 있습니다.</div>`;
@@ -4110,13 +4276,13 @@
       </section>
       <div class="building-monthly-kpis">
         <article class="building-monthly-kpi"><span>처리 업무</span><b>${report.summary.workCount}건</b><small>완료 ${report.summary.doneCount} · 진행 중 ${Math.max(0, report.summary.workCount - report.summary.doneCount)}</small></article>
-        <article class="building-monthly-kpi"><span>호실 현황</span><b>${report.summary.unitCount}호실</b><small>공실 ${report.summary.vacantCount} · 공실률 ${esc(report.summary.vacancyRateText || "확인 필요")}</small></article>
+        <article class="building-monthly-kpi"><span>호실 현황 · 작성일 기준</span><b>${report.summary.unitCount ? `${report.summary.unitCount}호실` : "확인 필요"}</b><small>${report.summary.unitCount ? `공실 ${report.summary.vacantCount} · ` : ""}${report.summary.unknownUnitCount ? `미확인 ${report.summary.unknownUnitCount} · ` : ""}공실률 ${esc(report.summary.vacancyRateText || "확인 필요")}</small></article>
         <article class="building-monthly-kpi"><span>건물주 청구 합계</span><b>${esc(report.summary.billedText || "미확정")}</b><small>업체 원가와 이익은 제외</small></article>
         <article class="building-monthly-kpi"><span>자료 확인</span><b>${missing.length ? `${missing.length}건` : "완료"}</b><small>${esc(missing[0] || "PDF 생성 가능")}</small></article>
       </div>
       <div class="building-monthly-layout">
         <section class="building-monthly-panel"><header><div><h3>보고서 자료 확인</h3><p>${esc(report.monthText)} · ${esc(contract && contract.name || "건물 기준 집계 · 계약 선택 사항")}</p></div><div class="building-monthly-panel-actions"><span class="building-monthly-count">${report.works.length}건</span><button type="button" class="secondary-button" data-building-monthly-add-toggle>＋ 업무 직접 추가</button></div></header><div class="building-monthly-source-body"><div class="building-monthly-work-list">${workRows}${manualRows}</div>${addWorkForm}<section class="building-monthly-photo-section"><header><div><b>활동 사진</b><small>기억한 폴더에서 건물명·보고월에 맞는 사진을 찾아 Gemini가 검토합니다.</small></div>${monthlyDriveAction}</header>${monthlyDriveStatus}<p class="building-monthly-auto-status" role="status">${esc(buildingMonthlyReportState.autoProgress || (buildingMonthlyReportState.photoSource ? `자동 연결 폴더 · ${buildingMonthlyReportState.photoSource.name}` : "처음 한 번 활동사진 상위 폴더를 지정해 주세요. 다음부터는 자동으로 찾습니다."))}</p>${buildingMonthlyReportState.photoError ? `<div class="building-monthly-error" role="alert">${esc(buildingMonthlyReportState.photoError)}</div>` : ""}<div class="building-monthly-photo-grid">${photoRows || `<div class="building-monthly-photo-empty">선택된 사진이 없습니다. 사진은 선택 사항입니다.</div>`}</div>${candidateNames}</section><label class="building-monthly-plan"><span>다음 달 예정 관리</span><small>확정된 계획만 입력합니다. Gemini는 새로운 계획을 만들지 않습니다.</small><textarea data-building-monthly-next-plan placeholder="예: 옥상 방수 의심 구간 재점검, 공용부 소방설비 정기점검">${esc(buildingMonthlyReportState.nextMonthPlan)}</textarea></label><div class="building-monthly-exclusion"><span><b>자동 제외:</b> 협력업체명, 업체 원가, 이익률, 내부 메모, 열쇠·출입 비밀번호, 계좌번호와 개인 연락처는 Gemini에 보내지 않습니다.</span></div></div></section>
-        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><header class="building-monthly-paper-cover"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(report.ownerName)}님</div></header><p class="building-monthly-paper-greeting">${esc(report.ownerName)}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실</span><b>${report.summary.vacantCount}/${report.summary.unitCount || "-"}</b></div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "-")}</b></div></div><div class="building-monthly-copy"><label>이번 달 관리 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label></div>${paperActivities}<div class="building-monthly-copy"><label>관리 결과 및 후속 확인<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos"><h5>날짜별 현장 활동 사진</h5>${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-crm-save ${customerDocumentSaving || !canWriteCRM() ? "disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 카톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} · ${esc(monthlyKakaoResultText(buildingMonthlyReportState.kakaoResult))} · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} <button type="button" class="secondary-button" data-building-monthly-kakao-status>전달 상태 확인</button></p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
+        <section class="building-monthly-panel building-monthly-draft"><header><div><h3>건물주용 보고서 초안</h3><p>${generatedLabel}</p></div><button type="button" class="primary-button" data-building-monthly-generate ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy || buildingMonthlyReportState.photoSelectBusy ? "disabled" : ""}>${buildingMonthlyReportState.autoBusy ? buildingMonthlyReportState.autoProgress : "사진 찾아 AI 보고서 작성"}</button></header><div class="building-monthly-draft-body">${buildingMonthlyReportState.error ? `<div class="building-monthly-error">${esc(buildingMonthlyReportState.error)}</div>` : ""}<div class="building-monthly-ai-note"><b>건물주에게 보여줄 요약</b>CRM 작업 기록과 AI가 선별한 사진의 관찰 내용을 합쳐 초안을 만듭니다. 사진만으로 작업 완료를 단정하지 않습니다. 내부 자료 출처는 보고서에 표시하지 않습니다.</div><article class="building-monthly-paper"><header class="building-monthly-paper-cover"><div class="building-monthly-paper-mark">BRING CARE</div><h4>${esc(report.monthText)} 월간 관리 보고서</h4><div class="building-monthly-paper-meta">${esc(report.buildingName)} · ${esc(report.ownerName)}님</div></header><p class="building-monthly-paper-greeting">${esc(report.ownerName)}님, ${esc(report.monthText)} ${esc(report.buildingName)} 관리 내역을 보고드립니다.</p><div class="building-monthly-paper-stats"><div><span>처리 업무</span><b>${report.summary.workCount}건</b></div><div><span>완료</span><b>${report.summary.doneCount}건</b></div><div><span>공실 확인 · 작성일 기준</span><b>${report.summary.unitCount ? `${report.summary.vacantCount}/${report.summary.unitCount}` : "확인 필요"}</b>${report.summary.unknownUnitCount ? `<small>미확인 ${report.summary.unknownUnitCount}호실</small>` : ""}</div><div><span>공실률</span><b>${esc(report.summary.vacancyRateText || "확인 필요")}</b></div></div><div class="building-monthly-copy"><label>이번 달 관리 요약<textarea data-building-monthly-copy="summary" placeholder="Gemini가 공개 가능한 CRM 기록으로 요약합니다.">${esc(narrative.summary)}</textarea></label></div>${paperActivities}<div class="building-monthly-copy"><label>관리 결과 및 후속 확인<textarea data-building-monthly-copy="attention" placeholder="진행 중이거나 건물주가 알아야 할 내용만 표시합니다.">${esc(narrative.attention)}</textarea></label><label>다음 달 예정 관리<textarea data-building-monthly-copy="nextMonthPlan" placeholder="확정된 계획의 문장을 정리합니다.">${esc(narrative.nextMonthPlan)}</textarea></label></div>${photoRows ? `<div class="building-monthly-paper-photos"><h5>날짜별 현장 활동 사진</h5>${paperPhotos}</div>` : ""}</article><div class="building-monthly-report-actions"><button type="button" class="secondary-button" data-building-monthly-text-only ${!canGenerate || buildingMonthlyReportState.loading || buildingMonthlyReportState.autoBusy ? "disabled" : ""}>${buildingMonthlyReportState.loading ? "Gemini 작성 중…" : "선택 자료로 문장만 작성"}</button><button type="button" class="secondary-button" data-building-monthly-preview>문서 내용 확인</button><button type="button" class="secondary-button" data-building-monthly-reset>AI 문장 지우기</button><button type="button" class="primary-button" data-building-monthly-pdf>PDF 저장</button><button type="button" class="primary-button" data-building-monthly-crm-save ${customerDocumentSaving || !canWriteCRM() ? "disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button><button type="button" class="primary-button" data-building-monthly-kakao-send ${canSendMonthlyKakao ? "" : "disabled"}>${buildingMonthlyReportState.kakaoSending ? "발송 준비 중…" : "고객에게 카톡 발송"}</button></div>${buildingMonthlyReportState.kakaoResult ? `<p class="building-monthly-kakao-result" role="status">${esc(buildingMonthlyReportState.kakaoResult.month)} · ${esc(monthlyKakaoResultText(buildingMonthlyReportState.kakaoResult))} · ${esc(buildingMonthlyReportState.kakaoResult.requestedAt)} <button type="button" class="secondary-button" data-building-monthly-kakao-status>전달 상태 확인</button></p>` : ""}<div class="building-monthly-checks">${missing.length ? missing.map(item => `<span>확인 필요 · ${esc(item)}</span>`).join("") : `<span>✓ 건물 연결 확인</span><span>✓ 수신자 확인</span><span>✓ 외부 공개 항목만 포함</span>`}<span>${esc(owner && owner.phone ? `${owner.name || "건물주"} · ${owner.phone}` : "건물주 휴대전화 번호 연결 필요")}</span></div></div></section>
       </div>
       ${targetManager}
       ${photoPicker}
@@ -4365,7 +4531,7 @@
     });
     const reportRequest = makeRequest();
     const confirmedContent = JSON.stringify(reportRequest);
-    const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(reportRequest);
+    const reportPreview = BuildingReportCore.buildBuildingMonthlyReport(withPeriodicInputs(reportRequest));
     const confirmed = await requestConfirmation({
       title: "월간 관리 보고서를 카카오톡으로 보낼까요?",
       description: "월 1회 수신 요청이 확인된 건물주에게 월간보고서 알림톡을 보냅니다. PDF 링크는 7일 뒤 만료됩니다.",
@@ -4638,12 +4804,16 @@
   function customerMessageDeliveries() {
     const value = operations && operations.messageDeliveries;
     const rows = Array.isArray(value) ? value : Object.values(value || {});
-    const reports = (store.buildingDocuments || []).filter(row => row.savedCustomerDocument?.kind === "workReport" && row.workReportDelivery).map(row => ({
+    const reports = (store.buildingDocuments || []).filter(row => row.savedCustomerDocument && (row.workReportDelivery || row.customerDocumentDelivery)).map(row => {
+      const delivery = row.workReportDelivery || row.customerDocumentDelivery;
+      const checked = customerDocumentDeliveryStatus.get(String(delivery.messageId || ""));
+      const status = checked?.generation === authGeneration ? checked.status : delivery.status;
+      return ({
       id: row.id, documentId: row.id, documentType: "completion_report", documentName: row.title,
-      customerId: row.savedCustomerDocument.customerId, customerName: customerById(row.savedCustomerDocument.customerId)?.name || "건물주",
-      channel: "kakao", templateLabel: "작업 결과보고서", requestedAt: row.workReportDelivery.requestedAt,
-      status: ({sending: "발송 처리 중", requested: "발송 요청 접수", failed: "발송 준비 실패", unknown: "발송 결과 확인 필요"})[row.workReportDelivery.status] || "확인 필요",
-    }));
+      customerId: row.savedCustomerDocument.customerId, customerName: customerDisplayName(customerById(row.savedCustomerDocument.customerId)) || "건물주",
+      channel: "kakao", templateLabel: SavedCustomerDocuments.KINDS[row.savedCustomerDocument.kind] || "문서", requestedAt: delivery.requestedAt,
+      messageId: delivery.messageId, status: ({sending: "발송 처리 중 · 결과 확인 필요", requested: "전달 확인 중", delivered: "전달 완료", failed: "전달 실패", unknown: "발송 결과 확인 필요"})[status] || "확인 필요",
+    }); });
     return [...rows, ...reports].sort((left, right) => String(right.requestedAt || "").localeCompare(String(left.requestedAt || "")));
   }
 
@@ -4693,7 +4863,40 @@
 
   function normalizedPhone(value) { return String(value || "").replace(/\D/gu, ""); }
 
+  // 발송 이력을 열면 아직 '전달 확인 중' 인 최근 문서 발송(7일 안, 최대 10건)을 한 번씩 조용히 확인한다.
+  // 직원이 줄마다 '상태 확인' 을 눌러야 전달 완료가 보이던 것을 없앤다. 확인은 읽기만 하고 재발송하지 않는다.
+  const autoCheckedDeliveries = new Set();
+  let autoDeliveryCheckRunning = false;
+  async function autoRefreshPendingDeliveries() {
+    if (autoDeliveryCheckRunning || !canAdministerSecurity() || typeof api.readCustomerDocumentDelivery !== "function") return;
+    const generation = authGeneration;
+    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const pending = customerMessageDeliveries().filter(row => row.documentType === "completion_report" && row.status === "전달 확인 중"
+      && /^[A-Za-z0-9_-]{1,120}$/.test(String(row.messageId || "")) && !autoCheckedDeliveries.has(`${generation}|${row.messageId}`)
+      && Date.parse(row.requestedAt || "") >= since).slice(0, 10);
+    if (!pending.length) return;
+    autoDeliveryCheckRunning = true;
+    let changed = false;
+    try {
+      for (const row of pending) {
+        autoCheckedDeliveries.add(`${generation}|${row.messageId}`);
+        try {
+          const result = await api.readCustomerDocumentDelivery({messageId: row.messageId});
+          if (generation !== authGeneration) return;
+          if (result?.ok && ["requested", "delivered", "failed", "unknown"].includes(result.status)) {
+            customerDocumentDeliveryStatus.set(row.messageId, {generation, status: result.status});
+            changed = changed || result.status !== "requested";
+          }
+        } catch (_) { /* 다음에 '상태 확인' 으로 다시 볼 수 있다 */ }
+      }
+    } finally {
+      autoDeliveryCheckRunning = false;
+      if (changed && generation === authGeneration && currentView === "customerAlimTalk" && !customerAlimTalkState.busy) renderCustomerAlimTalk();
+    }
+  }
+
   function renderCustomerAlimTalk() {
+    setTimeout(() => { void autoRefreshPendingDeliveries(); }, 0);
     const state = customerAlimTalkState;
     const customers = (store.customers || []).filter(item => item && item.id && !item.archivedAt && !item.deletedAt && item.deleted !== true);
     state.selectedCustomerIds = state.selectedCustomerIds.filter(id => customers.some(customer => String(customer.id) === String(id)));
@@ -4717,7 +4920,7 @@
     const selectedDecision = customer ? MessagePolicy.evaluateMessageRequest({ customer, templateId: template.id, channel: "kakao", sourceType: state.sourceType, sourceId: state.sourceId }) : { allowed: false };
     const selectedBuildingOwner = building && customer && String(building.ownerCustomerId || "") === String(customer.id);
     main.innerHTML = CustomerAlimTalkUI.render({
-      customers,
+      customers: customers.map(item => ({...item, searchBuildings: customerBuildings(item).filter(building => !building.archivedAt && !building.deletedAt && building.deleted !== true).flatMap(building => [building.name, building.roadAddress, building.address, ...(Array.isArray(building.aliases) ? building.aliases : [])]).filter(Boolean)})),
       selectedCustomerIds: state.selectedCustomerIds,
       category: state.category,
       search: state.search,
@@ -4754,7 +4957,7 @@
       selectedMessageSourceId = state.sourceId;
       main.insertAdjacentHTML("beforeend", `<details class="alimtalk-legacy-tools" data-alimtalk-tools ${state.messageToolsOpen ? "open" : ""}><summary>안내 상세 작성·SMS·수신 동의 관리</summary>${renderCustomerMessageTools()}</details>`);
     }
-    main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries() }));
+    main.insertAdjacentHTML("beforeend", MessageUI.renderHistory({ deliveries: customerMessageDeliveries(), adminCanSend: canAdministerSecurity(), busy: state.busy }));
     if (state.busy) main.querySelectorAll?.("input, select, textarea, button").forEach(control => { control.disabled = true; });
     if (!documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
     if (!reportState.loaded && !reportState.loading && !reportState.error) void loadWorkReports();
@@ -4806,6 +5009,7 @@
       if (!result || result.ok !== true || !result.record) throw new Error(result && result.error || "문서를 CRM에 저장하지 못했습니다.");
       store.buildingDocuments = [...(store.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
       if (synchronizedStore) synchronizedStore.buildingDocuments = [...(synchronizedStore.buildingDocuments || []).filter(item => item.id !== result.record.id), result.record];
+      if (request.kind === "quote" && aiAssistantState.quote === request.quote && aiAssistantState.quoteCustomerId === request.quote.customerId) aiAssistantState.quoteSource = {documentId: result.record.id, updatedAt: result.record.updatedAt, sha256: result.record.savedCustomerDocument.sha256};
       showToast("CRM에 저장했습니다. CRM → 알림톡 발송에서 고객과 저장 문서를 선택해 주세요.", "success");
     } catch (error) {
       if (generation === authGeneration) showToast(error.message || "문서를 저장하지 못했습니다.", "error");
@@ -4864,7 +5068,7 @@
         const sendGeneration = authGeneration;
         let result;
         try { result = await api.sendSavedCustomerDocument(request); }
-        finally { if (request.kind === "workReport" && request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
+        finally { if (request.sha256) await refreshWorkReportPdfRecord(request.documentId, sendGeneration); }
         if (sendGeneration !== authGeneration) return;
         if (!result || result.ok !== true) throw new Error(result && result.error || "저장 문서 알림톡을 발송하지 못했습니다.");
         state.receipt = {generation: sendGeneration, messageId: String(result.messageId || ""), status: result.status === "requested" ? "requested" : "unknown", label: request.title, kind: request.kind, documentId: request.documentId, updatedAt: request.updatedAt, customerId: customer.id};
@@ -4892,6 +5096,8 @@
       if (generation !== authGeneration || state.receipt !== receipt) return;
       if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error(result?.error || "전달 상태를 확인하지 못했습니다. 재발송하지 말고 잠시 후 상태를 다시 확인해 주세요.");
       receipt.status = result.status;
+      // 아래 발송 이력도 같은 결과를 보여야 한다(전달 완료 알림 뒤에도 '전달 확인 중' 으로 남았다).
+      customerDocumentDeliveryStatus.set(receipt.messageId, {generation, status: result.status});
       receipt.failureCode = /^(?:[AB]\d{3}|\d{4})$/.test(String(result.failureCode || "")) ? result.failureCode : "";
       state.result = result.status === "delivered" ? "카카오톡 전달이 완료됐습니다. 고객의 읽음 여부와는 다릅니다."
         : result.status === "failed" ? "알림톡 전달에 실패했습니다. 업체 결과 코드: " + (receipt.failureCode || "확인 필요")
@@ -5476,15 +5682,16 @@
       return `<section class="vacancy-floor-card" data-vacancy-floor="${attr(floor.floorLabel)}"><header><div><h3>${esc(floor.floorLabel)}</h3><span>표시 ${floor.units.length.toLocaleString("ko-KR")}개</span></div><p>${esc(floorSummary)}</p></header><div class="vacancy-unit-grid">${floor.units.map(unit => renderVacancyUnitCard(unit, building)).join("")}</div></section>`;
     }).join("");
     const emptyMarkup = summary.formal
-      ? `<div class="vacancy-detail-empty"><b>${query ? "검색 조건에 맞는 호실이 없습니다" : vacancyStatusFilter === "attention" ? "현재 공실과 공실 예정 호실이 없습니다" : "선택한 상태의 호실이 없습니다"}</b><span>${query ? "호실 검색어를 지우거나 다른 검색어를 입력해 주세요." : vacancyStatusFilter === "attention" ? "모든 호실을 확인하려면 전체 필터를 선택하세요." : "상단에서 전체 상태를 선택해 모든 호실을 확인하세요."}</span></div>`
+      ? `<div class="vacancy-detail-empty"><b>${query ? "검색 조건에 맞는 호실이 없습니다" : vacancyStatusFilter === "attention" ? "등록된 공실과 공실 예정 호실이 없습니다" : "선택한 상태의 호실이 없습니다"}</b><span>${query ? "호실 검색어를 지우거나 다른 검색어를 입력해 주세요." : vacancyStatusFilter === "attention" ? (summary.unknown ? `상태를 확인하지 않은 호실이 ${summary.unknown}개 있습니다. 확인 필요 필터에서 살펴보세요.` : "모든 호실을 확인하려면 전체 필터를 선택하세요.") : "상단에서 전체 상태를 선택해 모든 호실을 확인하세요."}</span></div>`
       : `<div class="vacancy-detail-empty legacy"><b>층·호실 설정이 필요합니다</b><span>${legacyLabels.length ? `기존 공실 메모: ${esc(legacyLabels.join(", "))}` : "위의 층·호실 설정에서 층과 층별 호실 수를 입력하면 공실 현황을 시작할 수 있습니다."}</span></div>`;
     const kpis = [
       ["attention", "attention", "확인할 공실", summary.actionable, "공실 + 공실 예정"],
       ["vacant", "vacant", "현재 공실", summary.vacant, "즉시 확인할 호실"],
       ["move_out_scheduled", "upcoming", "공실 예정", summary.move_out_scheduled, "예정일 확인 필요"],
+      ["unknown", "unknown", "확인 필요", summary.unknown, "상태를 확인할 호실"],
       ["all", "", "전체 호실", summary.total, summary.formal ? `등록된 층 ${new Set(units.map(inferredVacancyFloorLabel)).size}개` : "기존 건물 정보 기준"],
     ].map(([filter, className, label, count, description]) => `<button type="button" class="${className} ${vacancyStatusFilter === filter ? "active" : ""}" data-vacancy-filter="${attr(filter)}" aria-pressed="${vacancyStatusFilter === filter}"><span>${esc(label)}</span><b>${Number(count || 0).toLocaleString("ko-KR")}</b><small>${esc(description)}</small></button>`).join("");
-    return `<header class="vacancy-detail-head"><div>${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-vacancy-configure="${attr(building.id)}">층·호실 설정</button>` : ""}</header><div class="vacancy-detail-scroll"><div class="vacancy-kpis" data-vacancy-kpis>${kpis}</div>${formalMismatch ? `<div class="vacancy-count-warning">건물 정보의 전체 호실 ${Number(building.unitCount).toLocaleString("ko-KR")}개와 등록된 정식 호실 ${summary.total.toLocaleString("ko-KR")}개가 다릅니다. 층·호실 설정을 확인해 주세요.</div>` : ""}${legacyMigration.unresolvedCount ? `<div class="vacancy-count-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실: ${esc(legacyMigration.missingNamedLabels.join(", "))}.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` 상태 변경 필요: ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 기존 기록 중 호실명 미지정 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실.` : ""} 층·호실 설정에서 실제 호실로 지정해 주세요.</div>` : ""}<div class="vacancy-unit-tools"><label><span>호실 검색</span><input type="search" data-vacancy-unit-search value="${attr(vacancyUnitQuery)}" placeholder="호실명·층·메모 검색" autocomplete="off"></label>${vacancyUnitQuery ? `<button type="button" class="secondary-button" data-vacancy-search-clear>검색 지우기</button>` : ""}</div><nav class="vacancy-status-tabs" aria-label="호실 상태 필터">${statusTabs}</nav><p class="vacancy-result-summary" aria-live="polite">${query ? `검색 결과 ${filteredUnits.length.toLocaleString("ko-KR")}개 호실` : `${VACANCY_FILTER_LABELS[vacancyStatusFilter]} ${filteredUnits.length.toLocaleString("ko-KR")}개 호실`}</p><div class="vacancy-floor-list">${floorMarkup || emptyMarkup}</div></div>`;
+    return `<header class="vacancy-detail-head"><div>${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-vacancy-configure="${attr(building.id)}">층·호실 설정</button>` : ""}</header><div class="vacancy-detail-scroll"><div class="vacancy-kpis" data-vacancy-kpis>${kpis}</div>${summary.unknown ? `<div class="vacancy-count-warning" role="status">상태를 확인하지 않은 호실 ${summary.unknown.toLocaleString("ko-KR")}개가 있습니다. 실제 공실 여부를 확인해 주세요.</div>` : ""}${formalMismatch ? `<div class="vacancy-count-warning">건물 정보의 전체 호실 ${Number(building.unitCount).toLocaleString("ko-KR")}개와 등록된 정식 호실 ${summary.total.toLocaleString("ko-KR")}개가 다릅니다. 층·호실 설정을 확인해 주세요.</div>` : ""}${legacyMigration.unresolvedCount ? `<div class="vacancy-count-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실: ${esc(legacyMigration.missingNamedLabels.join(", "))}.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` 상태 변경 필요: ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 기존 기록 중 호실명 미지정 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실.` : ""} 층·호실 설정에서 실제 호실로 지정해 주세요.</div>` : ""}<div class="vacancy-unit-tools"><label><span>호실 검색</span><input type="search" data-vacancy-unit-search value="${attr(vacancyUnitQuery)}" placeholder="호실명·층·메모 검색" autocomplete="off"></label>${vacancyUnitQuery ? `<button type="button" class="secondary-button" data-vacancy-search-clear>검색 지우기</button>` : ""}</div><nav class="vacancy-status-tabs" aria-label="호실 상태 필터">${statusTabs}</nav><p class="vacancy-result-summary" aria-live="polite">${query ? `검색 결과 ${filteredUnits.length.toLocaleString("ko-KR")}개 호실` : `${VACANCY_FILTER_LABELS[vacancyStatusFilter]} ${filteredUnits.length.toLocaleString("ko-KR")}개 호실`}</p><div class="vacancy-floor-list">${floorMarkup || emptyMarkup}</div></div>`;
   }
 
   function renderVacancies() {
@@ -5944,9 +6151,78 @@
     return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button><button type="button" class="primary" data-ai-quote-export="pdf"${canExport ? "" : " disabled"}>⇩ PDF</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 공급가액·세액·작업 범위를 확인한 뒤 PDF로 발행하세요." : "회사 사업자등록번호가 등록되면 이미지·엑셀·PDF를 내보낼 수 있습니다."}</footer></section></section>`;
   }
 
+  function quoteDraftActions() {
+    const busy = aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy;
+    return `<div class="ai-quote-editor-toolbar"><button type="button" data-quote-new${busy ? " disabled" : ""}>새 견적 시작</button>${cleaningQuoteContext.orderId ? `<button type="button" data-quote-detach${busy ? " disabled" : ""}>주문 연결 해제</button><small>연결을 해제해도 작성한 견적은 유지됩니다.</small>` : ""}</div>`;
+  }
+
+  function quoteHistoryMarkup() {
+    const customer = (store.customers || []).find(row => String(row?.id || "") === String(aiAssistantState.quoteCustomerId || ""));
+    const rows = SavedCustomerDocuments.historyList(store.buildingDocuments, customer, "quote");
+    const busy = aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy;
+    return `<section class="ai-content-field"><span>저장된 견적서</span><small>${customer ? "고객별 저장본을 최신순으로 표시합니다. 수정본은 새 문서로 저장됩니다." : "고객을 선택하면 저장된 견적서가 표시됩니다."}</small>${rows.map(row => `<div class="ai-quote-editor-toolbar"><div><b>${esc(row.title || "견적서")}</b><small>${esc(row.updatedAt.slice(0, 16).replace("T", " "))} · ${row.isRevision ? "수정본" : "원본"}${row.editable ? "" : " · PDF만 보관"}</small></div><button type="button" data-quote-history-preview="${attr(row.id)}"${busy ? " disabled" : ""}>PDF 보기</button>${row.editable ? `<button type="button" data-quote-history-load="${attr(row.id)}"${busy || cleaningQuoteContext.orderId ? " disabled" : ""}>불러와 수정</button>` : ""}</div>`).join("") || (customer ? `<small>저장된 견적서가 없습니다.</small>` : "")}</section>`;
+  }
+
+  async function openQuoteHistory(id, edit) {
+    if (aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy || (edit && cleaningQuoteContext.orderId)) return;
+    const customer = (store.customers || []).find(row => String(row?.id || "") === String(aiAssistantState.quoteCustomerId || ""));
+    const row = SavedCustomerDocuments.historyList(store.buildingDocuments, customer, "quote").find(item => item.id === id);
+    if (!row) return showToast("저장 견적을 다시 선택해 주세요.", "error");
+    if (edit && aiAssistantState.quote && !window.confirm("현재 작성 중인 견적을 바꾸고 저장된 견적을 불러올까요? 저장하지 않은 내용은 사라집니다.")) return;
+    const request = {kind: "quote", customerId: String(customer.id), documentId: row.id, updatedAt: row.updatedAt, sha256: row.savedCustomerDocument.sha256};
+    const generation = authGeneration;
+    aiAssistantState.quoteLoading = true;
+    refreshQuotesView();
+    try {
+      const result = edit ? await api.loadSavedQuoteDraft(request) : await api.previewSavedCustomerDocument(request);
+      if (generation !== authGeneration) return;
+      if (!result?.ok) throw new Error(result?.error || "저장 견적을 불러오지 못했습니다.");
+      if (edit) {
+        aiAssistantState.quote = QuoteCore.normalizeDraft(result.quote);
+        aiAssistantState.quoteSource = result.source;
+        aiAssistantState.quoteMode = "manual";
+        aiAssistantState.quoteError = "";
+        aiAssistantState.quoteWarnings = [];
+        showToast("저장 견적을 불러왔습니다. 수정 후 CRM에 저장하면 새 문서가 만들어집니다.", "success");
+      } else showToast("저장 견적 PDF를 열었습니다.", "success");
+    } catch (error) { if (generation === authGeneration) showToast(error.message || "저장 견적을 불러오지 못했습니다.", "error"); }
+    finally { if (generation === authGeneration) { aiAssistantState.quoteLoading = false; refreshQuotesView(); } }
+  }
+
+  function resetQuoteDraft(startNew) {
+    if (aiAssistantState.quoteLoading || customerDocumentSaving || cleaningOrderState.busy) return;
+    if (startNew && (aiAssistantState.quote || aiAssistantState.quoteContent) && !window.confirm("작성 중인 견적을 비우고 새 견적을 시작할까요? 저장하지 않은 내용은 사라집니다.")) return;
+    cleaningQuoteContext = { orderId: "", expectedRevision: 0, requestId: "", confirmedPriceIndices: [], pricedPriceIndices: [] };
+    if (startNew) {
+      aiAssistantState.quote = null;
+      aiAssistantState.quoteContent = "";
+      aiAssistantState.quoteCustomerId = "";
+      aiAssistantState.quoteSource = null;
+      aiAssistantState.quoteWarnings = [];
+    }
+    aiAssistantState.quoteError = "";
+    refreshQuotesView();
+  }
+
+  function quoteCustomerFields() {
+    const id = aiAssistantState.quoteCustomerId || "";
+    const customers = (store.customers || []).filter(row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true);
+    const customer = customers.find(row => String(row.id) === id);
+    const phoneReady = /^01\d{8,9}$/.test(String(customer?.phone || "").replace(/\D/g, ""));
+    return `<label class="ai-content-field"><span>연결 고객 *</span><select data-quote-customer${aiAssistantState.quoteLoading || cleaningQuoteContext.orderId ? " disabled" : ""}><option value="">고객을 선택하세요</option>${customers.map(row => `<option value="${attr(row.id)}"${String(row.id) === id ? " selected" : ""}>${esc(row.name || row.company || "고객")} · ${esc(row.roadAddress || row.address || row.jibunAddress || "주소 미등록")}</option>`).join("")}</select><small>고객에 등록된 건물 주소와 연락처를 불러옵니다. 문서의 성명·주소는 수정할 수 있습니다.${customer && !phoneReady ? " 고객관리에서 휴대전화 번호를 등록하고 다시 선택해야 CRM에 저장할 수 있습니다." : " 연락처 변경은 고객관리에서 해 주세요."}</small></label>`;
+  }
+
+  function bindSelectedQuoteCustomer(quote) {
+    return QuoteCore.bindCustomer(quote, store.customers, aiAssistantState.quoteCustomerId);
+  }
+
+  function quoteCustomerReady(quote) {
+    try { QuoteCore.resolveCustomer(quote, store.customers); return true; } catch (_) { return false; }
+  }
+
   function quoteRecipientFields(quote) {
     if (!quote) return "";
-    return `<section class="ai-quote-recipient-editor"><header><div><b>견적·공급받는자 정보</b><small>이 정보는 AI에 전송하지 않고 저장 파일에만 사용합니다</small></div><span>직접 수정 가능</span></header><div><label class="wide"><span>견적명</span><input data-ai-quote-recipient="projectName" maxlength="120" value="${attr(quote.projectName)}" placeholder="예: 햇빛빌라 입주청소"><small>현장명 + 작업명으로 작성해 주세요.</small></label><label class="wide"><span>현장 주소</span><input data-ai-quote-recipient="siteAddress" maxlength="180" value="${attr(quote.siteAddress || "")}" placeholder="예: 강원특별자치도 원주시 이화3길 28-5"></label><label><span>성 명</span><input data-ai-quote-recipient="recipient" maxlength="80" autocomplete="name" value="${attr(quote.recipient)}" placeholder="성명을 입력하세요"></label><label><span>전화번호</span><input data-ai-quote-recipient="recipientPhone" maxlength="30" inputmode="tel" autocomplete="tel" value="${attr(quote.recipientPhone)}" placeholder="010-0000-0000"></label><label><span>발행일</span><input data-ai-quote-recipient="quoteDate" type="date" value="${attr(quote.quoteDate)}"></label><label><span>유효일</span><input data-ai-quote-recipient="validUntil" type="date" value="${attr(quote.validUntil)}"><small>오늘부터 7일이 기본이며, 발행일 변경 시 7일 뒤로 설정됩니다.</small></label></div></section>`;
+    return `<section class="ai-quote-recipient-editor"><header><div><b>견적·공급받는자 정보</b><small>이 정보는 AI에 전송하지 않고 저장 파일에만 사용합니다</small></div><span>직접 수정 가능</span></header><div><label class="wide"><span>견적명</span><input data-ai-quote-recipient="projectName" maxlength="120" value="${attr(quote.projectName)}" placeholder="예: 햇빛빌라 입주청소"><small>현장명 + 작업명으로 작성해 주세요.</small></label><label class="wide"><span>현장 주소</span><input data-ai-quote-recipient="siteAddress" maxlength="180" value="${attr(quote.siteAddress || "")}" placeholder="예: 강원특별자치도 원주시 이화3길 28-5"></label><label><span>성 명</span><input data-ai-quote-recipient="recipient" maxlength="80" autocomplete="name" value="${attr(quote.recipient)}" placeholder="성명을 입력하세요"></label><label><span>전화번호</span><input data-ai-quote-recipient="recipientPhone" readonly maxlength="30" inputmode="tel" autocomplete="tel" value="${attr(quote.recipientPhone)}" placeholder="010-0000-0000"></label><label><span>발행일</span><input data-ai-quote-recipient="quoteDate" type="date" value="${attr(quote.quoteDate)}"></label><label><span>유효일</span><input data-ai-quote-recipient="validUntil" type="date" value="${attr(quote.validUntil)}"><small>오늘부터 7일이 기본이며, 발행일 변경 시 7일 뒤로 설정됩니다.</small></label></div></section>`;
   }
 
   function quotePreviewHtml(quote) {
@@ -6008,10 +6284,10 @@
     const quote = aiAssistantState.quote;
     const manual = aiAssistantState.quoteMode === "manual";
     const modeSwitch = `<div class="ai-quote-mode-switch" role="tablist" aria-label="견적서 작성 방식"><button type="button" data-quote-mode="ai" class="${manual ? "" : "active"}" aria-selected="${!manual}">AI 작성</button><button type="button" data-quote-mode="manual" class="${manual ? "active" : ""}" aria-selected="${manual}">수기 작성</button></div>${moveInCleaningQuotePreset(quote)}`;
-    const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote));
+    const canExport = Boolean(quote && aiAssistantState.sealConfigured && QuoteCore.supplierComplete(quote.company) && QuoteCore.recipientComplete(quote, { requireName: true }));
     const disabled = canExport ? "" : " disabled";
-    const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button><button type="button" data-ai-quote-crm-save${disabled || customerDocumentSaving || !canWriteCRM() ? " disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button></div></div>`;
-    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuotePricingMarkup()}${cleaningQuotePriceReviewMarkup(quote)}${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy || !cleaningQuotePricesConfirmed(quote) ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "공급받는자 성명과 전화번호를 입력하면 네 가지 파일을 저장할 수 있습니다."}</footer></section></section>`;
+    const exportButtons = `<div class="ai-quote-export-groups"><div class="ai-quote-export-group supplier-copy"><b>공급자 보관용</b><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="supplier" data-ai-quote-format="pdf"${disabled}>PDF 저장</button></div><div class="ai-quote-export-group recipient-copy"><b>공급받는자용</b><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="xlsx"${disabled}>Excel 저장</button><button type="button" data-ai-quote-export="recipient" data-ai-quote-format="pdf"${disabled}>PDF 저장</button><button type="button" data-ai-quote-crm-save${disabled || !quoteCustomerReady(quote) || customerDocumentSaving || !canWriteCRM() ? " disabled" : ""}>${customerDocumentSaving ? "CRM 저장 중…" : "CRM에 저장"}</button></div></div>`;
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM · QUOTE</span><h2>${manual ? "필요한 내용을 직접 입력해 견적서를 만듭니다" : "한 줄로 요청하면 견적서가 완성됩니다"}</h2><p>${manual ? "AI를 호출하지 않고 품목과 금액을 직접 작성합니다." : "현장명·작업명·최종 금액을 입력하세요. 사람용 견적서와 AI용 OCR_DATA 시트를 함께 생성합니다."}</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteDraftActions()}${quoteCustomerFields()}${quoteHistoryMarkup()}${quoteSupplierFields()}${modeSwitch}<div${manual ? " hidden" : ""}><div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button></div>${manual && !quote ? `<button type="button" class="primary-button ai-quote-generate" data-manual-quote-create>＋ 빈 견적서 작성</button>` : ""}${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `${quoteRecipientFields(quote)}<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>${cleaningQuotePricingMarkup()}${cleaningQuotePriceReviewMarkup(quote)}${cleaningQuoteContext.orderId ? `<div class="form-actions cleaning-quote-save-context"><span>청소 주문 연결 · ${esc(cleaningQuoteContext.orderId)}</span><button type="button" class="primary-button" data-action="save-cleaning-order-quote"${cleaningOrderState.busy || !cleaningQuotePricesConfirmed(quote) ? " disabled" : ""}>${cleaningOrderState.busy ? "서버에 저장 중…" : "청소 주문에 견적 초안 저장"}</button></div>` : ""}` : ""}</form><section class="ai-quote-preview-card"><header><div><span>OCR 친화 양식</span><b>견적서 미리보기</b></div>${exportButtons}</header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "파란색 공급받는자용과 연한 빨간색 공급자 보관용에 동일한 내용과 OCR_DATA 시트가 저장됩니다." : !aiAssistantState.sealConfigured ? "보호된 회사 인감을 등록하면 견적서 파일을 저장할 수 있습니다." : "회사 정보와 공급받는자 성명을 확인해 주세요. 파일 저장에는 전화번호가 필요하지 않습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {
@@ -6034,6 +6310,7 @@
 
   async function requestAiQuoteDraft() {
     if (aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim()) return;
+    if (!aiAssistantState.quoteCustomerId) return showToast("먼저 고객을 선택해 주세요.", "error");
     aiAssistantState.quoteLoading = true;
     aiAssistantState.quoteError = "";
     aiAssistantState.quoteWarnings = [];
@@ -6047,7 +6324,7 @@
       aiAssistantState.quoteWarnings = ["AI 연결을 확인하지 못해 입력 금액을 기준으로 BRING 기본 품목을 구성했습니다. 발행 전에 세부 범위를 확인해 주세요."];
     }
     try {
-      aiAssistantState.quote = QuoteCore.createDraftFromPrompt(aiAssistantState.quoteContent, aiResult, { now: new Date(), supplier: aiAssistantState.supplier });
+      aiAssistantState.quote = bindSelectedQuoteCustomer(QuoteCore.createDraftFromPrompt(aiAssistantState.quoteContent, aiResult, { now: new Date(), supplier: aiAssistantState.supplier }));
     } catch (error) {
       aiAssistantState.quote = null;
       aiAssistantState.quoteError = error.message || "견적서를 만들지 못했습니다.";
@@ -6165,8 +6442,8 @@
       refreshQuotesView();
       return;
     }
-    if (!QuoteCore.recipientComplete(aiAssistantState.quote)) {
-      aiAssistantState.quoteError = "공급받는자 성명과 전화번호를 입력해 주세요.";
+    if (!QuoteCore.recipientComplete(aiAssistantState.quote, { requireName: true })) {
+      aiAssistantState.quoteError = "공급받는자 성명을 입력해 주세요.";
       refreshQuotesView();
       return;
     }
@@ -6452,6 +6729,8 @@
       if (!operations.loadedAt && !operationsLoading) void refreshOperations({ silent: true, render: false });
     }
     if (view === "cleaningCti" && !cleaningOrderState.loaded && !cleaningOrderState.loading) void loadCleaningOrders();
+    // 첫 화면에서도 '보낼 정기 관리보고서' 숫자가 보이게 한다.
+    if (["dashboard", "periodicReports", "buildingMonthlyReports"].includes(view) && currentAuth.user && window.BringPeriodicReportUI) periodicReportView().refreshBadge();
   }
   function refreshButton(state, action) {
     const when = freshLabel(state);
@@ -7023,7 +7302,7 @@
     return `<section class="roadmap-detail">
       <header>
         <div><span>${project ? "선택한 프로젝트 · 진행 현황과 다음 일정을 확인하세요" : "프로젝트에 연결되지 않은 업무"}</span><h3>${projectName}</h3><p>${esc(project && project.goal ? project.goal : `${assignment.assigneeName} 담당 일정 ${assignment.total}건`)}</p></div>
-        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? "업무지시 평균 진행률" : "프로젝트 진행률"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions"><button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}" data-roadmap-project-base-end="${esc(assignment.endDate || today)}">기간 연장</button><button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
+        <div class="roadmap-detail-score"><b>${assignment.progress}%</b><span>${orders.length ? `전체 연결 업무 ${orders.length}건 평균 진행률` : "프로젝트 진행률 · 연결된 업무지시 없음"}</span>${project && workOrderState.admin ? `<div class="roadmap-detail-actions"><button type="button" class="mini-button" data-roadmap-project-extend="${esc(project.id)}" data-roadmap-project-base-end="${esc(assignment.endDate || today)}">기간 연장</button><button type="button" class="mini-button" data-roadmap-project-progress="${esc(project.id)}">＋ 진행사항 추가</button></div>` : ""}</div>
       </header>
       ${extensionEditor}
       <div class="roadmap-detail-grid">
@@ -8473,7 +8752,7 @@
     }));
     if (!checked.ok) { showToast(checked.error, "error"); return; }
     try {
-      const saved = await api.saveProject(checked.project);
+      const saved = await api.saveProject(Object.assign({}, checked.project, { expectedProject: previous.id ? previous : null }));
       workOrderState.projectEditing = null;
       workOrderState.projectId = saved.id;
       workOrderState.loaded = false;
@@ -8504,7 +8783,7 @@
     }));
     if (!checked.ok) return showToast(checked.error, "error");
     try {
-      const saved = await api.saveProject(checked.project);
+      const saved = await api.saveProject(Object.assign({}, checked.project, { expectedProject: previous }));
       workOrderState.projectEditing = null;
       projectRoadmapState.extensionProjectId = "";
       workOrderState.projectId = saved.id;
@@ -8766,8 +9045,8 @@
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "", readOnlyReason: "", saveBusy: false, saveError: "",
     driveScanning: false,
-    drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "",
-    driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0,
+    drivePlan: null, driveBasePlan: null, driveLeftovers: [], driveError: "", photoSelectedIds: new Set(),
+    driveClassificationLoading: false, driveClassifications: [], driveRequestGeneration: 0, pairMatching: null,
     photoReviewFilter: "all", photoReviewSelected: new Set(), photoReviewBulk: {}, photoReviewStage: "",
     photoReviewCollapsed: new Set(), photoReviewEditing: "", photoReviewAdd: null,
     drivePickerOpen: false, driveBrowserLoading: false, driveBrowserError: "", driveBrowserTruncated: false,
@@ -8787,6 +9066,7 @@
       reportState.draft.items = window.BringPhotoPairReview.syncDraftPhotos(reportState.draft.items, [], reportState.autoPhotoIds).items;
     }
     reportState.driveRequestGeneration += 1;
+    reportState.pairMatching = null; // 진행 중인 짝 찾기 결과는 버린다.
     reportState.aiRequestGeneration += 1;
     reportState.aiLoading = false;
     reportState.aiSuggestion = "";
@@ -8796,6 +9076,7 @@
     reportState.driveScanning = false;
     reportState.drivePlan = null;
     reportState.driveBasePlan = null;
+    reportState.photoSelectedIds = new Set();
     reportState.driveClassificationLoading = false;
     reportState.driveClassifications = [];
     reportState.photoReviewFilter = "all";
@@ -9130,7 +9411,7 @@
       ${plan && plan.kind === "moveIn" ? reportPairMain() : plan ? `
         ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         ${["moveIn", "common"].includes(plan.kind) ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
-        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span></header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
+        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span>${plan.kind === "common" && photoRows.some(row => reportItemKeys.has(row.itemKey) && row.phase === "unsorted" && !row.file.manualPhase) ? `<button type="button" class="secondary-button" data-report-time-split${reportState.driveClassificationLoading ? " disabled" : ""} title="구역별로 같은 날 찍은 사진을 촬영 시각 순으로 놓고, 가장 크게 벌어진 시점 앞을 작업 전·뒤를 작업 후로 추천합니다.">촬영 시각으로 전·후 나누기</button>` : ""}${plan.kind === "common" && typeof reportPhotoPlan().matchRequests === "function" && reportPhotoPlan().matchRequests(plan).length ? `<button type="button" class="secondary-button" data-report-pair-match${reportState.driveClassificationLoading || reportState.pairMatching ? " disabled" : ""} title="같은 구역의 작업 전·후 사진 중 같은 장소를 찍은 짝을 AI가 찾아 보고서에 나란히 싣습니다. 확신이 없는 사진은 짝짓지 않습니다.">${reportState.pairMatching ? "같은 장소 짝 찾는 중…" : "AI로 전·후 짝 맞추기"}</button>` : ""}</header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
           <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th>${plan.kind === "common" ? "<th>작업 중</th>" : ""}<th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -9247,6 +9528,14 @@
       const row = rows.get(id);
       return ids.has(id) && (!row || !V.resolved(row) || !row.file.reviewConfirmed);
     }).length;
+  }
+
+  function reportPhotoCounts(draft) {
+    const included = new Set((draft?.items || []).flatMap(item => ["before", "during", "after"].flatMap(phase => item[phase] || []))
+      .map(photo => String(photo.driveFileId || photo.id || "")).filter(Boolean));
+    const selected = new Set(reportState.photoSelectedIds || []);
+    for (const id of included) selected.add(id);
+    return {selected: selected.size, included: included.size, excluded: [...selected].filter(id => !included.has(id)).length};
   }
 
   function preserveReportDraft() {
@@ -9376,7 +9665,7 @@
   async function openReportDrivePicker(destination = null) {
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) return;
     preserveReportDraft();
-    if (!reportState.draft || !reportState.draft.buildingId) {
+    if (!reportState.draft || (!reportState.draft.buildingId && !reportState.draft.customerId)) {
       showToast("건물을 먼저 골라 주세요.", "error");
       const building = document.querySelector("[data-report-building]");
       if (building) building.focus();
@@ -9491,6 +9780,7 @@
     const generation = ++reportState.driveRequestGeneration;
     const previousPlan = reportState.drivePlan;
     const previousClassifications = reportState.driveClassifications;
+    const previousPhotoSelectedIds = new Set(reportState.photoSelectedIds || []);
     const destination = reportState.photoReviewAdd;
     const V = window.BringPhotoPairReview;
     const previousIds = new Set(V.flatten(previousPlan).map(row => row.id));
@@ -9508,6 +9798,7 @@
       if (generation !== reportState.driveRequestGeneration) return;
       preserveReportDraft();
       if (!result || result.ok !== true) throw new Error((result && result.error) || "선택한 사진을 분류하지 못했습니다.");
+      reportState.photoSelectedIds = new Set([...(destination ? previousPhotoSelectedIds : []), ...reportState.driveSelected.keys()]);
       reportState.driveBasePlan = result.plan.kind === "moveIn" ? V.mergeSelection(result.plan, previousPlan, !!destination) : result.plan.kind === "common" ? reportPhotoPlan().mergeCommonSelection(result.plan, previousPlan) : result.plan;
       reportState.drivePlan = reportState.driveBasePlan;
       if (destination) for (const row of V.flatten(reportState.drivePlan)) reportState.driveSelected.set(row.id, row.file);
@@ -9532,6 +9823,7 @@
       reportState.drivePlan = previousPlan;
       reportState.driveBasePlan = previousPlan;
       reportState.driveClassifications = previousClassifications;
+      reportState.photoSelectedIds = previousPhotoSelectedIds;
       reportState.driveError = error && error.message || "선택한 사진을 분류하지 못했습니다.";
     } finally {
       if (generation === reportState.driveRequestGeneration) {
@@ -9648,6 +9940,76 @@
     renderWorkReports();
   }
 
+  // 사람이 눌렀을 때만 공용부 사진을 촬영 시각 순서로 전·후 추천한다.
+  function splitReportPhotosByCaptureTime() {
+    const P = reportPhotoPlan();
+    if (!P || typeof P.splitCommonByCaptureTime !== "function" || reportState.drivePlan?.kind !== "common" || reportState.driveClassificationLoading) return;
+    preserveReportDraft();
+    const result = P.splitCommonByCaptureTime(reportState.drivePlan);
+    reportState.drivePlan = result.plan;
+    reportState.driveBasePlan = reportState.drivePlan;
+    syncReportAnalysisPhotos();
+    renderWorkReports();
+    const left = result.skipped + result.undated;
+    if (!result.photos) {
+      showToast(result.undated && !result.skipped ? "원본 촬영 시각이 있는 사진이 없어 나누지 못했습니다. 사진별로 작업 단계를 골라 주세요." : "작업 전·후 사이로 볼 만한 촬영 공백(15분 이상, 또는 다른 간격보다 뚜렷이 긴 5분 이상)을 찾지 못했습니다. 사진별로 골라 주세요.", "error");
+      return;
+    }
+    showToast(`${result.areas}개 구역 ${result.photos}장을 촬영 시각 순서로 전·후 추천했습니다.${left ? ` ${left}장은 시각 정보·간격이 부족해 그대로 두었습니다.` : ""} 사진을 확인해 주세요.`, "success");
+    // 전·후가 나뉘었으니 이어서 같은 장소끼리 짝을 찾는다.
+    void matchReportPairsWithAi();
+  }
+
+  // 작업 전·후로 나뉜 공용부 사진에서 AI가 같은 장소의 짝만 찾는다(구역마다 한 번).
+  // 단계는 바꾸지 않고 짝 표시만 남긴다. 실패해도 사진과 단계는 그대로다.
+  async function matchReportPairsWithAi() {
+    const P = reportPhotoPlan();
+    const plan = reportState.drivePlan;
+    if (!P || typeof P.matchRequests !== "function" || plan?.kind !== "common" || reportState.driveClassificationLoading || reportState.pairMatching) return;
+    const requests = P.matchRequests(plan);
+    if (!requests.length) { showToast("짝을 찾을 구역이 없습니다. 같은 구역에 작업 전·후 사진이 모두 있어야 합니다.", "error"); return; }
+    const token = {};
+    reportState.pairMatching = token;
+    renderWorkReports();
+    const pairs = [];
+    let failed = 0;
+    try {
+      // 구역을 하나씩 물으면 25장에 9분 걸렸다(2026-11-03). 세 구역씩 함께 묻는다.
+      const queue = requests.slice();
+      const askOne = async request => {
+        // 신중한 모델이 가끔 일시 오류를 내므로 한 번만 다시 묻는다(사용 한도·권한 오류는 다시 묻지 않는다).
+        let result = null;
+        for (let attempt = 0; attempt < 2 && !result; attempt += 1) {
+          try {
+            const reply = await api.classifyWorkReportPhotos({ kind: "common", fileIds: request.fileIds, mode: "match", phases: request.phases });
+            if (reply && reply.ok === true && Array.isArray(reply.pairs)) result = reply;
+          } catch (error) {
+            if (!/TEMPORARY|TIMEOUT|INVALID_RESPONSE/.test(String(error && (error.code || error.message) || ""))) break;
+          }
+          if (reportState.pairMatching !== token) return;
+        }
+        if (result) pairs.push(...result.pairs); else failed += 1;
+      };
+      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+        while (queue.length && reportState.pairMatching === token) await askOne(queue.shift());
+      }));
+      if (reportState.pairMatching !== token) return;
+      // 기다리는 사이 사람이 사진을 옮겼을 수 있으니 지금 계획에 다시 맞춰 반영한다.
+      if (reportState.drivePlan?.kind !== "common") return;
+      preserveReportDraft();
+      const matched = P.applyMatchedPairs(reportState.drivePlan, pairs);
+      reportState.drivePlan = matched.plan;
+      reportState.driveBasePlan = reportState.drivePlan;
+      syncReportAnalysisPhotos();
+      showToast(matched.paired
+        ? `AI가 같은 장소의 작업 전·후 ${matched.paired}쌍을 찾았습니다. 보고서에 나란히 실립니다.${failed ? ` ${failed}개 구역은 찾지 못했습니다.` : ""}`
+        : `같은 장소로 확신할 수 있는 짝을 찾지 못했습니다. 사진은 단계별로 실립니다.${failed ? ` (${failed}개 구역 실패)` : ""}`, matched.paired ? "success" : "error");
+    } finally {
+      if (reportState.pairMatching === token) reportState.pairMatching = null;
+      renderWorkReports();
+    }
+  }
+
   function applyReportDrivePlan() {
     const R = reportCore();
     const P = reportPhotoPlan();
@@ -9728,7 +10090,7 @@
   }
 
   function workReportAiSignature(draft) {
-    return JSON.stringify([draft.id, draft.buildingId, draft.kind, draft.workDate, draft.category, draft.area, draft.followUp, draft.items]);
+    return JSON.stringify([draft.id, draft.buildingId, draft.customerId || "", draft.kind, draft.workDate, draft.category, draft.area, draft.followUp, draft.items]);
   }
 
   async function createWorkReportAiDraft({ automatic = false } = {}) {
@@ -9774,11 +10136,14 @@
       if (latest.summary.trim()) {
         reportState.aiSuggestion = text.slice(0, 2000);
         reportState.aiSuggestionSignature = signature;
+        reportState.aiSuggestionDate = draft.workDate;
         showToast("기존 문장은 유지했습니다. 새 AI 제안을 확인한 뒤 적용할 수 있습니다.");
         return;
       }
       reportState.draft = R.normalizeReport(Object.assign({}, latest, { summary: text }));
       reportState.aiDraftAt = new Date().toISOString();
+      reportState.aiSummaryDate = { id: draft.id, date: draft.workDate };
+      reportState.aiSummaryText = text;
       showToast("AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
     } catch (error) {
       if (active()) {
@@ -9794,27 +10159,24 @@
   }
 
   function workReportBuildings(existingBuildingId = "") {
-    const choices = customerManagedBuildingChoices(existingBuildingId).map(choice => ({
-      ...(choice.building || {}), id: choice.value,
-      name: String(choice.customer?.name || choice.building?.name || choice.address || "현장").trim(),
-      internalLabel: choice.name,
-      address: choice.address,
-      roadAddress: String(choice.customer?.roadAddress || "").trim(),
-      jibunAddress: String(choice.customer?.jibunAddress || "").trim(),
-      ownerCustomerId: choice.customer?.id || choice.building?.ownerCustomerId || "",
-    }));
-    const ids = new Set(choices.map(item => item.id));
+    const choices = (store.customers || []).filter(customer => customer && /^[A-Za-z0-9_-]{1,120}$/.test(String(customer.id || "")) && !["__proto__", "prototype", "constructor"].includes(String(customer.id)) && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true)
+      .map(customer => ({id: "customer:" + customer.id, name: customer.name || customer.company || "고객", internalLabel: customerDisplayName(customer),
+        ownerCustomerId: customer.id, address: customerManagedBuildingAddress(customer, null), roadAddress: customer.roadAddress || "", jibunAddress: customer.jibunAddress || ""}));
+    // Older standalone sites remain available until they are linked to a customer.
     for (const building of store.buildings || []) {
-      if (building && !building.archivedAt && !ids.has(building.id)) {
-        choices.push(building);
-        ids.add(building.id);
-      }
+      if (building && building.id && !building.ownerCustomerId && !building.archivedAt && !building.deletedAt && building.deleted !== true) choices.push(building);
+    }
+    // Historical reports and linked orders retain their existing building.
+    const existingId = String(existingBuildingId || "");
+    if (existingId && !existingId.startsWith("customer:") && !choices.some(row => String(row.id) === existingId)) {
+      const existing = (store.buildings || []).find(row => row && String(row.id || "") === existingId);
+      choices.push(existing || {id: existingId, name: "연결 기록이 남아 있는 고객건물", archivedAt: "missing"});
     }
     return choices.sort((a, b) => String(a.internalLabel || a.name || "").localeCompare(String(b.internalLabel || b.name || ""), "ko"));
   }
 
   function workReportBuildingAddress(building) {
-    return String(building && (building.roadAddress || building.jibunAddress || building.address) || "").trim();
+    return String(building && (building.roadAddress || building.address || building.jibunAddress) || "").trim();
   }
 
   // 저장 형식은 기존 siteAddress 한 칸을 그대로 쓴다. 화면에서만 건물 주소와
@@ -9855,13 +10217,15 @@
   function reportEditor(R, draft) {
     const buildings = workReportBuildings(draft.buildingId);
     const directCustomer = !draft.buildingId && draft.customerId ? customerById(draft.customerId) : null;
-    const selectedBuilding = buildings.find(item => String(item && item.id || "") === draft.buildingId) || (directCustomer ? {name: directCustomer.name, address: directCustomer.address, ownerCustomerId: directCustomer.id} : null);
-    const linkedOrders = cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId);
+    const selectionValue = draft.buildingId || (draft.customerId ? "customer:" + draft.customerId : "");
+    const selectedBuilding = buildings.find(item => String(item && item.id || "") === selectionValue) || (directCustomer ? {name: directCustomer.name, address: customerManagedBuildingAddress(directCustomer, null), ownerCustomerId: directCustomer.id} : null);
+    const linkedOrders = draft.buildingId ? cleaningOrderState.orders.filter(item => String(item.buildingId || "") === draft.buildingId) : [];
     const selectedOrderIsKnown = linkedOrders.some(item => item.id === draft.cleaningOrderId);
     const addressParts = workReportAddressParts(draft, selectedBuilding);
     const optionalOpen = Boolean(draft.contractFrom || draft.contractTo || draft.ownerName || draft.ownerContact);
     const blockers = R.blockers(draft);
     const photoConfirmations = reportPhotoConfirmationCount(draft);
+    const photoCounts = reportPhotoCounts(draft);
     if (photoConfirmations) blockers.push({ key: "photoReview", text: `AI 추천 사진 ${photoConfirmations}장의 구역·전후를 확인해 주세요. 초안은 먼저 만들 수 있습니다.` });
     if (reportState.driveScanning || reportState.driveClassificationLoading || reportState.aiLoading) blockers.push({ key: "analysisBusy", text: "AI 분석·초안 작성을 마친 뒤 저장해 주세요." });
     const sum = R.summarizeItems(draft);
@@ -9913,16 +10277,16 @@
             <header><span class="wr-ai-card-icon">01</span><div><h4>현장과 작업</h4><p>고객을 선택하면 고객 등록 주소가 자동으로 연결됩니다.</p></div></header>
             <div class="wr-ai-form-grid">
               <label><span>작업 종류</span><select name="kind" data-report-kind>${R.KINDS.map(item => `<option value="${esc(item.key)}"${item.key === draft.kind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
-              <label><span>고객·현장 <em>필수</em></span>${draft.customerId && !draft.buildingId ? `<input type="hidden" name="buildingId" value=""><input value="${esc(directCustomer?.name || draft.buildingName)}" readonly><small>현장노트에서 선택한 고객입니다.</small>` : `<select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === draft.buildingId ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select>`}</label>
+              <label><span>고객·현장 <em>필수</em></span>${draft.customerId && !draft.buildingId && draft.updatedAt ? `<input type="hidden" name="buildingId" value=""><input value="${esc(directCustomer?.name || draft.buildingName)}" readonly><small>저장된 보고서의 고객입니다.</small>` : `<select name="buildingId" data-report-building required><option value="">고르세요</option>${buildings.map(item => `<option value="${esc(String(item.id))}"${String(item.id) === selectionValue ? " selected" : ""}>${esc(item.internalLabel || item.name || workReportBuildingAddress(item) || item.id)}</option>`).join("")}</select>`}</label>
               <label><span>청소 요청 연결 <small>선택 사항</small></span><select name="cleaningOrderId" data-report-cleaning-order><option value="">연결 안 함</option>${linkedOrders.map(item => `<option value="${esc(item.id)}"${item.id === draft.cleaningOrderId ? " selected" : ""}>${esc(item.title || "청소 요청")} · ${esc(item.desiredDate || "일정 미정")}</option>`).join("")}${!selectedOrderIsKnown && draft.cleaningOrderId ? `<option value="${esc(draft.cleaningOrderId)}" selected>기존 연결 유지</option>` : ""}</select></label>
             </div>
             <section class="wr-ai-location">
               <header><b>현장 위치</b><span>↗ 고객·건물 관리에서 자동입력</span></header>
               <div class="wr-ai-location-grid">
-                <label><span>현장 주소</span><div class="wr-ai-address-input"><i aria-hidden="true">⌖</i><input type="text" name="siteAddress" maxlength="300" value="${esc(addressParts.base)}" placeholder="건물을 선택하면 자동으로 입력됩니다" readonly></div></label>
+                <label><span>현장 주소</span><div class="wr-ai-address-input"><i aria-hidden="true">⌖</i><input type="text" name="siteAddress" maxlength="300" value="${esc(addressParts.base)}" placeholder="고객을 선택하면 등록 주소가 입력됩니다" readonly></div></label>
                 <label><span>상세주소 <em>직접 입력</em></span><input type="text" name="siteAddressDetail" data-report-site-detail maxlength="60" value="${esc(addressParts.detail)}" placeholder="예: 301호"></label>
               </div>
-              <p>ⓘ 건물을 바꾸면 현장 주소만 자동 변경되며, 상세주소는 비워 둡니다.</p>
+              <p>${selectionValue && !addressParts.base ? "ⓘ 고객·건물 관리에서 주소를 등록해 주세요. 주소가 없으면 고객 알림 발송이 제한됩니다." : "ⓘ 고객을 바꾸면 현장 주소가 자동 변경되며, 상세주소는 비워 둡니다."}</p>
             </section>
             <div class="wr-ai-section-divider"></div>
             <header class="wr-ai-subheading"><span class="wr-ai-card-icon">02</span><div><h4>작업 세부 정보</h4><p>일정과 인원, 작업 범위를 입력합니다.</p></div></header>
@@ -9985,6 +10349,7 @@
             <header><div><span>FINAL CHECK</span><h4>작업 항목 완료율</h4></div><strong>${sum.progress}%</strong></header>
             <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
             <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${["moveIn", "common"].includes(draft.kind) ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
+            <p data-report-photo-counts aria-live="polite">선택 ${photoCounts.selected}장 · 보고서 포함 ${photoCounts.included}장 · 빠진 사진 ${photoCounts.excluded}장${photoCounts.excluded ? " — 분류하거나 제외 여부를 확인해 주세요." : ""}</p>
             ${blockers.length
               ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
               : `<div class="wr-ai-ready">✓ 보고서를 저장할 준비가 됐습니다.</div>`}
@@ -10008,7 +10373,9 @@
     if (!R || !form) return reportState.draft;
     const raw = Object.fromEntries(new FormData(form).entries());
     const previous = R.normalizeReport(reportState.draft);
-    const building = workReportBuildings(raw.buildingId).find(item => String(item.id) === String(raw.buildingId || ""));
+    const selection = String(raw.buildingId || (form.elements.buildingId?.type === "hidden" && previous.customerId ? "customer:" + previous.customerId : ""));
+    const building = workReportBuildings(selection).find(item => String(item.id) === selection);
+    const customerId = selection.startsWith("customer:") ? selection.slice("customer:".length) : "";
     const baseAddress = String(raw.siteAddress || workReportBuildingAddress(building) || "").trim();
     const detailAddress = String(raw.siteAddressDetail || "").trim();
     const items = previous.items.map(item => {
@@ -10019,9 +10386,24 @@
         note: noteEl ? noteEl.value : item.note,
       });
     });
+    // 작업일을 고치면 초안 본문 속 옛 날짜도 함께 고친다. 화면 글상자도 바꿔야 다음 읽기에서 되돌아가지 않는다.
+    // AI 가 쓴 문장은 그때 넘긴 작업일을 기준으로 한다 — 사진 반영 중 초안의 작업일이 먼저
+    // 바뀌어도(실제 CRM 테스트에서 재현) 본문 날짜를 놓치지 않는다.
+    const aiDate = reportState.aiSummaryDate && reportState.aiSummaryDate.id === previous.id ? reportState.aiSummaryDate.date : "";
+    const writtenFor = aiDate || previous.workDate;
+    if (typeof R.retargetDate === "function" && writtenFor && raw.workDate && raw.workDate !== writtenFor) {
+      const moved = R.retargetDate(String(raw.summary || ""), writtenFor, String(raw.workDate));
+      if (moved !== String(raw.summary || "")) {
+        if (reportState.aiSummaryText && reportState.aiSummaryText === String(raw.summary || "")) reportState.aiSummaryText = moved;
+        raw.summary = moved;
+        if (form.elements.summary) form.elements.summary.value = moved;
+      }
+      if (aiDate) reportState.aiSummaryDate = { id: previous.id, date: String(raw.workDate) };
+    }
     return R.normalizeReport(Object.assign({}, previous, {
       kind: String(raw.kind || previous.kind),
-      buildingId: String(raw.buildingId || ""),
+      buildingId: customerId ? "" : selection,
+      customerId: customerId || undefined,
       buildingName: building ? String(building.name || building.address || "") : previous.buildingName,
       siteAddress: [baseAddress, detailAddress].filter(Boolean).join(" ").slice(0, 300),
       workDate: String(raw.workDate || ""),
@@ -10059,6 +10441,27 @@
     } catch (_) { /* Keep the saved PDF; an uncertain send must not be retried automatically. */ }
   }
 
+  async function offerWorkReportDeliveryResult(record, owner, status, messageId, generation, active) {
+    if (!active() || currentView !== "workReports") return;
+    const requested = status === "requested";
+    const message = requested
+      ? "알림톡 발송 요청이 접수됐습니다. 고객에게 전달됐는지는 확인이 필요합니다."
+      : "발송 접수 여부가 불확실합니다. 중복 발송하지 말고 고객 알림과 업체 기록을 확인해 주세요.";
+    const state = customerAlimTalkState;
+    state.category = "workReport";
+    state.selectedCustomerIds = [String(owner.id)];
+    state.savedDocumentId = record.id;
+    state.workReportId = "";
+    state.receipt = {generation, messageId: String(messageId || ""), status: requested ? "requested" : "unknown",
+      label: record.title, kind: "workReport", documentId: record.id, updatedAt: record.updatedAt, customerId: owner.id};
+    state.result = message;
+    showToast(message, requested ? "success" : "error");
+    const open = await requestConfirmation({title: requested ? "알림톡 발송 요청 접수" : "알림톡 접수 여부 확인 필요",
+      description: message, target: record.title, message: "고객 알림의 발송 이력에서 상태를 확인할 수 있습니다.",
+      confirmLabel: "고객 알림에서 확인", cancelLabel: "닫기", tone: requested ? "success" : "warning"});
+    if (open && active() && currentView === "workReports") openCustomerAlimTalk();
+  }
+
   async function saveWorkReportFromForm({ pdfOnly = false } = {}) {
     const R = reportCore();
     if (!R || reportState.saveBusy || reportState.busyKey || !reportState.canWork || reportState.readOnlyReason) return;
@@ -10077,12 +10480,12 @@
     renderWorkReports();
     let reportSaved = false, pdfSaved = false, archivedId = "";
     try {
-      if (checked.report.buildingId.startsWith("customer:")) {
-        const building = await resolveCustomerManagedBuildingSelection(checked.report.buildingId);
-        if (!active()) return;
-        if (!building) throw new Error("고객 등록 주소를 확인한 뒤 다시 저장해 주세요.");
-        checked.report.buildingId = building.id;
-        reportState.draft = checked.report;
+      const counts = reportPhotoCounts(checked.report);
+      if (counts.excluded) {
+        const accept = await requestConfirmation({title: "보고서에 빠진 사진이 있습니다", description: `선택 ${counts.selected}장 중 ${counts.included}장이 포함되고 ${counts.excluded}장이 빠집니다.`,
+          target: "빠진 사진은 이번 보고서와 PDF에 포함되지 않습니다.", message: "사진을 더 분류하려면 돌아가기를 누르고, 빠진 사진을 제외하려면 제외하고 저장을 누르세요.",
+          warning: "원본 사진은 삭제되지 않습니다.", confirmLabel: "제외하고 저장", cancelLabel: "분류 계속하기"});
+        if (!accept || !active() || currentView !== "workReports") return;
       }
       if (pdfOnly) {
         const result = await api.exportWorkReport({report: checked.report, copyType: "owner", company: store.settings?.quoteCompany || {}, secrets: reportSecrets(), strictPhotos: true});
@@ -10122,19 +10525,29 @@
       const accepted = await requestConfirmation({title: "저장되었습니다.", description: "고객 알림을 보내시겠습니까?",
         target: `${building?.name || saved.buildingName} · ${owner.name || owner.company || "건물주"}\n${customerPhoneText(owner.phone)}`,
         message: "브링케어 카카오 알림톡으로 저장한 보고서 보기 링크를 보냅니다. 링크는 7일 뒤 만료됩니다.",
-        warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success"});
-      if (!accepted || !active()) return;
+        warning: "아니요를 누르면 CRM·PDF 저장만 유지하고 알림톡은 보내지 않습니다.", confirmLabel: "예", cancelLabel: "아니요", tone: "success",
+        // 방금 한 저장이 동기화로 되돌아오면서 이 창이 매번 취소됐다(2026-11-02·03 재현). 발송은
+        // 저장본 ID·수정시각·지문으로 메인에서 다시 검증하므로 다른 변경이 들어와도 안전하다.
+        remoteSafe: true});
+      if (!accepted || !active() || currentView !== "workReports") return;
       const result = await api.sendSavedCustomerDocument({kind: "workReport", documentId: archived.record.id, customerId: owner.id,
         updatedAt: archived.record.updatedAt, sha256: doc.sha256});
       if (!active()) return;
       if (!result?.ok) throw new Error("알림톡 발송 결과를 확인하지 못했습니다.");
       if (result.record) rememberWorkReportPdf(result.record);
-      showToast("알림톡 발송 요청을 접수했습니다. 고객 알림에서 결과를 확인해 주세요.", "success");
+      await offerWorkReportDeliveryResult(result.record || archived.record, owner, result.status, result.messageId, generation, active);
     } catch (error) {
       if (!active()) return;
       reportState.saveError = `${pdfSaved ? "CRM·PDF 저장은 완료됐습니다. " : reportSaved ? "보고서는 CRM에 저장됐습니다. PDF 보관을 다시 시도해 주세요. " : ""}${error?.message || "처리하지 못했습니다."}`;
       showToast(reportState.saveError, "error");
-      if (pdfSaved) await refreshWorkReportPdfRecord(archivedId, generation);
+      if (pdfSaved) {
+        await refreshWorkReportPdfRecord(archivedId, generation);
+        const record = (store.buildingDocuments || []).find(row => row.id === archivedId);
+        const owner = record && customerById(record.savedCustomerDocument?.customerId);
+        if (active() && owner && record?.workReportDelivery?.status === "unknown") {
+          await offerWorkReportDeliveryResult(record, owner, "unknown", record.workReportDelivery.messageId, generation, active);
+        }
+      }
     } finally {
       if (reportState.saveToken === saveToken) {
         reportState.saveBusy = false;
@@ -10149,9 +10562,11 @@
     if (!R || reportState.busyKey) return;
     const draft = readReportForm();
     if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
-    if (!draft.buildingId) return showToast("건물을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
+    if (!draft.buildingId && !draft.customerId) return showToast("고객을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
+    const rootFolderId = buildingDocsRootFolderId();
+    if (!rootFolderId) return showToast("문서관리 → 건물 문서함에서 회사 Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
     const picked = await api.pickBuildingDocuments();
     if (!picked || !picked.ok || !Array.isArray(picked.files) || !picked.files.length) return;
     reportState.busyKey = `${itemKey}:${phase}`;
@@ -10161,6 +10576,7 @@
     try {
       for (const file of picked.files.slice(0, 4)) {
         const uploaded = await api.uploadWorkReportPhoto({
+          rootFolderId,
           reportId: draft.id,
           itemKey,
           itemLabel: item.label,
@@ -10168,7 +10584,7 @@
           buildingName: draft.buildingName,
           kindLabel: R.kindLabel(draft.kind),
           workDate: draft.workDate,
-          filePath: file.path,
+          filePath: file.filePath,
           mimeType: file.mimeType,
         });
         if (!uploaded || !uploaded.ok) throw new Error((uploaded && uploaded.error) || "Drive 에 올리지 못했습니다.");
@@ -11343,15 +11759,24 @@
   }
 
   function relationshipContractsHtml(customer, contracts = contractCustomerContracts(customer)) {
-    if (!contracts.length) return "";
-    return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건</b>${contracts.map(contract => {
-      const dates = ContractSchedule.contractDates(contract);
-      const monthlySchedule = ContractSchedule.normalizeCleaningSchedule(contract.cleaningSchedule)?.mode === "twice_monthly";
+    const Summary = window.BringContractCustomerSummary;
+    if (!contracts.length) return `<section class="relationship-contracts"><small>${esc(Summary.relationshipReason(customer, 0, customerSalesProgress(customer).filterIds.includes("paid_management")))}</small></section>`;
+    const active = contracts.filter(contract => contract.status !== "종료");
+    const ended = contracts.filter(contract => contract.status === "종료");
+    const renderContract = contract => {
       const building = buildingById(contract.buildingId);
       const mode = contractCustomerMode(contract);
       const label = mode === "single" ? "단건 계약" : mode === "recurring" ? "정기 계약" : "구분 확인 필요";
-      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && building.name, contract.status, ContractSchedule.scheduleLabel(contract)].filter(Boolean).join(" · "))}</span>${dates.length ? `<small>${monthlySchedule ? "첫 작업 월 미리보기" : `업무일정 ${dates.length}회`} · ${esc(dates.join(" · "))}</small>` : ""}</div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
-    }).join("")}</section>`;
+      const today = todayKey(), month = today.slice(0, 7);
+      const calendar = Summary.calendarSummary(contract, store, month);
+      const payment = Summary.paymentSummary(contract, month, today);
+      const statusLabels = {planned: "예정", in_progress: "진행 중", completed: "완료", cancelled: "취소"};
+      const dates = calendar.items.slice(0, 5).map(item => `${item.date} ${item.source === "contract" ? (item.status === "completed" ? "계약 종료 기준" : "예정 · 계약 기준") : statusLabels[item.status] || "상태 확인 필요"}`);
+      const datesLabel = dates.length ? dates.join(" · ") + (calendar.items.length > 5 ? ` 외 ${calendar.items.length - 5}건` : "") : "연결된 일정 없음";
+      const paymentLabel = payment.status === "missing" ? "입금 예정일 미등록" : payment.status === "none" ? "이번 달 입금 일정 없음" : `${payment.date} ${{paid: "입금 완료(등록 상태)", overdue: "입금 예정 · 확인 필요", scheduled: "입금 예정"}[payment.status] || "상태 확인 필요"}`;
+      return `<div class="relationship-contract-row"><div><strong>${esc(contract.name || "계약명 미입력")} <em class="contract-customer-mode-badge">${label}</em></strong><span>${esc([building && (building.name || building.roadAddress || building.address), contract.status || "상태 확인 필요"].filter(Boolean).join(" · "))}</span><small>계약 주기 · ${esc(ContractSchedule.scheduleLabel(contract) || "별도 주기 없음 또는 확인 필요")}</small><small>업무일정 · ${esc(month)} · ${esc(datesLabel)}</small>${calendar.movedToOtherBuilding ? `<small>다른 건물이나 계약으로 변경된 연결 일정이 있습니다. 캘린더에서 확인해 주세요.</small>` : ""}<small>입금일정 · ${esc(paymentLabel)}</small></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">계약 상세</button>` : ""}</div>`;
+    };
+    return `<section class="relationship-contracts" aria-label="연결 계약"><b>등록 계약 ${contracts.length}건 · 종료 ${ended.length}건 포함</b>${active.map(renderContract).join("")}${ended.length ? `<details class="relationship-ended"><summary>종료 계약 ${ended.length}건</summary>${ended.map(renderContract).join("")}</details>` : ""}</section>`;
   }
 
   function contractCustomerMode(contract) {
@@ -11371,7 +11796,7 @@
       .sort((a, b) => customerDisplayName(a).localeCompare(customerDisplayName(b), "ko"));
     const contractCount = customers.reduce((sum, customer) => sum + contractCustomerContracts(customer).length, 0);
     const modeLabel = modes.find(([mode]) => mode === contractCustomerModeFilter)?.[1] || "전체";
-    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 등록 계약과 고객 상세정보를 확인하세요.</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
+    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 종료 계약 포함</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
       <nav class="contract-payment-mode-tabs contract-customer-mode-tabs" aria-label="계약 고객 계약 구분">${modes.map(([mode, label]) => `<button type="button" class="${contractCustomerModeFilter === mode ? "active" : ""}" data-contract-customer-mode="${mode}" aria-pressed="${contractCustomerModeFilter === mode}">${label} <span>${allContracts.filter(contract => mode === "all" || contractCustomerMode(contract) === mode).length}건</span></button>`).join("")}</nav>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
         return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button></footer></article>`;
@@ -11924,7 +12349,7 @@
 
   // 대표OS 연결 상태. 비밀키는 절대 여기 담기지 않는다 — 화면은 설정 여부와
   // 끝 네 자리만 안다(main.js 의 loadOwnerOsSettings 가 그것만 넘긴다).
-  let ownerOsState = { view: null, loaded: false, loading: false, saving: false, sending: false, error: "", notice: "" };
+  let ownerOsState = { view: null, loaded: false, loading: false, loadError: "", saving: false, sending: false, error: "", notice: "" };
 
   // 설정 화면과 월간 경영보고 화면이 같은 함수로 보낸다. 두 곳이 서로 다른
   // 내용을 보내게 되는 상황을 만들지 않으려는 것이다.
@@ -11956,13 +12381,15 @@
   async function loadOwnerOsSettingsView() {
     if (ownerOsState.loading) return;
     ownerOsState.loading = true;
+    ownerOsState.loadError = "";
     try {
       ownerOsState.view = await api.loadOwnerOsSettings();
-      ownerOsState.loaded = true;
       ownerOsState.error = "";
-    } catch (error) {
-      ownerOsState.error = error && error.message || "대표OS 연결 설정을 읽지 못했습니다.";
+    } catch (_error) {
+      ownerOsState.view = null;
+      ownerOsState.loadError = "대표OS 연결 설정을 읽지 못했습니다. 다시 확인해 주세요.";
     } finally {
+      ownerOsState.loaded = true;
       ownerOsState.loading = false;
       // 이 값은 설정 화면과 월간 경영보고 화면 양쪽이 쓴다. 열려 있는 쪽을 다시 그린다.
       if (currentView === "settings") renderSettings();
@@ -11974,10 +12401,12 @@
     if (!canAdministerSecurity()) {
       return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p>매달 현장 운영 실적을 대표OS 로 올립니다.</p><div class="info-box">대표OS 연결은 관리자만 설정할 수 있습니다.</div></section>`;
     }
+    if (ownerOsState.loading || !ownerOsState.loaded) return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p role="status">설정을 확인하고 있습니다…</p></section>`;
+    if (ownerOsState.loadError) return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p role="alert">${esc(ownerOsState.loadError)}</p><button type="button" class="secondary-button" data-action="owner-os-settings-retry">다시 확인</button></section>`;
     const view = ownerOsState.view;
     const configured = Boolean(view && view.configured);
     const status = configured
-      ? `<div class="info-box"><b>연결됨</b><br>${esc(view.endpoint)}<br>비밀키 ${esc(view.secretHint)}</div>`
+      ? `<div class="info-box"><b>이 PC에 설정 저장됨</b><br>실제 연결 상태는 별도 확인이 필요합니다.<br>${esc(view.endpoint)}<br>비밀키 ${esc(view.secretHint)}</div>`
       : `<div class="info-box">아직 연결하지 않았습니다. 대표OS 운영 주소와 비밀키를 넣어 주세요.</div>`;
     return `<section class="setting-card"><h3>대표OS 보고 연결</h3><p>매달 현장 운영 실적(매출·원가·이익·영업)을 대표OS 로 올립니다. 총평은 사람이 확인해야 평가 근거로 쓰입니다.</p>
       ${status}
@@ -12602,10 +13031,30 @@
   function renderSettings() {
     const user = currentAuth.user || {};
     const canRestore = (!currentAuth.required && !currentAuth.enforceRoles) || user.role === "admin";
+    const identity = String(user.uid || user.email || "local");
+    const oldGrid = main.querySelector(".settings-grid");
+    const retainForms = oldGrid && oldGrid.dataset.settingsIdentity === identity
+      ? [...oldGrid.querySelectorAll('form[data-settings-dirty="true"]')].filter(form => form.id !== "ownerOsForm" || canAdministerSecurity())
+      : [];
+    const focused = retainForms.some(form => form.contains(document.activeElement)) ? document.activeElement : null;
+    const selection = focused && typeof focused.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection] : null;
     main.innerHTML = `<div class="settings-grid">
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
       <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section>${telegramCard()}${ownerOsCard()}</div>
     </div>`;
+    main.querySelector(".settings-grid").dataset.settingsIdentity = identity;
+    for (const form of retainForms) {
+      const replacement = main.querySelector(`#${form.id}`);
+      if (!replacement) continue;
+      const button = form.querySelector('button[type="submit"]');
+      const nextButton = replacement.querySelector('button[type="submit"]');
+      if (button && nextButton) { button.disabled = nextButton.disabled; button.textContent = nextButton.textContent; }
+      replacement.replaceWith(form);
+    }
+    if (focused && focused.isConnected) {
+      focused.focus({ preventScroll: true });
+      if (selection) focused.setSelectionRange(...selection);
+    }
     if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
     if (!telegramState.loading && canAdministerSecurity() && (!telegramState.loaded || Date.now() - telegramState.checkedAt > 60000)) void loadTelegramServerStatus();
   }
@@ -12740,6 +13189,7 @@
       ${legacyAddressNotice}
       ${field("도로명 주소", "roadAddress", customer.roadAddress, "text", "예: 강원특별자치도 원주시 중앙로 1", "wide")}
       ${field("지번 주소", "jibunAddress", customer.jibunAddress, "text", "예: 강원특별자치도 원주시 중앙동 1-1", "wide")}
+      <div class="info-box wide">고객 등록 주소는 그대로 보관합니다. 연결된 건물의 계약·일정·새 보고서는 선택한 건물의 현장 주소를 사용합니다. 현장 주소 정정은 건물의 임대·공실 정보 수정에서 별도로 적용하세요.</div>
       ${selectField("고객 유형", "type", ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"], selectedCustomerType)}
       <label class="field" data-customer-custom-type ${selectedCustomerType === "직접 입력" ? "" : "hidden"}><span>고객 유형 직접 입력 *</span><input name="customType" value="${attr(customCustomerType)}" maxlength="40" placeholder="예: 상가 임차인, 관리업체"></label>
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
@@ -12754,6 +13204,9 @@
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
+    const form = modalContent.querySelector("#customerForm");
+    form.customerEditBase = editing ? structuredClone(customer) : null;
+    form.customerEditValues = Object.fromEntries(new FormData(form).entries());
     openModal();
     setTimeout(() => document.querySelector(`#customerForm [name="name"]`)?.focus(), 30);
   }
@@ -12820,7 +13273,8 @@
         ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
       </div></section>`;
     const returnView = ["customers", "vacancies", "payments"].includes(currentView) ? currentView : "buildings";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "임대·공실 정보 수정" : "새 건물 등록"}</h2><p>${editing ? `${esc(building.name || "건물")}의 임대 조건과 공실 정보를 수정합니다.` : "건물 고유 ID를 기준으로 고객·계약·민원·입금 자료가 연결됩니다."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">${buildingIdentityEditor}
+    const buildingAddressEditor = editing ? `<section class="building-form-section"><header><div><h3>현장 주소 확인·정정</h3><p>건물 ID와 기존 문서는 유지하고, 적용을 선택한 경우에만 현장 주소를 정정합니다.</p></div></header><div class="form-grid building-form-section-body"><label class="wide"><input type="checkbox" name="applySiteAddress" value="true"> 현장 주소 정정 적용 · 새 계약·일정·보고서에 반영</label>${field("현장 도로명 주소", "roadAddress", building.roadAddress, "text", "도로명 주소", "wide")}${field("현장 지번 주소", "jibunAddress", building.jibunAddress, "text", "지번 주소", "wide")}</div></section>` : "";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "임대·공실 정보 수정" : "새 건물 등록"}</h2><p>${editing ? `${esc(building.name || "건물")}의 임대 조건과 공실 정보를 수정합니다.` : "건물 고유 ID를 기준으로 고객·계약·민원·입금 자료가 연결됩니다."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">${buildingIdentityEditor}${buildingAddressEditor}
       <section class="building-form-section building-rental-form-section"><header><div><h3>임대·공실 정보</h3><p>대표 임대 조건과 현재 확인된 공실을 입력하세요.</p></div><span>금액은 원 단위</span></header><div class="form-grid building-form-section-body">
         ${buildingNumberField("보증금", "rentDeposit", building.rentDeposit, "원", "예: 3000000")}
         ${buildingNumberField("월세", "monthlyRent", building.monthlyRent, "원", "예: 330000")}
@@ -13000,8 +13454,13 @@
 
   function contractBuildingField(customerId, buildingId) {
     const customer = customerById(customerId);
-    const building = buildingById(buildingId) || customerBuildings(customer).find(item => !item.archivedAt);
-    return `<label class="field contract-building-field"><span>고객 등록 주소</span><input type="hidden" name="buildingId" value="${attr(building?.id || "")}"><input data-contract-customer-address value="${attr(customerManagedBuildingAddress(customer, building))}" placeholder="고객을 선택하면 등록 주소가 표시됩니다" readonly><small>선택한 고객의 등록 주소를 사용합니다.</small></label>`;
+    const buildings = customerBuildings(customer).filter(item => !item.archivedAt);
+    const current = buildingById(buildingId);
+    if (current && !buildings.some(item => item.id === current.id)) buildings.push(current);
+    const selectedId = buildings.some(item => item.id === buildingId) ? buildingId : buildings.length === 1 ? buildings[0].id : "";
+    const selected = buildings.find(item => item.id === selectedId);
+    const help = buildings.length > 1 ? "계약할 건물을 직접 선택하세요. 선택한 건물의 주소를 사용합니다." : buildings.length ? "연결된 건물의 현장 주소를 사용합니다." : "연결 건물이 없으면 고객 등록 주소로 현장을 연결합니다. 기존 주소는 자동 변경하지 않습니다.";
+    return `<label class="field contract-building-field"><span>계약 현장 · 건물</span><select name="buildingId" data-contract-building-select ${buildings.length > 1 ? "required" : ""}><option value="">${buildings.length > 1 ? "계약할 건물 선택" : buildings.length ? "건물 선택" : "고객 등록 주소 사용 · 건물 미연결"}</option>${buildings.map(item => `<option value="${attr(item.id)}" ${item.id === selectedId ? "selected" : ""}>${esc([item.name, customerManagedBuildingAddress(customer, item)].filter(Boolean).join(" · ") || "주소 미등록")}${item.archivedAt ? " · 기존 보관 건물" : ""}</option>`).join("")}</select><input data-contract-customer-address value="${attr(selectedId ? customerManagedBuildingAddress(customer, selected) : buildings.length ? "" : customerManagedBuildingAddress(customer, null))}" placeholder="건물을 선택하면 현장 주소가 표시됩니다" readonly><small>${esc(help)}</small></label>`;
   }
 
   function refreshContractTypeFields(form) {
@@ -13016,11 +13475,22 @@
   function refreshContractBuildings(form) {
     if (!form) return "";
     const customer = customerById(form.elements.customerId?.value);
-    const building = customerBuildings(customer).find(item => !item.archivedAt);
-    if (form.elements.buildingId) form.elements.buildingId.value = building?.id || "";
+    const buildings = customerBuildings(customer).filter(item => !item.archivedAt);
+    const selectedId = buildings.length === 1 ? buildings[0].id : "";
+    const field = form.querySelector(".contract-building-field");
+    if (field) field.outerHTML = contractBuildingField(customer?.id || "", selectedId);
+    else if (form.elements.buildingId) form.elements.buildingId.value = selectedId;
+    refreshContractBuildingAddress(form);
+    return selectedId;
+  }
+
+  function refreshContractBuildingAddress(form) {
+    if (!form) return;
+    const customer = customerById(form.elements.customerId?.value);
+    const building = buildingById(form.elements.buildingId?.value);
     const address = form.querySelector("[data-contract-customer-address]");
-    if (address) address.value = customerManagedBuildingAddress(customer, building);
-    return building?.id || "";
+    if (address) address.value = building ? customerManagedBuildingAddress(customer, building)
+      : customerBuildings(customer).some(item => !item.archivedAt) ? "" : customerManagedBuildingAddress(customer, null);
   }
 
   function refreshContractPaymentFields(form, resetPaymentDate = false) {
@@ -13882,7 +14352,7 @@
     drawer.inert = false;
     confirmationContent.innerHTML = "";
     let remoteConflict = false;
-    if (confirmed && pendingRemoteStore) {
+    if (confirmed && pendingRemoteStore && !pending.remoteSafe) {
       if (!saveInFlight) {
         const remote = pendingRemoteStore;
         pendingRemoteStore = null;
@@ -13918,7 +14388,7 @@
     modal.inert = true;
     drawer.inert = true;
     return new Promise(resolve => {
-      activeConfirmation = { resolve, previousFocus };
+      activeConfirmation = { resolve, previousFocus, remoteSafe: config.remoteSafe === true };
       setTimeout(() => confirmationContent.querySelector('[data-confirm-choice="confirm"]')?.focus(), 20);
     });
   }
@@ -14035,23 +14505,35 @@
     const raw = Object.fromEntries(new FormData(form).entries());
     const id = form.dataset.customerId;
     const existing = customerById(id);
+    if (id && !existing) throw new Error("고객이 삭제되었거나 변경되었습니다. 최신 내용을 확인해 주세요.");
     const customer = existing || Core.createCustomer({ owner: store.settings.owner || "김현진" });
+    const opening = form.customerEditBase || existing;
+    const initial = form.customerEditValues;
+    const changed = name => !existing || !initial || String(raw[name] ?? "") !== String(initial[name] ?? "");
     const roadAddress = String(raw.roadAddress || "").trim().slice(0, 500);
     const jibunAddress = String(raw.jibunAddress || "").trim().slice(0, 500);
-    const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
-      ? String(existing.address || "").trim().slice(0, 500)
+    const legacyAddress = opening && !String(opening.roadAddress || "").trim() && !String(opening.jibunAddress || "").trim()
+      ? String(opening.address || "").trim().slice(0, 500)
       : "";
     const address = roadAddress || jibunAddress || legacyAddress;
     const customerType = raw.type === "직접 입력" ? String(raw.customType || "").trim().slice(0, 40) : raw.type;
-    Object.assign(customer, {
+    const values = {
       name: raw.name.trim(), nickname: Core.normalizeCustomerNickname(raw.nickname), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: customerType,
       address, roadAddress, jibunAddress,
       owner: raw.owner, source: raw.source, priority: raw.priority, expectedValue: Core.money(raw.expectedValue),
       interestServices: raw.interestServices.split(",").map(item => item.trim()).filter(Boolean), tags: raw.tags.split(",").map(item => item.trim()).filter(Boolean),
       currentIssue: raw.currentIssue.trim(), lastContactAt: raw.lastContactAt ? new Date(raw.lastContactAt).toISOString() : "",
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
-      notes: raw.notes.trim(), updatedAt: new Date().toISOString()
-    });
+      notes: raw.notes.trim()
+    };
+    const fields = [];
+    for (const [key, value] of Object.entries(values)) {
+      const modified = key === "address" ? changed("roadAddress") || changed("jibunAddress")
+        : key === "type" ? changed("type") || changed("customType") : changed(key);
+      if (modified) { customer[key] = value; fields.push(key); }
+    }
+    customer.updatedAt = new Date().toISOString();
+    form.customerEdit = existing && form.customerEditBase ? { id, base: form.customerEditBase, fields } : null;
     if (!existing) store.customers.push(customer);
     return customer;
   }
@@ -14239,6 +14721,24 @@
 
   document.addEventListener("click", async event => {
     if (currentView === "customerAlimTalk" && customerAlimTalkState.busy && event.target.closest("[data-alimtalk-category], [data-alimtalk-clear], [data-alimtalk-open-quote], [data-alimtalk-open-monthly], [data-alimtalk-send], [data-alimtalk-preview], [data-alimtalk-status]")) return;
+    const historyStatus = event.target.closest("[data-alimtalk-history-status]");
+    if (historyStatus && currentView === "customerAlimTalk") {
+      if (customerAlimTalkState.busy || !canAdministerSecurity()) return;
+      const messageId = String(historyStatus.dataset.alimtalkHistoryStatus || "");
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(messageId)) return;
+      const generation = authGeneration;
+      customerAlimTalkState.busy = true;
+      renderCustomerAlimTalk();
+      try {
+        const result = await api.readCustomerDocumentDelivery({messageId});
+        if (generation !== authGeneration) return;
+        if (!result?.ok || !["requested", "delivered", "failed", "unknown"].includes(result.status)) throw new Error("전달 상태를 확인하지 못했습니다. 재발송하지 말고 다시 확인해 주세요.");
+        customerDocumentDeliveryStatus.set(messageId, {generation, status: result.status});
+        showToast(result.status === "delivered" ? "전달 완료를 확인했습니다. 읽음 여부는 별도입니다." : result.status === "failed" ? "전달 실패를 확인했습니다." : "전달 상태를 확인했습니다. 결과가 불확실하면 재발송하지 마세요.");
+      } catch (error) { if (generation === authGeneration) showToast(error.message || "전달 상태를 확인하지 못했습니다.", "error"); }
+      finally { customerAlimTalkState.busy = false; if (generation === authGeneration && currentView === "customerAlimTalk") renderCustomerAlimTalk(); }
+      return;
+    }
     if (event.target.closest("[data-alimtalk-status]") && currentView === "customerAlimTalk") { void refreshCustomerAlimTalkDelivery(); return; }
     if (event.target.closest("[data-alimtalk-preview]") && currentView === "customerAlimTalk") {
       await previewCustomerDocument();
@@ -14989,6 +15489,8 @@
       await saveWeeklyReport();
       return;
     }
+    if (event.target.closest("[data-report-time-split]")) { splitReportPhotosByCaptureTime(); return; }
+    if (event.target.closest("[data-report-pair-match]")) { await matchReportPairsWithAi(); return; }
     if (event.target.closest("[data-report-drive-connect]")) { await connectReportDrive(); return; }
     if (event.target.closest("[data-report-drive-open]")) { await openReportDrivePicker(); return; }
     if (event.target.closest("[data-report-drive-close]")) {
@@ -15057,6 +15559,8 @@
         renderWorkReports(); return;
       }
       reportState.draft.summary = reportState.aiSuggestion;
+      reportState.aiSummaryDate = { id: reportState.draft.id, date: reportState.aiSuggestionDate || reportState.draft.workDate };
+      reportState.aiSummaryText = reportState.draft.summary;
       reportState.aiSuggestion = "";
       reportState.aiDraftAt = new Date().toISOString();
       renderWorkReports(); return;
@@ -15848,6 +16352,10 @@
       catch { showToast("초안을 복사하지 못했습니다.", "error"); }
       return;
     }
+    const quoteHistoryPreview = event.target.closest("[data-quote-history-preview]");
+    if (quoteHistoryPreview) { await openQuoteHistory(quoteHistoryPreview.dataset.quoteHistoryPreview, false); return; }
+    const quoteHistoryLoad = event.target.closest("[data-quote-history-load]");
+    if (quoteHistoryLoad) { await openQuoteHistory(quoteHistoryLoad.dataset.quoteHistoryLoad, true); return; }
     const aiQuoteExample = event.target.closest("[data-ai-quote-example]");
     if (aiQuoteExample) {
       aiAssistantState.quoteContent = aiQuoteExample.dataset.aiQuoteExample || "";
@@ -15858,10 +16366,11 @@
     }
     const aiQuoteGenerate = event.target.closest("[data-ai-quote-generate]");
     if (aiQuoteGenerate) { await requestAiQuoteDraft(); return; }
+    const quoteAction = event.target.closest("[data-quote-new], [data-quote-detach]");
+    if (quoteAction) { resetQuoteDraft(quoteAction.hasAttribute("data-quote-new")); return; }
     const quoteMode = event.target.closest("[data-quote-mode]");
     if (quoteMode) {
       aiAssistantState.quoteMode = quoteMode.dataset.quoteMode === "manual" ? "manual" : "ai";
-      aiAssistantState.quote = null;
       aiAssistantState.quoteError = "";
       aiAssistantState.quoteWarnings = [];
       refreshQuotesView();
@@ -15869,7 +16378,8 @@
     }
     const manualQuoteCreate = event.target.closest("[data-manual-quote-create]");
     if (manualQuoteCreate) {
-      aiAssistantState.quote = QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
+      if (!aiAssistantState.quoteCustomerId) return showToast("먼저 고객을 선택해 주세요.", "error");
+      aiAssistantState.quote = bindSelectedQuoteCustomer(QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier }));
       aiAssistantState.quoteError = "";
       refreshQuotesView();
       document.querySelector('[data-ai-quote-recipient="projectName"]')?.select();
@@ -15925,7 +16435,7 @@
       return;
     }
     if (event.target.closest("[data-ai-quote-crm-save]")) {
-      await saveDocumentForCustomer({kind: "quote", quote: aiAssistantState.quote});
+      await saveDocumentForCustomer({kind: "quote", quote: aiAssistantState.quote, quoteSource: aiAssistantState.quoteSource});
       return;
     }
     const aiQuoteExport = event.target.closest("[data-ai-quote-export]");
@@ -17423,8 +17933,15 @@
     else if (action === "new-incident") { if (requireSecurityPermission(false)) incidentEditor(""); }
     else if (action === "backup") {
       if (!canAdministerSecurity()) return showToast("백업 파일은 관리자만 저장할 수 있습니다.", "error");
-      const result = await api.backup(store);
-      if (result.ok) { logAudit({ category: "백업", targetType: "백업", targetLabel: Core.dayKey(), action: "CRM 전체 데이터 백업 생성", reason: "정기·수동 백업" }); scheduleSave(); showToast("CRM 백업을 저장했습니다.", "success"); }
+      try {
+        const result = await api.backup(store);
+        if (result.ok) { logAudit({ category: "백업", targetType: "백업", targetLabel: Core.dayKey(), action: "CRM 전체 데이터 백업 생성", reason: "정기·수동 백업" }); scheduleSave(); showToast("CRM 백업을 저장했습니다.", "success"); }
+        else if (!result.canceled) showToast(result.error || "백업 파일을 저장하지 못했습니다.", "error");
+      } catch (_error) { showToast("백업 파일을 저장하지 못했습니다. 저장 위치와 암호화 설정을 확인해 주세요.", "error"); }
+    } else if (action === "telegram-status-retry") {
+      if (canAdministerSecurity()) await loadTelegramServerStatus();
+    } else if (action === "owner-os-settings-retry") {
+      if (canAdministerSecurity()) { ownerOsState.loaded = false; renderSettings(); }
     } else if (action === "owner-os-send-from-settings") {
       ownerOsState.sending = true;
       ownerOsState.error = "";
@@ -17446,6 +17963,18 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-quote-customer]")) {
+      if (aiAssistantState.quoteLoading || cleaningQuoteContext.orderId) return;
+      aiAssistantState.quoteCustomerId = event.target.value;
+      aiAssistantState.quoteSource = null;
+      if (aiAssistantState.quote) {
+        try { aiAssistantState.quote = bindSelectedQuoteCustomer(aiAssistantState.quote); }
+        catch (_) { aiAssistantState.quote = {...aiAssistantState.quote, customerId: "", recipient: "", recipientPhone: "", siteAddress: ""}; }
+      }
+      aiAssistantState.quoteError = "";
+      refreshQuotesView();
+      return;
+    }
     const receiptForm = event.target.closest?.("#contractReceiptQuickForm");
     if (receiptForm) { captureContractReceiptDraft(receiptForm); return; }
     if (event.target.matches("[data-cleaning-quote-order-select]") && currentView === "cleaningQuoteCalculator") {
@@ -17548,6 +18077,11 @@
       refreshOperationsCheck();
       return;
     }
+    if (event.target.matches('[data-report-form] [name="workDate"]')) {
+      // 작업일을 고치면 초안 본문 속 옛 날짜가 그 자리에서 바뀌어 보여야 한다(readReportForm 이 바꾼다).
+      preserveReportDraft();
+      return;
+    }
     if (event.target.matches("[data-report-kind]")) {
       resetReportDriveSelection();
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
@@ -17564,6 +18098,13 @@
       const orderSelect = form && form.elements.cleaningOrderId;
       const linkedOrder = cleaningOrderState.orders.find(item => item.id === orderSelect?.value);
       if (linkedOrder && String(linkedOrder.buildingId || "") !== String(event.target.value || "")) orderSelect.value = "";
+      // 다른 건물 사진으로 쓴 AI 요약을 손대지 않은 채 남기면 엉뚱한 건물 내용이 나간다(2026-11-03 재현).
+      // 사람이 고친 문장은 지우지 않는다.
+      if (form?.elements.summary && reportState.aiSummaryText && form.elements.summary.value === reportState.aiSummaryText) {
+        form.elements.summary.value = "";
+        reportState.aiSummaryText = "";
+        reportState.aiSummaryDate = null;
+      }
       syncReportDraft();
       return;
     }
@@ -17653,7 +18194,7 @@
       const amount = Number(event.target.value);
       if (!amount) return;
       try {
-        const base = aiAssistantState.quote || QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier });
+        const base = aiAssistantState.quote || bindSelectedQuoteCustomer(QuoteCore.createManualDraft({ now: new Date(), supplier: aiAssistantState.supplier }));
         aiAssistantState.quote = QuoteCore.applyMoveInCleaningPreset(base, amount);
         if (cleaningQuoteContext.orderId) {
           cleaningQuoteContext.confirmedPriceIndices = [];
@@ -17671,7 +18212,7 @@
     if (event.target.matches("[data-ai-quote-recipient]")) {
       const quote = aiAssistantState.quote;
       const key = event.target.dataset.aiQuoteRecipient;
-      if (!quote || !["projectName", "siteAddress", "recipient", "recipientPhone", "quoteDate", "validUntil"].includes(key)) return;
+      if (!quote || !["projectName", "siteAddress", "recipient", "quoteDate", "validUntil"].includes(key)) return;
       const next = JSON.parse(JSON.stringify(quote));
       next[key] = event.target.value.trim();
       if (key === "quoteDate") next.validUntil = QuoteCore.dateAfter(next.quoteDate, 7);
@@ -17821,11 +18362,9 @@
         renderCases();
         return showToast("조회 전용 계정은 단계 상태를 변경할 수 없습니다.", "error");
       }
-      const caseItem = workflowCaseByKey(caseStep.dataset.caseKey);
       const stepKey = caseStep.dataset.caseStepStatus;
-      const nextKey = `c${Number(stepKey.slice(1)) + 1}`;
-      const result = await api.saveWorkflowCase({ caseKey: caseStep.dataset.caseKey, stepKey, stepStatus: caseStep.value, startNext: !(caseItem && caseItem.status && caseItem.status[nextKey]) });
-      if (!result.ok) { showToast(result.error || "단계 상태를 저장하지 못했습니다.", "error"); await refreshOperations({ silent: true }); return; }
+      const result = await api.saveWorkflowCase({ caseKey: caseStep.dataset.caseKey, stepKey, stepStatus: caseStep.value, expectedStepStatus: caseStep.dataset.caseOriginalStatus || "wait" });
+      if (!result.ok) { caseStep.value = caseStep.dataset.caseOriginalStatus || "wait"; showToast(result.error || "단계 상태를 저장하지 못했습니다.", "error"); return; }
       await refreshOperations({ silent: true, render: false });
       renderCases();
       showToast(`${Core.WORKFLOW_STEPS[Number(stepKey.slice(1)) - 1]} · ${caseStep.options[caseStep.selectedIndex].text}`, "success");
@@ -17874,6 +18413,7 @@
     }
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
+    if (event.target.matches('#contractForm [data-contract-building-select]')) refreshContractBuildingAddress(event.target.form);
     if (event.target.matches('#contractForm [name="billingCycle"], #contractForm [name="paymentDueDate"]')) refreshContractPaymentFields(event.target.form, true);
     if (event.target.matches('#contractForm [name="endDate"], #contractForm [name="status"]')) refreshContractPaymentFields(event.target.form);
     if (event.target.matches('#customerForm [name="type"]')) updateCustomerCustomTypeField(event.target.form);
@@ -19118,14 +19658,16 @@
         else return showToast("민원 작성 구분을 확인해 주세요.", "error");
       }
       const normalizedCaseFields = caseFieldsWithMarketing(raw);
-      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields });
+      const expectedFields = caseBasicSnapshots.get(form);
+      if (!expectedFields) return showToast("처음 열린 민원 정보를 확인하지 못했습니다. 화면을 다시 열어 주세요.", "error");
+      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields, expectedFields });
       if (!result.ok) return showToast(result.error || "기본 정보를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();
       showToast("민원 기본 정보를 저장했습니다.", "success");
     } else if (form.classList.contains("case-step-note-form")) {
       const raw = Object.fromEntries(new FormData(form).entries());
-      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, stepKey: form.dataset.stepKey, stepNote: raw.stepNote });
+      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, stepKey: form.dataset.stepKey, stepNote: raw.stepNote, expectedStepNote: form.elements.stepNote.defaultValue });
       if (!result.ok) return showToast(result.error || "단계 메모를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();
@@ -19359,8 +19901,10 @@
       if (maintenanceIncludeOther && !maintenanceIncludes.includes("기타")) maintenanceIncludes.push("기타");
       if (roomTypeOther && !roomTypes.includes("기타")) roomTypes.push("기타");
       if (roomOptionOther && !roomOptions.includes("기타")) roomOptions.push("기타");
-      const roadAddress = String(existing ? existing.roadAddress : raw.roadAddress || "").trim();
-      const jibunAddress = String(existing ? existing.jibunAddress : raw.jibunAddress || "").trim();
+      const applySiteAddress = !existing || raw.applySiteAddress === "true";
+      const roadAddress = String(existing && !applySiteAddress ? existing.roadAddress || "" : raw.roadAddress || "").trim();
+      const jibunAddress = String(existing && !applySiteAddress ? existing.jibunAddress || "" : raw.jibunAddress || "").trim();
+      if (existing && applySiteAddress && !roadAddress && !jibunAddress) return showToast("정정할 현장 주소를 하나 이상 입력해 주세요.", "error");
       const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
         ? String(existing.address || "").trim()
         : "";
@@ -19450,8 +19994,11 @@
       catch (error) { return showToast(error.message, "error"); }
       if (cleaningSchedule && cleaningSchedule.mode !== "manual" && raw.status === "진행 중"
         && !ContractSchedule.contractDates({ ...raw, types, cleaningSchedule }).length) return showToast("계약 기간 안에 청소 작업일이 없습니다. 시작일·종료일·요일을 확인해 주세요.", "error");
-      raw.buildingId = existing?.customerId === raw.customerId && buildingById(existing.buildingId) && !buildingById(existing.buildingId).archivedAt
-        ? existing.buildingId : customerBuildings(linkedCustomer).find(building => !building.archivedAt)?.id || "";
+      const customerSites = customerBuildings(linkedCustomer).filter(building => !building.archivedAt);
+      const keepsExistingSite = existing?.customerId === raw.customerId && existing.buildingId === raw.buildingId;
+      if (raw.buildingId && !keepsExistingSite && !customerSites.some(building => building.id === raw.buildingId)) return showToast("선택한 고객의 계약 건물을 다시 확인해 주세요.", "error");
+      if (!raw.buildingId && customerSites.length > 1) return showToast("연결된 건물이 여러 개입니다. 계약할 건물을 직접 선택해 주세요.", "error");
+      if (!raw.buildingId && customerSites.length === 1) raw.buildingId = customerSites[0].id;
       if (!raw.buildingId && customerManagedBuildingAddress(linkedCustomer, null)) {
         form.dataset.resolvingSite = "true";
         try {
@@ -19528,6 +20075,10 @@
         showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleSummary}에 연결했습니다.`, "success");
       } });
     } else if (form.id === "customerForm") {
+      if (form.dataset.preparing === "true") return;
+      form.dataset.preparing = "true";
+      try { await waitForSaveIdle(); } finally { delete form.dataset.preparing; }
+      if (!form.isConnected) return;
       const beforeStore = cloneStore(store);
       const wasExisting = !!form.dataset.customerId;
       const customerName = String(form.elements.name && form.elements.name.value || "").trim();
@@ -19537,10 +20088,11 @@
       }
       const photoChanged = wasExisting && form.dataset.photoChanged === "true";
       const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(form.elements.photoDataUrl && form.elements.photoDataUrl.value);
-      const customer = customerFromForm(form);
+      let customer;
+      try { customer = customerFromForm(form); } catch (error) { return showToast(error.message, "error"); }
       const customerLabel = customer.name || "고객명 미입력";
       logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${customer.address ? "주소 등록" : "주소 미입력"}` });
-      const saved = await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+      const saved = await commitSharedFormMutation({ form, beforeStore, customerEdit: form.customerEdit, onSaved: () => {
         selectedCustomerHubId = customer.id;
         closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customerLabel} 정보를 서버에 저장했습니다.`, "success");
       } });
@@ -19812,7 +20364,7 @@
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       store.company.workspace = raw.workspace.trim();
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { renderSettings(); showToast("설정을 서버에 저장했습니다.", "success"); } });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { delete form.dataset.settingsDirty; renderSettings(); showToast("설정을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "ownerOsForm") {
       if (!canAdministerSecurity()) return showToast("대표OS 연결은 관리자만 설정할 수 있습니다.", "error");
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -19835,6 +20387,8 @@
       try {
         ownerOsState.view = await api.saveOwnerOsSettings({ endpoint, secret });
         ownerOsState.loaded = true;
+        delete form.dataset.settingsDirty;
+        if (form.elements.secret) form.elements.secret.value = "";
         ownerOsState.notice = "대표OS 연결을 저장했습니다.";
         logAudit({ category: "설정", targetType: "대표OS", targetLabel: "보고 연결", action: "대표OS 보고 연결 설정", reason: "월간 보고 전송" });
         scheduleSave();
@@ -19982,6 +20536,8 @@
   }
 
   document.addEventListener("input", event => {
+    const settingsForm = event.target.closest?.("#settingsForm, #ownerOsForm");
+    if (settingsForm && currentView === "settings") settingsForm.dataset.settingsDirty = "true";
     const receiptForm = event.target.closest?.("#contractReceiptQuickForm");
     if (receiptForm) { captureContractReceiptDraft(receiptForm); return; }
     const alimtalkSearch = event.target.closest?.("[data-alimtalk-search]");
@@ -19991,9 +20547,11 @@
       main.querySelectorAll("[data-alimtalk-search-row]").forEach(row => {
         const id = row.querySelector("[data-alimtalk-recipient]")?.dataset.alimtalkRecipient;
         const customer = id && customerById(id);
-        const haystack = [row.dataset.alimtalkSearchRow, customer && customer.phone].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
-        row.hidden = Boolean(query) && !haystack.includes(query);
+        const searchBuildings = customer ? customerBuildings(customer).filter(building => !building.archivedAt && !building.deletedAt && building.deleted !== true).flatMap(building => [building.name, building.roadAddress, building.address, ...(Array.isArray(building.aliases) ? building.aliases : [])]).filter(Boolean) : [];
+        row.hidden = !customer || !CustomerAlimTalkUI.matchesCustomer({...customer, searchBuildings}, query);
       });
+      const noResults = main.querySelector("[data-alimtalk-no-results]");
+      if (noResults) noResults.hidden = [...main.querySelectorAll("[data-alimtalk-search-row]")].some(row => !row.hidden);
       return;
     }
     const refundForm = event.target.closest?.("#cleaningRefundForm");
@@ -20119,7 +20677,7 @@
     } else if (event.target.matches("[data-ai-quote-recipient]")) {
       const quote = aiAssistantState.quote;
       const key = event.target.dataset.aiQuoteRecipient;
-      if (!quote || !["projectName", "siteAddress", "recipient", "recipientPhone", "quoteDate", "validUntil"].includes(key)) return;
+      if (!quote || !["projectName", "siteAddress", "recipient", "quoteDate", "validUntil"].includes(key)) return;
       const maxLength = key === "projectName" ? 120 : key === "siteAddress" ? 180 : key === "recipient" ? 80 : key === "recipientPhone" ? 30 : 10;
       quote[key] = event.target.value.slice(0, maxLength);
       aiAssistantState.quoteError = "";
@@ -20459,7 +21017,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk"].includes(query.get("view"))) currentView = query.get("view");
+      if (window.BringCleaningCenterPages.screenByView(query.get("view")) || ["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "officeHome", "officeAttendance", "officeRfid", "officeMembers", "officeAdmin", "officeAccountSetup", "buildingDocuments", "buildingMonthlyReports", "periodicReports", "security", "settings", "forms", "quotes", "workReports", "customerNotices", "weeklyReports", "teamTraining", "projectRoadmap", "companyGoals", "workOrders", "companyWallboard"].includes(query.get("view")) || ["customerMessages", "customerAlimTalk", "lifeToday", "lifeInbox", "lifeBoard"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

@@ -224,6 +224,36 @@ test("업무지시가 없는 새 프로젝트도 진행률과 기한으로 로�
   assert.equal(lanes[0].assignments[0].progressNote, "기획 완료");
 });
 
+test("담당자가 여러 명인 프로젝트는 연결 업무가 없어도 각 담당자와 내 일정에 표시한다", () => {
+  const source = { range: {from:"2026-10-01", to:"2026-10-31"}, mode:"people",
+    members:[{uid:"u1", displayName:"김담당"},{uid:"u2", displayName:"이담당"}],
+    projects:[{id:"p1",name:"현장 관리",startDate:"2026-10-01",endDate:"2026-12-01",progress:40,assignees:[{uid:"u1",name:"김담당"},{uid:"u2",name:"이담당"}]}], orders:[] };
+  const rows = P.roadmapRows(source);
+  assert.equal(rows.some(row => row.key === "__none"), false);
+  for (const uid of ["u1", "u2"]) {
+    const assignment = rows.find(row => row.key === uid).assignments[0];
+    assert.equal(assignment.projectId, "p1");
+    assert.equal(assignment.progress, 40);
+    assert.deepEqual(assignment.orderIds, []);
+    assert.equal(P.roadmapRows({...source, mineUid:uid})[0].assignments[0].projectId, "p1");
+  }
+  assert.deepEqual(P.roadmapRows({...source, mineUid:"other"}).flatMap(row=>row.assignments), []);
+});
+
+test("기간 이동은 표시 범위만 바꾸고 담당자의 전체 연결 업무 평균을 유지한다", () => {
+  const source = { mode:"people", members:[{uid:"u1",displayName:"김담당"},{uid:"u2",displayName:"이담당"}],
+    projects:[{id:"p1",name:"현장 관리",startDate:"2026-10-01",endDate:"2026-11-30",progress:40,assignees:[{uid:"u1",name:"김담당"},{uid:"u2",name:"이담당"}]}],
+    orders:[order({id:"a",projectId:"p1",assigneeUid:"u1",progress:100,status:"done",startDate:"2026-10-01",dueDate:"2026-10-10"}),
+      order({id:"b",projectId:"p1",assigneeUid:"u1",progress:0,status:"doing",startDate:"2026-11-01",dueDate:"2026-11-10"})] };
+  for (const range of [{from:"2026-10-01",to:"2026-10-31"},{from:"2026-11-01",to:"2026-11-30"}]) {
+    const rows=P.roadmapRows({...source,range});
+    const assigned=rows.find(row=>row.key==="u1").assignments[0];
+    assert.equal(assigned.progress,50);
+    assert.deepEqual(assigned.orderIds,["a","b"]);
+    assert.equal(rows.find(row=>row.key==="u2").assignments[0].progress,40);
+  }
+});
+
 test("기간을 연장한 프로젝트는 로드맵 막대에 연장 상태를 전달한다", () => {
   const lanes = P.roadmapRows({
     range: P.roadmapRange("2026-09-07", 0),
