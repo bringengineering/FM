@@ -4,7 +4,10 @@ const text = value => typeof value === 'string' ? value.trim() : '';
 const keyValid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
 const failure = code => ({ ok: false, code, error: ({ AUTH: 'CRM 로그인 권한을 확인해 주세요.', ADMIN: '지도 설정은 관리자만 변경할 수 있습니다.', CONFIG: '인증키 등록과 운영 사용 확인이 필요합니다.', INPUT: '지도 요청 내용을 확인해 주세요.', LIMIT: '지도 조회 한도에 도달했습니다. 잠시 후 다시 확인해 주세요.', NETWORK: '브이월드에 연결하지 못했습니다. 키 권한·만료일과 연결 상태를 확인해 주세요.', STORAGE: 'PC의 암호화 저장소를 확인해 주세요.' })[code] || '지도 요청을 완료하지 못했습니다.' });
 function createService(deps) {
-  let revision = 0, queue = Promise.resolve(), inFlight = 0, windowAt = 0, windowCount = 0, day = '', daily = 0, serverCache = null;
+  let revision = 0, queue = Promise.resolve(), inFlight = 0, windowAt = 0, windowCount = 0, day = '', daily = 0, serverCache = null, serverPending = null;
+  // Address lookups that succeeded (found or not found) are reused in memory so
+  // re-opening the map does not geocode the same buildings again.
+  const geocoded = new Map();
   function context(admin = false) {
     const ctx = deps.context(), user = ctx?.user;
     if (!user?.uid || !['admin', 'member', 'viewer'].includes(user.role) || user.disabled || user.mustChangePassword || user.emailVerified === false || (user.accessRole === 'member' && user.marketingRole === 'marketing')) throw 'AUTH';
@@ -26,19 +29,26 @@ function createService(deps) {
     const now = Date.now(), date = new Date(now).toISOString().slice(0, 10);
     if (date !== day) { day = date; daily = 0; }
     if (now - windowAt >= 1000) { windowAt = now; windowCount = 0; }
-    if (inFlight >= 4 || windowCount >= 64 || daily >= 8000) throw 'LIMIT';
+    if (inFlight >= 6 || windowCount >= 64 || daily >= 8000) throw 'LIMIT';
     windowCount++; daily++; inFlight++;
     try { const result = await run(); ctx.assertActive(); if (expectedRevision !== revision) throw 'AUTH'; return result; }
     finally { inFlight--; }
   }
-  async function serverEnabled(ctx, expectedRevision = revision) {
-    if (typeof deps.gateway !== 'function') return false;
-    const now = Date.now();
-    if (serverCache && now - serverCache.at < (serverCache.value ? 300000 : 30000)) return serverCache.value;
-    let value = false;
-    try { value = (await limited(ctx, expectedRevision, () => deps.gateway({ action: 'status' })))?.configured === true; }
-    catch (error) { if (error === 'AUTH' && expectedRevision !== revision) throw error; }
-    ctx.assertActive(); serverCache = { at: now, value }; return value;
+  // Company key handed out by crm-ai-worker (/v1/map action "key") to signed-in
+  // staff. VWorld rejects calls from the Worker's Cloudflare IPs, so this PC
+  // calls VWorld itself; the key is kept in memory only, never saved to disk.
+  async function serverKey(ctx, expectedRevision = revision) {
+    if (typeof deps.gateway !== 'function') return '';
+    const uid = ctx.user.uid;
+    if (serverCache?.uid === uid && Date.now() - serverCache.at < (serverCache.key ? 1800000 : 30000)) return serverCache.key;
+    if (!serverPending || serverPending.uid !== uid) serverPending = (async () => {
+      let key = '';
+      try { const value = await deps.gateway({ action: 'key' }); if (keyValid(value?.key)) key = value.key; }
+      catch {}
+      serverCache = { at: Date.now(), key, uid }; return key;
+    })();
+    const pending = serverPending; pending.uid = uid; pending.finally(() => { if (serverPending === pending) serverPending = null; });
+    const key = await pending; ctx.assertActive(); if (expectedRevision !== revision) throw 'AUTH'; return key;
   }
   function pngDataUrl(bytes) {
     if (bytes.length < 33 || bytes.length > 524288 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || bytes.subarray(12, 16).toString() !== 'IHDR' || bytes.readUInt32BE(16) !== 256 || bytes.readUInt32BE(20) !== 256) throw 'NETWORK';
@@ -59,7 +69,7 @@ function createService(deps) {
   }
   const safeCodes = new Set(['AUTH', 'ADMIN', 'CONFIG', 'INPUT', 'LIMIT', 'NETWORK', 'STORAGE']);
   const safe = handler => async input => { try { return await handler(input); } catch (error) { return failure(safeCodes.has(error) ? error : 'NETWORK'); } };
-  const status = safe(async () => { const ctx = context(), value = await settings(ctx); return publicSettings(value, !localReady(value) && await serverEnabled(ctx)); });
+  const status = safe(async () => { const ctx = context(), value = await settings(ctx); return publicSettings(value, !localReady(value) && !!await serverKey(ctx)); });
   const save = safe(async input => {
     const ctx = context(true);
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['apiKey', 'enabled', 'usageConfirmed'].includes(key)) || typeof input.enabled !== 'boolean' || typeof input.usageConfirmed !== 'boolean' || typeof input.apiKey !== 'string' || (input.apiKey && !keyValid(input.apiKey))) throw 'INPUT';
@@ -68,32 +78,34 @@ function createService(deps) {
       if (!keyValid(apiKey) || input.enabled && !input.usageConfirmed) throw 'INPUT';
       const next = { apiKey, enabled: input.enabled, usageConfirmed: input.usageConfirmed };
       await deps.save(next, () => ctx.assertActive()); ctx.assertActive(); revision++;
-      return publicSettings(next, serverCache?.value === true);
+      return publicSettings(next, !!serverCache?.key);
     };
     const pending = queue.then(operation, operation); queue = pending.catch(() => {}); return pending;
   });
   const locate = safe(async input => {
     const ctx = context(), ownRevision = revision, config = await settings(ctx);
     if (ownRevision !== revision) throw 'AUTH';
-    const local = localReady(config), server = !local && await serverEnabled(ctx, ownRevision);
+    const apiKey = localReady(config) ? config.apiKey : await serverKey(ctx, ownRevision);
     if (ownRevision !== revision) throw 'AUTH';
-    if (!local && !server) return failure('CONFIG');
+    if (!apiKey) return failure('CONFIG');
     if (!input || Object.keys(input).some(key => key !== 'buildingIds') || !Array.isArray(input.buildingIds) || input.buildingIds.length > 20 || !input.buildingIds.length || input.buildingIds.some(id => !Core.validId(id)) || new Set(input.buildingIds).size !== input.buildingIds.length) throw 'INPUT';
     const store = await deps.store(); ctx.assertActive(); if (ownRevision !== revision) throw 'AUTH';
     const rows = Core.project(store).rows, results = [];
-    const lookup = local ? async address => {
+    const lookup = async address => {
+      const cacheKey = address.type + '|' + address.address, hit = geocoded.get(cacheKey);
+      if (hit && Date.now() - hit.at < 21600000) return hit.point;
+      const point = await geocode(address);
+      if (geocoded.size >= 500) geocoded.delete(geocoded.keys().next().value);
+      geocoded.set(cacheKey, { at: Date.now(), point }); return point;
+    };
+    const geocode = async address => {
       const url = new URL('https://api.vworld.kr/req/address');
-      for (const [key, value] of Object.entries({ service: 'address', request: 'getcoord', version: '2.0', crs: 'epsg:4326', format: 'json', type: address.type, address: address.address, key: config.apiKey })) url.searchParams.set(key, value);
+      for (const [key, value] of Object.entries({ service: 'address', request: 'getcoord', version: '2.0', crs: 'epsg:4326', format: 'json', type: address.type, address: address.address, key: apiKey })) url.searchParams.set(key, value);
       const json = await request(url.href, ctx, 65536, false, ownRevision);
       if (json?.response?.status === 'NOT_FOUND') return null;
       if (json?.response?.status !== 'OK') throw 'NETWORK';
       const point = json.response.result?.point;
       return point && point.x !== '' && point.y !== '' ? { lon: Number(point.x), lat: Number(point.y) } : null;
-    } : async address => {
-      const value = await limited(ctx, ownRevision, () => deps.gateway({ action: 'geocode', address: address.address, type: address.type }));
-      if (value.status === 'NOT_FOUND') return null;
-      if (value.status !== 'OK') throw 'NETWORK';
-      return { lon: Number(value.lon), lat: Number(value.lat) };
     };
     for (const id of input.buildingIds) {
       ctx.assertActive(); if (ownRevision !== revision) throw 'AUTH';
@@ -114,18 +126,13 @@ function createService(deps) {
   const tile = safe(async input => {
     const ctx = context(), ownRevision = revision, config = await settings(ctx);
     if (ownRevision !== revision) throw 'AUTH';
-    const local = localReady(config), server = !local && await serverEnabled(ctx, ownRevision);
+    const apiKey = localReady(config) ? config.apiKey : await serverKey(ctx, ownRevision);
     if (ownRevision !== revision) throw 'AUTH';
-    if (!local && !server) return failure('CONFIG');
+    if (!apiKey) return failure('CONFIG');
     if (!input || Object.keys(input).some(key => !['z', 'x', 'y'].includes(key)) || !['z', 'x', 'y'].every(key => Number.isInteger(input[key])) || input.z < 6 || input.z > 19 || input.x < 0 || input.y < 0 || input.x >= 2 ** input.z || input.y >= 2 ** input.z) throw 'INPUT';
     const n = 2 ** input.z, lon = (input.x + .5) / n * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (input.y + .5) / n))) * 180 / Math.PI;
     if (!Core.point(lon, lat, input.z)) throw 'INPUT';
-    if (!local) {
-      const value = await limited(ctx, ownRevision, () => deps.gateway({ action: 'tile', z: input.z, x: input.x, y: input.y }));
-      if (typeof value.png !== 'string' || value.png.length > 700000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.png)) throw 'NETWORK';
-      return { ok: true, dataUrl: pngDataUrl(Buffer.from(value.png, 'base64')) };
-    }
-    const url = `https://api.vworld.kr/req/wmts/1.0.0/${config.apiKey}/Base/${input.z}/${input.y}/${input.x}.png`;
+    const url = `https://api.vworld.kr/req/wmts/1.0.0/${apiKey}/Base/${input.z}/${input.y}/${input.x}.png`;
     return { ok: true, dataUrl: await request(url, ctx, 524288, true, ownRevision) };
   });
   return Object.freeze({ status, save, locate, tile });

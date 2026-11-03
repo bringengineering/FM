@@ -37,7 +37,7 @@ CRM은 사진 가져오기 후 자동분류하며 최대 100장을 30장 이하 
 
 ## 계약 건물 지도 중계
 
-`POST /v1/map`은 CRM 계약 건물 지도용 브이월드 주소 조회(`geocode`)와 배경 타일(`tile`)을 회사 공용 키로 대신 호출합니다. 키는 Cloudflare Secret `VWORLD_API_KEY`로만 등록하고(`npx wrangler secret put VWORLD_API_KEY`), `VWORLD_MAP_ENABLED = "true"`와 Secret이 모두 있어야 동작합니다. Firebase 토큰과 CRM 접근 기록(활성 admin/member/viewer)을 확인하며 AI 허용 이메일 목록은 적용하지 않습니다. 사용자별 분당 600회 제한(`MAP_RATE_LIMITER`), 건물 주소 1건·한국 범위 타일 1장 단위 요청, 256×256 PNG 검증을 적용하고 키·브이월드 URL·오류 본문은 응답에 포함하지 않습니다. 자세한 내용은 `desktop-crm/docs/contract-building-map.md`를 참고하세요.
+`POST /v1/map`은 CRM 계약 건물 지도용입니다. 브이월드가 Cloudflare 출구 IP의 호출을 받지 않아, CRM은 `action: "key"`로 회사 공용 키를 받아 PC에서 브이월드를 직접 호출합니다(키는 메모리에만 보관). 키는 Cloudflare Secret `VWORLD_API_KEY`로만 등록하고(`npx wrangler secret put VWORLD_API_KEY`), `VWORLD_MAP_ENABLED = "true"`와 Secret이 모두 있어야 동작합니다. Firebase 토큰과 CRM 접근 기록(활성 admin/member/viewer)을 확인하며 AI 허용 이메일 목록은 적용하지 않습니다. 사용자별 분당 600회 제한(`MAP_RATE_LIMITER`)을 적용합니다. 진단용 `geocode`/`tile` 동작은 실패 시 짧은 `reason` 코드만 돌려주고 브이월드 URL·오류 본문은 포함하지 않습니다. 자세한 내용은 `desktop-crm/docs/contract-building-map.md`를 참고하세요.
 
 ## CRM 고객 문서 발송
 
