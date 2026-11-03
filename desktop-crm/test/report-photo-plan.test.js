@@ -352,6 +352,20 @@ test("공용부 '촬영 시각으로 전·후 나누기'는 같은 날 전체 �
   // 다른 날 찍은 사진끼리는 잇지 않는다.
   const twoDays = { kind: "common", buckets: [bucket("stairs", [shot("d1", "09:00"), shot("d2", "09:01"), shot("d3", "09:00", {}, "2026-11-03"), shot("d4", "09:01", {}, "2026-11-03")])] };
   assert.equal(P.splitCommonByCaptureTime(twoDays).photos, 0);
+
+  // 짧게 끝난 현장: 13분 공백이 다른 간격(수십 초)보다 뚜렷이 길면 15분 미만이어도 나눈다.
+  const sec = (id, hms) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", captureTime: { source: "exif-original", local: `2026-11-03T${hms}`, offset: "+09:00" } });
+  const quick = { kind: "common", buckets: [
+    bucket("stairs", [sec("q1", "10:46:44"), sec("q2", "10:47:10"), sec("q3", "10:47:40"), sec("q4", "11:02:24"), sec("q5", "11:02:50")]),
+    bucket("corridor", [sec("q6", "10:48:10"), sec("q7", "10:49:04"), sec("q8", "11:03:10"), sec("q9", "11:04:23")]),
+  ] };
+  const quickSplit = P.splitCommonByCaptureTime(quick);
+  const p3 = id => P.photoReviewRows(quickSplit.plan).find(row => row.id === id).phase;
+  assert.deepEqual(["q1", "q2", "q3", "q6", "q7", "q4", "q5", "q8", "q9"].map(p3), ["before", "before", "before", "before", "before", "after", "after", "after", "after"]);
+  assert.match(P.photoReviewRows(quickSplit.plan).find(row => row.id === "q1").phaseReason, /같은 날 촬영 흐름의 13분 공백/);
+  // 공백이 고르게 흩어져 있으면(다른 간격의 5배 미만) 그대로 둔다.
+  const even = { kind: "common", buckets: [bucket("stairs", ["09:00", "09:04", "09:08", "09:12", "09:18", "09:22", "09:26", "09:30"].map((hm, i) => shot(`e${i}`, hm)))] };
+  assert.equal(P.splitCommonByCaptureTime(even).photos, 0);
 });
 
 test("보고서 전·후는 같은 장소로 묶인 짝을 같은 번호에, 나머지는 촬영 시각 순으로 싣는다", () => {

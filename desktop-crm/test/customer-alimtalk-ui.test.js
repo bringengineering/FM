@@ -30,7 +30,7 @@ test("통합 화면 렌더링은 자료가 없어도 동작하고 실패한 인�
   const state = {selectedCustomerIds: ["c1"], category: "notice", templateId: "cleaning_schedule", month: "2026-09", sourceType: "", sourceId: ""};
   const output = {innerHTML: "", extra: "", insertAdjacentHTML(_position, html) { this.extra += html; }};
   let sealCalls = 0;
-  const context = {customerAlimTalkState: state, store: {customers: [customer("c1", "샘플", "01000000000")]},
+  const context = {setTimeout: () => {}, autoRefreshPendingDeliveries: () => {}, customerAlimTalkState: state, store: {customers: [customer("c1", "샘플", "01000000000")]},
     monthlyReportTargetBuildings: () => [], previousMonthKey: () => "2026-09", currentMonthKey: () => "2026-10",
     aiAssistantState: {quote: null, sealLoaded: false, sealLoading: false, sealError: "조회 실패"},
     reportState: {reports: [], loaded: true}, buildingMonthlyReportState: {}, documentDeliveryCapabilities: {loaded: true, kakao: false},
