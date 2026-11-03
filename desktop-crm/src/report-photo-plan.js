@@ -791,7 +791,20 @@
       const phases = Object.fromEntries([...beforeIds.map(file => [file.id, "before"]), ...afterIds.map(file => [file.id, "after"])]);
       requests.push({ itemKey: bucket.itemKey, fileIds: Object.keys(phases), phases });
     }
-    return requests;
+    // 작은 구역은 한 요청에 묶는다(구역마다 한 번씩 물으면 회사 Gemini 분당 한도에 걸렸다, 2026-11-03).
+    // 묶어도 group 으로 구역을 표시해 같은 구역끼리만 짝짓는다. 한 요청은 여전히 limit 장까지.
+    const packed = [];
+    for (const request of requests.sort((left, right) => right.fileIds.length - left.fileIds.length)) {
+      const room = packed.find(entry => entry.fileIds.length + request.fileIds.length <= limit);
+      const groups = Object.fromEntries(request.fileIds.map(id => [id, request.itemKey]));
+      if (room) {
+        room.fileIds.push(...request.fileIds);
+        Object.assign(room.phases, request.phases);
+        Object.assign(room.groups, groups);
+        room.itemKeys.push(request.itemKey);
+      } else packed.push({ itemKey: request.itemKey, itemKeys: [request.itemKey], fileIds: [...request.fileIds], phases: { ...request.phases }, groups });
+    }
+    return packed;
   }
 
   function syncCommonDraftPhotos(existing, incoming, managedIds) {
