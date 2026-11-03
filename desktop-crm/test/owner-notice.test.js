@@ -25,8 +25,9 @@ function extractFunction(name) {
 function extractConst(name) {
   const start = gsSource.indexOf(`const ${name} =`);
   assert.notEqual(start, -1, `missing ${name}`);
-  const end = gsSource.indexOf("};\n", start);
-  return gsSource.slice(start, end + 2);
+  const end = gsSource.slice(start).search(/\};\r?\n/u);
+  assert.notEqual(end, -1, `unterminated ${name}`);
+  return gsSource.slice(start, start + end + 2);
 }
 
 function gsContext() {

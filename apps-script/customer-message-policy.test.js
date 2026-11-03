@@ -16,7 +16,7 @@ function extractFunction(name) {
 const context = { String, Object, Array, Date };
 vm.createContext(context);
 const ownerTemplatesStart = source.indexOf("const OWNER_NOTICE_TEMPLATES_ =");
-const ownerTemplates = source.slice(ownerTemplatesStart, source.indexOf("};\n", ownerTemplatesStart) + 2);
+const ownerTemplates = source.slice(ownerTemplatesStart, ownerTemplatesStart + source.slice(ownerTemplatesStart).search(/\};\r?\n/u) + 2);
 vm.runInContext(['const OWNER_NOTICE_CONTACT_ = "문의: 1551-3873";', ownerTemplates, extractFunction("ownerNoticeCatalogEntry_"),
   extractFunction("customerMessageTemplateCatalog_"), extractFunction("customerMessagePolicy_")].join("\n"), context);
 
