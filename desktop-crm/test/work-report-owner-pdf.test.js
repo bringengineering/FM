@@ -99,6 +99,10 @@ test("전·후는 색과 번호로 구분하고, 한쪽만 있는 구역은 그 
   report.items[1].before = [photo("b1"), photo("b2")]; report.items[1].after = [photo("a1")];
   const html = createWorkReportHtml(report);
   assert.ok(html.includes("이 구역은 작업 후 사진으로 기록했습니다."));
+  // 전+중만 있으면 "작업 전" 하나만 적지 않고 실제 있는 단계를 다 적는다.
+  const mixed = seed();
+  mixed.items[0].before = [photo("mb")]; mixed.items[0].during = [photo("md")]; mixed.items[0].after = [];
+  assert.ok(createWorkReportHtml(mixed).includes("이 구역은 작업 전·작업 중 사진으로 기록했습니다."));
   // 장수가 다르면 다른 장소끼리 짝짓지 않고 단계별로 나눠 싣는다.
   assert.ok(html.includes("작업 전 2장과 작업 후 1장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다."));
   assert.match(html, /<p class="group-head before">작업 전 사진<small>2장<\/small><\/p>/);

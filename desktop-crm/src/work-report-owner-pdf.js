@@ -99,9 +99,11 @@ function areaPhotos(item, index, images) {
   const rest = { before, after, during: item.during };
   const numbered = phase => rest[phase].map((photo, i) => ({ photo, phase, n: i + 1 }));
   const notes = [];
-  if (!item.before.length && !item.after.length) { if (item.during.length) notes.push("이 구역은 작업 중 사진으로 기록했습니다."); }
-  else if (!item.before.length && item.after.length) notes.push("이 구역은 작업 후 사진으로 기록했습니다.");
-  else if (item.before.length && !item.after.length) notes.push("이 구역은 작업 전 사진으로 기록했습니다.");
+  if (!item.before.length || !item.after.length) {
+    // 전·후 짝을 만들 수 없는 구역. 실제로 있는 단계만 적는다(전+중이면 "작업 전·작업 중").
+    const used = ["before", "during", "after"].filter(phase => item[phase].length).map(phase => PHASES[phase]);
+    if (used.length) notes.push(`이 구역은 ${used.join("·")} 사진으로 기록했습니다.`);
+  }
   else if (!pairs.length) notes.push(`작업 전 ${item.before.length}장과 작업 후 ${item.after.length}장은 같은 장소끼리 짝이 맞지 않아 단계별로 나누어 실었습니다.`);
   else if (before.length || after.length) {
     // 남은 장수가 0인 단계는 적지 않는다("작업 후 0장은 아래에…" 는 없는 사진을 가리킨다).
