@@ -22,7 +22,7 @@ test("작업일을 고치면 초안 본문 속 옛 날짜도 고친다 — 다�
   assert.match(app, /const writtenFor = aiDate \|\| previous\.workDate/);
   assert.match(app, /form\.elements\.summary\.value = moved/);
   // 저장을 기다리지 않고 작업일을 바꾸는 즉시 반영한다.
-  assert.match(app, /if \(event\.target\.matches\('\[data-report-form\] \[name="workDate"\]'\)\) \{\n[^\n]*\n\s*preserveReportDraft\(\);/);
+  assert.match(app, /if \(event\.target\.matches\('\[data-report-form\] \[name="workDate"\]'\)\) \{\r?\n[^\r\n]*\r?\n\s*preserveReportDraft\(\);/);
 });
 
 test("저장 직후 발송 확인 창은 방금 저장한 동기화 변경으로 취소되지 않는다", () => {
