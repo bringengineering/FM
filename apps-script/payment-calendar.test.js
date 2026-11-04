@@ -53,6 +53,7 @@ const functionNames = [
   "paymentHash",
   "paymentScheduleActiveInMonth",
   "paymentTransactionsArray",
+  "paymentBankCoversDueDate",
   "calculatePaymentMonthRows",
   "paymentBuildingRecords",
   "paymentBankName",
@@ -80,8 +81,25 @@ function schedule(id, overrides) {
   }, overrides || {});
 }
 
-function rows(data, month, today) {
-  return context.calculatePaymentMonthRows(data, "building-1", month || "2026-07", today || "2026-07-10");
+const linkedBank = {
+  bankBindings: { "building-1": { accountRef: "pb_building1account00" } },
+  bankSync: { ok: true, status: "completed", lastSuccessfulAt: "2026-07-25T01:00:00.000Z", accounts: [], errors: [] }
+};
+
+function rows(data, month, today, options) {
+  const withBank = options && options.noBank ? data : Object.assign({}, linkedBank, data);
+  return context.calculatePaymentMonthRows(withBank, "building-1", month || "2026-07", today || "2026-07-10");
+}
+
+// 계좌 연결이나 조회 성공이 없으면 입금 여부를 알 수 없으므로 미입금으로 단정하지 않는다.
+{
+  const base = { schedules: { s1: schedule("s1") }, transactions: {} };
+  assert.equal(rows(base, "2026-07", "2026-07-20", { noBank: true })[0].status, "unverified", "계좌 미연결은 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { lastSuccessfulAt: "2026-07-09T23:00:00.000Z" }) }), "2026-07", "2026-07-20")[0].status, "unverified", "납부일 이후 조회 성공이 없으면 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { errors: [{ accountRef: "pb_building1account00" }] }) }), "2026-07", "2026-07-20")[0].status, "unverified", "해당 계좌 조회 실패면 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { accounts: [{ accountRef: "pb_building1account00", pending: true }] }) }), "2026-07", "2026-07-20")[0].status, "unverified", "수집 대기 중이면 조회 필요");
+  assert.equal(rows(base, "2026-07", "2026-07-20")[0].status, "overdue", "연결되고 납부일 이후 조회가 끝났으면 미입금");
+  assert.equal(rows(base, "2026-07", "2026-07-10", { noBank: true })[0].status, "scheduled", "납부일 당일까지는 입금예정");
 }
 
 assert.equal(context.paymentDueDate("2026-02", 31), "2026-02-28", "말일이 짧은 달에는 실제 말일을 사용한다");
