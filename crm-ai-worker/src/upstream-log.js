@@ -58,3 +58,8 @@ export function logInvalidResponse(feature, model, reason) {
   console.warn("ai-invalid-response", JSON.stringify({ feature, model: safe(model), reason: safe(String(reason || "")) }));
 }
 
+
+// 응답을 받지 못한 경우(시간 초과·연결 실패). 원문 메시지는 남기지 않고 오류 종류만 남긴다.
+export function logUpstreamUnreachable(feature, model, error) {
+  console.warn("ai-upstream-unreachable", JSON.stringify({ feature, model: safe(model), reason: safe(error?.name) }));
+}

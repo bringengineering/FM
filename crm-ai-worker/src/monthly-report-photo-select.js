@@ -1,4 +1,4 @@
-import { logUpstreamFailure } from "./upstream-log.js";
+import { logInvalidResponse, logUpstreamFailure, logUpstreamUnreachable } from "./upstream-log.js";
 import { SUBJECTS, ACTIONS, monthlyEvidence } from "./monthly-photo-evidence.js";
 import { maskSensitiveText } from "./privacy.js";
 
@@ -206,7 +206,10 @@ async function selectAttempt(payload, env, model, fetchImpl, signal, usage) {
       redirect: "manual",
       signal,
     });
-  } catch { throw failure("AI_TEMPORARY_FAILURE"); }
+  } catch (error) {
+    logUpstreamUnreachable("monthly-photo-select", model, error);
+    throw failure("AI_TEMPORARY_FAILURE");
+  }
   if (!response.ok) {
     await logUpstreamFailure("monthly-photo-select", model, response);
     throw failure(response.status === 429 ? "RATE_LIMITED" : "AI_TEMPORARY_FAILURE");
@@ -216,6 +219,9 @@ async function selectAttempt(payload, env, model, fetchImpl, signal, usage) {
   usage.outputTokens += tokenCount(result?.usageMetadata?.candidatesTokenCount);
   const candidate = result?.candidates?.[0];
   const finish = candidate?.finishReason;
+  if (result?.promptFeedback?.blockReason || (finish && finish !== "STOP")) {
+    logInvalidResponse("monthly-photo-select", model, result?.promptFeedback?.blockReason || finish);
+  }
   if (result?.promptFeedback?.blockReason || ["SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY"].includes(finish)) {
     throw failure("AI_CONTENT_BLOCKED");
   }

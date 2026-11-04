@@ -13,6 +13,7 @@ import { readInspectionReviewPayload, reviewInspectionPhotos } from "./inspectio
 import { readMonthlyReportPhotoSelectionPayload, selectMonthlyReportPhotos } from "./monthly-report-photo-select.js";
 export { WallboardDevices } from "./wallboard-devices.js";
 export { WallboardRefreshJobs } from "./wallboard-refresh-jobs.js";
+import { logInvalidResponse, logUpstreamFailure, logUpstreamUnreachable } from "./upstream-log.js";
 import { MORNING_CRON, morningReady, morningSourceReady } from "./telegram-morning-jobs.js";
 import { seoulDay } from "./telegram-morning-core.js";
 export { TelegramMorningJobs } from "./telegram-morning-jobs.js";
@@ -222,22 +223,25 @@ async function callGroq(payload, env, fetchImpl, timeoutMs) {
   if (!env.GROQ_API_KEY) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   const maskedContent = maskSensitiveText(payload.content);
   const maskedContext = sanitizeContext(payload.context);
+  const model = env.GROQ_MODEL || "qwen/qwen3.8-27b";
   let response;
   try {
     response = await fetchImpl(GROQ_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${env.GROQ_API_KEY}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: env.GROQ_MODEL || "qwen/qwen3.8-27b",
+        model,
         messages: buildTaskMessages(payload.task, maskedContent, maskedContext),
         response_format: { type: "json_object" },
         temperature: 0.2
       }),
       signal: AbortSignal.timeout(timeoutMs)
     });
-  } catch {
+  } catch (error) {
+    logUpstreamUnreachable("ai-assist", model, error);
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
+  if (!response.ok) await logUpstreamFailure("ai-assist", model, response);
   if (response.status === 429) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
   if (!response.ok) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   let data;
@@ -308,9 +312,11 @@ async function callGeminiReport(payload, env, fetchImpl, timeoutMs) {
       redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs)
     });
-  } catch {
+  } catch (error) {
+    logUpstreamUnreachable("ai-report", model, error);
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
+  if (!response.ok) await logUpstreamFailure("ai-report", model, response);
   if (response.status === 429) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
   if (!response.ok) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
 
@@ -321,7 +327,10 @@ async function callGeminiReport(payload, env, fetchImpl, timeoutMs) {
     throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
   }
   const rawText = data?.candidates?.[0]?.content?.parts?.map(part => typeof part?.text === "string" ? part.text : "").join("").trim();
-  if (!rawText) throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  if (!rawText) {
+    logInvalidResponse("ai-report", model, data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason || "EMPTY");
+    throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  }
   let parsed;
   try { parsed = JSON.parse(rawText); }
   catch { throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" }); }
@@ -355,7 +364,8 @@ async function callGroqTranscription(payload, env, fetchImpl, timeoutMs) {
   if (!env.GROQ_API_KEY) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   const form = new FormData();
   form.append("file", payload.file, payload.file.name);
-  form.append("model", env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo");
+  const model = env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo";
+  form.append("model", model);
   form.append("language", payload.language);
   form.append("response_format", "json");
   let response;
@@ -364,7 +374,11 @@ async function callGroqTranscription(payload, env, fetchImpl, timeoutMs) {
       method: "POST", headers: { authorization: `Bearer ${env.GROQ_API_KEY}` }, body: form,
       signal: AbortSignal.timeout(Math.max(timeoutMs, 60_000))
     });
-  } catch { throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" }); }
+  } catch (error) {
+    logUpstreamUnreachable("transcribe", model, error);
+    throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  }
+  if (!response.ok) await logUpstreamFailure("transcribe", model, response);
   if (response.status === 429) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
   if (!response.ok) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   let value;
