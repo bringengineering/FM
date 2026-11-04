@@ -116,6 +116,9 @@ Apps Script `프로젝트 설정 > 스크립트 속성`에 아래 값을 저장�
 - `POPBILL_SECRET_KEY`: 팝빌에서 발급한 SecretKey
 - `POPBILL_CORP_NUM`: 하이픈을 제외한 팝빌 회원 사업자번호
 - `POPBILL_USER_ID`: 팝빌 테스트 회원 ID
+- `POPBILL_ACCOUNT_REF_KEY`: 건물-계좌 연결 ID용 키. 비워 두면 첫 조회 때 그 시점의 SecretKey로 자동 생성되며, 이후 SecretKey를 바꾸거나 테스트→운영으로 전환해도 기존 연결이 유지됩니다. 지우면 모든 건물 계좌 연결을 다시 해야 합니다.
+
+입금 자동 알림은 관리자별 계좌 연결(`PAYMENT_NOTIFICATION_BINDINGS_<uid>`)을 합쳐 사용하므로, 계좌 연결이 없는 관리자가 캘린더를 열어도 기존 알림이 멈추지 않습니다. 발송 기록은 이벤트 해시를 여러 속성(`PAYMENT_NOTIFICATION_LEDGER_<날짜>#n`)에 나눠 40일간 보관합니다. 미입금 알림은 납부일 다음 날 13시 이후 보내고, 실행을 놓쳤으면 납부일 후 3일까지 이어서 보냅니다. 캘린더는 계좌 연결과 납부일 이후 조회 성공이 확인될 때만 `미입금`으로, 그 외에는 `조회 필요`로 표시합니다.
 
 `verifyPopbillEasyFinBankConnection()`은 계좌조회 권한과 등록 계좌 목록을 확인하며, 로그에는 계좌번호 뒤 4자리만 남깁니다.
 연동 파트너 계정에서 직접 등록 버튼이 보이지 않으면 `getPopbillBankAccountManagerUrl()`을 실행하고 로그에 출력되는 30초 유효 팝빌 테스트 URL을 바로 엽니다. 계좌번호·계좌 비밀번호·실명번호·신한은행 조회전용 ID/PW는 이 팝빌 화면에만 입력합니다.

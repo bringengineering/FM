@@ -37,12 +37,18 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260803-v53";
+const AUTOMATION_BUILD = "complaint-workflow-20261104-v54";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
 const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
 const PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY = "PAYMENT_NOTIFICATION_CONFIRMED_BASELINE";
+const PAYMENT_NOTIFICATION_BINDINGS_PREFIX = "PAYMENT_NOTIFICATION_BINDINGS_";
+const PAYMENT_NOTIFICATION_LEDGER_RETENTION_DAYS = 40;
+const PAYMENT_OVERDUE_CATCHUP_DAYS = 3;
+const POPBILL_ACCOUNT_REF_KEY_PROPERTY = "POPBILL_ACCOUNT_REF_KEY";
+// 스크립트 속성 값 하나는 약 9KB까지라서, 한글이 섞여도 넘지 않게 나눠 저장한다.
+const SCRIPT_PROPERTY_CHUNK_CHARS = 2500;
 const PAYMENT_DUE_ALERT_HOUR = 9;
 const PAYMENT_OVERDUE_ALERT_HOUR = 13;
 const OWNER_PAYMENT_ACCOUNT = {
@@ -8489,23 +8495,99 @@ function paymentNotificationSafeBindings_(bankBindings) {
   return safe;
 }
 
+function scriptPropertyChunkedRead_(props, baseKey) {
+  const count = Number(props.getProperty(baseKey + "#n") || 0);
+  if (!(count > 0)) return "";
+  let text = "";
+  for (let index = 0; index < count; index += 1) {
+    text += props.getProperty(baseKey + "#" + index) || "";
+  }
+  return text;
+}
+
+function scriptPropertyChunkedWrite_(props, baseKey, text) {
+  const value = String(text || "");
+  const previousCount = Number(props.getProperty(baseKey + "#n") || 0);
+  const updates = {};
+  let count = 0;
+  for (let offset = 0; offset < value.length; offset += SCRIPT_PROPERTY_CHUNK_CHARS) {
+    updates[baseKey + "#" + count] = value.slice(offset, offset + SCRIPT_PROPERTY_CHUNK_CHARS);
+    count += 1;
+  }
+  updates[baseKey + "#n"] = String(count);
+  props.setProperties(updates);
+  for (let index = count; index < previousCount; index += 1) {
+    props.deleteProperty(baseKey + "#" + index);
+  }
+}
+
+function paymentNotificationParseConfig_(raw) {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function paymentNotificationReadAdminBindings_(props, uid) {
+  try {
+    return paymentNotificationSafeBindings_(
+      JSON.parse(scriptPropertyChunkedRead_(props, PAYMENT_NOTIFICATION_BINDINGS_PREFIX + uid) || "{}")
+    );
+  } catch (error) {
+    return {};
+  }
+}
+
+// 관리자마다 자기 캘린더의 계좌 연결을 따로 저장하고, 자동 알림은 모두를 합쳐 쓴다.
+// 계좌 연결이 없는 다른 관리자가 캘린더를 열어도 기존 자동 알림이 멈추지 않는다.
 function rememberPaymentNotificationAutomation_(payload, bankBindings) {
   const uid = String(payload && payload.uid || "").trim();
   if (!/^[A-Za-z0-9:_-]{6,160}$/.test(uid)) {
     throw new Error("입금 알림 자동화 사용자 ID가 올바르지 않습니다.");
   }
   const safeBindings = paymentNotificationSafeBindings_(bankBindings);
-  const config = {
-    uid: uid,
-    adminEmail: String(payload && payload.adminEmail || "").trim().slice(0, 160),
-    bankBindings: safeBindings,
-    updatedAt: new Date().toISOString(),
-    build: AUTOMATION_BUILD
-  };
-  PropertiesService.getScriptProperties().setProperty(
-    PAYMENT_NOTIFICATION_CONFIG_PROPERTY,
-    JSON.stringify(config)
-  );
+  const props = PropertiesService.getScriptProperties();
+  const config = paymentNotificationParseConfig_(props.getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY));
+  const admins = config.admins && typeof config.admins === "object" ? config.admins : {};
+  const now = new Date().toISOString();
+  let configChanged = false;
+  const legacyUid = String(config.uid || "");
+  if (!config.admins && /^[A-Za-z0-9:_-]{6,160}$/.test(legacyUid)) {
+    scriptPropertyChunkedWrite_(
+      props,
+      PAYMENT_NOTIFICATION_BINDINGS_PREFIX + legacyUid,
+      JSON.stringify(paymentNotificationSafeBindings_(config.bankBindings))
+    );
+    admins[legacyUid] = {
+      adminEmail: String(config.adminEmail || "").slice(0, 160),
+      updatedAt: String(config.updatedAt || now)
+    };
+    configChanged = true;
+  }
+  const bindingsKey = PAYMENT_NOTIFICATION_BINDINGS_PREFIX + uid;
+  const serialized = JSON.stringify(safeBindings);
+  const bindingsChanged = scriptPropertyChunkedRead_(props, bindingsKey) !== serialized;
+  if (bindingsChanged) scriptPropertyChunkedWrite_(props, bindingsKey, serialized);
+  const adminEmail = String(payload && payload.adminEmail || "").trim().slice(0, 160);
+  const previous = admins[uid] || null;
+  if (!previous || bindingsChanged || previous.adminEmail !== adminEmail) {
+    admins[uid] = {
+      adminEmail: adminEmail,
+      updatedAt: bindingsChanged || !previous ? now : String(previous.updatedAt || now)
+    };
+    configChanged = true;
+  }
+  if (configChanged || config.build !== AUTOMATION_BUILD) {
+    props.setProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY, JSON.stringify({
+      uid: /^[A-Za-z0-9:_-]{6,160}$/.test(legacyUid) ? legacyUid : uid,
+      admins: admins,
+      updatedAt: now,
+      build: AUTOMATION_BUILD
+    }));
+  }
   ensurePaymentNotificationTrigger_();
   return {
     configured: Object.keys(safeBindings).length > 0,
@@ -8514,17 +8596,25 @@ function rememberPaymentNotificationAutomation_(payload, bankBindings) {
 }
 
 function paymentNotificationConfig_() {
-  const raw = PropertiesService.getScriptProperties()
-    .getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
   if (!raw) return null;
-  try {
-    const config = JSON.parse(raw);
-    if (!config || !/^[A-Za-z0-9:_-]{6,160}$/.test(String(config.uid || ""))) return null;
+  const config = paymentNotificationParseConfig_(raw);
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(String(config.uid || ""))) return null;
+  if (!config.admins || typeof config.admins !== "object") {
     config.bankBindings = paymentNotificationSafeBindings_(config.bankBindings);
     return config;
-  } catch (error) {
-    return null;
   }
+  // 같은 건물을 두 관리자가 연결했다면 가장 최근에 바꾼 관리자의 연결을 쓴다.
+  const merged = {};
+  Object.keys(config.admins)
+    .filter(uid => /^[A-Za-z0-9:_-]{6,160}$/.test(uid))
+    .sort((left, right) =>
+      String(config.admins[left] && config.admins[left].updatedAt || "")
+        .localeCompare(String(config.admins[right] && config.admins[right].updatedAt || "")))
+    .forEach(uid => Object.assign(merged, paymentNotificationReadAdminBindings_(props, uid)));
+  config.bankBindings = merged;
+  return config;
 }
 
 function paymentNotificationDateKey_(date, offsetDays) {
@@ -8669,6 +8759,7 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
   const current = now || new Date();
   const today = paymentNotificationDateKey_(current, 0);
   const yesterday = paymentNotificationDateKey_(current, -1);
+  const earliestOverdue = paymentNotificationDateKey_(current, -PAYMENT_OVERDUE_CATCHUP_DAYS);
   const hour = paymentNotificationHour_(current);
   const plan = {
     today: today,
@@ -8676,6 +8767,7 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
     ownerDue: {},
     tenantOverdue: [],
     ownerOverdue: {},
+    ownerOverdueByDate: {},
     skippedUnlinked: 0,
     skippedUnavailable: 0
   };
@@ -8692,7 +8784,11 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
       plan.skippedUnavailable += 1;
       return;
     }
-    const monthKeys = Array.from(new Set([today.slice(0, 7), yesterday.slice(0, 7)]));
+    const monthKeys = Array.from(new Set([
+      earliestOverdue.slice(0, 7),
+      yesterday.slice(0, 7),
+      today.slice(0, 7)
+    ]));
     monthKeys.forEach(monthKey => {
       if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return;
       if (paid[id + "|" + monthKey] || held[id + "|" + monthKey]) return;
@@ -8702,10 +8798,18 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
         plan.ownerDue[schedule.buildingId] = plan.ownerDue[schedule.buildingId] || [];
         plan.ownerDue[schedule.buildingId].push({ schedule: schedule, dueDate: dueDate });
       }
-      if (hour >= PAYMENT_OVERDUE_ALERT_HOUR && dueDate === yesterday) {
-        plan.tenantOverdue.push({ schedule: schedule, dueDate: dueDate });
+      // 다음 날 13시 이후 미입금 안내. 그 시간에 실행을 놓쳤으면 최대 3일까지 이어서 보낸다.
+      const overdueReady = dueDate === yesterday
+        ? hour >= PAYMENT_OVERDUE_ALERT_HOUR
+        : dueDate < yesterday && dueDate >= earliestOverdue;
+      if (overdueReady) {
+        const row = { schedule: schedule, dueDate: dueDate };
+        plan.tenantOverdue.push(row);
         plan.ownerOverdue[schedule.buildingId] = plan.ownerOverdue[schedule.buildingId] || [];
-        plan.ownerOverdue[schedule.buildingId].push({ schedule: schedule, dueDate: dueDate });
+        plan.ownerOverdue[schedule.buildingId].push(row);
+        const byDate = plan.ownerOverdueByDate[dueDate] = plan.ownerOverdueByDate[dueDate] || {};
+        byDate[schedule.buildingId] = byDate[schedule.buildingId] || [];
+        byDate[schedule.buildingId].push(row);
       }
     });
   });
@@ -9037,32 +9141,67 @@ function kakaoAlimTalkTemplateState_(templateCode, config) {
   };
 }
 
+function paymentNotificationLedgerKey_(eventId) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(eventId || ""),
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(digest).slice(0, 16);
+}
+
+// 발송 기록은 이벤트 ID의 짧은 해시만 나눠 저장해 속성 크기 한도를 넘지 않는다.
+// 예전 형식(이벤트 ID 전체를 담은 JSON)도 읽고, 저장할 때 새 형식으로 옮긴다.
 function paymentNotificationLedger_(dateKey) {
   const propertyKey = PAYMENT_NOTIFICATION_LEDGER_PREFIX + String(dateKey || "").replace(/\D/g, "");
   const props = PropertiesService.getScriptProperties();
-  let entries = {};
-  try {
-    entries = JSON.parse(props.getProperty(propertyKey) || "{}") || {};
-  } catch (error) {
-    entries = {};
+  const keys = {};
+  const legacyRaw = props.getProperty(propertyKey);
+  if (legacyRaw) {
+    try {
+      const legacy = JSON.parse(legacyRaw) || {};
+      Object.keys(legacy).forEach(eventId => {
+        if (legacy[eventId]) keys[paymentNotificationLedgerKey_(eventId)] = true;
+      });
+    } catch (error) {
+      // 깨진 예전 기록은 무시한다.
+    }
   }
+  scriptPropertyChunkedRead_(props, propertyKey).split(",").forEach(key => {
+    if (key) keys[key] = true;
+  });
+  let dirty = !!legacyRaw;
   return {
     propertyKey: propertyKey,
-    entries: entries,
+    has: function(eventId) {
+      return !!eventId && keys[paymentNotificationLedgerKey_(eventId)] === true;
+    },
+    add: function(eventId) {
+      if (!eventId) return;
+      const key = paymentNotificationLedgerKey_(eventId);
+      if (keys[key] === true) return;
+      keys[key] = true;
+      dirty = true;
+    },
     save: function() {
-      props.setProperty(propertyKey, JSON.stringify(entries));
+      if (!dirty) return;
+      scriptPropertyChunkedWrite_(props, propertyKey, Object.keys(keys).join(","));
+      if (legacyRaw) props.deleteProperty(propertyKey);
+      dirty = false;
     }
   };
 }
 
 function cleanupPaymentNotificationLedgers_(todayKey) {
-  const cutoff = paymentNotificationDateKey_(new Date(todayKey + "T12:00:00+09:00"), -62)
-    .replace(/\D/g, "");
+  const cutoff = paymentNotificationDateKey_(
+    new Date(todayKey + "T12:00:00+09:00"),
+    -PAYMENT_NOTIFICATION_LEDGER_RETENTION_DAYS
+  ).replace(/\D/g, "");
   const props = PropertiesService.getScriptProperties();
   Object.keys(props.getProperties()).forEach(key => {
     if (key.indexOf(PAYMENT_NOTIFICATION_LEDGER_PREFIX) !== 0) return;
-    const datePart = key.slice(PAYMENT_NOTIFICATION_LEDGER_PREFIX.length);
-    if (/^\d{8}$/.test(datePart) && datePart < cutoff) props.deleteProperty(key);
+    const match = key.slice(PAYMENT_NOTIFICATION_LEDGER_PREFIX.length).match(/^(\d{8})(?:#|$)/);
+    if (match && match[1] < cutoff) props.deleteProperty(key);
   });
 }
 
@@ -9120,19 +9259,27 @@ function processPaymentNotificationAutomation() {
       transactionState,
       now
     );
-    const confirmedLedgers = {};
+    // 날짜별 발송 기록은 하나의 객체만 써야 서로의 저장을 덮어쓰지 않는다.
+    const ledgersByDate = {};
     const confirmedSeenEntries = {};
-    function confirmedLedgerForDate(dateKey) {
+    function ledgerForDate(dateKey) {
       const key = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))
         ? String(dateKey)
         : plan.today;
-      if (!confirmedLedgers[key]) confirmedLedgers[key] = paymentNotificationLedger_(key);
-      return confirmedLedgers[key];
+      if (!ledgersByDate[key]) ledgersByDate[key] = paymentNotificationLedger_(key);
+      return ledgersByDate[key];
+    }
+    function nextDateKey(dateKey) {
+      return paymentNotificationDateKey_(new Date(dateKey + "T12:00:00+09:00"), 1);
+    }
+    // 납부일 안내는 납부일, 미입금 안내는 그 다음 날 기록에 남긴다(예전 기록과 같은 위치).
+    function reminderLedger(reminderType, dueDate) {
+      return ledgerForDate(reminderType === "due" ? dueDate : nextDateKey(dueDate));
     }
     (transactionState.matchedPayments || []).forEach(payment => {
       const eventId = paymentNotificationConfirmedEventId_(payment);
-      const paymentLedger = confirmedLedgerForDate(payment && payment.date);
-      if (eventId && paymentLedger.entries[eventId]) confirmedSeenEntries[eventId] = true;
+      const paymentLedger = ledgerForDate(payment && payment.date);
+      if (eventId && paymentLedger.has(eventId)) confirmedSeenEntries[eventId] = true;
     });
 
     const confirmedBaselineRefs = paymentNotificationConfirmedBaselineRefs_();
@@ -9151,13 +9298,13 @@ function processPaymentNotificationAutomation() {
         if (!newConfirmedBaselineRefs[String(payment && payment.accountRef || "")]) return;
         const eventId = paymentNotificationConfirmedEventId_(payment);
         if (!eventId) return;
-        const paymentLedger = confirmedLedgerForDate(payment && payment.date);
-        if (!paymentLedger.entries[eventId]) {
-          paymentLedger.entries[eventId] = true;
+        const paymentLedger = ledgerForDate(payment && payment.date);
+        if (!paymentLedger.has(eventId)) {
+          paymentLedger.add(eventId);
           confirmedBaselineCount += 1;
         }
       });
-      Object.keys(confirmedLedgers).forEach(dateKey => confirmedLedgers[dateKey].save());
+      Object.keys(ledgersByDate).forEach(dateKey => ledgersByDate[dateKey].save());
       savePaymentNotificationConfirmedBaselineRefs_(confirmedBaselineRefs);
     }
 
@@ -9178,9 +9325,14 @@ function processPaymentNotificationAutomation() {
       ? paymentNotificationOwnerContacts_()
       : {};
     const ownerDueGroups = paymentOwnerPhoneGroups_(plan.ownerDue, ownerContacts);
-    const ownerOverdueGroups = paymentOwnerPhoneGroups_(plan.ownerOverdue, ownerContacts);
+    const ownerOverdueGroupsByDate = Object.keys(plan.ownerOverdueByDate || {}).sort().map(dueDate => ({
+      dueDate: dueDate,
+      groups: paymentOwnerPhoneGroups_(plan.ownerOverdueByDate[dueDate], ownerContacts)
+    }));
+    const ownerOverdueGroupCount = ownerOverdueGroupsByDate
+      .reduce((sum, item) => sum + item.groups.length, 0);
     const ownerConfirmedGroups = paymentOwnerPhoneGroups_(confirmedPlan.groups, ownerContacts);
-    const ownerEventCount = ownerDueGroups.length + ownerOverdueGroups.length;
+    const ownerEventCount = ownerDueGroups.length + ownerOverdueGroupCount;
     const ownerConfirmedEventCount = ownerConfirmedGroups.length;
     const tenantDueTemplate = plan.tenantDue.length
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminder, kakaoConfig)
@@ -9194,7 +9346,6 @@ function processPaymentNotificationAutomation() {
     const ownerConfirmedTemplate = ownerConfirmedEventCount
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerConfirmedGroup, kakaoConfig)
       : { ready: false };
-    const ledger = paymentNotificationLedger_(plan.today);
     const stats = {
       tenantDueSent: 0,
       tenantOverdueSent: 0,
@@ -9213,7 +9364,8 @@ function processPaymentNotificationAutomation() {
     function sendTenant(row, reminderType) {
       const schedule = row.schedule || {};
       const eventId = ["tenant", reminderType, schedule.id, row.dueDate].join("_");
-      if (ledger.entries[eventId]) {
+      const ledger = reminderLedger(reminderType, row.dueDate);
+      if (ledger.has(eventId)) {
         stats.duplicateSkipped += 1;
         return;
       }
@@ -9242,24 +9394,30 @@ function processPaymentNotificationAutomation() {
         stats.sendFailed += 1;
         return;
       }
-      ledger.entries[eventId] = true;
+      ledger.add(eventId);
       ledger.save();
       if (reminderType === "due") stats.tenantDueSent += 1;
       else stats.tenantOverdueSent += 1;
     }
 
-    function sendOwner(group, reminderType) {
-      const buildings = group && group.buildings || [];
-      const rows = buildings.reduce((all, building) => all.concat(building.rows || []), []);
+    function ownerBuildingEventId(reminderType, buildingId, dueDate) {
+      return ["owner", reminderType, "building", buildingId, dueDate].join("_");
+    }
+
+    function sendOwner(group, reminderType, dueDate) {
+      const ledger = reminderLedger(reminderType, dueDate);
+      // 이미 안내한 건물은 빼고 보낸다. 같은 날 일부 건물이 입금돼 묶음이 바뀌어도 다시 보내지 않는다.
+      const buildings = (group && group.buildings || []).filter(building =>
+        !ledger.has(ownerBuildingEventId(reminderType, building.buildingId, dueDate)));
       const buildingIds = buildings.map(building => building.buildingId).sort().join("-");
       const eventId = [
         "owner",
         reminderType,
         group && group.key || "unknown",
-        rows[0] && rows[0].dueDate || "",
+        dueDate,
         buildingIds
       ].join("_");
-      if (ledger.entries[eventId]) {
+      if (!buildings.length || ledger.has(eventId)) {
         stats.duplicateSkipped += 1;
         return;
       }
@@ -9288,7 +9446,9 @@ function processPaymentNotificationAutomation() {
         stats.sendFailed += 1;
         return;
       }
-      ledger.entries[eventId] = true;
+      ledger.add(eventId);
+      buildings.forEach(building =>
+        ledger.add(ownerBuildingEventId(reminderType, building.buildingId, dueDate)));
       ledger.save();
       if (reminderType === "due") stats.ownerDueSent += 1;
       else stats.ownerOverdueSent += 1;
@@ -9323,8 +9483,8 @@ function processPaymentNotificationAutomation() {
       }
       const savedDates = {};
       rows.forEach(row => {
-        const paymentLedger = confirmedLedgerForDate(row.payment && row.payment.date);
-        paymentLedger.entries[row.eventId] = true;
+        const paymentLedger = ledgerForDate(row.payment && row.payment.date);
+        paymentLedger.add(row.eventId);
         savedDates[paymentLedger.propertyKey] = paymentLedger;
       });
       Object.keys(savedDates).forEach(propertyKey => savedDates[propertyKey].save());
@@ -9334,8 +9494,9 @@ function processPaymentNotificationAutomation() {
 
     plan.tenantDue.forEach(row => sendTenant(row, "due"));
     plan.tenantOverdue.forEach(row => sendTenant(row, "overdue"));
-    ownerDueGroups.forEach(group => sendOwner(group, "due"));
-    ownerOverdueGroups.forEach(group => sendOwner(group, "overdue"));
+    ownerDueGroups.forEach(group => sendOwner(group, "due", plan.today));
+    ownerOverdueGroupsByDate.forEach(item =>
+      item.groups.forEach(group => sendOwner(group, "overdue", item.dueDate)));
     ownerConfirmedGroups.forEach(group => sendOwnerConfirmed(group));
     cleanupPaymentNotificationLedgers_(plan.today);
     const output = {
@@ -9393,6 +9554,7 @@ function popbillConfigFromValues_(values) {
     secretKey: secretKey,
     corpNum: corpNum,
     userId: userId,
+    accountRefKey: String(source.POPBILL_ACCOUNT_REF_KEY || "").trim(),
     serviceId: isTest ? "POPBILL_TEST" : "POPBILL",
     apiBaseUrl: isTest
       ? "https://popbill-test.linkhub.co.kr"
@@ -9609,6 +9771,22 @@ function popbillBankNormalizePayer_(value) {
     .replace(/[^0-9a-z가-힣]/g, "");
 }
 
+// 건물-계좌 연결 ID용 키. 처음 한 번 그때의 SecretKey로 정해 두고 따로 보관하므로,
+// 팝빌 SecretKey를 바꾸거나 테스트→운영으로 옮겨도 기존 연결이 끊기지 않는다.
+function popbillAccountRefKey_(config) {
+  const configured = String(config && config.accountRefKey || "").trim();
+  if (configured) return configured;
+  const props = PropertiesService.getScriptProperties();
+  let key = String(props.getProperty(POPBILL_ACCOUNT_REF_KEY_PROPERTY) || "").trim();
+  if (!key) {
+    key = String(config && config.secretKey || "").trim();
+    if (!key) throw new Error("팝빌 계좌 연결 키를 만들 수 없습니다.");
+    props.setProperty(POPBILL_ACCOUNT_REF_KEY_PROPERTY, key);
+  }
+  if (config) config.accountRefKey = key;
+  return key;
+}
+
 function popbillBankAccountRef_(account, config) {
   const resolvedConfig = config || popbillConfig_();
   const raw = [
@@ -9618,7 +9796,7 @@ function popbillBankAccountRef_(account, config) {
   if (!raw.replace(":", "")) throw new Error("팝빌 등록계좌 식별정보가 올바르지 않습니다.");
   const signature = Utilities.computeHmacSha256Signature(
     Utilities.newBlob(raw).getBytes(),
-    Utilities.base64Decode(resolvedConfig.secretKey)
+    Utilities.base64Decode(popbillAccountRefKey_(resolvedConfig))
   );
   return "pb_" + Utilities.base64EncodeWebSafe(signature)
     .replace(/=+$/g, "")

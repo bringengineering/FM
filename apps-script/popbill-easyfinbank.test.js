@@ -101,6 +101,7 @@ vm.runInContext([
   extractFunction("popbillBankIsoDate_"),
   extractFunction("popbillBankShiftMonth_"),
   extractFunction("popbillBankNormalizePayer_"),
+  extractFunction("popbillAccountRefKey_"),
   extractFunction("popbillBankAccountRef_"),
   extractFunction("popbillBankSchedulesForAccount_"),
   extractFunction("popbillBankRemarkCandidates_"),
@@ -178,7 +179,7 @@ const schedules = {
 };
 const accountRef = context.popbillBankAccountRef_(
   { bankCode: "0088", accountNumber: "110123451076" },
-  { secretKey: Buffer.from("server-only-key").toString("base64") }
+  { secretKey: "unused", accountRefKey: Buffer.from("server-only-key").toString("base64") }
 );
 assert.match(accountRef, /^pb_[A-Za-z0-9_-]{24}$/);
 assert.equal(accountRef.includes("1076"), false, "익명 계좌 ID에는 계좌번호 끝자리도 포함하지 않는다");
