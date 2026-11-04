@@ -261,3 +261,52 @@ test("document delivery routes reuse Firebase employee authentication", async ()
   assert.deepEqual(await response.json(), { ok: true, email: "ameejin92@gmail.com" });
   assert.equal(calls.length, 1);
 });
+
+async function warnsFrom(run) {
+  const lines = [];
+  const original = console.warn;
+  console.warn = (...args) => lines.push(args.join(" "));
+  try { await run(); } finally { console.warn = original; }
+  return lines.join("\n");
+}
+
+function failingProvider(provider) {
+  return async url => {
+    if (String(url).includes("accounts:lookup")) return new Response(JSON.stringify({ users: [{ localId: "uid-1", email: "ameejin92@gmail.com" }] }), { status: 200 });
+    return provider();
+  };
+}
+
+test("AI assist and report failures record the provider reason without changing the response", async () => {
+  const report = { task: "completion_report", content: "작업 완료" };
+  const env = environment({ GEMINI_API_KEY: "secret", GEMINI_REPORT_MODEL: "gemini-3.5-flash-lite" });
+  const cases = [
+    [request(), env, () => new Response("{}", { status: 429 }), 429, /^ai-upstream-failure .*"feature":"ai-assist".*"httpStatus":429/m],
+    [request(), env, () => { throw new TypeError("private detail"); }, 503, /^ai-upstream-unreachable .*"feature":"ai-assist".*"reason":"TypeError"/m],
+    [request(report), env, () => new Response("{}", { status: 500 }), 503, /^ai-upstream-failure .*"feature":"ai-report".*"httpStatus":500/m],
+    [request(report), env, () => new Response(JSON.stringify({ promptFeedback: { blockReason: "SAFETY" } })), 502, /^ai-invalid-response .*"feature":"ai-report".*"reason":"SAFETY"/m],
+  ];
+  for (const [req, caseEnv, provider, status, pattern] of cases) {
+    const worker = createWorker({ fetchImpl: failingProvider(provider) });
+    let response;
+    const logged = await warnsFrom(async () => { response = await worker.fetch(req, caseEnv); });
+    assert.equal(response.status, status);
+    assert.match(logged, pattern);
+    assert.doesNotMatch(logged, /private detail|작업 완료|secret/);
+  }
+});
+
+test("transcription failures record the provider reason", async () => {
+  const body = new FormData();
+  body.append("file", new Blob(["audio"], { type: "audio/mpeg" }), "call.mp3");
+  body.append("language", "ko");
+  const worker = createWorker({ fetchImpl: failingProvider(() => new Response("{}", { status: 503 })) });
+  let response;
+  const logged = await warnsFrom(async () => {
+    response = await worker.fetch(new Request("https://ai.example/v1/transcribe", {
+      method: "POST", headers: { authorization: "Bearer firebase-token", origin: "app://bring-crm" }, body
+    }), environment());
+  });
+  assert.equal(response.status, 503);
+  assert.match(logged, /^ai-upstream-failure .*"feature":"transcribe".*"httpStatus":503/m);
+});

@@ -1,4 +1,4 @@
-import { logUpstreamFailure, logInvalidResponse } from "./upstream-log.js";
+import { logUpstreamFailure, logInvalidResponse, logUpstreamUnreachable } from "./upstream-log.js";
 import { SPACES, TARGETS, ACTIONS, CONTACTS, WATER, FEATURES, ANCHORS, QUALITY, normalizeEvidence } from "./photo-evidence.js";
 const MAX_PHOTOS = 30;
 const MATCH_MODEL = "gemini-3.5-flash";
@@ -259,7 +259,13 @@ async function classifyBatch(images, env, model, fetchImpl, signal, mode = "clas
     }),
     redirect: "manual", signal,
   });
-  const response = await sendWithRetry(send, signal);
+  let response;
+  try { response = await sendWithRetry(send, signal); }
+  catch (error) {
+    // 시간 초과는 signal.reason 이 TimeoutError, 다른 배치 실패로 취소되면 AbortError 다.
+    logUpstreamUnreachable(match ? "photo-match" : "photo-classify", model, signal?.reason || error);
+    throw error;
+  }
   if (!response.ok) {
     await logUpstreamFailure(match ? "photo-match" : "photo-classify", model, response);
     throw failure(response.status === 429 ? "RATE_LIMITED" : "AI_TEMPORARY_FAILURE");

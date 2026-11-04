@@ -3,6 +3,8 @@
 //
 // 건물주 보고서에 들어갈 말이라 사진에서 보이는 사실만 쓰게 한다. 원인·책임·비용을 단정하지
 // 않는다. 확신이 없으면 unknown/관찰로 둔다. 사진 축소본은 이 요청에만 쓰고 저장하지 않는다.
+import { logInvalidResponse, logUpstreamFailure, logUpstreamUnreachable } from "./upstream-log.js";
+
 const MODEL = "gemini-3.5-flash";
 const MAX_IMAGES = 12;
 const MAX_JPEG_BYTES = 120 * 1024;
@@ -88,10 +90,11 @@ const clean = (value, limit) => String(value || "").replace(/[\u0000-\u001f\u007
 export async function reviewInspectionPhotos(images, env, fetchImpl = fetch, timeoutMs = 60_000) {
   if (!env.GEMINI_API_KEY) throw failure("GEMINI_NOT_CONFIGURED");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), timeoutMs);
+  const model = env.GEMINI_INSPECTION_MODEL || MODEL;
   let response;
   try {
-    response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.GEMINI_INSPECTION_MODEL || MODEL)}:generateContent`, {
+    response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       signal: controller.signal,
       headers: { "x-goog-api-key": String(env.GEMINI_API_KEY), "content-type": "application/json" },
@@ -103,15 +106,23 @@ export async function reviewInspectionPhotos(images, env, fetchImpl = fetch, tim
         generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema, temperature: 0.1 },
       }),
     });
-  } catch {
+  } catch (error) {
+    logUpstreamUnreachable("inspection-review", model, controller.signal.reason || error);
     throw failure("AI_TEMPORARY_FAILURE");
   } finally { clearTimeout(timer); }
-  if (!response.ok) throw failure("AI_TEMPORARY_FAILURE");
+  if (!response.ok) {
+    await logUpstreamFailure("inspection-review", model, response);
+    throw failure("AI_TEMPORARY_FAILURE");
+  }
   const raw = await response.text();
   if (raw.length > MAX_RESPONSE_BYTES * 4) throw failure("AI_INVALID_RESPONSE");
   let parsed;
   try {
     const body = JSON.parse(raw);
+    const finish = body?.candidates?.[0]?.finishReason;
+    if (body?.promptFeedback?.blockReason || (finish && finish !== "STOP")) {
+      logInvalidResponse("inspection-review", model, body?.promptFeedback?.blockReason || finish);
+    }
     parsed = JSON.parse(body?.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("") || "{}");
   } catch { throw failure("AI_INVALID_RESPONSE"); }
   const ids = new Set(images.map(image => image.id));
