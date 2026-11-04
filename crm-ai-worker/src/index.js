@@ -200,7 +200,10 @@ async function enforceLimits(identity, env, now) {
   const key = `company:${day}`;
   const count = Number(await env.AI_USAGE.get(key) || 0);
   const limit = Math.max(1, Number(env.AI_COMPANY_DAILY_LIMIT || 1000));
-  if (!Number.isFinite(count) || count >= limit) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  if (!Number.isFinite(count) || count >= limit) {
+    console.warn("ai-gateway-limit", JSON.stringify({ source: "company-daily", count, limit }));
+    throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  }
   await env.AI_USAGE.put(key, String(count + 1), { expirationTtl: 172800 });
 }
 
@@ -209,7 +212,10 @@ async function enforceBurstLimit(identity, env) {
     throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
   }
   const burst = await env.AI_RATE_LIMITER.limit({ key: identity.uid });
-  if (!burst?.success) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  if (!burst?.success) {
+    console.warn("ai-gateway-limit", JSON.stringify({ source: "per-user-burst" }));
+    throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  }
 }
 
 async function callGroq(payload, env, fetchImpl, timeoutMs) {
