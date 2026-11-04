@@ -310,3 +310,18 @@ test("transcription failures record the provider reason", async () => {
   assert.equal(response.status, 503);
   assert.match(logged, /^ai-upstream-failure .*"feature":"transcribe".*"httpStatus":503/m);
 });
+
+test("gateway limits record which limit stopped the request", async () => {
+  const worker = createWorker({ fetchImpl: failingProvider(() => new Response("{}", { status: 500 })) });
+  const cases = [
+    [{ AI_RATE_LIMITER: { async limit() { return { success: false }; } } }, /^ai-gateway-limit .*"source":"per-user-burst"/m],
+    [{ AI_COMPANY_DAILY_LIMIT: "5", AI_USAGE: { async get() { return "5"; }, async put() {} } }, /^ai-gateway-limit .*"source":"company-daily".*"count":5,"limit":5/m],
+  ];
+  for (const [overrides, pattern] of cases) {
+    let response;
+    const logged = await warnsFrom(async () => { response = await worker.fetch(request(), environment(overrides)); });
+    assert.equal(response.status, 429);
+    assert.match(logged, pattern);
+    assert.doesNotMatch(logged, /ameejin92|uid-1/);
+  }
+});

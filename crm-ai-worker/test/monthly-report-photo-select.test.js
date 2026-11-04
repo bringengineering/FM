@@ -106,3 +106,27 @@ test("비인증 요청은 사진 내용을 Gemini에 보내지 않는다", async
   assert.equal(response.status, 401);
   assert.equal(calls, 0);
 });
+
+async function warnsFrom(run) {
+  const lines = [];
+  const original = console.warn;
+  console.warn = (...args) => lines.push(args.join(" "));
+  try { await run(); } finally { console.warn = original; }
+  return lines.join("\n");
+}
+
+test("월간 사진 선택은 연결 실패와 차단 응답의 사유를 기록한다", async () => {
+  const payload = await readMonthlyReportPhotoSelectionPayload(request(basePayload()));
+  const env = { GEMINI_API_KEY: "test-secret", GEMINI_VISION_MODEL: "gemini-3.8-flash" };
+  const unreachable = await warnsFrom(() => assert.rejects(
+    selectMonthlyReportPhotos(payload, env, async () => { throw new TypeError("private detail"); }),
+    error => error?.code === "AI_TEMPORARY_FAILURE",
+  ));
+  assert.match(unreachable, /^ai-upstream-unreachable .*"feature":"monthly-photo-select".*"reason":"TypeError"/m);
+  assert.doesNotMatch(unreachable, /private detail|test-secret/);
+  const blocked = await warnsFrom(() => assert.rejects(
+    selectMonthlyReportPhotos(payload, env, async () => Response.json({ promptFeedback: { blockReason: "SAFETY" } })),
+    error => error?.code === "AI_CONTENT_BLOCKED",
+  ));
+  assert.match(blocked, /^ai-invalid-response .*"feature":"monthly-photo-select".*"reason":"SAFETY"/m);
+});
