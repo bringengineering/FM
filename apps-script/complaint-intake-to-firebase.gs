@@ -8616,6 +8616,7 @@ function paymentNotificationTransactionState_(schedules, bankBindings, now) {
   const endDate = popbillBankCompactDate_(now || new Date());
   const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
   const paidScheduleIds = {};
+  const heldScheduleMonths = {};
   const matchedPayments = [];
   const availableAccountRefs = {};
   const errors = [];
@@ -8629,8 +8630,16 @@ function paymentNotificationTransactionState_(schedules, bankBindings, now) {
       availableAccountRefs[accountRef] = true;
       (collected.list || []).forEach(transaction => {
         const match = popbillBankResolveTransactionMatch_(transaction, accountSchedules);
+        // 같은 이름·금액이 여러 일정에 걸린 입금(확인필요)은 사람이 볼 때까지 미입금 알림을 보류한다.
+        if (match.matchStatus === "review") {
+          match.reviewScheduleIds.forEach(id => {
+            const monthKey = popbillBankTransactionMatchMonth_(transaction, Object.assign({ id: id }, accountSchedules[id] || {}));
+            if (monthKey) heldScheduleMonths[id + "|" + monthKey] = true;
+          });
+        }
         if (match.matchStatus === "matched" && match.matchedScheduleId) {
-          paidScheduleIds[match.matchedScheduleId] = true;
+          // 납부 확인은 일정 하나가 아니라 "그 일정의 그 달" 단위다. 지난달 입금으로 이번 달 알림을 건너뛰면 안 된다.
+          if (match.matchedMonthKey) paidScheduleIds[match.matchedScheduleId + "|" + match.matchedMonthKey] = true;
           const payment = paymentNotificationMatchedPayment_(transaction, match, accountRef);
           if (payment) matchedPayments.push(payment);
         }
@@ -8644,6 +8653,7 @@ function paymentNotificationTransactionState_(schedules, bankBindings, now) {
   });
   return {
     paidScheduleIds: paidScheduleIds,
+    heldScheduleMonths: heldScheduleMonths,
     matchedPayments: matchedPayments,
     availableAccountRefs: availableAccountRefs,
     errors: errors
@@ -8654,6 +8664,7 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
   const bindings = paymentNotificationSafeBindings_(bankBindings);
   const state = transactionState || {};
   const paid = state.paidScheduleIds || {};
+  const held = state.heldScheduleMonths || {};
   const available = state.availableAccountRefs || {};
   const current = now || new Date();
   const today = paymentNotificationDateKey_(current, 0);
@@ -8681,11 +8692,10 @@ function paymentNotificationPlan_(schedules, bankBindings, transactionState, now
       plan.skippedUnavailable += 1;
       return;
     }
-    if (paid[id]) return;
-
     const monthKeys = Array.from(new Set([today.slice(0, 7), yesterday.slice(0, 7)]));
     monthKeys.forEach(monthKey => {
       if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return;
+      if (paid[id + "|" + monthKey] || held[id + "|" + monthKey]) return;
       const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
       if (hour >= PAYMENT_DUE_ALERT_HOUR && dueDate === today) {
         plan.tenantDue.push({ schedule: schedule, dueDate: dueDate });
@@ -9434,8 +9444,10 @@ function popbillFetchJson_(url, options, errorLabel) {
   }
   if (status < 200 || status >= 300) {
     const message = String(parsed.message || parsed.Message || "").trim();
-    throw new Error((errorLabel || "팝빌 API 요청 실패") +
+    const failure = new Error((errorLabel || "팝빌 API 요청 실패") +
       " (" + status + ")" + (message ? ": " + message : ""));
+    failure.status = status;
+    throw failure;
   }
   return parsed;
 }
@@ -9486,14 +9498,17 @@ function popbillSessionToken_(forceRefresh) {
   );
   const token = String(tokenResult.session_token || "").trim();
   if (!token) throw new Error("팝빌 인증 응답에 세션 토큰이 없습니다.");
-  cache.put(cacheKey, token, 25 * 60);
+  // 토큰 만료 시각보다 5분 먼저 버린다. 만료 정보가 없으면 예전처럼 25분.
+  const expiresAt = Date.parse(String(tokenResult.expiration || ""));
+  const seconds = isFinite(expiresAt) ? Math.floor((expiresAt - Date.now()) / 1000) - 300 : 25 * 60;
+  if (seconds >= 60) cache.put(cacheKey, token, Math.min(seconds, 6 * 60 * 60));
   return token;
 }
 
-function popbillApiRequest_(method, resourcePath, payload) {
+function popbillApiRequest_(method, resourcePath, payload, retried) {
   const config = popbillConfig_();
   const headers = {
-    Authorization: "Bearer " + popbillSessionToken_(false),
+    Authorization: "Bearer " + popbillSessionToken_(retried === true),
     "Accept-Language": "ko-KR"
   };
   if (config.userId) headers["X-PB-UserID"] = config.userId;
@@ -9505,11 +9520,19 @@ function popbillApiRequest_(method, resourcePath, payload) {
     options.contentType = "application/json";
     options.payload = JSON.stringify(payload);
   }
-  return popbillFetchJson_(
-    config.apiBaseUrl + resourcePath,
-    options,
-    "팝빌 계좌조회 API 요청 실패"
-  );
+  try {
+    return popbillFetchJson_(
+      config.apiBaseUrl + resourcePath,
+      options,
+      "팝빌 계좌조회 API 요청 실패"
+    );
+  } catch (error) {
+    // 저장해 둔 토큰이 먼저 무효가 되면 한 번만 새 토큰으로 다시 시도한다.
+    if (retried !== true && Number(error && error.status) === 401) {
+      return popbillApiRequest_(method, resourcePath, payload, true);
+    }
+    throw error;
+  }
 }
 
 function verifyPopbillEasyFinBankConnection() {
@@ -9637,7 +9660,9 @@ function popbillBankScheduleActiveInMonth_(schedule, monthKey) {
   return true;
 }
 
-function popbillBankTransactionScheduleMatches_(transaction, schedule) {
+// 입금이 어느 달 납부분인지 돌려준다(없으면 ""). 납부일 3일 전부터 7일 뒤까지를 그 달 납부로 본다.
+// 거래 달의 앞·뒤 달도 본다 — 1일 납부분을 전달 30일에 미리 넣는 경우가 있다.
+function popbillBankTransactionMatchMonth_(transaction, schedule) {
   const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
   if (!schedule || amount <= 0 || Number(schedule.amount) !== amount) return false;
   const payerKey = popbillBankNormalizePayer_(schedule.payerName);
@@ -9649,12 +9674,19 @@ function popbillBankTransactionScheduleMatches_(transaction, schedule) {
   const transactionDate = popbillBankIsoDate_(transaction.trdate);
   if (!transactionDate) return false;
   const transactionMonth = transactionDate.slice(0, 7);
-  return [transactionMonth, popbillBankShiftMonth_(transactionMonth, -1)].some(monthKey => {
-    if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return false;
+  const months = [transactionMonth, popbillBankShiftMonth_(transactionMonth, -1), popbillBankShiftMonth_(transactionMonth, 1)];
+  for (let i = 0; i < months.length; i += 1) {
+    const monthKey = months[i];
+    if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) continue;
     const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
-    return transactionDate >= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), -3)) &&
-      transactionDate <= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), 7));
-  });
+    if (transactionDate >= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), -3)) &&
+      transactionDate <= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), 7))) return monthKey;
+  }
+  return "";
+}
+
+function popbillBankTransactionScheduleMatches_(transaction, schedule) {
+  return !!popbillBankTransactionMatchMonth_(transaction, schedule);
 }
 
 function popbillBankResolveTransactionMatch_(transaction, schedules) {
@@ -9673,6 +9705,7 @@ function popbillBankResolveTransactionMatch_(transaction, schedules) {
       buildingId: String(matches[0].buildingId || ""),
       buildingName: String(matches[0].buildingName || ""),
       matchedScheduleId: String(matches[0].id || ""),
+      matchedMonthKey: popbillBankTransactionMatchMonth_(transaction, matches[0]),
       reviewScheduleIds: [],
       buildingIds: matches[0].buildingId ? [String(matches[0].buildingId)] : []
     };
@@ -9770,11 +9803,22 @@ function popbillBankJobState_(jobId) {
 }
 
 function popbillBankSearchTransactions_(jobId) {
-  return popbillApiRequest_(
-    "get",
-    "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) +
-      "?TradeType=I&Page=1&PerPage=1000&Order=A"
-  );
+  // 한 쪽 최대 1000건. 넘치면 다음 쪽까지 모두 읽는다(오름차순이라 첫 쪽만 읽으면 최근 입금이 빠진다).
+  const list = [];
+  let first = null;
+  for (let page = 1; page <= 50; page += 1) {
+    const result = popbillApiRequest_(
+      "get",
+      "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) +
+        "?TradeType=I&Page=" + page + "&PerPage=1000&Order=A"
+    ) || {};
+    if (!first) first = result;
+    const rows = Array.isArray(result.list) ? result.list : [];
+    list.push.apply(list, rows);
+    const pageCount = Number(result.pageCount) || 0;
+    if (rows.length < 1000 || (pageCount && page >= pageCount)) break;
+  }
+  return Object.assign({}, first || {}, { list: list });
 }
 
 function popbillBankSafeError_(error) {
@@ -9813,14 +9857,17 @@ function popbillBankCollectAccount_(account, startDate, endDate) {
   }
 
   let state = {};
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  // 은행 수집은 보통 수 초~수십 초 걸린다. 8초만 기다리면 매시간 실행이 늘 "대기"로 끝나
+  // 알림이 멈췄다. 약 40초까지 점점 길게 기다린다.
+  const waits = [1000, 1000, 2000, 2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000, 5000];
+  for (let attempt = 0; attempt <= waits.length; attempt += 1) {
     try {
       state = popbillBankJobState_(jobId) || {};
     } catch (error) {
-      if (attempt === 7) throw error;
+      if (attempt === waits.length) throw error;
     }
     if (Number(state.jobState) === 3) break;
-    if (attempt < 7) Utilities.sleep(1000);
+    if (attempt < waits.length) Utilities.sleep(waits[attempt]);
   }
   if (Number(state.jobState) !== 3) {
     return { pending: true, jobId: jobId, state: Number(state.jobState || 0), list: [] };

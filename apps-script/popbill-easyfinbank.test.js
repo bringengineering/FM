@@ -105,6 +105,7 @@ vm.runInContext([
   extractFunction("popbillBankSchedulesForAccount_"),
   extractFunction("popbillBankRemarkCandidates_"),
   extractFunction("popbillBankScheduleActiveInMonth_"),
+  extractFunction("popbillBankTransactionMatchMonth_"),
   extractFunction("popbillBankTransactionScheduleMatches_"),
   extractFunction("popbillBankResolveTransactionMatch_"),
   extractFunction("popbillBankTransactionRecord_"),
@@ -244,7 +245,55 @@ assert.equal(
 
 assert.match(source, /syncPopbillBankTransactions/);
 assert.match(source, /\/EasyFin\/Bank\/BankAccount\?/);
-assert.match(source, /TradeType=I&Page=1&PerPage=1000&Order=A/);
+assert.match(source, /TradeType=I&Page=" \+ page \+ "&PerPage=1000&Order=A/);
 assert.doesNotMatch(extractFunction("popbillBankTransactionRecord_"), /balance/);
+
+// 1일 납부분을 전달 30일에 미리 넣어도 다음 달 납부로 맞춘다.
+const firstDay = { s9: { id: "s9", buildingId: "building-1", buildingName: "햇빛빌라", payerName: "김선납", amount: 400000, dueDay: 1, startMonth: "2026-01", active: true } };
+const early = { tid: "T-EARLY", trdate: "20261030", trdt: "20261030100000", accIn: "400000", remark1: "김선납" };
+assert.equal(context.popbillBankTransactionMatchMonth_(early, firstDay.s9), "2026-11");
+const earlyMatch = context.popbillBankResolveTransactionMatch_(early, firstDay);
+assert.equal(earlyMatch.matchStatus, "matched");
+assert.equal(earlyMatch.matchedMonthKey, "2026-11");
+// 25일 납부분을 27일에 넣으면 그 달(10월) 납부다. 다음 달 납부로 잘못 세지 않는다.
+const late = { tid: "T-LATE", trdate: "20261027", accIn: "400000", remark1: "김선납" };
+assert.equal(context.popbillBankTransactionMatchMonth_(late, Object.assign({}, firstDay.s9, { dueDay: 25 })), "2026-10");
+assert.equal(context.popbillBankTransactionMatchMonth_({ tid: "x", trdate: "20261015", accIn: "400000", remark1: "김선납" }, Object.assign({}, firstDay.s9, { dueDay: 25 })), "");
+
+// 검색은 1000건이 넘으면 다음 쪽까지 읽는다.
+{
+  const calls = [];
+  const pageCtx = { String, Number, Array, Object, encodeURIComponent,
+    popbillApiRequest_(method, path) {
+      calls.push(path);
+      const page = Number(/Page=(\d+)/.exec(path)[1]);
+      const size = page === 1 ? 1000 : 3;
+      return { pageCount: 2, total: 1003, list: Array.from({ length: size }, (_, i) => ({ tid: page + "-" + i })) };
+    } };
+  vm.createContext(pageCtx);
+  vm.runInContext(extractFunction("popbillBankSearchTransactions_"), pageCtx);
+  const result = pageCtx.popbillBankSearchTransactions_("123456789012345678");
+  assert.equal(result.list.length, 1003);
+  assert.equal(calls.length, 2);
+}
+
+// 저장된 토큰이 먼저 무효가 되면(401) 한 번만 새 토큰으로 다시 시도한다.
+{
+  const tokens = [];
+  let fetches = 0;
+  const retryCtx = { String, Number, Object, JSON,
+    popbillConfig_: () => ({ apiBaseUrl: "https://popbill-test.linkhub.co.kr", userId: "" }),
+    popbillSessionToken_: force => { tokens.push(force); return force ? "fresh" : "stale"; },
+    popbillFetchJson_(url, options) {
+      fetches += 1;
+      if (options.headers.Authorization === "Bearer stale") { const e = new Error("팝빌 (401)"); e.status = 401; throw e; }
+      return { ok: true };
+    } };
+  vm.createContext(retryCtx);
+  vm.runInContext(extractFunction("popbillApiRequest_"), retryCtx);
+  assert.deepEqual(JSON.parse(JSON.stringify(retryCtx.popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount"))), { ok: true });
+  assert.deepEqual(tokens, [false, true]);
+  assert.equal(fetches, 2);
+}
 
 console.log("popbill easyfinbank tests passed");

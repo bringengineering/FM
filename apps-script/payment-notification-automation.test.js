@@ -186,11 +186,18 @@ const schedules = {
 };
 
 const transactionState = {
-  paidScheduleIds: { alreadyPaid: true },
+  paidScheduleIds: { "alreadyPaid|2026-07": true },
   availableAccountRefs: { pb_abcdefghijklmnopqrstuvwx: true }
 };
 
 const afterOnePm = new Date("2026-07-30T04:05:00.000Z");
+// 지난달 납부 확인이나 다른 달 표시는 이번 달 알림을 막지 않는다. 확인필요(보류)는 막는다.
+{
+  const onlyLastMonth = context.paymentNotificationPlan_(schedules, bindings, { paidScheduleIds: { "dueToday|2026-06": true }, availableAccountRefs: transactionState.availableAccountRefs }, afterOnePm);
+  assert.ok(onlyLastMonth.tenantDue.some(row => row.schedule.id === "dueToday"));
+  const heldPlan = context.paymentNotificationPlan_(schedules, bindings, Object.assign({}, transactionState, { heldScheduleMonths: { "overdueOne|2026-07": true } }), afterOnePm);
+  assert.equal(heldPlan.tenantOverdue.some(row => row.schedule.id === "overdueOne"), false);
+}
 const plan = context.paymentNotificationPlan_(schedules, bindings, transactionState, afterOnePm);
 assert.deepEqual(plan.tenantDue.map(row => row.schedule.id), ["dueToday"]);
 assert.deepEqual(plan.tenantOverdue.map(row => row.schedule.id), ["overdueOne"]);
