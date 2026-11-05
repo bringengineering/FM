@@ -6760,6 +6760,11 @@
     projectReports: [], projectReportsLoaded: false, projectReportsLoading: false, projectReportsError: "", projectReportEditingId: "",
   };
   let workAssessmentState = {key: "", loading: false, result: null, error: ""};
+  // Electron이 IPC 오류 앞에 붙이는 개발용 문구는 직원에게 보여 주지 않는다.
+  function workAssessmentErrorText(error) {
+    const text = String(error?.message || "").replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "").trim();
+    return (text || "Gemini 분석을 완료하지 못했습니다.").slice(0, 240);
+  }
   async function loadWorkAssessment(key, assigneeUid) {
     if (workAssessmentState.loading || workAssessmentState.key === key) return;
     const generation = authGeneration, uid = currentAuthUid();
@@ -6769,7 +6774,7 @@
       const result = await window.bringCRM.assessWorkOrders({assigneeUid});
       if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) workAssessmentState.result = result;
     } catch (error) {
-      if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) workAssessmentState.error = String(error?.message || "Gemini 분석을 완료하지 못했습니다.").slice(0, 240);
+      if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) workAssessmentState.error = workAssessmentErrorText(error);
     } finally {
       if (generation === authGeneration && uid === currentAuthUid() && workAssessmentState.key === key) {
         workAssessmentState.loading = false;
