@@ -1,0 +1,11 @@
+# CRM account management
+
+Account registration now lists every CRM access grant, including existing users without an invitation and previously archived invitation rows. The server pages through the canonical access table and batches Auth lookup; the desktop follows all pages rather than imposing the former 200-invite limit. Deleted grants remain tombstones for historical work attribution and are omitted once Auth deletion completes.
+
+Only a verified password-provider CRM administrator can list, grant/revoke administrator privileges, or delete accounts. The access-table transaction rechecks the actor and expected target role, protects self/last administrator, and serializes concurrent changes. Administrator changes update CRM role and officeAdmin together. Auth refresh sessions are revoked after a role change.
+
+Deletion requires an explicit confirmation in the renderer and an allowlisted UID plus expected role on the server. The server retains a private access-grant backup and denies access before deleting the Auth identity. Partial deletion remains denied and visible for retry. After deletion it releases the email for a new invitation, retaining the original UID/display name for work attribution. Attendance, reports, employee history, and work assignments are not removed. Audit records contain action metadata, not credentials. No real account is deleted during development or deployment verification.
+
+Deployment: reserve a version for the latest merged source first; run all CI/role emulator checks; dispatch CRM Automatic Release. After the installer passes verification, the existing release workflow ensures the management backend is available. If it is missing, it repeats Functions/emulator verification, captures a redacted Functions inventory, deploys only deleteCrmAccount/listCrmAccounts/setCrmAccountRole to bring-fm, and verifies unrelated Functions are unchanged. Database rules, Hosting, and retired bring-fm-hj are not selected. All three endpoints must reject anonymous callers before publication.
+
+Rollback: restore the preceding desktop installer/update channel. Keep the additive callables and account audit/tombstone data. The deployment artifact records the exact source and old Functions inventory. Reverting an administrator's operational changes is a separate explicit action, not part of code rollback.

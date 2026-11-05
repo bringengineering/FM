@@ -1,0 +1,255 @@
+import { describe, expect, it } from "vitest";
+
+import { buildAdvertisingProjection } from "../src/security/advertising-projection.js";
+
+const SECRET_VALUES = [
+  "010-SECRET-OWNER",
+  "COMMON-DOOR-1234",
+  "UNIT-DOOR-5678",
+  "KEY-BEHIND-METER",
+  "INTERNAL-SALES-MEMO",
+  "OWNER-PRIVATE-NOTE",
+  "CAPTURE-PRIVATE-NOTE",
+];
+
+function source() {
+  return {
+    building: {
+      id: "building-1",
+      managementNumber: "BR-0001",
+      name: "Bring House",
+      roadAddress: "1 Bring-ro, Wonju",
+      purpose: "multi-family housing",
+      completionYear: 2020,
+      floorCount: 5,
+      elevator: true,
+      parking: {
+        available: true,
+        totalSpaces: 8,
+        notes: SECRET_VALUES[5],
+      },
+      ownerPhone: SECRET_VALUES[0],
+      commonDoorPassword: SECRET_VALUES[1],
+      internalMemo: SECRET_VALUES[4],
+      ownerNote: SECRET_VALUES[5],
+    },
+    unit: {
+      id: "unit-1",
+      buildingId: "building-1",
+      unitLabel: "201",
+      structure: "two-room",
+      floor: 2,
+      direction: "south",
+      options: ["air conditioner", "washing machine"],
+      unitDoorPassword: SECRET_VALUES[2],
+      keyLocation: SECRET_VALUES[3],
+      captureNote: SECRET_VALUES[6],
+    },
+    listing: {
+      id: "listing-1",
+      buildingId: "building-1",
+      unitId: "unit-1",
+      unitLabel: "201",
+      status: "advertising",
+      depositWon: 5_000_000,
+      monthlyRentWon: 450_000,
+      maintenanceFeeWon: 50_000,
+      maintenanceFeeItems: ["water", "internet"],
+      availableFrom: "2026-08-10",
+      contractTermMonths: 12,
+      moveInCondition: "immediate",
+      locationDescription: "five minutes from the terminal",
+      parkingDescription: "one vehicle available",
+      petPolicy: "ask before moving in",
+      options: ["air conditioner", "washing machine"],
+      advertisingApproved: true,
+      internalMemo: SECRET_VALUES[4],
+      ownerPhone: SECRET_VALUES[0],
+    },
+    media: [
+      {
+        id: "media-2",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        listingId: "listing-1",
+        kind: "photo",
+        zone: "roomOverview",
+        slotId: "room-wide",
+        mimeType: "image/jpeg",
+        sizeBytes: 2_000,
+        capturedAt: "2026-08-10T01:01:00.000Z",
+        storagePath: "field-media-finalized/building-1/media-2.jpg",
+        objectGeneration: "102",
+        objectMd5Hash: "md5-media-2",
+        captureSessionId: "session-1",
+        uploadState: "finalized",
+        advertisingApproved: true,
+        advertisingOrder: 2,
+        captureNote: SECRET_VALUES[6],
+      },
+      {
+        id: "media-1",
+        buildingId: "building-1",
+        kind: "photo",
+        zone: "exterior",
+        slotId: "front",
+        mimeType: "image/jpeg",
+        sizeBytes: 1_000,
+        capturedAt: "2026-08-10T01:00:00.000Z",
+        storagePath: "field-media-finalized/building-1/media-1.jpg",
+        objectGeneration: "101",
+        objectMd5Hash: "md5-media-1",
+        captureSessionId: "session-1",
+        uploadState: "finalized",
+        advertisingApproved: true,
+        advertisingOrder: 1,
+        ownerNote: SECRET_VALUES[5],
+      },
+      {
+        id: "media-missing-unit-binding",
+        buildingId: "building-1",
+        kind: "photo",
+        zone: "bathroom",
+        slotId: "missing-binding",
+        mimeType: "image/jpeg",
+        sizeBytes: 1_500,
+        capturedAt: "2026-08-10T01:00:30.000Z",
+        storagePath: "DO-NOT-INCLUDE-MISSING-UNIT-BINDING",
+        objectGeneration: "103",
+        captureSessionId: "session-1",
+        uploadState: "finalized",
+        advertisingApproved: true,
+      },
+      {
+        id: "media-unapproved",
+        buildingId: "building-1",
+        listingId: "listing-1",
+        kind: "photo",
+        zone: "room",
+        slotId: "unapproved",
+        mimeType: "image/jpeg",
+        sizeBytes: 3_000,
+        capturedAt: "2026-08-10T01:02:00.000Z",
+        storagePath: "DO-NOT-INCLUDE-UNAPPROVED",
+        uploadState: "finalized",
+        advertisingApproved: false,
+      },
+      {
+        id: "media-excluded",
+        buildingId: "building-1",
+        listingId: "listing-1",
+        kind: "video",
+        zone: "room",
+        slotId: "excluded",
+        mimeType: "video/mp4",
+        sizeBytes: 4_000,
+        capturedAt: "2026-08-10T01:03:00.000Z",
+        storagePath: "DO-NOT-INCLUDE-EXCLUDED",
+        uploadState: "finalized",
+        advertisingApproved: true,
+        excludedAt: "2026-08-10T02:00:00.000Z",
+      },
+    ],
+    commonDoorPassword: SECRET_VALUES[1],
+    unitDoorPassword: SECRET_VALUES[2],
+    keyLocation: SECRET_VALUES[3],
+  };
+}
+
+describe("buildAdvertisingProjection", () => {
+  it("copies only explicitly allowed advertising fields and eligible media", () => {
+    const projection = buildAdvertisingProjection(source());
+
+    expect(projection).toEqual({
+      building: {
+        id: "building-1",
+        managementNumber: "BR-0001",
+        name: "Bring House",
+        roadAddress: "1 Bring-ro, Wonju",
+        purpose: "multi-family housing",
+        completionYear: 2020,
+        floorCount: 5,
+        elevator: true,
+        parking: { available: true, totalSpaces: 8 },
+      },
+      unit: {
+        id: "unit-1",
+        buildingId: "building-1",
+        unitLabel: "201",
+        structure: "two-room",
+        floor: 2,
+        direction: "south",
+        options: ["air conditioner", "washing machine"],
+      },
+      listing: {
+        id: "listing-1",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        unitLabel: "201",
+        depositWon: 5_000_000,
+        monthlyRentWon: 450_000,
+        maintenanceFeeWon: 50_000,
+        maintenanceFeeItems: ["water", "internet"],
+        availableFrom: "2026-08-10",
+        contractTermMonths: 12,
+        moveInCondition: "immediate",
+        locationDescription: "five minutes from the terminal",
+        parkingDescription: "one vehicle available",
+        petPolicy: "ask before moving in",
+        options: ["air conditioner", "washing machine"],
+      },
+      media: [
+        {
+          id: "media-1",
+          kind: "photo",
+          zone: "exterior",
+          slotId: "front",
+          mimeType: "image/jpeg",
+          sizeBytes: 1_000,
+          capturedAt: "2026-08-10T01:00:00.000Z",
+          storagePath: "field-media-finalized/building-1/media-1.jpg",
+          objectGeneration: "101",
+          objectMd5Hash: "md5-media-1",
+          captureSessionId: "session-1",
+          advertisingOrder: 1,
+        },
+        {
+          id: "media-2",
+          kind: "photo",
+          zone: "roomOverview",
+          slotId: "room-wide",
+          mimeType: "image/jpeg",
+          sizeBytes: 2_000,
+          capturedAt: "2026-08-10T01:01:00.000Z",
+          storagePath: "field-media-finalized/building-1/media-2.jpg",
+          objectGeneration: "102",
+          objectMd5Hash: "md5-media-2",
+          captureSessionId: "session-1",
+          advertisingOrder: 2,
+        },
+      ],
+    });
+    expect(JSON.stringify(projection)).not.toMatch(
+      /DO-NOT-INCLUDE-UNAPPROVED|DO-NOT-INCLUDE-EXCLUDED|DO-NOT-INCLUDE-MISSING-UNIT-BINDING/,
+    );
+  });
+
+  it("never emits sensitive field names or their values", () => {
+    const serialized = JSON.stringify(buildAdvertisingProjection(source()));
+
+    for (const key of [
+      "ownerPhone",
+      "commonDoorPassword",
+      "unitDoorPassword",
+      "keyLocation",
+      "internalMemo",
+      "ownerNote",
+      "captureNote",
+    ]) {
+      expect(serialized).not.toContain(key);
+    }
+    for (const value of SECRET_VALUES) {
+      expect(serialized).not.toContain(value);
+    }
+  });
+});

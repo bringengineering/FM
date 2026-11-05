@@ -1,0 +1,679 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const crypto = require("node:crypto");
+const ContractSchedule = require("../src/contract-schedule-core");
+const Calendar = require("../src/work-calendar");
+
+const Core = require("../src/core");
+const {
+  FirebaseRemoteClient,
+  SHARED_COLLECTIONS,
+  validateBuildingScheduleCommitInput,
+  planBuildingScheduleCommit,
+} = require("../src/remote");
+
+function response(value, status = 200, etag = '"etag-1"') {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: name => String(name).toLowerCase() === "etag" ? etag : "" },
+    text: async () => value === undefined ? "" : JSON.stringify(value),
+  };
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+  return { promise, resolve, reject };
+}
+
+function session(uid = "member_1", role = "member") {
+  return {
+    uid,
+    role,
+    email: `${uid}@bring.test`,
+    displayName: uid,
+    idToken: `${uid}-token`,
+    refreshToken: `${uid}-refresh`,
+    expiresAt: Date.now() + 60_000,
+  };
+}
+
+function makeClient(fetchImpl = async () => { throw new Error("unexpected fetch"); }) {
+  const client = new FirebaseRemoteClient({
+    Core,
+    fetchImpl,
+    fs: {
+      readFile: async () => { const error = new Error("missing"); error.code = "ENOENT"; throw error; },
+      mkdir: async () => undefined,
+      writeFile: async () => undefined,
+      rename: async () => undefined,
+      unlink: async () => undefined,
+    },
+    safeStorage: { isEncryptionAvailable: () => true },
+    shell: {},
+    sessionFile: "session.json",
+    pendingFile: "pending.json",
+    readLocalStore: async () => Core.blankSharedStore(),
+    writeLocalStore: async value => value,
+  });
+  client.session = session();
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  return client;
+}
+
+function values(overrides = {}) {
+  return {
+    buildingId: "building_1",
+    title: "소방시설 점검",
+    scheduledDate: "2026-08-21",
+    startTime: "09:00",
+    endTime: "10:00",
+    status: "planned",
+    serviceType: "inspection",
+    owner: "김현진",
+    summary: "관리실 방문",
+    completedAt: "",
+    amount: 0,
+    vendorName: "",
+    evidenceUrl: "",
+    ...overrides,
+  };
+}
+
+function input(overrides = {}) {
+  return {
+    operation: "create",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    recordId: "service_schedule_1",
+    expectedUpdatedAt: "",
+    expectedCommitVersion: 0,
+    values: values(),
+    ...overrides,
+  };
+}
+
+function firebaseHarness(options = {}) {
+  const state = {
+    record: options.record || null,
+    building: options.building === undefined ? { id: "building_1", name: "해피하우스", archivedAt: "" } : options.building,
+    audit: null,
+    requests: [],
+    scheduleGets: 0,
+  };
+  const fetchImpl = async (url, request = {}) => {
+    state.requests.push({ url, method: request.method, headers: request.headers, body: request.body });
+    if (url.includes(`/data/serviceRecords/${options.recordId || "service_schedule_1"}.json`)) {
+      if (request.method === "GET") {
+        state.scheduleGets += 1;
+        return response(state.record, 200, state.record ? '"record-existing"' : '"null-etag"');
+      }
+      if (request.method === "PUT") {
+        const intended = JSON.parse(request.body);
+        if (options.putStatus === 412) return response({ error: "Precondition Failed" }, 412);
+        if (options.ambiguousPut) {
+          state.record = intended;
+          throw new Error("socket reset after commit");
+        }
+        if (options.deferredPut) {
+          state.record = intended;
+          return options.deferredPut.promise;
+        }
+        state.record = intended;
+        return response(intended);
+      }
+    }
+    if (url.includes("/data/buildings/building_1.json") && request.method === "GET") {
+      return response(state.building, 200, '"building-etag"');
+    }
+    if (url.includes("/data/contracts/contract_1.json") && request.method === "GET") {
+      return response(options.contract || null);
+    }
+    if (url.includes("/data/auditLogs/audit_schedule_")) {
+      if (request.method === "GET") return response(state.audit, 200, state.audit ? '"audit-existing"' : '"null-audit"');
+      if (request.method === "PUT") {
+        state.audit = JSON.parse(request.body);
+        return response(state.audit);
+      }
+    }
+    throw new Error(`Unexpected request: ${request.method} ${url}`);
+  };
+  return { state, client: makeClient(fetchImpl) };
+}
+
+function occurrenceInput(overrides = {}) {
+  const contractOccurrence = {contractId: "contract_1", date: "2026-10-15", buildingId: "building_1"};
+  const identity = ContractSchedule.occurrenceIdentity(contractOccurrence.contractId, contractOccurrence.date, contractOccurrence.buildingId);
+  return input({recordId: `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`, values: values({title: "공용부청소", scheduledDate: "2026-10-16"}), contractOccurrence, ...overrides});
+}
+const recurringContract = () => ({id: "contract_1", buildingId: "building_1", types: ["청소"], name: "공용부청소", status: "진행 중", startDate: "2026-10-08", billingCycle: "월 정기", amount: 50000, cleaningSchedule: {mode: "weekly", weekday: 4}});
+
+test("a projected contract visit is deleted in one archive CAS and remains absent after reload and retry", async () => {
+  const intent = {...occurrenceInput(), operation: "archive"}; delete intent.values;
+  const contract = recurringContract(), before = JSON.stringify(contract);
+  const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+  const result = await client.commitBuildingSchedule(intent);
+  assert.ok(result.record.archivedAt);
+  assert.equal(result.record.sourceContractId, contract.id);
+  assert.equal(result.record.sourceContractDate, "2026-10-15");
+  assert.equal(result.record.scheduledDate, "2026-10-15");
+  assert.equal(result.record.amount, 0);
+  assert.equal(result.record.calendarCommitVersion, 1);
+  assert.equal(result.record.archivedByAuthUid, "member_1");
+  assert.equal(state.audit.action, "일정 삭제 (원본 보관)");
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  assert.equal(state.requests.some(r => r.method === "DELETE" || r.method === "PATCH" || r.method === "PUT" && r.url.includes("/contracts/")), false);
+  const reloaded = JSON.parse(JSON.stringify({contracts: [contract], serviceRecords: [result.record]}));
+  assert.deepEqual(ContractSchedule.contractWorkOccurrences(reloaded).map(r => r.scheduledDate), ["2026-10-08", "2026-10-22", "2026-10-29"]);
+  assert.equal(JSON.stringify(contract), before);
+  assert.equal((await client.commitBuildingSchedule(intent)).repeated, true);
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+});
+
+test("projected archive denies forged values, stale contracts, concurrent materialization and viewers", async () => {
+  const intent = {...occurrenceInput(), operation: "archive"}; delete intent.values;
+  for (const changed of [{...intent, values: values()}, {...intent, expectedUpdatedAt: "forged"}, {...intent, expectedCommitVersion: 1}, {...intent, recordId: "forged"}]) {
+    assert.throws(() => validateBuildingScheduleCommitInput(changed), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  }
+  for (const contract of [null, {...recurringContract(), archivedAt: "fixture"}, {...recurringContract(), startDate: "2026-11-01"}, {...recurringContract(), buildingId: "other"}]) {
+    const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+    await assert.rejects(client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(state.requests.some(r => r.method === "PUT"), false);
+  }
+  const context = {actor: session(), contract: recurringContract(), building: {id: "building_1"}};
+  const existing = planBuildingScheduleCommit(occurrenceInput(), context).record;
+  assert.throws(() => planBuildingScheduleCommit(intent, {...context, existing}), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.throws(() => planBuildingScheduleCommit(intent, {...context, actor: {...session(), role: "viewer"}}), e => e.code === "BUILDING_SCHEDULE_READ_ONLY");
+});
+
+test("one contract occurrence is materialized through CAS without changing contracts or other dates", async () => {
+  const intent = occurrenceInput(), contract = recurringContract(), before = JSON.stringify(contract);
+  const {client, state} = firebaseHarness({recordId: intent.recordId, contract});
+  const first = await client.commitBuildingSchedule(intent);
+  assert.equal(first.record.sourceContractId, "contract_1");
+  assert.equal(first.record.sourceContractDate, "2026-10-15");
+  assert.equal(first.record.sourceContractBuildingId, "building_1");
+  assert.equal(first.record.scheduledDate, "2026-10-16");
+  assert.equal(first.record.calendarCommitVersion, 1);
+  assert.equal(state.requests.some(r => r.method !== "GET" && r.url.includes("/contracts/")), false);
+  assert.equal(JSON.stringify(contract), before);
+  const store = {contracts: [contract], serviceRecords: [first.record], buildings: [{id: "building_1"}]};
+  assert.deepEqual(Calendar.buildModel(store, {month: "2026-10"}).events.map(e => e.scheduledDate), ["2026-10-08", "2026-10-16", "2026-10-22", "2026-10-29"]);
+  const retry = await client.commitBuildingSchedule(intent);
+  assert.equal(retry.repeated, true);
+  assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  const competing = {...intent, requestId: "550e8400-e29b-41d4-a716-446655440001"};
+  await assert.rejects(client.commitBuildingSchedule(competing), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+
+  const updated = planBuildingScheduleCommit(input({recordId: intent.recordId, operation: "update", expectedUpdatedAt: first.record.updatedAt, expectedCommitVersion: 1, requestId: competing.requestId, values: values({scheduledDate: "2026-10-20"})}), {existing: first.record, actor: session(), building: {id: "building_1"}}).record;
+  assert.equal(updated.sourceContractDate, "2026-10-15");
+  for (const operation of ["cancel", "archive"]) {
+    const hidden = planBuildingScheduleCommit({operation, recordId: updated.id, requestId: "550e8400-e29b-41d4-a716-446655440002", expectedUpdatedAt: updated.updatedAt, expectedCommitVersion: 2}, {existing: updated, actor: session(), building: {id: "building_1"}}).record;
+    assert.equal(Calendar.buildModel({...store, serviceRecords: [hidden]}, {month: "2026-10"}).events.length, 3);
+    assert.equal(ContractSchedule.contractWorkOccurrences({...store, serviceRecords: [{...hidden, buildingId: "another_building"}]}).length, 3, "original building/date stay suppressed after relinking");
+  }
+});
+
+test("occurrence intent rejects forged metadata, inactive/changed contracts and wrong hash IDs before writing", async () => {
+  const intent = occurrenceInput();
+  for (const changed of [null, {...recurringContract(), archivedAt: "2026-10-14"}, {...recurringContract(), buildingId: "different"}, {...recurringContract(), startDate: "2026-11-01"}]) {
+    const {client, state} = firebaseHarness({recordId: intent.recordId, contract: changed});
+    await assert.rejects(client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(state.requests.some(r => r.method === "PUT"), false);
+  }
+  for (const changed of [{...intent, recordId: "wrong"}, {...intent, contractOccurrence: {...intent.contractOccurrence, unexpected: true}}, {...intent, contractOccurrence: {...intent.contractOccurrence, contractId: "unsafe/id"}}, {...intent, operation: "update"}, {...intent, values: {...intent.values, sourceContractId: "forged"}}]) {
+    assert.throws(() => validateBuildingScheduleCommitInput(changed), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  }
+});
+
+test("a future twice-monthly visit uses the existing CAS path; fifth weekdays and stale patterns are denied", async () => {
+  const contract = { ...recurringContract(), startDate: "2026-10-01", cleaningSchedule: { mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 2 } };
+  const makeIntent = date => {
+    const contractOccurrence = { contractId: "contract_1", buildingId: "building_1", date };
+    const identity = ContractSchedule.occurrenceIdentity(contractOccurrence.contractId, date, contractOccurrence.buildingId);
+    return occurrenceInput({ contractOccurrence, recordId: `service_contract_${crypto.createHash("sha256").update(identity).digest("hex")}`, values: values({ title: "Fixture monthly visit", scheduledDate: date }) });
+  };
+  const intent = makeIntent("2026-11-19");
+  const { client, state } = firebaseHarness({ recordId: intent.recordId, contract });
+  const saved = await client.commitBuildingSchedule(intent);
+  assert.equal(saved.record.sourceContractDate, "2026-11-19");
+  assert.equal(state.requests.some(r => r.method !== "GET" && r.url.includes("/contracts/")), false);
+  const inputStore = { contracts: [contract], serviceRecords: [saved.record] };
+  assert.equal(ContractSchedule.contractWorkOccurrences(inputStore, "2026-10").length, 2);
+  assert.equal(ContractSchedule.contractWorkOccurrences(inputStore, "2026-11").length, 1);
+  for (const date of ["2026-10-29", "2026-11-12", "2026-09-17"]) {
+    const bad = makeIntent(date), h = firebaseHarness({ recordId: bad.recordId, contract });
+    await assert.rejects(h.client.commitBuildingSchedule(bad), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+    assert.equal(h.state.requests.some(r => r.method === "PUT"), false);
+  }
+  const stale = firebaseHarness({ recordId: intent.recordId, contract: { ...contract, cleaningSchedule: { ...contract.cleaningSchedule, weekPattern: "second_fourth" } } });
+  await assert.rejects(stale.client.commitBuildingSchedule(intent), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+});
+
+test("schedule deletion archives planned, active and completed records through the existing CAS path", async () => {
+  for (const status of ["planned", "in_progress", "completed"]) {
+    const existing = {id: "service_schedule_1", ...values({status, completedAt: status === "completed" ? "2026-10-06" : ""}), updatedAt: "2026-10-06T00:00:00.000Z", calendarCommitVersion: 4, reportId: "report_preserved", driveFileId: "drive_preserved", operationsSyncStatus: "synced"};
+    const {client, state} = firebaseHarness({record: existing});
+    const archive = {operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: existing.id, expectedUpdatedAt: existing.updatedAt, expectedCommitVersion: 4};
+    const result = await client.commitBuildingSchedule(archive);
+    assert.ok(result.record.archivedAt);
+    assert.equal(result.record.archivedByAuthUid, "member_1");
+    assert.equal(result.record.calendarCommitVersion, 5);
+    for (const field of ["status", "completedAt", "amount", "summary", "evidenceUrl", "reportId", "driveFileId", "operationsSyncStatus"]) assert.equal(result.record[field], existing[field]);
+    assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+    assert.equal(state.requests.some(r => r.method === "DELETE" || r.method === "PATCH"), false);
+    assert.equal(state.audit.action, "일정 삭제 (원본 보관)");
+    const repeated = await client.commitBuildingSchedule(archive);
+    assert.equal(repeated.repeated, true);
+    assert.equal(state.requests.filter(r => r.method === "PUT" && r.url.includes("/serviceRecords/")).length, 1);
+  }
+});
+
+test("archive refuses fields, unauthorized roles, stale versions and later edits of deleted records", () => {
+  const archive = {operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: "service_schedule_1", expectedUpdatedAt: "opened", expectedCommitVersion: 0};
+  const existing = {id: archive.recordId, buildingId: "building_1", status: "completed", updatedAt: "opened", completedAt: "2026-10-06"};
+  const context = {existing, actor: session(), building: {id: "building_1"}, now: "2026-10-14T00:00:00.000Z"};
+  assert.throws(() => validateBuildingScheduleCommitInput({...archive, values: values()}), e => e.code === "BUILDING_SCHEDULE_INVALID");
+  for (const role of ["viewer", "staff", "", "marketing"]) assert.throws(() => planBuildingScheduleCommit(archive, {...context, actor: session("fixture", role)}), e => e.code === "BUILDING_SCHEDULE_READ_ONLY");
+  assert.throws(() => planBuildingScheduleCommit({...archive, expectedUpdatedAt: "stale"}, context), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.throws(() => planBuildingScheduleCommit({...archive, expectedCommitVersion: 1}, context), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  const archived = planBuildingScheduleCommit(archive, context).record;
+  for (const operation of ["update", "complete", "cancel", "archive"]) {
+    const next = {...archive, operation, requestId: "550e8400-e29b-41d4-a716-446655440015", expectedUpdatedAt: archived.updatedAt, expectedCommitVersion: 1};
+    if (operation === "update") next.values = values();
+    assert.throws(() => planBuildingScheduleCommit(next, {...context, existing: archived}), e => e.code === "BUILDING_SCHEDULE_STATE_INVALID");
+  }
+});
+
+test("a conflicting archive never adopts or hides an unconfirmed record", async () => {
+  const existing = {id: "service_schedule_1", buildingId: "building_1", status: "completed", updatedAt: "opened", calendarCommitVersion: 4};
+  const {client, state} = firebaseHarness({record: existing, putStatus: 412});
+  await assert.rejects(client.commitBuildingSchedule({operation: "archive", requestId: "550e8400-e29b-41d4-a716-446655440014", recordId: existing.id, expectedUpdatedAt: "opened", expectedCommitVersion: 4}), e => e.code === "BUILDING_SCHEDULE_CONFLICT");
+  assert.equal(state.record.archivedAt, undefined);
+  assert.equal(state.audit, null);
+});
+
+test("create uses one record-level Firebase ETag conditional PUT and returns the committed record", async () => {
+  const { client, state } = firebaseHarness();
+  client.remotePayload = { serviceRecords: {} };
+
+  const result = await client.commitBuildingSchedule(input());
+
+  assert.equal(result.record.id, "service_schedule_1");
+  assert.equal(result.record.buildingId, "building_1");
+  assert.equal(result.record.calendarCommitRequestId, input().requestId);
+  assert.equal(result.record.calendarCommitVersion, 1);
+  assert.equal(result.repeated, false);
+  assert.equal(client.remotePayload.serviceRecords.service_schedule_1.updatedAt, result.record.updatedAt);
+  const schedulePut = state.requests.find(item => item.method === "PUT" && item.url.includes("/serviceRecords/"));
+  assert.ok(schedulePut);
+  assert.equal(schedulePut.headers["If-Match"], '"null-etag"');
+  assert.equal(state.requests.some(item => item.method === "PATCH" || item.method === "DELETE"), false);
+  assert.equal(state.audit.targetId, "service_schedule_1");
+});
+
+test("update preserves non-calendar fields and compares the exact opened updatedAt", async () => {
+  const existing = {
+    id: "service_schedule_1",
+    buildingId: "building_1",
+    title: "이전 일정",
+    status: "planned",
+    scheduledDate: "2026-08-20",
+    updatedAt: "2026-08-20T01:02:03.000Z",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    driveFileId: "drive_preserved",
+    vendorPhone: "010-1111-2222",
+    calendarCommitVersion: 7,
+  };
+  const { client, state } = firebaseHarness({ record: existing });
+  const commitInput = input({
+    operation: "update",
+    expectedUpdatedAt: existing.updatedAt,
+    expectedCommitVersion: 7,
+    values: values({ title: "변경 일정", amount: 150000, vendorName: "안전점검", evidenceUrl: "https://drive.google.com/file/d/1/view" }),
+  });
+
+  const result = await client.commitBuildingSchedule(commitInput);
+
+  assert.equal(result.record.title, "변경 일정");
+  assert.equal(result.record.driveFileId, "drive_preserved");
+  assert.equal(result.record.vendorPhone, "010-1111-2222");
+  assert.equal(result.record.amount, 150000);
+  assert.equal(result.record.calendarCommitVersion, 8);
+  assert.notEqual(result.record.updatedAt, existing.updatedAt);
+  assert.equal(state.requests.filter(item => item.method === "PUT" && item.url.includes("/serviceRecords/")).length, 1);
+});
+
+test("stale expectedUpdatedAt and Firebase 412 both fail closed as conflicts", async () => {
+  const existing = { id: "service_schedule_1", buildingId: "building_1", status: "planned", updatedAt: "server-newer" };
+  const stale = firebaseHarness({ record: existing });
+  await assert.rejects(
+    stale.client.commitBuildingSchedule(input({ operation: "update", expectedUpdatedAt: "opened-old", values: values() })),
+    error => error && error.code === "BUILDING_SCHEDULE_CONFLICT"
+  );
+  assert.equal(stale.state.requests.some(item => item.method === "PUT"), false);
+
+  const raced = firebaseHarness({ record: existing, putStatus: 412 });
+  await assert.rejects(
+    raced.client.commitBuildingSchedule(input({ operation: "update", expectedUpdatedAt: "server-newer", values: values() })),
+    error => error && error.code === "BUILDING_SCHEDULE_CONFLICT"
+  );
+  assert.equal(raced.state.scheduleGets, 1, "a definitive 412 is not mistaken for an ambiguous success");
+});
+
+test("a lost successful PUT response is accepted only after the exact record is re-read", async () => {
+  const { client, state } = firebaseHarness({ ambiguousPut: true });
+
+  const result = await client.commitBuildingSchedule(input());
+
+  assert.equal(result.record.id, "service_schedule_1");
+  assert.equal(state.scheduleGets, 2);
+  assert.equal(state.record.calendarCommitHash, result.record.calendarCommitHash);
+});
+
+test("a session switch while PUT is in flight discards the result and does not append an audit", async () => {
+  const pendingPut = deferred();
+  const { client, state } = firebaseHarness({ deferredPut: pendingPut });
+  let putStartedResolve;
+  const putStarted = new Promise(resolve => { putStartedResolve = resolve; });
+  const originalFetch = client.fetch;
+  client.fetch = async (url, request) => {
+    const result = originalFetch(url, request);
+    if (request.method === "PUT" && url.includes("/serviceRecords/")) putStartedResolve();
+    return result;
+  };
+  const commit = client.commitBuildingSchedule(input());
+  await putStarted;
+  client.session = session("member_2");
+  client.markSessionStarted();
+  pendingPut.resolve(response(state.record));
+
+  await assert.rejects(commit, error => error && error.code === "SESSION_CHANGED");
+  assert.equal(state.audit, null);
+});
+
+test("queue-wait session switches reject commit, save, push, and restore before any remote write", async () => {
+  const queuedCommit = firebaseHarness();
+  const commitGate = deferred();
+  queuedCommit.client.sharedMutationQueue = commitGate.promise;
+  const commit = queuedCommit.client.commitBuildingSchedule(input());
+  queuedCommit.client.session = session("member_2");
+  queuedCommit.client.markSessionStarted();
+  commitGate.resolve();
+  await assert.rejects(commit, error => error && error.code === "SESSION_CHANGED");
+  assert.equal(queuedCommit.state.requests.length, 0);
+  assert.equal(queuedCommit.state.audit, null);
+
+  for (const method of ["saveStore", "pushStore", "restoreStore"]) {
+    let remoteCalls = 0;
+    const client = makeClient(async () => { remoteCalls += 1; throw new Error("remote call must not start"); });
+    if (method === "restoreStore") client.session = session("admin_1", "admin");
+    const gate = deferred();
+    client.sharedMutationQueue = gate.promise;
+    client.dbRequest = async () => { remoteCalls += 1; throw new Error("database write must not start"); };
+    const pending = client[method](Core.blankSharedStore());
+    client.session = session(method === "restoreStore" ? "admin_2" : "member_2", method === "restoreStore" ? "admin" : "member");
+    client.markSessionStarted();
+    gate.resolve();
+    await assert.rejects(pending, error => error && error.code === "SESSION_CHANGED", method);
+    assert.equal(remoteCalls, 0, `${method} must not read or write as the replacement session`);
+  }
+});
+
+test("closed input schema rejects extras, unsafe IDs, invalid values, and viewers", async () => {
+  assert.throws(() => validateBuildingScheduleCommitInput({ ...input(), unexpected: true }), error => error.code === "BUILDING_SCHEDULE_INVALID");
+  const missingVersion = { ...input() };
+  delete missingVersion.expectedCommitVersion;
+  assert.throws(() => validateBuildingScheduleCommitInput(missingVersion), error => error.code === "BUILDING_SCHEDULE_INVALID");
+  assert.throws(() => validateBuildingScheduleCommitInput(input({ recordId: "unsafe/id" })), error => error.code === "BUILDING_SCHEDULE_INVALID");
+  assert.throws(() => validateBuildingScheduleCommitInput(input({ values: values({ evidenceUrl: "http://example.com" }) })), error => error.code === "BUILDING_SCHEDULE_INVALID");
+  assert.doesNotThrow(() => validateBuildingScheduleCommitInput(input({ values: values({ scheduledDate: "" }) })));
+
+  const { client } = firebaseHarness();
+  client.session = session("viewer_1", "viewer");
+  await assert.rejects(client.commitBuildingSchedule(input()), error => error && error.code === "READ_ONLY_ACCOUNT");
+});
+
+test("archived or missing buildings may retain an existing link but cannot receive a create or relink", () => {
+  const existing = { id: "service_schedule_1", buildingId: "building_1", status: "planned", updatedAt: "opened" };
+  const update = input({ operation: "update", expectedUpdatedAt: "opened", values: values() });
+  const context = { existing, actor: session(), now: "2026-08-21T00:00:00.000Z" };
+
+  assert.doesNotThrow(() => planBuildingScheduleCommit(update, { ...context, building: { id: "building_1", archivedAt: "2026-08-20T00:00:00.000Z" } }));
+  assert.doesNotThrow(() => planBuildingScheduleCommit(update, { ...context, building: null }));
+  assert.throws(
+    () => planBuildingScheduleCommit(input(), { existing: null, building: { id: "building_1", archivedAt: "2026-08-20T00:00:00.000Z" }, actor: session() }),
+    error => error.code === "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE"
+  );
+  assert.throws(
+    () => planBuildingScheduleCommit(input({ operation: "update", expectedUpdatedAt: "opened", values: values({ buildingId: "building_2" }) }), {
+      ...context,
+      building: { id: "building_2", archivedAt: "2026-08-20T00:00:00.000Z" },
+    }),
+    error => error.code === "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE"
+  );
+});
+
+test("legacy schedules enter CAS at version one and every later commit is the exact monotonic successor", () => {
+  const actor = session();
+  const legacy = { id: "service_schedule_1", buildingId: "building_1", status: "planned", updatedAt: "opened" };
+  const first = planBuildingScheduleCommit(
+    input({ operation: "update", expectedUpdatedAt: "opened", values: values() }),
+    { existing: legacy, building: { id: "building_1" }, actor, now: "2026-08-21T00:00:00.000Z" }
+  );
+  assert.equal(first.record.calendarCommitVersion, 1);
+
+  const secondInput = input({
+    operation: "update",
+    requestId: "550e8400-e29b-41d4-a716-446655440001",
+    expectedUpdatedAt: first.record.updatedAt,
+    expectedCommitVersion: 1,
+    values: values({ title: "두 번째 저장" }),
+  });
+  const second = planBuildingScheduleCommit(secondInput, {
+    existing: first.record,
+    building: { id: "building_1" },
+    actor,
+    now: "2026-08-21T00:00:00.000Z",
+  });
+  assert.equal(second.record.calendarCommitVersion, 2);
+  assert.equal(second.record.updatedAt, "2026-08-21T00:00:00.001Z");
+  assert.throws(
+    () => planBuildingScheduleCommit({ ...secondInput, expectedCommitVersion: 0 }, {
+      existing: first.record,
+      building: { id: "building_1" },
+      actor,
+      now: "2026-08-21T00:00:00.000Z",
+    }),
+    error => error && error.code === "BUILDING_SCHEDULE_CONFLICT"
+  );
+  assert.throws(
+    () => planBuildingScheduleCommit(secondInput, {
+      existing: { ...first.record, calendarCommitVersion: 0 },
+      building: { id: "building_1" },
+      actor,
+    }),
+    error => error && error.code === "BUILDING_SCHEDULE_CONFLICT"
+  );
+});
+
+test("generic shared saves preserve server schedules and serialize with CAS commits", async () => {
+  const client = makeClient();
+  client.remotePayload = { serviceRecords: { service_schedule_1: { id: "service_schedule_1", title: "server" } } };
+  client.fetchRemotePayload = async () => structuredClone(client.remotePayload);
+  const writes = [];
+  client.dbRequest = async (location, options) => { writes.push({ location, ...options }); return null; };
+  await client.pushStore(Core.sanitizeSharedStore({ serviceRecords: [{ id: "service_schedule_1", title: "stale renderer" }] }));
+  assert.equal(client.remotePayload.serviceRecords.service_schedule_1.title, "server");
+  assert.equal(writes.some(item => Object.keys(item.body || {}).some(key => key.startsWith("serviceRecords/"))), false);
+
+  const gate = deferred();
+  const order = [];
+  client.pushStoreLocked = async () => { order.push("save-start"); await gate.promise; order.push("save-end"); return {}; };
+  client.commitBuildingScheduleLocked = async () => { order.push("cas"); return { record: { id: "service_schedule_1" } }; };
+  const save = client.pushStore({});
+  const cas = client.commitBuildingSchedule(input());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(order, ["save-start"]);
+  gate.resolve();
+  await Promise.all([save, cas]);
+  assert.deepEqual(order, ["save-start", "save-end", "cas"]);
+
+  let pendingPayload;
+  client.writePendingPayload = async value => { pendingPayload = value; };
+  await client.writePendingStore(Core.blankSharedStore(), {});
+  assert.equal(pendingPayload.presentCollections.includes("serviceRecords"), false);
+  assert.equal(SHARED_COLLECTIONS.includes("serviceRecords"), true);
+});
+
+test("normalization-only serviceRecord differences never block or leak into an unrelated generic save", async () => {
+  const sparse = { id: "service_sparse_1", buildingId: "building_1", status: "planned" };
+  const client = makeClient();
+  const authoritative = {
+    customers: { customer_1: { id: "customer_1", name: "이전" } },
+    serviceRecords: { service_sparse_1: sparse },
+  };
+  client.remotePayload = structuredClone(authoritative);
+  client.fetchRemotePayload = async () => structuredClone(authoritative);
+  const writes = [];
+  client.dbRequest = async (location, options) => { writes.push({ location, ...options }); return null; };
+  const desired = Core.sanitizeSharedStore({
+    customers: [{ id: "customer_1", name: "변경" }],
+    serviceRecords: [sparse],
+  });
+  const customerWrites = [];
+  client.dbReadWithEtag = async () => ({value:"이전",etag:'"fixture"'});
+  client.dbConditionalPut = async (location,value) => { customerWrites.push({location,value}); };
+
+  await client.pushStore(desired);
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].method, "PATCH");
+  assert.ok(customerWrites.some(write=>write.location.endsWith("/customers/customer_1/name")&&write.value==="변경"));
+  assert.equal(Object.keys(writes[0].body).some(key => key.startsWith("serviceRecords/")), false);
+  assert.deepEqual(client.remotePayload.serviceRecords.service_sparse_1, sparse);
+});
+
+test("a CAS create followed by an unrelated generic save keeps the exact committed schedule", async () => {
+  const { client, state } = firebaseHarness();
+  client.remotePayload = { serviceRecords: {} };
+  const committed = await client.commitBuildingSchedule(input());
+  const writes = [];
+  client.fetchRemotePayload = async () => ({ serviceRecords: { service_schedule_1: structuredClone(state.record) } });
+  client.dbRequest = async (location, options) => { writes.push({ location, ...options }); return null; };
+  const desired = Core.sanitizeSharedStore({
+    customers: [{ id: "customer_2", name: "새 고객" }],
+    serviceRecords: [committed.record],
+  });
+  client.dbReadWithEtag = async location => { assert.match(location,/\/customers\/customer_2$/);return {value:null,etag:'"fixture"'}; };
+  client.dbConditionalPut = async location => { assert.match(location,/\/customers\/customer_2$/);return true; };
+
+  await client.pushStore(desired);
+
+  assert.equal(Object.keys(writes[0].body).some(key => key.startsWith("serviceRecords/")), false);
+  assert.equal(client.remotePayload.serviceRecords.service_schedule_1.calendarCommitHash, state.record.calendarCommitHash);
+});
+
+test("CAS refreshes the disposable local cache and cannot race a shared-stream reload", async () => {
+  const { client } = firebaseHarness();
+  let local = Core.sanitizeSharedStore({ buildings: [{ id: "building_1", name: "해피하우스" }] });
+  client.readSessionLocalStore = async guard => client.sessionGuardActive(guard) ? structuredClone(local) : null;
+  client.writeSessionLocalStore = async (value, guard) => {
+    if (!client.sessionGuardActive(guard)) return null;
+    local = Core.sanitizeSharedStore(value);
+    return structuredClone(local);
+  };
+  client.loadRendererOverlays = async () => ({ buildingUnits: [], fieldSummaries: [] });
+
+  const committed = await client.commitBuildingSchedule(input());
+  const overlay = await client.reloadRendererOverlays();
+
+  assert.equal(local.serviceRecords[0].updatedAt, committed.record.updatedAt);
+  assert.equal(overlay.serviceRecords[0].calendarCommitHash, committed.record.calendarCommitHash);
+
+  const gate = deferred();
+  const order = [];
+  client.reloadFromRemoteLocked = async () => { order.push("reload-start"); await gate.promise; order.push("reload-end"); return {}; };
+  client.commitBuildingScheduleLocked = async () => { order.push("cas"); return { record: committed.record }; };
+  const reload = client.reloadFromRemote();
+  const cas = client.commitBuildingSchedule(input());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(order, ["reload-start"]);
+  gate.resolve();
+  await Promise.all([reload, cas]);
+  assert.deepEqual(order, ["reload-start", "reload-end", "cas"]);
+});
+
+test("generic saves fetch latest server schedules while legacy pending schedule edits fail closed", async () => {
+  const client = makeClient();
+  const latest = { id: "service_schedule_1", buildingId: "building_1", title: "latest", status: "planned", updatedAt: "new" };
+  client.remotePayload = { customers: {customer_1:{id:"customer_1",name:"이전"}}, serviceRecords: { service_schedule_1: { ...latest, title: "cached-old", updatedAt: "old" } } };
+  client.fetchRemotePayload = async () => ({
+    customers: { customer_1: { id: "customer_1", name: "이전" } },
+    serviceRecords: { service_schedule_1: structuredClone(latest) },
+  });
+  const writes = [];
+  client.dbRequest = async (location, options) => { writes.push({ location, ...options }); return null; };
+  const staleRendererSave = Core.sanitizeSharedStore({
+    customers: [{ id: "customer_1", name: "변경" }],
+    serviceRecords: [{ ...latest, title: "stale-renderer", updatedAt: "old" }],
+  });
+  client.dbReadWithEtag = async () => ({value:"이전",etag:'"fixture"'});
+  client.dbConditionalPut = async () => true;
+
+  await client.pushStore(staleRendererSave);
+
+  assert.equal(client.remotePayload.serviceRecords.service_schedule_1.title, "latest");
+  assert.equal(Object.keys(writes[0].body).some(key => key.startsWith("serviceRecords/")), false);
+
+  const legacyPending = {
+    actorUid: client.session.uid,
+    actorRole: client.session.role,
+    store: staleRendererSave,
+    presentCollections: ["customers", "serviceRecords"],
+    baseRemote: {},
+  };
+  await assert.rejects(
+    client.syncPending(legacyPending),
+    error => error && error.code === "BUILDING_SCHEDULE_COMMIT_REQUIRED"
+  );
+});
+
+test("restore compares schedules before writing and preserves the exact server representation", async () => {
+  const currentSchedule = { id: "service_sparse_1", buildingId: "building_1", status: "planned" };
+  const client = makeClient();
+  client.session = session("admin_1", "admin");
+  client.verifyAccess = async () => ({ enabled: true, role: "admin" });
+  client.startStream = () => {};
+  const currentRemote = {
+    customers: { customer_1: { id: "customer_1", name: "이전" } },
+    serviceRecords: { service_sparse_1: currentSchedule },
+  };
+  client.fetchRemotePayload = async () => structuredClone(currentRemote);
+  const writes = [];
+  client.dbRequest = async (location, options) => { writes.push({ location, ...options }); return null; };
+  const matchingBackup = Core.sanitizeSharedStore({
+    customers: [{ id: "customer_1", name: "복원" }],
+    serviceRecords: [currentSchedule],
+  });
+
+  const restored = await client.restoreStore(matchingBackup);
+
+  assert.equal(restored.ok, true);
+  assert.deepEqual(client.remotePayload.serviceRecords.service_sparse_1, currentSchedule);
+  assert.equal(Object.keys(writes[0].body).some(key => key.startsWith("serviceRecords/")), false);
+
+  writes.length = 0;
+  const conflictingBackup = Core.sanitizeSharedStore({
+    customers: [{ id: "customer_1", name: "복원" }],
+    serviceRecords: [{ ...currentSchedule, title: "백업의 다른 일정" }],
+  });
+  await assert.rejects(
+    client.restoreStore(conflictingBackup),
+    error => error && error.code === "BUILDING_SCHEDULE_RESTORE_CONFLICT"
+  );
+  assert.equal(writes.length, 0, "a restore conflict is rejected before any database write");
+});
