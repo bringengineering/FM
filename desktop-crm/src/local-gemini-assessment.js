@@ -12,7 +12,7 @@ function runBringOsGemini({localAppData, prompt, timeoutMs = 90000}) {
     const key = path.join(runtime, 'gemini-key.dpapi-base64');
     const script = path.join(localAppData, 'Programs', 'BRING OS', 'resources', 'app.asar.unpacked', 'src', 'executive_advisor.py');
     try { await Promise.all([fs.access(python), fs.access(key), fs.access(script)]); }
-    catch { reject(new Error('이 PC의 BRING OS Gemini 연결을 확인해 주세요.')); return; }
+    catch { reject(new Error('이 PC에서는 AI 업무 분석을 사용할 수 없습니다. 위 업무 현황은 그대로 볼 수 있습니다.')); return; }
     const child = spawn(python, ['-I', script], {cwd: runtime, env: {...process.env, LOCALAPPDATA: localAppData}, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']});
     let output = '', settled = false;
     const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(value); };

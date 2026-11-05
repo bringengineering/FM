@@ -46,3 +46,18 @@ test('Gemini assessment reuses unchanged results and bounds daily calls', async 
   await assert.rejects(assess({data:data(12),selectedUid:'u1',viewer}), /한도/);
   assert.equal(calls, 12);
 });
+
+test('BRING OS가 없는 PC는 안내 문구로 끝난다', async () => {
+  const {runBringOsGemini} = require('../src/local-gemini-assessment');
+  await assert.rejects(runBringOsGemini({localAppData: path.join(os.tmpdir(), 'no-bring-os'), prompt: 'x'}), /이 PC에서는 AI 업무 분석을 사용할 수 없습니다/);
+});
+
+test('홈 화면 분석 오류에 IPC 개발용 문구가 보이지 않는다', async () => {
+  const source = await fs.readFile(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
+  const body = source.match(/function workAssessmentErrorText\(error\) \{[\s\S]*?\n  \}/)[0];
+  const errorText = new Function(`${body}; return workAssessmentErrorText;`)();
+  assert.equal(errorText(new Error("Error invoking remote method 'crm:work-assessment': Error: 이 PC에서는 AI 업무 분석을 사용할 수 없습니다.")), '이 PC에서는 AI 업무 분석을 사용할 수 없습니다.');
+  assert.equal(errorText(new Error('Gemini 응답 시간이 초과됐습니다.')), 'Gemini 응답 시간이 초과됐습니다.');
+  assert.equal(errorText(null), 'Gemini 분석을 완료하지 못했습니다.');
+  assert.equal(errorText(new Error('가'.repeat(300))).length, 240);
+});
