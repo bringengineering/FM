@@ -51,6 +51,7 @@ const context = {
   Intl,
   PAYMENT_DUE_ALERT_HOUR: 9,
   PAYMENT_OVERDUE_ALERT_HOUR: 13,
+  PAYMENT_OVERDUE_CATCHUP_DAYS: 3,
   Utilities: {
     formatDate(date, timeZone, pattern) {
       assert.equal(timeZone, "Asia/Seoul");
@@ -186,11 +187,18 @@ const schedules = {
 };
 
 const transactionState = {
-  paidScheduleIds: { alreadyPaid: true },
+  paidScheduleIds: { "alreadyPaid|2026-07": true },
   availableAccountRefs: { pb_abcdefghijklmnopqrstuvwx: true }
 };
 
 const afterOnePm = new Date("2026-07-30T04:05:00.000Z");
+// 지난달 납부 확인이나 다른 달 표시는 이번 달 알림을 막지 않는다. 확인필요(보류)는 막는다.
+{
+  const onlyLastMonth = context.paymentNotificationPlan_(schedules, bindings, { paidScheduleIds: { "dueToday|2026-06": true }, availableAccountRefs: transactionState.availableAccountRefs }, afterOnePm);
+  assert.ok(onlyLastMonth.tenantDue.some(row => row.schedule.id === "dueToday"));
+  const heldPlan = context.paymentNotificationPlan_(schedules, bindings, Object.assign({}, transactionState, { heldScheduleMonths: { "overdueOne|2026-07": true } }), afterOnePm);
+  assert.equal(heldPlan.tenantOverdue.some(row => row.schedule.id === "overdueOne"), false);
+}
 const plan = context.paymentNotificationPlan_(schedules, bindings, transactionState, afterOnePm);
 assert.deepEqual(plan.tenantDue.map(row => row.schedule.id), ["dueToday"]);
 assert.deepEqual(plan.tenantOverdue.map(row => row.schedule.id), ["overdueOne"]);
@@ -199,6 +207,14 @@ assert.equal(Object.keys(plan.ownerOverdue).length, 1);
 assert.equal(plan.skippedUnavailable, 1);
 assert.equal(plan.skippedUnlinked, 1);
 
+// 다음 날 13시 실행을 놓쳐도 3일 안에는 미입금 안내를 이어서 보낸다(중복은 발송 기록이 막는다).
+{
+  const catchUp = context.paymentNotificationPlan_(schedules, bindings, transactionState, new Date("2026-08-01T01:00:00.000Z"));
+  assert.ok(catchUp.tenantOverdue.some(row => row.schedule.id === "overdueOne" && row.dueDate === "2026-07-29"));
+  assert.ok(catchUp.ownerOverdueByDate["2026-07-29"].buildingA.length >= 1, "건물주 미입금은 납부일별로 묶는다");
+  const tooLate = context.paymentNotificationPlan_(schedules, bindings, transactionState, new Date("2026-08-03T05:00:00.000Z"));
+  assert.equal(tooLate.tenantOverdue.some(row => row.dueDate === "2026-07-29"), false, "3일이 지나면 더 보내지 않는다");
+}
 const beforeOnePm = new Date("2026-07-30T03:59:00.000Z");
 const beforePlan = context.paymentNotificationPlan_(schedules, bindings, transactionState, beforeOnePm);
 assert.equal(beforePlan.tenantDue.length, 1, "납부일 안내는 오전 9시 이후 대상이다");

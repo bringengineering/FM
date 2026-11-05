@@ -606,6 +606,7 @@
   .pv-payitem.paid{ border-color:#20a552; background:#eaf7ee; color:#116329; }
   .pv-payitem.overdue,.pv-payitem.manual_unpaid{ border-color:#e03131; background:#fff1f0; color:#b42318; }
   .pv-payitem.review{ border-color:#e5a900; background:#fff8e1; color:#7a5200; }
+  .pv-payitem.unverified{ border-color:#7b8794; background:#eef1f5; color:#3e4c59; border-left-style:dashed; }
   .pv-payitem.selected{ outline:2px solid #4b7bec; outline-offset:1px; }
   .pv-detail{ margin-top:12px; border:1px solid #d8e0ec; background:#fff; border-radius:11px; padding:13px; }
   .pv-detail-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
@@ -5701,12 +5702,29 @@ function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
     if(row.candidates.some(tx=>tx.matchStatus==="review")){ row.status="review"; return; }
     if(row.candidates.length===1&&candidateUsage[row.candidates[0].id]===1){ row.status="paid"; row.matchedTransaction=row.candidates[0]; return; }
     if(row.candidates.length){ row.status="review"; return; }
-    row.status=String(todayKey||"")>row.dueDate?"overdue":"scheduled";
+    if(String(todayKey||"")<=row.dueDate){ row.status="scheduled"; return; }
+    row.status=paymentBankCoversDueDate(data,row.schedule.buildingId,row.dueDate)?"overdue":"unverified";
   });
   return rows.sort((a,b)=>a.dueDate.localeCompare(b.dueDate)||String(a.schedule.unit||"").localeCompare(String(b.schedule.unit||""),"ko"));
 }
+// 계좌가 연결돼 있고 납부일 이후에 팝빌 조회가 성공했을 때만 "미입금"으로 판단한다.
+// 연결이 없거나 조회가 실패·대기 중이면 입금 여부를 모르므로 "조회 필요"로 보여 준다.
+function paymentBankCoversDueDate(data,buildingId,dueDate){
+  const binding=data&&data.bankBindings&&data.bankBindings[buildingId]||null;
+  const accountRef=String(binding&&binding.accountRef||"");
+  if(!accountRef) return false;
+  const sync=data&&data.bankSync||{};
+  const errors=Array.isArray(sync.errors)?sync.errors:[];
+  if(errors.some(item=>String(item&&item.accountRef||"")===accountRef)) return false;
+  const accounts=Array.isArray(sync.accounts)?sync.accounts:[];
+  if(accounts.some(item=>String(item&&item.accountRef||"")===accountRef&&item.pending===true)) return false;
+  const successAt=Date.parse(sync.lastSuccessfulAt||"");
+  if(!Number.isFinite(successAt)) return false;
+  const successDate=new Date(successAt+9*3600000).toISOString().slice(0,10);
+  return successDate>String(dueDate||"");
+}
 function paymentFormatMoney(value){ const n=Number(value); return Number.isFinite(n)&&n?Math.round(n).toLocaleString("ko-KR")+"원":"0원"; }
-function paymentStatusLabel(status){ return status==="paid"?"입금완료":status==="overdue"||status==="manual_unpaid"?"미입금":status==="review"?"확인필요":"입금예정"; }
+function paymentStatusLabel(status){ return status==="paid"?"입금완료":status==="overdue"||status==="manual_unpaid"?"미입금":status==="review"?"확인필요":status==="unverified"?"조회 필요":"입금예정"; }
 function paymentId(prefix){ return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function paymentHash(value){ let h=2166136261; const text=String(value||""); for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(36); }
 function paymentEnsureData(){
@@ -5879,7 +5897,7 @@ function renderPaymentDetail(row){
 function renderPaymentMain(building){
   if(!paymentMainEl) return;
   if(!building){ paymentMainEl.innerHTML=`<div class="pv-empty">온보딩 건물을 선택하면 건물별 입금확인 캘린더가 표시됩니다.</div>`; return; }
-  const rows=paymentRowsFor(building.id),paid=rows.filter(r=>r.status==="paid").length,overdue=rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review=rows.filter(r=>r.status==="review").length;
+  const rows=paymentRowsFor(building.id),paid=rows.filter(r=>r.status==="paid").length,overdue=rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review=rows.filter(r=>r.status==="review").length,unverified=rows.filter(r=>r.status==="unverified").length;
   const bankBinding=paymentBankBinding(building.id);
   if(selectedPaymentScheduleId&&!rows.some(r=>r.schedule.id===selectedPaymentScheduleId)) selectedPaymentScheduleId="";
   const days=paymentCalendarDays(paymentMonth),today=paymentTodayKey();
@@ -5887,7 +5905,7 @@ function renderPaymentMain(building){
   paymentMainEl.innerHTML=`<div class="pv-top"><div><div class="pv-title">${esc(building.name)}</div><div class="pv-sub">${esc(building.address||"주소 미입력")} · 건물별 월 납부 현황</div></div><div class="pv-actions"><button class="pv-btn test" data-payment-test="1">＋ 테스트 입금</button><button class="pv-btn primary" data-payment-add="1">＋ 월 납부 일정</button></div></div>`+
     `<div class="pv-bank-link"><div><b>${bankBinding?`입금계좌 · ${esc(paymentBankLabel(bankBinding))}`:"입금계좌가 연결되지 않았습니다"}</b><span>${bankBinding?"이 계좌의 입금만 이 건물 세입자 일정과 비교합니다.":"팝빌 등록계좌를 연결해야 실제 입금이 자동 매칭됩니다."}</span></div><button data-payment-bank-link="${escAttr(building.id)}">${bankBinding?"계좌 변경":"팝빌 계좌 연결"}</button></div>`+
     `<div class="pv-monthbar"><button data-payment-month="-1">‹</button><b>${esc(paymentMonthLabel(paymentMonth))}</b><button data-payment-month="1">›</button></div>`+
-    `<div class="pv-summary"><div class="pv-stat"><span>전체 예정</span><b>${rows.length}건</b></div><div class="pv-stat paid"><span>입금완료</span><b>${paid}건</b></div><div class="pv-stat overdue"><span>미입금</span><b>${overdue}건</b></div><div class="pv-stat review"><span>확인필요</span><b>${review}건</b></div></div>`+
+    `<div class="pv-summary"><div class="pv-stat"><span>전체 예정</span><b>${rows.length}건</b></div><div class="pv-stat paid"><span>입금완료</span><b>${paid}건</b></div><div class="pv-stat overdue"><span>미입금</span><b>${overdue}건</b></div><div class="pv-stat review"><span>확인필요</span><b>${review}건</b></div>${unverified?`<div class="pv-stat"><span>조회 필요</span><b>${unverified}건</b></div>`:""}</div>`+
     `<div class="pv-calendar"><div class="pv-weekdays">${["일","월","화","수","목","금","토"].map(x=>`<div>${x}</div>`).join("")}</div><div class="pv-days">${days.map(date=>{ const inMonth=date.slice(0,7)===paymentMonth,dayRows=rows.filter(r=>r.dueDate===date); return `<div class="pv-day ${inMonth?'':'out'} ${date===today?'today':''}"><div class="pv-daynum">${Number(date.slice(-2))}</div>${dayRows.map(r=>`<button class="pv-payitem ${escAttr(r.status)} ${selectedPaymentScheduleId===r.schedule.id?'selected':''}" data-payment-item="${escAttr(r.schedule.id)}"><b>${esc(r.schedule.unit||r.schedule.tenantName||"납부")}</b>${esc(paymentFormatMoney(r.schedule.amount))}</button>`).join("")}</div>`; }).join("")}</div></div>`+renderPaymentDetail(selected);
 }
 function renderPaymentCalendar(){
