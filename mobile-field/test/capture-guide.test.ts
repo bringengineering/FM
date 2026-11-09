@@ -50,3 +50,18 @@ it('예전 공용부 구역으로 저장된 방문은 불러올 때 지금 구�
   expect(out.photos.map(p => p.itemKey)).toEqual(['windows', 'glass']);
   expect(out.visits[1]!.captureAreas).toEqual(['entrance', 'handrail', 'stairs', 'lighting']);
 });
+
+it('예전 구역으로 보관했을 수 있는 판은 그때의 구역 목록을 기억하고, 발송 조회는 예전 ID부터 찾는다', async () => {
+  const { withCurrentZones } = await import('../src/domain/report');
+  const { archiveDocumentIds } = await import('../src/domain/archive-lookup');
+  const { createHash } = await import('node:crypto');
+  const digest = async (value: string) => createHash('sha256').update(value).digest('hex');
+  const raw = { id: 'v1', ownerUid: 'u', job: { id: 'j', kind: 'common', title: 't', address: 'a', workDate: '2026-11-09', customerId: 'c' }, revision: 3, updatedAt: '',
+    captureAreas: ['entrance', 'handrail'], draft: { summary: '', followUp: '', statuses: { lighting: 'done' }, notes: {}, confirmedRevision: 3 } };
+  const v = withCurrentZones({ visits: [raw] as never, photos: [] }).visits[0]!;
+  expect(v.legacyArchive).toEqual({ revision: 3, plan: ['entrance', 'handrail', 'lighting'] });
+  const ids = await archiveDocumentIds(v, 'u', digest);
+  expect(ids[0]).toBe('saved_wr_' + (await digest(JSON.stringify(['u', 'v1', 3, ['entrance', 'handrail', 'lighting']]))).slice(0, 40));
+  expect(ids).toHaveLength(2);
+  expect(await archiveDocumentIds({ ...v, revision: 4, draft: { ...v.draft, confirmedRevision: 4 } }, 'u', digest)).toHaveLength(1);
+});

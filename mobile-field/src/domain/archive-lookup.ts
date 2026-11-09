@@ -19,3 +19,12 @@ export async function archiveDocumentId(visit:Visit,uid:string,digest:(input:str
   if(!/^[a-f0-9]{64}$/.test(value))throw new FieldError('SERVER_RESPONSE_INVALID');
   return 'saved_wr_'+value.slice(0,40);
 }
+// 9개 구역으로 바뀌기 전에 이 판을 보관했다면 그때의 구역 목록으로 만든 ID가 먼저다. 없으면 지금 ID.
+export async function archiveDocumentIds(visit:Visit,uid:string,digest:(input:string)=>Promise<string>):Promise<string[]>{
+  const current=await archiveDocumentId(visit,uid,digest);
+  if(visit.legacyArchive?.revision!==visit.revision||!visit.legacyArchive.plan.length)return [current];
+  const value=await digest(JSON.stringify([uid,visit.id,visit.revision,visit.legacyArchive.plan]));
+  if(!/^[a-f0-9]{64}$/.test(value))throw new FieldError('SERVER_RESPONSE_INVALID');
+  const legacy='saved_wr_'+value.slice(0,40);
+  return legacy===current?[current]:[legacy,current];
+}

@@ -1,5 +1,5 @@
 import { assertOwner, assertPhoto, canDeletePhoto, FieldError, invalidateVisit, LIMITS, orderPhotos, orderVisits, type Photo, type Vault, type Visit, type Workspace } from '../domain/model';
-import { catalog } from '../domain/report';
+import { catalog, zoneFor } from '../domain/report';
 
 type Bind = string | number | Uint8Array | null;
 export interface SqlConnection {
@@ -99,8 +99,9 @@ export class SqlVault implements Vault {
       const visit = await this.visit(tx, previous.visitId, expected);
       // Transfer metadata and original bytes cannot be edited through the UI.
       if (photo.visitId !== previous.visitId || !catalog(visit.job.kind).some(item => item.key === photo.itemKey)) throw new FieldError('PHOTO_INVALID');
-      if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && (photo.itemKey!==previous.itemKey||photo.phase!==previous.phase)) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
-      const moved = photo.itemKey !== previous.itemKey || photo.phase !== previous.phase;
+      // 예전 공용부 구역 이름(앱 0.1.15)은 지금 구역과 같은 구역으로 본다. 화면은 지금 구역 이름으로 고쳐 보낸다.
+      const moved = zoneFor(visit.job.kind, photo.itemKey) !== zoneFor(visit.job.kind, previous.itemKey) || photo.phase !== previous.phase;
+      if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && moved) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
       const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption, ...(moved ? { pairWith: undefined } : {}) };
       // Validate the stored result: a moved "after" photo loses its pairWith above.
       assertPhoto(updated);

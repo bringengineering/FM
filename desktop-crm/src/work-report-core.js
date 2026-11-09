@@ -284,20 +284,40 @@
     handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
     rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
   });
+  // 9개로 줄이기 전 공용부 구역 순서. 그때 보관한 보고서의 문서 ID(촬영 구역 목록으로 만든다)를
+  // 다시 찾을 때만 쓴다. 새 보고서에는 쓰지 않는다.
+  const COMMON_LEGACY_ORDER = Object.freeze(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final"]);
+  // 예전 앱이 보관할 때 쓴 구역 목록: 고른 구역 + 상태를 정했거나 메모를 쓴 구역, 예전 순서대로.
+  function legacyCommonPlan(areas, statuses, notes) {
+    const chosen = new Set(rows(areas).map(key => text(key, 40)));
+    for (const key of COMMON_LEGACY_ORDER) {
+      const status = statuses && typeof statuses === "object" ? statuses[key] : "";
+      const note = notes && typeof notes === "object" ? notes[key] : "";
+      if ((status && status !== "recorded") || (typeof note === "string" && note.trim())) chosen.add(key);
+    }
+    return COMMON_LEGACY_ORDER.filter(key => chosen.has(key));
+  }
   function commonZoneFor(key) {
     const value = text(key, 40);
     return COMMON_LEGACY_ZONES[value] || value;
   }
+  // 합친 구역의 상태: 실제로 한 기록(완료·일부)이 '못 함'·'기록' 보다 앞선다.
+  const STATUS_RANK = Object.freeze({ done: 3, partial: 2, skipped: 1, recorded: 0 });
+  function strongerStatus(a, b) {
+    return (STATUS_RANK[b] ?? -1) > (STATUS_RANK[a] ?? -1) ? b : a;
+  }
   // 예전 구역 항목을 지금 구역 항목에 합친다. 사진은 순서대로 뒤에 붙이고 메모는 이어 쓴다.
+  // 공용부는 '공용부 활동 결과보고서' 양식의 고정 구역표에 실리므로 저장된 이름·설명("배수구·트렌치",
+  // "출입구·현관" 등)을 버리고 지금 구역 이름을 쓴다. 다른 작업 종류는 저장된 이름을 그대로 쓴다.
   function mergeLegacyCommon(saved) {
     const merged = [];
     for (const item of saved) {
       const key = commonZoneFor(item.key);
       const target = merged.find(row => row.key === key);
-      if (!target) { merged.push({ ...item, key }); continue; }
+      if (!target) { merged.push({ ...item, key, label: "", detail: "" }); continue; }
       for (const phase of ["before", "during", "after"]) target[phase] = [...target[phase], ...item[phase]];
       target.note = [target.note, item.note].filter(Boolean).join(" / ").slice(0, 500);
-      if (target.status === "recorded" && item.status !== "recorded") target.status = item.status;
+      target.status = strongerStatus(target.status, item.status);
     }
     return merged;
   }
@@ -608,6 +628,8 @@
     itemCatalogFor,
     commonZoneFor,
     COMMON_LEGACY_ZONES,
+    COMMON_LEGACY_ORDER,
+    legacyCommonPlan,
     itemIssue,
     validateReport,
     progress,
