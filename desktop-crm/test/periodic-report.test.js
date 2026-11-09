@@ -145,7 +145,8 @@ test("청소 내역의 수행 내용에는 안내문이 아니라 구역별 수�
   const works = [{ id: "w1", buildingId: "b1", kind: "common", workDate: "2026-10-28", summary: letter,
     items: [{ key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소", status: "recorded", after: [{ id: "p" }] }] }];
   const view = P.buildView({ id: "pr_x0001", buildingId: "b1", period: "2026-10-2", inspection: { date: "2026-10-28" } }, works);
-  assert.equal(view.cleanings[0].work, "층별 계단·참의 오염 확인 및 청소");
+  // 공용부 구역 이름·범위는 '공용부 활동 결과보고서' 양식의 지금 구역 기준으로 읽는다.
+  assert.equal(view.cleanings[0].work, "층별 계단·계단참·난간의 오염 확인 및 청소");
   assert.doesNotMatch(view.cleanings[0].work, /안녕하십니까/);
 });
 
