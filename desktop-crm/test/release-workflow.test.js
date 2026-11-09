@@ -218,3 +218,17 @@ test("rechecks the exact canonical source around tag, draft, and stable publicat
   assert.ok(release.indexOf("finalize-release-ref.js") < release.indexOf("--mode stage"));
   assert.ok(release.indexOf("--mode stage") < release.lastIndexOf("--mode publish"));
 });
+
+test("NSIS toolset is fetched through the GitHub API with electron-builder's pinned SHA-256 before the build", () => {
+  const release = require("node:fs").readFileSync(require("node:path").join(__dirname, "../../.github/workflows/crm-release.yml"), "utf8");
+  const fetch = release.indexOf("name: Fetch the pinned NSIS toolset through the GitHub API");
+  assert.ok(fetch > 0 && fetch < release.indexOf("name: Build installer with the Google Drive Desktop OAuth client ID"));
+  const block = release.slice(fetch, release.indexOf("name: Build installer", fetch));
+  assert.match(block, /9877df902530f96357d13a7a31ae2b9df67f48b11ffc9a1700a7c961574ec5fa/);
+  assert.match(block, /Accept = 'application\/octet-stream'/);
+  assert.match(block, /ELECTRON_BUILDER_NSIS_DIR=/);
+  assert.match(block, /if: steps\.reserve\.outputs\.reuse_assets != 'true'/);
+  const lib = require("node:fs").readFileSync(require.resolve("app-builder-lib/out/toolsets/windows.js"), "utf8");
+  assert.ok(lib.includes('"nsis-3.0.4.1.7z", "9877df902530f96357d13a7a31ae2b9df67f48b11ffc9a1700a7c961574ec5fa"'), "electron-builder NSIS pin changed; update the workflow step");
+  assert.ok(lib.includes("ELECTRON_BUILDER_NSIS_DIR"));
+});
