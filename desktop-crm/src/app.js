@@ -11814,10 +11814,10 @@
       .sort((a, b) => customerDisplayName(a).localeCompare(customerDisplayName(b), "ko"));
     const contractCount = customers.reduce((sum, customer) => sum + contractCustomerContracts(customer).length, 0);
     const modeLabel = modes.find(([mode]) => mode === contractCustomerModeFilter)?.[1] || "전체";
-    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 종료 계약 포함</p></div><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button></section>
+    main.innerHTML = `<section class="relationship-hero"><div><span>고객과 연결된 계약을 확인합니다</span><h2>계약 고객 관리</h2><p>고객 ${customers.length}명 · ${modeLabel} ${contractCount}건 · 종료 계약 포함</p></div><div class="relationship-hero-actions"><button class="secondary-button" data-view="pipeline">영업 관리 보기 →</button>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="new-contract">＋ 계약 등록</button>` : ""}</div></section>
       <nav class="contract-payment-mode-tabs contract-customer-mode-tabs" aria-label="계약 고객 계약 구분">${modes.map(([mode, label]) => `<button type="button" class="${contractCustomerModeFilter === mode ? "active" : ""}" data-contract-customer-mode="${mode}" aria-pressed="${contractCustomerModeFilter === mode}">${label} <span>${allContracts.filter(contract => mode === "all" || contractCustomerMode(contract) === mode).length}건</span></button>`).join("")}</nav>
       ${customers.length ? `<section class="relationship-list">${customers.map(customer => {
-        return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button></footer></article>`;
+        return `<article class="relationship-card"><header>${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc(customer.company || customer.type || "계약 고객")}</p></div></header>${relationshipContractsHtml(customer)}<footer><button type="button" class="secondary-button" data-customer-open="${attr(customer.id)}">고객·계약 상세 보기 →</button>${canWriteCRM() ? `<button type="button" class="secondary-button" data-contract-new-for-customer="${attr(customer.id)}">＋ 이 고객 계약 추가</button>` : ""}</footer></article>`;
       }).join("")}</section>` : empty(contractCustomerModeFilter === "all" ? "등록된 계약 고객이 없습니다" : `등록된 ${modeLabel}이 없습니다`, contractCustomerModeFilter === "all" ? "캘린더나 계약 관리에서 고객에게 계약을 연결하면 이곳에 자동으로 나타납니다." : "다른 구분의 계약과 구분 확인이 필요한 계약은 전체 탭에서 확인하세요.", canWriteCRM() ? `<button class="primary-button" data-action="new-contract">＋ 계약 등록</button>` : "")}`;
   }
 
@@ -13668,12 +13668,13 @@
     return `<section class="contract-type-fields contract-readiness-form"><header><b>계약 준비 도우미</b><span>회사 운영 참고용이며 법률 판단이 필요한 사항은 최종 확인이 필요합니다.</span></header><div class="form-grid"><label class="field wide"><span>승인된 기준 문서</span><select name="readinessSourceId"><option value="">기준 문서 선택</option>${sources.map(entry => `<option value="${attr(entry.id)}" ${entry.driveFileId === checklist?.sourceDriveFileId ? "selected" : ""}>${esc(`${entry.contractType} · ${entry.title || entry.driveFileId} · ${entry.approvedVersion.revisionId}`)}</option>`).join("")}</select></label>${field("준비 담당자", "readinessOwner", checklist?.owner || item.owner || store.settings.owner || "김현진")}${field("준비 기한", "readinessDueDate", checklist?.dueDate || item.startDate || todayKey(), "date")}</div><div class="contract-readiness-items">${items.map(entry => `<label><span><b>${esc(entry.party || "확인")}</b>${esc(entry.label)}<small>${esc(entry.evidence || "근거 위치 확인 필요")}</small></span><select name="readiness__${attr(entry.id)}"><option value="pending" ${entry.status === "pending" ? "selected" : ""}>미완료</option><option value="complete" ${entry.status === "complete" ? "selected" : ""}>완료</option><option value="not_applicable" ${entry.status === "not_applicable" ? "selected" : ""}>해당 없음</option></select><input name="readinessNote__${attr(entry.id)}" value="${attr(entry.note || "")}" placeholder="메모·증빙 링크"></label>`).join("")}</div></section>`;
   }
 
-  function contractEditor(contractId, oneOff = false, paymentDate = "") {
+  function contractEditor(contractId, oneOff = false, paymentDate = "", presetCustomerId = "") {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 등록하거나 변경할 수 없습니다.", "error");
     const editing = store.contracts.find(item => item.id === contractId);
-    const isOneOff = editing ? editing.billingCycle === "건별" : oneOff || contractPaymentModeFilter === "single";
+    const isOneOff = editing ? editing.billingCycle === "건별" : currentView === "relationships" ? oneOff || contractCustomerModeFilter === "single" : oneOff || contractPaymentModeFilter === "single";
+    const presetCustomer = !editing && presetCustomerId ? customerById(presetCustomerId) : null;
     const returnView = currentView === "buildingCalendar" ? "buildingCalendar" : currentView === "relationships" ? "relationships" : "contracts";
-    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: "" });
+    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: "", customerId: presetCustomer ? presetCustomer.id : "" });
     const requestedPaymentDate = String(paymentDate || "");
     const selectedPaymentDate = Core.contractPaymentRows([item], requestedPaymentDate.slice(0, 7)).some(row => row.dueDate === requestedPaymentDate)
       ? requestedPaymentDate : item.paymentDueDate || "";
@@ -17483,6 +17484,8 @@
       return;
     }
     if (event.target.closest("[data-contract-receipt-reload]")) { await reloadContractReceiptQuickPanel(); return; }
+    const contractNewForCustomer = event.target.closest("[data-contract-new-for-customer]");
+    if (contractNewForCustomer) { contractEditor("", false, "", contractNewForCustomer.dataset.contractNewForCustomer); return; }
     const contractEdit = event.target.closest("[data-contract-edit]");
     if (contractEdit) { contractEditor(contractEdit.dataset.contractEdit, false, contractEdit.dataset.contractPaymentDate || ""); return; }
     const caseListModeButton = event.target.closest("[data-case-list-mode]");
