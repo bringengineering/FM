@@ -284,6 +284,19 @@
     handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
     rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
   });
+  // 9개로 줄이기 전 공용부 구역 순서. 그때 보관한 보고서의 문서 ID(촬영 구역 목록으로 만든다)를
+  // 다시 찾을 때만 쓴다. 새 보고서에는 쓰지 않는다.
+  const COMMON_LEGACY_ORDER = Object.freeze(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final"]);
+  // 예전 앱이 보관할 때 쓴 구역 목록: 고른 구역 + 상태를 정했거나 메모를 쓴 구역, 예전 순서대로.
+  function legacyCommonPlan(areas, statuses, notes) {
+    const chosen = new Set(rows(areas).map(key => text(key, 40)));
+    for (const key of COMMON_LEGACY_ORDER) {
+      const status = statuses && typeof statuses === "object" ? statuses[key] : "";
+      const note = notes && typeof notes === "object" ? notes[key] : "";
+      if ((status && status !== "recorded") || (typeof note === "string" && note.trim())) chosen.add(key);
+    }
+    return COMMON_LEGACY_ORDER.filter(key => chosen.has(key));
+  }
   function commonZoneFor(key) {
     const value = text(key, 40);
     return COMMON_LEGACY_ZONES[value] || value;
@@ -615,6 +628,8 @@
     itemCatalogFor,
     commonZoneFor,
     COMMON_LEGACY_ZONES,
+    COMMON_LEGACY_ORDER,
+    legacyCommonPlan,
     itemIssue,
     validateReport,
     progress,
