@@ -73,9 +73,10 @@ test("sub-minute visual pairs survive Worker rounding but exact equal/reversed t
     const decisions = files.map(file => ({ id: file.id, category: "window", space: "other", target: "window", phase: "unknown", confidence: 95 }));
     const moveIn = V.withCaptureTimes(V.decorate(P.planFromTree({ files }, { kind: "moveIn" }), decisions), files);
     assert.equal(V.flatten(V.applyPairs(moveIn, pairs)).filter(row => row.phase === "before").length, expected);
+    // 공용부는 작업 전 사진을 찍지 않아 전·후 짝을 만들지 않는다(모든 사진이 작업 후).
     const common = P.withCommonCaptureTimes(P.applyPhotoClassifications(P.planFromTree({ files }, { kind: "common" }),
       decisions.map(row => ({ ...row, category: "windows" }))), files);
-    assert.equal(P.photoReviewRows(P.applyCommonPairs(common, pairs)).filter(row => row.phase === "before").length, expected);
+    assert.equal(P.photoReviewRows(common).filter(row => row.phase === "before").length, 0);
   }
 });
 

@@ -9384,7 +9384,7 @@
         ? `<span class="wr-ai-photo-thumb"><img src="${attr(thumbnail)}" alt=""></span>`
         : `<span class="wr-ai-photo-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span aria-hidden="true">▧</span></span>`;
       const selectedKey = reportItemKeys.has(row.itemKey) ? row.itemKey : "";
-      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span>${reportPhotoEvidence(row)}<label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ["before", "작업 전"], ...(plan.kind === "common" ? [["during", "작업 중"]] : []), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
+      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span>${reportPhotoEvidence(row)}<label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ...(plan.kind === "common" ? [["during", "작업 중"]] : [["before", "작업 전"]]), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
     };
     const needsReview = row => !reportItemKeys.has(row.itemKey) || row.phase === "unsorted";
     const classificationCards = photoRows.filter(needsReview).map(classificationCard).join("");
@@ -9400,7 +9400,7 @@
             : plan.aiClassified
               ? `<span class="wr-drive-loose">위 사진별 항목을 선택하세요</span>`
               : `<label class="wr-drive-item-picker"><span>${item ? "연결 항목" : "붙일 항목 선택"}</span><select data-report-drive-item="${index}"><option value="">보고서 항목 선택</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === key ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label>`}</td>
-          <td>${bucket.before.length}</td>${plan.kind === "common" ? `<td>${(bucket.during || []).length}</td>` : ""}
+          ${plan.kind === "common" ? `<td>${(bucket.during || []).length}</td>` : `<td>${bucket.before.length}</td>`}
           <td>${bucket.after.length}</td>
           <td>${bucket.unsorted.length ? `<span class="wr-drive-unsure">${bucket.unsorted.length}</span>` : "0"}</td>
           <td class="wr-drive-why">${esc(bucket.reason || "")}</td>
@@ -9425,9 +9425,9 @@
       ${plan && plan.kind === "moveIn" ? reportPairMain() : plan ? `
         ${planWarnings.length ? `<ul class="wr-drive-warn">${planWarnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
         ${["moveIn", "common"].includes(plan.kind) ? `<div class="wr-ai-classify-bar"><div><b>Gemini 사진 구역 자동분류</b><small>메타데이터를 제거한 작은 JPEG만 Gemini에 전송합니다. 파일명·Drive 링크는 보내지 않지만 사진 안에 보이는 정보는 포함됩니다.</small></div><button type="button" class="primary-button" data-report-photo-classify${reportState.driveClassificationLoading || !selected ? " disabled" : ""}>${reportState.driveClassificationLoading ? "Gemini가 사진 분류 중…" : plan.aiClassified ? "Gemini로 다시 분류" : "Gemini 분류 다시 시도"}</button></div>` : ""}
-        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span>${plan.kind === "common" && photoRows.some(row => reportItemKeys.has(row.itemKey) && row.phase === "unsorted" && !row.file.manualPhase) ? `<button type="button" class="secondary-button" data-report-time-split${reportState.driveClassificationLoading ? " disabled" : ""} title="구역별로 같은 날 찍은 사진을 촬영 시각 순으로 놓고, 가장 크게 벌어진 시점 앞을 작업 전·뒤를 작업 후로 추천합니다.">촬영 시각으로 전·후 나누기</button>` : ""}${plan.kind === "common" && typeof reportPhotoPlan().matchRequests === "function" && reportPhotoPlan().matchRequests(plan).length ? `<button type="button" class="secondary-button" data-report-pair-match${reportState.driveClassificationLoading || reportState.pairMatching ? " disabled" : ""} title="같은 구역의 작업 전·후 사진 중 같은 장소를 찍은 짝을 AI가 찾아 보고서에 나란히 싣습니다. 확신이 없는 사진은 짝짓지 않습니다.">${reportState.pairMatching ? "같은 장소 짝 찾는 중…" : "AI로 전·후 짝 맞추기"}</button>` : ""}</header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
+        ${photoRows.length ? `<div class="wr-ai-photo-review"><header><b>사진별 구역·작업 단계 확인</b><span aria-live="polite">선택 ${photoRows.length}장 · 배치 가능 ${photoRows.length - pendingCount}장 · 확인 필요 ${pendingCount}장</span></header>${classificationCards ? `<div>${classificationCards}</div>` : `<p>모든 사진을 배치할 수 있습니다. 확인 후 초안에 적용해 주세요.</p>`}${readyCards ? `<details${plan.kind === "common" ? " open" : ""}><summary>분류된 사진 ${photoRows.length - pendingCount}장 확인·수정</summary><div class="wr-ai-ready-grid">${readyCards}</div></details>` : ""}</div>` : ""}
         <div class="office-table-wrap"><table class="office-table wr-drive-table">
-          <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th>${plan.kind === "common" ? "<th>작업 중</th>" : ""}<th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
+          <thead><tr><th>Drive 폴더</th><th>보고서 항목</th>${plan.kind === "common" ? "<th>작업 중</th>" : "<th>작업 전</th>"}<th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
         <div class="wr-drive-actions">
@@ -9880,7 +9880,8 @@
         reportState.drivePlan.warnings = [...new Set([...(reportState.drivePlan.warnings || []), ...(result.warnings || []).filter(line => typeof line === "string")])].slice(0, 20);
       }
       const V = window.BringPhotoPairReview;
-      const groups = basePlan.kind === "common" ? P.commonComparisonGroups(reportState.drivePlan) : V.comparisonGroups(reportState.drivePlan);
+      // 공용부는 작업 전 사진을 찍지 않으므로 전·후 비교를 돌리지 않는다.
+      const groups = basePlan.kind === "common" ? [] : V.comparisonGroups(reportState.drivePlan);
       for (let index = 0; index < groups.length; index += 1) {
         if (!active()) return;
         const ids = groups[index];
@@ -10267,7 +10268,7 @@
         </header>
         <div class="wr-shots${["moveIn", "common"].includes(draft.kind) ? " is-common" : ""}">
           ${["moveIn", "common"].includes(draft.kind) ? `<div><span>작업 중 <b>${item.during.length}</b></span><ul>${shots("during")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="during"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>` : ""}
-          <div><span>작업 전 <b>${item.before.length}</b></span><ul>${shots("before")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
+          ${draft.kind === "common" && !item.before.length ? "" : `<div><span>작업 전 <b>${item.before.length}</b></span><ul>${shots("before")}</ul>${reportState.canWork && draft.kind !== "common" ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>`}
           <div><span>작업 후 <b>${item.after.length}</b></span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
         </div>
         <input type="text" class="wr-note" data-report-note="${esc(item.key)}" maxlength="500" value="${esc(item.note)}" placeholder="${item.status === "skipped" ? "못 한 이유를 적어 주세요" : "비고 (선택)"}">
@@ -10325,7 +10326,7 @@
           </section>
           <section class="wr-ai-card wr-ai-photo-section">
             <header><span class="wr-ai-card-icon">02</span><div><h4>사진 등록 및 구역 확인</h4><p>회사 Drive 화면에서 사진을 고르거나 항목별로 직접 추가할 수 있습니다.</p></div><strong>${sum.photos}장</strong></header>
-            <div class="wr-ai-photo-guide"><span>1</span><p><b>${draft.kind === "common" ? "작업 중 사진을 중심으로 등록하세요. 완료 여부는 별도로 확인합니다." : "작업 전·후 사진을 등록하세요."}</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
+            <div class="wr-ai-photo-guide"><span>1</span><p><b>${draft.kind === "common" ? "작업 후 사진을 구역별로 등록하세요. 공용부는 작업 전 사진을 찍지 않습니다." : "작업 전·후 사진을 등록하세요."}</b><small>자동 분류가 맞지 않으면 아래 항목에서 바로 옮기거나 다시 넣을 수 있습니다.</small></p></div>
             ${reportState.canWork ? reportDriveBox(R) : ""}
             <div class="wr-ai-manual-head"><div><b>항목별 사진 · 자동 반영 및 직접 등록</b><small>분석된 사진은 자동 반영됩니다. 문장 작성에는 작업 정보·사진 구분·메모만 사용하며, 완료 여부는 담당자가 확인합니다.</small></div><span>${draft.items.length}개 구역</span></div>
             <div class="wr-items">${cards}</div>

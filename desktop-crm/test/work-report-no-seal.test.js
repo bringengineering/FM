@@ -49,7 +49,8 @@ test("인감 저장소가 없거나 읽기 실패여도 두 서식의 PDF 다운
       assert.doesNotMatch(html, /대표자 날인|서명 또는 인|class="stamp"|data:image\/png;base64/);
       assert.match(html, /data:image\/jpeg;base64/);
       assert.match(html, /예시 회사/);
-      assert.match(html, /검증용 현장 기록/);
+      // 공용부 건물주용은 '공용부 활동 결과보고서' 양식이라 요약 칸이 없다.
+      assert.match(html, kind === "common" ? /검증용 현장 기록|공용부 활동 결과보고서/ : /검증용 현장 기록/);
     }
   }
 });

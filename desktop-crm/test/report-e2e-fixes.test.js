@@ -89,7 +89,7 @@ test("PDF·AI 용 사진 모두 EXIF 방향대로 세운다", () => {
 });
 
 test("남은 사진이 없는 단계는 '0장' 으로 적지 않는다", () => {
-  const report = R.normalizeReport({ id: "wr_x", kind: "common", buildingId: "b", buildingName: "예시", workDate: "2026-10-29", updatedAt: "2026-10-29T00:00:00Z" });
+  const report = R.normalizeReport({ id: "wr_x", kind: "moveIn", buildingId: "b", buildingName: "예시", workDate: "2026-10-29", updatedAt: "2026-10-29T00:00:00Z" });
   const item = report.items[1];
   item.before = [{ id: "b1", driveFileId: "b1", pairId: "p1" }, { id: "b2", driveFileId: "b2" }];
   item.after = [{ id: "a1", driveFileId: "a1", pairId: "p1" }];
