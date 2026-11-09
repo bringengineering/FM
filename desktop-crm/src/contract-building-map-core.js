@@ -41,7 +41,7 @@
       for (const record of list(store?.serviceRecords)) consider(record);
       const projectionStore = { contracts: activeContracts, serviceRecords: list(store?.serviceRecords) };
       for (const month of months) for (const occurrence of Schedule.contractWorkOccurrences(projectionStore, month)) {
-        // Weekly schedules are bounded to four dates, and may cross months.
+        // Keep only this month's dates when picking the next visit.
         if (occurrence.scheduledDate.startsWith(month)) consider(occurrence);
       }
     }

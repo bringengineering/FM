@@ -46,7 +46,7 @@ test("month projections stop at the inclusive contract boundaries and stay bound
   for (const changes of [{ startDate: "2026-02-30" }, { endDate: "2026-02-30" }, { endDate: "2026-09-01" }, { status: "종료" }, { status: "cancelled" }, { deleted: true }, { types: ["건물관리"] }]) assert.deepEqual(Schedule.contractDates(contract(changes), "2026-10"), []);
 });
 
-test("malformed rules fail closed, count is fixed at two, and legacy weekly schedules keep four total dates", () => {
+test("malformed rules fail closed, count is fixed at two, and weekly schedules keep repeating in later months", () => {
   for (const schedule of [{ mode: "twice_monthly", weekday: "4", weekPattern: "first_third" }, { mode: "twice_monthly", weekday: 7, weekPattern: "first_third" }, { mode: "twice_monthly", weekday: 4 }, { mode: "twice_monthly", weekday: 4, weekPattern: "first_fifth" }]) {
     assert.equal(Schedule.normalizeCleaningSchedule(schedule), null);
     assert.deepEqual(Schedule.contractDates(contract({ cleaningSchedule: schedule }), "2026-10"), []);
@@ -54,7 +54,7 @@ test("malformed rules fail closed, count is fixed at two, and legacy weekly sche
   assert.deepEqual(Schedule.normalizeCleaningSchedule({ mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 1000000 }), { mode: "twice_monthly", weekday: 4, weekPattern: "first_third", count: 2 });
   const weekly = contract({ cleaningSchedule: { mode: "weekly", weekday: 4 } });
   assert.deepEqual(Schedule.contractDates(weekly), ["2026-10-01", "2026-10-08", "2026-10-15", "2026-10-22"]);
-  assert.equal(Calendar.buildModel(store({ contracts: [weekly] }), { month: "2026-11" }).events.length, 0);
+  assert.deepEqual(Calendar.buildModel(store({ contracts: [weekly] }), { month: "2026-11" }).events.map(item => item.scheduledDate), ["2026-11-05", "2026-11-12", "2026-11-19", "2026-11-26"]);
 });
 
 test("calendar, work management and individual occurrence lookup use the requested month without changing payments or data", () => {
@@ -119,7 +119,8 @@ test("live preview toggles the extra field and shows a bounded first eligible mo
   values.cleaningScheduleMode = "weekly";
   ctx.module.exports.refresh(form);
   assert.equal(pattern.hidden, true);
-  assert.match(preview.children[2].textContent, /총 4회/);
+  assert.match(preview.children[0].textContent, /매주 목요일 \(처음 4회 미리보기\)/);
+  assert.match(preview.children[2].textContent, /매주 선택한 요일/);
   values.cleaningScheduleMode = "manual";
   ctx.module.exports.refresh(form);
   assert.equal(weekday.hidden, true);

@@ -33,7 +33,7 @@ function extractConst(name) {
 function gsContext() {
   const names = ["safeAlimTalkVariable_", "ownerNoticeCatalogEntry_", "ownerNoticeLine_", "ownerNoticeShortAddress_", "ownerNoticeBuildingAddress_",
     "ownerNoticeUnitLabel_", "ownerNoticeIsOwner_", "ownerNoticeRender_", "ownerNoticeMissing_", "ownerNoticeRows_", "ownerNoticeIsDate_",
-    "ownerNoticeLive_", "ownerNoticeTypes_", "ownerNoticeIsCleaningContract_", "ownerNoticeCleaningSchedule_", "ownerNoticeTwiceMonthlyDates_",
+    "ownerNoticeLive_", "ownerNoticeTypes_", "ownerNoticeIsCleaningContract_", "ownerNoticeCleaningSchedule_", "ownerNoticeTwiceMonthlyDates_", "ownerNoticeWeeklyDates_",
     "ownerNoticeContractDates_", "ownerNoticePaymentDate_", "ownerNoticeCollectionStatus_", "ownerNoticeDateLabel_", "ownerNoticeTimeLabel_",
     "ownerNoticeMoney_", "ownerNoticeAddDays_", "ownerNoticeOwner_", "ownerNoticePlan_"];
   const code = [
@@ -125,11 +125,15 @@ test("Apps Script schedule copies agree with CRM contract-schedule-core and core
     { id: "k2", types: ["청소"], status: "진행 중", startDate: "2026-10-27", billingCycle: "월 정기", cleaningSchedule: { mode: "weekly", weekday: 1 } },
     { id: "k3", types: ["청소"], status: "진행 중", startDate: "2026-11-02", workDate: "2026-11-02", billingCycle: "건별" },
     { id: "k4", types: ["청소"], status: "계약 준비", startDate: "2026-09-01", billingCycle: "월 정기", cleaningSchedule: { mode: "weekly", weekday: 1 } },
+    { id: "k5", types: ["청소"], status: "진행 중", startDate: "2026-09-25", endDate: "2027-01-11", billingCycle: "월 정기", cleaningSchedule: { mode: "weekly", weekday: 4, count: 4 } },
   ];
-  for (const contract of contracts) for (const month of ["2026-10", "2026-11", "2026-12"]) {
+  for (const contract of contracts) for (const month of ["2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02"]) {
     const expected = Schedule.contractDates(contract, month).filter(date => date.slice(0, 7) === month);
     assert.deepEqual([...GS.ownerNoticeContractDates_(contract, month)], expected, `${contract.id} ${month}`);
   }
+  // 주 1회 청소는 첫 4회가 지난 뒤에도 매주 이어진다.
+  assert.deepEqual([...GS.ownerNoticeContractDates_(contracts[4], "2026-12")], ["2026-12-03", "2026-12-10", "2026-12-17", "2026-12-24", "2026-12-31"]);
+  assert.deepEqual([...GS.ownerNoticeContractDates_(contracts[4], "2027-01")], ["2027-01-07"]);
   const pay = [
     { billingCycle: "월 정기", paymentDueDate: "2026-01-31", status: "진행 중" },
     { billingCycle: "연간", paymentDueDate: "2025-11-15", status: "진행 중" },

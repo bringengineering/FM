@@ -11,7 +11,7 @@
     const schedule = Schedule.normalizeCleaningSchedule(item.cleaningSchedule)
       || { mode: settings.isNew ? settings.oneOff ? "once" : "weekly" : "manual", weekday: 1 };
     return `<div class="form-grid contract-cleaning-schedule" data-contract-cleaning-schedule>
-      <label class="field"><span>청소 주기·작업 시점</span><select name="cleaningScheduleMode"><option value="manual"${schedule.mode === "manual" ? " selected" : ""}>직접 입력 · 일정 자동 생성 안 함</option><option value="once"${schedule.mode === "once" ? " selected" : ""}>한 번 작업</option><option value="weekly"${schedule.mode === "weekly" ? " selected" : ""}>주 1회 · 첫 4회</option><option value="twice_monthly"${schedule.mode === "twice_monthly" ? " selected" : ""}>2주 1회 · 월 2회</option></select></label>
+      <label class="field"><span>청소 주기·작업 시점</span><select name="cleaningScheduleMode"><option value="manual"${schedule.mode === "manual" ? " selected" : ""}>직접 입력 · 일정 자동 생성 안 함</option><option value="once"${schedule.mode === "once" ? " selected" : ""}>한 번 작업</option><option value="weekly"${schedule.mode === "weekly" ? " selected" : ""}>주 1회 · 매주</option><option value="twice_monthly"${schedule.mode === "twice_monthly" ? " selected" : ""}>2주 1회 · 월 2회</option></select></label>
       <label class="field" data-cleaning-weekday-field><span>작업 요일</span><select name="cleaningWeekday">${Schedule.WEEKDAYS.map((day, index) => `<option value="${index}"${index === (schedule.weekday ?? 1) ? " selected" : ""}>${esc(day)}</option>`).join("")}</select></label>
       <label class="field" data-cleaning-week-pattern-field${schedule.mode === "twice_monthly" ? "" : " hidden"}><span>매월 작업 순서</span><select name="cleaningWeekPattern"><option value="first_third"${schedule.weekPattern !== "second_fourth" ? " selected" : ""}>1·3번째 선택 요일</option><option value="second_fourth"${schedule.weekPattern === "second_fourth" ? " selected" : ""}>2·4번째 선택 요일</option></select></label>
       <label class="field"><span>청소 방문 시각 (건물주 알림톡)</span><input name="cleaningVisitTime" type="time" value="${esc(/^([01]\d|2[0-3]):[0-5]\d$/.test(String(item.cleaningVisitTime || "")) ? item.cleaningVisitTime : "")}"><small>청소 당일 오전 8시에 건물주에게 '오늘 ○시 청소 예정'을 보냅니다. 비우면 '방문 전 연락드립니다'로 안내합니다.</small></label>
@@ -51,7 +51,7 @@
     const dates = Schedule.contractDates({ ...values, types, cleaningSchedule: schedule });
     if (!dates.length) { preview.textContent = "계약 기간과 작업 날짜를 확인해 주세요. 계약 종료일 이후에는 일정을 만들지 않습니다."; return; }
     const heading = form.ownerDocument.createElement("strong");
-    heading.textContent = schedule.mode === "twice_monthly" ? `업무일정에 자동 연결 · 매월 2회 (${dates[0].slice(0, 7)} 미리보기)` : `업무일정에 자동 연결 · ${dates.length}회`;
+    heading.textContent = schedule.mode === "twice_monthly" ? `업무일정에 자동 연결 · 매월 2회 (${dates[0].slice(0, 7)} 미리보기)` : schedule.mode === "weekly" ? `업무일정에 자동 연결 · 매주 ${Schedule.WEEKDAYS[schedule.weekday]} (처음 ${dates.length}회 미리보기)` : `업무일정에 자동 연결 · ${dates.length}회`;
     const list = form.ownerDocument.createElement("div");
     list.className = "contract-cleaning-schedule-dates";
     dates.forEach((date, index) => {
@@ -60,7 +60,7 @@
       list.append(item);
     });
     const note = form.ownerDocument.createElement("small");
-    note.textContent = schedule.mode === "twice_monthly" ? "매월 선택한 요일의 1·3번째 또는 2·4번째에 연결합니다. 다섯 번째 요일은 제외하며 계약 시작 전·종료 후 날짜는 만들지 않습니다. 월별 일정을 캘린더에서 확인할 수 있습니다." : schedule.mode === "weekly" ? "계약 시작일 기준 첫 4회만 생성합니다. 월이 바뀌어도 총 4회이며 이후 자동 추가하지 않습니다." : "건별 계약은 작업일, 그 외 계약은 시작일 기준으로 1회 연결합니다.";
+    note.textContent = schedule.mode === "twice_monthly" ? "매월 선택한 요일의 1·3번째 또는 2·4번째에 연결합니다. 다섯 번째 요일은 제외하며 계약 시작 전·종료 후 날짜는 만들지 않습니다. 월별 일정을 캘린더에서 확인할 수 있습니다." : schedule.mode === "weekly" ? "계약 시작일부터 종료일까지 매주 선택한 요일에 연결합니다. 종료일이 없으면 계속 이어지며, 월별 일정은 캘린더에서 확인할 수 있습니다." : "건별 계약은 작업일, 그 외 계약은 시작일 기준으로 1회 연결합니다.";
     preview.append(heading, list, note);
   }
 

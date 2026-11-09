@@ -13,15 +13,18 @@ const contract = changes => ({ id: "contract_a", customerId: "customer_a", build
 const store = changes => ({ buildings: [{ id: "building_a", name: "Fixture building" }], customers: [{ id: "customer_a", stage: "상담 중" }], contracts: [contract()], serviceRecords: [], ...changes });
 const mondays = ["2026-10-19", "2026-10-26", "2026-11-02", "2026-11-09"];
 
-test("weekly cleaning generates the first four selected weekdays across months, not a moving window", () => {
+test("weekly cleaning previews four dates and repeats every selected weekday month by month until the end date", () => {
   const input = store(), before = JSON.stringify(input);
   assert.deepEqual(Schedule.contractDates(input.contracts[0]), mondays);
   assert.deepEqual(Schedule.contractWorkOccurrences(input).map(item => item.scheduledDate), mondays);
   const october = Calendar.buildModel(input, { month: "2026-10", today: "2026-10-13" });
   const november = Calendar.buildModel(input, { month: "2026-11", today: "2026-11-30" });
   assert.deepEqual(october.events.map(item => item.scheduledDate), mondays.slice(0, 2));
-  assert.deepEqual(november.events.map(item => item.scheduledDate), mondays.slice(2));
-  assert.equal(Calendar.buildModel(input, { month: "2026-12" }).events.length, 0);
+  assert.deepEqual(november.events.map(item => item.scheduledDate), ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+  assert.deepEqual(Calendar.buildModel(input, { month: "2026-12" }).events.map(item => item.scheduledDate), ["2026-12-07", "2026-12-14", "2026-12-21", "2026-12-28"]);
+  assert.deepEqual(Schedule.contractDates(contract({ endDate: "2026-12-14" }), "2026-12"), ["2026-12-07", "2026-12-14"]);
+  assert.deepEqual(Schedule.contractDates(contract({ endDate: "2026-11-30" }), "2026-12"), []);
+  assert.deepEqual(Schedule.contractDates(contract(), "2026-09"), []);
   assert.equal(JSON.stringify(input), before);
 });
 
@@ -54,15 +57,15 @@ test("legacy text is preserved without guessing a recurrence; one-off work and r
   assert.equal(Core.sanitizeSharedStore({ contracts: [legacy] }).contracts[0].serviceFrequency, "주 1회 월요일");
 });
 
-test("shared snapshot roundtrip preserves the same four occurrences and never mutates or multiplies monthly costs", () => {
+test("shared snapshot roundtrip preserves the month's weekly occurrences and never mutates or multiplies monthly costs", () => {
   const sanitized = Core.sanitizeSharedStore(store());
   assert.deepEqual(sanitized.contracts[0].cleaningSchedule, { mode: "weekly", weekday: 1, count: 4 });
   const model = Work.buildModel(sanitized, { month: "2026-10", today: "2026-10-19" });
-  assert.equal(model.items.length, 4);
+  assert.equal(model.items.length, 2);
   assert.equal(model.kpis.today, 1);
   assert(model.items.every(item => item.kind === "crm_contract" && item.contractId === "contract_a" && item.amount === 0));
   assert.equal(model.kpis.completedCost, 0);
-  assert.equal(new Set(model.items.map(item => item.id)).size, 4);
+  assert.equal(new Set(model.items.map(item => item.id)).size, 2);
 });
 
 test("duplicate contract payloads and already represented work records do not create duplicate occurrences", () => {
@@ -108,7 +111,7 @@ test("derived calendar controls edit the selected occurrence, not the source con
   const writer = Calendar.render(model, { canWrite: true });
   assert.match(writer, /data-work-calendar-occurrence="crm-contract:contract_a:2026-10-19"/);
   assert.doesNotMatch(writer, /data-contract-edit/);
-  assert.match(writer, /계약에서 자동 연결 · 1\/4회/);
+  assert.match(writer, /계약에서 자동 연결 · 1\/2회/);
   assert.doesNotMatch(writer, /data-work-calendar-(?:edit|complete)="crm-contract/);
   const viewer = Calendar.render(model, { canWrite: false });
   assert.doesNotMatch(viewer, /data-contract-edit|data-work-calendar-(?:complete|edit|occurrence)/);
