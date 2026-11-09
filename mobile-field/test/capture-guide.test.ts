@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { areaPhotoCount,captureProgress,changeCaptureAreas,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from '../src/domain/capture-guide';
+import { areaPhotoCount,capturePhases,captureProgress,changeCaptureAreas,firstUncapturedArea,hasBeforePhase,initialCaptureAreas,nextUncapturedArea,startPhase } from '../src/domain/capture-guide';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,4 +28,25 @@ it('keeps existing photos in the guide and prevents silently dropping a photogra
   expect(()=>changeCaptureAreas(v,[p],['entrance'],'now')).toThrow('CAPTURE_AREAS_INVALID');
   expect(()=>changeCaptureAreas(v,[],['not-real'],'now')).toThrow('CAPTURE_AREAS_INVALID');
   const next=changeCaptureAreas(v,[p],['entrance','parking'],'now');expect(next.captureAreas).toEqual(['entrance','parking']);expect(next.revision).toBe(v.revision+1);
+});
+
+it('공용부는 작업 전 사진을 찍지 않는다: 작업 후부터 시작하고 작업 전 단계가 없다', () => {
+  expect(capturePhases('common')).toEqual(['after', 'during']);
+  expect(startPhase('common')).toBe('after');
+  expect(hasBeforePhase('common')).toBe(false);
+  expect(capturePhases('moveIn')).toEqual(['before', 'after', 'during']);
+  expect(startPhase('moveIn')).toBe('before');
+});
+
+it('예전 공용부 구역으로 저장된 방문은 불러올 때 지금 구역으로 읽는다', async () => {
+  const { withCurrentZones } = await import('../src/domain/report');
+  const job = (kind: 'common' | 'moveIn') => ({ id: 'j', kind, title: 't', address: 'a', workDate: '2026-11-09', customerId: 'c' });
+  const visit = (id: string, kind: 'common' | 'moveIn') => ({ id, ownerUid: 'u', job: job(kind), revision: 1, updatedAt: '', captureAreas: ['entrance', 'handrail', 'stairs', 'lighting'], draft: { summary: '', followUp: '', statuses: { handrail: 'done', stairs: 'recorded' }, notes: { handrail: '난간', stairs: '계단' } } });
+  const photo = (visitId: string) => ({ id: `${visitId}-p`, visitId, ownerUid: 'u', itemKey: 'glass', phase: 'after', caption: '', included: true }) as never;
+  const out = withCurrentZones({ visits: [visit('c1', 'common'), visit('m1', 'moveIn')] as never, photos: [photo('c1'), photo('m1')] });
+  expect(out.visits[0]!.captureAreas).toEqual(['entrance', 'stairs', 'fixtures']);
+  expect(out.visits[0]!.draft.statuses).toEqual({ stairs: 'done' });
+  expect(out.visits[0]!.draft.notes).toEqual({ stairs: '난간 / 계단' });
+  expect(out.photos.map(p => p.itemKey)).toEqual(['windows', 'glass']);
+  expect(out.visits[1]!.captureAreas).toEqual(['entrance', 'handrail', 'stairs', 'lighting']);
 });

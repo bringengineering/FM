@@ -16,7 +16,19 @@ export interface RecordingInput {customerId: string; kind: 'common'|'moveIn'; wo
 export interface Recording extends RecordingInput {id: string; ownerUid: string; site: CustomerSite; contentHash: string; createdAt: string; updatedAt: string; captureAreas?:string[]}
 export interface UploadRecord {id: string; ownerUid: string; visitId: string; photo: RecordingPhoto; receivedBytes: number; state: 'uploading'|'ready'; driveFileId?: string; folderId?: string; createdAt: string}
 export interface ArchiveRecord {id: string; visitId: string; revision: number; ownerUid: string; contentHash: string; driveFileId?: string; folderId?: string; ready?: boolean; archivedAt?: string; reportId: string}
+// 공용부 구역을 양식의 9개로 줄이기 전(앱 0.1.15 이하)의 구역 이름은 지금 구역으로 받는다.
+export const zoneFor = (kind: string, key: unknown): unknown => kind === 'common' && typeof key === 'string' ? reportCore.commonZoneFor(key) : key;
+function zoneRecord(kind: string, record: Record<string, unknown>, merge: (a: string, b: string) => string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const zone = String(zoneFor(kind, key));
+    out[zone] = zone in out && typeof out[zone] === 'string' && typeof value === 'string' ? merge(out[zone] as string, value) : value;
+  }
+  return out;
+}
 export function photoInput(v: unknown, kind: string): RecordingPhoto {
+  assert(object(v));
+  v = { ...v, itemKey: zoneFor(kind, v.itemKey) };
   assert(object(v));
   assert(siteId(v.id) && reportCore.itemCatalogFor(kind).some(i => i.key === v.itemKey));
   assert(['before','during','after'].includes(v.phase) && bounded(v.caption,120) && typeof v.included === 'boolean');
@@ -31,7 +43,8 @@ export function recordingInput(v: unknown): RecordingInput {
   assert(object(v) && siteId(v.customerId) && ['common','moveIn'].includes(v.kind));
   assert(typeof v.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.workDate) && Number.isFinite(Date.parse(v.workDate)) && new Date(v.workDate).toISOString().slice(0,10) === v.workDate);
   assert(Number.isSafeInteger(v.revision) && v.revision >= 1 && v.revision <= 1_000_000 && object(v.draft));
-  const d=v.draft, keys=new Set(reportCore.itemCatalogFor(v.kind).map(i=>i.key));
+  const keys=new Set(reportCore.itemCatalogFor(v.kind).map(i=>i.key));
+  const d:Record<string,any>={...v.draft, ...(object(v.draft.statuses)?{statuses:zoneRecord(v.kind,v.draft.statuses,(a,b)=>a==='recorded'?b:a)}:{}), ...(object(v.draft.notes)?{notes:zoneRecord(v.kind,v.draft.notes,(a,b)=>[a,b].filter(Boolean).join(' / ').slice(0,500))}:{})};
   assert(bounded(d.summary,2000,true) && bounded(d.followUp,2000,true) && object(d.statuses) && object(d.notes));
   assert(Object.entries(d.statuses).every(([key,value])=>keys.has(key)&&['recorded','done','partial','skipped'].includes(String(value))));
   assert(Object.entries(d.notes).every(([key,value])=>keys.has(key)&&bounded(value,500,true)));

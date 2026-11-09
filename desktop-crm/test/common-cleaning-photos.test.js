@@ -9,38 +9,23 @@ const plan = () => P.planFromTree({files:files()}, {kind:'common'});
 const classified = () => P.applyPhotoClassifications(plan(), files().map(file => ({id:file.id,category:'windows',confidence:92,phase:file.id==='work'?'during':'unknown',phaseConfidence:95})));
 const report = p => R.normalizeReport({id:'r1',buildingId:'b1',kind:'common',workDate:'2026-10-06',items:P.toReportDraft(p,{core:R,requireResolved:true}).draft.items});
 
-test('공용부는 시각이나 파일명만으로 전후를 추정하지 않는다',()=>{
+// 공용부는 작업 전 사진을 찍지 않는다(2026-11). 전·후 짝짓기 대신 모든 사진을 작업 후 기록으로 싣는다.
+test('공용부 Drive 사진은 작업 후로 싣고 시각·파일명으로 전후를 나누지 않는다',()=>{
   const p=P.planFromTree({files:[{id:'a',name:'20261006_090000_before.jpg',mimeType:'image/jpeg'},{id:'b',name:'20261006_170000_after.jpg',mimeType:'image/jpeg'}]},{kind:'common'});
-  assert.ok(P.photoReviewRows(p).every(x=>x.phase==='unsorted'));
+  assert.ok(P.photoReviewRows(p).every(x=>x.phase==='after'));
 });
-test('작업 중 사진만으로 보고서를 저장하고 미확인 사진은 원본 계획에 남긴다',()=>{
+test('작업 전 없이 작업 중·후 사진으로 보고서를 저장한다',()=>{
   const p=classified(),r=report(p);
-  assert.equal(R.photoCount(r),1);assert.equal(R.validateReport(r).ok,true);
+  assert.equal(R.photoCount(r),4);assert.equal(R.validateReport(r).ok,true);
   assert.equal(R.progress(r),0);assert.equal(r.items.find(x=>x.key==='windows').status,'recorded');
-  assert.equal(P.photoReviewRows(p).filter(x=>x.phase==='unsorted').length,3);
-  assert.equal(R.photoCount(R.normalizeReport(JSON.parse(JSON.stringify(r)))),1);
+  assert.equal(P.photoReviewRows(p).filter(x=>x.phase==='unsorted'||x.phase==='before').length,0);
+  assert.equal(P.photoReviewRows(p).find(x=>x.id==='work').phase,'during');
+  assert.equal(R.photoCount(R.normalizeReport(JSON.parse(JSON.stringify(r)))),4);
 });
-test('명확한 전후 쌍만 적용하고 작업 중·시간뿐인 쌍은 거부한다',()=>{
-  const p=classified();
-  const result=P.applyCommonPairs(p,[{beforeId:'work',afterId:'unclear',evidence:'stain_reduced'},{beforeId:'before',afterId:'after',evidence:'same_scene_time'}]);
-  assert.equal(P.photoReviewRows(result).filter(x=>x.phase==='before').length,0);
-  const paired=P.applyCommonPairs(result,[{beforeId:'before',afterId:'after',evidence:'stain_reduced'}]);
-  assert.equal(R.photoCount(report(paired)),3);
-  assert.equal(P.photoReviewRows(paired).find(x=>x.id==='work').phase,'during');
-});
-
-test('공용부도 다른 방문일·시간대를 전후로 묶지 않고 역순을 거부한다',()=>{
-  const time = local => ({local,offset:'+09:00',source:'exif-original'});
-  const withDates = (a,b) => P.withCommonCaptureTimes(classified(),[{id:'before',captureTime:time(a)},{id:'after',captureTime:time(b)}]);
-  const pair = {beforeId:'before',afterId:'after',evidence:'stain_reduced'};
-  const different = withDates('2026-10-06T09:00:00','2026-10-12T10:00:00');
-  assert.deepEqual(P.commonComparisonGroups(different),[]);
-  assert.equal(P.photoReviewRows(P.applyCommonPairs(different,[pair])).filter(x=>x.phase==='before').length,0);
-  const reversed = withDates('2026-10-06T12:00:00','2026-10-06T10:00:00');
-  assert.equal(P.photoReviewRows(P.applyCommonPairs(reversed,[pair])).filter(x=>x.phase==='before').length,0);
-  const same = withDates('2026-10-06T09:00:00','2026-10-06T10:00:00');
-  assert.deepEqual(P.commonComparisonGroups(same),[['before','after']]);
-  assert.equal(P.photoReviewRows(P.applyCommonPairs(same,[pair])).filter(x=>x.phase==='before').length,1);
+test('AI 의 예전 공용부 분류는 양식의 9개 구역으로 옮겨진다',()=>{
+  const p=P.applyPhotoClassifications(plan(),files().map((file,i)=>({id:file.id,category:['handrail','glass','lighting','yard'][i],confidence:92,phase:'unknown',phaseConfidence:0})));
+  assert.deepEqual(P.photoReviewRows(p).map(x=>x.itemKey),['stairs','windows','fixtures','parking']);
+  assert.ok(P.photoReviewRows(p).every(x=>x.phase==='after'));
 });
 test('작업 중이지만 구역이 불명확한 사진은 미배치 목록에 남는다',()=>{
   const p=P.applyPhotoClassifications(plan(),files().map(file=>({id:file.id,category:'review',confidence:0,phase:'during',phaseConfidence:95})));
@@ -64,14 +49,15 @@ test('단계 이동·제외·반복 반영은 중복 없이 캡션과 수동 상
   const synced=P.syncCommonDraftPhotos(r.items,incoming.items,['work']);
   const again=P.syncCommonDraftPhotos(synced.items,incoming.items,synced.ids);
   const item=again.items.find(x=>x.key==='windows');
-  assert.equal(item.during.length,0);assert.equal(item.after.length,1);assert.equal(item.after[0].caption,'직접 캡션');assert.equal(item.status,'partial');
+  assert.equal(item.during.length,0);assert.equal(item.after.length,4);assert.equal(item.after.find(x=>x.id==='work').caption,'직접 캡션');assert.equal(item.status,'partial');
   assert.equal(P.photoReviewRows(P.removeCommonPhotos(p,['work'])).length,3);
 });
-test('공용부 PDF는 작업 중 사진을 따로 표시하며 모두 다운로드 대상에 포함한다',()=>{
+test('공용부 PDF는 활동 결과보고서 양식이고 사진을 모두 다운로드 대상에 포함한다',()=>{
   const r=report(classified());const options={sealImage:Buffer.from([137,80,78,71,13,10,26,10]),images:{work:'data:image/jpeg;base64,fixture'}};
   const html=PDF.createWorkReportHtml(r,'owner',options);
-  assert.match(html,/공용 창호 · 작업 중/);assert.match(html,/fixture/);assert.doesNotMatch(html,/class="pair"/);
-  assert.equal(PDF.workReportPdfPhotos(r).length,1);
+  assert.match(html,/<title>공용부 활동 결과보고서<\/title>/);assert.match(html,/사진 01&nbsp;&nbsp;\|&nbsp;&nbsp;<b>창틀<\/b>/);
+  assert.match(html,/fixture/);assert.doesNotMatch(html,/작업 전|class="pair"/);
+  assert.equal(PDF.workReportPdfPhotos(r).length,4);
   r.items.find(x=>x.key==='windows').during=Array.from({length:101},(_,i)=>R.normalizePhoto({id:'p'+i,driveFileId:'p'+i}));
   assert.throws(()=>PDF.workReportPdfPhotos(r),{code:'REPORT_PHOTO_LIMIT'});
 });

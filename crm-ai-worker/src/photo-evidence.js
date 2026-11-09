@@ -15,8 +15,10 @@ const FEATURE_LABELS = Object.freeze({ room_fixtures: "공간의 고정 설비",
 
 export function categoryFor(space, target) {
   if (["hood", "aircon", "refrigerator"].includes(target)) return target;
-  if (target === "unknown" || space === "unknown") return "review";
+  // Bath/veranda items are defined by the room alone. A verified room overview
+  // with several objects (toilet, sink, floor) must not be held for lacking one target.
   if (["bath", "veranda"].includes(space)) return space;
+  if (target === "unknown" || space === "unknown") return "review";
   if (target === "window") return "window";
   if (space === "kitchen" && ["sink", "cabinet"].includes(target)) return "kitchen";
   if (target === "cabinet") return "storage";
@@ -44,6 +46,9 @@ export function normalizeEvidence(row, kind, categories) {
     || (row.space === "kitchen" && (any(features, ["kitchen_counter", "cooking_fixture"]) || ["sink_bowl", "cabinet_interior"].every(x => features.includes(x))))
     || (row.space === "bath" && any(features, ["toilet_bowl", "bath_fixture"]))
     || (row.space === "entrance" && features.includes("doorway"))
+    // A veranda is identified by its enclosing sash/glass together with its floor.
+    // Every other room already had a specific structure; veranda needed the generic token.
+    || (row.space === "veranda" && features.includes("floor_surface") && any(features, ["window_frame", "window_track", "glass_pane"]))
     || (row.space === "other" && (any(features, ["continuous_corridor", "steps", "stair_landing", "waste_bins", "balustrade", "elevator_structure"])
       || (features.includes("floor_surface") && any(features, ["outdoor_yard", "parking_markings", "rooftop_boundary"]))
       || ["open_walkway", "floor_surface"].every(x => features.includes(x))));
@@ -58,7 +63,10 @@ export function normalizeEvidence(row, kind, categories) {
   // is not work; a cloth/tool resting on a surface is not a driven action.
   const inactive = Array.isArray(row.features) && (any(row.features, ["inactive_tool", "cloth_display"]) || (row.features.includes("supporting_hand") && !activeContact));
   const action = !clear || inactive || !activeContact ? "unknown" : oneOf(row.action, ACTIONS);
-  const phase = clear && row.phase === "during" && scores.phase >= 85 && action !== "unknown" && activeContact && features.includes("cleaning_contact") ? "during" : "unknown";
+  // The literal contact/water observations already prove the action (activeContact).
+  // The abstract cleaning_contact token was a duplicate the model often omits on
+  // real sweeping photos; requiring it held every such photo on the tuning set.
+  const phase = clear && row.phase === "during" && scores.phase >= 85 && action !== "unknown" && activeContact ? "during" : "unknown";
   let category = clear && scores.category >= 75 && Object.hasOwn(categories, row.category) ? row.category : "review";
   const issues = [];
   if (clear && scores.category < 75) issues.push("category_score_low");

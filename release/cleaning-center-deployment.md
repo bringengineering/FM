@@ -27,3 +27,17 @@ node release/cleaning-center-deployment.js --project bring-fm --apply --confirm-
 The command fetches the official release branch, refuses a source commit not yet merged there, refuses a dirty checkout, requires the exported `/partner` route, deploys the exact allowlist, and checks `firebase functions:list` for all four functions. Afterward, verify `/partner` responds over HTTPS and the three APIs return their expected unauthenticated responses. The command never prints or retrieves Secret Manager values. The script deliberately fails if the manifest allowlist changes, another Hosting site is configured, or general Functions deployment is enabled. Database Rules are not part of this release.
 
 The desktop CRM updater runs its own release workflow when this implementation merges to `codex/bring-field-platform`. Employee-PC login and real customer/order verification still require a separate operational smoke test; physical TV validation is outside this release.
+
+## Common-cleaning report schema rollout
+
+The `common-v2` photo categories require only `cleaningOrdersApi`. Use an already authorized operator's normal CLI authentication; do not expand the Rules-only GitHub identity or retrieve Secret Manager values. From the latest clean operating-branch checkout after CI passes:
+
+```bash
+node release/crm-cleaning-report-deployment.cjs --operator --project bring-fm --confirm-project bring-fm --backup-dir /absolute/private/fresh-backup-directory
+```
+
+This path validates the unchanged deployment manifest, captures the existing function inventory and immutable regional source archive before deployment, and deploys only `functions:field-platform:cleaningOrdersApi`. Keep the backup directory for rollback. It verifies unrelated functions remain unchanged and that an anonymous request still returns 401 / `cleaning_order_auth_required` with `X-Bring-Cleaning-Report-Schema: common-v2`. No orders or report data are migrated.
+
+The desktop release gate accepts that exact schema response before accessing its CI service-account credential. It still requires a clean latest source and an immutable installer-version reservation. A missing capability keeps publication blocked. A static schema marker represents compatibility with the additive category catalogue, not a source-commit assertion. New backend behavior must advance the marker and corresponding readiness check when compatibility changes.
+
+Start `CRM Automatic Release` manually from `codex/bring-field-platform` after this backend verification. The read-only preflight input must be false for publication. Release tags and failed version reservations remain immutable.

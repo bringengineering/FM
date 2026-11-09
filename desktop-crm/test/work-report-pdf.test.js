@@ -40,7 +40,7 @@ test("두 벌이 서로 다른 표를 낸다", () => {
   const owner = createWorkReportHtml(report(), "owner", options());
   const program = createWorkReportHtml(report(), "program", options());
   // 건물주는 퍼센트를 보러 오지 않는다.
-  assert.match(owner, /<th>작업 구역<\/th><th>보고 내용<\/th><th>현장 사진<\/th>/u);
+  assert.match(owner, /<th>No\.<\/th><th>작업 구역<\/th><th>수행 내용<\/th><th>현장 사진<\/th>/u);
   assert.doesNotMatch(owner, /<th>진척도<\/th>/u);
   // 청창사 서식은 진척도와 결과평가를 요구한다.
   assert.match(program, /<th>수행범위<\/th><th>진척도<\/th><th>결과평가<\/th>/u);
@@ -98,8 +98,10 @@ test("바깥에서 온 글자가 태그로 새지 않는다", () => {
 test("문서 안에서 바깥을 부르지 않는다", () => {
   // 인쇄본이 네트워크를 타면 인쇄가 멈추거나 빈 칸이 난다.
   const owner = createWorkReportHtml(report(), "owner", options());
-  assert.match(owner, /default-src 'none'; img-src data:; style-src 'unsafe-inline'/u);
+  assert.match(owner, /default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'/u);
   assert.doesNotMatch(owner, /<script/u);
+  // 글꼴도 문서 안에 박은 것만 쓴다. data: 가 아닌 url() 은 없다.
+  assert.deepEqual((owner.match(/url\((?!data:)[^)]*\)/gu) || []), []);
 });
 
 test("못 한 항목도 표에 남는다", () => {

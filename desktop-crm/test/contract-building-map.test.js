@@ -25,6 +25,25 @@ test('building marker precedence active > planned > ended; canceled excluded', (
 });
 for (const value of [null, {}, '../path', 'x/y', 'x?key=bad', ' padded', '__proto__', 'constructor']) test(`invalid identity ${JSON.stringify(value)} rejected`, () => assert.equal(Core.validId(value), false));
 test('real upcoming work wins and past/completed records do not', () => { const store = fixture(); store.serviceRecords = [{ buildingId: 'building', scheduledDate: '2026-10-16', status: 'scheduled' }, { buildingId: 'building', scheduledDate: '2026-10-15', status: 'completed' }]; assert.equal(Core.project(store, '2026-10-15').rows[0].nextDate, '2026-10-16'); });
+test('monthly recurring future projections continue beyond their first month', () => {
+  const store=fixture(); store.contracts[0].cleaningSchedule={mode:'twice_monthly',weekday:4,weekPattern:'first_third'};
+  assert.equal(Core.project(store,'2026-11-01').rows[0].nextDate,'2026-11-05');
+  assert.equal(Core.project(store,'2026-11-06').rows[0].nextDate,'2026-11-19');
+});
+test('moved, cancelled and archived occurrences do not resurrect the original date', () => {
+  const store=fixture(); store.contracts[0].cleaningSchedule={mode:'twice_monthly',weekday:4,weekPattern:'first_third'};
+  const record={id:'record',sourceContractId:'contract',sourceContractDate:'2026-10-15',sourceContractBuildingId:'building',buildingId:'building',scheduledDate:'2026-10-22',status:'planned'};
+  store.serviceRecords=[record]; assert.equal(Core.project(store,'2026-10-10').rows[0].nextDate,'2026-10-22');
+  store.serviceRecords=[{...record,status:'cancelled'}]; assert.equal(Core.project(store,'2026-10-10').rows[0].nextDate,'2026-11-05');
+  store.serviceRecords=[{...record,archivedAt:'2026-10-10'}]; assert.equal(Core.project(store,'2026-10-10').rows[0].nextDate,'2026-11-05');
+});
+test('12-month search excludes unlinked contracts and dates outside the shown horizon', () => {
+  const store=fixture(); store.contracts[0].status='계약 준비';
+  store.contracts.push({...store.contracts[0],id:'orphan',status:'진행 중',customerId:'missing'});
+  assert.equal(Core.project(store,'2026-10-01').rows[0].nextDate,'');
+  store.contracts[0].status='진행 중'; store.contracts[0].startDate='2028-10-01';
+  assert.equal(Core.project(store,'2026-10-01').rows[0].nextDate,'');
+});
 test('map projection validates Korea bounds and rejects nonfinite coordinates', () => { assert.ok(Core.point(127.94, 37.34)); for (const pair of [[0,0], [Infinity,37], [127,NaN], [181,37]]) assert.equal(Core.point(...pair), null); assert.equal(Core.point(127,37,20), null); });
 for (const [name, config] of [['missing', null], ['disabled', { apiKey: placeholderKey, enabled: false, usageConfirmed: true }], ['unapproved', { apiKey: placeholderKey, enabled: true, usageConfirmed: false }]]) test(`no external requests with ${name} configuration`, async () => { const h = harness(); h.setConfig(config); assert.equal((await h.service.status()).enabled, false); assert.equal((await h.service.locate({ buildingIds: ['building'] })).code, 'CONFIG'); assert.equal((await h.service.tile({ z: 13, x: 7007, y: 3179 })).code, 'CONFIG'); assert.equal(h.calls.length, 0); });
 for (const user of [null, { uid: 'x', role: 'disabled' }, { uid: 'x', role: 'member', mustChangePassword: true }, { uid: 'x', role: 'admin', disabled: true }, { uid: 'x', role: 'viewer', emailVerified: false }, { uid: 'x', role: 'member', accessRole: 'member', marketingRole: 'marketing' }]) test(`unauthorized map session ${JSON.stringify(user)} fails closed`, async () => { const h = harness(); h.setUser(user); for (const op of [() => h.service.status(), () => h.service.locate({ buildingIds: ['building'] }), () => h.service.tile({ x: 1,y: 1,z: 13 }), () => h.service.save({ apiKey: placeholderKey, enabled: true, usageConfirmed: true })]) assert.equal((await op()).code, 'AUTH'); assert.equal(h.calls.length, 0); });
@@ -67,13 +86,34 @@ test('shell escapes data, uses actual statuses, exposes no key and keeps admin s
   const store = fixture(); store.buildings[0].name = '<img src=x onerror=alert(1)>'; const projection = Core.project(store), state = { filter:'all',query:'',points:new Map(),failed:new Set(),config:null };
   const html = UI.shell(projection,state,true); assert.match(html, /&lt;img/); assert.doesNotMatch(html, /<img src=x/); assert.match(html,/설정 필요/); assert.match(html,/type="password"/); assert.match(html,/이 PC에만 적용/); assert.doesNotMatch(UI.shell(projection,state,false), /data-cbm-key/); assert.doesNotMatch(html, /https?:\/\//);
 });
-function mountHarness(api, user = { role:'admin' }) {
+test('shell distinguishes missing address, unresolved status and lookup errors and links each customer', () => {
+  const store=fixture(); store.customers.push({id:'other',name:'<고객>'});
+  store.contracts.push({...store.contracts[0],id:'contract2',customerId:'other'});
+  let projection=Core.project(store,'2026-10-15');
+  const state={filter:'all',query:'',points:new Map(),failed:new Map([['building','not-found']]),config:{enabled:true}};
+  let html=UI.shell(projection,state,true);
+  assert.match(html,/주소 조회 실패/); assert.match(html,/data-cbm-customer="customer"/); assert.match(html,/data-cbm-customer="other"/); assert.match(html,/&lt;고객&gt;/); assert.doesNotMatch(html,/<고객>/);
+  store.buildings[0].roadAddress=''; store.buildings[0].jibunAddress=''; projection=Core.project(store,'2026-10-15');
+  assert.match(UI.shell(projection,state,true),/주소 미등록/);
+  store.contracts.forEach(c=>{c.status='unknown';}); projection=Core.project(store,'2026-10-15');
+  assert.match(UI.shell(projection,state,true),/위치 · 계약 상태 확인 필요/);
+});
+function mountHarness(api, user = { role:'admin' }, onCustomer = () => {}) {
   let current = true; const listeners = new Map();
-  const root = { className:'',innerHTML:'',isConnected:true,querySelector:()=>null,replaceChildren(){this.innerHTML='';},addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(type){listeners.delete(type);} };
+  const root = { className:'',innerHTML:'',isConnected:true,querySelector:()=>null,contains:()=>true,replaceChildren(){this.innerHTML='';},addEventListener(type,fn){listeners.set(type,fn);},removeEventListener(type){listeners.delete(type);} };
   const container = { ownerDocument:{ createElement:()=>root, defaultView:{} },replaceChildren:()=>{} };
-  const dispose = UI.mount(container,{api,user,store:fixture(),today:'2026-10-15',isActive:()=>current,onCustomer:()=>{}});
+  const dispose = UI.mount(container,{api,user,store:fixture(),today:'2026-10-15',isActive:()=>current,onCustomer});
   return {root,dispose,listeners,leave:()=>{current=false;}};
 }
+test('each customer detail button passes its own selected customer identity', async () => {
+  const selected=[]; const h=mountHarness({contractMapStatus:async()=>({ok:true,configured:false,enabled:false})}, {role:'admin'}, id=>selected.push(id));
+  await new Promise(resolve=>setImmediate(resolve));
+  for (const id of ['customer','other']) {
+    const button={dataset:{cbmCustomer:id},hasAttribute:name=>name==='data-cbm-customer'};
+    h.listeners.get('click')({target:{closest:()=>button}});
+  }
+  assert.deepEqual(selected,['customer','other']); h.dispose();
+});
 test('default no-key mount performs no geocoder/tile calls and late status cannot repopulate after disposal', async () => {
   let resolveStatus, calls = 0; const h = mountHarness({ contractMapStatus:()=>new Promise(resolve=>{resolveStatus=resolve;}),locateContractBuildings:()=>{calls++;},contractMapTile:()=>{calls++;} });
   h.dispose(); resolveStatus({ok:true,configured:true,enabled:true}); await new Promise(resolve=>setImmediate(resolve)); assert.equal(calls,0); assert.equal(h.root.innerHTML,''); assert.equal(h.listeners.size,0);
@@ -86,4 +126,44 @@ test('production wiring keeps trusted canonical IPC, encrypted settings and tear
   const read = name => fs.readFileSync(path.join(__dirname,'../src',name),'utf8'), main = read('main.js'), app = read('app.js'), html = read('index.html'), policy = require('../src/mutation-policy');
   for (const channel of ['status','locate','tile','settings-save']) assert.match(main,new RegExp(`secureCanonicalHandle\\("crm:contract-map-${channel}"`));
   assert.equal(policy.classification('crm:contract-map-settings-save'),'mutation'); assert.equal(policy.classification('crm:contract-map-locate'),'control'); assert.match(main,/encodeProtectedJson\(safeStorage, value\)/); assert.match(main,/if \(!decoded.encrypted\) throw 'STORAGE'/); assert.match(html,/data-view="contractBuildingMap"/); assert.ok(html.indexOf('data-view="relationships"') < html.indexOf('data-view="contractBuildingMap"')); assert.match(app,/window.BringContractBuildingMapUI.mount/); assert.match(app,/function setCurrentAuth\(value\) \{\s*if \(disposeContractBuildingMap\)/); assert.match(app,/function prepareWorkspaceTransition\(workspace\) \{\s*if \(disposeContractBuildingMap\)/); assert.doesNotMatch(read('contract-building-map-ui.js'),/localStorage|sessionStorage|fetch\(|https?:\/\//);
+});
+const { createMapGateway } = require('../src/contract-building-map-gateway');
+function serverHarness(reply = async input => input.action === 'status' ? { ok: true, configured: true } : input.action === 'geocode' ? { ok: true, status: 'OK', lon: 127.94, lat: 37.34 } : { ok: true, png: (() => { const png = Buffer.alloc(33); Buffer.from('89504e470d0a1a0a','hex').copy(png); png.write('IHDR',12); png.writeUInt32BE(256,16); png.writeUInt32BE(256,20); return png.toString('base64'); })() }) {
+  const sent = []; const h = harness({ gateway: async input => { sent.push(input); return reply(input); } }); h.setConfig(null); return { ...h, sent };
+}
+test('without a PC key the company relay serves every role and the PC never calls VWorld directly', async () => {
+  for (const role of ['admin', 'member', 'viewer']) {
+    const h = serverHarness(); h.setUser({ uid: 'x', role });
+    const status = await h.service.status(); assert.equal(status.enabled, true); assert.equal(status.source, 'server'); assert.equal(status.configured, false);
+    const located = await h.service.locate({ buildingIds: ['building'] }); assert.deepEqual(located.results, [{ id: 'building', status: 'located', lon: 127.94, lat: 37.34 }]);
+    const p = Core.point(127.94, 37.34, 13), tile = await h.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) }); assert.ok(tile.dataUrl.startsWith('data:image/png;base64,'));
+    assert.equal(h.calls.length, 0); assert.deepEqual(h.sent.find(input => input.action === 'geocode'), { action: 'geocode', address: '공개 도로명 시연 주소', type: 'ROAD' });
+    assert.equal(h.sent.filter(input => input.action === 'status').length, 1, 'relay status is cached');
+  }
+});
+test('relay not configured or unreachable keeps the map off without outbound geocoding', async () => {
+  for (const reply of [async () => ({ ok: true, configured: false }), async () => { throw 'NETWORK'; }]) {
+    const h = serverHarness(reply); assert.equal((await h.service.status()).enabled, false); assert.equal((await h.service.locate({ buildingIds: ['building'] })).code, 'CONFIG'); assert.equal(h.sent.every(input => input.action === 'status'), true);
+  }
+});
+test('relay tile payload is PNG-validated and relay errors map to safe codes', async () => {
+  const bad = serverHarness(async input => input.action === 'status' ? { ok: true, configured: true } : { ok: true, png: Buffer.from('<html>').toString('base64') });
+  const p = Core.point(127.94, 37.34, 13); assert.equal((await bad.service.tile({ z: 13, x: Math.floor(p.x / 256), y: Math.floor(p.y / 256) })).code, 'NETWORK');
+  const limited = serverHarness(async input => { if (input.action === 'status') return { ok: true, configured: true }; throw 'LIMIT'; });
+  assert.equal((await limited.service.locate({ buildingIds: ['building'] })).code, 'LIMIT');
+});
+test('a key saved and enabled on this PC still takes precedence over the relay', async () => {
+  const h = harness({ gateway: async () => { throw new Error('relay must not be used'); } });
+  assert.equal((await h.service.status()).source, 'pc'); assert.equal((await h.service.locate({ buildingIds: ['building'] })).ok, true); assert.equal(h.calls.length, 1);
+});
+test('map gateway client sends only token + request to the fixed HTTPS endpoint and redacts failures', async () => {
+  assert.throws(() => createMapGateway({ endpoint: 'http://example.test/v1/map', idToken: async () => 't', fetchImpl: async () => {} }));
+  assert.throws(() => createMapGateway({ endpoint: 'https://example.test/v1/other', idToken: async () => 't', fetchImpl: async () => {} }));
+  const calls = []; const ok = createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => 'id-token', fetchImpl: async (url, options) => { calls.push({ url, options }); return Response.json({ ok: true, configured: true }); } });
+  assert.deepEqual(await ok({ action: 'status' }), { ok: true, configured: true }); assert.equal(calls[0].options.redirect, 'error'); assert.equal(calls[0].options.headers.authorization, 'Bearer id-token'); assert.equal(calls[0].options.body, '{"action":"status"}');
+  for (const [response, code] of [[Response.json({ ok: false, code: 'RATE_LIMITED' }, { status: 429 }), 'LIMIT'], [Response.json({ ok: false, code: 'FORBIDDEN' }, { status: 403 }), 'AUTH'], [Response.json({ ok: false, code: 'MAP_NOT_CONFIGURED' }, { status: 503 }), 'CONFIG'], [new Response('<html>', { headers: { 'content-type': 'text/html' } }), 'NETWORK'], [new Response('x'.repeat(800 * 1024), { headers: { 'content-type': 'application/json' } }), 'NETWORK']]) {
+    const call = createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => 't', fetchImpl: async () => response });
+    await assert.rejects(call({ action: 'status' }), error => error === code);
+  }
+  await assert.rejects(createMapGateway({ endpoint: 'https://example.test/v1/map', idToken: async () => '', fetchImpl: async () => { throw new Error('no'); } })({ action: 'status' }), error => error === 'AUTH');
 });

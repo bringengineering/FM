@@ -318,3 +318,43 @@ and the move-in `during`/`recorded` validation schema need coordinated rollout.
 No access-role grants change. Live rules still require explicit approval, a current
 backup, rollback plan and Emulator role/anonymous-denial verification. Follow all
 seven release steps in AGENTS.md when deployment is explicitly requested.
+
+### Six-image batch rejection and room-rule gaps, 2026-11-02
+
+New private sets: a 30-image tuning set (4 sites) and a 30-image validation set
+(4 different sites), sampled at fixed filename intervals from the BRING CARE
+activity-photo folders, metadata stripped. Labels are assistant drafts frozen
+before any model call (not independent expert labels). A `none` phase label
+marks photos with no visible cleaning action, so a false `during` counts as an
+error instead of being invisible.
+
+- **Provider rejection:** every classify request with six images returned HTTP
+  400 (`INVALID_ARGUMENT`); five or fewer succeeded. Removing the
+  `classifications` array `maxItems` (or the nested feature/candidate enums)
+  restored it. The Worker batches six images, so any deployment containing the
+  2026-10-26 feature expansion should be checked. `maxItems` was removed
+  (#251, deployed in CRM v1.93.0 on 2026-11-02); closed enums and local
+  normalization remain.
+- The local harness did not send `categorySchema: "common-v2"` as the app does;
+  it now does (and strips it before the desktop client, which adds it itself).
+- Rule gaps found on the tuning set: a veranda could only be proven by the
+  generic room token; bath/veranda overviews were held when no single target
+  was chosen; real sweeping was held when the model omitted the duplicate
+  `cleaning_contact` token despite `active_hand_contact` + `driving_tool`.
+
+Tuning set, 3 runs each (correct/accepted): baseline category 15/16, 13/13,
+16/16; candidate 16/16 ×3. Visible action 5/6 ×3 → 5/6, 6/6, 6/6. False
+`during` on 23 no-action photos: 0 → 0.
+
+Validation set, one run each: baseline category 14/15 accepted (15/15
+coverage), candidate 11/12 (12/15). The three extra holds were model-output
+differences (space/target answered `unknown` or a different category) on photos
+none of the changed rules touch; under the old rules the same outputs are held
+too. Visible action 0/3 for both; false `during` 0/22 for both. One consistent
+error in both: a cabinet interior being wiped classified as an air conditioner.
+
+Conclusion: the rule changes fix deterministic gaps but **no validation-set
+improvement is demonstrated**; run-to-run model variance (category coverage
+13–16 of 17 on identical input) is larger than the rule effect. Stabilising
+outputs (e.g. agreement across passes) is the next lever, not further prompt
+tuning on these sets.

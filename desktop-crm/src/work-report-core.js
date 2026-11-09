@@ -87,22 +87,16 @@
       key: "common",
       label: "공용부청소",
       items: Object.freeze([
-        { key: "entrance", label: "출입구·현관", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
-        { key: "corridor", label: "복도·공용 바닥", detail: "층별 복도와 공용 바닥 쓸기·물걸레·얼룩 제거" },
-        { key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소" },
-        { key: "handrail", label: "난간·손잡이", detail: "난간 먼지 제거 및 손이 닿는 면의 오염 확인" },
-        { key: "windows", label: "창틀·레일", detail: "접근 가능한 공용 창틀 홈·레일 먼지 제거 및 청소" },
-        { key: "glass", label: "공용 유리", detail: "접근 가능한 공용 유리면 오염 확인 및 닦기", optional: true },
-        { key: "yard", label: "마당·외부 바닥", detail: "마당·뜰·건물 앞 외부 바닥 쓸기 및 잔여물 정리", optional: true },
-        { key: "parking", label: "주차장", detail: "주차 구역 바닥 오염 확인 및 청소", optional: true },
-        { key: "drain", label: "배수구·트렌치", detail: "접근 가능한 배수구·배수 홈·그레이팅의 이물질 정리", optional: true },
-        { key: "rooftop", label: "옥상·테라스", detail: "승인된 접근 범위의 옥상·테라스 바닥 및 잔여물 정리", optional: true },
+        // '공용부 활동 결과보고서' 양식의 9개 구역. 예전 16개 구역은 COMMON_LEGACY_ZONES 로 옮겨 싣는다.
+        { key: "entrance", label: "출입구", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
         { key: "elevator", label: "승강기", detail: "승강기 문·내부·버튼의 접근 가능한 면 청소", optional: true },
-        { key: "walls", label: "벽면·문", detail: "공용 벽면·문의 국소 오염 확인 및 닦기", optional: true },
-        { key: "fixtures", label: "공용 설비·게시판", detail: "소화기·공용 설비함·계량기함·게시판의 접근 가능한 외부 표면 확인 및 닦기", optional: true },
-        { key: "lighting", label: "조명·천장", detail: "조명 주변 먼지·거미줄 및 이상 여부 확인" },
+        { key: "corridor", label: "복도", detail: "층별 복도와 공용 바닥·벽면·문의 오염 확인 및 청소" },
+        { key: "stairs", label: "계단", detail: "층별 계단·계단참·난간의 오염 확인 및 청소" },
+        { key: "windows", label: "창틀", detail: "접근 가능한 공용 창틀·레일·유리면 먼지 제거 및 청소" },
+        { key: "fire", label: "소방 설비", detail: "소화기·소화전함 등 소방 설비의 접근 가능한 외부 표면 확인 및 닦기" },
+        { key: "fixtures", label: "공용부 설비", detail: "공용 설비함·계량기함·게시판·조명·배수구의 접근 가능한 면 확인 및 정리" },
+        { key: "parking", label: "주차장", detail: "주차 구역·마당 등 외부 바닥 오염 확인 및 청소", optional: true },
         { key: "recycle", label: "분리수거장", detail: "수거장 바닥·분리배출 상태·악취 확인 및 정리" },
-        { key: "final", label: "마감·안전 확인", detail: "공용 통로 적치물·미끄럼·잔여 작업 여부 확인" },
       ]),
     },
     {
@@ -219,6 +213,31 @@
     return COPIES.find(item => item.key === text(key, 20)) || null;
   }
 
+  // AI 초안은 분류 직후 그때의 작업일로 쓰인다. 작업일을 나중에 고치면 본문 속 옛 날짜도
+  // 같이 바꾼다(2026-11-03 실제 발송 테스트에서 "11월 03일" 이 10월 29일 보고서에 남았다).
+  // 옛 날짜를 그대로 적은 표기만 바꾸고 다른 날짜는 건드리지 않는다.
+  function retargetDate(value, from, to) {
+    const source = String(value || "");
+    const parse = date => /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+    const a = parse(from), b = parse(to);
+    if (!source || !a || !b || from === to) return source;
+    const plain = n => String(Number(n));
+    const pairs = [
+      [`${a[1]}년 ${a[2]}월 ${a[3]}일`, `${b[1]}년 ${b[2]}월 ${b[3]}일`],
+      [`${a[1]}년 ${plain(a[2])}월 ${plain(a[3])}일`, `${b[1]}년 ${plain(b[2])}월 ${plain(b[3])}일`],
+      [`${a[1]}-${a[2]}-${a[3]}`, `${b[1]}-${b[2]}-${b[3]}`],
+      [`${a[1]}.${a[2]}.${a[3]}`, `${b[1]}.${b[2]}.${b[3]}`],
+      [`${a[1]}. ${plain(a[2])}. ${plain(a[3])}.`, `${b[1]}. ${plain(b[2])}. ${plain(b[3])}.`],
+    ];
+    let out = source;
+    for (const [old, next] of pairs) out = out.split(old).join(next);
+    // 연도 없이 "11월 3일"·"11월 03일" 로 적은 경우(앞이 숫자나 "년 " 이 아닐 때만).
+    for (const [old, next] of [[`${plain(a[2])}월 ${plain(a[3])}일`, `${plain(b[2])}월 ${plain(b[3])}일`], [`${a[2]}월 ${a[3]}일`, `${b[2]}월 ${b[3]}일`]]) {
+      out = out.replace(new RegExp(`(?<!\\d)(?<!년\\s?)${old}`, "gu"), next);
+    }
+    return out;
+  }
+
   function normalizePhoto(source) {
     const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
     let link = "";
@@ -229,12 +248,15 @@
         link = url.toString();
       }
     } catch { /* 링크가 불완전하거나 Drive 도메인이 아니면 열 수 없게 둔다. */ }
+    // 같은 장소의 작업 전·후 짝. 짝이 있을 때만 싣는다 — 없는 사진은 예전과 같은 모양이다.
+    const pairId = text(value.pairId, 250);
     return {
       id: text(value.id, 80),
       driveFileId: text(value.driveFileId, 120),
       // 결과보고 사진은 Google Drive 뷰 링크만 사람에게 연다.
       webViewLink: link,
       caption: text(value.caption, 120),
+      ...(/^[A-Za-z0-9_:|.-]{1,250}$/.test(pairId) ? { pairId } : {}),
     };
   }
 
@@ -255,12 +277,38 @@
     };
   }
 
+  // 공용부 구역을 양식의 9개로 줄이기 전에 쓰던 구역 → 지금 구역. 저장된 예전 보고서와
+  // AI 분류 결과(common-v2 의 16개 분류)가 이 표로 옮겨진다. 목록에 없는 구역은 사진째 버려지므로
+  // 예전 구역을 지우지 말고 여기서 옮긴다.
+  const COMMON_LEGACY_ZONES = Object.freeze({
+    handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
+    rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
+  });
+  function commonZoneFor(key) {
+    const value = text(key, 40);
+    return COMMON_LEGACY_ZONES[value] || value;
+  }
+  // 예전 구역 항목을 지금 구역 항목에 합친다. 사진은 순서대로 뒤에 붙이고 메모는 이어 쓴다.
+  function mergeLegacyCommon(saved) {
+    const merged = [];
+    for (const item of saved) {
+      const key = commonZoneFor(item.key);
+      const target = merged.find(row => row.key === key);
+      if (!target) { merged.push({ ...item, key }); continue; }
+      for (const phase of ["before", "during", "after"]) target[phase] = [...target[phase], ...item[phase]];
+      target.note = [target.note, item.note].filter(Boolean).join(" / ").slice(0, 500);
+      if (target.status === "recorded" && item.status !== "recorded") target.status = item.status;
+    }
+    return merged;
+  }
+
   // 작업 종류를 고르면 그 종류의 표준 항목이 깔린다. 이미 적어 둔 것이 있으면
   // 그 위에 얹는다 — 종류를 잘못 골랐다 고쳤을 때 쓴 것이 날아가면 안 된다.
   function itemsFor(kindKey, existing, onlySaved = false) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
-    const saved = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const normalized = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const saved = kindKey === "common" ? mergeLegacyCommon(normalized) : normalized;
     const savedKeys = new Set(saved.map(item => item.key));
     const scoped = onlySaved && kind.items.some(item => savedKeys.has(item.key));
     return kind.items.filter(standard => scoped ? savedKeys.has(standard.key) : !standard.optional || savedKeys.has(standard.key)).map(standard => {
@@ -458,6 +506,53 @@
     return leaks;
   }
 
+  // 검사할 값은 메인 프로세스가 회사 자료에서 직접 만든다. 화면이 보낸 목록만
+  // 믿으면 빈 목록 하나로 검사가 꺼진다. 업체 원가는 이 보고서의 건물(건물이
+  // 없으면 고객)에 걸린 계약에서만 가져온다 — 회사 전체 금액을 넣으면 우연히
+  // 같은 숫자가 든 보고서까지 막힌다.
+  function reportSecrets(store, report) {
+    const data = store && typeof store === "object" ? store : {};
+    const target = normalizeReport(report);
+    const vendorNames = [...rows(data.partnerVendors), ...rows(data.vendors)]
+      .map(row => text(row && row.name, 200)).filter(Boolean);
+    const vendorAmounts = [];
+    rows(data.contracts).forEach(contract => {
+      const linked = target.buildingId
+        ? text(contract.buildingId, 80) === target.buildingId
+        : !!target.customerId && text(contract.customerId, 120) === target.customerId;
+      const cost = Math.round(Number(contract.vendorCost));
+      if (!linked || !Number.isFinite(cost) || cost <= 0) return;
+      vendorAmounts.push(String(cost), cost.toLocaleString("en-US"));
+    });
+    return { vendorNames: [...new Set(vendorNames)], vendorAmounts: [...new Set(vendorAmounts)], privateMemos: [] };
+  }
+
+  // 보고서에 현장 주소가 비어 있으면 CRM 의 건물 주소(건물이 없으면 고객 주소)로
+  // 채운 사본을 돌려준다. 수신인은 "(주소) 건물주" 로 쓰므로 주소가 없으면 그냥
+  // "건물주" 가 된다. 저장된 보고서는 바꾸지 않는다 — 출력할 때만 쓴다.
+  function withSiteAddress(report, store) {
+    const source = report && typeof report === "object" ? report : {};
+    if (text(source.siteAddress, 300)) return source;
+    const data = store && typeof store === "object" ? store : {};
+    const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
+    const building = text(source.buildingId, 80) ? rows(data.buildings).find(row => live(row) && row.id === source.buildingId) : null;
+    const customer = !building && text(source.customerId, 120) ? rows(data.customers).find(row => live(row) && row.id === source.customerId) : null;
+    const address = building ? [building.roadAddress, building.address, building.jibunAddress].map(value => text(value, 300)).find(Boolean)
+      : customer ? text(customer.address, 300) : "";
+    return address ? Object.assign({}, source, { siteAddress: address }) : source;
+  }
+
+  // 화면이 보낸 목록과 메인이 만든 목록을 합친다. 어느 쪽도 다른 쪽을 지우지 못한다.
+  function mergeSecrets(...sources) {
+    const merged = { vendorNames: [], vendorAmounts: [], privateMemos: [] };
+    sources.forEach(source => {
+      const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+      Object.keys(merged).forEach(key => merged[key].push(...rows(value[key]).map(item => text(item, 200)).filter(Boolean)));
+    });
+    Object.keys(merged).forEach(key => { merged[key] = [...new Set(merged[key])]; });
+    return merged;
+  }
+
   function sortReports(reports) {
     return rows(reports).map(normalizeReport).filter(item => item.id).sort((a, b) => {
       if (a.workDate !== b.workDate) return a.workDate < b.workDate ? 1 : -1;
@@ -505,11 +600,14 @@
     statusOf,
     statusLabel,
     copyOf,
+    retargetDate,
     normalizePhoto,
     normalizeItem,
     normalizeReport,
     itemsFor,
     itemCatalogFor,
+    commonZoneFor,
+    COMMON_LEGACY_ZONES,
     itemIssue,
     validateReport,
     progress,
@@ -519,6 +617,9 @@
     summarizeItems,
     resultLine,
     findLeakedFields,
+    reportSecrets,
+    mergeSecrets,
+    withSiteAddress,
     sortReports,
     forCleaningOrder,
     findReport,

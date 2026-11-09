@@ -33,7 +33,7 @@ const order: CleaningOrderRecord = {
 };
 
 function readyReport(overrides: Record<string, unknown> = {}) {
-  const kind = workReportCore.kindForCleaningServiceType(order.serviceType);
+  const kind = overrides.kind || workReportCore.kindForCleaningServiceType(order.serviceType);
   const template = workReportCore.KINDS.find((item: { key: string }) => item.key === kind);
   return {
     id: "report_01",
@@ -151,6 +151,59 @@ describe("validateCleaningOrderCompletionEvidence", () => {
       .toMatchObject({ ok: false, error: "cleaning_order_completion_evidence_required" });
     expect(validate(revisedOrder, [readyReport({ updatedAt: "2026-09-26T05:35:00.000Z" })]))
       .toMatchObject({ ok: true, reportId: "report_01" });
+  });
+
+  it("accepts legacy common reports and reports with any newly selected common area", () => {
+    const commonOrder = { ...order, serviceType: "common_cleaning" as const };
+    const report = readyReport({ kind: "common" });
+    const requiredKeys = new Set(workReportCore.itemsFor("common").map((item: { key: string }) => item.key));
+    const items = report.items as Array<Record<string, unknown>>;
+    const requiredItems = items.filter(item => requiredKeys.has(item.key));
+    expect(requiredItems).toHaveLength(7);
+    expect(validate(commonOrder, [{ ...report, items: requiredItems }])).toMatchObject({ ok: true });
+    for (const key of ["elevator", "parking"]) {
+      const optionalItem = items.find(item => item.key === key);
+      expect(optionalItem).toBeDefined();
+      expect(validate(commonOrder, [{ ...report, items: [...requiredItems, optionalItem] }]))
+        .toMatchObject({ ok: true });
+    }
+    // 구역을 9개로 줄이기 전에 저장된 예전 구역도 받아 준다.
+    for (const key of ["handrail", "glass", "yard", "drain", "rooftop", "walls", "lighting", "final"]) {
+      const legacy = { ...items.find(item => item.key === "parking")!, key };
+      expect(validate(commonOrder, [{ ...report, items: [...requiredItems, legacy] }])).toMatchObject({ ok: true });
+    }
+  });
+
+  it("keeps checklist and verified photo requirements for newly added common areas", () => {
+    const commonOrder = { ...order, serviceType: "common_cleaning" as const };
+    const report = readyReport({ kind: "common" });
+    const items = report.items as Array<Record<string, unknown>>;
+    const yard = items.find(item => item.key === "parking")!;
+    const withoutYard = items.filter(item => item.key !== "parking");
+    const rejectedItems = [
+      items.filter(item => item.key !== "entrance"),
+      [...items, { ...yard, key: "unknown_area" }],
+      [...items, yard],
+      [...withoutYard, { ...yard, after: [] }],
+      [...withoutYard, { ...yard, status: "skipped", note: "" }],
+    ];
+    for (const invalidItems of rejectedItems) {
+      expect(validate(commonOrder, [{ ...report, items: invalidItems }]))
+        .toMatchObject({ ok: false, error: "cleaning_order_completion_evidence_required" });
+    }
+    const verified = new Set(collectCleaningOrderCompletionPhotoFileIds(commonOrder.id, [report]) || []);
+    verified.delete("parking_after_file");
+    expect(validate(commonOrder, [report], verified)).toMatchObject({ ok: false });
+    expect(validate(commonOrder, [{ ...report, items: [...withoutYard, { ...yard, status: "skipped", note: "작업 범위 제외" }] }]))
+      .toMatchObject({ ok: true });
+  });
+
+  it("공용부 완료 구역은 작업 후 사진만으로 충분하고, 다른 작업은 전·후가 모두 필요하다", () => {
+    for (const [serviceType, kind, ok] of [["common_cleaning", "common", true], ["move_in_cleaning", "moveIn", false]] as const) {
+      const report = readyReport({ kind });
+      const afterOnly = (report.items as Array<Record<string, unknown>>).map(item => ({ ...item, before: [] }));
+      expect(validate({ ...order, serviceType } as CleaningOrderRecord, [{ ...report, items: afterOnly }]).ok).toBe(ok);
+    }
   });
 
   it("keeps the server service-to-checklist mapping aligned with the existing CRM report templates", () => {

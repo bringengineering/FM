@@ -30,11 +30,18 @@ function createBundle(root = ROOT) {
     fs.writeFileSync(path.join(modules, name), code.replace("../../../desktop-crm/src/work-report-core.js","../shared/work-report-core.cjs").replace("../../../desktop-crm/src/work-report-owner-pdf.js","../shared/work-report-owner-pdf.cjs").replace("../../../desktop-crm/src/work-report-message.js","../shared/work-report-message.cjs").replace("../../assets/NotoSansKR.ttf","../assets/NotoSansKR.ttf").replace(/^\/\/# sourceMappingURL=.*$/gm, ""));
   }
   const shared=path.join(source,"shared");fs.mkdirSync(shared,{recursive:true});
-  if(fs.readdirSync(shared).some(name=>!["work-report-core.cjs","work-report-owner-pdf.cjs","work-report-message.cjs","core.cjs"].includes(name)))throw Error("FIELD_BUNDLE_UNEXPECTED_FILE");
+  if(fs.readdirSync(shared).some(name=>!["work-report-core.cjs","work-report-owner-pdf.cjs","work-report-common-pdf.cjs","work-report-message.cjs","core.cjs","assets"].includes(name)))throw Error("FIELD_BUNDLE_UNEXPECTED_FILE");
+  // 건물주 보고서 양식이 __dirname/assets 에서 로고·Pretendard 를 읽는다. 없으면 글자 상표·기본 글꼴로 나간다.
+  const OWNER_ASSETS=["bring-care-logo.jpg","fonts/PretendardVariable.woff2","fonts/Pretendard-LICENSE.txt"];
+  fs.mkdirSync(path.join(shared,"assets","fonts"),{recursive:true});
+  if(fs.readdirSync(path.join(shared,"assets")).some(name=>!["bring-care-logo.jpg","fonts"].includes(name))||fs.readdirSync(path.join(shared,"assets","fonts")).some(name=>!["PretendardVariable.woff2","Pretendard-LICENSE.txt"].includes(name)))throw Error("FIELD_BUNDLE_UNEXPECTED_FILE");
+  for(const name of OWNER_ASSETS){const from=path.join(root,"desktop-crm/src/assets",name);if(fs.existsSync(from))fs.copyFileSync(from,path.join(shared,"assets",name));}
   fs.copyFileSync(path.join(root,"desktop-crm/src/work-report-core.js"),path.join(shared,"work-report-core.cjs"));
   fs.copyFileSync(path.join(root,"desktop-crm/src/core.js"),path.join(shared,"core.cjs"));
-  const owner=fs.readFileSync(path.join(root,"desktop-crm/src/work-report-owner-pdf.js"),"utf8").replace('require("./core")','require("./core.cjs")').replace('require("./work-report-core")','require("./work-report-core.cjs")');
+  const owner=fs.readFileSync(path.join(root,"desktop-crm/src/work-report-owner-pdf.js"),"utf8").replace('require("./core")','require("./core.cjs")').replace('require("./work-report-core")','require("./work-report-core.cjs")').replace('require("./work-report-common-pdf")','require("./work-report-common-pdf.cjs")');
   fs.writeFileSync(path.join(shared,"work-report-owner-pdf.cjs"),owner);
+  // 공용부 '공용부 활동 결과보고서' 양식. 건물주 양식 파일의 글꼴·로고를 쓴다.
+  fs.writeFileSync(path.join(shared,"work-report-common-pdf.cjs"),fs.readFileSync(path.join(root,"desktop-crm/src/work-report-common-pdf.js"),"utf8").replace('require("./work-report-owner-pdf")','require("./work-report-owner-pdf.cjs")'));
   fs.writeFileSync(path.join(shared,"work-report-message.cjs"),fs.readFileSync(path.join(root,"desktop-crm/src/work-report-message.js"),"utf8").replace('require("./work-report-core")','require("./work-report-core.cjs")'));
   const assets=path.join(source,'assets');fs.mkdirSync(assets,{recursive:true});
   const fontFiles=['NotoSansKR.ttf','NotoSansKR-OFL.txt'];

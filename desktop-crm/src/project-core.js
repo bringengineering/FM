@@ -415,8 +415,7 @@
     const projects = new Map(rows(source.projects).map(item => [text(item && item.id, 80), normalizeProject(item)]));
     const members = rows(source.members).filter(item => item && text(item.uid, 128));
     const orders = rows(source.orders)
-      .filter(item => !mineUid || text(item.assigneeUid, 128) === mineUid)
-      .filter(item => overlapsRange(item, range));
+      .filter(item => !mineUid || text(item.assigneeUid, 128) === mineUid);
     const laneMap = new Map();
 
     const ensureLane = (key, label, secondary) => {
@@ -488,25 +487,31 @@
         total: list.length,
         updatedAt: [project && project.progressUpdatedAt, ...list.map(item => text(item.updatedAt || item.createdAt, 40))].filter(Boolean).sort().pop() || "",
       };
+      if (!overlapsRange({ startDate: assignment.startDate, dueDate: assignment.endDate }, range)) return;
       const lane = laneMap.get(group.laneKey);
       if (lane) lane.assignments.push(assignment);
     });
 
     // 업무지시가 아직 없어도 직접 만든 프로젝트는 로드맵에서 사라지지 않는다.
     // 담당자가 없는 새 프로젝트는 사람 기준 화면의 "담당자 미정" 줄에 놓는다.
-    if (!mineUid) projects.forEach(project => {
-      if ([...grouped.values()].some(group => group.orders.some(order => text(order.projectId, 80) === project.id))) return;
+    projects.forEach(project => {
       if (!overlapsRange({ startDate: project.startDate, dueDate: project.endDate }, range)) return;
-      const laneKey = mode === "people" ? "__none" : project.id;
-      const lane = ensureLane(laneKey, mode === "people" ? "담당자 미정" : project.name, mode === "people" ? "담당자" : "프로젝트");
+      const assigned = project.assignees.filter(person => !mineUid || person.uid === mineUid);
+      if (!assigned.length && (mineUid || project.assignees.length || [...grouped.values()].some(group => group.orders.some(order => text(order.projectId, 80) === project.id)))) return;
+      const people = assigned.length ? assigned : [{ uid: "", name: "담당자 미정" }];
+      people.forEach(person => {
+      const alreadyGrouped = [...grouped.values()].some(group => group.orders.some(order => text(order.projectId, 80) === project.id && text(order.assigneeUid, 128) === person.uid));
+      if (alreadyGrouped) return;
+      const laneKey = mode === "people" ? (person.uid || "__none") : project.id;
+      const lane = ensureLane(laneKey, mode === "people" ? person.name : project.name, mode === "people" ? "담당자" : "프로젝트");
       const extensionStartDate = isDate(project.previousEndDate) ? project.previousEndDate : "";
       const extensionEndDate = isDate(project.endDate) ? project.endDate : "";
       lane.assignments.push({
-        key: `${laneKey}::project:${project.id}`,
+        key: `${laneKey}::project:${project.id}:${person.uid}`,
         projectId: project.id,
         projectName: project.name,
-        assigneeUid: "",
-        assigneeName: "담당자 미정",
+        assigneeUid: person.uid,
+        assigneeName: person.name,
         startDate: project.startDate,
         endDate: project.endDate,
         extended: Boolean(extensionStartDate && extensionEndDate && extensionStartDate < extensionEndDate),
@@ -517,9 +522,10 @@
         progressNote: project.progressNote,
         status: project.status === "done" ? "done" : "assigned",
         orderIds: [],
-        open: project.status === "done" ? 0 : 1,
-        total: 1,
+        open: 0,
+        total: 0,
         updatedAt: project.progressUpdatedAt || project.updatedAt || project.createdAt,
+      });
       });
     });
 

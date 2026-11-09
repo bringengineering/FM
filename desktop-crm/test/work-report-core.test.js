@@ -223,8 +223,42 @@ test("건물주에게 나가는 문서에 업체 정보가 새면 잡는다", ()
   assert.deepEqual(R.findLeakedFields(noted, secrets), ["내부 메모"]);
 });
 
+test("검사 목록은 회사 자료에서 이 건물·고객 계약의 원가만 가져온다", () => {
+  const store = {
+    partnerVendors: [{ name: "한빛크린" }, { name: "" }], vendors: [{ name: "한빛크린" }, { name: "원주설비" }],
+    contracts: [
+      { buildingId: "b_main", vendorCost: 450000 }, { buildingId: "b_main", vendorCost: 0 },
+      { buildingId: "b_other", vendorCost: 777000 }, { customerId: "c_only", vendorCost: 120000 },
+    ],
+  };
+  const secrets = R.reportSecrets(store, { id: "wr_1", buildingId: "b_main" });
+  assert.deepEqual(secrets.vendorNames, ["한빛크린", "원주설비"]);
+  assert.deepEqual(secrets.vendorAmounts, ["450000", "450,000"]);
+  assert.deepEqual(R.reportSecrets(store, { id: "wr_2", customerId: "c_only" }).vendorAmounts, ["120000", "120,000"]);
+  assert.deepEqual(R.reportSecrets({}, null), { vendorNames: [], vendorAmounts: [], privateMemos: [] });
+  // 화면이 보낸 빈 목록이 회사 자료 목록을 지우지 못한다.
+  const merged = R.mergeSecrets(secrets, { vendorNames: [], vendorAmounts: undefined, privateMemos: ["마진 메모"] });
+  assert.deepEqual(merged.vendorNames, ["한빛크린", "원주설비"]);
+  assert.deepEqual(merged.privateMemos, ["마진 메모"]);
+  assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "원가 450,000원" }), merged), ["업체 단가"]);
+});
+
 test("너무 짧은 값으로는 막지 않는다", () => {
   // 두 글자 업체명까지 막으면 검사가 늘 걸려서 아무도 안 본다.
   assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "가나 청소 완료" }), { vendorNames: ["가나"] }), []);
   assert.deepEqual(R.findLeakedFields(full("stairs", { summary: "가나다 청소 완료" }), { vendorNames: ["가나다"] }), ["협력업체명"]);
+});
+
+test("현장 주소가 비면 CRM 건물 주소(없으면 고객 주소)로 채운 사본만 돌려준다", () => {
+  const store = {
+    buildings: [{ id: "b1", roadAddress: "예시시 도로명 1", address: "예시시 지번 1" }, { id: "b2", address: "예시시 지번 2", archivedAt: "x" }],
+    customers: [{ id: "c1", address: "예시시 고객로 3" }],
+  };
+  const saved = { id: "wr", buildingId: "b1", siteAddress: "" };
+  assert.equal(R.withSiteAddress(saved, store).siteAddress, "예시시 도로명 1");
+  assert.equal(saved.siteAddress, "", "저장된 보고서는 바꾸지 않는다");
+  assert.equal(R.withSiteAddress({ id: "wr", buildingId: "b1", siteAddress: "적어 둔 주소" }, store).siteAddress, "적어 둔 주소");
+  assert.equal(R.withSiteAddress({ id: "wr", buildingId: "b2" }, store).siteAddress, undefined, "보관된 건물은 쓰지 않는다");
+  assert.equal(R.withSiteAddress({ id: "wr", customerId: "c1" }, store).siteAddress, "예시시 고객로 3");
+  assert.equal(R.withSiteAddress({ id: "wr" }, {}).siteAddress, undefined);
 });

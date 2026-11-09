@@ -463,6 +463,7 @@
       },
       customers: [], buildings: [], activities: [], contracts: [], contractReadiness: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [], buildingDocuments: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
+      lifeLeads: [], lifeContacts: [], lifeApplications: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
         createAccessRole({ name: "업무 담당자", canView: true, canEdit: true, canDownload: false, canManageSecurity: false }),
@@ -518,6 +519,10 @@
       salesActivities: Array.isArray(src.salesActivities) ? src.salesActivities.filter(Boolean) : [],
       salesEvents: Array.isArray(src.salesEvents) ? src.salesEvents.filter(Boolean) : [],
       salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
+      // 생활서비스(인터넷·TV·렌탈). 규칙은 life-service-core.js 가 읽을 때 다시 맞춘다.
+      lifeLeads: Array.isArray(src.lifeLeads) ? src.lifeLeads.filter(item => item && typeof item === "object" && item.id) : [],
+      lifeContacts: Array.isArray(src.lifeContacts) ? src.lifeContacts.filter(item => item && typeof item === "object" && item.id) : [],
+      lifeApplications: Array.isArray(src.lifeApplications) ? src.lifeApplications.filter(item => item && typeof item === "object" && item.id) : [],
       updatedAt: src.updatedAt || iso()
     };
   }
@@ -969,8 +974,10 @@
     const status = workflowCase && workflowCase.status || {};
     const done = WORKFLOW_STEPS.reduce((count, _, index) => count + (status[`c${index + 1}`] === "done" ? 1 : 0), 0);
     const doingIndex = WORKFLOW_STEPS.findIndex((_, index) => status[`c${index + 1}`] === "doing");
-    const currentIndex = doingIndex >= 0 ? doingIndex : Math.min(done, WORKFLOW_STEPS.length - 1);
-    return { done, total: WORKFLOW_STEPS.length, percent: Math.round(done / WORKFLOW_STEPS.length * 100), currentIndex, current: WORKFLOW_STEPS[currentIndex] };
+    const waitingIndex = WORKFLOW_STEPS.findIndex((_, index) => status[`c${index + 1}`] !== "done");
+    const currentIndex = doingIndex >= 0 ? doingIndex : waitingIndex;
+    const current = done === WORKFLOW_STEPS.length ? "민원 처리 완료" : doingIndex >= 0 ? WORKFLOW_STEPS[doingIndex] : "진행 중인 단계 없음";
+    return { done, total: WORKFLOW_STEPS.length, percent: Math.round(done / WORKFLOW_STEPS.length * 100), currentIndex, current };
   }
 
   function calculateDashboard(store, nowValue, workflowCases) {

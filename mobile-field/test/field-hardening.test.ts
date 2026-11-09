@@ -204,3 +204,36 @@ describe('화면에 빈 글자가 새지 않는다', () => {
     expect(source.includes(`{${name}&&`)).toBe(false);
   });
 });
+
+describe('검수에서 나온 문제', () => {
+  it('보내기 직전에 표시한 사진은 응답이 끊겨도 지우지 않는다', async () => {
+    const { vault } = await makeVault(); await vault.saveVisit(visit(), null); await vault.savePhoto(await photo(), jpeg, 1);
+    const current = (await vault.load()).visits[0]!;
+    await vault.markSubmitted!('visit-a', current.revision);
+    const loaded = await vault.load();
+    expect(loaded.visits[0]!.revision).toBe(current.revision);
+    expect(canDeletePhoto(loaded.photos[0]!)).toBe(false);
+    await expect(vault.deletePhoto('photo-a', current.revision)).rejects.toThrow('PHOTO_DELETE_REQUIRES_SERVER');
+    await vault.close();
+  });
+  it('서버로 보내기 전에 표시를 먼저 남긴다', () => {
+    const source = readFileSync(new URL('../src/FieldWorkspace.tsx', import.meta.url), 'utf8');
+    expect(source.indexOf('vault.markSubmitted?.(current.id,current.revision)')).toBeGreaterThan(-1);
+    expect(source.indexOf('vault.markSubmitted?.(current.id,current.revision)')).toBeLessThan(source.indexOf('company.api.reconcile('));
+  });
+  it('짝을 고른 작업 후 사진도 작업 전으로 옮길 수 있고, 짝은 풀린다', async () => {
+    const { vault } = await makeVault(); await vault.saveVisit(visit(), null);
+    await vault.savePhoto(await photo(), jpeg, 1);
+    const after = { ...(await photo()), id: 'photo-b', phase: 'after' as const, pairWith: 'photo-a' };
+    await vault.savePhoto(after, jpeg, 2);
+    const rev = (await vault.load()).visits[0]!.revision;
+    await vault.editPhoto({ ...after, phase: 'before' }, rev);
+    const moved = (await vault.load()).photos.find(p => p.id === 'photo-b')!;
+    expect(moved.phase).toBe('before'); expect(moved.pairWith).toBeUndefined();
+    await vault.close();
+  });
+  it('자동 저장 중에는 버튼도 잠근다', () => {
+    const source = readFileSync(new URL('../src/FieldWorkspace.tsx', import.meta.url), 'utf8');
+    expect(source).toMatch(/busyRef\.current = true; setBusy\(true\);\n    try \{ await vault\.saveVisit/u);
+  });
+});

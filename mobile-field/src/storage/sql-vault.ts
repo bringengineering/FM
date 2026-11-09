@@ -91,7 +91,7 @@ export class SqlVault implements Vault {
     });
   }); }
   editPhoto(photo: Photo, expected: number): Promise<void> { return this.run(async () => {
-    assertOwner(photo.ownerUid, this.uid); assertPhoto(photo);
+    assertOwner(photo.ownerUid, this.uid);
     await this.transaction(async tx => {
       const row = await tx.getFirstAsync<{ body: string }>('SELECT body FROM photos WHERE id = ?', photo.id);
       if (!row) throw new FieldError('PHOTO_NOT_FOUND');
@@ -102,6 +102,8 @@ export class SqlVault implements Vault {
       if ((previous.reservationRevision || previous.uploadId || previous.state !== 'queued') && (photo.itemKey!==previous.itemKey||photo.phase!==previous.phase)) throw new FieldError('PHOTO_EDIT_REQUIRES_SERVER');
       const moved = photo.itemKey !== previous.itemKey || photo.phase !== previous.phase;
       const updated = { ...previous, itemKey: photo.itemKey, phase: photo.phase, included: photo.included, caption: photo.caption, ...(moved ? { pairWith: undefined } : {}) };
+      // Validate the stored result: a moved "after" photo loses its pairWith above.
+      assertPhoto(updated);
       await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?', JSON.stringify(updated), photo.id);
       await tx.runAsync('UPDATE visits SET body = ? WHERE id = ?', JSON.stringify(invalidateVisit(visit)), visit.id);
     });
@@ -124,6 +126,13 @@ export class SqlVault implements Vault {
       const photos=rows.map(row=>JSON.parse(row.body) as Photo);
       if(photos.length!==photoIds.length||photos.some(p=>!photoIds.includes(p.id)))throw new FieldError('REVISION_CONFLICT');
         for(const photo of photos){assertOwner(photo.ownerUid,this.uid);await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?',JSON.stringify({...photo,reservationRevision:revision,...(photo.state==='auth_blocked'?{state:'failed',errorCode:undefined}:{})}),photo.id);}
+    });
+  }); }
+  markSubmitted(visitId: string, revision: number): Promise<void> { return this.run(async () => {
+    await this.transaction(async tx => {
+      await this.visit(tx, visitId, revision);
+      const rows = await tx.getAllAsync<{body:string}>('SELECT body FROM photos WHERE visit_id = ?', visitId);
+      for(const row of rows){const photo=JSON.parse(row.body) as Photo;assertOwner(photo.ownerUid,this.uid);if(!photo.submitted)await tx.runAsync('UPDATE photos SET body = ? WHERE id = ?',JSON.stringify({...photo,submitted:true}),photo.id);}
     });
   }); }
   prepareTransfer(id: string): Promise<Photo> { return this.run(async () => {

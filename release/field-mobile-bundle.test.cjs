@@ -19,6 +19,7 @@ function fixture(t) {
   for(const name of DEPENDENCIES.filter(n=>!n.startsWith('firebase-')))fs.appendFileSync(path.join(root,'functions/pnpm-lock.yaml'),`      '${name}':\n        specifier: 1.0.0\n        version: 1.0.0\n`);
   fs.mkdirSync(path.join(root,'desktop-crm/src'),{recursive:true});fs.writeFileSync(path.join(root,'desktop-crm/src/work-report-core.js'),'module.exports = {};');fs.writeFileSync(path.join(root,'desktop-crm/src/core.js'),'module.exports = {};');fs.writeFileSync(path.join(root,'desktop-crm/src/work-report-owner-pdf.js'),'module.exports = {};');
   fs.writeFileSync(path.join(root,'desktop-crm/src/work-report-message.js'),'module.exports = {};');
+  fs.writeFileSync(path.join(root,'desktop-crm/src/work-report-common-pdf.js'),'const Owner = require("./work-report-owner-pdf");\nmodule.exports = {};');
   fs.mkdirSync(path.join(root,'functions/assets'),{recursive:true});for(const name of ['NotoSansKR.ttf','NotoSansKR-OFL.txt'])fs.writeFileSync(path.join(root,'functions/assets',name),'synthetic font fixture');
   return root;
 }
@@ -33,7 +34,17 @@ test("deployment contains only the mobile API and no database/hosting targets", 
   assert.doesNotMatch(entry, /legacy/);
   assert.equal(fs.readFileSync(path.join(bundle.source, ".env.bring-fm"), "utf8"), `FIELD_MOBILE_NATIVE_APP_IDS=${APP_ID}\nFIELD_MOBILE_PHOTOS_ROOT=${PHOTOS_ROOT}\nFIELD_MOBILE_REPORTS_ROOT=${REPORTS_ROOT}\n`);
   assert.equal(fs.readFileSync(path.join(bundle.source,'shared/work-report-core.cjs'),'utf8'),'module.exports = {};');
+  assert.match(fs.readFileSync(path.join(bundle.source,'shared/work-report-common-pdf.cjs'),'utf8'),/require\("\.\/work-report-owner-pdf\.cjs"\)/);
   assert.deepEqual(fs.readdirSync(path.join(bundle.source, "field-mobile")).sort(), [...MODULES].sort());
+});
+test("ships the owner report logo and Pretendard next to the shared template", t => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root,'desktop-crm/src/assets/fonts'),{recursive:true});
+  for(const name of ['bring-care-logo.jpg','fonts/PretendardVariable.woff2','fonts/Pretendard-LICENSE.txt'])fs.writeFileSync(path.join(root,'desktop-crm/src/assets',name),'synthetic asset');
+  const bundle = createBundle(root);
+  for(const name of ['bring-care-logo.jpg','fonts/PretendardVariable.woff2','fonts/Pretendard-LICENSE.txt'])assert.equal(fs.readFileSync(path.join(bundle.source,'shared/assets',name),'utf8'),'synthetic asset');
+  fs.writeFileSync(path.join(bundle.source,'shared/assets/other.png'),'x');
+  assert.throws(() => createBundle(root), /UNEXPECTED_FILE/);
 });
 test("refuses an import outside the audited mobile modules", t => {
   const root = fixture(t);

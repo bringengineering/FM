@@ -76,7 +76,10 @@ test("concurrent views coalesce checks and cached success expires before recheck
 test("the approved card contains only server state and delivery information, without PC configuration controls", () => {
   const html = render({ loaded: true, status: "connected" });
   for (const label of ["서버 자동발송", "서버 연결 정상", "매일 오전 6시", "브링엔지니어링 업무방", "오늘 업무일정", "오늘 계약 입금일", "등록된 항목이 있는 날만 발송", "컴퓨터와 CRM을 꺼도", "PC에서 입력하거나 저장하지 않습니다"]) assert.ok(html.includes(label), label);
-  assert.doesNotMatch(html, /<(input|form|button|textarea|select)\b|data-telegram-form|data-telegram-send|지금 보내기|방 찾기|연결 끊기|수동 연락 알림/);
+  assert.doesNotMatch(html, /<(input|form|textarea|select)\b|data-telegram-form|data-telegram-send|지금 보내기|방 찾기|연결 끊기|수동 연락 알림/);
+  assert.equal((html.match(/<button\b/g) || []).length, 1);
+  assert.match(html, /data-action="telegram-status-retry"/);
+  assert.match(render({ loading: true }), /data-action="telegram-status-retry" disabled/);
 });
 
 test("the status pill distinguishes checking, connected and unavailable without trusting arbitrary text", () => {

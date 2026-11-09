@@ -88,7 +88,7 @@ test("monthly, service, and owner work report PDFs use address + 건물주님, n
     const recipient = `${Core.reportOwnerName(building)}님`;
     const monthly = Monthly.buildBuildingMonthlyReport({ building, month: "2026-10", ownerName: customer.nickname, customer });
     const service = Service.buildServiceReport({ building, customer, case: { id: "qa_case", name: customer.nickname, workCompletedAt: "2026-10-01" } });
-    const work = Work.normalizeReport({ id: "qa_work", kind: "common", buildingId: building.id, buildingName: building.name, siteAddress: monthly.address, ownerName: customer.nickname, workDate: "2026-10-01" });
+    const work = Work.normalizeReport({ id: "qa_work", kind: "moveIn", buildingId: building.id, buildingName: building.name, siteAddress: monthly.address, ownerName: customer.nickname, workDate: "2026-10-01" });
     const before = JSON.stringify(work);
     for (const html of [createBuildingReportHtml(monthly), createServiceReportHtml(service), createWorkReportHtml(work)]) {
       assert.ok(html.includes(recipient)); assert.ok(!html.includes(customer.nickname)); assert.ok(!html.includes(customer.address));
@@ -128,8 +128,8 @@ test("browser report modules use the same recipient policy as PDF generation", (
 test("customer-address report picker keeps an alias out of the public building name", () => {
   const picker = between("  function workReportBuildings", "  function workReportBuildingAddress");
   const rows = new vm.Script(`${picker}; workReportBuildings()`).runInNewContext({
-    store: { buildings: [] }, customerManagedBuildingChoices: () => [{ value: "customer:qa_customer", customer,
-      building: buildings[0], name: customer.nickname, address: buildings[0].roadAddress }],
+    store: { buildings: [], customers: [customer] }, customerDisplayName: () => customer.nickname,
+    customerManagedBuildingAddress: () => buildings[0].roadAddress,
   });
   assert.equal(rows[0].internalLabel, customer.nickname);
   assert.equal(rows[0].name, customer.name);

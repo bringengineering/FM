@@ -24,7 +24,7 @@ async function setup(){
 }
 it('saves customer-only visits, verifies images, archives once, and binds CRM to the selected customer',async()=>{
   const t=await setup(),u=await t.uploaded();expect((await t.service.complete(u.uploadId,'complete_photo-a')).state).toBe('ready');
-  expect(t.deps.drive.folder).toHaveBeenCalledWith('photos',expect.arrayContaining([{key:'before',name:'작업 전'},{key:'entrance',name:'출입구·현관'}]));
+  expect(t.deps.drive.folder).toHaveBeenCalledWith('photos',expect.arrayContaining([{key:'before',name:'작업 전'},{key:'entrance',name:'출입구'}]));
   const a=await t.service.archive('visit-a',{revision:3}),again=await t.service.archive('visit-a',{revision:3});expect(again).toEqual(a);expect(t.files.size).toBe(2);expect(t.commits.size).toBe(2);
   const doc=t.commits.get(a.documentId);expect(doc.buildingId).toBe('');expect(doc.customerId).toBe('customer-a');expect(doc.savedCustomerDocument.customerId).toBe('customer-a');expect(t.deps.pdf).toHaveBeenCalledTimes(1);
 });

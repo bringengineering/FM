@@ -22,6 +22,7 @@ function harness(options = {}) {
   const context = vm.createContext({Buffer, WorkReportCore: R, ...Pdf,
     readLocalQuoteSeal: async () => { throw Error("Report must never access the quote seal store"); },
     savedDocumentSession: () => session, authState: () => ({user: session.user}), isMarketingOnlySession: () => false,
+    remoteClient: {loadStore: async () => structuredClone(options.store || {})},
     driveSessionView: () => ({connected: !options.noDrive}), driveApiDeps: () => ({}),
     BuildingDocsDrive: {downloadFile: async (_deps, input) => {downloads.push(input.fileId); return {content: Buffer.from("synthetic jpeg"), mimeType: "image/jpeg", name: "fixture.jpg"};}},
     workReportPdfJpeg: value => value, HeicJpegConverter: {looksLikeHeic: () => false},
@@ -48,7 +49,8 @@ test("인감 저장소가 없거나 읽기 실패여도 두 서식의 PDF 다운
       assert.doesNotMatch(html, /대표자 날인|서명 또는 인|class="stamp"|data:image\/png;base64/);
       assert.match(html, /data:image\/jpeg;base64/);
       assert.match(html, /예시 회사/);
-      assert.match(html, /검증용 현장 기록/);
+      // 공용부 건물주용은 '공용부 활동 결과보고서' 양식이라 요약 칸이 없다.
+      assert.match(html, kind === "common" ? /검증용 현장 기록|공용부 활동 결과보고서/ : /검증용 현장 기록/);
     }
   }
 });
@@ -62,12 +64,42 @@ test("인감 제거는 사진 확인·보고서 검증·민감정보·세션 검
   const leaking = harness();
   const blocked = await leaking.context.createWorkReportPdfArtifact({report: {...report(), summary: "검증업체 비공개자료"}, secrets: {vendorNames: ["검증업체"]}}, "owner");
   assert.equal(blocked.code, "REPORT_LEAK"); assert.equal(leaking.pages.length, 0);
+  // 화면이 빈 검사 목록을 보내도 메인이 회사 자료의 업체명·계약 원가로 막는다.
+  const store = {partnerVendors: [{name: "검증업체"}], contracts: [{buildingId: "building_fixture", vendorCost: 450000}, {buildingId: "other_building", vendorCost: 777000}]};
+  for (const summary of ["검증업체 방문", "업체 원가 450,000원", "원가 450000"]) {
+    const h = harness({store});
+    const result = await h.context.exportWorkReport({report: {...report(), summary}, secrets: {}});
+    assert.equal(result.code, "REPORT_LEAK", summary); assert.equal(h.writes.length, 0);
+  }
+  const otherBuilding = harness({store});
+  assert.equal((await otherBuilding.context.exportWorkReport({report: {...report(), summary: "다른 건물 금액 777,000원"}})).ok, true);
   const expired = harness({expired: true});
   await assert.rejects(expired.context.exportWorkReport({report: report()}), /session changed/);
   assert.equal(expired.writes.length, 0);
   const canceled = harness({canceled: true});
   assert.equal((await canceled.context.exportWorkReport({report: report()})).canceled, true);
   assert.equal(canceled.writes.length, 0);
+});
+
+test("Drive 가 끊겨 사진을 하나도 못 받으면 저장은 되어도 실패 장수로 알린다", async () => {
+  for (const kind of ["stairs", "common"]) {
+    const h = harness({noDrive: true}), value = report(kind);
+    const result = await h.context.exportWorkReport({report: value});
+    assert.equal(result.ok, true); assert.equal(result.photos, 0);
+    assert.equal(result.photoFailures, R.photoCount(value));
+  }
+  const empty = harness();
+  empty.context.BuildingDocsDrive = {downloadFile: async () => ({content: null})};
+  assert.equal((await empty.context.exportWorkReport({report: report()})).photoFailures, 2);
+});
+
+test("예전 발송 경로도 작업 중 사진까지 세어 사진 빠진 PDF를 막는다", () => {
+  const start = source.indexOf("async function readSavedWorkReportPdf(");
+  const body = source.slice(start, source.indexOf("\nasync function ", start + 1));
+  assert.match(body, /const expectedPhotos = WorkReportCore\.photoCount\(report\)/u);
+  assert.match(body, /secrets: WorkReportCore\.reportSecrets\(data, report\)/u);
+  const common = report("common");
+  assert.equal(R.photoCount(common), 1, "공용부 보고서는 작업 중 사진만으로도 1장");
 });
 
 test("실제 보고서 생성 함수를 거친 인감 없는 PDF가 CRM에 보관되고 같은 저장본으로 발송된다", async () => {
