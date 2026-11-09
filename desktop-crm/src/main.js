@@ -2016,7 +2016,11 @@ function configureUpdater() {
     clearUpdateRetryTimer();
     setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, retryAt: 0, message: "최신 버전입니다." });
   });
-  autoUpdater.on("download-progress", progress => setUpdateState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))), retryAt: 0, message: "새 버전을 받고 있습니다." }));
+  autoUpdater.on("download-progress", progress => {
+    const percent = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
+    if (updateState.status === "downloading" && updateState.percent === percent) return;
+    setUpdateState({ status: "downloading", percent, retryAt: 0, message: "새 버전을 받고 있습니다." });
+  });
   autoUpdater.on("update-downloaded", info => {
     updateRetryAttempt = 0;
     clearUpdateRetryTimer();
