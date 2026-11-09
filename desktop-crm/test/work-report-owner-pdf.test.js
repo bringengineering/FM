@@ -5,7 +5,7 @@ const Core = require("../src/work-report-core");
 const {createWorkReportHtml, workReportPdfPhotos} = require("../src/work-report-pdf");
 const {photoPages} = require("../src/work-report-owner-pdf");
 const photo = id => ({id, caption: `설명 ${id}`});
-const seed = () => Core.normalizeReport({id: "qa_report", kind: "common", buildingName: "예시 건물", workDate: "2026-10-06"});
+const seed = () => Core.normalizeReport({id: "qa_report", kind: "moveIn", buildingName: "예시 건물", workDate: "2026-10-06"});
 
 test("건물주용은 월간보고서 계열 디자인이고 견적서 격자·인감·진척도를 넣지 않는다", () => {
   const report = seed(); report.items[0].during = [photo("sample")];
@@ -151,22 +151,22 @@ test("수신인은 실명이 아니라 '(주소) 건물주 귀하' 로 쓰고 �
 });
 
 test("고객 단위 보고서는 고객 이름(buildingName) 대신 현장 주소를 현장·제목으로 쓴다", () => {
-  const report = Core.normalizeReport({ id: "qa_customer", kind: "common", customerId: "c1", buildingName: "홍길동_별명집", siteAddress: "예시시 예시로 7", workDate: "2026-10-06" });
+  const report = Core.normalizeReport({ id: "qa_customer", kind: "moveIn", customerId: "c1", buildingName: "홍길동_별명집", siteAddress: "예시시 예시로 7", workDate: "2026-10-06" });
   report.items[0].after = [photo("a")];
   const html = createWorkReportHtml(report);
   assert.ok(!html.includes("홍길동"), "고객 실명·별명이 문서에 나가면 안 된다");
   assert.ok(html.includes("<th>현장 주소</th><td>예시시 예시로 7</td>"));
   assert.ok(!html.includes("<th>현장</th>"), "주소와 같은 값을 현장 칸에 두 번 싣지 않는다");
-  assert.match(html, /<th>제목<\/th><td>예시시 예시로 7 공용부청소 작업 결과 보고/);
+  assert.match(html, /<th>제목<\/th><td>예시시 예시로 7 입주청소 작업 결과 보고/);
   // 주소도 없으면 '현장' 으로 쓴다.
-  const bare = Core.normalizeReport({ id: "qa_bare", kind: "common", customerId: "c1", buildingName: "홍길동", workDate: "2026-10-06" });
+  const bare = Core.normalizeReport({ id: "qa_bare", kind: "moveIn", customerId: "c1", buildingName: "홍길동", workDate: "2026-10-06" });
   bare.items[0].after = [photo("b")];
   const bareHtml = createWorkReportHtml(bare);
   assert.ok(!bareHtml.includes("홍길동"));
-  assert.ok(bareHtml.includes("<th>제목</th><td>공용부청소 작업 결과 보고"), "주소가 없으면 제목에 '현장' 을 붙이지 않는다");
+  assert.ok(bareHtml.includes("<th>제목</th><td>입주청소 작업 결과 보고"), "주소가 없으면 제목에 '현장' 을 붙이지 않는다");
   assert.ok(!bareHtml.includes("<th>현장</th>"));
   // 연결된 건물이 있으면 건물명을 그대로 쓴다.
-  const linked = Core.normalizeReport({ id: "qa_building", kind: "common", buildingId: "b1", buildingName: "예시 빌딩", workDate: "2026-10-06" });
+  const linked = Core.normalizeReport({ id: "qa_building", kind: "moveIn", buildingId: "b1", buildingName: "예시 빌딩", workDate: "2026-10-06" });
   linked.items[0].after = [photo("c")];
   assert.ok(createWorkReportHtml(linked).includes("<th>현장</th><td>예시 빌딩</td>"));
 });

@@ -1,6 +1,6 @@
 import { getCustomerSite, siteId, type CustomerSiteReads } from './sites.js';
 import { reportCore } from './report-core.js';
-import { assert, hash, nowIso, object, photoBinding, RECORD_LIMITS, recordingInput, RecordingError, reportFor, uploadKey, uploadStatus, type ArchiveRecord, type Recording, type RecordingPhoto, type UploadRecord } from './recording-model.js';
+import { assert, hash, nowIso, object, photoBinding, RECORD_LIMITS, recordingInput, RecordingError, reportFor, uploadKey, uploadStatus, zoneFor, type ArchiveRecord, type Recording, type RecordingPhoto, type UploadRecord } from './recording-model.js';
 
 export interface RecordingStore {
   get<T>(path:string):Promise<T|null>;
@@ -53,7 +53,7 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     assert(object(input)); const v=await visit(visitId),p=v.photos.find(p=>p.id===input.photoId);
     assert(p&&key===`photo_${p.id}`&&input.expectedRevision===v.revision,'REVISION_CONFLICT',409);
     const expected={expectedRevision:v.revision,photoId:p.id,itemKey:p.itemKey,phase:p.phase,claimedCapturedAt:p.capturedAt,mime:p.mime,bytes:p.bytes,sha256:p.sha256,width:p.width,height:p.height,included:p.included,caption:p.caption};
-    assert(Object.keys(input).length===Object.keys(expected).length&&Object.entries(expected).every(([k,val])=>input[k]===val));
+    assert(Object.keys(input).length===Object.keys(expected).length&&Object.entries(expected).every(([k,val])=>(k==='itemKey'?zoneFor(v.kind,input[k]):input[k])===val));
     const id=uploadKey(uid,visitId,p.id);
     const u=await d.store.change<UploadRecord>(uploadPath(id),old=>{
       if(old) {assert(old.visitId===visitId&&old.ownerUid===uid&&photoBinding(old.photo)===photoBinding(p),'REVISION_CONFLICT',409);return old;}
@@ -95,6 +95,7 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     assert(v.site.address.trim(),'SITE_ADDRESS_REQUIRED',422);
     const selected=v.photos.filter(p=>p.included);assert(selected.length>0&&selected.length<=RECORD_LIMITS.pdfPhotos,'REPORT_PHOTO_LIMIT',422);
     let plan:string[]|undefined;
+    if(Array.isArray(input.captureAreas))input.captureAreas=[...new Set(input.captureAreas.map((key:unknown)=>zoneFor(v.kind,key)))];
     if(input.captureAreas!==undefined){
       const catalog=reportCore.itemCatalogFor(v.kind),keys=new Set(catalog.map(item=>item.key));
       assert(Array.isArray(input.captureAreas)&&input.captureAreas.length>0&&input.captureAreas.length<=catalog.length&&input.captureAreas.every((key:unknown)=>typeof key==='string'&&keys.has(key))&&new Set(input.captureAreas).size===input.captureAreas.length);

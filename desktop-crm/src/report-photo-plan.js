@@ -83,19 +83,20 @@
       출입구: "entrance", 현관: "entrance", 로비: "entrance",
       복도: "corridor", 공용바닥: "corridor", 바닥: "corridor",
       계단: "stairs", 계단실: "stairs", 계단참: "stairs",
-      난간: "handrail", 손잡이: "handrail",
+      난간: "stairs", 손잡이: "stairs",
       창틀: "windows", 레일: "windows", 창호: "windows", 샷시: "windows", 새시: "windows",
-      유리: "glass", 유리창: "glass", 창문: "glass", 공용유리: "glass",
-      마당: "yard", 마당바닥: "yard", 뜰: "yard", 외부바닥: "yard", 건물앞: "yard",
+      유리: "windows", 유리창: "windows", 창문: "windows", 공용유리: "windows",
+      마당: "parking", 마당바닥: "parking", 뜰: "parking", 외부바닥: "parking", 건물앞: "parking",
       주차장: "parking", 주차장바닥: "parking", 주차구역: "parking",
-      배수구: "drain", 배수로: "drain", 트렌치: "drain", 그레이팅: "drain",
-      옥상: "rooftop", 옥상바닥: "rooftop", 테라스: "rooftop", 테라스바닥: "rooftop",
+      배수구: "fixtures", 배수로: "fixtures", 트렌치: "fixtures", 그레이팅: "fixtures",
+      옥상: "fixtures", 옥상바닥: "fixtures", 테라스: "fixtures", 테라스바닥: "fixtures",
       승강기: "elevator", 엘리베이터: "elevator",
-      벽면: "walls", 외벽: "walls", 벽: "walls", 문: "walls",
-      소화기: "fixtures", 설비함: "fixtures", 전기함: "fixtures", 계량기함: "fixtures", 게시판: "fixtures",
-      조명: "lighting", 천장: "lighting", 등: "lighting",
+      벽면: "corridor", 외벽: "corridor", 벽: "corridor", 문: "corridor",
+      소화기: "fire", 소화전: "fire", 소방: "fire", 소방설비: "fire",
+      설비: "fixtures", 공용부설비: "fixtures", 설비함: "fixtures", 전기함: "fixtures", 계량기함: "fixtures", 게시판: "fixtures",
+      조명: "fixtures", 천장: "fixtures", 등: "fixtures",
       분리수거장: "recycle", 수거장: "recycle", 재활용: "recycle",
-      마감: "final", 안전: "final",
+      마감: "corridor", 안전: "corridor",
     }),
     stairs: Object.freeze({
       계단: "stairFloor", 계단실: "stairFloor", 계단청소: "stairFloor",
@@ -327,8 +328,9 @@
         if (other.length) skipped.push({ folder: text(folder && folder.name, 120), count: other.length, why: "사진이 아닙니다." });
         return;
       }
+      // 공용부는 작업 전 사진을 찍지 않는다. 모든 사진을 작업 후 기록으로 싣는다.
       const split = kind === "common"
-        ? { before: [], after: [], unsorted: images.concat(heic), confident: false, reason: "공용부는 청소 동작과 같은 장소의 변화를 분석합니다. 촬영시각만으로 전·후를 나누지 않습니다." }
+        ? { before: [], after: images.concat(heic), unsorted: [], confident: true, reason: "공용부는 작업 후 사진만 싣습니다." }
         : splitBeforeAfter(images.concat(heic), { folderName: folder && folder.name, requireVisualEvidence: kind === "moveIn" });
       buckets.push({
         folder: text(folder && folder.name, 120),
@@ -465,8 +467,17 @@
     };
   }
 
+  // 공용부 9개 구역(work-report-core.js 의 common 목록과 같아야 한다)과 예전 구역 옮김 표.
+  const COMMON_ZONES = Object.freeze(["entrance", "elevator", "corridor", "stairs", "windows", "fire", "fixtures", "parking", "recycle"]);
+  const COMMON_LEGACY_ZONES = Object.freeze({
+    handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
+    rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
+  });
+  const commonZoneFor = key => COMMON_LEGACY_ZONES[text(key, 40)] || text(key, 40);
+
   const AI_CATEGORY_LABELS = Object.freeze({
-    entrance: "출입구·현관", corridor: "복도·공용 바닥", stairs: "계단·계단참", handrail: "난간·손잡이", windows: "창틀·레일", glass: "공용 유리", yard: "마당·외부 바닥", parking: "주차장", drain: "배수구·트렌치", rooftop: "옥상·테라스", elevator: "승강기", walls: "벽면·문", fixtures: "공용 설비·게시판", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인",
+    fire: "소방 설비",
+    entrance: "출입구", corridor: "복도", stairs: "계단", handrail: "난간·손잡이", windows: "창틀", glass: "공용 유리", yard: "마당·외부 바닥", parking: "주차장", drain: "배수구·트렌치", rooftop: "옥상·테라스", elevator: "승강기", walls: "벽면·문", fixtures: "공용부 설비", lighting: "조명·천장", recycle: "분리수거장", final: "마감·안전 확인",
     floor: "바닥",
     window: "창호·새시",
     kitchen: "싱크대·상하부장",
@@ -599,18 +610,21 @@
   // Common-area evidence has two independent axes. Missing AI decisions never
   // erase a previous recommendation or a user's explicit correction.
   function applyCommonClassifications(plan, classifications) {
-    const allowed = new Set(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final"]);
+    // AI 는 예전 16개 분류(common-v2)로 답한다. 양식의 9개 구역으로 옮겨 담는다.
+    const allowed = new Set(COMMON_ZONES);
     const decisions = new Map(rows(classifications).map(row => [text(row.id, 200), row]));
     let result = plan;
     for (const row of photoReviewRows(plan)) {
       const decision = decisions.get(row.id);
       if (!decision) continue;
       if (!row.file.manualCategory) {
-        const category = (decision.manual || Number(decision.confidence) >= 75) && allowed.has(decision.category) ? decision.category : "";
+        const zone = commonZoneFor(decision.category);
+        const category = (decision.manual || Number(decision.confidence) >= 75) && allowed.has(zone) ? zone : "";
         result = assignPhotoCategory(result, row.id, category);
       }
       if (!row.file.manualPhase) {
-        const phase = decision.phase === "during" && Number(decision.phaseConfidence) >= 85 ? "during" : "unsorted";
+        // 작업 전 사진이 없으므로 작업 중으로 확실한 것만 빼고 모두 작업 후다.
+        const phase = decision.phase === "during" && Number(decision.phaseConfidence) >= 85 ? "during" : "after";
         result = assignPhotoPhase(result, row.id, phase);
       }
     }
@@ -622,7 +636,7 @@
         return { ...file, manualCategory: !!old.manualCategory, manualPhase: !!old.manualPhase,
           aiReason: old.manualCategory ? "사용자가 직접 선택했습니다." : (decisions.get(file.id)?.reason || old.aiReason || (bucket.itemKey ? "공용부 구역 추천" : "구역 확인 필요")),
           aiCandidates: decisions.get(file.id)?.candidates || old.aiCandidates || [], aiReviewState: decisions.get(file.id)?.reviewState || old.aiReviewState || "",
-          phaseReason: old.manualPhase ? old.phaseReason : phase === "during" ? "청소 동작이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : "전·후 판단 근거가 부족해 확인이 필요합니다." };
+          phaseReason: old.manualPhase ? old.phaseReason : phase === "during" ? "청소 동작이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : "공용부는 작업 후 사진으로 싣습니다." };
       })])),
     })) };
   }
@@ -811,6 +825,9 @@
     GAP_MINUTES,
     FOLDER_HINTS,
     AI_CATEGORY_LABELS,
+    COMMON_ZONES,
+    COMMON_LEGACY_ZONES,
+    commonZoneFor,
     parseFolderName,
     parseDateChunk,
     kindFromWords,

@@ -4,6 +4,8 @@ type ChecklistDefinition = {
   reportKind: string;
   requiredKeys: readonly string[];
   optionalKeys?: readonly string[];
+  // 완료(done) 구역에 작업 전 사진이 필요 없는 작업. 공용부는 작업 후 사진만 찍는다(2026-11).
+  afterOnly?: boolean;
 };
 
 const checklists: Readonly<Record<CleaningOrderServiceType, ChecklistDefinition>> = Object.freeze({
@@ -19,8 +21,10 @@ const checklists: Readonly<Record<CleaningOrderServiceType, ChecklistDefinition>
   },
   common_cleaning: {
     reportKind: "common",
-    requiredKeys: ["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final"],
-    optionalKeys: ["glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures"],
+    // '공용부 활동 결과보고서' 양식의 9개 구역. 뒤쪽 8개는 예전 구역으로 저장된 보고서를 위한 것이다.
+    requiredKeys: ["entrance", "corridor", "stairs", "windows", "fire", "fixtures", "recycle"],
+    optionalKeys: ["elevator", "parking", "handrail", "glass", "yard", "drain", "rooftop", "walls", "lighting", "final"],
+    afterOnly: true,
   },
   stair_cleaning: {
     reportKind: "stairs",
@@ -105,7 +109,9 @@ function isReadyReport(order: CleaningOrderRecord, report: unknown, checklist: C
     if (rawItem.status === "done") {
       const beforeFileIds = verifiedPhotoFileIdsIn(rawItem.before, verifiedPhotoFileIds);
       const afterFileIds = verifiedPhotoFileIdsIn(rawItem.after, verifiedPhotoFileIds);
-      if (!beforeFileIds.length || !afterFileIds.length
+      if (checklist.afterOnly) {
+        if (!afterFileIds.length) return false;
+      } else if (!beforeFileIds.length || !afterFileIds.length
         || !beforeFileIds.some(beforeId => afterFileIds.some(afterId => beforeId !== afterId))) return false;
     }
   }
