@@ -11480,6 +11480,20 @@ function ownerNoticeTwiceMonthlyDates_(schedule, start, end, month) {
   }).filter(function (date) { return date >= start && (!end || date <= end); });
 }
 
+// 주 1회: 계약 시작일~종료일 사이 그 달의 선택 요일 전부 (종료일 없으면 계속).
+function ownerNoticeWeeklyDates_(schedule, start, end, month) {
+  if (!ownerNoticeIsDate_(month + "-01") || month < start.slice(0, 7) || end && month > end.slice(0, 7)) return [];
+  const date = new Date(month + "-01T00:00:00Z");
+  date.setUTCDate(1 + (schedule.weekday - date.getUTCDay() + 7) % 7);
+  const dates = [];
+  while (date.toISOString().slice(0, 7) === month) {
+    const key = date.toISOString().slice(0, 10);
+    if (key >= start && (!end || key <= end)) dates.push(key);
+    date.setUTCDate(date.getUTCDate() + 7);
+  }
+  return dates;
+}
+
 // contract-schedule-core.js contractDates(contract, month) 의 사본.
 function ownerNoticeContractDates_(contract, month) {
   if (!ownerNoticeLive_(contract)) return [];
@@ -11492,17 +11506,8 @@ function ownerNoticeContractDates_(contract, month) {
     const end = ownerNoticeLine_(contract.endDate);
     if (!ownerNoticeIsDate_(start) || end && (!ownerNoticeIsDate_(end) || end < start)) return [];
     if (schedule.mode === "twice_monthly") return ownerNoticeTwiceMonthlyDates_(schedule, start, end, month);
-    const first = new Date(start + "T00:00:00Z");
-    if (schedule.mode === "weekly") first.setUTCDate(first.getUTCDate() + (schedule.weekday - first.getUTCDay() + 7) % 7);
-    const count = schedule.mode === "weekly" ? 4 : 1;
-    const dates = [];
-    for (let index = 0; index < count; index += 1) {
-      const date = new Date(first.getTime());
-      date.setUTCDate(date.getUTCDate() + index * 7);
-      const key = date.toISOString().slice(0, 10);
-      if (ownerNoticeIsDate_(key) && (!end || key <= end) && key.slice(0, 7) === month) dates.push(key);
-    }
-    return dates;
+    if (schedule.mode === "weekly") return ownerNoticeWeeklyDates_(schedule, start, end, month);
+    return ownerNoticeIsDate_(start) && start.slice(0, 7) === month ? [start] : [];
   }
   if (contract.billingCycle !== "건별") return [];
   const date = ownerNoticeLine_(contract.workDate || contract.startDate);

@@ -20215,7 +20215,7 @@
         closeModal(); currentView = returnToContractCalendar || returnToWorkCalendar ? "buildingCalendar" : form.dataset.returnView === "relationships" ? "relationships" : "contracts";
         render();
         const scheduleCount = ContractSchedule.contractDates(item).length;
-        const scheduleSummary = item.cleaningSchedule?.mode === "twice_monthly" ? "·업무일정 월 2회" : scheduleCount ? `·업무일정 ${scheduleCount}회` : "";
+        const scheduleSummary = item.cleaningSchedule?.mode === "twice_monthly" ? "·업무일정 월 2회" : item.cleaningSchedule?.mode === "weekly" && scheduleCount ? "·업무일정 매주" : scheduleCount ? `·업무일정 ${scheduleCount}회` : "";
         showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장하고 계약 고객 관리${scheduleSummary}에 연결했습니다.`, "success");
       } });
     } else if (form.id === "customerForm") {

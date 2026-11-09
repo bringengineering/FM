@@ -36,7 +36,8 @@
       if (!["first_third", "second_fourth"].includes(value.weekPattern)) return null;
       return { mode: "twice_monthly", weekday: value.weekday, weekPattern: value.weekPattern, count: 2 };
     }
-    // This is a bounded registration, not a moving four-week window or cron.
+    // Repeats every week until the contract end date; months are projected on
+    // demand. count is only the length of the registration preview.
     return { mode: "weekly", weekday: value.weekday, count: 4 };
   }
 
@@ -44,7 +45,7 @@
     const schedule = normalizeCleaningSchedule(contract && contract.cleaningSchedule);
     if (!schedule || schedule.mode === "manual") return "";
     if (schedule.mode === "twice_monthly") return `2주 1회 · 월 2회 · 매월 ${schedule.weekPattern === "first_third" ? "1·3" : "2·4"}번째 ${WEEKDAYS[schedule.weekday]}`;
-    return schedule.mode === "weekly" ? `주 1회 ${WEEKDAYS[schedule.weekday]} · 첫 4회` : "한 번 작업";
+    return schedule.mode === "weekly" ? `주 1회 ${WEEKDAYS[schedule.weekday]} · 매주` : "한 번 작업";
   }
 
   function twiceMonthlyDates(schedule, start, end, month) {
@@ -57,6 +58,18 @@
       date.setUTCDate(1 + offset + (week - 1) * 7);
       return date.toISOString().slice(0, 10);
     }).filter(date => date >= start && (!end || date <= end));
+  }
+
+  function weeklyDates(schedule, start, end, month) {
+    if (typeof month !== "string" || !isDate(month + "-01") || month < start.slice(0, 7) || end && month > end.slice(0, 7)) return [];
+    const first = new Date(month + "-01T00:00:00Z");
+    first.setUTCDate(1 + (schedule.weekday - first.getUTCDay() + 7) % 7);
+    const dates = [];
+    for (const date = new Date(first); date.toISOString().slice(0, 7) === month; date.setUTCDate(date.getUTCDate() + 7)) {
+      const key = date.toISOString().slice(0, 10);
+      if (key >= start && (!end || key <= end)) dates.push(key);
+    }
+    return dates;
   }
 
   function contractDates(contract, month) {
@@ -81,6 +94,9 @@
         next.setUTCMonth(next.getUTCMonth() + 1);
         return twiceMonthlyDates(schedule, start, end, next.toISOString().slice(0, 7));
       }
+      // Weekly repeats until the end date: a month gets every selected weekday
+      // in it. Without a month (registration preview) show the first four.
+      if (schedule.mode === "weekly" && month !== undefined) return weeklyDates(schedule, start, end, month);
       const first = new Date(start + "T00:00:00Z");
       if (schedule.mode === "weekly") first.setUTCDate(first.getUTCDate() + (schedule.weekday - first.getUTCDay() + 7) % 7);
       const count = schedule.mode === "weekly" ? 4 : 1;
