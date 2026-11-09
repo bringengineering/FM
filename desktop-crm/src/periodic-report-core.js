@@ -480,7 +480,7 @@
   // 청소 사진 중 점검 근거가 될 만한 후보. 점검 항목과 겹치는 구역(설비·분리수거장·배수·조명·
   // 현관·창)을 먼저, 그다음 작업 후 사진을 고른다. 이미 점검에 붙은 사진은 빼고, 구역마다 한 장씩
   // 돌려 가며 고른다 — 한 구역 사진만 몰리면 다른 항목 근거를 못 찾는다.
-  const EVIDENCE_AREAS = ["fixtures", "recycle", "drain", "lighting", "light", "entrance", "windows", "stairWindow", "glass", "walls", "rooftop", "parking", "handrail"];
+  const EVIDENCE_AREAS = ["fixtures", "fire", "recycle", "drain", "lighting", "light", "entrance", "windows", "stairWindow", "glass", "walls", "rooftop", "parking", "handrail"];
   function cleaningPhotoCandidates(cleanings, report) {
     const used = new Set(normalizeReport(report).inspection.items.flatMap(item => item.photos.map(photo => photo.id)));
     const groups = new Map();

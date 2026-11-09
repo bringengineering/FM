@@ -9,6 +9,10 @@ export function initialCaptureAreas(visit:Visit, photos:Photo[]):string[]{
   const wanted=new Set([...defaults,...photos.filter(p=>p.visitId===visit.id).map(p=>p.itemKey)].filter(key=>valid.has(key)));
   return items.filter(item=>wanted.has(item.key)).map(item=>item.key);
 }
+// 공용부는 작업 전 사진을 찍지 않는다(2026-11): 작업 후부터 시작하고 전·후 짝을 만들지 않는다.
+export const hasBeforePhase=(kind:string)=>kind!=='common';
+export const capturePhases=(kind:string):Phase[]=>hasBeforePhase(kind)?['before','after','during']:['after','during'];
+export const startPhase=(kind:string):Phase=>hasBeforePhase(kind)?'before':'after';
 export function areaPhotoCount(photos:Photo[],area:string,phase:Phase):number{
   return photos.filter(p=>p.itemKey===area&&p.phase===phase).length;
 }

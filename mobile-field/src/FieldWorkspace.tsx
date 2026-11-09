@@ -8,12 +8,12 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { openVault } from './storage/open-vault';
 import { canDeletePhoto, confirmVisit, editVisit, LIMITS, phaseLabel, stateLabel, type ItemStatus, type Job, type Phase, type Photo, type Vault, type Visit, type Workspace } from './domain/model';
-import { catalog, reviewIssues } from './domain/report';
+import { catalog, reviewIssues, withCurrentZones } from './domain/report';
 import { persistCapture } from './capture';
 import { aiDraftState,reportFacts } from './domain/ai-report';
 import { saveGroupedReport } from './domain/save-report';
 import { archiveDocumentId } from './domain/archive-lookup';
-import { areaPhotoCount,beforeChoices,captureProgress,changeCaptureAreas,defaultReference,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
+import { areaPhotoCount,beforeChoices,capturePhases,captureProgress,changeCaptureAreas,hasBeforePhase,startPhase,defaultReference,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
 import { samplePhoto } from './sample-photo';
 import { exifCapturedAt } from './domain/capture-time';
 const GALLERY_BATCH = 20;
@@ -87,7 +87,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     try { await task(); } catch (error) { notify(safeMessage(error), true); }
     finally { busyRef.current = false; setBusy(false); setBusyLabel('처리 중입니다.'); }
   }
-  async function refresh(store = vault) { if (store) { const next = await store.load(); setWorkspace(next); return next; } }
+  async function refresh(store = vault) { if (store) { const next = withCurrentZones(await store.load()); setWorkspace(next); return next; } }
   function navigate(next: Screen) {
     if (busyRef.current || next === screen) return;
     if (dirty || captionDirty) { notify('작성 중인 내용을 저장한 뒤 이동해 주세요.', true); return; }
@@ -123,7 +123,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   useEffect(() => { if (!visit) return; setSummary(visit.draft.summary); setFollowUp(visit.draft.followUp); setNotes(visit.draft.notes); }, [selected, visit?.draft.summary, visit?.draft.followUp, visit?.draft.notes]);
   async function enterDevelopment() {
     const store = await openVault('development-sample');
-    try { const loaded = await store.load(); setVault(store); setWorkspace(loaded); setScreen('jobs'); }
+    try { const loaded = withCurrentZones(await store.load()); setVault(store); setWorkspace(loaded); setScreen('jobs'); }
     catch (error) { await store.close(); throw error; }
   }
   async function openJob(job: Job) {
@@ -144,7 +144,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   // the vault and lose the shot.
   function beginVisit(target:Visit,visitPhotos:Photo[],next?:Screen){
     const plan=initialCaptureAreas(target,visitPhotos);
-    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase('before');setLastArea('');setArea(firstUncapturedArea(target.captureAreas?.length?target.captureAreas:plan,visitPhotos,'before'));setPhotoId('');setCaption('');setLastShotId('');
+    setReceipt(undefined);setRecovered(undefined);setDelivery(undefined);setShowAllAreas(false);setSelected(target.id);setPlannedAreas(plan);setPhase(startPhase(target.job.kind));setLastArea('');setArea(firstUncapturedArea(target.captureAreas?.length?target.captureAreas:plan,visitPhotos,startPhase(target.job.kind)));setPhotoId('');setCaption('');setLastShotId('');
     setScreen(next??(target.draft.confirmedRevision===target.revision?'report':target.captureAreas?.length?'capture':'capture-setup'));
   }
   async function saveCaptureAreas(){
@@ -154,7 +154,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if(JSON.stringify(ordered)!==JSON.stringify(visit.captureAreas)){
       const next=changeCaptureAreas(visit,photos,ordered,new Date().toISOString());await vault.saveVisit(next,visit.revision);await refresh();
     }
-    setPhase('before');setLastArea('');setArea(firstUncapturedArea(ordered,photos,'before'));setScreen('capture');
+    setPhase(startPhase(visit.job.kind));setLastArea('');setArea(firstUncapturedArea(ordered,photos,startPhase(visit.job.kind)));setScreen('capture');
   }
   useEffect(()=>{if(screen==='capture'&&areas.length&&!areas.includes(area))setArea(firstUncapturedArea(areas,photos,phase));},[screen,selected,areas.join(','),area]);
   function switchPhase(next:Phase){setPhase(next);setLastArea('');setArea(firstUncapturedArea(areas,photos,next));setNotice('');}
@@ -162,7 +162,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if(!company)return;
     controller.current=new AbortController();
     let active=true,opened:Vault|undefined;
-    void perform(async()=>{await company.api.recordingContext(controller.current.signal);opened=await openVault(company.uid);const loaded=await opened.load();if(!active){await opened.close();return;}setVault(opened);setWorkspace(loaded);setScreen('jobs');});
+    void perform(async()=>{await company.api.recordingContext(controller.current.signal);opened=await openVault(company.uid);const loaded=withCurrentZones(await opened.load());if(!active){await opened.close();return;}setVault(opened);setWorkspace(loaded);setScreen('jobs');});
     return()=>{active=false;controller.current.abort();runner.current?.stop();void opened?.close();};
   },[company?.uid]);
   async function syncCurrent(current=visit, currentPhotos=photos, draftSaved=false){
@@ -212,7 +212,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
     if(!target)throw new FieldError('CAPTURE_AREAS_INVALID');
     if(target!==area)setArea(target);
     // Only a single camera shot is lined up with the overlaid before photo; gallery imports stay unpaired.
-    const pairWith=phase==='after'?(beforeChoices(photos,target).find(p=>p.id===referenceId)?.id??defaultReference(photos,target))||undefined:undefined;
+    const pairWith=phase==='after'&&hasBeforePhase(visit.job.kind)?(beforeChoices(photos,target).find(p=>p.id===referenceId)?.id??defaultReference(photos,target))||undefined:undefined;
     let savedId = '';
     if (Platform.OS === 'web') { savedId = await persistCapture(vault, visit, samplePhoto(), target, phase, undefined, pairWith); setReferenceId(''); }
     else if (gallery) {
@@ -272,7 +272,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   }
   function finishCaptureRequested(){
     if(!visit||busy)return;
-    const included=photos.filter(p=>p.included),before=areas.filter(key=>!included.some(p=>p.itemKey===key&&p.phase==='before')),
+    const included=photos.filter(p=>p.included),before=hasBeforePhase(visit.job.kind)?areas.filter(key=>!included.some(p=>p.itemKey===key&&p.phase==='before')):[],
       after=areas.filter(key=>!included.some(p=>p.itemKey===key&&p.phase==='after'));
     if((before.length||after.length)&&Platform.OS!=='web'){
       const label=(keys:string[])=>keys.map(key=>catalog(visit.job.kind).find(item=>item.key===key)?.label||key).join(', ');
@@ -323,11 +323,11 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
       </> : <>
         {screen!=='capture'&&<View style={s.sectionHead}><View><Text style={s.eyebrow}>{today()} · BRING FIELD</Text><Text style={s.h1}>{title[screen]}</Text></View></View>}
         {visit && screen !== 'jobs' && screen!=='capture' && <View style={s.siteBar}><Text style={s.siteTitle}>{visit.job.title}</Text><Text style={s.muted}>{visit.job.address}</Text></View>}
-        {screen === 'jobs' && <><Text style={s.subtitle}>현장을 열고 작업 전 사진부터 남겨 주세요.</Text>{jobs.map(job => <View key={job.id} style={s.card}>
+        {screen === 'jobs' && <><Text style={s.subtitle}>현장을 열고 작업 사진을 남겨 주세요. 공용부는 작업 후 사진만 찍습니다.</Text>{jobs.map(job => <View key={job.id} style={s.card}>
           <Text style={s.tag}>{job.kind === 'common' ? '공용부청소' : '입주청소'}</Text><Text style={s.cardTitle}>{job.title}</Text><Text style={s.muted}>{job.address}</Text>
           {(()=>{const v=workspace.visits.find(row=>row.job.id===job.id&&row.job.workDate===job.workDate);if(!v)return <Text style={s.body}>아직 시작하지 않았습니다.</Text>;
             const own=workspace.photos.filter(p=>p.visitId===v.id),planned=v.captureAreas||[],b=captureProgress(planned,own,'before'),a=captureProgress(planned,own,'after'),ready=own.filter(p=>p.state==='ready').length;
-            return <Text style={s.body}>{planned.length?`작업 전 ${b.done}/${b.total}구역 · 작업 후 ${a.done}/${a.total}구역`:'촬영 구역 선택 전'}{'\n'}사진 {own.length}장{company?` · 서버 보관 ${ready}/${own.length}장`:''}{v.draft.confirmedRevision===v.revision?' · 보고서 검토 완료':''}</Text>;})()}
+            return <Text style={s.body}>{planned.length?(hasBeforePhase(v.job.kind)?`작업 전 ${b.done}/${b.total}구역 · `:'')+`작업 후 ${a.done}/${a.total}구역`:'촬영 구역 선택 전'}{'\n'}사진 {own.length}장{company?` · 서버 보관 ${ready}/${own.length}장`:''}{v.draft.confirmedRevision===v.revision?' · 보고서 검토 완료':''}</Text>;})()}
           <Button label={workspace.visits.some(v => v.job.id === job.id && v.job.workDate===job.workDate) ? '오늘 작업 이어하기' : '오늘 작업 시작'} onPress={() => void perform(() => openJob(job))} disabled={busy} />
         </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>beginVisit(v,workspace.photos.filter(p=>p.visitId===v.id),'report')}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
         {['capture-setup', 'capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
@@ -347,12 +347,12 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           const label=(key:string)=>catalog(visit.job.kind).find(item=>item.key===key)?.label||key;
           const before=captureProgress(areas,photos,'before'),after=captureProgress(areas,photos,'after');
           const beforeDone=areas.length>0&&before.done===before.total,afterDone=areas.length>0&&after.done===after.total;
-          const choices=phase==='after'?beforeChoices(photos,area):[];
+          const choices=phase==='after'&&hasBeforePhase(visit.job.kind)?beforeChoices(photos,area):[];
           const referencePhoto=choices.find(p=>p.id===referenceId)??choices.find(p=>p.id===defaultReference(photos,area));
           const lastShot=photos.find(p=>p.id===lastShotId);
           const shutterOff=busy || (Platform.OS !== 'web' && (!permission?.granted || !cameraReady));
           return <>
-          <View style={s.wrap}>{(['before','after','during'] as Phase[]).map(p=>{
+          <View style={s.wrap}>{capturePhases(visit.job.kind).map(p=>{
             const progress=captureProgress(areas,photos,p);return <Chip key={p} label={`${phaseLabel[p]} ${progress.done}/${progress.total}`} active={phase===p} disabled={busy} onPress={()=>switchPhase(p)}/>;
           })}</View>
           <View style={s.guideCard}><Text style={s.guideStep}>{phaseLabel[phase]} · {Math.max(areas.indexOf(area)+1,1)} / {areas.length} 구역 · 이 구역 {areaPhotoCount(photos,area,phase)}장</Text>
@@ -379,7 +379,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
             {canDeletePhoto(lastShot)&&<Pressable accessibilityRole="button" accessibilityLabel="방금 찍은 사진 지우기" disabled={busy} onPress={()=>void perform(undoLastShot)} style={s.undo}><Text style={s.undoText}>지우기</Text></Pressable>}</View>}
           {phase==='before'&&beforeDone&&<View style={s.doneCard}><Text style={s.doneTitle}>작업 전 사진을 모든 구역에서 찍었어요</Text><Text style={s.doneBody}>청소를 마친 뒤 같은 구역을 작업 후로 찍어 주세요.</Text><Button label="작업 후 촬영 시작" disabled={busy} onPress={()=>switchPhase('after')} /></View>}
           {phase==='after'&&afterDone&&<View style={s.doneCard}><Text style={s.doneTitle}>작업 후 사진까지 모두 찍었어요</Text><Text style={s.doneBody}>이제 보고서를 확인하고 저장하면 됩니다.</Text><Button label={company?'촬영 완료 · AI 보고서 작성':'촬영 완료 · 보고서 작성'} disabled={busy} onPress={finishCaptureRequested} /></View>}
-          {phase==='after'&&!referencePhoto&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
+          {phase==='after'&&!referencePhoto&&hasBeforePhase(visit.job.kind)&&<Note>이 구역의 작업 전 사진이 없습니다.</Note>}
           <View style={s.wrap}>{areas.map((key,index)=>{const count=areaPhotoCount(photos,key,phase);return <Chip key={key} label={`${count?'✓ ':''}${index+1}. ${label(key)} · ${count}장`} active={area===key} disabled={busy} onPress={()=>{setArea(key);setLastArea('');}} />;})}</View>
           <View style={s.grid}>
             {phase==='before'&&!beforeDone&&<View style={s.gridItem}><Button label="작업 후로 넘어가기" secondary disabled={busy} onPress={()=>switchPhase('after')} /></View>}
@@ -405,7 +405,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
           {!photo&&photos.length>0&&<Note>위에서 확인할 사진을 눌러 주세요.</Note>}
           {photo && <View style={s.card}><PhotoImage vault={vault} photo={photo} /><Text style={s.tag}>{catalog(visit.job.kind).find(item=>item.key===photo.itemKey)?.label} · {phaseLabel[photo.phase]} · {stateLabel[photo.state]}</Text>
             <Text style={s.label}>구역</Text><View style={s.wrap}>{catalog(visit.job.kind).map(item => <Chip key={item.key} label={item.label} active={photo.itemKey === item.key} onPress={() => void perform(() => updatePhoto({ itemKey: item.key }))} />)}</View>
-            <View style={s.wrap}>{(['before', 'during', 'after'] as Phase[]).map(p => <Chip key={p} label={phaseLabel[p]} active={photo.phase === p} onPress={() => void perform(() => updatePhoto({ phase: p }))} />)}</View>
+            <View style={s.wrap}>{(['before', 'during', 'after'] as Phase[]).filter(p => p !== 'before' || hasBeforePhase(visit.job.kind) || photo.phase === 'before').map(p => <Chip key={p} label={phaseLabel[p]} active={photo.phase === p} onPress={() => void perform(() => updatePhoto({ phase: p }))} />)}</View>
             <View style={s.between}><Text style={s.label}>보고서에 포함</Text><Switch accessibilityLabel="보고서에 사진 포함" value={photo.included} onValueChange={included => void perform(() => updatePhoto({ included }))} /></View>
             <TextInput accessibilityLabel="사진 설명" editable={!busy} placeholder="고객에게 보여도 되는 사진 설명" value={caption} onChangeText={setCaption} maxLength={120} style={s.input} />
             <Button label="사진 설명 저장" secondary disabled={busy} onPress={() => void perform(() => updatePhoto({ caption }))} />
@@ -414,13 +414,13 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
         </>}
         {screen === 'report' && visit && <>
           <Note>{company?'초안을 저장하고 내용을 검토한 뒤, PDF를 Drive와 CRM에 보관하세요.':'작성한 내용은 기기에 보관됩니다. 고객 PDF·Drive 보관은 서버 연결 후 사용할 수 있습니다.'}</Note>
-          {areas.length>0&&<Note>촬영 현황 · 작업 전 {captureProgress(areas,photos,'before').done}/{areas.length}구역 · 작업 후 {captureProgress(areas,photos,'after').done}/{areas.length}구역. 미촬영 구역은 사진이 없는 상태로 보고서에 남습니다.</Note>}
+          {areas.length>0&&<Note>촬영 현황 · {hasBeforePhase(visit.job.kind)?`작업 전 ${captureProgress(areas,photos,'before').done}/${areas.length}구역 · `:''}작업 후 {captureProgress(areas,photos,'after').done}/{areas.length}구역. 미촬영 구역은 사진이 없는 상태로 보고서에 남습니다.</Note>}
           <Text style={s.h2}>이번 작업 요약</Text><Text style={s.label}>작업 내용</Text><TextInput accessibilityLabel="작업 내용" editable={!busy} multiline maxLength={2000} value={summary} onChangeText={setSummary} style={[s.input, s.textarea]} placeholder="직접 확인한 작업과 결과를 적어 주세요." />
           {company&&<><Note>AI는 촬영 구역과 사진 수만 이용합니다. 사진과 고객 정보는 AI에 보내지 않습니다. 초안의 실제 작업 내용을 확인하고 필요한 내용을 수정해 주세요.</Note>{['stale','edited_stale'].includes(aiDraftState(visit,photos))&&<Note>사진 구역 또는 사진 수가 바뀌었습니다. 작성한 내용을 확인해 주세요.</Note>}{(!summary.trim()||aiDraftState(visit,photos)==='stale')&&<Button label={summary.trim()?'AI 초안 다시 만들기':'AI 보고서 초안 만들기'} secondary disabled={busy||dirty||!photos.length} onPress={()=>void perform(generateAiDraft)} />}</>}
           <View style={s.card}><Text style={s.cardTitle}>작업 정보</Text><Text style={s.body}>작업일 · {visit.job.workDate}{'\n'}작업 종류 · {visit.job.kind==='common'?'공용부청소':'입주청소'}{'\n'}현장 주소 · {visit.job.address || '주소 미기재'}</Text></View>
-          <View style={s.card}><Text style={s.cardTitle}>사진 기록 요약</Text><Text style={s.body}>작업 구역 · {areas.length}곳{'\n'}작업 전 · {photos.filter(p=>p.included&&p.phase==='before').length}장　 작업 중 · {photos.filter(p=>p.included&&p.phase==='during').length}장　 작업 후 · {photos.filter(p=>p.included&&p.phase==='after').length}장</Text></View>
+          <View style={s.card}><Text style={s.cardTitle}>사진 기록 요약</Text><Text style={s.body}>작업 구역 · {areas.length}곳{'\n'}{hasBeforePhase(visit.job.kind)?`작업 전 · ${photos.filter(p=>p.included&&p.phase==='before').length}장　 `:''}작업 중 · {photos.filter(p=>p.included&&p.phase==='during').length}장　 작업 후 · {photos.filter(p=>p.included&&p.phase==='after').length}장</Text></View>
           <Text style={s.h2}>구역별 작업 기록</Text>{areas.length>0&&<Button label={showAllAreas?'촬영 구역만 보기':'다른 구역도 보기'} secondary disabled={busy} onPress={()=>setShowAllAreas(!showAllAreas)}/>}{catalog(visit.job.kind).filter(item=>showAllAreas||!areas.length||areas.includes(item.key)||(visit.draft.statuses[item.key]&&visit.draft.statuses[item.key]!=='recorded')||!!notes[item.key]?.trim()).map(item => <View key={item.key} style={s.card}>
-            <Text style={s.cardTitle}>{item.label}</Text><Text style={s.muted}>전 {photos.filter(p=>p.itemKey===item.key&&p.phase==='before'&&p.included).length}장 · 중 {photos.filter(p=>p.itemKey===item.key&&p.phase==='during'&&p.included).length}장 · 후 {photos.filter(p=>p.itemKey===item.key&&p.phase==='after'&&p.included).length}장</Text>
+            <Text style={s.cardTitle}>{item.label}</Text><Text style={s.muted}>{hasBeforePhase(visit.job.kind)?`전 ${photos.filter(p=>p.itemKey===item.key&&p.phase==='before'&&p.included).length}장 · `:''}중 {photos.filter(p=>p.itemKey===item.key&&p.phase==='during'&&p.included).length}장 · 후 {photos.filter(p=>p.itemKey===item.key&&p.phase==='after'&&p.included).length}장</Text>
             <View style={s.wrap}>{([['recorded', '기록'], ['done', '완료'], ['partial', '일부'], ['skipped', '못 함']] as [ItemStatus, string][]).map(([status, label]) => <Chip key={status} label={label} active={(visit.draft.statuses[item.key] ?? 'recorded') === status} onPress={() => void perform(() => saveDraft({ statuses: { ...visit.draft.statuses, [item.key]: status } }))} />)}</View>
             {visit.draft.statuses[item.key] === 'skipped' && <><TextInput accessibilityLabel={`${item.label} 못 한 이유`} editable={!busy} value={notes[item.key] ?? ''} onChangeText={value => setNotes({ ...notes, [item.key]: value })} maxLength={500} style={s.input} placeholder="작업하지 못한 이유" /><Button secondary label="사유 저장" disabled={busy} onPress={() => void perform(() => saveDraft())} /></>}
           </View>)}

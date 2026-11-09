@@ -122,8 +122,9 @@ function areaPhotos(item, index, images) {
 
 // 건물주에게 나가는 보고서들이 같은 얼굴을 하도록 글꼴·색·사진 카드 양식을 한 곳에 둔다.
 // runningTitle 은 둘째 쪽부터 오른쪽 위에 찍히는 문서 이름·번호다.
+const ownerFontFace = () => PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : "";
 function ownerReportStyles(runningTitle) {
-  return `${PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : ""}
+  return `${ownerFontFace()}
 @page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"${escape(runningTitle)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
 @page:first{@top-right{content:none}}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#1d3b4f;font-family:${FONT_STACK};-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -169,6 +170,9 @@ figure img,.missing-photo{display:block;width:100%;height:58mm;object-fit:contai
 figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;white-space:pre-wrap}figcaption b{font-weight:600}figcaption span{color:#5d7b8d}`;
 }
 function createOwnerReportHtml(report, options = {}) {
+  // 공용부 청소는 '공용부 활동 결과보고서' 양식으로 따로 만든다. 그 모듈이 이 파일의 글꼴·로고를
+  // 쓰므로 여기서는 호출할 때 불러온다(맨 위에서 서로 require 하면 한쪽이 빈 모듈을 받는다).
+  if (report.kind === "common") return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   // 현장노트는 고른 구역을 사진이 없어도 표에 남긴다(includeEmptyAreas).
@@ -228,4 +232,4 @@ ${photoItems.map((item, i) => areaPhotos(item, i + 1, images)).join("")}
 </main></body></html>`;
 }
 
-module.exports = { createOwnerReportHtml, photoPages, areaPhotos, ownerReportStyles, ownerLogo: () => LOGO, FONT_STACK, SAFE_IMAGE, escape };
+module.exports = { createOwnerReportHtml, photoPages, areaPhotos, ownerReportStyles, ownerFontFace, ownerLogo: () => LOGO, FONT_STACK, SAFE_IMAGE, escape };

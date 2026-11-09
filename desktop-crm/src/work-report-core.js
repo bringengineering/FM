@@ -87,22 +87,16 @@
       key: "common",
       label: "공용부청소",
       items: Object.freeze([
-        { key: "entrance", label: "출입구·현관", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
-        { key: "corridor", label: "복도·공용 바닥", detail: "층별 복도와 공용 바닥 쓸기·물걸레·얼룩 제거" },
-        { key: "stairs", label: "계단·계단참", detail: "층별 계단·참의 오염 확인 및 청소" },
-        { key: "handrail", label: "난간·손잡이", detail: "난간 먼지 제거 및 손이 닿는 면의 오염 확인" },
-        { key: "windows", label: "창틀·레일", detail: "접근 가능한 공용 창틀 홈·레일 먼지 제거 및 청소" },
-        { key: "glass", label: "공용 유리", detail: "접근 가능한 공용 유리면 오염 확인 및 닦기", optional: true },
-        { key: "yard", label: "마당·외부 바닥", detail: "마당·뜰·건물 앞 외부 바닥 쓸기 및 잔여물 정리", optional: true },
-        { key: "parking", label: "주차장", detail: "주차 구역 바닥 오염 확인 및 청소", optional: true },
-        { key: "drain", label: "배수구·트렌치", detail: "접근 가능한 배수구·배수 홈·그레이팅의 이물질 정리", optional: true },
-        { key: "rooftop", label: "옥상·테라스", detail: "승인된 접근 범위의 옥상·테라스 바닥 및 잔여물 정리", optional: true },
+        // '공용부 활동 결과보고서' 양식의 9개 구역. 예전 16개 구역은 COMMON_LEGACY_ZONES 로 옮겨 싣는다.
+        { key: "entrance", label: "출입구", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
         { key: "elevator", label: "승강기", detail: "승강기 문·내부·버튼의 접근 가능한 면 청소", optional: true },
-        { key: "walls", label: "벽면·문", detail: "공용 벽면·문의 국소 오염 확인 및 닦기", optional: true },
-        { key: "fixtures", label: "공용 설비·게시판", detail: "소화기·공용 설비함·계량기함·게시판의 접근 가능한 외부 표면 확인 및 닦기", optional: true },
-        { key: "lighting", label: "조명·천장", detail: "조명 주변 먼지·거미줄 및 이상 여부 확인" },
+        { key: "corridor", label: "복도", detail: "층별 복도와 공용 바닥·벽면·문의 오염 확인 및 청소" },
+        { key: "stairs", label: "계단", detail: "층별 계단·계단참·난간의 오염 확인 및 청소" },
+        { key: "windows", label: "창틀", detail: "접근 가능한 공용 창틀·레일·유리면 먼지 제거 및 청소" },
+        { key: "fire", label: "소방 설비", detail: "소화기·소화전함 등 소방 설비의 접근 가능한 외부 표면 확인 및 닦기" },
+        { key: "fixtures", label: "공용부 설비", detail: "공용 설비함·계량기함·게시판·조명·배수구의 접근 가능한 면 확인 및 정리" },
+        { key: "parking", label: "주차장", detail: "주차 구역·마당 등 외부 바닥 오염 확인 및 청소", optional: true },
         { key: "recycle", label: "분리수거장", detail: "수거장 바닥·분리배출 상태·악취 확인 및 정리" },
-        { key: "final", label: "마감·안전 확인", detail: "공용 통로 적치물·미끄럼·잔여 작업 여부 확인" },
       ]),
     },
     {
@@ -283,12 +277,38 @@
     };
   }
 
+  // 공용부 구역을 양식의 9개로 줄이기 전에 쓰던 구역 → 지금 구역. 저장된 예전 보고서와
+  // AI 분류 결과(common-v2 의 16개 분류)가 이 표로 옮겨진다. 목록에 없는 구역은 사진째 버려지므로
+  // 예전 구역을 지우지 말고 여기서 옮긴다.
+  const COMMON_LEGACY_ZONES = Object.freeze({
+    handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
+    rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
+  });
+  function commonZoneFor(key) {
+    const value = text(key, 40);
+    return COMMON_LEGACY_ZONES[value] || value;
+  }
+  // 예전 구역 항목을 지금 구역 항목에 합친다. 사진은 순서대로 뒤에 붙이고 메모는 이어 쓴다.
+  function mergeLegacyCommon(saved) {
+    const merged = [];
+    for (const item of saved) {
+      const key = commonZoneFor(item.key);
+      const target = merged.find(row => row.key === key);
+      if (!target) { merged.push({ ...item, key }); continue; }
+      for (const phase of ["before", "during", "after"]) target[phase] = [...target[phase], ...item[phase]];
+      target.note = [target.note, item.note].filter(Boolean).join(" / ").slice(0, 500);
+      if (target.status === "recorded" && item.status !== "recorded") target.status = item.status;
+    }
+    return merged;
+  }
+
   // 작업 종류를 고르면 그 종류의 표준 항목이 깔린다. 이미 적어 둔 것이 있으면
   // 그 위에 얹는다 — 종류를 잘못 골랐다 고쳤을 때 쓴 것이 날아가면 안 된다.
   function itemsFor(kindKey, existing, onlySaved = false) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
-    const saved = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const normalized = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const saved = kindKey === "common" ? mergeLegacyCommon(normalized) : normalized;
     const savedKeys = new Set(saved.map(item => item.key));
     const scoped = onlySaved && kind.items.some(item => savedKeys.has(item.key));
     return kind.items.filter(standard => scoped ? savedKeys.has(standard.key) : !standard.optional || savedKeys.has(standard.key)).map(standard => {
@@ -586,6 +606,8 @@
     normalizeReport,
     itemsFor,
     itemCatalogFor,
+    commonZoneFor,
+    COMMON_LEGACY_ZONES,
     itemIssue,
     validateReport,
     progress,
