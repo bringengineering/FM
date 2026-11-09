@@ -66,7 +66,7 @@ const context = {
   Array,
   Object,
   JSON,
-  AUTOMATION_BUILD: "complaint-workflow-20261104-v62",
+  AUTOMATION_BUILD: "complaint-workflow-20261109-v63",
   safeAlimTalkVariable_(value, maxLength) {
     return String(value || "").trim().slice(0, maxLength || 100);
   },

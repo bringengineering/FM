@@ -167,6 +167,28 @@ FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래
 3. 권한 승인 창이 뜨면 승인합니다.
 4. 그래도 안 뜨면 함수 선택에서 `authorizeDriveAccess`를 실행해 Drive 권한만 따로 승인합니다.
 
+## 회사 계좌 결제완료 알림 (텔레그램 · 대표자)
+
+건물주가 회사 계좌로 구독료를 보내면 매시간 팝빌 계좌조회로 입금을 가져와 CRM 계약과 맞춥니다.
+**건물주 이름(또는 CRM의 입금자명) · 결제일(5일 전~10일 뒤) · 금액**이 모두 맞으면 회사 텔레그램 업무방과
+대표자 번호로 "결제완료"를 보냅니다. 같은 이름·금액 계약이 여러 건이면 "입금 확인 필요"로 보냅니다.
+
+스크립트 속성(값은 채팅·코드에 적지 않고 직접 입력):
+
+| 속성 | 내용 |
+| --- | --- |
+| `COMPANY_DEPOSIT_ACCOUNT_LAST4` | 팝빌에 등록한 회사 계좌번호 끝 4자리 |
+| `COMPANY_DEPOSIT_TELEGRAM_BOT_TOKEN` | 업무방 텔레그램 봇 키 |
+| `COMPANY_DEPOSIT_TELEGRAM_CHAT_ID` | 업무방 채팅 ID |
+| `COMPANY_DEPOSIT_CEO_PHONE` | 대표자 휴대폰 번호 |
+| `COMPANY_DEPOSIT_CEO_TEMPLATE_CODE` | (선택) 승인된 대표 알림톡 템플릿 코드. 없으면 문자로 보냄 |
+| `COMPANY_DEPOSIT_AUTOMATION_ENABLED` | `true`일 때만 동작 |
+
+순서: 팝빌 운영 전환(`POPBILL_IS_TEST=false`) → 속성 입력 → `testCompanyDepositTelegram`(업무방 시험 1통) →
+`setupCompanyDepositAutomation`(매시간 트리거, 준비 상태 표시) → `COMPANY_DEPOSIT_AUTOMATION_ENABLED=true`.
+처음 실행은 이미 들어와 있던 입금을 알리지 않고 기준선(`COMPANY_DEPOSIT_BASELINE_AT`)만 남깁니다.
+발송 기록은 `crmCompany/companyDepositMatches/{id}`에 남고, 보내기 전에 먼저 기록해 두 번 보내지 않습니다.
+
 ## 네이버클라우드 SENS 문자 테스트
 
 1. 네이버클라우드 콘솔에서 SENS SMS 프로젝트를 만들고 발신번호를 등록/승인합니다.

@@ -37,7 +37,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20261104-v62";
+const AUTOMATION_BUILD = "complaint-workflow-20261109-v63";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
@@ -13116,4 +13116,308 @@ function setupOwnerNoticeAutomation() {
   };
   Logger.log(JSON.stringify(output));
   return output;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 회사 계좌 결제완료 알림
+// 건물주가 회사 계좌로 구독료를 보내면(팝빌 계좌조회) CRM 계약의 건물주 이름·결제일·금액과
+// 맞춰 보고, 맞으면 회사 텔레그램 업무방과 대표자 번호로 "결제완료"를 알린다.
+// 같은 입금은 crmCompany/companyDepositMatches/{id} 기록으로 한 번만 알린다.
+// 처음 켤 때 이미 들어와 있던 입금은 알리지 않고 기준선으로만 남긴다.
+// ─────────────────────────────────────────────────────────────
+const COMPANY_DEPOSIT_ENABLED_PROPERTY = "COMPANY_DEPOSIT_AUTOMATION_ENABLED";
+const COMPANY_DEPOSIT_ACCOUNT_PROPERTY = "COMPANY_DEPOSIT_ACCOUNT_LAST4";
+const COMPANY_DEPOSIT_TELEGRAM_TOKEN_PROPERTY = "COMPANY_DEPOSIT_TELEGRAM_BOT_TOKEN";
+const COMPANY_DEPOSIT_TELEGRAM_CHAT_PROPERTY = "COMPANY_DEPOSIT_TELEGRAM_CHAT_ID";
+const COMPANY_DEPOSIT_CEO_PHONE_PROPERTY = "COMPANY_DEPOSIT_CEO_PHONE";
+const COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY = "COMPANY_DEPOSIT_CEO_TEMPLATE_CODE";
+const COMPANY_DEPOSIT_BASELINE_PROPERTY = "COMPANY_DEPOSIT_BASELINE_AT";
+const COMPANY_DEPOSIT_RECORD_PATH = "companyDepositMatches";
+const COMPANY_DEPOSIT_LOOKBACK_DAYS = 14;
+const COMPANY_DEPOSIT_EARLY_DAYS = 5;   // 결제일 5일 전 입금까지
+const COMPANY_DEPOSIT_LATE_DAYS = 10;   // 결제일 10일 뒤 입금까지
+
+function companyDepositAutomationEnabled_() {
+  return String(PropertiesService.getScriptProperties().getProperty(COMPANY_DEPOSIT_ENABLED_PROPERTY) || "false").toLowerCase() === "true";
+}
+
+function companyDepositAmount_(value) {
+  const amount = Number(String(value == null ? "" : value).replace(/,/g, ""));
+  return isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+// 통장 입금자명과 CRM 이름이 같은지 본다. 은행이 이름을 자르거나 앞뒤에 글자를 붙이는 경우가 있어
+// 한쪽이 다른 쪽을 포함하면 같은 이름으로 본다(두 글자 이상일 때만).
+function companyDepositNameMatches_(payerNames, candidateNames) {
+  const payers = (payerNames || []).map(popbillBankNormalizePayer_).filter(function (key) { return key.length >= 2; });
+  const candidates = (candidateNames || []).map(popbillBankNormalizePayer_).filter(function (key) { return key.length >= 2; });
+  return payers.some(function (payer) {
+    return candidates.some(function (name) { return payer === name || payer.indexOf(name) !== -1 || name.indexOf(payer) !== -1; });
+  });
+}
+
+function companyDepositOwnerNames_(contract, owner) {
+  const source = [contract && contract.depositorName, owner && owner.depositorName, owner && owner.name, owner && owner.company, owner && owner.companyName];
+  const seen = {};
+  return source.map(function (value) { return ownerNoticeLine_(value); }).filter(function (value) {
+    if (!value || seen[value]) return false;
+    seen[value] = true;
+    return true;
+  });
+}
+
+function companyDepositRecordId_(accountRef, transactionId) {
+  return ("dep_" + String(accountRef || "") + "_" + String(transactionId || ""))
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 200);
+}
+
+// 순수 함수: 입금 목록과 CRM 계약을 맞춰 알릴 목록을 만든다. 발송·중복 확인은 하지 않는다.
+// input = { transactions, contracts, customers, buildings, accountRef }
+function companyDepositPlan_(input) {
+  const data = input || {};
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const store = { customersById: customersById };
+  const contracts = ownerNoticeRows_(data.contracts).filter(function (contract) {
+    return /^[A-Za-z0-9_-]{1,120}$/.test(String(contract.id || "")) && ownerNoticeLive_(contract)
+      && companyDepositAmount_(contract.amount) > 0;
+  });
+  const plan = { notices: [], unmatched: 0 };
+  const claimed = {};
+
+  (Array.isArray(data.transactions) ? data.transactions : []).forEach(function (transaction) {
+    const amount = companyDepositAmount_(transaction && transaction.accIn);
+    const date = popbillBankIsoDate_(transaction && transaction.trdate);
+    const tid = String(transaction && transaction.tid || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 120);
+    if (!amount || !ownerNoticeIsDate_(date) || !tid) return;
+    const payerNames = popbillBankRemarkCandidates_(transaction);
+    const months = [ownerNoticeAddDays_(date, -COMPANY_DEPOSIT_LATE_DAYS), date, ownerNoticeAddDays_(date, COMPANY_DEPOSIT_EARLY_DAYS)]
+      .map(function (value) { return value.slice(0, 7); })
+      .filter(function (month, index, list) { return list.indexOf(month) === index; });
+    const earliestDue = ownerNoticeAddDays_(date, -COMPANY_DEPOSIT_LATE_DAYS);
+    const latestDue = ownerNoticeAddDays_(date, COMPANY_DEPOSIT_EARLY_DAYS);
+    const matches = [];
+    contracts.forEach(function (contract) {
+      if (companyDepositAmount_(contract.amount) !== amount) return;
+      const building = buildingsById[contract.buildingId] || null;
+      const owner = ownerNoticeOwner_(store, building, contract) || customersById[contract.customerId] || null;
+      if (!companyDepositNameMatches_(payerNames, companyDepositOwnerNames_(contract, owner))) return;
+      months.forEach(function (month) {
+        const dueDate = ownerNoticePaymentDate_(contract, month);
+        if (!dueDate || dueDate < earliestDue || dueDate > latestDue) return;
+        if (matches.some(function (row) { return row.contract.id === contract.id && row.dueDate === dueDate; })) return;
+        matches.push({ contract: contract, dueDate: dueDate, building: building, owner: owner });
+      });
+    });
+    if (!matches.length) { plan.unmatched += 1; return; }
+    const base = {
+      id: companyDepositRecordId_(data.accountRef, tid),
+      transactionId: tid,
+      date: date,
+      amount: amount,
+      payerName: String(payerNames[0] || "").slice(0, 60)
+    };
+    const single = matches.length === 1 ? matches[0] : null;
+    const claimKey = single ? single.contract.id + "|" + single.dueDate : "";
+    if (single && !claimed[claimKey]) {
+      claimed[claimKey] = true;
+      plan.notices.push(Object.assign(base, {
+        kind: "paid",
+        contractId: String(single.contract.id),
+        contractName: ownerNoticeLine_(single.contract.name).slice(0, 60),
+        buildingId: String(single.contract.buildingId || ""),
+        buildingName: ownerNoticeLine_(single.building && single.building.name).slice(0, 60),
+        ownerName: ownerNoticeLine_(single.owner && single.owner.name).slice(0, 40),
+        dueDate: single.dueDate,
+        alreadyMarkedPaid: ownerNoticeCollectionStatus_(single.contract, single.dueDate) === "입금 완료"
+      }));
+      return;
+    }
+    // 같은 이름·금액 계약이 여러 건이거나, 같은 달 납부분이 두 번 들어왔으면 사람이 확인하게 한다.
+    plan.notices.push(Object.assign(base, {
+      kind: "review",
+      reason: single ? "DUPLICATE_PAYMENT" : "MULTIPLE_CONTRACTS",
+      candidates: matches.slice(0, 5).map(function (row) {
+        return {
+          contractId: String(row.contract.id),
+          buildingName: ownerNoticeLine_(row.building && row.building.name).slice(0, 60),
+          ownerName: ownerNoticeLine_(row.owner && row.owner.name).slice(0, 40),
+          dueDate: row.dueDate
+        };
+      })
+    }));
+  });
+  return plan;
+}
+
+function companyDepositHtml_(value) {
+  return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function companyDepositTelegramText_(notice) {
+  const money = ownerNoticeMoney_(notice.amount) + "원";
+  if (notice.kind === "paid") {
+    return [
+      "<b>💰 결제완료</b>",
+      "",
+      "🏢 <b>" + companyDepositHtml_(notice.buildingName || "현장 미지정") + "</b>",
+      "건물주 " + companyDepositHtml_(notice.ownerName || "-") + (notice.contractName ? " · " + companyDepositHtml_(notice.contractName) : ""),
+      "입금액 <b>" + money + "</b> · " + ownerNoticeDateLabel_(notice.date) + " 입금",
+      "결제일 " + ownerNoticeDateLabel_(notice.dueDate) + " · 입금자명 " + companyDepositHtml_(notice.payerName || "-"),
+      notice.alreadyMarkedPaid ? "CRM에는 이미 입금 완료로 표시되어 있습니다." : "CRM 계약에서 입금 완료로 표시해 주세요."
+    ].join("\n");
+  }
+  const lines = (notice.candidates || []).map(function (row) {
+    return "· " + companyDepositHtml_(row.buildingName || "현장 미지정") + " / " + companyDepositHtml_(row.ownerName || "-") + " / 결제일 " + ownerNoticeDateLabel_(row.dueDate);
+  });
+  return [
+    "<b>⚠️ 입금 확인 필요</b>",
+    "",
+    "입금액 <b>" + money + "</b> · " + ownerNoticeDateLabel_(notice.date) + " · 입금자명 " + companyDepositHtml_(notice.payerName || "-"),
+    notice.reason === "DUPLICATE_PAYMENT" ? "같은 결제일 납부분이 한 번 더 들어왔습니다." : "이름·금액이 같은 계약이 여러 건이라 어느 건인지 확인이 필요합니다.",
+    lines.join("\n")
+  ].join("\n");
+}
+
+function companyDepositCeoText_(notice) {
+  const money = ownerNoticeMoney_(notice.amount) + "원";
+  if (notice.kind === "paid") {
+    return "[브링케어] 결제완료\n" + (notice.buildingName || "현장 미지정") + " · 건물주 " + (notice.ownerName || "-") +
+      "\n" + money + " 입금 (" + ownerNoticeDateLabel_(notice.date) + ")";
+  }
+  return "[브링케어] 입금 확인 필요\n" + money + " 입금 (" + ownerNoticeDateLabel_(notice.date) + ", 입금자 " + (notice.payerName || "-") + ")\n텔레그램 업무방을 확인해 주세요.";
+}
+
+function companyDepositTelegramConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const token = String(props.getProperty(COMPANY_DEPOSIT_TELEGRAM_TOKEN_PROPERTY) || "").trim();
+  const chatId = String(props.getProperty(COMPANY_DEPOSIT_TELEGRAM_CHAT_PROPERTY) || "").trim();
+  const ok = /^\d{5,15}:[A-Za-z0-9_-]{20,80}$/.test(token) && /^-?\d{3,20}$|^@[A-Za-z0-9_]{4,64}$/.test(chatId);
+  return { ok: ok, token: token, chatId: chatId };
+}
+
+function sendCompanyDepositTelegram_(text) {
+  const config = companyDepositTelegramConfig_();
+  if (!config.ok) return { ok: false, message: "TELEGRAM_NOT_CONFIGURED" };
+  const response = UrlFetchApp.fetch("https://api.telegram.org/bot" + config.token + "/sendMessage", {
+    method: "post",
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify({ chat_id: config.chatId, text: String(text || "").slice(0, 3800), parse_mode: "HTML", disable_web_page_preview: true }),
+    muteHttpExceptions: true,
+    followRedirects: false
+  });
+  const code = response.getResponseCode();
+  let body = {};
+  try { body = JSON.parse(response.getContentText() || "{}"); } catch (error) { body = {}; }
+  // 오류 문구에 봇 키가 섞이지 않도록 상태 코드와 텔레그램 설명만 남긴다.
+  if (code === 200 && body.ok === true) return { ok: true, messageId: String(body.result && body.result.message_id || "") };
+  return { ok: false, message: "TELEGRAM_HTTP_" + code + (body.description ? " " + String(body.description).slice(0, 120) : "") };
+}
+
+function sendCompanyDepositCeo_(notice) {
+  const props = PropertiesService.getScriptProperties();
+  const phone = normalizePhoneForSms_(props.getProperty(COMPANY_DEPOSIT_CEO_PHONE_PROPERTY) || "");
+  if (!isSendableSmsPhone_(phone)) return { ok: false, message: "CEO_PHONE_NOT_CONFIGURED" };
+  const templateCode = String(props.getProperty(COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY) || "").trim();
+  // 카카오 알림톡 문구가 승인되기 전에는 문자로 보낸다.
+  return sendKakaoAlimTalkOrSms_(phone, companyDepositCeoText_(notice), "대표 결제완료 알림",
+    templateCode ? { templateCode: templateCode, allowSmsFallback: true } : {});
+}
+
+function companyDepositAccount_() {
+  const last4 = String(PropertiesService.getScriptProperties().getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "");
+  if (!/^\d{4}$/.test(last4)) throw new Error(COMPANY_DEPOSIT_ACCOUNT_PROPERTY + " 스크립트 속성에 회사 계좌번호 끝 4자리를 넣어 주세요.");
+  const accounts = (popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount") || []).filter(function (account) {
+    return Number(account && account.state) === 1 && String(account.accountNumber || "").replace(/\D/g, "").slice(-4) === last4;
+  });
+  if (accounts.length !== 1) throw new Error("팝빌에서 끝자리 " + last4 + " 회사 계좌를 하나로 찾지 못했습니다(" + accounts.length + "개).");
+  return accounts[0];
+}
+
+// 시간 트리거(매시간)가 부르는 함수.
+function processCompanyDepositAutomation() {
+  if (!companyDepositAutomationEnabled_()) return { ok: true, skipped: "COMPANY_DEPOSIT_AUTOMATION_DISABLED" };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: true, skipped: "LOCKED" };
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const account = companyDepositAccount_();
+    const accountRef = popbillBankAccountRef_(account);
+    const endDate = popbillBankCompactDate_(new Date());
+    const collected = popbillBankCollectAccount_(account, popbillBankAddDays_(endDate, -COMPANY_DEPOSIT_LOOKBACK_DAYS), endDate);
+    if (collected.pending) return { ok: true, skipped: "POPBILL_PENDING" };
+    const plan = companyDepositPlan_({
+      transactions: collected.list,
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      accountRef: accountRef
+    });
+    const baseline = !props.getProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY);
+    const summary = { ok: true, deposits: collected.list.length, planned: plan.notices.length, unmatched: plan.unmatched,
+      sent: 0, failed: 0, duplicate: 0, baseline: 0 };
+    plan.notices.forEach(function (notice) {
+      const recordPath = COMPANY_DEPOSIT_RECORD_PATH + "/" + notice.id;
+      if (firebaseCompanyServerReadJson_(recordPath, "결제완료 알림 기록 조회 실패")) { summary.duplicate += 1; return; }
+      const stamp = new Date().toISOString();
+      const record = {
+        kind: notice.kind, transactionDate: notice.date, amount: notice.amount, payerName: notice.payerName,
+        contractId: notice.contractId || "", buildingId: notice.buildingId || "", dueDate: notice.dueDate || "",
+        reason: notice.reason || "", createdAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
+      };
+      const recordUrl = firebaseCompanyServerUrl_(recordPath);
+      if (baseline) {
+        firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "baseline_skipped" }), "결제완료 기준선 저장 실패");
+        summary.baseline += 1;
+        return;
+      }
+      // 보내기 전에 기록부터 남겨, 실행이 겹치거나 중간에 멈춰도 두 번 보내지 않는다.
+      firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "sending" }), "결제완료 알림 기록 저장 실패");
+      let telegram, ceo;
+      try { telegram = sendCompanyDepositTelegram_(companyDepositTelegramText_(notice)); } catch (error) { telegram = { ok: false, message: "TELEGRAM_ERROR" }; }
+      try { ceo = sendCompanyDepositCeo_(notice); } catch (error) { ceo = { ok: false, message: "CEO_SEND_ERROR" }; }
+      firebaseWriteRequest_(recordUrl, "patch", {
+        status: telegram.ok || ceo.ok ? "sent" : "failed",
+        telegramStatus: telegram.ok ? "sent" : String(telegram.message || "failed").slice(0, 160),
+        ceoStatus: ceo.ok ? String(ceo.provider || "sent") : String(ceo.message || "failed").slice(0, 160),
+        updatedAt: new Date().toISOString()
+      }, "결제완료 알림 결과 저장 실패");
+      if (telegram.ok || ceo.ok) summary.sent += 1; else summary.failed += 1;
+    });
+    if (baseline) props.setProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY, new Date().toISOString());
+    Logger.log(JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 한 번 실행: 매시간 트리거를 만들고, 설정이 다 됐는지(값은 숨기고) 보여 준다.
+function setupCompanyDepositAutomation() {
+  const handler = "processCompanyDepositAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyHours(1).create();
+  const props = PropertiesService.getScriptProperties();
+  const output = {
+    ok: true, handler: handler, created: !exists, cadence: "every hour",
+    enabled: companyDepositAutomationEnabled_(),
+    popbillProduction: !popbillConfig_().isTest,
+    accountLast4Set: /^\d{4}$/.test(String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "")),
+    telegramReady: companyDepositTelegramConfig_().ok,
+    ceoPhoneSet: isSendableSmsPhone_(normalizePhoneForSms_(props.getProperty(COMPANY_DEPOSIT_CEO_PHONE_PROPERTY) || "")),
+    ceoAlimTalkTemplateSet: Boolean(String(props.getProperty(COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY) || "").trim()),
+    baselineAt: String(props.getProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY) || "")
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+// 텔레그램 업무방으로 시험 메시지 한 통만 보낸다(입금·CRM은 보지 않는다).
+function testCompanyDepositTelegram() {
+  const result = sendCompanyDepositTelegram_("<b>🔔 결제완료 알림 연결 시험</b>\n브링케어 회사 계좌 결제완료 알림이 이 방으로 옵니다.");
+  Logger.log(JSON.stringify(result));
+  return result;
 }
