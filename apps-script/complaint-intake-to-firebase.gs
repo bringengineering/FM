@@ -13421,3 +13421,66 @@ function testCompanyDepositTelegram() {
   Logger.log(JSON.stringify(result));
   return result;
 }
+
+// 순수 함수: CRM 계약 중 결제완료 알림에 필요한 정보(건물주 이름·결제일·금액)가 빠진 것을 찾는다.
+function companyDepositCrmReadiness_(input) {
+  const data = input || {};
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const store = { customersById: customersById };
+  const report = { contracts: 0, ready: 0, missingOwner: [], missingDueDate: [], missingAmount: [], sharedNameAmount: [] };
+  const keys = {};
+  ownerNoticeRows_(data.contracts).forEach(function (contract) {
+    if (!ownerNoticeLive_(contract) || ["진행 중", "종료 예정"].indexOf(contract.status) === -1) return;
+    report.contracts += 1;
+    const building = buildingsById[contract.buildingId] || null;
+    const owner = ownerNoticeOwner_(store, building, contract) || customersById[contract.customerId] || null;
+    const names = companyDepositOwnerNames_(contract, owner);
+    const label = (ownerNoticeLine_(building && building.name) || "현장 미지정") + " / " + (ownerNoticeLine_(contract.name) || "계약");
+    const problems = [];
+    if (!names.length) { report.missingOwner.push(label); problems.push(1); }
+    if (!ownerNoticeIsDate_(contract.paymentDueDate)) { report.missingDueDate.push(label); problems.push(1); }
+    const amount = companyDepositAmount_(contract.amount);
+    if (!amount) { report.missingAmount.push(label); problems.push(1); }
+    if (problems.length) return;
+    report.ready += 1;
+    const key = popbillBankNormalizePayer_(names[0]) + "|" + amount;
+    (keys[key] = keys[key] || []).push(label);
+  });
+  Object.keys(keys).forEach(function (key) { if (keys[key].length > 1) report.sharedNameAmount.push(keys[key]); });
+  return report;
+}
+
+// 점검 1 (팝빌 없이 지금 실행 가능): CRM 계약 정보가 알림에 쓸 만큼 채워져 있는지 본다. 아무것도 보내지 않는다.
+function checkCompanyDepositCrmReadiness() {
+  const report = companyDepositCrmReadiness_({
+    contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+    customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+    buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패")
+  });
+  Logger.log(JSON.stringify(report));
+  return report;
+}
+
+// 점검 2 (팝빌 운영 전환 후): 실제 입금과 CRM을 맞춰 본 결과만 보여 준다. 텔레그램·문자·기록 모두 하지 않는다.
+function previewCompanyDepositMatches() {
+  const account = companyDepositAccount_();
+  const endDate = popbillBankCompactDate_(new Date());
+  const collected = popbillBankCollectAccount_(account, popbillBankAddDays_(endDate, -30), endDate);
+  if (collected.pending) { Logger.log("팝빌 수집 대기 중입니다. 1~2분 뒤 다시 실행해 주세요."); return { ok: true, pending: true }; }
+  const plan = companyDepositPlan_({
+    transactions: collected.list,
+    contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+    customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+    buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+    accountRef: popbillBankAccountRef_(account)
+  });
+  const output = {
+    ok: true, deposits: collected.list.length, unmatched: plan.unmatched,
+    results: plan.notices.map(function (notice) { return companyDepositTelegramText_(notice).replace(/<[^>]+>/g, ""); })
+  };
+  Logger.log(JSON.stringify(output, null, 2));
+  return output;
+}

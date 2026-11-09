@@ -266,3 +266,20 @@ const baseCrm = () => ({
 }
 
 console.log("company-deposit-notification tests passed");
+
+// 6) CRM 점검: 이름·결제일·금액이 빠진 계약과, 이름·금액이 겹쳐 헷갈릴 계약을 알려 준다.
+{
+  vm.runInContext(extractFunction("companyDepositCrmReadiness_"), context);
+  const data = baseCrm();
+  data.contracts.k6 = { name: "결제일 없음", buildingId: "b1", customerId: "c1", amount: 100000, billingCycle: "월 정기", status: "진행 중" };
+  data.contracts.k7 = { name: "금액 없음", buildingId: "b2", customerId: "c2", billingCycle: "월 정기", paymentDueDate: "2026-10-01", status: "진행 중" };
+  data.contracts.k8 = { name: "건물주 없음", buildingId: "bx", customerId: "cx", amount: 1000, billingCycle: "월 정기", paymentDueDate: "2026-10-01", status: "진행 중" };
+  const report = context.companyDepositCrmReadiness_(data);
+  assert.equal(report.contracts, 7, "취소된 계약은 세지 않는다");
+  assert.equal(report.ready, 4);
+  assert.deepEqual(report.missingDueDate, ["한빛빌딩 / 결제일 없음"]);
+  assert.deepEqual(report.missingAmount, ["푸른빌라 / 금액 없음"]);
+  assert.deepEqual(report.missingOwner, ["현장 미지정 / 건물주 없음"]);
+  assert.deepEqual(report.sharedNameAmount, [["새솔타워 / 구독 A", "새솔2관 / 구독 B"]]);
+}
+console.log("company-deposit readiness tests passed");
