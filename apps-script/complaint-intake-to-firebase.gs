@@ -37,7 +37,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20261104-v60";
+const AUTOMATION_BUILD = "complaint-workflow-20261104-v62";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
@@ -391,7 +391,10 @@ function ensureKakaoComplaintQueueTrigger_() {
 const KAKAO_REGISTRY_CACHE_KEY = "bringcare:kakao:buildingRegistry:v1";
 const KAKAO_LEDGER_CACHE_KEY = "bringcare:kakao:tenantLedger:v1";
 const KAKAO_QUEUE_MAX_ATTEMPTS = 3;
-const KAKAO_ISSUE_TYPES = ["누수", "배관", "전기", "도어락", "보일러", "에어컨", "기타"];
+const KAKAO_ISSUE_TYPES = ["누수", "배관", "전기", "도어락", "보일러", "에어컨", "전구·조명", "층간소음", "기타"];
+// 업체 연결 없이 브링케어가 직접 안내하는 민원입니다.
+const KAKAO_DIRECT_ISSUE_TYPES = ["전구·조명", "층간소음"];
+const KAKAO_DIRECT_VENDOR_TYPE = "브링케어 직접 처리";
 
 // 대화 순서: 동의 → (지난번 정보 재사용) → 연락처 → 건물 검색/선택 → 호실 확인 → 유형 → 증상 → 사진 → 방문시간 → 최종 확인
 function handleKakaoChatbotSkill_(payload, event) {
@@ -606,10 +609,8 @@ function handleKakaoChatbotSkill_(payload, event) {
 
   if (step === "building" || step === "buildingPick") {
     if (/^목록에없어요$/.test(command)) {
-      kakaoChatbotDeleteSession_(userHash);
-      return kakaoChatbotConsultationResponse_(
-        "브링케어 관리 건물 목록에서 찾지 못했습니다.\n상담원에게 건물 이름과 주소를 알려 주시면 확인해 드립니다."
-      );
+      delete session.candidates;
+      return kakaoChatbotSaveStep_(userHash, session, "manualBuilding", config);
     }
     if (step === "buildingPick") {
       if (/^다시검색$/.test(command)) {
@@ -670,6 +671,24 @@ function handleKakaoChatbotSkill_(payload, event) {
     return kakaoChatbotSaveStep_(userHash, session, "buildingPick", config);
   }
 
+  if (step === "manualBuilding") {
+    const manualBuilding = kakaoChatbotCleanText_(utterance, 120);
+    if (normalizeText_(manualBuilding).length < 2) {
+      return kakaoChatbotPromptResponse_("manualBuilding", config, session);
+    }
+    session.values.building = manualBuilding;
+    delete session.values.contractBuildingId;
+    return kakaoChatbotSaveStep_(userHash, session, "manualAddress", config);
+  }
+
+  if (step === "manualAddress") {
+    const manualAddress = kakaoChatbotCleanText_(utterance, 240);
+    if (!manualAddress) return kakaoChatbotPromptResponse_("manualAddress", config, session);
+    session.values.address = /^주소모름$/.test(command) ? "" : manualAddress;
+    session.values.manualBuilding = true;
+    return kakaoChatbotSaveStep_(userHash, session, "room", config);
+  }
+
   if (step === "roomConfirm") {
     const options = session.roomOptions || [];
     if (/^다른호실입력$/.test(command)) {
@@ -704,7 +723,36 @@ function handleKakaoChatbotSkill_(payload, event) {
     const issueType = kakaoChatbotCleanText_(utterance, 80);
     if (!issueType) return kakaoChatbotPromptResponse_("issueType", config, session);
     session.values.issueType = issueType;
+    const simpleIssue = kakaoChatbotSimpleIssue_(issueType);
+    if (simpleIssue) {
+      session.simpleIssue = simpleIssue;
+      return kakaoChatbotSaveStep_(userHash, session, "simpleGuide", config);
+    }
     return kakaoChatbotSaveStep_(userHash, session, "description", config);
+  }
+
+  if (step === "simpleGuide") {
+    if (session.simpleIssue === "lamp" && /^해결됐어요$/.test(command)) {
+      kakaoChatbotDeleteSession_(userHash);
+      return kakaoChatbotTextResponse_(
+        "해결되어 다행입니다. 다른 문제가 있으면 언제든 접수해 주세요.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    if (session.simpleIssue === "lamp" && /^교체해도안돼요$/.test(command)) {
+      session.values.issueType = "전기";
+      delete session.simpleIssue;
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    if (session.simpleIssue === "lamp" && /^공용부전등$/.test(command)) {
+      session.values.issueType = "전구·조명";
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    if (session.simpleIssue === "noise" && /^브링케어에전달$/.test(command)) {
+      session.values.issueType = "층간소음";
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    return kakaoChatbotPromptResponse_("simpleGuide", config, session);
   }
 
   if (step === "description") {
@@ -718,10 +766,23 @@ function handleKakaoChatbotSkill_(payload, event) {
     session.values.description = description;
     const risk = kakaoChatbotDetectRisk_([session.values.issueType, description].join(" "));
     if (risk) {
+      // 위험 표현이 있으면 직접 처리 민원이 아니라 일반 민원으로 접수합니다.
+      if (session.simpleIssue === "lamp") session.values.issueType = "전기";
+      if (session.simpleIssue === "noise") session.values.issueType = "기타";
+      delete session.simpleIssue;
       session.values.safetyRisk = risk;
       return kakaoChatbotWithSafetyNotice_(kakaoChatbotSaveStep_(userHash, session, "photo", config), risk);
     }
     delete session.values.safetyRisk;
+    if (session.simpleIssue) {
+      delete session.simpleIssue;
+      delete session.values.photoUrls;
+      delete session.values.photoUrl;
+      session.values.photoCount = 0;
+      session.values.photoSkipped = true;
+      session.values.visitTime = "해당 없음";
+      return kakaoChatbotSaveStep_(userHash, session, "confirm", config);
+    }
     return kakaoChatbotSaveStep_(userHash, session, "photo", config);
   }
 
@@ -803,6 +864,7 @@ function handleKakaoChatbotSkill_(payload, event) {
         ["민원이 접수되었습니다.", ""]
           .concat(summaryLines)
           .concat(session.values.safetyRisk ? ["", "긴급 민원으로 표시했습니다. 위험하면 119 신고가 먼저입니다."] : [])
+          .concat(session.values.manualBuilding ? ["", "브링케어가 건물을 확인한 뒤 연락드리겠습니다."] : [])
           .concat(["", "접수번호는 1~2분 안에 발급됩니다. '내 민원 조회'에서 확인해 주세요."])
           .join("\n"),
         kakaoChatbotHomeQuickReplies_()
@@ -868,6 +930,16 @@ function kakaoChatbotSaveStep_(userHash, session, nextStep, config) {
   session.updatedAt = new Date().toISOString();
   kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
   return kakaoChatbotPromptResponse_(nextStep, config, session);
+}
+
+// 업체 연결이 필요 없는 생활 민원을 고릅니다. 기계 소음이나 위험 표현은 일반 민원으로 둡니다.
+function kakaoChatbotSimpleIssue_(text) {
+  const value = String(text || "").replace(/\s+/g, "");
+  if (kakaoChatbotDetectRisk_(value)) return "";
+  if (/에어컨|보일러|실외기|배관|환풍|엘리베이터|승강기/.test(value)) return "";
+  if (/층간소음|(윗집|위층|아랫집|아래층|옆집|이웃).*(소음|시끄|쿵쿵|발소리|뛰)/.test(value)) return "noise";
+  if (/전구|전등|형광등|조명/.test(value)) return "lamp";
+  return "";
 }
 
 // 오늘부터 일주일치 방문 날짜 버튼을 만듭니다. 오후 5시 이후에는 오늘을 뺍니다.
@@ -1058,6 +1130,20 @@ function kakaoChatbotQuickRepliesForStep_(step, config, session) {
   if (step === "building") {
     return [kakaoChatbotMessageReply_("목록에 없어요"), cancel];
   }
+  if (step === "manualAddress") {
+    return [kakaoChatbotMessageReply_("주소 모름"), cancel];
+  }
+  if (step === "simpleGuide") {
+    if (session && session.simpleIssue === "noise") {
+      return [kakaoChatbotMessageReply_("브링케어에 전달"), cancel];
+    }
+    return [
+      kakaoChatbotMessageReply_("해결됐어요"),
+      kakaoChatbotMessageReply_("교체해도 안 돼요"),
+      kakaoChatbotMessageReply_("공용부 전등"),
+      cancel
+    ];
+  }
   if (step === "buildingPick") {
     const candidates = session && session.candidates || [];
     return candidates.map((item, index) => kakaoChatbotMessageReply_((index + 1) + "번"))
@@ -1146,6 +1232,32 @@ function kakaoChatbotPromptText_(step, session) {
   }
   if (step === "building") {
     return "민원을 접수할 건물 이름을 입력해 주세요.\n이름 일부만 입력해도 찾아 드립니다.\n예: 브링타워";
+  }
+  if (step === "manualBuilding") {
+    return "목록에 없는 건물도 접수할 수 있습니다.\n건물 이름을 입력해 주세요.\n브링케어가 건물을 확인한 뒤 연락드립니다.";
+  }
+  if (step === "manualAddress") {
+    return "건물 주소를 입력해 주세요.\n예: 강원 원주시 단계동 123\n모르면 '주소 모름'을 선택해 주세요.";
+  }
+  if (step === "simpleGuide") {
+    if (session && session.simpleIssue === "noise") {
+      return [
+        "층간소음은 업체 수리 대상이 아니라서 브링케어가 직접 확인해 안내드립니다.",
+        "",
+        "소음이 나는 날짜와 시간을 기록해 두시면 도움이 됩니다.",
+        "직접 찾아가 항의하면 다툼으로 번질 수 있으니 피해 주세요.",
+        "공공 상담: 층간소음 이웃사이센터 1661-2642",
+        "",
+        "브링케어에 내용을 남기시겠어요?"
+      ].join("\n");
+    }
+    return [
+      "전구가 나갔다면 같은 규격의 전구로 교체해 보세요.",
+      "교체 전에 스위치를 끄고, 전구가 식은 뒤 바꿔 주세요.",
+      "",
+      "교체해도 안 켜지면 '교체해도 안 돼요'를,",
+      "복도·계단 같은 공용 전등이면 '공용부 전등'을 선택해 주세요."
+    ].join("\n");
   }
   if (step === "buildingPick") {
     const candidates = session && session.candidates || [];
@@ -1633,15 +1745,9 @@ function kakaoChatbotCaseStatusResponse_(userHash) {
 }
 
 // 잠금을 잠깐만 기다리고, 다른 작업이 잠금을 쥐고 있으면 Firebase 접수함에 넣어 대기열이 처리하게 합니다.
+// 시트 저장은 4.6초 이상 걸릴 수 있어 카카오 응답 시간(앞단 Worker 4.8초)을 넘깁니다.
+// 접수는 Firebase 대기함에만 넣고, 시트 저장과 접수번호 발급은 1분 대기열이 처리합니다.
 function submitKakaoComplaintIntake_(values, userHash, submissionId) {
-  const lock = LockService.getScriptLock();
-  if (lock.tryLock(1500)) {
-    try {
-      return appendKakaoComplaintRow_(values, userHash, submissionId, new Date());
-    } finally {
-      lock.releaseLock();
-    }
-  }
   queueKakaoComplaintInbox_(values, userHash, submissionId);
   return { ok: true, queued: true };
 }
@@ -1650,7 +1756,7 @@ function kakaoChatbotInboxValues_(values) {
   const keys = [
     "name", "phone", "contractBuildingId", "building", "address", "room", "issueType",
     "description", "photoUrls", "photoUrl", "photoCount", "photoSkipped", "visitTime",
-    "consentAt", "ledgerMatched", "reusedPrevious", "safetyRisk"
+    "consentAt", "ledgerMatched", "reusedPrevious", "safetyRisk", "manualBuilding"
   ];
   const output = {};
   keys.forEach(key => {
@@ -1762,6 +1868,8 @@ function appendKakaoComplaintRow_(values, userHash, submissionId, receivedAt) {
     "추가 요청사항": [
       "카카오톡 브링케어 채널 접수",
       values.ledgerMatched ? "월세 관리대장으로 호실 확인" : "",
+      values.manualBuilding ? "세입자 직접 입력 건물: 브링케어 확인 필요" : "",
+      KAKAO_DIRECT_ISSUE_TYPES.includes(values.issueType) ? "브링케어 직접 처리(업체 연결 불필요)" : "",
       values.safetyRisk ? "챗봇 안전 안내 발송(" + kakaoChatbotSafetyGuide_(values.safetyRisk).label + ")" : ""
     ].filter(Boolean).join(" / "),
     "방문 가능 시간": kakaoChatbotCleanText_(values.visitTime, 240),
@@ -11534,8 +11642,12 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     logs.push("세입자 연락처 없음");
   }
 
+  // 건물주 접수 안내에는 '업체 견적 진행' 문구가 있어 직접 처리 민원에는 보내지 않습니다.
+  const skipOwnerNotice = !!analysis && analysis.vendorType === KAKAO_DIRECT_VENDOR_TYPE;
   if (ownerSent) {
     logs.push("건물주 " + (previous.ownerPhoneMasked || maskPhone_(ownerPhone)) + " 기존 발송 완료");
+  } else if (skipOwnerNotice) {
+    logs.push("건물주 알림 생략: 브링케어 직접 처리 민원");
   } else if (ownerPhone) {
     const ownerResult = sendKakaoAlimTalkOrSms_(ownerPhone, ownerContent, "건물주", {
       templateCode: kakaoConfig.templates.receiptOwner,
@@ -11548,7 +11660,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     logs.push("건물주 연락처 미확인: 온보딩 수집서 본문에 '건물주 연락처: 010-0000-0000' 형식으로 넣어주세요.");
   }
 
-  const status = tenantSent && ownerSent ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
+  const status = tenantSent && (ownerSent || skipOwnerNotice) ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
   const statusSummary = logs.join(" / ");
   return {
     ok: status === "발송완료",
@@ -12139,7 +12251,12 @@ function analyzeComplaint_(record) {
     reason = "사진 누락, 짧은 설명, 기타/애매한 표현으로 관리자 확인이 필요합니다.";
   }
 
-  const vendorType = classifyVendor_(issueType, haystack);
+  const isDirectIssue = KAKAO_DIRECT_ISSUE_TYPES.includes(issueType) && !hasUrgentKeyword;
+  if (isDirectIssue) {
+    urgency = "보통";
+    reason = "업체 연결 없이 브링케어가 직접 안내하는 민원입니다.";
+  }
+  const vendorType = isDirectIssue ? KAKAO_DIRECT_VENDOR_TYPE : classifyVendor_(issueType, haystack);
   const summary = makeSummary_(record, issueType, description);
   const statusValue = urgency === "긴급" ? "긴급확인필요" : urgency === "확인필요" ? "관리자확인중" : "접수완료";
 
@@ -12260,6 +12377,7 @@ function makeClassificationNote_(ticketNo, record, analysis) {
 }
 
 function classificationSiteVisit_(issueType, vendorType, urgency) {
+  if (vendorType === KAKAO_DIRECT_VENDOR_TYPE) return "불필요";
   const text = [issueType, vendorType].join(" ");
   if (urgency === "긴급") return "필요";
   if (/전기|누수|배관|보일러|에어컨|도어락|출입|창호|문|청소|방역|공용부/.test(text)) return "필요";
@@ -12267,6 +12385,7 @@ function classificationSiteVisit_(issueType, vendorType, urgency) {
 }
 
 function classificationQuoteNeed_(vendorType) {
+  if (vendorType === KAKAO_DIRECT_VENDOR_TYPE) return "불필요";
   return vendorType === "관리자 확인" ? "확인 필요" : "필요";
 }
 

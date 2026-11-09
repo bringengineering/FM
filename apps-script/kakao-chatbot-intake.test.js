@@ -214,6 +214,7 @@ const functions = [
   "kakaoChatbotSaveStep_",
   "kakaoChatbotSelectBuilding_",
   "kakaoChatbotVisitDays_",
+  "kakaoChatbotSimpleIssue_",
   "kakaoChatbotFindVisitDay_",
   "kakaoChatbotSaveVisitTime_",
   "kakaoChatbotConsentAnswer_",
@@ -260,7 +261,9 @@ const constants = [
   "KAKAO_REGISTRY_CACHE_KEY",
   "KAKAO_LEDGER_CACHE_KEY",
   "KAKAO_QUEUE_MAX_ATTEMPTS",
-  "KAKAO_ISSUE_TYPES"
+  "KAKAO_ISSUE_TYPES",
+  "KAKAO_DIRECT_ISSUE_TYPES",
+  "KAKAO_DIRECT_VENDOR_TYPE"
 ];
 
 vm.createContext(context);
@@ -470,14 +473,67 @@ assert.doesNotMatch(textOf(response), /101/);
 response = say("B102");
 assert.match(textOf(response), /문제 유형/);
 
-// 4) 목록에 없는 건물은 상담원 연결로 넘깁니다.
+// 4) 목록에 없는 건물도 이름과 주소를 받아 접수합니다.
 say("민원 접수");
 say("동의");
 say("다른 곳 접수");
 say("010-7777-6666");
 response = say("목록에 없어요");
-assert.match(response.template.outputs[0].basicCard.description, /찾지 못했습니다/);
-assert.equal(response.template.outputs[0].basicCard.buttons[0].action, "operator");
+assert.match(textOf(response), /목록에 없는 건물도 접수할 수 있습니다/);
+response = say("우리집빌라");
+assert.match(textOf(response), /건물 주소를 입력해/);
+assert.deepEqual(labelsOf(response), ["주소 모름", "접수 취소"]);
+response = say("주소 모름");
+assert.match(textOf(response), /호실을 입력해/);
+say("201");
+response = say("층간소음");
+assert.match(textOf(response), /이웃사이센터 1661-2642/);
+assert.deepEqual(labelsOf(response), ["브링케어에 전달", "접수 취소"]);
+response = say("브링케어에 전달");
+assert.match(textOf(response), /증상을 자세히/);
+response = say("밤마다 윗집 소리가 커요");
+assert.match(textOf(response), /아래 내용으로 접수할까요/);
+assert.match(textOf(response), /건물: 우리집빌라/);
+assert.match(textOf(response), /방문 가능 시간: 해당 없음/);
+say("접수 취소");
+
+// 4-2) 전구: 교체 안내 후 해결, 전기 민원 전환, 위험 표현 처리
+const startToIssue = () => {
+  say("민원 접수");
+  say("동의");
+  say("다른 곳 접수");
+  say("010-7777-6666");
+  say("목록에 없어요");
+  say("우리집빌라");
+  say("주소 모름");
+  say("201");
+};
+startToIssue();
+response = say("전구·조명");
+assert.match(textOf(response), /같은 규격의 전구/);
+assert.deepEqual(labelsOf(response), ["해결됐어요", "교체해도 안 돼요", "공용부 전등", "접수 취소"]);
+response = say("해결됐어요");
+assert.match(textOf(response), /해결되어 다행/);
+startToIssue();
+say("전구·조명");
+say("교체해도 안 돼요");
+response = say("천장 등이 계속 안 켜져요");
+assert.match(textOf(response), /현장 사진을 등록/, "일반 전기 민원은 사진 단계로 갑니다");
+say("접수 취소");
+startToIssue();
+say("전구·조명");
+say("공용부 전등");
+response = say("복도 전등에서 스파크가 튀어요");
+assert.equal(response.template.outputs.length, 2, "위험 표현이면 안전 안내를 함께 보냅니다");
+assert.match(response.template.outputs[0].basicCard.title, /안전/);
+assert.match(textOf({ template: { outputs: [response.template.outputs[1]] } }), /현장 사진을 등록/);
+say("접수 취소");
+assert.equal(context.kakaoChatbotSimpleIssue_("층간소음"), "noise");
+assert.equal(context.kakaoChatbotSimpleIssue_("윗집 발소리가 너무 커요"), "noise");
+assert.equal(context.kakaoChatbotSimpleIssue_("거실 형광등이 나갔어요"), "lamp");
+assert.equal(context.kakaoChatbotSimpleIssue_("에어컨 소음과 조명"), "");
+assert.equal(context.kakaoChatbotSimpleIssue_("전등에서 스파크가 나요"), "");
+assert.equal(context.kakaoChatbotSimpleIssue_("보일러"), "");
 
 // 5) 동의 거부와 취소
 say("민원 접수");
@@ -1012,6 +1068,7 @@ const smsContext = {
   }
 };
 vm.createContext(smsContext);
+vm.runInContext(extractConst("KAKAO_DIRECT_VENDOR_TYPE"), smsContext, { filename: sourcePath });
 vm.runInContext(
   [
     "normalizePhoneForSms_",
@@ -1049,7 +1106,7 @@ assert.deepEqual(
 );
 
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20261104-v60"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20261104-v62"/);
 assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "automationState\/receiptSms", casePayload\.automationState\.receiptSms\)/);
@@ -1073,6 +1130,7 @@ assert.match(queueSource, /photoErr/, "사진 저장 실패가 민원 처리를 
 assert.match(extractFunction("processResponseRow_"), /matchOnboardingFileById_\(selectedBuildingId, record\)/);
 assert.match(extractFunction("processResponseRow_"), /allocateTicketNo_\(sheet, headers, row, record, false\)/);
 assert.match(extractFunction("submitKakaoComplaintIntake_"), /queueKakaoComplaintInbox_/);
+assert.ok(!/appendKakaoComplaintRow_/.test(extractFunction("submitKakaoComplaintIntake_")), "시트 저장은 카카오 응답 안에서 하지 않습니다");
 assert.match(source, /KAKAO_CHATBOT_PHOTO_BLOCK_ID/);
 const urgentList = source.match(/const urgentKeywords = \[[\s\S]*?\];/)[0];
 for (const label of ["가스", "화재", "감전", "침수", "갇힘"]) {
@@ -1107,3 +1165,42 @@ console.log("PASS Kakao chatbot intake session, validation, case link and queue 
   assert.equal(card.buttons[0].phoneNumber, "119");
 }
 assert.ok(!/action: "phoneNumber"/.test(source), "phoneNumber는 action 값이 아닙니다");
+
+// 직접 처리 민원: 업체 분류와 건물주 알림에서 빠지고, 위험 표현이 있으면 일반 민원으로 남습니다.
+{
+  const analysisContext = {
+    readField_: (record, keys) => keys.map(key => record[key]).find(Boolean) || "",
+    makeSummary_: () => "요약"
+  };
+  vm.createContext(analysisContext);
+  vm.runInContext(
+    ["KAKAO_DIRECT_ISSUE_TYPES", "KAKAO_DIRECT_VENDOR_TYPE"].map(extractConst)
+      .concat(["analyzeComplaint_", "classifyVendor_", "classificationSiteVisit_", "classificationQuoteNeed_"].map(extractFunction))
+      .join("\n\n"),
+    analysisContext,
+    { filename: sourcePath }
+  );
+  const noise = analysisContext.analyzeComplaint_({ "문제 유형": "층간소음", "증상 설명": "밤마다 윗집 소음이 심합니다" });
+  assert.equal(noise.vendorType, "브링케어 직접 처리");
+  assert.equal(noise.urgency, "보통");
+  assert.equal(analysisContext.classificationQuoteNeed_(noise.vendorType), "불필요");
+  assert.equal(analysisContext.classificationSiteVisit_("층간소음", noise.vendorType, noise.urgency), "불필요");
+  const lamp = analysisContext.analyzeComplaint_({ "문제 유형": "전구·조명", "증상 설명": "복도 전등이 나갔습니다" });
+  assert.equal(lamp.vendorType, "브링케어 직접 처리");
+  const risky = analysisContext.analyzeComplaint_({ "문제 유형": "전구·조명", "증상 설명": "복도 전등에서 스파크가 납니다" });
+  assert.notEqual(risky.vendorType, "브링케어 직접 처리");
+  assert.equal(risky.urgency, "긴급");
+  const leak = analysisContext.analyzeComplaint_({ "문제 유형": "누수", "증상 설명": "천장에서 물이 떨어집니다", "사진 첨부": "x" });
+  assert.equal(leak.vendorType, "누수·방수");
+
+  const directSms = smsContext.sendComplaintSms_(
+    "BR-2026-0010",
+    { "연락처": "01020773076" },
+    { vendorType: "브링케어 직접 처리" },
+    {},
+    { force: true }
+  );
+  assert.equal(directSms.status, "발송완료", "세입자에게 보내면 직접 처리 민원은 완료입니다");
+  assert.equal(directSms.ownerSent, false, "건물주 업체 견적 안내를 보내지 않습니다");
+  assert.match(directSms.statusSummary, /건물주 알림 생략/);
+}
