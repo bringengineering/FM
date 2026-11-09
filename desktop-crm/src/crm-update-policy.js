@@ -540,7 +540,9 @@ async function checkCrmUpdates({ updater, fetchImpl = globalThis.fetch, timeoutM
       if (!error || error.code !== "CRM_UPDATE_POINTER_UNAVAILABLE") throw error;
       selected = await resolveCrmReleaseApi({ fetchImpl, timeoutMs });
     }
-    updater.setFeedURL({ provider: "generic", url: selected.feedUrl });
+    // GitHub release storage rejects multi-range requests (HTTP 501), which made every
+    // differential update silently fall back to downloading the full installer.
+    updater.setFeedURL({ provider: "generic", url: selected.feedUrl, useMultipleRangeRequest: false });
     await updater.checkForUpdates();
     return selected;
   } catch (error) {

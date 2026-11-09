@@ -237,7 +237,7 @@ test("uses the rate-limit-independent pointer and verifies its exact manifest be
     { url: manifestUrl, accept: "application/octet-stream" },
   ]);
   assert.deepEqual(recorded.calls, [
-    ["feed", { provider: "generic", url: "https://github.com/bringengineering/FM/releases/download/crm-v1.8.7/" }],
+    ["feed", { provider: "generic", url: "https://github.com/bringengineering/FM/releases/download/crm-v1.8.7/", useMultipleRangeRequest: false }],
     ["check"],
   ]);
 });
@@ -294,7 +294,7 @@ test("reads every release page, validates the API-bound manifest, then configure
     { url: latest.release.assets[2].url, accept: "application/octet-stream" },
   ]);
   assert.deepEqual(recorded.calls, [
-    ["feed", { provider: "generic", url: "https://github.com/bringengineering/FM/releases/download/crm-v1.8.1/" }],
+    ["feed", { provider: "generic", url: "https://github.com/bringengineering/FM/releases/download/crm-v1.8.1/", useMultipleRangeRequest: false }],
     ["check"],
   ]);
 });
