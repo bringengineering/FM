@@ -190,3 +190,17 @@ test('background sync does not re-mount the contract map and the map reuses one 
   assert.equal((app.match(/if \(!selfRefreshingView\(\)\) render\(\);/g) || []).length, 3);
   assert.match(main, /contractMapStoreCache\.uid !== uid \|\| now - contractMapStoreCache\.at > 60000/);
 });
+
+test('map card shows the selected building with detail, focus and copy actions; none when nothing matches', () => {
+  const store = fixture(); store.buildings[0].name = '<b>시연</b>'; const projection = Core.project(store, '2026-10-15');
+  const base = { filter:'all', query:'', points:new Map([['building',{lon:127.94,lat:37.34}]]), failed:new Map(), config:{ enabled:true } };
+  const html = UI.shell(projection, base, false);
+  const card = html.slice(html.indexOf('data-cbm-card'), html.indexOf('</article>', html.indexOf('data-cbm-card')));
+  assert.match(card, /&lt;b&gt;시연&lt;\/b&gt;/); assert.doesNotMatch(card, /<b>시연/);
+  assert.match(card, /data-cbm-customer="customer"/); assert.match(card, /data-cbm-focus/); assert.match(card, /data-cbm-copy/);
+  assert.match(html, /class="cbm-legend"/); assert.match(html, /끌어서 이동/);
+  const unlocated = UI.shell(projection, { ...base, points:new Map(), failed:new Map([['building','not-found']]) }, false);
+  assert.doesNotMatch(unlocated, /data-cbm-focus/); assert.match(unlocated, /cbm-card-note">주소 조회 실패/);
+  assert.doesNotMatch(UI.shell(projection, { ...base, query:'없는 건물' }, false), /data-cbm-card/);
+  assert.doesNotMatch(UI.shell(projection, { ...base, config:{ enabled:false } }, false), /data-cbm-card/);
+});
