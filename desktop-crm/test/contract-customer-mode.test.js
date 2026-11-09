@@ -114,3 +114,27 @@ test("고객 카드에는 변경된 실제 일정과 입금 등록 상태를 각
   assert.doesNotMatch(ctx.main.innerHTML,/업무일정 · 2026-10 · 2026-10-06/);
   assert.match(ctx.main.innerHTML,/입금일정 · 2026-10-15 입금 예정/);
 });
+test("계약 고객 관리 화면에서 바로 계약을 등록하고 고객 카드에서 그 고객으로 계약을 추가할 수 있다", () => {
+  const ctx = setup();
+  ctx.renderRelationships();
+  const html = ctx.main.innerHTML;
+  assert.match(html, /relationship-hero-actions[\s\S]*data-action="new-contract"[^>]*>＋ 계약 등록</);
+  assert.match(html, /data-contract-new-for-customer="mixed"[^>]*>＋ 이 고객 계약 추가</);
+  assert.match(html, /data-contract-new-for-customer="empty"/, "계약이 아직 없는 계약 확정 고객에게도 추가 버튼을 보여 준다");
+  const viewer = setup(false);
+  viewer.renderRelationships();
+  assert.doesNotMatch(viewer.main.innerHTML, /data-action="new-contract"|data-contract-new-for-customer=/);
+});
+test("고객 카드의 계약 추가 버튼은 그 고객을 미리 고른 새 계약 창을 연다", () => {
+  const handler = between("    const contractNewForCustomer =", "    const contractEdit =");
+  const calls = [];
+  const ctx = vm.createContext({ contractEditor: (...args) => calls.push(args) });
+  vm.runInContext(`function click(target) { const event = { target }; (() => { ${handler} })(); }`, ctx);
+  ctx.click({ closest: selector => selector === "[data-contract-new-for-customer]" ? { dataset: { contractNewForCustomer: "cus_1" } } : null });
+  assert.deepEqual(calls, [["", false, "", "cus_1"]]);
+  const editor = between("  function contractEditor(", "    const requestedPaymentDate");
+  assert.match(editor, /presetCustomerId = ""/);
+  assert.match(editor, /!editing && presetCustomerId \? customerById\(presetCustomerId\) : null/, "기존 계약 수정에는 미리 고른 고객을 덮어쓰지 않는다");
+  assert.match(editor, /customerId: presetCustomer \? presetCustomer\.id : ""/, "없는 고객 ID는 무시한다");
+  assert.match(editor, /currentView === "relationships" \? oneOff \|\| contractCustomerModeFilter === "single"/, "단건 탭에서 열면 단건 계약으로 시작한다");
+});
