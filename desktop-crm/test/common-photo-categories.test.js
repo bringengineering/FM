@@ -38,11 +38,12 @@ test("new common categories survive gateway transport, draft, saved report and b
   }
 });
 
-test("optional categories stay out of empty reports, and old windows records keep their saved labels and photos", () => {
+test("optional categories stay out of empty reports, and old windows records keep their photos under the template label", () => {
   assert.equal(R.itemsFor("common").some(item => ["elevator", "parking"].includes(item.key)), false);
   const saved = R.normalizeReport({ kind: "common", items: [{ key: "windows", label: "공용 창호", detail: "기존 범위", during: [{ id: "old" }] }] });
   const window = saved.items.find(item => item.key === "windows");
-  assert.equal(window.label, "공용 창호"); assert.equal(window.detail, "기존 범위"); assert.equal(window.during[0].id, "old");
+  // 공용부는 양식의 고정 구역표에 실리므로 저장된 옛 이름 대신 지금 구역 이름을 쓴다. 사진은 그대로다.
+  assert.equal(window.label, "창틀"); assert.equal(window.during[0].id, "old");
   const selected = R.normalizeReport({ kind: "common", items: keys.map(key => ({ key, during: [{ id: key }] })) });
   assert.equal(R.photoCount(selected), keys.length);
 });

@@ -198,6 +198,16 @@ describe("validateCleaningOrderCompletionEvidence", () => {
       .toMatchObject({ ok: true });
   });
 
+  it("예전 16개 구역으로 저장된 공용부 보고서도 지금 필수 구역을 채운 것으로 본다", () => {
+    const commonOrder = { ...order, serviceType: "common_cleaning" as const };
+    const photo = (key: string) => [{ id: `${key}_after`, driveFileId: `${key}_after_file`, webViewLink: `https://drive.google.com/file/d/${key}_after_file/view` }];
+    const legacyRequired = ["entrance", "corridor", "stairs", "handrail", "windows", "lighting", "recycle", "final"];
+    const items = legacyRequired.map(key => ({ key, status: "done", before: [], after: photo(key) }));
+    expect(validate(commonOrder, [readyReport({ kind: "common", items })])).toMatchObject({ ok: true });
+    // 계단·창틀처럼 지금도 있는 필수 구역이 빠지면 여전히 막는다.
+    expect(validate(commonOrder, [readyReport({ kind: "common", items: items.filter(item => item.key !== "windows") })])).toMatchObject({ ok: false });
+  });
+
   it("공용부 완료 구역은 작업 후 사진만으로 충분하고, 다른 작업은 전·후가 모두 필요하다", () => {
     for (const [serviceType, kind, ok] of [["common_cleaning", "common", true], ["move_in_cleaning", "moveIn", false]] as const) {
       const report = readyReport({ kind });

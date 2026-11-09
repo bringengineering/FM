@@ -66,3 +66,22 @@ test("사진이 없으면 사진 쪽 없이 개요에서 끝내고, 사진 번�
   assert.ok(html.includes("- 이 상 -"));
   assert.equal(numberRanges([1, 2, 3, 5, 7, 8]), "1–3, 5, 7–8");
 });
+
+test("예전 구역을 합치면 지금 구역 이름을 쓰고, 실제로 한 상태(완료)가 '못 함'보다 앞선다", () => {
+  const value = report([
+    { key: "drain", label: "배수구·트렌치", status: "skipped", note: "배수구 없음", after: [{ id: "d" }] },
+    { key: "fixtures", label: "공용 설비·게시판", status: "done", after: [{ id: "f" }] },
+    { key: "yard", label: "마당·외부 바닥", after: [{ id: "y" }] },
+  ]);
+  const by = key => value.items.find(item => item.key === key);
+  assert.equal(by("fixtures").label, "공용부 설비");
+  assert.equal(by("fixtures").status, "done");
+  assert.equal(by("parking").label, "주차장");
+  const html = createOwnerReportHtml(value, {});
+  assert.doesNotMatch(html, /배수구·트렌치|마당·외부 바닥|공용 설비·게시판/);
+});
+
+test("사진·메모가 없어도 상태를 정한 구역은 표에 남는다", () => {
+  const html = createOwnerReportHtml(report([{ key: "elevator", status: "skipped", note: "" }]), {});
+  assert.match(html, /<td>승강기<\/td><td>-<\/td>/);
+});
