@@ -6,6 +6,8 @@ type ChecklistDefinition = {
   optionalKeys?: readonly string[];
   // 완료(done) 구역에 작업 전 사진이 필요 없는 작업. 공용부는 작업 후 사진만 찍는다(2026-11).
   afterOnly?: boolean;
+  // 예전 구역 → 지금 구역(공용부). 필수 구역은 옮긴 뒤의 이름으로 센다.
+  zoneFor?: Readonly<Record<string, string>>;
 };
 
 const checklists: Readonly<Record<CleaningOrderServiceType, ChecklistDefinition>> = Object.freeze({
@@ -21,10 +23,12 @@ const checklists: Readonly<Record<CleaningOrderServiceType, ChecklistDefinition>
   },
   common_cleaning: {
     reportKind: "common",
-    // '공용부 활동 결과보고서' 양식의 9개 구역. 뒤쪽 8개는 예전 구역으로 저장된 보고서를 위한 것이다.
-    requiredKeys: ["entrance", "corridor", "stairs", "windows", "fire", "fixtures", "recycle"],
-    optionalKeys: ["elevator", "parking", "handrail", "glass", "yard", "drain", "rooftop", "walls", "lighting", "final"],
+    // '공용부 활동 결과보고서' 양식의 9개 구역. 필수는 예전 필수 구역(난간→계단, 조명→공용부 설비,
+    // 마감→복도)을 옮긴 것과 같아서 예전 보고서도 그대로 통과한다. 소방 설비는 새 구역이라 선택이다.
+    requiredKeys: ["entrance", "corridor", "stairs", "windows", "fixtures", "recycle"],
+    optionalKeys: ["elevator", "fire", "parking", "handrail", "glass", "yard", "drain", "rooftop", "walls", "lighting", "final"],
     afterOnly: true,
+    zoneFor: { handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures", rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor" },
   },
   stair_cleaning: {
     reportKind: "stairs",
@@ -93,6 +97,7 @@ function isReadyReport(order: CleaningOrderRecord, report: unknown, checklist: C
 
   const allowedKeys = new Set([...checklist.requiredKeys, ...(checklist.optionalKeys || [])]);
   const seenKeys = new Set<string>();
+  const coveredKeys = new Set<string>();
   let hasPerformedWork = false;
   for (const rawItem of report.items) {
     if (!isRecord(rawItem)
@@ -101,6 +106,7 @@ function isReadyReport(order: CleaningOrderRecord, report: unknown, checklist: C
       || seenKeys.has(rawItem.key)
       || !["done", "partial", "skipped"].includes(String(rawItem.status))) return false;
     seenKeys.add(rawItem.key);
+    coveredKeys.add(checklist.zoneFor?.[rawItem.key] || rawItem.key);
     if (rawItem.status === "skipped") {
       if (typeof rawItem.note !== "string" || rawItem.note.trim().length === 0) return false;
       continue;
@@ -116,7 +122,7 @@ function isReadyReport(order: CleaningOrderRecord, report: unknown, checklist: C
     }
   }
 
-  return hasPerformedWork && checklist.requiredKeys.every(key => seenKeys.has(key));
+  return hasPerformedWork && checklist.requiredKeys.every(key => coveredKeys.has(key));
 }
 
 export function validateCleaningOrderCompletionEvidence(

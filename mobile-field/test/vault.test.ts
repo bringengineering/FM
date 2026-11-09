@@ -83,3 +83,20 @@ describe('persistent vault and report integrity', () => {
     await expect(vault.editPhoto({ ...p, phase: 'after' }, v.revision)).rejects.toThrow('PHOTO_EDIT_REQUIRES_SERVER'); await vault.close();
   });
 });
+
+describe('예전 공용부 구역(앱 0.1.15)으로 저장된 사진', () => {
+  it('업로드를 시작한 사진도 지금 구역 이름으로 설명·포함 여부를 고칠 수 있다', async () => {
+    const { vault, db } = await makeVault(); await vault.saveVisit(visit(), null); const p = await photo(); await vault.savePhoto({ ...p, phase: 'after' }, jpeg, 1);
+    // 0.1.15 가 저장했던 모양: 예전 구역 이름 + 업로드 시작.
+    const row = db.prepare('SELECT body FROM photos WHERE id = ?').get(p.id) as { body: string };
+    db.prepare('UPDATE photos SET body = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.body), itemKey: 'handrail' }), p.id);
+    await vault.updateTransfer(p.id, { state: 'uploading', uploadId: 'upload-a', receivedBytes: 0, errorCode: undefined });
+    const v = (await vault.load()).visits[0]!, stored = (await vault.load()).photos[0]!;
+    await vault.editPhoto({ ...stored, itemKey: 'stairs', caption: '난간', included: false }, v.revision);
+    const edited = (await vault.load()).photos[0]!;
+    expect(edited.caption).toBe('난간'); expect(edited.included).toBe(false); expect(edited.itemKey).toBe('stairs');
+    // 다른 구역으로 옮기는 것은 여전히 서버 확인이 필요하다.
+    await expect(vault.editPhoto({ ...edited, itemKey: 'windows' }, (await vault.load()).visits[0]!.revision)).rejects.toThrow('PHOTO_EDIT_REQUIRES_SERVER');
+    await vault.close();
+  });
+});

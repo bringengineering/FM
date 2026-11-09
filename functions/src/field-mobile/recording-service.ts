@@ -1,6 +1,6 @@
 import { getCustomerSite, siteId, type CustomerSiteReads } from './sites.js';
 import { reportCore } from './report-core.js';
-import { assert, hash, nowIso, object, photoBinding, RECORD_LIMITS, recordingInput, RecordingError, reportFor, uploadKey, uploadStatus, zoneFor, type ArchiveRecord, type Recording, type RecordingPhoto, type UploadRecord } from './recording-model.js';
+import { assert, currentContentHash, currentPhoto, currentRecording, hash, nowIso, object, photoBinding, RECORD_LIMITS, recordingInput, RecordingError, reportFor, uploadKey, uploadStatus, zoneFor, type ArchiveRecord, type Recording, type RecordingPhoto, type UploadRecord } from './recording-model.js';
 
 export interface RecordingStore {
   get<T>(path:string):Promise<T|null>;
@@ -22,15 +22,17 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
   const visitPath=(id:string)=>`${base}/visits/${uid}/${id}`;
   const uploadPath=(id:string)=>`${base}/uploads/${uid}/${id}`;
   const blobPath=(u:UploadRecord,offset:number)=>`field-mobile-staging/${uid}/${u.id}/${offset}`;
-  async function visit(id:string) {
+  async function rawVisit(id:string) {
     assert(siteId(id)); const v=await d.store.get<Recording>(visitPath(id));
     assert(v&&v.ownerUid===uid&&v.id===id,'VISIT_NOT_FOUND',404);
     await getCustomerSite(v.customerId,d.sites); return v;
   }
+  // 배포 전에 저장된 예전 구역 이름은 읽을 때 지금 구역으로 옮긴다(저장값은 그대로 둔다).
+  async function visit(id:string) { return currentRecording(await rawVisit(id)); }
   async function upload(id:string) {
-    assert(siteId(id));const u=await d.store.get<UploadRecord>(uploadPath(id));
-    assert(u&&u.id===id&&u.ownerUid===uid,'UPLOAD_NOT_FOUND',404);
-    const v=await visit(u.visitId); const p=v.photos.find(p=>p.id===u.photo.id);
+    assert(siteId(id));const stored=await d.store.get<UploadRecord>(uploadPath(id));
+    assert(stored&&stored.id===id&&stored.ownerUid===uid,'UPLOAD_NOT_FOUND',404);
+    const v=await visit(stored.visitId),u={...stored,photo:currentPhoto(v.kind,stored.photo)}; const p=v.photos.find(p=>p.id===u.photo.id);
     assert(p&&photoBinding(p)===photoBinding(u.photo),'REVISION_CONFLICT',409); return u;
   }
   async function save(id:string,input:unknown) {
@@ -40,10 +42,10 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
       if(old) {
         assert(old.ownerUid===uid&&old.customerId===value.customerId&&old.kind===value.kind&&old.workDate===value.workDate,'REVISION_CONFLICT',409);
         assert(value.revision>=old.revision,'REVISION_CONFLICT',409);
-        if(value.revision===old.revision) {assert(old.contentHash===contentHash,'REVISION_CONFLICT',409);return old;}
+        if(value.revision===old.revision) {assert(old.contentHash===contentHash||currentContentHash(old)===contentHash,'REVISION_CONFLICT',409);return old;}
         // Photos are append-only after reconciliation. A new visit is required
         // for a different site/date; a later draft cannot substitute image bytes.
-        for(const p of old.photos) assert(value.photos.some(n=>n.id===p.id&&photoBinding(n)===photoBinding(p)),'PHOTO_ALREADY_LINKED',409);
+        for(const p of currentRecording(old).photos) assert(value.photos.some(n=>n.id===p.id&&photoBinding(n)===photoBinding(p)),'PHOTO_ALREADY_LINKED',409);
       }
       return {...value,id,ownerUid:uid,site:old?.site.address?old.site:site,contentHash,createdAt:old?.createdAt||timestamp,updatedAt:timestamp};
     });
@@ -56,7 +58,7 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     assert(Object.keys(input).length===Object.keys(expected).length&&Object.entries(expected).every(([k,val])=>(k==='itemKey'?zoneFor(v.kind,input[k]):input[k])===val));
     const id=uploadKey(uid,visitId,p.id);
     const u=await d.store.change<UploadRecord>(uploadPath(id),old=>{
-      if(old) {assert(old.visitId===visitId&&old.ownerUid===uid&&photoBinding(old.photo)===photoBinding(p),'REVISION_CONFLICT',409);return old;}
+      if(old) {assert(old.visitId===visitId&&old.ownerUid===uid&&photoBinding(currentPhoto(v.kind,old.photo))===photoBinding(p),'REVISION_CONFLICT',409);return old;}
       return{id,ownerUid:uid,visitId,photo:p,receivedBytes:0,state:'uploading',createdAt:nowIso()};
     });return uploadStatus(u);
   }
@@ -90,11 +92,17 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
   async function archive(visitId:string,input:unknown) {
     let stage='validate';
     try{
-    assert(object(input)&&Object.keys(input).every(k=>['revision','captureAreas'].includes(k))&&Number.isSafeInteger(input.revision));
+    assert(object(input)&&Object.keys(input).every(k=>['revision','captureAreas','legacyPlan'].includes(k))&&Number.isSafeInteger(input.revision));
+    // 배포 전 구역으로 이미 보관한 문서를 다시 찾기 위한 예전 구역 목록(앱 0.1.16 이 보내거나, 0.1.15 가 보낸 원래 목록).
+    const legacyPlans:string[][]=[];
+    if(Array.isArray(input.legacyPlan)&&input.legacyPlan.length<=32&&input.legacyPlan.every((key:unknown)=>typeof key==='string'&&key.length<=40))legacyPlans.push(input.legacyPlan as string[]);
     const v=await visit(visitId);assert(v.revision===input.revision&&v.draft.confirmedRevision===v.revision,'REPORT_REVIEW_REQUIRED',409);
     assert(v.site.address.trim(),'SITE_ADDRESS_REQUIRED',422);
     const selected=v.photos.filter(p=>p.included);assert(selected.length>0&&selected.length<=RECORD_LIMITS.pdfPhotos,'REPORT_PHOTO_LIMIT',422);
     let plan:string[]|undefined;
+    if(v.kind==='common'&&Array.isArray(input.captureAreas)&&input.captureAreas.some((key:unknown)=>zoneFor(v.kind,key)!==key)){
+      const raw=await rawVisit(visitId);legacyPlans.push(reportCore.legacyCommonPlan(input.captureAreas,raw.draft.statuses,raw.draft.notes));
+    }
     if(Array.isArray(input.captureAreas))input.captureAreas=[...new Set(input.captureAreas.map((key:unknown)=>zoneFor(v.kind,key)))];
     if(input.captureAreas!==undefined){
       const catalog=reportCore.itemCatalogFor(v.kind),keys=new Set(catalog.map(item=>item.key));
@@ -106,7 +114,11 @@ export function createRecordingService(uid:string,d:RecordingDependencies) {
     }
     assert(selected.reduce((n,p)=>n+p.bytes,0)<=RECORD_LIMITS.pdfSourceBytes,'REPORT_PHOTO_BYTES_LIMIT',422);
     const uploads:UploadRecord[]=[];for(const p of selected){const u=await upload(uploadKey(uid,v.id,p.id));assert(u.state==='ready'&&u.driveFileId,'PHOTOS_NOT_READY',409);uploads.push(u);}
-    const identity=plan?[uid,v.id,v.revision,plan]:[uid,v.id,v.revision];
+    let identity:unknown[]=plan?[uid,v.id,v.revision,plan]:[uid,v.id,v.revision];
+    for(const legacy of legacyPlans){
+      const candidate=[uid,v.id,v.revision,legacy],id='saved_wr_'+hash(JSON.stringify(candidate)).slice(0,40);
+      if(await d.store.get<ArchiveRecord>(`${base}/archives/${uid}/${id}`)){identity=candidate;break;}
+    }
     const recordId='saved_wr_'+hash(JSON.stringify(identity)).slice(0,40),reportId='fm_'+hash(JSON.stringify(identity)).slice(0,40),path=`${base}/archives/${uid}/${recordId}`;
     let a=await d.store.change<ArchiveRecord>(path,old=>{if(old){assert(old.contentHash===v.contentHash,'REVISION_CONFLICT',409);return old;}return{id:recordId,visitId:v.id,revision:v.revision,ownerUid:uid,contentHash:v.contentHash,reportId};});
     if(a.ready)return{documentId:a.id,revision:a.revision,archivedAt:a.archivedAt,driveVerified:true,crmLinked:true};

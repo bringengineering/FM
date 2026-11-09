@@ -99,8 +99,9 @@ h3{font-size:12pt;font-weight:700;margin:5mm 0 2mm}
 function createCommonActivityReportHtml(report, options = {}) {
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const count = item => item.before.length + item.during.length + item.after.length;
-  // 고른 구역은 사진이 없어도 표에 남긴다(현장앱 includeEmptyAreas). 아니면 사진·메모가 있는 구역만.
-  const items = report.items.filter(item => options.includeEmptyAreas || count(item) || item.note);
+  // 고른 구역은 사진이 없어도 표에 남긴다(현장앱 includeEmptyAreas). 아니면 사진·메모가 있거나
+  // 상태(완료·일부·못 함)를 정한 구역만.
+  const items = report.items.filter(item => options.includeEmptyAreas || item.status !== "recorded" || count(item) || item.note);
   const photos = numberedPhotos(items);
   const date = formDate(report.workDate) || "날짜 미기재";
   // 고객 단위 보고서(건물 미연결)는 buildingName 에 CRM 고객 이름이 들어 있다. 실명·별명이

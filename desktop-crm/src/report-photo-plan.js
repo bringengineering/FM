@@ -635,7 +635,7 @@
         const old = previous.get(file.id) || {};
         return { ...file, manualCategory: !!old.manualCategory, manualPhase: !!old.manualPhase,
           aiReason: old.manualCategory ? "사용자가 직접 선택했습니다." : (decisions.get(file.id)?.reason || old.aiReason || (bucket.itemKey ? "공용부 구역 추천" : "구역 확인 필요")),
-          aiCandidates: decisions.get(file.id)?.candidates || old.aiCandidates || [], aiReviewState: decisions.get(file.id)?.reviewState || old.aiReviewState || "",
+          aiCandidates: [...new Set(rows(decisions.get(file.id)?.candidates || old.aiCandidates || []).map(commonZoneFor))], aiReviewState: decisions.get(file.id)?.reviewState || old.aiReviewState || "",
           phaseReason: old.manualPhase ? old.phaseReason : phase === "during" ? "청소 동작이 보여 작업 중으로 추천했습니다. 완료 증명은 아닙니다." : "공용부는 작업 후 사진으로 싣습니다." };
       })])),
     })) };

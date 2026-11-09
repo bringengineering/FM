@@ -26,6 +26,26 @@ function zoneRecord(kind: string, record: Record<string, unknown>, merge: (a: st
   }
   return out;
 }
+// 합친 구역의 상태: 실제로 한 기록(완료·일부)이 '못 함'·'기록'보다 앞선다.
+const STATUS_RANK: Record<string, number> = { done: 3, partial: 2, skipped: 1, recorded: 0 };
+const strongerStatus = (a: string, b: string) => (STATUS_RANK[b] ?? -1) > (STATUS_RANK[a] ?? -1) ? b : a;
+// 배포 전에 저장된 방문·업로드 기록은 예전 구역 이름을 그대로 갖고 있다. 읽을 때 지금 구역으로 본다.
+export function currentPhoto<T extends RecordingPhoto>(kind: string, p: T): T {
+  const itemKey = String(zoneFor(kind, p.itemKey));
+  return itemKey === p.itemKey ? p : { ...p, itemKey };
+}
+export function currentRecording(v: Recording): Recording {
+  if (v.kind !== 'common') return v;
+  const sorted = (r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).sort(([a], [b]) => a.localeCompare(b))) as Record<string, string>;
+  return { ...v, photos: v.photos.map(p => currentPhoto(v.kind, p)),
+    draft: { ...v.draft, statuses: sorted(zoneRecord(v.kind, v.draft.statuses, strongerStatus)), notes: sorted(zoneRecord(v.kind, v.draft.notes, (a, b) => [a, b].filter(Boolean).join(' / ').slice(0, 500))) },
+    ...(v.captureAreas ? { captureAreas: [...new Set(v.captureAreas.map(key => String(zoneFor(v.kind, key))))] } : {}) };
+}
+// 같은 판을 다시 보냈는지 볼 때 쓴다. 저장값을 지금 구역으로 옮겨 입력과 같은 모양으로 다시 계산한다.
+export function currentContentHash(v: Recording): string {
+  try { return hash(JSON.stringify(recordingInput({ customerId: v.customerId, kind: v.kind, workDate: v.workDate, revision: v.revision, draft: v.draft, photos: v.photos }))); }
+  catch { return ''; }
+}
 export function photoInput(v: unknown, kind: string): RecordingPhoto {
   assert(object(v));
   v = { ...v, itemKey: zoneFor(kind, v.itemKey) };
@@ -44,7 +64,7 @@ export function recordingInput(v: unknown): RecordingInput {
   assert(typeof v.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.workDate) && Number.isFinite(Date.parse(v.workDate)) && new Date(v.workDate).toISOString().slice(0,10) === v.workDate);
   assert(Number.isSafeInteger(v.revision) && v.revision >= 1 && v.revision <= 1_000_000 && object(v.draft));
   const keys=new Set(reportCore.itemCatalogFor(v.kind).map(i=>i.key));
-  const d:Record<string,any>={...v.draft, ...(object(v.draft.statuses)?{statuses:zoneRecord(v.kind,v.draft.statuses,(a,b)=>a==='recorded'?b:a)}:{}), ...(object(v.draft.notes)?{notes:zoneRecord(v.kind,v.draft.notes,(a,b)=>[a,b].filter(Boolean).join(' / ').slice(0,500))}:{})};
+  const d:Record<string,any>={...v.draft, ...(object(v.draft.statuses)?{statuses:zoneRecord(v.kind,v.draft.statuses,strongerStatus)}:{}), ...(object(v.draft.notes)?{notes:zoneRecord(v.kind,v.draft.notes,(a,b)=>[a,b].filter(Boolean).join(' / ').slice(0,500))}:{})};
   assert(bounded(d.summary,2000,true) && bounded(d.followUp,2000,true) && object(d.statuses) && object(d.notes));
   assert(Object.entries(d.statuses).every(([key,value])=>keys.has(key)&&['recorded','done','partial','skipped'].includes(String(value))));
   assert(Object.entries(d.notes).every(([key,value])=>keys.has(key)&&bounded(value,500,true)));

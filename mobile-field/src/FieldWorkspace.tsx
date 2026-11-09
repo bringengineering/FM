@@ -12,7 +12,7 @@ import { catalog, reviewIssues, withCurrentZones } from './domain/report';
 import { persistCapture } from './capture';
 import { aiDraftState,reportFacts } from './domain/ai-report';
 import { saveGroupedReport } from './domain/save-report';
-import { archiveDocumentId } from './domain/archive-lookup';
+import { archiveDocumentIds } from './domain/archive-lookup';
 import { areaPhotoCount,beforeChoices,capturePhases,captureProgress,changeCaptureAreas,hasBeforePhase,startPhase,defaultReference,firstUncapturedArea,initialCaptureAreas,nextUncapturedArea } from './domain/capture-guide';
 import { samplePhoto } from './sample-photo';
 import { exifCapturedAt } from './domain/capture-time';
@@ -193,8 +193,11 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
   }
   async function checkDelivery(){
     if(!company||!visit||dirty||captionDirty)throw new FieldError('REPORT_REVIEW_REQUIRED');
-    const id=documentId||await archiveDocumentId(visit,company.uid,value=>Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,value));
-    const value=await company.api.deliveryStatus(id,controller.current.signal);setRecovered({visitId:visit.id,revision:visit.revision,documentId:id});setDelivery(value);
+    const ids=documentId?[documentId]:await archiveDocumentIds(visit,company.uid,value=>Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,value));
+    let id='',value:Awaited<ReturnType<typeof company.api.deliveryStatus>>|undefined,lastError:unknown;
+    for(const candidate of ids){try{value=await company.api.deliveryStatus(candidate,controller.current.signal);id=candidate;break;}catch(error){lastError=error;}}
+    if(!value)throw lastError;
+    setRecovered({visitId:visit.id,revision:visit.revision,documentId:id});setDelivery(value);
   }
   function confirmDelivery(){
     if(!delivery||!company||!visit||!documentId||delivery.documentId!==documentId||dirty||captionDirty)return;
@@ -332,7 +335,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
         </View>)}{company&&workspace.visits.filter(v=>v.job.customerId===company.site.id&&v.job.workDate!==today()).map(v=><View key={v.id} style={s.card}><Text style={s.cardTitle}>{v.job.workDate} · {v.job.kind==='common'?'공용부청소':'입주청소'}</Text><Button label="이전 작업 이어하기" disabled={busy} onPress={()=>beginVisit(v,workspace.photos.filter(p=>p.visitId===v.id),'report')}/></View>)}{!company&&<Note>가상 현장은 CRM에 등록되거나 실제 고객에게 연결되지 않습니다.</Note>}</>}
         {['capture-setup', 'capture', 'photos', 'report', 'pdf', 'send'].includes(screen) && !visit && <Note>먼저 현장 탭에서 작업할 현장을 선택해 주세요.</Note>}
         {screen === 'capture-setup' && visit && <>
-          <Text style={s.subtitle}>이 현장에서 촬영할 구역을 골라 주세요. 선택한 구역을 차례대로 작업 전과 후에 각각 촬영합니다.</Text>
+          <Text style={s.subtitle}>이 현장에서 촬영할 구역을 골라 주세요. {hasBeforePhase(visit.job.kind)?'선택한 구역을 차례대로 작업 전과 후에 각각 촬영합니다.':'선택한 구역을 차례대로 작업 후 사진으로 촬영합니다.'}</Text>
           <View style={s.card}><Text style={s.cardTitle}>촬영 구역 · {plannedAreas.length}곳</Text>
             <View style={s.wrap}>{catalog(visit.job.kind).map(item=><Chip key={item.key} label={`${item.label}${photos.some(p=>p.itemKey===item.key)?' · 사진 있음':''}`} active={plannedAreas.includes(item.key)} disabled={busy} onPress={()=>{
               if(plannedAreas.includes(item.key)&&photos.some(p=>p.itemKey===item.key)){notify('사진이 있는 구역은 촬영 목록에 남겨 둡니다.',true);return;}
@@ -340,7 +343,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
             }}/>)}</View>
           </View>
           <Note>현장에 없는 구역은 선택 해제할 수 있습니다. 한 구역에서 여러 장을 찍을 수도 있습니다.</Note>
-          <Button label="작업 전 촬영 시작" disabled={busy||!plannedAreas.length} onPress={()=>void perform(saveCaptureAreas)} />
+          <Button label={hasBeforePhase(visit.job.kind)?'작업 전 촬영 시작':'작업 후 촬영 시작'} disabled={busy||!plannedAreas.length} onPress={()=>void perform(saveCaptureAreas)} />
           {!!visit.captureAreas?.length&&<Button label="촬영 화면으로 돌아가기" secondary disabled={busy} onPress={()=>setScreen('capture')} />}
         </>}
         {screen === 'capture' && visit && (()=>{
@@ -392,7 +395,7 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
         </>;})()}
         {screen === 'photos' && visit && <>
           {!photos.length && <Note>아직 사진이 없습니다. 촬영 탭에서 사진을 추가해 주세요.</Note>}
-          {photos.length>0&&<Text style={s.muted}>보고서 포함 {photos.filter(p=>p.included).length}장 · 제외 {photos.filter(p=>!p.included).length}장 · 사진을 눌러 구역·전후·설명을 고칠 수 있습니다.</Text>}
+          {photos.length>0&&<Text style={s.muted}>보고서 포함 {photos.filter(p=>p.included).length}장 · 제외 {photos.filter(p=>!p.included).length}장 · 사진을 눌러 {hasBeforePhase(visit.job.kind)?'구역·전후·설명':'구역·단계·설명'}을 고칠 수 있습니다.</Text>}
           {catalog(visit.job.kind).filter(item=>photos.some(p=>p.itemKey===item.key)).map(item=><View key={item.key} style={s.group}>
             <Text style={s.label}>{item.label}</Text>
             <View style={s.wrap}>{photos.filter(p=>p.itemKey===item.key).map(p => <Chip key={p.id} label={`${photos.indexOf(p) + 1} · ${phaseLabel[p.phase]}${p.included?'':' · 제외'}`} active={photoId === p.id} onPress={() => choosePhoto(p)} />)}</View>
@@ -433,9 +436,9 @@ export function FieldWorkspace({company,onClose,backRequest=0}:{company?:{uid:st
         </>}
         {screen === 'pdf' && visit && <>
           <Note>{documentId?'현재 검토한 내용의 PDF가 Drive·CRM에 보관됐습니다.':'내용 검토 화면입니다. 아래 저장 버튼에서 PDF를 생성하고 보관합니다.'}</Note>
-          <View style={s.paper}><Text style={s.brand}>BRING CARE</Text><Text style={s.h1}>작업 결과보고서</Text>{!company&&<Text style={s.paperTag}>TEST · 실제 작업 보고서 아님</Text>}
+          <View style={s.paper}><Text style={s.brand}>BRING CARE</Text><Text style={s.h1}>{hasBeforePhase(visit.job.kind)?'작업 결과보고서':'공용부 활동 결과보고서'}</Text>{!company&&<Text style={s.paperTag}>TEST · 실제 작업 보고서 아님</Text>}
             <Text style={s.cardTitle}>{visit.job.title}</Text><Text style={s.muted}>{visit.job.workDate} · {visit.job.kind === 'common' ? '공용부청소' : '입주청소'}</Text>
-            <Text style={s.h2}>작업 내용</Text><Text style={s.body}>{visit.draft.summary || '미기재'}</Text><Text style={s.h2}>후속 조치</Text><Text style={s.body}>{visit.draft.followUp || '미기재'}</Text>
+            {hasBeforePhase(visit.job.kind)?<><Text style={s.h2}>작업 내용</Text><Text style={s.body}>{visit.draft.summary || '미기재'}</Text><Text style={s.h2}>후속 조치</Text><Text style={s.body}>{visit.draft.followUp || '미기재'}</Text></>:<><Text style={s.h2}>구역별 사진</Text><Text style={s.body}>{catalog(visit.job.kind).filter(item=>photos.some(p=>p.included&&p.itemKey===item.key)).map(item=>`${item.label} ${photos.filter(p=>p.included&&p.itemKey===item.key).length}장`).join(' · ')||'없음'}</Text><Note>공용부 PDF는 표지·현장 기록 개요·사진 기록(한 쪽에 9장)으로 만들어집니다. 작업 내용·후속 조치는 PDF에 실리지 않습니다.</Note></>}
             <Text style={s.h2}>선택 사진</Text><Text style={s.body}>{photos.filter(p => p.included).length}장 · 기기 보관</Text>
             <Text style={s.footerText}>문의 1551-3873</Text></View>
           {company&&documentId&&<Button label="고객에게 발송하기" disabled={busy||dirty} onPress={()=>navigate('send')}/>}<Button label={company?'PDF 생성 · Drive·CRM 보관':'서버 연결 후 PDF 보관 가능'} disabled={!company||busy||dirty||issues.length>0||visit.draft.confirmedRevision!==visit.revision} onPress={()=>void perform(archiveCurrent)} /><Button label="보고서 편집으로 돌아가기" secondary onPress={() => navigate('report')} />

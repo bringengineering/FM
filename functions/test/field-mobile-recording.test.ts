@@ -83,3 +83,41 @@ it('denies unauthenticated, malformed, oversized and unsupported HTTP requests w
   expect((await handleRecording({...request,body:Buffer.alloc(256*1024+1)},{auth,allowRequest:()=>true,recording:factory})).status).toBe(413);
   expect((await handleRecording({...request,method:'DELETE'},{auth,allowRequest:()=>true,recording:factory})).status).toBe(405);expect(factory).not.toHaveBeenCalled();
 });
+
+// 배포 전(구역 16개 시절)에 서버에 저장된 공용부 방문: 저장값은 예전 구역 이름 그대로다.
+it('keeps pre-deploy common visits with legacy zones syncable, uploadable and archivable',async()=>{
+  const t=await setup(),legacyPhoto={...t.photo,itemKey:'handrail',phase:'after' as const};
+  const legacy={...t.input,draft:{...t.input.draft,statuses:{handrail:'done'},notes:{handrail:'난간 닦음'}},photos:[legacyPhoto]};
+  await t.service.save('visit-a',legacy);
+  const path='crmCompany/fieldMobile/visits/staff-a/visit-a',stored=t.data.get(path);
+  // 예전 서버가 저장했던 모양으로 되돌린다(예전 구역 이름 + 그때의 contentHash).
+  const old={customerId:legacy.customerId,kind:legacy.kind,workDate:legacy.workDate,revision:legacy.revision,draft:{summary:legacy.draft.summary,followUp:legacy.draft.followUp,statuses:{handrail:'done'},notes:{handrail:'난간 닦음'},confirmedRevision:3},photos:[{id:legacyPhoto.id,itemKey:'handrail',phase:'after',caption:legacyPhoto.caption,included:true,capturedAt:legacyPhoto.capturedAt,mime:legacyPhoto.mime,bytes:legacyPhoto.bytes,sha256:legacyPhoto.sha256,width:legacyPhoto.width,height:legacyPhoto.height}]};
+  t.data.set(path,{...stored,draft:old.draft,photos:old.photos,contentHash:hash(JSON.stringify(old))});
+  const mapped={...legacy,draft:{...legacy.draft,statuses:{stairs:'done'},notes:{stairs:'난간 닦음'}},photos:[{...legacyPhoto,itemKey:'stairs'}]};
+  // 같은 판 재동기화: 0.1.16(지금 구역)도 0.1.15(예전 구역)도 통과한다.
+  await expect(t.service.save('visit-a',mapped)).resolves.toMatchObject({revision:3});
+  await expect(t.service.save('visit-a',legacy)).resolves.toMatchObject({revision:3});
+  // 업로드: 지금 구역 이름으로 예약하고, Drive 폴더는 지금 구역 이름이다.
+  const u=await t.service.reserve('visit-a',{expectedRevision:3,photoId:legacyPhoto.id,itemKey:'stairs',phase:'after',claimedCapturedAt:legacyPhoto.capturedAt,mime:legacyPhoto.mime,bytes:legacyPhoto.bytes,sha256:legacyPhoto.sha256,width:legacyPhoto.width,height:legacyPhoto.height,included:true,caption:legacyPhoto.caption},`photo_${legacyPhoto.id}`);
+  await t.service.chunk(u.uploadId,`bytes 0-${t.bytes.length-1}/${t.bytes.length}`,t.bytes);
+  expect((await t.service.complete(u.uploadId,`complete_${legacyPhoto.id}`)).state).toBe('ready');
+  expect(t.deps.drive.folder).toHaveBeenCalledWith('photos',expect.arrayContaining([{key:'stairs',name:'계단'}]));
+  // 보관: 0.1.15 가 보내는 예전 촬영 구역도 받는다.
+  await expect(t.service.archive('visit-a',{revision:3,captureAreas:['handrail']})).resolves.toMatchObject({revision:3});
+  // 다음 판 저장: 예전 사진이 지금 구역으로 와도 '이미 연결된 사진' 으로 막지 않는다.
+  await expect(t.service.save('visit-a',{...mapped,revision:4,draft:{...mapped.draft,confirmedRevision:undefined}})).resolves.toMatchObject({revision:4});
+});
+
+it('reuses an archive made before the zone change instead of creating a second PDF',async()=>{
+  const t=await setup(),legacyPhoto={...t.photo,itemKey:'handrail',phase:'after' as const};
+  await t.service.save('visit-a',{...t.input,photos:[legacyPhoto]});
+  const u=await t.service.reserve('visit-a',{expectedRevision:3,photoId:legacyPhoto.id,itemKey:'stairs',phase:'after',claimedCapturedAt:legacyPhoto.capturedAt,mime:legacyPhoto.mime,bytes:legacyPhoto.bytes,sha256:legacyPhoto.sha256,width:legacyPhoto.width,height:legacyPhoto.height,included:true,caption:legacyPhoto.caption},`photo_${legacyPhoto.id}`);
+  await t.service.chunk(u.uploadId,`bytes 0-${t.bytes.length-1}/${t.bytes.length}`,t.bytes);await t.service.complete(u.uploadId,`complete_${legacyPhoto.id}`);
+  const legacyId='saved_wr_'+hash(JSON.stringify(['staff-a','visit-a',3,['handrail']])).slice(0,40),v=t.data.get('crmCompany/fieldMobile/visits/staff-a/visit-a');
+  t.data.set(`crmCompany/fieldMobile/archives/staff-a/${legacyId}`,{id:legacyId,visitId:'visit-a',revision:3,ownerUid:'staff-a',contentHash:v.contentHash,reportId:'fm_legacy',ready:true,archivedAt:'2026-11-01T00:00:00.000Z'});
+  const viaApp=await t.service.archive('visit-a',{revision:3,captureAreas:['stairs'],legacyPlan:['handrail']});
+  expect(viaApp.documentId).toBe(legacyId);
+  const viaOldApp=await t.service.archive('visit-a',{revision:3,captureAreas:['handrail']});
+  expect(viaOldApp.documentId).toBe(legacyId);
+  expect(t.files.size).toBe(1);
+});

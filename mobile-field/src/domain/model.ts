@@ -18,7 +18,9 @@ export interface Photo {
   pairWith?: string;
 }
 export interface Draft { summary: string; followUp: string; statuses: Record<string, ItemStatus>; notes: Record<string, string>; confirmedRevision?: number }
-export interface Visit { id: string; ownerUid: string; job: Job; revision: number; draft: Draft; updatedAt: string; captureAreas?: string[]; aiDraft?: {summary:string;facts:string} }
+export interface Visit { id: string; ownerUid: string; job: Job; revision: number; draft: Draft; updatedAt: string; captureAreas?: string[]; aiDraft?: {summary:string;facts:string};
+  // 9개 구역으로 바뀌기 전에 보관했을 수 있는 판의 예전 구역 목록. 그때 만든 보관 문서를 다시 찾을 때만 쓴다.
+  legacyArchive?: {revision:number; plan:string[]} }
 export interface Workspace { visits: Visit[]; photos: Photo[] }
 export interface Vault {
   readonly uid: string;
