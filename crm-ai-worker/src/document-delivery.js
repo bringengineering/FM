@@ -2,6 +2,7 @@ import { monthlyReportRecipient } from './monthly-report-delivery.js';
 import MonthlyTemplate from '../templates/BRINGMONTHLYREPORTV2.json' with {type: 'json'};
 import CompletionTemplate from '../templates/BRINGCOMPLETIONREPORTV3.json' with {type: 'json'};
 import QuoteTemplate from '../templates/BRINGCUSTOMERQUOTEV2.json' with {type: 'json'};
+import { viewerAsset, viewerPage, pdfResponse } from './document-viewer.js';
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const MAX_TTL_SECONDS = 14 * 24 * 60 * 60;
@@ -235,12 +236,16 @@ export function createDocumentDeliveryHandler(options = {}) {
   const activeRequests = new Set();
   return async function handle(request, identity, env, trustedField = false) {
     const url = new URL(request.url), capabilities = configured(env);
-    const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})$/.exec(url.pathname);
+    const assetMatch = /^\/d\/_viewer\/([a-z.]{1,40})$/.exec(url.pathname);
+    if (assetMatch && request.method === "GET") return viewerAsset(assetMatch[1], fetchImpl);
+    // /d/{token} = 보기 화면(열람 기록), /d/{token}/pdf = 보기 화면이 받는 PDF 원본(?download=1 이면 내려받기).
+    const publicMatch = /^\/d\/([A-Za-z0-9_-]{16,160})(\/pdf)?$/.exec(url.pathname);
     if (publicMatch && request.method === "GET") {
       const documentId = await env.DOCUMENT_DELIVERY.get(`token:${publicMatch[1]}`);
       const document = documentId && await env.DOCUMENT_DELIVERY.get(`doc:${documentId}`, "json");
       if (!document || document.revokedAt || new Date(document.expiresAt).getTime() <= now()) return new Response("문서가 만료되었거나 폐기되었습니다.", { status: 410 });
-      const bytes = decodeBase64(document.bytes);
+      // PDF 원본 요청은 보기 화면이 부르는 것이라 열람 횟수에 넣지 않는다.
+      if (publicMatch[2]) return pdfResponse(decodeBase64(document.bytes), document, url.searchParams.get("download") === "1");
       // 열람 기록. 카카오 미리보기·검색 봇 같은 자동 접속은 세지 않는다. 쓰기는 첫 열람과
       // 그 뒤 한 시간에 한 번만 — 같은 사람이 새로고침할 때마다 KV 에 쓰지 않는다.
       const agent = String(request.headers.get("user-agent") || "");
@@ -252,7 +257,7 @@ export function createDocumentDeliveryHandler(options = {}) {
           try { await env.DOCUMENT_DELIVERY.put(`doc:${documentId}`, JSON.stringify(updated), { expirationTtl: ttl }); } catch { /* 열람 기록을 못 남겨도 문서는 보여 준다. */ }
         }
       }
-      return new Response(bytes, { headers: { "content-type": "application/pdf", "content-disposition": "inline", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
+      return viewerPage(document, publicMatch[1]);
     }
     if (!identity) return json({ ok: false, code: "AUTH_REQUIRED" }, 401);
     const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
