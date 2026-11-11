@@ -16,6 +16,8 @@ const config: ExpoConfig = {
   name: 'BRING CARE 현장노트 개발', slug: 'bring-care-field-notes',
   ...(build.owner ? { owner: build.owner } : {}),
   version: '0.1.18', orientation: 'portrait', userInterfaceStyle: 'light',
+  // 브링케어 BR 마크(CRM 앱 아이콘 desktop-crm/src/assets/bring-logo.png 에서 마크만 잘라 흰 바탕에 놓음).
+  icon: './assets/icon.png',
   scheme: 'bring-field-dev',
   ios: { bundleIdentifier: 'kr.co.bringengineering.fieldnotes.dev', supportsTablet: true, ...(company ? {
     googleServicesFile: company.ios,
@@ -23,6 +25,7 @@ const config: ExpoConfig = {
     entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' },
   } : {}) },
   android: { package: 'kr.co.bringengineering.fieldnotes.dev', versionCode: 19, allowBackup: false,
+    adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#ffffff' },
     ...(company ? { googleServicesFile: company.android } : {}),
     blockedPermissions: ['android.permission.RECORD_AUDIO', 'android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'] },
   web: { bundler: 'metro' },
