@@ -22,10 +22,15 @@ const CUSTOMERS = [
   { id: 'c3', name: '한빛맨션', address: '원주시 시청로 7', kind: '폐기물 처리', last: '기록 없음', today: false },
   { id: 'c4', name: '솔숲타운', address: '원주시 북원로 58', kind: '정기 청소', last: '10월 29일 정기 청소', today: false },
 ];
+const ALL = ['owner_move_out', 'owner_broker_listed', 'owner_room_viewing', 'owner_lease_contract', 'owner_move_in_cleaning'];
+const unitOf = (id: string, building: string, address: string, unit: string, owner: string, phone: string, done: string[]) => ({ id, building, address, unit, owner, phone, done });
 const UNITS = [
-  { id: 'u1', address: '원주시 단계로 101', unit: '201', owner: '김가상', phone: '010-****-1234', done: ['owner_move_out'] },
-  { id: 'u2', address: '원주시 단계로 101', unit: '305', owner: '김가상', phone: '010-****-1234', done: ['owner_move_out', 'owner_broker_listed', 'owner_room_viewing'] },
-  { id: 'u3', address: '원주시 무실로 22', unit: '102', owner: '이시안', phone: '010-****-5678', done: [] as string[] },
+  unitOf('u1', '햇살빌라', '원주시 단계로 101', '201', '김가상', '010-****-1234', ['owner_move_out']),
+  unitOf('u2', '햇살빌라', '원주시 단계로 101', '305', '김가상', '010-****-1234', ALL.slice(0, 3)),
+  unitOf('u3', '햇살빌라', '원주시 단계로 101', '402', '김가상', '010-****-1234', ALL),
+  unitOf('u4', '푸른주택', '원주시 무실로 22', '102', '이시안', '010-****-5678', []),
+  unitOf('u5', '푸른주택', '원주시 무실로 22', '203', '이시안', '010-****-5678', ALL.slice(0, 4)),
+  unitOf('u6', '솔숲타운', '원주시 북원로 58', 'B01', '박예시', '010-****-9012', ALL.slice(0, 1)),
 ];
 const AREAS = ['계단', '복도', '현관', '주차장', '분리수거장'];
 type Customer = typeof CUSTOMERS[number]; type Unit = typeof UNITS[number];
@@ -109,20 +114,33 @@ function WorkFlow({ site, onClose }: { site: Customer; onClose: () => void }) {
 
 /* ── 안내 알림톡 ─────────────────────────────── */
 function NoticeTab() {
-  const [query, setQuery] = useState(''); const [unit, setUnit] = useState<Unit>();
+  const [query, setQuery] = useState(''); const [unit, setUnit] = useState<Unit>(); const [open, setOpen] = useState<Record<string, boolean>>({ '햇살빌라': true });
   if (unit) return <NoticeFlow unit={unit} onClose={() => setUnit(undefined)} />;
-  const list = UNITS.filter(u => !query.trim() || (u.address + u.unit + u.owner).includes(query.trim()));
+  const q = query.trim();
+  const list = UNITS.filter(u => !q || (u.building + u.address + u.unit + u.owner).includes(q));
+  const buildings = [...new Set(list.map(u => u.building))].map(name => ({ name, units: list.filter(u => u.building === name) }));
   return <><Header title="안내 알림톡" sub="건물주에게 퇴실~입주 단계 안내" /><ScrollView contentContainerStyle={s.body}>
-    <Search value={query} onChange={setQuery} placeholder="주소, 호실, 건물주 이름" />
-    <View style={s.group}>{list.map(u => {
-      const next = core.TURNOVER_STAGES.find(st => !u.done.includes(st.id));
-      return <Pressable key={u.id} onPress={() => setUnit(u)} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
-        <View style={s.rowIcon}><PinIcon size={20} color={color.primary} /></View>
-        <View style={s.flex}><Text style={s.rowTitle}>{u.address} {u.unit}호</Text><Text style={s.rowSub}>건물주 {u.owner}</Text>
-          <View style={s.progress}>{core.TURNOVER_STAGES.map(st => <View key={st.id} style={[s.progressBar, u.done.includes(st.id) && s.progressOn]} />)}</View>
-          <Text style={s.rowMeta}>{next ? `다음: ${next.label}` : '5단계 모두 보냄'}</Text></View>
-        <NextIcon size={20} color={color.subtle} /></Pressable>;
-    })}</View>
+    <Search value={query} onChange={setQuery} placeholder="건물명, 주소, 호실, 건물주" />
+    {buildings.map(({ name, units }) => {
+      const first = units[0]!, expanded = !!q || !!open[name];
+      const active = units.filter(u => u.done.length && u.done.length < ALL.length).length;
+      return <View key={name} style={s.group}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setOpen({ ...open, [name]: !open[name] })} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
+          <View style={s.rowIcon}><BuildingIcon size={20} color={color.primary} /></View>
+          <View style={s.flex}><Text style={s.rowTitle}>{name}</Text><Text style={s.rowSub}>{first.address} · 건물주 {first.owner}</Text>
+            <Text style={s.rowMeta}>호실 {units.length}개{active ? ` · 진행 중 ${active}` : ''}</Text></View>
+          <View style={expanded ? s.chevronOpen : undefined}><NextIcon size={20} color={color.subtle} /></View></Pressable>
+        {expanded && units.map(u => {
+          const next = core.TURNOVER_STAGES.find(st => !u.done.includes(st.id));
+          return <Pressable key={u.id} accessibilityRole="button" onPress={() => setUnit(u)} style={({ pressed }) => [s.unitRow, pressed && s.rowPressed]}>
+            <Text style={s.unitNo}>{u.unit}호</Text>
+            <View style={s.flex}><View style={[s.progress, s.progressTight]}>{core.TURNOVER_STAGES.map(st => <View key={st.id} style={[s.progressBar, u.done.includes(st.id) && s.progressOn]} />)}</View>
+              <Text style={[s.rowMeta, !next && s.doneMeta]}>{next ? `다음: ${next.label}` : '입주청소까지 완료'}</Text></View>
+            <NextIcon size={18} color={color.subtle} /></Pressable>;
+        })}
+      </View>;
+    })}
+    {!buildings.length && <Text style={s.empty}>일치하는 건물·호실이 없습니다.</Text>}
   </ScrollView></>;
 }
 function NoticeFlow({ unit, onClose }: { unit: Unit; onClose: () => void }) {
@@ -133,7 +151,7 @@ function NoticeFlow({ unit, onClose }: { unit: Unit; onClose: () => void }) {
   const values = useMemo(() => ({ ...core.formatTurnoverValues(stage, input), 건물주소: unit.address, 호실: unit.unit }), [stage, input, unit]);
   const missing = core.missingVariables(stage, values); const preview = core.render(stage, values);
   const already = unit.done.includes(stage);
-  return <><Header title={`${unit.unit}호 안내`} sub={`${unit.address} · 건물주 ${unit.owner}`} onBack={onClose} />
+  return <><Header title={`${unit.building} ${unit.unit}호`} sub={`${unit.address} · 건물주 ${unit.owner}`} onBack={onClose} />
     <ScrollView contentContainerStyle={s.body}>
       {sent ? <View style={s.done}><CheckIcon size={36} color={color.success} strokeWidth={2.5} /><Text style={s.doneTitle}>발송 접수됨</Text><Text style={s.text}>{unit.owner}님({unit.phone})께 알림톡을 보냈습니다. 시안이라 실제로는 보내지 않았습니다.</Text></View> : <>
         <Text style={s.section}>단계</Text>
@@ -236,7 +254,10 @@ const s = brandStyles({
   stage: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderColor: color.line },
   stageOn: { backgroundColor: color.primarySoft }, stageNum: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: color.lineStrong, alignItems: 'center', justifyContent: 'center', backgroundColor: color.surface },
   stageText: { flex: 1, fontSize: 15, color: color.text }, stageTextOn: { fontWeight: '700', color: color.primaryDark }, stageSent: { fontSize: 12, color: color.subtle },
-  progress: { flexDirection: 'row', gap: 3, marginTop: 8 }, progressBar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line }, progressOn: { backgroundColor: color.primary },
+  progress: { flexDirection: 'row', gap: 3, marginTop: 8 }, progressTight: { marginTop: 0 },
+  unitRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingLeft: 68, paddingRight: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: color.line, backgroundColor: color.fill },
+  unitNo: { width: 52, fontSize: 16, fontWeight: '700', color: color.ink }, doneMeta: { color: color.success },
+  chevronOpen: { transform: [{ rotate: '90deg' }] }, progressBar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line }, progressOn: { backgroundColor: color.primary },
   warn: { fontSize: 13, lineHeight: 19, color: color.warning, backgroundColor: color.warningSoft, padding: 12, borderRadius: 10 },
   preview: { backgroundColor: color.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: color.line },
   previewText: { fontSize: 14, lineHeight: 21, color: color.text },
