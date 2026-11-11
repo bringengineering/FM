@@ -21,6 +21,11 @@ export class MobileAccessError extends Error {
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const pathId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
 export async function authorizeMobile(headers: { authorization: string; appCheck: string }, deps: MobileAuthDependencies): Promise<MobileActor> {
+  const { uid, role } = await authorizeMobileSender(headers, deps);
+  return { uid, role };
+}
+/** 업무 자동화 서버가 같은 사용자를 다시 확인할 수 있게 검증된 토큰과 CRM 계정 이메일을 함께 돌려준다. */
+export async function authorizeMobileSender(headers: { authorization: string; appCheck: string }, deps: MobileAuthDependencies): Promise<MobileActor & { email: string; idToken: string }> {
   if (!deps.projectId || deps.allowedNativeAppIds.length === 0) throw new MobileAccessError('MOBILE_APP_NOT_REGISTERED');
   const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/.exec(headers.authorization);
   if (!bearer || !/^[A-Za-z0-9._~-]{1,12000}$/.test(headers.appCheck)) throw new MobileAccessError('MOBILE_AUTH_REQUIRED');
@@ -38,7 +43,7 @@ export async function authorizeMobile(headers: { authorization: string; appCheck
     || access.deletionPending === true || !!access.deletedAt || access.marketingRole === 'marketing'
     || typeof access.email !== 'string' || access.email.trim().toLowerCase() !== identity.email.trim().toLowerCase()
     || (access.role !== 'member' && access.role !== 'admin')) throw new MobileAccessError('MOBILE_ACCESS_DENIED');
-  return { uid: identity.uid, role: access.role };
+  return { uid: identity.uid, role: access.role, email: access.email, idToken: bearer[1]! };
 }
 /** assignedUids must be resolved server-side from canonical work assignments.
  * Until a teamProfile-to-auth-UID mapping has been verified, return no member

@@ -46,4 +46,30 @@ export class CompanyRecordingApi extends CompanySiteApi {
     const v=await this.request(`/visits/${visit.id}/archive`,'POST',JSON.stringify({revision:visit.revision,...(visit.captureAreas?.length?{captureAreas:visit.captureAreas}:{}),...(visit.legacyArchive?.revision===visit.revision&&visit.legacyArchive.plan.length?{legacyPlan:visit.legacyArchive.plan}:{})}),signal) as any;
     if(!/^saved_wr_[a-f0-9]{40}$/.test(v?.documentId||'')||v?.revision!==visit.revision||typeof v.archivedAt!=='string'||!Number.isFinite(Date.parse(v.archivedAt))||v.driveVerified!==true||v.crmLinked!==true)throw new FieldError('SERVER_RESPONSE_INVALID');return v;
   }
+  // 건물주 안내(퇴실 → 입주 5단계) 알림톡. 서버가 호실 → 건물 → 건물주를 다시 찾고 관리자만 허용한다.
+  async ownerNoticeUnits(signal:AbortSignal):Promise<{units:OwnerNoticeUnit[];truncated:boolean}>{
+    const v=await this.request('/owner-notices/units','GET',undefined,signal) as any;
+    if(!v||!Array.isArray(v.units)||v.units.length>250||typeof v.truncated!=='boolean'||!v.units.every(ownerNoticeUnit))throw new FieldError('SERVER_RESPONSE_INVALID');
+    return {units:v.units,truncated:v.truncated};
+  }
+  async sendOwnerNotice(input:{requestId:string;unitId:string;templateId:string;input:Record<string,string>;preview:string},signal:AbortSignal):Promise<OwnerNoticeReceipt>{
+    if(!UUID.test(input.requestId)||!/^[A-Za-z0-9_-]{1,160}$/.test(input.unitId))throw new FieldError('REQUEST_INVALID');
+    return ownerNoticeReceipt(await this.request('/owner-notices/send','POST',JSON.stringify(input),signal),input.requestId);
+  }
+  async ownerNoticeStatus(requestId:string,signal:AbortSignal):Promise<OwnerNoticeReceipt>{
+    if(!UUID.test(requestId))throw new FieldError('REQUEST_INVALID');
+    return ownerNoticeReceipt(await this.request(`/owner-notices/deliveries/${requestId}`,'GET',undefined,signal),requestId);
+  }
+}
+export interface OwnerNoticeUnit {id:string;buildingId:string;address:string;unit:string;owner:string;recipient:string;nextStage:string;progress:{id:string;count:number;lastSentAt:string}[]}
+export interface OwnerNoticeReceipt {requestId:string;status:'accepted'|'delivered'|'failed'|'unknown';recipient?:string}
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const short=(v:unknown,max:number)=>typeof v==='string'&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
+function ownerNoticeUnit(v:any):v is OwnerNoticeUnit{
+  return !!v&&/^[A-Za-z0-9_-]{1,160}$/.test(v.id||'')&&/^[A-Za-z0-9_-]{1,160}$/.test(v.buildingId||'')&&short(v.address,80)&&short(v.unit,30)&&short(v.owner,60)&&/^01\d-\*\*\*\*-\d{4}$/.test(v.recipient||'')
+    &&short(v.nextStage,60)&&Array.isArray(v.progress)&&v.progress.length<=10&&v.progress.every((p:any)=>short(p?.id,60)&&Number.isSafeInteger(p.count)&&p.count>=0&&short(p.lastSentAt,40));
+}
+function ownerNoticeReceipt(v:any,requestId:string):OwnerNoticeReceipt{
+  if(v?.requestId!==requestId||!['accepted','delivered','failed','unknown'].includes(v.status)||(v.recipient!==undefined&&!/^01\d-\*\*\*\*-\d{4}$/.test(v.recipient)))throw new FieldError('SERVER_RESPONSE_INVALID');
+  return {requestId,status:v.status,...(v.recipient?{recipient:v.recipient}:{})};
 }

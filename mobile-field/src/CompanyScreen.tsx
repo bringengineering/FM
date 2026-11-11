@@ -5,6 +5,7 @@ import {APP_VERSION} from './app-version';
 import { companyConnectionEnabled, createCompanySession } from './auth/runtime';
 import type { CompanySession } from './auth/session';
 import { FieldWorkspace } from './FieldWorkspace';
+import { OwnerNoticeScreen } from './OwnerNoticeScreen';
 import type { CustomerSite } from './api/sites';
 import type { CompanyRecordingApi } from './api/recording';
 
@@ -56,6 +57,7 @@ function SessionScreen({ session }: { session: CompanySession }) {
   const [hidden, setHidden] = useState(AppState.currentState !== 'active');
   const [recording,setRecording]=useState<{uid:string;site:CustomerSite;api:CompanyRecordingApi}>();
   const [backRequest,setBackRequest]=useState(0);
+  const [ownerNotice,setOwnerNotice]=useState<CompanyRecordingApi>();
   const [query,setQuery]=useState(''),[searchResult,setSearchResult]=useState<{sites:CustomerSite[];incomplete:boolean;nextCursor:string|null}>(),[searchBusy,setSearchBusy]=useState(false),[searchError,setSearchError]=useState('');
   const searchLock=useRef(false);
   const [pageHistory,setPageHistory]=useState<(string|null)[]>([null]);
@@ -66,14 +68,14 @@ function SessionScreen({ session }: { session: CompanySession }) {
     catch{if(session.snapshot().phase==='ready')setSearchError('검색하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.');}
     finally{searchLock.current=false;setSearchBusy(false);}
   }
-  useEffect(()=>{if(state.phase==='signedOut'||state.phase==='error'){setRecording(undefined);setQuery('');setSearchResult(undefined);setPageHistory([null]);}},[state.phase]);
+  useEffect(()=>{if(state.phase==='signedOut'||state.phase==='error'){setRecording(undefined);setOwnerNotice(undefined);setQuery('');setSearchResult(undefined);setPageHistory([null]);}},[state.phase]);
   useEffect(() => {
     const listener = AppState.addEventListener('change', next => {
       if (next !== 'active') { setPassword(''); setHidden(true); }
       else { void session.revalidate().finally(() => setHidden(false)); }
     }); return () => listener.remove();
   }, [session]);
-  if (hidden&&!recording) return <View style={styles.card}><Text style={styles.copy}>회사 정보를 보호하고 있습니다.</Text></View>;
+  if (hidden&&!recording&&!ownerNotice) return <View style={styles.card}><Text style={styles.copy}>회사 정보를 보호하고 있습니다.</Text></View>;
   if (state.phase === 'loading') return <View style={styles.card}><ActivityIndicator accessibilityLabel="회사 권한·현장 확인 중" /><Text style={styles.copy}>회사 권한과 현장을 확인하고 있습니다.</Text></View>;
   if (state.phase !== 'ready') return <View style={styles.card}>
     <Text style={styles.heading}>회사 계정 로그인</Text>
@@ -85,6 +87,7 @@ function SessionScreen({ session }: { session: CompanySession }) {
   </View>;
   const selected = state.selected;
   return <>
+    {state.context?.actor.role==='admin'&&!selected&&<View style={styles.card}><Text style={styles.heading}>건물주 안내 알림톡</Text><Text style={styles.copy}>퇴실·중개 접수·방 보기·신규 계약·입주청소 안내를 호실별로 보냅니다.</Text><Action label="안내 보내기" onPress={()=>setOwnerNotice(session.recordingApi())}/></View>}
     <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text>{state.error&&<Text accessibilityRole="alert" style={styles.error}>{messages[state.error]||messages.SERVER_UNAVAILABLE}</Text>}<Action label="목록 새로고침" disabled={searchBusy} onPress={() => {setSearchResult(undefined);setSearchError('');void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
     {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Action label="사진 촬영·보고서 작성" onPress={()=>setRecording({uid:state.context!.actor.uid,site:selected,api:session.recordingApi()})}/><Action label="고객 목록으로" onPress={() => {void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /></View> : <>
       <View style={styles.card}><Text style={styles.heading}>고객 찾기</Text><TextInput accessibilityLabel="고객명 또는 건물주소 검색" value={query} onChangeText={value=>{setQuery(value);setSearchResult(undefined);setSearchError('');}} editable={!searchBusy} placeholder="고객명 또는 건물주소" returnKeyType="search" maxLength={100} style={styles.input} onSubmitEditing={()=>void findCustomer()} />
@@ -99,6 +102,7 @@ function SessionScreen({ session }: { session: CompanySession }) {
       {!searchResult&&pageHistory.length>1&&<Action label="이전 고객 보기" disabled={searchBusy} onPress={()=>{const next=pageHistory.slice(0,-1);void session.refresh(next[next.length-1]??null).then(ok=>{if(ok)setPageHistory(next);});}} />}
       {!searchResult&&state.page?.nextCursor && <Action label="다음 고객 보기" disabled={searchBusy} onPress={() => {const next=state.page!.nextCursor!;void session.refresh(next).then(ok=>{if(ok)setPageHistory([...pageHistory,next]);});}} />}
     </>}
+    {ownerNotice&&<Modal visible animationType="slide" onRequestClose={()=>setOwnerNotice(undefined)}><OwnerNoticeScreen api={ownerNotice} onClose={()=>setOwnerNotice(undefined)}/></Modal>}
     {recording&&<Modal visible animationType="slide" onRequestClose={()=>setBackRequest(value=>value+1)}><FieldWorkspace company={recording} backRequest={backRequest} onClose={()=>setRecording(undefined)}/></Modal>}
   </>;
 }
