@@ -53,11 +53,15 @@ const functionNames = [
   "paymentHash",
   "paymentScheduleActiveInMonth",
   "paymentTransactionsArray",
+  "paymentBankCoversDueDate",
   "calculatePaymentMonthRows",
   "paymentBuildingRecords",
+  "paymentBankName",
+  "paymentBankLabel",
+  "paymentBankBindingRecord",
   "paymentReminderTimingEligible"
 ];
-const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {} };
+const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {}, authedUser: { email: "admin@example.com" } };
 vm.createContext(context);
 vm.runInContext(functionNames.map(extractFunction).join("\n"), context);
 
@@ -77,8 +81,25 @@ function schedule(id, overrides) {
   }, overrides || {});
 }
 
-function rows(data, month, today) {
-  return context.calculatePaymentMonthRows(data, "building-1", month || "2026-07", today || "2026-07-10");
+const linkedBank = {
+  bankBindings: { "building-1": { accountRef: "pb_building1account00" } },
+  bankSync: { ok: true, status: "completed", lastSuccessfulAt: "2026-07-25T01:00:00.000Z", accounts: [], errors: [] }
+};
+
+function rows(data, month, today, options) {
+  const withBank = options && options.noBank ? data : Object.assign({}, linkedBank, data);
+  return context.calculatePaymentMonthRows(withBank, "building-1", month || "2026-07", today || "2026-07-10");
+}
+
+// 계좌 연결이나 조회 성공이 없으면 입금 여부를 알 수 없으므로 미입금으로 단정하지 않는다.
+{
+  const base = { schedules: { s1: schedule("s1") }, transactions: {} };
+  assert.equal(rows(base, "2026-07", "2026-07-20", { noBank: true })[0].status, "unverified", "계좌 미연결은 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { lastSuccessfulAt: "2026-07-09T23:00:00.000Z" }) }), "2026-07", "2026-07-20")[0].status, "unverified", "납부일 이후 조회 성공이 없으면 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { errors: [{ accountRef: "pb_building1account00" }] }) }), "2026-07", "2026-07-20")[0].status, "unverified", "해당 계좌 조회 실패면 조회 필요");
+  assert.equal(rows(Object.assign({}, base, { bankSync: Object.assign({}, linkedBank.bankSync, { accounts: [{ accountRef: "pb_building1account00", pending: true }] }) }), "2026-07", "2026-07-20")[0].status, "unverified", "수집 대기 중이면 조회 필요");
+  assert.equal(rows(base, "2026-07", "2026-07-20")[0].status, "overdue", "연결되고 납부일 이후 조회가 끝났으면 미입금");
+  assert.equal(rows(base, "2026-07", "2026-07-10", { noBank: true })[0].status, "scheduled", "납부일 당일까지는 입금예정");
 }
 
 assert.equal(context.paymentDueDate("2026-02", 31), "2026-02-28", "말일이 짧은 달에는 실제 말일을 사용한다");
@@ -118,6 +139,23 @@ const otherBuilding = rows({
 }, "2026-07", "2026-07-20");
 assert.equal(otherBuilding[0].status, "overdue", "다른 건물 계좌 거래는 매칭하지 않는다");
 
+const popbillReview = rows({
+  schedules: { s1: schedule("s1") },
+  transactions: {
+    tx1: {
+      buildingId: "",
+      date: "2026-07-10",
+      payerName: "홍길동",
+      amount: 500000,
+      direction: "deposit",
+      source: "popbill",
+      matchStatus: "review",
+      reviewScheduleIds: ["s1"]
+    }
+  }
+});
+assert.equal(popbillReview[0].status, "review", "팝빌 거래가 여러 일정에 걸리면 자동 입금완료 대신 확인필요다");
+
 const manual = rows({
   schedules: { s1: schedule("s1") },
   transactions: {},
@@ -146,5 +184,17 @@ const buildings = context.paymentBuildingRecords();
 assert.equal(buildings.length, 1, "안내문 항목과 같은 온보딩 파일의 중복 건물은 왼쪽 목록에서 제거한다");
 assert.equal(buildings[0].name, "햇빛빌라");
 assert.equal(buildings[0].ownerName, "서창환", "중복 온보딩 자료의 건물주명을 합쳐 표시한다");
+
+const bankBinding = context.paymentBankBindingRecord(
+  buildings[0],
+  { accountRef: "pb_safeopaqueaccountref1234", bankCode: "0088", accountLast4: "1076" },
+  "2026-07-29T00:00:00.000Z"
+);
+assert.equal(bankBinding.bankName, "신한은행");
+assert.equal(bankBinding.accountLast4, "1076");
+assert.equal(bankBinding.accountRef, "pb_safeopaqueaccountref1234");
+assert.equal(JSON.stringify(bankBinding).includes("accountNumber"), false, "건물 계좌 연결에는 전체 계좌번호 필드를 저장하지 않는다");
+assert.match(source, /팝빌 계좌 연결/);
+assert.match(source, /bankBindings/);
 
 console.log("payment calendar tests passed");

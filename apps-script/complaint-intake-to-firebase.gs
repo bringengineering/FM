@@ -1,5 +1,5 @@
 /**
- * BRING Care 민원접수 자동 분석 -> FM GitHub.io 케이스 등록
+ * BRING Care 민원접수 자동 분석 -> FM GitHub.io 민원 등록
  *
  * 설치 위치: Google Sheets 응답 시트의 확장 프로그램 > Apps Script
  * 최초 1회 실행: setupComplaintAutomation()
@@ -13,8 +13,11 @@ const COMPLAINT_CONFIG = {
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
-  FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+  OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?c=",
+  FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
+  FIREBASE_CASE_SETTINGS_PATH: "caseSettings",
+  FIREBASE_PAYMENT_CALENDARS_PATH: "crmCompany/paymentCalendars",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
   PAYMENT_SCHEDULE_DRIVE_FOLDER_ID: "1q1uKquSngjyi0upoCRmjnRxm_CD1sAcN",
   PAYMENT_SCHEDULE_SPREADSHEET_NAME: "BRING CARE 세입자 월세 관리대장"
@@ -34,9 +37,24 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v25";
+const AUTOMATION_BUILD = "complaint-workflow-20261111-v64";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
+const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
+const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
+const PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY = "PAYMENT_NOTIFICATION_CONFIRMED_BASELINE";
+const PAYMENT_NOTIFICATION_BINDINGS_PREFIX = "PAYMENT_NOTIFICATION_BINDINGS_";
+const PAYMENT_NOTIFICATION_LEDGER_RETENTION_DAYS = 40;
+const PAYMENT_OVERDUE_CATCHUP_DAYS = 3;
+const POPBILL_ACCOUNT_REF_KEY_PROPERTY = "POPBILL_ACCOUNT_REF_KEY";
+// 스크립트 속성 값 하나는 약 9KB까지라서, 한글이 섞여도 넘지 않게 나눠 저장한다.
+const SCRIPT_PROPERTY_CHUNK_CHARS = 2500;
+const PAYMENT_DUE_ALERT_HOUR = 9;
+const PAYMENT_OVERDUE_ALERT_HOUR = 13;
+const OWNER_PAYMENT_ACCOUNT = {
+  accountNumber: "123-456-789012",
+  accountHolder: "브링케어"
+};
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -50,7 +68,28 @@ const OUTPUT_HEADERS = [
   "문자 발송 상태",
   "문자 발송 메모",
   "Firebase Case ID",
-  "분석 처리일시"
+  "분석 처리일시",
+  "접수 경로",
+  "카카오 사용자 키 해시",
+  "카카오 처리 상태",
+  "카카오 처리 메모"
+];
+const KAKAO_INTAKE_INPUT_HEADERS = [
+  "타임스탬프",
+  "건물명",
+  "건물 주소",
+  "호실",
+  "이름",
+  "연락처",
+  "문제 유형",
+  "증상 설명",
+  "추가 요청사항",
+  "방문 가능 시간",
+  "사진 첨부",
+  "카카오 사진 원본 URL",
+  "카카오 계약 건물 ID",
+  "카카오 접수 ID",
+  "카카오 처리 시도"
 ];
 
 function setupComplaintAutomation() {
@@ -66,10 +105,12 @@ function setupComplaintAutomation() {
     .onFormSubmit()
     .create();
 
+  ensureKakaoComplaintQueueTrigger_();
   ensureFormAddressQuestion_();
   syncPaymentBuildingsFromOnboarding_();
   setupPaymentScheduleSheet_();
   ensurePaymentScheduleEditTrigger_();
+  ensurePaymentNotificationTrigger_();
   processExistingResponses();
 }
 
@@ -105,7 +146,7 @@ function authorizeDriveAccess() {
   if (quoteFolderId) {
     const quoteFolder = DriveApp.getFolderById(quoteFolderId);
     Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
-    Logger.log("사업자등록증은 견적서 저장 폴더의 케이스 폴더 안에 바로 저장됩니다: {접수번호}_{건물명}/사업자등록증/BR-..._{업체명}_사업자등록증.pdf");
+    Logger.log("사업자등록증은 견적서 저장 폴더의 민원 폴더 안에 바로 저장됩니다: {접수번호}_{건물명}/사업자등록증/BR-..._{업체명}_사업자등록증.pdf");
   }
 
   if (templateId) {
@@ -134,21 +175,76 @@ function doGet(e) {
   ).setTitle("BRING Care");
 }
 
+// 요청 본문을 읽는다. 휴대폰(MacroDroid)이 보내는 입금 문자는 줄바꿈이 그대로 들어와 JSON이 깨지거나
+// 폼 형식(action=bankSms&key=...&text=...)으로 올 수 있어, 그 두 경우만 따로 받아 준다.
+function parseWebhookPayload_(e) {
+  const raw = e && e.postData && e.postData.contents ? String(e.postData.contents) : "{}";
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const params = e && e.parameter || {};
+    if (params.action === "bankSms" || params.action === "bankSmsHeartbeat") {
+      return { action: params.action, key: params.key, sender: params.sender, text: params.text };
+    }
+    if (/"action"\s*:\s*"bankSms/.test(raw)) {
+      return JSON.parse(raw.replace(/\r\n|\r|\n/g, "\\n").replace(/\t/g, " "));
+    }
+    throw error;
+  }
+}
+
 function doPost(e) {
   let payload = {};
   try {
-    payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    payload = parseWebhookPayload_(e);
+    if (isKakaoChatbotSkillPayload_(payload)) {
+      return jsonResponse_(handleKakaoChatbotSkill_(payload, e));
+    }
     if (payload.action === "healthCheck") {
       return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
+    }
+    if (payload.action === "submitOwnerDecision") {
+      return jsonResponse_(submitOwnerDecision(
+        payload.caseId,
+        payload.token,
+        payload.decision
+      ));
+    }
+    if (payload.action === "confirmCasePayment") {
+      return jsonResponse_(handleConfirmCasePayment_(payload));
     }
     if (payload.action === "syncPaymentBuildings") {
       return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
     }
+    if (payload.action === "approveDriveImport") {
+      return jsonResponse_(handleApproveDriveImport_(payload));
+    }
+    if (payload.action === "rejectDriveImport") {
+      return jsonResponse_(handleRejectDriveImport_(payload));
+    }
     if (payload.action === "syncPaymentSchedules") {
       return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
     }
+    if (payload.action === "bankSms") {
+      return jsonResponse_(handleBankSms_(payload));
+    }
+    if (payload.action === "bankSmsHeartbeat") {
+      return jsonResponse_(handleBankSmsHeartbeat_(payload));
+    }
+    if (payload.action === "syncPopbillBankTransactions") {
+      return jsonResponse_(syncPopbillBankTransactions_(payload));
+    }
     if (payload.action === "sendPaymentReminderSms") {
       return jsonResponse_(handlePaymentReminderSms_(payload));
+    }
+    if (payload.action === "getPaymentReminderDeliveryStatus") {
+      return jsonResponse_(handlePaymentReminderDeliveryStatus_(payload));
+    }
+    if (payload.action === "sendCustomerMessage") {
+      return jsonResponse_(handleCustomerMessageSend_(payload));
+    }
+    if (payload.action === "getCustomerMessageDeliveryStatus") {
+      return jsonResponse_(handleCustomerMessageDeliveryStatus_(payload));
     }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
@@ -174,6 +270,9 @@ function doPost(e) {
     if (payload.action === "uploadBusinessRegistration") {
       return jsonResponse_(handleBusinessRegistrationUpload_(payload));
     }
+    if (payload.action === "uploadWorkPhoto") {
+      return jsonResponse_(handleWorkPhotoUpload_(payload));
+    }
     if (payload.action === "confirmQuoteAmount") {
       return jsonResponse_(handleConfirmQuoteAmount_(payload));
     }
@@ -191,10 +290,2064 @@ function doPost(e) {
   }
 }
 
+// Apps Script 편집기에서만 직접 실행하는 bring-fm 전환 점검입니다.
+// 공개 doPost 라우팅에는 연결하지 않으며, 임시 레코드는 항상 삭제합니다.
+function verifyFirebaseCutover() {
+  const probeId = "cutover-smoke-" + Utilities.getUuid();
+  const probeUrl = firebaseCaseSettingsUrl_("system/cutoverSmoke/" + probeId);
+  let created = false;
+
+  try {
+    const schemaVersion = firebaseOauthRequest_(
+      crmCompanyImportUrl_("data/schemaVersion"),
+      "get",
+      undefined,
+      "bring-fm 인증 조회 실패"
+    );
+    if (schemaVersion === null || schemaVersion === undefined) {
+      throw new Error("bring-fm 스키마 버전을 확인하지 못했습니다.");
+    }
+
+    const probe = {
+      purpose: "cutover-smoke",
+      createdAt: new Date().toISOString()
+    };
+    firebaseOauthRequest_(probeUrl, "put", probe, "bring-fm 점검 쓰기 실패");
+    created = true;
+
+    const stored = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 조회 실패");
+    if (!stored || stored.purpose !== probe.purpose || stored.createdAt !== probe.createdAt) {
+      throw new Error("bring-fm 점검 자료가 일치하지 않습니다.");
+    }
+
+    firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+    created = false;
+    const removed = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 정리 확인 실패");
+    if (removed !== null) throw new Error("bring-fm 점검 자료가 완전히 정리되지 않았습니다.");
+
+    return {
+      ok: true,
+      accessVerified: true,
+      writeVerified: true,
+      cleanupVerified: true
+    };
+  } finally {
+    if (created) {
+      try {
+        firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+      } catch (cleanupError) {
+        Logger.log("bring-fm cutover smoke cleanup failed");
+      }
+    }
+  }
+}
+
+function isKakaoChatbotSkillPayload_(payload) {
+  return !!(
+    payload &&
+    payload.userRequest &&
+    payload.userRequest.user &&
+    payload.action &&
+    typeof payload.action === "object" &&
+    payload.bot &&
+    typeof payload.bot === "object"
+  );
+}
+
+function getKakaoChatbotIntakeConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    enabled: /^(1|true|yes|on)$/i.test(String(props.getProperty("KAKAO_CHATBOT_INTAKE_ENABLED") || "")),
+    token: String(props.getProperty("KAKAO_CHATBOT_SKILL_TOKEN") || "").trim(),
+    botId: String(props.getProperty("KAKAO_CHATBOT_BOT_ID") || "").trim(),
+    photoBlockId: String(props.getProperty("KAKAO_CHATBOT_PHOTO_BLOCK_ID") || "").trim(),
+    sessionSeconds: 30 * 60
+  };
+}
+
+function setupKakaoComplaintIntake() {
+  const props = PropertiesService.getScriptProperties();
+  let token = String(props.getProperty("KAKAO_CHATBOT_SKILL_TOKEN") || "").trim();
+  if (!token) {
+    token = [Utilities.getUuid(), Utilities.getUuid()].join("").replace(/-/g, "");
+    props.setProperty("KAKAO_CHATBOT_SKILL_TOKEN", token);
+  }
+  if (!props.getProperty("KAKAO_CHATBOT_INTAKE_ENABLED")) {
+    props.setProperty("KAKAO_CHATBOT_INTAKE_ENABLED", "false");
+  }
+  ensureKakaoIntakeHeaders_(getResponseSheet_());
+  ensureKakaoComplaintQueueTrigger_();
+  ensureKakaoBuildingSyncTrigger_();
+  try {
+    syncPaymentBuildingsFromOnboarding_();
+  } catch (err) {
+    Logger.log("등록 건물 목록 동기화 실패: " + err.message);
+  }
+  const skillUrl = ownerDecisionWebAppUrl_() + "?kakaoSkillToken=" + encodeURIComponent(token);
+  Logger.log("카카오 챗봇 스킬 URL: " + skillUrl);
+  Logger.log("챗봇 연결과 테스트를 마친 뒤 KAKAO_CHATBOT_INTAKE_ENABLED=true 로 변경하세요.");
+  return {
+    ok: true,
+    enabled: getKakaoChatbotIntakeConfig_().enabled,
+    skillUrl: skillUrl,
+    queueTrigger: true,
+    buildingSyncTrigger: "daily 05:00"
+  };
+}
+
+// 새로 온보딩한 건물이 챗봇 검색에 나오도록 매일 새벽 건물 목록을 다시 읽습니다.
+function ensureKakaoBuildingSyncTrigger_() {
+  const handler = "syncPaymentBuildings";
+  const exists = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === handler);
+  if (exists) return false;
+  ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(5).create();
+  return true;
+}
+
+function ensureKakaoComplaintQueueTrigger_() {
+  const handler = "processPendingKakaoComplaintIntakes";
+  const exists = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === handler);
+  if (exists) return false;
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(1).create();
+  return true;
+}
+
+const KAKAO_REGISTRY_CACHE_KEY = "bringcare:kakao:buildingRegistry:v1";
+const KAKAO_LEDGER_CACHE_KEY = "bringcare:kakao:tenantLedger:v1";
+const KAKAO_QUEUE_MAX_ATTEMPTS = 3;
+const KAKAO_ISSUE_TYPES = ["누수", "배관", "전기", "도어락", "보일러", "에어컨", "전구·조명", "층간소음", "기타"];
+// 업체 연결 없이 브링케어가 직접 안내하는 민원입니다.
+const KAKAO_DIRECT_ISSUE_TYPES = ["전구·조명", "층간소음"];
+const KAKAO_DIRECT_VENDOR_TYPE = "브링케어 직접 처리";
+
+// 대화 순서: 동의 → (지난번 정보 재사용) → 연락처 → 건물 검색/선택 → 호실 확인 → 유형 → 증상 → 사진 → 방문시간 → 최종 확인
+function handleKakaoChatbotSkill_(payload, event) {
+  const config = getKakaoChatbotIntakeConfig_();
+  const suppliedToken = String(event && event.parameter && event.parameter.kakaoSkillToken || "").trim();
+  if (!config.token || suppliedToken !== config.token) {
+    return kakaoChatbotTextResponse_(
+      "브링케어 연결 인증에 실패했습니다. 채널 관리자에게 문의해 주세요."
+    );
+  }
+  if (!config.enabled) {
+    return kakaoChatbotTextResponse_(
+      [
+        "브링케어 카카오 민원 접수를 준비 중입니다.",
+        "현재는 기존 민원 접수 폼을 이용해 주세요.",
+        "",
+        "https://docs.google.com/forms/d/e/1FAIpQLSfzi-H-abXT-dgsU5rF8vgkWuKtbltr9acgWClVeQ5W297DiA/viewform"
+      ].join("\n")
+    );
+  }
+  if (String(payload.action && payload.action.name || "") === "__bringcare_keepalive__") {
+    return kakaoChatbotTextResponse_("ok");
+  }
+
+  const request = payload.userRequest || {};
+  const user = request.user || {};
+  const userKey = String(user.id || user.properties && (user.properties.botUserKey || user.properties.plusfriendUserKey) || "").trim();
+  if (!userKey) {
+    return kakaoChatbotTextResponse_("카카오 사용자 정보를 확인하지 못했습니다. 채팅방을 다시 열어 주세요.");
+  }
+  if (config.botId && String(payload.bot && payload.bot.id || "") !== config.botId) {
+    return kakaoChatbotTextResponse_("등록되지 않은 브링케어 챗봇 요청입니다.");
+  }
+
+  const userHash = kakaoChatbotUserHash_(userKey);
+  const utterance = kakaoChatbotCleanText_(request.utterance, 1000);
+  const command = normalizeText_(utterance).replace(/^[^0-9a-z가-힣]+/i, "");
+
+  if (/^(취소|접수취소|민원취소|추가취소)$/.test(command)) {
+    const cancelled = kakaoChatbotReadSession_(userHash);
+    const wasAdding = !!(cancelled && /^add/.test(String(cancelled.step || "")));
+    kakaoChatbotDeleteSession_(userHash);
+    return kakaoChatbotTextResponse_(
+      wasAdding ? "내용 추가를 취소했습니다." : "민원 접수를 취소했습니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  if (/^(내민원조회|민원조회|접수조회|진행상황)$/.test(command)) {
+    return kakaoChatbotCaseStatusResponse_(userHash);
+  }
+  if (/^(상담|상담신청|상담연결|상담원연결|직원상담)$/.test(command)) {
+    return kakaoChatbotConsultationResponse_();
+  }
+  if (/^(내용추가|사진추가|민원내용추가|민원추가|내용더추가)$/.test(command)) {
+    return kakaoChatbotStartCaseUpdate_(userHash, config);
+  }
+  if (/^(긴급|긴급안내|긴급상황|응급)$/.test(command)) {
+    return kakaoChatbotWithSafetyNotice_(
+      kakaoChatbotTextResponse_(
+        "위험이 없다면 '민원 접수'로 내용을 남겨 주세요.\n접수 중이었다면 이어서 답해 주세요.",
+        kakaoChatbotHomeQuickReplies_()
+      ),
+      "general"
+    );
+  }
+  if (/^(민원접수|민원접수시작|접수시작|새민원)$/.test(command)) {
+    const now = new Date().toISOString();
+    const freshSession = {
+      step: "consent",
+      values: { name: "세입자" },
+      createdAt: now,
+      updatedAt: now
+    };
+    return kakaoChatbotSaveStep_(userHash, freshSession, "consent", config);
+  }
+
+  const session = kakaoChatbotReadSession_(userHash);
+  if (!session) {
+    const greeting = kakaoChatbotTextResponse_(
+      "안녕하세요. 브링케어입니다.\n카카오톡에서 건물 민원을 접수하고 진행 상황을 확인할 수 있습니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+    const firstMessageRisk = kakaoChatbotDetectRisk_(utterance);
+    return firstMessageRisk ? kakaoChatbotWithSafetyNotice_(greeting, firstMessageRisk) : greeting;
+  }
+  if (session.completedTicketNo) {
+    return kakaoChatbotTextResponse_(
+      "최근 접수번호는 " + session.completedTicketNo + "입니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  if (session.completedPending) {
+    return kakaoChatbotTextResponse_(
+      "방금 접수한 민원을 처리하고 있습니다.\n잠시 후 '내 민원 조회'에서 접수번호를 확인해 주세요.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+
+  session.values = Object.assign({}, session.values || {});
+  const step = String(session.step || "consent");
+
+  if (step === "addPick") {
+    const pick = command.match(/^([1-9])번?$/);
+    const chosen = pick ? (session.addCases || [])[Number(pick[1]) - 1] : null;
+    if (!chosen) return kakaoChatbotPromptResponse_("addPick", config, session);
+    session.addCase = chosen;
+    delete session.addCases;
+    return kakaoChatbotSaveStep_(userHash, session, "addContent", config);
+  }
+
+  if (step === "addContent") {
+    const photoUrls = kakaoChatbotExtractPhotoUrls_(payload);
+    const isPhotoEcho = /^현장사진등록$/.test(command) || (photoUrls.length && /^https?:\/\//i.test(utterance));
+    const text = isPhotoEcho ? "" : kakaoChatbotCleanText_(utterance, 500);
+    if (!photoUrls.length && text.replace(/\s/g, "").length < 2) {
+      return kakaoChatbotPromptResponse_("addContent", config, session);
+    }
+    const addCase = session.addCase || {};
+    try {
+      queueKakaoCaseUpdate_(addCase.id, userHash, text, photoUrls);
+    } catch (err) {
+      Logger.log("카카오 민원 내용 추가 실패: " + err.message);
+      return kakaoChatbotTextResponse_(
+        "내용을 저장하지 못했습니다. 잠시 후 다시 보내 주세요.",
+        kakaoChatbotQuickRepliesForStep_("addContent", config, session)
+      );
+    }
+    kakaoChatbotDeleteSession_(userHash);
+    const added = kakaoChatbotTextResponse_(
+      [
+        addCase.id + " 민원에 내용을 추가했습니다." + (photoUrls.length ? " (사진 " + photoUrls.length + "장)" : ""),
+        "1~2분 안에 브링케어 민원 기록에 반영됩니다."
+      ].join("\n"),
+      [kakaoChatbotMessageReply_("➕ 내용 더 추가", "내용 더 추가")].concat(kakaoChatbotHomeQuickReplies_())
+    );
+    const addedRisk = kakaoChatbotDetectRisk_(text);
+    return addedRisk ? kakaoChatbotWithSafetyNotice_(added, addedRisk) : added;
+  }
+
+  if (step === "consent") {
+    const agreed = kakaoChatbotConsentAnswer_(command);
+    if (agreed === null) {
+      return kakaoChatbotTextResponse_(
+        "민원 접수를 계속하려면 '동의합니다'를 선택해 주세요.",
+        kakaoChatbotQuickRepliesForStep_("consent", config, session)
+      );
+    }
+    if (!agreed) {
+      kakaoChatbotDeleteSession_(userHash);
+      return kakaoChatbotTextResponse_(
+        "개인정보 수집·이용에 동의하지 않아 접수를 종료했습니다.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    session.values.consentAt = new Date().toISOString();
+    const previous = kakaoChatbotPreviousIntake_(userHash);
+    if (previous) {
+      session.previous = previous;
+      return kakaoChatbotSaveStep_(userHash, session, "reuse", config);
+    }
+    return kakaoChatbotSaveStep_(userHash, session, "phone", config);
+  }
+
+  if (step === "reuse") {
+    if (/^(같은곳접수|같은곳|네|예|맞아요|맞습니다|응)$/.test(command) && session.previous) {
+      const previous = session.previous;
+      delete session.previous;
+      let building = null;
+      try {
+        building = kakaoChatbotFindRegistryBuilding_(previous.buildingId);
+      } catch (err) {
+        Logger.log("카카오 지난 건물 조회 실패: " + err.message);
+      }
+      if (!building) {
+        session.step = "phone";
+        kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+        return kakaoChatbotTextResponse_(
+          "지난번 건물을 현재 등록 목록에서 찾지 못했습니다. 다시 입력해 주세요.\n\n" +
+            kakaoChatbotPromptText_("phone", session),
+          kakaoChatbotQuickRepliesForStep_("phone", config, session)
+        );
+      }
+      Object.assign(session.values, {
+        phone: previous.phone,
+        contractBuildingId: building.id,
+        building: building.building,
+        address: building.address,
+        room: previous.room,
+        name: previous.name || "세입자",
+        reusedPrevious: true
+      });
+      return kakaoChatbotSaveStep_(userHash, session, "issueType", config);
+    }
+    if (/^(다른곳접수|다른곳|아니요|아니오|아니)$/.test(command)) {
+      delete session.previous;
+      return kakaoChatbotSaveStep_(userHash, session, "phone", config);
+    }
+    return kakaoChatbotPromptResponse_("reuse", config, session);
+  }
+
+  if (step === "phone") {
+    const phone = normalizePhoneForSms_(utterance);
+    if (!/^01[016789]\d{7,8}$/.test(phone)) {
+      return kakaoChatbotTextResponse_(
+        "휴대폰 번호를 다시 입력해 주세요. 예: 010-1234-5678",
+        kakaoChatbotQuickRepliesForStep_("phone", config, session)
+      );
+    }
+    session.values.phone = phone;
+    return kakaoChatbotSaveStep_(userHash, session, "building", config);
+  }
+
+  if (step === "building" || step === "buildingPick") {
+    if (/^목록에없어요$/.test(command)) {
+      delete session.candidates;
+      return kakaoChatbotSaveStep_(userHash, session, "manualBuilding", config);
+    }
+    if (step === "buildingPick") {
+      if (/^다시검색$/.test(command)) {
+        delete session.candidates;
+        return kakaoChatbotSaveStep_(userHash, session, "building", config);
+      }
+      const pick = command.match(/^([1-9])번?$/);
+      if (pick) {
+        const candidate = (session.candidates || [])[Number(pick[1]) - 1];
+        if (!candidate) {
+          return kakaoChatbotTextResponse_(
+            "목록에 있는 번호를 선택해 주세요.",
+            kakaoChatbotQuickRepliesForStep_("buildingPick", config, session)
+          );
+        }
+        return kakaoChatbotSelectBuilding_(userHash, session, candidate, config);
+      }
+      // 번호가 아니면 새 검색어로 처리합니다.
+    }
+
+    const query = kakaoChatbotCleanText_(utterance, 60);
+    if (normalizeText_(query).length < 2) {
+      return kakaoChatbotTextResponse_(
+        "건물 이름을 두 글자 이상 입력해 주세요.",
+        kakaoChatbotQuickRepliesForStep_("building", config, session)
+      );
+    }
+    let candidates = [];
+    try {
+      candidates = kakaoChatbotSearchBuildings_(query);
+    } catch (err) {
+      Logger.log("카카오 건물 검색 실패: " + err.message);
+      return kakaoChatbotTextResponse_(
+        "건물 목록을 불러오지 못했습니다. 잠시 후 건물 이름을 다시 입력해 주세요.",
+        kakaoChatbotQuickRepliesForStep_("building", config, session)
+      );
+    }
+    if (!candidates.length) {
+      delete session.candidates;
+      session.step = "building";
+      session.updatedAt = new Date().toISOString();
+      kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+      return kakaoChatbotTextResponse_(
+        [
+          "'" + query + "'(으)로 찾은 브링케어 관리 건물이 없습니다.",
+          "건물 이름을 다르게 입력해 보세요.",
+          "예: 건물 간판에 적힌 이름, 이름 일부"
+        ].join("\n"),
+        kakaoChatbotQuickRepliesForStep_("building", config, session)
+      );
+    }
+    session.candidates = candidates.map(item => ({
+      id: item.id,
+      building: item.building,
+      address: item.address,
+      area: item.area
+    }));
+    return kakaoChatbotSaveStep_(userHash, session, "buildingPick", config);
+  }
+
+  if (step === "manualBuilding") {
+    const manualBuilding = kakaoChatbotCleanText_(utterance, 120);
+    if (normalizeText_(manualBuilding).length < 2) {
+      return kakaoChatbotPromptResponse_("manualBuilding", config, session);
+    }
+    session.values.building = manualBuilding;
+    delete session.values.contractBuildingId;
+    return kakaoChatbotSaveStep_(userHash, session, "manualAddress", config);
+  }
+
+  if (step === "manualAddress") {
+    const manualAddress = kakaoChatbotCleanText_(utterance, 240);
+    if (!manualAddress) return kakaoChatbotPromptResponse_("manualAddress", config, session);
+    session.values.address = /^주소모름$/.test(command) ? "" : manualAddress;
+    session.values.manualBuilding = true;
+    return kakaoChatbotSaveStep_(userHash, session, "room", config);
+  }
+
+  if (step === "roomConfirm") {
+    const options = session.roomOptions || [];
+    if (/^다른호실입력$/.test(command)) {
+      delete session.roomOptions;
+      return kakaoChatbotSaveStep_(userHash, session, "room", config);
+    }
+    let chosen = null;
+    if (options.length === 1 && /^(맞아요|맞습니다|네|예|응)$/.test(command)) chosen = options[0];
+    const pick = command.match(/^([1-9])번?$/);
+    if (pick) chosen = options[Number(pick[1]) - 1] || null;
+    if (!chosen) return kakaoChatbotPromptResponse_("roomConfirm", config, session);
+    session.values.room = chosen.unit;
+    session.values.name = chosen.name || "세입자";
+    session.values.ledgerMatched = true;
+    delete session.roomOptions;
+    return kakaoChatbotSaveStep_(userHash, session, "issueType", config);
+  }
+
+  if (step === "room") {
+    const room = kakaoChatbotCleanText_(utterance, 60);
+    if (!/[0-9가-힣A-Za-z]/.test(room)) {
+      return kakaoChatbotTextResponse_(
+        "호실을 다시 입력해 주세요. 예: 301",
+        kakaoChatbotQuickRepliesForStep_("room", config, session)
+      );
+    }
+    session.values.room = room;
+    return kakaoChatbotSaveStep_(userHash, session, "issueType", config);
+  }
+
+  if (step === "issueType") {
+    const issueType = kakaoChatbotCleanText_(utterance, 80);
+    if (!issueType) return kakaoChatbotPromptResponse_("issueType", config, session);
+    session.values.issueType = issueType;
+    const simpleIssue = kakaoChatbotSimpleIssue_(issueType);
+    if (simpleIssue) {
+      session.simpleIssue = simpleIssue;
+      return kakaoChatbotSaveStep_(userHash, session, "simpleGuide", config);
+    }
+    return kakaoChatbotSaveStep_(userHash, session, "description", config);
+  }
+
+  if (step === "simpleGuide") {
+    if (session.simpleIssue === "lamp" && /^해결됐어요$/.test(command)) {
+      kakaoChatbotDeleteSession_(userHash);
+      return kakaoChatbotTextResponse_(
+        "해결되어 다행입니다. 다른 문제가 있으면 언제든 접수해 주세요.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    if (session.simpleIssue === "lamp" && /^교체해도안돼요$/.test(command)) {
+      session.values.issueType = "전기";
+      delete session.simpleIssue;
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    if (session.simpleIssue === "lamp" && /^공용부전등$/.test(command)) {
+      session.values.issueType = "전구·조명";
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    if (session.simpleIssue === "noise" && /^브링케어에전달$/.test(command)) {
+      session.values.issueType = "층간소음";
+      return kakaoChatbotSaveStep_(userHash, session, "description", config);
+    }
+    return kakaoChatbotPromptResponse_("simpleGuide", config, session);
+  }
+
+  if (step === "description") {
+    const description = kakaoChatbotCleanText_(utterance, 1000);
+    if (description.replace(/\s/g, "").length < 5) {
+      return kakaoChatbotTextResponse_(
+        "증상을 다섯 글자 이상 자세히 입력해 주세요.",
+        kakaoChatbotQuickRepliesForStep_("description", config, session)
+      );
+    }
+    session.values.description = description;
+    const risk = kakaoChatbotDetectRisk_([session.values.issueType, description].join(" "));
+    if (risk) {
+      // 위험 표현이 있으면 직접 처리 민원이 아니라 일반 민원으로 접수합니다.
+      if (session.simpleIssue === "lamp") session.values.issueType = "전기";
+      if (session.simpleIssue === "noise") session.values.issueType = "기타";
+      delete session.simpleIssue;
+      session.values.safetyRisk = risk;
+      return kakaoChatbotWithSafetyNotice_(kakaoChatbotSaveStep_(userHash, session, "photo", config), risk);
+    }
+    delete session.values.safetyRisk;
+    if (session.simpleIssue) {
+      delete session.simpleIssue;
+      delete session.values.photoUrls;
+      delete session.values.photoUrl;
+      session.values.photoCount = 0;
+      session.values.photoSkipped = true;
+      session.values.visitTime = "해당 없음";
+      return kakaoChatbotSaveStep_(userHash, session, "confirm", config);
+    }
+    return kakaoChatbotSaveStep_(userHash, session, "photo", config);
+  }
+
+  if (step === "photo") {
+    const photoUrls = kakaoChatbotExtractPhotoUrls_(payload);
+    const skipPhoto = /^(사진없이접수|사진건너뛰기|사진생략|건너뛰기)$/.test(command);
+    if (!photoUrls.length && !skipPhoto) {
+      return kakaoChatbotPromptResponse_("photo", config, session);
+    }
+    if (photoUrls.length) {
+      session.values.photoUrls = photoUrls;
+      session.values.photoCount = photoUrls.length;
+      session.values.photoSkipped = false;
+    } else {
+      delete session.values.photoUrls;
+      delete session.values.photoUrl;
+      session.values.photoCount = 0;
+      session.values.photoSkipped = true;
+    }
+    session.visitDays = kakaoChatbotVisitDays_(new Date());
+    return kakaoChatbotSaveStep_(userHash, session, "visitTime", config);
+  }
+
+  if (step === "visitTime") {
+    const visitTime = kakaoChatbotCleanText_(utterance, 240);
+    if (!visitTime) return kakaoChatbotPromptResponse_("visitTime", config, session);
+    const visitDay = kakaoChatbotFindVisitDay_(session.visitDays || kakaoChatbotVisitDays_(new Date()), command);
+    if (visitDay) {
+      session.visitDay = visitDay;
+      return kakaoChatbotSaveStep_(userHash, session, "visitSlot", config);
+    }
+    // 일정 협의나 직접 입력한 일정은 그대로 저장합니다.
+    return kakaoChatbotSaveVisitTime_(userHash, session, visitTime, config);
+  }
+
+  if (step === "visitSlot") {
+    if (/^날짜다시선택$/.test(command) || !session.visitDay) {
+      delete session.visitDay;
+      return kakaoChatbotSaveStep_(userHash, session, "visitTime", config);
+    }
+    const slotText = kakaoChatbotCleanText_(utterance, 200);
+    if (!slotText) return kakaoChatbotPromptResponse_("visitSlot", config, session);
+    return kakaoChatbotSaveVisitTime_(userHash, session, session.visitDay.text + " " + slotText, config);
+  }
+
+  if (step === "confirm") {
+    if (!/^(접수하기|접수|네|예|확인)$/.test(command)) {
+      return kakaoChatbotPromptResponse_("confirm", config, session);
+    }
+    if (!session.submissionId) {
+      session.submissionId = Utilities.getUuid();
+      session.updatedAt = new Date().toISOString();
+      kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+    }
+    try {
+      const result = submitKakaoComplaintIntake_(session.values, userHash, session.submissionId);
+      const summaryLines = [
+        "건물: " + (session.values.building || ""),
+        "호실: " + formatRoomForCase_(session.values.room),
+        "문제 유형: " + (session.values.issueType || "")
+      ];
+      session.step = "completed";
+      session.updatedAt = new Date().toISOString();
+      if (result.ticketNo) {
+        session.completedTicketNo = result.ticketNo;
+        kakaoChatbotWriteSession_(userHash, session, 6 * 60 * 60);
+        return kakaoChatbotTextResponse_(
+          ["민원이 정상 접수되었습니다.", "", "접수번호: " + result.ticketNo]
+            .concat(summaryLines)
+            .concat(session.values.safetyRisk ? ["", "긴급 민원으로 표시했습니다. 위험하면 119 신고가 먼저입니다."] : [])
+            .concat(["", "브링케어가 내용을 확인하고 있습니다. 진행 상황은 '내 민원 조회'에서 볼 수 있습니다."])
+            .join("\n"),
+          kakaoChatbotHomeQuickReplies_()
+        );
+      }
+      session.completedPending = true;
+      kakaoChatbotWriteSession_(userHash, session, 6 * 60 * 60);
+      return kakaoChatbotTextResponse_(
+        ["민원이 접수되었습니다.", ""]
+          .concat(summaryLines)
+          .concat(session.values.safetyRisk ? ["", "긴급 민원으로 표시했습니다. 위험하면 119 신고가 먼저입니다."] : [])
+          .concat(session.values.manualBuilding ? ["", "브링케어가 건물을 확인한 뒤 연락드리겠습니다."] : [])
+          .concat(["", "접수번호는 1~2분 안에 발급됩니다. '내 민원 조회'에서 확인해 주세요."])
+          .join("\n"),
+        kakaoChatbotHomeQuickReplies_()
+      );
+    } catch (err) {
+      Logger.log("카카오 민원 접수 실패: " + err.message);
+      return kakaoChatbotTextResponse_(
+        "접수 처리 중 오류가 발생했습니다. 잠시 후 '접수하기'를 다시 눌러 주세요.\n같은 민원이 두 번 접수되지는 않습니다.",
+        kakaoChatbotQuickRepliesForStep_("confirm", config, session)
+      );
+    }
+  }
+
+  // 알 수 없는 단계면 처음부터 다시 시작합니다.
+  kakaoChatbotDeleteSession_(userHash);
+  return kakaoChatbotTextResponse_(
+    "접수 정보를 확인하지 못했습니다. '민원 접수'를 눌러 다시 시작해 주세요.",
+    kakaoChatbotHomeQuickReplies_()
+  );
+}
+
+function kakaoChatbotStartCaseUpdate_(userHash, config) {
+  let openCases = [];
+  try {
+    const link = firebaseOauthRequest_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
+      "카카오 민원 연결 조회 실패"
+    ) || {};
+    openCases = kakaoChatbotReadCases_(kakaoChatbotRecentCaseIds_(link))
+      .filter(item => kakaoChatbotTenantStage_(item) !== "수리 완료")
+      .slice(0, 3);
+  } catch (err) {
+    Logger.log("카카오 진행 중 민원 조회 실패: " + err.message);
+    return kakaoChatbotTextResponse_(
+      "민원 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  if (!openCases.length) {
+    return kakaoChatbotTextResponse_(
+      "내용을 추가할 수 있는 진행 중 민원이 없습니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  const options = openCases.map(item => ({
+    id: item.ticketNo,
+    label: [item.building, formatRoomForCase_(item.room), item.issueType].filter(Boolean).join(" ")
+  }));
+  const now = new Date().toISOString();
+  const session = { values: {}, createdAt: now, updatedAt: now };
+  if (options.length === 1) {
+    session.addCase = options[0];
+    return kakaoChatbotSaveStep_(userHash, session, "addContent", config);
+  }
+  session.addCases = options;
+  return kakaoChatbotSaveStep_(userHash, session, "addPick", config);
+}
+
+function kakaoChatbotSaveStep_(userHash, session, nextStep, config) {
+  session.step = nextStep;
+  session.updatedAt = new Date().toISOString();
+  kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+  return kakaoChatbotPromptResponse_(nextStep, config, session);
+}
+
+// 업체 연결이 필요 없는 생활 민원을 고릅니다. 기계 소음이나 위험 표현은 일반 민원으로 둡니다.
+function kakaoChatbotSimpleIssue_(text) {
+  const value = String(text || "").replace(/\s+/g, "");
+  if (kakaoChatbotDetectRisk_(value)) return "";
+  if (/에어컨|보일러|실외기|배관|환풍|엘리베이터|승강기/.test(value)) return "";
+  if (/층간소음|(윗집|위층|아랫집|아래층|옆집|이웃).*(소음|시끄|쿵쿵|발소리|뛰)/.test(value)) return "noise";
+  if (/전구|전등|형광등|조명/.test(value)) return "lamp";
+  return "";
+}
+
+// 오늘부터 일주일치 방문 날짜 버튼을 만듭니다. 오후 5시 이후에는 오늘을 뺍니다.
+function kakaoChatbotVisitDays_(now) {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const nowKst = new Date(now.getTime() + KST_OFFSET_MS);
+  const firstOffset = nowKst.getUTCHours() >= 17 ? 1 : 0;
+  const days = [];
+  for (let offset = firstOffset; offset < 7; offset++) {
+    const day = new Date(nowKst.getTime() + offset * DAY_MS);
+    const month = day.getUTCMonth() + 1;
+    const date = day.getUTCDate();
+    const weekday = weekdays[day.getUTCDay()];
+    const alias = offset === 0 ? "오늘" : (offset === 1 ? "내일" : (offset === 2 ? "모레" : ""));
+    days.push({
+      label: (alias ? alias + " " : "") + month + "/" + date + "(" + weekday + ")",
+      text: month + "월 " + date + "일(" + weekday + ")",
+      alias: alias
+    });
+  }
+  return days;
+}
+
+function kakaoChatbotFindVisitDay_(days, command) {
+  return days.find(day => command === normalizeText_(day.label) || (day.alias && command === day.alias)) || null;
+}
+
+function kakaoChatbotSaveVisitTime_(userHash, session, visitTime, config) {
+  session.values.visitTime = visitTime;
+  delete session.visitDays;
+  delete session.visitDay;
+  return kakaoChatbotSaveStep_(userHash, session, "confirm", config);
+}
+
+function kakaoChatbotSelectBuilding_(userHash, session, candidate, config) {
+  Object.assign(session.values, {
+    contractBuildingId: candidate.id,
+    building: candidate.building,
+    address: candidate.address
+  });
+  delete session.candidates;
+  let rooms = [];
+  try {
+    rooms = kakaoChatbotLedgerRooms_(candidate.building, session.values.phone);
+  } catch (err) {
+    Logger.log("카카오 월세 관리대장 호실 조회 실패: " + err.message);
+  }
+  if (rooms.length) {
+    session.roomOptions = rooms.slice(0, 5);
+    return kakaoChatbotSaveStep_(userHash, session, "roomConfirm", config);
+  }
+  return kakaoChatbotSaveStep_(userHash, session, "room", config);
+}
+
+function kakaoChatbotConsentAnswer_(command) {
+  if (/동의하지|비동의|거부|않|아니/.test(command)) return false;
+  if (/^(동의|동의합니다|동의해요|동의함|네|예|확인)$/.test(command)) return true;
+  return null;
+}
+
+function kakaoChatbotTextResponse_(text, quickReplies) {
+  const template = {
+    outputs: [{ simpleText: { text: String(text || "").slice(0, 1000) } }]
+  };
+  if (quickReplies && quickReplies.length) {
+    template.quickReplies = quickReplies.slice(0, 10);
+  }
+  return { version: "2.0", template: template };
+}
+
+function kakaoChatbotConsultationResponse_(description) {
+  return {
+    version: "2.0",
+    template: {
+      outputs: [{
+        basicCard: {
+          title: "💬 브링케어 상담 연결",
+          description: description || "궁금한 점을 편하게 말씀해 주세요.\n아래 버튼을 누르면 상담원과 1:1 상담을 시작합니다.",
+          buttons: [{
+            label: "💬 상담원 연결",
+            action: "operator"
+          }]
+        }
+      }],
+      quickReplies: kakaoChatbotHomeQuickReplies_()
+    }
+  };
+}
+
+function kakaoChatbotHomeQuickReplies_() {
+  return [
+    { label: "🛠 민원 접수", action: "message", messageText: "민원 접수" },
+    { label: "🔎 내 민원 조회", action: "message", messageText: "내 민원 조회" },
+    { label: "💬 상담 연결", action: "message", messageText: "상담 연결" },
+    { label: "🚨 긴급 안내", action: "message", messageText: "긴급 안내" }
+  ];
+}
+
+// 세입자 표현에서 위험 신호를 찾습니다. 위에서부터 먼저 맞는 항목을 씁니다.
+function kakaoChatbotDetectRisk_(text) {
+  const value = String(text || "").replace(/\s+/g, "");
+  if (/가스(냄새|누출|가?샌|가?새|샘)/.test(value)) return "gas";
+  if (/화재|불이(났|붙)|불났|연기가|타는냄새|탄냄새/.test(value)) return "fire";
+  if (/감전|스파크|합선|불꽃|전선이?(타|녹)/.test(value)) return "electric";
+  if (/침수|역류|물이?(쏟|콸콸|넘치|넘쳐)|물바다|천장이?(무너|내려앉)/.test(value)) return "water";
+  if (/갇혔|갇혀|갇힘/.test(value)) return "trapped";
+  return "";
+}
+
+// 내용은 위험 시 일반 행동 요령이며, 담당자 출동이나 응답 시간을 약속하지 않습니다.
+// 긴급 분류 키워드와 맞추기 위해 label을 접수 기록에 남깁니다.
+function kakaoChatbotSafetyGuide_(risk) {
+  const guides = {
+    gas: {
+      label: "가스",
+      text: "불을 켜거나 전기 스위치를 만지지 마세요.\n가능하면 가스 밸브를 잠그고 창문을 연 뒤 밖으로 나가 119에 신고해 주세요."
+    },
+    fire: {
+      label: "화재",
+      text: "불이나 연기가 보이면 바로 밖으로 대피하고 119에 신고해 주세요.\n엘리베이터 대신 계단을 이용해 주세요."
+    },
+    electric: {
+      label: "감전",
+      text: "전선이나 콘센트, 젖은 전기 설비를 만지지 마세요.\n안전하게 닿을 수 있으면 차단기를 내리고, 불꽃이나 타는 냄새가 있으면 119에 신고해 주세요."
+    },
+    water: {
+      label: "침수",
+      text: "물 근처의 콘센트와 전기 제품을 만지지 마세요.\n안전하면 수도 밸브를 잠가 주세요. 물이 차오르거나 위험하면 대피 후 119에 신고해 주세요."
+    },
+    trapped: {
+      label: "갇힘",
+      text: "갇힌 상태라면 119에 신고해 주세요."
+    },
+    general: {
+      label: "",
+      text: "가스 냄새, 불, 연기, 감전 위험이 있거나 다친 사람이 있으면 바로 안전한 곳으로 이동해 119에 신고해 주세요."
+    }
+  };
+  return guides[risk] || guides.general;
+}
+
+function kakaoChatbotWithSafetyNotice_(response, risk) {
+  response.template.outputs.unshift({
+    basicCard: {
+      title: "🚨 안전 먼저 확인해 주세요",
+      description: kakaoChatbotSafetyGuide_(risk).text,
+      buttons: [
+        { label: "📞 119 전화", action: "phone", phoneNumber: "119" },
+        { label: "💬 상담원 연결", action: "operator" }
+      ]
+    }
+  });
+  return response;
+}
+
+function kakaoChatbotMessageReply_(label, messageText) {
+  return { label: label, action: "message", messageText: messageText || label };
+}
+
+function kakaoChatbotQuickRepliesForStep_(step, config, session) {
+  const cancel = kakaoChatbotMessageReply_("접수 취소");
+  if (step === "addPick") {
+    const addCases = session && session.addCases || [];
+    return addCases.map((item, index) => kakaoChatbotMessageReply_((index + 1) + "번"))
+      .concat([kakaoChatbotMessageReply_("취소")]);
+  }
+  if (step === "addContent") {
+    const replies = [];
+    const addPhotoBlockId = String(config && config.photoBlockId || "").trim();
+    if (addPhotoBlockId) {
+      replies.push({
+        label: "현장 사진 등록",
+        action: "block",
+        messageText: "현장 사진 등록",
+        blockId: addPhotoBlockId
+      });
+    }
+    return replies.concat([kakaoChatbotMessageReply_("취소")]);
+  }
+  if (step === "consent") {
+    return [kakaoChatbotMessageReply_("동의합니다"), kakaoChatbotMessageReply_("동의하지 않습니다")];
+  }
+  if (step === "reuse") {
+    return [kakaoChatbotMessageReply_("같은 곳 접수"), kakaoChatbotMessageReply_("다른 곳 접수"), cancel];
+  }
+  if (step === "building") {
+    return [kakaoChatbotMessageReply_("목록에 없어요"), cancel];
+  }
+  if (step === "manualAddress") {
+    return [kakaoChatbotMessageReply_("주소 모름"), cancel];
+  }
+  if (step === "simpleGuide") {
+    if (session && session.simpleIssue === "noise") {
+      return [kakaoChatbotMessageReply_("브링케어에 전달"), cancel];
+    }
+    return [
+      kakaoChatbotMessageReply_("해결됐어요"),
+      kakaoChatbotMessageReply_("교체해도 안 돼요"),
+      kakaoChatbotMessageReply_("공용부 전등"),
+      cancel
+    ];
+  }
+  if (step === "buildingPick") {
+    const candidates = session && session.candidates || [];
+    return candidates.map((item, index) => kakaoChatbotMessageReply_((index + 1) + "번"))
+      .concat([kakaoChatbotMessageReply_("다시 검색"), kakaoChatbotMessageReply_("목록에 없어요"), cancel]);
+  }
+  if (step === "roomConfirm") {
+    const options = session && session.roomOptions || [];
+    const picks = options.length === 1
+      ? [kakaoChatbotMessageReply_("맞아요")]
+      : options.map((item, index) => kakaoChatbotMessageReply_((index + 1) + "번"));
+    return picks.concat([kakaoChatbotMessageReply_("다른 호실 입력"), cancel]);
+  }
+  if (step === "issueType") {
+    return KAKAO_ISSUE_TYPES.map(value => kakaoChatbotMessageReply_(value));
+  }
+  if (step === "photo") {
+    const replies = [];
+    const photoBlockId = String(config && config.photoBlockId || "").trim();
+    if (photoBlockId) {
+      replies.push({
+        label: "현장 사진 등록",
+        action: "block",
+        messageText: "현장 사진 등록",
+        blockId: photoBlockId
+      });
+    }
+    replies.push(kakaoChatbotMessageReply_("사진 없이 접수"));
+    replies.push(cancel);
+    return replies;
+  }
+  if (step === "visitTime") {
+    const visitDays = session && session.visitDays || kakaoChatbotVisitDays_(new Date());
+    return visitDays.map(day => kakaoChatbotMessageReply_(day.label))
+      .concat([kakaoChatbotMessageReply_("일정 협의"), cancel]);
+  }
+  if (step === "visitSlot") {
+    const isToday = session && session.visitDay && session.visitDay.alias === "오늘";
+    const pastNoon = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours() >= 12;
+    const slots = isToday && pastNoon ? ["오후", "시간 무관"] : ["오전", "오후", "시간 무관"];
+    return slots.map(value => kakaoChatbotMessageReply_(value))
+      .concat([kakaoChatbotMessageReply_("날짜 다시 선택"), cancel]);
+  }
+  if (step === "confirm") {
+    return [kakaoChatbotMessageReply_("접수하기"), cancel];
+  }
+  return [cancel];
+}
+
+function kakaoChatbotPromptText_(step, session) {
+  const values = session && session.values || {};
+  if (step === "addPick") {
+    const addCases = session && session.addCases || [];
+    return ["내용을 추가할 민원을 선택해 주세요.", ""]
+      .concat(addCases.map((item, index) => (index + 1) + ". " + item.id + " " + item.label))
+      .join("\n");
+  }
+  if (step === "addContent") {
+    const addCase = session && session.addCase || {};
+    return [
+      addCase.id + " 민원에 추가할 내용을 입력하거나 사진을 등록해 주세요.",
+      addCase.label || ""
+    ].filter(Boolean).join("\n");
+  }
+  if (step === "consent") {
+    return [
+      "브링케어 민원 접수를 시작합니다.",
+      "",
+      "민원 처리와 계약 건물 확인을 위해 연락처, 건물·호실, 민원 내용을 수집·이용합니다.",
+      "수집한 정보는 민원 처리와 업체 연결 목적으로만 사용합니다.",
+      "",
+      "동의하시겠습니까?"
+    ].join("\n");
+  }
+  if (step === "reuse") {
+    const previous = session && session.previous || {};
+    return [
+      "지난번에 접수한 곳으로 접수할까요?",
+      "",
+      "건물: " + (previous.building || ""),
+      "호실: " + formatRoomForCase_(previous.room),
+      "연락처: " + maskPhone_(previous.phone)
+    ].join("\n");
+  }
+  if (step === "phone") {
+    return "접수 안내를 받을 휴대폰 번호를 입력해 주세요.\n예: 010-1234-5678";
+  }
+  if (step === "building") {
+    return "민원을 접수할 건물 이름을 입력해 주세요.\n이름 일부만 입력해도 찾아 드립니다.\n예: 브링타워";
+  }
+  if (step === "manualBuilding") {
+    return "목록에 없는 건물도 접수할 수 있습니다.\n건물 이름을 입력해 주세요.\n브링케어가 건물을 확인한 뒤 연락드립니다.";
+  }
+  if (step === "manualAddress") {
+    return "건물 주소를 입력해 주세요.\n예: 강원 원주시 단계동 123\n모르면 '주소 모름'을 선택해 주세요.";
+  }
+  if (step === "simpleGuide") {
+    if (session && session.simpleIssue === "noise") {
+      return [
+        "층간소음은 업체 수리 대상이 아니라서 브링케어가 직접 확인해 안내드립니다.",
+        "",
+        "소음이 나는 날짜와 시간을 기록해 두시면 도움이 됩니다.",
+        "직접 찾아가 항의하면 다툼으로 번질 수 있으니 피해 주세요.",
+        "공공 상담: 층간소음 이웃사이센터 1661-2642",
+        "",
+        "브링케어에 내용을 남기시겠어요?"
+      ].join("\n");
+    }
+    return [
+      "전구가 나갔다면 같은 규격의 전구로 교체해 보세요.",
+      "교체 전에 스위치를 끄고, 전구가 식은 뒤 바꿔 주세요.",
+      "",
+      "교체해도 안 켜지면 '교체해도 안 돼요'를,",
+      "복도·계단 같은 공용 전등이면 '공용부 전등'을 선택해 주세요."
+    ].join("\n");
+  }
+  if (step === "buildingPick") {
+    const candidates = session && session.candidates || [];
+    return ["건물을 찾았습니다. 번호를 선택해 주세요.", ""]
+      .concat(candidates.map((item, index) =>
+        (index + 1) + ". " + item.building + (item.area ? " (" + item.area + ")" : "")
+      ))
+      .concat(["", "찾는 건물이 없으면 이름을 다시 입력해 주세요."])
+      .join("\n");
+  }
+  if (step === "roomConfirm") {
+    const options = session && session.roomOptions || [];
+    if (options.length === 1) {
+      const option = options[0];
+      return [
+        values.building + " " + formatRoomForCase_(option.unit) +
+          (option.name ? " " + maskName_(option.name) + "님" : "") + "으로 확인했습니다.",
+        "이 호실로 접수할까요?"
+      ].join("\n");
+    }
+    return ["등록된 호실이 여러 개입니다. 접수할 호실을 선택해 주세요.", ""]
+      .concat(options.map((item, index) => (index + 1) + ". " + formatRoomForCase_(item.unit)))
+      .join("\n");
+  }
+  if (step === "room") {
+    return values.building
+      ? values.building + "의 호실을 입력해 주세요.\n예: 301"
+      : "호실을 입력해 주세요.\n예: 301";
+  }
+  if (step === "issueType") return "문제 유형을 선택하거나 직접 입력해 주세요.";
+  if (step === "description") {
+    return "현재 증상을 자세히 입력해 주세요.\n언제부터, 어디에서, 어떤 문제가 발생했는지 적어 주세요.";
+  }
+  if (step === "photo") {
+    return [
+      "문제가 발생한 현장 사진을 등록해 주세요.",
+      "카메라로 바로 촬영하거나 앨범에서 선택할 수 있습니다.",
+      "가능하면 전체 모습과 문제 부위를 1~3장 보내 주세요.",
+      "",
+      "사진이 없으면 '사진 없이 접수'를 선택해 주세요."
+    ].join("\n");
+  }
+  if (step === "visitTime") {
+    return [
+      "방문 가능한 날짜를 골라 주세요.",
+      "목록에 없으면 직접 입력해 주세요.",
+      "예: 다음 주 화요일 오후 2시 이후",
+      "",
+      "정해지지 않았다면 '일정 협의'를 선택해 주세요."
+    ].join("\n");
+  }
+  if (step === "visitSlot") {
+    return [
+      ((session && session.visitDay && session.visitDay.text) || "") + " 어느 시간대가 좋으세요?",
+      "원하는 시간이 있으면 직접 입력해 주세요.",
+      "예: 2시 이후"
+    ].join("\n");
+  }
+  if (step === "confirm") {
+    const description = String(values.description || "");
+    return [
+      "아래 내용으로 접수할까요?",
+      "",
+      "건물: " + (values.building || ""),
+      "호실: " + formatRoomForCase_(values.room),
+      "연락처: " + maskPhone_(values.phone),
+      "문제 유형: " + (values.issueType || ""),
+      "증상: " + (description.length > 60 ? description.slice(0, 60) + "…" : description),
+      "사진: " + (values.photoCount ? values.photoCount + "장" : "없음"),
+      "방문 가능 시간: " + (values.visitTime || "")
+    ].join("\n");
+  }
+  return kakaoChatbotPromptText_("consent", session);
+}
+
+function kakaoChatbotPromptResponse_(step, config, session) {
+  return kakaoChatbotTextResponse_(
+    kakaoChatbotPromptText_(step, session),
+    kakaoChatbotQuickRepliesForStep_(step, config, session)
+  );
+}
+
+function kakaoChatbotCleanText_(value, maxLength) {
+  return String(value || "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .slice(0, Number(maxLength || 500));
+}
+
+function kakaoChatbotUserHash_(userKey) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(userKey || ""),
+    Utilities.Charset.UTF_8
+  );
+  return digest.map(value => ("0" + ((value + 256) % 256).toString(16)).slice(-2)).join("");
+}
+
+function kakaoChatbotSessionCacheKey_(userHash) {
+  return "bringcare:kakao:intake:" + String(userHash || "").slice(0, 64);
+}
+
+function kakaoChatbotReadSession_(userHash) {
+  const raw = CacheService.getScriptCache().get(kakaoChatbotSessionCacheKey_(userHash));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    kakaoChatbotDeleteSession_(userHash);
+    return null;
+  }
+}
+
+function kakaoChatbotWriteSession_(userHash, session, expirationSeconds) {
+  CacheService.getScriptCache().put(
+    kakaoChatbotSessionCacheKey_(userHash),
+    JSON.stringify(session || {}),
+    Math.min(Math.max(Number(expirationSeconds || 1800), 60), 21600)
+  );
+}
+
+function kakaoChatbotDeleteSession_(userHash) {
+  CacheService.getScriptCache().remove(kakaoChatbotSessionCacheKey_(userHash));
+}
+
+function kakaoChatbotExtractPhotoUrls_(payload) {
+  const action = payload && payload.action || {};
+  const params = Object.assign({}, action.params || {});
+  const detailParams = Object.assign({}, action.detailParams || {});
+  const candidates = [
+    params.photoUrl,
+    params.photo,
+    params.imageUrl,
+    params.secureImage,
+    params.secureimage,
+    detailParams.photoUrl && (detailParams.photoUrl.value || detailParams.photoUrl.origin),
+    detailParams.photo && (detailParams.photo.value || detailParams.photo.origin),
+    detailParams.imageUrl && (detailParams.imageUrl.value || detailParams.imageUrl.origin),
+    detailParams.secureImage && (detailParams.secureImage.value || detailParams.secureImage.origin),
+    detailParams.secureimage && (detailParams.secureimage.value || detailParams.secureimage.origin)
+  ];
+  const urls = [];
+  candidates.forEach(candidate => {
+    kakaoChatbotPhotoUrlsFromValue_(candidate).forEach(url => {
+      if (!urls.includes(url)) urls.push(url);
+    });
+  });
+  return urls.slice(0, 10);
+}
+
+function kakaoChatbotPhotoUrlsFromValue_(candidate) {
+  if (candidate === null || candidate === undefined) return [];
+  if (Array.isArray(candidate)) {
+    return candidate.reduce((all, item) => all.concat(kakaoChatbotPhotoUrlsFromValue_(item)), []);
+  }
+  if (typeof candidate === "object") {
+    const nested = candidate.secureUrls || candidate.urls || candidate.url || candidate.value || candidate.origin;
+    return kakaoChatbotPhotoUrlsFromValue_(nested);
+  }
+
+  const value = String(candidate || "").trim();
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed !== value) return kakaoChatbotPhotoUrlsFromValue_(parsed);
+  } catch (err) {
+    // The secureimage plugin also returns a List(url) string, so plain-text parsing continues.
+  }
+
+  const matches = value.match(/https?:\/\/[^,\s<>\\)]+/gi) || [];
+  return matches
+    .map(url => url.split("\"")[0].split("'")[0].replace(/[,\]]+$/, "").slice(0, 3000))
+    .filter(url => /^https?:\/\//i.test(url));
+}
+
+function kakaoChatbotExtractPhotoUrl_(payload) {
+  return kakaoChatbotExtractPhotoUrls_(payload)[0] || "";
+}
+
+function isTrustedKakaoPhotoUrl_(url) {
+  return /^https?:\/\/(?:[A-Za-z0-9-]+\.)*kakaocdn\.net(?::\d+)?\//i.test(String(url || ""));
+}
+
+function saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo, startIndex) {
+  const trustedUrls = (photoUrls || [])
+    .map(url => String(url || "").trim())
+    .filter(isTrustedKakaoPhotoUrl_)
+    .slice(0, 10);
+  if (!trustedUrls.length) {
+    const error = new Error("카카오 현장 사진 URL이 없거나 허용된 주소가 아닙니다.");
+    error.kakaoPhotoRetry = true;
+    throw error;
+  }
+
+  const responses = UrlFetchApp.fetchAll(trustedUrls.map(url => ({
+    url: url,
+    method: "get",
+    followRedirects: true,
+    muteHttpExceptions: true,
+    headers: { "User-Agent": "BRING-Care-Kakao-Photo/1.0" }
+  })));
+  const root = getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "카카오 민원 사진");
+  const folder = getOrCreateChildFolder_(root, safeDriveName_(ticketNo));
+  const driveUrls = [];
+  const fileIds = [];
+  const errors = [];
+
+  responses.forEach((response, index) => {
+    const status = Number(response.getResponseCode());
+    if (status < 200 || status >= 300) {
+      errors.push("사진 " + (index + 1) + " HTTP " + status);
+      return;
+    }
+    const blob = response.getBlob();
+    const contentType = String(blob.getContentType() || "").toLowerCase();
+    if (!/^image\/(jpeg|jpg|png|gif|webp)$/.test(contentType)) {
+      errors.push("사진 " + (index + 1) + " 지원하지 않는 형식 " + (contentType || "알 수 없음"));
+      return;
+    }
+    if (blob.getBytes().length > 15 * 1024 * 1024) {
+      errors.push("사진 " + (index + 1) + " 15MB 초과");
+      return;
+    }
+    const extensionMap = {
+      "image/jpeg": ".jpg",
+      "image/jpg": ".jpg",
+      "image/png": ".png",
+      "image/gif": ".gif",
+      "image/webp": ".webp"
+    };
+    const fileName = safeDriveName_(
+      ticketNo + "_현장사진_" + String(index + 1 + Number(startIndex || 0)).padStart(2, "0")
+    ) + (extensionMap[contentType] || ".jpg");
+    const file = folder.createFile(blob.setName(fileName));
+    fileIds.push(file.getId());
+    driveUrls.push("https://drive.google.com/open?id=" + file.getId());
+  });
+
+  if (!fileIds.length) {
+    const error = new Error("카카오 현장 사진을 Drive에 저장하지 못했습니다. " + errors.join(" / "));
+    error.kakaoPhotoRetry = true;
+    throw error;
+  }
+  return {
+    count: fileIds.length,
+    fileIds: fileIds,
+    driveUrls: driveUrls,
+    errors: errors
+  };
+}
+
+function kakaoChatbotBuildingRegistry_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(KAKAO_REGISTRY_CACHE_KEY);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (err) {
+      cache.remove(KAKAO_REGISTRY_CACHE_KEY);
+    }
+  }
+  const registry = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("paymentBuildings"),
+    "get",
+    undefined,
+    "카카오 계약 건물 목록 조회 실패"
+  ) || {};
+  const list = Object.keys(registry).map(key => {
+    const item = registry[key] || {};
+    return {
+      id: String(item.id || item.driveFileId || key),
+      building: String(item.building || item.name || "").trim(),
+      address: String(item.address || "").trim()
+    };
+  }).filter(item => item.id && item.building);
+  const json = JSON.stringify(list);
+  if (json.length < 90000) cache.put(KAKAO_REGISTRY_CACHE_KEY, json, 600);
+  return list;
+}
+
+function kakaoChatbotFindRegistryBuilding_(buildingId) {
+  const id = String(buildingId || "").trim();
+  if (!id) return null;
+  return kakaoChatbotBuildingRegistry_().filter(item => item.id === id)[0] || null;
+}
+
+// 입력한 글자와 비슷한 건물만 최대 3개 돌려줍니다. 전체 목록은 노출하지 않습니다.
+function kakaoChatbotSearchBuildings_(query) {
+  const q = normalizeText_(query);
+  if (q.length < 2) return [];
+  return kakaoChatbotBuildingRegistry_().map(item => {
+    const name = normalizeText_(item.building);
+    const address = normalizeText_(item.address);
+    let score;
+    if (name === q) score = 1;
+    else if (name.indexOf(q) >= 0 || (name.length >= 2 && q.indexOf(name) >= 0)) score = 0.9;
+    else if (q.length >= 3 && address.indexOf(q) >= 0) score = 0.75;
+    else score = diceSimilarity_(q, name);
+    return Object.assign({}, item, { score: score, area: kakaoBuildingAreaLabel_(item.address) });
+  })
+    .filter(item => item.score >= 0.5)
+    .sort((a, b) => b.score - a.score || a.building.localeCompare(b.building))
+    .slice(0, 3);
+}
+
+// "서울시 강남구 테헤란로 123" → "강남구 테헤란로" (번지는 표시하지 않음)
+function kakaoBuildingAreaLabel_(address) {
+  const tokens = String(address || "").replace(/[(),]/g, " ").split(/\s+/).filter(Boolean);
+  const district = tokens.filter(token => /[구군]$/.test(token))[0] ||
+    tokens.filter(token => /시$/.test(token) && !/(특별|광역)시$/.test(token))[0] || "";
+  const street = tokens.filter(token =>
+    token !== district && !/^\d/.test(token) && /(동|로|길|읍|면|리)$/.test(token)
+  )[0] || "";
+  return [district, street].filter(Boolean).join(" ");
+}
+
+function kakaoChatbotTenantLedger_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(KAKAO_LEDGER_CACHE_KEY);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (err) {
+      cache.remove(KAKAO_LEDGER_CACHE_KEY);
+    }
+  }
+  const spreadsheet = SpreadsheetApp.openById(paymentScheduleSpreadsheetId_());
+  const sheet = spreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(value => String(value || "").trim());
+  const column = name => headers.indexOf(name);
+  const buildingCol = column("건물명");
+  const unitCol = column("호실");
+  const nameCol = column("세입자명");
+  const phoneCol = column("연락처");
+  const statusCol = column("상태");
+  if (buildingCol < 0 || unitCol < 0 || phoneCol < 0) return [];
+  const list = values.slice(1).map(row => ({
+    b: normalizeText_(row[buildingCol]),
+    u: String(row[unitCol] || "").trim(),
+    n: nameCol >= 0 ? String(row[nameCol] || "").trim() : "",
+    p: normalizePhoneForSms_(row[phoneCol]),
+    s: statusCol >= 0 ? String(row[statusCol] || "").trim() : ""
+  }))
+    .filter(item => item.b && item.u && item.p && (!item.s || item.s === "계약중"))
+    .map(item => ({ b: item.b, u: item.u, n: item.n, p: item.p }));
+  const json = JSON.stringify(list);
+  if (json.length < 90000) cache.put(KAKAO_LEDGER_CACHE_KEY, json, 600);
+  return list;
+}
+
+// 선택한 건물 + 연락처가 모두 맞을 때만 호실을 돌려줍니다.
+function kakaoChatbotLedgerRooms_(buildingName, phone) {
+  const buildingKey = normalizeText_(buildingName);
+  const phoneKey = normalizePhoneForSms_(phone);
+  if (!buildingKey || !phoneKey) return [];
+  const seen = {};
+  return kakaoChatbotTenantLedger_()
+    .filter(item => item.b === buildingKey && item.p === phoneKey)
+    .filter(item => {
+      if (seen[item.u]) return false;
+      seen[item.u] = true;
+      return true;
+    })
+    .map(item => ({ unit: item.u, name: item.n }));
+}
+
+function kakaoChatbotPreviousIntake_(userHash) {
+  try {
+    const link = firebaseOauthRequest_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
+      "카카오 지난 접수 정보 조회 실패"
+    );
+    if (!link || !link.lastBuildingId || !link.lastPhone || !link.lastRoom) return null;
+    return {
+      buildingId: String(link.lastBuildingId),
+      building: String(link.lastBuilding || ""),
+      room: String(link.lastRoom),
+      phone: String(link.lastPhone),
+      name: String(link.lastName || "")
+    };
+  } catch (err) {
+    Logger.log("카카오 지난 접수 정보 조회 실패: " + err.message);
+    return null;
+  }
+}
+
+// statusValue는 접수 시점 값이라 갱신되지 않으므로, 실제 진행 단계(status.c1~c17)로 판단합니다.
+// 세입자에게는 건물주 승인·입금 같은 내부 단계를 드러내지 않습니다.
+function kakaoChatbotTenantStage_(casePayload) {
+  const status = casePayload && casePayload.status || {};
+  let latest = 0;
+  for (let step = 17; step >= 1; step--) {
+    if (status["c" + step] === "doing" || status["c" + step] === "done") {
+      latest = step;
+      break;
+    }
+  }
+  if (status.c13 === "done" || latest >= 14) return "수리 완료";
+  if (latest >= 12) return "수리 진행 중";
+  if (latest === 11) return "업체 일정 조율 중";
+  if (latest >= 5) return "업체 확인·견적 진행 중";
+  return "접수 내용 확인 중";
+}
+
+function kakaoChatbotRecentCaseIds_(link) {
+  const ids = Array.isArray(link && link.recentCaseIds) ? link.recentCaseIds.slice() : [];
+  if (link && link.lastCaseId) ids.unshift(link.lastCaseId);
+  return ids
+    .map(id => String(id || "").trim())
+    .filter((id, index, all) => id && all.indexOf(id) === index)
+    .slice(0, 5);
+}
+
+function kakaoChatbotReadCases_(caseIds) {
+  if (!caseIds.length) return [];
+  const token = ScriptApp.getOAuthToken();
+  const responses = UrlFetchApp.fetchAll(caseIds.map(caseId => ({
+    url: firebaseCaseUrl_(caseId),
+    method: "get",
+    headers: { Authorization: "Bearer " + token },
+    muteHttpExceptions: true
+  })));
+  const cases = [];
+  responses.forEach((response, index) => {
+    if (response.getResponseCode() !== 200) return;
+    const body = response.getContentText();
+    if (!body || body === "null") return;
+    const casePayload = JSON.parse(body);
+    if (casePayload && casePayload.deleted !== true) {
+      cases.push(Object.assign({ ticketNo: caseIds[index] }, casePayload));
+    }
+  });
+  return cases;
+}
+
+function kakaoChatbotCaseStatusResponse_(userHash) {
+  try {
+    const link = firebaseOauthRequest_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
+      "카카오 민원 연결 조회 실패"
+    ) || {};
+    const pendingAt = String(link.pendingAt || "");
+    const isPending = !!link.pendingSubmissionId && (!link.updatedAt || pendingAt > String(link.updatedAt));
+    const cases = kakaoChatbotReadCases_(kakaoChatbotRecentCaseIds_(link)).slice(0, 3);
+    const pendingLine = "방금 접수한 민원을 처리하고 있습니다. 1~2분 뒤 다시 조회해 주세요.";
+    if (!cases.length) {
+      return kakaoChatbotTextResponse_(
+        isPending ? pendingLine : "이 카카오 계정으로 접수한 민원이 없습니다.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    const blocks = cases.map(item => {
+      const place = [item.building, formatRoomForCase_(item.room)].filter(Boolean).join(" ");
+      const received = item.receivedAt
+        ? Utilities.formatDate(new Date(item.receivedAt), "Asia/Seoul", "M월 d일") + " 접수"
+        : "";
+      return [
+        "접수번호: " + item.ticketNo,
+        [place, item.issueType].filter(Boolean).join(" · "),
+        received,
+        "진행 상황: " + kakaoChatbotTenantStage_(item)
+      ].filter(Boolean).join("\n");
+    });
+    return kakaoChatbotTextResponse_(
+      (isPending ? [pendingLine] : []).concat(["최근 민원 진행 상황입니다."]).concat(blocks).join("\n\n"),
+      (cases.some(item => kakaoChatbotTenantStage_(item) !== "수리 완료")
+        ? [kakaoChatbotMessageReply_("➕ 내용 추가", "내용 추가")]
+        : []
+      ).concat(kakaoChatbotHomeQuickReplies_())
+    );
+  } catch (err) {
+    Logger.log("카카오 민원 상태 조회 실패: " + err.message);
+    return kakaoChatbotTextResponse_(
+      "민원 진행 상황을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+}
+
+// 잠금을 잠깐만 기다리고, 다른 작업이 잠금을 쥐고 있으면 Firebase 접수함에 넣어 대기열이 처리하게 합니다.
+// 시트 저장은 4.6초 이상 걸릴 수 있어 카카오 응답 시간(앞단 Worker 4.8초)을 넘깁니다.
+// 접수는 Firebase 대기함에만 넣고, 시트 저장과 접수번호 발급은 1분 대기열이 처리합니다.
+function submitKakaoComplaintIntake_(values, userHash, submissionId) {
+  queueKakaoComplaintInbox_(values, userHash, submissionId);
+  return { ok: true, queued: true };
+}
+
+function kakaoChatbotInboxValues_(values) {
+  const keys = [
+    "name", "phone", "contractBuildingId", "building", "address", "room", "issueType",
+    "description", "photoUrls", "photoUrl", "photoCount", "photoSkipped", "visitTime",
+    "consentAt", "ledgerMatched", "reusedPrevious", "safetyRisk", "manualBuilding"
+  ];
+  const output = {};
+  keys.forEach(key => {
+    if (values[key] !== undefined && values[key] !== null && values[key] !== "") output[key] = values[key];
+  });
+  return output;
+}
+
+function queueKakaoComplaintInbox_(values, userHash, submissionId) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const settingsPath = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
+  const now = new Date().toISOString();
+  const updates = {};
+  updates[settingsPath + "/kakaoChatbotIntake/inbox/" + submissionId] = {
+    submissionId: submissionId,
+    userHash: userHash,
+    values: kakaoChatbotInboxValues_(values),
+    receivedAt: now
+  };
+  updates[settingsPath + "/kakaoChatbotIntake/users/" + userHash + "/pendingSubmissionId"] = submissionId;
+  updates[settingsPath + "/kakaoChatbotIntake/users/" + userHash + "/pendingAt"] = now;
+  firebaseWriteRequest_(base + "/.json", "patch", updates, "카카오 민원 접수함 저장 실패");
+}
+
+// 호출하는 쪽이 스크립트 잠금을 쥐고 있어야 합니다.
+function drainKakaoComplaintInbox_() {
+  const inbox = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("kakaoChatbotIntake/inbox"),
+    "get",
+    undefined,
+    "카카오 민원 접수함 조회 실패"
+  ) || {};
+  Object.keys(inbox)
+    .map(key => Object.assign({ key: key }, inbox[key] || {}))
+    .filter(item => item.values && item.userHash)
+    .sort((a, b) => String(a.receivedAt || "").localeCompare(String(b.receivedAt || "")))
+    .slice(0, 5)
+    .forEach(item => {
+      try {
+        appendKakaoComplaintRow_(
+          item.values,
+          item.userHash,
+          item.submissionId || item.key,
+          item.receivedAt ? new Date(item.receivedAt) : new Date()
+        );
+        firebaseOauthRequest_(
+          firebaseCaseSettingsUrl_("kakaoChatbotIntake/inbox/" + item.key),
+          "delete",
+          undefined,
+          "카카오 민원 접수함 정리 실패"
+        );
+      } catch (err) {
+        Logger.log("카카오 민원 접수함 처리 실패 " + item.key + ": " + err.message);
+      }
+    });
+}
+
+function findKakaoRowBySubmissionId_(sheet, headerMap, submissionId) {
+  const idCol = headerMap["카카오 접수 ID"];
+  const ticketCol = headerMap["접수번호"];
+  const lastRow = sheet.getLastRow();
+  if (!submissionId || !idCol || !ticketCol || lastRow < 2) return null;
+  const firstRow = Math.max(2, lastRow - 199);
+  const count = lastRow - firstRow + 1;
+  const ids = sheet.getRange(firstRow, idCol, count, 1).getValues();
+  const tickets = sheet.getRange(firstRow, ticketCol, count, 1).getValues();
+  for (let index = ids.length - 1; index >= 0; index--) {
+    if (String(ids[index][0] || "").trim() === submissionId) {
+      return { row: firstRow + index, ticketNo: String(tickets[index][0] || "").trim() };
+    }
+  }
+  return null;
+}
+
+// 호출하는 쪽이 스크립트 잠금을 쥐고 있어야 합니다. 같은 접수 ID는 한 번만 저장됩니다.
+function appendKakaoComplaintRow_(values, userHash, submissionId, receivedAt) {
+  values = values || {};
+  const sheet = getResponseSheet_();
+  const headers = ensureKakaoIntakeHeaders_(sheet);
+  const headerMap = kakaoComplaintHeaderMap_(headers);
+  const existing = findKakaoRowBySubmissionId_(sheet, headerMap, submissionId);
+  if (existing && existing.ticketNo) {
+    writeKakaoUserLink_(userHash, existing.ticketNo, values, new Date());
+    return {
+      ok: true,
+      duplicate: true,
+      ticketNo: existing.ticketNo,
+      building: values.building,
+      room: values.room,
+      issueType: values.issueType,
+      row: existing.row
+    };
+  }
+
+  const now = receivedAt instanceof Date && !isNaN(receivedAt.getTime()) ? receivedAt : new Date();
+  const photoUrls = (Array.isArray(values.photoUrls) ? values.photoUrls : [])
+    .concat(values.photoUrl ? [values.photoUrl] : [])
+    .filter((url, index, all) => url && all.indexOf(url) === index)
+    .slice(0, 10);
+  const record = {
+    "타임스탬프": now,
+    "건물명": kakaoChatbotCleanText_(values.building, 120),
+    "건물 주소": kakaoChatbotCleanText_(values.address, 240),
+    "호실": kakaoChatbotCleanText_(values.room, 60),
+    "이름": kakaoChatbotCleanText_(values.name || "세입자", 80),
+    "연락처": normalizePhoneForSms_(values.phone),
+    "문제 유형": kakaoChatbotCleanText_(values.issueType, 80),
+    "증상 설명": kakaoChatbotCleanText_(values.description, 1000),
+    "추가 요청사항": [
+      "카카오톡 브링케어 채널 접수",
+      values.ledgerMatched ? "월세 관리대장으로 호실 확인" : "",
+      values.manualBuilding ? "세입자 직접 입력 건물: 브링케어 확인 필요" : "",
+      KAKAO_DIRECT_ISSUE_TYPES.includes(values.issueType) ? "브링케어 직접 처리(업체 연결 불필요)" : "",
+      values.safetyRisk ? "챗봇 안전 안내 발송(" + kakaoChatbotSafetyGuide_(values.safetyRisk).label + ")" : ""
+    ].filter(Boolean).join(" / "),
+    "방문 가능 시간": kakaoChatbotCleanText_(values.visitTime, 240),
+    "사진 첨부": "",
+    "카카오 사진 원본 URL": photoUrls.length ? JSON.stringify(photoUrls) : "",
+    "카카오 계약 건물 ID": String(values.contractBuildingId || ""),
+    "카카오 접수 ID": String(submissionId || ""),
+    "카카오 처리 시도": 0,
+    "접수 경로": "kakao_chatbot",
+    "카카오 사용자 키 해시": userHash,
+    "카카오 처리 상태": "대기",
+    "카카오 처리 메모": "챗봇 접수 후 자동 처리 대기"
+  };
+  const row = sheet.getLastRow() + 1;
+  const ticketNo = allocateTicketNo_(sheet, headers, row, record, true);
+  if (photoUrls.length) {
+    record["카카오 처리 메모"] =
+      "현장 사진 " + photoUrls.length + "장 비동기 저장 대기 / 챗봇 접수 후 자동 처리 대기";
+  } else if (values.photoSkipped) {
+    record["카카오 처리 메모"] = "사용자가 사진 없이 접수 / 챗봇 접수 후 자동 처리 대기";
+  }
+  record["접수번호"] = ticketNo;
+  const rowValues = headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
+  if (headerMap["연락처"]) {
+    sheet.getRange(row, headerMap["연락처"]).setNumberFormat("@");
+  }
+  sheet.getRange(row, 1, 1, headers.length).setValues([rowValues]);
+  SpreadsheetApp.flush();
+
+  const pendingCase = makeKakaoPendingCase_(ticketNo, record, row, sheet);
+  writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now, values);
+  return {
+    ok: true,
+    ticketNo: ticketNo,
+    building: record["건물명"],
+    room: record["호실"],
+    issueType: record["문제 유형"],
+    photoCount: photoUrls.length,
+    row: row
+  };
+}
+
+// 행 번호 기반 접수번호를 우선 쓰되, 시트나 Firebase에 이미 있는 번호면 다음 빈 번호를 씁니다.
+// isNewRow=false(폼 재처리)이면 같은 행·같은 접수 시각의 기존 민원은 같은 번호를 그대로 씁니다.
+function allocateTicketNo_(sheet, headers, row, record, isNewRow) {
+  const rowTicket = makeTicketNo_(row, record);
+  const prefix = rowTicket.replace(/\d+$/, "");
+  const ticketCol = headers.indexOf("접수번호") + 1;
+  const used = {};
+  let maxSeq = 0;
+  const lastRow = sheet.getLastRow();
+  if (ticketCol > 0 && lastRow >= 2) {
+    sheet.getRange(2, ticketCol, lastRow - 1, 1).getValues().forEach((cell, index) => {
+      if (index + 2 === row) return;
+      const ticket = String(cell[0] || "").trim();
+      const match = ticket.match(/^BR-\d{4}-(\d+)$/);
+      if (!match) return;
+      used[ticket] = true;
+      maxSeq = Math.max(maxSeq, Number(match[1]));
+    });
+  }
+  const receivedAt = dateFromValue_(readRawField_(record, ["타임스탬프", "Timestamp"])).toISOString();
+  const isFree = ticket => {
+    if (used[ticket]) return false;
+    const existingCase = readCaseFromFirebase_(ticket);
+    if (!existingCase) return true;
+    if (isNewRow) return false;
+    return Number(existingCase.sheetRow) === row && String(existingCase.receivedAt || "") === receivedAt;
+  };
+  if (isFree(rowTicket)) return rowTicket;
+  let seq = Math.max(maxSeq + 1, row - 1);
+  for (let attempt = 0; attempt < 20; attempt++, seq++) {
+    const ticket = prefix + String(seq).padStart(4, "0");
+    if (isFree(ticket)) return ticket;
+  }
+  throw new Error("겹치지 않는 접수번호를 만들지 못했습니다.");
+}
+
+function kakaoUserPreviousLink_(userHash) {
+  try {
+    return firebaseOauthRequest_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
+      "카카오 사용자 민원 연결 조회 실패"
+    ) || {};
+  } catch (err) {
+    Logger.log("카카오 사용자 민원 연결 조회 실패: " + err.message);
+    return {};
+  }
+}
+
+function kakaoUserLinkPayload_(ticketNo, values, now, previousLink) {
+  values = values || {};
+  return {
+    lastCaseId: ticketNo,
+    recentCaseIds: kakaoChatbotRecentCaseIds_({
+      lastCaseId: ticketNo,
+      recentCaseIds: kakaoChatbotRecentCaseIds_(previousLink)
+    }),
+    updatedAt: now.toISOString(),
+    lastBuildingId: String(values.contractBuildingId || ""),
+    lastBuilding: String(values.building || ""),
+    lastRoom: String(values.room || ""),
+    lastName: values.name && values.name !== "세입자" ? String(values.name) : "",
+    lastPhone: normalizePhoneForSms_(values.phone)
+  };
+}
+
+function writeKakaoUserLink_(userHash, ticketNo, values, now) {
+  return firebaseWriteRequest_(
+    firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+    "put",
+    kakaoUserLinkPayload_(ticketNo, values, now, kakaoUserPreviousLink_(userHash)),
+    "카카오 사용자 민원 연결 저장 실패"
+  );
+}
+
+function writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now, values) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const casesPath = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
+  const updates = {};
+  updates[casesPath + "/" + ticketNo] = pendingCase;
+  const caseSettingsPath = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
+  updates[caseSettingsPath + "/kakaoChatbotIntake/users/" + userHash] =
+    kakaoUserLinkPayload_(ticketNo, values, now, kakaoUserPreviousLink_(userHash));
+  return firebaseWriteRequest_(
+    base + "/.json",
+    "patch",
+    updates,
+    "카카오 접수 대기 민원과 사용자 연결 저장 실패"
+  );
+}
+
+function ensureKakaoIntakeHeaders_(sheet) {
+  let headers = ensureOutputHeaders_(sheet);
+  KAKAO_INTAKE_INPUT_HEADERS.forEach(header => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+      sheet.getRange(1, headers.length).setValue(header);
+    }
+  });
+  OUTPUT_HEADERS.forEach(header => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+      sheet.getRange(1, headers.length).setValue(header);
+    }
+  });
+  return headers;
+}
+
+function kakaoComplaintHeaderMap_(headers) {
+  const map = {};
+  (headers || []).forEach((header, index) => {
+    if (header) map[header] = index + 1;
+  });
+  return map;
+}
+
+function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
+  const photoFileIds = extractDriveFileIdsFromText_(record["사진 첨부"] || "");
+  const queuedPhotoCount = kakaoChatbotPhotoUrlsFromValue_(
+    record["카카오 사진 원본 URL"] || ""
+  ).length;
+  return {
+    id: ticketNo,
+    ticketNo: ticketNo,
+    source: "kakao_chatbot",
+    createdAt: new Date().toISOString(),
+    receivedAt: dateFromValue_(record["타임스탬프"]).toISOString(),
+    sheetUrl: COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId(),
+    sheetRow: row,
+    name: maskName_(record["이름"]) || "세입자",
+    phone: maskPhone_(record["연락처"]),
+    email: "",
+    building: record["건물명"],
+    address: record["건물 주소"],
+    room: formatRoomForCase_(record["호실"]),
+    issueType: record["문제 유형"],
+    summary: [record["건물명"], formatRoomForCase_(record["호실"]), record["문제 유형"]].filter(Boolean).join(" / "),
+    visitTime: record["방문 가능 시간"],
+    photos: photoFileIds.map((fileId, index) => ({
+      id: fileId,
+      name: "현장 사진 " + (index + 1),
+      driveUrl: "https://drive.google.com/open?id=" + fileId
+    })),
+    photoCount: photoFileIds.length || queuedPhotoCount,
+    statusValue: "접수처리중",
+    status: { c1: "doing" },
+    kakao: {
+      userKeyHash: record["카카오 사용자 키 해시"],
+      contractBuildingId: record["카카오 계약 건물 ID"] || "",
+      linkedAt: new Date().toISOString()
+    },
+    note: {
+      c1: "카카오톡 브링케어 채널에서 접수되었습니다. 세입자가 등록 건물을 직접 선택했고 자동 분석을 진행 중입니다."
+    },
+    log: [
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " 카카오톡 민원 접수",
+      "자동 분석 대기"
+    ]
+  };
+}
+
+function saveQueuedKakaoComplaintPhotos_(sheet, row, headerMap, record) {
+  const queuedPhotoValue = readField_(record, ["카카오 사진 원본 URL"]);
+  if (!queuedPhotoValue) {
+    return { count: 0, fileIds: [], driveUrls: [], errors: [] };
+  }
+
+  const photoUrls = kakaoChatbotPhotoUrlsFromValue_(queuedPhotoValue)
+    .filter((url, index, all) => url && all.indexOf(url) === index)
+    .slice(0, 10);
+  const ticketNo = readField_(record, ["접수번호"]);
+  const savedPhotos = saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo);
+  const driveUrlText = savedPhotos.driveUrls.join("\n");
+
+  setCellByHeader_(sheet, row, headerMap, "사진 첨부", driveUrlText);
+  setCellByHeader_(sheet, row, headerMap, "카카오 사진 원본 URL", "");
+  record["사진 첨부"] = driveUrlText;
+  record["카카오 사진 원본 URL"] = "";
+  return savedPhotos;
+}
+
+function queueKakaoCaseUpdate_(caseId, userHash, text, photoUrls) {
+  if (!caseId) throw new Error("내용을 추가할 민원 번호가 없습니다.");
+  const updateId = Utilities.getUuid();
+  firebaseWriteRequest_(
+    firebaseCaseSettingsUrl_("kakaoChatbotIntake/updates/" + updateId),
+    "put",
+    {
+      caseId: caseId,
+      userHash: userHash,
+      text: text || "",
+      photoUrls: (photoUrls || []).slice(0, 10),
+      receivedAt: new Date().toISOString()
+    },
+    "카카오 민원 추가 내용 저장 실패"
+  );
+  return updateId;
+}
+
+// 세입자가 접수 후 보낸 내용과 사진을 민원에 합칩니다. 본인 민원이 아니면 버립니다.
+function applyKakaoCaseUpdate_(update) {
+  const casePayload = readCaseFromFirebase_(update.caseId);
+  const ownerHash = casePayload && casePayload.kakao && casePayload.kakao.userKeyHash;
+  if (!casePayload || casePayload.deleted === true || !ownerHash || ownerHash !== update.userHash) {
+    Logger.log("카카오 민원 추가 내용 폐기: " + update.caseId);
+    return false;
+  }
+  const photos = Array.isArray(casePayload.photos) ? casePayload.photos.slice() : [];
+  const urls = Array.isArray(update.photoUrls) ? update.photoUrls : [];
+  let photoNote = "";
+  if (urls.length) {
+    try {
+      const saved = saveKakaoComplaintPhotosToDrive_(urls, update.caseId, photos.length);
+      saved.fileIds.forEach((fileId, index) => {
+        photos.push({
+          id: fileId,
+          name: "현장 사진 " + (photos.length + 1) + " (추가)",
+          driveUrl: saved.driveUrls[index]
+        });
+      });
+      photoNote = "사진 " + saved.count + "장";
+    } catch (err) {
+      Logger.log("카카오 추가 사진 저장 실패 " + update.caseId + ": " + err.message);
+      photoNote = "사진 저장 실패";
+    }
+  }
+  const stamp = Utilities.formatDate(new Date(update.receivedAt || new Date()), "Asia/Seoul", "yyyy-MM-dd HH:mm");
+  const entry = stamp + " 세입자 추가: " +
+    [String(update.text || "").replace(/\s+/g, " ").trim(), photoNote].filter(Boolean).join(" / ");
+  const log = [entry].concat(Array.isArray(casePayload.log) ? casePayload.log : []).slice(0, 30);
+  patchKakaoCaseFields_(update.caseId, {
+    log: log,
+    photos: photos,
+    photoCount: photos.length,
+    "kakao/lastTenantUpdateAt": new Date().toISOString()
+  });
+  return true;
+}
+
+// 호출하는 쪽이 스크립트 잠금을 쥐고 있어야 합니다.
+function drainKakaoCaseUpdates_() {
+  const updates = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("kakaoChatbotIntake/updates"),
+    "get",
+    undefined,
+    "카카오 민원 추가 내용 조회 실패"
+  ) || {};
+  Object.keys(updates)
+    .map(key => Object.assign({ key: key }, updates[key] || {}))
+    .sort((a, b) => String(a.receivedAt || "").localeCompare(String(b.receivedAt || "")))
+    .slice(0, 5)
+    .forEach(update => {
+      const url = firebaseCaseSettingsUrl_("kakaoChatbotIntake/updates/" + update.key);
+      try {
+        applyKakaoCaseUpdate_(update);
+        firebaseOauthRequest_(url, "delete", undefined, "카카오 민원 추가 내용 정리 실패");
+      } catch (err) {
+        const attempts = Number(update.attempts || 0) + 1;
+        Logger.log("카카오 민원 추가 내용 반영 실패 " + update.caseId + " (" + attempts + "회): " + err.message);
+        if (attempts >= KAKAO_QUEUE_MAX_ATTEMPTS) {
+          firebaseOauthRequest_(url, "delete", undefined, "카카오 민원 추가 내용 정리 실패");
+        } else {
+          firebaseWriteRequest_(url, "patch", { attempts: attempts }, "카카오 민원 추가 내용 재시도 표시 실패");
+        }
+      }
+    });
+}
+
+function patchKakaoCaseFields_(ticketNo, fields) {
+  if (!ticketNo) return null;
+  return firebaseWriteRequest_(firebaseCaseUrl_(ticketNo), "patch", fields, "카카오 민원 상태 저장 실패");
+}
+
+function markKakaoQueueFailed_(sheet, row, headerMap, ticketNo, lastMemo) {
+  setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "실패");
+  setCellByHeader_(
+    sheet,
+    row,
+    headerMap,
+    "카카오 처리 메모",
+    ("자동 처리 " + KAKAO_QUEUE_MAX_ATTEMPTS + "회 실패 - 직접 확인 필요 / 마지막 기록: " + String(lastMemo || "")).slice(0, 500)
+  );
+  try {
+    patchKakaoCaseFields_(ticketNo, {
+      "note/c1": "카카오 접수 자동 처리에 " + KAKAO_QUEUE_MAX_ATTEMPTS + "번 실패했습니다. 응답 시트의 '카카오 처리 메모'를 확인해 주세요.",
+      "kakao/queueFailedAt": new Date().toISOString()
+    });
+  } catch (err) {
+    Logger.log("카카오 처리 실패 표시 저장 실패 " + ticketNo + ": " + err.message);
+  }
+}
+
+function processPendingKakaoComplaintIntakes() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try {
+    try {
+      drainKakaoComplaintInbox_();
+    } catch (err) {
+      Logger.log("카카오 민원 접수함 확인 실패: " + err.message);
+    }
+    try {
+      drainKakaoCaseUpdates_();
+    } catch (err) {
+      Logger.log("카카오 민원 추가 내용 확인 실패: " + err.message);
+    }
+
+    const sheet = getResponseSheet_();
+    const headers = ensureKakaoIntakeHeaders_(sheet);
+    const headerMap = kakaoComplaintHeaderMap_(headers);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    const firstRow = Math.max(2, lastRow - 49);
+    const rows = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, headers.length).getValues();
+    let processed = 0;
+    for (let index = 0; index < rows.length && processed < 5; index++) {
+      const row = firstRow + index;
+      const record = recordFromRow_(headers, rows[index]);
+      if (readField_(record, ["접수 경로"]) !== "kakao_chatbot") continue;
+      const queueStatus = readField_(record, ["카카오 처리 상태"]);
+      const analyzedAt = readField_(record, ["분석 처리일시"]);
+      if (queueStatus === "완료" || queueStatus === "실패" || analyzedAt) continue;
+
+      const ticketNo = readField_(record, ["접수번호"]);
+      const attempts = Number(readField_(record, ["카카오 처리 시도"]) || 0);
+      if (attempts >= KAKAO_QUEUE_MAX_ATTEMPTS) {
+        markKakaoQueueFailed_(sheet, row, headerMap, ticketNo, readField_(record, ["카카오 처리 메모"]));
+        continue;
+      }
+      setCellByHeader_(sheet, row, headerMap, "카카오 처리 시도", attempts + 1);
+      setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "처리중");
+      setCellByHeader_(sheet, row, headerMap, "카카오 처리 메모", "자동 분석 및 계약 연결 진행 중");
+      SpreadsheetApp.flush();
+      try {
+        let photoNote = "";
+        try {
+          const savedPhotos = saveQueuedKakaoComplaintPhotos_(sheet, row, headerMap, record);
+          if (savedPhotos.count) {
+            photoNote = " / 현장 사진 " + savedPhotos.count + "장 저장";
+            setCellByHeader_(
+              sheet,
+              row,
+              headerMap,
+              "카카오 처리 메모",
+              "현장 사진 " + savedPhotos.count + "장 저장 완료 / 자동 분석 및 계약 연결 진행 중"
+            );
+            SpreadsheetApp.flush();
+          }
+        } catch (photoErr) {
+          // 사진이 실패해도 민원 자체는 계속 처리합니다. (카카오 사진 링크는 시간이 지나면 만료됨)
+          const photoMessage = String(photoErr && photoErr.message || photoErr).slice(0, 300);
+          photoNote = " / 현장 사진 저장 실패, 사진 없이 처리";
+          setCellByHeader_(sheet, row, headerMap, "카카오 사진 원본 URL", "");
+          setCellByHeader_(sheet, row, headerMap, "카카오 처리 메모", "현장 사진 저장 실패: " + photoMessage + " / 사진 없이 계속 처리");
+          SpreadsheetApp.flush();
+          Logger.log("카카오 현장 사진 저장 실패 " + row + "행: " + photoMessage);
+          try {
+            patchKakaoCaseFields_(ticketNo, { "kakao/photoError": photoMessage });
+          } catch (patchErr) {
+            Logger.log("카카오 사진 실패 표시 저장 실패: " + patchErr.message);
+          }
+        }
+        processResponseRow_(sheet, row);
+        setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "완료");
+        setCellByHeader_(
+          sheet,
+          row,
+          headerMap,
+          "카카오 처리 메모",
+          Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") + " 민원 연결 완료" + photoNote
+        );
+      } catch (err) {
+        setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "오류");
+        setCellByHeader_(
+          sheet,
+          row,
+          headerMap,
+          "카카오 처리 메모",
+          ("(" + (attempts + 1) + "/" + KAKAO_QUEUE_MAX_ATTEMPTS + "회) " + String(err.message || err)).slice(0, 500)
+        );
+        Logger.log("카카오 민원 대기열 처리 실패 " + row + "행: " + err.message);
+      }
+      processed++;
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function ownerDecisionWebAppUrl_() {
   const configured = String(COMPLAINT_CONFIG.WEB_APP_URL || "").trim();
   if (configured) return configured;
   return String(ScriptApp.getService().getUrl() || "").trim();
+}
+
+function ensureOwnerDecisionShortLink_(caseId, state) {
+  const current = Object.assign({}, state || {});
+  const shortCode = String(caseId || "").trim().replace(/^BR-/i, "");
+  if (!/^\d{4}-\d{4,}$/.test(shortCode)) {
+    throw new Error("승인 짧은 링크용 접수번호가 올바르지 않습니다.");
+  }
+  const shortDecisionUrl = String(current.decisionUrl || "").trim();
+  if (!shortDecisionUrl) {
+    throw new Error("Secure owner decision URL is missing.");
+  }
+  const now = new Date().toISOString();
+  return Object.assign({}, current, {
+    shortCode: shortCode,
+    shortDecisionUrl: shortDecisionUrl,
+    shortLinkUpdatedAt: now
+  });
 }
 
 function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amounts) {
@@ -205,7 +2358,10 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     existing.decisionUrl &&
     String(existing.quoteId || "") === String(quoteId || "")
   ) {
-    return existing;
+    const linkedExisting = ensureOwnerDecisionShortLink_(caseId, existing);
+    putCaseChildToFirebase_(caseId, "ownerDecision", linkedExisting);
+    casePayload.ownerDecision = linkedExisting;
+    return linkedExisting;
   }
 
   const baseUrl = ownerDecisionWebAppUrl_();
@@ -216,7 +2372,7 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     "?view=" + encodeURIComponent(OWNER_DECISION_VIEW) +
     "&caseId=" + encodeURIComponent(caseId) +
     "&token=" + encodeURIComponent(token);
-  const state = {
+  let state = {
     status: "pending",
     statusText: "건물주 응답 대기",
     token: token,
@@ -227,6 +2383,7 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     createdAt: now,
     updatedAt: now
   };
+  state = ensureOwnerDecisionShortLink_(caseId, state);
   putCaseChildToFirebase_(caseId, "ownerDecision", state);
   casePayload.ownerDecision = state;
   return state;
@@ -255,7 +2412,7 @@ function validateOwnerDecisionLink_(decisionUrl, caseId, token) {
     urlCaseId !== String(caseId || "") ||
     urlToken !== String(token || "")
   ) {
-    return { ok: false, statusCode: 0, message: "승인 링크의 케이스 또는 보안 토큰이 일치하지 않습니다." };
+    return { ok: false, statusCode: 0, message: "승인 링크의 민원 또는 보안 토큰이 일치하지 않습니다." };
   }
   try {
     const latestCase = readCaseFromFirebase_(caseId);
@@ -337,7 +2494,7 @@ function handleEnsureOwnerDecisionLink_(payload) {
   const caseId = String(payload && payload.caseId || "").trim();
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
   const selected = selectOwnerRecommendationQuote_(casePayload, payload && payload.quoteId);
   if (!selected.quote) return { ok: false, message: "승인 링크에 연결할 추천 견적이 없습니다." };
 
@@ -347,6 +2504,7 @@ function handleEnsureOwnerDecisionLink_(payload) {
     caseId: caseId,
     quoteId: selected.quoteId,
     decisionUrl: prepared.state && prepared.state.decisionUrl || "",
+    shortDecisionUrl: prepared.state && prepared.state.shortDecisionUrl || "",
     decisionStatus: prepared.state && prepared.state.status || "",
     linkValidated: prepared.state && prepared.state.linkValidated === true,
     linkStatusText: prepared.state && prepared.state.linkStatusText || prepared.message || "",
@@ -389,6 +2547,23 @@ function ownerDecisionStatusText_(status) {
   return "응답 대기";
 }
 
+function ownerDecisionPaymentHtml_(amount) {
+  return [
+    "<section class=\"payment\">",
+    "<div class=\"payment-head\"><span>입금 계좌</span><b>승인 완료</b></div>",
+    "<p>아래 계좌로 입금을 진행해 주세요.</p>",
+    "<dl><div><dt>계좌번호</dt><dd id=\"accountNumber\">" +
+      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountNumber) +
+      "</dd></div><div><dt>예금주</dt><dd>" +
+      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountHolder) +
+      "</dd></div><div><dt>입금금액</dt><dd>" +
+      ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amount)) +
+      "</dd></div></dl>",
+    "<button type=\"button\" class=\"copy\" onclick=\"copyAccountNumber()\">계좌번호 복사</button>",
+    "</section>"
+  ].join("");
+}
+
 function renderOwnerDecisionPage_(params) {
   const caseId = String(params && params.caseId || "").trim();
   const token = String(params && params.token || "").trim();
@@ -410,7 +2585,8 @@ function renderOwnerDecisionPage_(params) {
   const statusHtml = decided
     ? "<div class=\"result " + (state.status === "approved_payment" ? "approved" : "other") + "\">" +
       "<strong>" + ownerDecisionEscapeHtml_(ownerDecisionStatusText_(state.status)) + "</strong>" +
-      "<span>응답이 정상적으로 접수되었습니다.</span></div>"
+      "<span>응답이 정상적으로 접수되었습니다.</span></div>" +
+      (state.status === "approved_payment" ? ownerDecisionPaymentHtml_(amounts.totalAmount) : "")
     : "";
   const buttons = valid && !decided
     ? "<div class=\"actions\"><button class=\"approve\" onclick=\"submitDecision('approve_payment')\">승인하고 입금 진행</button>" +
@@ -418,25 +2594,30 @@ function renderOwnerDecisionPage_(params) {
     : "";
   const caseIdJs = JSON.stringify(caseId).replace(/</g, "\\u003c");
   const tokenJs = JSON.stringify(token).replace(/</g, "\\u003c");
+  const paymentHtmlJs = JSON.stringify(ownerDecisionPaymentHtml_(amounts.totalAmount)).replace(/</g, "\\u003c");
+  const accountNumberJs = JSON.stringify(OWNER_PAYMENT_ACCOUNT.accountNumber).replace(/</g, "\\u003c");
   const html = [
     "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">",
     "<title>BRING Care 추천 견적 승인</title>",
     "<style>",
-    "*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#162033;font-family:Arial,'Noto Sans KR',sans-serif}",
-    ".page{max-width:520px;margin:0 auto;padding:22px 16px 40px}.brand{font-weight:900;color:#173a70;font-size:18px;margin:5px 0 24px}",
-    ".card{background:#fff;border:1px solid #dbe3ef;border-radius:8px;padding:22px 18px;box-shadow:0 8px 24px rgba(31,57,91,.08)}",
-    "h1{font-size:24px;line-height:1.3;margin:0 0 8px}p{font-size:14px;line-height:1.6;color:#667085;margin:0 0 20px}",
-    ".amount{background:#eaf2ff;border:1px solid #bfd3f6;border-radius:8px;padding:18px;margin:0 0 16px}",
-    ".amount span{display:block;font-size:12px;color:#52606f;margin-bottom:5px}.amount strong{font-size:30px;color:#123568;letter-spacing:0}",
-    ".info{display:grid;grid-template-columns:92px 1fr;gap:10px 12px;padding:14px 0;border-top:1px solid #edf1f6}",
-    ".info b{font-size:13px;color:#667085}.info span{font-size:14px;font-weight:700;word-break:keep-all}",
-    ".work{border-top:1px solid #edf1f6;padding-top:15px}.work b{font-size:13px}.work ul{margin:9px 0 0;padding-left:20px}.work li{font-size:14px;line-height:1.55;margin:4px 0}",
-    ".actions{display:grid;gap:10px;margin-top:22px}.actions button{width:100%;min-height:54px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer}",
-    ".approve{border:1px solid #173a70;background:#173a70;color:#fff}.other{border:1px solid #b8c3d1;background:#fff;color:#27364a}",
-    ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:17px;border-radius:8px}",
+    "*{box-sizing:border-box}html{background:#eef3f9}body{margin:0;color:#162033;font-family:Arial,'Noto Sans KR',sans-serif;-webkit-font-smoothing:antialiased}",
+    ".page{width:100%;max-width:480px;min-height:100dvh;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 16px max(32px,env(safe-area-inset-bottom))}",
+    ".brand{display:flex;align-items:center;gap:9px;font-weight:900;color:#173a70;font-size:18px;margin:2px 2px 18px}.brand:before{content:'';width:12px;height:12px;border-radius:50%;background:#2f80ed;box-shadow:8px 0 0 #28b779}",
+    ".card{background:#fff;border:1px solid #dbe3ef;border-radius:8px;padding:24px 18px;box-shadow:0 10px 28px rgba(31,57,91,.09)}",
+    "h1{font-size:25px;line-height:1.3;margin:0 0 8px;letter-spacing:0}p{font-size:14px;line-height:1.6;color:#667085;margin:0 0 20px}",
+    ".amount{background:#eaf2ff;border:1px solid #b8cff2;border-radius:8px;padding:20px 18px;margin:0 0 18px}",
+    ".amount span{display:block;font-size:13px;font-weight:700;color:#52606f;margin-bottom:6px}.amount strong{display:block;font-size:34px;line-height:1.15;color:#123568;letter-spacing:0;word-break:keep-all}",
+    ".info{display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px;padding:16px 0;border-top:1px solid #e7edf5}",
+    ".info b{font-size:13px;color:#667085}.info span{font-size:15px;font-weight:800;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere}",
+    ".work{border-top:1px solid #e7edf5;padding-top:16px}.work b{font-size:14px}.work ul{margin:10px 0 0;padding-left:20px}.work li{font-size:15px;line-height:1.55;margin:5px 0;word-break:keep-all}",
+    ".actions{display:grid;gap:10px;margin-top:24px}.actions button{width:100%;min-height:56px;border-radius:8px;font-size:16px;font-weight:900;cursor:pointer;touch-action:manipulation}",
+    ".approve{border:1px solid #173a70;background:#173a70;color:#fff}.other{border:1px solid #aebbc9;background:#fff;color:#27364a}",
+    ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:18px;border-radius:8px}",
     ".result.approved{background:#eaf8ef;border:1px solid #9cd9b0;color:#116329}.result.other{background:#fff7e8;border:1px solid #f1c879;color:#8a5300}",
-    ".result strong{font-size:17px}.result span{font-size:13px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
+    ".result strong{font-size:18px}.result span{font-size:14px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
+    ".payment{margin-top:14px;padding:18px;background:#f7f9fc;border:1px solid #dbe3ef;border-radius:8px}.payment-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.payment-head span{font-size:18px;font-weight:900}.payment-head b{font-size:12px;color:#116329;background:#dcf7e6;border:1px solid #a9dfba;border-radius:999px;padding:5px 8px}.payment>p{margin:8px 0 14px}.payment dl{margin:0}.payment dl div{display:grid;grid-template-columns:82px 1fr;gap:10px;padding:11px 0;border-top:1px solid #e1e7ef}.payment dt{font-size:13px;color:#667085}.payment dd{margin:0;font-size:16px;font-weight:900;word-break:break-all}.copy{width:100%;min-height:48px;margin-top:14px;border:1px solid #173a70;background:#fff;color:#173a70;border-radius:8px;font-size:15px;font-weight:900}",
+    "@media(max-width:360px){.page{padding-left:10px;padding-right:10px}.card{padding:20px 14px}.amount strong{font-size:30px}}",
     "</style></head><body data-owner-decision-valid=\"" + (valid ? "1" : "0") + "\"><main class=\"page\"><div class=\"brand\">BRING Care</div><section class=\"card\">",
     "<h1>" + ownerDecisionEscapeHtml_(title) + "</h1><p>" + ownerDecisionEscapeHtml_(description) + "</p>",
     valid ? "<div class=\"amount\"><span>추천 최종금액</span><strong>" + ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amounts.totalAmount)) + "</strong></div>" : "",
@@ -444,12 +2625,13 @@ function renderOwnerDecisionPage_(params) {
     valid ? "<div class=\"work\"><b>주요 작업</b><ul>" + workHtml + "</ul></div>" : "",
     "<div id=\"result\">" + statusHtml + "</div>" + buttons + "<div class=\"message\" id=\"message\"></div>",
     "</section></main><script>",
-    "var CASE_ID=" + caseIdJs + ";var TOKEN=" + tokenJs + ";var running=false;",
+    "var CASE_ID=" + caseIdJs + ";var TOKEN=" + tokenJs + ";var PAYMENT_HTML=" + paymentHtmlJs + ";var ACCOUNT_NUMBER=" + accountNumberJs + ";var running=false;",
+    "function copyAccountNumber(){var value=ACCOUNT_NUMBER.replace(/[^0-9]/g,'');if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(function(){var b=document.querySelector('.copy');if(b){b.textContent='복사 완료';setTimeout(function(){b.textContent='계좌번호 복사'},1400)}});return;}var t=document.createElement('textarea');t.value=value;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();}",
     "function submitDecision(decision){if(running)return;running=true;var buttons=document.querySelectorAll('button');buttons.forEach(function(b){b.disabled=true});",
     "document.getElementById('message').textContent='응답을 저장하고 있습니다...';",
     "google.script.run.withSuccessHandler(function(result){running=false;if(!result||!result.ok){document.getElementById('message').textContent=result&&result.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});return;}",
     "document.getElementById('message').textContent='';document.querySelector('.actions').remove();var cls=decision==='approve_payment'?'approved':'other';",
-    "var label=decision==='approve_payment'?'승인하고 입금 진행':'다른 견적 요청';document.getElementById('result').innerHTML='<div class=\"result '+cls+'\"><strong>'+label+'</strong><span>응답이 정상적으로 접수되었습니다.</span></div>';",
+    "var label=decision==='approve_payment'?'승인하고 입금 진행':'다른 견적 요청';document.getElementById('result').innerHTML='<div class=\"result '+cls+'\"><strong>'+label+'</strong><span>응답이 정상적으로 접수되었습니다.</span></div>'+(decision==='approve_payment'?PAYMENT_HTML:'');",
     "}).withFailureHandler(function(err){running=false;document.getElementById('message').textContent=err&&err.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});}).submitOwnerDecision(CASE_ID,TOKEN,decision);}",
     "</script></body></html>"
   ].join("");
@@ -475,12 +2657,17 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
     return { ok: false, message: "지원하지 않는 응답입니다." };
   }
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "케이스를 찾지 못했습니다." };
+  if (!casePayload) return { ok: false, message: "민원을 찾지 못했습니다." };
   const current = Object.assign({}, casePayload.ownerDecision || {});
   if (!current.token || current.token !== token) return { ok: false, message: "유효하지 않거나 만료된 승인 링크입니다." };
   if (current.status && current.status !== "pending") {
     return current.status === (decision === "approve_payment" ? "approved_payment" : "request_other_quote")
-      ? { ok: true, skipped: true, status: current.status }
+      ? {
+        ok: true,
+        skipped: true,
+        status: current.status,
+        payment: current.status === "approved_payment" ? Object.assign({}, OWNER_PAYMENT_ACCOUNT) : null
+      }
       : { ok: false, message: "이미 다른 응답이 접수된 링크입니다." };
   }
 
@@ -508,14 +2695,101 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
     patchCaseToFirebase_(caseId, {
       automationState: automationState,
       paymentStatus: "awaiting_payment",
+      paymentAccount: Object.assign({}, OWNER_PAYMENT_ACCOUNT),
+      paymentExpectedAmount: Number(current.bringTotalAmount || 0),
       log: log,
       updatedAt: now
     });
-    return { ok: true, status: resolved.status, nextStep: "c10" };
+    return {
+      ok: true,
+      status: resolved.status,
+      nextStep: "c10",
+      payment: Object.assign({}, OWNER_PAYMENT_ACCOUNT)
+    };
   }
 
   reopenCaseForAnotherQuote_(caseId, casePayload, resolved, now);
   return { ok: true, status: resolved.status, nextStep: "c5" };
+}
+
+function handleConfirmCasePayment_(payload) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: false, message: "다른 입금 확인을 처리 중입니다. 잠시 후 다시 시도해 주세요." };
+  try {
+    return confirmCasePaymentLocked_(
+      payload && payload.caseId,
+      payload && payload.adminEmail,
+      payload && payload.adminUid
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function confirmCasePaymentLocked_(caseId, adminEmail, adminUid) {
+  caseId = String(caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "민원을 찾지 못했습니다." };
+  const status = Object.assign({}, casePayload.status || {});
+  const ownerDecision = Object.assign({}, casePayload.ownerDecision || {});
+  if (status.c10 === "done" && String(casePayload.paymentStatus || "") === "confirmed") {
+    return {
+      ok: true,
+      skipped: true,
+      status: "confirmed",
+      nextStep: "c11",
+      confirmedAt: casePayload.paymentConfirmedAt || ""
+    };
+  }
+  if (status.c9 !== "done" || ownerDecision.status !== "approved_payment") {
+    return { ok: false, message: "건물주 승인 완료 후 입금을 확인할 수 있습니다." };
+  }
+
+  const now = new Date().toISOString();
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  workflowStepState_(automationState, "c10", "done", now, {
+    mode: "manual_admin_confirmation",
+    confirmedBy: String(adminEmail || adminUid || "관리자")
+  });
+  workflowStepState_(automationState, "c11", "doing", now, { mode: "vendor_schedule" });
+
+  const priced = workflowPricedQuote_(casePayload);
+  const amounts = priced ? ownerRecommendationAmounts_(priced.quote) : { totalAmount: Number(casePayload.paymentExpectedAmount || ownerDecision.bringTotalAmount || 0) };
+  const confirmation = {
+    status: "confirmed",
+    statusText: "관리자 입금 확인 완료",
+    amount: Number(amounts.totalAmount || 0),
+    accountNumber: String(casePayload.paymentAccount && casePayload.paymentAccount.accountNumber || OWNER_PAYMENT_ACCOUNT.accountNumber),
+    accountHolder: String(casePayload.paymentAccount && casePayload.paymentAccount.accountHolder || OWNER_PAYMENT_ACCOUNT.accountHolder),
+    confirmedAt: now,
+    confirmedBy: String(adminEmail || adminUid || "관리자")
+  };
+  const log = Array.isArray(casePayload.log) ? casePayload.log.slice() : [];
+  log.unshift("관리자 입금 확인 완료 · ⑪ 업체 연결·일정 시작");
+  if (log.length > 30) log.length = 30;
+
+  patchCaseChildToFirebase_(caseId, "status", { c10: "done", c11: "doing" });
+  patchCaseChildToFirebase_(caseId, "note", {
+    c10: "관리자가 실제 사업자계좌 입금 내역을 확인했습니다.",
+    c11: "입금 확인 완료 · 업체 연결 및 일정 조율을 진행해 주세요."
+  });
+  patchCaseToFirebase_(caseId, {
+    automationState: automationState,
+    paymentStatus: "confirmed",
+    paymentConfirmation: confirmation,
+    paymentConfirmedAt: now,
+    paymentConfirmedBy: confirmation.confirmedBy,
+    log: log,
+    updatedAt: now
+  });
+  return {
+    ok: true,
+    status: "confirmed",
+    nextStep: "c11",
+    confirmedAt: now,
+    amount: confirmation.amount
+  };
 }
 
 function reopenCaseForAnotherQuote_(caseId, casePayload, ownerDecision, now) {
@@ -593,6 +2867,11 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "사업자등록증 업로드 실패: " + fileName + " / " + message });
     log.unshift("사업자등록증 업로드 실패: " + fileName + " / " + message);
+  } else if (action === "uploadWorkPhoto") {
+    const fileName = payload && payload.file && payload.file.fileName ? String(payload.file.fileName) : "파일명 미확인";
+    patchCaseChildToFirebase_(caseId, "status", { c13: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c13: "작업 사진 업로드 실패: " + fileName + " / " + message });
+    log.unshift("작업 사진 업로드 실패: " + fileName + " / " + message);
   } else if (action === "confirmQuoteAmount") {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "견적 합계금액 확정 실패: " + message });
@@ -605,6 +2884,10 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c8: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c8: "건물주 추천 MMS 발송 실패: " + message });
     log.unshift("건물주 추천 MMS 발송 실패: " + message);
+  } else if (action === "confirmCasePayment") {
+    patchCaseChildToFirebase_(caseId, "status", { c10: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c10: "관리자 입금 확인 처리 실패: " + message });
+    log.unshift("관리자 입금 확인 처리 실패: " + message);
   } else {
     return;
   }
@@ -624,7 +2907,7 @@ function handleComplaintReceiptSms_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const existingStatus = String(casePayload.sms && casePayload.sms.status || "");
   if (!payload.force && isSmsSentStatus_(existingStatus)) {
@@ -646,12 +2929,30 @@ function handleComplaintReceiptSms_(payload) {
     reason: casePayload.analysisReason || ""
   };
   const smsResult = sendComplaintSms_(ticketNo, smsRecord, analysis, casePayload.contractMatch || {}, {
-    force: payload.force === true
+    force: payload.force === true,
+    existingSms: casePayload.sms || {}
   });
+
+  const normalizedTenantPhone = normalizePhoneForSms_(
+    readField_(smsRecord, ["연락처", "전화번호", "휴대폰"])
+  );
+  if (
+    casePayload.source === "kakao_chatbot" &&
+    isSendableSmsPhone_(normalizedTenantPhone)
+  ) {
+    casePayload.phone = maskPhone_(normalizedTenantPhone);
+    writeNormalizedKakaoPhoneToSheetForCase_(casePayload, normalizedTenantPhone);
+  }
 
   applySmsResultToCase_(casePayload, smsResult);
   if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
   writeCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "complaintReceiptSms", smsResult);
+  putCaseChildToFirebase_(caseId, "automationState/receiptSms", casePayload.automationState.receiptSms);
+  putCaseChildToFirebase_(caseId, "note/c2", casePayload.note.c2 || "");
+  if (casePayload.source === "kakao_chatbot" && casePayload.phone) {
+    putCaseChildToFirebase_(caseId, "phone", casePayload.phone);
+  }
   const workflow = advanceCaseWorkflow_(caseId, { source: "receipt_sms", skipOwnerAutoSend: true });
 
   const ok = isSmsSentStatus_(smsResult.status);
@@ -692,6 +2993,18 @@ function writeSmsResultToSheetForCase_(casePayload, smsResult) {
   setCellByHeader_(sheet, row, headerMap, "문자 발송 메모", smsResult.statusText || "");
 }
 
+function writeNormalizedKakaoPhoneToSheetForCase_(casePayload, phone) {
+  const row = Number(casePayload && casePayload.sheetRow);
+  if (!row || row < 2 || !isSendableSmsPhone_(phone)) return;
+
+  const sheet = getResponseSheet_();
+  const headers = ensureKakaoIntakeHeaders_(sheet);
+  const headerMap = kakaoComplaintHeaderMap_(headers);
+  const column = headerMap["연락처"];
+  if (!column) return;
+  sheet.getRange(row, column).setNumberFormat("@").setValue(String(phone));
+}
+
 function handleVendorEstimateMms_(payload) {
   const caseId = String(payload.caseId || "").trim();
   const selectedVendors = Array.isArray(payload.vendors) ? payload.vendors.map(normalizeVendorForMms_).filter(v => v.name || v.phone) : [];
@@ -699,7 +3012,7 @@ function handleVendorEstimateMms_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const requestKey = "vendor-mms:" + caseId + ":" + selectedVendors.map(vendor => [
     vendor.id || "",
@@ -817,7 +3130,7 @@ function handleOwnerRecommendationPreview_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
   if (!selected.quote) {
@@ -842,7 +3155,7 @@ function handleOwnerRecommendationPreview_(payload) {
   }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
-    ownerDecision.decisionUrl
+    ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl
   );
   let image = null;
   try {
@@ -861,6 +3174,7 @@ function handleOwnerRecommendationPreview_(payload) {
     bringVatAmount: amounts.vatAmount,
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
@@ -887,6 +3201,7 @@ function handleOwnerRecommendationPreview_(payload) {
     bringVatAmount: amounts.vatAmount,
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
@@ -913,7 +3228,7 @@ function handleOwnerRecommendationMmsConfirmation_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const existing = casePayload.ownerRecommendationMms || {};
   if (ownerMmsResultComplete_(casePayload, existing)) {
@@ -950,7 +3265,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
   if (!selected.quote) {
@@ -974,7 +3289,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
       deliveryAccepted: true,
       deliveryConfirmed: true,
       confirmedAt: existing.confirmedAt || new Date().toISOString(),
-      statusText: "SENS MMS 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
+      statusText: "건물주 추천 알림 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
     });
     return Object.assign({ skipped: true }, updateOwnerRecommendationMmsCase_(caseId, casePayload, normalizedExisting));
   }
@@ -988,7 +3303,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     return updateOwnerRecommendationMmsCase_(caseId, casePayload, {
       ok: false,
       status: "blocked",
-      statusText: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 MMS 발송을 보류했습니다.",
+      statusText: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 추천 알림 발송을 보류했습니다.",
       requestKey: requestKey,
       quoteId: selected.quoteId,
       vendorName: supplier.name,
@@ -996,6 +3311,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
       bringTotalAmount: amounts.totalAmount,
       ownerPhoneMasked: maskPhone_(ownerPhone),
       decisionUrl: ownerDecision.decisionUrl || "",
+      shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
       decisionStatus: ownerDecision.status || "",
       decisionLinkValidated: false,
       updatedAt: new Date().toISOString()
@@ -1003,7 +3319,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
-    ownerDecision.decisionUrl
+    ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl
   );
   const baseResult = {
     ok: false,
@@ -1016,6 +3332,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     bringTotalAmount: amounts.totalAmount,
     ownerPhoneMasked: maskPhone_(ownerPhone),
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     updatedAt: new Date().toISOString()
@@ -1024,6 +3341,43 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   if (!ownerPhone) {
     baseResult.status = "blocked";
     baseResult.statusText = "온보딩 수집서에서 건물주 연락처를 찾지 못했습니다.";
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+  }
+
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (kakaoConfig.enabled && kakaoConfig.templates.ownerQuote) {
+    const approvalUrl = ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl;
+    const alimTalkContent = makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts);
+    const fallbackContent = appendOwnerDecisionLink_(alimTalkContent, approvalUrl);
+    checkpointOwnerRecommendationMmsCase_(caseId, casePayload, Object.assign({}, baseResult, {
+      provider: "kakao_alimtalk",
+      templateCode: kakaoConfig.templates.ownerQuote
+    }));
+    const send = sendKakaoAlimTalkOrSms_(ownerPhone, alimTalkContent, "건물주 추천 견적", {
+      templateCode: kakaoConfig.templates.ownerQuote,
+      fallbackContent: fallbackContent,
+      buttons: [{
+        type: "WL",
+        name: "추천 견적 확인",
+        linkMobile: approvalUrl,
+        linkPc: approvalUrl
+      }]
+    });
+    baseResult.provider = send.provider || "kakao_alimtalk";
+    baseResult.templateCode = send.templateCode || kakaoConfig.templates.ownerQuote;
+    baseResult.requestId = send.requestId || "";
+    baseResult.messageId = send.messageId || "";
+    baseResult.responseCode = send.responseCode || "";
+    baseResult.statusText = send.ok
+      ? (send.provider === "kakao_alimtalk"
+        ? "카카오 알림톡 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
+        : "알림톡 실패 후 문자 대체 발송 완료. ⑨ 승인·입금 단계로 전환했습니다.")
+      : send.message;
+    baseResult.deliveryAccepted = send.ok === true;
+    baseResult.deliveryConfirmed = send.ok === true;
+    baseResult.confirmedAt = send.ok ? new Date().toISOString() : "";
+    baseResult.ok = send.ok === true;
+    baseResult.status = send.ok ? "sent" : "failed";
     return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
   }
 
@@ -1175,6 +3529,68 @@ function makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts) {
   ].join("\n");
 }
 
+function safeAlimTalkVariable_(value, fallback) {
+  const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  return (text || String(fallback || "미입력")).slice(0, 200);
+}
+
+function makeComplaintReceiptTenantAlimTalkContent_(ticketNo, record) {
+  const tenantName = safeAlimTalkVariable_(readField_(record, ["이름", "성명", "세입자명"]), "고객");
+  const building = safeAlimTalkVariable_(readField_(record, ["건물명", "건물"]), "미입력");
+  const room = safeAlimTalkVariable_(formatRoomForCase_(readField_(record, ["호실"])), "미입력");
+  const issueType = safeAlimTalkVariable_(readField_(record, ["문제 유형"]), "미입력");
+  return [
+    "[브링케어 민원 접수 안내]",
+    tenantName + "님, 민원이 정상 접수되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(ticketNo, "미입력"),
+    "건물: " + building,
+    "호실: " + room,
+    "문제 유형: " + issueType,
+    "",
+    "담당자가 내용을 확인한 후 진행 상황을 안내드리겠습니다."
+  ].join("\n");
+}
+
+function makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record) {
+  const building = safeAlimTalkVariable_(readField_(record, ["건물명", "건물"]), "미입력");
+  const room = safeAlimTalkVariable_(formatRoomForCase_(readField_(record, ["호실"])), "미입력");
+  const issueType = safeAlimTalkVariable_(readField_(record, ["문제 유형"]), "미입력");
+  return [
+    "[브링케어 건물 민원 접수 안내]",
+    "관리 중인 건물에 민원이 접수되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(ticketNo, "미입력"),
+    "건물: " + building,
+    "호실: " + room,
+    "문제 유형: " + issueType,
+    "",
+    "접수 내용을 확인한 후 필요한 업체 견적을 진행하겠습니다."
+  ].join("\n");
+}
+
+function makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts) {
+  return [
+    "[브링케어 추천 견적 안내]",
+    "",
+    "본 알림은 고객님께서 브링케어 관리 서비스 계약 시 신청하고 수신에 동의하신 건물 민원 견적 안내입니다.",
+    "계약 건물의 민원에 새로운 추천 견적이 등록될 때마다 발송됩니다.",
+    "",
+    "건물 민원에 대한 추천 견적이 준비되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(casePayload && (casePayload.ticketNo || casePayload.id), "미입력"),
+    "건물: " + safeAlimTalkVariable_(casePayload && casePayload.building, "미입력"),
+    "호실: " + safeAlimTalkVariable_(formatRoomForCase_(casePayload && casePayload.room), "미입력"),
+    "추천 업체: " + safeAlimTalkVariable_(supplier && supplier.name, "업체 확인 필요"),
+    "추천 금액: " + ownerRecommendationAmountText_(amounts && amounts.totalAmount),
+    "",
+    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 여부를 선택해 주세요.",
+    "",
+    "알림 관련 문의 및 수신 중단 요청",
+    "브링케어 고객센터: 033-748-8919"
+  ].join("\n");
+}
+
 function extractOwnerRecommendationPhone_(casePayload) {
   const direct = [casePayload && casePayload.ownerPhone, casePayload && casePayload.ownerContact,
     casePayload && casePayload.owner && casePayload.owner.phone].filter(Boolean).join(" ");
@@ -1303,8 +3719,8 @@ function recordUploadBatchProgress_(caseId, payload) {
 function advanceCaseWorkflow_(caseId, context) {
   context = context || {};
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
-  if (casePayload.deleted === true) return { ok: false, skipped: true, message: "삭제된 케이스는 자동 진행하지 않습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
+  if (casePayload.deleted === true) return { ok: false, skipped: true, message: "삭제된 민원은 자동 진행하지 않습니다: " + caseId };
 
   const now = new Date().toISOString();
   const before = Object.assign({}, casePayload.status || {});
@@ -1317,7 +3733,7 @@ function advanceCaseWorkflow_(caseId, context) {
   const ownerMmsComplete = ownerMmsWorkflowComplete_(casePayload);
 
   // 과거 MMS 성공 기록만 있고 현재 승인 링크가 검증되지 않았거나 서로 다른
-  // 링크인 경우에는 ⑨를 열지 않는다. 잘못 진행된 기존 케이스도 여기서 복구한다.
+  // 링크인 경우에는 ⑨를 열지 않는다. 잘못 진행된 기존 민원도 여기서 복구한다.
   if (
     status.c8 === "done" &&
     status.c9 !== "done" &&
@@ -1745,10 +4161,10 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
     result.status = "blocked";
     result.deliveryAccepted = false;
     result.deliveryConfirmed = false;
-    result.statusText = "MMS 발송 기록과 검증된 승인 링크가 일치하지 않아 ⑧ 단계에서 다시 확인합니다.";
+    result.statusText = "추천 알림 발송 기록과 검증된 승인 링크가 일치하지 않아 ⑧ 단계에서 다시 확인합니다.";
   }
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
-  casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
+  casePayload.log.unshift("건물주 추천 알림 " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   putCaseChildToFirebase_(caseId, "ownerRecommendationMms", result);
   patchCaseChildToFirebase_(caseId, "status", {
@@ -1772,6 +4188,9 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       deliveryAccepted: safeCompletion,
       deliveryConfirmed: safeCompletion,
       requestId: result.requestId || "",
+      messageId: result.messageId || "",
+      provider: result.provider || "",
+      templateCode: result.templateCode || "",
       requestKey: result.requestKey || "",
       quoteId: result.quoteId || "",
       vendorName: result.vendorName || "",
@@ -1784,7 +4203,7 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       decisionUrl: result.decisionUrl || "",
       decisionStatus: result.decisionStatus || "",
       decisionLinkValidated: result.decisionLinkValidated === true,
-      statusText: result.statusText || (safeCompletion ? "SENS MMS 발송 완료" : "승인 링크 확인 필요"),
+      statusText: result.statusText || (safeCompletion ? "건물주 추천 알림 발송 완료" : "승인 링크 확인 필요"),
       confirmedAt: safeCompletion ? (result.confirmedAt || timestamp) : "",
       updatedAt: timestamp,
       build: AUTOMATION_BUILD
@@ -1801,7 +4220,7 @@ function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   const checkpoint = Object.assign({}, result, {
     ok: false,
     status: "sending",
-    statusText: "SENS MMS 발송 요청을 처리하고 있습니다.",
+    statusText: "건물주 추천 알림 발송 요청을 처리하고 있습니다.",
     deliveryAccepted: false,
     deliveryConfirmed: false,
     sendAttemptedAt: timestamp,
@@ -1812,7 +4231,7 @@ function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.status.c8 = "doing";
-  casePayload.note.c8 = "건물주 추천 MMS 발송을 처리하고 있습니다.";
+  casePayload.note.c8 = "건물주 추천 알림 발송을 처리하고 있습니다.";
   casePayload.ownerRecommendationMms = checkpoint;
 
   putCaseChildToFirebase_(caseId, "ownerRecommendationMms", checkpoint);
@@ -1841,7 +4260,7 @@ function makeOwnerRecommendationMmsNote_(result) {
   const deliveryConfirmed = result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
   const deliveryAccepted = result.deliveryAccepted === true || result.status === "sent_pending_confirmation";
   const lines = [
-    "[건물주 추천 MMS]",
+    "[건물주 추천 알림]",
     "상태: " + (deliveryConfirmed ? "발송완료" : deliveryAccepted ? "발송 요청 완료 · 수신 확인 필요" : "진행중/보류"),
     result.statusText || "",
     result.vendorName ? "추천 업체: " + result.vendorName : "",
@@ -1856,6 +4275,7 @@ function makeOwnerRecommendationMmsNote_(result) {
 function readCaseFromFirebase_(caseId) {
   const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
     method: "get",
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();
@@ -1889,15 +4309,22 @@ function firstJpegPhotoFromRecord_(record) {
       const file = DriveApp.getFileById(id);
       const blob = file.getBlob();
       const name = file.getName() || "photo.jpg";
-      const contentType = blob.getContentType() || "";
+      const contentType = String(blob.getContentType() || "").toLowerCase();
+      const isImage = /^image\//i.test(contentType);
       const isJpeg = /jpe?g$/i.test(name) || /jpeg/i.test(contentType);
-      if (!isJpeg) {
-        errors.push(name + ": JPG/JPEG 파일이 아님");
+      if (!isImage && !isJpeg) {
+        errors.push(name + ": 이미지 파일이 아님");
         continue;
       }
 
       const originalBytes = blob.getBytes();
-      const thumbnail = originalBytes.length > 300 * 1024 ? makeSensThumbnailBlob_(id, name) : null;
+      const thumbnail = !isJpeg || originalBytes.length > 300 * 1024
+        ? makeSensThumbnailBlob_(id, name)
+        : null;
+      if (!isJpeg && !thumbnail) {
+        errors.push(name + ": MMS용 JPG 이미지로 변환하지 못함");
+        continue;
+      }
       const bytes = thumbnail ? thumbnail.blob.getBytes() : originalBytes;
       const outputName = thumbnail ? thumbnail.name : makeSensImageName_(name);
       if (bytes.length > 300 * 1024) {
@@ -1917,7 +4344,7 @@ function firstJpegPhotoFromRecord_(record) {
     }
   }
 
-  return { ok: false, message: "MMS로 보낼 수 있는 JPG/JPEG 사진을 찾지 못했습니다. " + errors.join(" / ") };
+  return { ok: false, message: "MMS로 보낼 수 있는 현장 사진을 찾지 못했습니다. " + errors.join(" / ") };
 }
 
 function makeSensThumbnailBlob_(fileId, originalName) {
@@ -2051,6 +4478,30 @@ function sensPostJson_(uri, payload, config) {
         "x-ncp-apigw-signature-v2": signature
       },
       payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    let json = {};
+    try { json = body ? JSON.parse(body) : {}; } catch (err) {}
+    if (code >= 200 && code < 300) return { ok: true, code: code, body: body, json: json };
+    return { ok: false, code: code, body: body, json: json, message: "HTTP " + code + " / " + body.slice(0, 200) };
+  } catch (err) {
+    return { ok: false, code: 0, body: "", json: {}, message: err.message };
+  }
+}
+
+function sensGetJson_(uri, config) {
+  const timestamp = String(Date.now());
+  const signature = makeNcpSignature_("GET", uri, timestamp, config.accessKey, config.secretKey);
+  try {
+    const response = UrlFetchApp.fetch("https://sens.apigw.ntruss.com" + uri, {
+      method: "get",
+      headers: {
+        "x-ncp-apigw-timestamp": timestamp,
+        "x-ncp-iam-access-key": config.accessKey,
+        "x-ncp-apigw-signature-v2": signature
+      },
       muteHttpExceptions: true
     });
     const code = response.getResponseCode();
@@ -2261,7 +4712,7 @@ function handleQuoteFileUpload_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const validation = validateQuoteUpload_(filePayload);
   if (!validation.ok) {
@@ -2360,7 +4811,7 @@ function handleBusinessRegistrationUpload_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const validation = validateBusinessRegistrationUpload_(filePayload);
   if (!validation.ok) {
@@ -2453,6 +4904,78 @@ function handleBusinessRegistrationUpload_(payload) {
   return { ok: true, caseId: caseId, businessRegistration: doc, refreshedQuotes: refreshResult.updated, workflow: workflow, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
 }
 
+function handleWorkPhotoUpload_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const phase = String(payload.phase || "").trim().toLowerCase();
+  const filePayload = payload.file || {};
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  if (phase !== "before" && phase !== "after") return { ok: false, message: "작업 사진 구분이 올바르지 않습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
+
+  const validation = validateWorkPhotoUpload_(filePayload);
+  if (!validation.ok) return updateWorkPhotoUploadFailure_(caseId, casePayload, validation.message);
+
+  const now = new Date();
+  const uploadedAt = now.toISOString();
+  const phaseText = phase === "after" ? "작업 후" : "작업 전";
+  const photoId = "wp" + Utilities.formatDate(now, "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
+  const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
+  const mimeType = String(filePayload.mimeType || "").trim() || inferWorkPhotoMimeType_(filePayload.fileName);
+  const savedName = makeWorkPhotoDriveFileName_(casePayload, phaseText, filePayload.fileName, now);
+  const blob = Utilities.newBlob(bytes, mimeType, savedName);
+  const folder = getWorkPhotoDriveFolder_(casePayload, phase);
+  const driveFile = folder.createFile(blob);
+
+  const photo = {
+    id: photoId,
+    phase: phase,
+    phaseText: phaseText,
+    fileName: driveFile.getName(),
+    originalFileName: String(filePayload.fileName || driveFile.getName()),
+    fileUrl: driveFile.getUrl(),
+    driveFileId: driveFile.getId(),
+    mimeType: mimeType,
+    size: Number(filePayload.size || bytes.length),
+    uploadedAt: uploadedAt
+  };
+
+  casePayload.workPhotoFiles = casePayload.workPhotoFiles && typeof casePayload.workPhotoFiles === "object" && !Array.isArray(casePayload.workPhotoFiles)
+    ? casePayload.workPhotoFiles
+    : {};
+  casePayload.workPhotoFiles[photoId] = photo;
+  const photos = Object.keys(casePayload.workPhotoFiles).map(key => casePayload.workPhotoFiles[key]).filter(Boolean);
+  const beforeCount = photos.filter(item => item.phase === "before").length;
+  const afterCount = photos.filter(item => item.phase === "after").length;
+
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c13 !== "done") casePayload.status.c13 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c13 = [
+    "[작업 사진]",
+    "작업 전: " + beforeCount + "장",
+    "작업 후: " + afterCount + "장",
+    "⑭ B/A 보고서에서 자동 참조됩니다."
+  ].join("\n");
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift(phaseText + " 사진 업로드: " + driveFile.getName());
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+
+  putCaseChildToFirebase_(caseId, "workPhotoFiles/" + photoId, photo);
+  patchCaseChildToFirebase_(caseId, "status", { c13: casePayload.status.c13 });
+  patchCaseChildToFirebase_(caseId, "note", { c13: casePayload.note.c13 });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: uploadedAt });
+
+  return {
+    ok: true,
+    caseId: caseId,
+    photo: photo,
+    counts: { before: beforeCount, after: afterCount },
+    message: phaseText + " 사진 저장 완료"
+  };
+}
+
 function applyQuoteAmountState_(quote) {
   quote = quote || {};
   if (Number(quote.confirmedTotalAmount || 0)) {
@@ -2484,7 +5007,7 @@ function handleConfirmQuoteAmount_(payload) {
   if (!totalAmount || totalAmount < 1000) return { ok: false, caseId: caseId, quoteId: quoteId, message: "확정할 합계금액을 1,000원 이상으로 입력해주세요." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -2616,7 +5139,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
 
   const timestamp = new Date().toISOString();
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -2727,7 +5250,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
   return { ok: message.indexOf("실패") === -1 && message.indexOf("없음") === -1, caseId: caseId, quoteId: quoteId, quote: quote, message: message };
 }
 
-const BRING_QUOTE_MARKUP_RATE = 0.10;
+const BRING_QUOTE_MARKUP_RATE = 0.05;
 
 function roundToHundred_(value) {
   const number = Number(value || 0);
@@ -2893,6 +5416,36 @@ function validateBusinessRegistrationUpload_(filePayload) {
   };
 }
 
+function validateWorkPhotoUpload_(filePayload) {
+  const fileName = String(filePayload.fileName || "").trim();
+  const mimeType = String(filePayload.mimeType || "").trim().toLowerCase();
+  const body = String(filePayload.fileBody || "").replace(/^data:[^,]+,/, "");
+  const size = Number(filePayload.size || 0);
+  const ext = fileName.split(".").pop().toLowerCase();
+  if (!fileName) return { ok: false, message: "작업 사진 파일명이 없습니다." };
+  if (!body) return { ok: false, message: "작업 사진 내용이 없습니다." };
+  if (size > 5 * 1024 * 1024) return { ok: false, message: "작업 사진 용량이 5MB를 초과했습니다." };
+  if (["jpg", "jpeg", "png", "webp"].indexOf(ext) === -1 && ["image/jpeg", "image/png", "image/webp"].indexOf(mimeType) === -1) {
+    return { ok: false, message: "작업 사진은 JPG, PNG, WEBP 형식만 업로드할 수 있습니다." };
+  }
+  return { ok: true };
+}
+
+function updateWorkPhotoUploadFailure_(caseId, casePayload, message) {
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c13 !== "done") casePayload.status.c13 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c13 = "작업 사진 업로드 실패: " + message;
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("작업 사진 업로드 실패: " + message);
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  const updatedAt = new Date().toISOString();
+  patchCaseChildToFirebase_(caseId, "status", { c13: casePayload.status.c13 });
+  patchCaseChildToFirebase_(caseId, "note", { c13: casePayload.note.c13 });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: updatedAt });
+  return { ok: false, caseId: caseId, message: message };
+}
+
 function updateQuoteUploadFailure_(caseId, casePayload, message) {
   casePayload.status = casePayload.status || {};
   if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
@@ -2939,6 +5492,12 @@ function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
   return getOrCreateChildFolder_(caseFolder, "사업자등록증");
 }
 
+function getWorkPhotoDriveFolder_(casePayload, phase) {
+  const caseFolder = getQuoteDriveFolder_(casePayload);
+  const workFolder = getOrCreateChildFolder_(caseFolder, "작업 사진");
+  return getOrCreateChildFolder_(workFolder, phase === "after" ? "작업 후" : "작업 전");
+}
+
 function getQuoteDriveRootFolder_() {
   const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
   if (!configured) throw new Error("QUOTE_DRIVE_FOLDER_ID가 비어 있어 견적서 저장 폴더를 찾을 수 없습니다.");
@@ -2974,6 +5533,20 @@ function makeBusinessRegistrationDriveFileName_(casePayload, vendorName, origina
     "사업자등록증"
   ].join("_");
   return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function makeWorkPhotoDriveFileName_(casePayload, phaseText, originalName, date) {
+  const extMatch = String(originalName || "").match(/(\.[A-Za-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1].toLowerCase() : ".jpg";
+  const originalBase = String(originalName || "photo").replace(/\.[^.]+$/, "");
+  const timestamp = Utilities.formatDate(date || new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
+  const base = [
+    casePayload.ticketNo || casePayload.id || "case",
+    phaseText,
+    timestamp,
+    originalBase
+  ].join("_");
+  return safeDriveName_(base).slice(0, 150 - ext.length) + ext;
 }
 
 function resolveInitialQuoteVendorName_(payload, originalName) {
@@ -5414,6 +7987,7 @@ function inferQuoteMimeType_(fileName) {
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     png: "image/png",
+    webp: "image/webp",
     doc: "application/msword",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xls: "application/vnd.ms-excel",
@@ -5543,14 +8117,17 @@ function processResponseRow_(sheet, row) {
     return;
   }
 
-  const ticketNo = readField_(record, ["접수번호"]) || makeTicketNo_(row, record);
+  const ticketNo = readField_(record, ["접수번호"]) || allocateTicketNo_(sheet, headers, row, record, false);
   const deletedCase = readCaseFromFirebase_(ticketNo);
   if (deletedCase && deletedCase.deleted === true) {
-    Logger.log("삭제된 케이스 재처리 생략: " + ticketNo);
+    Logger.log("삭제된 민원 재처리 생략: " + ticketNo);
     return;
   }
   const analysis = analyzeComplaint_(record);
-  const contractMatch = matchDriveOnboardingFile_(record);
+  const selectedBuildingId = readField_(record, ["카카오 계약 건물 ID"]);
+  const contractMatch = selectedBuildingId
+    ? matchOnboardingFileById_(selectedBuildingId, record)
+    : matchDriveOnboardingFile_(record);
   const casePayload = buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet);
   writeCaseToFirebase_(ticketNo, casePayload);
 
@@ -5707,6 +8284,47 @@ function normalizeAddress_(value) {
     .replace(/층/g, "f");
 }
 
+// 세입자가 카카오 챗봇에서 등록 건물을 직접 고른 경우: 그 온보딩 문서 하나만 읽습니다.
+// 파일을 열 수 없으면 기존 방식(건물명·주소 비교)으로 돌아갑니다.
+function matchOnboardingFileById_(fileId, record) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    if (file.isTrashed() || !isSupportedDriveImportMime_(file.getMimeType())) {
+      return matchDriveOnboardingFile_(record);
+    }
+    let text = "";
+    try {
+      text = file.getMimeType() === "application/pdf"
+        ? extractPdfTextForReview_(file.getId())
+        : extractDocxText_(file.getId());
+    } catch (err) {
+      Logger.log("선택 건물 온보딩 문서 본문 추출 실패: " + file.getName() + " / " + err.message);
+    }
+    const inputBuilding = readField_(record, ["건물명", "건물"]);
+    const inputAddress = readField_(record, ["건물 주소", "주소"]);
+    const building = extractOnboardingField_(text, ["건물명", "건물"]) || onboardingBuildingFromFileName_(file.getName()) || inputBuilding;
+    const address = extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]) || inputAddress;
+    const levelText = "세입자가 카카오 챗봇에서 등록 건물을 직접 선택";
+    return makeDriveMatchPayload_(file, inputBuilding, inputAddress, {
+      matchKey: "kakao_selected|" + fileId,
+      candidateCount: 1,
+      statusText: levelText + "했습니다.",
+      source: "kakao_selected",
+      matchLevel: levelText,
+      matchScore: 1,
+      buildingScore: 1,
+      addressScore: 1,
+      matchedBuilding: building,
+      matchedAddress: address,
+      ownerName: extractOnboardingOwnerName_(text),
+      candidates: [makeDriveCandidate_(file)]
+    });
+  } catch (err) {
+    Logger.log("선택 건물 온보딩 문서 열기 실패 " + fileId + ": " + err.message);
+    return matchDriveOnboardingFile_(record);
+  }
+}
+
 function matchDriveOnboardingFile_(record) {
   const inputBuilding = readField_(record, ["건물명", "건물"]);
   const inputAddress = readField_(record, ["건물 주소", "주소"]);
@@ -5748,6 +8366,21 @@ function matchDriveOnboardingFile_(record) {
     return b.lastUpdatedMs - a.lastUpdatedMs;
   });
   const winner = ranked[0];
+  if (!isPlausibleOnboardingCandidate_(winner, inputBuilding, inputAddress)) {
+    return Object.assign(base, {
+      statusText: "입력한 건물명과 주소에 일치하는 계약 건물을 찾지 못했습니다.",
+      candidateCount: ranked.length,
+      candidates: ranked.slice(0, 5).map(candidate => ({
+        fileName: candidate.file.getName(),
+        fileUrl: candidate.file.getUrl(),
+        driveFileId: candidate.file.getId(),
+        building: candidate.building,
+        address: candidate.address,
+        ownerName: candidate.ownerName,
+        matchScore: candidate.matchScore
+      }))
+    });
+  }
   const levelText = winner.matchRank === 3
     ? "건물명과 주소 정확 일치"
     : winner.matchRank === 2
@@ -5786,9 +8419,15 @@ function listDriveOnboardingCandidates_() {
     const candidates = [];
     while (files.hasNext()) {
       const file = files.next();
-      if (file.isTrashed() || file.getMimeType() !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") continue;
+      if (file.isTrashed() || !isSupportedDriveImportMime_(file.getMimeType())) continue;
       let text = "";
-      try { text = extractDocxText_(file.getId()) || ""; } catch (err) { Logger.log("온보딩 DOCX 본문 추출 실패: " + file.getName() + " / " + err.message); }
+      try {
+        text = file.getMimeType() === "application/pdf"
+          ? extractPdfTextForReview_(file.getId())
+          : extractDocxText_(file.getId());
+      } catch (err) {
+        Logger.log("온보딩 문서 본문 추출 실패: " + file.getName() + " / " + err.message);
+      }
       candidates.push({
         file: file,
         text: text,
@@ -5804,9 +8443,352 @@ function listDriveOnboardingCandidates_() {
   }
 }
 
+function isSupportedDriveImportMime_(mimeType) {
+  return [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ].indexOf(String(mimeType || "")) >= 0;
+}
+
+function buildDriveImportCandidate_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const text = String(input.text || "");
+  const extractedName = extractOnboardingField_(text, ["건물명", "건물"]);
+  const fileNameFallback = onboardingBuildingFromFileName_(input.fileName)
+    .replace(/[_-]*(?:통합\s*)?건물\s*체크리스트.*$/i, "")
+    .replace(/[_-]*체크리스트.*$/i, "")
+    .trim();
+  const name = String(extractedName || fileNameFallback || "").slice(0, 120).trim();
+  const address = String(extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]) || "").slice(0, 240).trim();
+  const manager = String(extractOnboardingField_(text, ["담당자", "담당자명"]) || "").slice(0, 60).trim();
+  const warnings = [];
+  if (input.extractionWarning) warnings.push(String(input.extractionWarning).slice(0, 240));
+  if (!text.trim()) warnings.push("문서 본문을 확인하지 못해 파일명만 제안했습니다.");
+  if (/손글씨|필기/i.test(text)) warnings.push("손글씨 값은 Drive 원본 확인이 필요합니다.");
+  return {
+    id: String(input.driveFileId || ""),
+    driveFileId: String(input.driveFileId || ""),
+    fileName: String(input.fileName || "").slice(0, 240),
+    fileUrl: String(input.fileUrl || "").slice(0, 500),
+    mimeType: String(input.mimeType || ""),
+    sourceFolderId: String(input.sourceFolderId || ""),
+    sourceModifiedAt: String(input.sourceModifiedAt || ""),
+    sourceHash: String(input.sourceHash || ""),
+    suggested: {
+      name: name,
+      address: address,
+      manager: manager,
+      type: "다가구",
+      status: "영업후보",
+      unitCount: 0,
+      memo: "Drive 원본: " + String(input.fileName || "").slice(0, 180)
+    },
+    confidence: {
+      name: extractedName ? "high" : (name ? "medium" : "low"),
+      address: address ? "medium" : "low",
+      manager: manager ? "medium" : "low"
+    },
+    warnings: Array.from(new Set(warnings)),
+    status: "pending",
+    createdAt: String(input.now || input.sourceModifiedAt || ""),
+    updatedAt: String(input.now || input.sourceModifiedAt || ""),
+    approvedAt: null,
+    approvedByUid: null,
+    crmBuildingId: null,
+    rejectionReason: null
+  };
+}
+
+function mergeDriveImportCandidate_(existing, incoming) {
+  const previous = existing && typeof existing === "object" ? existing : null;
+  const next = incoming && typeof incoming === "object" ? incoming : {};
+  if (!previous) return { changed: true, candidate: next };
+  if (String(previous.sourceHash || "") === String(next.sourceHash || "")) {
+    return { changed: false, candidate: previous };
+  }
+  const reviewed = previous.status === "approved" || previous.status === "rejected";
+  return {
+    changed: true,
+    candidate: Object.assign({}, next, {
+      status: reviewed ? "stale" : "pending",
+      createdAt: previous.createdAt || next.createdAt,
+      approvedAt: previous.approvedAt || null,
+      approvedByUid: previous.approvedByUid || null,
+      crmBuildingId: previous.crmBuildingId || null,
+      rejectionReason: previous.rejectionReason || null
+    })
+  };
+}
+
+function driveImportSourceHash_(file) {
+  const checksum = typeof file.getMd5Checksum === "function" ? String(file.getMd5Checksum() || "") : "";
+  if (checksum) return checksum;
+  const raw = [file.getId(), file.getLastUpdated().toISOString(), file.getSize()].join("|");
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return digest.map(value => (value + 256).toString(16).slice(-2)).join("");
+}
+
+function crmCompanyImportUrl_(childPath) {
+  const props = PropertiesService.getScriptProperties();
+  const base = String(props.getProperty("CRM_FIREBASE_DATABASE_URL") || "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app").replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json";
+}
+
+function firebaseOauthRequest_(url, method, payload, label) {
+  const options = {
+    method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  };
+  if (payload !== undefined) {
+    options.contentType = "application/json; charset=utf-8";
+    options.payload = JSON.stringify(payload);
+  }
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function syncDriveCrmImportCandidates_() {
+  const listed = listDriveOnboardingCandidates_();
+  if (!listed.ok) throw new Error(listed.error || "Drive 검토 후보를 읽지 못했습니다.");
+  const existing = firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "get", undefined, "CRM 검토 후보 조회 실패") || {};
+  const now = new Date().toISOString();
+  const patch = {};
+  listed.candidates.forEach(item => {
+    const file = item.file;
+    const incoming = buildDriveImportCandidate_({
+      driveFileId: file.getId(),
+      fileName: file.getName(),
+      fileUrl: file.getUrl(),
+      mimeType: file.getMimeType(),
+      sourceFolderId: extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID),
+      sourceModifiedAt: file.getLastUpdated().toISOString(),
+      sourceHash: driveImportSourceHash_(file),
+      text: item.text,
+      extractionWarning: item.text ? "" : "문서 본문 추출 실패",
+      now: now
+    });
+    const merged = mergeDriveImportCandidate_(existing[incoming.driveFileId], incoming);
+    if (merged.changed) patch[incoming.driveFileId] = merged.candidate;
+  });
+  if (Object.keys(patch).length) {
+    firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "patch", patch, "CRM 검토 후보 저장 실패");
+  }
+  return { ok: true, scanned: listed.candidates.length, changed: Object.keys(patch).length, syncedAt: now };
+}
+
+function assertDriveImportApprover_(access, identity) {
+  access = access && typeof access === "object" ? access : {};
+  identity = identity && typeof identity === "object" ? identity : {};
+  if (access.enabled !== true) throw new Error("비활성 CRM 계정입니다.");
+  if (String(access.role || "") !== "admin") throw new Error("관리자만 Drive 자료를 승인할 수 있습니다.");
+  const accessEmail = String(access.email || "").trim().toLowerCase();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
+  if (!accessEmail || !identityEmail || accessEmail !== identityEmail) throw new Error("로그인 이메일과 CRM 허용 이메일이 일치하지 않습니다.");
+  return true;
+}
+
+function normalizeDriveImportKey_(value) {
+  return String(value || "").toLowerCase().replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function buildDriveImportApprovalPatch_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const requestId = String(input.requestId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new Error("승인 요청 ID가 올바르지 않습니다.");
+  if (input.receipt && typeof input.receipt === "object") {
+    if (String(input.receipt.requestId || "") !== requestId) throw new Error("승인 요청 영수증이 올바르지 않습니다.");
+    return { patch: {}, result: Object.assign({}, input.receipt, { repeated: true }) };
+  }
+  const candidate = input.candidate && typeof input.candidate === "object" ? input.candidate : {};
+  if (candidate.status !== "pending") throw new Error("검토 대기 상태의 후보만 승인할 수 있습니다.");
+  const driveFileId = String(candidate.driveFileId || "");
+  if (!driveFileId || driveFileId !== String(candidate.id || "")) throw new Error("Drive 후보 식별자가 올바르지 않습니다.");
+  const approved = input.approved && typeof input.approved === "object" ? input.approved : {};
+  const name = String(approved.name || "").trim().slice(0, 120);
+  const address = String(approved.address || "").trim().slice(0, 240);
+  if (!name || !address) throw new Error("건물명과 주소를 확인해 주세요.");
+  const nameKey = normalizeDriveImportKey_(name);
+  const addressKey = normalizeDriveImportKey_(address);
+  Object.keys(input.buildings || {}).forEach(key => {
+    const building = input.buildings[key] || {};
+    const sameDrive = ((building.externalRefs && building.externalRefs.driveFileIds) || []).indexOf(driveFileId) >= 0;
+    const sameNameAddress = normalizeDriveImportKey_(building.name) === nameKey && normalizeDriveImportKey_(building.address) === addressKey;
+    if (sameDrive || sameNameAddress) throw new Error("중복 건물입니다. 같은 Drive 자료 또는 이름·주소의 건물이 이미 존재합니다.");
+  });
+  const now = String(input.now || new Date().toISOString());
+  const actor = input.actor && typeof input.actor === "object" ? input.actor : {};
+  const safeFileKey = String(driveFileId).toLowerCase().replace(/[^0-9a-z_-]/g, "-").slice(0, 100);
+  const crmBuildingId = "building_drive_" + safeFileKey;
+  const auditId = "drive_building_" + requestId.replace(/-/g, "");
+  const building = {
+    id: crmBuildingId,
+    name: name,
+    address: address,
+    manager: String(approved.manager || "").trim().slice(0, 60),
+    type: String(approved.type || "다가구").trim().slice(0, 40),
+    status: String(approved.status || "영업후보").trim().slice(0, 40),
+    unitCount: Math.max(0, Math.min(10000, Number(approved.unitCount) || 0)),
+    memo: String(approved.memo || "").trim().slice(0, 500),
+    externalRefs: { driveFileIds: [driveFileId] },
+    entityVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: String(actor.uid || ""),
+    updatedBy: String(actor.uid || "")
+  };
+  const approvedCandidate = Object.assign({}, candidate, {
+    status: "approved",
+    approvedAt: now,
+    approvedByUid: String(actor.uid || ""),
+    crmBuildingId: crmBuildingId,
+    rejectionReason: null,
+    updatedAt: now
+  });
+  const result = {
+    requestId: requestId,
+    crmBuildingId: crmBuildingId,
+    auditId: auditId,
+    approvedAt: now,
+    repeated: false
+  };
+  const receipt = Object.assign({}, result);
+  delete receipt.repeated;
+  const patch = {};
+  patch["data/buildings/" + crmBuildingId] = building;
+  patch["driveImportCandidates/" + driveFileId] = approvedCandidate;
+  patch["driveImportAuditLogs/" + auditId] = {
+    id: auditId,
+    action: "drive_building_approved",
+    requestId: requestId,
+    driveFileId: driveFileId,
+    crmBuildingId: crmBuildingId,
+    actorUid: String(actor.uid || ""),
+    occurredAt: now
+  };
+  patch["driveImportRequestReceipts/" + requestId] = receipt;
+  return { patch: patch, result: result };
+}
+
+function buildDriveImportRejectionPatch_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const requestId = String(input.requestId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new Error("반려 요청 ID가 올바르지 않습니다.");
+  if (input.receipt && typeof input.receipt === "object") return { patch: {}, result: Object.assign({}, input.receipt, { repeated: true }) };
+  const candidate = input.candidate && typeof input.candidate === "object" ? input.candidate : {};
+  if (["pending", "stale"].indexOf(candidate.status) < 0) throw new Error("검토 대기 또는 재검토 상태만 반려할 수 있습니다.");
+  const driveFileId = String(candidate.driveFileId || "");
+  if (!driveFileId || driveFileId !== String(candidate.id || "")) throw new Error("Drive 후보 식별자가 올바르지 않습니다.");
+  const reason = String(input.reason || "").trim().slice(0, 500);
+  if (!reason) throw new Error("반려 사유를 입력해 주세요.");
+  const now = String(input.now || new Date().toISOString());
+  const actorUid = String(input.actor && input.actor.uid || "");
+  const auditId = "drive_reject_" + requestId.replace(/-/g, "");
+  const result = { requestId: requestId, driveFileId: driveFileId, auditId: auditId, rejectedAt: now, repeated: false };
+  const receipt = Object.assign({}, result);
+  delete receipt.repeated;
+  const patch = {};
+  patch["driveImportCandidates/" + driveFileId] = Object.assign({}, candidate, {
+    status: "rejected",
+    rejectionReason: reason,
+    approvedAt: null,
+    approvedByUid: null,
+    updatedAt: now
+  });
+  patch["driveImportAuditLogs/" + auditId] = {
+    id: auditId,
+    action: "drive_building_rejected",
+    requestId: requestId,
+    driveFileId: driveFileId,
+    actorUid: actorUid,
+    reason: reason,
+    occurredAt: now
+  };
+  patch["driveImportRequestReceipts/" + requestId] = receipt;
+  return { patch: patch, result: result };
+}
+
+function verifyFirebaseIdTokenForDriveImport_(idToken) {
+  const token = String(idToken || "").trim();
+  if (!token || token.length > 4096) throw new Error("로그인 인증정보가 올바르지 않습니다.");
+  const apiKey = String(PropertiesService.getScriptProperties().getProperty("CRM_FIREBASE_WEB_API_KEY") || "").trim();
+  if (!apiKey) throw new Error("CRM Firebase 인증 설정이 없습니다.");
+  const response = UrlFetchApp.fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + encodeURIComponent(apiKey), {
+    method: "post",
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify({ idToken: token }),
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200) throw new Error("로그인 세션을 확인할 수 없습니다. 다시 로그인해 주세요.");
+  const body = JSON.parse(response.getContentText() || "{}");
+  const user = body.users && body.users[0];
+  if (!user || !user.localId || !user.email || user.emailVerified !== true) throw new Error("확인된 Firebase 이메일 계정이 필요합니다.");
+  return { uid: String(user.localId), email: String(user.email).trim().toLowerCase() };
+}
+
+function handleApproveDriveImport_(payload) {
+  payload = payload && typeof payload === "object" ? payload : {};
+  const identity = verifyFirebaseIdTokenForDriveImport_(payload.idToken);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const root = firebaseOauthRequest_(crmCompanyImportUrl_(""), "get", undefined, "CRM 승인 자료 조회 실패") || {};
+    const access = root.access && root.access[identity.uid];
+    assertDriveImportApprover_(access, identity);
+    const requestId = String(payload.requestId || "");
+    const receipt = root.driveImportRequestReceipts && root.driveImportRequestReceipts[requestId];
+    const driveFileId = String(payload.driveFileId || "");
+    const candidate = root.driveImportCandidates && root.driveImportCandidates[driveFileId];
+    const built = buildDriveImportApprovalPatch_({
+      requestId: requestId,
+      now: new Date().toISOString(),
+      actor: identity,
+      candidate: candidate,
+      approved: payload.approved,
+      buildings: root.data && root.data.buildings || {},
+      receipt: receipt
+    });
+    if (Object.keys(built.patch).length) {
+      firebaseOauthRequest_(crmCompanyImportUrl_(""), "patch", built.patch, "Drive 자료 CRM 승인 실패");
+    }
+    return { ok: true, result: built.result };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleRejectDriveImport_(payload) {
+  payload = payload && typeof payload === "object" ? payload : {};
+  const identity = verifyFirebaseIdTokenForDriveImport_(payload.idToken);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const root = firebaseOauthRequest_(crmCompanyImportUrl_(""), "get", undefined, "CRM 반려 자료 조회 실패") || {};
+    assertDriveImportApprover_(root.access && root.access[identity.uid], identity);
+    const requestId = String(payload.requestId || "");
+    const driveFileId = String(payload.driveFileId || "");
+    const built = buildDriveImportRejectionPatch_({
+      requestId: requestId,
+      now: new Date().toISOString(),
+      actor: identity,
+      candidate: root.driveImportCandidates && root.driveImportCandidates[driveFileId],
+      reason: payload.reason,
+      receipt: root.driveImportRequestReceipts && root.driveImportRequestReceipts[requestId]
+    });
+    if (Object.keys(built.patch).length) firebaseOauthRequest_(crmCompanyImportUrl_(""), "patch", built.patch, "Drive 자료 CRM 반려 실패");
+    return { ok: true, result: built.result };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function extractOnboardingField_(text, labels) {
   const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ").replace(/\n+/g, " ").trim();
-  const stopLabels = "(?:건물명|건물 주소|주소|소재지|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
+  const stopLabels = "(?:건물명|건물 주소|주소|소재지|담당자명|담당자|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
   const isInstruction = value => /(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
   for (const label of labels || []) {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -5878,6 +8860,36 @@ function setupPaymentScheduleAutoSync() {
   return output;
 }
 
+function ensurePaymentNotificationTrigger_() {
+  const handler = "processPaymentNotificationAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(trigger =>
+    trigger.getHandlerFunction() === handler
+  );
+  if (!exists) {
+    ScriptApp.newTrigger(handler)
+      .timeBased()
+      .everyHours(1)
+      .create();
+  }
+  return { handler: handler, created: !exists, cadence: "hourly" };
+}
+
+function setupPaymentNotificationAutomation() {
+  const trigger = ensurePaymentNotificationTrigger_();
+  const configured = !!PropertiesService.getScriptProperties()
+    .getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
+  const output = {
+    ok: true,
+    configured: configured,
+    dueAlertAfter: String(PAYMENT_DUE_ALERT_HOUR).padStart(2, "0") + ":00",
+    overdueAlertAfter: String(PAYMENT_OVERDUE_ALERT_HOUR).padStart(2, "0") + ":00",
+    trigger: trigger,
+    build: AUTOMATION_BUILD
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
 function onPaymentScheduleSheetEdit(e) {
   const range = e && e.range;
   if (!range) return;
@@ -5885,6 +8897,7 @@ function onPaymentScheduleSheetEdit(e) {
   if (!sheet || sheet.getName() !== PAYMENT_SCHEDULE_SHEET_NAME) return;
   if (sheet.getParent().getId() !== paymentScheduleSpreadsheetId_()) return;
   if (range.getLastRow() < 2 || range.getColumn() > PAYMENT_SCHEDULE_HEADERS.length) return;
+  CacheService.getScriptCache().remove(KAKAO_LEDGER_CACHE_KEY);
 
   firebaseWriteRequest_(
     firebaseCaseSettingsUrl_("paymentScheduleSheet"),
@@ -6019,7 +9032,12 @@ function setupPaymentScheduleSheet_() {
 }
 
 function paymentBuildingRegistryRecords_() {
-  const registry = firebaseReadJson_(firebaseCaseSettingsUrl_("paymentBuildings"), "입금 캘린더 건물 조회 실패") || {};
+  const registry = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("paymentBuildings"),
+    "get",
+    undefined,
+    "입금 캘린더 건물 조회 실패"
+  ) || {};
   return Object.keys(registry).map(key => {
     const item = registry[key] || {};
     return {
@@ -6129,10 +9147,11 @@ function firebasePaymentCalendarUrl_(uid, childPath, idToken) {
   const safeUid = String(uid || "").trim();
   if (!/^[A-Za-z0-9:_-]{6,160}$/.test(safeUid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const calendarsPath = String(COMPLAINT_CONFIG.FIREBASE_PAYMENT_CALENDARS_PATH || "crmCompany/paymentCalendars").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
   const token = String(idToken || "").trim();
   if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
-  return base + "/paymentCalendars/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+  return base + "/" + calendarsPath + "/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
 }
 
 function firebaseReadJson_(url, label) {
@@ -6157,7 +9176,17 @@ function writePaymentSheetSyncStatus_(payload, status) {
 }
 
 function firebaseAuthorizedWriteRequest_(url, method, payload, label) {
-  return firebaseWriteRequest_(url, method, payload, label);
+  const response = UrlFetchApp.fetch(url, {
+    method: method,
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  }
+  return response;
 }
 
 function syncPaymentSchedulesFromSheet_(payload) {
@@ -6255,6 +9284,188 @@ function paymentReminderDueDate_(month, dueDay) {
   return match[1] + "-" + match[2] + "-" + String(day).padStart(2, "0");
 }
 
+function customerMessageTemplateCatalog_() {
+  return {
+    cleaning_schedule: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_SCHEDULE", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_SCHEDULE" },
+    move_in_cleaning_confirmation: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_MOVE_IN_CLEANING", bodyProperty: "KAKAO_CUSTOMER_BODY_MOVE_IN_CLEANING" },
+    requested_followup: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_REQUESTED_FOLLOWUP", bodyProperty: "KAKAO_CUSTOMER_BODY_REQUESTED_FOLLOWUP" },
+    work_completed: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_WORK_COMPLETED", bodyProperty: "KAKAO_CUSTOMER_BODY_WORK_COMPLETED" },
+    cleaning_extra_charge_approval: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_EXTRA_CHARGE", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_EXTRA_CHARGE" },
+    payment_reminder: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_PAYMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_PAYMENT" },
+    owner_move_out: ownerNoticeCatalogEntry_("owner_move_out"),
+    owner_broker_listed: ownerNoticeCatalogEntry_("owner_broker_listed"),
+    owner_room_viewing: ownerNoticeCatalogEntry_("owner_room_viewing"),
+    owner_lease_contract: ownerNoticeCatalogEntry_("owner_lease_contract"),
+    owner_move_in_cleaning: ownerNoticeCatalogEntry_("owner_move_in_cleaning"),
+    cleaning_reengagement: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_REENGAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_REENGAGEMENT" },
+    building_management_offer: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_BUILDING_MANAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_BUILDING_MANAGEMENT" },
+    promotion: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_PROMOTION", bodyProperty: "KAKAO_CUSTOMER_BODY_PROMOTION" }
+  };
+}
+
+function customerMessagePolicy_(customer, request) {
+  customer = customer || {};
+  request = request || {};
+  const template = customerMessageTemplateCatalog_()[String(request.templateId || "")];
+  if (!template) return { allowed: false, code: "TEMPLATE_NOT_ALLOWED" };
+  if (String(request.channel || "") !== "kakao" && String(request.channel || "") !== "sms") return { allowed: false, code: "CHANNEL_NOT_ALLOWED", template: template };
+  if (!String(customer.id || "").trim()) return { allowed: false, code: "CUSTOMER_REQUIRED", template: template };
+  if (!String(customer.phone || "").trim()) return { allowed: false, code: "PHONE_REQUIRED", template: template };
+  if (template.requiresSource && (!String(request.sourceType || "").trim() || !String(request.sourceId || "").trim())) return { allowed: false, code: "SOURCE_REQUIRED", template: template };
+  if (template.purpose === "marketing") {
+    const consent = customer.messageConsents && customer.messageConsents[String(request.channel || "")] || {};
+    if (String(consent.withdrawnAt || "").trim() || consent.status === "withdrawn") return { allowed: false, code: "MARKETING_CONSENT_WITHDRAWN", template: template };
+    if (consent.status !== "granted" || !String(consent.consentedAt || "").trim()) return { allowed: false, code: "MARKETING_CONSENT_REQUIRED", template: template };
+    if (!String(consent.evidenceRef || "").trim() || !String(consent.consentTextVersion || "").trim()) return { allowed: false, code: "CONSENT_EVIDENCE_REQUIRED", template: template };
+  }
+  return { allowed: true, code: "ALLOWED", template: template };
+}
+
+function firebaseCompanyAuthorizedUrl_(childPath, idToken) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  const token = String(idToken || "").trim();
+  if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+}
+
+function firebaseCompanyServerUrl_(childPath) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json";
+}
+
+function customerMessageSourceCollection_(sourceType) {
+  return ({ activity: "activities", work: "serviceRecords", contract: "contracts", cleaningOrder: "cleaningOrders", buildingUnit: "buildingUnits" })[String(sourceType || "")] || "";
+}
+
+function customerMessageSourceMatches_(customer, sourceRecord) {
+  if (!customer || !sourceRecord) return false;
+  if (String(sourceRecord.customerId || sourceRecord.crmCustomerId || "") === String(customer.id || "")) return true;
+  const buildingId = String(sourceRecord.buildingId || sourceRecord.crmBuildingId || "");
+  return Boolean(buildingId && customer.buildingIdLinks && customer.buildingIdLinks[buildingId] === true);
+}
+
+function customerMessageRequestHash_(payload) {
+  const value = JSON.stringify({
+    customerId: String(payload.customerId || ""), templateId: String(payload.templateId || ""), channel: String(payload.channel || ""),
+    sourceType: String(payload.sourceType || ""), sourceId: String(payload.sourceId || ""), variables: payload.variables || {}
+  });
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, "");
+}
+
+function customerMessageContent_(template, customer, variables) {
+  const props = PropertiesService.getScriptProperties();
+  const body = String(props.getProperty(template.bodyProperty) || template.defaultBody || "").trim();
+  if (!body) throw new Error("승인된 고객 메시지 본문 설정이 없습니다.");
+  const values = Object.assign({}, variables || {}, { customerName: customer.name || customer.company || "고객" });
+  return body.replace(/#\{([A-Za-z0-9_가-힣]+)\}/g, function (_all, key) {
+    return safeAlimTalkVariable_(values[key] || "", 160);
+  });
+}
+
+function customerMessageActor_(payload) {
+  const uid = String(payload.uid || "").trim();
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(uid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
+  const access = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("access/" + uid, payload.idToken), "사용자 권한 조회 실패") || {};
+  const role = String(access.role || "");
+  if (access.enabled !== true || ["admin", "member"].indexOf(role) === -1 || String(access.email || "") !== String(payload.adminEmail || "")) throw new Error("고객 메시지를 발송할 권한이 없습니다.");
+  return { uid: uid, role: role, email: String(access.email || "") };
+}
+
+function handleCustomerMessageSend_(payload) {
+  payload = payload || {};
+  const actor = customerMessageActor_(payload);
+  const requestId = String(payload.requestId || "").trim();
+  const customerId = String(payload.customerId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error("메시지 요청 ID가 올바르지 않습니다.");
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(customerId)) throw new Error("고객 ID가 올바르지 않습니다.");
+  const recordAuthUrl = firebaseCompanyAuthorizedUrl_("messageDeliveries/" + requestId, payload.idToken);
+  const existing = firebaseReadJson_(recordAuthUrl, "기존 메시지 요청 조회 실패") || null;
+  const requestHash = customerMessageRequestHash_(payload);
+  if (existing) {
+    if (existing.requestHash !== requestHash) throw new Error("같은 요청 ID의 내용이 달라 발송을 중단했습니다.");
+    return Object.assign({}, existing, { repeated: true });
+  }
+  const customer = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/customers/" + customerId, payload.idToken), "고객 조회 실패") || null;
+  if (!customer) throw new Error("발송할 고객을 찾지 못했습니다.");
+  if (!customer.id) customer.id = customerId;
+  const policy = customerMessagePolicy_(customer, payload);
+  if (!policy.allowed) throw new Error("고객 메시지 정책 차단: " + policy.code);
+  if (policy.template.requiresSource) {
+    const collection = customerMessageSourceCollection_(payload.sourceType);
+    if (!collection || !/^[A-Za-z0-9_-]{1,160}$/.test(String(payload.sourceId || ""))) throw new Error("연결 업무 정보가 올바르지 않습니다.");
+    const sourcePath = payload.sourceType === "cleaningOrder"
+      ? collection + "/" + payload.sourceId
+      : "data/" + collection + "/" + payload.sourceId;
+    const sourceRecord = firebaseReadJson_(firebaseCompanyAuthorizedUrl_(sourcePath, payload.idToken), "연결 업무 조회 실패") || null;
+    if (policy.template.ownerNotice) {
+      payload.variables = ownerNoticeTurnoverVariables_(payload, customer, sourceRecord);
+    } else if (!customerMessageSourceMatches_(customer, sourceRecord)) throw new Error("선택한 업무가 고객과 연결되어 있지 않습니다.");
+    if (payload.templateId === "cleaning_extra_charge_approval") {
+      const extraChargeRequestId = String(payload.variables && payload.variables.extraChargeRequestId || "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(extraChargeRequestId) || sourceRecord.id !== payload.sourceId) throw new Error("추가 서비스 요청 정보를 확인할 수 없습니다.");
+      const extraCharge = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("cleaningPartnerExtraCharges/" + payload.sourceId + "/" + extraChargeRequestId, payload.idToken), "추가 서비스 요청 조회 실패") || null;
+      if (!extraCharge || extraCharge.requestId !== extraChargeRequestId || extraCharge.orderId !== payload.sourceId
+        || extraCharge.customerId !== customerId || extraCharge.status !== "draft" || extraCharge.communication && extraCharge.communication.status === "accepted") {
+        throw new Error("고객 승인을 요청할 수 있는 추가 서비스 내역이 아닙니다.");
+      }
+      const services = { balcony_cleaning: "베란다 청소", window_cleaning: "창틀 청소", aircon_disassembly: "에어컨 분해 청소", waste_disposal: "폐기물 처리", other: "기타 서비스" };
+      payload.variables = {
+        orderId: payload.sourceId,
+        service: services[String(extraCharge.serviceType || "")] || "추가 서비스",
+        amount: Math.round(Number(extraCharge.amount) || 0).toLocaleString("ko-KR"),
+        reason: String(extraCharge.reason || "").slice(0, 160),
+        replyInstructions: "동의 또는 거절 의사를 회신해 주세요.",
+      };
+    }
+  }
+  const props = PropertiesService.getScriptProperties();
+  const templateCode = String(props.getProperty(policy.template.property) || "").trim();
+  if (!templateCode) throw new Error("승인된 고객 메시지 템플릿 코드가 없습니다.");
+  const phone = normalizePhoneForSms_(customer.phone || "");
+  if (!isSendableSmsPhone_(phone)) throw new Error("고객 연락처를 확인해 주세요.");
+  const content = customerMessageContent_(policy.template, customer, payload.variables || {});
+  const result = String(payload.channel || "") === "sms"
+    ? sendSensSms_(phone, content, "고객 메시지")
+    : sendKakaoAlimTalkOrSms_(phone, content, "고객 메시지", { templateCode: templateCode, allowSmsFallback: false });
+  const now = new Date().toISOString();
+  const record = {
+    requestId: requestId, requestHash: requestHash, customerId: customerId,
+    channel: String(payload.channel || ""), purpose: policy.template.purpose, category: String(payload.templateId || ""),
+    sourceType: String(payload.sourceType || ""), sourceId: String(payload.sourceId || ""),
+    templateCode: templateCode, provider: String(result.provider || ""), providerMessageId: String(result.messageId || ""),
+    status: result.ok === true ? "accepted" : "failed", errorCode: result.ok === true ? "" : "PROVIDER_REJECTED",
+    phoneMasked: maskPhone_(phone), requestedBy: actor.email, requestedByUid: actor.uid, requestedAt: now,
+    sentAt: result.ok === true ? now : "", updatedAt: now, build: AUTOMATION_BUILD
+  };
+  const recordUrl = firebaseCompanyServerUrl_("messageDeliveries/" + requestId);
+  firebaseWriteRequest_(recordUrl, "put", record, "고객 메시지 발송 기록 저장 실패");
+  if (!result.ok) throw new Error(result.message || "고객 메시지 발송에 실패했습니다.");
+  return record;
+}
+
+function handleCustomerMessageDeliveryStatus_(payload) {
+  payload = payload || {};
+  customerMessageActor_(payload);
+  const requestId = String(payload.requestId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error("메시지 요청 ID가 올바르지 않습니다.");
+  const record = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("messageDeliveries/" + requestId, payload.idToken), "메시지 발송 기록 조회 실패") || null;
+  if (!record || record.provider !== "kakao_alimtalk" || !record.providerMessageId) throw new Error("조회할 알림톡 메시지 기록이 없습니다.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡 설정이 완료되지 않았습니다.");
+  const response = sensGetJson_("/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) + "/messages/" + encodeURIComponent(record.providerMessageId), config);
+  if (!response.ok) throw new Error("카카오 알림톡 전달 결과 조회 실패: " + response.message);
+  const raw = response.json && typeof response.json === "object" ? response.json : {};
+  const statusName = String(raw.messageStatusName || "processing").toLowerCase();
+  const statusCode = String(raw.messageStatusCode || "");
+  const status = statusName === "success" && statusCode === "0000" ? "delivered" : statusName === "fail" ? "failed" : "accepted";
+  const updated = Object.assign({}, record, { status: status, errorCode: status === "failed" ? statusCode || "DELIVERY_FAILED" : "", deliveredAt: status === "delivered" ? String(raw.completeTime || new Date().toISOString()) : "", checkedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  firebaseWriteRequest_(firebaseCompanyServerUrl_("messageDeliveries/" + requestId), "put", updated, "고객 메시지 전달 결과 저장 실패");
+  return updated;
+}
+
 function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
   const dateParts = String(dueDate || "").split("-");
   const displayDate = Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일";
@@ -6266,9 +9477,38 @@ function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
     schedule.buildingName ? "건물: " + schedule.buildingName : "",
     schedule.unit ? "호실: " + schedule.unit : "",
     amount ? "납부금액: " + Math.round(amount).toLocaleString("ko-KR") + "원" : "",
-    "납부일: " + displayDate,
-    "이미 납부하셨다면 확인에 시간이 걸릴 수 있으니 이 문자는 무시해 주세요."
-  ].filter(Boolean).join("\n");
+    "납부일: " + displayDate
+  ].filter(Boolean).concat(paymentTenantInquiryLines_(reminderType)).join("\n");
+}
+
+function paymentTenantInquiryLines_(reminderType) {
+  return reminderType === "due" ? [] : [
+    "",
+    "월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요.",
+    "문의: 033-748-8919"
+  ];
+}
+
+function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
+  const dateParts = String(dueDate || "").split("-");
+  const displayDate = Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일";
+  const tenantName = safeAlimTalkVariable_(schedule.tenantName || "고객", 80);
+  const buildingName = safeAlimTalkVariable_(schedule.buildingName || "등록 건물", 120);
+  const unit = safeAlimTalkVariable_(schedule.unit || "등록 호실", 60);
+  const amount = Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR");
+  const notice = reminderType === "due"
+    ? "오늘은 월세 납부일입니다."
+    : "월세 입금이 아직 확인되지 않아 안내드립니다.";
+  return [
+    "[BRING Care 월세 납부 안내]",
+    tenantName + "님, 안녕하세요.",
+    "",
+    notice,
+    "건물: " + buildingName,
+    "호실: " + unit,
+    "납부금액: " + amount + "원",
+    "납부일: " + displayDate
+  ].concat(paymentTenantInquiryLines_(reminderType)).join("\n");
 }
 
 function handlePaymentReminderSms_(payload) {
@@ -6298,13 +9538,27 @@ function handlePaymentReminderSms_(payload) {
     return Object.assign({}, existing, { skipped: true, message: "이미 발송된 기록이 있습니다." });
   }
 
-  const content = paymentReminderSmsContent_(schedule, dueDate, reminderType);
-  const result = sendSensSms_(tenantPhone, content, "월세 안내");
+  const smsContent = paymentReminderSmsContent_(schedule, dueDate, reminderType);
+  const alimTalkContent = paymentReminderAlimTalkContent_(schedule, dueDate, reminderType);
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  const templateCode = reminderType === "due"
+    ? kakaoConfig.templates.paymentReminder
+    : kakaoConfig.templates.paymentReminderOverdue;
+  const result = sendKakaoAlimTalkOrSms_(tenantPhone, alimTalkContent, "월세 납부 안내", {
+    templateCode: templateCode,
+    fallbackContent: smsContent,
+    allowSmsFallback: false
+  });
   const record = {
     ok: result.ok === true,
-    status: result.ok === true ? "발송요청 완료" : "발송실패",
+    status: result.ok === true
+      ? (result.provider === "kakao_alimtalk" ? "카카오 알림톡 요청 완료" : "문자 요청 완료")
+      : "발송실패",
     message: result.message || "",
     requestId: result.requestId || "",
+    messageId: result.messageId || "",
+    provider: result.provider || "",
+    templateCode: result.templateCode || "",
     reminderType: reminderType,
     scheduleId: scheduleId,
     month: month,
@@ -6317,6 +9571,1836 @@ function handlePaymentReminderSms_(payload) {
   firebaseAuthorizedWriteRequest_(recordUrl, "put", record, "월세 안내 문자 기록 저장 실패");
   if (!result.ok) throw new Error(result.message || "월세 안내 문자 발송에 실패했습니다.");
   return record;
+}
+
+function handlePaymentReminderDeliveryStatus_(payload) {
+  payload = payload || {};
+  const scheduleId = String(payload.scheduleId || "").trim();
+  const month = String(payload.month || "").trim();
+  if (!/^[A-Za-z0-9_-]{6,160}$/.test(scheduleId)) throw new Error("월 납부 일정 ID가 올바르지 않습니다.");
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("납부 월이 올바르지 않습니다.");
+
+  const recordUrl = firebasePaymentCalendarUrl_(payload.uid, "rentSms/" + month + "/" + scheduleId, payload.idToken);
+  const record = firebaseReadJson_(recordUrl, "카카오 알림톡 발송 기록 조회 실패") || {};
+  if (record.provider !== "kakao_alimtalk" || !record.messageId) {
+    throw new Error("조회할 카카오 알림톡 메시지 ID가 없습니다.");
+  }
+
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡 설정이 완료되지 않았습니다.");
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
+    "/messages/" + encodeURIComponent(String(record.messageId));
+  const response = sensGetJson_(uri, config);
+  if (!response.ok) throw new Error("카카오 알림톡 전달 결과 조회 실패: " + response.message);
+
+  const result = response.json && typeof response.json === "object" ? response.json : {};
+  const messageStatusName = String(result.messageStatusName || "processing").toLowerCase();
+  const messageStatusCode = String(result.messageStatusCode || "");
+  const delivered = messageStatusName === "success" && messageStatusCode === "0000";
+  const processing = messageStatusName === "processing" || (!messageStatusCode && messageStatusName !== "fail");
+  const deliveryStatus = delivered ? "delivered" : (processing ? "processing" : "failed");
+  const safeResult = {
+    ok: true,
+    delivered: delivered,
+    deliveryStatus: deliveryStatus,
+    requestStatusCode: String(result.requestStatusCode || ""),
+    requestStatusName: String(result.requestStatusName || ""),
+    requestStatusDesc: String(result.requestStatusDesc || ""),
+    messageStatusCode: messageStatusCode,
+    messageStatusName: messageStatusName,
+    messageStatusDesc: String(result.messageStatusDesc || ""),
+    completeTime: String(result.completeTime || ""),
+    templateCode: String(result.templateCode || record.templateCode || ""),
+    checkedAt: new Date().toISOString(),
+    build: AUTOMATION_BUILD
+  };
+  const updatedRecord = Object.assign({}, record, {
+    deliveryStatus: safeResult.deliveryStatus,
+    deliveryCode: safeResult.messageStatusCode,
+    deliveryMessage: safeResult.messageStatusDesc,
+    deliveryCheckedAt: safeResult.checkedAt,
+    deliveredAt: delivered ? (safeResult.completeTime || safeResult.checkedAt) : String(record.deliveredAt || "")
+  });
+  firebaseAuthorizedWriteRequest_(recordUrl, "put", updatedRecord, "카카오 알림톡 전달 결과 저장 실패");
+  return safeResult;
+}
+
+function paymentNotificationSafeBindings_(bankBindings) {
+  const safe = {};
+  Object.keys(bankBindings || {}).forEach(buildingId => {
+    const binding = bankBindings[buildingId] || {};
+    const id = String(buildingId || "").trim();
+    const accountRef = String(binding.accountRef || "").trim();
+    if (!/^[A-Za-z0-9_-]{6,160}$/.test(id)) return;
+    if (!/^pb_[A-Za-z0-9_-]{12,40}$/.test(accountRef)) return;
+    safe[id] = {
+      buildingId: id,
+      buildingName: String(binding.buildingName || "").slice(0, 120),
+      ownerName: String(binding.ownerName || "").slice(0, 80),
+      accountRef: accountRef,
+      bankCode: String(binding.bankCode || "").slice(0, 12),
+      accountLast4: String(binding.accountLast4 || "").replace(/\D/g, "").slice(-4)
+    };
+  });
+  return safe;
+}
+
+function scriptPropertyChunkedRead_(props, baseKey) {
+  const count = Number(props.getProperty(baseKey + "#n") || 0);
+  if (!(count > 0)) return "";
+  let text = "";
+  for (let index = 0; index < count; index += 1) {
+    text += props.getProperty(baseKey + "#" + index) || "";
+  }
+  return text;
+}
+
+function scriptPropertyChunkedWrite_(props, baseKey, text) {
+  const value = String(text || "");
+  const previousCount = Number(props.getProperty(baseKey + "#n") || 0);
+  const updates = {};
+  let count = 0;
+  for (let offset = 0; offset < value.length; offset += SCRIPT_PROPERTY_CHUNK_CHARS) {
+    updates[baseKey + "#" + count] = value.slice(offset, offset + SCRIPT_PROPERTY_CHUNK_CHARS);
+    count += 1;
+  }
+  updates[baseKey + "#n"] = String(count);
+  props.setProperties(updates);
+  for (let index = count; index < previousCount; index += 1) {
+    props.deleteProperty(baseKey + "#" + index);
+  }
+}
+
+function paymentNotificationParseConfig_(raw) {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function paymentNotificationReadAdminBindings_(props, uid) {
+  try {
+    return paymentNotificationSafeBindings_(
+      JSON.parse(scriptPropertyChunkedRead_(props, PAYMENT_NOTIFICATION_BINDINGS_PREFIX + uid) || "{}")
+    );
+  } catch (error) {
+    return {};
+  }
+}
+
+// 관리자마다 자기 캘린더의 계좌 연결을 따로 저장하고, 자동 알림은 모두를 합쳐 쓴다.
+// 계좌 연결이 없는 다른 관리자가 캘린더를 열어도 기존 자동 알림이 멈추지 않는다.
+function rememberPaymentNotificationAutomation_(payload, bankBindings) {
+  const uid = String(payload && payload.uid || "").trim();
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(uid)) {
+    throw new Error("입금 알림 자동화 사용자 ID가 올바르지 않습니다.");
+  }
+  const safeBindings = paymentNotificationSafeBindings_(bankBindings);
+  const props = PropertiesService.getScriptProperties();
+  const config = paymentNotificationParseConfig_(props.getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY));
+  const admins = config.admins && typeof config.admins === "object" ? config.admins : {};
+  const now = new Date().toISOString();
+  let configChanged = false;
+  const legacyUid = String(config.uid || "");
+  if (!config.admins && /^[A-Za-z0-9:_-]{6,160}$/.test(legacyUid)) {
+    scriptPropertyChunkedWrite_(
+      props,
+      PAYMENT_NOTIFICATION_BINDINGS_PREFIX + legacyUid,
+      JSON.stringify(paymentNotificationSafeBindings_(config.bankBindings))
+    );
+    admins[legacyUid] = {
+      adminEmail: String(config.adminEmail || "").slice(0, 160),
+      updatedAt: String(config.updatedAt || now)
+    };
+    configChanged = true;
+  }
+  const bindingsKey = PAYMENT_NOTIFICATION_BINDINGS_PREFIX + uid;
+  const serialized = JSON.stringify(safeBindings);
+  const bindingsChanged = scriptPropertyChunkedRead_(props, bindingsKey) !== serialized;
+  if (bindingsChanged) scriptPropertyChunkedWrite_(props, bindingsKey, serialized);
+  const adminEmail = String(payload && payload.adminEmail || "").trim().slice(0, 160);
+  const previous = admins[uid] || null;
+  if (!previous || bindingsChanged || previous.adminEmail !== adminEmail) {
+    admins[uid] = {
+      adminEmail: adminEmail,
+      updatedAt: bindingsChanged || !previous ? now : String(previous.updatedAt || now)
+    };
+    configChanged = true;
+  }
+  if (configChanged || config.build !== AUTOMATION_BUILD) {
+    props.setProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY, JSON.stringify({
+      uid: /^[A-Za-z0-9:_-]{6,160}$/.test(legacyUid) ? legacyUid : uid,
+      admins: admins,
+      updatedAt: now,
+      build: AUTOMATION_BUILD
+    }));
+  }
+  ensurePaymentNotificationTrigger_();
+  return {
+    configured: Object.keys(safeBindings).length > 0,
+    linkedBuildingCount: Object.keys(safeBindings).length
+  };
+}
+
+function paymentNotificationConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
+  if (!raw) return null;
+  const config = paymentNotificationParseConfig_(raw);
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(String(config.uid || ""))) return null;
+  if (!config.admins || typeof config.admins !== "object") {
+    config.bankBindings = paymentNotificationSafeBindings_(config.bankBindings);
+    return config;
+  }
+  // 같은 건물을 두 관리자가 연결했다면 가장 최근에 바꾼 관리자의 연결을 쓴다.
+  const merged = {};
+  Object.keys(config.admins)
+    .filter(uid => /^[A-Za-z0-9:_-]{6,160}$/.test(uid))
+    .sort((left, right) =>
+      String(config.admins[left] && config.admins[left].updatedAt || "")
+        .localeCompare(String(config.admins[right] && config.admins[right].updatedAt || "")))
+    .forEach(uid => Object.assign(merged, paymentNotificationReadAdminBindings_(props, uid)));
+  config.bankBindings = merged;
+  return config;
+}
+
+function paymentNotificationDateKey_(date, offsetDays) {
+  const base = new Date((date || new Date()).getTime() + Number(offsetDays || 0) * 86400000);
+  return Utilities.formatDate(base, "Asia/Seoul", "yyyy-MM-dd");
+}
+
+function paymentNotificationHour_(date) {
+  return Number(Utilities.formatDate(date || new Date(), "Asia/Seoul", "H"));
+}
+
+function paymentNotificationSheetSchedules_(now) {
+  const sheet = SpreadsheetApp.openById(paymentScheduleSpreadsheetId_())
+    .getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  if (!sheet) throw new Error("세입자 월세 관리대장 탭을 찾지 못했습니다.");
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  const lastColumn = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length);
+  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  const headerMap = paymentScheduleHeaderMap_(values[0] || []);
+  const missingHeaders = PAYMENT_SCHEDULE_HEADERS.filter(header => headerMap[header] === undefined);
+  if (missingHeaders.length) throw new Error("관리대장 필수 열이 없습니다: " + missingHeaders.join(", "));
+
+  const buildings = paymentBuildingRegistryRecords_();
+  const byName = {};
+  buildings.forEach(building => {
+    const key = normalizeText_(building.name);
+    byName[key] = byName[key] || [];
+    byName[key].push(building);
+  });
+  const currentMonth = Utilities.formatDate(now || new Date(), "Asia/Seoul", "yyyy-MM");
+  const schedules = {};
+  for (let index = 1; index < values.length; index += 1) {
+    const row = values[index];
+    const rowNumber = index + 1;
+    const hasContent = row.slice(1, PAYMENT_SCHEDULE_HEADERS.length)
+      .some(value => paymentScheduleSheetText_(value));
+    if (!hasContent) continue;
+    const id = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "관리번호"));
+    if (!id) continue;
+    const parsed = paymentScheduleRecordFromSheetRow_(
+      row,
+      headerMap,
+      byName,
+      currentMonth,
+      id,
+      rowNumber,
+      new Date().toISOString()
+    );
+    if (parsed.problems.length || !parsed.schedule || parsed.schedule.active === false) continue;
+    schedules[id] = parsed.schedule;
+  }
+  return schedules;
+}
+
+function paymentNotificationMatchedPayment_(transaction, match, accountRef) {
+  const tid = String(transaction && transaction.tid || "")
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 120);
+  const date = popbillBankIsoDate_(transaction && transaction.trdate);
+  const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
+  const scheduleId = String(match && match.matchedScheduleId || "");
+  const buildingId = String(match && match.buildingId || "");
+  if (!tid || !date || amount <= 0 || !scheduleId || !buildingId) return null;
+  return {
+    id: [String(accountRef || ""), tid].join("_"),
+    accountRef: String(accountRef || ""),
+    transactionId: tid,
+    date: date,
+    transactionAt: String(transaction && transaction.trdt || "").slice(0, 40),
+    payerName: String(match && match.payerName || "").slice(0, 120),
+    amount: amount,
+    scheduleId: scheduleId,
+    buildingId: buildingId,
+    buildingName: String(match && match.buildingName || "").slice(0, 120)
+  };
+}
+
+function paymentNotificationTransactionState_(schedules, bankBindings, now) {
+  const bindings = paymentNotificationSafeBindings_(bankBindings);
+  const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const activeAccounts = (Array.isArray(allAccounts) ? allAccounts : [])
+    .filter(account => Number(account && account.state) === 1);
+  const requiredRefs = {};
+  Object.keys(bindings).forEach(buildingId => {
+    requiredRefs[String(bindings[buildingId].accountRef || "")] = true;
+  });
+
+  const endDate = popbillBankCompactDate_(now || new Date());
+  const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+  const paidScheduleIds = {};
+  const heldScheduleMonths = {};
+  const matchedPayments = [];
+  const availableAccountRefs = {};
+  const errors = [];
+  activeAccounts.forEach(account => {
+    const accountRef = popbillBankAccountRef_(account);
+    if (!requiredRefs[accountRef]) return;
+    const accountSchedules = popbillBankSchedulesForAccount_(schedules, bindings, accountRef);
+    try {
+      const collected = popbillBankCollectAccount_(account, startDate, endDate);
+      if (collected.pending) return;
+      availableAccountRefs[accountRef] = true;
+      (collected.list || []).forEach(transaction => {
+        const match = popbillBankResolveTransactionMatch_(transaction, accountSchedules);
+        // 같은 이름·금액이 여러 일정에 걸린 입금(확인필요)은 사람이 볼 때까지 미입금 알림을 보류한다.
+        if (match.matchStatus === "review") {
+          match.reviewScheduleIds.forEach(id => {
+            const monthKey = popbillBankTransactionMatchMonth_(transaction, Object.assign({ id: id }, accountSchedules[id] || {}));
+            if (monthKey) heldScheduleMonths[id + "|" + monthKey] = true;
+          });
+        }
+        if (match.matchStatus === "matched" && match.matchedScheduleId) {
+          // 납부 확인은 일정 하나가 아니라 "그 일정의 그 달" 단위다. 지난달 입금으로 이번 달 알림을 건너뛰면 안 된다.
+          if (match.matchedMonthKey) paidScheduleIds[match.matchedScheduleId + "|" + match.matchedMonthKey] = true;
+          const payment = paymentNotificationMatchedPayment_(transaction, match, accountRef);
+          if (payment) matchedPayments.push(payment);
+        }
+      });
+    } catch (error) {
+      errors.push({
+        accountRef: accountRef,
+        message: popbillBankSafeError_(error)
+      });
+    }
+  });
+  return {
+    paidScheduleIds: paidScheduleIds,
+    heldScheduleMonths: heldScheduleMonths,
+    matchedPayments: matchedPayments,
+    availableAccountRefs: availableAccountRefs,
+    errors: errors
+  };
+}
+
+function paymentNotificationPlan_(schedules, bankBindings, transactionState, now) {
+  const bindings = paymentNotificationSafeBindings_(bankBindings);
+  const state = transactionState || {};
+  const paid = state.paidScheduleIds || {};
+  const held = state.heldScheduleMonths || {};
+  const available = state.availableAccountRefs || {};
+  const current = now || new Date();
+  const today = paymentNotificationDateKey_(current, 0);
+  const yesterday = paymentNotificationDateKey_(current, -1);
+  const earliestOverdue = paymentNotificationDateKey_(current, -PAYMENT_OVERDUE_CATCHUP_DAYS);
+  const hour = paymentNotificationHour_(current);
+  const plan = {
+    today: today,
+    tenantDue: [],
+    ownerDue: {},
+    tenantOverdue: [],
+    ownerOverdue: {},
+    ownerOverdueByDate: {},
+    skippedUnlinked: 0,
+    skippedUnavailable: 0
+  };
+
+  Object.keys(schedules || {}).forEach(id => {
+    const schedule = Object.assign({ id: id }, schedules[id] || {});
+    const binding = bindings[String(schedule.buildingId || "")] || {};
+    const accountRef = String(binding.accountRef || "");
+    if (!accountRef) {
+      plan.skippedUnlinked += 1;
+      return;
+    }
+    if (!available[accountRef]) {
+      plan.skippedUnavailable += 1;
+      return;
+    }
+    const monthKeys = Array.from(new Set([
+      earliestOverdue.slice(0, 7),
+      yesterday.slice(0, 7),
+      today.slice(0, 7)
+    ]));
+    monthKeys.forEach(monthKey => {
+      if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return;
+      if (paid[id + "|" + monthKey] || held[id + "|" + monthKey]) return;
+      const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
+      if (hour >= PAYMENT_DUE_ALERT_HOUR && dueDate === today) {
+        plan.tenantDue.push({ schedule: schedule, dueDate: dueDate });
+        plan.ownerDue[schedule.buildingId] = plan.ownerDue[schedule.buildingId] || [];
+        plan.ownerDue[schedule.buildingId].push({ schedule: schedule, dueDate: dueDate });
+      }
+      // 다음 날 13시 이후 미입금 안내. 그 시간에 실행을 놓쳤으면 최대 3일까지 이어서 보낸다.
+      const overdueReady = dueDate === yesterday
+        ? hour >= PAYMENT_OVERDUE_ALERT_HOUR
+        : dueDate < yesterday && dueDate >= earliestOverdue;
+      if (overdueReady) {
+        const row = { schedule: schedule, dueDate: dueDate };
+        plan.tenantOverdue.push(row);
+        plan.ownerOverdue[schedule.buildingId] = plan.ownerOverdue[schedule.buildingId] || [];
+        plan.ownerOverdue[schedule.buildingId].push(row);
+        const byDate = plan.ownerOverdueByDate[dueDate] = plan.ownerOverdueByDate[dueDate] || {};
+        byDate[schedule.buildingId] = byDate[schedule.buildingId] || [];
+        byDate[schedule.buildingId].push(row);
+      }
+    });
+  });
+  return plan;
+}
+
+function paymentNotificationOwnerContacts_() {
+  const result = listDriveOnboardingCandidates_();
+  if (!result.ok) throw new Error(result.error || "온보딩 건물주 연락처를 읽지 못했습니다.");
+  const contacts = {};
+  result.candidates.forEach(candidate => {
+    const id = candidate && candidate.file && candidate.file.getId();
+    if (!id) return;
+    const text = String(candidate.text || "");
+    const labelMatch = text.match(/건물주\s*(?:연락처|전화번호|휴대폰|번호)\s*[:：]?\s*((?:\+?82[-.\s]?)?0?\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4})/);
+    const phone = normalizePhoneForSms_(labelMatch ? labelMatch[1] : "");
+    contacts[id] = {
+      ownerName: String(candidate.ownerName || "").trim(),
+      buildingName: String(candidate.building || "").trim(),
+      phone: isSendableSmsPhone_(phone) ? phone : ""
+    };
+  });
+  return contacts;
+}
+
+function paymentNotificationConfirmedEventId_(payment) {
+  const paymentId = String(payment && payment.id || "");
+  if (!paymentId) return "";
+  return ["owner", "confirmed", paymentId]
+    .join("_")
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 220);
+}
+
+function paymentNotificationConfirmedGroups_(schedules, matchedPayments, seenEntries) {
+  const groups = {};
+  const seen = seenEntries || {};
+  const seenInRun = {};
+  let duplicateSkipped = 0;
+  let invalidSkipped = 0;
+  (matchedPayments || []).forEach(payment => {
+    const eventId = paymentNotificationConfirmedEventId_(payment);
+    const schedule = schedules && schedules[String(payment && payment.scheduleId || "")];
+    const buildingId = String(payment && payment.buildingId || "");
+    if (!eventId || !schedule || !buildingId || String(schedule.buildingId || "") !== buildingId) {
+      invalidSkipped += 1;
+      return;
+    }
+    if (seen[eventId] || seenInRun[eventId]) {
+      duplicateSkipped += 1;
+      return;
+    }
+    seenInRun[eventId] = true;
+    groups[buildingId] = groups[buildingId] || [];
+    groups[buildingId].push({
+      schedule: Object.assign({ id: String(payment.scheduleId || "") }, schedule),
+      payment: payment,
+      eventId: eventId
+    });
+  });
+  return {
+    groups: groups,
+    duplicateSkipped: duplicateSkipped,
+    invalidSkipped: invalidSkipped
+  };
+}
+
+function paymentOwnerSummaryDetail_(rows, reminderType) {
+  const items = (rows || []).slice().sort((left, right) =>
+    String(left.schedule && left.schedule.unit || "")
+      .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko")
+  );
+  const total = items.reduce((sum, row) => sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+  const label = reminderType === "overdue" ? "미입금" : "예정";
+  let detail = label + " " + items.length + "건 / 총 " +
+    Math.round(total).toLocaleString("ko-KR") + "원";
+  let included = 0;
+  items.forEach(row => {
+    const schedule = row.schedule || {};
+    const item = [
+      safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+      safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력"),
+      Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR") + "원"
+    ].join(" ");
+    if ((detail + " · " + item).length > 520) return;
+    detail += " · " + item;
+    included += 1;
+  });
+  if (included < items.length) detail += " · 외 " + (items.length - included) + "건";
+  return detail;
+}
+
+function paymentOwnerPhoneGroups_(buildingRows, ownerContacts) {
+  const grouped = {};
+  Object.keys(buildingRows || {}).sort().forEach(buildingId => {
+    const rows = Array.isArray(buildingRows[buildingId]) ? buildingRows[buildingId] : [];
+    if (!rows.length) return;
+    const contact = ownerContacts && ownerContacts[buildingId] || {};
+    const schedule = rows[0] && rows[0].schedule || {};
+    const normalizedPhone = normalizePhoneForSms_(contact.phone || "");
+    const sendable = isSendableSmsPhone_(normalizedPhone);
+    const key = sendable ? normalizedPhone : "missing_" + buildingId;
+    if (!grouped[key]) {
+      grouped[key] = {
+        key: key,
+        phone: sendable ? normalizedPhone : "",
+        ownerName: contact.ownerName || schedule.ownerName || "건물주",
+        buildings: []
+      };
+    }
+    grouped[key].buildings.push({
+      buildingId: String(buildingId),
+      buildingName: contact.buildingName || schedule.buildingName || "등록 건물",
+      rows: rows
+    });
+  });
+  return Object.keys(grouped).sort().map(key => {
+    grouped[key].buildings.sort((left, right) =>
+      String(left.buildingName || "").localeCompare(String(right.buildingName || ""), "ko")
+    );
+    return grouped[key];
+  });
+}
+
+function paymentOwnerSummaryBuildingsDetail_(buildings, reminderType) {
+  const groups = Array.isArray(buildings) ? buildings : [];
+  const label = reminderType === "overdue" ? "미입금" : "예정";
+  const allRows = groups.reduce((rows, building) =>
+    rows.concat(Array.isArray(building && building.rows) ? building.rows : []), []);
+  const totalAmount = allRows.reduce((sum, row) =>
+    sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+  const overall = "전체 " + label + " " + allRows.length + "건 / 총 " +
+    Math.round(totalAmount).toLocaleString("ko-KR") + "원";
+  const lines = [];
+  let omitted = 0;
+  groups.forEach(building => {
+    const rows = (building.rows || []).slice().sort((left, right) =>
+      String(left.schedule && left.schedule.unit || "")
+        .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko")
+    );
+    const buildingTotal = rows.reduce((sum, row) =>
+      sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+    const sectionHeader = [
+      "건물: " + safeAlimTalkVariable_(building.buildingName || "등록 건물", "등록 건물"),
+      label + " " + rows.length + "건 / 총 " +
+        Math.round(buildingTotal).toLocaleString("ko-KR") + "원"
+    ];
+    const separator = lines.length ? [""] : [];
+    const headerCandidate = lines.concat(separator, sectionHeader, groups.length > 1 ? ["", overall] : [])
+      .join("\n");
+    if (headerCandidate.length > 720) {
+      omitted += rows.length;
+      return;
+    }
+    lines.push.apply(lines, separator.concat(sectionHeader));
+    rows.forEach(row => {
+      const schedule = row.schedule || {};
+      const item = "· " + [
+        safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+        safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력"),
+        Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR") + "원"
+      ].join(" ");
+      const candidate = lines.concat([item], groups.length > 1 ? ["", overall] : []).join("\n");
+      if (candidate.length > 720) {
+        omitted += 1;
+        return;
+      }
+      lines.push(item);
+    });
+  });
+  if (omitted) lines.push("· 세부내역 외 " + omitted + "건");
+  if (groups.length > 1) lines.push("", overall);
+  return lines.join("\n");
+}
+
+function paymentOwnerSummaryAlimTalkContent_(ownerName, buildings, reminderType) {
+  const firstRows = buildings && buildings[0] && buildings[0].rows || [];
+  const dueDate = String(firstRows[0] && firstRows[0].dueDate || "");
+  const dateParts = dueDate.split("-");
+  const displayDate = dateParts.length === 3 && dateParts.every(part => /^\d+$/.test(part))
+    ? Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
+    : "";
+  const notice = reminderType === "overdue"
+    ? "납부일 다음 날 13시까지 입금이 확인되지 않은 내역입니다."
+    : (displayDate ? displayDate + " 입금 예정 내역을 안내드립니다." : "입금 예정 내역을 안내드립니다.");
+  return [
+    "[BRING Care 월세 입금 안내]",
+    safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
+    "",
+    "본 알림은 BRING Care가 관리하는 임대차 계약의 월세 납부 예정 또는 미입금 현황을 계약 건물주에게 안내하는 정보성 알림입니다.",
+    "",
+    notice,
+    paymentOwnerSummaryBuildingsDetail_(buildings, reminderType)
+  ].join("\n");
+}
+
+function paymentOwnerConfirmedDetail_(rows) {
+  const items = (rows || []).slice().sort((left, right) => {
+    const leftDate = String(left.payment && left.payment.date || "");
+    const rightDate = String(right.payment && right.payment.date || "");
+    if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+    return String(left.schedule && left.schedule.unit || "")
+      .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko");
+  });
+  const total = items.reduce((sum, row) =>
+    sum + (Number(row.payment && row.payment.amount) || 0), 0);
+  let detail = "입금완료 " + items.length + "건 / 총 " +
+    Math.round(total).toLocaleString("ko-KR") + "원";
+  let included = 0;
+  items.forEach(row => {
+    const schedule = row.schedule || {};
+    const payment = row.payment || {};
+    const dateParts = String(payment.date || "").split("-");
+    const dateText = dateParts.length === 3
+      ? Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
+      : "입금일 미확인";
+    const payerText = payment.payerName
+      ? "(입금자 " + safeAlimTalkVariable_(payment.payerName, "미확인") + ")"
+      : "";
+    const item = [
+      safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+      safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력") + payerText,
+      Math.round(Number(payment.amount) || 0).toLocaleString("ko-KR") + "원",
+      dateText
+    ].join(" ");
+    if ((detail + " · " + item).length > 520) return;
+    detail += " · " + item;
+    included += 1;
+  });
+  if (included < items.length) detail += " · 외 " + (items.length - included) + "건";
+  return detail;
+}
+
+function paymentOwnerConfirmedBuildingsDetail_(buildings) {
+  const groups = Array.isArray(buildings) ? buildings : [];
+  const allRows = groups.reduce((rows, building) =>
+    rows.concat(Array.isArray(building && building.rows) ? building.rows : []), []);
+  const totalAmount = allRows.reduce((sum, row) =>
+    sum + (Number(row.payment && row.payment.amount) || 0), 0);
+  const overall = "전체 입금완료 " + allRows.length + "건 / 총 " +
+    Math.round(totalAmount).toLocaleString("ko-KR") + "원";
+  const lines = [];
+  let omitted = 0;
+  groups.forEach(building => {
+    const rows = (building.rows || []).slice().sort((left, right) => {
+      const leftDate = String(left.payment && left.payment.date || "");
+      const rightDate = String(right.payment && right.payment.date || "");
+      if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+      return String(left.schedule && left.schedule.unit || "")
+        .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko");
+    });
+    const buildingTotal = rows.reduce((sum, row) =>
+      sum + (Number(row.payment && row.payment.amount) || 0), 0);
+    const sectionHeader = [
+      "건물: " + safeAlimTalkVariable_(building.buildingName || "등록 건물", "등록 건물"),
+      "입금완료 " + rows.length + "건 / 총 " +
+        Math.round(buildingTotal).toLocaleString("ko-KR") + "원"
+    ];
+    const separator = lines.length ? [""] : [];
+    const headerCandidate = lines.concat(separator, sectionHeader, groups.length > 1 ? ["", overall] : [])
+      .join("\n");
+    if (headerCandidate.length > 720) {
+      omitted += rows.length;
+      return;
+    }
+    lines.push.apply(lines, separator.concat(sectionHeader));
+    rows.forEach(row => {
+      const schedule = row.schedule || {};
+      const payment = row.payment || {};
+      const dateParts = String(payment.date || "").split("-");
+      const dateText = dateParts.length === 3
+        ? Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
+        : "입금일 미확인";
+      const payerText = payment.payerName
+        ? "(입금자 " + safeAlimTalkVariable_(payment.payerName, "미확인") + ")"
+        : "";
+      const item = "· " + [
+        safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+        safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력") + payerText,
+        Math.round(Number(payment.amount) || 0).toLocaleString("ko-KR") + "원",
+        dateText
+      ].join(" ");
+      const candidate = lines.concat([item], groups.length > 1 ? ["", overall] : []).join("\n");
+      if (candidate.length > 720) {
+        omitted += 1;
+        return;
+      }
+      lines.push(item);
+    });
+  });
+  if (omitted) lines.push("· 세부내역 외 " + omitted + "건");
+  if (groups.length > 1) lines.push("", overall);
+  return lines.join("\n");
+}
+
+function paymentOwnerConfirmedAlimTalkContent_(ownerName, buildings) {
+  return [
+    "[BRING Care 월세 입금 완료 안내]",
+    safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
+    "",
+    "월세 입금이 확인되었습니다.",
+    paymentOwnerConfirmedBuildingsDetail_(buildings)
+  ].join("\n");
+}
+
+function kakaoAlimTalkTemplateState_(templateCode, config) {
+  const resolved = config || getKakaoAlimTalkConfig_();
+  if (!resolved.enabled) {
+    return { ready: false, templateCode: templateCode, message: "카카오 알림톡 설정 필요" };
+  }
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(resolved.serviceId) +
+    "/templates?channelId=" + encodeURIComponent(resolved.plusFriendId) +
+    "&templateCode=" + encodeURIComponent(String(templateCode || ""));
+  const response = sensGetJson_(uri, resolved);
+  if (!response.ok) {
+    return { ready: false, templateCode: templateCode, message: response.message || "템플릿 조회 실패" };
+  }
+  const list = Array.isArray(response.json)
+    ? response.json
+    : (response.json && Array.isArray(response.json.templates) ? response.json.templates : []);
+  const template = list.find(item => String(item && item.templateCode || "") === String(templateCode || ""));
+  return {
+    ready: !!template &&
+      String(template.templateInspectionStatus || "") === "COMPLETE" &&
+      String(template.templateStatus || "") === "ACTIVE",
+    templateCode: String(templateCode || ""),
+    inspectionStatus: String(template && template.templateInspectionStatus || ""),
+    templateStatus: String(template && template.templateStatus || "")
+  };
+}
+
+function paymentNotificationLedgerKey_(eventId) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(eventId || ""),
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(digest).slice(0, 16);
+}
+
+// 발송 기록은 이벤트 ID의 짧은 해시만 나눠 저장해 속성 크기 한도를 넘지 않는다.
+// 예전 형식(이벤트 ID 전체를 담은 JSON)도 읽고, 저장할 때 새 형식으로 옮긴다.
+function paymentNotificationLedger_(dateKey) {
+  const propertyKey = PAYMENT_NOTIFICATION_LEDGER_PREFIX + String(dateKey || "").replace(/\D/g, "");
+  const props = PropertiesService.getScriptProperties();
+  const keys = {};
+  const legacyRaw = props.getProperty(propertyKey);
+  if (legacyRaw) {
+    try {
+      const legacy = JSON.parse(legacyRaw) || {};
+      Object.keys(legacy).forEach(eventId => {
+        if (legacy[eventId]) keys[paymentNotificationLedgerKey_(eventId)] = true;
+      });
+    } catch (error) {
+      // 깨진 예전 기록은 무시한다.
+    }
+  }
+  scriptPropertyChunkedRead_(props, propertyKey).split(",").forEach(key => {
+    if (key) keys[key] = true;
+  });
+  let dirty = !!legacyRaw;
+  return {
+    propertyKey: propertyKey,
+    has: function(eventId) {
+      return !!eventId && keys[paymentNotificationLedgerKey_(eventId)] === true;
+    },
+    add: function(eventId) {
+      if (!eventId) return;
+      const key = paymentNotificationLedgerKey_(eventId);
+      if (keys[key] === true) return;
+      keys[key] = true;
+      dirty = true;
+    },
+    save: function() {
+      if (!dirty) return;
+      scriptPropertyChunkedWrite_(props, propertyKey, Object.keys(keys).join(","));
+      if (legacyRaw) props.deleteProperty(propertyKey);
+      dirty = false;
+    }
+  };
+}
+
+function cleanupPaymentNotificationLedgers_(todayKey) {
+  const cutoff = paymentNotificationDateKey_(
+    new Date(todayKey + "T12:00:00+09:00"),
+    -PAYMENT_NOTIFICATION_LEDGER_RETENTION_DAYS
+  ).replace(/\D/g, "");
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(props.getProperties()).forEach(key => {
+    if (key.indexOf(PAYMENT_NOTIFICATION_LEDGER_PREFIX) !== 0) return;
+    const match = key.slice(PAYMENT_NOTIFICATION_LEDGER_PREFIX.length).match(/^(\d{8})(?:#|$)/);
+    if (match && match[1] < cutoff) props.deleteProperty(key);
+  });
+}
+
+function paymentNotificationConfirmedBaselineRefs_() {
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && parsed.accountRefs &&
+      typeof parsed.accountRefs === "object"
+      ? parsed.accountRefs
+      : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function savePaymentNotificationConfirmedBaselineRefs_(accountRefs) {
+  PropertiesService.getScriptProperties().setProperty(
+    PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY,
+    JSON.stringify({
+      accountRefs: accountRefs || {},
+      updatedAt: new Date().toISOString(),
+      build: AUTOMATION_BUILD
+    })
+  );
+}
+
+function processPaymentNotificationAutomation() {
+  const config = paymentNotificationConfig_();
+  const now = new Date();
+  if (!config) return { ok: true, configured: false, build: AUTOMATION_BUILD };
+  if (paymentNotificationHour_(now) < PAYMENT_DUE_ALERT_HOUR) {
+    return { ok: true, configured: true, skipped: "before_notification_window", build: AUTOMATION_BUILD };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) {
+    return { ok: true, configured: true, skipped: "already_running", build: AUTOMATION_BUILD };
+  }
+  try {
+    const schedules = paymentNotificationSheetSchedules_(now);
+    if (!Object.keys(schedules).length) {
+      return { ok: true, configured: true, scheduleCount: 0, build: AUTOMATION_BUILD };
+    }
+    const transactionState = paymentNotificationTransactionState_(
+      schedules,
+      config.bankBindings,
+      now
+    );
+    const plan = paymentNotificationPlan_(
+      schedules,
+      config.bankBindings,
+      transactionState,
+      now
+    );
+    // 날짜별 발송 기록은 하나의 객체만 써야 서로의 저장을 덮어쓰지 않는다.
+    const ledgersByDate = {};
+    const confirmedSeenEntries = {};
+    function ledgerForDate(dateKey) {
+      const key = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))
+        ? String(dateKey)
+        : plan.today;
+      if (!ledgersByDate[key]) ledgersByDate[key] = paymentNotificationLedger_(key);
+      return ledgersByDate[key];
+    }
+    function nextDateKey(dateKey) {
+      return paymentNotificationDateKey_(new Date(dateKey + "T12:00:00+09:00"), 1);
+    }
+    // 납부일 안내는 납부일, 미입금 안내는 그 다음 날 기록에 남긴다(예전 기록과 같은 위치).
+    function reminderLedger(reminderType, dueDate) {
+      return ledgerForDate(reminderType === "due" ? dueDate : nextDateKey(dueDate));
+    }
+    (transactionState.matchedPayments || []).forEach(payment => {
+      const eventId = paymentNotificationConfirmedEventId_(payment);
+      const paymentLedger = ledgerForDate(payment && payment.date);
+      if (eventId && paymentLedger.has(eventId)) confirmedSeenEntries[eventId] = true;
+    });
+
+    const confirmedBaselineRefs = paymentNotificationConfirmedBaselineRefs_();
+    const newConfirmedBaselineRefs = {};
+    Object.keys(config.bankBindings || {}).forEach(buildingId => {
+      const accountRef = String(config.bankBindings[buildingId] &&
+        config.bankBindings[buildingId].accountRef || "");
+      if (!accountRef || !transactionState.availableAccountRefs[accountRef] ||
+          confirmedBaselineRefs[accountRef]) return;
+      newConfirmedBaselineRefs[accountRef] = true;
+      confirmedBaselineRefs[accountRef] = new Date().toISOString();
+    });
+    let confirmedBaselineCount = 0;
+    if (Object.keys(newConfirmedBaselineRefs).length) {
+      (transactionState.matchedPayments || []).forEach(payment => {
+        if (!newConfirmedBaselineRefs[String(payment && payment.accountRef || "")]) return;
+        const eventId = paymentNotificationConfirmedEventId_(payment);
+        if (!eventId) return;
+        const paymentLedger = ledgerForDate(payment && payment.date);
+        if (!paymentLedger.has(eventId)) {
+          paymentLedger.add(eventId);
+          confirmedBaselineCount += 1;
+        }
+      });
+      Object.keys(ledgersByDate).forEach(dateKey => ledgersByDate[dateKey].save());
+      savePaymentNotificationConfirmedBaselineRefs_(confirmedBaselineRefs);
+    }
+
+    const confirmedEligiblePayments = (transactionState.matchedPayments || [])
+      .filter(payment => confirmedBaselineRefs[String(payment && payment.accountRef || "")] &&
+        !newConfirmedBaselineRefs[String(payment && payment.accountRef || "")]);
+    const confirmedPlan = paymentNotificationConfirmedGroups_(
+      schedules,
+      confirmedEligiblePayments,
+      confirmedSeenEntries
+    );
+    const kakaoConfig = getKakaoAlimTalkConfig_();
+    const ownerBuildingEventCount =
+      Object.keys(plan.ownerDue).length +
+      Object.keys(plan.ownerOverdue).length +
+      Object.keys(confirmedPlan.groups).length;
+    const ownerContacts = ownerBuildingEventCount
+      ? paymentNotificationOwnerContacts_()
+      : {};
+    const ownerDueGroups = paymentOwnerPhoneGroups_(plan.ownerDue, ownerContacts);
+    const ownerOverdueGroupsByDate = Object.keys(plan.ownerOverdueByDate || {}).sort().map(dueDate => ({
+      dueDate: dueDate,
+      groups: paymentOwnerPhoneGroups_(plan.ownerOverdueByDate[dueDate], ownerContacts)
+    }));
+    const ownerOverdueGroupCount = ownerOverdueGroupsByDate
+      .reduce((sum, item) => sum + item.groups.length, 0);
+    const ownerConfirmedGroups = paymentOwnerPhoneGroups_(confirmedPlan.groups, ownerContacts);
+    const ownerEventCount = ownerDueGroups.length + ownerOverdueGroupCount;
+    const ownerConfirmedEventCount = ownerConfirmedGroups.length;
+    const tenantDueTemplate = plan.tenantDue.length
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminder, kakaoConfig)
+      : { ready: false };
+    const tenantOverdueTemplate = plan.tenantOverdue.length
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminderOverdue, kakaoConfig)
+      : { ready: false };
+    const ownerTemplate = ownerEventCount
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerGroup, kakaoConfig)
+      : { ready: false };
+    const ownerConfirmedTemplate = ownerConfirmedEventCount
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerConfirmedGroup, kakaoConfig)
+      : { ready: false };
+    const stats = {
+      tenantDueSent: 0,
+      tenantOverdueSent: 0,
+      ownerDueSent: 0,
+      ownerOverdueSent: 0,
+      ownerConfirmedSent: 0,
+      ownerConfirmedPaymentCount: 0,
+      confirmedBaselineCount: confirmedBaselineCount,
+      duplicateSkipped: confirmedPlan.duplicateSkipped,
+      invalidPaymentSkipped: confirmedPlan.invalidSkipped,
+      missingPhoneSkipped: 0,
+      templatePendingSkipped: 0,
+      sendFailed: 0
+    };
+
+    function sendTenant(row, reminderType) {
+      const schedule = row.schedule || {};
+      const eventId = ["tenant", reminderType, schedule.id, row.dueDate].join("_");
+      const ledger = reminderLedger(reminderType, row.dueDate);
+      if (ledger.has(eventId)) {
+        stats.duplicateSkipped += 1;
+        return;
+      }
+      const tenantTemplate = reminderType === "due" ? tenantDueTemplate : tenantOverdueTemplate;
+      if (!tenantTemplate.ready) {
+        stats.templatePendingSkipped += 1;
+        return;
+      }
+      const phone = normalizePhoneForSms_(schedule.tenantPhone || "");
+      if (!isSendableSmsPhone_(phone)) {
+        stats.missingPhoneSkipped += 1;
+        return;
+      }
+      const result = sendKakaoAlimTalkOrSms_(
+        phone,
+        paymentReminderAlimTalkContent_(schedule, row.dueDate, reminderType),
+        "월세 자동 안내",
+        {
+          templateCode: reminderType === "due"
+            ? kakaoConfig.templates.paymentReminder
+            : kakaoConfig.templates.paymentReminderOverdue,
+          allowSmsFallback: false
+        }
+      );
+      if (!result.ok) {
+        stats.sendFailed += 1;
+        return;
+      }
+      ledger.add(eventId);
+      ledger.save();
+      if (reminderType === "due") stats.tenantDueSent += 1;
+      else stats.tenantOverdueSent += 1;
+    }
+
+    function ownerBuildingEventId(reminderType, buildingId, dueDate) {
+      return ["owner", reminderType, "building", buildingId, dueDate].join("_");
+    }
+
+    function sendOwner(group, reminderType, dueDate) {
+      const ledger = reminderLedger(reminderType, dueDate);
+      // 이미 안내한 건물은 빼고 보낸다. 같은 날 일부 건물이 입금돼 묶음이 바뀌어도 다시 보내지 않는다.
+      const buildings = (group && group.buildings || []).filter(building =>
+        !ledger.has(ownerBuildingEventId(reminderType, building.buildingId, dueDate)));
+      const buildingIds = buildings.map(building => building.buildingId).sort().join("-");
+      const eventId = [
+        "owner",
+        reminderType,
+        group && group.key || "unknown",
+        dueDate,
+        buildingIds
+      ].join("_");
+      if (!buildings.length || ledger.has(eventId)) {
+        stats.duplicateSkipped += 1;
+        return;
+      }
+      if (!ownerTemplate.ready) {
+        stats.templatePendingSkipped += 1;
+        return;
+      }
+      if (!isSendableSmsPhone_(group && group.phone || "")) {
+        stats.missingPhoneSkipped += buildings.length || 1;
+        return;
+      }
+      const result = sendKakaoAlimTalkOrSms_(
+        group.phone,
+        paymentOwnerSummaryAlimTalkContent_(
+          group.ownerName || "건물주",
+          buildings,
+          reminderType
+        ),
+        "건물주 월세 입금 현황",
+        {
+          templateCode: kakaoConfig.templates.paymentOwnerGroup,
+          allowSmsFallback: false
+        }
+      );
+      if (!result.ok) {
+        stats.sendFailed += 1;
+        return;
+      }
+      ledger.add(eventId);
+      buildings.forEach(building =>
+        ledger.add(ownerBuildingEventId(reminderType, building.buildingId, dueDate)));
+      ledger.save();
+      if (reminderType === "due") stats.ownerDueSent += 1;
+      else stats.ownerOverdueSent += 1;
+    }
+
+    function sendOwnerConfirmed(group) {
+      const buildings = group && group.buildings || [];
+      const rows = buildings.reduce((all, building) => all.concat(building.rows || []), []);
+      if (!ownerConfirmedTemplate.ready) {
+        stats.templatePendingSkipped += rows.length;
+        return;
+      }
+      if (!isSendableSmsPhone_(group && group.phone || "")) {
+        stats.missingPhoneSkipped += rows.length;
+        return;
+      }
+      const result = sendKakaoAlimTalkOrSms_(
+        group.phone,
+        paymentOwnerConfirmedAlimTalkContent_(
+          group.ownerName || "건물주",
+          buildings
+        ),
+        "건물주 월세 입금 완료",
+        {
+          templateCode: kakaoConfig.templates.paymentOwnerConfirmedGroup,
+          allowSmsFallback: false
+        }
+      );
+      if (!result.ok) {
+        stats.sendFailed += 1;
+        return;
+      }
+      const savedDates = {};
+      rows.forEach(row => {
+        const paymentLedger = ledgerForDate(row.payment && row.payment.date);
+        paymentLedger.add(row.eventId);
+        savedDates[paymentLedger.propertyKey] = paymentLedger;
+      });
+      Object.keys(savedDates).forEach(propertyKey => savedDates[propertyKey].save());
+      stats.ownerConfirmedSent += 1;
+      stats.ownerConfirmedPaymentCount += rows.length;
+    }
+
+    plan.tenantDue.forEach(row => sendTenant(row, "due"));
+    plan.tenantOverdue.forEach(row => sendTenant(row, "overdue"));
+    ownerDueGroups.forEach(group => sendOwner(group, "due", plan.today));
+    ownerOverdueGroupsByDate.forEach(item =>
+      item.groups.forEach(group => sendOwner(group, "overdue", item.dueDate)));
+    ownerConfirmedGroups.forEach(group => sendOwnerConfirmed(group));
+    cleanupPaymentNotificationLedgers_(plan.today);
+    const output = {
+      ok: stats.sendFailed === 0,
+      configured: true,
+      date: plan.today,
+      scheduleCount: Object.keys(schedules).length,
+      linkedBuildingCount: Object.keys(config.bankBindings || {}).length,
+      transactionErrorCount: transactionState.errors.length,
+      tenantTemplateReady:
+        (!plan.tenantDue.length || tenantDueTemplate.ready === true) &&
+        (!plan.tenantOverdue.length || tenantOverdueTemplate.ready === true),
+      tenantDueTemplateReady: tenantDueTemplate.ready === true,
+      tenantOverdueTemplateReady: tenantOverdueTemplate.ready === true,
+      ownerTemplateReady: ownerTemplate.ready === true,
+      ownerConfirmedTemplateReady: ownerConfirmedTemplate.ready === true,
+      stats: stats,
+      build: AUTOMATION_BUILD
+    };
+    Logger.log(JSON.stringify(output));
+    return output;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+const POPBILL_EASYFINBANK_SCOPE = ["180", "member"];
+const POPBILL_API_VERSION = "2.0";
+const POPBILL_BANK_SYNC_DAYS = 30;
+const POPBILL_BANK_SYNC_FRESH_MINUTES = 25;
+
+function popbillBoolean_(value, fallback) {
+  const normalized = String(value == null ? "" : value).trim().toLowerCase();
+  if (!normalized) return !!fallback;
+  return normalized !== "false" && normalized !== "0" && normalized !== "no";
+}
+
+function popbillConfigFromValues_(values) {
+  const source = values || {};
+  const isTest = popbillBoolean_(source.POPBILL_IS_TEST, true);
+  const linkId = String(source.POPBILL_LINK_ID || "").trim();
+  const secretKey = String(source.POPBILL_SECRET_KEY || "").trim();
+  const corpNum = String(source.POPBILL_CORP_NUM || "").replace(/\D/g, "");
+  const userId = String(source.POPBILL_USER_ID || "").trim();
+  const missing = [];
+  if (!linkId) missing.push("POPBILL_LINK_ID");
+  if (!secretKey) missing.push("POPBILL_SECRET_KEY");
+  if (!/^\d{10}$/.test(corpNum)) missing.push("POPBILL_CORP_NUM");
+  if (missing.length) {
+    throw new Error("팝빌 스크립트 속성을 확인해 주세요: " + missing.join(", "));
+  }
+  return {
+    isTest: isTest,
+    linkId: linkId,
+    secretKey: secretKey,
+    corpNum: corpNum,
+    userId: userId,
+    accountRefKey: String(source.POPBILL_ACCOUNT_REF_KEY || "").trim(),
+    serviceId: isTest ? "POPBILL_TEST" : "POPBILL",
+    apiBaseUrl: isTest
+      ? "https://popbill-test.linkhub.co.kr"
+      : "https://popbill.linkhub.co.kr"
+  };
+}
+
+function popbillConfig_() {
+  return popbillConfigFromValues_(PropertiesService.getScriptProperties().getProperties());
+}
+
+function popbillUtcTimestamp_(date) {
+  return Utilities.formatDate(
+    date || new Date(),
+    "UTC",
+    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+  );
+}
+
+function popbillTokenRequestBody_(corpNum) {
+  return JSON.stringify({
+    access_id: String(corpNum || "").replace(/\D/g, ""),
+    scope: POPBILL_EASYFINBANK_SCOPE.slice()
+  });
+}
+
+function popbillStringToSign_(serviceId, bodyDigest, requestDate, forwardedIp) {
+  return [
+    "POST",
+    bodyDigest,
+    requestDate,
+    forwardedIp || "*",
+    POPBILL_API_VERSION,
+    "/" + serviceId + "/Token"
+  ].join("\n");
+}
+
+function popbillFetchJson_(url, options, errorLabel) {
+  const response = UrlFetchApp.fetch(url, Object.assign({
+    muteHttpExceptions: true
+  }, options || {}));
+  const status = response.getResponseCode();
+  const body = response.getContentText() || "";
+  let parsed = {};
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch (error) {
+    parsed = {};
+  }
+  if (status < 200 || status >= 300) {
+    const message = String(parsed.message || parsed.Message || "").trim();
+    const failure = new Error((errorLabel || "팝빌 API 요청 실패") +
+      " (" + status + ")" + (message ? ": " + message : ""));
+    failure.status = status;
+    throw failure;
+  }
+  return parsed;
+}
+
+function popbillSessionToken_(forceRefresh) {
+  const config = popbillConfig_();
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "popbill-token-" + config.serviceId + "-" + config.corpNum;
+  if (!forceRefresh) {
+    const cached = cache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const body = popbillTokenRequestBody_(config.corpNum);
+  const digestBytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    body,
+    Utilities.Charset.UTF_8
+  );
+  const bodyDigest = Utilities.base64Encode(digestBytes);
+  const requestDate = popbillUtcTimestamp_(new Date());
+  const forwardedIp = "*";
+  const stringToSign = popbillStringToSign_(
+    config.serviceId,
+    bodyDigest,
+    requestDate,
+    forwardedIp
+  );
+  const signatureBytes = Utilities.computeHmacSha256Signature(
+    Utilities.newBlob(stringToSign).getBytes(),
+    Utilities.base64Decode(config.secretKey)
+  );
+  const signature = Utilities.base64Encode(signatureBytes);
+  const tokenResult = popbillFetchJson_(
+    "https://auth.linkhub.co.kr/" + config.serviceId + "/Token",
+    {
+      method: "post",
+      contentType: "application/json",
+      payload: body,
+      headers: {
+        Authorization: "LINKHUB " + config.linkId + " " + signature,
+        "X-LH-Version": POPBILL_API_VERSION,
+        "X-LH-Date": requestDate,
+        "X-LH-Forwarded": forwardedIp
+      }
+    },
+    "팝빌 인증 실패"
+  );
+  const token = String(tokenResult.session_token || "").trim();
+  if (!token) throw new Error("팝빌 인증 응답에 세션 토큰이 없습니다.");
+  // 토큰 만료 시각보다 5분 먼저 버린다. 만료 정보가 없으면 예전처럼 25분.
+  const expiresAt = Date.parse(String(tokenResult.expiration || ""));
+  const seconds = isFinite(expiresAt) ? Math.floor((expiresAt - Date.now()) / 1000) - 300 : 25 * 60;
+  if (seconds >= 60) cache.put(cacheKey, token, Math.min(seconds, 6 * 60 * 60));
+  return token;
+}
+
+function popbillApiRequest_(method, resourcePath, payload, retried) {
+  const config = popbillConfig_();
+  const headers = {
+    Authorization: "Bearer " + popbillSessionToken_(retried === true),
+    "Accept-Language": "ko-KR"
+  };
+  if (config.userId) headers["X-PB-UserID"] = config.userId;
+  const options = {
+    method: String(method || "get").toLowerCase(),
+    headers: headers
+  };
+  if (payload != null) {
+    options.contentType = "application/json";
+    options.payload = JSON.stringify(payload);
+  }
+  try {
+    return popbillFetchJson_(
+      config.apiBaseUrl + resourcePath,
+      options,
+      "팝빌 계좌조회 API 요청 실패"
+    );
+  } catch (error) {
+    // 저장해 둔 토큰이 먼저 무효가 되면 한 번만 새 토큰으로 다시 시도한다.
+    if (retried !== true && Number(error && error.status) === 401) {
+      return popbillApiRequest_(method, resourcePath, payload, true);
+    }
+    throw error;
+  }
+}
+
+function verifyPopbillEasyFinBankConnection() {
+  const config = popbillConfig_();
+  const accounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const safeAccounts = (Array.isArray(accounts) ? accounts : []).map(account => {
+    const number = String(account && account.accountNumber || "").replace(/\D/g, "");
+    return {
+      bankCode: String(account && account.bankCode || ""),
+      accountName: String(account && account.accountName || ""),
+      accountLast4: number.slice(-4),
+      state: Number(account && account.state || 0)
+    };
+  });
+  const result = {
+    ok: true,
+    environment: config.isTest ? "test" : "production",
+    accountCount: safeAccounts.length,
+    accounts: safeAccounts
+  };
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function getPopbillBankAccountManagerUrl() {
+  const config = popbillConfig_();
+  if (!config.isTest) {
+    throw new Error("현재 운영환경으로 설정되어 있습니다. 테스트 계좌 등록 시 POPBILL_IS_TEST=true를 사용하세요.");
+  }
+  const result = popbillApiRequest_(
+    "get",
+    "/EasyFin/Bank?TG=BankAccount"
+  );
+  const url = String(result && result.url || "").trim();
+  if (!/^https:\/\/test\.popbill\.com\//.test(url)) {
+    throw new Error("팝빌 테스트 계좌등록 URL을 받지 못했습니다.");
+  }
+  Logger.log("POPBILL_BANK_ACCOUNT_MANAGER_URL=" + url);
+  return url;
+}
+
+function popbillBankCompactDate_(date) {
+  return Utilities.formatDate(date || new Date(), "Asia/Seoul", "yyyyMMdd");
+}
+
+function popbillBankAddDays_(compactDate, days) {
+  const match = String(compactDate || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!match) throw new Error("팝빌 계좌조회 날짜가 올바르지 않습니다.");
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("");
+}
+
+function popbillBankIsoDate_(compactDate) {
+  const match = String(compactDate || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  return match ? [match[1], match[2], match[3]].join("-") : "";
+}
+
+function popbillBankShiftMonth_(monthKey, offset) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return "";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1 + Number(offset || 0), 1));
+  return date.getUTCFullYear() + "-" + String(date.getUTCMonth() + 1).padStart(2, "0");
+}
+
+function popbillBankNormalizePayer_(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+// 건물-계좌 연결 ID용 키. 처음 한 번 그때의 SecretKey로 정해 두고 따로 보관하므로,
+// 팝빌 SecretKey를 바꾸거나 테스트→운영으로 옮겨도 기존 연결이 끊기지 않는다.
+function popbillAccountRefKey_(config) {
+  const configured = String(config && config.accountRefKey || "").trim();
+  if (configured) return configured;
+  const props = PropertiesService.getScriptProperties();
+  let key = String(props.getProperty(POPBILL_ACCOUNT_REF_KEY_PROPERTY) || "").trim();
+  if (!key) {
+    key = String(config && config.secretKey || "").trim();
+    if (!key) throw new Error("팝빌 계좌 연결 키를 만들 수 없습니다.");
+    props.setProperty(POPBILL_ACCOUNT_REF_KEY_PROPERTY, key);
+  }
+  if (config) config.accountRefKey = key;
+  return key;
+}
+
+function popbillBankAccountRef_(account, config) {
+  const resolvedConfig = config || popbillConfig_();
+  const raw = [
+    String(account && account.bankCode || ""),
+    String(account && account.accountNumber || "").replace(/\D/g, "")
+  ].join(":");
+  if (!raw.replace(":", "")) throw new Error("팝빌 등록계좌 식별정보가 올바르지 않습니다.");
+  const signature = Utilities.computeHmacSha256Signature(
+    Utilities.newBlob(raw).getBytes(),
+    Utilities.base64Decode(popbillAccountRefKey_(resolvedConfig))
+  );
+  return "pb_" + Utilities.base64EncodeWebSafe(signature)
+    .replace(/=+$/g, "")
+    .slice(0, 24);
+}
+
+function popbillBankSchedulesForAccount_(schedules, bankBindings, accountRef) {
+  const bindings = bankBindings || {};
+  const ref = String(accountRef || "");
+  if (!ref) return {};
+  const out = {};
+  Object.keys(schedules || {}).forEach(id => {
+    const schedule = schedules[id] || {};
+    const buildingId = String(schedule.buildingId || "");
+    const binding = bindings[buildingId] || {};
+    if (String(binding.accountRef || "") !== ref) return;
+    out[id] = schedule;
+  });
+  return out;
+}
+
+function popbillBankRemarkCandidates_(transaction) {
+  const source = transaction || {};
+  const seen = {};
+  return [source.remark1, source.remark3, source.remark2]
+    .map(value => String(value || "").trim())
+    .filter(value => {
+      const key = popbillBankNormalizePayer_(value);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+}
+
+function popbillBankScheduleActiveInMonth_(schedule, monthKey) {
+  if (!schedule || schedule.active === false) return false;
+  if (schedule.startMonth && String(monthKey) < String(schedule.startMonth)) return false;
+  if (schedule.endMonth && String(monthKey) > String(schedule.endMonth)) return false;
+  return true;
+}
+
+// 입금이 어느 달 납부분인지 돌려준다(없으면 ""). 납부일 3일 전부터 7일 뒤까지를 그 달 납부로 본다.
+// 거래 달의 앞·뒤 달도 본다 — 1일 납부분을 전달 30일에 미리 넣는 경우가 있다.
+function popbillBankTransactionMatchMonth_(transaction, schedule) {
+  const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
+  if (!schedule || amount <= 0 || Number(schedule.amount) !== amount) return false;
+  const payerKey = popbillBankNormalizePayer_(schedule.payerName);
+  if (!payerKey) return false;
+  const remarks = popbillBankRemarkCandidates_(transaction)
+    .map(popbillBankNormalizePayer_);
+  if (remarks.indexOf(payerKey) === -1) return false;
+
+  const transactionDate = popbillBankIsoDate_(transaction.trdate);
+  if (!transactionDate) return false;
+  const transactionMonth = transactionDate.slice(0, 7);
+  const months = [transactionMonth, popbillBankShiftMonth_(transactionMonth, -1), popbillBankShiftMonth_(transactionMonth, 1)];
+  for (let i = 0; i < months.length; i += 1) {
+    const monthKey = months[i];
+    if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) continue;
+    const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
+    if (transactionDate >= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), -3)) &&
+      transactionDate <= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), 7))) return monthKey;
+  }
+  return "";
+}
+
+function popbillBankTransactionScheduleMatches_(transaction, schedule) {
+  return !!popbillBankTransactionMatchMonth_(transaction, schedule);
+}
+
+function popbillBankResolveTransactionMatch_(transaction, schedules) {
+  const rows = Object.keys(schedules || {}).map(id =>
+    Object.assign({ id: id }, schedules[id] || {})
+  );
+  const matches = rows.filter(schedule =>
+    popbillBankTransactionScheduleMatches_(transaction, schedule)
+  );
+  const remarks = popbillBankRemarkCandidates_(transaction);
+  const fallbackPayer = remarks[0] || "";
+  if (matches.length === 1) {
+    return {
+      matchStatus: "matched",
+      payerName: String(matches[0].payerName || fallbackPayer),
+      buildingId: String(matches[0].buildingId || ""),
+      buildingName: String(matches[0].buildingName || ""),
+      matchedScheduleId: String(matches[0].id || ""),
+      matchedMonthKey: popbillBankTransactionMatchMonth_(transaction, matches[0]),
+      reviewScheduleIds: [],
+      buildingIds: matches[0].buildingId ? [String(matches[0].buildingId)] : []
+    };
+  }
+  if (matches.length > 1) {
+    const buildingIds = Array.from(new Set(matches
+      .map(schedule => String(schedule.buildingId || ""))
+      .filter(Boolean)));
+    return {
+      matchStatus: "review",
+      payerName: String(matches[0].payerName || fallbackPayer),
+      buildingId: "",
+      buildingName: "",
+      matchedScheduleId: "",
+      reviewScheduleIds: matches.map(schedule => String(schedule.id || "")).filter(Boolean),
+      buildingIds: buildingIds
+    };
+  }
+  return {
+    matchStatus: "unmatched",
+    payerName: fallbackPayer,
+    buildingId: "",
+    buildingName: "",
+    matchedScheduleId: "",
+    reviewScheduleIds: [],
+    buildingIds: []
+  };
+}
+
+function popbillBankTransactionRecord_(transaction, account, schedules, syncedAt, accountRef) {
+  const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
+  const date = popbillBankIsoDate_(transaction && transaction.trdate);
+  const tid = String(transaction && transaction.tid || "").replace(/[.#$\[\]\/]/g, "");
+  if (!tid || !date || amount <= 0) return null;
+  const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
+  const bankCode = String(account && account.bankCode || "");
+  const safeAccountRef = String(accountRef || popbillBankAccountRef_(account));
+  const match = popbillBankResolveTransactionMatch_(transaction, schedules);
+  return {
+    id: ["pb", bankCode, accountNumber.slice(-4), tid].join("_"),
+    date: date,
+    transactionAt: String(transaction && transaction.trdt || ""),
+    payerName: match.payerName,
+    amount: amount,
+    direction: "deposit",
+    source: "popbill",
+    provider: "popbill",
+    bankCode: bankCode,
+    accountLast4: accountNumber.slice(-4),
+    accountRef: safeAccountRef,
+    buildingId: match.buildingId,
+    buildingName: match.buildingName,
+    matchedScheduleId: match.matchedScheduleId,
+    reviewScheduleIds: match.reviewScheduleIds,
+    buildingIds: match.buildingIds,
+    matchStatus: match.matchStatus,
+    active: true,
+    providerRegisteredAt: String(transaction && transaction.regDT || ""),
+    syncedAt: syncedAt
+  };
+}
+
+function popbillBankJobPropertyKey_(account) {
+  const raw = [
+    String(account && account.bankCode || ""),
+    String(account && account.accountNumber || "").replace(/\D/g, "")
+  ].join(":");
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    raw,
+    Utilities.Charset.UTF_8
+  );
+  return "POPBILL_BANK_JOB_" +
+    Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, "").slice(0, 20);
+}
+
+function popbillBankRequestJob_(account, startDate, endDate) {
+  const query = [
+    "BankCode=" + encodeURIComponent(String(account.bankCode || "")),
+    "AccountNumber=" + encodeURIComponent(String(account.accountNumber || "").replace(/\D/g, "")),
+    "SDate=" + encodeURIComponent(startDate),
+    "EDate=" + encodeURIComponent(endDate)
+  ].join("&");
+  const result = popbillApiRequest_("post", "/EasyFin/Bank/BankAccount?" + query);
+  const jobId = String(result && (result.jobID || result.jobId) || result || "").trim();
+  if (!/^\d{18}$/.test(jobId)) throw new Error("팝빌 거래수집 작업번호를 받지 못했습니다.");
+  return jobId;
+}
+
+function popbillBankJobState_(jobId) {
+  return popbillApiRequest_(
+    "get",
+    "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) + "/State"
+  );
+}
+
+function popbillBankSearchTransactions_(jobId) {
+  // 한 쪽 최대 1000건. 넘치면 다음 쪽까지 모두 읽는다(오름차순이라 첫 쪽만 읽으면 최근 입금이 빠진다).
+  const list = [];
+  let first = null;
+  for (let page = 1; page <= 50; page += 1) {
+    const result = popbillApiRequest_(
+      "get",
+      "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) +
+        "?TradeType=I&Page=" + page + "&PerPage=1000&Order=A"
+    ) || {};
+    if (!first) first = result;
+    const rows = Array.isArray(result.list) ? result.list : [];
+    list.push.apply(list, rows);
+    const pageCount = Number(result.pageCount) || 0;
+    if (rows.length < 1000 || (pageCount && page >= pageCount)) break;
+  }
+  return Object.assign({}, first || {}, { list: list });
+}
+
+function popbillBankSafeError_(error) {
+  return String(error && error.message || error || "알 수 없는 오류")
+    .replace(/\d{6,}/g, "••••")
+    .slice(0, 240);
+}
+
+function popbillBankCollectAccount_(account, startDate, endDate) {
+  const props = PropertiesService.getScriptProperties();
+  const propertyKey = popbillBankJobPropertyKey_(account);
+  let pending = null;
+  try {
+    pending = JSON.parse(props.getProperty(propertyKey) || "null");
+  } catch (error) {
+    pending = null;
+  }
+  if (pending && (
+    pending.startDate !== startDate ||
+    pending.endDate !== endDate ||
+    Date.now() - Number(pending.requestedAt || 0) > 50 * 60 * 1000
+  )) {
+    pending = null;
+    props.deleteProperty(propertyKey);
+  }
+
+  const jobId = pending && pending.jobId ||
+    popbillBankRequestJob_(account, startDate, endDate);
+  if (!pending) {
+    props.setProperty(propertyKey, JSON.stringify({
+      jobId: jobId,
+      startDate: startDate,
+      endDate: endDate,
+      requestedAt: Date.now()
+    }));
+  }
+
+  let state = {};
+  // 은행 수집은 보통 수 초~수십 초 걸린다. 8초만 기다리면 매시간 실행이 늘 "대기"로 끝나
+  // 알림이 멈췄다. 약 40초까지 점점 길게 기다린다.
+  const waits = [1000, 1000, 2000, 2000, 3000, 3000, 4000, 4000, 5000, 5000, 5000, 5000];
+  for (let attempt = 0; attempt <= waits.length; attempt += 1) {
+    try {
+      state = popbillBankJobState_(jobId) || {};
+    } catch (error) {
+      if (attempt === waits.length) throw error;
+    }
+    if (Number(state.jobState) === 3) break;
+    if (attempt < waits.length) Utilities.sleep(waits[attempt]);
+  }
+  if (Number(state.jobState) !== 3) {
+    return { pending: true, jobId: jobId, state: Number(state.jobState || 0), list: [] };
+  }
+  props.deleteProperty(propertyKey);
+  if (Number(state.errorCode) !== 1) {
+    throw new Error(String(state.errorReason || "팝빌 거래내역 수집에 실패했습니다."));
+  }
+  const search = popbillBankSearchTransactions_(jobId) || {};
+  return {
+    pending: false,
+    jobId: jobId,
+    state: 3,
+    list: Array.isArray(search.list) ? search.list : [],
+    lastScrapDT: String(search.lastScrapDT || "")
+  };
+}
+
+function popbillBankSyncIsFresh_(status, nowMillis) {
+  if (!status || status.ok !== true || status.status !== "completed") return false;
+  const timestamp = Date.parse(status.lastSuccessfulAt || status.updatedAt || "");
+  if (!isFinite(timestamp)) return false;
+  return Number(nowMillis == null ? Date.now() : nowMillis) - timestamp <
+    POPBILL_BANK_SYNC_FRESH_MINUTES * 60 * 1000;
+}
+
+function syncPopbillBankTransactions_(payload) {
+  payload = payload || {};
+  const requestedAt = new Date().toISOString();
+  const bankSyncUrl = firebasePaymentCalendarUrl_(payload.uid, "bankSync", payload.idToken);
+  const existingStatus = firebaseReadJson_(bankSyncUrl, "기존 팝빌 동기화 상태 조회 실패") || {};
+  const bankBindingsUrl = firebasePaymentCalendarUrl_(payload.uid, "bankBindings", payload.idToken);
+  const bankBindings = firebaseReadJson_(bankBindingsUrl, "건물별 팝빌 계좌 연결정보 조회 실패") || {};
+  rememberPaymentNotificationAutomation_(payload, bankBindings);
+  if (payload.force !== true && popbillBankSyncIsFresh_(existingStatus, Date.now())) {
+    return Object.assign({}, existingStatus, { skipped: true });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1500)) {
+    return { ok: true, skipped: true, status: "running", updatedAt: requestedAt };
+  }
+  try {
+    const schedulesUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules", payload.idToken);
+    const transactionsUrl = firebasePaymentCalendarUrl_(payload.uid, "transactions", payload.idToken);
+    const schedules = firebaseReadJson_(schedulesUrl, "월 납부 일정 조회 실패") || {};
+    const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+    const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
+      .filter(account => Number(account && account.state) === 1);
+    if (!accounts.length) throw new Error("팝빌에서 사용 가능한 등록 계좌를 찾지 못했습니다.");
+
+    const endDate = popbillBankCompactDate_(new Date());
+    const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+    const transactionPatch = {};
+    const accountResults = [];
+    const errors = [];
+    let pendingCount = 0;
+    let lastScrapDT = "";
+
+    accounts.forEach(account => {
+      const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
+      const accountRef = popbillBankAccountRef_(account);
+      const accountSchedules = popbillBankSchedulesForAccount_(schedules, bankBindings, accountRef);
+      const linkedBuildingIds = Array.from(new Set(Object.keys(accountSchedules)
+        .map(id => String(accountSchedules[id] && accountSchedules[id].buildingId || ""))
+        .filter(Boolean)));
+      const safeAccount = {
+        accountRef: accountRef,
+        bankCode: String(account && account.bankCode || ""),
+        accountName: String(account && account.accountName || ""),
+        accountLast4: accountNumber.slice(-4),
+        linkedBuildingCount: linkedBuildingIds.length
+      };
+      try {
+        const collected = popbillBankCollectAccount_(account, startDate, endDate);
+        if (collected.pending) pendingCount += 1;
+        lastScrapDT = String(collected.lastScrapDT || lastScrapDT);
+        let depositCount = 0;
+        (collected.list || []).forEach(transaction => {
+          const record = popbillBankTransactionRecord_(
+            transaction,
+            account,
+            accountSchedules,
+            requestedAt,
+            accountRef
+          );
+          if (!record) return;
+          transactionPatch[record.id] = record;
+          depositCount += 1;
+        });
+        accountResults.push(Object.assign({}, safeAccount, {
+          pending: collected.pending === true,
+          depositCount: depositCount
+        }));
+      } catch (error) {
+        errors.push(Object.assign({}, safeAccount, {
+          message: popbillBankSafeError_(error)
+        }));
+      }
+    });
+
+    if (Object.keys(transactionPatch).length) {
+      firebaseAuthorizedWriteRequest_(
+        transactionsUrl,
+        "patch",
+        transactionPatch,
+        "팝빌 입금내역 저장 실패"
+      );
+    }
+    const records = Object.keys(transactionPatch).map(id => transactionPatch[id]);
+    const status = {
+      ok: errors.length === 0,
+      status: pendingCount ? "pending" : (errors.length ? "error" : "completed"),
+      environment: popbillConfig_().isTest ? "test" : "production",
+      accountCount: accounts.length,
+      linkedBuildingCount: Object.keys(bankBindings).filter(buildingId =>
+        String(bankBindings[buildingId] && bankBindings[buildingId].accountRef || "")
+      ).length,
+      completedAccountCount: accountResults.filter(item => !item.pending).length,
+      pendingAccountCount: pendingCount,
+      transactionCount: records.length,
+      matchedCount: records.filter(item => item.matchStatus === "matched").length,
+      reviewCount: records.filter(item => item.matchStatus === "review").length,
+      unmatchedCount: records.filter(item => item.matchStatus === "unmatched").length,
+      accounts: accountResults,
+      errors: errors,
+      rangeStart: popbillBankIsoDate_(startDate),
+      rangeEnd: popbillBankIsoDate_(endDate),
+      lastScrapDT: lastScrapDT,
+      updatedAt: requestedAt,
+      lastSuccessfulAt: errors.length || pendingCount
+        ? String(existingStatus.lastSuccessfulAt || "")
+        : requestedAt,
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    firebaseAuthorizedWriteRequest_(bankSyncUrl, "put", status, "팝빌 동기화 상태 저장 실패");
+    Logger.log(JSON.stringify({
+      ok: status.ok,
+      status: status.status,
+      accountCount: status.accountCount,
+      transactionCount: status.transactionCount,
+      matchedCount: status.matchedCount,
+      reviewCount: status.reviewCount,
+      unmatchedCount: status.unmatchedCount
+    }));
+    return status;
+  } catch (error) {
+    const failed = {
+      ok: false,
+      status: "error",
+      accountCount: 0,
+      transactionCount: 0,
+      errors: [{ message: popbillBankSafeError_(error) }],
+      updatedAt: requestedAt,
+      lastSuccessfulAt: String(existingStatus.lastSuccessfulAt || ""),
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    try {
+      firebaseAuthorizedWriteRequest_(bankSyncUrl, "put", failed, "팝빌 동기화 오류 상태 저장 실패");
+    } catch (writeError) {
+      Logger.log("팝빌 동기화 오류 상태 저장 실패");
+    }
+    return failed;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function testPopbillBankTransactionCollection() {
+  const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
+    .filter(account => Number(account && account.state) === 1);
+  const endDate = popbillBankCompactDate_(new Date());
+  const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+  const results = accounts.map(account => {
+    const number = String(account && account.accountNumber || "").replace(/\D/g, "");
+    try {
+      const collected = popbillBankCollectAccount_(account, startDate, endDate);
+      return {
+        bankCode: String(account && account.bankCode || ""),
+        accountLast4: number.slice(-4),
+        pending: collected.pending === true,
+        depositCount: (collected.list || []).filter(item =>
+          (Number(String(item && item.accIn || "0").replace(/,/g, "")) || 0) > 0
+        ).length
+      };
+    } catch (error) {
+      return {
+        bankCode: String(account && account.bankCode || ""),
+        accountLast4: number.slice(-4),
+        error: popbillBankSafeError_(error)
+      };
+    }
+  });
+  const output = {
+    ok: results.every(item => !item.error),
+    accountCount: accounts.length,
+    rangeStart: popbillBankIsoDate_(startDate),
+    rangeEnd: popbillBankIsoDate_(endDate),
+    accounts: results
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
 }
 
 function syncPaymentBuildingsFromOnboarding_() {
@@ -6350,6 +11434,7 @@ function syncPaymentBuildingsFromOnboarding_() {
     registry,
     "입금 캘린더 건물 동기화 실패"
   );
+  CacheService.getScriptCache().remove(KAKAO_REGISTRY_CACHE_KEY);
   return { ok: true, count: Object.keys(registry).length, syncedAt: syncedAt, build: AUTOMATION_BUILD };
 }
 
@@ -6388,6 +11473,32 @@ function rankDriveOnboardingCandidate_(candidate, inputBuilding, inputAddress) {
   candidate.addressScore = Math.round(addressScore * 1000) / 1000;
   candidate.matchScore = Math.round((buildingScore * 0.6 + addressScore * 0.4) * 1000) / 1000;
   return candidate;
+}
+
+function isPlausibleOnboardingCandidate_(candidate, inputBuilding, inputAddress) {
+  if (!candidate) return false;
+  const buildingKey = normalizeText_(inputBuilding);
+  const candidateBuildingKey = normalizeText_(candidate.building);
+  const addressKey = normalizeAddress_(inputAddress);
+  const candidateAddressKey = normalizeAddress_(candidate.address);
+  if (!buildingKey || !candidateBuildingKey || !addressKey || !candidateAddressKey) return false;
+
+  const buildingMatches = (
+    buildingKey === candidateBuildingKey ||
+    candidate.buildingScore >= 0.82
+  );
+  const addressContains = (
+    addressKey.indexOf(candidateAddressKey) >= 0 ||
+    candidateAddressKey.indexOf(addressKey) >= 0
+  );
+  const inputNumbers = addressKey.match(/\d+/g) || [];
+  const candidateNumbers = candidateAddressKey.match(/\d+/g) || [];
+  const sharesAddressNumber = inputNumbers.some(value => candidateNumbers.indexOf(value) >= 0);
+  const addressMatches = addressContains || (
+    candidate.addressScore >= 0.5 &&
+    sharesAddressNumber
+  );
+  return buildingMatches && addressMatches;
 }
 
 function makeDriveSearchTerms_(value) {
@@ -6500,6 +11611,9 @@ function isSmsSentStatus_(status) {
 
 function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const force = options && options.force === true;
+  const previous = options && options.existingSms && typeof options.existingSms === "object"
+    ? options.existingSms
+    : {};
   const existingStatus = readField_(record, ["문자 발송 상태"]);
   if (!force && isSmsSentStatus_(existingStatus)) {
     return {
@@ -6509,44 +11623,40 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     };
   }
 
-  const config = getSensConfig_();
-  if (!config.enabled) {
-    return { status: "설정필요", statusText: "NCP SENS Script Properties 설정 후 문자 발송이 가능합니다.", skipped: true };
+  const smsConfig = getSensConfig_();
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (!smsConfig.enabled && !kakaoConfig.enabled) {
+    return { status: "설정필요", statusText: "NCP SENS SMS 또는 카카오 알림톡 Script Properties 설정 후 발송이 가능합니다.", skipped: true };
   }
 
   const tenantPhoneRaw = normalizePhoneForSms_(readField_(record, ["연락처", "전화번호", "휴대폰"]));
   const ownerPhoneRaw = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
   const tenantPhone = isSendableSmsPhone_(tenantPhoneRaw) ? tenantPhoneRaw : "";
   const ownerPhone = isSendableSmsPhone_(ownerPhoneRaw) ? ownerPhoneRaw : "";
-  const building = readField_(record, ["건물명", "건물"]);
-  const room = readField_(record, ["호실"]);
-  const issueType = readField_(record, ["문제 유형"]);
-  const tenantContent = [
-    "[BRING Care]",
-    "민원이 접수되었습니다.",
-    "접수번호: " + ticketNo,
-    building ? "건물: " + building : "",
-    room ? "호실: " + formatRoomForCase_(room) : "",
-    issueType ? "문제: " + issueType : "",
-    "확인 후 안내드리겠습니다."
-  ].filter(Boolean).join("\n");
-  const ownerContent = [
-    "[BRING Care]",
-    "건물 민원이 접수되었습니다.",
-    "접수번호: " + ticketNo,
-    building ? "건물: " + building : "",
-    room ? "호실: " + formatRoomForCase_(room) : "",
-    issueType ? "문제: " + issueType : ""
-  ].filter(Boolean).join("\n");
+  const tenantContent = makeComplaintReceiptTenantAlimTalkContent_(ticketNo, record);
+  const ownerContent = makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record);
 
   const logs = [];
-  let tenantSent = false;
-  let ownerSent = false;
-  let tenantReceipt = {};
-  let ownerReceipt = {};
+  let tenantSent = previous.tenantSent === true;
+  let ownerSent = previous.ownerSent === true;
+  let tenantReceipt = {
+    requestId: previous.tenantRequestId || "",
+    provider: previous.tenantProvider || "",
+    templateCode: previous.tenantTemplateCode || ""
+  };
+  let ownerReceipt = {
+    requestId: previous.ownerRequestId || "",
+    provider: previous.ownerProvider || "",
+    templateCode: previous.ownerTemplateCode || ""
+  };
 
-  if (tenantPhone) {
-    const tenantResult = sendSensSms_(tenantPhone, tenantContent, "세입자");
+  if (tenantSent) {
+    logs.push("세입자 " + (previous.tenantPhoneMasked || maskPhone_(tenantPhone)) + " 기존 발송 완료");
+  } else if (tenantPhone) {
+    const tenantResult = sendKakaoAlimTalkOrSms_(tenantPhone, tenantContent, "세입자", {
+      templateCode: kakaoConfig.templates.receiptTenant,
+      fallbackContent: tenantContent
+    });
     tenantReceipt = tenantResult;
     tenantSent = tenantResult.ok;
     logs.push("세입자 " + maskPhone_(tenantPhone) + " " + tenantResult.message);
@@ -6556,8 +11666,17 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     logs.push("세입자 연락처 없음");
   }
 
-  if (ownerPhone) {
-    const ownerResult = sendSensSms_(ownerPhone, ownerContent, "건물주");
+  // 건물주 접수 안내에는 '업체 견적 진행' 문구가 있어 직접 처리 민원에는 보내지 않습니다.
+  const skipOwnerNotice = !!analysis && analysis.vendorType === KAKAO_DIRECT_VENDOR_TYPE;
+  if (ownerSent) {
+    logs.push("건물주 " + (previous.ownerPhoneMasked || maskPhone_(ownerPhone)) + " 기존 발송 완료");
+  } else if (skipOwnerNotice) {
+    logs.push("건물주 알림 생략: 브링케어 직접 처리 민원");
+  } else if (ownerPhone) {
+    const ownerResult = sendKakaoAlimTalkOrSms_(ownerPhone, ownerContent, "건물주", {
+      templateCode: kakaoConfig.templates.receiptOwner,
+      fallbackContent: ownerContent
+    });
     ownerReceipt = ownerResult;
     ownerSent = ownerResult.ok;
     logs.push("건물주 " + maskPhone_(ownerPhone) + " " + ownerResult.message);
@@ -6565,7 +11684,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     logs.push("건물주 연락처 미확인: 온보딩 수집서 본문에 '건물주 연락처: 010-0000-0000' 형식으로 넣어주세요.");
   }
 
-  const status = tenantSent && ownerSent ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
+  const status = tenantSent && (ownerSent || skipOwnerNotice) ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
   const statusSummary = logs.join(" / ");
   return {
     ok: status === "발송완료",
@@ -6578,9 +11697,18 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
     tenantRequestId: tenantReceipt.requestId || "",
     ownerRequestId: ownerReceipt.requestId || "",
-    requestIds: [tenantReceipt.requestId, ownerReceipt.requestId].filter(Boolean),
+    tenantProvider: tenantReceipt.provider || "",
+    ownerProvider: ownerReceipt.provider || "",
+    tenantTemplateCode: tenantReceipt.templateCode || "",
+    ownerTemplateCode: ownerReceipt.templateCode || "",
+    requestIds: Array.from(new Set(
+      []
+        .concat(previous.requestIds || [])
+        .concat([tenantReceipt.requestId, ownerReceipt.requestId])
+        .filter(Boolean)
+    )),
     deliveryAccepted: status === "발송완료",
-    completedAt: status === "발송완료" ? new Date().toISOString() : ""
+    completedAt: status === "발송완료" ? (previous.completedAt || new Date().toISOString()) : ""
   };
 }
 
@@ -6605,6 +11733,10 @@ function applySmsResultToCase_(casePayload, smsResult) {
     requestIds: smsResult.requestIds || [],
     tenantRequestId: smsResult.tenantRequestId || "",
     ownerRequestId: smsResult.ownerRequestId || "",
+    tenantProvider: smsResult.tenantProvider || "",
+    ownerProvider: smsResult.ownerProvider || "",
+    tenantTemplateCode: smsResult.tenantTemplateCode || "",
+    ownerTemplateCode: smsResult.ownerTemplateCode || "",
     deliveryAccepted: isSmsCompleteStatus_(smsResult.status),
     completedAt: smsResult.completedAt || "",
     updatedAt: new Date().toISOString(),
@@ -6637,6 +11769,151 @@ function getSensConfig_() {
   };
   config.enabled = Boolean(config.enabled && config.serviceId && config.accessKey && config.secretKey && config.from);
   return config;
+}
+
+function getKakaoAlimTalkConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const enabled = String(props.getProperty("KAKAO_ALIMTALK_ENABLED") || "false").toLowerCase() === "true";
+  const plusFriendIdRaw = String(props.getProperty("KAKAO_CHANNEL_ID") || "").trim();
+  const config = {
+    enabled: enabled,
+    serviceId: String(props.getProperty("NCP_BIZ_MESSAGE_SERVICE_ID") || "").trim(),
+    plusFriendId: plusFriendIdRaw && plusFriendIdRaw.charAt(0) !== "@" ? "@" + plusFriendIdRaw : plusFriendIdRaw,
+    accessKey: String(props.getProperty("NCP_ACCESS_KEY") || "").trim(),
+    secretKey: String(props.getProperty("NCP_SECRET_KEY") || "").trim(),
+    smsFrom: normalizePhoneForSms_(props.getProperty("NCP_SENS_FROM") || ""),
+    useSmsFailover: String(props.getProperty("KAKAO_SMS_FAILOVER_ENABLED") || "false").toLowerCase() === "true",
+    templates: {
+      receiptTenant: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_TENANT") || "BRINGRECEIPTTENANTV1").trim(),
+      receiptOwner: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_OWNER") || "BRINGRECEIPTOWNERV1").trim(),
+      ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim(),
+      paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim(),
+      paymentReminderOverdue: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER_OVERDUE") || "BRINGRENTOVERDUEV1").trim(),
+      paymentOwnerSummary: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY") || "BRINGRENTOWNERSUMMARYV1").trim(),
+      paymentOwnerConfirmed: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED") || "BRINGRENTOWNERPAIDV1").trim(),
+      paymentOwnerGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_GROUP") || "BRINGRENTOWNERGROUPV1").trim(),
+      paymentOwnerConfirmedGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED_GROUP") || "BRINGRENTOWNERPAIDGROUPV1").trim(),
+      customerQuote: String(props.getProperty("KAKAO_TEMPLATE_CUSTOMER_QUOTE") || "BRINGCUSTOMERQUOTEV1").trim(),
+      completionReport: String(props.getProperty("KAKAO_TEMPLATE_COMPLETION_REPORT") || "BRINGCOMPLETIONREPORTV1").trim()
+    }
+  };
+  config.enabled = Boolean(
+    config.enabled &&
+    config.serviceId &&
+    config.plusFriendId &&
+    config.accessKey &&
+    config.secretKey
+  );
+  return config;
+}
+
+function sendSensAlimTalk_(to, content, label, templateCode, options, config) {
+  options = options || {};
+  if (!config || !config.enabled) config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) return { ok: false, provider: "kakao_alimtalk", message: "카카오 알림톡 설정필요" };
+  to = normalizePhoneForSms_(to);
+  if (!isSendableSmsPhone_(to)) {
+    return { ok: false, provider: "kakao_alimtalk", message: "수신번호 확인필요(" + label + ")" };
+  }
+  templateCode = String(templateCode || "").trim();
+  if (!templateCode) {
+    return { ok: false, provider: "kakao_alimtalk", message: "알림톡 템플릿 코드 확인필요(" + label + ")" };
+  }
+  content = String(content || "");
+  if (!content || content.length > 1000) {
+    return { ok: false, provider: "kakao_alimtalk", message: "알림톡 본문은 1~1000자로 입력해야 합니다(" + label + ")" };
+  }
+
+  const message = {
+    countryCode: "82",
+    to: to,
+    content: content
+  };
+  if (Array.isArray(options.buttons) && options.buttons.length) {
+    message.buttons = options.buttons.map(button => ({
+      type: String(button.type || "WL"),
+      name: String(button.name || ""),
+      linkMobile: String(button.linkMobile || ""),
+      linkPc: String(button.linkPc || button.linkMobile || "")
+    }));
+  }
+  if (config.useSmsFailover && config.smsFrom) {
+    const fallbackContent = String(options.fallbackContent || content);
+    message.useSmsFailover = true;
+    message.failoverConfig = {
+      type: byteLength_(fallbackContent) > 90 ? "LMS" : "SMS",
+      from: config.smsFrom,
+      content: fallbackContent
+    };
+    if (message.failoverConfig.type === "LMS") message.failoverConfig.subject = "BRING Care";
+  } else {
+    message.useSmsFailover = false;
+  }
+
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) + "/messages";
+  const response = sensPostJson_(uri, {
+    plusFriendId: config.plusFriendId,
+    templateCode: templateCode,
+    messages: [message]
+  }, config);
+  if (!response.ok) {
+    return {
+      ok: false,
+      provider: "kakao_alimtalk",
+      templateCode: templateCode,
+      responseCode: response.code || 0,
+      message: "알림톡 발송실패(" + label + "): " + response.message
+    };
+  }
+
+  const receipt = sensResponseReceipt_(response.json);
+  const responseMessages = Array.isArray(response.json && response.json.messages) ? response.json.messages : [];
+  const firstMessage = responseMessages[0] || {};
+  return {
+    ok: true,
+    provider: "kakao_alimtalk",
+    templateCode: templateCode,
+    message: "카카오 알림톡 발송요청 완료(" + label + ")",
+    requestId: receipt.requestId,
+    messageId: String(firstMessage.messageId || ""),
+    statusCode: receipt.statusCode,
+    statusName: receipt.statusName,
+    responseCode: response.code
+  };
+}
+
+function sendKakaoAlimTalkOrSms_(to, content, label, options) {
+  options = options || {};
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (kakaoConfig.enabled && options.templateCode) {
+    const alimTalkResult = sendSensAlimTalk_(
+      to,
+      content,
+      label,
+      options.templateCode,
+      options,
+      kakaoConfig
+    );
+    if (alimTalkResult.ok) return alimTalkResult;
+    if (options.allowSmsFallback === false) return alimTalkResult;
+
+    const smsConfig = getSensConfig_();
+    if (!smsConfig.enabled) return alimTalkResult;
+    const smsResult = sendSensSms_(to, String(options.fallbackContent || content), label);
+    smsResult.provider = smsResult.ok ? "sens_sms_fallback" : "kakao_alimtalk";
+    smsResult.templateCode = options.templateCode;
+    smsResult.alimTalkError = alimTalkResult.message || "";
+    if (smsResult.ok) {
+      smsResult.message = "알림톡 실패 후 문자 대체 발송요청 완료(" + label + ")";
+    } else {
+      smsResult.message = (alimTalkResult.message || "알림톡 발송실패") + " / " + (smsResult.message || "문자 대체 발송실패");
+    }
+    return smsResult;
+  }
+
+  const smsResult = sendSensSms_(to, content, label);
+  smsResult.provider = "sens_sms";
+  return smsResult;
 }
 
 function sendSensSms_(to, content, label) {
@@ -6724,6 +12001,30 @@ function extractDocxText_(driveFileId) {
   }
 }
 
+function extractPdfTextForReview_(driveFileId) {
+  let convertedId = "";
+  try {
+    const sourceFile = DriveApp.getFileById(driveFileId);
+    const converted = Drive.Files.insert({
+      title: "CRM 검토 OCR " + driveFileId,
+      mimeType: "application/vnd.google-apps.document"
+    }, sourceFile.getBlob(), {
+      convert: true,
+      ocr: true,
+      ocrLanguage: "ko"
+    });
+    convertedId = String(converted && converted.id || "");
+    if (!convertedId) throw new Error("OCR 변환 문서 ID가 없습니다.");
+    return String(DocumentApp.openById(convertedId).getBody().getText() || "").replace(/\s+/g, " ").trim();
+  } finally {
+    if (convertedId) {
+      try { DriveApp.getFileById(convertedId).setTrashed(true); } catch (cleanupError) {
+        Logger.log("임시 OCR 문서 정리 실패: " + cleanupError.message);
+      }
+    }
+  }
+}
+
 function decodeXmlText_(xml) {
   return String(xml || "")
     .replace(/<w:tab\/>/g, " ")
@@ -6741,6 +12042,7 @@ function normalizePhoneForSms_(phone) {
   let digits = String(phone || "").replace(/\D/g, "");
   if (!digits) return "";
   if (digits.indexOf("82") === 0) digits = "0" + digits.slice(2);
+  if (/^1[016789]\d{7,8}$/.test(digits)) digits = "0" + digits;
   return digits;
 }
 
@@ -6758,6 +12060,183 @@ function testSensSmsSetup() {
   if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
   const result = sendSensSms_(to, "[BRING Care]\nSENS 문자 연동 테스트입니다.", "테스트");
   Logger.log(JSON.stringify(result));
+}
+
+function testKakaoAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("KAKAO_ALIMTALK_ENABLED, NCP_BIZ_MESSAGE_SERVICE_ID, KAKAO_CHANNEL_ID와 NCP 인증키 설정을 확인해 주세요.");
+  }
+  const content = [
+    "[브링케어 민원 접수 안내]",
+    "테스트고객님, 민원이 정상 접수되었습니다.",
+    "",
+    "접수번호: BR-2026-0000",
+    "건물: 브링케어 테스트 건물",
+    "호실: 101호",
+    "문제 유형: 알림톡 연동 테스트",
+    "",
+    "담당자가 내용을 확인한 후 진행 상황을 안내드리겠습니다."
+  ].join("\n");
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "알림톡 테스트",
+    config.templates.receiptTenant,
+    { fallbackContent: content },
+    config
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "카카오 알림톡 테스트 발송 실패");
+  return result;
+}
+
+function testKakaoOwnerReceiptAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  }
+
+  const record = {
+    "건물명": "브링케어 테스트 건물",
+    "호실": "101",
+    "문제 유형": "건물주 알림톡 연동 테스트"
+  };
+  const content = makeComplaintReceiptOwnerAlimTalkContent_("BR-2026-0000", record);
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "건물주 접수 알림 테스트",
+    config.templates.receiptOwner,
+    { fallbackContent: content },
+    config
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "건물주 접수 알림톡 테스트 발송 실패");
+  return result;
+}
+
+function testKakaoOwnerRecommendationAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  }
+
+  const caseId = "BR-2099-9999";
+  const quoteId = "owner_quote_alimtalk_test";
+  const now = new Date().toISOString();
+  const quote = {
+    id: quoteId,
+    vendorName: "원주빛전기",
+    resolvedVendorInfo: {
+      name: "원주빛전기",
+      phone: "010-1111-0001"
+    },
+    confirmedTotalAmount: 130900,
+    bringQuoteBaseTotalAmount: 130900,
+    bringQuoteSupplyAmount: 130900,
+    bringQuoteVatAmount: 13100,
+    bringQuoteTotalAmount: 144000,
+    bringQuoteItems: [
+      { product: "현관 센서등 교체" },
+      { product: "공용부 LED 램프 교체" }
+    ],
+    uploadedAt: now
+  };
+  const casePayload = {
+    id: caseId,
+    ticketNo: caseId,
+    building: "브링케어 테스트 건물",
+    room: "101호",
+    archived: true,
+    archivedAt: now,
+    archivedBy: "alimtalk-test",
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "doing" },
+    quoteFiles: {}
+  };
+  casePayload.quoteFiles[quoteId] = quote;
+  patchCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "ownerDecision", {});
+
+  const latestCase = readCaseFromFirebase_(caseId) || casePayload;
+  const prepared = prepareOwnerDecisionLinkForCase_(caseId, latestCase, quoteId, quote);
+  if (!prepared.ok || !prepared.state || !prepared.state.shortDecisionUrl) {
+    throw new Error(prepared.message || "테스트 승인 링크 생성에 실패했습니다.");
+  }
+  const supplier = prepared.supplier;
+  const amounts = prepared.amounts;
+  const approvalUrl = prepared.state.shortDecisionUrl;
+  const content = makeOwnerRecommendationAlimTalkContent_(latestCase, supplier, amounts);
+  const fallbackContent = appendOwnerDecisionLink_(content, approvalUrl);
+  const testConfig = Object.assign({}, config, { useSmsFailover: false });
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "건물주 추천 견적 테스트",
+    config.templates.ownerQuote,
+    {
+      fallbackContent: fallbackContent,
+      buttons: [{
+        type: "WL",
+        name: "추천 견적 확인",
+        linkMobile: approvalUrl,
+        linkPc: approvalUrl
+      }]
+    },
+    testConfig
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "건물주 추천 견적 알림톡 테스트 발송 실패");
+  const saved = {
+    sentAt: now,
+    caseId: caseId,
+    quoteId: quoteId,
+    decisionUrl: prepared.state.decisionUrl,
+    shortDecisionUrl: approvalUrl,
+    requestId: result.requestId || "",
+    messageId: result.messageId || "",
+    templateCode: result.templateCode || config.templates.ownerQuote
+  };
+  props.setProperty("LAST_OWNER_RECOMMENDATION_ALIMTALK_TEST", JSON.stringify(saved));
+  return Object.assign({}, result, saved);
+}
+
+function checkKakaoOwnerRecommendationAlimTalkTestStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = JSON.parse(props.getProperty("LAST_OWNER_RECOMMENDATION_ALIMTALK_TEST") || "{}");
+  if (!saved.messageId) {
+    throw new Error("먼저 testKakaoOwnerRecommendationAlimTalkSetup을 실행해 주세요.");
+  }
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
+    "/messages/" + encodeURIComponent(String(saved.messageId));
+  const response = sensGetJson_(uri, config);
+  const status = response.json && typeof response.json === "object" ? response.json : {};
+  const result = {
+    ok: response.ok === true,
+    caseId: saved.caseId || "",
+    messageId: saved.messageId,
+    requestStatusCode: String(status.requestStatusCode || ""),
+    requestStatusName: String(status.requestStatusName || ""),
+    messageStatusCode: String(status.messageStatusCode || ""),
+    messageStatusName: String(status.messageStatusName || ""),
+    messageStatusDesc: String(status.messageStatusDesc || ""),
+    completeTime: String(status.completeTime || ""),
+    shortDecisionUrl: saved.shortDecisionUrl || "",
+    decisionUrl: saved.decisionUrl || ""
+  };
+  Logger.log(JSON.stringify(result));
+  return result;
 }
 
 function makeTicketNo_(row, record) {
@@ -6796,7 +12275,12 @@ function analyzeComplaint_(record) {
     reason = "사진 누락, 짧은 설명, 기타/애매한 표현으로 관리자 확인이 필요합니다.";
   }
 
-  const vendorType = classifyVendor_(issueType, haystack);
+  const isDirectIssue = KAKAO_DIRECT_ISSUE_TYPES.includes(issueType) && !hasUrgentKeyword;
+  if (isDirectIssue) {
+    urgency = "보통";
+    reason = "업체 연결 없이 브링케어가 직접 안내하는 민원입니다.";
+  }
+  const vendorType = isDirectIssue ? KAKAO_DIRECT_VENDOR_TYPE : classifyVendor_(issueType, haystack);
   const summary = makeSummary_(record, issueType, description);
   const statusValue = urgency === "긴급" ? "긴급확인필요" : urgency === "확인필요" ? "관리자확인중" : "접수완료";
 
@@ -6917,6 +12401,7 @@ function makeClassificationNote_(ticketNo, record, analysis) {
 }
 
 function classificationSiteVisit_(issueType, vendorType, urgency) {
+  if (vendorType === KAKAO_DIRECT_VENDOR_TYPE) return "불필요";
   const text = [issueType, vendorType].join(" ");
   if (urgency === "긴급") return "필요";
   if (/전기|누수|배관|보일러|에어컨|도어락|출입|창호|문|청소|방역|공용부/.test(text)) return "필요";
@@ -6924,6 +12409,7 @@ function classificationSiteVisit_(issueType, vendorType, urgency) {
 }
 
 function classificationQuoteNeed_(vendorType) {
+  if (vendorType === KAKAO_DIRECT_VENDOR_TYPE) return "불필요";
   return vendorType === "관리자 확인" ? "확인 필요" : "필요";
 }
 
@@ -6949,19 +12435,24 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const visitTime = formatVisitTimeFromRecord_(record, timestamp);
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const ownerPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  const source = readField_(record, ["접수 경로"]) || "google_form";
+  const sourceLabel = source === "kakao_chatbot" ? "카카오톡" : "구글폼";
+  const kakaoUserKeyHash = readField_(record, ["카카오 사용자 키 해시"]);
+  const photoFileIds = extractDriveFileIdsFromText_(readField_(record, ["사진 첨부", "첨부 사진", "사진", "사진첨부"]));
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
   const status = isContractHold ? { c1: "doing" } : { c1: "done", c2: "doing" };
   const c1Note = contractMatch && contractMatch.status === "matched"
-    ? "구글폼 자동 접수. Drive 온보딩 수집서와 연결되었습니다. 개인정보/사진 원본은 응답 시트에서 확인하세요."
+    ? sourceLabel + " 자동 접수. Drive 온보딩 수집서와 연결되었습니다. 개인정보/사진 원본은 응답 시트에서 확인하세요."
     : isContractHold
       ? "온보딩 파일 미매칭. Drive 폴더의 DOCX 본문에 건물명/주소가 있는지 확인한 뒤 진행하세요."
-      : "구글폼 자동 접수. 개인정보/사진 원본은 응답 시트에서 확인하세요.";
+      : sourceLabel + " 자동 접수. 개인정보/사진 원본은 응답 시트에서 확인하세요.";
 
   return {
     id: ticketNo,
     ticketNo: ticketNo,
-    source: "google_form",
+    caseParty: "건물주",
+    source: source,
     createdAt: new Date().toISOString(),
     receivedAt: receivedAt,
     sheetUrl: sheetUrl,
@@ -6980,10 +12471,20 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     analysisReason: analysis.reason,
     visitDate: formatKoreanDateOnlyForCase_(visitDateRaw || timestamp),
     visitTime: visitTime,
+    photos: photoFileIds.map((fileId, index) => ({
+      id: fileId,
+      name: "현장 사진 " + (index + 1),
+      driveUrl: "https://drive.google.com/open?id=" + fileId
+    })),
+    photoCount: photoFileIds.length,
     statusValue: statusValue,
     contractMatch: contractMatch,
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
     status: status,
+    kakao: source === "kakao_chatbot" ? {
+      userKeyHash: kakaoUserKeyHash,
+      linkedAt: new Date().toISOString()
+    } : {},
     note: {
       c1: c1Note,
       c3: makeConsultationNote_(ticketNo, record, analysis, sheetUrl),
@@ -6991,7 +12492,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
       c11: visitTime ? "방문 가능 시간: " + visitTime : ""
     },
     log: [
-      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " 구글폼 자동 접수",
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " " + sourceLabel + " 자동 접수",
       "긴급도 " + analysis.urgency + " / 업체분류 " + analysis.vendorType,
       contractMatch ? "온보딩매칭 " + contractMatch.status + " / " + contractMatch.statusText : "온보딩매칭 미확인"
     ]
@@ -7041,13 +12542,15 @@ function firebaseCaseUrl_(caseId, childPath) {
 
 function firebaseCaseSettingsUrl_(childPath) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const path = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
-  return base + "/caseSettings" + (child ? "/" + child : "") + ".json";
+  return base + "/" + path + (child ? "/" + child : "") + ".json";
 }
 
 function firebaseWriteRequest_(url, method, payload, label) {
   const response = UrlFetchApp.fetch(url, {
     method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     contentType: "application/json; charset=utf-8",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
@@ -7099,6 +12602,7 @@ function mergeCasePayloadForFirebase_(existing, payload) {
     "log",
     "quoteFiles",
     "businessRegistrationFiles",
+    "workPhotoFiles",
     "vendorSelections",
     "vendorEstimateMms",
     "ownerRecommendationMms",
@@ -7124,7 +12628,7 @@ function mergeCasePayloadForFirebase_(existing, payload) {
 function writeCaseToFirebase_(caseId, payload) {
   const existing = readCaseFromFirebase_(caseId);
   if (existing && existing.deleted === true) {
-    Logger.log("삭제된 케이스 저장 생략: " + caseId);
+    Logger.log("삭제된 민원 저장 생략: " + caseId);
     return;
   }
   const merged = mergeCasePayloadForFirebase_(existing, payload || {});
@@ -7141,7 +12645,7 @@ function maskName_(name) {
 }
 
 function maskPhone_(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
+  const digits = normalizePhoneForSms_(phone);
   if (digits.length < 7) return phone ? "***" : "";
   return digits.slice(0, 3) + "-****-" + digits.slice(-4);
 }
@@ -7167,4 +12671,1117 @@ function testAnalyzeSample() {
   const analysis = analyzeComplaint_(sample);
   const contractMatch = matchDriveOnboardingFile_(sample);
   Logger.log(JSON.stringify(buildCasePayload_("BR-TEST-0001", sample, analysis, contractMatch, 2, getResponseSheet_()), null, 2));
+}
+
+// ===== 건물주 안내 알림톡 =====
+// 본문은 NCP 등록 템플릿(crm-ai-worker/templates/*.json)과 글자 하나까지 같아야
+// 한다. CRM owner-notice-core.js 와 이 사본이 같은지 테스트가 확인한다.
+// 템플릿 코드 속성(KAKAO_OWNER_TEMPLATE_*)이 비어 있으면 = 아직 검수 전이므로
+// 그 안내는 보내지 않는다.
+const OWNER_NOTICE_CONTACT_ = "문의: 1551-3873";
+const OWNER_NOTICE_TEMPLATES_ = {
+  owner_cleaning_schedule: {
+    code: "BRINGCLEANSCHEDULEV1", property: "KAKAO_OWNER_TEMPLATE_CLEANING_SCHEDULE", label: "청소 일정 안내",
+    variables: ["건물주소", "작업명", "작업일", "예정시간"],
+    body: "[BRING CARE 청소 일정 안내]\n#{건물주소} 건물주님, 오늘 예정된 청소 일정을 안내드립니다.\n\n작업명: #{작업명}\n작업일: #{작업일}\n예정시간: #{예정시간}\n\n작업이 끝나면 결과보고서를 보내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_move_out: {
+    code: "BRINGMOVEOUTNOTICEV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_OUT", label: "퇴실 일정 안내",
+    variables: ["건물주소", "호실", "퇴실일"],
+    body: "[BRING CARE 퇴실 일정 안내]\n#{건물주소} 건물주님, #{호실}호 세입자 퇴실 일정을 안내드립니다.\n\n퇴실예정일: #{퇴실일}\n\n퇴실 전 공실 준비(중개 접수·입주청소)를 순서대로 진행하고 단계마다 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_broker_listed: {
+    code: "BRINGBROKERLISTEDV1", property: "KAKAO_OWNER_TEMPLATE_BROKER_LISTED", label: "중개 접수 안내",
+    variables: ["건물주소", "호실", "중개사무소", "접수일"],
+    body: "[BRING CARE 중개 접수 안내]\n#{건물주소} 건물주님, #{호실}호 공실을 중개사무소에 접수했습니다.\n\n중개사무소: #{중개사무소}\n접수일: #{접수일}\n\n방 보기 일정이 잡히면 다시 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_room_viewing: {
+    code: "BRINGROOMVIEWINGV1", property: "KAKAO_OWNER_TEMPLATE_ROOM_VIEWING", label: "방 보기 안내",
+    variables: ["건물주소", "호실", "방문일시", "중개사무소"],
+    body: "[BRING CARE 방 보기 안내]\n#{건물주소} 건물주님, #{호실}호 방 보기 일정을 안내드립니다.\n\n방문일시: #{방문일시}\n방문: #{중개사무소} 및 입주희망자\n\n방문 결과는 확인되는 대로 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_lease_contract: {
+    code: "BRINGLEASECONTRACTV1", property: "KAKAO_OWNER_TEMPLATE_LEASE_CONTRACT", label: "신규 계약 안내",
+    variables: ["건물주소", "호실", "계약일", "입주일", "계약조건"],
+    body: "[BRING CARE 신규 계약 안내]\n#{건물주소} 건물주님, #{호실}호 신규 계약 일정을 안내드립니다.\n\n계약일: #{계약일}\n입주예정일: #{입주일}\n계약조건: #{계약조건}\n\n입주 전 입주청소 일정도 이어서 안내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_move_in_cleaning: {
+    code: "BRINGMOVEINCLEANV1", property: "KAKAO_OWNER_TEMPLATE_MOVE_IN_CLEANING", label: "입주청소 안내",
+    variables: ["건물주소", "호실", "작업일", "예정시간", "입주일"],
+    body: "[BRING CARE 입주청소 안내]\n#{건물주소} 건물주님, #{호실}호 입주청소 일정을 안내드립니다.\n\n청소일: #{작업일}\n예정시간: #{예정시간}\n입주예정일: #{입주일}\n\n청소가 끝나면 결과보고서를 보내드리겠습니다.\n\n※ 이 메시지는 고객님께서 BRING CARE와 체결하신 건물관리 계약에 따라 계약 건물의 관리 및 이용 내역을 안내드리는 메시지입니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_subscription_due: {
+    code: "BRINGSUBSCRIPTIONDUEV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_DUE", label: "구독료 결제일 안내",
+    variables: ["건물주소", "상품명", "결제금액", "결제일"],
+    body: "[BRING CARE 결제일 안내]\n#{건물주소} 건물주님, 오늘은 브링케어 구독료 결제일입니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제일: #{결제일}\n\n이미 결제하셨다면 이 안내는 넘기셔도 됩니다.\n" + OWNER_NOTICE_CONTACT_
+  },
+  owner_subscription_paid: {
+    code: "BRINGSUBSCRIPTIONPAIDV1", property: "KAKAO_OWNER_TEMPLATE_SUBSCRIPTION_PAID", label: "구독료 결제 확인 안내",
+    variables: ["건물주소", "상품명", "결제금액", "결제일"],
+    body: "[BRING CARE 결제 확인 안내]\n#{건물주소} 건물주님, 브링케어 구독료 결제가 확인되었습니다.\n\n상품명: #{상품명}\n결제금액: #{결제금액}원\n결제확인일: #{결제일}\n\n영수증이 필요하시면 아래 번호로 말씀해 주세요.\n" + OWNER_NOTICE_CONTACT_
+  }
+};
+const OWNER_NOTICE_WEEKDAYS_ = ["일", "월", "화", "수", "목", "금", "토"];
+const OWNER_NOTICE_PAID_LOOKBACK_DAYS_ = 14;
+
+function ownerNoticeCatalogEntry_(templateId) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  return {
+    purpose: "information", requiresSource: true, ownerNotice: true,
+    property: template.property, bodyProperty: template.property.replace("_TEMPLATE_", "_BODY_"),
+    defaultBody: template.body, variables: template.variables
+  };
+}
+
+function ownerNoticeLine_(value) {
+  return String(value == null ? "" : value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function ownerNoticeShortAddress_(value) {
+  const raw = ownerNoticeLine_(value);
+  if (!raw || raw.length > 300) return "";
+  const base = raw.replace(/\([^)]*\)/g, " ").split(",")[0].trim();
+  const words = base.split(/\s+/);
+  const road = words.findIndex(function (word, index) { return /(?:대로|로|길)$/.test(word) && /^\d+(?:-\d+)?$/.test(words[index + 1] || ""); });
+  const lot = road < 0 ? words.findIndex(function (word, index) {
+    return /[^\d](?:동|읍|면|리)$/.test(word)
+      && (/^(?:산)?\d+(?:-\d+)?(?:번지)?$/.test(words[index + 1] || "") || words[index + 1] === "산" && /^\d+(?:-\d+)?$/.test(words[index + 2] || ""));
+  }) : -1;
+  const index = road >= 0 ? road : lot;
+  let result = base;
+  if (index >= 0) {
+    const admin = words.slice(0, index).filter(function (word) {
+      return /(?:시|군|구|읍|면)$/.test(word) && !/^\d/.test(word) || /^(?:서울|부산|대구|인천|광주|대전|울산|세종)$/.test(word);
+    }).map(function (word) { return word.replace(/특별자치시$/, "시").replace(/(?:특별시|광역시)$/, ""); });
+    const end = index + (words[index + 1] === "산" ? 3 : 2);
+    result = admin.concat(words.slice(index, end)).join(" ");
+  }
+  result = ownerNoticeLine_(result);
+  return result.length > 80 ? "" : result;
+}
+
+function ownerNoticeBuildingAddress_(building) {
+  const item = building || {};
+  return ownerNoticeShortAddress_(item.roadAddress || item.address || item.jibunAddress) || ownerNoticeLine_(item.name).slice(0, 80);
+}
+
+function ownerNoticeUnitLabel_(unit) {
+  return ownerNoticeLine_(unit && (unit.label || unit.unitLabel)).replace(/호$/, "").slice(0, 30);
+}
+
+function ownerNoticeIsOwner_(customer, building) {
+  if (!customer || !building || !customer.id) return false;
+  if (String(building.ownerCustomerId || "") === String(customer.id)) return true;
+  if (String(building.ownerCustomerId || "")) return false;
+  const links = customer.buildingIdLinks && customer.buildingIdLinks[building.id] === true;
+  const ids = Array.isArray(customer.buildingIds) && customer.buildingIds.indexOf(building.id) !== -1;
+  return customer.type === "건물주" && (links || ids);
+}
+
+function ownerNoticeRender_(templateId, values) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  if (!template) throw new Error("허용되지 않은 건물주 안내입니다.");
+  return template.body.replace(/#\{([^\u007D]+)\}/g, function (_all, key) {
+    return safeAlimTalkVariable_(values && values[key], "미입력");
+  });
+}
+
+function ownerNoticeMissing_(templateId, values) {
+  const template = OWNER_NOTICE_TEMPLATES_[templateId];
+  return template ? template.variables.filter(function (key) { return !ownerNoticeLine_(values && values[key]); }) : [];
+}
+
+// 퇴실 단계 안내: 건물주소·호실은 서버가 호실·건물 기록에서 다시 채운다.
+function ownerNoticeTurnoverVariables_(payload, customer, unit) {
+  const template = OWNER_NOTICE_TEMPLATES_[String(payload.templateId || "")];
+  if (!template) throw new Error("허용되지 않은 건물주 안내입니다.");
+  if (String(payload.sourceType || "") !== "buildingUnit") throw new Error("퇴실 안내는 호실 기록에서만 보낼 수 있습니다.");
+  const buildingId = String(unit && unit.crmBuildingId || "");
+  if (!unit || unit.archivedAt || !/^[A-Za-z0-9_-]{1,160}$/.test(buildingId)) throw new Error("호실 기록을 확인해 주세요.");
+  const building = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/buildings/" + buildingId, payload.idToken), "건물 조회 실패") || null;
+  if (!building || building.archivedAt) throw new Error("호실이 속한 건물을 찾지 못했습니다.");
+  if (!building.id) building.id = buildingId;
+  if (!ownerNoticeIsOwner_(customer, building)) throw new Error("이 건물의 건물주로 지정된 고객에게만 보낼 수 있습니다.");
+  const input = payload.variables && typeof payload.variables === "object" ? payload.variables : {};
+  const values = {};
+  template.variables.forEach(function (key) { values[key] = ownerNoticeLine_(input[key]).slice(0, 60); });
+  values["건물주소"] = ownerNoticeBuildingAddress_(building);
+  values["호실"] = ownerNoticeUnitLabel_(unit);
+  const missing = ownerNoticeMissing_(payload.templateId, values);
+  if (missing.length) throw new Error("안내에 필요한 항목을 입력해 주세요: " + missing.join(", "));
+  return values;
+}
+
+// --- 자동 안내 계획 (청소 일정 · 구독료 결제일 · 결제 확인) ---
+
+function ownerNoticeRows_(value) {
+  if (!value || typeof value !== "object") return [];
+  const rows = Array.isArray(value) ? value : Object.keys(value).map(function (key) {
+    const row = value[key];
+    return row && typeof row === "object" && !Array.isArray(row) ? Object.assign({ id: key }, row) : null;
+  });
+  return rows.filter(function (row) { return row && typeof row === "object" && !Array.isArray(row); });
+}
+
+function ownerNoticeIsDate_(value) {
+  if (!/^[1-9]\d{3}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+  const date = new Date(value + "T00:00:00Z");
+  return isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function ownerNoticeLive_(item) {
+  return Boolean(item && !item.archivedAt && !item.deletedAt && !item.archived && !item.deleted && !item.isArchived
+    && ["archived", "deleted", "cancelled", "canceled", "취소", "무효"].indexOf(ownerNoticeLine_(item.status)) === -1);
+}
+
+function ownerNoticeTypes_(contract) {
+  return Array.isArray(contract.types) && contract.types.length ? contract.types : [contract.type];
+}
+
+function ownerNoticeIsCleaningContract_(contract) {
+  const description = [contract.name, contract.scope, contract.memo].concat(ownerNoticeTypes_(contract)).filter(Boolean).join(" ").toLowerCase();
+  if (/예초|제초|잔디/.test(description)) return false;
+  return /청소|미화/.test(description);
+}
+
+function ownerNoticeCleaningSchedule_(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.mode === "manual" || value.mode === "once") return { mode: value.mode };
+  if (["weekly", "twice_monthly"].indexOf(value.mode) === -1 || !(value.weekday >= 0 && value.weekday <= 6 && value.weekday % 1 === 0)) return null;
+  if (value.mode === "twice_monthly") {
+    if (["first_third", "second_fourth"].indexOf(value.weekPattern) === -1) return null;
+    return { mode: "twice_monthly", weekday: value.weekday, weekPattern: value.weekPattern };
+  }
+  return { mode: "weekly", weekday: value.weekday };
+}
+
+function ownerNoticeTwiceMonthlyDates_(schedule, start, end, month) {
+  if (!ownerNoticeIsDate_(month + "-01") || month < start.slice(0, 7) || end && month > end.slice(0, 7)) return [];
+  const first = new Date(month + "-01T00:00:00Z");
+  const offset = (schedule.weekday - first.getUTCDay() + 7) % 7;
+  const weeks = schedule.weekPattern === "first_third" ? [1, 3] : [2, 4];
+  return weeks.map(function (week) {
+    const date = new Date(first.getTime());
+    date.setUTCDate(1 + offset + (week - 1) * 7);
+    return date.toISOString().slice(0, 10);
+  }).filter(function (date) { return date >= start && (!end || date <= end); });
+}
+
+// 주 1회: 계약 시작일~종료일 사이 그 달의 선택 요일 전부 (종료일 없으면 계속).
+function ownerNoticeWeeklyDates_(schedule, start, end, month) {
+  if (!ownerNoticeIsDate_(month + "-01") || month < start.slice(0, 7) || end && month > end.slice(0, 7)) return [];
+  const date = new Date(month + "-01T00:00:00Z");
+  date.setUTCDate(1 + (schedule.weekday - date.getUTCDay() + 7) % 7);
+  const dates = [];
+  while (date.toISOString().slice(0, 7) === month) {
+    const key = date.toISOString().slice(0, 10);
+    if (key >= start && (!end || key <= end)) dates.push(key);
+    date.setUTCDate(date.getUTCDate() + 7);
+  }
+  return dates;
+}
+
+// contract-schedule-core.js contractDates(contract, month) 의 사본.
+function ownerNoticeContractDates_(contract, month) {
+  if (!ownerNoticeLive_(contract)) return [];
+  const cleaning = ownerNoticeTypes_(contract).indexOf("청소") !== -1;
+  const schedule = ownerNoticeCleaningSchedule_(contract.cleaningSchedule);
+  if (cleaning && Object.prototype.hasOwnProperty.call(contract, "cleaningSchedule") && !schedule) return [];
+  if (cleaning && schedule && schedule.mode !== "manual") {
+    if (contract.status !== "진행 중") return [];
+    const start = schedule.mode === "once" && contract.billingCycle === "건별" ? ownerNoticeLine_(contract.workDate || contract.startDate) : ownerNoticeLine_(contract.startDate);
+    const end = ownerNoticeLine_(contract.endDate);
+    if (!ownerNoticeIsDate_(start) || end && (!ownerNoticeIsDate_(end) || end < start)) return [];
+    if (schedule.mode === "twice_monthly") return ownerNoticeTwiceMonthlyDates_(schedule, start, end, month);
+    if (schedule.mode === "weekly") return ownerNoticeWeeklyDates_(schedule, start, end, month);
+    return ownerNoticeIsDate_(start) && start.slice(0, 7) === month ? [start] : [];
+  }
+  if (contract.billingCycle !== "건별") return [];
+  const date = ownerNoticeLine_(contract.workDate || contract.startDate);
+  return ownerNoticeIsDate_(date) && date.slice(0, 7) === month ? [date] : [];
+}
+
+// core.js contractPaymentDate(contract, month) 의 사본.
+function ownerNoticePaymentDate_(contract, month) {
+  const anchor = String(contract && contract.paymentDueDate || "");
+  if (!ownerNoticeIsDate_(anchor) || !ownerNoticeIsDate_(month + "-01") || month < anchor.slice(0, 7)) return "";
+  if (["월 정기", "연간"].indexOf(contract.billingCycle) === -1) return anchor.slice(0, 7) === month ? anchor : "";
+  if (month !== anchor.slice(0, 7)) {
+    if (ownerNoticeIsDate_(contract.endDate) && month > contract.endDate.slice(0, 7)) return "";
+    if (contract.status === "종료" && !ownerNoticeIsDate_(contract.endDate)) return "";
+  }
+  if (contract.billingCycle === "연간" && month.slice(5) !== anchor.slice(5, 7)) return "";
+  const parts = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate();
+  return month + "-" + String(Math.min(Number(anchor.slice(8)), lastDay)).padStart(2, "0");
+}
+
+// core.js contractPaymentCollectionStatus(contract, date) 의 사본.
+function ownerNoticeCollectionStatus_(contract, date) {
+  if (!ownerNoticeIsDate_(date)) return "입금 예정";
+  const collections = contract && contract.paymentCollections;
+  if (collections && Object.prototype.hasOwnProperty.call(collections, date)
+    && ["입금 예정", "입금 완료"].indexOf(collections[date]) !== -1) return collections[date];
+  return contract && date === contract.paymentDueDate && contract.collectionStatus === "입금 완료" ? "입금 완료" : "입금 예정";
+}
+
+function ownerNoticeDateLabel_(value) {
+  const key = String(value || "").slice(0, 10);
+  if (!ownerNoticeIsDate_(key)) return "";
+  const date = new Date(key + "T00:00:00Z");
+  return (date.getUTCMonth() + 1) + "월 " + date.getUTCDate() + "일(" + OWNER_NOTICE_WEEKDAYS_[date.getUTCDay()] + ")";
+}
+
+function ownerNoticeTimeLabel_(value) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || "").trim());
+  if (!match) return "";
+  const hour = Number(match[1]);
+  return (hour < 12 ? "오전 " : "오후 ") + (hour % 12 === 0 ? 12 : hour % 12) + ":" + match[2];
+}
+
+function ownerNoticeMoney_(value) {
+  const amount = Math.round(Number(value) || 0);
+  return amount > 0 ? String(amount).replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "";
+}
+
+function ownerNoticeAddDays_(dateKey, days) {
+  const date = new Date(dateKey + "T00:00:00Z");
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function ownerNoticeOwner_(store, building, contract) {
+  const customers = store.customersById || {};
+  const assigned = building && building.ownerCustomerId ? customers[building.ownerCustomerId] : null;
+  if (assigned && ownerNoticeLive_(assigned)) return assigned;
+  if (building && building.ownerCustomerId) return null;
+  const linked = contract ? customers[contract.customerId] : null;
+  return linked && ownerNoticeLive_(linked) && linked.type === "건물주" ? linked : null;
+}
+
+// 순수 함수: 오늘(서울 기준) 보낼 자동 안내 목록을 만든다. 발송·중복 확인은 하지 않는다.
+// input = { contracts, customers, buildings, serviceRecords, today: "YYYY-MM-DD", hour: 0~23 }
+function ownerNoticePlan_(input) {
+  const data = input || {};
+  const today = String(data.today || "");
+  const hour = Number(data.hour);
+  const plan = { notices: [], skipped: [] };
+  if (!ownerNoticeIsDate_(today) || !(hour >= 0 && hour <= 23)) return plan;
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const contracts = ownerNoticeRows_(data.contracts).filter(function (row) { return /^[A-Za-z0-9_-]{1,120}$/.test(String(row.id || "")); });
+  const contractsById = {};
+  contracts.forEach(function (row) { contractsById[row.id] = row; });
+  const store = { customersById: customersById };
+  const quiet = hour >= 21;
+
+  function push(kind, templateId, id, contract, building, sourceType, sourceId, values) {
+    const owner = ownerNoticeOwner_(store, building, contract);
+    if (!building || !owner) { plan.skipped.push({ id: id, reason: "OWNER_NOT_LINKED" }); return; }
+    if (!isSendableSmsPhone_(normalizePhoneForSms_(owner.phone || ""))) { plan.skipped.push({ id: id, reason: "OWNER_PHONE_MISSING" }); return; }
+    values["건물주소"] = ownerNoticeBuildingAddress_(building);
+    const missing = ownerNoticeMissing_(templateId, values);
+    if (missing.length) { plan.skipped.push({ id: id, reason: "MISSING_" + missing.join("_") }); return; }
+    plan.notices.push({ id: id, kind: kind, templateId: templateId, customerId: String(owner.id), buildingId: String(building.id),
+      sourceType: sourceType, sourceId: sourceId, values: values });
+  }
+
+  // 1) 오늘 청소 일정 — 08시 이후 첫 실행에 보낸다.
+  if (hour >= 8 && !quiet) {
+    const month = today.slice(0, 7);
+    const records = ownerNoticeRows_(data.serviceRecords).filter(function (row) { return !row.deletedAt && !row.deleted; });
+    const represented = {};
+    records.forEach(function (row) {
+      const contractId = ownerNoticeLine_(row.sourceContractId || row.contractId);
+      const date = ownerNoticeLine_(row.sourceContractDate || row.scheduledDate);
+      if (contractId && ownerNoticeIsDate_(date)) represented[contractId + "|" + ownerNoticeLine_(row.sourceContractBuildingId || row.buildingId) + "|" + date] = true;
+    });
+    contracts.forEach(function (contract) {
+      if (!ownerNoticeIsCleaningContract_(contract)) return;
+      if (ownerNoticeContractDates_(contract, month).indexOf(today) === -1) return;
+      if (represented[contract.id + "|" + ownerNoticeLine_(contract.buildingId) + "|" + today]) return;
+      push("cleaning", "owner_cleaning_schedule", "owner_clean_" + contract.id + "_" + today, contract, buildingsById[contract.buildingId],
+        "contract", contract.id, {
+          "작업명": ownerNoticeLine_(contract.name).slice(0, 60) || "청소",
+          "작업일": ownerNoticeDateLabel_(today),
+          "예정시간": ownerNoticeTimeLabel_(contract.cleaningVisitTime) || "방문 전 연락드립니다"
+        });
+    });
+    // 날짜를 옮긴 회차·직접 등록한 청소 일정
+    records.forEach(function (row) {
+      if (!/^[A-Za-z0-9_-]{1,160}$/.test(String(row.id || ""))) return;
+      if (row.archivedAt || ownerNoticeLine_(row.scheduledDate) !== today) return;
+      if (["cancelled", "canceled", "취소", "archived", "completed", "done", "완료"].indexOf(ownerNoticeLine_(row.status)) !== -1) return;
+      if (["cleaning", "stair_cleaning"].indexOf(ownerNoticeLine_(row.serviceType)) === -1) return;
+      const contract = contractsById[ownerNoticeLine_(row.sourceContractId || row.contractId)] || null;
+      push("cleaning", "owner_cleaning_schedule", "owner_clean_rec_" + row.id + "_" + today, contract, buildingsById[row.buildingId],
+        "work", row.id, {
+          "작업명": ownerNoticeLine_(row.title || contract && contract.name).slice(0, 60) || "청소",
+          "작업일": ownerNoticeDateLabel_(today),
+          "예정시간": ownerNoticeTimeLabel_(row.scheduledTime || contract && contract.cleaningVisitTime) || "방문 전 연락드립니다"
+        });
+    });
+  }
+
+  // 2) 구독료 결제일 · 3) 결제 확인 — 09시 이후.
+  if (hour >= 9 && !quiet) {
+    const earliest = ownerNoticeAddDays_(today, -OWNER_NOTICE_PAID_LOOKBACK_DAYS_);
+    const months = [earliest.slice(0, 7), today.slice(0, 7)].filter(function (month, index, list) { return list.indexOf(month) === index; });
+    contracts.forEach(function (contract) {
+      if (["월 정기", "연간"].indexOf(contract.billingCycle) === -1 || !ownerNoticeLive_(contract)) return;
+      if (["진행 중", "종료 예정", "종료"].indexOf(contract.status) === -1) return;
+      const building = buildingsById[contract.buildingId];
+      const amount = ownerNoticeMoney_(contract.amount);
+      const product = ownerNoticeLine_(contract.name).slice(0, 60) || "브링케어 구독";
+      const dueToday = ownerNoticePaymentDate_(contract, today.slice(0, 7));
+      if (dueToday === today && contract.status !== "종료" && ownerNoticeCollectionStatus_(contract, today) !== "입금 완료") {
+        push("due", "owner_subscription_due", "owner_due_" + contract.id + "_" + today, contract, building, "contract", contract.id,
+          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(today) });
+      }
+      months.forEach(function (month) {
+        const date = ownerNoticePaymentDate_(contract, month);
+        if (!date || date < earliest || date > today || ownerNoticeCollectionStatus_(contract, date) !== "입금 완료") return;
+        push("paid", "owner_subscription_paid", "owner_paid_" + contract.id + "_" + date, contract, building, "contract", contract.id,
+          { "상품명": product, "결제금액": amount, "결제일": ownerNoticeDateLabel_(date) });
+      });
+    });
+  }
+  return plan;
+}
+
+function firebaseCompanyServerReadJson_(childPath, label) {
+  const response = UrlFetchApp.fetch(firebaseCompanyServerUrl_(childPath), {
+    method: "get", headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code);
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function ownerNoticeAutomationEnabled_() {
+  return String(PropertiesService.getScriptProperties().getProperty("OWNER_NOTICE_AUTOMATION_ENABLED") || "false").toLowerCase() === "true";
+}
+
+// 시간 트리거(30분마다)가 부르는 함수. 같은 안내는 messageDeliveries/{id}가
+// 있으면 다시 보내지 않는다(발송 전에 'sending' 기록을 먼저 남김 → 최대 1회).
+function processOwnerNoticeAutomation() {
+  if (!ownerNoticeAutomationEnabled_()) return { ok: true, skipped: "OWNER_NOTICE_AUTOMATION_DISABLED" };
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (!kakaoConfig.enabled) return { ok: true, skipped: "KAKAO_ALIMTALK_DISABLED" };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: true, skipped: "LOCKED" };
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const now = new Date();
+    const hour = Number(Utilities.formatDate(now, "Asia/Seoul", "H"));
+    const plan = ownerNoticePlan_({
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      serviceRecords: firebaseCompanyServerReadJson_("data/serviceRecords", "업무 일정 조회 실패"),
+      today: Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd"),
+      hour: hour
+    });
+    // 처음 켰을 때 이미 '입금 완료'인 건은 결제 확인 안내를 보내지 않고 기준선으로만 남긴다.
+    // 결제 확인은 09시 이후에만 계획되므로, 그 시간대 실행에서만 기준선을 확정한다.
+    const baseline = !props.getProperty("OWNER_NOTICE_PAID_BASELINE_AT") && hour >= 9 && hour < 21;
+    const summary = { ok: true, planned: plan.notices.length, sent: 0, failed: 0, duplicate: 0, unapproved: 0, baseline: 0, skipped: plan.skipped.length };
+    plan.notices.forEach(function (notice) {
+      const template = OWNER_NOTICE_TEMPLATES_[notice.templateId];
+      const recordPath = "messageDeliveries/" + notice.id;
+      if (firebaseCompanyServerReadJson_(recordPath, "자동 안내 기록 조회 실패")) { summary.duplicate += 1; return; }
+      const stamp = new Date().toISOString();
+      const base = {
+        requestId: notice.id, customerId: notice.customerId, channel: "kakao", purpose: "information", category: notice.templateId,
+        templateLabel: "건물주 · " + template.label, sourceType: notice.sourceType, sourceId: notice.sourceId, buildingId: notice.buildingId,
+        automated: true, requestedBy: "automation", requestedAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
+      };
+      if (baseline && notice.kind === "paid") {
+        firebaseWriteRequest_(firebaseCompanyServerUrl_(recordPath), "put", Object.assign(base, { status: "baseline_skipped" }), "자동 안내 기준선 저장 실패");
+        summary.baseline += 1;
+        return;
+      }
+      const templateCode = String(props.getProperty(template.property) || "").trim();
+      if (!templateCode) { summary.unapproved += 1; return; }
+      const customer = firebaseCompanyServerReadJson_("data/customers/" + notice.customerId, "고객 조회 실패") || {};
+      const phone = normalizePhoneForSms_(customer.phone || "");
+      if (!isSendableSmsPhone_(phone)) { summary.skipped += 1; return; }
+      const recordUrl = firebaseCompanyServerUrl_(recordPath);
+      firebaseWriteRequest_(recordUrl, "put", Object.assign({}, base, { status: "sending", templateCode: templateCode, phoneMasked: maskPhone_(phone) }), "자동 안내 기록 저장 실패");
+      let result;
+      try {
+        result = sendKakaoAlimTalkOrSms_(phone, ownerNoticeRender_(notice.templateId, notice.values), "건물주 " + template.label,
+          { templateCode: templateCode, allowSmsFallback: false });
+      } catch (error) {
+        result = { ok: false, message: error.message };
+      }
+      const done = new Date().toISOString();
+      firebaseWriteRequest_(recordUrl, "patch", {
+        status: result.ok === true ? "accepted" : "failed", provider: String(result.provider || ""), providerMessageId: String(result.messageId || ""),
+        errorCode: result.ok === true ? "" : "PROVIDER_REJECTED", sentAt: result.ok === true ? done : "", updatedAt: done
+      }, "자동 안내 결과 저장 실패");
+      if (result.ok === true) summary.sent += 1; else summary.failed += 1;
+    });
+    if (baseline) props.setProperty("OWNER_NOTICE_PAID_BASELINE_AT", now.toISOString());
+    Logger.log(JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function setupOwnerNoticeAutomation() {
+  const handler = "processOwnerNoticeAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyMinutes(30).create();
+  const props = PropertiesService.getScriptProperties();
+  const output = {
+    ok: true, handler: handler, created: !exists, cadence: "every 30 minutes",
+    enabled: ownerNoticeAutomationEnabled_(),
+    approvedTemplates: Object.keys(OWNER_NOTICE_TEMPLATES_).filter(function (id) { return Boolean(props.getProperty(OWNER_NOTICE_TEMPLATES_[id].property)); })
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 회사 계좌 결제완료 알림
+// 건물주가 회사 계좌로 구독료를 보내면(팝빌 계좌조회) CRM 계약의 건물주 이름·결제일·금액과
+// 맞춰 보고, 맞으면 회사 텔레그램 업무방과 대표자 번호로 "결제완료"를 알린다.
+// 같은 입금은 crmCompany/companyDepositMatches/{id} 기록으로 한 번만 알린다.
+// 처음 켤 때 이미 들어와 있던 입금은 알리지 않고 기준선으로만 남긴다.
+// ─────────────────────────────────────────────────────────────
+const COMPANY_DEPOSIT_ENABLED_PROPERTY = "COMPANY_DEPOSIT_AUTOMATION_ENABLED";
+const COMPANY_DEPOSIT_ACCOUNT_PROPERTY = "COMPANY_DEPOSIT_ACCOUNT_LAST4";
+const COMPANY_DEPOSIT_TELEGRAM_TOKEN_PROPERTY = "COMPANY_DEPOSIT_TELEGRAM_BOT_TOKEN";
+const COMPANY_DEPOSIT_TELEGRAM_CHAT_PROPERTY = "COMPANY_DEPOSIT_TELEGRAM_CHAT_ID";
+const COMPANY_DEPOSIT_CEO_PHONE_PROPERTY = "COMPANY_DEPOSIT_CEO_PHONE";
+const COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY = "COMPANY_DEPOSIT_CEO_TEMPLATE_CODE";
+const COMPANY_DEPOSIT_BASELINE_PROPERTY = "COMPANY_DEPOSIT_BASELINE_AT";
+const COMPANY_DEPOSIT_RECORD_PATH = "companyDepositMatches";
+const COMPANY_DEPOSIT_LOOKBACK_DAYS = 14;
+const COMPANY_DEPOSIT_EARLY_DAYS = 5;   // 결제일 5일 전 입금까지
+const COMPANY_DEPOSIT_LATE_DAYS = 10;   // 결제일 10일 뒤 입금까지
+
+function companyDepositAutomationEnabled_() {
+  return String(PropertiesService.getScriptProperties().getProperty(COMPANY_DEPOSIT_ENABLED_PROPERTY) || "false").toLowerCase() === "true";
+}
+
+function companyDepositAmount_(value) {
+  const amount = Number(String(value == null ? "" : value).replace(/,/g, ""));
+  return isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+// 통장 입금자명과 CRM 이름이 같은지 본다. 은행이 이름을 자르거나 앞뒤에 글자를 붙이는 경우가 있어
+// 한쪽이 다른 쪽을 포함하면 같은 이름으로 본다(두 글자 이상일 때만).
+function companyDepositNameMatches_(payerNames, candidateNames) {
+  const payers = (payerNames || []).map(popbillBankNormalizePayer_).filter(function (key) { return key.length >= 2; });
+  const candidates = (candidateNames || []).map(popbillBankNormalizePayer_).filter(function (key) { return key.length >= 2; });
+  return payers.some(function (payer) {
+    return candidates.some(function (name) { return payer === name || payer.indexOf(name) !== -1 || name.indexOf(payer) !== -1; });
+  });
+}
+
+function companyDepositOwnerNames_(contract, owner) {
+  const source = [contract && contract.depositorName, owner && owner.depositorName, owner && owner.name, owner && owner.company, owner && owner.companyName];
+  const seen = {};
+  return source.map(function (value) { return ownerNoticeLine_(value); }).filter(function (value) {
+    if (!value || seen[value]) return false;
+    seen[value] = true;
+    return true;
+  });
+}
+
+function companyDepositRecordId_(accountRef, transactionId) {
+  return ("dep_" + String(accountRef || "") + "_" + String(transactionId || ""))
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 200);
+}
+
+// 순수 함수: 입금 목록과 CRM 계약을 맞춰 알릴 목록을 만든다. 발송·중복 확인은 하지 않는다.
+// input = { transactions, contracts, customers, buildings, accountRef }
+function companyDepositPlan_(input) {
+  const data = input || {};
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const store = { customersById: customersById };
+  const contracts = ownerNoticeRows_(data.contracts).filter(function (contract) {
+    return /^[A-Za-z0-9_-]{1,120}$/.test(String(contract.id || "")) && ownerNoticeLive_(contract)
+      && companyDepositAmount_(contract.amount) > 0;
+  });
+  const plan = { notices: [], unmatched: 0 };
+  const claimed = {};
+
+  (Array.isArray(data.transactions) ? data.transactions : []).forEach(function (transaction) {
+    const amount = companyDepositAmount_(transaction && transaction.accIn);
+    const date = popbillBankIsoDate_(transaction && transaction.trdate);
+    const tid = String(transaction && transaction.tid || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 120);
+    if (!amount || !ownerNoticeIsDate_(date) || !tid) return;
+    const payerNames = popbillBankRemarkCandidates_(transaction);
+    const months = [ownerNoticeAddDays_(date, -COMPANY_DEPOSIT_LATE_DAYS), date, ownerNoticeAddDays_(date, COMPANY_DEPOSIT_EARLY_DAYS)]
+      .map(function (value) { return value.slice(0, 7); })
+      .filter(function (month, index, list) { return list.indexOf(month) === index; });
+    const earliestDue = ownerNoticeAddDays_(date, -COMPANY_DEPOSIT_LATE_DAYS);
+    const latestDue = ownerNoticeAddDays_(date, COMPANY_DEPOSIT_EARLY_DAYS);
+    const matches = [];
+    contracts.forEach(function (contract) {
+      if (companyDepositAmount_(contract.amount) !== amount) return;
+      const building = buildingsById[contract.buildingId] || null;
+      const owner = ownerNoticeOwner_(store, building, contract) || customersById[contract.customerId] || null;
+      if (!companyDepositNameMatches_(payerNames, companyDepositOwnerNames_(contract, owner))) return;
+      months.forEach(function (month) {
+        const dueDate = ownerNoticePaymentDate_(contract, month);
+        if (!dueDate || dueDate < earliestDue || dueDate > latestDue) return;
+        if (matches.some(function (row) { return row.contract.id === contract.id && row.dueDate === dueDate; })) return;
+        matches.push({ contract: contract, dueDate: dueDate, building: building, owner: owner });
+      });
+    });
+    if (!matches.length) { plan.unmatched += 1; return; }
+    const base = {
+      id: companyDepositRecordId_(data.accountRef, tid),
+      transactionId: tid,
+      date: date,
+      amount: amount,
+      payerName: String(payerNames[0] || "").slice(0, 60)
+    };
+    const single = matches.length === 1 ? matches[0] : null;
+    const claimKey = single ? single.contract.id + "|" + single.dueDate : "";
+    if (single && !claimed[claimKey]) {
+      claimed[claimKey] = true;
+      plan.notices.push(Object.assign(base, {
+        kind: "paid",
+        contractId: String(single.contract.id),
+        contractName: ownerNoticeLine_(single.contract.name).slice(0, 60),
+        buildingId: String(single.contract.buildingId || ""),
+        buildingName: ownerNoticeLine_(single.building && single.building.name).slice(0, 60),
+        ownerName: ownerNoticeLine_(single.owner && single.owner.name).slice(0, 40),
+        dueDate: single.dueDate,
+        alreadyMarkedPaid: ownerNoticeCollectionStatus_(single.contract, single.dueDate) === "입금 완료"
+      }));
+      return;
+    }
+    // 같은 이름·금액 계약이 여러 건이거나, 같은 달 납부분이 두 번 들어왔으면 사람이 확인하게 한다.
+    plan.notices.push(Object.assign(base, {
+      kind: "review",
+      reason: single ? "DUPLICATE_PAYMENT" : "MULTIPLE_CONTRACTS",
+      candidates: matches.slice(0, 5).map(function (row) {
+        return {
+          contractId: String(row.contract.id),
+          buildingName: ownerNoticeLine_(row.building && row.building.name).slice(0, 60),
+          ownerName: ownerNoticeLine_(row.owner && row.owner.name).slice(0, 40),
+          dueDate: row.dueDate
+        };
+      })
+    }));
+  });
+  return plan;
+}
+
+function companyDepositHtml_(value) {
+  return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function companyDepositTelegramText_(notice) {
+  const money = ownerNoticeMoney_(notice.amount) + "원";
+  if (notice.kind === "paid") {
+    return [
+      "<b>💰 결제완료</b>",
+      "",
+      "🏢 <b>" + companyDepositHtml_(notice.buildingName || "현장 미지정") + "</b>",
+      "건물주 " + companyDepositHtml_(notice.ownerName || "-") + (notice.contractName ? " · " + companyDepositHtml_(notice.contractName) : ""),
+      "입금액 <b>" + money + "</b> · " + ownerNoticeDateLabel_(notice.date) + " 입금",
+      "결제일 " + ownerNoticeDateLabel_(notice.dueDate) + " · 입금자명 " + companyDepositHtml_(notice.payerName || "-"),
+      notice.alreadyMarkedPaid ? "CRM에는 이미 입금 완료로 표시되어 있습니다." : "CRM 계약에서 입금 완료로 표시해 주세요."
+    ].join("\n");
+  }
+  const lines = (notice.candidates || []).map(function (row) {
+    return "· " + companyDepositHtml_(row.buildingName || "현장 미지정") + " / " + companyDepositHtml_(row.ownerName || "-") + " / 결제일 " + ownerNoticeDateLabel_(row.dueDate);
+  });
+  return [
+    "<b>⚠️ 입금 확인 필요</b>",
+    "",
+    "입금액 <b>" + money + "</b> · " + ownerNoticeDateLabel_(notice.date) + " · 입금자명 " + companyDepositHtml_(notice.payerName || "-"),
+    notice.reason === "DUPLICATE_PAYMENT" ? "같은 결제일 납부분이 한 번 더 들어왔습니다." : "이름·금액이 같은 계약이 여러 건이라 어느 건인지 확인이 필요합니다.",
+    lines.join("\n")
+  ].join("\n");
+}
+
+function companyDepositCeoText_(notice) {
+  const money = ownerNoticeMoney_(notice.amount) + "원";
+  if (notice.kind === "paid") {
+    return "[브링케어] 결제완료\n" + (notice.buildingName || "현장 미지정") + " · 건물주 " + (notice.ownerName || "-") +
+      "\n" + money + " 입금 (" + ownerNoticeDateLabel_(notice.date) + ")";
+  }
+  return "[브링케어] 입금 확인 필요\n" + money + " 입금 (" + ownerNoticeDateLabel_(notice.date) + ", 입금자 " + (notice.payerName || "-") + ")\n텔레그램 업무방을 확인해 주세요.";
+}
+
+function companyDepositTelegramConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const token = String(props.getProperty(COMPANY_DEPOSIT_TELEGRAM_TOKEN_PROPERTY) || "").trim();
+  const chatId = String(props.getProperty(COMPANY_DEPOSIT_TELEGRAM_CHAT_PROPERTY) || "").trim();
+  const ok = /^\d{5,15}:[A-Za-z0-9_-]{20,80}$/.test(token) && /^-?\d{3,20}$|^@[A-Za-z0-9_]{4,64}$/.test(chatId);
+  return { ok: ok, token: token, chatId: chatId };
+}
+
+function sendCompanyDepositTelegram_(text) {
+  const config = companyDepositTelegramConfig_();
+  if (!config.ok) return { ok: false, message: "TELEGRAM_NOT_CONFIGURED" };
+  const response = UrlFetchApp.fetch("https://api.telegram.org/bot" + config.token + "/sendMessage", {
+    method: "post",
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify({ chat_id: config.chatId, text: String(text || "").slice(0, 3800), parse_mode: "HTML", disable_web_page_preview: true }),
+    muteHttpExceptions: true,
+    followRedirects: false
+  });
+  const code = response.getResponseCode();
+  let body = {};
+  try { body = JSON.parse(response.getContentText() || "{}"); } catch (error) { body = {}; }
+  // 오류 문구에 봇 키가 섞이지 않도록 상태 코드와 텔레그램 설명만 남긴다.
+  if (code === 200 && body.ok === true) return { ok: true, messageId: String(body.result && body.result.message_id || "") };
+  return { ok: false, message: "TELEGRAM_HTTP_" + code + (body.description ? " " + String(body.description).slice(0, 120) : "") };
+}
+
+function sendCompanyDepositCeo_(notice) {
+  const props = PropertiesService.getScriptProperties();
+  const phone = normalizePhoneForSms_(props.getProperty(COMPANY_DEPOSIT_CEO_PHONE_PROPERTY) || "");
+  if (!isSendableSmsPhone_(phone)) return { ok: false, message: "CEO_PHONE_NOT_CONFIGURED" };
+  const templateCode = String(props.getProperty(COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY) || "").trim();
+  // 카카오 알림톡 문구가 승인되기 전에는 문자로 보낸다.
+  return sendKakaoAlimTalkOrSms_(phone, companyDepositCeoText_(notice), "대표 결제완료 알림",
+    templateCode ? { templateCode: templateCode, allowSmsFallback: true } : {});
+}
+
+function companyDepositAccount_() {
+  const last4 = String(PropertiesService.getScriptProperties().getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "");
+  if (!/^\d{4}$/.test(last4)) throw new Error(COMPANY_DEPOSIT_ACCOUNT_PROPERTY + " 스크립트 속성에 회사 계좌번호 끝 4자리를 넣어 주세요.");
+  const accounts = (popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount") || []).filter(function (account) {
+    return Number(account && account.state) === 1 && String(account.accountNumber || "").replace(/\D/g, "").slice(-4) === last4;
+  });
+  if (accounts.length !== 1) throw new Error("팝빌에서 끝자리 " + last4 + " 회사 계좌를 하나로 찾지 못했습니다(" + accounts.length + "개).");
+  return accounts[0];
+}
+
+// 알림 한 건을 기록하고 보낸다. 결과는 "sent" | "failed" | "duplicate" | "baseline".
+// 보내기 전에 기록부터 남겨, 실행이 겹치거나 중간에 멈춰도 두 번 보내지 않는다.
+function companyDepositDeliver_(notice, baseline, extra) {
+  const recordPath = COMPANY_DEPOSIT_RECORD_PATH + "/" + notice.id;
+  if (firebaseCompanyServerReadJson_(recordPath, "결제완료 알림 기록 조회 실패")) return "duplicate";
+  const stamp = new Date().toISOString();
+  const record = Object.assign({
+    kind: notice.kind, transactionDate: notice.date, amount: notice.amount, payerName: notice.payerName,
+    contractId: notice.contractId || "", buildingId: notice.buildingId || "", dueDate: notice.dueDate || "",
+    reason: notice.reason || "", createdAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
+  }, extra || {});
+  const recordUrl = firebaseCompanyServerUrl_(recordPath);
+  if (baseline) {
+    firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "baseline_skipped" }), "결제완료 기준선 저장 실패");
+    return "baseline";
+  }
+  firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "sending" }), "결제완료 알림 기록 저장 실패");
+  let telegram, ceo;
+  try { telegram = sendCompanyDepositTelegram_(companyDepositTelegramText_(notice)); } catch (error) { telegram = { ok: false, message: "TELEGRAM_ERROR" }; }
+  try { ceo = sendCompanyDepositCeo_(notice); } catch (error) { ceo = { ok: false, message: "CEO_SEND_ERROR" }; }
+  firebaseWriteRequest_(recordUrl, "patch", {
+    status: telegram.ok || ceo.ok ? "sent" : "failed",
+    telegramStatus: telegram.ok ? "sent" : String(telegram.message || "failed").slice(0, 160),
+    ceoStatus: ceo.ok ? String(ceo.provider || "sent") : String(ceo.message || "failed").slice(0, 160),
+    updatedAt: new Date().toISOString()
+  }, "결제완료 알림 결과 저장 실패");
+  return telegram.ok || ceo.ok ? "sent" : "failed";
+}
+
+// 시간 트리거(매시간)가 부르는 함수.
+function processCompanyDepositAutomation() {
+  if (!companyDepositAutomationEnabled_()) return { ok: true, skipped: "COMPANY_DEPOSIT_AUTOMATION_DISABLED" };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: true, skipped: "LOCKED" };
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const account = companyDepositAccount_();
+    const accountRef = popbillBankAccountRef_(account);
+    const endDate = popbillBankCompactDate_(new Date());
+    const collected = popbillBankCollectAccount_(account, popbillBankAddDays_(endDate, -COMPANY_DEPOSIT_LOOKBACK_DAYS), endDate);
+    if (collected.pending) return { ok: true, skipped: "POPBILL_PENDING" };
+    const plan = companyDepositPlan_({
+      transactions: collected.list,
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      accountRef: accountRef
+    });
+    const baseline = !props.getProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY);
+    const summary = { ok: true, deposits: collected.list.length, planned: plan.notices.length, unmatched: plan.unmatched,
+      sent: 0, failed: 0, duplicate: 0, baseline: 0 };
+    plan.notices.forEach(function (notice) {
+      summary[companyDepositDeliver_(notice, baseline)] += 1;
+    });
+    if (baseline) props.setProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY, new Date().toISOString());
+    Logger.log(JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 한 번 실행: 매시간 트리거를 만들고, 설정이 다 됐는지(값은 숨기고) 보여 준다.
+function setupCompanyDepositAutomation() {
+  const handler = "processCompanyDepositAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyHours(1).create();
+  const props = PropertiesService.getScriptProperties();
+  const output = {
+    ok: true, handler: handler, created: !exists, cadence: "every hour",
+    enabled: companyDepositAutomationEnabled_(),
+    popbillProduction: !popbillConfig_().isTest,
+    accountLast4Set: /^\d{4}$/.test(String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "")),
+    telegramReady: companyDepositTelegramConfig_().ok,
+    ceoPhoneSet: isSendableSmsPhone_(normalizePhoneForSms_(props.getProperty(COMPANY_DEPOSIT_CEO_PHONE_PROPERTY) || "")),
+    ceoAlimTalkTemplateSet: Boolean(String(props.getProperty(COMPANY_DEPOSIT_CEO_TEMPLATE_PROPERTY) || "").trim()),
+    baselineAt: String(props.getProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY) || "")
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+// 텔레그램 업무방으로 시험 메시지 한 통만 보낸다(입금·CRM은 보지 않는다).
+function testCompanyDepositTelegram() {
+  const result = sendCompanyDepositTelegram_("<b>🔔 결제완료 알림 연결 시험</b>\n브링케어 회사 계좌 결제완료 알림이 이 방으로 옵니다.");
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+// 순수 함수: CRM 계약 중 결제완료 알림에 필요한 정보(건물주 이름·결제일·금액)가 빠진 것을 찾는다.
+function companyDepositCrmReadiness_(input) {
+  const data = input || {};
+  const customersById = {};
+  ownerNoticeRows_(data.customers).forEach(function (row) { customersById[String(row.id)] = row; });
+  const buildingsById = {};
+  ownerNoticeRows_(data.buildings).forEach(function (row) { buildingsById[String(row.id)] = row; });
+  const store = { customersById: customersById };
+  const report = { contracts: 0, ready: 0, missingOwner: [], missingDueDate: [], missingAmount: [], sharedNameAmount: [] };
+  const keys = {};
+  ownerNoticeRows_(data.contracts).forEach(function (contract) {
+    if (!ownerNoticeLive_(contract) || ["진행 중", "종료 예정"].indexOf(contract.status) === -1) return;
+    report.contracts += 1;
+    const building = buildingsById[contract.buildingId] || null;
+    const owner = ownerNoticeOwner_(store, building, contract) || customersById[contract.customerId] || null;
+    const names = companyDepositOwnerNames_(contract, owner);
+    const label = (ownerNoticeLine_(building && building.name) || "현장 미지정") + " / " + (ownerNoticeLine_(contract.name) || "계약");
+    const problems = [];
+    if (!names.length) { report.missingOwner.push(label); problems.push(1); }
+    if (!ownerNoticeIsDate_(contract.paymentDueDate)) { report.missingDueDate.push(label); problems.push(1); }
+    const amount = companyDepositAmount_(contract.amount);
+    if (!amount) { report.missingAmount.push(label); problems.push(1); }
+    if (problems.length) return;
+    report.ready += 1;
+    const key = popbillBankNormalizePayer_(names[0]) + "|" + amount;
+    (keys[key] = keys[key] || []).push(label);
+  });
+  Object.keys(keys).forEach(function (key) { if (keys[key].length > 1) report.sharedNameAmount.push(keys[key]); });
+  return report;
+}
+
+// 점검 1 (팝빌 없이 지금 실행 가능): CRM 계약 정보가 알림에 쓸 만큼 채워져 있는지 본다. 아무것도 보내지 않는다.
+function checkCompanyDepositCrmReadiness() {
+  const report = companyDepositCrmReadiness_({
+    contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+    customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+    buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패")
+  });
+  Logger.log(JSON.stringify(report));
+  return report;
+}
+
+// 점검 2 (팝빌 운영 전환 후): 실제 입금과 CRM을 맞춰 본 결과만 보여 준다. 텔레그램·문자·기록 모두 하지 않는다.
+function previewCompanyDepositMatches() {
+  const account = companyDepositAccount_();
+  const endDate = popbillBankCompactDate_(new Date());
+  const collected = popbillBankCollectAccount_(account, popbillBankAddDays_(endDate, -30), endDate);
+  if (collected.pending) { Logger.log("팝빌 수집 대기 중입니다. 1~2분 뒤 다시 실행해 주세요."); return { ok: true, pending: true }; }
+  const plan = companyDepositPlan_({
+    transactions: collected.list,
+    contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+    customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+    buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+    accountRef: popbillBankAccountRef_(account)
+  });
+  const output = {
+    ok: true, deposits: collected.list.length, unmatched: plan.unmatched,
+    results: plan.notices.map(function (notice) { return companyDepositTelegramText_(notice).replace(/<[^>]+>/g, ""); })
+  };
+  Logger.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 은행 입금 문자(SMS) 수신 → 결제완료 알림
+// 전용 안드로이드 휴대폰의 MacroDroid가 은행 입금 문자를 그대로 보내면
+// (action "bankSms"), 문자에서 날짜·시간·금액·입금자·계좌 끝자리를 읽어
+// crmCompany/bankSmsDeposits/{id}에 원문과 함께 저장하고,
+// 회사 계좌 입금이면 위의 결제완료 맞추기·알림(companyDepositPlan_)을 그대로 쓴다.
+// 휴대폰은 하루 한 번 "bankSmsHeartbeat"를 보내고, 끊기면 텔레그램으로 경고한다.
+// ─────────────────────────────────────────────────────────────
+const BANK_SMS_KEY_PROPERTY = "BANK_SMS_KEY";
+const BANK_SMS_SENDERS_PROPERTY = "BANK_SMS_SENDERS";
+const BANK_SMS_DEFAULT_SENDERS = "15778000";
+const BANK_SMS_HEARTBEAT_PROPERTY = "BANK_SMS_HEARTBEAT_AT";
+const BANK_SMS_HEARTBEAT_WARNED_PROPERTY = "BANK_SMS_HEARTBEAT_WARNED_AT";
+const BANK_SMS_SETUP_PROPERTY = "BANK_SMS_SETUP_AT";
+const BANK_SMS_RECORD_PATH = "bankSmsDeposits";
+const BANK_SMS_HEARTBEAT_LIMIT_HOURS = 26;
+const BANK_SMS_MAX_TEXT = 2000;
+
+// 길이가 같을 때 끝까지 비교해, 비밀 키를 한 글자씩 맞춰 보는 공격을 어렵게 한다.
+function bankSmsSafeEqual_(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  if (!left || !right || left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return diff === 0;
+}
+
+function bankSmsKeyValid_(key) {
+  const expected = String(PropertiesService.getScriptProperties().getProperty(BANK_SMS_KEY_PROPERTY) || "").trim();
+  return expected.length >= 24 && bankSmsSafeEqual_(String(key || "").trim(), expected);
+}
+
+function bankSmsSenderAllowed_(sender) {
+  const value = String(sender || "");
+  if (/신한/.test(value)) return true;
+  const digits = value.replace(/\D/g, "");
+  const allowed = String(PropertiesService.getScriptProperties().getProperty(BANK_SMS_SENDERS_PROPERTY) || BANK_SMS_DEFAULT_SENDERS)
+    .split(/[,\s]+/).map(function (item) { return item.replace(/\D/g, ""); }).filter(Boolean);
+  return !!digits && allowed.indexOf(digits) !== -1;
+}
+
+// 순수 함수: 신한은행 입금 문자를 읽는다. receivedAt(ISO)으로 연도를 정한다.
+// 예) "[Web발신]\n신한11/10 18:45\n110-***-123456\n입금          10\n잔액     1,234\n 서창환"
+//     계좌번호·잔액을 숨기는 설정이면 "신한11/10 18:45\n입금 10\n서창환"처럼 온다.
+function bankSmsParse_(text, receivedAt) {
+  const flat = String(text || "")
+    .replace(/\[\s*(?:Web|웹)\s*발신\s*\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!flat) return { ok: false, reason: "EMPTY" };
+  if (!/신한/.test(flat)) return { ok: false, reason: "UNKNOWN_BANK" };
+  if (/출금|지급|취소/.test(flat) && !/입금/.test(flat)) return { ok: false, reason: "NOT_DEPOSIT" };
+  const when = flat.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s+(\d{1,2})\s*:\s*(\d{2})/);
+  const money = flat.match(/입금\s*:?\s*([0-9][0-9,]*)\s*원?/);
+  if (!when || !money) return { ok: false, reason: "FORMAT" };
+  const amount = companyDepositAmount_(money[1]);
+  const month = Number(when[1]);
+  const day = Number(when[2]);
+  const hour = Number(when[3]);
+  const minute = Number(when[4]);
+  if (!amount || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return { ok: false, reason: "FORMAT" };
+
+  const received = new Date(receivedAt);
+  const seoul = new Date((isFinite(received.getTime()) ? received.getTime() : Date.now()) + 9 * 3600000);
+  let year = seoul.getUTCFullYear();
+  if (month > seoul.getUTCMonth() + 1 + 1) year -= 1; // 12월 문자를 1월에 받은 경우
+  const date = year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  if (!ownerNoticeIsDate_(date)) return { ok: false, reason: "FORMAT" };
+
+  const accountMatch = flat.match(/[0-9*]{2,6}-[0-9*]{2,6}-[0-9*]{2,8}(?:-[0-9*]{1,4})?/);
+  const accountDigits = accountMatch ? (accountMatch[0].match(/(\d+)$/) || ["", ""])[1] : "";
+  const payerName = flat
+    .replace(when[0], " ")
+    .replace(accountMatch ? accountMatch[0] : "", " ")
+    .replace(money[0], " ")
+    .replace(/잔액\s*:?\s*-?[0-9][0-9,]*\s*원?/g, " ")
+    .replace(/신한(?:은행)?/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+  return {
+    ok: true,
+    bank: "신한",
+    date: date,
+    time: String(hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0"),
+    amount: amount,
+    payerName: payerName,
+    accountLast4: accountDigits.length >= 4 ? accountDigits.slice(-4) : ""
+  };
+}
+
+function bankSmsId_(text, receivedAt) {
+  const year = String(receivedAt || "").slice(0, 4);
+  const normalized = year + "|" + String(text || "").replace(/\s+/g, " ").trim();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalized, Utilities.Charset.UTF_8);
+  return "sms_" + digest.map(function (byte) { return ((byte + 256) % 256).toString(16).padStart(2, "0"); }).join("").slice(0, 32);
+}
+
+// 이미 결제완료로 알린 계약·결제일이면 두 번째 입금은 "확인 필요"로 바꾼다.
+function bankSmsMarkRepeatPayment_(notice, records) {
+  if (!notice || notice.kind !== "paid") return notice;
+  const repeat = Object.keys(records || {}).some(function (key) {
+    const row = records[key] || {};
+    return row.kind === "paid" && row.contractId === notice.contractId && row.dueDate === notice.dueDate
+      && ["sent", "sending", "failed", "baseline_skipped"].indexOf(row.status) !== -1;
+  });
+  if (!repeat) return notice;
+  return Object.assign({}, notice, {
+    kind: "review", reason: "DUPLICATE_PAYMENT",
+    candidates: [{ contractId: notice.contractId, buildingName: notice.buildingName, ownerName: notice.ownerName, dueDate: notice.dueDate }]
+  });
+}
+
+function bankSmsUnmatchedText_(parsed) {
+  return [
+    "<b>ℹ️ 입금 (계약과 연결 안 됨)</b>",
+    "",
+    "입금액 <b>" + ownerNoticeMoney_(parsed.amount) + "원</b> · " + ownerNoticeDateLabel_(parsed.date) + " " + parsed.time,
+    "입금자명 " + companyDepositHtml_(parsed.payerName || "-"),
+    "CRM 계약 중 이름·금액·결제일이 맞는 건이 없습니다. 구독료라면 CRM 계약의 금액이나 입금자명을 확인해 주세요."
+  ].join("\n");
+}
+
+function bankSmsUnreadableText_(text) {
+  return [
+    "<b>⚠️ 입금 문자를 읽지 못했습니다</b>",
+    "",
+    companyDepositHtml_(String(text || "").replace(/\s+/g, " ").trim().slice(0, 300)),
+    "",
+    "통장에서 직접 확인해 주세요. 문자 모양이 바뀌었을 수 있습니다."
+  ].join("\n");
+}
+
+// doPost action "bankSms": { action, key, sender, text }
+function handleBankSms_(payload) {
+  if (!bankSmsKeyValid_(payload && payload.key)) return { ok: false, message: "UNAUTHORIZED" };
+  const text = String(payload.text || "");
+  if (!text.trim() || text.length > BANK_SMS_MAX_TEXT) return { ok: false, message: "INVALID_TEXT" };
+  if (!bankSmsSenderAllowed_(payload.sender)) return { ok: true, status: "ignored_sender" };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, message: "BUSY" }; // 휴대폰이 잠시 뒤 다시 보낸다
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const receivedAt = new Date().toISOString();
+    props.setProperty(BANK_SMS_HEARTBEAT_PROPERTY, receivedAt); // 문자가 오면 휴대폰이 살아 있는 것
+    const id = bankSmsId_(text, receivedAt);
+    const recordPath = BANK_SMS_RECORD_PATH + "/" + id;
+    if (firebaseCompanyServerReadJson_(recordPath, "입금 문자 기록 조회 실패")) return { ok: true, status: "duplicate", id: id };
+
+    const parsed = bankSmsParse_(text, receivedAt);
+    const recordUrl = firebaseCompanyServerUrl_(recordPath);
+    const record = {
+      receivedAt: receivedAt,
+      sender: String(payload.sender || "").replace(/[^0-9A-Za-z가-힣+ -]/g, "").slice(0, 30),
+      text: text.slice(0, BANK_SMS_MAX_TEXT),
+      parsed: parsed.ok ? parsed : null,
+      parseError: parsed.ok ? "" : parsed.reason,
+      status: "received",
+      build: AUTOMATION_BUILD
+    };
+    firebaseWriteRequest_(recordUrl, "put", record, "입금 문자 저장 실패");
+
+    if (!parsed.ok) {
+      if (parsed.reason === "NOT_DEPOSIT") {
+        firebaseWriteRequest_(recordUrl, "patch", { status: "ignored_not_deposit" }, "입금 문자 상태 저장 실패");
+        return { ok: true, status: "ignored_not_deposit", id: id };
+      }
+      const warn = companyDepositAutomationEnabled_() ? sendCompanyDepositTelegram_(bankSmsUnreadableText_(text)) : { ok: false, message: "DISABLED" };
+      firebaseWriteRequest_(recordUrl, "patch", { status: "unreadable", telegramStatus: warn.ok ? "sent" : String(warn.message || "") }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "unreadable", id: id };
+    }
+
+    const companyLast4 = String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "");
+    if (parsed.accountLast4 && companyLast4 && parsed.accountLast4 !== companyLast4) {
+      // 지금은 회사 계좌만 처리한다. 건물주 계좌는 다음 단계에서 연결한다.
+      firebaseWriteRequest_(recordUrl, "patch", { status: "other_account" }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "other_account", id: id };
+    }
+    if (!companyDepositAutomationEnabled_()) {
+      firebaseWriteRequest_(recordUrl, "patch", { status: "stored_only" }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "stored_only", id: id };
+    }
+
+    const plan = companyDepositPlan_({
+      transactions: [{ tid: id, trdate: parsed.date.replace(/-/g, ""), accIn: String(parsed.amount), remark1: parsed.payerName }],
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      accountRef: "sms"
+    });
+    if (!plan.notices.length) {
+      const info = sendCompanyDepositTelegram_(bankSmsUnmatchedText_(parsed));
+      firebaseWriteRequest_(recordUrl, "patch", { status: "unmatched", telegramStatus: info.ok ? "sent" : String(info.message || "") }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "unmatched", id: id };
+    }
+    const records = firebaseCompanyServerReadJson_(COMPANY_DEPOSIT_RECORD_PATH, "결제완료 알림 기록 조회 실패") || {};
+    const notice = bankSmsMarkRepeatPayment_(plan.notices[0], records);
+    const result = companyDepositDeliver_(notice, false, { source: "sms", smsId: id });
+    firebaseWriteRequest_(recordUrl, "patch", { status: notice.kind === "paid" ? "matched" : "review", matchId: notice.id, delivery: result }, "입금 문자 상태 저장 실패");
+    return { ok: true, status: notice.kind === "paid" ? "matched" : "review", delivery: result, id: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// doPost action "bankSmsHeartbeat": 휴대폰이 하루 한 번 보내는 "살아 있음" 신호.
+function handleBankSmsHeartbeat_(payload) {
+  if (!bankSmsKeyValid_(payload && payload.key)) return { ok: false, message: "UNAUTHORIZED" };
+  PropertiesService.getScriptProperties().setProperty(BANK_SMS_HEARTBEAT_PROPERTY, new Date().toISOString());
+  return { ok: true, status: "alive" };
+}
+
+// 6시간마다 실행: 휴대폰 신호가 26시간 넘게 없으면 텔레그램으로 경고한다(12시간에 한 번만).
+function checkBankSmsHeartbeat() {
+  const props = PropertiesService.getScriptProperties();
+  if (!companyDepositAutomationEnabled_() || !String(props.getProperty(BANK_SMS_KEY_PROPERTY) || "")) return { ok: true, skipped: "DISABLED" };
+  const now = Date.now();
+  const last = Date.parse(props.getProperty(BANK_SMS_HEARTBEAT_PROPERTY) || props.getProperty(BANK_SMS_SETUP_PROPERTY) || "");
+  if (isFinite(last) && now - last < BANK_SMS_HEARTBEAT_LIMIT_HOURS * 3600000) return { ok: true, status: "alive" };
+  const warned = Date.parse(props.getProperty(BANK_SMS_HEARTBEAT_WARNED_PROPERTY) || "");
+  if (isFinite(warned) && now - warned < 12 * 3600000) return { ok: true, status: "already_warned" };
+  const result = sendCompanyDepositTelegram_([
+    "<b>📵 입금 문자 휴대폰 연결 끊김</b>",
+    "",
+    "전용 휴대폰에서 " + BANK_SMS_HEARTBEAT_LIMIT_HOURS + "시간 넘게 신호가 없습니다.",
+    "전원·충전·인터넷과 MacroDroid가 켜져 있는지 확인해 주세요. 그동안 들어온 입금은 통장에서 직접 확인해야 합니다."
+  ].join("\n"));
+  if (result.ok) props.setProperty(BANK_SMS_HEARTBEAT_WARNED_PROPERTY, new Date().toISOString());
+  return { ok: true, status: "warned", telegram: result.ok };
+}
+
+// 편집기에서 한 번 실행: 휴대폰에 넣을 비밀 키를 만들고(이미 있으면 그대로), 연결 확인 트리거를 만든다.
+// 비밀 키는 실행 로그에만 보이므로, MacroDroid에 붙여 넣은 뒤 채팅·메신저에 올리지 마세요.
+function setupBankSmsAutomation() {
+  const props = PropertiesService.getScriptProperties();
+  let key = String(props.getProperty(BANK_SMS_KEY_PROPERTY) || "").trim();
+  const created = key.length < 24;
+  if (created) {
+    key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, "");
+    props.setProperty(BANK_SMS_KEY_PROPERTY, key);
+  }
+  if (!props.getProperty(BANK_SMS_SETUP_PROPERTY)) props.setProperty(BANK_SMS_SETUP_PROPERTY, new Date().toISOString());
+  const handler = "checkBankSmsHeartbeat";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyHours(6).create();
+  Logger.log("MacroDroid에 넣을 비밀 키: " + key);
+  const output = {
+    ok: true, keyCreated: created, heartbeatTrigger: exists ? "already" : "created",
+    notificationsEnabled: companyDepositAutomationEnabled_(),
+    telegramReady: companyDepositTelegramConfig_().ok,
+    companyAccountLast4Set: /^\d{4}$/.test(String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "")),
+    allowedSenders: String(props.getProperty(BANK_SMS_SENDERS_PROPERTY) || BANK_SMS_DEFAULT_SENDERS),
+    lastSignalAt: String(props.getProperty(BANK_SMS_HEARTBEAT_PROPERTY) || "")
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+// 편집기에서 실행: 문자 내용을 붙여 넣어 읽기 결과만 확인한다(저장·발송 없음).
+function previewBankSmsParse() {
+  const sample = "[Web발신]\n신한11/10 18:45\n110-***-123456\n입금          10\n잔액       1,234\n 서창환";
+  const output = bankSmsParse_(sample, new Date().toISOString());
+  Logger.log(JSON.stringify(output));
+  return output;
 }

@@ -1,0 +1,21 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+test('existing authenticated result picker accepts PowerPoint with correct MIME and picked-file guard',async()=>{
+ const start=source.indexOf('const DOCUMENT_MIME =');
+ const end=source.indexOf('async function uploadBuildingDocument',start);
+ let options;
+ const selected=new Set();
+ const context={authState:()=>({user:{uid:'test'}}),dialog:{showOpenDialog:async(_,value)=>{options=value;return {canceled:false,filePaths:['C:/reports/weekly.pptx','C:/reports/legacy.ppt']};}},mainWindow:null,fs:{stat:async()=>({size:400})},BuildingDocsDrive:{MAX_FILE_BYTES:1000},pickedDocumentPaths:selected,path:path.win32};
+ vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+ const result=await context.pickBuildingDocuments();
+ assert.ok(options.filters[0].extensions.includes('pptx'));
+ assert.ok(options.filters[0].extensions.includes('ppt'));
+ assert.equal(result.files[0].mimeType,'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+ assert.equal(result.files[1].mimeType,'application/vnd.ms-powerpoint');
+ assert.equal(selected.size,2);
+ assert.equal(result.files[0].fileBody,undefined);
+});
