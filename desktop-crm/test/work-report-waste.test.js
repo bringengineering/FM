@@ -34,8 +34,24 @@ test("건물주 PDF와 알림톡 작업명이 '폐기물 처리'로 나간다", 
     items: [{ key: "before", status: "done", before: [{ id: "p1" }] }, { key: "load", status: "done", note: "1톤 트럭 1대 반출", during: [{ id: "p2" }] }, { key: "after", status: "done", after: [{ id: "p3" }] }] });
   const html = createOwnerReportHtml(report, {});
   assert.ok(html.includes("폐기물 처리"));
-  assert.ok(html.includes("배출 전 상태") && html.includes("적재·반출") && html.includes("1톤 트럭 1대 반출"));
+  assert.ok(html.includes("배출 전 상태") && html.includes("운반·배출") && html.includes("1톤 트럭 1대 반출"));
   const info = Message.details(report);
   assert.equal(info.workName, "폐기물 처리");
   assert.equal(Message.documentName(info), "원주시 단계로 7 폐기물 처리 결과보고서");
+});
+
+test("폐기물 처리는 사진 기록형: 안 한 항목은 '작업 기록'으로 남아 PDF에 안 실리고, 완료는 사진 한 장이면 된다", () => {
+  const report = Core.normalizeReport({ id: "w3", kind: "waste", buildingId: "b1", buildingName: "주택집", siteAddress: "강원특별자치도 원주시 상지대길 75-11", workDate: "2026-11-11",
+    items: [{ key: "load", status: "done", note: "집 앞 골목 배출", after: [{ id: "p1" }] }, { key: "proof", status: "done", after: [{ id: "p2" }] }] });
+  assert.equal(report.items.find(item => item.key === "before").status, "recorded");
+  assert.equal(Core.isPhotoRecordKind("waste"), true);
+  assert.equal(Core.isPhotoRecordKind("special"), false);
+  assert.deepEqual(Core.validateReport(report).ok, true);
+  const html = createOwnerReportHtml(report, {});
+  assert.doesNotMatch(html, /배출 전 상태|분리·정리|마감 상태/);
+  assert.match(html, /운반·배출/);
+  const empty = Core.normalizeReport({ ...report, items: [] });
+  assert.equal(Core.validateReport(empty).code, "PHOTO_REQUIRED");
+  const noPhoto = Core.normalizeReport({ ...report, items: [{ key: "load", status: "done" }] });
+  assert.equal(Core.validateReport(noPhoto).code, "PHOTO_REQUIRED");
 });

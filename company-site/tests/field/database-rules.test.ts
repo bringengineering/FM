@@ -2952,6 +2952,8 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       const denied = environment.authenticatedContext(uid, crmPasswordClaims(email)).database();
       await assertFails(set(ref(denied, at("move-in-denied")), common("move-in-denied", { kind: "moveIn", updatedBy: uid })));
     }
+    // 폐기물 처리도 사진 기록형이라 작업 기록 상태와 작업 중 사진을 받는다.
+    await assertSucceeds(set(ref(member, at("waste-during")), common("waste-during", { kind: "waste" })));
     await assertFails(set(ref(member, at("other-kind-during")), common("other-kind-during", { kind: "moveOut" })));
     await assertFails(set(ref(member, at("move-in-unsafe-photo")), common("move-in-unsafe-photo", { kind: "moveIn", items: [item("aircon", "에어컨", { status: "recorded", during: [{ id: "bad", driveFileId: "bad", webViewLink: "https://evil.invalid" }] })] })));
   });

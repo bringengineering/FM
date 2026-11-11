@@ -121,7 +121,7 @@
     waste: Object.freeze({
       배출전: "before", 작업전: "before", 전: "before",
       분리: "sort", 정리: "sort", 분류: "sort",
-      적재: "load", 반출: "load", 상차: "load", 차량: "load",
+      적재: "load", 반출: "load", 상차: "load", 차량: "load", 운반: "load", 배출: "load",
       처리확인: "proof", 스티커: "proof", 필증: "proof", 신고필증: "proof", 영수증: "proof",
       마감: "after", 마감정리: "after", 작업후: "after", 후: "after", 반출후: "after",
     }),
@@ -452,7 +452,7 @@
       }
       const ordered = orderPairs(bucket.before, bucket.after);
       target.before = target.before.concat(ordered.before.map(toPhoto));
-      if (["moveIn", "common"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
+      if (["moveIn", "common", "waste"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
       target.after = target.after.concat(ordered.after.map(toPhoto));
       // 못 가른 것은 작업 전에 몰아 두지 않는다. 몰아 두면 사람이
       // 옮겼는지 원래 그런지 알 수 없다. 메모로 남겨 눈에 띄게 한다.
@@ -509,7 +509,7 @@
   }
 
   function assignPhotoPhase(plan, fileId, phase) {
-    if (!["before", "after", "unsorted", ...(["moveIn", "common"].includes(plan?.kind) ? ["during"] : [])].includes(phase)) return plan;
+    if (!["before", "after", "unsorted", ...(["moveIn", "common", "waste"].includes(plan?.kind) ? ["during"] : [])].includes(phase)) return plan;
     return Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => {
       const copy = Object.assign({}, bucket);
       let moved;
