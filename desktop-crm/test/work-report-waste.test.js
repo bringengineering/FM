@@ -34,7 +34,7 @@ test("건물주 PDF와 알림톡 작업명이 '폐기물 처리'로 나간다", 
     items: [{ key: "before", status: "done", before: [{ id: "p1" }] }, { key: "load", status: "done", note: "1톤 트럭 1대 반출", during: [{ id: "p2" }] }, { key: "after", status: "done", after: [{ id: "p3" }] }] });
   const html = createOwnerReportHtml(report, {});
   assert.ok(html.includes("폐기물 처리"));
-  assert.ok(html.includes("배출 전 상태") && html.includes("운반·배출") && html.includes("1톤 트럭 1대 반출"));
+  assert.ok(html.includes("배출 전 상태") && html.includes("운반·배출"));
   const info = Message.details(report);
   assert.equal(info.workName, "폐기물 처리");
   assert.equal(Message.documentName(info), "원주시 단계로 7 폐기물 처리 결과보고서");
@@ -54,4 +54,15 @@ test("폐기물 처리는 사진 기록형: 안 한 항목은 '작업 기록'으
   assert.equal(Core.validateReport(empty).code, "PHOTO_REQUIRED");
   const noPhoto = Core.normalizeReport({ ...report, items: [{ key: "load", status: "done" }] });
   assert.equal(Core.validateReport(noPhoto).code, "PHOTO_REQUIRED");
+});
+
+test("폐기물 처리도 활동 결과보고서 양식(표지 → 현장 기록 개요 → 3×3 사진)으로 나간다", () => {
+  const report = Core.normalizeReport({ id: "w4", kind: "waste", customerId: "c1", buildingName: "햇빛빌라", siteAddress: "강원 원주시 이화3길 28-5", workDate: "2026-11-11",
+    items: [{ key: "load", note: "건물 앞 배출", after: [{ id: "a" }] }, { key: "proof", note: "납부필증", after: [{ id: "b" }] }] });
+  const html = createOwnerReportHtml(report, { images: { a: "data:image/jpeg;base64,/9j/4AAQ", b: "data:image/jpeg;base64,/9j/4AAQ" } });
+  for (const text of ["폐기물 처리 활동 결과보고서", "폐기물 처리 현장 기록 개요", "3. 항목별 사진 현황", "지자체 수거 완료 여부를 증명하지 않습니다", "2026. 11. 11.", "- 이 상 -"]) assert.ok(html.includes(text), text);
+  assert.match(html, /<td>운반·배출<\/td><td>1<\/td><td>1<\/td>/);
+  assert.match(html, /<td>처리 확인<\/td><td>1<\/td><td>2<\/td>/);
+  assert.match(html, /사진 02&nbsp;&nbsp;\|&nbsp;&nbsp;<b>처리 확인<\/b>/);
+  assert.doesNotMatch(html, /공용부|배출 전 상태|작업 결과보고서/);
 });
