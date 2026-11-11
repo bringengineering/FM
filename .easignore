@@ -27,3 +27,4 @@ desktop-crm/*
 !desktop-crm/src
 desktop-crm/src/*
 !desktop-crm/src/work-report-core.js
+!desktop-crm/src/owner-notice-core.js
