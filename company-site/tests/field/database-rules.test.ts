@@ -2893,7 +2893,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(member, at("w1")), report("w1")));
     await assertSucceeds(get(ref(viewer, at("w1"))));
     // Cleaning Center의 각 정식 서비스 유형은 공통 저장 규칙에서 허용한다.
-    for (const kind of ["moveIn", "moveOut", "common", "stairs", "general", "special"]) {
+    for (const kind of ["moveIn", "moveOut", "common", "stairs", "general", "special", "waste"]) {
       const id = `w-kind-${kind}`;
       await assertSucceeds(set(ref(member, at(id)), report(id, { kind })));
     }

@@ -132,6 +132,18 @@
         { key: "after", label: "마감 점검", detail: "작업 후 상태 확인 및 인계" },
       ]),
     },
+    {
+      // 폐기물만 따로 치우는 단발 작업(2026-11). 배출 전·후를 비교하므로 작업 전 사진도 찍는다.
+      key: "waste",
+      label: "폐기물 처리",
+      items: Object.freeze([
+        { key: "before", label: "배출 전 상태", detail: "쌓여 있던 폐기물의 위치·종류·양 확인" },
+        { key: "sort", label: "분리·정리", detail: "대형·생활·재활용 등 종류별 분리 및 정리" },
+        { key: "load", label: "적재·반출", detail: "차량 적재 및 현장 밖으로 반출" },
+        { key: "proof", label: "처리 확인", detail: "배출 스티커·신고필증·처리 영수증 등 처리 근거 확인", optional: true },
+        { key: "after", label: "마감 상태", detail: "반출 후 바닥·주변 잔여물 정리 및 상태 확인" },
+      ]),
+    },
   ]);
 
   const KIND_KEYS = Object.freeze(KINDS.map(item => item.key));

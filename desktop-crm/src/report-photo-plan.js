@@ -118,6 +118,13 @@
       폐기물: "waste", 반출: "waste", 폐기: "waste",
       마감: "after", 작업후: "after", 후: "after",
     }),
+    waste: Object.freeze({
+      배출전: "before", 작업전: "before", 전: "before",
+      분리: "sort", 정리: "sort", 분류: "sort",
+      적재: "load", 반출: "load", 상차: "load", 차량: "load",
+      처리확인: "proof", 스티커: "proof", 필증: "proof", 신고필증: "proof", 영수증: "proof",
+      마감: "after", 마감정리: "after", 작업후: "after", 후: "after", 반출후: "after",
+    }),
   });
 
   function normalizeFolderWord(value) {
@@ -185,7 +192,8 @@
     if (word.includes("공용")) return "common";
     if (word.includes("계단")) return "stairs";
     if (word.includes("일반청소") || word.includes("기타청소")) return "general";
-    if (word.includes("특수") || word.includes("폐기물") || word.includes("특수청소")) return "special";
+    if (word.includes("특수")) return "special";
+    if (word.includes("폐기물") || word.includes("폐기")) return "waste";
     return "";
   }
 
