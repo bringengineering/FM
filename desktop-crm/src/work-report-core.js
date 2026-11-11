@@ -139,7 +139,7 @@
       items: Object.freeze([
         { key: "before", label: "배출 전 상태", detail: "쌓여 있던 폐기물의 위치·종류·양 확인" },
         { key: "sort", label: "분리·정리", detail: "대형·생활·재활용 등 종류별 분리 및 정리" },
-        { key: "load", label: "적재·반출", detail: "차량 적재 및 현장 밖으로 반출" },
+        { key: "load", label: "운반·배출", detail: "지정 배출 장소로 운반·배출하거나 차량에 실어 반출" },
         { key: "proof", label: "처리 확인", detail: "배출 스티커·신고필증·처리 영수증 등 처리 근거 확인", optional: true },
         { key: "after", label: "마감 상태", detail: "반출 후 바닥·주변 잔여물 정리 및 상태 확인" },
       ]),
@@ -147,6 +147,12 @@
   ]);
 
   const KIND_KEYS = Object.freeze(KINDS.map(item => item.key));
+
+  // 사진 기록형 종류: 항목마다 '작업 기록' 상태로 시작하고, 작업 중 사진을 받으며, 사진도 메모도
+  // 없는 항목은 보고서에 싣지 않는다. 폐기물 처리는 납부필증처럼 한 장으로 끝나는 근거가 많아서
+  // 완료 항목에 전·후 두 장을 요구하지 않고 사진 한 장 이상이면 된다.
+  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste"]);
+  const isPhotoRecordKind = kind => PHOTO_RECORD_KINDS.includes(text(kind, 20));
 
   // 한 항목이 가질 수 있는 상태. 진척도는 여기서 센다.
   const ITEM_STATUSES = Object.freeze([
@@ -339,13 +345,13 @@
   function itemsFor(kindKey, existing, onlySaved = false) {
     const kind = kindOf(kindKey);
     if (!kind) return [];
-    const normalized = rows(existing).map(item => normalizeItem(["moveIn", "common"].includes(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const normalized = rows(existing).map(item => normalizeItem(isPhotoRecordKind(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
     const saved = kindKey === "common" ? mergeLegacyCommon(normalized) : normalized;
     const savedKeys = new Set(saved.map(item => item.key));
     const scoped = onlySaved && kind.items.some(item => savedKeys.has(item.key));
     return kind.items.filter(standard => scoped ? savedKeys.has(standard.key) : !standard.optional || savedKeys.has(standard.key)).map(standard => {
       const found = saved.find(item => item.key === standard.key);
-      return normalizeItem(found || { key: standard.key, status: ["moveIn", "common"].includes(kindKey) ? "recorded" : "done" }, standard);
+      return normalizeItem(found || { key: standard.key, status: isPhotoRecordKind(kindKey) ? "recorded" : "done" }, standard);
     });
   }
 
@@ -421,12 +427,12 @@
   // 둘을 가르지 못하면 그 사진은 아무것도 증명하지 않는다.
   function itemIssue(item, kind) {
     const row = normalizeItem(item);
-    if (row.status === "recorded") return ["moveIn", "common"].includes(kind) ? null : "작업 상태를 확인해 주세요.";
+    if (row.status === "recorded") return isPhotoRecordKind(kind) ? null : "작업 상태를 확인해 주세요.";
     if (row.status === "skipped") {
       return row.note ? null : "못 한 이유를 적어 주세요.";
     }
     if (row.status === "done") {
-      if (kind === "common") return row.before.length + row.during.length + row.after.length ? null : "작업 사진을 등록해 주세요.";
+      if (kind === "common" || kind === "waste") return row.before.length + row.during.length + row.after.length ? null : "작업 사진을 등록해 주세요.";
       if (!row.before.length && !row.after.length) return "전·후 사진이 없습니다.";
       if (!row.before.length) return "작업 전 사진이 없습니다.";
       if (!row.after.length) return "작업 후 사진이 없습니다.";
@@ -440,7 +446,7 @@
     if (!report.buildingId && !report.customerId) return { ok: false, error: "작업할 고객 또는 건물을 정해 주세요.", code: "BUILDING_REQUIRED" };
     if (!report.workDate) return { ok: false, error: "작업한 날짜를 골라 주세요.", code: "DATE_REQUIRED" };
     const closed = report.items.filter(item => item.status !== "skipped");
-    if (["moveIn", "common"].includes(report.kind) && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
+    if (isPhotoRecordKind(report.kind) && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
     if (!closed.length) {
       return { ok: false, error: "한 항목도 하지 않은 것은 결과보고서가 아닙니다.", code: "NOTHING_DONE" };
     }
@@ -471,7 +477,7 @@
     const item = normalizeReport(report);
     const list = [];
     if (!item.workDate) list.push({ key: "workDate", text: "작업한 날짜를 골라 주세요." });
-    if (["moveIn", "common"].includes(item.kind) && !photoCount(item)) list.push({ key: "photos", text: "분류된 작업 사진을 한 장 이상 등록해 주세요." });
+    if (isPhotoRecordKind(item.kind) && !photoCount(item)) list.push({ key: "photos", text: "분류된 작업 사진을 한 장 이상 등록해 주세요." });
     item.items.forEach(row => {
       const issue = itemIssue(row, item.kind);
       if (issue) list.push({ key: row.key, text: `${row.label}: ${issue}` });
@@ -629,6 +635,8 @@
     kindForCleaningServiceType,
     draftForCleaningOrder,
     kindLabel,
+    PHOTO_RECORD_KINDS,
+    isPhotoRecordKind,
     statusOf,
     statusLabel,
     copyOf,

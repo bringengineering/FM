@@ -10220,7 +10220,7 @@
       : `<small>등록된 사진 없음</small>`;
     const rows = draft.items.map(item => `<article class="wr-readonly-item">
       <div class="wr-readonly-item-summary"><b>${esc(item.label)}</b><small>${esc(statusLabel(item.status))}${item.note ? ` · ${esc(item.note)}` : ""}</small></div>
-      <div class="wr-readonly-photos">${["moveIn", "common"].includes(draft.kind) ? `<section><b>작업 중 · ${item.during.length}장</b>${evidence(item.during, "작업 중")}</section>` : ""}<section><b>작업 전 · ${item.before.length}장</b>${evidence(item.before, "작업 전")}</section><section><b>작업 후 · ${item.after.length}장</b>${evidence(item.after, "작업 후")}</section></div>
+      <div class="wr-readonly-photos">${R.isPhotoRecordKind(draft.kind) ? `<section><b>작업 중 · ${item.during.length}장</b>${evidence(item.during, "작업 중")}</section>` : ""}<section><b>작업 전 · ${item.before.length}장</b>${evidence(item.before, "작업 전")}</section><section><b>작업 후 · ${item.after.length}장</b>${evidence(item.after, "작업 후")}</section></div>
     </article>`).join("");
     return `<section class="wr-readonly-panel" role="status" aria-label="결과보고서 읽기 전용">
       <header><div><span>REPORT · READ ONLY</span><h3>${esc(draft.title || "결과보고서")}</h3><p>${esc(draft.buildingName || "건물 미지정")} · ${esc(R.kindLabel(draft.kind))} · ${esc(draft.workDate || "작업일 미기재")}</p></div><button type="button" class="secondary-button" data-report-cancel>닫기</button></header>
@@ -10264,10 +10264,10 @@
       return `<article class="wr-item${issue ? " has-issue" : ""}" id="wr-item-${attr(item.key)}">
         <header>
           <div><b>${esc(item.label)}</b><small>${esc(item.detail)}</small></div>
-          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.filter(entry => ["moveIn", "common"].includes(draft.kind) || entry.key !== "recorded").map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
+          <select data-report-status="${esc(item.key)}">${R.ITEM_STATUSES.filter(entry => R.isPhotoRecordKind(draft.kind) || entry.key !== "recorded").map(entry => `<option value="${esc(entry.key)}"${entry.key === item.status ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select>
         </header>
-        <div class="wr-shots${["moveIn", "common"].includes(draft.kind) ? " is-common" : ""}">
-          ${["moveIn", "common"].includes(draft.kind) ? `<div><span>작업 중 <b>${item.during.length}</b></span><ul>${shots("during")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="during"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>` : ""}
+        <div class="wr-shots${R.isPhotoRecordKind(draft.kind) ? " is-common" : ""}">
+          ${R.isPhotoRecordKind(draft.kind) ? `<div><span>작업 중 <b>${item.during.length}</b></span><ul>${shots("during")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="during"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>` : ""}
           ${draft.kind === "common" && !item.before.length ? "" : `<div><span>작업 전 <b>${item.before.length}</b></span><ul>${shots("before")}</ul>${reportState.canWork && draft.kind !== "common" ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="before"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>`}
           <div><span>작업 후 <b>${item.after.length}</b></span><ul>${shots("after")}</ul>${reportState.canWork ? `<button type="button" class="mini-button" data-report-add-photo="${esc(item.key)}" data-report-phase="after"${reportState.busyKey ? " disabled" : ""}>＋ 사진 넣기</button>` : ""}</div>
         </div>
@@ -10278,7 +10278,7 @@
 
     const reviewRows = draft.items.map(item => {
       const issue = R.itemIssue(item, draft.kind);
-      return `<button type="button" class="wr-ai-review-row${issue ? " needs-review" : ""}" data-report-focus-item="${attr(item.key)}"><span><i></i><b>${esc(item.label)}</b></span><small>전 ${item.before.length}${["moveIn", "common"].includes(draft.kind) ? ` · 중 ${item.during.length}` : ""} · 후 ${item.after.length}</small><em>${issue ? "확인 필요" : "확인 완료"}</em></button>`;
+      return `<button type="button" class="wr-ai-review-row${issue ? " needs-review" : ""}" data-report-focus-item="${attr(item.key)}"><span><i></i><b>${esc(item.label)}</b></span><small>전 ${item.before.length}${R.isPhotoRecordKind(draft.kind) ? ` · 중 ${item.during.length}` : ""} · 후 ${item.after.length}</small><em>${issue ? "확인 필요" : "확인 완료"}</em></button>`;
     }).join("");
 
     return `<form class="wo-editor wr-editor wr-ai-editor" data-report-form>
@@ -10351,7 +10351,7 @@
           </section>
           <section class="wr-ai-card wr-ai-analysis">
             <header><div><span>PHOTO CHECK</span><h4>사진 분류 확인</h4></div><em>${issueCount ? `${issueCount}개 확인 필요` : "모두 확인"}</em></header>
-            <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div>${["moveIn", "common"].includes(draft.kind) ? `<div><span>작업 중</span><b>${draft.items.reduce((n, item) => n + item.during.length, 0)}</b></div>` : ""}<div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
+            <div class="wr-ai-stats"><div><span>전체 사진</span><b>${sum.photos}</b></div><div><span>작업 전</span><b>${draft.items.reduce((n, item) => n + item.before.length, 0)}</b></div>${R.isPhotoRecordKind(draft.kind) ? `<div><span>작업 중</span><b>${draft.items.reduce((n, item) => n + item.during.length, 0)}</b></div>` : ""}<div><span>작업 후</span><b>${draft.items.reduce((n, item) => n + item.after.length, 0)}</b></div></div>
             <div class="wr-ai-review-list">${reviewRows}</div>
           </section>
           <section class="wr-ai-card wr-ai-draft">
@@ -10366,7 +10366,7 @@
           <section class="wr-ai-card wr-ai-finish">
             <header><div><span>FINAL CHECK</span><h4>작업 항목 완료율</h4></div><strong>${sum.progress}%</strong></header>
             <div class="wr-ai-progress"><i style="width:${sum.progress}%"></i></div>
-            <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${["moveIn", "common"].includes(draft.kind) ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
+            <p>완료 ${sum.done} · 일부 ${sum.partial} · 못 함 ${sum.skipped}${R.isPhotoRecordKind(draft.kind) ? ` · 작업 기록 ${sum.recorded}` : ""} · 사진 ${sum.photos}장</p>
             <p data-report-photo-counts aria-live="polite">선택 ${photoCounts.selected}장 · 보고서 포함 ${photoCounts.included}장 · 빠진 사진 ${photoCounts.excluded}장${photoCounts.excluded ? " — 분류하거나 제외 여부를 확인해 주세요." : ""}</p>
             ${blockers.length
               ? `<div class="wr-blockers"><b>저장 전 확인해 주세요</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
@@ -10579,7 +10579,7 @@
     const R = reportCore();
     if (!R || reportState.busyKey) return;
     const draft = readReportForm();
-    if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
+    if (!["before", "after", ...(R.isPhotoRecordKind(draft.kind) ? ["during"] : [])].includes(phase)) return;
     if (!draft.buildingId && !draft.customerId) return showToast("고객을 먼저 골라 주세요. 사진이 어느 현장 것인지 알아야 합니다.", "error");
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
@@ -10629,7 +10629,7 @@
     const R = reportCore();
     if (!R || reportState.driveScanning || reportState.driveClassificationLoading) return;
     const draft = readReportForm();
-    if (!["before", "after", ...(["moveIn", "common"].includes(draft.kind) ? ["during"] : [])].includes(phase)) return;
+    if (!["before", "after", ...(R.isPhotoRecordKind(draft.kind) ? ["during"] : [])].includes(phase)) return;
     const item = draft.items.find(entry => entry.key === itemKey);
     if (!item) return;
     // Drive 에서 지우지는 않는다. 잘못 눌렀을 때 되돌릴 길이 있어야 한다.
