@@ -32,6 +32,10 @@ const config: ExpoConfig = {
   plugins: [
     ...companyPlugins,
     'expo-status-bar',
+    // 브랜드 글꼴 Pretendard(OFL-1.1)를 APK에 넣는다. 굵기별 파일 이름이 글꼴 이름이 된다(src/theme.ts).
+    ['expo-font', { fonts: ['./assets/fonts/Pretendard-Regular.otf', './assets/fonts/Pretendard-SemiBold.otf', './assets/fonts/Pretendard-Bold.otf', './assets/fonts/Pretendard-ExtraBold.otf'] }],
+    // 앱을 켤 때 흰 바탕에 BR 마크가 보이게 한다.
+    ['expo-splash-screen', { image: './assets/logo-mark.png', imageWidth: 160, resizeMode: 'contain', backgroundColor: '#ffffff' }],
     ['expo-camera', { cameraPermission: '작업 전후 사진 촬영에 카메라를 사용합니다.', recordAudioAndroid: false }],
     ['expo-image-picker', { photosPermission: '선택한 작업사진을 보고서에 추가합니다.', microphonePermission: false, cameraPermission: '작업 전후 사진 촬영에 카메라를 사용합니다.' }],
     ['expo-sqlite', { useSQLCipher: true }],

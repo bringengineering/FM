@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { brandStyles, color } from './theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Crypto from 'expo-crypto';
@@ -159,21 +160,21 @@ export function OwnerNoticeScreen({ api, onClose }: { api: CompanyRecordingApi; 
   </ScrollView></SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#f5f7fb' }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
+const styles = brandStyles({
+  page: { flex: 1, backgroundColor: color.bg }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 },
-  brand: { fontSize: 22, fontWeight: '800', color: '#182334', flexShrink: 1 },
-  heading: { fontSize: 18, fontWeight: '700', color: '#182334' }, copy: { fontSize: 15, lineHeight: 23, color: '#435167' }, small: { fontSize: 13, lineHeight: 19, color: '#637086' },
-  card: { backgroundColor: '#fff', borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: '#e0e7f1' },
-  field: { gap: 6 }, label: { fontSize: 14, fontWeight: '600', color: '#26354b' },
-  input: { borderWidth: 1, borderColor: '#c4cfdf', borderRadius: 10, padding: 13, fontSize: 16, color: '#182334', backgroundColor: '#fff' },
-  inputText: { fontSize: 16, color: '#182334' }, placeholder: { color: '#8a96a8' },
+  brand: { fontSize: 22, fontWeight: '800', color: color.ink, flexShrink: 1 },
+  heading: { fontSize: 18, fontWeight: '700', color: color.ink }, copy: { fontSize: 15, lineHeight: 23, color: color.muted }, small: { fontSize: 13, lineHeight: 19, color: color.subtle },
+  card: { backgroundColor: color.surface, borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: color.line },
+  field: { gap: 6 }, label: { fontSize: 14, fontWeight: '600', color: color.text },
+  input: { borderWidth: 1, borderColor: color.lineStrong, borderRadius: 10, padding: 13, fontSize: 16, color: color.ink, backgroundColor: color.surface },
+  inputText: { fontSize: 16, color: color.ink }, placeholder: { color: color.subtle },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: '#c4cfdf', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#fff' },
-  chipActive: { backgroundColor: '#2367d1', borderColor: '#2367d1' }, chipText: { fontSize: 14, color: '#26354b' }, chipTextActive: { color: '#fff', fontWeight: '700' },
-  preview: { backgroundColor: '#f2f5fa', borderRadius: 12, padding: 14 }, previewText: { fontSize: 14, lineHeight: 21, color: '#26354b' },
-  status: { fontSize: 16, fontWeight: '700', color: '#1d7a4a' },
-  button: { backgroundColor: '#2367d1', borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  secondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c4cfdf' }, secondaryText: { color: '#2367d1' },
-  disabled: { opacity: 0.45 }, pressed: { opacity: 0.8 }, error: { color: '#b3293b', lineHeight: 22 },
+  chip: { borderWidth: 1, borderColor: color.lineStrong, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: color.surface },
+  chipActive: { backgroundColor: color.primary, borderColor: color.primary }, chipText: { fontSize: 14, color: color.text }, chipTextActive: { color: color.surface, fontWeight: '700' },
+  preview: { backgroundColor: color.fill, borderRadius: 12, padding: 14 }, previewText: { fontSize: 14, lineHeight: 21, color: color.text },
+  status: { fontSize: 16, fontWeight: '700', color: color.success },
+  button: { backgroundColor: color.primary, borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: color.surface, fontSize: 15, fontWeight: '700' },
+  secondary: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.lineStrong }, secondaryText: { color: color.primary },
+  disabled: { opacity: 0.45 }, pressed: { opacity: 0.8 }, error: { color: color.danger, lineHeight: 22 },
 });

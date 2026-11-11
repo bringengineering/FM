@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { brandStyles, color } from './theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {APP_VERSION} from './app-version';
 import { companyConnectionEnabled, createCompanySession } from './auth/runtime';
 import type { CompanySession } from './auth/session';
 import { FieldWorkspace } from './FieldWorkspace';
 import { OwnerNoticeScreen } from './OwnerNoticeScreen';
+import { NoticeIcon } from './icons';
+const LOGO = require('../assets/logo-mark.png');
 import type { CustomerSite } from './api/sites';
 import type { CompanyRecordingApi } from './api/recording';
 
@@ -39,7 +42,7 @@ export function CompanyScreen({ openSample }: { openSample: () => void }) {
     return () => { active = false; created?.dispose(); };
   }, []);
   return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={styles.brand}>BRING CARE · 현장노트</Text><Text style={styles.title}>내 현장, 내 작업 기록</Text>
+    <View style={styles.brandRow}><Image source={LOGO} style={styles.logo} accessibilityLabel="브링케어" /><Text style={styles.brand}>BRING CARE · 현장노트</Text></View><Text style={styles.title}>내 현장, 내 작업 기록</Text>
     <Text style={styles.copy}>직원 개인 CRM 계정으로 회사에 연결합니다.</Text>
     {session ? <SessionScreen session={session} /> : <View style={styles.card}>
       <Text style={styles.heading}>회사 계정 로그인</Text>
@@ -87,7 +90,7 @@ function SessionScreen({ session }: { session: CompanySession }) {
   </View>;
   const selected = state.selected;
   return <>
-    {state.context?.actor.role==='admin'&&!selected&&<View style={styles.card}><Text style={styles.heading}>건물주 안내 알림톡</Text><Text style={styles.copy}>퇴실·중개 접수·방 보기·신규 계약·입주청소 안내를 호실별로 보냅니다.</Text><Action label="안내 보내기" onPress={()=>setOwnerNotice(session.recordingApi())}/></View>}
+    {state.context?.actor.role==='admin'&&!selected&&<View style={styles.card}><View style={styles.headingRow}><NoticeIcon size={20} color={color.primary} strokeWidth={2} /><Text style={styles.heading}>건물주 안내 알림톡</Text></View><Text style={styles.copy}>퇴실·중개 접수·방 보기·신규 계약·입주청소 안내를 호실별로 보냅니다.</Text><Action label="안내 보내기" onPress={()=>setOwnerNotice(session.recordingApi())}/></View>}
     <View style={styles.card}><Text style={styles.heading}>CRM 고객 현장</Text><Text style={styles.copy}>작업할 고객을 선택하세요. 고객정보에 입력한 건물주소를 불러옵니다.</Text>{state.error&&<Text accessibilityRole="alert" style={styles.error}>{messages[state.error]||messages.SERVER_UNAVAILABLE}</Text>}<Action label="목록 새로고침" disabled={searchBusy} onPress={() => {setSearchResult(undefined);setSearchError('');void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /><Action label="로그아웃" onPress={() => { setEmail(''); setPassword(''); void session.logout().catch(() => undefined); }} /></View>
     {selected ? <View style={styles.card}><Text style={styles.heading}>{selected.name}</Text><Text style={styles.small}>건물주소</Text><Text style={styles.copy}>{selected.address || '주소 미입력'}</Text>{!selected.address && <Text style={styles.copy}>CRM 고객정보에서 건물주소를 입력한 뒤 목록을 새로고침해 주세요.</Text>}<Action label="사진 촬영·보고서 작성" onPress={()=>setRecording({uid:state.context!.actor.uid,site:selected,api:session.recordingApi()})}/><Action label="고객 목록으로" onPress={() => {void session.refresh().then(ok=>{if(ok)setPageHistory([null]);});}} /></View> : <>
       <View style={styles.card}><Text style={styles.heading}>고객 찾기</Text><TextInput accessibilityLabel="고객명 또는 건물주소 검색" value={query} onChangeText={value=>{setQuery(value);setSearchResult(undefined);setSearchError('');}} editable={!searchBusy} placeholder="고객명 또는 건물주소" returnKeyType="search" maxLength={100} style={styles.input} onSubmitEditing={()=>void findCustomer()} />
@@ -106,11 +109,12 @@ function SessionScreen({ session }: { session: CompanySession }) {
     {recording&&<Modal visible animationType="slide" onRequestClose={()=>setBackRequest(value=>value+1)}><FieldWorkspace company={recording} backRequest={backRequest} onClose={()=>setRecording(undefined)}/></Modal>}
   </>;
 }
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#f5f7fb' }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
-  brand: { fontSize: 13, fontWeight: '700', color: '#2367d1', marginTop: 20 }, title: { fontSize: 29, fontWeight: '800', color: '#182334' },
-  heading: { fontSize: 19, fontWeight: '700', color: '#182334' }, copy: { fontSize: 15, lineHeight: 23, color: '#435167' }, small: { fontSize: 12, lineHeight: 19, color: '#637086' },
-  card: { backgroundColor: '#fff', borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: '#e0e7f1' },
-  input: { borderWidth: 1, borderColor: '#c4cfdf', borderRadius: 10, padding: 13, fontSize: 16, color: '#182334', backgroundColor: '#fff' },
-  button: { backgroundColor: '#2367d1', borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' }, error: { color: '#b3293b', lineHeight: 22 },
+const styles = brandStyles({
+  page: { flex: 1, backgroundColor: color.bg }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 }, logo: { width: 48, height: 22, resizeMode: 'contain' }, headingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brand: { fontSize: 13, fontWeight: '700', color: color.primary }, title: { fontSize: 29, fontWeight: '800', color: color.ink },
+  heading: { fontSize: 19, fontWeight: '700', color: color.ink }, copy: { fontSize: 15, lineHeight: 23, color: color.muted }, small: { fontSize: 12, lineHeight: 19, color: color.subtle },
+  card: { backgroundColor: color.surface, borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: color.line },
+  input: { borderWidth: 1, borderColor: color.lineStrong, borderRadius: 10, padding: 13, fontSize: 16, color: color.ink, backgroundColor: color.surface },
+  button: { backgroundColor: color.primary, borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: color.surface, fontSize: 15, fontWeight: '700' }, error: { color: color.danger, lineHeight: 22 },
 });
