@@ -175,10 +175,28 @@ function doGet(e) {
   ).setTitle("BRING Care");
 }
 
+// 요청 본문을 읽는다. 휴대폰(MacroDroid)이 보내는 입금 문자는 줄바꿈이 그대로 들어와 JSON이 깨지거나
+// 폼 형식(action=bankSms&key=...&text=...)으로 올 수 있어, 그 두 경우만 따로 받아 준다.
+function parseWebhookPayload_(e) {
+  const raw = e && e.postData && e.postData.contents ? String(e.postData.contents) : "{}";
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const params = e && e.parameter || {};
+    if (params.action === "bankSms" || params.action === "bankSmsHeartbeat") {
+      return { action: params.action, key: params.key, sender: params.sender, text: params.text };
+    }
+    if (/"action"\s*:\s*"bankSms/.test(raw)) {
+      return JSON.parse(raw.replace(/\r\n|\r|\n/g, "\\n").replace(/\t/g, " "));
+    }
+    throw error;
+  }
+}
+
 function doPost(e) {
   let payload = {};
   try {
-    payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    payload = parseWebhookPayload_(e);
     if (isKakaoChatbotSkillPayload_(payload)) {
       return jsonResponse_(handleKakaoChatbotSkill_(payload, e));
     }

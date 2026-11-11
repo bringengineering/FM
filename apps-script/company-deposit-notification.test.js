@@ -396,3 +396,16 @@ console.log("company-deposit readiness tests passed");
   assert.equal(context.checkBankSmsHeartbeat().status, "alive");
 }
 console.log("bank-sms tests passed");
+
+// 8) 휴대폰이 보내는 요청 본문: 정상 JSON, 줄바꿈이 그대로 든 JSON, 폼 형식을 모두 받는다.
+{
+  vm.runInContext(extractFunction("parseWebhookPayload_"), context);
+  const parse = e => JSON.parse(JSON.stringify(context.parseWebhookPayload_(e)));
+  assert.deepEqual(parse({ postData: { contents: '{"action":"healthCheck"}' } }), { action: "healthCheck" });
+  const broken = '{"action":"bankSms","key":"abc","sender":"15778000","text":"[Web발신]\n신한11/10 18:45\r\n입금 10\n서창환"}';
+  assert.equal(parse({ postData: { contents: broken } }).text, "[Web발신]\n신한11/10 18:45\n입금 10\n서창환");
+  assert.deepEqual(parse({ postData: { contents: "action=bankSms&key=abc" }, parameter: { action: "bankSms", key: "abc", sender: "15778000", text: "신한 입금", extra: "x" } }),
+    { action: "bankSms", key: "abc", sender: "15778000", text: "신한 입금" });
+  assert.throws(() => context.parseWebhookPayload_({ postData: { contents: "not json" }, parameter: {} }));
+}
+console.log("webhook payload tests passed");
