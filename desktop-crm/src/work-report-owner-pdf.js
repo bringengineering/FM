@@ -172,7 +172,7 @@ figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;wh
 function createOwnerReportHtml(report, options = {}) {
   // 공용부 청소는 '공용부 활동 결과보고서' 양식으로 따로 만든다. 그 모듈이 이 파일의 글꼴·로고를
   // 쓰므로 여기서는 호출할 때 불러온다(맨 위에서 서로 require 하면 한쪽이 빈 모듈을 받는다).
-  if (report.kind === "common") return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
+  if (report.kind === "common" || report.kind === "waste") return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);

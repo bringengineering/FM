@@ -9,6 +9,31 @@ const { escape, SAFE_IMAGE, FONT_STACK } = Owner;
 const PER_PAGE = 9;
 const BLUE = "#0C58A0";
 
+// 같은 양식을 쓰는 종류별 문구. 폐기물 처리도 이 양식으로 낸다(2026-11).
+const VARIANTS = Object.freeze({
+  common: Object.freeze({
+    title: "공용부 활동 결과보고서",
+    overview: "공용부 현장 기록 개요",
+    zone: "구역",
+    notes: Object.freeze([
+      "제공된 사진을 구역별로 촬영 순서대로 표 안에 정리했습니다.",
+      "사진은 현장 상태 기록이며 청소 완료 여부나 설비의 작동·안전 상태를 증명하지 않습니다.",
+      "촬영일은 보고서에 등록된 작업일 기준입니다. 작업일과 결과는 별도 확인이 필요합니다.",
+    ]),
+  }),
+  waste: Object.freeze({
+    title: "폐기물 처리 활동 결과보고서",
+    overview: "폐기물 처리 현장 기록 개요",
+    zone: "항목",
+    notes: Object.freeze([
+      "제공된 사진을 항목별로 촬영 순서대로 표 안에 정리했습니다.",
+      "사진은 촬영 시점의 현장 상태 기록이며 지자체 수거 완료 여부를 증명하지 않습니다.",
+      "촬영일은 보고서에 등록된 작업일 기준입니다. 수거 일정과 결과는 별도 확인이 필요합니다.",
+    ]),
+  }),
+});
+const variantFor = kind => VARIANTS[kind] || VARIANTS.common;
+
 const pad = n => String(n).padStart(2, "0");
 // 양식 표기 "2026. 11. 09." 로 쓴다. 저장값은 2026-11-09 형식이다.
 const formDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? `${value.slice(0, 4)}. ${value.slice(5, 7)}. ${value.slice(8, 10)}.` : "";
@@ -113,17 +138,18 @@ function createCommonActivityReportHtml(report, options = {}) {
   const pages = [];
   for (let i = 0; i < photos.length; i += PER_PAGE) pages.push(photos.slice(i, i + PER_PAGE));
   const targets = items.map(item => item.label).join("·") || "-";
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>공용부 활동 결과보고서</title><style>
+  const v = variantFor(report.kind);
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>${escape(v.title)}</title><style>
 ${Owner.ownerFontFace()}
 ${styles()}
 </style></head><body><main>
-<section class="cover"><div class="cover-band"><h1>공용부 활동 결과보고서</h1></div>
+<section class="cover"><div class="cover-band"><h1>${escape(v.title)}</h1></div>
 <p class="cover-site">${escape(site)}</p><p class="cover-date">${escape(date)}</p>
 <div class="cover-brand">${logo ? `<img src="${logo}" alt="Bring Care">` : ""}<b>${escape(sender)}</b></div></section>
 <section class="overview">
 <div class="top-bar"><i></i><i></i></div>
-<h2 class="doc-title">공용부 활동 결과보고서</h2>
-${sectionHead("Ⅰ", "공용부 현장 기록 개요")}
+<h2 class="doc-title">${escape(v.title)}</h2>
+${sectionHead("Ⅰ", v.overview)}
 <h3>1. 현장 기본정보</h3>
 <table class="info"><tbody>
 <tr><th>현장명</th><td>${escape(site)}</td></tr>
@@ -133,12 +159,10 @@ ${sectionHead("Ⅰ", "공용부 현장 기록 개요")}
 </tbody></table>
 <h3>2. 사진 확인 범위 및 안내</h3>
 <div class="notes">
-<p>○ 제공된 사진을 구역별로 촬영 순서대로 표 안에 정리했습니다.</p>
-<p>○ 사진은 현장 상태 기록이며 청소 완료 여부나 설비의 작동·안전 상태를 증명하지 않습니다.</p>
-<p>○ 촬영일은 보고서에 등록된 작업일 기준입니다. 작업일과 결과는 별도 확인이 필요합니다.</p>
+${v.notes.map(note => `<p>○ ${escape(note)}</p>`).join("\n")}
 </div>
-<h3>3. 구역별 사진 현황</h3>
-<table class="zones"><thead><tr><th class="c1">구역</th><th class="c2">사진 수</th><th>사진 번호</th></tr></thead><tbody>
+<h3>3. ${v.zone}별 사진 현황</h3>
+<table class="zones"><thead><tr><th class="c1">${v.zone}</th><th class="c2">사진 수</th><th>사진 번호</th></tr></thead><tbody>
 ${items.map(item => { const numbers = byItem.get(item); return `<tr><td>${escape(item.label)}</td><td>${numbers.length || "-"}</td><td>${numbers.length ? numberRanges(numbers) : "-"}</td></tr>`; }).join("")}
 </tbody><tfoot><tr><td>합계</td><td>${photos.length}</td><td></td></tr></tfoot></table>
 ${pages.length ? "" : '<p class="end">- 이 상 -</p>'}
@@ -147,4 +171,4 @@ ${pages.map((entries, index) => photoPage(entries, index, pages.length, date, im
 </main></body></html>`;
 }
 
-module.exports = { createCommonActivityReportHtml, numberRanges, PER_PAGE };
+module.exports = { createCommonActivityReportHtml, numberRanges, PER_PAGE, VARIANTS };
