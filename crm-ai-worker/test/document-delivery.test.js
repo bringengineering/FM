@@ -45,8 +45,10 @@ test("creates a bounded expiring PDF and serves it only through its opaque token
   assert.equal(created.secureUrl, "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/d/opaque_token_1234567890");
   const opened = await handler(new Request(created.secureUrl), null, env);
   assert.equal(opened.status, 200);
-  assert.equal(await opened.text(), "%PDF-test");
-  assert.equal(opened.headers.get("content-type"), "application/pdf");
+  assert.equal(opened.headers.get("content-type"), "text/html; charset=utf-8");
+  const file = await handler(new Request(`${created.secureUrl}/pdf`), null, env);
+  assert.equal(await file.text(), "%PDF-test");
+  assert.equal(file.headers.get("content-type"), "application/pdf");
 });
 
 test("sends the exact approved AlimTalk variables and deduplicates the request key", async () => {

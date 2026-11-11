@@ -22,7 +22,7 @@ for (const documentType of ["completion_report", "monthly_report"]) {
     assert.equal(caps.capabilities[documentType === "monthly_report" ? "monthlyReport" : "kakao"], true);
     const pdf = Buffer.from("%PDF-1.7\nSynthetic report\n%%EOF");
     const doc = await request("create", { documentId: "report_test", customerId: "customer_test", documentType, documentName: "전송 테스트", reportMonth: "2026-10", crmCustomerId: "customer_test", crmBuildingId:"building_fixture", buildingName: "TEST ONLY", mimeType: "application/pdf", bytes: pdf.toString("base64"), expiresAt: "2026-10-19T00:00:00Z" });
-    const opened = await handler(new Request(doc.secureUrl), null, env);
+    const opened = await handler(new Request(`${doc.secureUrl}/pdf`), null, env);
     assert.equal(opened.headers.get("content-type"), "application/pdf");
     assert.deepEqual(Buffer.from(await opened.arrayBuffer()), pdf);
     const send = { documentId: doc.documentId, customerId: "customer_test", customerName: "테스트", phone: "01000000000", channel: "kakao", idempotencyKey: "test_send_12345678" };
