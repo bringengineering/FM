@@ -37,7 +37,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20261109-v63";
+const AUTOMATION_BUILD = "complaint-workflow-20261111-v64";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
@@ -206,6 +206,12 @@ function doPost(e) {
     }
     if (payload.action === "syncPaymentSchedules") {
       return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
+    }
+    if (payload.action === "bankSms") {
+      return jsonResponse_(handleBankSms_(payload));
+    }
+    if (payload.action === "bankSmsHeartbeat") {
+      return jsonResponse_(handleBankSmsHeartbeat_(payload));
     }
     if (payload.action === "syncPopbillBankTransactions") {
       return jsonResponse_(syncPopbillBankTransactions_(payload));
@@ -13342,6 +13348,35 @@ function companyDepositAccount_() {
   return accounts[0];
 }
 
+// 알림 한 건을 기록하고 보낸다. 결과는 "sent" | "failed" | "duplicate" | "baseline".
+// 보내기 전에 기록부터 남겨, 실행이 겹치거나 중간에 멈춰도 두 번 보내지 않는다.
+function companyDepositDeliver_(notice, baseline, extra) {
+  const recordPath = COMPANY_DEPOSIT_RECORD_PATH + "/" + notice.id;
+  if (firebaseCompanyServerReadJson_(recordPath, "결제완료 알림 기록 조회 실패")) return "duplicate";
+  const stamp = new Date().toISOString();
+  const record = Object.assign({
+    kind: notice.kind, transactionDate: notice.date, amount: notice.amount, payerName: notice.payerName,
+    contractId: notice.contractId || "", buildingId: notice.buildingId || "", dueDate: notice.dueDate || "",
+    reason: notice.reason || "", createdAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
+  }, extra || {});
+  const recordUrl = firebaseCompanyServerUrl_(recordPath);
+  if (baseline) {
+    firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "baseline_skipped" }), "결제완료 기준선 저장 실패");
+    return "baseline";
+  }
+  firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "sending" }), "결제완료 알림 기록 저장 실패");
+  let telegram, ceo;
+  try { telegram = sendCompanyDepositTelegram_(companyDepositTelegramText_(notice)); } catch (error) { telegram = { ok: false, message: "TELEGRAM_ERROR" }; }
+  try { ceo = sendCompanyDepositCeo_(notice); } catch (error) { ceo = { ok: false, message: "CEO_SEND_ERROR" }; }
+  firebaseWriteRequest_(recordUrl, "patch", {
+    status: telegram.ok || ceo.ok ? "sent" : "failed",
+    telegramStatus: telegram.ok ? "sent" : String(telegram.message || "failed").slice(0, 160),
+    ceoStatus: ceo.ok ? String(ceo.provider || "sent") : String(ceo.message || "failed").slice(0, 160),
+    updatedAt: new Date().toISOString()
+  }, "결제완료 알림 결과 저장 실패");
+  return telegram.ok || ceo.ok ? "sent" : "failed";
+}
+
 // 시간 트리거(매시간)가 부르는 함수.
 function processCompanyDepositAutomation() {
   if (!companyDepositAutomationEnabled_()) return { ok: true, skipped: "COMPANY_DEPOSIT_AUTOMATION_DISABLED" };
@@ -13365,32 +13400,7 @@ function processCompanyDepositAutomation() {
     const summary = { ok: true, deposits: collected.list.length, planned: plan.notices.length, unmatched: plan.unmatched,
       sent: 0, failed: 0, duplicate: 0, baseline: 0 };
     plan.notices.forEach(function (notice) {
-      const recordPath = COMPANY_DEPOSIT_RECORD_PATH + "/" + notice.id;
-      if (firebaseCompanyServerReadJson_(recordPath, "결제완료 알림 기록 조회 실패")) { summary.duplicate += 1; return; }
-      const stamp = new Date().toISOString();
-      const record = {
-        kind: notice.kind, transactionDate: notice.date, amount: notice.amount, payerName: notice.payerName,
-        contractId: notice.contractId || "", buildingId: notice.buildingId || "", dueDate: notice.dueDate || "",
-        reason: notice.reason || "", createdAt: stamp, updatedAt: stamp, build: AUTOMATION_BUILD
-      };
-      const recordUrl = firebaseCompanyServerUrl_(recordPath);
-      if (baseline) {
-        firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "baseline_skipped" }), "결제완료 기준선 저장 실패");
-        summary.baseline += 1;
-        return;
-      }
-      // 보내기 전에 기록부터 남겨, 실행이 겹치거나 중간에 멈춰도 두 번 보내지 않는다.
-      firebaseWriteRequest_(recordUrl, "put", Object.assign(record, { status: "sending" }), "결제완료 알림 기록 저장 실패");
-      let telegram, ceo;
-      try { telegram = sendCompanyDepositTelegram_(companyDepositTelegramText_(notice)); } catch (error) { telegram = { ok: false, message: "TELEGRAM_ERROR" }; }
-      try { ceo = sendCompanyDepositCeo_(notice); } catch (error) { ceo = { ok: false, message: "CEO_SEND_ERROR" }; }
-      firebaseWriteRequest_(recordUrl, "patch", {
-        status: telegram.ok || ceo.ok ? "sent" : "failed",
-        telegramStatus: telegram.ok ? "sent" : String(telegram.message || "failed").slice(0, 160),
-        ceoStatus: ceo.ok ? String(ceo.provider || "sent") : String(ceo.message || "failed").slice(0, 160),
-        updatedAt: new Date().toISOString()
-      }, "결제완료 알림 결과 저장 실패");
-      if (telegram.ok || ceo.ok) summary.sent += 1; else summary.failed += 1;
+      summary[companyDepositDeliver_(notice, baseline)] += 1;
     });
     if (baseline) props.setProperty(COMPANY_DEPOSIT_BASELINE_PROPERTY, new Date().toISOString());
     Logger.log(JSON.stringify(summary));
@@ -13487,5 +13497,273 @@ function previewCompanyDepositMatches() {
     results: plan.notices.map(function (notice) { return companyDepositTelegramText_(notice).replace(/<[^>]+>/g, ""); })
   };
   Logger.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 은행 입금 문자(SMS) 수신 → 결제완료 알림
+// 전용 안드로이드 휴대폰의 MacroDroid가 은행 입금 문자를 그대로 보내면
+// (action "bankSms"), 문자에서 날짜·시간·금액·입금자·계좌 끝자리를 읽어
+// crmCompany/bankSmsDeposits/{id}에 원문과 함께 저장하고,
+// 회사 계좌 입금이면 위의 결제완료 맞추기·알림(companyDepositPlan_)을 그대로 쓴다.
+// 휴대폰은 하루 한 번 "bankSmsHeartbeat"를 보내고, 끊기면 텔레그램으로 경고한다.
+// ─────────────────────────────────────────────────────────────
+const BANK_SMS_KEY_PROPERTY = "BANK_SMS_KEY";
+const BANK_SMS_SENDERS_PROPERTY = "BANK_SMS_SENDERS";
+const BANK_SMS_DEFAULT_SENDERS = "15778000";
+const BANK_SMS_HEARTBEAT_PROPERTY = "BANK_SMS_HEARTBEAT_AT";
+const BANK_SMS_HEARTBEAT_WARNED_PROPERTY = "BANK_SMS_HEARTBEAT_WARNED_AT";
+const BANK_SMS_SETUP_PROPERTY = "BANK_SMS_SETUP_AT";
+const BANK_SMS_RECORD_PATH = "bankSmsDeposits";
+const BANK_SMS_HEARTBEAT_LIMIT_HOURS = 26;
+const BANK_SMS_MAX_TEXT = 2000;
+
+// 길이가 같을 때 끝까지 비교해, 비밀 키를 한 글자씩 맞춰 보는 공격을 어렵게 한다.
+function bankSmsSafeEqual_(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  if (!left || !right || left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return diff === 0;
+}
+
+function bankSmsKeyValid_(key) {
+  const expected = String(PropertiesService.getScriptProperties().getProperty(BANK_SMS_KEY_PROPERTY) || "").trim();
+  return expected.length >= 24 && bankSmsSafeEqual_(String(key || "").trim(), expected);
+}
+
+function bankSmsSenderAllowed_(sender) {
+  const value = String(sender || "");
+  if (/신한/.test(value)) return true;
+  const digits = value.replace(/\D/g, "");
+  const allowed = String(PropertiesService.getScriptProperties().getProperty(BANK_SMS_SENDERS_PROPERTY) || BANK_SMS_DEFAULT_SENDERS)
+    .split(/[,\s]+/).map(function (item) { return item.replace(/\D/g, ""); }).filter(Boolean);
+  return !!digits && allowed.indexOf(digits) !== -1;
+}
+
+// 순수 함수: 신한은행 입금 문자를 읽는다. receivedAt(ISO)으로 연도를 정한다.
+// 예) "[Web발신]\n신한11/10 18:45\n110-***-123456\n입금          10\n잔액     1,234\n 서창환"
+//     계좌번호·잔액을 숨기는 설정이면 "신한11/10 18:45\n입금 10\n서창환"처럼 온다.
+function bankSmsParse_(text, receivedAt) {
+  const flat = String(text || "")
+    .replace(/\[\s*(?:Web|웹)\s*발신\s*\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!flat) return { ok: false, reason: "EMPTY" };
+  if (!/신한/.test(flat)) return { ok: false, reason: "UNKNOWN_BANK" };
+  if (/출금|지급|취소/.test(flat) && !/입금/.test(flat)) return { ok: false, reason: "NOT_DEPOSIT" };
+  const when = flat.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s+(\d{1,2})\s*:\s*(\d{2})/);
+  const money = flat.match(/입금\s*:?\s*([0-9][0-9,]*)\s*원?/);
+  if (!when || !money) return { ok: false, reason: "FORMAT" };
+  const amount = companyDepositAmount_(money[1]);
+  const month = Number(when[1]);
+  const day = Number(when[2]);
+  const hour = Number(when[3]);
+  const minute = Number(when[4]);
+  if (!amount || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return { ok: false, reason: "FORMAT" };
+
+  const received = new Date(receivedAt);
+  const seoul = new Date((isFinite(received.getTime()) ? received.getTime() : Date.now()) + 9 * 3600000);
+  let year = seoul.getUTCFullYear();
+  if (month > seoul.getUTCMonth() + 1 + 1) year -= 1; // 12월 문자를 1월에 받은 경우
+  const date = year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  if (!ownerNoticeIsDate_(date)) return { ok: false, reason: "FORMAT" };
+
+  const accountMatch = flat.match(/[0-9*]{2,6}-[0-9*]{2,6}-[0-9*]{2,8}(?:-[0-9*]{1,4})?/);
+  const accountDigits = accountMatch ? (accountMatch[0].match(/(\d+)$/) || ["", ""])[1] : "";
+  const payerName = flat
+    .replace(when[0], " ")
+    .replace(accountMatch ? accountMatch[0] : "", " ")
+    .replace(money[0], " ")
+    .replace(/잔액\s*:?\s*-?[0-9][0-9,]*\s*원?/g, " ")
+    .replace(/신한(?:은행)?/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+  return {
+    ok: true,
+    bank: "신한",
+    date: date,
+    time: String(hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0"),
+    amount: amount,
+    payerName: payerName,
+    accountLast4: accountDigits.length >= 4 ? accountDigits.slice(-4) : ""
+  };
+}
+
+function bankSmsId_(text, receivedAt) {
+  const year = String(receivedAt || "").slice(0, 4);
+  const normalized = year + "|" + String(text || "").replace(/\s+/g, " ").trim();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalized, Utilities.Charset.UTF_8);
+  return "sms_" + digest.map(function (byte) { return ((byte + 256) % 256).toString(16).padStart(2, "0"); }).join("").slice(0, 32);
+}
+
+// 이미 결제완료로 알린 계약·결제일이면 두 번째 입금은 "확인 필요"로 바꾼다.
+function bankSmsMarkRepeatPayment_(notice, records) {
+  if (!notice || notice.kind !== "paid") return notice;
+  const repeat = Object.keys(records || {}).some(function (key) {
+    const row = records[key] || {};
+    return row.kind === "paid" && row.contractId === notice.contractId && row.dueDate === notice.dueDate
+      && ["sent", "sending", "failed", "baseline_skipped"].indexOf(row.status) !== -1;
+  });
+  if (!repeat) return notice;
+  return Object.assign({}, notice, {
+    kind: "review", reason: "DUPLICATE_PAYMENT",
+    candidates: [{ contractId: notice.contractId, buildingName: notice.buildingName, ownerName: notice.ownerName, dueDate: notice.dueDate }]
+  });
+}
+
+function bankSmsUnmatchedText_(parsed) {
+  return [
+    "<b>ℹ️ 입금 (계약과 연결 안 됨)</b>",
+    "",
+    "입금액 <b>" + ownerNoticeMoney_(parsed.amount) + "원</b> · " + ownerNoticeDateLabel_(parsed.date) + " " + parsed.time,
+    "입금자명 " + companyDepositHtml_(parsed.payerName || "-"),
+    "CRM 계약 중 이름·금액·결제일이 맞는 건이 없습니다. 구독료라면 CRM 계약의 금액이나 입금자명을 확인해 주세요."
+  ].join("\n");
+}
+
+function bankSmsUnreadableText_(text) {
+  return [
+    "<b>⚠️ 입금 문자를 읽지 못했습니다</b>",
+    "",
+    companyDepositHtml_(String(text || "").replace(/\s+/g, " ").trim().slice(0, 300)),
+    "",
+    "통장에서 직접 확인해 주세요. 문자 모양이 바뀌었을 수 있습니다."
+  ].join("\n");
+}
+
+// doPost action "bankSms": { action, key, sender, text }
+function handleBankSms_(payload) {
+  if (!bankSmsKeyValid_(payload && payload.key)) return { ok: false, message: "UNAUTHORIZED" };
+  const text = String(payload.text || "");
+  if (!text.trim() || text.length > BANK_SMS_MAX_TEXT) return { ok: false, message: "INVALID_TEXT" };
+  if (!bankSmsSenderAllowed_(payload.sender)) return { ok: true, status: "ignored_sender" };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, message: "BUSY" }; // 휴대폰이 잠시 뒤 다시 보낸다
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const receivedAt = new Date().toISOString();
+    props.setProperty(BANK_SMS_HEARTBEAT_PROPERTY, receivedAt); // 문자가 오면 휴대폰이 살아 있는 것
+    const id = bankSmsId_(text, receivedAt);
+    const recordPath = BANK_SMS_RECORD_PATH + "/" + id;
+    if (firebaseCompanyServerReadJson_(recordPath, "입금 문자 기록 조회 실패")) return { ok: true, status: "duplicate", id: id };
+
+    const parsed = bankSmsParse_(text, receivedAt);
+    const recordUrl = firebaseCompanyServerUrl_(recordPath);
+    const record = {
+      receivedAt: receivedAt,
+      sender: String(payload.sender || "").replace(/[^0-9A-Za-z가-힣+ -]/g, "").slice(0, 30),
+      text: text.slice(0, BANK_SMS_MAX_TEXT),
+      parsed: parsed.ok ? parsed : null,
+      parseError: parsed.ok ? "" : parsed.reason,
+      status: "received",
+      build: AUTOMATION_BUILD
+    };
+    firebaseWriteRequest_(recordUrl, "put", record, "입금 문자 저장 실패");
+
+    if (!parsed.ok) {
+      if (parsed.reason === "NOT_DEPOSIT") {
+        firebaseWriteRequest_(recordUrl, "patch", { status: "ignored_not_deposit" }, "입금 문자 상태 저장 실패");
+        return { ok: true, status: "ignored_not_deposit", id: id };
+      }
+      const warn = companyDepositAutomationEnabled_() ? sendCompanyDepositTelegram_(bankSmsUnreadableText_(text)) : { ok: false, message: "DISABLED" };
+      firebaseWriteRequest_(recordUrl, "patch", { status: "unreadable", telegramStatus: warn.ok ? "sent" : String(warn.message || "") }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "unreadable", id: id };
+    }
+
+    const companyLast4 = String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "");
+    if (parsed.accountLast4 && companyLast4 && parsed.accountLast4 !== companyLast4) {
+      // 지금은 회사 계좌만 처리한다. 건물주 계좌는 다음 단계에서 연결한다.
+      firebaseWriteRequest_(recordUrl, "patch", { status: "other_account" }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "other_account", id: id };
+    }
+    if (!companyDepositAutomationEnabled_()) {
+      firebaseWriteRequest_(recordUrl, "patch", { status: "stored_only" }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "stored_only", id: id };
+    }
+
+    const plan = companyDepositPlan_({
+      transactions: [{ tid: id, trdate: parsed.date.replace(/-/g, ""), accIn: String(parsed.amount), remark1: parsed.payerName }],
+      contracts: firebaseCompanyServerReadJson_("data/contracts", "계약 조회 실패"),
+      customers: firebaseCompanyServerReadJson_("data/customers", "고객 조회 실패"),
+      buildings: firebaseCompanyServerReadJson_("data/buildings", "건물 조회 실패"),
+      accountRef: "sms"
+    });
+    if (!plan.notices.length) {
+      const info = sendCompanyDepositTelegram_(bankSmsUnmatchedText_(parsed));
+      firebaseWriteRequest_(recordUrl, "patch", { status: "unmatched", telegramStatus: info.ok ? "sent" : String(info.message || "") }, "입금 문자 상태 저장 실패");
+      return { ok: true, status: "unmatched", id: id };
+    }
+    const records = firebaseCompanyServerReadJson_(COMPANY_DEPOSIT_RECORD_PATH, "결제완료 알림 기록 조회 실패") || {};
+    const notice = bankSmsMarkRepeatPayment_(plan.notices[0], records);
+    const result = companyDepositDeliver_(notice, false, { source: "sms", smsId: id });
+    firebaseWriteRequest_(recordUrl, "patch", { status: notice.kind === "paid" ? "matched" : "review", matchId: notice.id, delivery: result }, "입금 문자 상태 저장 실패");
+    return { ok: true, status: notice.kind === "paid" ? "matched" : "review", delivery: result, id: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// doPost action "bankSmsHeartbeat": 휴대폰이 하루 한 번 보내는 "살아 있음" 신호.
+function handleBankSmsHeartbeat_(payload) {
+  if (!bankSmsKeyValid_(payload && payload.key)) return { ok: false, message: "UNAUTHORIZED" };
+  PropertiesService.getScriptProperties().setProperty(BANK_SMS_HEARTBEAT_PROPERTY, new Date().toISOString());
+  return { ok: true, status: "alive" };
+}
+
+// 6시간마다 실행: 휴대폰 신호가 26시간 넘게 없으면 텔레그램으로 경고한다(12시간에 한 번만).
+function checkBankSmsHeartbeat() {
+  const props = PropertiesService.getScriptProperties();
+  if (!companyDepositAutomationEnabled_() || !String(props.getProperty(BANK_SMS_KEY_PROPERTY) || "")) return { ok: true, skipped: "DISABLED" };
+  const now = Date.now();
+  const last = Date.parse(props.getProperty(BANK_SMS_HEARTBEAT_PROPERTY) || props.getProperty(BANK_SMS_SETUP_PROPERTY) || "");
+  if (isFinite(last) && now - last < BANK_SMS_HEARTBEAT_LIMIT_HOURS * 3600000) return { ok: true, status: "alive" };
+  const warned = Date.parse(props.getProperty(BANK_SMS_HEARTBEAT_WARNED_PROPERTY) || "");
+  if (isFinite(warned) && now - warned < 12 * 3600000) return { ok: true, status: "already_warned" };
+  const result = sendCompanyDepositTelegram_([
+    "<b>📵 입금 문자 휴대폰 연결 끊김</b>",
+    "",
+    "전용 휴대폰에서 " + BANK_SMS_HEARTBEAT_LIMIT_HOURS + "시간 넘게 신호가 없습니다.",
+    "전원·충전·인터넷과 MacroDroid가 켜져 있는지 확인해 주세요. 그동안 들어온 입금은 통장에서 직접 확인해야 합니다."
+  ].join("\n"));
+  if (result.ok) props.setProperty(BANK_SMS_HEARTBEAT_WARNED_PROPERTY, new Date().toISOString());
+  return { ok: true, status: "warned", telegram: result.ok };
+}
+
+// 편집기에서 한 번 실행: 휴대폰에 넣을 비밀 키를 만들고(이미 있으면 그대로), 연결 확인 트리거를 만든다.
+// 비밀 키는 실행 로그에만 보이므로, MacroDroid에 붙여 넣은 뒤 채팅·메신저에 올리지 마세요.
+function setupBankSmsAutomation() {
+  const props = PropertiesService.getScriptProperties();
+  let key = String(props.getProperty(BANK_SMS_KEY_PROPERTY) || "").trim();
+  const created = key.length < 24;
+  if (created) {
+    key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, "");
+    props.setProperty(BANK_SMS_KEY_PROPERTY, key);
+  }
+  if (!props.getProperty(BANK_SMS_SETUP_PROPERTY)) props.setProperty(BANK_SMS_SETUP_PROPERTY, new Date().toISOString());
+  const handler = "checkBankSmsHeartbeat";
+  const exists = ScriptApp.getProjectTriggers().some(function (trigger) { return trigger.getHandlerFunction() === handler; });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyHours(6).create();
+  Logger.log("MacroDroid에 넣을 비밀 키: " + key);
+  const output = {
+    ok: true, keyCreated: created, heartbeatTrigger: exists ? "already" : "created",
+    notificationsEnabled: companyDepositAutomationEnabled_(),
+    telegramReady: companyDepositTelegramConfig_().ok,
+    companyAccountLast4Set: /^\d{4}$/.test(String(props.getProperty(COMPANY_DEPOSIT_ACCOUNT_PROPERTY) || "").replace(/\D/g, "")),
+    allowedSenders: String(props.getProperty(BANK_SMS_SENDERS_PROPERTY) || BANK_SMS_DEFAULT_SENDERS),
+    lastSignalAt: String(props.getProperty(BANK_SMS_HEARTBEAT_PROPERTY) || "")
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+// 편집기에서 실행: 문자 내용을 붙여 넣어 읽기 결과만 확인한다(저장·발송 없음).
+function previewBankSmsParse() {
+  const sample = "[Web발신]\n신한11/10 18:45\n110-***-123456\n입금          10\n잔액       1,234\n 서창환";
+  const output = bankSmsParse_(sample, new Date().toISOString());
+  Logger.log(JSON.stringify(output));
   return output;
 }

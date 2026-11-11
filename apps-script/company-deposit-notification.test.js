@@ -74,7 +74,10 @@ const context = {
   popbillConfig_: () => ({ isTest: true }),
   firebaseCompanyServerReadJson_: childPath => {
     if (childPath.startsWith("data/")) return crm[childPath.slice(5)] || null;
-    return firebase[childPath] || null;
+    if (firebase[childPath]) return firebase[childPath];
+    const children = {};
+    Object.keys(firebase).filter(key => key.startsWith(childPath + "/")).forEach(key => { children[key.slice(childPath.length + 1)] = firebase[key]; });
+    return Object.keys(children).length ? children : null;
   },
   firebaseCompanyServerUrl_: childPath => childPath,
   firebaseWriteRequest_: (url, method, payload) => {
@@ -127,6 +130,7 @@ vm.runInContext([
   extractFunction("sendCompanyDepositTelegram_"),
   extractFunction("sendCompanyDepositCeo_"),
   extractFunction("companyDepositAccount_"),
+  extractFunction("companyDepositDeliver_"),
   extractFunction("processCompanyDepositAutomation")
 ].join("\n"), context);
 
@@ -283,3 +287,112 @@ console.log("company-deposit-notification tests passed");
   assert.deepEqual(report.sharedNameAmount, [["새솔타워 / 구독 A", "새솔2관 / 구독 B"]]);
 }
 console.log("company-deposit readiness tests passed");
+
+// 7) 은행 입금 문자: 읽기, 비밀 키, 중복, 회사 계좌 결제완료 알림, 다른 계좌, 연결 끊김 경고.
+{
+  const crypto = require("crypto");
+  context.Utilities = {
+    DigestAlgorithm: { SHA_256: "sha256" },
+    Charset: { UTF_8: "utf8" },
+    computeDigest: (algorithm, value) => Array.from(crypto.createHash("sha256").update(String(value), "utf8").digest()).map(byte => byte > 127 ? byte - 256 : byte)
+  };
+  vm.runInContext([
+    constant("BANK_SMS_KEY_PROPERTY"),
+    constant("BANK_SMS_SENDERS_PROPERTY"),
+    constant("BANK_SMS_DEFAULT_SENDERS"),
+    constant("BANK_SMS_HEARTBEAT_PROPERTY"),
+    constant("BANK_SMS_HEARTBEAT_WARNED_PROPERTY"),
+    constant("BANK_SMS_SETUP_PROPERTY"),
+    constant("BANK_SMS_RECORD_PATH"),
+    constant("BANK_SMS_HEARTBEAT_LIMIT_HOURS"),
+    constant("BANK_SMS_MAX_TEXT"),
+    extractFunction("bankSmsSafeEqual_"),
+    extractFunction("bankSmsKeyValid_"),
+    extractFunction("bankSmsSenderAllowed_"),
+    extractFunction("bankSmsParse_"),
+    extractFunction("bankSmsId_"),
+    extractFunction("bankSmsMarkRepeatPayment_"),
+    extractFunction("bankSmsUnmatchedText_"),
+    extractFunction("bankSmsUnreadableText_"),
+    extractFunction("handleBankSms_"),
+    extractFunction("handleBankSmsHeartbeat_"),
+    extractFunction("checkBankSmsHeartbeat")
+  ].join("\n"), context);
+
+  // 읽기
+  const full = context.bankSmsParse_("[Web발신]\n신한11/10 18:45\n110-***-123456\n입금          10\n잔액       1,234\n 서창환", "2026-11-10T09:46:00Z");
+  assert.deepEqual(JSON.parse(JSON.stringify(full)), { ok: true, bank: "신한", date: "2026-11-10", time: "18:45", amount: 10, payerName: "서창환", accountLast4: "3456" });
+  const short = context.bankSmsParse_("[Web발신] 신한 11/16 09:05 입금 550,000원 홍길동", "2026-11-16T00:05:00Z");
+  assert.equal(short.amount, 550000);
+  assert.equal(short.payerName, "홍길동");
+  assert.equal(short.accountLast4, "");
+  assert.equal(context.bankSmsParse_("신한12/31 23:59 입금 1,000 김연말", "2027-01-01T00:10:00Z").date, "2026-12-31", "해를 넘겨 받은 문자는 작년 날짜");
+  assert.equal(context.bankSmsParse_("신한11/10 18:45 출금 5,000 편의점", "2026-11-10T10:00:00Z").reason, "NOT_DEPOSIT");
+  assert.equal(context.bankSmsParse_("국민 11/10 입금 5,000", "2026-11-10T10:00:00Z").reason, "UNKNOWN_BANK");
+  assert.equal(context.bankSmsParse_("신한 안내 문자입니다", "2026-11-10T10:00:00Z").reason, "FORMAT");
+
+  // 비밀 키와 보낸 번호
+  const key = "k".repeat(32);
+  store.BANK_SMS_KEY = key;
+  assert.equal(context.handleBankSms_({ key: "wrong", sender: "15778000", text: "신한11/16 09:05 입금 550,000 홍길동" }).message, "UNAUTHORIZED");
+  assert.equal(context.handleBankSms_({ key, sender: "01012345678", text: "신한11/16 09:05 입금 550,000 홍길동" }).status, "ignored_sender");
+  assert.equal(context.handleBankSmsHeartbeat_({ key: "" }).message, "UNAUTHORIZED");
+
+  // 회사 계좌 결제완료: 텔레그램·대표 알림 한 번, 같은 문자는 다시 처리하지 않음
+  crm = baseCrm();
+  crm.contracts.k1.paymentDueDate = "2026-09-15";
+  Object.keys(firebase).forEach(key => { delete firebase[key]; }); // 앞 시험의 결제완료 기록 지우기
+  store.COMPANY_DEPOSIT_AUTOMATION_ENABLED = "true";
+  store.COMPANY_DEPOSIT_ACCOUNT_LAST4 = "6789";
+  delete store.COMPANY_DEPOSIT_CEO_TEMPLATE_CODE;
+  telegramResponse = { code: 200, body: { ok: true, result: { message_id: 8 } } };
+  const beforeTelegram = sent.telegram.length;
+  const beforeCeo = sent.ceo.length;
+  const smsText = "[Web발신]\n신한11/16 09:05\n110-***-456789\n입금 550,000\n홍길동";
+  const first = context.handleBankSms_({ key, sender: "1577-8000", text: smsText });
+  assert.equal(first.status, "matched");
+  assert.equal(first.delivery, "sent");
+  assert.equal(sent.telegram.length, beforeTelegram + 1);
+  assert.ok(sent.telegram[sent.telegram.length - 1].text.includes("한빛빌딩"));
+  assert.equal(sent.ceo.length, beforeCeo + 1);
+  const smsRecord = firebase["bankSmsDeposits/" + first.id];
+  assert.equal(smsRecord.status, "matched");
+  assert.equal(smsRecord.parsed.payerName, "홍길동");
+  assert.equal(firebase["companyDepositMatches/dep_sms_" + first.id].source, "sms");
+  assert.ok(store.BANK_SMS_HEARTBEAT_AT, "문자가 오면 휴대폰 신호로도 본다");
+  assert.equal(context.handleBankSms_({ key, sender: "15778000", text: smsText }).status, "duplicate");
+  assert.equal(sent.telegram.length, beforeTelegram + 1, "같은 문자는 다시 알리지 않는다");
+
+  // 같은 결제일 납부분이 다른 문자로 또 오면 "확인 필요"
+  const again = context.handleBankSms_({ key, sender: "15778000", text: "신한11/17 10:00 110-***-456789 입금 550,000 홍길동" });
+  assert.equal(again.status, "review");
+  assert.ok(sent.telegram[sent.telegram.length - 1].text.includes("한 번 더"));
+
+  // 계약과 맞지 않는 입금은 텔레그램으로만 알림, 다른 계좌는 저장만
+  const ceoCount = sent.ceo.length;
+  assert.equal(context.handleBankSms_({ key, sender: "15778000", text: "신한11/16 11:00 입금 12,345 이몽룡" }).status, "unmatched");
+  assert.ok(sent.telegram[sent.telegram.length - 1].text.includes("연결 안 됨"));
+  assert.equal(sent.ceo.length, ceoCount, "계약과 맞지 않는 입금은 대표 번호로 보내지 않는다");
+  const tgCount = sent.telegram.length;
+  assert.equal(context.handleBankSms_({ key, sender: "15778000", text: "신한11/16 11:05 222-***-111111 입금 550,000 홍길동" }).status, "other_account");
+  assert.equal(context.handleBankSms_({ key, sender: "15778000", text: "신한 점검 안내 입금" }).status, "unreadable");
+  assert.equal(sent.telegram.length, tgCount + 1, "읽지 못한 문자는 경고만 보낸다");
+
+  // 알림이 꺼져 있으면 저장만
+  store.COMPANY_DEPOSIT_AUTOMATION_ENABLED = "false";
+  const stored = context.handleBankSms_({ key, sender: "15778000", text: "신한11/18 08:00 입금 330,000 영희상사" });
+  assert.equal(stored.status, "stored_only");
+  assert.equal(sent.telegram.length, tgCount + 1);
+
+  // 연결 끊김 경고: 26시간 넘게 신호가 없을 때 한 번만
+  store.COMPANY_DEPOSIT_AUTOMATION_ENABLED = "true";
+  store.BANK_SMS_HEARTBEAT_AT = new Date(Date.now() - 2 * 3600000).toISOString();
+  assert.equal(context.checkBankSmsHeartbeat().status, "alive");
+  store.BANK_SMS_HEARTBEAT_AT = new Date(Date.now() - 30 * 3600000).toISOString();
+  assert.equal(context.checkBankSmsHeartbeat().status, "warned");
+  assert.ok(sent.telegram[sent.telegram.length - 1].text.includes("연결 끊김"));
+  assert.equal(context.checkBankSmsHeartbeat().status, "already_warned");
+  assert.equal(context.handleBankSmsHeartbeat_({ key }).status, "alive");
+  assert.equal(context.checkBankSmsHeartbeat().status, "alive");
+}
+console.log("bank-sms tests passed");

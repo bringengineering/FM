@@ -189,6 +189,34 @@ FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래
 처음 실행은 이미 들어와 있던 입금을 알리지 않고 기준선(`COMPANY_DEPOSIT_BASELINE_AT`)만 남깁니다.
 발송 기록은 `crmCompany/companyDepositMatches/{id}`에 남고, 보내기 전에 먼저 기록해 두 번 보내지 않습니다.
 
+### 은행 입금 문자(SMS)로 받기 (팝빌 없이)
+
+전용 안드로이드 휴대폰의 MacroDroid가 신한은행 입금 문자(1577-8000)를 받으면, 문자 원문을 웹앱 주소로 그대로 보냅니다.
+
+```json
+{ "action": "bankSms", "key": "<BANK_SMS_KEY>", "sender": "<보낸 번호>", "text": "<문자 전체>" }
+```
+
+서버는 날짜·시간·금액·입금자·계좌 끝자리를 읽어 `crmCompany/bankSmsDeposits/{id}`에 원문과 함께 저장하고,
+회사 계좌 입금이면 위와 같은 맞추기·알림을 씁니다. 결과(`status`)는 다음 중 하나입니다.
+
+| status | 뜻 |
+| --- | --- |
+| `matched` | 계약과 맞음 → 텔레그램·대표 "결제완료" |
+| `review` | 같은 이름·금액 계약이 여럿, 또는 같은 결제일에 두 번째 입금 → 텔레그램 "확인 필요" |
+| `unmatched` | 맞는 계약 없음 → 텔레그램에만 "계약과 연결 안 됨" |
+| `unreadable` | 문자를 읽지 못함 → 텔레그램 경고(원문 포함) |
+| `other_account` | 문자의 계좌 끝자리가 `COMPANY_DEPOSIT_ACCOUNT_LAST4`와 다름 → 저장만 |
+| `stored_only` | `COMPANY_DEPOSIT_AUTOMATION_ENABLED`가 꺼져 있음 → 저장만 |
+| `duplicate` | 같은 문자를 이미 받음 |
+
+- `BANK_SMS_KEY`: `setupBankSmsAutomation`을 한 번 실행하면 만들어지고 실행 로그에만 보입니다. MacroDroid에 붙여 넣습니다.
+- `BANK_SMS_SENDERS`: (선택) 받을 발신번호, 쉼표로 구분. 기본 `15778000`.
+- 휴대폰은 하루 한 번 `{ "action": "bankSmsHeartbeat", "key": "…" }`를 보냅니다. `checkBankSmsHeartbeat`(6시간마다)가
+  26시간 넘게 신호가 없으면 텔레그램으로 경고합니다(12시간에 한 번).
+- 문자 읽기 결과만 보려면 `previewBankSmsParse`를 실행합니다(저장·발송 없음).
+- 신한은행 문자 모양은 `11/10 18:45 … 입금 10 … 이름`을 기준으로 읽습니다. 실제 문자가 다르면 `bankSmsParse_`를 맞춰 고칩니다.
+
 ## 네이버클라우드 SENS 문자 테스트
 
 1. 네이버클라우드 콘솔에서 SENS SMS 프로젝트를 만들고 발신번호를 등록/승인합니다.

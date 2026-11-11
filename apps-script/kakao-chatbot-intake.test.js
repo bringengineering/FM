@@ -1106,7 +1106,7 @@ assert.deepEqual(
 );
 
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20261109-v63"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20261111-v64"/);
 assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "automationState\/receiptSms", casePayload\.automationState\.receiptSms\)/);
