@@ -54,6 +54,7 @@
   const SERVICE_KINDS = Object.freeze([
     Object.freeze({ kind: "stairs", words: Object.freeze(["계단", "공용부", "공용"]) }),
     Object.freeze({ kind: "moveIn", words: Object.freeze(["입주", "이사", "퇴실", "준공"]) }),
+    Object.freeze({ kind: "waste", words: Object.freeze(["폐기물", "폐기", "배출"]) }),
   ]);
 
   function kindFromService(service) {
