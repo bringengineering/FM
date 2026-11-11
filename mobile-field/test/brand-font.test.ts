@@ -8,5 +8,5 @@ it('picks the Pretendard file for each weight and leaves layout styles alone', (
   expect(brandFont({ fontSize: 12, fontWeight: '600' }, 'android')).toEqual({ fontSize: 12, fontFamily: 'Pretendard-SemiBold' });
   const box = { padding: 4, backgroundColor: '#fff' };
   expect(brandFont(box, 'android')).toBe(box);
-  expect(brandFont({ fontSize: 12 }, 'web')).toEqual({ fontSize: 12 });
+  expect(brandFont({ fontSize: 12, fontWeight: '700' }, 'web')).toEqual({ fontSize: 12, fontWeight: '700', fontFamily: 'Pretendard-Bold' });
 });

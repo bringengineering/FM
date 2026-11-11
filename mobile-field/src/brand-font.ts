@@ -7,7 +7,7 @@ const FAMILY: Record<string, string> = {
 /** 글자 스타일(fontSize·fontWeight 가 있는 것)에 굵기별 Pretendard 파일을 지정한다.
  *  안드로이드는 굵기마다 다른 파일을 쓰므로 fontWeight 를 지워 이중 굵게 처리를 막는다. */
 export function brandFont<T extends Record<string, any>>(style: T, os: string): T {
-  if (os === 'web' || style.fontFamily || (style.fontSize === undefined && style.fontWeight === undefined)) return style;
+  if (style.fontFamily || (style.fontSize === undefined && style.fontWeight === undefined)) return style;
   const family = FAMILY[String(style.fontWeight ?? '400')] ?? FAMILY['400']!;
   if (os !== 'android') return { ...style, fontFamily: family };
   const { fontWeight: _dropped, ...rest } = style;

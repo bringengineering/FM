@@ -1,4 +1,5 @@
 import React, {useState} from 'react';
+import './web-fonts';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {CompanyScreen} from './CompanyScreen';
 import {FieldWorkspace} from './FieldWorkspace';
