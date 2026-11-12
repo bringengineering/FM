@@ -23,17 +23,37 @@ const CUSTOMERS = [
   { id: 'c4', name: '솔숲타운', address: '원주시 북원로 58', kind: '정기 청소', last: '10월 29일 정기 청소', today: false },
 ];
 const ALL = ['owner_move_out', 'owner_broker_listed', 'owner_room_viewing', 'owner_lease_contract', 'owner_move_in_cleaning'];
-const unitOf = (id: string, building: string, address: string, unit: string, owner: string, phone: string, done: string[]) => ({ id, building, address, unit, owner, phone, done });
-const UNITS = [
-  unitOf('u1', '햇살빌라', '원주시 단계로 101', '201', '김가상', '010-****-1234', ['owner_move_out']),
-  unitOf('u2', '햇살빌라', '원주시 단계로 101', '305', '김가상', '010-****-1234', ALL.slice(0, 3)),
-  unitOf('u3', '햇살빌라', '원주시 단계로 101', '402', '김가상', '010-****-1234', ALL),
-  unitOf('u4', '푸른주택', '원주시 무실로 22', '102', '이시안', '010-****-5678', []),
-  unitOf('u5', '푸른주택', '원주시 무실로 22', '203', '이시안', '010-****-5678', ALL.slice(0, 4)),
-  unitOf('u6', '솔숲타운', '원주시 북원로 58', 'B01', '박예시', '010-****-9012', ALL.slice(0, 1)),
+interface Sent { stage: string; at: string; input: Record<string, string> }
+interface Unit { id: string; building: string; address: string; unit: string; owner: string; phone: string; history: Sent[] }
+const sent = (stage: string, at: string, input: Record<string, string> = {}): Sent => ({ stage, at, input });
+const UNITS: Unit[] = [
+  { id: 'u1', building: '햇살빌라', address: '원주시 단계로 101', unit: '201', owner: '김가상', phone: '010-****-1234', history: [sent('owner_move_out', '2026-11-05', { 퇴실일: '2026-11-30' })] },
+  { id: 'u2', building: '햇살빌라', address: '원주시 단계로 101', unit: '305', owner: '김가상', phone: '010-****-1234', history: [
+    sent('owner_move_out', '2026-10-20'), sent('owner_broker_listed', '2026-10-22', { 중개사무소: '단계공인중개사', 접수일: '2026-10-22' }),
+    sent('owner_room_viewing', '2026-10-28', { 중개사무소: '단계공인중개사' }), sent('owner_room_viewing', '2026-11-04', { 중개사무소: '단계공인중개사' })] },
+  { id: 'u3', building: '햇살빌라', address: '원주시 단계로 101', unit: '402', owner: '김가상', phone: '010-****-1234', history: ALL.map((id, i) => sent(id, `2026-0${3 + i}-10`)) },
+  { id: 'u4', building: '푸른주택', address: '원주시 무실로 22', unit: '102', owner: '이시안', phone: '010-****-5678', history: [] },
+  { id: 'u5', building: '푸른주택', address: '원주시 무실로 22', unit: '203', owner: '이시안', phone: '010-****-5678', history: [
+    sent('owner_move_out', '2026-10-01'), sent('owner_broker_listed', '2026-10-03', { 중개사무소: '무실부동산' }), sent('owner_room_viewing', '2026-10-10', { 중개사무소: '무실부동산' }),
+    sent('owner_lease_contract', '2026-10-15', { 입주일: '2026-11-20' })] },
+  { id: 'u6', building: '솔숲타운', address: '원주시 북원로 58', unit: 'B01', owner: '박예시', phone: '010-****-9012', history: [sent('owner_move_out', '2026-11-08')] },
 ];
+const label = (id: string) => core.TURNOVER_STAGES.find(st => st.id === id)?.label ?? id;
+const day = (at: string) => { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(at); return m ? `${Number(m[1])}월 ${Number(m[2])}일` : at; };
+/** 이번 회차 = 마지막 퇴실 안내부터. 입주청소까지 보내면 회차가 끝나고, 다음 퇴실 때 새 회차가 시작된다. */
+function cycleOf(history: Sent[]) {
+  const lastMoveOut = history.map(h => h.stage).lastIndexOf('owner_move_out');
+  const rows = lastMoveOut < 0 ? history : history.slice(lastMoveOut);
+  const stages = core.TURNOVER_STAGES.map(st => { const mine = rows.filter(r => r.stage === st.id); return { ...st, count: mine.length, last: mine[mine.length - 1] }; });
+  const complete = stages[4]!.count > 0, started = rows.length > 0;
+  const next = complete || !started ? 'owner_move_out' : stages.find(st => !st.count)?.id ?? 'owner_move_out';
+  /** 앞 단계에서 이미 입력한 값(중개사무소·입주일)은 다음 단계에 미리 채운다. */
+  const remembered: Record<string, string> = {};
+  for (const r of rows) for (const key of ['중개사무소', '입주일']) if (r.input[key]) remembered[key] = r.input[key]!;
+  return { stages, complete, started, next, remembered };
+}
 const AREAS = ['계단', '복도', '현관', '주차장', '분리수거장'];
-type Customer = typeof CUSTOMERS[number]; type Unit = typeof UNITS[number];
+type Customer = typeof CUSTOMERS[number];
 type Tab = 'work' | 'notice' | 'me';
 
 function Button({ label, onPress, kind = 'primary', disabled }: { label: string; onPress: () => void; kind?: 'primary' | 'secondary' | 'quiet'; disabled?: boolean }) {
@@ -114,28 +134,32 @@ function WorkFlow({ site, onClose }: { site: Customer; onClose: () => void }) {
 
 /* ── 안내 알림톡 ─────────────────────────────── */
 function NoticeTab() {
-  const [query, setQuery] = useState(''); const [unit, setUnit] = useState<Unit>(); const [open, setOpen] = useState<Record<string, boolean>>({ '햇살빌라': true });
-  if (unit) return <NoticeFlow unit={unit} onClose={() => setUnit(undefined)} />;
+  const [units, setUnits] = useState(UNITS); const [query, setQuery] = useState(''); const [unitId, setUnitId] = useState<string>();
+  const [open, setOpen] = useState<Record<string, boolean>>({ '햇살빌라': true });
+  const unit = units.find(u => u.id === unitId);
+  if (unit) return <NoticeFlow unit={unit} onClose={() => setUnitId(undefined)}
+    onSent={entry => setUnits(list => list.map(u => u.id === unit.id ? { ...u, history: [...u.history, entry] } : u))} />;
   const q = query.trim();
-  const list = UNITS.filter(u => !q || (u.building + u.address + u.unit + u.owner).includes(q));
+  const list = units.filter(u => !q || (u.building + u.address + u.unit + u.owner).includes(q));
   const buildings = [...new Set(list.map(u => u.building))].map(name => ({ name, units: list.filter(u => u.building === name) }));
   return <><Header title="안내 알림톡" sub="건물주에게 퇴실~입주 단계 안내" /><ScrollView contentContainerStyle={s.body}>
     <Search value={query} onChange={setQuery} placeholder="건물명, 주소, 호실, 건물주" />
-    {buildings.map(({ name, units }) => {
-      const first = units[0]!, expanded = !!q || !!open[name];
-      const active = units.filter(u => u.done.length && u.done.length < ALL.length).length;
+    {buildings.map(({ name, units: rows }) => {
+      const first = rows[0]!, expanded = !!q || !!open[name];
+      const active = rows.filter(u => { const c = cycleOf(u.history); return c.started && !c.complete; }).length;
       return <View key={name} style={s.group}>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setOpen({ ...open, [name]: !open[name] })} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
           <View style={s.rowIcon}><BuildingIcon size={20} color={color.primary} /></View>
           <View style={s.flex}><Text style={s.rowTitle}>{name}</Text><Text style={s.rowSub}>{first.address} · 건물주 {first.owner}</Text>
-            <Text style={s.rowMeta}>호실 {units.length}개{active ? ` · 진행 중 ${active}` : ''}</Text></View>
+            <Text style={s.rowMeta}>호실 {rows.length}개{active ? ` · 공실 진행 중 ${active}` : ''}</Text></View>
           <View style={expanded ? s.chevronOpen : undefined}><NextIcon size={20} color={color.subtle} /></View></Pressable>
-        {expanded && units.map(u => {
-          const next = core.TURNOVER_STAGES.find(st => !u.done.includes(st.id));
-          return <Pressable key={u.id} accessibilityRole="button" onPress={() => setUnit(u)} style={({ pressed }) => [s.unitRow, pressed && s.rowPressed]}>
+        {expanded && rows.map(u => {
+          const c = cycleOf(u.history);
+          const meta = !c.started ? '보낸 안내 없음 · 퇴실 일정이 잡히면 시작' : c.complete ? '입주청소까지 완료' : `다음: ${label(c.next)}`;
+          return <Pressable key={u.id} accessibilityRole="button" onPress={() => setUnitId(u.id)} style={({ pressed }) => [s.unitRow, pressed && s.rowPressed]}>
             <Text style={s.unitNo}>{u.unit}호</Text>
-            <View style={s.flex}><View style={[s.progress, s.progressTight]}>{core.TURNOVER_STAGES.map(st => <View key={st.id} style={[s.progressBar, u.done.includes(st.id) && s.progressOn]} />)}</View>
-              <Text style={[s.rowMeta, !next && s.doneMeta]}>{next ? `다음: ${next.label}` : '입주청소까지 완료'}</Text></View>
+            <View style={s.flex}><View style={[s.progress, s.progressTight]}>{c.stages.map(st => <View key={st.id} style={[s.progressBar, st.count > 0 && s.progressOn]} />)}</View>
+              <Text style={[s.rowMeta, c.complete && s.doneMeta]}>{meta}</Text></View>
             <NextIcon size={18} color={color.subtle} /></Pressable>;
         })}
       </View>;
@@ -143,27 +167,44 @@ function NoticeTab() {
     {!buildings.length && <Text style={s.empty}>일치하는 건물·호실이 없습니다.</Text>}
   </ScrollView></>;
 }
-function NoticeFlow({ unit, onClose }: { unit: Unit; onClose: () => void }) {
-  const firstOpen = core.TURNOVER_STAGES.find(st => !unit.done.includes(st.id))?.id ?? core.TURNOVER_STAGES[0]!.id;
-  const [stage, setStage] = useState(firstOpen); const [input, setInput] = useState<Record<string, string>>({});
-  const [confirm, setConfirm] = useState(false); const [sent, setSent] = useState(false);
+function NoticeFlow({ unit, onClose, onSent }: { unit: Unit; onClose: () => void; onSent: (entry: Sent) => void }) {
+  const cycle = cycleOf(unit.history);
+  const [stage, setStage] = useState(cycle.next); const [input, setInput] = useState<Record<string, string>>(cycle.remembered);
+  const [confirm, setConfirm] = useState(false); const [receipt, setReceipt] = useState<'' | 'accepted' | 'delivered'>('');
   const fields = core.TURNOVER_FIELDS[stage] ?? [];
   const values = useMemo(() => ({ ...core.formatTurnoverValues(stage, input), 건물주소: unit.address, 호실: unit.unit }), [stage, input, unit]);
   const missing = core.missingVariables(stage, values); const preview = core.render(stage, values);
-  const already = unit.done.includes(stage);
+  const current = cycle.stages.find(st => st.id === stage)!;
+  const newCycle = stage === 'owner_move_out' && (cycle.complete || cycle.started);
+  const skipped = cycle.complete || newCycle ? [] : cycle.stages.filter(st => st.stage < current.stage && !st.count && st.id !== 'owner_room_viewing');
+  const notice = newCycle ? { tone: 'info', text: `새 세입자 회차를 시작합니다. 지난 회차 기록(${cycle.stages.filter(st => st.count).length}단계)은 그대로 남습니다.` }
+    : cycle.complete ? { tone: 'warn', text: '이번 회차는 입주청소까지 보냈습니다. 새 퇴실이면 1단계 퇴실 일정 안내부터 보내세요.' }
+    : current.count && stage === 'owner_room_viewing' ? { tone: 'info', text: `방 보기 안내 ${current.count}회 보냄 (마지막 ${day(current.last!.at)}). 방 보기 일정이 잡힐 때마다 보내면 됩니다.` }
+    : current.count ? { tone: 'warn', text: `${day(current.last!.at)}에 이미 보낸 단계입니다. 다시 보내면 건물주님이 같은 안내를 한 번 더 받습니다.` }
+    : skipped.length ? { tone: 'warn', text: `앞 단계(${skipped.map(st => st.label).join(', ')})를 아직 보내지 않았습니다. 건너뛰고 보낼 수는 있습니다.` } : null;
+  function pick(id: string) { setStage(id); setInput(cycle.remembered); }
+  function send() {
+    setConfirm(false); setReceipt('accepted'); onSent({ stage, at: '2026-11-12', input });
+    setTimeout(() => setReceipt(r => r === 'accepted' ? 'delivered' : r), 1500);
+  }
+  const after = cycleOf([...unit.history]);
+  const following = receipt && !after.complete && after.next !== 'owner_move_out' ? after.next : '';
   return <><Header title={`${unit.building} ${unit.unit}호`} sub={`${unit.address} · 건물주 ${unit.owner}`} onBack={onClose} />
     <ScrollView contentContainerStyle={s.body}>
-      {sent ? <View style={s.done}><CheckIcon size={36} color={color.success} strokeWidth={2.5} /><Text style={s.doneTitle}>발송 접수됨</Text><Text style={s.text}>{unit.owner}님({unit.phone})께 알림톡을 보냈습니다. 시안이라 실제로는 보내지 않았습니다.</Text></View> : <>
-        <Text style={s.section}>단계</Text>
-        <View style={s.stageList}>{core.TURNOVER_STAGES.map(st => {
-          const done = unit.done.includes(st.id), on = st.id === stage;
-          return <Pressable key={st.id} onPress={() => { setStage(st.id); setInput({}); }} style={[s.stage, on && s.stageOn]}>
+      {receipt ? <View style={s.done}><CheckIcon size={36} color={color.success} strokeWidth={2.5} />
+        <Text style={s.doneTitle}>{receipt === 'delivered' ? '카카오 전달 완료' : '발송 접수됨 · 전달 확인 중'}</Text>
+        <Text style={[s.text, s.center]}>{label(stage)}를 {unit.owner}님({unit.phone})께 보냈습니다.{'\n'}시안이라 실제로는 보내지 않았습니다.</Text></View> : <>
+        <Text style={s.section}>{cycle.complete || !cycle.started ? '단계' : '이번 회차 단계'}</Text>
+        <View style={s.stageList}>{cycle.stages.map(st => {
+          const done = st.count > 0 && !newCycle, on = st.id === stage;
+          return <Pressable key={st.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => pick(st.id)} style={[s.stage, on && s.stageOn]}>
             <View style={[s.stageNum, done && s.stepDone, on && !done && s.stepNow]}>{done ? <CheckIcon size={12} color={color.surface} strokeWidth={3} /> : <Text style={[s.stepNum, on && s.stepNumNow]}>{st.stage}</Text>}</View>
-            <Text style={[s.stageText, on && s.stageTextOn]}>{st.label}</Text>{done && <Text style={s.stageSent}>보냄</Text>}</Pressable>;
+            <Text style={[s.stageText, on && s.stageTextOn]}>{st.label}</Text>
+            {st.count > 0 && !newCycle && <Text style={s.stageSent}>{day(st.last!.at)}{st.count > 1 ? ` · ${st.count}회` : ''}</Text>}</Pressable>;
         })}</View>
-        {already && <Text style={s.warn}>이미 보낸 단계입니다. 다시 보내면 건물주님이 같은 안내를 한 번 더 받습니다.</Text>}
+        {notice && <Text style={notice.tone === 'warn' ? s.warn : s.info}>{notice.text}</Text>}
         <Text style={s.section}>입력</Text>
-        <View style={s.card}>{fields.map(f => <View key={f.key} style={s.field}><Text style={s.label}>{f.label}</Text>
+        <View style={s.card}>{fields.map(f => <View key={f.key} style={s.field}><Text style={s.label}>{f.label}{cycle.remembered[f.key] && input[f.key] === cycle.remembered[f.key] ? '  · 앞 단계 값' : ''}</Text>
           <TextInput value={input[f.key] ?? ''} onChangeText={v => setInput({ ...input, [f.key]: v })} placeholderTextColor={color.subtle}
             placeholder={f.placeholder ?? (f.type === 'date' ? '2026-11-12' : f.type === 'time' ? '10:00' : '2026-11-12T14:00')} style={s.input} /></View>)}
           <Text style={s.hint}>앱에서는 날짜·시간을 달력으로 고릅니다.</Text></View>
@@ -171,15 +212,18 @@ function NoticeFlow({ unit, onClose }: { unit: Unit; onClose: () => void }) {
         <View style={s.preview}><Text style={s.previewText}>{preview}</Text></View>
       </>}
     </ScrollView>
-    <View style={s.footer}>{sent ? <Button label="호실 목록으로" kind="secondary" onPress={onClose} />
-      : <Button label={missing.length ? `${missing.join(', ')} 입력 필요` : '보내기 전 확인'} disabled={!!missing.length} onPress={() => setConfirm(true)} />}</View>
+    <View style={s.footer}>{receipt ? <View style={s.footerStack}>
+        {!!following && <Button label={`이어서 · ${label(following)}`} onPress={() => { setReceipt(''); setStage(following); setInput(cycleOf(unit.history).remembered); }} />}
+        <Button label="호실 목록으로" kind="secondary" onPress={onClose} /></View>
+      : <Button label={missing.length ? `${missing.map(key => fields.find(f => f.key === key)?.label ?? key).join(', ')} 입력 필요` : '보내기 전 확인'} disabled={!!missing.length} onPress={() => setConfirm(true)} />}</View>
     <Modal visible={confirm} transparent animationType="fade" onRequestClose={() => setConfirm(false)}>
       <View style={s.sheetBack}><View style={s.sheet}>
-        <Text style={s.cardTitle}>이 내용으로 보낼까요?</Text>
+        <Text style={s.cardTitle}>{label(stage)}를 보낼까요?</Text>
         <Text style={s.text}>받는 분: 건물주 {unit.owner} · {unit.phone}</Text>
+        {notice?.tone === 'warn' && <Text style={s.warn}>{notice.text}</Text>}
         <ScrollView style={s.sheetPreview}><Text style={s.previewText}>{preview}</Text></ScrollView>
         <View style={s.sheetButtons}><View style={s.flex}><Button label="취소" kind="secondary" onPress={() => setConfirm(false)} /></View>
-          <View style={s.flex}><Button label="보내기" onPress={() => { setConfirm(false); setSent(true); }} /></View></View>
+          <View style={s.flex}><Button label="보내기" onPress={send} /></View></View>
       </View></View>
     </Modal></>;
 }
@@ -258,6 +302,7 @@ const s = brandStyles({
   unitRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingLeft: 68, paddingRight: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: color.line, backgroundColor: color.fill },
   unitNo: { width: 52, fontSize: 16, fontWeight: '700', color: color.ink }, doneMeta: { color: color.success },
   chevronOpen: { transform: [{ rotate: '90deg' }] }, progressBar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line }, progressOn: { backgroundColor: color.primary },
+  info: { fontSize: 13, lineHeight: 19, color: color.primaryDark, backgroundColor: color.primarySoft, padding: 12, borderRadius: 10 }, center: { textAlign: 'center' }, footerStack: { gap: 8 },
   warn: { fontSize: 13, lineHeight: 19, color: color.warning, backgroundColor: color.warningSoft, padding: 12, borderRadius: 10 },
   preview: { backgroundColor: color.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: color.line },
   previewText: { fontSize: 14, lineHeight: 21, color: color.text },
