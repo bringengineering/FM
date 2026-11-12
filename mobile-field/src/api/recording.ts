@@ -61,12 +61,12 @@ export class CompanyRecordingApi extends CompanySiteApi {
     return ownerNoticeReceipt(await this.request(`/owner-notices/deliveries/${requestId}`,'GET',undefined,signal),requestId);
   }
 }
-export interface OwnerNoticeUnit {id:string;buildingId:string;address:string;unit:string;owner:string;recipient:string;nextStage:string;progress:{id:string;count:number;lastSentAt:string}[]}
+export interface OwnerNoticeUnit {id:string;buildingId:string;building:string;address:string;unit:string;owner:string;recipient:string;nextStage:string;progress:{id:string;count:number;lastSentAt:string}[]}
 export interface OwnerNoticeReceipt {requestId:string;status:'accepted'|'delivered'|'failed'|'unknown';recipient?:string}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const short=(v:unknown,max:number)=>typeof v==='string'&&v.length<=max&&!/[\u0000-\u001f\u007f]/.test(v);
 function ownerNoticeUnit(v:any):v is OwnerNoticeUnit{
-  return !!v&&/^[A-Za-z0-9_-]{1,160}$/.test(v.id||'')&&/^[A-Za-z0-9_-]{1,160}$/.test(v.buildingId||'')&&short(v.address,80)&&short(v.unit,30)&&short(v.owner,60)&&/^01\d-\*\*\*\*-\d{4}$/.test(v.recipient||'')
+  return !!v&&/^[A-Za-z0-9_-]{1,160}$/.test(v.id||'')&&/^[A-Za-z0-9_-]{1,160}$/.test(v.buildingId||'')&&short(v.building,60)&&short(v.address,80)&&short(v.unit,30)&&short(v.owner,60)&&/^01\d-\*\*\*\*-\d{4}$/.test(v.recipient||'')
     &&short(v.nextStage,60)&&Array.isArray(v.progress)&&v.progress.length<=10&&v.progress.every((p:any)=>short(p?.id,60)&&Number.isSafeInteger(p.count)&&p.count>=0&&short(p.lastSentAt,40));
 }
 function ownerNoticeReceipt(v:any,requestId:string):OwnerNoticeReceipt{

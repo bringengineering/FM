@@ -169,21 +169,29 @@
   }
 
   // 발송 이력(messageDeliveries)에서 이 호실의 단계별 마지막 발송을 뽑는다.
+  // 한 호실의 '이번 회차'(마지막 퇴실 안내부터) 단계별 발송 현황. 입주청소까지 보낸 뒤 다음 세입자가
+  // 나가면 퇴실 안내로 새 회차가 시작되고, 지난 회차 발송은 세지 않는다(기록은 그대로 남는다).
   function turnoverProgress(deliveries, unitId) {
     const rows = (Array.isArray(deliveries) ? deliveries : []).filter(item => item
       && item.sourceType === "buildingUnit" && String(item.sourceId || "") === String(unitId || "")
       && TEMPLATES[item.category] && TEMPLATES[item.category].delivery === "turnover"
       && item.status !== "failed");
+    const cycleStart = rows.filter(item => item.category === "owner_move_out")
+      .reduce((latest, item) => String(item.requestedAt || "") > latest ? String(item.requestedAt || "") : latest, "");
+    const current = cycleStart ? rows.filter(item => String(item.requestedAt || "") >= cycleStart) : rows;
     return TURNOVER_STAGES.map(stage => {
-      const sent = rows.filter(item => item.category === stage.id).sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
+      const sent = current.filter(item => item.category === stage.id).sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
       return { id: stage.id, label: stage.label, stage: stage.stage, count: sent.length, lastSentAt: sent[0] ? String(sent[0].requestedAt || "") : "" };
     });
   }
 
+  // 다음에 보낼 단계: 아직 안 보낸 첫 단계. 아무것도 안 보냈거나 입주청소까지 끝난 회차는 퇴실 안내(새 회차).
   function nextTurnoverStage(progress) {
     const list = Array.isArray(progress) ? progress : [];
+    const cleaning = list.find(item => item.id === "owner_move_in_cleaning");
+    if (!list.some(item => item.count) || (cleaning && cleaning.count)) return "owner_move_out";
     const next = list.find(item => !item.count);
-    return next ? next.id : "owner_room_viewing";
+    return next ? next.id : "owner_move_out";
   }
 
   return Object.freeze({

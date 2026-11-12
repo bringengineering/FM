@@ -9,7 +9,7 @@ function data() {
   return {
     units: { 'unit-a': { id: 'unit-a', crmBuildingId: 'bld-a', label: '201호' }, 'unit-old': { id: 'unit-old', crmBuildingId: 'bld-a', label: '301', archivedAt: '2026-01-01' },
       'unit-b': { id: 'unit-b', crmBuildingId: 'bld-b', label: '101' } } as Record<string, any>,
-    buildings: { 'bld-a': { id: 'bld-a', roadAddress: '강원특별자치도 원주시 시험로 12', ownerCustomerId: 'owner-a' }, 'bld-b': { id: 'bld-b', roadAddress: '강원특별자치도 원주시 시험로 30' } } as Record<string, any>,
+    buildings: { 'bld-a': { id: 'bld-a', name: '시험빌라', roadAddress: '강원특별자치도 원주시 시험로 12', ownerCustomerId: 'owner-a' }, 'bld-b': { id: 'bld-b', roadAddress: '강원특별자치도 원주시 시험로 30' } } as Record<string, any>,
     customers: { 'owner-a': { id: 'owner-a', name: '합성 건물주', phone: '010-0000-0000' }, 'tenant-a': { id: 'tenant-a', name: '세입자', phone: '01011112222' } } as Record<string, any>,
     deliveries: { r1: { sourceType: 'buildingUnit', sourceId: 'unit-a', category: 'owner_move_out', status: 'delivered', requestedAt: '2026-11-01T00:00:00Z' } } as Record<string, any>,
   };
@@ -28,7 +28,7 @@ const body = (extra: Record<string, unknown> = {}) => ({ requestId: REQUEST, uni
 it('lists only live units whose owner is resolvable, masks the phone, and suggests the next stage', async () => {
   const { units, truncated } = await listOwnerNoticeUnits(reads());
   expect(truncated).toBe(false);
-  expect(units).toEqual([expect.objectContaining({ id: 'unit-a', address: '원주시 시험로 12', unit: '201', owner: '합성 건물주', recipient: '010-****-0000', nextStage: 'owner_broker_listed' })]);
+  expect(units).toEqual([expect.objectContaining({ id: 'unit-a', building: '시험빌라', address: '원주시 시험로 12', unit: '201', owner: '합성 건물주', recipient: '010-****-0000', nextStage: 'owner_broker_listed' })]);
   expect(JSON.stringify(units)).not.toContain('01000000000');
 });
 

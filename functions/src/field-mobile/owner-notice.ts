@@ -49,7 +49,7 @@ const isTurnover = (templateId: unknown): templateId is string => typeof templat
 const unitBuildingId = (unit: Row) => String(unit.crmBuildingId || unit.buildingId || '');
 
 export interface OwnerNoticeUnit {
-  id: string; buildingId: string; address: string; unit: string; owner: string; recipient: string;
+  id: string; buildingId: string; building: string; address: string; unit: string; owner: string; recipient: string;
   nextStage: string; progress: { id: string; count: number; lastSentAt: string }[];
 }
 function project(unit: Row, building: Row | undefined, customers: Row[], deliveries: Row[]): OwnerNoticeUnit | null {
@@ -60,7 +60,7 @@ function project(unit: Row, building: Row | undefined, customers: Row[], deliver
   const label = ownerNotice.unitLabel(unit), address = ownerNotice.buildingAddress(building);
   if (!label || !address) return null;
   const progress = ownerNotice.turnoverProgress(deliveries, unit.id);
-  return { id: unit.id, buildingId: String(building.id), address, unit: label, owner: line(owner.nickname || owner.name || owner.company || '건물주', 60), recipient: mask(to),
+  return { id: unit.id, buildingId: String(building.id), building: line(building.name, 60), address, unit: label, owner: line(owner.nickname || owner.name || owner.company || '건물주', 60), recipient: mask(to),
     nextStage: ownerNotice.nextTurnoverStage(progress), progress: progress.map(item => ({ id: item.id, count: item.count, lastSentAt: line(item.lastSentAt, 40) })) };
 }
 /** 건물주를 정확히 한 명 찾을 수 있고 휴대전화가 있는 호실만 보인다. */

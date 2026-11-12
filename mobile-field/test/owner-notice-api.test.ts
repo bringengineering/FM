@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { CompanyRecordingApi } from '../src/api/recording';
 
 const REQUEST = '0f4d6a0e-5d0b-4b3f-9a51-8f6d9b1c2a3e';
-const unit = { id: 'unit-a', buildingId: 'bld-a', address: '원주시 시험로 12', unit: '201', owner: '합성 건물주', recipient: '010-****-0000', nextStage: 'owner_lease_contract',
+const unit = { id: 'unit-a', buildingId: 'bld-a', building: '시험빌라', address: '원주시 시험로 12', unit: '201', owner: '합성 건물주', recipient: '010-****-0000', nextStage: 'owner_lease_contract',
   progress: [{ id: 'owner_move_out', count: 1, lastSentAt: '2026-11-01T00:00:00Z' }] };
 function api(handler: (url: string, init?: RequestInit) => Response) {
   const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => handler(String(url), init));
