@@ -3,7 +3,9 @@ import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { defineString, defineSecret } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
-import { firebaseCustomerSiteReads, firebaseWorkspaceReads } from './firebase-reads.js';
+import { firebaseCustomerSiteReads, firebaseOwnerNoticeReads, firebaseWorkspaceReads } from './firebase-reads.js';
+import { handleOwnerNotice } from './owner-notice-http.js';
+import { appsScriptBridge } from './owner-notice.js';
 import { handleMobileRead } from './http.js';
 import { authorizeMobile, type MobileAuthDependencies } from './access.js';
 import { handleRecording } from './recording-http.js';
@@ -33,6 +35,13 @@ export const fieldMobileApi = onRequest({ region: 'asia-northeast3', cors: false
       verifyAppCheck: async token => ({ app_id: (await getAppCheck().verifyToken(token)).appId }),
       readAccess: async uid => (await getDatabase().ref(`crmCompany/access/${uid}`).get()).val(),
   };
+  if(/^\/v1\/field-app\/owner-notices(?:\/|$)/.test(req.path)){
+    const result=await handleOwnerNotice({method:req.method,url:req.url,...headers,contentType:req.get('content-type')??'',body:req.rawBody??Buffer.alloc(0)},
+      {auth,reads:firebaseOwnerNoticeReads(getDatabase()),bridge:appsScriptBridge(),allowRequest:uid=>allowRequest('owner_notice_'+uid,30)});
+    if(result.status===405)res.set('Allow','GET, POST');
+    if(result.status===429)res.set('Retry-After','60');
+    res.status(result.status).json(result.body);return;
+  }
   const recording=/^\/v1\/field-app\/(recording|visits|uploads|deliveries)(?:\/|$)/.test(req.path);
   const result=recording?await handleRecording({method:req.method,url:req.url,...headers,contentType:req.get('content-type')??'',range:req.get('content-range')??'',idempotencyKey:req.get('idempotency-key')??'',body:req.rawBody??Buffer.alloc(0)},
     {auth,allowRequest:uid=>allowRequest('recording_'+uid,480),recording:()=>recordingRuntime({clientId:driveClientId.value(),clientSecret:driveClientSecret.value(),refreshToken:driveRefreshToken.value(),photosRoot:photosRoot.value(),reportsRoot:reportsRoot.value()},async()=>{await authorizeMobile(headers,auth);}),

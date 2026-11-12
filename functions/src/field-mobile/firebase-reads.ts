@@ -31,3 +31,15 @@ export function firebaseWorkspaceReads(database: Database): WorkspaceReads {
     async readBuilding(id) { return (await database.ref(`crmCompany/data/buildings/${id}`).get()).val(); },
   };
 }
+
+export function firebaseOwnerNoticeReads(database: Database): import('./owner-notice.js').OwnerNoticeReads {
+  const read = async (path: string) => (await database.ref(`crmCompany/${path}`).get()).val();
+  return {
+    units: () => read('data/buildingUnits'),
+    unit: id => read(`data/buildingUnits/${id}`),
+    buildings: () => read('data/buildings'),
+    building: id => read(`data/buildings/${id}`),
+    customers: () => read('data/customers'),
+    deliveries: () => read('messageDeliveries'),
+  };
+}

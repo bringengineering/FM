@@ -10,6 +10,8 @@ mobile-field/*
 !mobile-field/eas.json
 !mobile-field/metro.config.cjs
 !mobile-field/tsconfig.json
+!mobile-field/assets
+!mobile-field/assets/**
 !mobile-field/src
 !mobile-field/src/**
 !mobile-field/config
@@ -27,3 +29,4 @@ desktop-crm/*
 !desktop-crm/src
 desktop-crm/src/*
 !desktop-crm/src/work-report-core.js
+!desktop-crm/src/owner-notice-core.js

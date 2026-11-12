@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const APP_ID = "1:864976295990:android:644a2b7d5242a0b5eb6097";
-const MODULES = Object.freeze(["access.js", "endpoint.js", "firebase-reads.js", "http.js", "workspace.js", "sites.js", "report-core.js", "recording-model.js", "recording-service.js", "recording-drive.js", "recording-pdf.js", "recording-runtime.js", "recording-http.js", "delivery.js"]);
+const MODULES = Object.freeze(["access.js", "endpoint.js", "firebase-reads.js", "http.js", "workspace.js", "sites.js", "report-core.js", "recording-model.js", "recording-service.js", "recording-drive.js", "recording-pdf.js", "recording-runtime.js", "recording-http.js", "delivery.js", "owner-notice.js", "owner-notice-http.js"]);
 const DEPENDENCIES = Object.freeze(["firebase-admin", "firebase-functions", "sharp", "pdf-lib", "puppeteer-core", "@sparticuz/chromium"]);
 const PHOTOS_ROOT="19V2huIiKMWERu0dznsQ8GDVo5b7jGJZE", REPORTS_ROOT="1HGT6nr9gbTNIqeFBPuE6vdNH3Jc3Bfiu";
 const ENTRY = `import { initializeApp } from 'firebase-admin/app';\ninitializeApp();\nexport { fieldMobileApi } from './field-mobile/endpoint.js';\n`;
@@ -27,10 +27,10 @@ function createBundle(root = ROOT) {
     const code = fs.readFileSync(path.join(root, "functions", "lib", "field-mobile", name), "utf8");
     const imports = [...code.matchAll(/(?:from\s*|import\s*)["']([^"']+)["']/g)].map(match => match[1]);
     if (imports.some(specifier => !(["node:crypto","node:module","node:fs/promises","node:path","sharp","pdf-lib","puppeteer-core","@sparticuz/chromium"].includes(specifier) || specifier.startsWith("firebase-admin/") || specifier.startsWith("firebase-functions/") || MODULES.some(file => specifier === `./${file}`)))) throw Error("FIELD_BUNDLE_IMPORT_OUTSIDE_SCOPE");
-    fs.writeFileSync(path.join(modules, name), code.replace("../../../desktop-crm/src/work-report-core.js","../shared/work-report-core.cjs").replace("../../../desktop-crm/src/work-report-owner-pdf.js","../shared/work-report-owner-pdf.cjs").replace("../../../desktop-crm/src/work-report-message.js","../shared/work-report-message.cjs").replace("../../assets/NotoSansKR.ttf","../assets/NotoSansKR.ttf").replace(/^\/\/# sourceMappingURL=.*$/gm, ""));
+    fs.writeFileSync(path.join(modules, name), code.replace("../../../desktop-crm/src/work-report-core.js","../shared/work-report-core.cjs").replace("../../../desktop-crm/src/work-report-owner-pdf.js","../shared/work-report-owner-pdf.cjs").replace("../../../desktop-crm/src/work-report-message.js","../shared/work-report-message.cjs").replace("../../../desktop-crm/src/owner-notice-core.js","../shared/owner-notice-core.cjs").replace("../../assets/NotoSansKR.ttf","../assets/NotoSansKR.ttf").replace(/^\/\/# sourceMappingURL=.*$/gm, ""));
   }
   const shared=path.join(source,"shared");fs.mkdirSync(shared,{recursive:true});
-  if(fs.readdirSync(shared).some(name=>!["work-report-core.cjs","work-report-owner-pdf.cjs","work-report-common-pdf.cjs","work-report-message.cjs","core.cjs","assets"].includes(name)))throw Error("FIELD_BUNDLE_UNEXPECTED_FILE");
+  if(fs.readdirSync(shared).some(name=>!["work-report-core.cjs","work-report-owner-pdf.cjs","work-report-common-pdf.cjs","work-report-message.cjs","owner-notice-core.cjs","core.cjs","assets"].includes(name)))throw Error("FIELD_BUNDLE_UNEXPECTED_FILE");
   // 건물주 보고서 양식이 __dirname/assets 에서 로고·Pretendard 를 읽는다. 없으면 글자 상표·기본 글꼴로 나간다.
   const OWNER_ASSETS=["bring-care-logo.jpg","fonts/PretendardVariable.woff2","fonts/Pretendard-LICENSE.txt"];
   fs.mkdirSync(path.join(shared,"assets","fonts"),{recursive:true});
@@ -38,6 +38,8 @@ function createBundle(root = ROOT) {
   for(const name of OWNER_ASSETS){const from=path.join(root,"desktop-crm/src/assets",name);if(fs.existsSync(from))fs.copyFileSync(from,path.join(shared,"assets",name));}
   fs.copyFileSync(path.join(root,"desktop-crm/src/work-report-core.js"),path.join(shared,"work-report-core.cjs"));
   fs.copyFileSync(path.join(root,"desktop-crm/src/core.js"),path.join(shared,"core.cjs"));
+  // 건물주 안내 알림톡 문구·변수 규칙. CRM과 같은 파일 하나만 쓴다.
+  fs.copyFileSync(path.join(root,"desktop-crm/src/owner-notice-core.js"),path.join(shared,"owner-notice-core.cjs"));
   const owner=fs.readFileSync(path.join(root,"desktop-crm/src/work-report-owner-pdf.js"),"utf8").replace('require("./core")','require("./core.cjs")').replace('require("./work-report-core")','require("./work-report-core.cjs")').replace('require("./work-report-common-pdf")','require("./work-report-common-pdf.cjs")');
   fs.writeFileSync(path.join(shared,"work-report-owner-pdf.cjs"),owner);
   // 공용부 '공용부 활동 결과보고서' 양식. 건물주 양식 파일의 글꼴·로고를 쓴다.
