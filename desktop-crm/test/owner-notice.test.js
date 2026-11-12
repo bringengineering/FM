@@ -119,6 +119,22 @@ test("turnover progress counts sends per unit and suggests the next stage", () =
   assert.equal(Owner.nextTurnoverStage(progress), "owner_broker_listed");
 });
 
+test("turnover progress counts only the current cycle and restarts after move-in cleaning", () => {
+  const row = (category, at, extra = {}) => ({ sourceType: "buildingUnit", sourceId: "u1", category, status: "delivered", requestedAt: at, ...extra });
+  const first = ["owner_move_out", "owner_broker_listed", "owner_room_viewing", "owner_lease_contract", "owner_move_in_cleaning"].map((id, i) => row(id, `2026-0${3 + i}-10T00:00:00Z`));
+  assert.equal(Owner.nextTurnoverStage(Owner.turnoverProgress([], "u1")), "owner_move_out");
+  assert.equal(Owner.nextTurnoverStage(Owner.turnoverProgress(first, "u1")), "owner_move_out");
+  const viewings = [...first.slice(0, 3), row("owner_room_viewing", "2026-05-20T00:00:00Z")];
+  const progress = Owner.turnoverProgress(viewings, "u1");
+  assert.equal(progress[2].count, 2);
+  assert.equal(Owner.nextTurnoverStage(progress), "owner_lease_contract");
+  const second = [...first, row("owner_move_out", "2026-11-01T00:00:00Z"), row("owner_move_out", "2026-11-02T00:00:00Z", { status: "failed" })];
+  const next = Owner.turnoverProgress(second, "u1");
+  assert.deepEqual(next.map(item => item.count), [1, 0, 0, 0, 0]);
+  assert.equal(next[0].lastSentAt, "2026-11-01T00:00:00Z");
+  assert.equal(Owner.nextTurnoverStage(next), "owner_broker_listed");
+});
+
 test("Apps Script schedule copies agree with CRM contract-schedule-core and core", () => {
   const contracts = [
     { id: "k1", types: ["청소"], status: "진행 중", startDate: "2026-09-01", billingCycle: "월 정기", cleaningSchedule: { mode: "twice_monthly", weekday: 1, weekPattern: "first_third" } },
