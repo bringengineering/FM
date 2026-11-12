@@ -713,6 +713,39 @@
     fieldOperatorSelect.setAttribute("aria-label", selected ? `현재 작업자 ${selected.name}` : "현재 작업자 선택");
   }
 
+  function fieldOperatorOptionsMarkup() {
+    return `<option value="">작업자를 선택해 주세요</option>${fieldTeamProfiles.map(profile => `<option value="${attr(profile.id)}" ${profile.id === selectedFieldOperatorId ? "selected" : ""}>${esc(profile.name)}</option>`).join("")}`;
+  }
+
+  // The header picker is hidden on contract screens, so a modal that must create a
+  // building (e.g. a contract for a customer with no building yet) shows its own picker.
+  function showInlineFieldOperatorPicker() {
+    const form = modalContent.querySelector("form");
+    if (!form) return null;
+    let select = form.querySelector("[data-inline-field-operator]");
+    if (!select) {
+      form.insertAdjacentHTML("afterbegin", `<div class="info-box inline-field-operator"><label class="form-field"><span>현재 작업자 *</span><select data-inline-field-operator aria-label="현재 작업자 선택">${fieldOperatorOptionsMarkup()}</select></label><small>건물을 새로 만들 때 누가 작업했는지 기록합니다. 한 번 고르면 다음부터 기억합니다.</small></div>`);
+      select = form.querySelector("[data-inline-field-operator]");
+    }
+    return select;
+  }
+
+  function applyFieldOperatorSelection(nextOperatorId) {
+    if (nextOperatorId && !fieldTeamProfiles.some(profile => profile.active === true && profile.id === nextOperatorId)) {
+      showToast("선택할 수 없는 작업자입니다.", "error");
+      return false;
+    }
+    selectedFieldOperatorId = nextOperatorId;
+    try {
+      if (selectedFieldOperatorId) localStorage.setItem(fieldOperatorStorageKey(), JSON.stringify({ operatorId: selectedFieldOperatorId, selectedAt: new Date().toISOString() }));
+      else localStorage.removeItem(fieldOperatorStorageKey());
+    } catch (_error) {}
+    if (fieldOperatorControl && !fieldOperatorControl.hidden) renderFieldOperatorControl();
+    const selected = activeFieldOperator();
+    showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
+    return true;
+  }
+
   async function loadFieldTeamProfiles() {
     fieldProfilesAvailable = false;
     fieldProfilesError = "";
@@ -1058,6 +1091,12 @@
       return true;
     }
     if (!activeFieldOperator()) {
+      const inlinePicker = fieldProfilesAvailable && fieldTeamProfiles.length && modal.classList.contains("open") ? showInlineFieldOperatorPicker() : null;
+      if (inlinePicker) {
+        showToast(`${label}을 함께 만들려면 이 창 맨 위 '현재 작업자'에서 본인을 고른 뒤 다시 저장해 주세요.`, "error");
+        inlinePicker.focus();
+        return true;
+      }
       showToast(fieldProfilesAvailable ? `${label} 변경 전 현재 작업자를 선택해 주세요.` : (fieldProfilesError || "작업자 명단을 확인할 수 없어 변경을 잠시 막았습니다."), "error");
       fieldOperatorSelect?.focus();
       return true;
@@ -20573,19 +20612,14 @@
   });
   fieldOperatorSelect.addEventListener("change", async () => {
     const previousOperatorId = selectedFieldOperatorId;
-    const nextOperatorId = String(fieldOperatorSelect.value || "");
-    if (nextOperatorId && !fieldTeamProfiles.some(profile => profile.active === true && profile.id === nextOperatorId)) {
-      fieldOperatorSelect.value = previousOperatorId;
-      return showToast("선택할 수 없는 작업자입니다.", "error");
-    }
-    selectedFieldOperatorId = nextOperatorId;
-    try {
-      if (selectedFieldOperatorId) localStorage.setItem(fieldOperatorStorageKey(), JSON.stringify({ operatorId: selectedFieldOperatorId, selectedAt: new Date().toISOString() }));
-      else localStorage.removeItem(fieldOperatorStorageKey());
-    } catch (_error) {}
-    renderFieldOperatorControl();
-    const selected = activeFieldOperator();
-    showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
+    if (!applyFieldOperatorSelection(String(fieldOperatorSelect.value || ""))) fieldOperatorSelect.value = previousOperatorId;
+    else renderFieldOperatorControl();
+  });
+  document.addEventListener("change", event => {
+    const inline = event.target.closest?.("[data-inline-field-operator]");
+    if (!inline) return;
+    const previousOperatorId = selectedFieldOperatorId;
+    if (!applyFieldOperatorSelection(String(inline.value || ""))) inline.value = previousOperatorId;
   });
   document.addEventListener("beforeinput", event => {
     if (!event.target.matches(formattedPhoneInputSelector) || event.isComposing) return;
