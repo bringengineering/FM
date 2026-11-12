@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { brandStyles, color } from './theme';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Crypto from 'expo-crypto';
+import { brandStyles, color } from './theme';
+import { BuildingIcon, CheckIcon, NextIcon } from './icons';
+import { Button, Callout, ConfirmSheet, k, ScreenHeader, SearchBox, Section } from './ui/kit';
 import { safeMessage } from './errors';
+import { afterSend, carried, cycleState, dayLabel, groupByBuilding, MOVE_OUT, stageNotice } from './domain/owner-notice-flow';
 import type { CompanyRecordingApi, OwnerNoticeReceipt, OwnerNoticeUnit } from './api/recording';
 
 // CRM과 같은 문구·입력칸 규칙(desktop-crm/src/owner-notice-core.js). 서버가 같은 파일로 문구를 다시 만들어
@@ -17,6 +19,7 @@ interface Core {
   formatTurnoverValues(templateId: string, input: Record<string, string>): Record<string, string>;
   render(templateId: string, values: Record<string, string>): string;
   missingVariables(templateId: string, values: Record<string, string>): string[];
+  nextTurnoverStage(progress: { id: string; count: number }[]): string;
 }
 const core: Core = require('../../desktop-crm/src/owner-notice-core.js');
 
@@ -30,24 +33,17 @@ function parse(type: Field['type'], value: string): Date {
   if (time && type !== 'date') now.setHours(Number(time[1]), Number(time[2]), 0, 0);
   return now;
 }
+const label = (id: string) => core.TEMPLATES[id]?.label ?? id;
 const deliveryLabel: Record<OwnerNoticeReceipt['status'], string> = { accepted: '발송 접수됨 · 전달 확인 중', delivered: '카카오 전달 완료', failed: '전달 실패', unknown: '접수 여부 확인 필요' };
+const defaults = (stage: string): Record<string, string> => stage === 'owner_broker_listed' ? { 접수일: dateKey(new Date()) } : {};
 
-function Action({ label, onPress, disabled = false, secondary = false }: { label: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress}
-    style={({ pressed }) => [styles.button, secondary && styles.secondary, disabled && styles.disabled, pressed && styles.pressed]}>
-    <Text style={[styles.buttonText, secondary && styles.secondaryText]}>{label}</Text></Pressable>;
-}
-function Chip({ label, active, onPress, done }: { label: string; active: boolean; onPress: () => void; done: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-    <Text style={[styles.chipText, active && styles.chipTextActive]}>{done ? '✓ ' : ''}{label}</Text></Pressable>;
-}
-
-function FieldInput({ field, value, onChange }: { field: Field; value: string; onChange: (value: string) => void }) {
+function FieldInput({ field, value, onChange, carriedValue }: { field: Field; value: string; onChange: (value: string) => void; carriedValue: boolean }) {
   const [open, setOpen] = useState<'date' | 'time' | ''>('');
-  if (field.type === 'text') return <View style={styles.field}><Text style={styles.label}>{field.label}</Text>
-    <TextInput accessibilityLabel={field.label} value={value} onChangeText={onChange} placeholder={field.placeholder} maxLength={60} style={styles.input} /></View>;
+  const title = <Text style={s.label}>{field.label}{carriedValue ? <Text style={s.carried}>  · 앞 단계 값</Text> : null}</Text>;
+  if (field.type === 'text') return <View style={s.field}>{title}
+    <TextInput accessibilityLabel={field.label} value={value} onChangeText={onChange} placeholder={field.placeholder} placeholderTextColor={color.subtle} maxLength={60} style={k.input} /></View>;
   const current = parse(field.type, value);
-  const shown = value ? (field.type === 'date' ? value : field.type === 'time' ? value : value.replace('T', ' ')) : '선택해 주세요';
+  const shown = value ? value.replace('T', ' ') : '눌러서 고르기';
   function picked(event: DateTimePickerEvent, date?: Date) {
     const mode = open; if (Platform.OS === 'android') setOpen('');
     if (event.type !== 'set' || !date) return;
@@ -56,125 +52,161 @@ function FieldInput({ field, value, onChange }: { field: Field; value: string; o
     else if (mode === 'date') { onChange(`${dateKey(date)}T${value ? timeKey(current) : '10:00'}`); if (Platform.OS === 'android') setOpen('time'); }
     else onChange(`${dateKey(current)}T${timeKey(date)}`);
   }
-  return <View style={styles.field}><Text style={styles.label}>{field.label}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${field.label} ${shown}`} onPress={() => setOpen(field.type === 'time' ? 'time' : 'date')} style={styles.input}>
-      <Text style={[styles.inputText, !value && styles.placeholder]}>{shown}</Text></Pressable>
-    {field.type === 'datetime-local' && !!value && <Action secondary label="시각 바꾸기" onPress={() => setOpen('time')} />}
+  return <View style={s.field}>{title}
+    <Pressable accessibilityRole="button" accessibilityLabel={`${field.label} ${shown}`} onPress={() => setOpen(field.type === 'time' ? 'time' : 'date')} style={k.input}>
+      <Text style={[s.inputText, !value && s.placeholder]}>{shown}</Text></Pressable>
+    {field.type === 'datetime-local' && !!value && <Pressable accessibilityRole="button" onPress={() => setOpen('time')}><Text style={s.link}>시각 바꾸기</Text></Pressable>}
     {!!open && <DateTimePicker value={current} mode={open} is24Hour display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={picked} />}
-    {Platform.OS === 'ios' && !!open && <Action secondary label="선택 완료" onPress={() => setOpen('')} />}
+    {Platform.OS === 'ios' && !!open && <Button kind="secondary" label="선택 완료" onPress={() => setOpen('')} />}
   </View>;
 }
 
-export function OwnerNoticeScreen({ api, onClose }: { api: CompanyRecordingApi; onClose: () => void }) {
+/** 하단 '안내 알림톡' 탭: 건물별 호실 목록 → 호실 → 단계·입력·미리보기 → 확인 → 발송. */
+export function OwnerNoticeScreen({ api }: { api: CompanyRecordingApi }) {
   const controller = useRef(new AbortController());
   const [units, setUnits] = useState<OwnerNoticeUnit[]>(), [truncated, setTruncated] = useState(false);
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [query, setQuery] = useState('');
-  const [unit, setUnit] = useState<OwnerNoticeUnit>(), [stage, setStage] = useState(''), [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [query, setQuery] = useState('');
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [unitId, setUnitId] = useState(''), [stage, setStage] = useState(''), [values, setValues] = useState<Record<string, string>>({});
+  const [confirm, setConfirm] = useState(false);
   // 응답을 잃어버린 뒤 다시 누르면 같은 요청 ID로 보내서 서버가 두 번 보내지 않게 한다.
   const [pending, setPending] = useState<{ key: string; requestId: string }>();
-  const [receipt, setReceipt] = useState<OwnerNoticeReceipt>();
+  const [receipt, setReceipt] = useState<OwnerNoticeReceipt & { stage: string }>();
+  // 앞 단계에서 넣은 중개사무소·입주일(이 기기, 앱을 켜 둔 동안만).
+  const memory = useRef(new Map<string, Record<string, string>>());
   useEffect(() => () => controller.current.abort(), []);
-  async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
-    if (busy) return undefined; setBusy(true); setError('');
-    try { return await work(); } catch (e) { setError(safeMessage(e)); return undefined; } finally { setBusy(false); }
+
+  async function load() {
+    setLoading(true); setError('');
+    try { const result = await api.ownerNoticeUnits(controller.current.signal); setUnits(result.units); setTruncated(result.truncated); }
+    catch (e) { setError(safeMessage(e)); } finally { setLoading(false); }
   }
-  const load = () => run(async () => { const result = await api.ownerNoticeUnits(controller.current.signal); setUnits(result.units); setTruncated(result.truncated); });
   useEffect(() => { void load(); }, []);
 
+  const unit = units?.find(u => u.id === unitId);
   const fields = stage ? core.TURNOVER_FIELDS[stage] ?? [] : [];
-  const formatted = useMemo(() => stage ? core.formatTurnoverValues(stage, values) : {}, [stage, values]);
-  const preview = useMemo(() => unit && stage ? core.render(stage, { ...formatted, 건물주소: unit.address, 호실: unit.unit }) : '', [unit, stage, formatted]);
-  const missing = unit && stage ? core.missingVariables(stage, { ...formatted, 건물주소: unit.address, 호실: unit.unit }) : [];
-  const filtered = (units ?? []).filter(u => !query.trim() || `${u.address} ${u.unit} ${u.owner}`.includes(query.trim()));
+  const filled = useMemo(() => unit && stage ? { ...core.formatTurnoverValues(stage, values), 건물주소: unit.address, 호실: unit.unit } : {}, [unit, stage, values]);
+  const preview = unit && stage ? core.render(stage, filled) : '';
+  const missing = unit && stage ? core.missingVariables(stage, filled).map(key => fields.find(f => f.key === key)?.label ?? key) : [];
+  const notice = unit && stage ? stageNotice(core.TURNOVER_STAGES, unit.progress, stage) : null;
+  const remembered = memory.current.get(unitId) ?? {};
 
-  function choose(next: OwnerNoticeUnit) {
-    setUnit(next); setStage(next.nextStage); setReceipt(undefined); setPending(undefined);
-    setValues(next.nextStage === 'owner_broker_listed' ? { 접수일: dateKey(new Date()) } : {});
-  }
-  function changeStage(next: string) { setStage(next); setValues(next === 'owner_broker_listed' ? { 접수일: dateKey(new Date()) } : {}); setReceipt(undefined); }
-  function confirm() {
-    if (!unit || !stage || missing.length) return;
-    const template = core.TEMPLATES[stage]!, sent = unit.progress.find(p => p.id === stage);
-    const warning = sent?.count && !template.repeatable ? '\n\n※ 이 단계는 이미 보낸 기록이 있습니다. 내용이 바뀐 경우에만 다시 보내 주세요.' : '';
-    Alert.alert(`건물주에게 '${template.label}'을 보낼까요?`, `받는 분: ${unit.owner} · ${unit.recipient}\n\n${preview}${warning}`, [
-      { text: '취소', style: 'cancel' },
-      { text: '알림톡 발송', onPress: () => void send() },
-    ]);
-  }
+  function pick(next: string, id = unitId) { setStage(next); setValues({ ...defaults(next), ...(memory.current.get(id) ?? {}) }); setReceipt(undefined); setPending(undefined); }
+  function openUnit(next: OwnerNoticeUnit) { setUnitId(next.id); setError(''); pick(next.nextStage, next.id); }
+  function close() { setUnitId(''); setStage(''); setReceipt(undefined); setPending(undefined); setError(''); }
+
   async function send() {
-    if (!unit || !stage) return;
+    setConfirm(false);
+    if (!unit || !stage || busy) return;
     const key = JSON.stringify([unit.id, stage, preview]);
     const requestId = pending?.key === key ? pending.requestId : Crypto.randomUUID().toLowerCase();
-    setPending({ key, requestId });
-    const result = await run(() => api.sendOwnerNotice({ requestId, unitId: unit.id, templateId: stage, input: values, preview }, controller.current.signal));
-    if (result) { setReceipt(result); setPending(undefined); void load(); }
+    setPending({ key, requestId }); setBusy(true); setError('');
+    try {
+      const result = await api.sendOwnerNotice({ requestId, unitId: unit.id, templateId: stage, input: values, preview }, controller.current.signal);
+      memory.current.set(unit.id, { ...(memory.current.get(unit.id) ?? {}), ...carried(values) });
+      setUnits(list => list?.map(u => u.id === unit.id ? { ...u, progress: afterSend(u.progress, stage, new Date().toISOString()) } : u));
+      setReceipt({ ...result, stage }); setPending(undefined);
+    } catch (e) { setError(safeMessage(e)); } finally { setBusy(false); }
   }
   async function check() {
-    if (!receipt) return;
-    const result = await run(() => api.ownerNoticeStatus(receipt.requestId, controller.current.signal));
-    if (result) setReceipt({ ...receipt, ...result });
+    if (!receipt || busy) return;
+    setBusy(true); setError('');
+    try { const result = await api.ownerNoticeStatus(receipt.requestId, controller.current.signal); setReceipt({ ...receipt, ...result }); }
+    catch (e) { setError(safeMessage(e)); } finally { setBusy(false); }
   }
 
-  return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <View style={styles.header}><Text style={styles.brand}>건물주 안내 알림톡</Text><Action secondary label="닫기" onPress={onClose} /></View>
-    {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-    {!unit ? <>
-      <View style={styles.card}><Text style={styles.heading}>호실 찾기</Text>
-        <Text style={styles.copy}>퇴실부터 입주까지 단계별 안내를 CRM과 같은 승인 문구로 건물주에게 보냅니다.</Text>
-        <TextInput accessibilityLabel="건물 주소·호실·건물주 검색" value={query} onChangeText={setQuery} placeholder="주소, 호실, 건물주 이름" maxLength={60} style={styles.input} />
-        <Action secondary label={busy ? '불러오는 중…' : '목록 새로고침'} disabled={busy} onPress={() => void load()} />
-        {truncated && <Text style={styles.small}>호실이 많아 앞쪽 250개만 보입니다. 검색어로 좁혀 주세요.</Text>}
-      </View>
-      {!units && busy && <ActivityIndicator accessibilityLabel="호실 불러오는 중" />}
-      {units && !filtered.length && <View style={styles.card}><Text style={styles.copy}>{units.length ? '검색 결과가 없습니다.' : '보낼 수 있는 호실이 없습니다. CRM에서 호실과 건물주(휴대전화 포함)를 확인해 주세요.'}</Text></View>}
-      {filtered.map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => choose(item)} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-        <Text style={styles.heading}>{item.address} {item.unit}호</Text>
-        <Text style={styles.copy}>건물주 {item.owner} · {item.recipient}</Text>
-        <Text style={styles.small}>다음 안내: {core.TEMPLATES[item.nextStage]?.label ?? '-'} · 보낸 단계 {item.progress.filter(p => p.count).length}/5</Text>
-      </Pressable>)}
-    </> : <>
-      <View style={styles.card}>
-        <Text style={styles.heading}>{unit.address} {unit.unit}호</Text>
-        <Text style={styles.copy}>받는 분: 건물주 {unit.owner} · {unit.recipient}</Text>
-        <Action secondary label="다른 호실 고르기" disabled={busy} onPress={() => { setUnit(undefined); setReceipt(undefined); }} />
-      </View>
-      <View style={styles.card}><Text style={styles.heading}>안내 단계</Text>
-        <View style={styles.chips}>{core.TURNOVER_STAGES.map(item => {
-          const sent = unit.progress.find(p => p.id === item.id);
-          return <Chip key={item.id} label={`${item.stage}. ${item.label}`} active={stage === item.id} done={!!sent?.count} onPress={() => changeStage(item.id)} />;
+  if (!unit) {
+    const groups = groupByBuilding(units ?? [], query);
+    return <View style={k.flex}>
+      <ScreenHeader title="안내 알림톡" sub="건물주에게 퇴실~입주 단계 안내" />
+      <ScrollView contentContainerStyle={k.body} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!units} onRefresh={() => void load()} />}>
+        <SearchBox value={query} onChange={setQuery} placeholder="건물명, 주소, 호실, 건물주" />
+        {!!error && <Callout tone="error" text={error} />}
+        {!units && loading && <ActivityIndicator accessibilityLabel="호실 불러오는 중" style={s.spinner} />}
+        {!units && !loading && <Button kind="secondary" label="다시 불러오기" onPress={() => void load()} />}
+        {truncated && <Text style={k.small}>호실이 많아 앞쪽 250개만 보입니다. 검색어로 좁혀 주세요.</Text>}
+        {groups.map(group => {
+          const expanded = !!query.trim() || !!open[group.buildingId] || groups.length === 1;
+          return <View key={group.buildingId} style={k.group}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setOpen({ ...open, [group.buildingId]: !open[group.buildingId] })} style={({ pressed }) => [k.row, pressed && k.rowPressed]}>
+              <View style={k.rowIcon}><BuildingIcon size={20} color={color.primary} /></View>
+              <View style={k.flex}><Text style={k.rowTitle} numberOfLines={1}>{group.name}</Text><Text style={k.rowSub} numberOfLines={1}>{group.name !== group.address ? `${group.address} · ` : ''}건물주 {group.owner}</Text>
+                <Text style={k.rowMeta}>호실 {group.units.length}개{group.active ? ` · 공실 진행 중 ${group.active}` : ''}</Text></View>
+              <View style={expanded ? s.chevronOpen : undefined}><NextIcon size={20} color={color.subtle} /></View></Pressable>
+            {expanded && group.units.map(u => {
+              const cycle = cycleState(u.progress);
+              const meta = !cycle.started ? '보낸 안내 없음 · 퇴실 일정이 잡히면 시작' : cycle.complete ? '입주청소까지 완료' : `다음: ${label(u.nextStage)}`;
+              return <Pressable key={u.id} accessibilityRole="button" accessibilityLabel={`${u.unit}호 ${meta}`} onPress={() => openUnit(u)} style={({ pressed }) => [s.unitRow, pressed && k.rowPressed]}>
+                <Text style={s.unitNo} numberOfLines={1}>{u.unit}호</Text>
+                <View style={k.flex}><View style={s.progress}>{core.TURNOVER_STAGES.map(st => <View key={st.id} style={[s.bar, (u.progress.find(p => p.id === st.id)?.count ?? 0) > 0 && s.barOn]} />)}</View>
+                  <Text style={[k.rowMeta, cycle.complete && s.doneMeta]}>{meta}</Text></View>
+                <NextIcon size={18} color={color.subtle} /></Pressable>;
+            })}
+          </View>;
+        })}
+        {units && !groups.length && <Text style={k.empty}>{units.length ? '일치하는 건물·호실이 없습니다.' : '보낼 수 있는 호실이 없습니다. CRM에서 호실과 건물주(휴대전화 포함)를 확인해 주세요.'}</Text>}
+      </ScrollView>
+    </View>;
+  }
+
+  const startingNewCycle = stage === MOVE_OUT && cycleState(unit.progress).complete;
+  const following = receipt && receipt.status !== 'failed' ? core.nextTurnoverStage(unit.progress) : '';
+  return <View style={k.flex}>
+    <ScreenHeader title={`${unit.building || unit.address} ${unit.unit}호`} sub={`${unit.building ? `${unit.address} · ` : ''}건물주 ${unit.owner}`} onBack={close} />
+    <ScrollView contentContainerStyle={k.body} keyboardShouldPersistTaps="handled">
+      {!!error && <Callout tone="error" text={error} />}
+      {receipt ? <View style={s.done}>
+        <CheckIcon size={36} color={receipt.status === 'failed' ? color.danger : color.success} strokeWidth={2.5} />
+        <Text style={s.doneTitle}>{deliveryLabel[receipt.status]}</Text>
+        <Text style={[k.text, s.center]}>{label(receipt.stage)}를 건물주 {unit.owner}님({receipt.recipient ?? unit.recipient})께 보냈습니다.</Text>
+        {receipt.status !== 'delivered' && <Button kind="secondary" label="전달 상태 확인" busy={busy} onPress={() => void check()} />}
+      </View> : <>
+        <Section title={cycleState(unit.progress).active ? '이번 회차 단계' : '단계'} />
+        <View style={k.group}>{core.TURNOVER_STAGES.map(st => {
+          const p = unit.progress.find(item => item.id === st.id), done = !!p?.count && !startingNewCycle, on = st.id === stage;
+          return <Pressable key={st.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => pick(st.id)} style={[s.stage, on && s.stageOn]}>
+            <View style={[s.dot, done && s.dotDone, on && !done && s.dotNow]}>{done ? <CheckIcon size={12} color={color.surface} strokeWidth={3} /> : <Text style={[s.dotNum, on && s.dotNumNow]}>{st.stage}</Text>}</View>
+            <Text style={[s.stageText, on && s.stageTextOn]}>{st.label}</Text>
+            {done && <Text style={k.small}>{dayLabel(p!.lastSentAt)}{p!.count > 1 ? ` · ${p!.count}회` : ''}</Text>}</Pressable>;
         })}</View>
-        {(() => { const sent = unit.progress.find(p => p.id === stage); return sent?.count ? <Text style={styles.small}>이 단계는 {sent.count}번 보냈습니다{sent.lastSentAt ? ` · 마지막 ${sent.lastSentAt.slice(0, 10)}` : ''}.</Text> : null; })()}
-      </View>
-      <View style={styles.card}><Text style={styles.heading}>입력</Text>
-        {fields.map(field => <FieldInput key={`${stage}-${field.key}`} field={field} value={values[field.key] ?? ''} onChange={value => { setValues(prev => ({ ...prev, [field.key]: value })); setReceipt(undefined); }} />)}
-      </View>
-      <View style={styles.card}><Text style={styles.heading}>보낼 문구</Text>
-        <View style={styles.preview}><Text style={styles.previewText}>{preview}</Text></View>
-        {!!missing.length && <Text style={styles.small}>입력 필요: {missing.join(', ')}</Text>}
-        {!receipt ? <Action label={busy ? '보내는 중…' : '알림톡 보내기'} disabled={busy || !!missing.length} onPress={confirm} />
-          : <><Text style={styles.status}>{deliveryLabel[receipt.status]}</Text>
-            <Action secondary label={busy ? '확인 중…' : '전달 상태 확인'} disabled={busy} onPress={() => void check()} /></>}
-        {pending && !receipt && !busy && <Text style={styles.small}>발송 접수를 확인하지 못했습니다. 다시 누르면 같은 요청으로 확인하며 두 번 보내지 않습니다.</Text>}
-      </View>
-    </>}
-  </ScrollView></SafeAreaView>;
+        {notice && <Callout tone={notice.tone} text={notice.text} />}
+        <Section title="입력" />
+        <View style={k.card}>{fields.map(field => <FieldInput key={`${stage}-${field.key}`} field={field} value={values[field.key] ?? ''}
+          carriedValue={!!remembered[field.key] && values[field.key] === remembered[field.key]}
+          onChange={value => { setValues(prev => ({ ...prev, [field.key]: value })); setPending(undefined); }} />)}</View>
+        <Section title="미리보기" />
+        <View style={k.card}><Text style={s.previewText}>{preview}</Text></View>
+        {pending && !busy && <Callout tone="warn" text="발송 접수를 확인하지 못했습니다. 다시 누르면 같은 요청으로 확인하며 두 번 보내지 않습니다." />}
+      </>}
+    </ScrollView>
+    <View style={k.footer}>{receipt ? <>
+        {!!following && following !== MOVE_OUT && <Button label={`이어서 · ${label(following)}`} onPress={() => pick(following)} />}
+        <Button kind="secondary" label="호실 목록으로" onPress={close} /></>
+      : <Button label={missing.length ? `${missing.join(', ')} 입력 필요` : '보내기 전 확인'} busy={busy} disabled={!!missing.length} onPress={() => setConfirm(true)} />}</View>
+    <ConfirmSheet visible={confirm} title={`${label(stage)}를 보낼까요?`} confirmLabel="알림톡 보내기" onConfirm={() => void send()} onCancel={() => setConfirm(false)}>
+      <Text style={k.text}>받는 분: 건물주 {unit.owner} · {unit.recipient}</Text>
+      {notice?.tone === 'warn' && <Callout tone="warn" text={notice.text} />}
+      <View style={s.sheetPreview}><Text style={s.previewText}>{preview}</Text></View>
+    </ConfirmSheet>
+  </View>;
 }
 
-const styles = brandStyles({
-  page: { flex: 1, backgroundColor: color.bg }, content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 22, gap: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 },
-  brand: { fontSize: 22, fontWeight: '800', color: color.ink, flexShrink: 1 },
-  heading: { fontSize: 18, fontWeight: '700', color: color.ink }, copy: { fontSize: 15, lineHeight: 23, color: color.muted }, small: { fontSize: 13, lineHeight: 19, color: color.subtle },
-  card: { backgroundColor: color.surface, borderRadius: 18, padding: 20, gap: 12, borderWidth: 1, borderColor: color.line },
-  field: { gap: 6 }, label: { fontSize: 14, fontWeight: '600', color: color.text },
-  input: { borderWidth: 1, borderColor: color.lineStrong, borderRadius: 10, padding: 13, fontSize: 16, color: color.ink, backgroundColor: color.surface },
-  inputText: { fontSize: 16, color: color.ink }, placeholder: { color: color.subtle },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: color.lineStrong, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: color.surface },
-  chipActive: { backgroundColor: color.primary, borderColor: color.primary }, chipText: { fontSize: 14, color: color.text }, chipTextActive: { color: color.surface, fontWeight: '700' },
-  preview: { backgroundColor: color.fill, borderRadius: 12, padding: 14 }, previewText: { fontSize: 14, lineHeight: 21, color: color.text },
-  status: { fontSize: 16, fontWeight: '700', color: color.success },
-  button: { backgroundColor: color.primary, borderRadius: 11, padding: 14, alignItems: 'center' }, buttonText: { color: color.surface, fontSize: 15, fontWeight: '700' },
-  secondary: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.lineStrong }, secondaryText: { color: color.primary },
-  disabled: { opacity: 0.45 }, pressed: { opacity: 0.8 }, error: { color: color.danger, lineHeight: 22 },
+const s = brandStyles({
+  spinner: { paddingVertical: 24 },
+  unitRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingLeft: 68, paddingRight: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: color.line, backgroundColor: color.fill, minHeight: 56 },
+  unitNo: { width: 60, fontSize: 16, fontWeight: '700', color: color.ink }, doneMeta: { color: color.success },
+  progress: { flexDirection: 'row', gap: 3 }, bar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line }, barOn: { backgroundColor: color.primary },
+  chevronOpen: { transform: [{ rotate: '90deg' }] },
+  stage: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderColor: color.line, minHeight: 50 },
+  stageOn: { backgroundColor: color.primarySoft },
+  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: color.lineStrong, alignItems: 'center', justifyContent: 'center', backgroundColor: color.surface },
+  dotNow: { borderColor: color.primary }, dotDone: { backgroundColor: color.primary, borderColor: color.primary },
+  dotNum: { fontSize: 12, fontWeight: '700', color: color.subtle }, dotNumNow: { color: color.primary },
+  stageText: { flex: 1, fontSize: 15, color: color.text }, stageTextOn: { fontWeight: '700', color: color.primaryDark },
+  field: { gap: 6 }, label: { fontSize: 14, fontWeight: '600', color: color.text }, carried: { fontSize: 12, fontWeight: '400', color: color.primary },
+  inputText: { fontSize: 16, color: color.ink }, placeholder: { color: color.subtle }, link: { fontSize: 13, fontWeight: '700', color: color.primary, paddingVertical: 4 },
+  previewText: { fontSize: 14, lineHeight: 21, color: color.text },
+  sheetPreview: { backgroundColor: color.fill, borderRadius: 12, padding: 12 },
+  done: { alignItems: 'center', gap: 10, padding: 24, backgroundColor: color.surface, borderRadius: 16, borderWidth: 1, borderColor: color.line },
+  doneTitle: { fontSize: 20, fontWeight: '800', color: color.ink }, center: { textAlign: 'center' },
 });
