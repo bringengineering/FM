@@ -128,6 +128,7 @@
     repair: Object.freeze({
       도배: "wallpaper", 벽지: "wallpaper", 벽: "wallpaper", 천장: "wallpaper",
       장판: "flooring", 바닥: "flooring", 바닥재: "flooring",
+      수전: "faucet", 수도: "faucet", 싱크수전: "faucet", 세면대수전: "faucet", 샤워수전: "faucet",
       걸레받이: "molding", 몰딩: "molding",
       보수: "etc", 기타: "etc",
       마감: "finish", 마감정리: "finish", 청소: "finish",

@@ -147,10 +147,11 @@
     {
       // 도배·장판처럼 호실 하나를 고치는 단발 보수 작업(2026-11). 세입자용 안내문으로도 낸다.
       key: "repair",
-      label: "도배·장판",
+      label: "도배·장판·보수",
       items: Object.freeze([
         { key: "wallpaper", label: "도배", detail: "기존 벽지 제거, 벽면 정리 후 새 벽지 시공" },
         { key: "flooring", label: "장판", detail: "기존 장판 제거, 바닥 정리 후 새 장판 시공" },
+        { key: "faucet", label: "수전", detail: "기존 수전 분리, 새 수전 설치 및 누수·작동 확인", optional: true },
         { key: "molding", label: "걸레받이·몰딩", detail: "걸레받이·몰딩 교체 또는 마감", optional: true },
         { key: "etc", label: "기타 보수", detail: "합의한 범위의 부분 보수", optional: true },
         { key: "finish", label: "마감 정리", detail: "자재 잔여물 반출, 시공 부위 청소 및 상태 확인" },

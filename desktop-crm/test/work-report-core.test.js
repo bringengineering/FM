@@ -19,7 +19,7 @@ function full(kind = "moveIn", patch = {}) {
 test("작업 종류마다 표준 항목이 이미 있다", () => {
   // 사람이 항목을 적기 시작하면 사람마다 다른 보고서가 나온다.
   assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "moveOut", "common", "stairs", "general", "special", "waste", "repair"]);
-  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리", "도배·장판"]);
+  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리", "도배·장판·보수"]);
   const moveIn = R.itemsFor("moveIn");
   assert.equal(moveIn.length, 7);
   assert.deepEqual(moveIn.map(item => item.label).slice(0, 3), ["바닥", "창호·새시", "주방"]);
