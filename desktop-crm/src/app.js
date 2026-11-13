@@ -9241,6 +9241,8 @@
     const status = reportState.loading
       ? `<div class="info-box">불러오는 중…</div>`
       : (reportState.error ? `<div class="info-box" style="color:#C6535F">${esc(reportState.error)}</div>` : "");
+    // 세입자 문자용 링크. 복사가 막힌 PC 에서도 보고 복사할 수 있게 화면에 남긴다.
+    const tenantLinkBox = reportState.tenantLink ? `<div class="info-box"><b>세입자 문자 내용</b> · 7일 동안 열립니다. 문자로 직접 보내 주세요.<textarea readonly rows="4" style="width:100%;margin-top:8px">${esc(reportState.tenantLink.message)}</textarea><button type="button" class="mini-button" data-report-tenant-link-close>닫기</button></div>` : "";
 
     const rowsHtml = reports.slice(0, 60).map(item => {
       const sum = R.summarizeItems(item);
@@ -9255,6 +9257,7 @@
           ${reportState.canWork ? editAccess.editable || (item.cleaningOrderId && !linkedOrder) ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">${linkedOrder || !item.cleaningOrderId ? "고치기" : "상태 확인 후 편집"}</button>` : `<span class="wr-readonly-label" title="${esc(editAccess.reason)}">읽기 전용</span>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="tenant"${reportState.busyKey ? " disabled" : ""}>세입자용 PDF</button>
+          ${canAdministerSecurity() ? `<button type="button" class="mini-button" data-report-tenant-link="${esc(item.id)}"${reportState.busyKey ? " disabled" : ""}>세입자 문자용 링크</button>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
         </td>
       </tr>`;
@@ -9269,6 +9272,7 @@
         ${reportState.canWork ? `<button type="button" class="primary-button" data-report-new>＋ 새 보고서</button>` : ""}
       </div>
       ${status}
+      ${tenantLinkBox}
       ${reportState.saveError && !draft ? `<div class="info-box" role="alert">${esc(reportState.saveError)}</div>` : ""}
       ${draft ? reportState.readOnlyReason ? renderReadOnlyWorkReport(R, draft, reportState.readOnlyReason) : reportEditor(R, draft) : `<div class="operations-kpis">
         <div class="operations-kpi"><span>이번 달</span><b>${monthly.length}</b><small>전체 ${reports.length}건</small></div>
@@ -10815,6 +10819,32 @@
       showToast(`${R.copyOf(copyType).label} PDF 를 저장했습니다.${converted ? ` HEIC ${converted}장을 JPG로 변환했습니다.` : ""}${failed ? ` 사진 ${failed}장은 불러오지 못해 제외했습니다.` : ""}`, failed ? "error" : "success");
     } catch (error) {
       showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
+    } finally {
+      reportState.busyKey = "";
+      renderWorkReports();
+    }
+  }
+
+  // 세입자 안내문을 보안 링크로 올리고 문자에 붙여 넣을 글을 복사한다. 문자는 담당자가 직접 보낸다.
+  async function createTenantReportLink(reportId) {
+    const R = reportCore();
+    if (!R || reportState.busyKey) return;
+    const report = R.findReport(reportState.reports, reportId);
+    if (!report) return;
+    if (!report.tenantSummary.trim()) showToast("세입자용 본문이 비어 있어 기본 문장으로 만듭니다.");
+    reportState.busyKey = reportId;
+    renderWorkReports();
+    try {
+      const result = await api.createWorkReportTenantLink({ report, company: (store.settings && store.settings.quoteCompany) || {}, secrets: reportSecrets() });
+      if (!result || !result.ok) throw new Error((result && result.error) || "세입자 안내 링크를 만들지 못했습니다.");
+      const until = String(result.expiresAt || "").slice(0, 10);
+      const message = `[브링케어] ${result.documentName}입니다. 작업 내용과 사진을 아래 링크에서 확인해 주세요.${until ? ` (${until}까지 열람 가능)` : ""}\n${result.secureUrl}\n문의: 1551-3873`;
+      let copied = false;
+      try { await navigator.clipboard.writeText(message); copied = true; } catch (_) { /* 복사가 막혀도 링크는 보여 준다. */ }
+      reportState.tenantLink = { reportId, message };
+      showToast(copied ? "세입자 문자 내용을 복사했습니다. 문자에 붙여 넣어 보내 주세요." : "링크를 만들었습니다. 아래 내용을 복사해 문자로 보내 주세요.", "success");
+    } catch (error) {
+      showToast(error && error.message || "세입자 안내 링크를 만들지 못했습니다.", "error");
     } finally {
       reportState.busyKey = "";
       renderWorkReports();
@@ -15893,6 +15923,9 @@
     if (reportDropPhoto) { dropWorkReportPhoto(reportDropPhoto.dataset.reportDropPhoto, reportDropPhoto.dataset.reportItem, reportDropPhoto.dataset.reportPhase); return; }
     const reportExport = event.target.closest("[data-report-export]");
     if (reportExport) { await exportWorkReportPdf(reportExport.dataset.reportExport, reportExport.dataset.reportCopy); return; }
+    const reportTenantLink = event.target.closest("[data-report-tenant-link]");
+    if (reportTenantLink) { await createTenantReportLink(reportTenantLink.dataset.reportTenantLink); return; }
+    if (event.target.closest("[data-report-tenant-link-close]")) { reportState.tenantLink = null; renderWorkReports(); return; }
     if (event.target.closest("[data-report-draft-pdf]")) { await saveWorkReportFromForm({pdfOnly: true}); return; }
     const reportPhoto = event.target.closest("[data-report-open-photo]");
     if (reportPhoto) {

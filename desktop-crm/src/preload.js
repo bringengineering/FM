@@ -153,6 +153,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveWeeklyReportDraft: input => ipcRenderer.invoke("crm:weekly-report-draft-save", input),
     loadTelegramServerStatus: () => ipcRenderer.invoke("crm:telegram-server-status"),
   exportWorkReport: input => ipcRenderer.invoke("crm:work-report-export", input),
+  createWorkReportTenantLink: input => ipcRenderer.invoke("crm:work-report-tenant-link", input),
   sendWorkReportToCustomerByKakao: input => ipcRenderer.invoke("crm:work-report-kakao-send", input),
   saveDeliveryFlow: input => ipcRenderer.invoke("crm:delivery-flow-save", input),
   advanceDeliveryStage: input => ipcRenderer.invoke("crm:delivery-stage-advance", input),
