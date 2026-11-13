@@ -3036,13 +3036,17 @@ function shouldFillConsultationNote(c){
   const summary=String(c.summary||"").trim();
   return !!summary && note===summary;
 }
+// 층간소음·전구처럼 브링케어가 직접 안내하는 민원은 업체 방문·견적이 필요 없다(Apps Script와 같은 기준).
+function isDirectHandlingCase(c){ return String(c&&c.vendorType||"")==="브링케어 직접 처리"; }
 function classificationSiteVisit(c){
+  if(isDirectHandlingCase(c)) return "불필요";
   const text=[c.issueType,c.vendorType,c.summary,c.analysisReason].filter(Boolean).join(" ");
   if(c.urgency==="긴급") return "필요";
   if(/전기|누수|배관|보일러|에어컨|도어락|출입|창호|문|청소|방역|공용부/.test(text)) return "필요";
   return "확인 필요";
 }
 function classificationQuoteNeed(c){
+  if(isDirectHandlingCase(c)) return "불필요";
   return c.vendorType==="관리자 확인" ? "확인 필요" : "필요";
 }
 function classificationReasonLines(c){
