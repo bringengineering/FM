@@ -288,8 +288,8 @@
   const VACANCY_STATUS_LABELS = Object.freeze({
     all: "전체", occupied: "입주 중", vacant: "공실", move_out_scheduled: "공실 예정", maintenance: "정비 중", unknown: "확인 필요"
   });
-  const VACANCY_FILTER_ORDER = Object.freeze(["all", "attention", "vacant", "move_out_scheduled", "occupied", "maintenance", "unknown"]);
-  const VACANCY_FILTER_LABELS = Object.freeze({ ...VACANCY_STATUS_LABELS, attention: "공실·예정" });
+  const VACANCY_FILTER_ORDER = Object.freeze(["all", "attention", "vacant", "move_out_scheduled", "lease_ending", "occupied", "maintenance", "unknown"]);
+  const VACANCY_FILTER_LABELS = Object.freeze({ ...VACANCY_STATUS_LABELS, attention: "공실·예정", lease_ending: "만료 임박" });
 
   const INDUSTRY_CHECKLISTS = Object.freeze({
     "누수": [
@@ -3610,7 +3610,7 @@
   function paymentScheduleEditor(scheduleId, preset = {}) {
     const schedule = scheduleId && operations.payments && operations.payments.schedules && operations.payments.schedules[scheduleId]
       || (scheduleId ? {} : { buildingId: String(preset.buildingId || ""), buildingName: String(preset.buildingName || ""), unit: String(preset.unit || "") });
-    const returnView = preset.returnView === "buildings" ? "buildings" : "payments";
+    const returnView = ["buildings", "vacancies"].includes(preset.returnView) ? preset.returnView : "payments";
     const buildings = paymentBuildings();
     const linkedBuilding = storeBuildingForPaymentSchedule(schedule);
     const selectedBuildingId = linkedBuilding && linkedBuilding.id || schedule.buildingId || "";
@@ -5335,6 +5335,22 @@
       .filter(schedule => schedule && paymentUnitKey(schedule.unit) === key && scheduleBelongsToBuilding(schedule, building))
       .sort((left, right) => Number(right.active !== false) - Number(left.active !== false) || String(right.startMonth || "").localeCompare(String(left.startMonth || "")));
   };
+  // 계약 종료 월 기준 안내. 표시만 하고 호실 상태는 바꾸지 않는다 —
+  // 날짜가 지났다고 자동으로 공실 처리하지 않는 공실 현황 원칙과 같다.
+  const TENANT_EXPIRY_NOTICE_MONTHS = 2;
+  const tenantExpiryNotice = schedule => {
+    const end = /^(\d{4})-(\d{2})$/u.exec(String(schedule && schedule.endMonth || ""));
+    const now = /^(\d{4})-(\d{2})/u.exec(todayKey());
+    if (!end || !now) return null;
+    const monthsLeft = (Number(end[1]) - Number(now[1])) * 12 + (Number(end[2]) - Number(now[2]));
+    if (monthsLeft < 0) return { kind: "ended", label: `계약 종료월 지남 · ${schedule.endMonth}` };
+    if (monthsLeft <= TENANT_EXPIRY_NOTICE_MONTHS) return { kind: "soon", label: `계약 만료 임박 · ${schedule.endMonth}` };
+    return null;
+  };
+  const unitLeaseEnding = (building, unit) => {
+    const tenant = unitTenantSchedules(building, unit).find(schedule => schedule.active !== false);
+    return !!(tenant && tenantExpiryNotice(tenant));
+  };
   const tenantPeriodText = schedule => [schedule.startMonth, schedule.endMonth].some(Boolean) ? `${schedule.startMonth || "?"} ~ ${schedule.endMonth || "종료 월 미정"}` : "기간 미입력";
   const buildingPaymentRows = building => Core.paymentMonthRows(operations.payments || {}, paymentMonth, todayKey(), "all").filter(row => scheduleBelongsToBuilding(row.schedule, building));
   const buildingStatusBadge = status => managementStatusBadge(managementStatusForBuilding(status));
@@ -5708,7 +5724,12 @@
     const statusControl = canWriteCRM()
       ? `<select class="vacancy-quick-status ${attr(status)}" data-vacancy-status-select data-building-id="${attr(building.id)}" data-unit-id="${attr(unit.id)}" data-current-status="${attr(status)}" aria-label="${attr(`${label} 상태 변경`)}" ${saving ? "disabled aria-busy=\"true\"" : ""}>${["occupied", "vacant", "move_out_scheduled", "maintenance", "unknown"].map(value => `<option value="${attr(value)}" ${value === status ? "selected" : ""}>${esc(VACANCY_STATUS_LABELS[value])}</option>`).join("")}</select>`
       : vacancyStatusBadge(status);
-    return `<article class="vacancy-unit-card ${attr(status)} ${pastDue ? "date-warning" : ""} ${saving ? "saving" : ""}" data-vacancy-unit="${attr(unit.id)}" ${saving ? "aria-busy=\"true\"" : ""}><header><strong>${esc(label)}</strong>${statusControl}</header>${meta ? `<p>${esc(meta)}</p>` : ""}${status === "move_out_scheduled" && unit.memo ? `<small>${esc(unit.memo)}</small>` : ""}<footer><span>${esc(inferredVacancyFloorLabel(unit))}${saving ? " · 저장 중" : ""}</span>${canWriteCRM() ? `<button type="button" class="mini-button" data-owner-notice-open="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>건물주 안내</button><button type="button" class="mini-button" data-vacancy-unit-edit="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>상세 수정</button>` : ""}</footer></article>`;
+    const tenant = unitTenantSchedules(building, unit).find(schedule => schedule.active !== false);
+    const expiry = tenant ? tenantExpiryNotice(tenant) : null;
+    const tenantBlock = tenant
+      ? `<button type="button" class="vacancy-tenant ${expiry ? attr(expiry.kind) : ""}" data-unit-tenant-edit="${attr(tenant.id)}" data-building-id="${attr(building.id)}" aria-label="${attr(`${label} 세입자 ${tenant.tenantName || ""} 정보 보기`)}"><b>${esc(tenant.tenantName || "세입자 이름 미입력")}</b><span>${esc([customerPhoneText(tenant.tenantPhone), tenant.endMonth ? `~ ${tenant.endMonth}` : "종료 월 미정"].filter(Boolean).join(" · "))}</span>${expiry ? `<em>${esc(expiry.label)}</em>` : ""}</button>`
+      : status === "occupied" && canWriteCRM() ? `<button type="button" class="vacancy-tenant empty" data-unit-tenant-add="${attr(building.id)}" data-unit-label="${attr(label)}">＋ 세입자 등록</button>` : "";
+    return `<article class="vacancy-unit-card ${attr(status)} ${pastDue ? "date-warning" : ""} ${expiry ? `tenant-${attr(expiry.kind)}` : ""} ${saving ? "saving" : ""}" data-vacancy-unit="${attr(unit.id)}" ${saving ? "aria-busy=\"true\"" : ""}><header><strong>${esc(label)}</strong>${statusControl}</header>${meta ? `<p>${esc(meta)}</p>` : ""}${status === "move_out_scheduled" && unit.memo ? `<small>${esc(unit.memo)}</small>` : ""}${tenantBlock}<footer><span>${esc(inferredVacancyFloorLabel(unit))}${saving ? " · 저장 중" : ""}</span>${canWriteCRM() ? `<button type="button" class="mini-button" data-owner-notice-open="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>건물주 안내</button><button type="button" class="mini-button" data-vacancy-unit-edit="${attr(unit.id)}" data-building-id="${attr(building.id)}" ${saving ? "disabled" : ""}>상세 수정</button>` : ""}</footer></article>`;
   }
 
   function renderVacancyDetail(building, query) {
@@ -5717,7 +5738,8 @@
     const filteredUnits = units.filter(unit => {
       const status = vacancyUnitStatus(unit);
       const matchesStatus = vacancyStatusFilter === "all" || status === vacancyStatusFilter
-        || (vacancyStatusFilter === "attention" && ["vacant", "move_out_scheduled"].includes(status));
+        || (vacancyStatusFilter === "attention" && ["vacant", "move_out_scheduled"].includes(status))
+        || (vacancyStatusFilter === "lease_ending" && unitLeaseEnding(building, unit));
       return matchesStatus && (!query || vacancyUnitSearchText(unit).includes(query));
     });
     const grouped = new Map();
@@ -5729,7 +5751,7 @@
     });
     const floors = [...grouped.values()].sort((left, right) => left.floorOrder - right.floorOrder || left.floorLabel.localeCompare(right.floorLabel, "ko", { numeric: true }));
     const statusTabs = VACANCY_FILTER_ORDER.map(filter => {
-      const count = filter === "attention" ? summary.actionable : filter === "all" ? summary.total : summary[filter];
+      const count = filter === "attention" ? summary.actionable : filter === "all" ? summary.total : filter === "lease_ending" ? units.filter(unit => unitLeaseEnding(building, unit)).length : summary[filter];
       return `<button type="button" class="${vacancyStatusFilter === filter ? "active" : ""}" data-vacancy-filter="${attr(filter)}" aria-pressed="${vacancyStatusFilter === filter}"><span>${esc(VACANCY_FILTER_LABELS[filter])}</span><b>${Number(count || 0).toLocaleString("ko-KR")}</b></button>`;
     }).join("");
     const formalMismatch = summary.formal && Number(building.unitCount) > 0 && Number(building.unitCount) !== summary.total;
@@ -17086,12 +17108,12 @@
       return;
     }
     const unitTenantEdit = event.target.closest("[data-unit-tenant-edit]");
-    if (unitTenantEdit) { paymentScheduleEditor(unitTenantEdit.dataset.unitTenantEdit, { returnView: "buildings" }); return; }
+    if (unitTenantEdit) { paymentScheduleEditor(unitTenantEdit.dataset.unitTenantEdit, { returnView: currentView === "vacancies" ? "vacancies" : "buildings" }); return; }
     const unitTenantAdd = event.target.closest("[data-unit-tenant-add]");
     if (unitTenantAdd) {
       const building = buildingById(unitTenantAdd.dataset.unitTenantAdd);
       if (!building) return showToast("건물을 찾지 못했습니다.", "error");
-      paymentScheduleEditor("", { buildingId: building.id, buildingName: building.name || "", unit: unitTenantAdd.dataset.unitLabel || "", returnView: "buildings" });
+      paymentScheduleEditor("", { buildingId: building.id, buildingName: building.name || "", unit: unitTenantAdd.dataset.unitLabel || "", returnView: currentView === "vacancies" ? "vacancies" : "buildings" });
       return;
     }
     const paymentScheduleEdit = event.target.closest("[data-payment-schedule-edit]");
@@ -19902,8 +19924,8 @@
       const result = await api.savePaymentSchedule(Object.assign({}, raw, { scheduleId: form.dataset.scheduleId, active: raw.active === "true" }));
       if (!result.ok) return showToast(result.error || "납부 일정을 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
-      const returnToBuildings = form.dataset.returnView === "buildings";
-      closeModal(); currentView = returnToBuildings ? "buildings" : "payments"; render(); showToast(returnToBuildings ? "세입자 정보를 저장했습니다. 건물주 입금캘린더에도 반영됐습니다." : "납부 일정을 건물주 입금캘린더에 저장했습니다.", "success");
+      const returnView = ["buildings", "vacancies"].includes(form.dataset.returnView) ? form.dataset.returnView : "payments";
+      closeModal(); currentView = returnView; render(); showToast(returnView !== "payments" ? "세입자 정보를 저장했습니다. 건물주 입금캘린더에도 반영됐습니다." : "납부 일정을 건물주 입금캘린더에 저장했습니다.", "success");
     } else if (form.id === "paymentBankBindingForm") {
       const selected = form.querySelector('input[name="accountRef"]:checked');
       if (!selected) return showToast("연결할 입금계좌를 선택해 주세요.", "error");
