@@ -10600,6 +10600,15 @@ app.whenReady().then(async () => {
       loadWorkOrders: () => remoteClient ? remoteClient.loadWorkOrders() : null,
       loadServiceRevenueContext: async () => remoteClient ? { shared: await remoteClient.fetchRemotePayload(), ledger: await remoteClient.loadBillingLedger() } : null,
       loadBillingLedger: () => remoteClient ? remoteClient.loadBillingLedger() : null,
+      loadTenantSource: async () => {
+        if (!remoteClient) return null;
+        const [shared, schedules] = await Promise.all([
+          remoteClient.fetchRemotePayload(),
+          remoteClient.dbRequest("paymentCalendars/shared/schedules", { method: "GET" }),
+        ]);
+        return { buildings: shared && shared.buildings, buildingUnits: shared && shared.buildingUnits, schedules: schedules || {} };
+      },
+      savePaymentSchedule: input => savePaymentSchedule(input),
       saveBillingInvoice: input => saveAndSignalWallboard(() => {
         if (!remoteClient) throw Object.assign(new Error("CRM 연결이 없습니다."), { code: "AUTH_REQUIRED" });
         return remoteClient.saveBillingInvoice(input);

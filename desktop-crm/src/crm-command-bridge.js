@@ -4,6 +4,7 @@ const http = require("node:http");
 const path = require("node:path");
 const ProjectCore = require("./project-core");
 const WorkOrderCore = require("./work-order-core");
+const TenantDraftCore = require("./tenant-payment-draft-core");
 
 const PROTOCOL_VERSION = 1;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -57,11 +58,14 @@ function createCrmCommandBridge(options = {}) {
   const refreshWallboard = typeof options.refreshWallboard === "function" ? options.refreshWallboard : null;
   const wallboardAdmin = typeof options.wallboardAdmin === "function" ? options.wallboardAdmin : null;
   const signalWallboard = typeof options.signalWallboard === "function" ? options.signalWallboard : () => {};
+  const loadTenantSource = typeof options.loadTenantSource === "function" ? options.loadTenantSource : null;
+  const savePaymentSchedule = typeof options.savePaymentSchedule === "function" ? options.savePaymentSchedule : null;
   const now = typeof options.now === "function" ? options.now : Date.now;
   const randomBytes = typeof options.randomBytes === "function" ? options.randomBytes : crypto.randomBytes;
   const workOrderCore = options.workOrderCore || WorkOrderCore;
   const projectCore = options.projectCore || ProjectCore;
   const previews = new Map();
+  const tenantPreviews = new Map();
   let server = null;
   let port = 0;
   let token = "";
@@ -323,6 +327,60 @@ function createCrmCommandBridge(options = {}) {
     return result;
   }
 
+  async function tenantSource() {
+    if (!loadTenantSource) throw bridgeError(503, "READ_UNAVAILABLE", "건물·납부 자료 조회 경로가 준비되지 않았습니다.");
+    const source = await loadTenantSource();
+    if (!source || typeof source !== "object") throw bridgeError(503, "READ_UNAVAILABLE", "건물·납부 자료를 확인하지 못했습니다.");
+    return source;
+  }
+
+  async function tenantContext(input) {
+    requireAdmin();
+    if (!input || typeof input !== "object" || Object.keys(input).some(key => key !== "buildingQuery") || typeof input.buildingQuery !== "string") {
+      throw bridgeError(422, "INVALID_INPUT", "찾을 건물 이름(buildingQuery)만 보내 주세요.");
+    }
+    const context = TenantDraftCore.buildTenantContext(await tenantSource(), input.buildingQuery);
+    if (!context.ok) throw bridgeError(422, "INVALID_INPUT", context.error);
+    return Object.assign({ writesPerformed: false }, context);
+  }
+
+  async function previewTenant(input) {
+    const user = requireAdmin();
+    const checked = TenantDraftCore.normalizeTenantDraft(input, await tenantSource());
+    if (!checked.ok) return { valid: false, error: checked.error, writesPerformed: false };
+    const previewId = crypto.randomUUID();
+    const scheduleId = `crm_ai_${randomBytes(8).toString("hex")}`;
+    const schedule = Object.assign({ scheduleId }, checked.schedule);
+    const preview = { previewId, scheduleId, schedule, createdByUid: String(user.uid || ""), expiresAt: new Date(now() + PREVIEW_TTL_MS).toISOString(), result: null };
+    tenantPreviews.set(previewId, preview);
+    while (tenantPreviews.size > 50) tenantPreviews.delete(tenantPreviews.keys().next().value);
+    return { valid: true, previewId, expiresAt: preview.expiresAt, schedule, months: checked.months, warnings: checked.warnings, approvalPhrase: APPROVAL_PHRASE, writesPerformed: false };
+  }
+
+  async function publishTenant(input) {
+    const user = requireAdmin();
+    if (!input || typeof input !== "object" || Object.keys(input).some(key => !["previewId", "approvalPhrase"].includes(key))) throw bridgeError(422, "INVALID_INPUT", "미리보기 번호와 승인 문구만 보내 주세요.");
+    const previewId = String(input.previewId || "");
+    const preview = tenantPreviews.get(previewId);
+    if (!preview) throw bridgeError(409, "PREVIEW_NOT_FOUND", "등록할 세입자 초안이 없거나 이미 만료되었습니다. 다시 미리보기해 주세요.");
+    if (preview.result) return Object.assign({}, preview.result, { repeated: true });
+    if (now() >= Date.parse(preview.expiresAt)) {
+      tenantPreviews.delete(previewId);
+      throw bridgeError(409, "PREVIEW_EXPIRED", "초안 확인 시간이 만료되었습니다. 내용을 다시 확인해 주세요.");
+    }
+    if (input.approvalPhrase !== APPROVAL_PHRASE) throw bridgeError(403, "APPROVAL_REQUIRED", "대표님이 채팅에서 등록을 승인한 뒤 등록 도구를 호출해 주세요.");
+    if (String(user.uid || "") !== preview.createdByUid) throw bridgeError(403, "SESSION_CHANGED", "초안 작성 후 CRM 로그인 계정이 바뀌었습니다. 다시 미리보기해 주세요.");
+    if (!savePaymentSchedule) throw bridgeError(503, "SAVE_UNAVAILABLE", "납부 일정 저장 경로가 준비되지 않았습니다.");
+    let saved;
+    try { saved = await savePaymentSchedule(Object.assign({}, preview.schedule)); }
+    catch (_error) { saved = null; }
+    if (!saved || saved.ok !== true) {
+      return { complete: false, scheduleId: preview.scheduleId, error: String(saved && saved.error || "CRM에 저장하지 못했습니다. 같은 미리보기로 다시 등록하면 같은 번호로 덮어써서 중복되지 않습니다.") };
+    }
+    preview.result = { complete: true, scheduleId: preview.scheduleId, buildingName: preview.schedule.buildingName, unit: preview.schedule.unit, tenantName: preview.schedule.tenantName };
+    return preview.result;
+  }
+
   async function handle(request, response) {
     if (!request.socket.remoteAddress || !["127.0.0.1", "::ffff:127.0.0.1", "::1"].includes(request.socket.remoteAddress)) {
       return send(response, 403, { error: "LOOPBACK_ONLY", message: "로컬 BRING CRM 연결만 허용됩니다." });
@@ -407,6 +465,19 @@ function createCrmCommandBridge(options = {}) {
         }
         return send(response, 200, await wallboardAdmin({ action: "approve", code: input.code, name: input.name.trim() }));
       }
+      if (request.method === "POST" && ["/v1/tenant-context", "/v1/tenant-preview", "/v1/tenant-publish"].includes(request.url)) {
+        if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+          return send(response, 415, { error: "CONTENT_TYPE_REQUIRED", message: "JSON 요청만 허용됩니다." });
+        }
+        const body = await readJson(request);
+        if (request.url === "/v1/tenant-context") return send(response, 200, await tenantContext(body));
+        if (request.url === "/v1/tenant-preview") {
+          const preview = await previewTenant(body);
+          return send(response, preview.valid ? 200 : 422, preview);
+        }
+        const result = await publishTenant(body);
+        return send(response, result.complete ? 200 : 207, result);
+      }
       if (request.method !== "POST" || !["/v1/preview", "/v1/publish"].includes(request.url)) {
         return send(response, 404, { error: "NOT_FOUND", message: "지원하지 않는 BRING CRM 연결 경로입니다." });
       }
@@ -463,9 +534,13 @@ function createCrmCommandBridge(options = {}) {
       token = "";
       port = 0;
       previews.clear();
+      tenantPreviews.clear();
     },
     previewDraft,
     publishDraft,
+    tenantContext,
+    previewTenant,
+    publishTenant,
     get port() { return port; },
     get token() { return token; },
   });

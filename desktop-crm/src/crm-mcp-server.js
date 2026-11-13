@@ -33,6 +33,34 @@ const TOOL_DEFINITIONS = Object.freeze([
     description: "발행된 미리보기 초안을 기존 BRING CRM 관리자 저장 경로로 등록합니다. 현재 대화에서 대표가 해당 초안 내용을 확인하고 명시적으로 발행을 승인하기 전에는 절대 호출하지 마세요. 승인 문구는 정확히 'CRM 발행 승인'이어야 합니다.",
     inputSchema: { type: "object", additionalProperties: false, required: ["previewId", "approvalPhrase"], properties: { previewId: { type: "string" }, approvalPhrase: { type: "string", const: "CRM 발행 승인" } } },
   },
+  {
+    name: "crm_tenant_context",
+    description: "건물 이름으로 CRM에 등록된 건물을 찾고, 그 건물의 호실 목록과 이미 등록된 세입자(납부 일정) 요약을 읽습니다. 세입자 연락처는 돌려주지 않습니다. 저장하지 않습니다. 세입자를 등록하기 전에 반드시 먼저 호출해 건물 번호(id)를 확인하세요.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["buildingQuery"], properties: { buildingQuery: { type: "string", description: "건물 이름 또는 주소 일부. 예: 햇빛빌라" } } },
+  },
+  {
+    name: "crm_preview_tenant",
+    description: "세입자 정보를 건물주 입금캘린더의 납부 일정 초안으로 검사합니다. 저장하지 않습니다. 금액은 월세와 관리비를 합친 원 단위 정수, 시작·종료 월은 YYYY-MM입니다. 종료 월은 마지막으로 돈을 내는 달입니다(2026-11부터 12개월이면 2027-10). 경고가 나오면 대표에게 그대로 보여 주세요.",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["buildingId", "unit", "tenantName", "amount", "dueDay", "startMonth"],
+      properties: {
+        buildingId: { type: "string", description: "crm_tenant_context가 돌려준 건물 id" },
+        unit: { type: "string", description: "호실. 예: 202호" },
+        tenantName: { type: "string" },
+        tenantPhone: { type: "string" },
+        payerName: { type: "string", description: "통장에 찍히는 입금자명. 비우면 세입자명" },
+        amount: { type: "integer", minimum: 1, description: "월 납부금액(원). 예: 330000" },
+        dueDay: { type: "integer", minimum: 1, maximum: 31 },
+        startMonth: { type: "string", pattern: "^\\d{4}-\\d{2}$" },
+        endMonth: { type: "string", pattern: "^\\d{4}-\\d{2}$" },
+      },
+    },
+  },
+  {
+    name: "crm_publish_tenant",
+    description: "미리보기한 세입자 납부 일정을 CRM에 저장합니다. 현재 대화에서 대표가 미리보기 내용을 확인하고 명시적으로 승인하기 전에는 절대 호출하지 마세요. 승인 문구는 정확히 'CRM 발행 승인'이어야 합니다.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["previewId", "approvalPhrase"], properties: { previewId: { type: "string" }, approvalPhrase: { type: "string", const: "CRM 발행 승인" } } },
+  },
 ]);
 
 function textResult(value, isError = false) {
@@ -98,6 +126,9 @@ function createMcpServer(options = {}) {
           if (tool.name === "crm_connection_status") result = await requestBridge("GET", "/v1/status");
           else if (tool.name === "crm_work_order_context") result = await requestBridge("GET", "/v1/context");
           else if (tool.name === "crm_preview_work_order_draft") result = await requestBridge("POST", "/v1/preview", args);
+          else if (tool.name === "crm_tenant_context") result = await requestBridge("POST", "/v1/tenant-context", args);
+          else if (tool.name === "crm_preview_tenant") result = await requestBridge("POST", "/v1/tenant-preview", args);
+          else if (tool.name === "crm_publish_tenant") result = await requestBridge("POST", "/v1/tenant-publish", args);
           else result = await requestBridge("POST", "/v1/publish", args);
           return { jsonrpc: "2.0", id, result: textResult(result) };
         } catch (error) {

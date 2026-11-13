@@ -3607,12 +3607,14 @@
     openModal();
   }
 
-  function paymentScheduleEditor(scheduleId) {
-    const schedule = scheduleId && operations.payments && operations.payments.schedules && operations.payments.schedules[scheduleId] || {};
+  function paymentScheduleEditor(scheduleId, preset = {}) {
+    const schedule = scheduleId && operations.payments && operations.payments.schedules && operations.payments.schedules[scheduleId]
+      || (scheduleId ? {} : { buildingId: String(preset.buildingId || ""), buildingName: String(preset.buildingName || ""), unit: String(preset.unit || "") });
+    const returnView = preset.returnView === "buildings" ? "buildings" : "payments";
     const buildings = paymentBuildings();
     const linkedBuilding = storeBuildingForPaymentSchedule(schedule);
     const selectedBuildingId = linkedBuilding && linkedBuilding.id || schedule.buildingId || "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${scheduleId ? "납부 일정 수정" : "새 납부 일정"}</h2><p>입력한 일정은 모든 CRM 사용자의 건물주 입금캘린더 탭에 바로 반영됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentScheduleForm" class="modal-body" data-schedule-id="${attr(scheduleId || "")}" data-original-building-id="${attr(schedule.buildingId || "")}"><div class="info-box">세입자 이름·연락처·예상 입금자명·금액을 정확히 입력하면 은행 입금내역 자동 일치 정확도가 높아집니다.</div><div class="form-grid" style="margin-top:14px">${selectField("등록된 건물", "buildingId", ["", ...buildings.map(item => item.id)], selectedBuildingId, id => id ? ([buildings.find(item => item.id === id)?.name, buildings.find(item => item.id === id)?.address].filter(Boolean).join(" · ") || id) : "직접 입력")}${field("건물명 *", "buildingName", schedule.buildingName || "", "text", "예: 우산오피스텔")}${field("호실", "unit", schedule.unit || "", "text", "예: 302호")}${field("세입자명 *", "tenantName", schedule.tenantName || "", "text", "예: 홍길동")}${field("세입자 연락처", "tenantPhone", schedule.tenantPhone || "", "text", "010-0000-0000")}${field("예상 입금자명", "payerName", schedule.payerName || "", "text", "통장에 표시될 이름")}${field("월 납부금액 *", "amount", schedule.amount || "", "text", "원 단위")}${field("매월 납부일 *", "dueDay", schedule.dueDay || 1, "number", "1~31")}${field("시작 월 *", "startMonth", schedule.startMonth || paymentMonth, "month")}${field("종료 월", "endMonth", schedule.endMonth || "", "month")}${selectField("사용 상태", "active", ["true", "false"], schedule.active === false ? "false" : "true", value => value === "true" ? "사용 중" : "종료")}</div><div class="form-actions">${scheduleId && schedule.source === "crm" ? `<button type="button" class="danger-outline-button form-delete-left" data-payment-schedule-delete="${attr(scheduleId)}">일정 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${scheduleId ? "일정 수정 저장" : "납부 일정 등록"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${scheduleId ? "납부 일정 수정" : "새 납부 일정"}</h2><p>입력한 일정은 모든 CRM 사용자의 건물주 입금캘린더 탭에 바로 반영됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentScheduleForm" class="modal-body" data-schedule-id="${attr(scheduleId || "")}" data-original-building-id="${attr(scheduleId ? schedule.buildingId || "" : "")}" data-return-view="${attr(returnView)}"><div class="info-box">세입자 이름·연락처·예상 입금자명·금액을 정확히 입력하면 은행 입금내역 자동 일치 정확도가 높아집니다.</div><div class="form-grid" style="margin-top:14px">${selectField("등록된 건물", "buildingId", ["", ...buildings.map(item => item.id)], selectedBuildingId, id => id ? ([buildings.find(item => item.id === id)?.name, buildings.find(item => item.id === id)?.address].filter(Boolean).join(" · ") || id) : "직접 입력")}${field("건물명 *", "buildingName", schedule.buildingName || "", "text", "예: 우산오피스텔")}${field("호실", "unit", schedule.unit || "", "text", "예: 302호")}${field("세입자명 *", "tenantName", schedule.tenantName || "", "text", "예: 홍길동")}${field("세입자 연락처", "tenantPhone", schedule.tenantPhone || "", "text", "010-0000-0000")}${field("예상 입금자명", "payerName", schedule.payerName || "", "text", "통장에 표시될 이름")}${field("월 납부금액 *", "amount", schedule.amount || "", "text", "원 단위")}${field("매월 납부일 *", "dueDay", schedule.dueDay || 1, "number", "1~31")}${field("시작 월 *", "startMonth", schedule.startMonth || paymentMonth, "month")}${field("종료 월", "endMonth", schedule.endMonth || "", "month")}${selectField("사용 상태", "active", ["true", "false"], schedule.active === false ? "false" : "true", value => value === "true" ? "사용 중" : "종료")}</div><div class="form-actions">${scheduleId && schedule.source === "crm" ? `<button type="button" class="danger-outline-button form-delete-left" data-payment-schedule-delete="${attr(scheduleId)}">일정 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${scheduleId ? "일정 수정 저장" : "납부 일정 등록"}</button></div></form>`;
     openModal();
   }
 
@@ -5322,6 +5324,18 @@
   const paymentFilterIdForBuilding = building => String(building && building.id || "all");
   const buildingCases = building => activeCases().filter(item => caseBelongsToBuilding(item, building));
   const buildingUnitsForBuilding = building => (store.buildingUnits || []).filter(item => item && String(item.crmBuildingId || item.buildingId || "") === String(building.id));
+  // 세입자는 별도 저장소가 아니라 건물주 입금캘린더 납부 일정에 산다.
+  // 호실 화면은 같은 건물·같은 호실의 납부 일정을 찾아 세입자로 보여 준다.
+  const paymentUnitKey = value => String(value || "").replace(/\s+/gu, "").replace(/호$/u, "").toLowerCase();
+  const unitTenantSchedules = (building, unit) => {
+    const key = paymentUnitKey(unit && (unit.label || unit.unitLabel));
+    if (!building || !key) return [];
+    return Object.entries(operations.payments && operations.payments.schedules || {})
+      .map(([id, schedule]) => schedule && typeof schedule === "object" ? Object.assign({}, schedule, { id: schedule.id || id }) : null)
+      .filter(schedule => schedule && paymentUnitKey(schedule.unit) === key && scheduleBelongsToBuilding(schedule, building))
+      .sort((left, right) => Number(right.active !== false) - Number(left.active !== false) || String(right.startMonth || "").localeCompare(String(left.startMonth || "")));
+  };
+  const tenantPeriodText = schedule => [schedule.startMonth, schedule.endMonth].some(Boolean) ? `${schedule.startMonth || "?"} ~ ${schedule.endMonth || "종료 월 미정"}` : "기간 미입력";
   const buildingPaymentRows = building => Core.paymentMonthRows(operations.payments || {}, paymentMonth, todayKey(), "all").filter(row => scheduleBelongsToBuilding(row.schedule, building));
   const buildingStatusBadge = status => managementStatusBadge(managementStatusForBuilding(status));
   const buildingArray = value => Array.isArray(value) ? value.map(item => String(item || "").trim()).filter(Boolean) : [];
@@ -5656,7 +5670,13 @@
     const allUnits = buildingUnitsForBuilding(building);
     const units = allUnits.filter(item => !item.archivedAt);
     const archivedUnits = allUnits.filter(item => item.archivedAt);
-    const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([inferredVacancyFloorLabel(item), VACANCY_STATUS_LABELS[vacancyUnitStatus(item)], item.memo].filter(Boolean).join(" · "))}</span></div><em>수정</em></button>`).join("");
+    const unitRecords = units.map(item => {
+      const tenant = unitTenantSchedules(building, item).find(schedule => schedule.active !== false);
+      const tenantChip = tenant
+        ? `<button type="button" class="unit-tenant-chip" data-unit-tenant-edit="${attr(tenant.id)}" data-building-id="${attr(building.id)}" aria-label="${attr(`${item.label || item.unitLabel || "호실"} 세입자 정보 보기`)}"><b>세입자 ${esc(tenant.tenantName || "이름 미입력")}</b><span>${esc([customerPhoneText(tenant.tenantPhone), Core.money(tenant.amount) ? `월 ${krw(tenant.amount)}` : "", Number(tenant.dueDay) ? `매월 ${Number(tenant.dueDay)}일` : ""].filter(Boolean).join(" · "))}</span></button>`
+        : canWriteCRM() ? `<button type="button" class="unit-tenant-chip empty" data-unit-tenant-add="${attr(building.id)}" data-unit-label="${attr(item.label || item.unitLabel || "")}">＋ 세입자 등록</button>` : "";
+      return `<div class="building-unit-row"><button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([inferredVacancyFloorLabel(item), VACANCY_STATUS_LABELS[vacancyUnitStatus(item)], item.memo].filter(Boolean).join(" · "))}</span></div><em>수정</em></button>${tenantChip}</div>`;
+    }).join("");
     const archivedUnitRecords = archivedUnits.length ? `<details class="building-units-archived"><summary>보관된 호실 ${archivedUnits.length}개</summary>${archivedUnits.map(item => `<div class="building-detail-record"><div><b>${esc(item.label || item.unitLabel || "호실")}</b><span>${esc(dateText(item.archivedAt))}</span></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-unit-restore="${attr(item.id)}" data-building-id="${attr(building.id)}">복원</button>` : ""}</div>`).join("")}</details>` : "";
     const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customerDisplayName(customer))}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customerPhoneText(customer.phone), customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
     const vacancySummary = vacancySummaryForBuilding(building);
@@ -13553,6 +13573,14 @@
     }
   }
 
+  function unitTenantSection(building, unit) {
+    const schedules = unitTenantSchedules(building, unit);
+    const label = unit.label || unit.unitLabel || "";
+    const writable = canWriteCRM();
+    const records = schedules.map(schedule => `<div class="unit-tenant-record ${schedule.active === false ? "ended" : ""}"><div><b>${esc(schedule.tenantName || "이름 미입력")}${schedule.active === false ? " · 종료" : ""}</b><span>${esc([customerPhoneText(schedule.tenantPhone) || "연락처 미입력", Core.money(schedule.amount) ? `월 ${krw(schedule.amount)}` : "", Number(schedule.dueDay) ? `매월 ${Number(schedule.dueDay)}일` : "", tenantPeriodText(schedule)].filter(Boolean).join(" · "))}</span>${schedule.payerName && schedule.payerName !== schedule.tenantName ? `<small>입금자명 ${esc(schedule.payerName)}</small>` : ""}</div>${writable ? `<button type="button" class="mini-button" data-unit-tenant-edit="${attr(schedule.id)}" data-building-id="${attr(building.id)}">수정</button>` : ""}</div>`).join("");
+    return `<section class="unit-tenant-section wide" aria-label="세입자 정보"><header><div><b>세입자 정보</b><span>건물주 입금캘린더의 납부 일정과 같은 정보입니다. 여기서 고치면 입금캘린더에도 바로 반영됩니다.</span></div>${writable ? `<button type="button" class="mini-button" data-unit-tenant-add="${attr(building.id)}" data-unit-label="${attr(label)}">＋ 세입자 등록</button>` : ""}</header>${records || `<div class="unit-tenant-empty">등록된 세입자가 없습니다.${writable ? " ＋ 세입자 등록을 눌러 이름·연락처·월세를 넣어 주세요." : ""}</div>`}${writable ? `<small class="unit-tenant-hint">세입자 창으로 넘어가면 이 창에서 고친 호실 내용은 저장되지 않습니다. 호실 내용을 먼저 저장해 주세요.</small>` : ""}</section>`;
+  }
+
   function buildingUnitEditor(buildingId, unitId) {
     if (deferCanonicalMutation("건물 호실")) return;
     const building = buildingById(buildingId);
@@ -13570,6 +13598,7 @@
       ${field("공실 예정일", "availableFrom", availableFrom, "date")}
       <div class="info-box wide vacancy-date-guide ${dateWarning ? "warning" : ""}">${dateWarning ? "공실 예정일이 지났습니다. 실제 상태를 확인해 주세요. 날짜가 지났다고 자동으로 공실 처리하지 않습니다." : "공실 예정 상태를 선택하면 공실 예정일을 반드시 입력해 주세요."}</div>
       ${areaField("호실 메모", "memo", item.memo || "", "wide")}
+      ${item.id ? unitTenantSection(building, item) : ""}
     </div><div class="form-actions">${item.id ? `<button type="button" class="danger-outline-button form-delete-left" data-building-unit-archive="${attr(item.id)}" data-building-id="${attr(building.id)}">호실 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${item.id ? "호실 저장" : "호실 등록"}</button></div></form>`;
     openModal();
     const availableFromInput = document.querySelector('#buildingUnitForm [name="availableFrom"]');
@@ -17056,6 +17085,15 @@
       paymentBankBindingEditor(paymentBuildingFilter);
       return;
     }
+    const unitTenantEdit = event.target.closest("[data-unit-tenant-edit]");
+    if (unitTenantEdit) { paymentScheduleEditor(unitTenantEdit.dataset.unitTenantEdit, { returnView: "buildings" }); return; }
+    const unitTenantAdd = event.target.closest("[data-unit-tenant-add]");
+    if (unitTenantAdd) {
+      const building = buildingById(unitTenantAdd.dataset.unitTenantAdd);
+      if (!building) return showToast("건물을 찾지 못했습니다.", "error");
+      paymentScheduleEditor("", { buildingId: building.id, buildingName: building.name || "", unit: unitTenantAdd.dataset.unitLabel || "", returnView: "buildings" });
+      return;
+    }
     const paymentScheduleEdit = event.target.closest("[data-payment-schedule-edit]");
     if (paymentScheduleEdit) { paymentScheduleEditor(paymentScheduleEdit.dataset.paymentScheduleEdit); return; }
     const paymentBankEdit = event.target.closest("[data-payment-bank-edit]");
@@ -19864,7 +19902,8 @@
       const result = await api.savePaymentSchedule(Object.assign({}, raw, { scheduleId: form.dataset.scheduleId, active: raw.active === "true" }));
       if (!result.ok) return showToast(result.error || "납부 일정을 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
-      closeModal(); currentView = "payments"; render(); showToast("납부 일정을 건물주 입금캘린더에 저장했습니다.", "success");
+      const returnToBuildings = form.dataset.returnView === "buildings";
+      closeModal(); currentView = returnToBuildings ? "buildings" : "payments"; render(); showToast(returnToBuildings ? "세입자 정보를 저장했습니다. 건물주 입금캘린더에도 반영됐습니다." : "납부 일정을 건물주 입금캘린더에 저장했습니다.", "success");
     } else if (form.id === "paymentBankBindingForm") {
       const selected = form.querySelector('input[name="accountRef"]:checked');
       if (!selected) return showToast("연결할 입금계좌를 선택해 주세요.", "error");
