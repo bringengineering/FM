@@ -1,0 +1,724 @@
+// 업무 결과보고서. 사진만 넣으면 나오게 한다.
+//
+// 입주청소와 계단청소는 **매번 하는 일이 같다.** 바닥 닦고 창틀 닦고
+// 욕실 하고 마감 본다. 그런데 보고서는 매번 처음부터 쓴다. 그래서 사람마다
+// 다르게 쓰고, 바쁘면 안 쓰고, 안 쓰면 건물주는 무엇을 했는지 모른다.
+//
+// 그러니 **항목을 사람이 적게 두지 않는다.** 작업 종류를 고르면 그 종류의
+// 표준 항목이 깔린다. 사람이 하는 일은 항목마다 전·후 사진을 붙이는 것과,
+// 안 한 항목에 이유를 적는 것뿐이다.
+//
+// 왜 전·후 두 장인가
+//
+// 결과보고서가 하는 일은 "했다고 말하는 것"이 아니라 **"했다는 것을 보이는
+// 것"**이다. 후 사진만 있으면 원래 깨끗했는지 우리가 닦은 것인지 알 수
+// 없다. 그 둘을 가르지 못하면 그 사진은 아무것도 증명하지 않는다.
+//
+// 그래서 완료로 두려면 전·후가 다 있어야 한다. 한쪽만 있으면 '일부'다.
+//
+// 안 한 것을 숨기지 않는다
+//
+// 항목을 지울 수는 없고 '못 함'으로 두고 이유를 적는다. 목록에서 빼 버리면
+// 보고서만 보고는 그 항목이 원래 없었는지 빠뜨린 것인지 알 수 없다.
+// 못 한 이유가 적힌 보고서가 항목이 사라진 보고서보다 낫다.
+//
+// 두 벌로 낸다
+//
+//   건물주 제출용   무엇을 했는지. 사진이 주인공이다.
+//   청창사 제출용   용역 보고 서식. 계약기간·사업비·수행업체·항목별 진척도와
+//                   결과평가가 있다. 보고서에는 인감을 넣지 않는다.
+//
+// 같은 자료로 두 벌이 나온다. 두 번 적을 일이 없다.
+//
+// 하지 않는 것
+//
+// 1. 사진을 여기 담지 않는다. Drive 에 올리고 링크만 들고 있다.
+// 2. 금액을 여기서 계산하지 않는다. 계약 금액은 견적서가 안다.
+// 3. 진척도를 사람이 적지 않는다. 항목 상태에서 센다 — 손으로 적으면
+//    100% 라고 적힌 보고서에 사진이 두 장뿐인 일이 난다.
+(function attachWorkReportCore(root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else root.BringWorkReportCore = api;
+})(typeof globalThis === "object" ? globalThis : this, function createWorkReportCore() {
+  "use strict";
+
+  const text = (value, limit = 500) => String(value == null ? "" : value).trim().slice(0, limit);
+  const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
+  const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10));
+
+  // 작업 종류마다 표준 항목이 있다. 이 목록이 이 모듈의 요지다 — 사람이
+  // 항목을 적기 시작하면 사람마다 다른 보고서가 나온다.
+  //
+  // detail 은 '수행범위'다. 청창사 서식의 그 칸에 그대로 들어간다.
+  const KINDS = Object.freeze([
+    {
+      key: "moveIn",
+      label: "입주청소",
+      items: Object.freeze([
+        { key: "floor", label: "바닥", detail: "전실 바닥 쓸기·물걸레·얼룩 제거" },
+        { key: "window", label: "창호·새시", detail: "창틀 홈·레일 먼지 제거, 유리 양면 닦기" },
+        { key: "kitchen", label: "주방", detail: "싱크대 상하부장 내·외부, 가스대 기름때 제거" },
+        { key: "hood", label: "주방 후드·필터", detail: "후드 외부와 탈착 가능한 필터의 기름때 제거", optional: true },
+        { key: "aircon", label: "에어컨 필터·커버", detail: "탈착 가능한 필터·커버의 먼지 제거 및 세척", optional: true },
+        { key: "refrigerator", label: "냉장고 선반·서랍", detail: "탈착 가능한 선반·서랍·내부 플라스틱 세척", optional: true },
+        { key: "bath", label: "욕실", detail: "타일·줄눈·변기·세면대 물때 제거, 배수구 청소" },
+        { key: "veranda", label: "베란다", detail: "바닥·배수구·세탁기 자리 청소" },
+        { key: "storage", label: "붙박이장·수납", detail: "장 내부 먼지 제거, 선반 닦기" },
+        { key: "finish", label: "마감 점검", detail: "스위치·문틀·걸레받이 닦기, 잔여물 반출" },
+      ]),
+    },
+    {
+      key: "moveOut",
+      label: "퇴실청소",
+      items: Object.freeze([
+        { key: "floor", label: "바닥·오염 확인", detail: "전실 바닥 오염·잔여물 제거 및 퇴실 상태 확인" },
+        { key: "window", label: "창호·새시", detail: "창틀 홈·레일 먼지 제거, 유리 오염 확인" },
+        { key: "kitchen", label: "주방", detail: "싱크대·수납장 내부와 조리공간 오염 확인 및 청소" },
+        { key: "bath", label: "욕실", detail: "타일·변기·세면대·배수구 오염과 파손 여부 확인" },
+        { key: "veranda", label: "베란다·배수구", detail: "바닥·배수구·세탁기 자리 청소 및 상태 확인" },
+        { key: "storage", label: "붙박이장·수납", detail: "수납 내부 잔류물 확인 및 선반 청소" },
+        { key: "appliances", label: "옵션·가전 상태", detail: "계약 옵션 품목의 잔류물과 외관 상태 확인", optional: true },
+        { key: "waste", label: "잔류물·폐기물", detail: "잔류물과 폐기 대상 구분, 승인 범위 내 반출 기록" },
+        { key: "finish", label: "최종 인계 점검", detail: "열쇠·보안정보를 기록하지 않고 공간별 청소·파손 확인 후 인계" },
+      ]),
+    },
+    {
+      key: "common",
+      label: "공용부청소",
+      items: Object.freeze([
+        // '공용부 활동 결과보고서' 양식의 9개 구역. 예전 16개 구역은 COMMON_LEGACY_ZONES 로 옮겨 싣는다.
+        { key: "entrance", label: "출입구", detail: "공용 출입구 바닥·유리문·매트 상태 확인 및 청소" },
+        { key: "elevator", label: "승강기", detail: "승강기 문·내부·버튼의 접근 가능한 면 청소", optional: true },
+        { key: "corridor", label: "복도", detail: "층별 복도와 공용 바닥·벽면·문의 오염 확인 및 청소" },
+        { key: "stairs", label: "계단", detail: "층별 계단·계단참·난간의 오염 확인 및 청소" },
+        { key: "windows", label: "창틀", detail: "접근 가능한 공용 창틀·레일·유리면 먼지 제거 및 청소" },
+        { key: "fire", label: "소방 설비", detail: "소화기·소화전함 등 소방 설비의 접근 가능한 외부 표면 확인 및 닦기" },
+        { key: "fixtures", label: "공용부 설비", detail: "공용 설비함·계량기함·게시판·조명·배수구의 접근 가능한 면 확인 및 정리" },
+        { key: "parking", label: "주차장", detail: "주차 구역·마당 등 외부 바닥 오염 확인 및 청소", optional: true },
+        { key: "recycle", label: "분리수거장", detail: "수거장 바닥·분리배출 상태·악취 확인 및 정리" },
+      ]),
+    },
+    {
+      key: "stairs",
+      label: "계단청소",
+      items: Object.freeze([
+        { key: "stairFloor", label: "계단실 바닥", detail: "층별 계단·참 쓸기 및 물청소" },
+        { key: "handrail", label: "난간·손잡이", detail: "난간 먼지 제거 및 손닿는 면 소독" },
+        { key: "stairWindow", label: "창틀·유리", detail: "계단실 창틀 홈 먼지 제거, 유리 닦기" },
+        { key: "light", label: "조명·천장", detail: "등커버 먼지 제거, 거미줄 제거" },
+        { key: "entrance", label: "현관·공용출입구", detail: "출입구 바닥·유리문·매트 정리" },
+        { key: "recycle", label: "분리수거장", detail: "수거장 바닥 청소 및 정리, 악취 처리" },
+      ]),
+    },
+    {
+      key: "general",
+      label: "기타·일반청소",
+      items: Object.freeze([
+        { key: "scope", label: "합의 범위 확인", detail: "현장에서 의뢰 범위와 제외 작업을 다시 확인" },
+        { key: "before", label: "작업 전 상태", detail: "작업 전 오염·파손·접근 제한 구역 확인" },
+        { key: "work", label: "청소 작업", detail: "합의한 범위의 청소 작업 수행" },
+        { key: "waste", label: "폐기물·잔여물", detail: "발생 잔여물의 처리 범위와 반출 여부 기록" },
+        { key: "after", label: "마감 점검", detail: "작업 후 상태 확인 및 인계" },
+      ]),
+    },
+    {
+      key: "special",
+      label: "특수청소",
+      items: Object.freeze([
+        { key: "before", label: "작업 전 상태", detail: "작업 전 현장 상태 확인" },
+        { key: "work", label: "본 작업", detail: "합의한 범위의 특수 작업 수행" },
+        { key: "waste", label: "폐기물 반출", detail: "발생 폐기물 분리 및 반출" },
+        { key: "after", label: "마감 점검", detail: "작업 후 상태 확인 및 인계" },
+      ]),
+    },
+    {
+      // 폐기물만 따로 치우는 단발 작업(2026-11). 배출 전·후를 비교하므로 작업 전 사진도 찍는다.
+      key: "waste",
+      label: "폐기물 처리",
+      items: Object.freeze([
+        { key: "before", label: "배출 전 상태", detail: "쌓여 있던 폐기물의 위치·종류·양 확인" },
+        { key: "sort", label: "분리·정리", detail: "대형·생활·재활용 등 종류별 분리 및 정리" },
+        { key: "load", label: "운반·배출", detail: "지정 배출 장소로 운반·배출하거나 차량에 실어 반출" },
+        { key: "proof", label: "처리 확인", detail: "배출 스티커·신고필증·처리 영수증 등 처리 근거 확인", optional: true },
+        { key: "after", label: "마감 상태", detail: "반출 후 바닥·주변 잔여물 정리 및 상태 확인" },
+      ]),
+    },
+    {
+      // 유지보수·수리 단건 작업(2026-11). 도배·장판·수전처럼 호실이나 설비 하나를 고친다.
+      // 그날 한 항목만 보고서에 실린다(사진 기록형). 세입자용 안내문으로도 낸다.
+      key: "repair",
+      label: "유지보수·수리",
+      items: Object.freeze([
+        { key: "wallpaper", label: "도배", detail: "기존 벽지 제거, 벽면 정리 후 새 벽지 시공", optional: true },
+        { key: "flooring", label: "장판·바닥재", detail: "기존 바닥재 제거, 바닥 정리 후 새 장판·바닥재 시공", optional: true },
+        { key: "faucet", label: "수전·위생도기", detail: "수전·세면대·변기 등 분리, 교체·설치 및 누수·작동 확인", optional: true },
+        { key: "plumbing", label: "배관·누수", detail: "누수 위치 확인, 배관·배수구 보수 및 재누수 확인", optional: true },
+        { key: "electric", label: "전기·조명", detail: "조명·스위치·콘센트 등 교체·수리 및 작동 확인", optional: true },
+        { key: "tile", label: "타일·실리콘·방수", detail: "타일 보수, 실리콘 재시공, 방수 부위 보수", optional: true },
+        { key: "door", label: "문·창호·잠금장치", detail: "문·방충망·창호·도어락 등 조정·교체", optional: true },
+        { key: "heating", label: "보일러·냉난방", detail: "보일러·에어컨 등 점검·부품 교체 및 작동 확인", optional: true },
+        { key: "molding", label: "걸레받이·몰딩", detail: "걸레받이·몰딩 교체 또는 마감", optional: true },
+        { key: "etc", label: "기타 보수", detail: "합의한 범위의 부분 보수", optional: true },
+        { key: "finish", label: "마감 정리", detail: "자재 잔여물 반출, 작업 부위 청소 및 상태 확인" },
+      ]),
+    },
+  ]);
+
+  const KIND_KEYS = Object.freeze(KINDS.map(item => item.key));
+
+  // 사진 기록형 종류: 항목마다 '작업 기록' 상태로 시작하고, 작업 중 사진을 받으며, 사진도 메모도
+  // 없는 항목은 보고서에 싣지 않는다. 폐기물 처리는 납부필증처럼 한 장으로 끝나는 근거가 많아서
+  // 완료 항목에 전·후 두 장을 요구하지 않고 사진 한 장 이상이면 된다.
+  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste", "repair"]);
+  const isPhotoRecordKind = kind => PHOTO_RECORD_KINDS.includes(text(kind, 20));
+
+  // 한 항목이 가질 수 있는 상태. 진척도는 여기서 센다.
+  const ITEM_STATUSES = Object.freeze([
+    { key: "recorded", label: "작업 기록", weight: 0 },
+    { key: "done", label: "완료", weight: 1 },
+    { key: "partial", label: "일부", weight: 0.5 },
+    { key: "skipped", label: "못 함", weight: 0 },
+  ]);
+
+  // 보고서 구분. 쓰던 양식(작업점검_결과보고서_양식)의 체크 줄을 그대로
+  // 옮긴 것이다. 작업 종류(KINDS)와는 다른 축이다 — 같은 입주청소라도
+  // 정기로 도는 것과 급히 부른 것은 건물주가 다르게 읽는다.
+  const CATEGORIES = Object.freeze([
+    { key: "routine", label: "정기점검" },
+    { key: "single", label: "단발작업" },
+    { key: "urgent", label: "긴급조치" },
+    { key: "moveCheck", label: "입·퇴실 점검" },
+    { key: "etc", label: "기타" },
+  ]);
+
+  const CATEGORY_KEYS = Object.freeze(CATEGORIES.map(item => item.key));
+
+  // 어느 보고서에도 그대로 실린다. 사람이 지울 수 없다 — 이 세 줄은
+  // 우리가 지키기로 한 것이고, 빠진 보고서가 한 장이라도 나가면
+  // 지키기로 한 것이 아니게 된다.
+  const NOTICES = Object.freeze([
+    "열쇠·출입 비밀번호 등 보안 정보는 본 보고서를 포함한 어떠한 서류에도 기재하지 않습니다.",
+    "법정 의무점검은 브링이 직접 수행하지 않으며, 만료일 관리·업체 예약·결과 보관·후속 추적만 담당합니다.",
+    "비용 부담 비율·과실·법적 책임에 대한 단정적 판단은 본 보고서 범위가 아니며, 사실관계 기록에 한합니다.",
+  ]);
+
+  // 두 벌. 같은 자료로 모양만 달리 낸다.
+  const COPIES = Object.freeze([
+    { key: "owner", label: "건물주 제출용", title: "작업 결과 보고서" },
+    { key: "program", label: "청창사 제출용", title: "용역 결과 보고서" },
+    // 세입자에게 주는 안내문. 건물주 성함·연락처, 비용·자재 메모, 내부 후속 사항은 싣지 않는다.
+    { key: "tenant", label: "세입자 안내용", title: "작업 완료 안내문" },
+  ]);
+
+  // 세입자용 안내문의 기본 생활 안내. 담당자가 고쳐 쓰지 않으면 이 문장이 나간다.
+  // 유지보수·수리는 그날 실제로 한 항목의 안내만 모은다.
+  const REPAIR_GUIDES = Object.freeze({
+    wallpaper: "도배 후 2~3일은 창문을 조금 열어 환기해 주시고, 벽지가 마르는 동안 난방을 갑자기 세게 올리지 말아 주세요. 이음매가 들뜨면 떼지 마시고 사진을 찍어 알려 주세요.",
+    flooring: "장판 위에서 무거운 가구를 끌지 말고 들어서 옮겨 주세요. 장판이 울거나 들뜨면 사진을 찍어 알려 주세요.",
+    faucet: "수전·연결부 아래에 물기가 보이거나 물 흐름이 약하면 밸브를 잠그고 사진을 찍어 알려 주세요.",
+    plumbing: "보수한 부위 주변에 다시 물기나 얼룩이 생기면 사진을 찍어 바로 알려 주세요.",
+    electric: "교체한 조명·스위치·콘센트에서 깜빡임, 열, 타는 냄새가 나면 사용을 멈추고 바로 알려 주세요.",
+    tile: "새로 시공한 실리콘·줄눈은 하루 동안 물이 닿지 않게 해 주세요.",
+    door: "문·창호·잠금장치가 뻑뻑하거나 잘 닫히지 않으면 무리하게 힘을 주지 마시고 알려 주세요.",
+    heating: "보일러·냉난방기 작동 중 소음, 오류 표시, 물샘이 있으면 사진이나 오류 번호를 알려 주세요.",
+  });
+  const TENANT_GUIDES = Object.freeze({
+    moveIn: "청소 후 남은 약품 냄새가 있을 수 있으니 하루 정도 환기해 주세요.\n사용 중 불편한 점이 있으면 사진을 찍어 브링케어로 알려 주세요.",
+  });
+  const DEFAULT_TENANT_GUIDE = "사용 중 불편한 점이나 다시 살펴볼 부분이 있으면 사진을 찍어 브링케어로 알려 주세요.";
+  function tenantGuideFor(kind, items) {
+    const key = text(kind, 20);
+    if (key === "repair") {
+      const done = rows(items).map(item => REPAIR_GUIDES[text(item && item.key, 40)]).filter(Boolean);
+      return [...done, DEFAULT_TENANT_GUIDE].join("\n");
+    }
+    return TENANT_GUIDES[key] || DEFAULT_TENANT_GUIDE;
+  }
+
+  function kindOf(key) {
+    return KINDS.find(item => item.key === text(key, 20)) || null;
+  }
+
+  function kindLabel(key) {
+    const found = kindOf(key);
+    return found ? found.label : text(key, 20);
+  }
+
+  function statusOf(key) {
+    return ITEM_STATUSES.find(item => item.key === text(key, 20)) || null;
+  }
+
+  function statusLabel(key) {
+    const found = statusOf(key);
+    return found ? found.label : text(key, 20);
+  }
+
+  function categoryOf(key) {
+    return CATEGORIES.find(item => item.key === text(key, 20)) || null;
+  }
+
+  function categoryLabel(key) {
+    const found = categoryOf(key);
+    return found ? found.label : text(key, 20);
+  }
+
+  // 문서번호. 쓰던 양식의 그 칸이다. 사람이 매기면 겹치거나 빠진다.
+  // 건물·날짜·종류가 정해지면 번호도 정해지게 둔다.
+  function documentNo(report) {
+    const row = report && typeof report === "object" ? report : {};
+    const day = text(row.workDate, 10).replace(/-/gu, "") || "00000000";
+    const kind = text(row.kind, 20).slice(0, 3).toUpperCase() || "GEN";
+    const tail = text(row.id, 80).replace(/[^A-Za-z0-9]/gu, "").slice(-4).toUpperCase() || "0000";
+    return `BR-${day}-${kind}-${tail}`;
+  }
+
+  function copyOf(key) {
+    return COPIES.find(item => item.key === text(key, 20)) || null;
+  }
+
+  // AI 초안은 분류 직후 그때의 작업일로 쓰인다. 작업일을 나중에 고치면 본문 속 옛 날짜도
+  // 같이 바꾼다(2026-11-03 실제 발송 테스트에서 "11월 03일" 이 10월 29일 보고서에 남았다).
+  // 옛 날짜를 그대로 적은 표기만 바꾸고 다른 날짜는 건드리지 않는다.
+  function retargetDate(value, from, to) {
+    const source = String(value || "");
+    const parse = date => /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+    const a = parse(from), b = parse(to);
+    if (!source || !a || !b || from === to) return source;
+    const plain = n => String(Number(n));
+    const pairs = [
+      [`${a[1]}년 ${a[2]}월 ${a[3]}일`, `${b[1]}년 ${b[2]}월 ${b[3]}일`],
+      [`${a[1]}년 ${plain(a[2])}월 ${plain(a[3])}일`, `${b[1]}년 ${plain(b[2])}월 ${plain(b[3])}일`],
+      [`${a[1]}-${a[2]}-${a[3]}`, `${b[1]}-${b[2]}-${b[3]}`],
+      [`${a[1]}.${a[2]}.${a[3]}`, `${b[1]}.${b[2]}.${b[3]}`],
+      [`${a[1]}. ${plain(a[2])}. ${plain(a[3])}.`, `${b[1]}. ${plain(b[2])}. ${plain(b[3])}.`],
+    ];
+    let out = source;
+    for (const [old, next] of pairs) out = out.split(old).join(next);
+    // 연도 없이 "11월 3일"·"11월 03일" 로 적은 경우(앞이 숫자나 "년 " 이 아닐 때만).
+    for (const [old, next] of [[`${plain(a[2])}월 ${plain(a[3])}일`, `${plain(b[2])}월 ${plain(b[3])}일`], [`${a[2]}월 ${a[3]}일`, `${b[2]}월 ${b[3]}일`]]) {
+      out = out.replace(new RegExp(`(?<!\\d)(?<!년\\s?)${old}`, "gu"), next);
+    }
+    return out;
+  }
+
+  function normalizePhoto(source) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    let link = "";
+    try {
+      const url = new URL(text(value.webViewLink, 500));
+      if (url.protocol === "https:" && !url.username && !url.password && !url.port
+        && (url.hostname === "drive.google.com" || url.hostname === "docs.google.com")) {
+        link = url.toString();
+      }
+    } catch { /* 링크가 불완전하거나 Drive 도메인이 아니면 열 수 없게 둔다. */ }
+    // 같은 장소의 작업 전·후 짝. 짝이 있을 때만 싣는다 — 없는 사진은 예전과 같은 모양이다.
+    const pairId = text(value.pairId, 250);
+    return {
+      id: text(value.id, 80),
+      driveFileId: text(value.driveFileId, 120),
+      // 결과보고 사진은 Google Drive 뷰 링크만 사람에게 연다.
+      webViewLink: link,
+      caption: text(value.caption, 120),
+      ...(/^[A-Za-z0-9_:|.-]{1,250}$/.test(pairId) ? { pairId } : {}),
+    };
+  }
+
+  function normalizeItem(source, standard) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    const status = text(value.status, 20);
+    return {
+      key: text(value.key, 40) || (standard ? standard.key : ""),
+      // 표준 항목의 이름·범위를 기록에 같이 박아 둔다. 나중에 표준이 바뀌어도
+      // 그때 낸 보고서는 그때 기준으로 읽혀야 한다.
+      label: text(value.label, 80) || (standard ? standard.label : ""),
+      detail: text(value.detail, 300) || (standard ? standard.detail : ""),
+      status: statusOf(status) ? status : "done",
+      note: text(value.note, 500),
+      before: rows(value.before).map(normalizePhoto).filter(photo => photo.id),
+      during: rows(value.during).map(normalizePhoto).filter(photo => photo.id),
+      after: rows(value.after).map(normalizePhoto).filter(photo => photo.id),
+    };
+  }
+
+  // 공용부 구역을 양식의 9개로 줄이기 전에 쓰던 구역 → 지금 구역. 저장된 예전 보고서와
+  // AI 분류 결과(common-v2 의 16개 분류)가 이 표로 옮겨진다. 목록에 없는 구역은 사진째 버려지므로
+  // 예전 구역을 지우지 말고 여기서 옮긴다.
+  const COMMON_LEGACY_ZONES = Object.freeze({
+    handrail: "stairs", glass: "windows", yard: "parking", drain: "fixtures",
+    rooftop: "fixtures", walls: "corridor", lighting: "fixtures", final: "corridor",
+  });
+  // 9개로 줄이기 전 공용부 구역 순서. 그때 보관한 보고서의 문서 ID(촬영 구역 목록으로 만든다)를
+  // 다시 찾을 때만 쓴다. 새 보고서에는 쓰지 않는다.
+  const COMMON_LEGACY_ORDER = Object.freeze(["entrance", "corridor", "stairs", "handrail", "windows", "glass", "yard", "parking", "drain", "rooftop", "elevator", "walls", "fixtures", "lighting", "recycle", "final"]);
+  // 예전 앱이 보관할 때 쓴 구역 목록: 고른 구역 + 상태를 정했거나 메모를 쓴 구역, 예전 순서대로.
+  function legacyCommonPlan(areas, statuses, notes) {
+    const chosen = new Set(rows(areas).map(key => text(key, 40)));
+    for (const key of COMMON_LEGACY_ORDER) {
+      const status = statuses && typeof statuses === "object" ? statuses[key] : "";
+      const note = notes && typeof notes === "object" ? notes[key] : "";
+      if ((status && status !== "recorded") || (typeof note === "string" && note.trim())) chosen.add(key);
+    }
+    return COMMON_LEGACY_ORDER.filter(key => chosen.has(key));
+  }
+  function commonZoneFor(key) {
+    const value = text(key, 40);
+    return COMMON_LEGACY_ZONES[value] || value;
+  }
+  // 합친 구역의 상태: 실제로 한 기록(완료·일부)이 '못 함'·'기록' 보다 앞선다.
+  const STATUS_RANK = Object.freeze({ done: 3, partial: 2, skipped: 1, recorded: 0 });
+  function strongerStatus(a, b) {
+    return (STATUS_RANK[b] ?? -1) > (STATUS_RANK[a] ?? -1) ? b : a;
+  }
+  // 예전 구역 항목을 지금 구역 항목에 합친다. 사진은 순서대로 뒤에 붙이고 메모는 이어 쓴다.
+  // 공용부는 '공용부 활동 결과보고서' 양식의 고정 구역표에 실리므로 저장된 이름·설명("배수구·트렌치",
+  // "출입구·현관" 등)을 버리고 지금 구역 이름을 쓴다. 다른 작업 종류는 저장된 이름을 그대로 쓴다.
+  function mergeLegacyCommon(saved) {
+    const merged = [];
+    for (const item of saved) {
+      const key = commonZoneFor(item.key);
+      const target = merged.find(row => row.key === key);
+      if (!target) { merged.push({ ...item, key, label: "", detail: "" }); continue; }
+      for (const phase of ["before", "during", "after"]) target[phase] = [...target[phase], ...item[phase]];
+      target.note = [target.note, item.note].filter(Boolean).join(" / ").slice(0, 500);
+      target.status = strongerStatus(target.status, item.status);
+    }
+    return merged;
+  }
+
+  // 작업 종류를 고르면 그 종류의 표준 항목이 깔린다. 이미 적어 둔 것이 있으면
+  // 그 위에 얹는다 — 종류를 잘못 골랐다 고쳤을 때 쓴 것이 날아가면 안 된다.
+  function itemsFor(kindKey, existing, onlySaved = false) {
+    const kind = kindOf(kindKey);
+    if (!kind) return [];
+    const normalized = rows(existing).map(item => normalizeItem(isPhotoRecordKind(kindKey) && !item.status ? { ...item, status: "recorded" } : item));
+    const saved = kindKey === "common" ? mergeLegacyCommon(normalized) : normalized;
+    const savedKeys = new Set(saved.map(item => item.key));
+    const scoped = onlySaved && kind.items.some(item => savedKeys.has(item.key));
+    return kind.items.filter(standard => scoped ? savedKeys.has(standard.key) : !standard.optional || savedKeys.has(standard.key)).map(standard => {
+      const found = saved.find(item => item.key === standard.key);
+      return normalizeItem(found || { key: standard.key, status: isPhotoRecordKind(kindKey) ? "recorded" : "done" }, standard);
+    });
+  }
+
+  // AI 분류와 수동 선택 화면에는 사진이 있을 때만 나타나는 선택 항목까지
+  // 모두 보여 준다. 실제 보고서에는 itemsFor가 선택된 선택 항목만 남긴다.
+  function itemCatalogFor(kindKey) {
+    const kind = kindOf(kindKey);
+    return kind ? kind.items.map(standard => Object.assign({}, standard)) : [];
+  }
+
+  function normalizeReport(source) {
+    const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    const kind = text(value.kind, 20);
+    return {
+      id: text(value.id, 80),
+      flowId: text(value.flowId, 80),
+      cleaningOrderId: text(value.cleaningOrderId, 80),
+      buildingId: text(value.buildingId, 80),
+      ...(/^[A-Za-z0-9_-]{1,120}$/.test(value.customerId || "") ? {customerId: value.customerId} : {}),
+      buildingName: text(value.buildingName, 200),
+      kind: kindOf(kind) ? kind : "moveIn",
+      title: text(value.title, 200),
+      siteAddress: text(value.siteAddress, 300),
+      ownerName: text(value.ownerName, 80),
+      workDate: isDate(value.workDate) ? text(value.workDate, 10) : "",
+      workerName: text(value.workerName, 120),
+      area: text(value.area, 60),
+      summary: text(value.summary, 2000),
+      // 쓰던 양식의 나머지 칸. 없으면 "미기재" 로 찍힌다 — 빈칸이 그냥
+      // 사라지면 받은 사람은 안 적은 것인지 없는 것인지 모른다.
+      category: categoryOf(text(value.category, 20)) ? text(value.category, 20) : "single",
+      categoryEtc: text(value.categoryEtc, 60),
+      ownerContact: text(value.ownerContact, 120),
+      followUp: text(value.followUp, 2000),
+      // 받는 사람별 칸. ownerNote 는 건물주용에만, tenant* 는 세입자 안내용에만 싣는다.
+      ownerNote: text(value.ownerNote, 1000),
+      tenantUnit: text(value.tenantUnit, 40),
+      tenantSummary: text(value.tenantSummary, 2000),
+      tenantGuide: text(value.tenantGuide, 1000),
+      // 청창사 제출용에만 쓰는 칸. 건물주용에는 안 나온다.
+      contractFrom: isDate(value.contractFrom) ? text(value.contractFrom, 10) : "",
+      contractTo: isDate(value.contractTo) ? text(value.contractTo, 10) : "",
+      // Field-mobile reports carry an explicit item list. Reintroducing every
+      // standard area here would make unselected areas appear in the report.
+      items: itemsFor(kindOf(kind) ? kind : "moveIn", value.items, /^fm_[a-f0-9]{40}$/.test(text(value.id, 80))),
+      createdAt: text(value.createdAt, 40),
+      updatedAt: text(value.updatedAt, 40),
+      updatedBy: text(value.updatedBy, 80),
+    };
+  }
+
+  function draftForCleaningOrder(orderSource, buildingSource, options) {
+    const order = orderSource && typeof orderSource === "object" ? orderSource : {};
+    const building = buildingSource && typeof buildingSource === "object" ? buildingSource : {};
+    const settings = options && typeof options === "object" ? options : {};
+    const orderId = text(order.id, 80);
+    const buildingId = text(order.buildingId, 80);
+    const kind = kindForCleaningServiceType(order.serviceType);
+    if (!orderId || !buildingId || text(building.id, 80) !== buildingId || !kind || !text(settings.id, 80)) return null;
+    const category = kind === "moveIn" || kind === "moveOut" ? "moveCheck" : "single";
+    return normalizeReport({
+      id: settings.id,
+      cleaningOrderId: orderId,
+      buildingId,
+      buildingName: text(building.name, 200),
+      title: text(order.title, 200),
+      siteAddress: text(settings.siteAddress || building.address, 300),
+      kind,
+      category,
+      workDate: isDate(settings.workDate) ? settings.workDate : "",
+      items: itemsFor(kind),
+    });
+  }
+
+  // 한 항목이 완료로 설 수 있는지. 전·후가 다 있어야 한다.
+  //
+  // 후 사진만 있으면 원래 깨끗했는지 우리가 닦은 것인지 알 수 없다. 그
+  // 둘을 가르지 못하면 그 사진은 아무것도 증명하지 않는다.
+  function itemIssue(item, kind) {
+    const row = normalizeItem(item);
+    if (row.status === "recorded") return isPhotoRecordKind(kind) ? null : "작업 상태를 확인해 주세요.";
+    if (row.status === "skipped") {
+      return row.note ? null : "못 한 이유를 적어 주세요.";
+    }
+    if (row.status === "done") {
+      if (kind === "common" || kind === "waste") return row.before.length + row.during.length + row.after.length ? null : "작업 사진을 등록해 주세요.";
+      if (!row.before.length && !row.after.length) return "전·후 사진이 없습니다.";
+      if (!row.before.length) return "작업 전 사진이 없습니다.";
+      if (!row.after.length) return "작업 후 사진이 없습니다.";
+    }
+    return null;
+  }
+
+  function validateReport(source) {
+    const report = normalizeReport(source);
+    if (!report.id) return { ok: false, error: "보고서 번호가 없습니다.", code: "VALIDATION_ERROR" };
+    if (!report.buildingId && !report.customerId) return { ok: false, error: "작업할 고객 또는 건물을 정해 주세요.", code: "BUILDING_REQUIRED" };
+    if (!report.workDate) return { ok: false, error: "작업한 날짜를 골라 주세요.", code: "DATE_REQUIRED" };
+    const closed = report.items.filter(item => item.status !== "skipped");
+    if (isPhotoRecordKind(report.kind) && !photoCount(report)) return { ok: false, error: "분류된 작업 사진을 한 장 이상 등록해 주세요.", code: "PHOTO_REQUIRED" };
+    if (!closed.length) {
+      return { ok: false, error: "한 항목도 하지 않은 것은 결과보고서가 아닙니다.", code: "NOTHING_DONE" };
+    }
+    for (const item of report.items) {
+      const issue = itemIssue(item, report.kind);
+      if (issue) return { ok: false, error: `${item.label}: ${issue}`, code: "ITEM_INCOMPLETE" };
+    }
+    return { ok: true, report };
+  }
+
+  // 진척도는 항목 상태에서 센다. 손으로 적으면 100% 라고 적힌 보고서에
+  // 사진이 두 장뿐인 일이 난다.
+  function progress(report) {
+    const item = normalizeReport(report);
+    if (!item.items.length) return 0;
+    const sum = item.items.reduce((total, row) => total + (statusOf(row.status) || { weight: 0 }).weight, 0);
+    return Math.round((sum / item.items.length) * 100);
+  }
+
+  function photoCount(report) {
+    const item = normalizeReport(report);
+    return item.items.reduce((total, row) => total + row.before.length + row.during.length + row.after.length, 0);
+  }
+
+  // 아직 못 낸 이유들. 화면에서 이걸 먼저 보여 줘야 사람이 무엇을 더 해야
+  // 하는지 안다. 저장 단추를 눌러 보고서야 아는 것보다 낫다.
+  function blockers(report) {
+    const item = normalizeReport(report);
+    const list = [];
+    if (!item.workDate) list.push({ key: "workDate", text: "작업한 날짜를 골라 주세요." });
+    if (isPhotoRecordKind(item.kind) && !photoCount(item)) list.push({ key: "photos", text: "분류된 작업 사진을 한 장 이상 등록해 주세요." });
+    item.items.forEach(row => {
+      const issue = itemIssue(row, item.kind);
+      if (issue) list.push({ key: row.key, text: `${row.label}: ${issue}` });
+    });
+    return list;
+  }
+
+  function ready(report) {
+    return blockers(report).length === 0 && validateReport(report).ok;
+  }
+
+  function summarizeItems(report) {
+    const item = normalizeReport(report);
+    const counts = { done: 0, partial: 0, skipped: 0, recorded: 0 };
+    item.items.forEach(row => { counts[row.status] = (counts[row.status] || 0) + 1; });
+    return {
+      total: item.items.length,
+      done: counts.done,
+      partial: counts.partial,
+      skipped: counts.skipped,
+      recorded: counts.recorded,
+      progress: progress(item),
+      photos: photoCount(item),
+    };
+  }
+
+  // 청창사 서식의 '결과평가' 칸에 들어갈 한 줄. 사람이 매번 쓰면 매번 다르게
+  // 쓰는데, 그 칸에 필요한 것은 문장력이 아니라 무엇을 했는지다.
+  function resultLine(item) {
+    const row = normalizeItem(item);
+    if (row.status === "skipped") return `미실시 — ${row.note || "사유 미기재"}`;
+    const photos = row.before.length + row.during.length + row.after.length;
+    const base = row.status === "recorded" ? `${row.label} 작업 기록 (완료 미확정)` : row.status === "done" ? `${row.label} 완료` : `${row.label} 일부 시행`;
+    const evidence = photos ? ` (사진 ${photos}장)` : "";
+    return `${base}${evidence}${row.note ? ` · ${row.note}` : ""}`;
+  }
+
+  // 이 문서는 밖으로 나간다. 건물주에게도, 청창사에도.
+  //
+  // 그래서 협력업체 이름과 업체 단가가 섞이면 안 된다. 우리가 얼마에 받아
+  // 얼마에 넘겼는지가 드러나면 그건 다음 계약을 잃는 일이다. 민원 결과보고서가
+  // 같은 이유로 같은 검사를 하고 있어서, 그 생각을 그대로 가져왔다.
+  //
+  // 사람이 실수로 메모에 적는 경우를 잡는 것이지, 악의를 막는 장치가 아니다.
+  // 그래도 대부분의 사고는 실수다.
+  function findLeakedFields(report, secrets) {
+    const serialized = JSON.stringify(normalizeReport(report));
+    const source = secrets && typeof secrets === "object" && !Array.isArray(secrets) ? secrets : {};
+    const groups = [
+      ["협력업체명", rows(source.vendorNames)],
+      ["업체 단가", rows(source.vendorAmounts)],
+      ["내부 메모", rows(source.privateMemos)],
+    ];
+    const leaks = [];
+    groups.forEach(([label, values]) => {
+      const hit = values
+        .map(value => text(value, 200))
+        // 두 글자짜리 업체명이나 한 자리 숫자는 아무 문장에나 들어 있다.
+        // 그것까지 막으면 검사가 늘 걸려서 아무도 안 본다.
+        .filter(value => value.length >= 3)
+        .some(value => serialized.includes(value));
+      if (hit) leaks.push(label);
+    });
+    return leaks;
+  }
+
+  // 검사할 값은 메인 프로세스가 회사 자료에서 직접 만든다. 화면이 보낸 목록만
+  // 믿으면 빈 목록 하나로 검사가 꺼진다. 업체 원가는 이 보고서의 건물(건물이
+  // 없으면 고객)에 걸린 계약에서만 가져온다 — 회사 전체 금액을 넣으면 우연히
+  // 같은 숫자가 든 보고서까지 막힌다.
+  function reportSecrets(store, report) {
+    const data = store && typeof store === "object" ? store : {};
+    const target = normalizeReport(report);
+    const vendorNames = [...rows(data.partnerVendors), ...rows(data.vendors)]
+      .map(row => text(row && row.name, 200)).filter(Boolean);
+    const vendorAmounts = [];
+    rows(data.contracts).forEach(contract => {
+      const linked = target.buildingId
+        ? text(contract.buildingId, 80) === target.buildingId
+        : !!target.customerId && text(contract.customerId, 120) === target.customerId;
+      const cost = Math.round(Number(contract.vendorCost));
+      if (!linked || !Number.isFinite(cost) || cost <= 0) return;
+      vendorAmounts.push(String(cost), cost.toLocaleString("en-US"));
+    });
+    return { vendorNames: [...new Set(vendorNames)], vendorAmounts: [...new Set(vendorAmounts)], privateMemos: [] };
+  }
+
+  // 보고서에 현장 주소가 비어 있으면 CRM 의 건물 주소(건물이 없으면 고객 주소)로
+  // 채운 사본을 돌려준다. 수신인은 "(주소) 건물주" 로 쓰므로 주소가 없으면 그냥
+  // "건물주" 가 된다. 저장된 보고서는 바꾸지 않는다 — 출력할 때만 쓴다.
+  function withSiteAddress(report, store) {
+    const source = report && typeof report === "object" ? report : {};
+    if (text(source.siteAddress, 300)) return source;
+    const data = store && typeof store === "object" ? store : {};
+    const live = row => row && !row.archivedAt && !row.deletedAt && row.deleted !== true;
+    const building = text(source.buildingId, 80) ? rows(data.buildings).find(row => live(row) && row.id === source.buildingId) : null;
+    const customer = !building && text(source.customerId, 120) ? rows(data.customers).find(row => live(row) && row.id === source.customerId) : null;
+    const address = building ? [building.roadAddress, building.address, building.jibunAddress].map(value => text(value, 300)).find(Boolean)
+      : customer ? text(customer.address, 300) : "";
+    return address ? Object.assign({}, source, { siteAddress: address }) : source;
+  }
+
+  // 화면이 보낸 목록과 메인이 만든 목록을 합친다. 어느 쪽도 다른 쪽을 지우지 못한다.
+  function mergeSecrets(...sources) {
+    const merged = { vendorNames: [], vendorAmounts: [], privateMemos: [] };
+    sources.forEach(source => {
+      const value = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+      Object.keys(merged).forEach(key => merged[key].push(...rows(value[key]).map(item => text(item, 200)).filter(Boolean)));
+    });
+    Object.keys(merged).forEach(key => { merged[key] = [...new Set(merged[key])]; });
+    return merged;
+  }
+
+  function sortReports(reports) {
+    return rows(reports).map(normalizeReport).filter(item => item.id).sort((a, b) => {
+      if (a.workDate !== b.workDate) return a.workDate < b.workDate ? 1 : -1;
+      return String(b.updatedAt).localeCompare(String(a.updatedAt));
+    });
+  }
+
+  function kindForCleaningServiceType(serviceType) {
+    return ({
+      move_in_cleaning: "moveIn",
+      move_out_cleaning: "moveOut",
+      common_cleaning: "common",
+      stair_cleaning: "stairs",
+      other: "general",
+    })[text(serviceType, 40)] || "";
+  }
+
+  function forCleaningOrder(reports, cleaningOrderId) {
+    const id = text(cleaningOrderId, 80);
+    if (!id) return [];
+    return sortReports(reports).filter(item => item.cleaningOrderId === id);
+  }
+
+  function findReport(reports, reportId) {
+    const id = text(reportId, 80);
+    if (!id) return null;
+    return rows(reports).map(normalizeReport).find(item => item.id === id) || null;
+  }
+
+  return Object.freeze({
+    KINDS,
+    KIND_KEYS,
+    CATEGORIES,
+    CATEGORY_KEYS,
+    NOTICES,
+    categoryOf,
+    categoryLabel,
+    documentNo,
+    ITEM_STATUSES,
+    COPIES,
+    TENANT_GUIDES,
+    tenantGuideFor,
+    kindOf,
+    kindForCleaningServiceType,
+    draftForCleaningOrder,
+    kindLabel,
+    PHOTO_RECORD_KINDS,
+    isPhotoRecordKind,
+    statusOf,
+    statusLabel,
+    copyOf,
+    retargetDate,
+    normalizePhoto,
+    normalizeItem,
+    normalizeReport,
+    itemsFor,
+    itemCatalogFor,
+    commonZoneFor,
+    COMMON_LEGACY_ZONES,
+    COMMON_LEGACY_ORDER,
+    legacyCommonPlan,
+    itemIssue,
+    validateReport,
+    progress,
+    photoCount,
+    blockers,
+    ready,
+    summarizeItems,
+    resultLine,
+    findLeakedFields,
+    reportSecrets,
+    mergeSecrets,
+    withSiteAddress,
+    sortReports,
+    forCleaningOrder,
+    findReport,
+    text,
+    rows,
+  });
+});
