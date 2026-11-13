@@ -208,17 +208,21 @@ test("참여 중인 공유 드라이브를 페이지 제한 안에서 읽는다"
   assert.equal(fake.calls[0].options.headers.authorization, "Bearer token-abc");
 });
 
-test("공유 문서함의 직접 공유 항목을 페이지 제한 안에서 읽는다", async () => {
+test("공유 문서함의 폴더와 사진을 따로, 페이지 제한 안에서 읽는다", async () => {
+  // 폴더를 사진과 섞어 읽으면 사진이 많을 때 상위 폴더가 범위 밖으로 밀린다.
   const fake = fakeDrive([
     { body: { files: [{ id: "shared-folder-01", name: "현장 사진", mimeType: Drive.FOLDER_MIME }], nextPageToken: "next page" } },
+    { body: { files: [{ id: "shared-folder-02", name: "활동 사진", mimeType: Drive.FOLDER_MIME }] } },
     { body: { files: [{ id: "shared-image-01", name: "작업 전.jpg", mimeType: "image/jpeg" }] } },
   ]);
   const listed = await Drive.listSharedWithMe(deps(fake), { maxPages: 2 });
-  assert.deepEqual(listed.folders.map(item => item.id), ["shared-folder-01"]);
+  assert.deepEqual(listed.folders.map(item => item.id), ["shared-folder-01", "shared-folder-02"]);
   assert.deepEqual(listed.files.map(item => item.id), ["shared-image-01"]);
   assert.equal(listed.truncated, false);
   const first = new URL(fake.calls[0].url);
-  assert.equal(first.searchParams.get("q"), "sharedWithMe and trashed = false");
+  assert.equal(first.searchParams.get("q"), `sharedWithMe and trashed = false and mimeType = '${Drive.FOLDER_MIME}'`);
+  assert.equal(first.searchParams.get("orderBy"), "name");
+  assert.equal(new URL(fake.calls[2].url).searchParams.get("q"), `sharedWithMe and trashed = false and mimeType != '${Drive.FOLDER_MIME}'`);
   assert.equal(first.searchParams.get("corpora"), "user");
   assert.equal(first.searchParams.get("spaces"), "drive");
   assert.equal(first.searchParams.get("supportsAllDrives"), "true");

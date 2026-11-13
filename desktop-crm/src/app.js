@@ -10586,7 +10586,8 @@
       ownerContact: String(raw.ownerContact || ""),
       contractFrom: String(raw.contractFrom || ""),
       contractTo: String(raw.contractTo || ""),
-      items,
+      // 종류를 바꾸면 같은 열쇠(예: finish)라도 새 종류의 이름·범위를 쓴다. 적은 메모·사진·상태는 남긴다.
+      items: String(raw.kind || previous.kind) === previous.kind ? items : items.map(item => Object.assign({}, item, { label: "", detail: "" })),
     }));
   }
 
