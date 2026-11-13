@@ -144,6 +144,25 @@
         { key: "after", label: "마감 상태", detail: "반출 후 바닥·주변 잔여물 정리 및 상태 확인" },
       ]),
     },
+    {
+      // 유지보수·수리 단건 작업(2026-11). 도배·장판·수전처럼 호실이나 설비 하나를 고친다.
+      // 그날 한 항목만 보고서에 실린다(사진 기록형). 세입자용 안내문으로도 낸다.
+      key: "repair",
+      label: "유지보수·수리",
+      items: Object.freeze([
+        { key: "wallpaper", label: "도배", detail: "기존 벽지 제거, 벽면 정리 후 새 벽지 시공", optional: true },
+        { key: "flooring", label: "장판·바닥재", detail: "기존 바닥재 제거, 바닥 정리 후 새 장판·바닥재 시공", optional: true },
+        { key: "faucet", label: "수전·위생도기", detail: "수전·세면대·변기 등 분리, 교체·설치 및 누수·작동 확인", optional: true },
+        { key: "plumbing", label: "배관·누수", detail: "누수 위치 확인, 배관·배수구 보수 및 재누수 확인", optional: true },
+        { key: "electric", label: "전기·조명", detail: "조명·스위치·콘센트 등 교체·수리 및 작동 확인", optional: true },
+        { key: "tile", label: "타일·실리콘·방수", detail: "타일 보수, 실리콘 재시공, 방수 부위 보수", optional: true },
+        { key: "door", label: "문·창호·잠금장치", detail: "문·방충망·창호·도어락 등 조정·교체", optional: true },
+        { key: "heating", label: "보일러·냉난방", detail: "보일러·에어컨 등 점검·부품 교체 및 작동 확인", optional: true },
+        { key: "molding", label: "걸레받이·몰딩", detail: "걸레받이·몰딩 교체 또는 마감", optional: true },
+        { key: "etc", label: "기타 보수", detail: "합의한 범위의 부분 보수", optional: true },
+        { key: "finish", label: "마감 정리", detail: "자재 잔여물 반출, 작업 부위 청소 및 상태 확인" },
+      ]),
+    },
   ]);
 
   const KIND_KEYS = Object.freeze(KINDS.map(item => item.key));
@@ -151,7 +170,7 @@
   // 사진 기록형 종류: 항목마다 '작업 기록' 상태로 시작하고, 작업 중 사진을 받으며, 사진도 메모도
   // 없는 항목은 보고서에 싣지 않는다. 폐기물 처리는 납부필증처럼 한 장으로 끝나는 근거가 많아서
   // 완료 항목에 전·후 두 장을 요구하지 않고 사진 한 장 이상이면 된다.
-  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste"]);
+  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste", "repair"]);
   const isPhotoRecordKind = kind => PHOTO_RECORD_KINDS.includes(text(kind, 20));
 
   // 한 항목이 가질 수 있는 상태. 진척도는 여기서 센다.
@@ -188,7 +207,34 @@
   const COPIES = Object.freeze([
     { key: "owner", label: "건물주 제출용", title: "작업 결과 보고서" },
     { key: "program", label: "청창사 제출용", title: "용역 결과 보고서" },
+    // 세입자에게 주는 안내문. 건물주 성함·연락처, 비용·자재 메모, 내부 후속 사항은 싣지 않는다.
+    { key: "tenant", label: "세입자 안내용", title: "작업 완료 안내문" },
   ]);
+
+  // 세입자용 안내문의 기본 생활 안내. 담당자가 고쳐 쓰지 않으면 이 문장이 나간다.
+  // 유지보수·수리는 그날 실제로 한 항목의 안내만 모은다.
+  const REPAIR_GUIDES = Object.freeze({
+    wallpaper: "도배 후 2~3일은 창문을 조금 열어 환기해 주시고, 벽지가 마르는 동안 난방을 갑자기 세게 올리지 말아 주세요. 이음매가 들뜨면 떼지 마시고 사진을 찍어 알려 주세요.",
+    flooring: "장판 위에서 무거운 가구를 끌지 말고 들어서 옮겨 주세요. 장판이 울거나 들뜨면 사진을 찍어 알려 주세요.",
+    faucet: "수전·연결부 아래에 물기가 보이거나 물 흐름이 약하면 밸브를 잠그고 사진을 찍어 알려 주세요.",
+    plumbing: "보수한 부위 주변에 다시 물기나 얼룩이 생기면 사진을 찍어 바로 알려 주세요.",
+    electric: "교체한 조명·스위치·콘센트에서 깜빡임, 열, 타는 냄새가 나면 사용을 멈추고 바로 알려 주세요.",
+    tile: "새로 시공한 실리콘·줄눈은 하루 동안 물이 닿지 않게 해 주세요.",
+    door: "문·창호·잠금장치가 뻑뻑하거나 잘 닫히지 않으면 무리하게 힘을 주지 마시고 알려 주세요.",
+    heating: "보일러·냉난방기 작동 중 소음, 오류 표시, 물샘이 있으면 사진이나 오류 번호를 알려 주세요.",
+  });
+  const TENANT_GUIDES = Object.freeze({
+    moveIn: "청소 후 남은 약품 냄새가 있을 수 있으니 하루 정도 환기해 주세요.\n사용 중 불편한 점이 있으면 사진을 찍어 브링케어로 알려 주세요.",
+  });
+  const DEFAULT_TENANT_GUIDE = "사용 중 불편한 점이나 다시 살펴볼 부분이 있으면 사진을 찍어 브링케어로 알려 주세요.";
+  function tenantGuideFor(kind, items) {
+    const key = text(kind, 20);
+    if (key === "repair") {
+      const done = rows(items).map(item => REPAIR_GUIDES[text(item && item.key, 40)]).filter(Boolean);
+      return [...done, DEFAULT_TENANT_GUIDE].join("\n");
+    }
+    return TENANT_GUIDES[key] || DEFAULT_TENANT_GUIDE;
+  }
 
   function kindOf(key) {
     return KINDS.find(item => item.key === text(key, 20)) || null;
@@ -386,6 +432,11 @@
       categoryEtc: text(value.categoryEtc, 60),
       ownerContact: text(value.ownerContact, 120),
       followUp: text(value.followUp, 2000),
+      // 받는 사람별 칸. ownerNote 는 건물주용에만, tenant* 는 세입자 안내용에만 싣는다.
+      ownerNote: text(value.ownerNote, 1000),
+      tenantUnit: text(value.tenantUnit, 40),
+      tenantSummary: text(value.tenantSummary, 2000),
+      tenantGuide: text(value.tenantGuide, 1000),
       // 청창사 제출용에만 쓰는 칸. 건물주용에는 안 나온다.
       contractFrom: isDate(value.contractFrom) ? text(value.contractFrom, 10) : "",
       contractTo: isDate(value.contractTo) ? text(value.contractTo, 10) : "",
@@ -631,6 +682,8 @@
     documentNo,
     ITEM_STATUSES,
     COPIES,
+    TENANT_GUIDES,
+    tenantGuideFor,
     kindOf,
     kindForCleaningServiceType,
     draftForCleaningOrder,

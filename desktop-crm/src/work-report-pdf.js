@@ -78,6 +78,7 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
   const copy = WorkReportCore.copyOf(copyType);
   if (!copy) throw new Error("보고서 종류를 확인해 주세요.");
   if (copy.key === "owner") return createOwnerReportHtml(report, options);
+  if (copy.key === "tenant") return createOwnerReportHtml(report, { ...options, audience: "tenant" });
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const program = copy.key === "program";

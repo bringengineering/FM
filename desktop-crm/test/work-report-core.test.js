@@ -18,8 +18,8 @@ function full(kind = "moveIn", patch = {}) {
 
 test("작업 종류마다 표준 항목이 이미 있다", () => {
   // 사람이 항목을 적기 시작하면 사람마다 다른 보고서가 나온다.
-  assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "moveOut", "common", "stairs", "general", "special", "waste"]);
-  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리"]);
+  assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "moveOut", "common", "stairs", "general", "special", "waste", "repair"]);
+  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리", "유지보수·수리"]);
   const moveIn = R.itemsFor("moveIn");
   assert.equal(moveIn.length, 7);
   assert.deepEqual(moveIn.map(item => item.label).slice(0, 3), ["바닥", "창호·새시", "주방"]);
@@ -143,7 +143,8 @@ test("표준이 바뀌어도 그때 낸 보고서는 그때 기준으로 읽힌�
 });
 
 test("두 벌로 낸다", () => {
-  assert.deepEqual(R.COPIES.map(item => item.key), ["owner", "program"]);
+  assert.deepEqual(R.COPIES.map(item => item.key), ["owner", "program", "tenant"]);
+  assert.equal(R.copyOf("tenant").title, "작업 완료 안내문");
   assert.equal(R.copyOf("owner").title, "작업 결과 보고서");
   assert.equal(R.copyOf("program").title, "용역 결과 보고서");
   assert.equal(R.copyOf("없음"), null);
@@ -261,4 +262,24 @@ test("현장 주소가 비면 CRM 건물 주소(없으면 고객 주소)로 채�
   assert.equal(R.withSiteAddress({ id: "wr", buildingId: "b2" }, store).siteAddress, undefined, "보관된 건물은 쓰지 않는다");
   assert.equal(R.withSiteAddress({ id: "wr", customerId: "c1" }, store).siteAddress, "예시시 고객로 3");
   assert.equal(R.withSiteAddress({ id: "wr" }, {}).siteAddress, undefined);
+});
+
+test("유지보수·수리는 사진 기록형이고 그날 한 항목만 깔린다", () => {
+  assert.ok(R.isPhotoRecordKind("repair"));
+  assert.deepEqual(R.itemsFor("repair").map(item => item.key), ["finish"]);
+  assert.deepEqual(R.itemsFor("repair", [{ key: "faucet" }, { key: "wallpaper" }]).map(item => item.key), ["wallpaper", "faucet", "finish"]);
+  assert.ok(R.itemCatalogFor("repair").some(item => item.key === "plumbing"));
+  assert.ok(R.itemsFor("repair").every(item => item.status === "recorded"));
+});
+
+test("받는 사람별 칸을 보관하고 세입자 기본 생활 안내를 준다", () => {
+  const report = R.normalizeReport({ id: "r", kind: "repair", ownerNote: "장판 15㎡", tenantUnit: "202", tenantSummary: "도배를 마쳤습니다.", tenantGuide: "" });
+  assert.equal(report.ownerNote, "장판 15㎡");
+  assert.equal(report.tenantUnit, "202");
+  assert.equal(report.tenantSummary, "도배를 마쳤습니다.");
+  const guide = R.tenantGuideFor("repair", [{ key: "wallpaper" }, { key: "faucet" }]);
+  assert.match(guide, /환기/u);
+  assert.match(guide, /밸브를 잠그고/u);
+  assert.doesNotMatch(guide, /장판 위에서/u);
+  assert.match(R.tenantGuideFor("stairs"), /브링케어/u);
 });

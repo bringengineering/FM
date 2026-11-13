@@ -124,3 +124,28 @@ test("파일 이름이 무엇인지 말해 준다", () => {
   assert.equal(workReportFileName(report(), "program"), "2026-09-06_우산동 빌딩_계단청소_청창사 제출용.pdf");
   assert.match(workReportFileName(report({ workDate: "", buildingName: "" }), "owner"), /날짜미정_건물미정/u);
 });
+
+test("세입자 안내용은 세입자 본문·생활 안내만 싣고 건물주 쪽 내용을 뺀다", () => {
+  const input = report({ kind: "repair", items: R.itemsFor("repair", [{ key: "wallpaper" }, { key: "flooring" }, { key: "faucet" }]).map(item => Object.assign({}, item, { before: [photo(`b_${item.key}`)], after: [photo(`a_${item.key}`)] })),
+    summary: "건물주님께 드리는 본문", followUp: "다음 달 누수 점검 권고", ownerNote: "시공비 85만원", ownerName: "홍길동", ownerContact: "010-1111-2222",
+    tenantUnit: "202호", tenantSummary: "생활하시는 방의 도배와 장판을 새로 했습니다." });
+  const tenant = createWorkReportHtml(input, "tenant", options());
+  assert.match(tenant, /작업 완료 안내문/u);
+  assert.match(tenant, /우산동 빌딩 202호 입주자/u);
+  assert.match(tenant, /생활하시는 방의 도배와 장판을 새로 했습니다/u);
+  assert.match(tenant, /생활 안내/u);
+  assert.match(tenant, /환기/u);
+  assert.match(tenant, /세입자 안내용/u);
+  for (const hidden of [/건물주님께 드리는 본문/u, /누수 점검 권고/u, /85만원/u, /홍길동/u, /010-1111-2222/u, /건물주 제출용/u, /황우중/u, /법정 의무점검/u]) assert.doesNotMatch(tenant, hidden);
+
+  const owner = createWorkReportHtml(input, "owner", options());
+  assert.match(owner, /비용·자재/u);
+  assert.match(owner, /시공비 85만원/u);
+  assert.doesNotMatch(owner, /생활하시는 방의 도배/u);
+});
+
+test("세입자용 본문이 비면 건물주용 본문을 옮기지 않는다", () => {
+  const tenant = createWorkReportHtml(report({ summary: "건물주님께 드리는 본문" }), "tenant", options());
+  assert.doesNotMatch(tenant, /건물주님께 드리는 본문/u);
+  assert.match(tenant, /작업 내용과 현장 사진을 정리해 안내드립니다/u);
+});

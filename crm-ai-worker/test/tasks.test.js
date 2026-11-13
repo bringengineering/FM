@@ -16,6 +16,7 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "completion_report_tenant",
     "building_monthly_report",
     "directive_split",
     "directive_draft",
@@ -182,4 +183,11 @@ test("directive split never guesses whose work an unclear line is", () => {
 
   const result = normalizeTaskResult("directive_split", { text: "== 김현진 ==\n배경\t가" });
   assert.match(result.text, /== 김현진 ==/u);
+});
+
+test("tenant completion report is written for the resident and keeps owner-only facts out", () => {
+  const messages = buildTaskMessages("completion_report_tenant", "작업 종류: 도배·장판", {});
+  const system = messages.map(message => message.content).join("\n");
+  assert.match(system, /세입자/u);
+  assert.match(system, /비용·금액·자재 단가, 건물주 이름·연락처/u);
 });
