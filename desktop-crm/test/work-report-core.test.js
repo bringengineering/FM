@@ -19,7 +19,7 @@ function full(kind = "moveIn", patch = {}) {
 test("작업 종류마다 표준 항목이 이미 있다", () => {
   // 사람이 항목을 적기 시작하면 사람마다 다른 보고서가 나온다.
   assert.deepEqual(R.KIND_KEYS.slice(), ["moveIn", "moveOut", "common", "stairs", "general", "special", "waste", "repair"]);
-  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리", "도배·장판·보수"]);
+  assert.deepEqual(R.KINDS.map(item => item.label), ["입주청소", "퇴실청소", "공용부청소", "계단청소", "기타·일반청소", "특수청소", "폐기물 처리", "유지보수·수리"]);
   const moveIn = R.itemsFor("moveIn");
   assert.equal(moveIn.length, 7);
   assert.deepEqual(moveIn.map(item => item.label).slice(0, 3), ["바닥", "창호·새시", "주방"]);
@@ -264,9 +264,11 @@ test("현장 주소가 비면 CRM 건물 주소(없으면 고객 주소)로 채�
   assert.equal(R.withSiteAddress({ id: "wr" }, {}).siteAddress, undefined);
 });
 
-test("도배·장판은 사진 기록형이고 쓰지 않은 선택 항목은 빠진다", () => {
+test("유지보수·수리는 사진 기록형이고 그날 한 항목만 깔린다", () => {
   assert.ok(R.isPhotoRecordKind("repair"));
-  assert.deepEqual(R.itemsFor("repair").map(item => item.key), ["wallpaper", "flooring", "finish"]);
+  assert.deepEqual(R.itemsFor("repair").map(item => item.key), ["finish"]);
+  assert.deepEqual(R.itemsFor("repair", [{ key: "faucet" }, { key: "wallpaper" }]).map(item => item.key), ["wallpaper", "faucet", "finish"]);
+  assert.ok(R.itemCatalogFor("repair").some(item => item.key === "plumbing"));
   assert.ok(R.itemsFor("repair").every(item => item.status === "recorded"));
 });
 
@@ -275,6 +277,9 @@ test("받는 사람별 칸을 보관하고 세입자 기본 생활 안내를 준
   assert.equal(report.ownerNote, "장판 15㎡");
   assert.equal(report.tenantUnit, "202");
   assert.equal(report.tenantSummary, "도배를 마쳤습니다.");
-  assert.match(R.tenantGuideFor("repair"), /환기/u);
+  const guide = R.tenantGuideFor("repair", [{ key: "wallpaper" }, { key: "faucet" }]);
+  assert.match(guide, /환기/u);
+  assert.match(guide, /밸브를 잠그고/u);
+  assert.doesNotMatch(guide, /장판 위에서/u);
   assert.match(R.tenantGuideFor("stairs"), /브링케어/u);
 });

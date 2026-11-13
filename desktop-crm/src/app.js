@@ -10453,7 +10453,7 @@
             <div class="wr-ai-form-grid">
               <label><span>호실</span><input type="text" name="tenantUnit" maxlength="40" value="${esc(draft.tenantUnit)}" placeholder="예: 202"></label>
               <label class="wide"><span>세입자에게 드리는 작업 안내</span><textarea name="tenantSummary" rows="5" maxlength="2000" placeholder="'세입자용 AI 초안'을 누르거나 직접 입력하세요. 비워 두면 기본 문장이 나갑니다.">${esc(draft.tenantSummary)}</textarea></label>
-              <label class="wide"><span>생활 안내</span><textarea name="tenantGuide" rows="4" maxlength="1000" placeholder="${esc(R.tenantGuideFor(draft.kind))}">${esc(draft.tenantGuide)}</textarea></label>
+              <label class="wide"><span>생활 안내</span><textarea name="tenantGuide" rows="4" maxlength="1000" placeholder="${esc(R.tenantGuideFor(draft.kind, draft.items.filter(item => item.before.length || item.during.length || item.after.length || item.note)))}">${esc(draft.tenantGuide)}</textarea></label>
             </div>
             <button type="button" class="secondary-button" data-report-tenant-ai${reportState.aiLoading || reportState.tenantAiLoading || !photosReady ? " disabled" : ""}>${reportState.tenantAiLoading ? "AI가 작성 중…" : draft.tenantSummary ? "✦ 세입자용 AI 초안 다시 만들기" : "✦ 세입자용 AI 초안"}</button>
             ${reportState.tenantAiSuggestion ? `<div class="wr-ai-suggestion"><b>새 세입자용 AI 제안 · 기존 내용 유지 중</b><p>${esc(reportState.tenantAiSuggestion)}</p><button type="button" class="secondary-button" data-report-tenant-ai-accept>이 제안으로 바꾸기</button></div>` : ""}

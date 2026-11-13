@@ -126,7 +126,7 @@ test("파일 이름이 무엇인지 말해 준다", () => {
 });
 
 test("세입자 안내용은 세입자 본문·생활 안내만 싣고 건물주 쪽 내용을 뺀다", () => {
-  const input = report({ kind: "repair", items: R.itemsFor("repair").map(item => Object.assign({}, item, { before: [photo(`b_${item.key}`)], after: [photo(`a_${item.key}`)] })),
+  const input = report({ kind: "repair", items: R.itemsFor("repair", [{ key: "wallpaper" }, { key: "flooring" }, { key: "faucet" }]).map(item => Object.assign({}, item, { before: [photo(`b_${item.key}`)], after: [photo(`a_${item.key}`)] })),
     summary: "건물주님께 드리는 본문", followUp: "다음 달 누수 점검 권고", ownerNote: "시공비 85만원", ownerName: "홍길동", ownerContact: "010-1111-2222",
     tenantUnit: "202호", tenantSummary: "생활하시는 방의 도배와 장판을 새로 했습니다." });
   const tenant = createWorkReportHtml(input, "tenant", options());

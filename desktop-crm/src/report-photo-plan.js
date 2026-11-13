@@ -127,8 +127,13 @@
     }),
     repair: Object.freeze({
       도배: "wallpaper", 벽지: "wallpaper", 벽: "wallpaper", 천장: "wallpaper",
-      장판: "flooring", 바닥: "flooring", 바닥재: "flooring",
-      수전: "faucet", 수도: "faucet", 싱크수전: "faucet", 세면대수전: "faucet", 샤워수전: "faucet",
+      장판: "flooring", 바닥: "flooring", 바닥재: "flooring", 마루: "flooring",
+      수전: "faucet", 수도: "faucet", 싱크수전: "faucet", 세면대: "faucet", 변기: "faucet", 샤워기: "faucet",
+      누수: "plumbing", 배관: "plumbing", 배수: "plumbing", 배수구: "plumbing",
+      전기: "electric", 조명: "electric", 등: "electric", 스위치: "electric", 콘센트: "electric",
+      타일: "tile", 실리콘: "tile", 방수: "tile", 줄눈: "tile",
+      문: "door", 창호: "door", 방충망: "door", 도어락: "door", 현관문: "door",
+      보일러: "heating", 에어컨: "heating", 난방: "heating",
       걸레받이: "molding", 몰딩: "molding",
       보수: "etc", 기타: "etc",
       마감: "finish", 마감정리: "finish", 청소: "finish",
@@ -195,8 +200,8 @@
   function kindFromWords(value) {
     const word = normalizeFolderWord(value);
     if (!word) return "";
-    // "입주 전 도배"·"퇴실 후 장판" 처럼 청소 말과 같이 적혀도 보수 작업이다.
-    if (word.includes("도배") || word.includes("장판") || word.includes("벽지")) return "repair";
+    // "입주 전 도배"·"퇴실 후 하자보수" 처럼 청소 말과 같이 적혀도 수리 작업이다.
+    if (["도배", "장판", "벽지", "수전", "하자", "보수", "수리", "누수", "유지보수"].some(term => word.includes(term))) return "repair";
     if (word.includes("퇴실") || word.includes("퇴거") || word.includes("공실")) return "moveOut";
     if (word.includes("입주") || word.includes("이사")) return "moveIn";
     if (word.includes("공용")) return "common";

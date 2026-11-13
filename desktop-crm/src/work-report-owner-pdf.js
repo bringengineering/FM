@@ -213,7 +213,7 @@ function createOwnerReportHtml(report, options = {}) {
     ? report.tenantSummary || "작업 내용과 현장 사진을 정리해 안내드립니다. 아래에서 확인하실 수 있습니다."
     : report.summary || "구역별 현장 기록을 정리했습니다. 등록된 작업 내용과 사진은 아래에서 확인하실 수 있습니다.";
   const followSection = tenant
-    ? `<section class="follow"><h2>생활 안내</h2><p>${escape(report.tenantGuide || Core.tenantGuideFor(report.kind))}</p></section>`
+    ? `<section class="follow"><h2>생활 안내</h2><p>${escape(report.tenantGuide || Core.tenantGuideFor(report.kind, items))}</p></section>`
     : `${report.ownerNote ? `<section class="follow"><h2>비용·자재</h2><p>${escape(report.ownerNote)}</p></section>` : ""}<section class="follow"><h2>추가 안내</h2><p>${escape(report.followUp || "등록된 후속 조치 사항은 없습니다. 궁금하신 점이나 추가로 살펴볼 부분은 브링케어로 말씀해 주세요.")}</p></section>`;
   const thanks = tenant
     ? "작업 후 불편한 점이나 다시 살펴볼 부분이 있으면 언제든 브링케어로 말씀해 주세요. 감사합니다."
