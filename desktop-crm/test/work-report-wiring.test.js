@@ -254,3 +254,14 @@ test("새 화면이 없는 클래스에 기대지 않는다", () => {
   assert.ok(used.size > 0);
   used.forEach(name => assert.ok(styled.has(name), `${name} 에 CSS 규칙이 없다`));
 });
+
+test("세입자 문자용 링크는 세입자 안내용 PDF를 올리기만 하고 발송하지 않는다", () => {
+  const start = mainSource.indexOf("async function createWorkReportTenantLink(");
+  const body = mainSource.slice(start, mainSource.indexOf("\nasync function exportWorkReport(", start));
+  assert.ok(start > 0);
+  assert.match(body, /createWorkReportPdfArtifact\(.*\}, "tenant"\);/u);
+  assert.match(body, /runDocumentDelivery\("create"/u);
+  assert.doesNotMatch(body, /createAndSend|"send"/u);
+  assert.match(body, /role !== "admin"/u);
+  assert.ok(appSource.includes("data-report-tenant-link="));
+});

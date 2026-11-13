@@ -4758,6 +4758,34 @@ async function createWorkReportPdfArtifact(options, copyType) {
   return { ok: true, report, bytes, photos: Object.keys(images).length, heicConverted, photoFailures };
 }
 
+// 세입자 안내용 PDF를 보안 링크로만 올린다(발송하지 않는다). 세입자 알림톡 템플릿이 승인되기 전까지
+// 담당자가 이 링크를 문자로 직접 보낸다. 링크는 7일 뒤 열리지 않는다.
+async function createWorkReportTenantLink(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin" || isMarketingOnlySession()) throw Object.assign(new Error("관리자만 세입자 안내 링크를 만들 수 있습니다."), { code: "ACCESS_DENIED" });
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const store = await remoteClient.loadStore();
+  const checked = WorkReportCore.validateReport(options.report);
+  if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
+  const secrets = WorkReportCore.mergeSecrets(WorkReportCore.reportSecrets(store, checked.report), options.secrets);
+  const artifact = await createWorkReportPdfArtifact({ report: WorkReportCore.withSiteAddress(checked.report, store), company: options.company, secrets }, "tenant");
+  if (!artifact.ok) return artifact;
+  const report = artifact.report;
+  const unit = String(report.tenantUnit || "").trim().replace(/호$/u, "");
+  const place = String(report.buildingId && report.buildingName || WorkReportMessage.shortAddress(report.siteAddress)).trim();
+  const documentName = `${place}${unit ? ` ${unit}호` : ""} 작업 완료 안내문`.slice(0, 150);
+  const created = await runDocumentDelivery("create", {
+    documentId: "tenant_" + crypto.randomBytes(16).toString("hex"), customerId: "tenant_" + crypto.randomBytes(16).toString("hex"),
+    documentType: "completion_report", documentName, mimeType: "application/pdf", bytes: Buffer.from(artifact.bytes).toString("base64"),
+    expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+  });
+  if (!created?.ok || !/^https:\/\//u.test(String(created.secureUrl || ""))) {
+    throw Object.assign(new Error(created?.error || "세입자 안내 링크를 만들지 못했습니다."), { code: created?.code || "DELIVERY_UNAVAILABLE" });
+  }
+  return { ok: true, secureUrl: created.secureUrl, expiresAt: created.expiresAt, documentName, photos: artifact.photos, photoFailures: artifact.photoFailures };
+}
+
 async function exportWorkReport(input) {
   const session = savedDocumentSession();
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
@@ -9920,6 +9948,7 @@ secureHandle("crm:telegram-server-status", () => loadTelegramServerStatus());
 secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:customer-notice-send", input => sendCustomerNotice(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
+secureCanonicalHandle("crm:work-report-tenant-link", input => createWorkReportTenantLink(input));
 secureCanonicalHandle("crm:periodic-report-save", input => remoteClient.savePeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-export", input => exportPeriodicReport(input));
 secureCanonicalHandle("crm:periodic-report-kakao-send", input => sendPeriodicReportByKakao(input));

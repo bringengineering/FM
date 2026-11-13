@@ -52,7 +52,7 @@ const MUTATIONS = [
   'crm:quote-kakao-send', 'crm:customer-document-save', 'crm:customer-document-send',
   'crm:drive-import-decision','crm:contract-source-register','crm:contract-source-check','crm:contract-source-decision','crm:canonical-entity-commit','crm:building-schedule-commit','crm:contract-receipt-commit','crm:marketing-commit','crm:marketing-archive',
   'crm:marketing-attribution-update','crm:work-operations-sync-retry','crm:canonical-building-units-configure','crm:case-save','crm:payment-override',
-  'crm:payment-schedule-save','crm:payment-schedule-delete','crm:payment-bank-binding','crm:workflow-action','crm:document-delivery-create','crm:document-delivery-send','crm:document-delivery-revoke','crm:field-request','crm:backup','crm:restore'
+  'crm:payment-schedule-save','crm:payment-schedule-delete','crm:payment-bank-binding','crm:workflow-action','crm:document-delivery-create','crm:work-report-tenant-link','crm:document-delivery-send','crm:document-delivery-revoke','crm:field-request','crm:backup','crm:restore'
 ];
 const CHANNEL_POLICY = Object.freeze(Object.fromEntries([
   ...READ_OR_CONTROL.map(channel => [channel, 'control']),
