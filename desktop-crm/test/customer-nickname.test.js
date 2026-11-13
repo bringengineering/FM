@@ -90,9 +90,12 @@ test("monthly, service, and owner work report PDFs use address + 건물주님, n
     const service = Service.buildServiceReport({ building, customer, case: { id: "qa_case", name: customer.nickname, workCompletedAt: "2026-10-01" } });
     const work = Work.normalizeReport({ id: "qa_work", kind: "moveIn", buildingId: building.id, buildingName: building.name, siteAddress: monthly.address, ownerName: customer.nickname, workDate: "2026-10-01" });
     const before = JSON.stringify(work);
-    for (const html of [createBuildingReportHtml(monthly), createServiceReportHtml(service), createWorkReportHtml(work)]) {
+    for (const html of [createBuildingReportHtml(monthly), createServiceReportHtml(service)]) {
       assert.ok(html.includes(recipient)); assert.ok(!html.includes(customer.nickname)); assert.ok(!html.includes(customer.address));
     }
+    // 결과보고서 표준 양식에는 수신인 줄이 없다. 별명·고객 주소가 새지 않는지만 본다.
+    const workHtml = createWorkReportHtml(work);
+    assert.ok(!workHtml.includes(customer.nickname)); assert.ok(!workHtml.includes(customer.address));
     assert.ok(!JSON.stringify(monthly).includes(customer.nickname)); assert.ok(!JSON.stringify(service).includes(customer.nickname));
     assert.equal(JSON.stringify(work), before, "printing must not rewrite saved owner/manual content");
   }

@@ -174,8 +174,10 @@ function createOwnerReportHtml(report, options = {}) {
   // 쓰므로 여기서는 호출할 때 불러온다(맨 위에서 서로 require 하면 한쪽이 빈 모듈을 받는다).
   // 세입자 안내용은 받는 사람이 다르다. 건물주 성함·연락처, 비용·자재 메모, 내부 후속 사항을 싣지 않고
   // 세입자용 본문과 생활 안내를 싣는다. 공용부 양식으로 돌리지 않는다.
+  // 2026-11-13: 모든 결과보고서(건물주용·세입자 안내용)를 표준 양식 '활동 결과보고서'로 낸다.
+  // 아래 예전 편지형 양식은 options.legacyLetter 로만 쓴다(정기보고서가 사진 카드 부품을 같이 쓴다).
   const tenant = options.audience === "tenant";
-  if (!tenant && (report.kind === "common" || report.kind === "waste")) return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
+  if (!options.legacyLetter) return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);

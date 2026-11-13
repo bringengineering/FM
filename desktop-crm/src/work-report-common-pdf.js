@@ -1,9 +1,11 @@
 "use strict";
-// 공용부 청소 보고서: '공용부 활동 결과보고서' 양식(공용부_활동결과보고서_양식.hwpx)을
+// 결과보고서 표준 양식: '공용부 활동 결과보고서' 양식(공용부_활동결과보고서_양식.hwpx)을
 // 그대로 옮긴 PDF. 표지 → Ⅰ 현장 기록 개요 → Ⅱ 현장 사진 기록(한 쪽에 3×3) 순서다.
+// 2026-11-13 부터 모든 작업 종류(유지보수·수리, 입주·퇴실청소 등)와 세입자 안내문도 이 양식으로 낸다.
 // 공용부는 작업 전 사진을 찍지 않으므로 단계(전·중·후)를 나누지 않고 사진 번호와 구역만 단다.
 // 예전 보고서에 남아 있는 작업 전·중 사진도 빠뜨리지 않고 같은 순서 규칙으로 싣는다.
 const Owner = require("./work-report-owner-pdf");
+const Core = require("./work-report-core");
 
 const { escape, SAFE_IMAGE, FONT_STACK } = Owner;
 const PER_PAGE = 9;
@@ -31,8 +33,43 @@ const VARIANTS = Object.freeze({
       "촬영일은 보고서에 등록된 작업일 기준입니다. 수거 일정과 결과는 별도 확인이 필요합니다.",
     ]),
   }),
+  repair: Object.freeze({
+    title: "유지보수·수리 결과보고서",
+    overview: "유지보수·수리 현장 기록 개요",
+    zone: "항목",
+    notes: Object.freeze([
+      "제공된 사진을 항목별로 작업 전·중·후 순서대로 표 안에 정리했습니다.",
+      "사진은 작업 당시 현장 상태 기록이며 시공 품질이나 하자 없음을 보증하지 않습니다.",
+      "작업일은 보고서에 등록된 날짜 기준입니다.",
+    ]),
+  }),
 });
-const variantFor = kind => VARIANTS[kind] || VARIANTS.common;
+// 따로 문구를 정하지 않은 종류(입주·퇴실청소, 계단청소 등)는 종류 이름으로 같은 양식을 쓴다.
+function variantFor(kind) {
+  if (VARIANTS[kind]) return VARIANTS[kind];
+  const label = Core.kindLabel(kind) || "작업";
+  return {
+    title: `${label} 결과보고서`,
+    overview: `${label} 현장 기록 개요`,
+    zone: "구역",
+    notes: [
+      "제공된 사진을 구역별로 작업 전·중·후 순서대로 표 안에 정리했습니다.",
+      "사진은 작업 당시 현장 상태 기록이며 설비의 작동·안전 상태를 증명하지 않습니다.",
+      "작업일은 보고서에 등록된 날짜 기준입니다.",
+    ],
+  };
+}
+// 세입자 안내문. 건물주 이름·연락처, 비용·자재, 후속 사항은 싣지 않는다.
+const TENANT = Object.freeze({
+  title: "작업 완료 안내문",
+  overview: "작업 개요",
+  zone: "항목",
+  notes: Object.freeze([
+    "작업한 부분의 사진을 항목별로 작업 순서대로 정리했습니다.",
+    "생활하시면서 불편한 점이 있으면 사진을 찍어 브링케어(1551-3873)로 알려 주세요.",
+  ]),
+});
+const PHASE_LABEL = Object.freeze({ before: "작업 전", during: "작업 중", after: "작업 후" });
 
 const pad = n => String(n).padStart(2, "0");
 // 양식 표기 "2026. 11. 09." 로 쓴다. 저장값은 2026-11-09 형식이다.
@@ -53,7 +90,7 @@ function numberRanges(numbers) {
 function numberedPhotos(items) {
   const photos = [];
   for (const item of items) {
-    for (const photo of [...item.before, ...item.during, ...item.after]) photos.push({ photo, item, n: photos.length + 1 });
+    for (const phase of ["before", "during", "after"]) for (const photo of item[phase]) photos.push({ photo, item, phase, n: photos.length + 1 });
   }
   return photos;
 }
@@ -63,28 +100,28 @@ function sectionHead(numeral, title, side) {
 }
 
 // 사진 한 장 = 위 칸(번호·구역) + 아래 칸(사진). 원본 비율 그대로 넣고 자르지 않는다.
-function photoCell(entry, images) {
+function photoCell(entry, images, showPhase) {
   const source = images[entry.photo.id];
   // Accept only embedded raster images. No remote URLs, SVG or file paths.
   const safe = typeof source === "string" && SAFE_IMAGE.test(source);
   const label = `사진 ${pad(entry.n)}`;
   return {
-    caption: `<td class="cap">${label}&nbsp;&nbsp;|&nbsp;&nbsp;<b>${escape(entry.item.label)}</b></td>`,
+    caption: `<td class="cap">${label}&nbsp;&nbsp;|&nbsp;&nbsp;<b>${escape(entry.item.label)}</b>${showPhase ? ` · ${PHASE_LABEL[entry.phase]}` : ""}</td>`,
     picture: `<td class="pic"><div>${safe ? `<img src="${escape(source)}" alt="${escape(`${label} · ${entry.item.label}`)}">` : '<span class="missing">사진 없음</span>'}</div></td>`,
   };
 }
 
-function photoPage(entries, index, total, date, images) {
+function photoPage(entries, index, total, date, images, showPhase, dateLabel) {
   const first = index * PER_PAGE + 1;
   const last = first + entries.length - 1;
   const rows = [];
   for (let r = 0; r < entries.length; r += 3) {
-    const row = entries.slice(r, r + 3).map(entry => photoCell(entry, images));
+    const row = entries.slice(r, r + 3).map(entry => photoCell(entry, images, showPhase));
     rows.push(`<tr>${row.map(cell => cell.caption).join("")}</tr><tr class="pics">${row.map(cell => cell.picture).join("")}</tr>`);
   }
   const title = index ? "현장 사진 기록 (계속)" : "현장 사진 기록";
   const range = first === last ? `사진 ${first}` : `사진 ${first}–${last}`;
-  return `<section class="photo-page">${sectionHead("Ⅱ", title, `촬영일: ${date}  /  ${range}`)}
+  return `<section class="photo-page">${sectionHead("Ⅱ", title, `${dateLabel}: ${date}  /  ${range}`)}
 <table class="grid"><colgroup><col><col><col></colgroup><tbody>${rows.join("")}</tbody></table>${index === total - 1 ? '<p class="end">- 이 상 -</p>' : ""}</section>`;
 }
 
@@ -118,7 +155,8 @@ h3{font-size:12pt;font-weight:700;margin:5mm 0 2mm}
 .grid .pic div{height:65mm;display:flex;align-items:center;justify-content:center}
 .grid .pic img{max-width:100%;max-height:65mm;object-fit:contain}
 .grid tr{break-inside:avoid}.missing{color:#888;font-size:9pt}
-.end{text-align:center;margin-top:6mm;font-size:10pt}`;
+.end{text-align:center;margin-top:6mm;font-size:10pt}
+.prose{white-space:pre-wrap;font-size:10pt;line-height:1.7;border:.12mm solid #BFBFBF;padding:3mm 4mm;background:#FAFBFD}`;
 }
 
 function createCommonActivityReportHtml(report, options = {}) {
@@ -138,13 +176,37 @@ function createCommonActivityReportHtml(report, options = {}) {
   const pages = [];
   for (let i = 0; i < photos.length; i += PER_PAGE) pages.push(photos.slice(i, i + PER_PAGE));
   const targets = items.map(item => item.label).join("·") || "-";
-  const v = variantFor(report.kind);
+  const tenant = options.audience === "tenant";
+  const v = tenant ? TENANT : variantFor(report.kind);
+  // 공용부·폐기물은 원래 양식대로 사진에 단계(전·중·후)를 달지 않는다. 나머지는 단다.
+  const legacyForm = !tenant && (report.kind === "common" || report.kind === "waste");
+  const dateLabel = legacyForm ? "촬영일" : "작업일";
+  const unit = String(report.tenantUnit || "").trim().replace(/호$/u, "");
+  const coverSite = tenant && unit && !site.includes(`${unit}호`) ? `${site} ${unit}호` : site;
+  // 양식의 1·2·3 뒤에 받는 사람별 칸을 이어 붙인다. 번호는 실린 것만 센다.
+  const blocks = [];
+  if (tenant) {
+    blocks.push(["작업 안내", `<p class="prose">${escape(report.tenantSummary || "작업 내용과 현장 사진을 정리해 안내드립니다.")}</p>`]);
+  } else if (!legacyForm && report.summary) {
+    blocks.push(["작업 내용", `<p class="prose">${escape(report.summary)}</p>`]);
+  }
+  blocks.push(["사진 확인 범위 및 안내", `<div class="notes">${v.notes.map(note => `<p>○ ${escape(note)}</p>`).join("")}</div>`]);
+  const zoneTable = `<table class="zones"><thead><tr><th class="c1">${v.zone}</th><th class="c2">사진 수</th><th>사진 번호</th></tr></thead><tbody>
+${items.map(item => { const numbers = byItem.get(item); return `<tr><td>${escape(item.label)}</td><td>${numbers.length || "-"}</td><td>${numbers.length ? numberRanges(numbers) : "-"}</td></tr>`; }).join("")}
+</tbody><tfoot><tr><td>합계</td><td>${photos.length}</td><td></td></tr></tfoot></table>`;
+  blocks.push([`${v.zone}별 사진 현황`, zoneTable]);
+  if (tenant) blocks.push(["생활 안내", `<p class="prose">${escape(report.tenantGuide || Core.tenantGuideFor(report.kind, items))}</p>`]);
+  else if (!legacyForm) {
+    if (report.ownerNote) blocks.push(["비용·자재", `<p class="prose">${escape(report.ownerNote)}</p>`]);
+    if (report.followUp) blocks.push(["후속 조치·권고", `<p class="prose">${escape(report.followUp)}</p>`]);
+  }
+  const infoRows = [["현장명", coverSite], [dateLabel, date], ["사진 수", `${photos.length}장`], ["대상", targets]];
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>${escape(v.title)}</title><style>
 ${Owner.ownerFontFace()}
 ${styles()}
 </style></head><body><main>
 <section class="cover"><div class="cover-band"><h1>${escape(v.title)}</h1></div>
-<p class="cover-site">${escape(site)}</p><p class="cover-date">${escape(date)}</p>
+<p class="cover-site">${escape(coverSite)}</p><p class="cover-date">${escape(date)}</p>
 <div class="cover-brand">${logo ? `<img src="${logo}" alt="Bring Care">` : ""}<b>${escape(sender)}</b></div></section>
 <section class="overview">
 <div class="top-bar"><i></i><i></i></div>
@@ -152,22 +214,12 @@ ${styles()}
 ${sectionHead("Ⅰ", v.overview)}
 <h3>1. 현장 기본정보</h3>
 <table class="info"><tbody>
-<tr><th>현장명</th><td>${escape(site)}</td></tr>
-<tr><th>촬영일</th><td>${escape(date)}</td></tr>
-<tr><th>사진 수</th><td>${photos.length}장</td></tr>
-<tr><th>대상</th><td>${escape(targets)}</td></tr>
+${infoRows.map(([label, value]) => `<tr><th>${escape(label)}</th><td>${escape(value)}</td></tr>`).join("")}
 </tbody></table>
-<h3>2. 사진 확인 범위 및 안내</h3>
-<div class="notes">
-${v.notes.map(note => `<p>○ ${escape(note)}</p>`).join("\n")}
-</div>
-<h3>3. ${v.zone}별 사진 현황</h3>
-<table class="zones"><thead><tr><th class="c1">${v.zone}</th><th class="c2">사진 수</th><th>사진 번호</th></tr></thead><tbody>
-${items.map(item => { const numbers = byItem.get(item); return `<tr><td>${escape(item.label)}</td><td>${numbers.length || "-"}</td><td>${numbers.length ? numberRanges(numbers) : "-"}</td></tr>`; }).join("")}
-</tbody><tfoot><tr><td>합계</td><td>${photos.length}</td><td></td></tr></tfoot></table>
+${blocks.map(([title, body], i) => `<h3>${i + 2}. ${escape(title)}</h3>\n${body}`).join("\n")}
 ${pages.length ? "" : '<p class="end">- 이 상 -</p>'}
 </section>
-${pages.map((entries, index) => photoPage(entries, index, pages.length, date, images)).join("\n")}
+${pages.map((entries, index) => photoPage(entries, index, pages.length, date, images, !legacyForm, dateLabel)).join("\n")}
 </main></body></html>`;
 }
 
