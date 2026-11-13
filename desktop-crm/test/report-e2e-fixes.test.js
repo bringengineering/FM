@@ -93,7 +93,7 @@ test("남은 사진이 없는 단계는 '0장' 으로 적지 않는다", () => {
   const item = report.items[1];
   item.before = [{ id: "b1", driveFileId: "b1", pairId: "p1" }, { id: "b2", driveFileId: "b2" }];
   item.after = [{ id: "a1", driveFileId: "a1", pairId: "p1" }];
-  const html = createOwnerReportHtml(R.normalizeReport(report));
+  const html = createOwnerReportHtml(R.normalizeReport(report), { legacyLetter: true });
   assert.ok(html.includes("같은 장소로 확인된 1쌍을 나란히 비교하고, 나머지 작업 전 1장은 아래에 단계별로 실었습니다."));
   assert.doesNotMatch(html, /작업 후 0장은/);
 });

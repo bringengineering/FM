@@ -9470,7 +9470,7 @@
         ? `<span class="wr-ai-photo-thumb"><img src="${attr(thumbnail)}" alt=""></span>`
         : `<span class="wr-ai-photo-thumb is-loading" data-report-ai-thumbnail="${attr(row.id)}"><span aria-hidden="true">▧</span></span>`;
       const selectedKey = reportItemKeys.has(row.itemKey) ? row.itemKey : "";
-      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span>${reportPhotoEvidence(row)}<label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ...(plan.kind === "common" ? [["during", "작업 중"]] : [["before", "작업 전"]]), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
+      return `<article class="wr-ai-photo-card${selectedKey && row.phase !== "unsorted" ? "" : " needs-review"}">${preview}<div><b>${esc(file.name || "선택한 사진")}</b><span>${esc(row.reason || "구역을 선택해 주세요.")}</span>${reportPhotoEvidence(row)}<label>구역<select data-report-photo-category="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 구역"${reportState.driveClassificationLoading ? " disabled" : ""}><option value=""${selectedKey ? "" : " selected"}>분류 확인 필요</option>${reportItems.map(entry => `<option value="${attr(entry.key)}"${entry.key === selectedKey ? " selected" : ""}>${esc(entry.label)}</option>`).join("")}</select></label><label>작업 단계<select data-report-photo-phase="${attr(row.id)}" aria-label="${attr(file.name || "사진")} 전·후"${reportState.driveClassificationLoading ? " disabled" : ""}>${[["unsorted", "확인 필요"], ...(plan.kind === "common" ? [["during", "작업 중"]] : [["before", "작업 전"], ...(["waste", "repair"].includes(plan.kind) ? [["during", "작업 중"]] : [])]), ["after", "작업 후"]].map(([value, label]) => `<option value="${value}"${row.phase === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><small>${esc(row.phaseReason || (row.phase === "unsorted" ? "작업 단계를 확인해 주세요. 애매한 사진은 보류할 수 있습니다." : "추천 결과를 확인해 주세요."))}</small></div></article>`;
     };
     const needsReview = row => !reportItemKeys.has(row.itemKey) || row.phase === "unsorted";
     const classificationCards = photoRows.filter(needsReview).map(classificationCard).join("");
@@ -10586,7 +10586,8 @@
       ownerContact: String(raw.ownerContact || ""),
       contractFrom: String(raw.contractFrom || ""),
       contractTo: String(raw.contractTo || ""),
-      items,
+      // 종류를 바꾸면 같은 열쇠(예: finish)라도 새 종류의 이름·범위를 쓴다. 적은 메모·사진·상태는 남긴다.
+      items: String(raw.kind || previous.kind) === previous.kind ? items : items.map(item => Object.assign({}, item, { label: "", detail: "" })),
     }));
   }
 

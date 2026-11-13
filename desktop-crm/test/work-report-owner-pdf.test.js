@@ -2,7 +2,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Core = require("../src/work-report-core");
-const {createWorkReportHtml, workReportPdfPhotos} = require("../src/work-report-pdf");
+const {createWorkReportHtml: createAnyWorkReportHtml, workReportPdfPhotos} = require("../src/work-report-pdf");
+// 예전 편지형 건물주 양식(legacyLetter). 표준 양식 검사는 work-report-pdf.test.js 에 있다.
+const createWorkReportHtml = (report, copy = "owner", options = {}) => createAnyWorkReportHtml(report, copy, { ...options, legacyLetter: true });
 const {photoPages} = require("../src/work-report-owner-pdf");
 const photo = id => ({id, caption: `설명 ${id}`});
 const seed = () => Core.normalizeReport({id: "qa_report", kind: "moveIn", buildingName: "예시 건물", workDate: "2026-10-06"});

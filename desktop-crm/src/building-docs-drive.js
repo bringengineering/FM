@@ -335,23 +335,30 @@
     const { fetchImpl, accessToken } = deps;
     const settings = options && typeof options === "object" ? options : {};
     const maxPages = Number(settings.maxPages) > 0 ? Number(settings.maxPages) : 5;
-    const files = [];
-    let pageToken = "";
-    for (let page = 0; page < maxPages; page += 1) {
-      const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent("sharedWithMe and trashed = false")}`
-        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink,thumbnailLink)"
-        + "&pageSize=200&orderBy=modifiedTime%20desc&corpora=user&spaces=drive"
-        + "&supportsAllDrives=true&includeItemsFromAllDrives=true"
-        + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
-      const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "공유 문서함 읽기");
-      (Array.isArray(got.files) ? got.files : []).forEach(file => files.push(file));
-      pageToken = text(got.nextPageToken);
-      if (!pageToken) break;
-    }
+    // 공유받은 폴더와 사진을 따로 읽는다. 섞어서 수정 시각 순으로 읽으면 사진이 많을 때
+    // "활동 사진" 같은 상위 폴더가 읽는 범위 밖으로 밀려 고를 수 없다(2026-11-13 실제 재현).
+    const read = async (query, order) => {
+      const found = [];
+      let pageToken = "";
+      for (let page = 0; page < maxPages; page += 1) {
+        const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(query)}`
+          + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink,thumbnailLink)"
+          + `&pageSize=200&orderBy=${order}&corpora=user&spaces=drive`
+          + "&supportsAllDrives=true&includeItemsFromAllDrives=true"
+          + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+        const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "공유 문서함 읽기");
+        (Array.isArray(got.files) ? got.files : []).forEach(file => found.push(file));
+        pageToken = text(got.nextPageToken);
+        if (!pageToken) break;
+      }
+      return { found, truncated: Boolean(pageToken) };
+    };
+    const folders = await read(`sharedWithMe and trashed = false and mimeType = '${FOLDER_MIME}'`, "name");
+    const files = await read(`sharedWithMe and trashed = false and mimeType != '${FOLDER_MIME}'`, "modifiedTime%20desc");
     return {
-      folders: files.filter(file => file.mimeType === FOLDER_MIME),
-      files: files.filter(file => file.mimeType !== FOLDER_MIME),
-      truncated: Boolean(pageToken),
+      folders: folders.found.filter(file => file.mimeType === FOLDER_MIME),
+      files: files.found.filter(file => file.mimeType !== FOLDER_MIME),
+      truncated: folders.truncated || files.truncated,
     };
   }
 

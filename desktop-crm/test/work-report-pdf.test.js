@@ -39,13 +39,13 @@ const options = (patch = {}) => Object.assign({ company, images: {} }, patch);
 test("두 벌이 서로 다른 표를 낸다", () => {
   const owner = createWorkReportHtml(report(), "owner", options());
   const program = createWorkReportHtml(report(), "program", options());
-  // 건물주는 퍼센트를 보러 오지 않는다.
-  assert.match(owner, /<th>No\.<\/th><th>작업 구역<\/th><th>수행 내용<\/th><th>현장 사진<\/th>/u);
+  // 건물주용은 표준 양식(활동 결과보고서). 건물주는 퍼센트를 보러 오지 않는다.
+  assert.match(owner, /계단청소 결과보고서/u);
+  assert.match(owner, /<th class="c1">구역<\/th><th class="c2">사진 수<\/th><th>사진 번호<\/th>/u);
   assert.doesNotMatch(owner, /<th>진척도<\/th>/u);
   // 청창사 서식은 진척도와 결과평가를 요구한다.
   assert.match(program, /<th>수행범위<\/th><th>진척도<\/th><th>결과평가<\/th>/u);
   assert.match(program, /계단실 바닥 완료 \(사진 2장\)/u);
-  assert.match(owner, /작업 결과 보고서/u);
   assert.match(program, /용역 결과 보고서/u);
 });
 
@@ -66,8 +66,10 @@ test("두 보고서는 인감 없이 생성되고 기존 인감 옵션도 표시
       assert.equal(createWorkReportHtml(report(), copy, options({sealImage})), expected);
     }
     assert.doesNotMatch(expected, /대표자 날인|서명 또는 인|class="sign"|class="stamp"|data:image\/png;base64/u);
-    assert.match(expected, copy === "owner" ? /@bottom-left\{content:"BRING CARE/ : /class="report-footer"/u);
-    assert.match(expected, /수신\(건물주\)/u);
+    if (copy === "program") {
+      assert.match(expected, /class="report-footer"/u);
+      assert.match(expected, /수신\(건물주\)/u);
+    } else assert.match(expected, /- 이 상 -/u);
     assert.match(expected, /브링엔지니어링/u);
   }
 });
@@ -131,16 +133,21 @@ test("세입자 안내용은 세입자 본문·생활 안내만 싣고 건물주
     tenantUnit: "202호", tenantSummary: "생활하시는 방의 도배와 장판을 새로 했습니다." });
   const tenant = createWorkReportHtml(input, "tenant", options());
   assert.match(tenant, /작업 완료 안내문/u);
-  assert.match(tenant, /우산동 빌딩 202호 입주자/u);
+  assert.match(tenant, /우산동 빌딩 202호/u);
   assert.match(tenant, /생활하시는 방의 도배와 장판을 새로 했습니다/u);
   assert.match(tenant, /생활 안내/u);
   assert.match(tenant, /환기/u);
-  assert.match(tenant, /세입자 안내용/u);
+  assert.match(tenant, /- 이 상 -/u);
   for (const hidden of [/건물주님께 드리는 본문/u, /누수 점검 권고/u, /85만원/u, /홍길동/u, /010-1111-2222/u, /건물주 제출용/u, /황우중/u, /법정 의무점검/u]) assert.doesNotMatch(tenant, hidden);
 
   const owner = createWorkReportHtml(input, "owner", options());
+  assert.match(owner, /유지보수·수리 결과보고서/u);
+  assert.match(owner, /작업 내용/u);
+  assert.match(owner, /건물주님께 드리는 본문/u);
   assert.match(owner, /비용·자재/u);
   assert.match(owner, /시공비 85만원/u);
+  assert.match(owner, /후속 조치·권고/u);
+  assert.match(owner, /도배<\/b> · 작업 전/u);
   assert.doesNotMatch(owner, /생활하시는 방의 도배/u);
 });
 
