@@ -37,7 +37,7 @@ test("vacancy workspace restores the building rail and keeps one structure-setti
 
 test("vacancy all filter renders first while attention remains the default", () => {
   assert.match(appSource, /let vacancyStatusFilter\s*=\s*"attention"/);
-  assert.match(appSource, /VACANCY_FILTER_ORDER\s*=\s*Object\.freeze\(\["all",\s*"attention",\s*"vacant",\s*"move_out_scheduled",\s*"occupied",\s*"maintenance",\s*"unknown"\]\)/);
+  assert.match(appSource, /VACANCY_FILTER_ORDER\s*=\s*Object\.freeze\(\["all",\s*"attention",\s*"vacant",\s*"move_out_scheduled",\s*"lease_ending",\s*"occupied",\s*"maintenance",\s*"unknown"\]\)/);
   assert.match(appSource, /vacancyStatusFilter === "attention"\s*&&\s*\["vacant",\s*"move_out_scheduled"\]\.includes\(status\)/);
   assert.match(appSource, /filter === "attention"\s*\?\s*summary\.actionable/);
 });
@@ -48,11 +48,11 @@ test("unknown units remain visible in the summary even when the default filter h
     activeBuildingUnitsForBuilding:()=>[unit], sortedVacancyUnits:items=>items,
     vacancySummaryForBuilding:()=>({formal:true,total:1,occupied:0,vacant:0,move_out_scheduled:0,maintenance:0,unknown:1,actionable:0}),
     vacancyUnitStatus:item=>item.status, vacancyUnitSearchText:()=>"", vacancyStatusFilter:"attention", vacancyUnitQuery:"",
-    VACANCY_FILTER_ORDER:["all","attention","vacant","move_out_scheduled","occupied","maintenance","unknown"],
-    VACANCY_FILTER_LABELS:{all:"전체",attention:"공실·예정",vacant:"공실",move_out_scheduled:"공실 예정",occupied:"입주 중",maintenance:"정비 중",unknown:"확인 필요"},
+    VACANCY_FILTER_ORDER:["all","attention","vacant","move_out_scheduled","lease_ending","occupied","maintenance","unknown"],
+    VACANCY_FILTER_LABELS:{all:"전체",attention:"공실·예정",vacant:"공실",move_out_scheduled:"공실 예정",lease_ending:"만료 임박",occupied:"입주 중",maintenance:"정비 중",unknown:"확인 필요"},
     buildingArray:()=>[], vacancyLegacyMigrationState:()=>({unresolvedCount:0}),
     inferredVacancyFloorLabel:()=>"1층", vacancyFloorOrder:()=>1, renderVacancyUnitCard:()=>"", buildingNumberLabel:()=>"",
-    canWriteCRM:()=>false, attr:String, esc:String,
+    canWriteCRM:()=>false, attr:String, esc:String, unitLeaseEnding:()=>false,
   };
   vm.runInNewContext(`${functionSource("renderVacancyDetail")}\nglobalThis.renderDetail=renderVacancyDetail;`,context);
   const html=context.renderDetail({id:"b1",name:"가상 건물"},"");

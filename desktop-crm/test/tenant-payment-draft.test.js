@@ -171,10 +171,27 @@ test("building unit list shows the tenant and opens the payment schedule editor 
   const source = await fs.readFile(path.join(__dirname, "../src/app.js"), "utf8");
   assert.match(source, /function paymentScheduleEditor\(scheduleId, preset = \{\}\)/);
   assert.match(source, /data-unit-tenant-add="\$\{attr\(building\.id\)\}" data-unit-label=/);
-  assert.match(source, /paymentScheduleEditor\(unitTenantEdit\.dataset\.unitTenantEdit, \{ returnView: "buildings" \}\)/);
-  assert.match(source, /unit: unitTenantAdd\.dataset\.unitLabel \|\| "", returnView: "buildings"/);
+  assert.match(source, /paymentScheduleEditor\(unitTenantEdit\.dataset\.unitTenantEdit, \{ returnView: currentView === "vacancies" \? "vacancies" : "buildings" \}\)/);
+  assert.match(source, /unit: unitTenantAdd\.dataset\.unitLabel \|\| "", returnView: currentView === "vacancies"/);
   // 세입자 칩은 '현재 작업자' 확인이 걸린 호실 창을 거치지 않는다 — 납부 일정은 건물 정본 변경이 아니다.
   const editorStart = source.indexOf("function paymentScheduleEditor(");
   assert.equal(source.slice(editorStart, editorStart + 600).includes("deferCanonicalMutation"), false);
   assert.equal(Core.unitKey("202 호"), Core.unitKey("202"));
+});
+
+test("vacancy cards show the tenant and flag contract end without changing unit status", async () => {
+  const source = await fs.readFile(path.join(__dirname, "../src/app.js"), "utf8");
+  const card = source.slice(source.indexOf("function renderVacancyUnitCard("), source.indexOf("function renderVacancyDetail("));
+  assert.match(card, /unitTenantSchedules\(building, unit\)/);
+  assert.match(card, /class="vacancy-tenant /);
+  assert.match(card, /status === "occupied" && canWriteCRM\(\) \? `<button type="button" class="vacancy-tenant empty" data-unit-tenant-add=/);
+  const notice = source.slice(source.indexOf("const tenantExpiryNotice"), source.indexOf("const tenantPeriodText"));
+  assert.match(notice, /TENANT_EXPIRY_NOTICE_MONTHS/);
+  assert.equal(/saveBuildingUnit|status\s*=\s*"vacant"|move_out_scheduled/.test(notice), false);
+});
+
+test("vacancy screen has a 만료 임박 filter for occupied units whose lease is ending", async () => {
+  const source = await fs.readFile(path.join(__dirname, "../src/app.js"), "utf8");
+  assert.match(source, /lease_ending: "만료 임박"/);
+  assert.match(source, /vacancyStatusFilter === "lease_ending" && unitLeaseEnding\(building, unit\)/);
 });
