@@ -592,7 +592,7 @@
             ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/) && newData.parent().child('buildingId').val() === '' && (!data.exists() || newData.val() === data.val()) && root.child('crmCompany/data/customers').child(newData.val()).child('id').val() === newData.val() && root.child('crmCompany/data/customers').child(newData.val()).child('deleted').val() !== true && root.child('crmCompany/data/customers').child(newData.val()).child('archived').val() !== true && (!root.child('crmCompany/data/customers').child(newData.val()).child('deletedAt').exists() || root.child('crmCompany/data/customers').child(newData.val()).child('deletedAt').val() === '') && (!root.child('crmCompany/data/customers').child(newData.val()).child('archivedAt').exists() || root.child('crmCompany/data/customers').child(newData.val()).child('archivedAt').val() === '')"
           },
           "buildingName": { ".validate": "newData.isString() && newData.val().length <= 200" },
-          "kind": { ".validate": "newData.isString() && (newData.val() === 'moveIn' || newData.val() === 'moveOut' || newData.val() === 'common' || newData.val() === 'stairs' || newData.val() === 'general' || newData.val() === 'special' || newData.val() === 'waste')" },
+          "kind": { ".validate": "newData.isString() && (newData.val() === 'moveIn' || newData.val() === 'moveOut' || newData.val() === 'common' || newData.val() === 'stairs' || newData.val() === 'general' || newData.val() === 'special' || newData.val() === 'waste' || newData.val() === 'repair')" },
           "title": { ".validate": "newData.isString() && newData.val().length <= 200" },
           "siteAddress": { ".validate": "newData.isString() && newData.val().length <= 300" },
           "ownerName": { ".validate": "newData.isString() && newData.val().length <= 80" },
@@ -600,6 +600,10 @@
           "categoryEtc": { ".validate": "newData.isString() && newData.val().length <= 60" },
           "ownerContact": { ".validate": "newData.isString() && newData.val().length <= 120" },
           "followUp": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "ownerNote": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+          "tenantUnit": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "tenantSummary": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "tenantGuide": { ".validate": "newData.isString() && newData.val().length <= 1000" },
           "workDate": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)" },
           "workerName": { ".validate": "newData.isString() && newData.val().length <= 120" },
           "area": { ".validate": "newData.isString() && newData.val().length <= 60" },
@@ -615,7 +619,7 @@
               "key": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
               "label": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
               "detail": { ".validate": "newData.isString() && newData.val().length <= 300" },
-              "status": { ".validate": "newData.isString() && (newData.val() === 'done' || newData.val() === 'partial' || newData.val() === 'skipped' || (newData.val() === 'recorded' && (newData.parent().parent().parent().child('kind').val() === 'common' || newData.parent().parent().parent().child('kind').val() === 'moveIn' || newData.parent().parent().parent().child('kind').val() === 'waste')))" },
+              "status": { ".validate": "newData.isString() && (newData.val() === 'done' || newData.val() === 'partial' || newData.val() === 'skipped' || (newData.val() === 'recorded' && (newData.parent().parent().parent().child('kind').val() === 'common' || newData.parent().parent().parent().child('kind').val() === 'moveIn' || newData.parent().parent().parent().child('kind').val() === 'waste' || newData.parent().parent().parent().child('kind').val() === 'repair')))" },
               "note": { ".validate": "newData.isString() && newData.val().length <= 500" },
               "before": { "$photoIndex": {
                 ".validate": "newData.hasChildren(['id','driveFileId'])",
@@ -627,7 +631,7 @@
                 "$other": { ".validate": false }
               } },
               "during": {
-                ".validate": "(newData.parent().parent().parent().child('kind').val() === 'common' || newData.parent().parent().parent().child('kind').val() === 'moveIn' || newData.parent().parent().parent().child('kind').val() === 'waste')",
+                ".validate": "(newData.parent().parent().parent().child('kind').val() === 'common' || newData.parent().parent().parent().child('kind').val() === 'moveIn' || newData.parent().parent().parent().child('kind').val() === 'waste' || newData.parent().parent().parent().child('kind').val() === 'repair')",
                 "$photoIndex": {
                   ".validate": "newData.hasChildren(['id','driveFileId'])",
                   "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },

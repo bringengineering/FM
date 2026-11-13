@@ -200,7 +200,7 @@ const localGeminiReportsPreview = !app.isPackaged && process.env.BRING_CRM_LOCAL
 const LOCAL_GEMINI_REPORT_GATEWAY_URL = "http://127.0.0.1:8787/v1/assist";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
 function aiGatewayUrlForTask(task) {
-  return localGeminiReportsPreview && ["completion_report", "building_monthly_report"].includes(task)
+  return localGeminiReportsPreview && ["completion_report", "completion_report_tenant", "building_monthly_report"].includes(task)
     ? LOCAL_GEMINI_REPORT_GATEWAY_URL
     : CRM_AI_GATEWAY_URL;
 }
@@ -4767,7 +4767,7 @@ async function exportWorkReport(input) {
     return { ok: false, error: "마케팅 담당자는 결과보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
   }
   const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const copyType = options.copyType === "program" ? "program" : "owner";
+  const copyType = ["program", "tenant"].includes(options.copyType) ? options.copyType : "owner";
   const checked = WorkReportCore.validateReport(options.report);
   if (!checked.ok) throw Object.assign(new Error(checked.error), { code: checked.code });
   const report = checked.report;
@@ -9701,7 +9701,7 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     idToken,
     input,
     fetchImpl: (url, options) => net.fetch(url, options),
-    allowLocalHttp: localGeminiReportsPreview && ["completion_report", "building_monthly_report"].includes(input?.task),
+    allowLocalHttp: localGeminiReportsPreview && ["completion_report", "completion_report_tenant", "building_monthly_report"].includes(input?.task),
   });
 });
 let localWorkAssessor = null;

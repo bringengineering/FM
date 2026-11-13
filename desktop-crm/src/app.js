@@ -9232,6 +9232,7 @@
         <td class="wr-row-actions">
           ${reportState.canWork ? editAccess.editable || (item.cleaningOrderId && !linkedOrder) ? `<button type="button" class="mini-button" data-report-edit="${esc(item.id)}">${linkedOrder || !item.cleaningOrderId ? "고치기" : "상태 확인 후 편집"}</button>` : `<span class="wr-readonly-label" title="${esc(editAccess.reason)}">읽기 전용</span>` : ""}
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="owner"${reportState.busyKey ? " disabled" : ""}>건물주용 PDF</button>
+          <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="tenant"${reportState.busyKey ? " disabled" : ""}>세입자용 PDF</button>
           <button type="button" class="mini-button" data-report-export="${esc(item.id)}" data-report-copy="program"${reportState.busyKey ? " disabled" : ""}>청창사용 PDF</button>
         </td>
       </tr>`;
@@ -10235,6 +10236,55 @@
     }
   }
 
+  // 세입자용 본문. 건물주용과 같은 자료(작업 정보·사진 구분·메모)만 보내고, 받는 사람에 맞춰 따로 쓴다.
+  // 이미 쓴 문장은 덮어쓰지 않고 제안으로 보여 준다.
+  async function createTenantAiDraft() {
+    const R = reportCore();
+    if (!R || !reportState.canWork || !reportState.draft || reportState.readOnlyReason || reportState.tenantAiLoading) return;
+    syncReportAnalysisPhotos();
+    const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    if (!R.summarizeItems(draft).photos) {
+      reportState.tenantAiError = "아직 구역과 작업 단계가 정해진 사진이 없습니다. 사진을 분류한 뒤 다시 눌러 주세요.";
+      renderWorkReports();
+      return;
+    }
+    reportState.draft = draft;
+    reportState.tenantAiLoading = true;
+    reportState.tenantAiError = "";
+    reportState.tenantAiSuggestion = "";
+    const generation = ++reportState.aiRequestGeneration;
+    const active = () => generation === reportState.aiRequestGeneration && currentView === "workReports" && reportState.draft?.id === draft.id;
+    renderWorkReports();
+    try {
+      const content = workReportAiContent(R, draft);
+      const response = await api.assist({
+        task: "completion_report_tenant",
+        content,
+        context: { workType: R.kindLabel(draft.kind), category: R.categoryLabel(draft.category) },
+      });
+      const text = String(response?.result?.text || "").trim().slice(0, 2000);
+      if (!active()) return;
+      if (!text) throw new Error("AI 초안이 비어 있습니다.");
+      const latest = R.normalizeReport(readReportForm() || reportState.draft);
+      if (latest.tenantSummary.trim()) {
+        reportState.draft = latest;
+        reportState.tenantAiSuggestion = text;
+        showToast("기존 문장은 유지했습니다. 새 제안을 확인한 뒤 바꿀 수 있습니다.");
+        return;
+      }
+      reportState.draft = R.normalizeReport(Object.assign({}, latest, { tenantSummary: text }));
+      showToast("세입자용 AI 초안을 만들었습니다. 내용을 확인하고 저장해 주세요.", "success");
+    } catch (error) {
+      if (active()) {
+        preserveReportDraft();
+        reportState.tenantAiError = "세입자용 AI 초안을 만들지 못했습니다. 사진과 입력 내용은 유지됩니다. 다시 시도해 주세요.";
+      }
+    } finally {
+      reportState.tenantAiLoading = false;
+      if (currentView === "workReports") renderWorkReports();
+    }
+  }
+
   function workReportBuildings(existingBuildingId = "") {
     const choices = (store.customers || []).filter(customer => customer && /^[A-Za-z0-9_-]{1,120}$/.test(String(customer.id || "")) && !["__proto__", "prototype", "constructor"].includes(String(customer.id)) && !customer.archivedAt && !customer.deletedAt && customer.deleted !== true)
       .map(customer => ({id: "customer:" + customer.id, name: customer.name || customer.company || "고객", internalLabel: customerDisplayName(customer),
@@ -10395,7 +10445,19 @@
             <div class="wr-ai-form-grid">
               <label class="wide"><span>발견 사항 및 조치 내용</span><textarea name="summary" rows="6" maxlength="2000" placeholder="사진 등록 후 오른쪽의 AI 초안 만들기를 누르거나 직접 입력하세요.">${esc(draft.summary)}</textarea></label>
               <label class="wide"><span>후속 필요 사항 · 권고</span><textarea name="followUp" rows="3" maxlength="2000" placeholder="추가 관리나 고객 안내가 필요한 내용을 적어 주세요.">${esc(draft.followUp)}</textarea></label>
+              <label class="wide"><span>비용·자재 <em>건물주용에만 실림</em></span><textarea name="ownerNote" rows="2" maxlength="1000" placeholder="예: 실크벽지 ○○ 2롤, 장판 1.8T 15㎡ · 시공비 85만원">${esc(draft.ownerNote)}</textarea></label>
             </div>
+          </section>
+          <section class="wr-ai-card">
+            <header><span class="wr-ai-card-icon">04</span><div><h4>세입자 안내용</h4><p>세입자에게 줄 안내문입니다. 건물주 정보, 비용·자재, 후속 사항은 싣지 않습니다. 목록의 '세입자용 PDF'로 뽑습니다.</p></div></header>
+            <div class="wr-ai-form-grid">
+              <label><span>호실</span><input type="text" name="tenantUnit" maxlength="40" value="${esc(draft.tenantUnit)}" placeholder="예: 202"></label>
+              <label class="wide"><span>세입자에게 드리는 작업 안내</span><textarea name="tenantSummary" rows="5" maxlength="2000" placeholder="'세입자용 AI 초안'을 누르거나 직접 입력하세요. 비워 두면 기본 문장이 나갑니다.">${esc(draft.tenantSummary)}</textarea></label>
+              <label class="wide"><span>생활 안내</span><textarea name="tenantGuide" rows="4" maxlength="1000" placeholder="${esc(R.tenantGuideFor(draft.kind))}">${esc(draft.tenantGuide)}</textarea></label>
+            </div>
+            <button type="button" class="secondary-button" data-report-tenant-ai${reportState.aiLoading || reportState.tenantAiLoading || !photosReady ? " disabled" : ""}>${reportState.tenantAiLoading ? "AI가 작성 중…" : draft.tenantSummary ? "✦ 세입자용 AI 초안 다시 만들기" : "✦ 세입자용 AI 초안"}</button>
+            ${reportState.tenantAiSuggestion ? `<div class="wr-ai-suggestion"><b>새 세입자용 AI 제안 · 기존 내용 유지 중</b><p>${esc(reportState.tenantAiSuggestion)}</p><button type="button" class="secondary-button" data-report-tenant-ai-accept>이 제안으로 바꾸기</button></div>` : ""}
+            ${reportState.tenantAiError ? `<p class="wr-ai-error" role="alert">${esc(reportState.tenantAiError)}</p>` : ""}
           </section>
         </div>
         <aside class="wr-ai-side">
@@ -10488,6 +10550,10 @@
       area: String(raw.area || ""),
       summary: String(raw.summary || ""),
       followUp: String(raw.followUp || ""),
+      ownerNote: String(raw.ownerNote ?? previous.ownerNote ?? ""),
+      tenantUnit: String(raw.tenantUnit ?? previous.tenantUnit ?? ""),
+      tenantSummary: String(raw.tenantSummary ?? previous.tenantSummary ?? ""),
+      tenantGuide: String(raw.tenantGuide ?? previous.tenantGuide ?? ""),
       category: String(raw.category || previous.category),
       cleaningOrderId: String(raw.cleaningOrderId || ""),
       ownerName: String(raw.ownerName || ""),
@@ -15751,6 +15817,17 @@
     }
     if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-ai-draft]")) { await createWorkReportAiDraft(); return; }
+    if (event.target.closest("[data-report-tenant-ai]")) { await createTenantAiDraft(); return; }
+    if (event.target.closest("[data-report-tenant-ai-accept]")) {
+      const R = reportCore();
+      const latest = R && R.normalizeReport(readReportForm() || reportState.draft);
+      if (latest && reportState.tenantAiSuggestion) {
+        reportState.draft = R.normalizeReport(Object.assign({}, latest, { tenantSummary: reportState.tenantAiSuggestion }));
+        reportState.tenantAiSuggestion = "";
+        renderWorkReports();
+      }
+      return;
+    }
     if (event.target.closest("[data-report-ai-accept]")) {
       if (!reportState.aiSuggestion || reportState.aiLoading) return;
       preserveReportDraft();

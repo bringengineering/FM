@@ -125,6 +125,13 @@
       처리확인: "proof", 스티커: "proof", 필증: "proof", 신고필증: "proof", 영수증: "proof",
       마감: "after", 마감정리: "after", 작업후: "after", 후: "after", 반출후: "after",
     }),
+    repair: Object.freeze({
+      도배: "wallpaper", 벽지: "wallpaper", 벽: "wallpaper", 천장: "wallpaper",
+      장판: "flooring", 바닥: "flooring", 바닥재: "flooring",
+      걸레받이: "molding", 몰딩: "molding",
+      보수: "etc", 기타: "etc",
+      마감: "finish", 마감정리: "finish", 청소: "finish",
+    }),
   });
 
   function normalizeFolderWord(value) {
@@ -187,6 +194,8 @@
   function kindFromWords(value) {
     const word = normalizeFolderWord(value);
     if (!word) return "";
+    // "입주 전 도배"·"퇴실 후 장판" 처럼 청소 말과 같이 적혀도 보수 작업이다.
+    if (word.includes("도배") || word.includes("장판") || word.includes("벽지")) return "repair";
     if (word.includes("퇴실") || word.includes("퇴거") || word.includes("공실")) return "moveOut";
     if (word.includes("입주") || word.includes("이사")) return "moveIn";
     if (word.includes("공용")) return "common";
@@ -452,7 +461,7 @@
       }
       const ordered = orderPairs(bucket.before, bucket.after);
       target.before = target.before.concat(ordered.before.map(toPhoto));
-      if (["moveIn", "common", "waste"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
+      if (["moveIn", "common", "waste", "repair"].includes(kind)) target.during = target.during.concat(rows(bucket.during).map(toPhoto));
       target.after = target.after.concat(ordered.after.map(toPhoto));
       // 못 가른 것은 작업 전에 몰아 두지 않는다. 몰아 두면 사람이
       // 옮겼는지 원래 그런지 알 수 없다. 메모로 남겨 눈에 띄게 한다.
@@ -509,7 +518,7 @@
   }
 
   function assignPhotoPhase(plan, fileId, phase) {
-    if (!["before", "after", "unsorted", ...(["moveIn", "common", "waste"].includes(plan?.kind) ? ["during"] : [])].includes(phase)) return plan;
+    if (!["before", "after", "unsorted", ...(["moveIn", "common", "waste", "repair"].includes(plan?.kind) ? ["during"] : [])].includes(phase)) return plan;
     return Object.assign({}, plan, { buckets: rows(plan && plan.buckets).map(bucket => {
       const copy = Object.assign({}, bucket);
       let moved;

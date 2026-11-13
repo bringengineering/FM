@@ -144,6 +144,18 @@
         { key: "after", label: "마감 상태", detail: "반출 후 바닥·주변 잔여물 정리 및 상태 확인" },
       ]),
     },
+    {
+      // 도배·장판처럼 호실 하나를 고치는 단발 보수 작업(2026-11). 세입자용 안내문으로도 낸다.
+      key: "repair",
+      label: "도배·장판",
+      items: Object.freeze([
+        { key: "wallpaper", label: "도배", detail: "기존 벽지 제거, 벽면 정리 후 새 벽지 시공" },
+        { key: "flooring", label: "장판", detail: "기존 장판 제거, 바닥 정리 후 새 장판 시공" },
+        { key: "molding", label: "걸레받이·몰딩", detail: "걸레받이·몰딩 교체 또는 마감", optional: true },
+        { key: "etc", label: "기타 보수", detail: "합의한 범위의 부분 보수", optional: true },
+        { key: "finish", label: "마감 정리", detail: "자재 잔여물 반출, 시공 부위 청소 및 상태 확인" },
+      ]),
+    },
   ]);
 
   const KIND_KEYS = Object.freeze(KINDS.map(item => item.key));
@@ -151,7 +163,7 @@
   // 사진 기록형 종류: 항목마다 '작업 기록' 상태로 시작하고, 작업 중 사진을 받으며, 사진도 메모도
   // 없는 항목은 보고서에 싣지 않는다. 폐기물 처리는 납부필증처럼 한 장으로 끝나는 근거가 많아서
   // 완료 항목에 전·후 두 장을 요구하지 않고 사진 한 장 이상이면 된다.
-  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste"]);
+  const PHOTO_RECORD_KINDS = Object.freeze(["moveIn", "common", "waste", "repair"]);
   const isPhotoRecordKind = kind => PHOTO_RECORD_KINDS.includes(text(kind, 20));
 
   // 한 항목이 가질 수 있는 상태. 진척도는 여기서 센다.
@@ -188,7 +200,18 @@
   const COPIES = Object.freeze([
     { key: "owner", label: "건물주 제출용", title: "작업 결과 보고서" },
     { key: "program", label: "청창사 제출용", title: "용역 결과 보고서" },
+    // 세입자에게 주는 안내문. 건물주 성함·연락처, 비용·자재 메모, 내부 후속 사항은 싣지 않는다.
+    { key: "tenant", label: "세입자 안내용", title: "작업 완료 안내문" },
   ]);
+
+  // 세입자용 안내문의 기본 생활 안내. 담당자가 고쳐 쓰지 않으면 이 문장이 나간다.
+  const TENANT_GUIDES = Object.freeze({
+    repair: "시공 후 2~3일은 창문을 조금 열어 환기해 주시고, 벽지가 마르는 동안 난방을 갑자기 세게 올리지 말아 주세요.\n벽지 이음매가 들뜨거나 장판이 울면 손으로 누르거나 떼지 마시고 사진을 찍어 브링케어로 알려 주세요.\n장판 위에서 무거운 가구를 끌지 말고 들어서 옮겨 주세요.",
+    moveIn: "청소 후 남은 약품 냄새가 있을 수 있으니 하루 정도 환기해 주세요.\n사용 중 불편한 점이 있으면 사진을 찍어 브링케어로 알려 주세요.",
+  });
+  function tenantGuideFor(kind) {
+    return TENANT_GUIDES[text(kind, 20)] || "사용 중 불편한 점이나 다시 살펴볼 부분이 있으면 사진을 찍어 브링케어로 알려 주세요.";
+  }
 
   function kindOf(key) {
     return KINDS.find(item => item.key === text(key, 20)) || null;
@@ -386,6 +409,11 @@
       categoryEtc: text(value.categoryEtc, 60),
       ownerContact: text(value.ownerContact, 120),
       followUp: text(value.followUp, 2000),
+      // 받는 사람별 칸. ownerNote 는 건물주용에만, tenant* 는 세입자 안내용에만 싣는다.
+      ownerNote: text(value.ownerNote, 1000),
+      tenantUnit: text(value.tenantUnit, 40),
+      tenantSummary: text(value.tenantSummary, 2000),
+      tenantGuide: text(value.tenantGuide, 1000),
       // 청창사 제출용에만 쓰는 칸. 건물주용에는 안 나온다.
       contractFrom: isDate(value.contractFrom) ? text(value.contractFrom, 10) : "",
       contractTo: isDate(value.contractTo) ? text(value.contractTo, 10) : "",
@@ -631,6 +659,8 @@
     documentNo,
     ITEM_STATUSES,
     COPIES,
+    TENANT_GUIDES,
+    tenantGuideFor,
     kindOf,
     kindForCleaningServiceType,
     draftForCleaningOrder,

@@ -123,9 +123,9 @@ function areaPhotos(item, index, images) {
 // 건물주에게 나가는 보고서들이 같은 얼굴을 하도록 글꼴·색·사진 카드 양식을 한 곳에 둔다.
 // runningTitle 은 둘째 쪽부터 오른쪽 위에 찍히는 문서 이름·번호다.
 const ownerFontFace = () => PRETENDARD ? `@font-face{font-family:"Pretendard";src:url(${PRETENDARD}) format("woff2-variations"),url(${PRETENDARD}) format("woff2");font-weight:45 920;font-style:normal;font-display:block}` : "";
-function ownerReportStyles(runningTitle) {
+function ownerReportStyles(runningTitle, footer = "건물주 제출용") {
   return `${ownerFontFace()}
-@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"${escape(runningTitle)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · 건물주 제출용";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
+@page{size:A4 portrait;margin:14mm 12mm 14mm;@top-right{content:"${escape(runningTitle)}";font-family:${FONT_STACK};font-size:7pt;color:#7a8f9c;vertical-align:bottom}@bottom-left{content:"BRING CARE · ${escape(footer)}";font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}@bottom-right{content:counter(page) " / " counter(pages);font-family:${FONT_STACK};font-size:7pt;color:#6a8190;vertical-align:middle}}
 @page:first{@top-right{content:none}}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#1d3b4f;font-family:${FONT_STACK};-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{width:186mm;font-size:9pt;line-height:1.65;overflow-wrap:anywhere}h1,h2,h3,p{margin:0}p{orphans:2;widows:2}
@@ -172,7 +172,10 @@ figcaption{padding:1.5mm 2.5mm;color:#49697d;font-size:7.3pt;line-height:1.45;wh
 function createOwnerReportHtml(report, options = {}) {
   // 공용부 청소는 '공용부 활동 결과보고서' 양식으로 따로 만든다. 그 모듈이 이 파일의 글꼴·로고를
   // 쓰므로 여기서는 호출할 때 불러온다(맨 위에서 서로 require 하면 한쪽이 빈 모듈을 받는다).
-  if (report.kind === "common" || report.kind === "waste") return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
+  // 세입자 안내용은 받는 사람이 다르다. 건물주 성함·연락처, 비용·자재 메모, 내부 후속 사항을 싣지 않고
+  // 세입자용 본문과 생활 안내를 싣는다. 공용부 양식으로 돌리지 않는다.
+  const tenant = options.audience === "tenant";
+  if (!tenant && (report.kind === "common" || report.kind === "waste")) return require("./work-report-common-pdf").createCommonActivityReportHtml(report, options);
   const company = options.company && typeof options.company === "object" ? options.company : {};
   const images = options.images && typeof options.images === "object" ? options.images : {};
   const items = report.items.filter(item => item.status !== "recorded" || count(item) || item.note);
@@ -186,7 +189,8 @@ function createOwnerReportHtml(report, options = {}) {
   const building = site || "현장";
   // 수신인은 실명이 아니라 "(주소) 건물주" 로 쓴다. CRM 이름·별명은 내부용이다.
   // '귀하' 하나로 높인다 — "건물주님 귀하" 는 높임이 겹친다.
-  const recipient = CustomerCore.reportOwnerName({ address: report.siteAddress });
+  const unit = String(report.tenantUnit || "").trim().replace(/호$/u, "");
+  const recipient = tenant ? `${site && site !== report.siteAddress ? `${site} ` : ""}${unit ? `${unit}호 ` : ""}입주자` : CustomerCore.reportOwnerName({ address: report.siteAddress });
   const sender = company.businessName || "브링케어";
   const documentNo = Core.documentNo(report);
   const totals = Object.fromEntries(Object.keys(PHASES).map(phase => [phase, items.reduce((n, item) => n + item[phase].length, 0)]));
@@ -195,25 +199,39 @@ function createOwnerReportHtml(report, options = {}) {
     // 작업일·작업 종류는 위 '한눈에 보기' 에 이미 있다. 같은 값을 두 번 싣지 않는다.
     ["현장", site !== report.siteAddress ? site : ""], ["현장 주소", report.siteAddress],
     ["작업 구분", Core.categoryLabel(report.category) + (report.category === "etc" && report.categoryEtc ? ` · ${report.categoryEtc}` : "")],
-    ["작업 범위", report.area], ["담당자", report.workerName],
-  ].filter(([, value]) => value);
+    ["작업 범위", report.area], ["담당자", tenant ? "" : report.workerName],
+  ].filter(([label]) => !tenant || label !== "작업 구분").filter(([, value]) => value);
   const stats = [["작업 구역", `${items.length}곳`], ...Object.entries(PHASES).filter(([phase]) => phase !== "during" || totals.during).map(([phase, label]) => [label, `${totals[phase]}장`])];
   const glance = [["작업일", date], ["작업 종류", kind], ["작업 구역", `${items.length}곳`], ["사진 기록", `${totals.before + totals.during + totals.after}장`]];
   const senderLine = [sender, company.representative ? `대표 ${company.representative}` : "", company.registrationNumber ? `사업자등록번호 ${company.registrationNumber}` : ""].filter(Boolean).join(" · ");
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>작업 결과 보고서</title><style>
-${ownerReportStyles(`작업 결과보고서 · ${documentNo}`)}
+  const docTitle = tenant ? "작업 완료 안내문" : "작업 결과보고서";
+  const greeting = tenant
+    ? `${recipient}님, 생활하시는 공간의 ${kind} 작업을 ${date}에 마쳤습니다.\n작업 내용과 사진을 아래와 같이 안내드리며, 작업하는 동안 양해해 주셔서 감사합니다.`
+    : `항상 브링케어를 믿고 소중한 건물을 맡겨 주시는 ${recipient}님께 진심으로 감사드립니다.\n${date} 귀 건물의 ${kind} 작업을 아래와 같이 정성껏 수행하였기에 그 결과를 삼가 보고드립니다.`;
+  // 세입자용 본문이 비어 있으면 건물주용 본문을 옮기지 않는다 — 건물주에게 쓴 말이 세입자에게 나간다.
+  const summaryText = tenant
+    ? report.tenantSummary || "작업 내용과 현장 사진을 정리해 안내드립니다. 아래에서 확인하실 수 있습니다."
+    : report.summary || "구역별 현장 기록을 정리했습니다. 등록된 작업 내용과 사진은 아래에서 확인하실 수 있습니다.";
+  const followSection = tenant
+    ? `<section class="follow"><h2>생활 안내</h2><p>${escape(report.tenantGuide || Core.tenantGuideFor(report.kind))}</p></section>`
+    : `${report.ownerNote ? `<section class="follow"><h2>비용·자재</h2><p>${escape(report.ownerNote)}</p></section>` : ""}<section class="follow"><h2>추가 안내</h2><p>${escape(report.followUp || "등록된 후속 조치 사항은 없습니다. 궁금하신 점이나 추가로 살펴볼 부분은 브링케어로 말씀해 주세요.")}</p></section>`;
+  const thanks = tenant
+    ? "작업 후 불편한 점이나 다시 살펴볼 부분이 있으면 언제든 브링케어로 말씀해 주세요. 감사합니다."
+    : `앞으로도 ${building}을(를) 내 건물처럼 세심하게 살피겠습니다. 궁금하신 점은 언제든 브링케어로 말씀해 주십시오. 감사합니다.`;
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><title>${tenant ? "작업 완료 안내문" : "작업 결과 보고서"}</title><style>
+${ownerReportStyles(`${docTitle} · ${documentNo}`, tenant ? "세입자 안내용" : "건물주 제출용")}
 </style></head><body><main>
 <section class="overview">
-<header class="doc-head">${LOGO ? `<img class="brand-logo" src="${LOGO}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>작업 결과보고서</h1><p>WORK COMPLETION REPORT</p></div></header>
+<header class="doc-head">${LOGO ? `<img class="brand-logo" src="${LOGO}" alt="BRING CARE">` : '<span class="brand-text">BRING CARE</span>'}<div class="doc-title"><h1>${docTitle}</h1><p>${tenant ? "WORK COMPLETION NOTICE" : "WORK COMPLETION REPORT"}</p></div></header>
 <table class="letter"><tbody>
 <tr><th>문서번호</th><td>${escape(documentNo)}</td></tr>
-<tr><th>수신(건물주)</th><td>${escape(recipient)} 귀하</td></tr>
+<tr><th>${tenant ? "수신" : "수신(건물주)"}</th><td>${escape(recipient)} 귀하</td></tr>
 <tr><th>발신</th><td>${escape(senderLine)}</td></tr>
-<tr><th>제목</th><td>${site ? `${escape(site)} ` : ""}${escape(kind)} 작업 결과 보고 (작업일 ${escape(date)})</td></tr>
+<tr><th>제목</th><td>${site ? `${escape(site)} ` : ""}${escape(kind)} 작업 ${tenant ? "완료 안내" : "결과 보고"} (작업일 ${escape(date)})</td></tr>
 </tbody></table>
-<section class="dear"><p class="dear-name"><b>${escape(recipient)}</b> 귀하</p><p class="greeting">항상 브링케어를 믿고 소중한 건물을 맡겨 주시는 ${escape(recipient)}님께 진심으로 감사드립니다.\n${escape(date)} 귀 건물의 ${escape(kind)} 작업을 아래와 같이 정성껏 수행하였기에 그 결과를 삼가 보고드립니다.</p></section>
+<section class="dear"><p class="dear-name"><b>${escape(recipient)}</b> 귀하</p><p class="greeting">${escape(greeting)}</p></section>
 <div class="glance">${glance.map(([label, value]) => `<div><span>${label}</span><b>${escape(value)}</b></div>`).join("")}</div>
-<section class="monthly-summary"><h2>이번 작업 요약</h2><p class="greeting">${escape(report.summary || "구역별 현장 기록을 정리했습니다. 등록된 작업 내용과 사진은 아래에서 확인하실 수 있습니다.")}</p></section>
+<section class="monthly-summary"><h2>이번 작업 요약</h2><p class="greeting">${escape(summaryText)}</p></section>
 <section><h2>작업 정보</h2><table class="facts"><tbody>${facts.map(([label, value]) => `<tr><th>${label}</th><td>${escape(value)}</td></tr>`).join("")}</tbody></table></section>
 <section><h2>사진 기록 요약</h2><div class="stats">${stats.map(([label, value]) => `<div class="stat"><span>${label}</span><b>${value}</b></div>`).join("")}</div></section>
 <section><h2>구역별 작업 기록</h2>${items.length ? `<table class="areas"><thead><tr><th>No.</th><th>작업 구역</th><th>수행 내용</th><th>현장 사진</th></tr></thead><tbody>${items.map((item, i) => `<tr><td>${i + 1}</td><td>${escape(item.label)}</td><td>${escape(recordText(item))}</td><td>${escape(photoCounts(item))}</td></tr>`).join("")}</tbody></table>` : '<p class="greeting">등록된 작업 기록이 없습니다.</p>'}</section>
@@ -223,9 +241,9 @@ ${photoItems.length ? `<section class="photos">
 ${photoItems.map((item, i) => areaPhotos(item, i + 1, images)).join("")}
 </section>` : ""}
 <section class="closing">
-<section class="follow"><h2>추가 안내</h2><p>${escape(report.followUp || "등록된 후속 조치 사항은 없습니다. 궁금하신 점이나 추가로 살펴볼 부분은 브링케어로 말씀해 주세요.")}</p></section>
-<section class="notices">${Core.NOTICES.map(line => `<p>· ${escape(line)}</p>`).join("")}</section>
-<p class="thanks">앞으로도 ${escape(building)}을(를) 내 건물처럼 세심하게 살피겠습니다. 궁금하신 점은 언제든 브링케어로 말씀해 주십시오. 감사합니다.</p>
+${followSection}
+<section class="notices">${(tenant ? Core.NOTICES.slice(0, 1) : Core.NOTICES).map(line => `<p>· ${escape(line)}</p>`).join("")}</section>
+<p class="thanks">${escape(thanks)}</p>
 <section class="sender"><p class="date">${escape(date)}</p><div class="from">${LOGO ? `<img src="${LOGO}" alt="">` : ""}<b>${escape(sender)} 드림</b><span>문서번호 ${escape(documentNo)} · 작성 업체 ${escape(sender)}</span></div></section>
 </section>
 </main></body></html>`;
