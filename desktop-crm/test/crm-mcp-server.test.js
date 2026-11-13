@@ -23,7 +23,8 @@ test("MCP initializes and advertises narrow CRM tools", async () => {
   const result = await server.handle({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } });
   assert.equal(result.result.protocolVersion, "2025-06-18");
   const tools = await server.handle({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-  assert.deepEqual(tools.result.tools.map(item => item.name), ["crm_connection_status", "crm_work_order_context", "crm_preview_work_order_draft", "crm_publish_work_order_draft"]);
+  assert.deepEqual(tools.result.tools.map(item => item.name), ["crm_connection_status", "crm_work_order_context", "crm_preview_work_order_draft", "crm_publish_work_order_draft", "crm_tenant_context", "crm_preview_tenant", "crm_publish_tenant"]);
+  assert.match(tools.result.tools[6].description, /승인/u);
   assert.match(tools.result.tools[3].description, /승인/u);
 });
 

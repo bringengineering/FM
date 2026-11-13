@@ -15,3 +15,28 @@
 @media(max-width:1250px){.building-hub-layout{grid-template-columns:260px minmax(0,1fr)}.building-hub-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.building-identity-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-hub-detail-head{align-items:stretch;flex-direction:column}.customer-hub-head-actions{align-self:stretch;justify-content:flex-start}.customer-action-divider{min-height:38px}}
 @media(max-width:980px){.building-hub-layout{display:block;height:auto;min-height:0;overflow:visible}.building-hub-browser{border-right:0;border-bottom:1px solid #E5E8EB}.building-hub-list{grid-template-columns:repeat(2,minmax(0,1fr));max-height:260px}.customer-hub-workspace{height:auto;min-height:0;overflow:visible}.customer-hub-selector-bar{grid-template-columns:auto minmax(240px,1fr) minmax(160px,200px)}.building-detail-grid{grid-template-columns:1fr}.building-detail-section.wide,.customer-priority-grid>.wide{grid-column:auto}.building-hub-detail-scroll{overflow:visible}}
 @media(max-width:700px){.customer-hub-selector-bar,.partner-vendor-detail-workspace .customer-hub-selector-bar{grid-template-columns:1fr}.customer-management-detail-workspace .customer-hub-selector-bar{grid-template-columns:1fr}.customer-selector-heading{justify-content:space-between}.customer-hub-head-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.customer-hub-head-actions button{width:100%}.customer-action-divider{display:none}.customer-secondary-details>summary{align-items:flex-start}.customer-consultation-record{flex-direction:column}.customer-consultation-record em{max-width:none;text-align:left}.customer-rental-toolbar{align-items:stretch;flex-direction:column}.customer-rental-toolbar>div{display:grid;grid-template-columns:1fr 1fr}.customer-rental-toolbar button{width:100%}}
+
+/* 호실 수정 창 안의 세입자 정보 (건물주 입금캘린더 납부 일정과 같은 자료) */
+.unit-tenant-section{grid-column:1/-1;display:grid;gap:8px;padding:14px;border:1px solid #E5E8EB;border-radius:12px;background:#FAFBFC}
+.unit-tenant-section>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.unit-tenant-section>header b{display:block;color:#191F28;font-size:13px}
+.unit-tenant-section>header span{display:block;margin-top:3px;color:#6B7684;font-size:11px;line-height:1.5}
+.unit-tenant-section>header .mini-button{flex:none;min-height:36px}
+.unit-tenant-record{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #E5E8EB;border-radius:10px;background:#fff}
+.unit-tenant-record b{display:block;color:#191F28;font-size:13px}
+.unit-tenant-record span,.unit-tenant-record small{display:block;margin-top:3px;color:#4E5968;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.unit-tenant-record small{color:#8B95A1}
+.unit-tenant-record.ended{opacity:.6}
+.unit-tenant-record .mini-button{flex:none;min-height:36px}
+.unit-tenant-empty{padding:12px;border:1px dashed #D1D6DB;border-radius:10px;color:#6B7684;font-size:12px;text-align:center}
+.unit-tenant-hint{color:#8B95A1;font-size:10.5px;line-height:1.5}
+@media (max-width:700px){.unit-tenant-section>header{flex-direction:column}}
+.crm-read-only [data-unit-tenant-add]{display:none!important}
+.building-unit-row{display:grid;gap:0;border-bottom:1px solid #F2F4F6}
+.building-unit-row .building-unit-record{border-bottom:0}
+.unit-tenant-chip{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;width:calc(100% - 24px);min-height:36px;margin:0 12px 10px;padding:7px 10px;border:1px solid #E8F3FF;border-radius:9px;background:#F5F9FF;color:#1B64DA;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.unit-tenant-chip b{font-weight:800}
+.unit-tenant-chip span{color:#4E5968;font-size:11px}
+.unit-tenant-chip.empty{border-style:dashed;border-color:#D1D6DB;background:#fff;color:#4E5968;font-weight:700}
+.unit-tenant-chip:hover{border-color:#90C2FF}
+.unit-tenant-chip:focus-visible{outline:3px solid rgba(49,130,246,.3);outline-offset:1px}
