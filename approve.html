@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173a70">
+  <title>BRING Care 승인 안내</title>
+  <style>
+    :root { color-scheme: light; --navy:#173a70; --blue:#2f80ed; --ink:#162033; --muted:#667085; --line:#d9e2ef; --page:#eef3f9; }
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--page); }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Arial, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { width: min(520px, calc(100% - 28px)); padding: max(20px, env(safe-area-inset-top)) 0 max(28px, env(safe-area-inset-bottom)); }
+    .brand { display:flex; align-items:center; gap:10px; margin:0 4px 14px; color:var(--navy); font-size:19px; font-weight:900; }
+    .mark { width:13px; height:13px; border-radius:50%; background:var(--blue); box-shadow:9px 0 0 #28b779; }
+    .panel { padding:28px 24px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 28px rgba(31,57,91,.09); }
+    .eyebrow { margin:0 0 8px; color:var(--blue); font-size:13px; font-weight:800; }
+    h1 { margin:0; font-size:26px; line-height:1.35; }
+    p { margin:14px 0 0; color:var(--muted); font-size:16px; line-height:1.65; word-break:keep-all; }
+    .notice { margin-top:20px; padding:15px 16px; color:#29405f; background:#f5f8fc; border:1px solid #dce5f0; border-radius:8px; font-weight:700; line-height:1.55; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="mark" aria-hidden="true"></span>BRING Care</div>
+    <section class="panel" aria-labelledby="title">
+      <p class="eyebrow">보안 링크 전환 안내</p>
+      <h1 id="title">기존 승인 링크는 종료되었습니다</h1>
+      <p>고객 정보 보호를 위해 공개 페이지에서 접수 자료를 조회하는 방식을 중단했습니다. 새로 발송된 보안 승인 링크를 이용해 주세요.</p>
+      <div class="notice" role="status">새 링크가 필요하면 BRING Care 담당자에게 다시 요청해 주세요.</div>
+    </section>
+  </main>
+</body>
+</html>
